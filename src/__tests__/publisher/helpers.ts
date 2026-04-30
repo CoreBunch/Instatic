@@ -4,6 +4,7 @@
  */
 import type { Page, PageNode, Project, Breakpoint } from '../../core/page-tree/types'
 import type { ModuleDefinition, IModuleRegistry, AnyModuleDefinition } from '../../core/module-engine/types'
+import { EMPTY_PROJECT_DATA_MODEL } from '../../core/data-model/types'
 import {
   DEFAULT_COLOR_TOKENS,
   DEFAULT_TYPE_SCALE,
@@ -115,6 +116,7 @@ export function makeProject(overrides: Partial<Project> = {}): Project {
     breakpoints: DEFAULT_BREAKPOINTS,
     settings: DEFAULT_PROJECT_SETTINGS,
     classes: {},
+    data: structuredClone(EMPTY_PROJECT_DATA_MODEL),
     createdAt: 0,
     updatedAt: 0,
     ...overrides,

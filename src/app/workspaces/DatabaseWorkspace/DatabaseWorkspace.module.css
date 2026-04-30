@@ -1,0 +1,262 @@
+.page {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  background: var(--editor-bg);
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 16px;
+  border-right: 1px solid var(--editor-border);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.sidebarHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.sidebarHeader h1,
+.header h1,
+.panel h2,
+.empty h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--editor-text);
+}
+
+.sidebarHeader p,
+.header p,
+.empty p,
+.muted {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--editor-text-secondary);
+}
+
+.createRow,
+.createRowInline {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.createRow {
+  margin-bottom: 12px;
+}
+
+.createRow input,
+.createRowInline input,
+.createRowInline select,
+.fieldGrid input,
+.fieldGrid select,
+.permissionGrid select,
+.titleInput {
+  min-width: 0;
+  height: 30px;
+  border: 1px solid var(--editor-border);
+  border-radius: 6px;
+  padding: 0 9px;
+  background: var(--editor-surface);
+  color: var(--editor-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.createRow input {
+  flex: 1;
+}
+
+.tableList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.tableItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--editor-text-secondary);
+  text-align: left;
+}
+
+.tableItemActive,
+.tableItem:hover {
+  color: var(--editor-text);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.tableItem small {
+  color: var(--editor-text-secondary);
+}
+
+.main {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.titleInput {
+  width: min(420px, 100%);
+  height: 36px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pinToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  color: var(--editor-text-secondary);
+  font-size: 12px;
+}
+
+.diagnostics {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 7px;
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.diagnostics p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--editor-warning);
+}
+
+.panel {
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--editor-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 140px 80px 60px 90px;
+  gap: 6px;
+  align-items: center;
+}
+
+.gridHead {
+  color: var(--editor-text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.gridRow {
+  display: contents;
+}
+
+.twoColumn {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.indexRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  color: var(--editor-text);
+  font-size: 12px;
+}
+
+.permissionGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.permissionGrid label {
+  display: grid;
+  gap: 5px;
+  color: var(--editor-text-secondary);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  min-height: 420px;
+  color: var(--editor-text-secondary);
+  text-align: center;
+}
+
+@media (max-width: 860px) {
+  .page,
+  .twoColumn {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    max-height: 240px;
+    border-right: 0;
+    border-bottom: 1px solid var(--editor-border);
+  }
+
+  .fieldGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .gridHead {
+    display: none;
+  }
+
+  .gridRow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--editor-border);
+  }
+}
+

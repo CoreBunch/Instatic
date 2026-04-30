@@ -28,7 +28,17 @@
  * @see render.ts escapeProps() — richtext props are passed through unescaped
  */
 
-import DOMPurify, { type Config } from 'dompurify'
+import DOMPurifyImport, { type Config } from 'dompurify'
+
+type DOMPurifyRuntime = {
+  sanitize?: (value: string, config?: Config) => string
+  addHook?: (name: string, hook: (node: Element) => void) => void
+}
+
+const DOMPurify = (
+  (DOMPurifyImport as DOMPurifyRuntime & { default?: DOMPurifyRuntime }).default
+  ?? DOMPurifyImport
+) as DOMPurifyRuntime
 
 // ---------------------------------------------------------------------------
 // DOMPurify configuration profiles
@@ -81,12 +91,14 @@ export const PLAIN_TEXT_CONFIG: Config & { _plainText?: true } = {
 
 // DOMPurify hook: after sanitizing, ensure all <a> tags have rel="noopener noreferrer"
 // This prevents reverse tabnapping attacks when links open in a new tab.
-DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-  if (node.tagName === 'A') {
-    node.setAttribute('target', '_blank')
-    node.setAttribute('rel', 'noopener noreferrer')
-  }
-})
+if (typeof DOMPurify.addHook === 'function') {
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (node.tagName === 'A') {
+      node.setAttribute('target', '_blank')
+      node.setAttribute('rel', 'noopener noreferrer')
+    }
+  })
+}
 
 // ---------------------------------------------------------------------------
 // Public API

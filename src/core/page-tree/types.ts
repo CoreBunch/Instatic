@@ -22,6 +22,9 @@ export type { VisualComponent } from '../visualComponents/types'
 import type { ProjectPackageJson } from '../project-dependencies/manifest'
 export type { ProjectPackageJson } from '../project-dependencies/manifest'
 
+import type { ProjectDataModel } from '../data-model/types'
+export type { ProjectDataModel } from '../data-model/types'
+
 // ---------------------------------------------------------------------------
 // Phase C — CSS Class System types
 // ---------------------------------------------------------------------------
@@ -370,6 +373,12 @@ export interface Project {
    * Defaults to [] on hydration of legacy projects (validateProject handles this).
    */
   visualComponents: VisualComponent[]
+  /**
+   * Structured data model for managed Convex publishing.
+   * Generated Convex files are build artifacts; the user-facing source is this
+   * serialisable model of tables, fields, indexes, permissions, and seed data.
+   */
+  data: ProjectDataModel
   /**
    * Project-owned package manifest used by the Files panel and React export.
    * Optional for legacy fixtures/projects; validation and project creation fill

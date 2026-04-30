@@ -32,6 +32,7 @@ import {
   clonePackageJson,
   DEFAULT_PROJECT_PACKAGE_JSON,
 } from '../../project-dependencies/manifest'
+import { EMPTY_PROJECT_DATA_MODEL } from '../../data-model/types'
 
 /** Maximum undo history depth — prevents unbounded memory growth */
 const MAX_HISTORY = 50
@@ -40,7 +41,7 @@ export interface ProjectSlice {
   project: Project | null
 
   // Project lifecycle
-  createProject: (name: string) => Project
+  createProject: (name: string, id?: string) => Project
   loadProject: (project: Project) => void
   clearProject: () => void
   updateProjectName: (name: string) => void
@@ -93,7 +94,7 @@ export interface ProjectSlice {
   pushHistory: () => void
 }
 
-function createDefaultProject(name: string): Project {
+function createDefaultProject(name: string, id?: string): Project {
   const rootNode = createNode('base.root')
   const homePage: Page = {
     id: nanoid(),
@@ -103,12 +104,13 @@ function createDefaultProject(name: string): Project {
     nodes: { [rootNode.id]: rootNode },
   }
   return {
-    id: nanoid(),
+    id: id ?? nanoid(),
     name,
     projectMode: 'html',  // Phase E — default to HTML mode
     pages: [homePage],
     files: [],             // Contribution #595 — files data layer
     visualComponents: [],  // Contribution #619 — visual components data layer
+    data: structuredClone(EMPTY_PROJECT_DATA_MODEL),
     packageJson: clonePackageJson(DEFAULT_PROJECT_PACKAGE_JSON),
     breakpoints: DEFAULT_BREAKPOINTS,
     settings: DEFAULT_PROJECT_SETTINGS,
@@ -264,8 +266,8 @@ export const createProjectSlice: StateCreator<EditorStore, [], [], ProjectSlice>
     },
 
     // ─── Project lifecycle ────────────────────────────────────────────────────
-    createProject: (name) => {
-      const project = createDefaultProject(name)
+    createProject: (name, id) => {
+      const project = createDefaultProject(name, id)
       set({
         project,
         packageJson: clonePackageJson(project.packageJson),

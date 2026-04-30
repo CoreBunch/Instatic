@@ -192,6 +192,7 @@ const PRE_APPROVED_FUTURE_SLICES = new Set([
   'settingsModalSlice.ts',    // Phase 6 (Task #183 — Settings Modal; open state may live in uiSlice but a dedicated slice is also permitted)
   'filesSlice.ts',            // File system data layer (Contribution #595 §6 / msg #1844 — CRUD actions for project.files[])
   'visualComponentsSlice.ts', // Visual Components data layer (Contribution #619 §10 / Task #436 — CRUD actions for project.visualComponents[])
+  'dataModelSlice.ts',        // Data model layer for managed Convex tables and resource workspaces
 ])
 
 describe('Phase 0 Gate 2 — Canonical six slices in src/core/editor-store/slices/ (Guideline #193 + #341)', () => {

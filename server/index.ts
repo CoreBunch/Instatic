@@ -18,6 +18,7 @@
  */
 
 import { handleAgentRequest } from './agentHandler'
+import { handlePublishRequest } from './publishHandler'
 
 const PORT = Number(process.env.PORT ?? 3001)
 const ALLOWED_ORIGINS = [
@@ -30,7 +31,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
   const allow = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
   return {
     'Access-Control-Allow-Origin': allow,
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   }
 }
@@ -61,6 +62,22 @@ Bun.serve({
       try {
         const res = await handleAgentRequest(req)
         // Append CORS headers to the streaming response
+        for (const [k, v] of Object.entries(cors)) {
+          res.headers.set(k, v)
+        }
+        return res
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Internal server error'
+        return new Response(JSON.stringify({ error: message }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', ...cors },
+        })
+      }
+    }
+
+    if (url.pathname === '/api/publish' || url.pathname.startsWith('/api/publish/')) {
+      try {
+        const res = await handlePublishRequest(req)
         for (const [k, v] of Object.entries(cors)) {
           res.headers.set(k, v)
         }

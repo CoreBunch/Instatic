@@ -1,73 +1,36 @@
-# React + TypeScript + Vite
+# Page Builder
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A React-based website and web app builder with an editor workspace, project-level database workspace, resource management screens, and managed publishing.
 
-Currently, two official plugins are available:
+## Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+bun install
+bun run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The Vite dev server also serves the MVP publishing API at `/api/publish`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Managed Publishing
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Publishing is server-side and uses:
+
+- Vercel for generated React/Vite frontends.
+- Convex for managed backend tables when a project has data tables.
+
+Create `.env.local` from `.env.example` and set:
+
+- `VERCEL_TOKEN`: Vercel API token used to create projects and deployments.
+- `VERCEL_TEAM_ID`: optional Vercel team id or slug.
+- `CONVEX_DEPLOY_KEY`: Convex deploy key for non-interactive backend deploys.
+- `CONVEX_URL`: optional fixed Convex deployment URL. If omitted, the publish service captures the URL from `convex deploy --cmd`.
+- `CONVEX_PREVIEW_DEPLOYMENTS`: set to `true` to create named Convex preview deployments per project.
+
+The publish workflow compiles the editor project into a temporary React/Vite bundle, deploys Convex first when needed, writes the public `VITE_CONVEX_URL` into the frontend bundle, and then deploys the frontend through the Vercel REST API.
+
+## Verification
+
+```bash
+bun run build
+bun test
 ```

@@ -1,0 +1,98 @@
+.page {
+  height: 100%;
+  overflow: auto;
+  padding: 18px;
+  background: var(--editor-bg);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.header h1,
+.empty h1,
+.emptyPanel h2 {
+  margin: 0;
+  color: var(--editor-text);
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.header p,
+.empty p,
+.emptyPanel p {
+  margin: 5px 0 0;
+  color: var(--editor-text-secondary);
+  font-size: 12px;
+}
+
+.notice {
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  border-radius: 7px;
+  background: rgba(96, 165, 250, 0.08);
+  color: rgb(147, 197, 253);
+  font-size: 12px;
+}
+
+.records {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.record,
+.emptyPanel {
+  padding: 14px;
+  border: 1px solid var(--editor-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.recordHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--editor-text);
+}
+
+.fieldList {
+  display: grid;
+  gap: 9px;
+}
+
+.fieldList label {
+  display: grid;
+  gap: 5px;
+  color: var(--editor-text-secondary);
+  font-size: 12px;
+}
+
+.fieldList input {
+  height: 32px;
+  border: 1px solid var(--editor-border);
+  border-radius: 6px;
+  padding: 0 9px;
+  background: var(--editor-surface);
+  color: var(--editor-text);
+  font: inherit;
+}
+
+.empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  height: 100%;
+  color: var(--editor-text-secondary);
+  text-align: center;
+  background: var(--editor-bg);
+}
+

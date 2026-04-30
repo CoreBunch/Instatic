@@ -13,6 +13,7 @@ import type { VisualComponentsSlice } from './slices/visualComponentsSlice'
 import type { SettingsSlice } from './slices/settingsSlice'
 import type { AgentSlice } from '../agent/agentSlice'
 import type { ProjectPanelSlice } from './slices/projectPanelSlice'
+import type { DataModelSlice } from './slices/dataModelSlice'
 import { createProjectSlice } from './slices/projectSlice'
 import { createSelectionSlice } from './slices/selectionSlice'
 import { createCanvasSlice } from './slices/canvasSlice'
@@ -23,11 +24,12 @@ import { createVisualComponentsSlice } from './slices/visualComponentsSlice'
 import { createSettingsSlice } from './slices/settingsSlice'
 import { createAgentSlice } from '../agent/agentSlice'
 import { createProjectPanelSlice } from './slices/projectPanelSlice'
+import { createDataModelSlice } from './slices/dataModelSlice'
 
 /**
  * EditorStore — the central Zustand store for the page builder editor.
  *
- * Composed of 10 slices (6 canonical Phase 0 + agentSlice + projectPanelSlice + filesSlice + visualComponentsSlice):
+ * Composed of 11 slices (6 canonical Phase 0 + agentSlice + projectPanelSlice + filesSlice + visualComponentsSlice + dataModelSlice):
  *   - projectSlice:        owns Project (pages, nodes, breakpoints, settings, classes, files)
  *   - selectionSlice:      selectedNodeId, hoveredNodeId
  *   - canvasSlice:         zoom, pan, activeBreakpointId, canvasMode (Constraint #317)
@@ -46,7 +48,7 @@ import { createProjectPanelSlice } from './slices/projectPanelSlice'
  * No panel may maintain a local copy of node data.
  * Constraint #283/#286: No Anthropic SDK imports in this file or any src/ file.
  */
-export type EditorStore = ProjectSlice & SelectionSlice & CanvasSlice & UiSlice & ClassSlice & FilesSlice & VisualComponentsSlice & SettingsSlice & AgentSlice & ProjectPanelSlice
+export type EditorStore = ProjectSlice & SelectionSlice & CanvasSlice & UiSlice & ClassSlice & FilesSlice & VisualComponentsSlice & SettingsSlice & AgentSlice & ProjectPanelSlice & DataModelSlice
 
 export const useEditorStore = create<EditorStore>()(
   subscribeWithSelector(
@@ -61,6 +63,7 @@ export const useEditorStore = create<EditorStore>()(
       ...createSettingsSlice(...args),
       ...createAgentSlice(...args),
       ...createProjectPanelSlice(...args),
+      ...createDataModelSlice(...args),
     }))
   )
 )

@@ -50,11 +50,11 @@ export default function Dashboard() {
 
   const handleNewProject = () => {
     const newId = nanoid()
-    navigate(`/editor/${newId}`)
+    navigate(`/projects/${newId}/editor`)
   }
 
   const handleOpen = (id: string) => {
-    navigate(`/editor/${id}`)
+    navigate(`/projects/${id}/editor`)
   }
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {

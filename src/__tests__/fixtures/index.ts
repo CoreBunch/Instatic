@@ -15,6 +15,7 @@ import type { Page, PageNode, Project } from '../../core/page-tree/types'
 import { DEFAULT_BREAKPOINTS, DEFAULT_PROJECT_SETTINGS } from '../../core/page-tree/types'
 import type { AnyModuleDefinition } from '../../core/module-engine/types'
 import { isSafeUrl } from '../../core/publisher/utils'
+import { EMPTY_PROJECT_DATA_MODEL } from '../../core/data-model/types'
 
 // ---------------------------------------------------------------------------
 // ModuleDefinition factories
@@ -234,6 +235,7 @@ export function makeProject(overrides: Partial<Project> = {}): Project {
     files: overrides.files ?? [],
     // visualComponents is required on Project; default to no reusable components.
     visualComponents: overrides.visualComponents ?? [],
+    data: overrides.data ?? structuredClone(EMPTY_PROJECT_DATA_MODEL),
     createdAt: overrides.createdAt ?? 1_700_000_000_000,
     updatedAt: overrides.updatedAt ?? 1_700_000_000_000,
   }

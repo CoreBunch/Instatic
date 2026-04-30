@@ -1,5 +1,5 @@
 /**
- * EditorLayout — root layout for the editor route /editor/:projectId
+ * EditorLayout — canvas workspace for /projects/:projectId/editor
  *
  * Editor Overlay Layout (Guideline #410 — motion-editor style):
  *   ┌─────────────────────────────── Toolbar ──────────────────────────────────┐  z-60
@@ -23,26 +23,20 @@
  * Authenticates via ambient Claude Code credentials through the local Bun server.
  * No env vars, no API keys, no endpoint configuration required (Constraint #385).
  */
-import { useParams } from 'react-router-dom'
 import { CanvasRoot } from '@editor/components/Canvas'
 import { PropertiesPanel } from '@editor/components/PropertiesPanel'
 import { CodeEditorPanel } from '@editor/components/CodeEditor'
 import { Toolbar } from '@editor/components/Toolbar'
 import { LeftSidebar } from '@editor/components/LeftSidebar'
 import { RightSidebar } from '@editor/components/RightSidebar'
-import { SettingsModal } from '@editor/components/Settings'
-import { usePersistence } from '@editor/hooks/usePersistence'
 import { useEditorLayoutPersistence } from '@editor/hooks/useEditorLayoutPersistence'
 import { selectRightSidebarExpanded, useEditorStore } from '@core/editor-store/store'
 import styles from './EditorLayout.module.css'
 
 export default function EditorLayout() {
-  const { projectId } = useParams<{ projectId: string }>()
   const propertiesPanelMode = useEditorStore((s) => s.propertiesPanelMode)
   const rightSidebarExpanded = useEditorStore(selectRightSidebarExpanded)
 
-  // J12 — wire IndexedDB persistence: load on mount, auto-save, Cmd+S
-  usePersistence(projectId)
   useEditorLayoutPersistence()
 
   return (
@@ -71,9 +65,6 @@ export default function EditorLayout() {
         </div>
         <RightSidebar />
       </div>
-
-      {/* J10 — Settings Modal (portal-rendered, listens to store.settingsModalOpen) */}
-      <SettingsModal />
     </div>
   )
 }

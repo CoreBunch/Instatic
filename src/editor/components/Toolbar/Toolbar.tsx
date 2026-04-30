@@ -19,6 +19,7 @@ import { ExportButton } from './ExportButton'
 import { PreviewButton } from './PreviewButton'
 import { SettingsButton } from './SettingsButton'
 import { SaveIndicator } from './SaveIndicator'
+import { PublishButton } from './PublishButton'
 import { PreviewOverlay } from '../Preview/PreviewOverlay'
 import styles from './Toolbar.module.css'
 
@@ -58,6 +59,7 @@ export function Toolbar() {
         <SaveIndicator />
         <Divider />
         <PreviewButton />
+        <PublishButton />
         <ExportButton />
         <SettingsButton />
       </header>

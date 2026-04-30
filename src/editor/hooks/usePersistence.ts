@@ -87,7 +87,10 @@ export function usePersistence(
 
       // Fallback: create a fresh blank project
       if (!cancelled) {
-        const newProject = createProject('My Project')
+        const newProjectId = requestedProjectId && requestedProjectId !== 'new-project'
+          ? requestedProjectId
+          : undefined
+        const newProject = createProject('My Project', newProjectId)
         localStorage.setItem(LAST_PROJECT_KEY, newProject.id)
         loadedRef.current = true
       }

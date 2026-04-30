@@ -132,6 +132,61 @@ function agentDevPlugin(): Plugin {
           })
         },
       )
+
+      let _publishHandler: ((req: Request) => Promise<Response>) | null = null
+      const getPublishHandler = async () => {
+        if (!_publishHandler) {
+          const mod = await server.ssrLoadModule(
+            path.resolve(__dirname, 'server/publishHandler.ts'),
+          )
+          _publishHandler = mod.handlePublishRequest as (req: Request) => Promise<Response>
+        }
+        return _publishHandler
+      }
+
+      server.middlewares.use(
+        '/api/publish',
+        (req: IncomingMessage, res: ServerResponse) => {
+          const origin = req.headers.origin ?? null
+          const corsHeaders: Record<string, string> = {
+            'Access-Control-Allow-Origin': origin ?? '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+          }
+
+          if (req.method === 'OPTIONS') {
+            res.writeHead(204, corsHeaders)
+            res.end()
+            return
+          }
+
+          const chunks: Buffer[] = []
+          req.on('data', (chunk: Buffer) => chunks.push(chunk))
+          req.on('end', () => {
+            void (async () => {
+              try {
+                const handler = await getPublishHandler()
+                const body = Buffer.concat(chunks)
+                const publishReq = new Request(`http://localhost/api/publish${req.url === '/' ? '' : req.url ?? ''}`, {
+                  method: req.method,
+                  headers: { 'Content-Type': 'application/json' },
+                  body: req.method === 'GET' ? undefined : body,
+                })
+                const response = await handler(publishReq)
+                res.writeHead(response.status, {
+                  'Content-Type': response.headers.get('Content-Type') ?? 'application/json',
+                  ...corsHeaders,
+                })
+                res.end(await response.text())
+              } catch (err) {
+                console.error('[publish-dev-plugin]', err)
+                res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders })
+                res.end(JSON.stringify({ error: 'Internal server error' }))
+              }
+            })()
+          })
+        },
+      )
     },
   }
 }

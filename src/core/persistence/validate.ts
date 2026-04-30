@@ -22,6 +22,7 @@ import { isSafePath, normalizePath } from '../files/pathValidation'
 import { validateComponentName } from '../visualComponents/nameValidation'
 import { sanitizeRichtext, isRichtextPropKey } from '../sanitize'
 import { normalizeProjectPackageJson } from '../project-dependencies/manifest'
+import { normalizeProjectDataModel } from '../data-model/validation'
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -366,6 +367,7 @@ export function validateProject(raw: unknown): Project {
 
   const settings = validateSettings(raw.settings ?? {}, 'project.settings')
   const packageJson = normalizeProjectPackageJson(raw.packageJson)
+  const data = normalizeProjectDataModel(raw.data)
 
   // Validate class registry — coerce any legacy projects that lack this field
   const rawClasses = raw.classes
@@ -459,6 +461,7 @@ export function validateProject(raw: unknown): Project {
     pages,
     files,
     visualComponents,
+    data,
     packageJson,
     breakpoints,
     settings,

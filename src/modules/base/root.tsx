@@ -41,6 +41,9 @@ export const RootModule: ModuleDefinition<RootProps> = {
     html: `<div class="${MODULE_CLASS}">${renderedChildren.join('')}</div>`,
     css: `.${MODULE_CLASS}{min-height:100vh;width:100%;background-color:#fff;color:#111827}`,
   }),
+
+  toJsx: (_props, renderedChildren) =>
+    `<div className="${MODULE_CLASS}">${renderedChildren.join('')}</div>`,
 }
 
 registry.register(RootModule)
