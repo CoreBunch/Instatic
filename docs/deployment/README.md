@@ -2,7 +2,7 @@
 
 This index maps supported deployment targets to the files, variables, and persistence rules they need.
 
-Instatic is one Bun server packaged by the root `Dockerfile`. The server reads runtime configuration from `server/config.ts`: `PORT`, `DATABASE_URL`, `UPLOADS_DIR`, and `STATIC_DIR`. Reversible server secrets, including AI provider credentials, plugin secret settings, and MFA TOTP seeds, are encrypted with `INSTATIC_SECRET_KEY` when configured. Database migrations run automatically on boot in `server/index.ts`.
+Instatic is one Bun server packaged by the root `Dockerfile`. The server reads runtime configuration from `server/config.ts`: `PORT`, `DATABASE_URL`, `UPLOADS_DIR`, `STATIC_DIR`, and `TRUSTED_PROXY_CIDRS`. Reversible server secrets, including AI provider credentials, plugin secret settings, and MFA TOTP seeds, are encrypted with `INSTATIC_SECRET_KEY` when configured. Database migrations run automatically on boot in `server/index.ts`.
 
 ---
 
@@ -30,6 +30,7 @@ DATABASE_URL  sqlite:/path/to/cms.db, file:/path/to/cms.db, postgres://..., or p
 UPLOADS_DIR   directory for media, plugin packs, fonts, and published disk artefacts
 STATIC_DIR    built admin SPA directory; /app/dist in the Docker image
 INSTATIC_SECRET_KEY  base64 32-byte key for encrypted server secrets
+TRUSTED_PROXY_CIDRS  comma-separated proxy CIDRs trusted for forwarded host/protocol/client IP headers
 ```
 
 Generate `INSTATIC_SECRET_KEY` with `bun run scripts/generate-secret-key.ts` before adding Anthropic, OpenAI, or OpenRouter credentials or enabling TOTP MFA in production. Without it, the admin can load but saving reversible secrets fails because there is no stable encryption key.
@@ -42,7 +43,7 @@ STATIC_DIR=/app/dist
 UPLOADS_DIR=/app/uploads
 ```
 
-Managed platforms often override `PORT`. That is fine; the server uses `process.env.PORT`.
+Managed platforms often override `PORT`. That is fine; the server uses `process.env.PORT`. When a managed platform terminates HTTPS before forwarding HTTP to the container, set `TRUSTED_PROXY_CIDRS` so CSRF origin checks, audit IPs, and rate limits use the public forwarded request context.
 
 ## Image Availability
 

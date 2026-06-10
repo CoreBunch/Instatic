@@ -15,6 +15,7 @@ Run the image with:
 - `UPLOADS_DIR` mounted on persistent storage
 - `STATIC_DIR=/app/dist`
 - `INSTATIC_SECRET_KEY` set before configuring AI provider credentials, plugin secret settings, or TOTP MFA
+- `TRUSTED_PROXY_CIDRS` set when the platform terminates HTTPS before forwarding to the container
 
 Use one persistent mount root when the platform only supports one app volume:
 
@@ -111,7 +112,11 @@ DATABASE_URL=sqlite:/app/storage/data/cms.db
 UPLOADS_DIR=/app/storage/uploads
 STATIC_DIR=/app/dist
 INSTATIC_SECRET_KEY=<output of bun run scripts/generate-secret-key.ts>
+TRUSTED_PROXY_CIDRS=0.0.0.0/0,::/0
+RAILWAY_RUN_UID=0
 ```
+
+`RAILWAY_RUN_UID=0` is required because Railway volumes are mounted as `root` and the published image otherwise runs as the non-root `bun` user. `TRUSTED_PROXY_CIDRS=0.0.0.0/0,::/0` lets Instatic trust Railway's forwarded HTTPS/public-host headers for CSRF origin checks and audit/rate-limit IP attribution.
 
 Enable Railway Image Auto Updates when you want Railway to move the service forward automatically during a maintenance window. Use `:latest` for "always follow the newest image", or a semver tag such as `:0.0.2` if you want Railway's semver update controls.
 
@@ -131,6 +136,7 @@ PORT=10000
 DATABASE_URL=sqlite:/app/storage/data/cms.db
 UPLOADS_DIR=/app/storage/uploads
 STATIC_DIR=/app/dist
+TRUSTED_PROXY_CIDRS=0.0.0.0/0,::/0
 ```
 
 The Postgres Blueprint creates one image-backed web service, one persistent disk for uploads, and one Render Postgres database. See [render.md](render.md) for the full Render contract.
@@ -145,8 +151,11 @@ The Postgres Blueprint creates one image-backed web service, one persistent disk
 | `STATIC_DIR` | Yes in Docker | `/app/dist` |
 | `PORT` | Platform-dependent | HTTP listen port; defaults to `3001` |
 | `INSTATIC_SECRET_KEY` | Yes for reversible server secrets | Output of `bun run scripts/generate-secret-key.ts` |
+| `TRUSTED_PROXY_CIDRS` | Yes behind managed HTTPS proxies | Comma-separated trusted proxy CIDRs, e.g. `0.0.0.0/0,::/0` for Railway or Render templates |
 
 Managed platforms usually inject `PORT`. Do not hard-code a different listen port unless the platform asks for a fixed target port.
+
+Managed HTTPS platforms often terminate TLS before forwarding HTTP to the container. Set `TRUSTED_PROXY_CIDRS` for those deployments so CSRF origin checks compare against the public host/protocol instead of the container-local request URL.
 
 `INSTATIC_SECRET_KEY` is the stable AES master key for reversible server secrets, including Anthropic, OpenAI, and OpenRouter credentials and TOTP MFA seeds. If it is missing in production, adding a credential or enabling TOTP MFA fails. If it is rotated or lost, existing stored credentials must be re-entered and TOTP MFA must be re-enrolled.
 

@@ -17,6 +17,8 @@ services:
         value: /app/storage/uploads
       - key: STATIC_DIR
         value: /app/dist
+      - key: TRUSTED_PROXY_CIDRS
+        value: "0.0.0.0/0,::/0"
       - key: INSTATIC_SECRET_KEY
         generateValue: true
     disk:
