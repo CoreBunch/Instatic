@@ -15,21 +15,33 @@
 }
 
 .siteName {
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: -0.015em;
-    margin-right: 4px;
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
     max-width: 140px;
+    margin-right: 4px;
+    padding: 0 8px;
     overflow: hidden;
+    color: var(--editor-text);
+    font-size: 11px;
+    font-weight: 700;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--editor-text);
+    flex-shrink: 0;
 }
 
-/* Site brand favicon — sized to match the 28px nav-item track so it sits
-   visually balanced next to the link buttons. Object-fit cover crops to a
-   neat square preview regardless of the asset's aspect ratio. */
+.siteNameSkeleton {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    width: 92px;
+    margin-right: 4px;
+    padding: 0 8px;
+    flex-shrink: 0;
+}
+
 .siteFavicon {
+    display: block;
     width: 20px;
     height: 20px;
     margin: 0 6px 0 4px;

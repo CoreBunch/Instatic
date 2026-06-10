@@ -350,13 +350,14 @@ describe('PublishButton — publish state machine', () => {
 // ---------------------------------------------------------------------------
 
 describe('Toolbar — structural requirements', () => {
-  it('source uses role="banner" as the top-level landmark', () => {
+  it('source uses a native <header> as the top-level banner landmark', () => {
     const { readFileSync } = require('fs')
     const src = readFileSync(
       new URL('../../admin/pages/site/toolbar/Toolbar.tsx', import.meta.url),
       'utf-8',
     )
-    expect(src).toContain('role="banner"')
+    expect(src).toContain('<header')
+    expect(src).not.toContain('role="banner"')
   })
 
   it('source has data-testid="toolbar" for Playwright targeting', () => {

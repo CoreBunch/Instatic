@@ -33,7 +33,7 @@ async function fetchAndPublishSummary(): Promise<void> {
   try {
     const site = await cmsAdapter.loadSite('default')
     useAdminUi.getState().setSiteSummary({
-      name: site?.name ?? 'Untitled Site',
+      name: site?.name ?? null,
       faviconUrl: site?.settings?.faviconUrl ?? null,
     })
   } catch (err) {

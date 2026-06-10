@@ -22,12 +22,12 @@
  *     toolbar right slot + settings button.
  *
  * Accessibility (WCAG 2.1 AA):
- * - role="banner" for the top-level landmark
+ * - native <header> banner landmark for the top-level toolbar
  * - aria-label on the nav region
  * - All interactive children have 44×44px minimum touch targets
  */
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ArticleSolidIcon } from 'pixel-art-icons/icons/article-solid'
 import { AiBoxSolidIcon } from 'pixel-art-icons/icons/ai-box-solid'
 import { DashboardSolidIcon } from 'pixel-art-icons/icons/dashboard-solid'
@@ -41,6 +41,8 @@ import { AccountMenuButton } from '@admin/shared/AccountMenuButton'
 import { OpenLivePageButton } from '@admin/shared/OpenLivePageButton'
 import { Link } from '@admin/lib/routing'
 import { Button } from '@ui/components/Button'
+import { Skeleton } from '@ui/components/Skeleton'
+import { Tooltip } from '@ui/components/Tooltip'
 import { cn } from '@ui/cn'
 import type { AdminWorkspace } from '@admin/workspace'
 import styles from './Toolbar.module.css'
@@ -49,9 +51,9 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 const NAV_ICON_SIZE = 13
 
 interface ToolbarProps {
-  /** Site name shown in the brand position. Defaults to "Untitled Site". */
-  siteName?: string
-  /** Optional favicon URL. When set, renders instead of the site-name text. */
+  /** Site name shown in the brand position. Null renders the loading skeleton. */
+  siteName?: string | null
+  /** Optional site favicon URL. When set, renders instead of the site-name text. */
   faviconUrl?: string | null
   /** Active admin section — drives the default nav slot's highlight. */
   section?: AdminWorkspace
@@ -79,8 +81,12 @@ type PluginButtonStatus = {
   message: string
 }
 
+function pluginButtonKey(button: RegisteredPluginToolbarButton): string {
+  return `${button.pluginId}:${button.id}`
+}
+
 export function Toolbar({
-  siteName = 'Untitled Site',
+  siteName = null,
   faviconUrl = null,
   section = 'site',
   adminNavigationSlot,
@@ -91,7 +97,8 @@ export function Toolbar({
     pluginRuntime.getToolbarButtons(),
   )
   const [pluginStatuses, setPluginStatuses] = useState<Record<string, PluginButtonStatus>>({})
-  const pluginStatusTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  const [statusTimers] = useState(() => new Map<string, ReturnType<typeof setTimeout>>())
+  const configuredFaviconUrl = faviconUrl?.trim()
 
   useEffect(() => {
     return pluginRuntime.subscribe(() => {
@@ -100,22 +107,17 @@ export function Toolbar({
   }, [])
 
   useEffect(() => {
-    const timers = pluginStatusTimers.current
     return () => {
-      for (const timer of timers.values()) clearTimeout(timer)
-      timers.clear()
+      for (const timer of statusTimers.values()) clearTimeout(timer)
+      statusTimers.clear()
     }
-  }, [])
-
-  function pluginButtonKey(button: RegisteredPluginToolbarButton): string {
-    return `${button.pluginId}:${button.id}`
-  }
+  }, [statusTimers])
 
   function setPluginStatus(key: string, status: PluginButtonStatus): void {
-    const currentTimer = pluginStatusTimers.current.get(key)
+    const currentTimer = statusTimers.get(key)
     if (currentTimer) {
       clearTimeout(currentTimer)
-      pluginStatusTimers.current.delete(key)
+      statusTimers.delete(key)
     }
 
     setPluginStatuses((current) => ({ ...current, [key]: status }))
@@ -127,9 +129,9 @@ export function Toolbar({
           delete next[key]
           return next
         })
-        pluginStatusTimers.current.delete(key)
+        statusTimers.delete(key)
       }, 4000)
-      pluginStatusTimers.current.set(key, timer)
+      statusTimers.set(key, timer)
     }
   }
 
@@ -161,35 +163,40 @@ export function Toolbar({
     <>
       {overlay}
       <header
-        role="banner"
         aria-label="Editor toolbar"
         data-testid="toolbar"
         className={styles.header}
       >
         {/* ── Left section ────────────────────────────────────────────────── */}
 
-        {/* Site brand — favicon when configured (icon replaces text per
-            operator preference); falls back to the site name text for fresh
-            installs that haven't picked a logo yet. The image is rendered
-            here purely as a visual brand mark: SafeURL'd assets land at
-            `/uploads/...` from the picker, so we don't need extra escaping. */}
-        {faviconUrl ? (
-          <img
-            className={styles.siteFavicon}
-            src={faviconUrl}
-            alt=""
-            title={siteName}
-            aria-label={`Site: ${siteName}`}
-            draggable={false}
-          />
-        ) : (
+        {siteName === null ? (
           <span
-            className={styles.siteName}
-            title={siteName}
-            aria-label={`Site: ${siteName}`}
+            className={styles.siteNameSkeleton}
+            data-testid="toolbar-site-brand"
+            aria-hidden="true"
           >
-            {siteName}
+            <Skeleton width={76} height={12} radius={999} />
           </span>
+        ) : configuredFaviconUrl ? (
+          <Tooltip content={siteName} side="bottom">
+            <img
+              className={styles.siteFavicon}
+              data-testid="toolbar-site-brand"
+              src={configuredFaviconUrl}
+              alt={`Site: ${siteName}`}
+              draggable={false}
+            />
+          </Tooltip>
+        ) : (
+          <Tooltip content={siteName} side="bottom">
+            <span
+              className={styles.siteName}
+              data-testid="toolbar-site-brand"
+              aria-label={`Site: ${siteName}`}
+            >
+              {siteName}
+            </span>
+          </Tooltip>
         )}
         {adminNavigationSlot ?? <DefaultAdminNavigation section={section} />}
 
@@ -214,9 +221,8 @@ export function Toolbar({
                   <span>{status?.state === 'running' ? `${button.label}...` : button.label}</span>
                 </Button>
                 {status && (
-                  <span
+                  <output
                     id={statusId}
-                    role="status"
                     aria-live="polite"
                     className={cn(
                       styles.pluginToast,
@@ -224,7 +230,7 @@ export function Toolbar({
                     )}
                   >
                     {status.message}
-                  </span>
+                  </output>
                 )}
               </div>
             )

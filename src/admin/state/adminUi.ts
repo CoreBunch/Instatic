@@ -39,6 +39,8 @@ export interface AdminUiState {
 
   /**
    * Site summary surfaced in the admin toolbar (site name + favicon).
+   * `siteName: null` means the shell has not loaded the identity yet; the
+   * toolbar renders a skeleton instead of flashing a placeholder name.
    *
    * Populated by:
    *   - The Site editor's `usePersistence` hook when it hydrates the full site.
@@ -48,9 +50,9 @@ export interface AdminUiState {
    * Either path writes via `setSiteSummary` so the toolbar always reads
    * from one source regardless of which layout mounted first.
    */
-  siteName: string
+  siteName: string | null
   siteFaviconUrl: string | null
-  setSiteSummary: (summary: { name: string; faviconUrl: string | null }) => void
+  setSiteSummary: (summary: { name: string | null; faviconUrl: string | null }) => void
 
   /**
    * Full public path of the document currently being edited. `null` on every
@@ -115,7 +117,7 @@ export const useAdminUi = create<AdminUiState>((set) => ({
   openSiteImport: () => set({ siteImportOpen: true }),
   closeSiteImport: () => set({ siteImportOpen: false }),
 
-  siteName: 'Untitled Site',
+  siteName: null,
   siteFaviconUrl: null,
   setSiteSummary: ({ name, faviconUrl }) =>
     set({ siteName: name, siteFaviconUrl: faviconUrl }),

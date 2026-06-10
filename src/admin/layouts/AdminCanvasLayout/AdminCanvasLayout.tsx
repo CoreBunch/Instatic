@@ -101,7 +101,7 @@ export function AdminCanvasLayout() {
   // Toolbar branding — pulled from the editor store here (we already have
   // it loaded) and forwarded to the prop-driven Toolbar below. Keeps the
   // Toolbar component itself free of editor-store imports.
-  const siteName = useEditorStore((s) => s.site?.name ?? 'Untitled Site')
+  const siteName = useEditorStore((s) => s.site?.name ?? null)
   const faviconUrl = useEditorStore((s) => s.site?.settings.faviconUrl ?? null)
   // Editor-only toolbar surface — gate its lazy chunk on store state.
   const previewOpen = useEditorStore((s) => s.previewOpen)
@@ -118,6 +118,7 @@ export function AdminCanvasLayout() {
   // too. This effect fires whenever the underlying values change, and is
   // cheap because adminUi.setSiteSummary is a stable setter.
   useEffect(() => {
+    if (siteName === null) return
     publishSiteSummary({ name: siteName, faviconUrl })
   }, [siteName, faviconUrl, publishSiteSummary])
   // The toolbar's "Open live page" target (adminUi.activeLivePath) is owned by

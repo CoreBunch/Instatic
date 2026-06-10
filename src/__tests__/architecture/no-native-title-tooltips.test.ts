@@ -85,11 +85,6 @@ export const ALLOWED_NATIVE_TITLES: Array<{
     reason:
       'Truncated media path (<div title={currentAsset.publicPath}>) — non-interactive display.',
   },
-  {
-    file: 'admin/pages/site/toolbar/Toolbar.tsx',
-    reason:
-      'Truncated site name (<span title={siteName}>) — non-interactive display span.',
-  },
 ]
 
 // ─── File collection ───────────────────────────────────────────────────────────
