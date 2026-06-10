@@ -369,10 +369,13 @@ Plugin storage is per-plugin, per-collection. The collection name must match a `
 ```js
 api.cms.hooks.on('publish.after', async (event) => { /* … */ })
 api.cms.hooks.filter('publish.html', async (html) => html + '<!-- plugin -->')
-await api.cms.hooks.emit('my.plugin.signal', { /* … */ })
+const name = await api.cms.hooks.emit('sync.done', { /* … */ })
+// name === 'plugin.<your-plugin-id>.sync.done'
 ```
 
-Hook channels include `publish.before`, `publish.html`, `publish.after`, `media.uploaded`, plus plugin-emitted custom channels.
+**Host-emitted events** (the reserved core list, `CORE_HOOK_EVENTS` in `src/core/plugins/hookBus.ts`): `publish.before`, `publish.after`, `content.entry.created`, `content.entry.updated`, `content.entry.deleted`, `settings.changed`. **Filters**: `publish.html`, `publish.headers`, `content.entry.cells`.
+
+**Plugin emits are namespaced.** The host rewrites every `emit('<name>', …)` to `plugin.<your-plugin-id>.<name>` (a name already in your own namespace passes through unchanged), so event provenance is unforgeable — a plugin cannot fire `content.entry.created` or any other core event at other listeners, and emitting a name in *another* plugin's namespace (`plugin.<other-id>.*`) is rejected with an error. `emit` resolves to the canonical namespaced name. Cross-plugin eventing still works: subscribing is unrestricted, so a plugin listens to another plugin's events by their full namespaced name, e.g. `api.cms.hooks.on('plugin.acme.analytics.page-view', …)`.
 
 ### Loop sources — requires `loops.register`
 

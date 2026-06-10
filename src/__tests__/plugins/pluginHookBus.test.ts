@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import { hookBus } from '@core/plugins/hookBus'
+import { canonicalPluginEventName, hookBus } from '@core/plugins/hookBus'
 
 afterEach(() => {
   hookBus.reset()
@@ -30,13 +30,13 @@ describe('hookBus', () => {
 
   it('isolates listener errors so other listeners still run', async () => {
     const calls: string[] = []
-    hookBus.on('plugin.bad', 'evt', () => {
+    hookBus.on('plugin.bad', 'plugin.x.evt', () => {
       throw new Error('boom')
     })
-    hookBus.on('plugin.good', 'evt', () => {
+    hookBus.on('plugin.good', 'plugin.x.evt', () => {
       calls.push('good')
     })
-    await hookBus.emit('evt', {})
+    await hookBus.emit('plugin.x.evt', {})
     expect(calls).toEqual(['good'])
   })
 
@@ -48,6 +48,15 @@ describe('hookBus', () => {
     expect(await hookBus.applyFilter('pipe', 'seed')).toBe('seed-good')
   })
 
+  it('delivers host emits of core events to listeners on the bare core name', async () => {
+    const seen: unknown[] = []
+    hookBus.on('acme.x', 'settings.changed', (payload) => {
+      seen.push(payload)
+    })
+    await hookBus.emit('settings.changed', { pluginId: 'acme.x' })
+    expect(seen).toEqual([{ pluginId: 'acme.x' }])
+  })
+
   it('unregisterPlugin removes both events and filters for that plugin id', async () => {
     hookBus.on('plugin.x', 'evt', () => {})
     hookBus.filter('plugin.x', 'pipe', (v) => v)
@@ -56,5 +65,38 @@ describe('hookBus', () => {
 
     expect(hookBus.hasListenersFor('evt')).toBe(true) // y still registered
     expect(hookBus.hasFiltersFor('pipe')).toBe(false)
+  })
+})
+
+describe('canonicalPluginEventName', () => {
+  it('namespaces a bare event name to plugin.<id>.<name>', () => {
+    expect(canonicalPluginEventName('acme.x', 'sync.done')).toBe('plugin.acme.x.sync.done')
+  })
+
+  it('namespaces a reserved core name so it cannot reach core-name listeners', async () => {
+    const canonical = canonicalPluginEventName('acme.x', 'content.entry.created')
+    expect(canonical).toBe('plugin.acme.x.content.entry.created')
+
+    const coreSeen: unknown[] = []
+    const namespacedSeen: unknown[] = []
+    hookBus.on('victim.plugin', 'content.entry.created', (payload) => {
+      coreSeen.push(payload)
+    })
+    hookBus.on('observer.plugin', canonical, (payload) => {
+      namespacedSeen.push(payload)
+    })
+    await hookBus.emit(canonical, { forged: true })
+    expect(coreSeen).toEqual([])
+    expect(namespacedSeen).toEqual([{ forged: true }])
+  })
+
+  it('does not double-prefix a name already in the plugin\'s own namespace', () => {
+    expect(canonicalPluginEventName('acme.x', 'plugin.acme.x.sync.done')).toBe('plugin.acme.x.sync.done')
+  })
+
+  it('rejects a name in another plugin\'s namespace (impersonation)', () => {
+    expect(() => canonicalPluginEventName('acme.x', 'plugin.zeta.y.sync.done')).toThrow(
+      /Plugin "acme\.x" cannot emit "plugin\.zeta\.y\.sync\.done"/,
+    )
   })
 })

@@ -398,7 +398,8 @@ describe('server plugin runtime SDK', () => {
     // the sandbox-safe cross-context channel: the plugin emits a hook event
     // with its metadata, and the host subscribes to capture it.
     const captured: Array<Record<string, unknown>> = []
-    hookBus.on('test', 'plugin.metadata.observed', async (payload: unknown) => {
+    // Plugin emits arrive force-namespaced as `plugin.<id>.<name>`.
+    hookBus.on('test', 'plugin.acme.workflow.metadata.observed', async (payload: unknown) => {
       if (payload && typeof payload === 'object') {
         captured.push(payload as Record<string, unknown>)
       }
@@ -409,7 +410,7 @@ describe('server plugin runtime SDK', () => {
         manifest: { ...baseManifest, permissions: ['cms.routes', 'cms.hooks'] },
         serverEntrypoint: `
           export async function activate(api) {
-            await api.cms.hooks.emit('plugin.metadata.observed', {
+            await api.cms.hooks.emit('metadata.observed', {
               id: api.plugin.id,
               version: api.plugin.version,
               permissions: api.plugin.permissions.slice().sort().join(','),
@@ -576,6 +577,80 @@ describe('server plugin runtime SDK', () => {
       )
       expect(await res.json()).toEqual({ observed: 'rotated' })
     } finally {
+      await rm(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
+  it('force-namespaces plugin emits and rejects impersonation of other plugins', async () => {
+    const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-hook-namespace-'))
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+
+    const seen: Array<{ event: string; payload: unknown }> = []
+    const subscribe = (event: string) => {
+      hookBus.on('test', event, async (payload: unknown) => {
+        seen.push({ event, payload })
+      })
+    }
+    // (b) a forged core name must never reach core-name listeners…
+    subscribe('content.entry.created')
+    // …it arrives namespaced instead.
+    subscribe('plugin.acme.workflow.content.entry.created')
+    // (a) a bare custom name lands namespaced; (c) an emit pre-prefixed with
+    // the plugin's own id is not double-prefixed (both resolve to this name).
+    subscribe('plugin.acme.workflow.sync.done')
+    // (d) the impersonation rejection the plugin observed in its catch.
+    subscribe('plugin.acme.workflow.rejection.observed')
+
+    try {
+      const install = await installPlugin({
+        manifest: { ...baseManifest, permissions: ['cms.routes', 'cms.hooks'] },
+        serverEntrypoint: `
+          export async function activate(api) {
+            const bare = await api.cms.hooks.emit('sync.done', { via: 'bare' })
+            const prefixed = await api.cms.hooks.emit('plugin.acme.workflow.sync.done', { via: 'prefixed', bare: bare })
+            await api.cms.hooks.emit('content.entry.created', { forged: true })
+            // (d) another plugin's namespace is rejected with a clear error.
+            let rejection = 'none'
+            try {
+              await api.cms.hooks.emit('plugin.zeta.other.evil', {})
+            } catch (err) {
+              rejection = String((err && err.message) || err)
+            }
+            await api.cms.hooks.emit('rejection.observed', { rejection: rejection, prefixed: prefixed })
+          }
+        `,
+        grantedPermissions: ['cms.routes', 'cms.hooks'],
+        uploadsDir,
+        db,
+        cookie,
+      })
+      expect(install.status).toBe(201)
+
+      // The cross-namespace emit was rejected with the impersonation error.
+      const rejected = seen.find((s) => s.event === 'plugin.acme.workflow.rejection.observed')
+      expect(rejected?.payload).toMatchObject({
+        rejection: expect.stringContaining(
+          'Plugin "acme.workflow" cannot emit "plugin.zeta.other.evil"',
+        ),
+      })
+
+      // The forged core emit never reached the core-name listener.
+      expect(seen.filter((s) => s.event === 'content.entry.created')).toEqual([])
+      expect(seen.filter((s) => s.event === 'plugin.acme.workflow.content.entry.created')).toEqual([
+        { event: 'plugin.acme.workflow.content.entry.created', payload: { forged: true } },
+      ])
+      // Bare and self-prefixed emits land on the SAME canonical name, and the
+      // emit call resolved to that canonical name.
+      expect(seen.filter((s) => s.event === 'plugin.acme.workflow.sync.done')).toEqual([
+        { event: 'plugin.acme.workflow.sync.done', payload: { via: 'bare' } },
+        {
+          event: 'plugin.acme.workflow.sync.done',
+          payload: { via: 'prefixed', bare: 'plugin.acme.workflow.sync.done' },
+        },
+      ])
+    } finally {
+      hookBus.unregisterPlugin('test')
       await rm(uploadsDir, { recursive: true, force: true })
     }
   })

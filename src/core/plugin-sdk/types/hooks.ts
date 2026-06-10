@@ -42,8 +42,10 @@ export interface CmsServerEvents {
   // Plugin-defined events fall through. The host does not pre-define any
   // frontend-specific event channels — plugins that ingest events from
   // their own published-page bundles register their own `routes.public.post`
-  // endpoints and (optionally) re-emit on the hook bus under a namespaced
-  // name (`instatic.analytics.page-view`) for cross-plugin coordination.
+  // endpoints and (optionally) re-emit on the hook bus for cross-plugin
+  // coordination. Plugin emits are always namespaced by the host, so the
+  // name other plugins subscribe to is `plugin.<emitter-id>.<name>` (e.g.
+  // `plugin.instatic.analytics.page-view`).
   [key: string]: Record<string, unknown>
 }
 
@@ -101,8 +103,17 @@ export interface ServerPluginHooksApi {
       | (K extends keyof CmsServerFilters ? CmsServerFilters[K] : unknown)
       | Promise<K extends keyof CmsServerFilters ? CmsServerFilters[K] : unknown>,
   ) => void
-  emit: <K extends keyof CmsServerEvents | string>(
-    event: K,
-    payload: K extends keyof CmsServerEvents ? CmsServerEvents[K] : Record<string, unknown>,
-  ) => Promise<void>
+  /**
+   * Emit a custom event on the hook bus. The host force-namespaces the name
+   * to the emitting plugin: `emit('sync.done', …)` is delivered as
+   * `plugin.<your-id>.sync.done`. A name already in your own namespace
+   * passes through unchanged; a name in another plugin's namespace
+   * (`plugin.<other-id>.*`) is rejected. Core host events (`publish.*`,
+   * `content.entry.*`, `settings.changed`) therefore cannot be forged —
+   * emitting one just yields `plugin.<your-id>.<name>`.
+   *
+   * Resolves to the canonical (namespaced) event name — the exact string
+   * other plugins must pass to `on()` to receive your events.
+   */
+  emit: (event: string, payload: unknown) => Promise<string>
 }

@@ -111,7 +111,7 @@ describe('VM-side permission enforcement', () => {
         ;(function () {
           const __plugin_exports = (globalThis.__plugin_exports = {});
           __plugin_exports.activate = async function activate(api) {
-            await api.cms.hooks.emit('plugin.perms', api.plugin.permissions.slice().sort());
+            await api.cms.hooks.emit('perms.observed', api.plugin.permissions.slice().sort());
           };
         })();
       `,
@@ -133,8 +133,10 @@ describe('VM-side permission enforcement', () => {
       const emit = calls.find((c) => c.target === 'cms.hooks.emit')
       expect(emit).toBeDefined()
       // `api.plugin.permissions` mirrors the authoritative granted set.
+      // The VM sends the RAW name — namespacing to `plugin.<id>.*` is the
+      // host dispatcher's job (canonicalPluginEventName in handleHooksEmit).
       expect(emit?.args?.[0]).toMatchObject({
-        event: 'plugin.perms',
+        event: 'perms.observed',
         payload: ['cms.hooks', 'cms.routes'],
       })
     } finally {

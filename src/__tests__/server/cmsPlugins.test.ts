@@ -670,7 +670,8 @@ describe('CMS plugin handlers', () => {
     function attachListener(): void {
       // Idempotent — drop any prior 'test' listener so this never double-fires.
       hookBus.unregisterPlugin('test')
-      hookBus.on('test', 'lifecycle.mark', async (payload: unknown) => {
+      // Plugin emits arrive force-namespaced as `plugin.<id>.<name>`.
+      hookBus.on('test', 'plugin.acme.lifecycle.lifecycle.mark', async (payload: unknown) => {
         if (payload && typeof payload === 'object') {
           const p = payload as { name?: unknown; pluginId?: unknown }
           if (typeof p.name === 'string' && typeof p.pluginId === 'string') {
@@ -914,7 +915,8 @@ describe('CMS plugin handlers', () => {
     function attachListener(): void {
       // Idempotent — drop any prior 'test' listener so this never double-fires.
       hookBus.unregisterPlugin('test')
-      hookBus.on('test', 'upgrade.mark', async (payload: unknown) => {
+      // Plugin emits arrive force-namespaced as `plugin.<id>.<name>`.
+      hookBus.on('test', 'plugin.acme.upgrade.upgrade.mark', async (payload: unknown) => {
         if (payload && typeof payload === 'object' && typeof (payload as { line?: unknown }).line === 'string') {
           markers.push(String((payload as { line: string }).line))
         }
@@ -1192,7 +1194,8 @@ describe('CMS plugin handlers', () => {
     const markers: string[] = []
     function attachListener(): void {
       hookBus.unregisterPlugin('test')
-      hookBus.on('test', 'restart.mark', async () => { markers.push('activate') })
+      // Plugin emits arrive force-namespaced as `plugin.<id>.<name>`.
+      hookBus.on('test', 'plugin.test.restart.restart.mark', async () => { markers.push('activate') })
     }
     attachListener()
     try {

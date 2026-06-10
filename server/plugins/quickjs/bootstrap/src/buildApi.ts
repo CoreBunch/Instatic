@@ -128,6 +128,9 @@ globalThis.__buildApi = function buildApi() {
     globalThis.__plugin_handlers.filters[filterId] = handler as BootstrapFn
     return call('cms.hooks.filter', [{ name: String(name), filterId: filterId }])
   }
+  // Plugin emits are force-namespaced by the host: `emit('x', …)` is
+  // delivered as `plugin.<id>.x`, names in another plugin's namespace are
+  // rejected, and the call resolves to the canonical (namespaced) name.
   function emit(event: unknown, payload: unknown) {
     assertTargetPermission('cms.hooks.emit')
     return call('cms.hooks.emit', [{ event: String(event), payload: payload === undefined ? null : payload }])

@@ -18,7 +18,65 @@
  *
  * Plugin registration is keyed by plugin id so `unregisterPlugin(pluginId)`
  * cleanly tears everything down on disable/uninstall.
+ *
+ * Event-name provenance: only the HOST emits the reserved core events in
+ * `CORE_HOOK_EVENTS`. Plugin-emitted events (via `cms.hooks.emit`) are
+ * force-namespaced to `plugin.<pluginId>.<name>` through
+ * `canonicalPluginEventName` before they reach `emit`, so a plugin can never
+ * forge a core event or impersonate another plugin. `emit` is typed against
+ * exactly those two name spaces — a new host emit site cannot introduce a
+ * core event without adding it to `CORE_HOOK_EVENTS` first.
  */
+
+/**
+ * Reserved host-emitted event names — the single source of truth. Plugins can
+ * LISTEN to these freely, but cannot emit them: plugin emits are always
+ * canonicalized into the `plugin.<pluginId>.*` namespace.
+ */
+export const CORE_HOOK_EVENTS = [
+  'settings.changed',
+  'content.entry.created',
+  'content.entry.updated',
+  'content.entry.deleted',
+  'publish.before',
+  'publish.after',
+] as const
+
+export type CoreHookEvent = (typeof CORE_HOOK_EVENTS)[number]
+
+/** A plugin-emitted event name, always of the form `plugin.<pluginId>.<name>`. */
+export type PluginScopedHookEvent = `plugin.${string}`
+
+/**
+ * Canonical name for a plugin-emitted hook event.
+ *
+ * Rules (one coherent contract — auto-prefix, never spoof):
+ *   • already in the plugin's own namespace (`plugin.<pluginId>.…`) — returned
+ *     unchanged (no double prefix)
+ *   • in the `plugin.*` namespace but NOT the plugin's own — thrown as an
+ *     impersonation attempt
+ *   • any other name (including reserved core names) — prefixed with
+ *     `plugin.<pluginId>.`, so e.g. a raw emit of `content.entry.created`
+ *     becomes the harmless `plugin.<pluginId>.content.entry.created`
+ *
+ * `pluginId` must be the host-verified worker identity (validated in
+ * `workerPool`), never a plugin-supplied value.
+ */
+export function canonicalPluginEventName(pluginId: string, event: string): PluginScopedHookEvent {
+  const ownNamespace = `plugin.${pluginId}.` as const
+  if (event.startsWith(ownNamespace)) {
+    // startsWith doesn't narrow string → template-literal type; the prefix
+    // check above is exactly the PluginScopedHookEvent shape.
+    return event as PluginScopedHookEvent
+  }
+  if (event.startsWith('plugin.')) {
+    throw new Error(
+      `Plugin "${pluginId}" cannot emit "${event}": the plugin.* event namespace is reserved per plugin. ` +
+        `Emit "${ownNamespace}<name>" or a bare name, which is namespaced to "${ownNamespace}<name>" automatically.`,
+    )
+  }
+  return `${ownNamespace}${event}`
+}
 
 type HookListener = (payload: unknown) => void | Promise<void>
 type HookFilterHandler = (
@@ -79,8 +137,12 @@ class HookBus {
    * Fire an event. Listeners run sequentially; an error in one listener is
    * logged and does not stop the others. Returns when every listener has
    * resolved or rejected.
+   *
+   * The name type is the enforcement that `CORE_HOOK_EVENTS` cannot drift:
+   * host emit sites must use a listed core name, and everything else must
+   * already be plugin-namespaced (the output of `canonicalPluginEventName`).
    */
-  async emit(event: string, payload: unknown): Promise<void> {
+  async emit(event: CoreHookEvent | PluginScopedHookEvent, payload: unknown): Promise<void> {
     const entries = this.listeners.get(event)
     if (!entries) return
     for (const entry of entries) {
