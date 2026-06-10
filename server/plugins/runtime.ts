@@ -13,10 +13,11 @@
  * This module is the thin orchestration layer between the rest of the
  * CMS server and the worker host. It owns:
  *   - Path-containment safety (`assertPathWithin`)
- *   - The plugin settings cache (read synchronously inside hook handlers
- *     via the worker's local mirror — populated at activation)
  *   - The HTTP entrypoint for `/admin/api/cms/plugins/:id/runtime/...`
  *   - The boot-time activation loop
+ *
+ * The plugin settings cache (and the write-path sync that pushes settings
+ * changes into running VMs) lives in `./host/settingsSync.ts`.
  *
  * Plugin canvas-module packs (`entrypoints.modules`) now run inside their
  * own QuickJS-WASM sandbox (`server/plugins/modulePackVm.ts`) — render
@@ -58,6 +59,7 @@ import {
 import { dispatchApiCall } from './host/apiDispatch'
 import { workerCallError } from './host/workerErrors'
 import { resetPluginWorker, setApiCallDispatcher } from './host/workerPool'
+import { pluginSettingsCache } from './host/settingsSync'
 import { broadcastPluginEvent } from './eventBroadcaster'
 
 setApiCallDispatcher(dispatchApiCall)
@@ -69,30 +71,6 @@ export { clearPluginCrashCounter }
 // Re-export the host's setter so the server entry point can wire in the
 // DbClient at boot before any request arrives.
 export { setPluginWorkerDbClient }
-
-// ---------------------------------------------------------------------------
-// Settings cache — used by the worker host to seed each loaded plugin's
-// in-worker `settings.get` mirror, and refreshed on PUTs through the admin
-// settings route.
-// ---------------------------------------------------------------------------
-
-const pluginSettingsCache = new Map<string, Record<string, string | number | boolean>>()
-
-export function updatePluginSettingsCache(
-  pluginId: string,
-  settings: Record<string, string | number | boolean>,
-): void {
-  pluginSettingsCache.set(pluginId, settings)
-}
-
-export async function refreshPluginSettingsCache(
-  db: DbClient,
-  pluginId: string,
-): Promise<void> {
-  const result = await getInstalledPlugin(db, pluginId)
-  if (!result || result.kind !== 'ok') return
-  pluginSettingsCache.set(pluginId, result.plugin.settings)
-}
 
 // ---------------------------------------------------------------------------
 // Plugin lifecycle helpers — wrappers around the worker host that resolve

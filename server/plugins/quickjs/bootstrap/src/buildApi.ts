@@ -231,9 +231,11 @@ globalThis.__buildApi = function buildApi() {
     get: function (key: string) { return globalThis.__plugin_settings[key] },
     getAll: function () { return Object.assign({}, globalThis.__plugin_settings) },
     replace: async function (next: unknown) {
-      const updated = await call('cms.settings.replace', [next])
-      for (const k of Object.keys(globalThis.__plugin_settings)) delete globalThis.__plugin_settings[k]
-      if (updated && typeof updated === 'object') Object.assign(globalThis.__plugin_settings, updated)
+      // Validation + persistence happen host-side. The host pushes the
+      // merged record back into this VM's __plugin_settings mirror (via
+      // __updateSettings) BEFORE resolving this call, so settings.get()
+      // reflects the new values as soon as the await returns.
+      await call('cms.settings.replace', [next])
     },
   }
 

@@ -7,7 +7,7 @@
  * the types in one file prevents skew between the two sides.
  */
 
-import type { PluginManifest } from '@core/plugin-sdk'
+import type { PluginManifest, PluginSettingsValues } from '@core/plugin-sdk'
 import type { BodyEncoding } from './bodyEncoding'
 
 // ---------------------------------------------------------------------------
@@ -73,6 +73,7 @@ export interface SerializedUser {
 export type MainToWorkerMessage =
   | LoadPluginRequest
   | UnloadPluginRequest
+  | UpdateSettingsRequest
   | RunLifecycleRequest
   | RunMigrateRequest
   | RunRouteRequest
@@ -94,13 +95,27 @@ export interface LoadPluginRequest {
   entryFileUrl: string
   /** Settings snapshot — populated into the worker's local cache so
    *  `settings.get` can resolve synchronously inside the plugin code. */
-  settings: Record<string, string | number | boolean>
+  settings: PluginSettingsValues
 }
 
 export interface UnloadPluginRequest {
   kind: 'unload-plugin'
   correlationId: string
   pluginId: string
+}
+
+/**
+ * Replace the worker's settings mirror for a loaded plugin. Sent by the
+ * host whenever a settings write persists (the admin settings PUT or the
+ * plugin's own `cms.settings.replace`). `settings` is the full
+ * merged-with-defaults record — the same shape `load-plugin` seeds into
+ * the VM's `__plugin_settings`.
+ */
+export interface UpdateSettingsRequest {
+  kind: 'update-settings'
+  correlationId: string
+  pluginId: string
+  settings: PluginSettingsValues
 }
 
 export interface RunLifecycleRequest {
@@ -250,6 +265,7 @@ export interface ApiReply {
 export type WorkerToMainMessage =
   | LoadPluginResult
   | UnloadPluginResult
+  | UpdateSettingsResult
   | LifecycleResult
   | RouteResult
   | HookListenerResult
@@ -284,6 +300,13 @@ export interface UnloadPluginResult {
   kind: 'unload-plugin-result'
   correlationId: string
   ok: boolean
+}
+
+export interface UpdateSettingsResult {
+  kind: 'update-settings-result'
+  correlationId: string
+  ok: boolean
+  error?: string
 }
 
 export interface LifecycleResult {

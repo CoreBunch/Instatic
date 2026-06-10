@@ -46,6 +46,7 @@ import type {
   RunScheduleRequest,
   SerializedResponse,
   UnloadPluginRequest,
+  UpdateSettingsRequest,
   WorkerToMainMessage,
 } from './protocol/messages'
 import { createPluginVm, type PluginVm } from './quickjs/vm'
@@ -172,6 +173,34 @@ function handleUnloadPlugin(msg: UnloadPluginRequest): void {
     vmsByPluginId.delete(msg.pluginId)
   }
   send({ kind: 'unload-plugin-result', correlationId: msg.correlationId, ok: true })
+}
+
+/**
+ * Settings push from the host — replaces the VM's `__plugin_settings`
+ * mirror so subsequent `api.cms.settings.get(...)` calls resolve to the
+ * new values synchronously. Sent after every persisted settings write
+ * (admin PUT or the plugin's own `settings.replace`).
+ */
+async function handleUpdateSettings(msg: UpdateSettingsRequest): Promise<void> {
+  const vm = vmsByPluginId.get(msg.pluginId)
+  if (!vm) {
+    // Plugin not loaded in this worker — nothing to refresh. Load-time
+    // seeding from the host's settings cache covers the next load, so an
+    // ok ack is the correct no-op.
+    send({ kind: 'update-settings-result', correlationId: msg.correlationId, ok: true })
+    return
+  }
+  try {
+    await vm.updateSettings(msg.settings)
+    send({ kind: 'update-settings-result', correlationId: msg.correlationId, ok: true })
+  } catch (err) {
+    send({
+      kind: 'update-settings-result',
+      correlationId: msg.correlationId,
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 }
 
 async function handleRunLifecycle(msg: RunLifecycleRequest): Promise<void> {
@@ -472,20 +501,6 @@ async function handleRunMediaUrlTransformer(msg: RunMediaUrlTransformerRequest):
 }
 
 // ---------------------------------------------------------------------------
-// Settings sync — `settings.changed` lands here from the host and updates
-// the VM's local mirror so subsequent `api.cms.settings.get(...)` calls
-// see the new values synchronously.
-// ---------------------------------------------------------------------------
-
-async function maybeApplySettingsChange(reply: ApiReply): Promise<void> {
-  // Currently the worker doesn't receive a dedicated settings.changed message;
-  // when a plugin's own `settings.replace()` call lands, the host's reply
-  // carries the cleaned values, and the VM's facade applies them locally.
-  // Kept as a stub for future host-pushed settings updates.
-  void reply
-}
-
-// ---------------------------------------------------------------------------
 // Worker bootstrap
 // ---------------------------------------------------------------------------
 
@@ -497,6 +512,9 @@ async function maybeApplySettingsChange(reply: ApiReply): Promise<void> {
       return
     case 'unload-plugin':
       handleUnloadPlugin(msg)
+      return
+    case 'update-settings':
+      void handleUpdateSettings(msg)
       return
     case 'run-lifecycle':
       void handleRunLifecycle(msg)
@@ -529,7 +547,6 @@ async function maybeApplySettingsChange(reply: ApiReply): Promise<void> {
       void handleRunMediaUrlTransformer(msg)
       return
     case 'api-reply':
-      void maybeApplySettingsChange(msg)
       handleApiReply(msg)
       return
   }

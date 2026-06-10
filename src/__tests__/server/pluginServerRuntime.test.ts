@@ -112,6 +112,13 @@ function makeFakeDb() {
       else plugins.push(row)
       return { rows: [row as Row], rowCount: 1 }
     }
+    if (normalized.includes('update installed_plugins') && normalized.includes('set settings_json')) {
+      const row = plugins.find((plugin) => plugin.id === values[1])
+      if (!row) return { rows: [], rowCount: 0 }
+      row.settings_json = values[0]
+      row.updated_at = new Date().toISOString()
+      return { rows: [row as Row], rowCount: 1 }
+    }
     if (normalized.includes('update installed_plugins set lifecycle_status')) {
       const row = plugins.find((plugin) => plugin.id === values[2])
       if (!row) return { rows: [], rowCount: 0 }
@@ -423,6 +430,152 @@ describe('server plugin runtime SDK', () => {
       }])
     } finally {
       hookBus.unregisterPlugin('test')
+      await rm(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
+  it('pushes admin settings updates into a running plugin VM without a reload', async () => {
+    const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-settings-push-'))
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+    try {
+      const install = await installPlugin({
+        manifest: {
+          ...baseManifest,
+          id: 'acme.settings-live',
+          permissions: ['cms.routes', 'cms.routes.public'],
+          settings: [{ id: 'apiKey', label: 'API key', type: 'text', default: 'initial' }],
+        },
+        serverEntrypoint: `
+          export function activate(api) {
+            api.cms.routes.public.get('/key', () => ({ key: api.cms.settings.get('apiKey') }))
+          }
+        `,
+        grantedPermissions: ['cms.routes', 'cms.routes.public'],
+        uploadsDir,
+        db,
+        cookie,
+      })
+      expect(install.status).toBe(201)
+
+      const before = await handleCmsRequest(
+        cmsRequest('http://localhost/admin/api/cms/plugins/acme.settings-live/runtime/key'),
+        db,
+        { uploadsDir },
+      )
+      expect(await before.json()).toEqual({ key: 'initial' })
+
+      const put = await handleCmsRequest(
+        cmsRequest('http://localhost/admin/api/cms/plugins/acme.settings-live/settings', {
+          method: 'PUT',
+          body: JSON.stringify({ settings: { apiKey: 'rotated' } }),
+          headers: { cookie },
+        }),
+        db,
+        { uploadsDir },
+      )
+      expect(put.status).toBe(200)
+
+      // No reload, no restart — the running VM's mirror was pushed, so the
+      // already-registered route handler reads the new value immediately.
+      const after = await handleCmsRequest(
+        cmsRequest('http://localhost/admin/api/cms/plugins/acme.settings-live/runtime/key'),
+        db,
+        { uploadsDir },
+      )
+      expect(await after.json()).toEqual({ key: 'rotated' })
+    } finally {
+      await rm(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
+  it('treats a settings update for a plugin with no running worker as a clean no-op', async () => {
+    const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-settings-noop-'))
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+    try {
+      // Declarative-only plugin: no `entrypoints.server`, so no worker is
+      // ever spawned for it. The settings push must not spawn one either.
+      const { entrypoints: _entrypoints, ...manifestWithoutEntrypoints } = baseManifest
+      const install = await installPlugin({
+        manifest: {
+          ...manifestWithoutEntrypoints,
+          id: 'acme.settings-dormant',
+          permissions: [],
+          settings: [{ id: 'apiKey', label: 'API key', type: 'text', default: 'initial' }],
+        },
+        serverEntrypoint: '', // present in the zip but undeclared — never loaded
+        grantedPermissions: [],
+        uploadsDir,
+        db,
+        cookie,
+      })
+      expect(install.status).toBe(201)
+
+      const put = await handleCmsRequest(
+        cmsRequest('http://localhost/admin/api/cms/plugins/acme.settings-dormant/settings', {
+          method: 'PUT',
+          body: JSON.stringify({ settings: { apiKey: 'rotated' } }),
+          headers: { cookie },
+        }),
+        db,
+        { uploadsDir },
+      )
+      expect(put.status).toBe(200)
+      expect(await put.json()).toEqual({ settings: { apiKey: 'rotated' } })
+    } finally {
+      await rm(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
+  it('updates the VM mirror before settings.changed fires, so listeners read the new values', async () => {
+    const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-settings-hook-'))
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+    try {
+      const install = await installPlugin({
+        manifest: {
+          ...baseManifest,
+          id: 'acme.settings-hooks',
+          permissions: ['cms.routes', 'cms.routes.public', 'cms.hooks'],
+          settings: [{ id: 'apiKey', label: 'API key', type: 'text', default: 'initial' }],
+        },
+        serverEntrypoint: `
+          export function activate(api) {
+            let observed = 'unset'
+            api.cms.hooks.on('settings.changed', () => {
+              observed = api.cms.settings.get('apiKey')
+            })
+            api.cms.routes.public.get('/observed', () => ({ observed }))
+          }
+        `,
+        grantedPermissions: ['cms.routes', 'cms.routes.public', 'cms.hooks'],
+        uploadsDir,
+        db,
+        cookie,
+      })
+      expect(install.status).toBe(201)
+
+      // The PUT awaits the hook emission, which awaits the in-worker
+      // listener — by the time it returns, `observed` has been captured.
+      const put = await handleCmsRequest(
+        cmsRequest('http://localhost/admin/api/cms/plugins/acme.settings-hooks/settings', {
+          method: 'PUT',
+          body: JSON.stringify({ settings: { apiKey: 'rotated' } }),
+          headers: { cookie },
+        }),
+        db,
+        { uploadsDir },
+      )
+      expect(put.status).toBe(200)
+
+      const res = await handleCmsRequest(
+        cmsRequest('http://localhost/admin/api/cms/plugins/acme.settings-hooks/runtime/observed'),
+        db,
+        { uploadsDir },
+      )
+      expect(await res.json()).toEqual({ observed: 'rotated' })
+    } finally {
       await rm(uploadsDir, { recursive: true, force: true })
     }
   })

@@ -1,20 +1,23 @@
 /**
  * Plugin settings handler — implements the `cms.settings.replace` api-call.
  *
- * Validates the incoming settings record against the plugin's declared setting
- * definitions, persists to the database, and emits a `settings.changed` hook
- * so other plugin subsystems can react to the update.
+ * Validates the incoming settings record against the plugin's declared
+ * setting definitions, then hands off to `persistAndSyncPluginSettings`,
+ * which persists, refreshes the host cache, pushes the merged record into
+ * the running VM's `__plugin_settings` mirror, and emits `settings.changed`
+ * (in that order — listeners reading `settings.get()` see the new values).
+ * Because the push lands before the api-reply, the plugin's awaited
+ * `settings.replace()` resolves with its mirror already updated.
  *
  * No permission gate — any active plugin may update its own settings.
  */
 
 import type { PluginSettingDefinition } from '@core/plugin-sdk'
 import { validatePluginSettingsRecord } from '@core/plugin-sdk'
-import { hookBus } from '@core/plugins/hookBus'
-import { setPluginSettings } from '../../../repositories/plugins'
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
 import type { DbClient } from '../../../db/client'
 import { replyApiOk } from '../apiReplies'
+import { persistAndSyncPluginSettings } from '../settingsSync'
 import type { HostPluginRecord } from '../types'
 
 export async function handleSettingsReplace(
@@ -25,12 +28,6 @@ export async function handleSettingsReplace(
   const [next] = msg.args
   const declared = (entry.manifest.settings ?? []) as PluginSettingDefinition[]
   const cleaned = validatePluginSettingsRecord(declared, next)
-  await setPluginSettings(db, msg.pluginId, cleaned)
-  // Refresh worker-side cache via the existing settings route — actually
-  // the worker's local cache is updated from the api reply value.
-  await hookBus.emit('settings.changed', {
-    pluginId: msg.pluginId,
-    settings: cleaned,
-  } as unknown as Record<string, unknown>)
-  replyApiOk(msg.pluginId, msg.correlationId, cleaned as unknown)
+  const merged = await persistAndSyncPluginSettings(db, msg.pluginId, cleaned)
+  replyApiOk(msg.pluginId, msg.correlationId, merged)
 }

@@ -12,7 +12,7 @@
  *   DELETE /admin/api/cms/plugins/:id                               — uninstall + delete on-disk assets
  *   POST   /admin/api/cms/plugins/:id/pack/install                  — manual pack re-sync into the draft site
  *   GET    /admin/api/cms/plugins/:id/settings                      — masked settings
- *   PUT    /admin/api/cms/plugins/:id/settings                      — update settings + fire `settings.changed`
+ *   PUT    /admin/api/cms/plugins/:id/settings                      — update settings, push into the running VM, fire `settings.changed`
  *   POST   /admin/api/cms/plugins/:id/restart                       — manual restart for a parked plugin
  *   GET    /admin/api/cms/plugins/events                            — SSE stream of lifecycle events
  *   GET    /admin/api/cms/plugins/:id/resources/:rid/records        — list records for a plugin resource

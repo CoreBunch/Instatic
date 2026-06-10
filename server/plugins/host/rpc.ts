@@ -9,7 +9,7 @@
  */
 
 import { nanoid } from 'nanoid'
-import type { ServerPluginLifecycleHook, PluginManifest } from '@core/plugin-sdk'
+import type { ServerPluginLifecycleHook, PluginManifest, PluginSettingsValues } from '@core/plugin-sdk'
 import { loopSourceRegistry } from '@core/loops/registry'
 import { hookBus } from '@core/plugins/hookBus'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
@@ -37,7 +37,7 @@ const SCHEDULE_RPC_SLACK_MS = 10_000
 export async function loadPluginInWorker(args: {
   manifest: PluginManifest
   entryFileUrl: string
-  settings: Record<string, string | number | boolean>
+  settings: PluginSettingsValues
 }): Promise<LoadPluginResult> {
   // Clear any prior host-side state for this plugin id — hook listeners,
   // loop sources, route entries — so a re-load (e.g. install → activate
@@ -119,6 +119,29 @@ export async function unloadPluginInWorker(pluginId: string): Promise<void> {
   }
   try { w.terminate() } catch {/* may already be terminated */}
   workers.delete(pluginId)
+}
+
+/**
+ * Push a fresh merged settings snapshot into a plugin's live VM so
+ * `api.cms.settings.get(...)` reflects it without a reload. A clean no-op
+ * when the plugin has no running worker — load-time seeding from the host
+ * settings cache covers the next load. Checked against the worker map
+ * directly because `requestFromWorker` would otherwise spawn a fresh
+ * (empty) worker as a side effect.
+ */
+export async function updateSettingsInWorker(
+  pluginId: string,
+  settings: PluginSettingsValues,
+): Promise<void> {
+  if (!workers.has(pluginId)) return
+  const result = await requestFromWorker(
+    pluginId,
+    { kind: 'update-settings', correlationId: nanoid(), pluginId, settings },
+    'update-settings-result',
+  )
+  if (!result.ok) {
+    throw new Error(result.error ?? `Plugin "${pluginId}" settings update failed in worker`)
+  }
 }
 
 export async function runLifecycleInWorker(

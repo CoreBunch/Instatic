@@ -3,25 +3,23 @@
  *
  *   GET /admin/api/cms/plugins/:id/settings — return masked settings (secret
  *                                              values become `'***'`)
- *   PUT /admin/api/cms/plugins/:id/settings — validate, persist, refresh
- *                                              runtime cache, fire
- *                                              `settings.changed` so plugin
- *                                              server hooks can react.
+ *   PUT /admin/api/cms/plugins/:id/settings — validate, then hand off to
+ *                                              `persistAndSyncPluginSettings`,
+ *                                              which persists, pushes the new
+ *                                              record into the running VM, and
+ *                                              fires `settings.changed`.
  */
 import type { DbClient } from '../../../db/client'
 import type { AuthUser } from '../../../repositories/users'
 import { createAuditEvent } from '../../../repositories/audit'
-import {
-  getInstalledPlugin,
-  setPluginSettings,
-} from '../../../repositories/plugins'
+import { getInstalledPlugin } from '../../../repositories/plugins'
 import {
   validatePluginSettingsRecord,
   maskSecretSettings,
   type PluginSettingDefinition,
+  type PluginSettingsValues,
 } from '@core/plugin-sdk'
-import { refreshPluginSettingsCache } from '../../../plugins/runtime'
-import { hookBus } from '@core/plugins/hookBus'
+import { persistAndSyncPluginSettings } from '../../../plugins/host/settingsSync'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../../http'
 import { Type } from '@core/utils/typeboxHelpers'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -59,18 +57,17 @@ export async function handlePluginSettings(
     const PluginSettingsBodySchema = Type.Object({ settings: Type.Optional(Type.Unknown()) })
     const body = await readValidatedBody(req, PluginSettingsBodySchema)
     if (!body) return badRequest('Invalid request body')
-    let cleaned: Record<string, string | number | boolean>
+    let cleaned: PluginSettingsValues
     try {
       cleaned = validatePluginSettingsRecord(declared, body.settings ?? body)
     } catch (err) {
       return badRequest(getErrorMessage(err, 'Invalid settings payload'))
     }
-    await setPluginSettings(db, pluginId, cleaned)
-    await refreshPluginSettingsCache(db, pluginId)
-    await hookBus.emit('settings.changed', {
-      pluginId,
-      settings: cleaned,
-    } as unknown as Record<string, unknown>)
+    // Persists, refreshes the host cache, pushes the merged record into the
+    // plugin's running VM (no-op when it isn't loaded), then emits
+    // `settings.changed` — in that order, so hook listeners reading
+    // `api.cms.settings.get(...)` observe the new values.
+    const merged = await persistAndSyncPluginSettings(db, pluginId, cleaned)
     await createAuditEvent(db, {
       actorUserId: user.id,
       action: 'plugin.settings.update',
@@ -82,7 +79,7 @@ export async function handlePluginSettings(
       },
       ...requestAuditContext(req),
     })
-    return jsonResponse({ settings: maskSecretSettings(declared, cleaned) })
+    return jsonResponse({ settings: maskSecretSettings(declared, merged) })
   }
 
   return methodNotAllowed()

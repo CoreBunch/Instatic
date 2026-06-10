@@ -40,8 +40,8 @@ import {
   runPluginLifecycle,
   runPluginMigrate,
   unloadPlugin,
-  updatePluginSettingsCache,
 } from '../../../plugins/runtime'
+import { pluginSettingsCache } from '../../../plugins/host/settingsSync'
 import {
   activateSandboxedPluginModulePack,
   deactivatePluginModulePack,
@@ -311,7 +311,7 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
   // Refresh settings cache from the upserted row so the worker's
   // `loadPluginServerEntrypoint` seeds the right values into the worker's
   // local mirror.
-  updatePluginSettingsCache(pluginId, upgraded.settings)
+  pluginSettingsCache.set(pluginId, upgraded.settings)
 
   // 4 + 5. Try to migrate then activate. On any failure we restore the old
   //        version end-to-end.
@@ -464,7 +464,7 @@ async function rollbackUpgrade(args: {
   deactivatePluginModulePack(pluginId)
   try {
     const restoredManifest = pluginManifestWithGrants(restored)
-    updatePluginSettingsCache(pluginId, restored.settings)
+    pluginSettingsCache.set(pluginId, restored.settings)
     if (
       restoredManifest.entrypoints?.modules
       && restoredManifest.grantedPermissions?.includes('modules.register')

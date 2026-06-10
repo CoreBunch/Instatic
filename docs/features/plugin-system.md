@@ -433,6 +433,8 @@ await api.cms.settings.replace({ apiKey: 'new-value' })
 
 Settings are typed (`string` / `number` / `boolean` / `secret`) and rendered automatically on the plugin admin page.
 
+Settings writes go live immediately. When an operator saves the admin form (or the plugin calls `settings.replace`), the host persists the record, refreshes its load-time cache, pushes the merged-with-defaults values into the running VM's mirror (an `update-settings` worker message — a no-op when the plugin isn't loaded), and only then emits the `settings.changed` hook. `api.cms.settings.get(...)` therefore returns the new value without a plugin reload — including inside a `settings.changed` listener.
+
 ### Scheduled jobs — requires `cms.schedule`
 
 ```js
