@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 import { handleCmsRequest } from '../../../server/handlers/cms'
 import type { DbClient, DbResult } from '../../../server/db'
 import { SESSION_COOKIE_NAME } from '../../../server/auth/tokens'
 import { loginRateLimit } from '../../../server/auth/rateLimit'
-import { stampSocketIp } from '../../../server/auth/security'
+import { configurePublicOrigins, resetPublicOrigins, stampSocketIp } from '../../../server/auth/security'
+
+afterEach(() => {
+  resetPublicOrigins()
+})
 
 function makeFakeDb() {
   const site: Record<string, unknown>[] = []
@@ -716,13 +720,14 @@ describe('CMS handlers', () => {
   })
 
   // ─── Secure cookie flag ─────────────────────────────────────────────────
-  // The CMS terminates TLS at Caddy (compose.tls.yml) which sets
-  // X-Forwarded-Proto: https on the upstream request. The handler must detect
-  // this and append `Secure` to the session cookie so it is never transmitted
-  // over plain HTTP. We also verify the inverse — direct HTTP requests must
-  // NOT get a Secure cookie (which browsers would reject).
+  // Managed HTTPS platforms (and Caddy in compose.tls.yml) terminate TLS at the
+  // edge and hand the container plain HTTP. The handler sets `Secure` from the
+  // configured public origin's scheme — never from an untrusted
+  // X-Forwarded-Proto header — so the cookie is reliably Secure on HTTPS
+  // platforms. Direct HTTP requests with no https public origin must NOT get a
+  // Secure cookie (which browsers would reject).
   describe('session cookie Secure flag', () => {
-    async function loginThen(headers: HeadersInit): Promise<string> {
+    async function loginThen(): Promise<string> {
       const db = makeFakeDb()
       await handleCmsRequest(new Request('http://localhost/admin/api/cms/setup', {
         method: 'POST',
@@ -732,30 +737,49 @@ describe('CMS handlers', () => {
       const res = await handleCmsRequest(new Request('http://localhost/admin/api/cms/login', {
         method: 'POST',
         body: JSON.stringify({ email: 'o@example.com', password: 'long-enough-password' }),
-        headers: { 'content-type': 'application/json', ...headers },
+        headers: { 'content-type': 'application/json' },
       }), db)
       expect(res.status).toBe(200)
       return res.headers.get('set-cookie') ?? ''
     }
 
-    it('sets Secure when the request carries X-Forwarded-Proto: https', async () => {
-      const cookie = await loginThen({ 'x-forwarded-proto': 'https' })
+    it('sets Secure when an https public origin is configured (TLS terminated at the edge, req.url is http)', async () => {
+      configurePublicOrigins(['https://cms.example.com'])
+      const cookie = await loginThen()
       expect(cookie).toContain('Secure')
       expect(cookie).toContain('HttpOnly')
       expect(cookie).toContain('SameSite=Lax')
     })
 
-    it('does NOT set Secure when X-Forwarded-Proto: http (i.e., plain HTTP via proxy)', async () => {
-      const cookie = await loginThen({ 'x-forwarded-proto': 'http' })
+    it('does NOT set Secure when the configured public origin is http', async () => {
+      configurePublicOrigins(['http://cms.example.com'])
+      const cookie = await loginThen()
       expect(cookie).not.toContain('Secure')
     })
 
-    it('does NOT set Secure when no forwarding header is present and the request is HTTP', async () => {
-      const cookie = await loginThen({})
+    it('does NOT set Secure when no public origin is configured and the request is HTTP', async () => {
+      const cookie = await loginThen()
       expect(cookie).not.toContain('Secure')
     })
 
-    it('logout cookie also gets Secure when behind HTTPS proxy (so the browser accepts the deletion)', async () => {
+    it('ignores a spoofed X-Forwarded-Proto: https when no https public origin is configured', async () => {
+      const db = makeFakeDb()
+      await handleCmsRequest(new Request('http://localhost/admin/api/cms/setup', {
+        method: 'POST',
+        body: JSON.stringify({ siteName: 'Example', email: 'o@example.com', password: 'long-enough-password' }),
+        headers: { 'content-type': 'application/json' },
+      }), db)
+      const res = await handleCmsRequest(new Request('http://localhost/admin/api/cms/login', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'o@example.com', password: 'long-enough-password' }),
+        headers: { 'content-type': 'application/json', 'x-forwarded-proto': 'https' },
+      }), db)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('set-cookie') ?? '').not.toContain('Secure')
+    })
+
+    it('logout cookie also gets Secure when an https public origin is configured', async () => {
+      configurePublicOrigins(['https://cms.example.com'])
       const db = makeFakeDb()
       await handleCmsRequest(new Request('http://localhost/admin/api/cms/setup', {
         method: 'POST',
@@ -765,7 +789,7 @@ describe('CMS handlers', () => {
       const loginRes = await handleCmsRequest(new Request('http://localhost/admin/api/cms/login', {
         method: 'POST',
         body: JSON.stringify({ email: 'o@example.com', password: 'long-enough-password' }),
-        headers: { 'content-type': 'application/json', 'x-forwarded-proto': 'https' },
+        headers: { 'content-type': 'application/json' },
       }), db)
       const sessionCookie = (loginRes.headers.get('set-cookie') ?? '')
         .split(';')[0] // just `instatic_admin_session=<token>`
@@ -774,7 +798,6 @@ describe('CMS handlers', () => {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'x-forwarded-proto': 'https',
           cookie: sessionCookie,
         },
       }), db)

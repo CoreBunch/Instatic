@@ -15,7 +15,7 @@ Run the image with:
 - `UPLOADS_DIR` mounted on persistent storage
 - `STATIC_DIR=/app/dist`
 - `INSTATIC_SECRET_KEY` set before configuring AI provider credentials, plugin secret settings, or TOTP MFA
-- `TRUSTED_PROXY_CIDRS` set when the platform terminates HTTPS before forwarding to the container
+- `PUBLIC_ORIGIN` set to the site's public origin when the platform terminates HTTPS before forwarding to the container (auto-detected from `RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN` on those platforms)
 
 Use one persistent mount root when the platform only supports one app volume:
 
@@ -112,11 +112,11 @@ DATABASE_URL=sqlite:/app/storage/data/cms.db
 UPLOADS_DIR=/app/storage/uploads
 STATIC_DIR=/app/dist
 INSTATIC_SECRET_KEY=<output of bun run scripts/generate-secret-key.ts>
-TRUSTED_PROXY_CIDRS=0.0.0.0/0,::/0
+PUBLIC_ORIGIN=https://${{RAILWAY_PUBLIC_DOMAIN}}
 RAILWAY_RUN_UID=0
 ```
 
-`RAILWAY_RUN_UID=0` is required because Railway volumes are mounted as `root` and the published image otherwise runs as the non-root `bun` user. `TRUSTED_PROXY_CIDRS=0.0.0.0/0,::/0` lets Instatic trust Railway's forwarded HTTPS/public-host headers for CSRF origin checks and audit/rate-limit IP attribution.
+`RAILWAY_RUN_UID=0` is required because Railway volumes are mounted as `root` and the published image otherwise runs as the non-root `bun` user. `PUBLIC_ORIGIN=https://${{RAILWAY_PUBLIC_DOMAIN}}` gives Instatic the public origin for its CSRF check now that Railway terminates HTTPS at the edge; the server would auto-detect the same value from `RAILWAY_PUBLIC_DOMAIN`, but setting it explicitly survives custom-domain edits.
 
 Enable Railway Image Auto Updates when you want Railway to move the service forward automatically during a maintenance window. Use `:latest` for "always follow the newest image", or a semver tag such as `:0.0.2` if you want Railway's semver update controls.
 
@@ -136,10 +136,9 @@ PORT=10000
 DATABASE_URL=sqlite:/app/storage/data/cms.db
 UPLOADS_DIR=/app/storage/uploads
 STATIC_DIR=/app/dist
-TRUSTED_PROXY_CIDRS=0.0.0.0/0,::/0
 ```
 
-The Postgres Blueprint creates one image-backed web service, one persistent disk for uploads, and one Render Postgres database. See [render.md](render.md) for the full Render contract.
+Render auto-injects `RENDER_EXTERNAL_URL`, which Instatic uses as the CSRF public origin, so no proxy/origin variable is needed in the Blueprint. The Postgres Blueprint creates one image-backed web service, one persistent disk for uploads, and one Render Postgres database. See [render.md](render.md) for the full Render contract.
 
 
 ## Required Runtime Variables
@@ -151,11 +150,12 @@ The Postgres Blueprint creates one image-backed web service, one persistent disk
 | `STATIC_DIR` | Yes in Docker | `/app/dist` |
 | `PORT` | Platform-dependent | HTTP listen port; defaults to `3001` |
 | `INSTATIC_SECRET_KEY` | Yes for reversible server secrets | Output of `bun run scripts/generate-secret-key.ts` |
-| `TRUSTED_PROXY_CIDRS` | Yes behind managed HTTPS proxies | Comma-separated trusted proxy CIDRs, e.g. `0.0.0.0/0,::/0` for Railway or Render templates |
+| `PUBLIC_ORIGIN` | Behind managed HTTPS proxies | Comma-separated public origins for the CSRF check, e.g. `https://www.example.com`. Auto-detected from `RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN` on those platforms |
+| `TRUSTED_PROXY_CIDRS` | Optional | Comma-separated trusted proxy CIDRs for client-IP attribution only (audit logs, rate-limit keys) — **not** used for CSRF. Trust only your real proxy CIDRs; never `0.0.0.0/0` for a public service |
 
 Managed platforms usually inject `PORT`. Do not hard-code a different listen port unless the platform asks for a fixed target port.
 
-Managed HTTPS platforms often terminate TLS before forwarding HTTP to the container. Set `TRUSTED_PROXY_CIDRS` for those deployments so CSRF origin checks compare against the public host/protocol instead of the container-local request URL.
+Managed HTTPS platforms often terminate TLS before forwarding HTTP to the container, so the container sees plain HTTP. Set `PUBLIC_ORIGIN` to the site's public origin for those deployments so the CSRF origin check compares against the real public origin instead of the container-local request URL. Render and Railway are auto-detected (`RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN`), so a one-click deploy needs no manual value; set `PUBLIC_ORIGIN` explicitly when you add a custom domain (append it as a second comma-separated entry).
 
 `INSTATIC_SECRET_KEY` is the stable AES master key for reversible server secrets, including Anthropic, OpenAI, and OpenRouter credentials and TOTP MFA seeds. If it is missing in production, adding a credential or enabling TOTP MFA fails. If it is rotated or lost, existing stored credentials must be re-entered and TOTP MFA must be re-enrolled.
 

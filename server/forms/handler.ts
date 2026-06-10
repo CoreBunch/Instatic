@@ -1,6 +1,6 @@
 import type { DbClient } from '../db/client'
 import type { Static, TSchema } from '@sinclair/typebox'
-import { DEV_ORIGIN_ALLOWLIST, clientIp, expectedOrigin } from '../auth/security'
+import { clientIp, originAllowed } from '../auth/security'
 import {
   RequestBodyTooLargeError,
   badRequest,
@@ -177,9 +177,12 @@ function publicFormRoute(pathname: string): PublicFormRoute | null {
 }
 
 function publicFormOriginAllowed(req: Request): boolean {
-  const origin = req.headers.get('origin')
-  if (!origin) return false
-  if (origin !== expectedOrigin(req) && !DEV_ORIGIN_ALLOWLIST.includes(origin)) return false
+  // Public form posts always come from a browser, so a missing Origin is
+  // rejected here (stricter than the admin check, which tolerates curl/SSR).
+  if (!req.headers.get('origin')) return false
+  // Same CSRF origin check as the admin/AI handlers — honours the full
+  // configured public-origin allowlist (platform + custom domain).
+  if (!originAllowed(req)) return false
   const fetchSite = req.headers.get('sec-fetch-site')
   return !fetchSite || fetchSite === 'same-origin' || fetchSite === 'none'
 }

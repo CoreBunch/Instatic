@@ -2,12 +2,31 @@
  * Auth-adjacent security helpers — request-side concerns that don't fit
  * inside the auth.ts crypto/session module.
  *
+ * Two independent mechanisms live here, and they no longer overlap:
+ *
+ *   - CSRF origin (configured public origin). `expectedOrigin` / `originAllowed`
+ *     derive the site's canonical origin ONLY from `configurePublicOrigins`
+ *     (set from `PUBLIC_ORIGIN` / `RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN`).
+ *     Forwarded headers (`X-Forwarded-Host` / `X-Forwarded-Proto`) are NOT
+ *     consulted for CSRF — a TLS-terminating edge is handled by configuring
+ *     the public origin, not by trusting a proxy to relay the host/scheme.
+ *
+ *   - Client-IP attribution (`TRUSTED_PROXY_CIDRS`). `clientIp` / `stampSocketIp`
+ *     / `configureTrustedProxyCidrs` exist solely to attribute the real client
+ *     IP for audit logs and rate-limit keys. `clientIp` walks `X-Forwarded-For`
+ *     right-to-left and returns the nearest untrusted hop only when the socket
+ *     peer is a configured trusted proxy. This has no bearing on CSRF.
+ *
+ * Helper roster:
  *   - `isStateChangingMethod`  — POST/PUT/PATCH/DELETE
- *   - `expectedOrigin`         — what the request's Origin *should* be,
- *                                accounting for X-Forwarded-* only when the
- *                                socket peer is a configured trusted proxy.
- *   - `originAllowed`          — true when the request's Origin matches the
- *                                expected origin, or is on the dev allowlist.
+ *   - `expectedOrigin`         — the configured canonical public origin, or a
+ *                                Host/req.url fallback when none is configured.
+ *   - `originAllowed`          — true when the request's Origin matches a
+ *                                configured public origin / expectedOrigin, or
+ *                                is on the dev allowlist.
+ *   - `publicOriginIsHttps`    — true when the canonical public origin is https
+ *                                (used to set the cookie `Secure` flag).
+ *   - `configurePublicOrigins` — boot-time list of normalized public origins.
  *   - `clientIp`               — the nearest untrusted client IP from a
  *                                trusted proxy chain, or the socket peer
  *                                address stamped by the Bun.serve boundary.
@@ -17,12 +36,14 @@
  *                                `clientIp` has a non-proxy fallback.
  *   - `configureTrustedProxyCidrs`
  *                              — boot-time allowlist for proxy socket peers
- *                                whose forwarding headers may be trusted.
+ *                                whose `X-Forwarded-For` may be trusted for
+ *                                client-IP attribution.
  *
- * Used by handlers.ts for CSRF defense-in-depth and by the login endpoint
- * for rate limiting.
+ * Used by the CMS/AI handlers for CSRF defense-in-depth and by the login
+ * endpoint for rate limiting.
  */
 import { isIP } from 'node:net'
+import { normalizeOrigin } from '../config'
 
 /** Extra origins allowed by the Origin check (set via env in dev/test). */
 export const DEV_ORIGIN_ALLOWLIST: string[] = [
@@ -39,20 +60,44 @@ export function isStateChangingMethod(method: string): boolean {
 }
 
 /**
- * The origin the client *should* be talking to, derived from request headers.
+ * Normalized public origins, set once at boot from
+ * `resolvePublicOrigins(env)`. The first entry is the canonical origin used by
+ * `expectedOrigin`; the full set is matched against by `originAllowed` so a
+ * platform domain and a custom domain can both be accepted.
+ */
+let publicOrigins: string[] = []
+
+export function configurePublicOrigins(origins: readonly string[]): void {
+  publicOrigins = origins.map(normalizeOrigin).filter((origin): origin is string => origin !== null)
+}
+
+export function resetPublicOrigins(): void {
+  publicOrigins = []
+}
+
+/**
+ * The origin the client *should* be talking to.
  *
- * When behind a configured reverse proxy (Caddy → app:3001), `req.url`
- * reports the upstream backend address. We trust `X-Forwarded-Proto` and
- * `X-Forwarded-Host` only when the socket peer is inside
- * `TRUSTED_PROXY_CIDRS`; direct clients cannot spoof their way into a
- * different CSRF origin. Falls back to the inbound `Host` header and finally
- * to `req.url` for direct connections.
+ * When a public origin is configured (the normal managed-platform / reverse-
+ * proxy case), the canonical first entry is authoritative — a TLS-terminating
+ * edge that hands the container plain HTTP no longer breaks the CSRF check, and
+ * forged `X-Forwarded-*` headers can't influence the result because we never
+ * read them here. With nothing configured (direct connection), fall back to the
+ * inbound `Host` header with the scheme from `req.url`.
  */
 export function expectedOrigin(req: Request): string {
+  const configured = publicOrigins[0]
+  if (configured) return configured
   const fallback = new URL(req.url)
-  const proto = (trustedForwardedHeader(req, 'x-forwarded-proto') ?? fallback.protocol.replace(':', '')).toLowerCase()
-  const host = trustedForwardedHeader(req, 'x-forwarded-host') ?? req.headers.get('host') ?? fallback.host
+  const proto = fallback.protocol.replace(':', '').toLowerCase()
+  const host = req.headers.get('host') ?? fallback.host
   return `${proto}://${host}`
+}
+
+/** True when the canonical configured public origin uses https. */
+export function publicOriginIsHttps(): boolean {
+  const configured = publicOrigins[0]
+  return configured?.startsWith('https://') ?? false
 }
 
 /**
@@ -62,15 +107,23 @@ export function expectedOrigin(req: Request): string {
  *   - No Origin header → trust (curl, server-to-server, same-origin form
  *     POST in some browsers); cannot be a cross-origin browser fetch since
  *     all modern browsers send Origin for CORS-significant requests.
- *   - Origin matches expectedOrigin(req) → same-origin, allow.
+ *   - Origin matches expectedOrigin(req) → allow.
+ *   - Origin is one of the configured public origins (custom domain +
+ *     platform domain both accepted) → allow.
  *   - Origin is in the dev allowlist (Vite at :5173, etc.) → allow.
  *   - Anything else → reject.
+ *
+ * Both sides are normalized with `normalizeOrigin` so trailing-slash / case
+ * differences never cause a false reject.
  */
 export function originAllowed(req: Request): boolean {
-  const origin = req.headers.get('origin')
-  if (!origin) return true
-  if (origin === expectedOrigin(req)) return true
-  return DEV_ORIGIN_ALLOWLIST.includes(origin)
+  const rawOrigin = req.headers.get('origin')
+  if (!rawOrigin) return true
+  const origin = normalizeOrigin(rawOrigin)
+  if (!origin) return false
+  if (origin === normalizeOrigin(expectedOrigin(req))) return true
+  if (publicOrigins.includes(origin)) return true
+  return DEV_ORIGIN_ALLOWLIST.some((dev) => normalizeOrigin(dev) === origin)
 }
 
 /**
@@ -241,12 +294,6 @@ function trustedProxyRangeContains(range: TrustedProxyRange, rawIp: string): boo
 
 function isTrustedProxyPeer(rawIp: string): boolean {
   return trustedProxyRanges.some((range) => trustedProxyRangeContains(range, rawIp))
-}
-
-function trustedForwardedHeader(req: Request, name: string): string | null {
-  const socketIp = req.headers.get(BUN_SOCKET_IP_HEADER)
-  if (!socketIp || !isTrustedProxyPeer(socketIp)) return null
-  return req.headers.get(name)
 }
 
 /**

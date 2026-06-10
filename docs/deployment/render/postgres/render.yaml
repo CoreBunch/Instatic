@@ -19,8 +19,8 @@ services:
         value: /app/storage/uploads
       - key: STATIC_DIR
         value: /app/dist
-      - key: TRUSTED_PROXY_CIDRS
-        value: "0.0.0.0/0,::/0"
+      # Render auto-injects RENDER_EXTERNAL_URL at runtime; Instatic uses it as
+      # the CSRF public origin, so no proxy/origin config is needed here.
       - key: INSTATIC_SECRET_KEY
         generateValue: true
     disk:

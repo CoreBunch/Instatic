@@ -4,9 +4,9 @@
  * Two concerns colocated because both are about the login/session boundary:
  *
  *  - `sessionCookie` / `clearSessionCookie` build the `Set-Cookie` headers
- *    used by the auth handlers. They detect HTTPS via `X-Forwarded-Proto`
- *    (so the `Secure` flag is set when behind a reverse proxy) and fall
- *    back to the request URL otherwise.
+ *    used by the auth handlers. They set the `Secure` flag from the configured
+ *    public origin (so cookies are reliably Secure on managed HTTPS platforms
+ *    that terminate TLS at the edge) and fall back to the request URL.
  *
  *  - `getDummyPasswordHash` returns a fixed argon2id hash, computed once
  *    per process. The login handler verifies against it on the
@@ -14,22 +14,19 @@
  *    can't enumerate emails by timing.
  */
 import { SESSION_COOKIE_NAME, hashPassword } from '../../auth/tokens'
+import { publicOriginIsHttps } from '../../auth/security'
 
 /**
  * True when the inbound request was made over HTTPS.
  *
- * Trusts `X-Forwarded-Proto` from a reverse proxy (e.g. Caddy in
- * compose.tls.yml) and falls back to the request URL's protocol when no
- * proxy is involved.
- *
- * Spoofing X-Forwarded-Proto from a direct (non-proxied) HTTP client doesn't
- * gain the attacker anything: it would cause the server to set `Secure`,
- * which makes browsers refuse to send the cookie over HTTP. So the worst
- * case is the attacker locks themselves out, not a privilege escalation.
+ * When a public origin is configured (the managed-platform / reverse-proxy
+ * case), that origin's scheme is authoritative — so the `Secure` flag is set
+ * even though a TLS-terminating edge hands the container plain HTTP, and no
+ * untrusted `X-Forwarded-Proto` header is consulted. Falls back to the request
+ * URL's protocol for direct connections.
  */
 function requestIsHttps(req: Request): boolean {
-  const forwardedProto = req.headers.get('x-forwarded-proto')
-  if (forwardedProto) return forwardedProto.toLowerCase() === 'https'
+  if (publicOriginIsHttps()) return true
   return req.url.startsWith('https://')
 }
 

@@ -140,7 +140,10 @@ Add `compose.tls.yml` when the VPS has a public domain. Set these in `.env`:
 ```txt
 DOMAIN=cms.example.com
 LETSENCRYPT_EMAIL=ops@example.com
+PUBLIC_ORIGIN=https://cms.example.com
 ```
+
+Caddy terminates TLS and forwards plain HTTP to the container, so the container's own request URL is `http://app:3001`. `PUBLIC_ORIGIN` is how Instatic knows the real public origin for its CSRF check — set it to `https://` plus your `DOMAIN`. (Leave `PUBLIC_ORIGIN` unset only for plain-HTTP installs with no proxy in front.)
 
 Run SQLite + TLS:
 
@@ -218,7 +221,7 @@ DATABASE_URL=sqlite:./data/cms.db \
 
 Replace `DATABASE_URL` with a Postgres connection string for Postgres mode. `STATIC_DIR` must point at the built admin SPA (`dist/` after `bun run build`).
 
-Wrap the command in a process supervisor (systemd, pm2, supervisord) for auto-restart on crash and on server boot. Put an HTTPS-capable reverse proxy (Caddy, Nginx, Cloudflare Tunnel) in front for TLS. Set `TRUSTED_PROXY_CIDRS` only to the socket peers that can reach the Bun process as trusted proxies; leave it empty if the app is directly exposed.
+Wrap the command in a process supervisor (systemd, pm2, supervisord) for auto-restart on crash and on server boot. Put an HTTPS-capable reverse proxy (Caddy, Nginx, Cloudflare Tunnel) in front for TLS, and set `PUBLIC_ORIGIN=https://your-domain` so the CSRF origin check matches the public URL even though the proxy hands the Bun process plain HTTP. `TRUSTED_PROXY_CIDRS` is independent of CSRF: set it to the proxy's source CIDR only if you want real client IPs in audit logs and rate-limit keys, and leave it empty if the app is directly exposed.
 
 ## Data Safety
 

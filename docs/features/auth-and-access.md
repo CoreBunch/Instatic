@@ -34,7 +34,7 @@ server/auth/
 ├── totpSecrets.ts    — encrypt/decrypt persisted TOTP seeds
 ├── lockout.ts        — evaluateFailedAttempt, evaluateLockState
 ├── rateLimit.ts      — RateLimiter + loginRateLimit / loginPerIpRateLimit / mfaRateLimit
-├── security.ts       — isStateChangingMethod, originAllowed, stampSocketIp, clientIp, DEV_ORIGIN_ALLOWLIST
+├── security.ts       — isStateChangingMethod, originAllowed, configurePublicOrigins, publicOriginIsHttps, stampSocketIp, clientIp, DEV_ORIGIN_ALLOWLIST
 └── deviceLabel.ts    — UA → friendly device name for the sessions panel
 ```
 
@@ -341,13 +341,15 @@ Lockouts are per-account (keyed on `users.id`), not per-IP. The IP rate limit (`
 
 ## CSRF defense
 
-State-changing methods (`POST/PUT/PATCH/DELETE`) require the request's `Origin` header to match the server's own origin (or a dev allowlist entry). Implemented in `server/handlers/cms/index.ts`:
+State-changing methods (`POST/PUT/PATCH/DELETE`) require the request's `Origin` header to match a configured public origin (or a dev allowlist entry). Implemented in `server/handlers/cms/index.ts`:
 
 ```ts
 if (isStateChangingMethod(req.method) && !originAllowed(req)) {
   return jsonResponse({ error: 'Forbidden: invalid origin' }, { status: 403 })
 }
 ```
+
+The expected origin is derived **only** from the configured public origin set at boot via `configurePublicOrigins(config.publicOrigins)` — `PUBLIC_ORIGIN`, auto-detected from `RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN` on those platforms. This decouples CSRF from proxy trust: a TLS-terminating edge that hands the container plain HTTP is handled by configuring the public origin, not by trusting `X-Forwarded-Host` / `X-Forwarded-Proto`. `TRUSTED_PROXY_CIDRS` is independent and only attributes the real client IP for audit logs and rate-limit keys. When no public origin is configured, the check falls back to the inbound `Host` header. Multiple origins (platform domain + custom domain) are accepted from a comma-separated `PUBLIC_ORIGIN`. The same `originAllowed(req)` check guards the AI handlers and the public form endpoints.
 
 `SameSite=Lax` on the session cookie covers the typical CSRF surface; this check closes the same-site-different-subdomain edge case.
 
@@ -479,7 +481,7 @@ if (userHasAnyCapability(user, SITE_WRITE_CAPABILITIES)) { /* … */ }
   - `server/auth/mfa.ts` — TOTP + recovery codes
   - `server/auth/lockout.ts` — exponential backoff
   - `server/auth/rateLimit.ts` — `loginRateLimit`, `mfaRateLimit`
-  - `server/auth/security.ts` — `originAllowed`, `DEV_ORIGIN_ALLOWLIST`, trusted-proxy IP attribution, IP stamping
+  - `server/auth/security.ts` — `originAllowed`, `configurePublicOrigins` (CSRF public origin), `DEV_ORIGIN_ALLOWLIST`, trusted-proxy IP attribution, IP stamping
   - `server/repositories/sessions.ts`, `server/repositories/users.ts`, `server/repositories/roles.ts`, `server/repositories/loginAttempts.ts`
   - `server/handlers/cms/auth.ts`, `me.ts`, `users.ts`, `roles.ts`
 - Gate tests:

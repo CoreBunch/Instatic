@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 import type { DbResult } from '../../../server/db'
 import { handlePublicFormRequest } from '../../../server/forms/handler'
 import {
@@ -8,7 +8,7 @@ import {
   verifyAndConsumePublicFormChallenge,
 } from '../../../server/forms/challenge'
 import { publicFormPerFormRateLimit, publicFormPerIpRateLimit } from '../../../server/forms/rateLimit'
-import { stampSocketIp } from '../../../server/auth/security'
+import { configurePublicOrigins, resetPublicOrigins, stampSocketIp } from '../../../server/auth/security'
 import { createFakeDb } from './dbTestFake'
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
 
@@ -191,6 +191,10 @@ function pageToken(): string {
 }
 
 describe('public CMS-native form endpoint', () => {
+  afterEach(() => {
+    resetPublicOrigins()
+  })
+
   it('rejects challenge requests from foreign origins', async () => {
     const { db } = makeDb()
     const response = await handlePublicFormRequest(
@@ -200,6 +204,28 @@ describe('public CMS-native form endpoint', () => {
     )
 
     expect(response?.status).toBe(403)
+  })
+
+  it('accepts a challenge whose Origin matches a non-canonical configured public origin (allowlist regression)', async () => {
+    resetPublicFormChallenges()
+    // The canonical origin is the Railway platform domain; the visitor reaches
+    // the site via the second (custom-domain) entry. The forms CSRF check must
+    // honour the FULL configured allowlist, not just the first/canonical entry
+    // — the old inline duplicate only compared against expectedOrigin() and
+    // would have rejected this.
+    configurePublicOrigins(['https://app.up.railway.app', 'https://forms.example.com'])
+    const { db } = makeDb()
+    const response = await handlePublicFormRequest(
+      makeRequest(
+        '/_instatic/form/challenge',
+        { formId: 'newsletter', pageId: 'page-home', pageToken: pageToken() },
+        'https://forms.example.com',
+      ),
+      db,
+      new URL('http://cms.test/_instatic/form/challenge'),
+    )
+
+    expect(response?.status).toBe(200)
   })
 
   it('issues a same-origin challenge and rejects submits without it', async () => {

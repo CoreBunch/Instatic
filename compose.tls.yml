@@ -63,10 +63,14 @@ services:
     # compose.prod.yml.
     ports: !reset []
     environment:
-      # Trust forwarding headers only from the Docker bridge range where the
-      # Caddy container connects from. The app port is not exposed in this
-      # override, so public clients cannot reach the app directly and spoof
-      # X-Forwarded-For.
+      # Caddy terminates TLS and proxies plain HTTP to app:3001, so the app's
+      # own request URL is http://app:3001. PUBLIC_ORIGIN tells Instatic the
+      # real public origin for its CSRF check — derived from ${DOMAIN}.
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://${DOMAIN}}
+      # Attribution only (audit logs / rate-limit keys), NOT CSRF: trust
+      # X-Forwarded-For from the Docker bridge range where Caddy connects from.
+      # The app port is not exposed in this override, so public clients cannot
+      # reach the app directly and spoof X-Forwarded-For.
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-172.16.0.0/12}
 
 volumes:

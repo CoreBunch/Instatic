@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import {
   DEV_ORIGIN_ALLOWLIST,
+  clientIp,
+  configurePublicOrigins,
   configureTrustedProxyCidrs,
   expectedOrigin,
   isStateChangingMethod,
   originAllowed,
-  clientIp,
+  publicOriginIsHttps,
+  resetPublicOrigins,
   resetTrustedProxyCidrs,
   stampSocketIp,
 } from '../../../server/auth/security'
@@ -28,6 +31,7 @@ function makeReq(url: string, init: { method?: string; headers?: Record<string, 
 
 afterEach(() => {
   resetTrustedProxyCidrs()
+  resetPublicOrigins()
 })
 
 describe('isStateChangingMethod', () => {
@@ -45,44 +49,73 @@ describe('isStateChangingMethod', () => {
 })
 
 describe('expectedOrigin', () => {
-  it('uses X-Forwarded-Proto + X-Forwarded-Host from a trusted proxy peer', () => {
+  it('returns the configured canonical public origin', () => {
+    configurePublicOrigins(['https://cms.example.com'])
+    const req = makeReq('http://app:3001/admin/api/cms/login', { method: 'POST' })
+    expect(expectedOrigin(req)).toBe('https://cms.example.com')
+  })
+
+  it('returns the first configured public origin when several are set', () => {
+    configurePublicOrigins(['https://cms.example.com', 'https://www.example.com'])
+    const req = makeReq('http://app:3001/admin/api/cms/login', { method: 'POST' })
+    expect(expectedOrigin(req)).toBe('https://cms.example.com')
+  })
+
+  it('IGNORES a spoofed X-Forwarded-Host/Proto even from a trusted proxy peer', () => {
+    configurePublicOrigins(['https://cms.example.com'])
     configureTrustedProxyCidrs(['172.16.0.0/12'])
     const req = makeReq('http://app:3001/admin/api/cms/login', {
       method: 'POST',
       headers: {
         'x-forwarded-proto': 'https',
-        'x-forwarded-host': 'cms.example.com',
+        'x-forwarded-host': 'evil.example.com',
       },
     })
     stampSocketIp(req, '172.18.0.4')
     expect(expectedOrigin(req)).toBe('https://cms.example.com')
   })
 
-  it('uses trusted X-Forwarded-Proto and falls back to Host when no X-Forwarded-Host is present', () => {
-    configureTrustedProxyCidrs(['172.16.0.0/12'])
+  it('falls back to the Host header (with the req.url scheme) when nothing is configured', () => {
     const req = makeReq('http://internal:3001/admin/api/cms/login', {
       method: 'POST',
-      headers: { host: 'cms.example.com', 'x-forwarded-proto': 'https' },
+      headers: { host: 'cms.example.com' },
     })
-    stampSocketIp(req, '172.18.0.4')
-    expect(expectedOrigin(req)).toBe('https://cms.example.com')
+    expect(expectedOrigin(req)).toBe('http://cms.example.com')
   })
 
-  it('falls back to the request URL when no proxy headers are present', () => {
+  it('falls back to the request URL when no public origin and no Host header are present', () => {
     const req = makeReq('http://localhost:3001/admin/api/cms/login', { method: 'POST' })
     expect(expectedOrigin(req)).toBe('http://localhost:3001')
   })
 
-  it('ignores spoofed X-Forwarded origin headers from an untrusted direct client', () => {
-    const req = makeReq('http://localhost:3001/admin/api/cms/login', {
+  it('does not consult forwarded headers in the fallback path either', () => {
+    configureTrustedProxyCidrs(['172.16.0.0/12'])
+    const req = makeReq('http://app:3001/admin/api/cms/login', {
       method: 'POST',
       headers: {
+        host: 'app:3001',
         'x-forwarded-proto': 'https',
         'x-forwarded-host': 'cms.example.com',
       },
     })
-    stampSocketIp(req, '198.51.100.9')
-    expect(expectedOrigin(req)).toBe('http://localhost:3001')
+    stampSocketIp(req, '172.18.0.4')
+    expect(expectedOrigin(req)).toBe('http://app:3001')
+  })
+})
+
+describe('publicOriginIsHttps', () => {
+  it('is true when the canonical public origin is https', () => {
+    configurePublicOrigins(['https://cms.example.com'])
+    expect(publicOriginIsHttps()).toBe(true)
+  })
+
+  it('is false when the canonical public origin is http', () => {
+    configurePublicOrigins(['http://cms.example.com'])
+    expect(publicOriginIsHttps()).toBe(false)
+  })
+
+  it('is false when nothing is configured', () => {
+    expect(publicOriginIsHttps()).toBe(false)
   })
 })
 
@@ -92,10 +125,34 @@ describe('originAllowed', () => {
     expect(originAllowed(req)).toBe(true)
   })
 
-  it('allows requests whose Origin matches the expected origin (same-origin)', () => {
-    const req = makeReq('http://localhost:3001/admin/api/cms/login', {
+  it('allows requests whose Origin matches the configured public origin', () => {
+    configurePublicOrigins(['https://cms.example.com'])
+    const req = makeReq('http://app:3001/admin/api/cms/login', {
       method: 'POST',
-      headers: { origin: 'http://localhost:3001' },
+      headers: { origin: 'https://cms.example.com' },
+    })
+    expect(originAllowed(req)).toBe(true)
+  })
+
+  it('matches against MULTIPLE configured origins (custom + platform domain both pass)', () => {
+    configurePublicOrigins(['https://app.onrender.com', 'https://www.example.com'])
+    const platform = makeReq('http://app:3001/admin/api/cms/login', {
+      method: 'POST',
+      headers: { origin: 'https://app.onrender.com' },
+    })
+    const custom = makeReq('http://app:3001/admin/api/cms/login', {
+      method: 'POST',
+      headers: { origin: 'https://www.example.com' },
+    })
+    expect(originAllowed(platform)).toBe(true)
+    expect(originAllowed(custom)).toBe(true)
+  })
+
+  it('normalizes both sides so a trailing slash / case difference still matches', () => {
+    configurePublicOrigins(['https://cms.example.com'])
+    const req = makeReq('http://app:3001/admin/api/cms/login', {
+      method: 'POST',
+      headers: { origin: 'https://CMS.example.com/' },
     })
     expect(originAllowed(req)).toBe(true)
   })
@@ -108,66 +165,41 @@ describe('originAllowed', () => {
     expect(originAllowed(req)).toBe(true)
   })
 
-  it('allows requests from the numeric loopback dev origin (Vite at :5173)', () => {
-    const req = makeReq('http://localhost:3001/admin/api/cms/login', {
-      method: 'POST',
-      headers: { origin: 'http://127.0.0.1:5173' },
-    })
-    expect(originAllowed(req)).toBe(true)
-  })
-
   it('uses the same dev origins for CSRF and CORS checks', () => {
     expect(DEV_ORIGIN_ALLOWLIST).toContain('http://localhost:5173')
     expect(DEV_ORIGIN_ALLOWLIST).toContain('http://127.0.0.1:5173')
   })
 
   it('rejects requests from a foreign origin', () => {
-    const req = makeReq('http://localhost:3001/admin/api/cms/login', {
+    configurePublicOrigins(['https://cms.example.com'])
+    const req = makeReq('http://app:3001/admin/api/cms/login', {
       method: 'POST',
       headers: { origin: 'https://evil.example.com' },
     })
     expect(originAllowed(req)).toBe(false)
   })
 
-  it('uses X-Forwarded headers to compute expected origin behind a trusted TLS proxy', () => {
+  it('rejects an Origin that only matches a spoofed X-Forwarded-Host from a trusted proxy', () => {
+    configurePublicOrigins(['https://cms.example.com'])
     configureTrustedProxyCidrs(['172.16.0.0/12'])
     const req = makeReq('http://app:3001/admin/api/cms/login', {
       method: 'POST',
       headers: {
         'x-forwarded-proto': 'https',
-        'x-forwarded-host': 'cms.example.com',
-        origin: 'https://cms.example.com',
+        'x-forwarded-host': 'evil.example.com',
+        origin: 'https://evil.example.com',
       },
     })
     stampSocketIp(req, '172.18.0.4')
+    expect(originAllowed(req)).toBe(false)
+  })
+
+  it('falls back to the Host header when no public origin is configured', () => {
+    const req = makeReq('http://app:3001/admin/api/cms/login', {
+      method: 'POST',
+      headers: { host: 'cms.example.com', origin: 'http://cms.example.com' },
+    })
     expect(originAllowed(req)).toBe(true)
-  })
-
-  it('rejects an Origin that uses HTTP when the site is HTTPS-only', () => {
-    configureTrustedProxyCidrs(['172.16.0.0/12'])
-    const req = makeReq('http://app:3001/admin/api/cms/login', {
-      method: 'POST',
-      headers: {
-        'x-forwarded-proto': 'https',
-        'x-forwarded-host': 'cms.example.com',
-        origin: 'http://cms.example.com', // wrong scheme
-      },
-    })
-    stampSocketIp(req, '172.18.0.4')
-    expect(originAllowed(req)).toBe(false)
-  })
-
-  it('rejects an Origin that only matches spoofed X-Forwarded headers from an untrusted client', () => {
-    const req = makeReq('http://localhost:3001/admin/api/cms/login', {
-      method: 'POST',
-      headers: {
-        'x-forwarded-proto': 'https',
-        'x-forwarded-host': 'cms.example.com',
-        origin: 'https://cms.example.com',
-      },
-    })
-    stampSocketIp(req, '198.51.100.9')
-    expect(originAllowed(req)).toBe(false)
   })
 })
 
@@ -230,6 +262,17 @@ describe('clientIp', () => {
     })
     stampSocketIp(req, '198.51.100.9')
     expect(clientIp(req)).toBe('198.51.100.9')
+  })
+
+  it('is unaffected by configured public origins (CSRF and attribution are independent)', () => {
+    configurePublicOrigins(['https://cms.example.com'])
+    configureTrustedProxyCidrs(['10.0.0.0/8'])
+    const req = makeReq('http://app:3001/admin/api/cms/login', {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '203.0.113.7, 10.0.0.1' },
+    })
+    stampSocketIp(req, '10.0.0.99')
+    expect(clientIp(req)).toBe('203.0.113.7')
   })
 })
 

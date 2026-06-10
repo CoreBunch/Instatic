@@ -21,7 +21,7 @@ PORT=8080
 UPLOADS_DIR=/app/storage/uploads
 STATIC_DIR=/app/dist
 INSTATIC_SECRET_KEY=${{secret(43, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/")}}=
-TRUSTED_PROXY_CIDRS=0.0.0.0/0,::/0
+PUBLIC_ORIGIN=https://${{RAILWAY_PUBLIC_DOMAIN}}
 RAILWAY_RUN_UID=0
 ```
 
@@ -58,7 +58,9 @@ Railway volumes mount at runtime, not build time. Instatic only writes runtime d
 
 Railway mounts volumes as `root`. The Instatic image normally runs as the non-root `bun` user, so Railway templates must set `RAILWAY_RUN_UID=0`; otherwise SQLite and media directory creation fail with `EACCES` under `/app/storage`.
 
-Railway terminates HTTPS before forwarding requests to the container. Railway templates must set `TRUSTED_PROXY_CIDRS=0.0.0.0/0,::/0` so Instatic trusts Railway's forwarded host/protocol headers for CSRF origin checks, login session context, audit IPs, and rate-limit IPs. Use that broad value only for the managed Railway service where Railway's proxy is the public ingress to the container; custom reverse-proxy deployments should trust only their actual proxy CIDRs.
+Railway terminates HTTPS before forwarding requests to the container, so the container sees plain HTTP. Instatic derives its CSRF public origin from `PUBLIC_ORIGIN`; the templates set `PUBLIC_ORIGIN=https://${{RAILWAY_PUBLIC_DOMAIN}}` so the origin is correct without any proxy trust. The server would auto-detect the same value from `RAILWAY_PUBLIC_DOMAIN` even if `PUBLIC_ORIGIN` were unset, but setting it explicitly is clearer and survives custom-domain edits. If you add a custom domain, append it as a second comma-separated entry, e.g. `PUBLIC_ORIGIN=https://${{RAILWAY_PUBLIC_DOMAIN}},https://www.example.com`.
+
+`TRUSTED_PROXY_CIDRS` is **not** needed for CSRF and is omitted from the templates. It is an optional knob for client-IP attribution only (audit logs, rate-limit keys): set it to Railway's ingress proxy CIDR if you want real client IPs in audit logs, and trust only your actual proxy CIDRs — never `0.0.0.0/0` for a public-facing service.
 
 Railway resolves the `INSTATIC_SECRET_KEY` expression at template deploy time. It generates the base64 32-byte AES key shape Instatic expects, so users do not need to run the local key-generation script for one-click installs. For hand-created Railway services outside the template flow, generate the same value with `bun run scripts/generate-secret-key.ts` and paste it into the variable manually.
 
@@ -80,7 +82,7 @@ DATABASE_URL=sqlite:/app/storage/data/cms.db
 UPLOADS_DIR=/app/storage/uploads
 STATIC_DIR=/app/dist
 INSTATIC_SECRET_KEY=${{secret(43, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/")}}=
-TRUSTED_PROXY_CIDRS=0.0.0.0/0,::/0
+PUBLIC_ORIGIN=https://${{RAILWAY_PUBLIC_DOMAIN}}
 RAILWAY_RUN_UID=0
 ```
 
@@ -111,7 +113,7 @@ DATABASE_URL=${{Postgres.DATABASE_URL}}
 UPLOADS_DIR=/app/storage/uploads
 STATIC_DIR=/app/dist
 INSTATIC_SECRET_KEY=${{secret(43, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/")}}=
-TRUSTED_PROXY_CIDRS=0.0.0.0/0,::/0
+PUBLIC_ORIGIN=https://${{RAILWAY_PUBLIC_DOMAIN}}
 RAILWAY_RUN_UID=0
 ```
 
@@ -146,7 +148,7 @@ Set a maintenance window before enabling automatic updates on sites with attache
 | SQLite data disappears after redeploy | `DATABASE_URL` must point under the mounted volume, e.g. `/app/storage/data/cms.db`. |
 | Uploaded files disappear after redeploy | `UPLOADS_DIR` must point under the mounted volume, e.g. `/app/storage/uploads`. |
 | App logs show `EACCES: permission denied, mkdir '/app/storage/...'` | Set `RAILWAY_RUN_UID=0`; Railway mounts volumes as `root` and the image otherwise runs as non-root `bun`. |
-| First-run setup or login returns `Forbidden: invalid origin` | Confirm `TRUSTED_PROXY_CIDRS=0.0.0.0/0,::/0` is set so Instatic trusts Railway's forwarded HTTPS/public-host headers. |
+| First-run setup or login returns `Forbidden: invalid origin` | Confirm `PUBLIC_ORIGIN` matches the public URL you opened. Templates set `PUBLIC_ORIGIN=https://${{RAILWAY_PUBLIC_DOMAIN}}`; if you front the app with a custom domain, append it as a second comma-separated entry. |
 | Postgres app cannot connect | `DATABASE_URL` must reference the Postgres service's internal `DATABASE_URL`, not a copied local URL. |
 | Adding an AI provider credential or enabling TOTP MFA returns 500 | Confirm `INSTATIC_SECRET_KEY` exists and has not been rotated. One-click templates generate it automatically; hand-created services can generate it with `bun run scripts/generate-secret-key.ts`. |
 | Deployments appear in the Instatic GitHub repo | The service is connected to GitHub source. Change the service source to the published Docker image. |

@@ -24,7 +24,7 @@ The server is a single `Bun.serve` process that boots the DB, runs migrations, a
 ```text
 server/index.ts
     │
-    ├─→ readServerConfig()                   ← env vars: PORT, DATABASE_URL, UPLOADS_DIR, STATIC_DIR, TRUSTED_PROXY_CIDRS
+    ├─→ readServerConfig()                   ← env vars: PORT, DATABASE_URL, UPLOADS_DIR, STATIC_DIR, PUBLIC_ORIGIN, TRUSTED_PROXY_CIDRS
     │
     ├─→ createDbClient(DATABASE_URL)         ← server/db/index.ts
     │     │
@@ -117,7 +117,7 @@ This prevents an unknown path under a known namespace from accidentally matching
 
 `/admin/api/cms/*` is handled by `server/handlers/cms/index.ts`. The flow:
 
-1. **CSRF defense in depth.** State-changing methods (`POST/PUT/PATCH/DELETE`) must come from an `Origin` matching the request's own origin or a dev allowlist entry. `SameSite=Lax` already covers most CSRF; this catches the same-site-different-subdomain edge.
+1. **CSRF defense in depth.** State-changing methods (`POST/PUT/PATCH/DELETE`) must come from an `Origin` matching a configured public origin (`PUBLIC_ORIGIN`, auto-detected from `RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN`), or a dev allowlist entry. With nothing configured the check falls back to the inbound `Host` header. Forwarded headers (`X-Forwarded-Host` / `X-Forwarded-Proto`) are never consulted, so `TRUSTED_PROXY_CIDRS` has no bearing on CSRF. `SameSite=Lax` already covers most CSRF; this catches the same-site-different-subdomain edge.
 
 2. **Group dispatch.** The handler walks an ordered chain of route-group handlers, each owning a resource:
 
@@ -276,7 +276,7 @@ Use `binaryResponse` whenever a route handler returns binary content (runtime as
 | `lockout.ts`      | Failed-login lockout policy                                                |
 | `mfa.ts`          | TOTP enrollment, verification                                              |
 | `rateLimit.ts`    | Token-bucket rate limiters                                                 |
-| `security.ts`     | `isStateChangingMethod`, `originAllowed`, `DEV_ORIGIN_ALLOWLIST`, IP stamp |
+| `security.ts`     | `isStateChangingMethod`, `originAllowed`, `configurePublicOrigins`, `DEV_ORIGIN_ALLOWLIST`, IP stamp |
 | `deviceLabel.ts`  | Device-fingerprint label for the sessions panel                            |
 
 ### The session flow
