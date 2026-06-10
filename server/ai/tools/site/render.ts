@@ -308,6 +308,7 @@ function truncateLongUrl(value: string, counts: AgentPageCleanedStrings): string
 function collectPageModuleCss(page: Page, site: SiteDocument): string {
   const acc = {
     cssMap: new Map<string, string>(),
+    jsMap: new Map<string, string>(),
     infiniteLoopIds: new Set<string>(),
     holeNodeIds: new Set<string>(),
   }

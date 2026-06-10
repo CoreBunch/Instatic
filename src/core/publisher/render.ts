@@ -510,12 +510,14 @@ export function publishPage(
   }
 
   // Mutable outputs, owned here and threaded by reference through the whole
-  // walk. All three are initialised up-front (no lazy undefined): the walk
-  // appends module CSS to `cssMap`, infinite-loop ids to `infiniteLoopIds`,
-  // and the ids of nodes that actually emitted a `<instatic-hole>` to
-  // `holeNodeIds`. After the walk, the head builders read their `.size`.
+  // walk. All four are initialised up-front (no lazy undefined): the walk
+  // appends module CSS to `cssMap`, module JS to `jsMap`, infinite-loop ids
+  // to `infiniteLoopIds`, and the ids of nodes that actually emitted a
+  // `<instatic-hole>` to `holeNodeIds`. After the walk, the head builders
+  // read their `.size`.
   const acc: RenderAccumulators = {
     cssMap: new Map<string, string>(),
+    jsMap: new Map<string, string>(),
     infiniteLoopIds: new Set<string>(),
     holeNodeIds: new Set<string>(),
   }

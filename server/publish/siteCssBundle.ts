@@ -172,6 +172,7 @@ function collectAllModuleCss(site: SiteDocument, registry: IModuleRegistry): str
   // (we throw the HTML away) but still owned up-front — no lazy undefined.
   const acc: RenderAccumulators = {
     cssMap: new Map<string, string>(),
+    jsMap: new Map<string, string>(),
     infiniteLoopIds: new Set<string>(),
     holeNodeIds: new Set<string>(),
   }

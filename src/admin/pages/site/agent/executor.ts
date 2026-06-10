@@ -359,6 +359,7 @@ function runGetNodeHtml(input: GetNodeHtmlInput): AiToolOutput {
   }
   const acc: RenderAccumulators = {
     cssMap: new Map(),
+    jsMap: new Map(),
     infiniteLoopIds: new Set(),
     holeNodeIds: new Set(),
   }

@@ -150,6 +150,7 @@ export async function handleLoopRequest(
   }
   const acc: RenderAccumulators = {
     cssMap: new Map(),
+    jsMap: new Map(),
     infiniteLoopIds: new Set(),
     holeNodeIds: new Set(),
   }
