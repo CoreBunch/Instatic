@@ -10,6 +10,8 @@ export type { PublishedRuntimePackageImportmap } from './render'
 
 export { renderNode, resolveSpecialRenderer, getSpecialRendererModuleIds } from './renderNode'
 
+export { collectHoleSubtreeModuleIds } from './holeSubtreeModules'
+
 export type {
   RenderConfig,
   RenderAccumulators,
