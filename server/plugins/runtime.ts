@@ -56,6 +56,7 @@ import {
   unloadPluginInWorker,
 } from './host/rpc'
 import { dispatchApiCall } from './host/apiDispatch'
+import { workerCallError } from './host/workerErrors'
 import { resetPluginWorker, setApiCallDispatcher } from './host/workerPool'
 import { broadcastPluginEvent } from './eventBroadcaster'
 
@@ -134,7 +135,7 @@ export async function loadPluginServerEntrypoint(
     settings: pluginSettingsCache.get(manifest.id) ?? {},
   })
   if (!result.ok) {
-    throw new Error(result.error ?? `Failed to load plugin "${manifest.id}" in worker`)
+    throw workerCallError(result.error ?? `Failed to load plugin "${manifest.id}" in worker`, result.stack)
   }
   return true
 }

@@ -239,6 +239,12 @@ export interface LoadPluginResult {
   ok: boolean
   error?: string
   /**
+   * QuickJS-side stack frames of the failure (plugin sources are evaluated
+   * with the filename `plugin:<id>`). For host-side `[plugin:<id>]` logging
+   * only — never sent to HTTP clients.
+   */
+  stack?: string
+  /**
    * List of hook names the plugin module exports. Lets the host skip the
    * round-trip when calling a non-existent lifecycle hook.
    */
@@ -256,6 +262,12 @@ export interface LifecycleResult {
   correlationId: string
   ok: boolean
   error?: string
+  /**
+   * QuickJS-side stack frames of the failure (plugin sources are evaluated
+   * with the filename `plugin:<id>`). For host-side `[plugin:<id>]` logging
+   * only — never sent to HTTP clients.
+   */
+  stack?: string
 }
 
 export interface RouteResult {
@@ -264,6 +276,12 @@ export interface RouteResult {
   ok: boolean
   response?: SerializedResponse
   error?: string
+  /**
+   * QuickJS-side stack frames of the failure (plugin sources are evaluated
+   * with the filename `plugin:<id>`). For host-side `[plugin:<id>]` logging
+   * only — never sent to HTTP clients.
+   */
+  stack?: string
 }
 
 export interface HookListenerResult {
@@ -271,6 +289,12 @@ export interface HookListenerResult {
   correlationId: string
   ok: boolean
   error?: string
+  /**
+   * QuickJS-side stack frames of the failure (plugin sources are evaluated
+   * with the filename `plugin:<id>`). For host-side `[plugin:<id>]` logging
+   * only — never sent to HTTP clients.
+   */
+  stack?: string
 }
 
 export interface HookFilterResult {
@@ -280,6 +304,12 @@ export interface HookFilterResult {
   /** Plugin-transformed value (when ok). */
   value?: unknown
   error?: string
+  /**
+   * QuickJS-side stack frames of the failure (plugin sources are evaluated
+   * with the filename `plugin:<id>`). For host-side `[plugin:<id>]` logging
+   * only — never sent to HTTP clients.
+   */
+  stack?: string
 }
 
 export interface LoopFetchResultMessage {
@@ -289,6 +319,12 @@ export interface LoopFetchResultMessage {
   /** `{ items, totalItems }` shape from the plugin's source — re-validated host-side. */
   value?: { items: unknown[]; totalItems: number }
   error?: string
+  /**
+   * QuickJS-side stack frames of the failure (plugin sources are evaluated
+   * with the filename `plugin:<id>`). For host-side `[plugin:<id>]` logging
+   * only — never sent to HTTP clients.
+   */
+  stack?: string
 }
 
 export interface LoopPreviewResult {
@@ -297,6 +333,12 @@ export interface LoopPreviewResult {
   ok: boolean
   value?: unknown[]
   error?: string
+  /**
+   * QuickJS-side stack frames of the failure (plugin sources are evaluated
+   * with the filename `plugin:<id>`). For host-side `[plugin:<id>]` logging
+   * only — never sent to HTTP clients.
+   */
+  stack?: string
 }
 
 /**
@@ -313,6 +355,12 @@ export interface ScheduleResult {
   /** 'ok' on success, 'error' on a throw, 'timeout' when the deadline aborted. */
   status: 'ok' | 'error' | 'timeout'
   error?: string
+  /**
+   * QuickJS-side stack frames of the failure (plugin sources are evaluated
+   * with the filename `plugin:<id>`). For host-side `[plugin:<id>]` logging
+   * only — never sent to HTTP clients.
+   */
+  stack?: string
   durationMs: number
 }
 
@@ -322,6 +370,12 @@ export interface MediaAdapterCallResult {
   ok: boolean
   value?: unknown
   error?: string
+  /**
+   * QuickJS-side stack frames of the failure (plugin sources are evaluated
+   * with the filename `plugin:<id>`). For host-side `[plugin:<id>]` logging
+   * only — never sent to HTTP clients.
+   */
+  stack?: string
 }
 
 export interface MediaUrlTransformerResult {
@@ -332,6 +386,12 @@ export interface MediaUrlTransformerResult {
    *  previous value (chain pass-through). */
   value?: string | null
   error?: string
+  /**
+   * QuickJS-side stack frames of the failure (plugin sources are evaluated
+   * with the filename `plugin:<id>`). For host-side `[plugin:<id>]` logging
+   * only — never sent to HTTP clients.
+   */
+  stack?: string
 }
 
 /**

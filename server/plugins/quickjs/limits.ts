@@ -8,9 +8,11 @@
  *     `OutOfMemory` error inside the VM.
  *   • A bounded stack size (`setMaxStackSize`) so a recursive plugin can't
  *     exhaust the host's WASM stack.
- *   • A wall-clock interrupt per eval call (`shouldInterruptAfterDeadline`).
- *     The VM cooperatively checks the interrupt flag during execution; a
- *     plugin stuck in an infinite loop is aborted within the deadline.
+ *   • A wall-clock interrupt per VM execution (the per-runtime deadline
+ *     registry in `eval.ts`). The VM cooperatively checks the interrupt
+ *     flag during execution; a plugin stuck in an infinite loop — at module
+ *     top level, in any `__run*` call, or in a timer callback — is aborted
+ *     within the deadline.
  *
  * Defaults are picked to be invisible for normal plugin work and harsh
  * for runaways. Plugins that legitimately need higher caps will surface

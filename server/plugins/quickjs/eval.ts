@@ -10,46 +10,122 @@
  *      event loop so __hostCall's host-side .then can fire deferred.resolve
  *   5. Once fulfilled/rejected, return the value or throw the error
  *
- * The deadline guard (`withDeadline`) installs a wall-clock interrupt on
- * the runtime for the duration of one eval call — a plugin stuck in a
- * tight loop is aborted within the deadline.
+ * Deadline guard: every entry into VM execution (async eval, sync eval,
+ * timer-callback pump) registers a wall-clock deadline in a per-runtime
+ * registry; ONE persistent interrupt handler aborts the runtime when the
+ * clock passes the latest active deadline. A plugin stuck in a tight loop
+ * is therefore always aborted, no matter which code path it spins on.
  */
 
-import { shouldInterruptAfterDeadline, type QuickJSContext, type QuickJSHandle } from 'quickjs-emscripten'
-import { DEFAULT_EVAL_TIMEOUT_MS } from './limits'
+import type { QuickJSContext, QuickJSHandle, QuickJSRuntime } from 'quickjs-emscripten'
 
 /**
- * Install a wall-clock interrupt on the runtime and return a disposer that
- * removes it. The QuickJS VM cooperatively polls the interrupt flag during
- * execution, so a plugin stuck in a tight loop is aborted within the
- * deadline. This is the single setInterruptHandler/removeInterruptHandler
- * core shared by the async (`withDeadline`) and sync (`withSyncDeadline`)
- * guards below.
+ * Error thrown when plugin code inside the VM throws (or is aborted by the
+ * wall-clock interrupt). `message` is the plugin's own error message and is
+ * safe to surface in API replies / HTTP error envelopes. `vmStack` carries
+ * the QuickJS-side stack frames — plugin sources are evaluated with the
+ * filename `plugin:<pluginId>`, so the frames point into the plugin bundle.
+ * `stack` is rewritten to show those VM frames so host-side
+ * `console.error('[plugin:<id>]', err)` logging prints them. Callers must
+ * never put `.stack` / `.vmStack` into HTTP response bodies.
  */
-function installDeadline(ctx: QuickJSContext, timeoutMs: number): () => void {
-  const deadline = Date.now() + timeoutMs
-  ctx.runtime.setInterruptHandler(shouldInterruptAfterDeadline(deadline))
+export class PluginVmError extends Error {
+  readonly vmStack?: string
+
+  constructor(message: string, vmStack?: string) {
+    super(message)
+    this.name = 'PluginVmError'
+    if (vmStack !== undefined && vmStack.length > 0) {
+      this.vmStack = vmStack
+      this.stack = `${this.name}: ${message}\n${vmStack}`
+    }
+  }
+}
+
+/**
+ * Extract the QuickJS-side stack frames from a VM eval error, if present.
+ * Handles both error shapes the eval paths produce:
+ *   - `PluginVmError` (rejected VM promises) carries `vmStack` directly;
+ *   - `QuickJSUnwrapError` (synchronous throws surfaced by
+ *     `ctx.unwrapResult`) carries the dumped VM error object as `cause`,
+ *     whose `stack` is pure VM frames.
+ */
+export function vmStackOf(err: unknown): string | undefined {
+  if (err instanceof PluginVmError) return err.vmStack
+  if (err instanceof Error && err.cause && typeof err.cause === 'object') {
+    const stack = (err.cause as { stack?: unknown }).stack
+    if (typeof stack === 'string' && stack.length > 0) return stack
+  }
+  return undefined
+}
+
+interface DeadlineToken {
+  expiresAt: number
+}
+
+/**
+ * Active wall-clock deadlines, per runtime. Multiple evals can be in flight
+ * on one context at the same time (the polling pump interleaves them), but
+ * the runtime has only ONE interrupt-handler slot — a naive install-on-start
+ * / remove-on-finish pair would let the first eval to finish strip the
+ * deadline from every eval still running. Instead each guarded execution
+ * registers a token here, and one persistent handler (installed when the
+ * first token arrives, removed when the last one releases) interrupts when
+ * the wall clock passes the MAX of the active deadlines. Max is the safe
+ * aggregation: it never falsely interrupts an eval that still has budget,
+ * while still guaranteeing the runtime cannot spin forever.
+ */
+const deadlinesByRuntime = new Map<QuickJSRuntime, Set<DeadlineToken>>()
+
+function acquireDeadline(ctx: QuickJSContext, timeoutMs: number): () => void {
+  const runtime = ctx.runtime
+  let tokens = deadlinesByRuntime.get(runtime)
+  if (!tokens) {
+    const created = new Set<DeadlineToken>()
+    tokens = created
+    deadlinesByRuntime.set(runtime, created)
+    runtime.setInterruptHandler(() => {
+      if (created.size === 0) return false
+      let latest = 0
+      for (const token of created) {
+        if (token.expiresAt > latest) latest = token.expiresAt
+      }
+      return Date.now() > latest
+    })
+  }
+  const activeTokens = tokens
+  const token: DeadlineToken = { expiresAt: Date.now() + timeoutMs }
+  activeTokens.add(token)
+  let released = false
   return () => {
-    try { ctx.runtime.removeInterruptHandler() } catch { /* runtime may already be disposed */ }
+    if (released) return
+    released = true
+    activeTokens.delete(token)
+    if (activeTokens.size === 0) {
+      deadlinesByRuntime.delete(runtime)
+      try { runtime.removeInterruptHandler() } catch { /* runtime may already be disposed */ }
+    }
   }
 }
 
 function withDeadline<T>(ctx: QuickJSContext, timeoutMs: number, body: () => Promise<T>): Promise<T> {
-  const clearDeadline = installDeadline(ctx, timeoutMs)
-  return body().finally(clearDeadline)
+  const releaseDeadline = acquireDeadline(ctx, timeoutMs)
+  return body().finally(releaseDeadline)
 }
 
 /**
- * Synchronous sibling of `withDeadline` — guards a fully-synchronous eval
- * (no Promise pumping) with the same interrupt deadline. The module-pack VM
- * uses this because canvas render() functions never call into the host.
+ * Synchronous sibling of `withDeadline` — guards a fully-synchronous VM
+ * execution (one-shot eval or a pending-jobs pump) with the same interrupt
+ * deadline. Used by the module-pack VM (canvas render() never calls into
+ * the host), by `createPluginVm`'s bootstrap + plugin-source evals, and by
+ * the timer-callback pumps in `vm.ts`.
  */
 export function withSyncDeadline<T>(ctx: QuickJSContext, timeoutMs: number, body: () => T): T {
-  const clearDeadline = installDeadline(ctx, timeoutMs)
+  const releaseDeadline = acquireDeadline(ctx, timeoutMs)
   try {
     return body()
   } finally {
-    clearDeadline()
+    releaseDeadline()
   }
 }
 
@@ -79,12 +155,12 @@ function evalResolved<T>(
   ctx: QuickJSContext,
   code: string,
   read: (handle: QuickJSHandle) => T,
-  timeoutMs: number = DEFAULT_EVAL_TIMEOUT_MS,
+  timeoutMs: number,
 ): Promise<T> {
   // Run inside a wall-clock deadline — runaway plugin code is aborted
   // with a QuickJS `InternalError: interrupted` rather than blocking
-  // the worker forever. Callers can override the default (5s) for cases
-  // like scheduled jobs that declare a higher `maxDurationMs`.
+  // the worker forever. Schedules pass a higher per-call budget derived
+  // from their declared `maxDurationMs`.
   return withDeadline(ctx, timeoutMs, () => evalResolvedInner(ctx, code, read))
 }
 
@@ -112,9 +188,13 @@ async function evalResolvedInner<T>(
   }
 
   // It IS a Promise — pump VM jobs + host event loop until it settles.
+  // Reuse `initialState` on the first pass: for a settled promise each
+  // `getPromiseState` call allocates a NEW owned result handle, so probing
+  // twice would leak the first one (QuickJS asserts on leaked GC objects at
+  // runtime-free time).
   const MAX_BATCHES = 10_000
   for (let i = 0; i < MAX_BATCHES; i += 1) {
-    const state = ctx.getPromiseState(evalHandle)
+    const state = i === 0 ? initialState : ctx.getPromiseState(evalHandle)
     if (state.type === 'fulfilled') {
       const valueHandle = state.value
       evalHandle.dispose()
@@ -125,18 +205,27 @@ async function evalResolvedInner<T>(
       }
     }
     if (state.type === 'rejected') {
-      const errorHandle = state.error
-      const errorValue = ctx.dump(errorHandle) as { message?: string; stack?: string } | string | undefined
+      // `state.error` is an OWNED heap handle (see getPromiseState) — leaving
+      // it alive trips QuickJS's `list_empty(&rt->gc_obj_list)` assertion
+      // when the runtime is freed. `consume` dumps + disposes in one step.
+      const errorValue = state.error.consume((handle) => ctx.dump(handle)) as
+        | { message?: string; stack?: string }
+        | string
+        | undefined
       evalHandle.dispose()
       // Surface the plugin's own error message verbatim — the host's
       // logging (`[plugin:<id>]`) provides the context, so a "Plugin VM
-      // threw: " prefix would just be redundant noise.
-      const message = typeof errorValue === 'object' && errorValue && errorValue.message
-        ? errorValue.message
-        : typeof errorValue === 'string'
-          ? errorValue
-          : 'VM promise rejected with unknown error'
-      throw new Error(message)
+      // threw: " prefix would just be redundant noise. The VM-side stack
+      // rides along on the PluginVmError for host logs.
+      if (typeof errorValue === 'object' && errorValue && errorValue.message) {
+        throw new PluginVmError(
+          errorValue.message,
+          typeof errorValue.stack === 'string' ? errorValue.stack : undefined,
+        )
+      }
+      throw new PluginVmError(
+        typeof errorValue === 'string' ? errorValue : 'VM promise rejected with unknown error',
+      )
     }
     // Still pending. Drain VM microtasks, then yield to host event loop
     // so any pending __hostCall host-side resolution can fire.
@@ -169,15 +258,15 @@ function drainJobs(ctx: QuickJSContext): number {
   return 0
 }
 
-export function evalVoid(ctx: QuickJSContext, code: string, timeoutMs?: number): Promise<void> {
+export function evalVoid(ctx: QuickJSContext, code: string, timeoutMs: number): Promise<void> {
   return evalResolved(ctx, code, () => undefined, timeoutMs)
 }
 
-export function evalString(ctx: QuickJSContext, code: string, timeoutMs?: number): Promise<string> {
+export function evalString(ctx: QuickJSContext, code: string, timeoutMs: number): Promise<string> {
   return evalResolved(ctx, code, (h) => ctx.getString(h), timeoutMs)
 }
 
-export async function evalJson<T>(ctx: QuickJSContext, code: string, timeoutMs?: number): Promise<T> {
+export async function evalJson<T>(ctx: QuickJSContext, code: string, timeoutMs: number): Promise<T> {
   const raw = await evalString(ctx, `JSON.stringify((${code}))`, timeoutMs)
   return JSON.parse(raw) as T
 }

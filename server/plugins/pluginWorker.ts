@@ -49,6 +49,7 @@ import type {
   WorkerToMainMessage,
 } from './protocol/messages'
 import { createPluginVm, type PluginVm } from './quickjs/vm'
+import { vmStackOf } from './quickjs/eval'
 import { wrapEsmAsGlobal } from './quickjs/esmShim'
 
 // ---------------------------------------------------------------------------
@@ -81,6 +82,20 @@ function callHostApi(pluginId: string, target: ApiCall['target'], args: unknown[
     pendingApiCalls.set(correlationId, { resolve, reject })
     send({ kind: 'api-call', correlationId, pluginId, target, args })
   })
+}
+
+/**
+ * Convert a caught VM error into the wire `{ error, stack }` pair. The
+ * message is what API replies / HTTP error envelopes may surface; the
+ * optional `stack` carries QuickJS-side frames (plugin sources eval with
+ * the filename `plugin:<id>`) for host-side logging only.
+ */
+function errorFields(err: unknown): { error: string; stack?: string } {
+  if (err instanceof Error) {
+    const stack = vmStackOf(err)
+    return stack !== undefined ? { error: err.message, stack } : { error: err.message }
+  }
+  return { error: String(err) }
 }
 
 function handleApiReply(reply: ApiReply): void {
@@ -141,7 +156,7 @@ async function handleLoadPlugin(msg: LoadPluginRequest): Promise<void> {
       kind: 'load-plugin-result',
       correlationId: msg.correlationId,
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      ...errorFields(err),
     })
   }
 }
@@ -184,7 +199,7 @@ async function handleRunLifecycle(msg: RunLifecycleRequest): Promise<void> {
       kind: 'lifecycle-result',
       correlationId: msg.correlationId,
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      ...errorFields(err),
     })
   }
 }
@@ -212,7 +227,7 @@ async function handleRunMigrate(msg: RunMigrateRequest): Promise<void> {
       kind: 'lifecycle-result',
       correlationId: msg.correlationId,
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      ...errorFields(err),
     })
   }
 }
@@ -236,7 +251,7 @@ async function handleRunRoute(msg: RunRouteRequest): Promise<void> {
       kind: 'route-result',
       correlationId: msg.correlationId,
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      ...errorFields(err),
     })
   }
 }
@@ -280,7 +295,7 @@ async function handleRunHookListener(msg: RunHookListenerRequest): Promise<void>
       kind: 'hook-listener-result',
       correlationId: msg.correlationId,
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      ...errorFields(err),
     })
   }
 }
@@ -299,7 +314,7 @@ async function handleRunHookFilter(msg: RunHookFilterRequest): Promise<void> {
       kind: 'hook-filter-result',
       correlationId: msg.correlationId,
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      ...errorFields(err),
     })
   }
 }
@@ -323,7 +338,7 @@ async function handleRunLoopFetch(msg: RunLoopFetchRequest): Promise<void> {
       kind: 'loop-fetch-result',
       correlationId: msg.correlationId,
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      ...errorFields(err),
     })
   }
 }
@@ -347,7 +362,7 @@ async function handleRunLoopPreview(msg: RunLoopPreviewRequest): Promise<void> {
       kind: 'loop-preview-result',
       correlationId: msg.correlationId,
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      ...errorFields(err),
     })
   }
 }
@@ -376,20 +391,20 @@ async function handleRunSchedule(msg: RunScheduleRequest): Promise<void> {
       durationMs: Date.now() - startedAt,
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
+    const fields = errorFields(err)
     // The QuickJS interrupt handler raises `InternalError: interrupted`
-    // when the per-eval deadline kicks in (see withDeadline in
-    // quickjsHost.ts). Surface this as a distinct status so the admin UI
+    // when the per-eval deadline kicks in (see the deadline registry in
+    // quickjs/eval.ts). Surface this as a distinct status so the admin UI
     // and consecutive-failures logic can treat timeouts separately from
     // logical errors.
     const status: 'timeout' | 'error' =
-      message.toLowerCase().includes('interrupted') ? 'timeout' : 'error'
+      fields.error.toLowerCase().includes('interrupted') ? 'timeout' : 'error'
     send({
       kind: 'schedule-result',
       correlationId: msg.correlationId,
       ok: false,
       status,
-      error: message,
+      ...fields,
       durationMs: Date.now() - startedAt,
     })
   }
@@ -418,7 +433,7 @@ async function handleRunMediaAdapterCall(msg: RunMediaAdapterCallRequest): Promi
       kind: 'media-adapter-call-result',
       correlationId: msg.correlationId,
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      ...errorFields(err),
     })
   }
 }
@@ -442,7 +457,7 @@ async function handleRunMediaUrlTransformer(msg: RunMediaUrlTransformerRequest):
       kind: 'media-url-transformer-result',
       correlationId: msg.correlationId,
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      ...errorFields(err),
     })
   }
 }

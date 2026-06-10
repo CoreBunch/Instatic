@@ -51,15 +51,49 @@ function sendTo(pluginId: string, msg: MainToWorkerMessage): void {
   ensureWorkerFor(pluginId).postMessage(msg)
 }
 
+/**
+ * Default budget for one host→worker RPC round-trip. Generous compared to
+ * the VM's own 5 s eval deadline — its real job is to bound the damage of a
+ * *wedged* worker (plugin code spinning past every in-VM guard), not to
+ * race healthy calls.
+ */
+export const DEFAULT_RPC_TIMEOUT_MS = 30_000
+
+export interface RequestFromWorkerOptions {
+  /**
+   * Wall-clock budget for the worker's reply. Schedule runs pass a budget
+   * derived from their declared `maxDurationMs`; everything else
+   * (load / lifecycle / route / hook / loop / media calls) uses the default.
+   */
+  timeoutMs?: number
+}
+
 export function requestFromWorker<TKind extends WorkerToMainMessage['kind']>(
   pluginId: string,
   msg: MainToWorkerMessage,
   expectedKind: TKind,
+  options: RequestFromWorkerOptions = {},
 ): Promise<Extract<WorkerToMainMessage, { kind: TKind }>> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_RPC_TIMEOUT_MS
   return new Promise<Extract<WorkerToMainMessage, { kind: TKind }>>((resolve, reject) => {
+    // A wedged worker never crashes on its own, so without a deadline this
+    // pending promise — and the HTTP request / publish render awaiting it —
+    // would hang forever while crash recovery never engages. On expiry we
+    // reject the call AND route the worker through the same teardown as a
+    // crash: terminate it, reject its sibling pendings, unregister its
+    // host-side state, record a crash event the admin UI surfaces, and let
+    // the sliding-window counter decide respawn vs park.
+    const timer = setTimeout(() => {
+      if (!pendingRequests.has(msg.correlationId)) return
+      pendingRequests.delete(msg.correlationId)
+      const reason = `Plugin "${pluginId}" did not respond to ${msg.kind} within ${timeoutMs}ms`
+      reject(new Error(reason))
+      handleWorkerCrash(pluginId, reason)
+    }, timeoutMs)
     pendingRequests.set(msg.correlationId, {
       pluginId,
       resolve: (value) => {
+        clearTimeout(timer)
         const v = value as WorkerToMainMessage
         if (v.kind !== expectedKind) {
           reject(new Error(`Plugin worker returned unexpected message kind "${v.kind}"`))
@@ -67,7 +101,10 @@ export function requestFromWorker<TKind extends WorkerToMainMessage['kind']>(
         }
         resolve(v as Extract<WorkerToMainMessage, { kind: TKind }>)
       },
-      reject,
+      reject: (err) => {
+        clearTimeout(timer)
+        reject(err)
+      },
     })
     sendTo(pluginId, msg)
   })

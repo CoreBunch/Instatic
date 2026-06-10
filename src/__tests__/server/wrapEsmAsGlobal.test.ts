@@ -113,3 +113,21 @@ describe('wrapEsmAsGlobal — pass-through', () => {
     expect(wrapEsmAsGlobal(pre, '__module_pack', { unwrapDefault: true })).toBe(pre)
   })
 })
+
+describe('wrapEsmAsGlobal — stack-trace line numbers', () => {
+  it('adds zero line offset so VM stack frames match the shipped bundle', () => {
+    // The IIFE prelude shares the first physical line with the source's
+    // first line; a wrapper that prepended its own lines would shift every
+    // QuickJS stack-trace line number reported under `plugin:<id>`.
+    const src = `const a = 1;\nconst b = 2;\nexport default a + b;`
+    const lines = wrapEsmAsGlobal(src, '__plugin_exports').split('\n')
+    expect(lines[0]).toContain('const a = 1;')
+    expect(lines[1]).toBe('const b = 2;')
+    expect(lines[2]).toContain('__exports.default = a + b;')
+  })
+
+  it('still evaluates correctly with the single-line prelude', () => {
+    const out = run(wrapEsmAsGlobal(`// leading comment\nexport const x = 41 + 1;`, '__plugin_exports'))
+    expect((out.__plugin_exports as Sandbox).x).toBe(42)
+  })
+})

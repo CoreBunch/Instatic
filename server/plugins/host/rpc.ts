@@ -20,8 +20,18 @@ import type { LoadPluginResult } from '../protocol/messages'
 import { normalizeRoutePath } from '../protocol/parser'
 import { hostPlugins } from './registry'
 import { requestFromWorker } from './workerPool'
+import { describeWorkerError, workerCallError } from './workerErrors'
 import { workers } from './workerState'
 import type { HostRouteAccess } from './types'
+
+/**
+ * Transport + teardown slack added on top of a schedule's own VM budget for
+ * the worker RPC timeout. The RPC timeout must outlive the in-VM
+ * `maxDurationMs` deadline so the normal overrun failure mode is a clean
+ * `status: 'timeout'` result from the worker — the host-side reset only
+ * engages when the worker is truly wedged.
+ */
+const SCHEDULE_RPC_SLACK_MS = 10_000
 
 export async function loadPluginInWorker(args: {
   manifest: PluginManifest
@@ -120,7 +130,7 @@ export async function runLifecycleInWorker(
     'lifecycle-result',
   )
   if (!result.ok) {
-    throw new Error(result.error ?? `Plugin "${pluginId}" ${hook} failed`)
+    throw workerCallError(result.error ?? `Plugin "${pluginId}" ${hook} failed`, result.stack)
   }
 }
 
@@ -134,7 +144,7 @@ export async function runMigrateInWorker(
     'lifecycle-result',
   )
   if (!result.ok) {
-    throw new Error(result.error ?? `Plugin "${pluginId}" migrate failed`)
+    throw workerCallError(result.error ?? `Plugin "${pluginId}" migrate failed`, result.stack)
   }
 }
 
@@ -259,6 +269,11 @@ export async function runRouteInWorker(args: {
     'route-result',
   )
   if (!result.ok || !result.response) {
+    // VM stacks stay in the server log — the HTTP body carries only the message.
+    console.error(
+      `[plugin:${args.pluginId}] route "${routeKey}" handler failed:`,
+      describeWorkerError(result.error, result.stack, 'Plugin route failed'),
+    )
     return Response.json({ error: result.error ?? 'Plugin route failed' }, { status: 500 })
   }
   return materializeResponse(result.response)
@@ -321,7 +336,16 @@ export async function runScheduleInWorker(args: {
       maxDurationMs: args.maxDurationMs,
     },
     'schedule-result',
+    // The RPC budget must outlive the in-VM deadline (see SCHEDULE_RPC_SLACK_MS).
+    { timeoutMs: args.maxDurationMs + SCHEDULE_RPC_SLACK_MS },
   )
+  if (!result.ok && result.stack) {
+    // The run row stores only the message; the VM stack goes to the server log.
+    console.error(
+      `[plugin:${args.pluginId}] schedule "${args.scheduleId}" failed:`,
+      describeWorkerError(result.error, result.stack, 'schedule run failed'),
+    )
+  }
   return {
     status: result.status,
     error: result.error,
@@ -347,7 +371,7 @@ export async function runHookListenerInWorker(
   if (!result.ok) {
     console.error(
       `[plugin:${pluginId}] hook listener for "${event}" threw:`,
-      result.error,
+      describeWorkerError(result.error, result.stack, 'unknown error'),
     )
   }
 }
@@ -365,7 +389,10 @@ export async function runHookFilterInWorker(
     'hook-filter-result',
   )
   if (!result.ok) {
-    console.error(`[plugin:${pluginId}] hook filter "${name}" threw:`, result.error)
+    console.error(
+      `[plugin:${pluginId}] hook filter "${name}" threw:`,
+      describeWorkerError(result.error, result.stack, 'unknown error'),
+    )
     return value
   }
   return result.value
@@ -384,7 +411,7 @@ export async function runLoopFetchInWorker(
   if (!result.ok || !result.value) {
     console.error(
       `[plugin:${pluginId}] loop source "${sourceId}" fetch failed:`,
-      result.error,
+      describeWorkerError(result.error, result.stack, 'unknown error'),
     )
     return { items: [], totalItems: 0 }
   }

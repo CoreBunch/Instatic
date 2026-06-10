@@ -30,9 +30,9 @@
 
 import { getQuickJS, type QuickJSContext, type QuickJSHandle, type QuickJSWASMModule } from 'quickjs-emscripten'
 import { BOOTSTRAP_SOURCE } from './bootstrap/index'
-import { DEFAULT_MEMORY_LIMIT_BYTES, DEFAULT_STACK_SIZE_BYTES } from './limits'
+import { DEFAULT_EVAL_TIMEOUT_MS, DEFAULT_MEMORY_LIMIT_BYTES, DEFAULT_STACK_SIZE_BYTES } from './limits'
 import { jsToHandle } from './marshal'
-import { evalJson, evalString, evalVoid } from './eval'
+import { evalJson, evalString, evalVoid, withSyncDeadline } from './eval'
 import type { PluginVm, PluginVmEnv } from './types'
 
 export type { PluginVm, PluginVmEnv } from './types'
@@ -72,7 +72,7 @@ export async function createPluginVm(args: {
 }): Promise<PluginVm> {
   const wasm = await getWasmModule()
   const ctx = wasm.newContext()
-  const defaultEvalTimeoutMs = args.evalTimeoutMs
+  const evalTimeoutMs = args.evalTimeoutMs ?? DEFAULT_EVAL_TIMEOUT_MS
 
   // Apply per-plugin resource limits BEFORE evaluating any plugin code.
   // setMemoryLimit / setMaxStackSize live on the runtime, not the context,
@@ -121,6 +121,31 @@ export async function createPluginVm(args: {
    */
   const pendingDeferreds = new Set<ReturnType<QuickJSContext['newPromise']>>()
 
+  /**
+   * Drain the VM's microtask queue under a wall-clock deadline. Host-call
+   * resolutions and timer fires pump plugin continuations OUTSIDE any
+   * `evalResolved` deadline (e.g. a `setInterval` callback firing long
+   * after the eval that scheduled it returned), so each pump carries its
+   * own deadline — a `while (true) {}` inside a timer callback is
+   * interrupted instead of wedging the worker thread forever. A job the
+   * queue reports as failed (interrupted or otherwise uncaught) is logged
+   * with the plugin prefix and dropped; the VM stays usable.
+   */
+  const pumpPendingJobs = (): void => {
+    withSyncDeadline(ctx, evalTimeoutMs, () => {
+      const result = ctx.runtime.executePendingJobs()
+      if ('error' in result && result.error) {
+        const dumped = result.error.consume((handle) => ctx.dump(handle)) as
+          | { message?: string; stack?: string }
+          | string
+          | undefined
+        const message = typeof dumped === 'object' && dumped?.message ? dumped.message : String(dumped)
+        const stack = typeof dumped === 'object' && typeof dumped?.stack === 'string' ? `\n${dumped.stack}` : ''
+        console.error(`[plugin:${args.env.pluginId}] VM job aborted: ${message}${stack}`)
+      }
+    })
+  }
+
   try {
     // 1. Wire __hostCall as a SYNCHRONOUS VM function. The host returns a
     //    VM-side Promise immediately and resolves it later from JS-land.
@@ -151,7 +176,7 @@ export async function createPluginVm(args: {
               valueHandle.dispose()
             }
             // Drain plugin-side microtasks queued by the resolve.
-            ctx.runtime.executePendingJobs()
+            pumpPendingJobs()
           } catch { /* VM gone — silent drop. */ }
           pendingDeferreds.delete(deferred)
         },
@@ -165,7 +190,7 @@ export async function createPluginVm(args: {
             const errHandle = ctx.newError(message)
             deferred.reject(errHandle)
             errHandle.dispose()
-            ctx.runtime.executePendingJobs()
+            pumpPendingJobs()
           } catch { /* VM gone — silent drop. */ }
           pendingDeferreds.delete(deferred)
         },
@@ -192,7 +217,7 @@ export async function createPluginVm(args: {
         }
         try {
           deferred.resolve(ctx.undefined)
-          ctx.runtime.executePendingJobs()
+          pumpPendingJobs()
         } catch { /* VM gone — silent drop. */ }
         pendingDeferreds.delete(deferred)
       }, safeMs)
@@ -233,15 +258,22 @@ export async function createPluginVm(args: {
     ctx.setProp(ctx.global, '__plugin_settings', settingsHandle)
     settingsHandle.dispose()
 
-    // 4. Evaluate the bootstrap and plugin bundle.
-    ctx.unwrapResult(ctx.evalCode(BOOTSTRAP_SOURCE, 'instatic-bootstrap.js')).dispose()
-    ctx.unwrapResult(ctx.evalCode(args.pluginSource, `plugin:${args.env.pluginId}`)).dispose()
+    // 4. Evaluate the bootstrap and plugin bundle — both under the
+    //    wall-clock interrupt deadline (mirrors modulePackVm.ts). Without
+    //    it, a plugin bundle with a top-level `while (true) {}` would wedge
+    //    the worker thread before any other guard could engage.
+    withSyncDeadline(ctx, evalTimeoutMs, () => {
+      ctx.unwrapResult(ctx.evalCode(BOOTSTRAP_SOURCE, 'instatic-bootstrap.js')).dispose()
+    })
+    withSyncDeadline(ctx, evalTimeoutMs, () => {
+      ctx.unwrapResult(ctx.evalCode(args.pluginSource, `plugin:${args.env.pluginId}`)).dispose()
+    })
 
     // 5. Detect which lifecycle hooks the plugin exported.
     const exportedHooks = await evalJson<Array<'install' | 'activate' | 'deactivate' | 'uninstall' | 'migrate'>>(
       ctx,
       `__detectExportedHooks()`,
-      defaultEvalTimeoutMs,
+      evalTimeoutMs,
     )
 
     const pluginId = args.env.pluginId
@@ -251,11 +283,11 @@ export async function createPluginVm(args: {
       exportedHooks,
 
       async runLifecycle(hook) {
-        await evalVoid(ctx, `__runLifecycle(${JSON.stringify(hook)})`, defaultEvalTimeoutMs)
+        await evalVoid(ctx, `__runLifecycle(${JSON.stringify(hook)})`, evalTimeoutMs)
       },
 
       async runMigrate(fromVersion) {
-        await evalVoid(ctx, `__runMigrate(${JSON.stringify(fromVersion)})`, defaultEvalTimeoutMs)
+        await evalVoid(ctx, `__runMigrate(${JSON.stringify(fromVersion)})`, evalTimeoutMs)
       },
 
       async runRoute(routeKey, routeCtx) {
@@ -263,7 +295,7 @@ export async function createPluginVm(args: {
         const json = await evalString(
           ctx,
           `__runRoute(${JSON.stringify(routeKey)}, ${JSON.stringify(ctxJson)})`,
-          defaultEvalTimeoutMs,
+          evalTimeoutMs,
         )
         return JSON.parse(json) as unknown
       },
@@ -273,7 +305,7 @@ export async function createPluginVm(args: {
         await evalVoid(
           ctx,
           `__runHookListener(${JSON.stringify(listenerId)}, ${JSON.stringify(payloadJson)})`,
-          defaultEvalTimeoutMs,
+          evalTimeoutMs,
         )
       },
 
@@ -289,7 +321,7 @@ export async function createPluginVm(args: {
         const resultJson = await evalString(
           ctx,
           `__runHookFilter(${JSON.stringify(filterId)}, ${JSON.stringify(valueJson)}, ${JSON.stringify(contextJson)})`,
-          defaultEvalTimeoutMs,
+          evalTimeoutMs,
         )
         return JSON.parse(resultJson) as unknown
       },
@@ -299,7 +331,7 @@ export async function createPluginVm(args: {
         const json = await evalString(
           ctx,
           `__runLoopFetch(${JSON.stringify(sourceId)}, ${JSON.stringify(ctxJson)})`,
-          defaultEvalTimeoutMs,
+          evalTimeoutMs,
         )
         const parsed = JSON.parse(json) as { items?: unknown[]; totalItems?: number }
         return {
@@ -313,7 +345,7 @@ export async function createPluginVm(args: {
         const json = await evalString(
           ctx,
           `__runLoopPreview(${JSON.stringify(sourceId)}, ${JSON.stringify(ctxJson)})`,
-          defaultEvalTimeoutMs,
+          evalTimeoutMs,
         )
         const parsed = JSON.parse(json) as unknown
         return Array.isArray(parsed) ? parsed : []
@@ -321,14 +353,14 @@ export async function createPluginVm(args: {
 
       async runSchedule(scheduleId, maxDurationMs) {
         // Per-schedule deadline replaces the VM's default 5s budget for
-        // this single call. The interrupt is reset by withDeadline's
-        // finally block so subsequent calls fall back to the default.
-        await evalVoid(ctx, `__runSchedule(${JSON.stringify(scheduleId)})`, maxDurationMs ?? defaultEvalTimeoutMs)
+        // this single call only — its registry token is released when the
+        // eval settles, so subsequent calls fall back to the default.
+        await evalVoid(ctx, `__runSchedule(${JSON.stringify(scheduleId)})`, maxDurationMs ?? evalTimeoutMs)
       },
 
       async updateSettings(next) {
         const json = JSON.stringify(next)
-        await evalVoid(ctx, `__updateSettings(${JSON.stringify(json)})`, defaultEvalTimeoutMs)
+        await evalVoid(ctx, `__updateSettings(${JSON.stringify(json)})`, evalTimeoutMs)
       },
 
       async runMediaAdapterCall(adapterId, method, callArgs) {
@@ -336,7 +368,7 @@ export async function createPluginVm(args: {
         const resultJson = await evalString(
           ctx,
           `__runMediaAdapterCall(${JSON.stringify(adapterId)}, ${JSON.stringify(method)}, ${JSON.stringify(argsJson)})`,
-          defaultEvalTimeoutMs,
+          evalTimeoutMs,
         )
         return JSON.parse(resultJson) as unknown
       },
@@ -346,7 +378,7 @@ export async function createPluginVm(args: {
         const resultJson = await evalString(
           ctx,
           `__runMediaUrlTransformer(${JSON.stringify(transformerId)}, ${JSON.stringify(payloadJson)})`,
-          defaultEvalTimeoutMs,
+          evalTimeoutMs,
         )
         const parsed = JSON.parse(resultJson) as unknown
         return typeof parsed === 'string' ? parsed : null

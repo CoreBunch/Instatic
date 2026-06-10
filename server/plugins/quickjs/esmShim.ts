@@ -87,5 +87,10 @@ export function wrapEsmAsGlobal(
     ? `globalThis.${globalName} = __exports.default;`
     : `globalThis.${globalName} = __exports;`
 
-  return `;(function () {\n  const __exports = {};\n${transformed}\n  ${handoff}\n})();\n`
+  // The prelude shares the first physical line with the source's first line
+  // (and the handoff comes after it) so wrapping adds ZERO line offset —
+  // QuickJS stack traces from the wrapped eval (filename `plugin:<id>` /
+  // `module-pack:<id>`) report the same line numbers as the bundle the
+  // author shipped.
+  return `;(function () { const __exports = {}; ${transformed}\n${handoff}\n})();\n`
 }

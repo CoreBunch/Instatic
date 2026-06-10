@@ -24,6 +24,7 @@ import type {
 } from '@core/plugin-sdk'
 import { MediaStorageUploadPlanSchema } from '@core/plugin-sdk'
 import { requestFromWorker } from './workerPool'
+import { describeWorkerError, workerCallError } from './workerErrors'
 
 export async function runMediaAdapterCallInWorker(
   pluginId: string,
@@ -44,7 +45,10 @@ export async function runMediaAdapterCallInWorker(
     'media-adapter-call-result',
   )
   if (!result.ok) {
-    throw new Error(result.error ?? `Plugin "${pluginId}" media adapter "${adapterId}.${method}" failed`)
+    throw workerCallError(
+      result.error ?? `Plugin "${pluginId}" media adapter "${adapterId}.${method}" failed`,
+      result.stack,
+    )
   }
   return result.value
 }
@@ -66,7 +70,10 @@ export async function runMediaUrlTransformerInWorker(
     'media-url-transformer-result',
   )
   if (!result.ok) {
-    console.error(`[plugin:${pluginId}] media URL transformer threw:`, result.error)
+    console.error(
+      `[plugin:${pluginId}] media URL transformer threw:`,
+      describeWorkerError(result.error, result.stack, 'unknown error'),
+    )
     return null
   }
   return typeof result.value === 'string' ? result.value : null
