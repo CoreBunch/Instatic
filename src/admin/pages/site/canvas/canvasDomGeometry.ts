@@ -1,5 +1,6 @@
 import type { PageNode } from '@core/page-tree'
 import type { NodeTree } from '@core/page-tree'
+import { escapeCssAttributeValue } from './canvasNodeLookup'
 import type {
   CanvasDropAxis,
   CanvasDropCandidate,
@@ -238,7 +239,7 @@ function queryCanvasNodeElement(
   nodeId: string,
 ): HTMLElement | null {
   return scope.querySelector<HTMLElement>(
-    `[data-node-id="${escapeAttribute(nodeId)}"]`,
+    `[data-node-id="${escapeCssAttributeValue(nodeId)}"]`,
   )
 }
 
@@ -327,8 +328,4 @@ function buildDepthMap(tree: NodeTree<PageNode>): Map<string, number> {
   }
 
   return depths
-}
-
-function escapeAttribute(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 }

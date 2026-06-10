@@ -250,7 +250,7 @@ describe('selectorPickerModel', () => {
   it('orders pills weakest → strongest by specificity', () => {
     document.body.innerHTML = '<a data-node-id="btn" class="btn-primary" href="#">Buy</a>'
     const selected = document.querySelector<HTMLElement>('[data-node-id="btn"]')!
-    const star = rule({ id: 'star', name: '*', kind: 'ambient', selector: '*' })
+    const anchor = rule({ id: 'anchor', name: 'a', kind: 'ambient', selector: 'a' })
     const base = rule({ id: 'base', name: 'btn-primary', kind: 'class', selector: '.btn-primary', order: 5 })
     const hover = rule({
       id: 'hover',
@@ -261,19 +261,107 @@ describe('selectorPickerModel', () => {
 
     const model = deriveSelectorPickerModel({
       // Registry insertion order deliberately scrambled to prove sort, not order.
-      rules: { [hover.id]: hover, [star.id]: star, [base.id]: base },
+      rules: { [hover.id]: hover, [anchor.id]: anchor, [base.id]: base },
       node: { ...node(['base']), id: 'btn' },
       selectedElement: selected,
       activeRuleId: null,
     })
 
-    // `*` (0,0,0) < `.btn-primary` (0,1,0) < `.btn-primary:hover` (0,2,0) — and the
-    // base class sits next to its hover variant rather than behind `*`.
+    // `a` (0,0,1) < `.btn-primary` (0,1,0) < `.btn-primary:hover` (0,2,0) — and the
+    // base class sits next to its hover variant rather than behind `a`.
     expect(model.pills.map((pill) => pill.rule.selector)).toEqual([
-      '*',
+      'a',
       '.btn-primary',
       '.btn-primary:hover',
     ])
+  })
+
+  it('does not surface universal-subject ambient rules as pills', () => {
+    // Imported global resets scoped under a body class (`body.theme-dark *`)
+    // match every element on the page — they are page-wide plumbing, not an
+    // identity of the selected element.
+    document.body.className = 'theme-dark'
+    document.body.innerHTML = '<div data-node-id="cell" class="spec-cell"></div>'
+    const selected = document.querySelector<HTMLElement>('[data-node-id="cell"]')!
+    const reset = rule({
+      id: 'reset',
+      name: 'body.theme-dark *',
+      kind: 'ambient',
+      order: 0,
+      selector: 'body.theme-dark *',
+    })
+    const boxSizing = rule({
+      id: 'box',
+      name: 'box',
+      kind: 'ambient',
+      order: 1,
+      selector:
+        'body.theme-dark *, body.theme-dark *::before, body.theme-dark *::after',
+    })
+    const hover = rule({
+      id: 'hover',
+      name: '.spec-cell:hover',
+      kind: 'ambient',
+      order: 2,
+      selector: 'body.theme-dark .spec-cell:hover',
+    })
+
+    const model = deriveSelectorPickerModel({
+      rules: { [reset.id]: reset, [boxSizing.id]: boxSizing, [hover.id]: hover },
+      node: { ...node(), id: 'cell' },
+      selectedElement: selected,
+      activeRuleId: null,
+    })
+    document.body.className = ''
+
+    // Only the rule that targets the element specifically pills; the scoped
+    // resets stay out of the pill row but remain selectable suggestions.
+    expect(model.pills.map((pill) => pill.rule.id)).toEqual(['hover'])
+    expect(model.pills[0].match).toEqual({ kind: 'inactive-pseudo', pseudo: ':hover' })
+    expect(model.suggestions.map((item) => [item.rule.id, item.disabled])).toEqual([
+      ['reset', false],
+      ['box', false],
+      ['hover', false],
+    ])
+  })
+
+  it('does not surface a bare universal selector as a pill', () => {
+    document.body.innerHTML = '<h1 data-node-id="title" class="title"></h1>'
+    const selected = document.querySelector<HTMLElement>('[data-node-id="title"]')!
+    const star = rule({ id: 'star', name: '*', kind: 'ambient', selector: '*' })
+
+    const model = deriveSelectorPickerModel({
+      rules: { [star.id]: star },
+      node: node(),
+      selectedElement: selected,
+      activeRuleId: null,
+    })
+
+    expect(model.pills).toHaveLength(0)
+    expect(model.suggestions[0]).toMatchObject({ rule: star, disabled: false })
+  })
+
+  it('pills a mixed selector list via its specific matching entry', () => {
+    document.body.innerHTML = '<div data-node-id="cell" class="spec-cell"></div>'
+    const selected = document.querySelector<HTMLElement>('[data-node-id="cell"]')!
+    const mixed = rule({
+      id: 'mixed',
+      name: 'mixed',
+      kind: 'ambient',
+      selector: '*, .spec-cell',
+    })
+
+    const model = deriveSelectorPickerModel({
+      rules: { [mixed.id]: mixed },
+      node: { ...node(), id: 'cell' },
+      selectedElement: selected,
+      activeRuleId: null,
+    })
+
+    // The universal entry alone would not pill, but `.spec-cell` targets the
+    // element specifically — the rule pills as a direct match.
+    expect(model.pills.map((pill) => pill.rule.id)).toEqual(['mixed'])
+    expect(model.pills[0].match).toEqual({ kind: 'direct' })
   })
 
   it('disables non-matching ambient selector suggestions', () => {

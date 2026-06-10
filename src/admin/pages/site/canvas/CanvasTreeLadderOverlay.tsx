@@ -18,10 +18,8 @@ import {
   moveCanvasTreeLadderHighlight,
   type CanvasTreeLadderRow,
 } from './canvasTreeLadder'
-import {
-  escapeCanvasAttributeValue,
-  measureCanvasElementRect,
-} from './canvasOverlayGeometry'
+import { escapeCssAttributeValue } from './canvasNodeLookup'
+import { measureCanvasElementRect } from './canvasOverlayGeometry'
 import styles from './BreakpointSelectionOverlay.module.css'
 
 const EMPTY_STYLE_RULES: StyleRuleRegistry = {}
@@ -353,7 +351,7 @@ function positionTreeLadder(
   }
 
   const target = iframeDoc.querySelector<HTMLElement>(
-    `[data-node-id="${escapeCanvasAttributeValue(nodeId)}"]`,
+    `[data-node-id="${escapeCssAttributeValue(nodeId)}"]`,
   )
   const rect = measureCanvasElementRect(target, iframe, canvasRoot)
   if (!rect) {

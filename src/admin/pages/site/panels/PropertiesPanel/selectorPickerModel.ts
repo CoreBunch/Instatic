@@ -52,11 +52,11 @@ export function deriveSelectorPickerModel(input: SelectorPickerModelInput): Sele
 
   for (const rule of sortedRules(rules)) {
     if (rule.kind === 'ambient') {
-      const match = matchAmbientRule(rule, selectorSubject)
-      if (match) {
+      const { match, pillMatch } = evaluateAmbientRule(rule, selectorSubject)
+      if (pillMatch) {
         pills.push({
           rule,
-          match,
+          match: pillMatch,
           active: activeRuleId === rule.id,
           removable: false,
         })
@@ -254,24 +254,117 @@ function skipBalanced(selector: string, start: number): number {
   return i
 }
 
-function matchAmbientRule(rule: StyleRule, selectedElement: Element | null): SelectorMatch | null {
-  if (!selectedElement) return null
-  const selector = styleRuleSelector(rule)
-  if (safeMatches(selectedElement, selector)) return { kind: 'direct' }
+interface AmbientRuleEvaluation {
+  /** Strongest match across all selector-list entries — drives suggestions. */
+  match: SelectorMatch | null
+  /**
+   * Strongest match among entries that target the element *specifically* —
+   * drives pills. `null` when the rule only matches through universal-subject
+   * entries (`*`, `body.x *`, `*::before`, …): those rules style every element
+   * in their scope — page-wide resets imported from external stylesheets —
+   * so they are not an identity of the selected element and must not surface
+   * as pills. They stay editable through the suggestions dropdown and the
+   * Selectors panel.
+   */
+  pillMatch: SelectorMatch | null
+}
 
-  // The selector did not match as-is. If it targets the element in an
-  // interactive pseudo-state (`:hover`/`:focus`/…) the rule is still relevant —
-  // surface it as an inactive-pseudo match so the state styles stay editable.
-  // The state pseudo may live in one entry of a comma-separated selector list
-  // (`.btn:hover, .x .btn`) and may sit alongside a `::pseudo-element`
-  // (`.card:hover::after`), so we test every list entry independently after
-  // stripping its state pseudos and pseudo-elements.
-  for (const alternative of splitSelectorList(selector)) {
-    const { base, pseudo } = stripStatePseudos(alternative)
-    if (!pseudo || !base) continue
-    if (safeMatches(selectedElement, base)) return { kind: 'inactive-pseudo', pseudo }
+function evaluateAmbientRule(rule: StyleRule, selectedElement: Element | null): AmbientRuleEvaluation {
+  if (!selectedElement) return { match: null, pillMatch: null }
+
+  let match: SelectorMatch | null = null
+  let pillMatch: SelectorMatch | null = null
+  // Each comma-separated entry is evaluated independently: it may match
+  // directly, or target the element in an interactive pseudo-state
+  // (`:hover`/`:focus`/…) that is off while editing — those still surface as
+  // inactive-pseudo matches so the state styles stay editable. The state
+  // pseudo may sit alongside a `::pseudo-element` (`.card:hover::after`), so
+  // entries are re-tested after stripping state pseudos and pseudo-elements.
+  for (const entry of splitSelectorList(styleRuleSelector(rule))) {
+    let entryMatch: SelectorMatch | null = null
+    if (safeMatches(selectedElement, entry)) {
+      entryMatch = { kind: 'direct' }
+    } else {
+      const { base, pseudo } = stripStatePseudos(entry)
+      if (pseudo && base && safeMatches(selectedElement, base)) {
+        entryMatch = { kind: 'inactive-pseudo', pseudo }
+      }
+    }
+    if (!entryMatch) continue
+    match = preferMatch(match, entryMatch)
+    if (isSpecificSubject(subjectCompound(entry))) {
+      pillMatch = preferMatch(pillMatch, entryMatch)
+    }
   }
-  return null
+  return { match, pillMatch }
+}
+
+/** A direct match beats an inactive-pseudo match; otherwise first wins. */
+function preferMatch(current: SelectorMatch | null, next: SelectorMatch): SelectorMatch {
+  if (!current) return next
+  if (current.kind === 'direct') return current
+  return next.kind === 'direct' ? next : current
+}
+
+/**
+ * The subject (rightmost compound) of a single complex selector — the part
+ * after the last top-level combinator. Combinator characters inside `()`/`[]`
+ * or quoted strings (e.g. `[class~="x"]`, `:not(a > b)`) don't split.
+ */
+function subjectCompound(selectorPart: string): string {
+  let subjectStart = 0
+  let depth = 0
+  let quote: '"' | "'" | null = null
+  for (let i = 0; i < selectorPart.length; i++) {
+    const ch = selectorPart[i]
+    if (quote) {
+      if (ch === '\\') i++
+      else if (ch === quote) quote = null
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      continue
+    }
+    if (ch === '(' || ch === '[') {
+      depth++
+      continue
+    }
+    if (ch === ')' || ch === ']') {
+      depth = Math.max(0, depth - 1)
+      continue
+    }
+    if (depth === 0 && (ch === ' ' || ch === '\t' || ch === '>' || ch === '+' || ch === '~')) {
+      subjectStart = i + 1
+    }
+  }
+  return selectorPart.slice(subjectStart).trim()
+}
+
+/**
+ * Whether a subject compound narrows the match beyond "every element": it
+ * contains at least one type, class, id, or attribute simple selector. A
+ * compound made only of `*` and pseudos (`*`, `*::before`, `:hover`) matches
+ * every element in its scope — a reset, not an element identity.
+ */
+function isSpecificSubject(compound: string): boolean {
+  let i = 0
+  while (i < compound.length) {
+    const ch = compound[i]
+    if (ch === '*') {
+      i++
+      continue
+    }
+    if (ch === ':') {
+      // Pseudo-class/element — skip the name and any `(...)` arguments.
+      i = readIdentifierEnd(compound, compound[i + 1] === ':' ? i + 2 : i + 1)
+      if (compound[i] === '(') i = skipBalanced(compound, i)
+      continue
+    }
+    // Type, class, id, or attribute selector — narrows the match.
+    return true
+  }
+  return false
 }
 
 function safeMatches(element: Element, selector: string): boolean {

@@ -28,7 +28,8 @@ import {
   UnmatchedSelectorNotice,
 } from './ClassPickerParts'
 import { classPickerUiReducer, initialClassPickerUiState } from './classPickerUiState'
-import { useClassPickerDerivedState, cssAttrSelectorValue } from './useClassPickerDerivedState'
+import { escapeCssAttributeValue } from '@site/canvas/canvasNodeLookup'
+import { useClassPickerDerivedState } from './useClassPickerDerivedState'
 import { PillContextMenuPortal } from './ClassPillContextMenu'
 import { ClassRenameDialog } from './ClassRenameDialog'
 import styles from './ClassPicker.module.css'
@@ -261,7 +262,7 @@ export function ClassPicker({ nodeId, trailingAction, ref }: ClassPickerProps) {
     const highlightedSuggestionId = highlightedClassId ?? highlightedSelectorId
     if (!highlightedSuggestionId) return
     const el = document.querySelector<HTMLElement>(
-      `[data-selector-suggestion-id="${cssAttrSelectorValue(highlightedSuggestionId)}"]`,
+      `[data-selector-suggestion-id="${escapeCssAttributeValue(highlightedSuggestionId)}"]`,
     )
     el?.scrollIntoView({ block: 'nearest' })
   }, [highlightedClassId, highlightedSelectorId])

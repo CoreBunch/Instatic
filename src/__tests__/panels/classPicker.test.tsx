@@ -83,17 +83,16 @@ function createAmbient(selector: string) {
   return useEditorStore.getState().createAmbientRule({ selector })
 }
 
-function addRenderedCanvasElement(html: string) {
-  const host = document.createElement('div')
-  host.setAttribute('data-testid', 'canvas-host')
-  host.innerHTML = html
-  document.body.appendChild(host)
-}
-
+/**
+ * Render node markup inside a canvas breakpoint frame — the only place
+ * `findRenderedCanvasNodeElement` resolves nodes from (the admin document is
+ * full of `data-node-id` chrome: tree rows, overlay rings, import previews).
+ */
 function addRenderedCanvasFrame(html: string) {
   const frame = document.createElement('iframe')
   document.body.appendChild(frame)
   if (!frame.contentDocument) throw new Error('Test iframe did not create a contentDocument')
+  frame.contentDocument.body.setAttribute('data-breakpoint-id', 'bp-desktop')
   frame.contentDocument.body.innerHTML = html
 }
 
@@ -320,7 +319,7 @@ describe('ClassPicker — ambient selectors', () => {
   it('auto-activates a matching ambient selector on selection, renders it without a remove action, and lets it be toggled', async () => {
     const user = userEvent.setup()
     const { nodeId } = loadSiteWithNode()
-    addRenderedCanvasElement(`<section class="hero"><h1 data-node-id="${nodeId}" class="title"></h1></section>`)
+    addRenderedCanvasFrame(`<section class="hero"><h1 data-node-id="${nodeId}" class="title"></h1></section>`)
     const ambient = createAmbient('.hero .title')
 
     render(<ClassPicker nodeId={nodeId} />)
@@ -343,7 +342,7 @@ describe('ClassPicker — ambient selectors', () => {
   it('shows non-matching ambient selectors as disabled dropdown rows', async () => {
     const user = userEvent.setup()
     const { nodeId } = loadSiteWithNode()
-    addRenderedCanvasElement(`<h1 data-node-id="${nodeId}" class="title"></h1>`)
+    addRenderedCanvasFrame(`<h1 data-node-id="${nodeId}" class="title"></h1>`)
     createAmbient('.card')
 
     render(<ClassPicker nodeId={nodeId} />)
@@ -360,11 +359,13 @@ describe('ClassPicker — ambient selectors', () => {
   it('matches ambient selectors against elements inside the canvas iframe', () => {
     const { nodeId } = loadSiteWithNode()
     addRenderedCanvasFrame(`<h1 data-node-id="${nodeId}" class="title"></h1>`)
-    createAmbient('*')
+    createAmbient('h1.title')
 
     render(<ClassPicker nodeId={nodeId} />)
 
-    expect(screen.getByRole('button', { name: 'Edit selector *' })).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: /edit selector h1\.title|deselect selector h1\.title/i }),
+    ).toBeTruthy()
   })
 
   it('ignores the selection-ring overlay and matches the real canvas element', () => {
@@ -388,7 +389,7 @@ describe('ClassPicker — ambient selectors', () => {
   it('shows an inline undo affordance when a newly-created ambient selector does not match', async () => {
     const user = userEvent.setup()
     const { nodeId } = loadSiteWithNode()
-    addRenderedCanvasElement(`<h1 data-node-id="${nodeId}" class="title"></h1>`)
+    addRenderedCanvasFrame(`<h1 data-node-id="${nodeId}" class="title"></h1>`)
     render(<ClassPicker nodeId={nodeId} />)
 
     const input = screen.getByPlaceholderText('Add or create selector…')

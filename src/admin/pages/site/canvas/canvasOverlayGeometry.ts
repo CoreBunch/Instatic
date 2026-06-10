@@ -40,10 +40,3 @@ export function measureCanvasElementRect(
     height: editorDocRect.height,
   }
 }
-
-/**
- * Escape an attribute value for safe inclusion in a CSS attribute selector.
- */
-export function escapeCanvasAttributeValue(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-}

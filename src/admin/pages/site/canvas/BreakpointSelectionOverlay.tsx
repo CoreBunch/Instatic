@@ -73,10 +73,8 @@ import { CanvasInsertModuleButton } from './CanvasInsertModuleButton'
 import { useCanvasReorderDrag } from './useCanvasReorderDrag'
 import { measureCanvasNodeClientUnionRect } from './canvasDomGeometry'
 import { useCanvasTreeLadderOverlay } from './CanvasTreeLadderOverlay'
-import {
-  escapeCanvasAttributeValue,
-  measureCanvasElementRect,
-} from './canvasOverlayGeometry'
+import { escapeCssAttributeValue } from './canvasNodeLookup'
+import { measureCanvasElementRect } from './canvasOverlayGeometry'
 import type {
   CanvasDropAxis,
   CanvasDropTarget,
@@ -473,7 +471,7 @@ function positionRing(
     return
   }
   const target = iframeDoc.querySelector<HTMLElement>(
-    `[data-node-id="${escapeCanvasAttributeValue(nodeId)}"]`,
+    `[data-node-id="${escapeCssAttributeValue(nodeId)}"]`,
   )
 
   const rect = measureCanvasElementRect(target, iframe, canvasRoot)
