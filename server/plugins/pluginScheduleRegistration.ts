@@ -105,6 +105,21 @@ export function computeNextRun(cadence: Cadence, from: Date): Date {
 }
 
 /**
+ * Namespace a plugin-local schedule id under its plugin id — same
+ * convention as routes, hooks, and loops (`<pluginId>.<localId>`).
+ * Idempotent on already-namespaced ids. The single source of truth for
+ * the convention on the host side; the VM bootstrap mirrors it in
+ * `buildApi.ts:namespaceScheduleId` (the sandbox cannot import host code).
+ *
+ * BOTH register and cancel must run the caller-supplied id through this —
+ * a cancel against the raw local id would match no row and the schedule
+ * would fire forever.
+ */
+export function pluginScheduleFullId(pluginId: string, scheduleId: string): string {
+  return scheduleId.startsWith(`${pluginId}.`) ? scheduleId : `${pluginId}.${scheduleId}`
+}
+
+/**
  * Upsert a schedule row from a plugin's `api.cms.schedule.register(...)`
  * call. Idempotent on re-activation: a second register with the same
  * (pluginId, scheduleId) keeps the row's last-run history but adopts the
@@ -114,14 +129,10 @@ export async function registerPluginSchedule(
   db: DbClient,
   reg: ScheduleRegistration,
 ): Promise<void> {
-  // Final id is namespaced — same convention as routes, hooks, loops.
-  const fullId = reg.scheduleId.startsWith(`${reg.pluginId}.`)
-    ? reg.scheduleId
-    : `${reg.pluginId}.${reg.scheduleId}`
   const nextRunAt = computeNextRun(reg.cadence, new Date()).toISOString()
   await upsertPluginSchedule(db, {
     pluginId: reg.pluginId,
-    scheduleId: fullId,
+    scheduleId: pluginScheduleFullId(reg.pluginId, reg.scheduleId),
     cadence: reg.cadence,
     overlap: reg.overlap,
     maxDurationMs: reg.maxDurationMs,

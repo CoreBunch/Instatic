@@ -260,10 +260,12 @@ globalThis.__runLoopPreview = function runLoopPreview(sourceId, ctxJson) {
  * pluginScheduleRegistration namespacing so both sides agree.
  *
  * If the handler isn't registered (e.g. plugin upgraded between tick and
- * dispatch, or the schedule row outlived a deactivate), we log and no-op
- * rather than throw — the schedule row will eventually be GC'd by the
- * host once the boot-claim grace window expires. We log so the silent
- * no-op surfaces during development if the handler-key ever drifts again.
+ * dispatch), we log and no-op rather than throw. This window is narrow:
+ * after every `activate()` pass the host disables any schedule row that
+ * was not re-registered during that pass (the ghost sweep in
+ * `runtime.ts:runPluginLifecycle`, keyed on `claimed_at`), so a dropped
+ * handler stops being dispatched after the next activation. We log so the
+ * silent no-op surfaces during development if the handler-key ever drifts.
  */
 globalThis.__runSchedule = async function runSchedule(scheduleId) {
   const handler = globalThis.__plugin_handlers.schedules[scheduleId]

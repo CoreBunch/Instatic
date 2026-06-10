@@ -259,7 +259,10 @@ export async function updateCmsPluginSettings(
 export interface CmsPluginScheduleSummary {
   pluginId: string
   scheduleId: string
+  /** Registration state — false once the plugin cancels the schedule or stops registering it. */
   enabled: boolean
+  /** Operator/failure intervention — true after admin pause or the consecutive-failure auto-pause. */
+  paused: boolean
   cadence: unknown
   overlap: 'skip' | 'queue' | 'parallel'
   maxDurationMs: number

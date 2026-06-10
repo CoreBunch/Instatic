@@ -74,4 +74,24 @@ describe('plugin schedule invariants', () => {
     // pin a worker indefinitely.
     expect(source).toContain('maxDurationMs: Type.Integer({ minimum: 100, maximum: 5 * 60_000 })')
   })
+
+  it('register and cancel share the single schedule-id namespacing helper', async () => {
+    // Registration stores rows under `<pluginId>.<localId>`. If cancel ever
+    // stops running the caller-supplied id through the same helper it will
+    // match no row and the schedule fires forever.
+    const registration = await read('server/plugins/pluginScheduleRegistration.ts')
+    const cancelHandler = await read('server/plugins/host/handlers/schedule.ts')
+    expect(registration).toContain('export function pluginScheduleFullId(')
+    expect(registration).toContain('pluginScheduleFullId(reg.pluginId, reg.scheduleId)')
+    expect(cancelHandler).toContain('pluginScheduleFullId(msg.pluginId, scheduleId)')
+  })
+
+  it('activation runs the schedule ghost sweep', async () => {
+    // A schedule row whose registration was dropped by a plugin upgrade has
+    // no live VM handler — runPluginLifecycle must disable rows that were
+    // not re-claimed during the activate pass.
+    const runtime = await read('server/plugins/runtime.ts')
+    expect(runtime).toContain("if (hook === 'activate')")
+    expect(runtime).toContain('disableSchedulesNotReclaimedSince(db, pluginId, startedAtIso)')
+  })
 })

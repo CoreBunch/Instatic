@@ -523,6 +523,18 @@ export const pgMigrations: Migration[] = [
       -- active run per schedule, even across HA host instances (Postgres
       -- advisory locks gate which instance ticks; row-level locks gate which
       -- schedule fires next).
+      --
+      -- Two independent state flags:
+      --   enabled — registration state. Set true by register, false by
+      --             cancel and by the post-activation ghost sweep.
+      --   paused  — operator/failure intervention. Set by the admin pause
+      --             endpoint and the consecutive-failure auto-pause;
+      --             cleared by admin resume. Registration never touches it,
+      --             so a pause survives server restarts.
+      --
+      -- claimed_at marks the most recent register() call for the row — the
+      -- ghost sweep disables rows whose claimed_at predates the plugin's
+      -- latest activate() pass.
 
       create table if not exists plugin_schedules (
         plugin_id text not null references installed_plugins(id) on delete cascade,
@@ -531,6 +543,7 @@ export const pgMigrations: Migration[] = [
         overlap text not null default 'skip',
         max_duration_ms integer not null default 5000,
         enabled boolean not null default true,
+        paused boolean not null default false,
         consecutive_failures integer not null default 0,
         last_run_at timestamptz,
         last_finished_at timestamptz,
@@ -547,7 +560,7 @@ export const pgMigrations: Migration[] = [
       );
 
       create index if not exists plugin_schedules_due_idx
-        on plugin_schedules (enabled, next_run_at);
+        on plugin_schedules (enabled, paused, next_run_at);
 
       -- History — bounded growth via app-level rolling delete in the
       -- scheduler tick. Each tick keeps the latest 200 rows per (plugin_id,

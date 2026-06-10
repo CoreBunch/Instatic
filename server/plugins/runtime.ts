@@ -37,6 +37,7 @@ import {
   recordPluginCrash,
   setPluginLifecycleStatus,
 } from '../repositories/plugins'
+import { disableSchedulesNotReclaimedSince } from '../repositories/pluginSchedules'
 import type { PluginManifest } from '@core/plugin-sdk'
 import { createModulePackVm, type ModulePackVm } from './modulePackVm'
 import {
@@ -121,12 +122,23 @@ export async function loadPluginServerEntrypoint(
 /**
  * Run a single lifecycle hook on a previously-loaded plugin. No-op if
  * the hook isn't exported by the plugin module.
+ *
+ * After a successful `activate` pass this also runs the schedule ghost
+ * sweep: any schedule row of this plugin that was NOT re-registered during
+ * the pass (its `claimed_at` predates the pass) is disabled. Without the
+ * sweep, a schedule dropped by a plugin upgrade keeps firing forever
+ * against a handler that no longer exists in the VM.
  */
 export async function runPluginLifecycle(
+  db: DbClient,
   pluginId: string,
   hook: 'install' | 'activate' | 'deactivate' | 'uninstall',
 ): Promise<void> {
+  const startedAtIso = new Date().toISOString()
   await runLifecycleInWorker(pluginId, hook)
+  if (hook === 'activate') {
+    await disableSchedulesNotReclaimedSince(db, pluginId, startedAtIso)
+  }
 }
 
 /**
@@ -262,7 +274,7 @@ export async function reloadAndActivatePlugin(
   pluginSettingsCache.set(manifest.id, plugin.settings)
   if (manifest.entrypoints?.server) {
     const loaded = await loadPluginServerEntrypoint(manifest, uploadsDir)
-    if (loaded) await runPluginLifecycle(manifest.id, 'activate')
+    if (loaded) await runPluginLifecycle(db, manifest.id, 'activate')
   }
 }
 
@@ -432,7 +444,7 @@ export async function activateInstalledServerPlugins(
     if (manifest.entrypoints?.server) {
       try {
         const loaded = await loadPluginServerEntrypoint(manifest, uploadsDir)
-        if (loaded) await runPluginLifecycle(manifest.id, 'activate')
+        if (loaded) await runPluginLifecycle(db, manifest.id, 'activate')
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Server entrypoint activation failed'
         console.error(`[plugin:${manifest.id}] boot server-entrypoint failed: ${message}`)

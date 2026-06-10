@@ -457,6 +457,17 @@ api.cms.schedule.register({
 
 All times are UTC. Each fire runs inside the sandbox with a wall-clock budget. The host's `server/plugins/scheduler.ts` drives dispatch and records run history.
 
+Schedule ids are namespaced as `<pluginId>.<localId>` (the `pluginScheduleFullId` helper in `server/plugins/pluginScheduleRegistration.ts`); both `register` and `cancel` accept the plugin-local id and target the same row.
+
+**Pause vs. cancel — two independent flags on each schedule row:**
+
+- **`enabled` (registration state).** `register` sets it true, `api.cms.schedule.cancel(id)` sets it false. The row stays for audit; a later `register` re-enables it.
+- **`paused` (operator/failure intervention).** Set by the admin **Pause** button and by the auto-pause after 5 consecutive failures; cleared only by the admin **Resume** button (which also resets the failure counter). Registration never touches `paused`, so a pause survives server restarts and plugin re-activations. A paused schedule is skipped by the tick but can still be fired explicitly via **Run now** so the operator can verify a fix before resuming.
+
+A schedule fires only when it is `enabled`, not `paused`, and its plugin is enabled — schedules of disabled plugins never dispatch.
+
+**Orphan sweep.** Schedules must be (re-)registered during `activate()`. After each activation pass the host disables every schedule row of that plugin that was not re-registered during the pass (keyed on the row's `claimed_at` registration stamp — see `disableSchedulesNotReclaimedSince` in `server/repositories/pluginSchedules.ts`). This prevents "ghost" schedules: when a plugin upgrade stops registering a schedule, the old row stops firing after the new version activates instead of dispatching into a VM with no handler forever.
+
 ### CMS content — requires `cms.content.*` + `contentAccess[]`
 
 Plugins read and write CMS content (pages, posts, custom tables) through `api.cms.content.*`. Five permissions are split so most plugins (SEO assistants, translators, search indexers, AI helpers) get only what they need:

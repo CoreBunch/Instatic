@@ -73,7 +73,7 @@ export async function runPluginLifecycleHook(
     // plugins without `entrypoints.server`), then run the named hook.
     const loaded = await loadPluginServerEntrypoint(manifest, options.uploadsDir)
     if (loaded) {
-      await runPluginLifecycle(plugin.id, hook)
+      await runPluginLifecycle(db, plugin.id, hook)
     }
 
     // After deactivate / uninstall the plugin should not stay loaded in

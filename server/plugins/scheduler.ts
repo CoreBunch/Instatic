@@ -27,8 +27,9 @@
  *      leader crash hands off naturally to the next tick on another instance.
  *
  *   5. **Failure cap + auto-pause** — after FAILURE_CAP consecutive
- *      failures, the schedule is paused (enabled=false) and the
- *      operator must explicitly resume from the admin UI.
+ *      failures, the schedule is paused (`paused = true`, independent of
+ *      the registration-owned `enabled` flag, so the pause survives
+ *      restarts) and the operator must explicitly resume from the admin UI.
  *
  * Plugin authors do NOT interact with this module directly. The cadence
  * math, the lock dance, and the dispatch wire format are all contained
@@ -67,7 +68,7 @@ const TICK_INTERVAL_MS = 10_000
 const TICK_BATCH_LIMIT = 50
 /** Plugin's claim is auto-released after `maxDurationMs * 2` so a crashed worker doesn't deadlock the row. */
 const LOCK_MULTIPLIER = 2
-/** Auto-pause threshold. After this many consecutive failures, the row flips `enabled=false`. */
+/** Auto-pause threshold. After this many consecutive failures, the row flips `paused=true`. */
 const FAILURE_CAP = 5
 /** Postgres advisory-lock key — must be a bigint. Derived from the string below for human readability. */
 const ADVISORY_LOCK_KEY = 712830541 // = djb2('instatic-plugin-scheduler') mod 2^31
@@ -139,9 +140,10 @@ export function startScheduler(db: DbClient): void {
 export async function tickPluginScheduler(db: DbClient): Promise<void> {
   await withSchedulerLeaderLock(db, ADVISORY_LOCK_KEY, '[plugin-scheduler]', async () => {
     const now = new Date()
+    // `selectDueSchedules` already filters to enabled, un-paused schedules
+    // of enabled plugins — no re-check needed here.
     const due = await selectDueSchedules(db, now.toISOString(), TICK_BATCH_LIMIT)
     for (const sched of due) {
-      if (!sched.enabled) continue
       await fireSchedule(db, sched, 'tick')
     }
     // Cheap rolling trim — keeps `plugin_schedule_runs` bounded without

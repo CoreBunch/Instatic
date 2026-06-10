@@ -6,6 +6,12 @@
  *   • Atomic claim race (two ticks can't fire the same schedule twice)
  *   • Failure cap auto-pauses a schedule after N consecutive errors
  *   • `runScheduleNow` bypasses cadence but still respects the claim lock
+ *   • Cancel namespacing — `cms.schedule.cancel` with a plugin-local id
+ *     targets the namespaced row that register created
+ *   • Due selection — paused schedules and schedules of disabled plugins
+ *     never fire; re-registration on boot preserves a pause
+ *   • Ghost sweep — schedules not re-registered during an activation pass
+ *     are disabled
  *   • HA leader path (SQLite single-leader sentinel; PG path covered
  *     structurally — we don't spin a real PG in tests)
  *
@@ -26,10 +32,16 @@ import {
   runScheduleNow,
   tickPluginScheduler,
 } from '../../../server/plugins/scheduler'
+import { handleScheduleCancel } from '../../../server/plugins/host/handlers/schedule'
+import type { HostPluginRecord } from '../../../server/plugins/host/types'
 import {
+  disableSchedulesNotReclaimedSince,
   getSchedule,
   insertScheduleRun,
   listRecentRuns,
+  pauseSchedule,
+  resumeSchedule,
+  selectDueSchedules,
 } from '../../../server/repositories/pluginSchedules'
 import type { DbClient } from '../../../server/db/client'
 
@@ -84,17 +96,11 @@ describe('computeNextRun', () => {
 // Live DB tests
 // ---------------------------------------------------------------------------
 
-async function setupDb(): Promise<{ db: DbClient; cleanup: () => Promise<void> }> {
-  const dir = await mkdtemp(join(tmpdir(), 'instatic-scheduler-'))
-  const dbPath = join(dir, 'test.db')
-  const db = createSqliteClient(dbPath)
-  await runMigrations(db, sqliteMigrations)
-  // Bootstrap a fake installed_plugins row — the FK on plugin_schedules
-  // requires it to exist before any registration.
+async function insertTestPlugin(db: DbClient, id: string, enabled = true): Promise<void> {
   await db`
     insert into installed_plugins (id, name, version, enabled, manifest_json)
-    values (${'test.sched'}, ${'Scheduler Test'}, ${'1.0.0'}, ${1}, ${JSON.stringify({
-      id: 'test.sched',
+    values (${id}, ${'Scheduler Test'}, ${'1.0.0'}, ${enabled ? 1 : 0}, ${JSON.stringify({
+      id,
       name: 'Scheduler Test',
       version: '1.0.0',
       apiVersion: 1,
@@ -103,12 +109,31 @@ async function setupDb(): Promise<{ db: DbClient; cleanup: () => Promise<void> }
       adminPages: [],
     })})
   `
+}
+
+async function setupDb(): Promise<{ db: DbClient; cleanup: () => Promise<void> }> {
+  const dir = await mkdtemp(join(tmpdir(), 'instatic-scheduler-'))
+  const dbPath = join(dir, 'test.db')
+  const db = createSqliteClient(dbPath)
+  await runMigrations(db, sqliteMigrations)
+  // Bootstrap a fake installed_plugins row — the FK on plugin_schedules
+  // requires it to exist before any registration.
+  await insertTestPlugin(db, 'test.sched')
   return {
     db,
     cleanup: async () => {
       await rm(dir, { recursive: true, force: true })
     },
   }
+}
+
+/** Force a registered schedule to be due immediately. */
+async function makeDue(db: DbClient, pluginId: string, scheduleId: string): Promise<void> {
+  const past = new Date(Date.now() - 60_000).toISOString()
+  await db`
+    update plugin_schedules set next_run_at = ${past}
+    where plugin_id = ${pluginId} and schedule_id = ${scheduleId}
+  `
 }
 
 describe('plugin scheduler — DB', () => {
@@ -211,6 +236,130 @@ describe('plugin scheduler — DB', () => {
       }
       const recent = await listRecentRuns(db, 'test.sched', 'test.sched.noisy', 3)
       expect(recent.length).toBe(3)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('cms.schedule.cancel with a plugin-local id disables the namespaced row', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      await registerPluginSchedule(db, {
+        pluginId: 'test.sched',
+        scheduleId: 'sync',
+        cadence: { interval: 'hourly' },
+        overlap: 'skip',
+        maxDurationMs: 5000,
+      })
+      // The VM sends the RAW local id ('sync') in the cancel api-call —
+      // the handler must namespace it to match the stored row
+      // ('test.sched.sync'). `replyApiOk` no-ops without a live worker.
+      await handleScheduleCancel(
+        {
+          kind: 'api-call',
+          correlationId: 'c1',
+          pluginId: 'test.sched',
+          target: 'cms.schedule.cancel',
+          args: [{ scheduleId: 'sync' }],
+        },
+        {} as unknown as HostPluginRecord,
+        db,
+      )
+      const sched = await getSchedule(db, 'test.sched', 'test.sched.sync')
+      expect(sched?.enabled).toBe(false)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('due selection excludes paused schedules until resumed', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      await registerPluginSchedule(db, {
+        pluginId: 'test.sched',
+        scheduleId: 'pausable',
+        cadence: { interval: 'hourly' },
+        overlap: 'skip',
+        maxDurationMs: 5000,
+      })
+      await makeDue(db, 'test.sched', 'test.sched.pausable')
+      await pauseSchedule(db, 'test.sched', 'test.sched.pausable', new Date().toISOString())
+      expect(await selectDueSchedules(db, new Date().toISOString(), 10)).toEqual([])
+      await resumeSchedule(db, 'test.sched', 'test.sched.pausable')
+      const due = await selectDueSchedules(db, new Date().toISOString(), 10)
+      expect(due.map((s) => s.scheduleId)).toEqual(['test.sched.pausable'])
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('due selection excludes schedules whose plugin is disabled', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      await insertTestPlugin(db, 'test.disabled', false)
+      for (const pluginId of ['test.sched', 'test.disabled']) {
+        await registerPluginSchedule(db, {
+          pluginId,
+          scheduleId: 'job',
+          cadence: { interval: 'hourly' },
+          overlap: 'skip',
+          maxDurationMs: 5000,
+        })
+        await makeDue(db, pluginId, `${pluginId}.job`)
+      }
+      const due = await selectDueSchedules(db, new Date().toISOString(), 10)
+      expect(due.map((s) => s.pluginId)).toEqual(['test.sched'])
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('re-registration on boot preserves an existing pause', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      const reg = {
+        pluginId: 'test.sched',
+        scheduleId: 'sticky',
+        cadence: { interval: 'hourly' as const },
+        overlap: 'skip' as const,
+        maxDurationMs: 5000,
+      }
+      await registerPluginSchedule(db, reg)
+      await pauseSchedule(db, 'test.sched', 'test.sched.sticky', new Date().toISOString())
+      // Server restart → activate() → register again. The upsert re-asserts
+      // registration state but must NOT clear the operator/failure pause.
+      await registerPluginSchedule(db, reg)
+      const sched = await getSchedule(db, 'test.sched', 'test.sched.sticky')
+      expect(sched?.enabled).toBe(true)
+      expect(sched?.paused).toBe(true)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('ghost sweep disables schedules not re-registered during the activation pass', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      const reg = (scheduleId: string) => ({
+        pluginId: 'test.sched',
+        scheduleId,
+        cadence: { interval: 'hourly' as const },
+        overlap: 'skip' as const,
+        maxDurationMs: 5000,
+      })
+      // v1 registered both schedules on a previous boot.
+      await registerPluginSchedule(db, reg('keep'))
+      await registerPluginSchedule(db, reg('drop'))
+      await Bun.sleep(5)
+      // v2 activation pass: only 'keep' is re-registered.
+      const activationStartedAt = new Date().toISOString()
+      await Bun.sleep(5)
+      await registerPluginSchedule(db, reg('keep'))
+      await disableSchedulesNotReclaimedSince(db, 'test.sched', activationStartedAt)
+      const kept = await getSchedule(db, 'test.sched', 'test.sched.keep')
+      const dropped = await getSchedule(db, 'test.sched', 'test.sched.drop')
+      expect(kept?.enabled).toBe(true)
+      expect(dropped?.enabled).toBe(false)
     } finally {
       await cleanup()
     }

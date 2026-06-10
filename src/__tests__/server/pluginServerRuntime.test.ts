@@ -164,6 +164,11 @@ function makeFakeDb() {
       records.push(row)
       return { rows: [row as Row], rowCount: 1 }
     }
+    // Post-activation schedule ghost sweep (disableSchedulesNotReclaimedSince)
+    // — these tests register no schedules, so the sweep matches nothing.
+    if (normalized.includes('update plugin_schedules')) {
+      return { rows: [], rowCount: 0 }
+    }
     throw new Error(`Unhandled SQL: ${sql}`)
   }
 

@@ -296,7 +296,7 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
   // 1. Deactivate the old version. Best-effort — a deactivate failure
   //    shouldn't prevent the upgrade from proceeding (the new version is
   //    about to replace it anyway). We log and move on.
-  await teardownPreviousVersion(pluginId, existing, options.uploadsDir)
+  await teardownPreviousVersion(db, pluginId, existing, options.uploadsDir)
 
   // 2. Write new assets.
   const newManifest = await writePluginPackageFiles(
@@ -335,7 +335,7 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
       }
     }
     if (loaded) {
-      await runPluginLifecycle(pluginId, 'activate')
+      await runPluginLifecycle(db, pluginId, 'activate')
     }
     await setPluginLifecycleStatus(db, pluginId, 'active')
   } catch (err) {
@@ -403,6 +403,7 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
  * (the new version is about to replace it anyway).
  */
 async function teardownPreviousVersion(
+  db: DbClient,
   pluginId: string,
   plugin: InstalledPlugin,
   uploadsDir: string,
@@ -411,7 +412,7 @@ async function teardownPreviousVersion(
     const manifest = pluginManifestWithGrants(plugin)
     if (manifest.entrypoints?.server) {
       await loadPluginServerEntrypoint(manifest, uploadsDir)
-      await runPluginLifecycle(pluginId, 'deactivate')
+      await runPluginLifecycle(db, pluginId, 'deactivate')
     }
   } catch (err) {
     console.error(`[plugin:${pluginId}] pre-upgrade deactivate failed`, err)
@@ -474,7 +475,7 @@ async function rollbackUpgrade(args: {
     }
     if (restoredManifest.entrypoints?.server) {
       const loaded = await loadPluginServerEntrypoint(restoredManifest, options.uploadsDir)
-      if (loaded) await runPluginLifecycle(pluginId, 'activate')
+      if (loaded) await runPluginLifecycle(db, pluginId, 'activate')
     }
     await setPluginLifecycleStatus(
       db,

@@ -10,7 +10,7 @@
  * disabled in the database.
  */
 
-import { registerPluginSchedule } from '../../pluginScheduleRegistration'
+import { pluginScheduleFullId, registerPluginSchedule } from '../../pluginScheduleRegistration'
 import { disablePluginSchedule } from '../../../repositories/pluginSchedules'
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
 import type { DbClient } from '../../../db/client'
@@ -39,6 +39,8 @@ export async function handleScheduleCancel(
   db: DbClient,
 ): Promise<void> {
   const [{ scheduleId }] = msg.args
-  await disablePluginSchedule(db, msg.pluginId, scheduleId)
+  // Registration stored the row under the namespaced id — cancel must
+  // target the same key or it matches nothing.
+  await disablePluginSchedule(db, msg.pluginId, pluginScheduleFullId(msg.pluginId, scheduleId))
   replyApiOk(msg.pluginId, msg.correlationId)
 }

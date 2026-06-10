@@ -52,7 +52,10 @@ export interface PluginSchedule {
   cadence: Cadence
   overlap: OverlapPolicy
   maxDurationMs: number
+  /** Registration state — true while the plugin's code still registers this schedule. */
   enabled: boolean
+  /** Operator/failure intervention — admin pause or consecutive-failure auto-pause. */
+  paused: boolean
   consecutiveFailures: number
   lastRunAt: string | null
   lastFinishedAt: string | null
@@ -90,6 +93,7 @@ interface ScheduleRow {
   overlap: string
   max_duration_ms: number
   enabled: boolean | number
+  paused: boolean | number
   consecutive_failures: number
   last_run_at: string | Date | null
   last_finished_at: string | Date | null
@@ -140,6 +144,7 @@ function mapSchedule(row: ScheduleRow): PluginSchedule {
     overlap: parseOverlap(row.overlap),
     maxDurationMs: row.max_duration_ms,
     enabled: Boolean(row.enabled),
+    paused: Boolean(row.paused),
     consecutiveFailures: row.consecutive_failures,
     lastRunAt: isoDateOrNull(row.last_run_at),
     lastFinishedAt: isoDateOrNull(row.last_finished_at),
@@ -188,6 +193,14 @@ export interface ScheduleUpsertInput {
  * cadence + maxDurationMs (the plugin code is the source of truth) but
  * MUST preserve last-run state so a restart doesn't lose history or
  * re-fire schedules that already ran.
+ *
+ * Registration owns `enabled` (registration state) but deliberately never
+ * touches `paused` — an admin pause or failure auto-pause must survive
+ * server restarts, which re-run `activate()` and land here on every boot.
+ *
+ * `claimed_at` is stamped on every register so the post-activation ghost
+ * sweep (`disableSchedulesNotReclaimedSince`) can tell which rows were
+ * re-registered during the latest `activate()` pass.
  */
 export async function upsertPluginSchedule(
   db: DbClient,
@@ -215,10 +228,10 @@ export async function upsertPluginSchedule(
 }
 
 /**
- * Cancel a previously-registered schedule. Soft-disables the row so the
- * tick stops firing it; the row stays for audit. The plugin's `activate`
- * call re-creates / re-enables on next boot if the registration is still
- * there.
+ * Cancel a previously-registered schedule (registration state). Soft-disables
+ * the row so the tick stops firing it; the row stays for audit. The plugin's
+ * `activate` call re-creates / re-enables on next boot if the registration is
+ * still there.
  */
 export async function disablePluginSchedule(
   db: DbClient,
@@ -232,15 +245,27 @@ export async function disablePluginSchedule(
   `
 }
 
-export async function enablePluginSchedule(
+/**
+ * Ghost sweep — disable every still-enabled schedule of `pluginId` whose
+ * `claimed_at` predates the plugin's latest `activate()` pass. A row that
+ * was not re-registered during that pass has no live VM handler, so firing
+ * it would only record healthy-looking no-op runs forever.
+ *
+ * `claimed_at` is stamped by `upsertPluginSchedule` on every register, so
+ * "claimed since activation start" is exactly "re-registered this pass".
+ * ISO-8601 strings compare correctly as text in both dialects.
+ */
+export async function disableSchedulesNotReclaimedSince(
   db: DbClient,
   pluginId: string,
-  scheduleId: string,
+  activationStartedAtIso: string,
 ): Promise<void> {
   await db`
     update plugin_schedules
-    set enabled = ${true}, consecutive_failures = ${0}, updated_at = ${new Date().toISOString()}
-    where plugin_id = ${pluginId} and schedule_id = ${scheduleId}
+    set enabled = ${false}, updated_at = ${new Date().toISOString()}
+    where plugin_id = ${pluginId}
+      and enabled = ${true}
+      and (claimed_at is null or claimed_at < ${activationStartedAtIso})
   `
 }
 
@@ -274,6 +299,11 @@ export async function getSchedule(
  * this then attempts to claim each via `tryClaimSchedule` — the two-step
  * dance is what lets multiple HA instances safely race for the same row
  * without firing twice.
+ *
+ * A schedule is due only when it is registered (`enabled`), not paused by
+ * an operator or the failure cap (`paused`), AND its owning plugin is
+ * enabled — a disabled plugin has no loaded worker, so firing its rows
+ * would just spawn empty workers that record error runs.
  */
 export async function selectDueSchedules(
   db: DbClient,
@@ -281,11 +311,14 @@ export async function selectDueSchedules(
   limit: number,
 ): Promise<PluginSchedule[]> {
   const { rows } = await db<ScheduleRow>`
-    select * from plugin_schedules
-    where enabled = ${true}
-      and next_run_at <= ${nowIso}
-      and (lock_until is null or lock_until <= ${nowIso})
-    order by next_run_at asc
+    select s.* from plugin_schedules s
+    join installed_plugins p on p.id = s.plugin_id
+    where s.enabled = ${true}
+      and s.paused = ${false}
+      and p.enabled = ${true}
+      and s.next_run_at <= ${nowIso}
+      and (s.lock_until is null or s.lock_until <= ${nowIso})
+    order by s.next_run_at asc
     limit ${limit}
   `
   return rows.map(mapSchedule)
@@ -302,6 +335,11 @@ export async function selectDueSchedules(
  * HA instances: only ONE UPDATE statement can transition the token from
  * null to a fresh value because Postgres + SQLite both serialize row
  * updates.
+ *
+ * Requires `enabled` (a cancelled schedule can never fire) but deliberately
+ * NOT `paused = false` — the tick already filters paused rows out in
+ * `selectDueSchedules`, while the admin "Run now" action must still work on
+ * a paused schedule so the operator can verify a fix before resuming.
  */
 export async function tryClaimSchedule(
   db: DbClient,
@@ -393,19 +431,33 @@ export async function markScheduleRunStarted(
 }
 
 /**
- * Pause a schedule that exceeded the consecutive-failure cap. The
- * schedule's row stays but enabled=false; the admin operator must
- * manually resume after fixing the cause.
+ * Pause a schedule — operator intervention (admin "Pause" button) or the
+ * consecutive-failure auto-pause. The pause is independent of the
+ * registration state (`enabled`) and survives server restarts because
+ * registration upserts never touch `paused`. Cleared by `resumeSchedule`.
  */
 export async function pauseSchedule(
   db: DbClient,
   pluginId: string,
   scheduleId: string,
-  reasonIso: string,
+  pausedAtIso: string,
 ): Promise<void> {
   await db`
     update plugin_schedules
-    set enabled = ${false}, updated_at = ${reasonIso}
+    set paused = ${true}, updated_at = ${pausedAtIso}
+    where plugin_id = ${pluginId} and schedule_id = ${scheduleId}
+  `
+}
+
+/** Clear an operator/failure pause and reset the failure counter. */
+export async function resumeSchedule(
+  db: DbClient,
+  pluginId: string,
+  scheduleId: string,
+): Promise<void> {
+  await db`
+    update plugin_schedules
+    set paused = ${false}, consecutive_failures = ${0}, updated_at = ${new Date().toISOString()}
     where plugin_id = ${pluginId} and schedule_id = ${scheduleId}
   `
 }

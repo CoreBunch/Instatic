@@ -489,6 +489,7 @@ export const sqliteMigrations: Migration[] = [
         overlap text not null default 'skip',
         max_duration_ms integer not null default 5000,
         enabled integer not null default 1,
+        paused integer not null default 0,
         consecutive_failures integer not null default 0,
         last_run_at text,
         last_finished_at text,
@@ -505,7 +506,7 @@ export const sqliteMigrations: Migration[] = [
       );
 
       create index if not exists plugin_schedules_due_idx
-        on plugin_schedules (enabled, next_run_at);
+        on plugin_schedules (enabled, paused, next_run_at);
 
       create table if not exists plugin_schedule_runs (
         id text primary key,

@@ -161,7 +161,13 @@ function ScheduleRow({ schedule, recent, busy, onRunNow, onPause, onResume }: Sc
         <dt>Last run</dt>
         <dd>{schedule.lastRunAt ? formatDateTime(schedule.lastRunAt) : '—'}</dd>
         <dt>Next run</dt>
-        <dd>{schedule.enabled ? formatDateTime(schedule.nextRunAt) : '— (paused)'}</dd>
+        <dd>
+          {!schedule.enabled
+            ? '— (cancelled)'
+            : schedule.paused
+              ? '— (paused)'
+              : formatDateTime(schedule.nextRunAt)}
+        </dd>
         {schedule.consecutiveFailures > 0 && (
           <>
             <dt>Failures</dt>
@@ -172,26 +178,30 @@ function ScheduleRow({ schedule, recent, busy, onRunNow, onPause, onResume }: Sc
 
       {schedule.lastError && <p className={styles.errorLine}>{schedule.lastError}</p>}
 
-      <div className={styles.scheduleActions}>
-        <Button
-          variant="secondary"
-          size="sm"
-          type="button"
-          onClick={onRunNow}
-          disabled={busy}
-        >
-          {busy ? 'Working...' : 'Run now'}
-        </Button>
-        {schedule.enabled ? (
-          <Button variant="secondary" size="sm" type="button" onClick={onPause} disabled={busy}>
-            Pause
+      {/* A cancelled schedule (enabled=false) has no live registration — the
+          plugin owns that state, so the admin gets no controls for it. */}
+      {schedule.enabled && (
+        <div className={styles.scheduleActions}>
+          <Button
+            variant="secondary"
+            size="sm"
+            type="button"
+            onClick={onRunNow}
+            disabled={busy}
+          >
+            {busy ? 'Working...' : 'Run now'}
           </Button>
-        ) : (
-          <Button variant="secondary" size="sm" type="button" onClick={onResume} disabled={busy}>
-            Resume
-          </Button>
-        )}
-      </div>
+          {schedule.paused ? (
+            <Button variant="secondary" size="sm" type="button" onClick={onResume} disabled={busy}>
+              Resume
+            </Button>
+          ) : (
+            <Button variant="secondary" size="sm" type="button" onClick={onPause} disabled={busy}>
+              Pause
+            </Button>
+          )}
+        </div>
+      )}
 
       {recent.length > 0 && (
         <>
@@ -213,6 +223,9 @@ function ScheduleRow({ schedule, recent, busy, onRunNow, onPause, onResume }: Sc
 
 function StatusBadge({ schedule }: { schedule: CmsPluginScheduleSummary }) {
   if (!schedule.enabled) {
+    return <span className={`${styles.statusBadge} ${styles.statusPaused}`}>Cancelled</span>
+  }
+  if (schedule.paused) {
     return <span className={`${styles.statusBadge} ${styles.statusPaused}`}>Paused</span>
   }
   switch (schedule.lastStatus) {

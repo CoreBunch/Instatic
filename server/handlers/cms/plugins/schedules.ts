@@ -11,11 +11,13 @@
  *            cannot fire it twice. Returns the outcome row.
  *
  *   POST   /admin/api/cms/plugins/:id/schedules/:scheduleId/pause
- *          → flip `enabled = false`. The tick stops dispatching until
- *            a `resume` arrives or the plugin re-activates.
+ *          → flip `paused = true`. The tick stops dispatching until a
+ *            `resume` arrives. Independent of the registration-owned
+ *            `enabled` flag, so the pause survives server restarts and
+ *            plugin re-activations.
  *
  *   POST   /admin/api/cms/plugins/:id/schedules/:scheduleId/resume
- *          → flip `enabled = true`, reset `consecutive_failures = 0`.
+ *          → flip `paused = false`, reset `consecutive_failures = 0`.
  *
  * The list route requires `plugins.read`; the mutating routes
  * (run-now / pause / resume) require `plugins.lifecycle` AND step-up.
@@ -24,10 +26,10 @@
 import type { DbClient } from '../../../db/client'
 import { jsonResponse, methodNotAllowed } from '../../../http'
 import {
-  enablePluginSchedule,
-  disablePluginSchedule,
   listRecentRuns,
   listSchedulesForPlugin,
+  pauseSchedule,
+  resumeSchedule,
 } from '../../../repositories/pluginSchedules'
 import { runScheduleNow } from '../../../plugins/scheduler'
 
@@ -66,7 +68,7 @@ export async function handlePluginSchedulePause(
   scheduleId: string,
 ): Promise<Response> {
   if (req.method !== 'POST') return methodNotAllowed()
-  await disablePluginSchedule(db, pluginId, scheduleId)
+  await pauseSchedule(db, pluginId, scheduleId, new Date().toISOString())
   return jsonResponse({ ok: true })
 }
 
@@ -77,6 +79,6 @@ export async function handlePluginScheduleResume(
   scheduleId: string,
 ): Promise<Response> {
   if (req.method !== 'POST') return methodNotAllowed()
-  await enablePluginSchedule(db, pluginId, scheduleId)
+  await resumeSchedule(db, pluginId, scheduleId)
   return jsonResponse({ ok: true })
 }
