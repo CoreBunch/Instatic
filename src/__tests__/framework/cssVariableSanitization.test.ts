@@ -107,12 +107,21 @@ describe('framework :root variable sanitisation', () => {
     expect(hslCss).toContain('--primary: hsla(238, 100%, 62%, 1);')
   })
 
-  it('skips an unparseable color (no variable emitted, not raw-passed)', () => {
+  it('emits an unparseable base value verbatim; derived variants are skipped', () => {
+    // The base `--<slug>` must always emit — dropping it severs every
+    // `var(--<slug>)` reference in imported CSS. Safety holds because
+    // `formatCssVariableBlock` sanitises each value at emission.
     const sets = generateFrameworkColorVariableSets(colorToken('not-a-color'))
-    expect(sets.light).toHaveLength(0)
+    expect(sets.light.map((variable) => variable.name)).toEqual(['--primary'])
+    expect(sets.light[0]?.value).toBe('not-a-color')
     const css = colorRootCss(colorToken('not-a-color'))
-    expect(css).not.toContain('not-a-color')
-    expect(css).not.toContain('--primary')
+    expect(css).toContain('--primary: not-a-color;')
+  })
+
+  it('a malicious unparseable base value is neutralised at emission, never raw-passed', () => {
+    const css = colorRootCss(colorToken('red; } body { display: none'))
+    expect(css).not.toContain('display: none')
+    expect(css).not.toContain('}')
   })
 })
 

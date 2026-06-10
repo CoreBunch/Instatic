@@ -64,6 +64,8 @@ const TRANSPARENT_STEPS = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90] as const
 const UTILITY_ORDER: FrameworkColorUtilityType[] = ['text', 'background', 'border', 'fill']
 const HSLA_RE = /^hsla?\(\s*([-+]?\d*\.?\d+)(?:deg)?\s*,\s*([-+]?\d*\.?\d+)%\s*,\s*([-+]?\d*\.?\d+)%(?:\s*,\s*([-+]?\d*\.?\d+))?\s*\)$/i
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
+// rgb()/rgba(), both comma and space syntax, alpha as number or percentage.
+const RGBA_RE = /^rgba?\(\s*(\d*\.?\d+)\s*[, ]\s*(\d*\.?\d+)\s*[, ]\s*(\d*\.?\d+)\s*(?:[,/]\s*(\d*\.?\d+%?))?\s*\)$/i
 
 export function normalizeFrameworkColorSlug(input: string): string {
   const slug = input
@@ -127,8 +129,9 @@ function colorVariableSetsFromPlan(plan: ColorTokenPlan[]): FrameworkColorVariab
 
   for (const { token, slug, variants } of plan) {
     for (const variant of variants) {
-      // An unparseable color (e.g. a non-hex/hsl format or garbage) yields null
-      // and emits no variable — we never raw-pass an unvalidated string.
+      // A derived variant (transparent/shade/tint) of an unparseable color
+      // yields null and emits no variable; the base variant falls back to the
+      // authored value (sanitised at emission by `formatCssVariableBlock`).
       const lightVariable = toVariable(token, slug, variant, token.lightValue)
       if (lightVariable) light.push(lightVariable)
       if (token.darkModeEnabled) {
@@ -264,7 +267,11 @@ function buildColorVariants(token: FrameworkColorToken): FrameworkColorVariant[]
       id: 'base',
       suffix: '',
       variableName: (slug) => `--${slug}`,
-      value: (base) => normalizeColorValue(base),
+      // The base variable must always emit: an unparseable-but-authored value
+      // (oklch(), color-mix(), named color) passes through verbatim so every
+      // `var(--<slug>)` reference keeps resolving. Derived variants below
+      // still skip when the value can't be modelled.
+      value: (base) => normalizeColorValue(base) ?? verbatimColorValue(base),
     },
   ]
 
@@ -343,12 +350,27 @@ function utilityStyles(
 }
 
 // All three color transforms validate at the boundary: they return null for any
-// value `parseColor` can't understand (anything that isn't hex or hsl/hsla —
-// e.g. rgb()/oklch()/named/color-mix). Callers skip null rather than raw-passing
-// an unvalidated string into the emitted `:root {}` block.
+// value `parseColor` can't understand (anything that isn't hex, rgb/rgba, or
+// hsl/hsla — e.g. oklch()/named/color-mix). Derived variants (transparent
+// steps, shades, tints) skip null — there is no meaningful way to derive them.
+// The BASE variable instead falls back to the authored value verbatim (see
+// `buildColorVariants`): a token the engine can't model must still emit its
+// `--<slug>`, or every `var(--<slug>)` reference in imported CSS silently
+// loses its declaration. Emission is injection-safe either way —
+// `formatCssVariableBlock` runs every value through `sanitiseCssValue`.
 function normalizeColorValue(value: string): string | null {
   const channels = parseColor(value)
   return channels ? formatHsla(channels) : null
+}
+
+/**
+ * Verbatim fallback for base variables whose value `parseColor` can't model
+ * (oklch(), color-mix(), named colors, …). Returns the trimmed authored value,
+ * or null for empty input.
+ */
+function verbatimColorValue(value: string): string | null {
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
 }
 
 function withAlpha(value: string, alpha: number): string | null {
@@ -387,6 +409,24 @@ function parseColor(value: string): ColorChannels | null {
   const hexMatch = input.match(HEX_RE)
   if (hexMatch) {
     return rgbToHsl(...hexToRgb(hexMatch[1]))
+  }
+
+  const rgbaMatch = input.match(RGBA_RE)
+  if (rgbaMatch) {
+    const alphaRaw = rgbaMatch[4]
+    const alpha = alphaRaw === undefined
+      ? 1
+      : alphaRaw.endsWith('%')
+        ? clamp(Number(alphaRaw.slice(0, -1)) / 100, 0, 1)
+        : clamp(Number(alphaRaw), 0, 1)
+    return {
+      ...rgbToHsl(
+        clamp(Number(rgbaMatch[1]), 0, 255),
+        clamp(Number(rgbaMatch[2]), 0, 255),
+        clamp(Number(rgbaMatch[3]), 0, 255),
+      ),
+      a: alpha,
+    }
   }
 
   return null

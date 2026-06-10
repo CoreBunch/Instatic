@@ -21,6 +21,12 @@
  * history snapshot, so Cmd+Z reverts the entire import in one press.
  */
 
+// Static-site analysis maps HTML onto base modules (`importHtml` resolves
+// every element through the module registry). The modal is a global surface —
+// openable from Spotlight or any workspace — so it must register the base
+// modules itself rather than rely on the site editor's chunk having loaded.
+// This rides the modal's own lazy chunk; it adds nothing to the shell bundle.
+import '@modules/base'
 import { useState, type ReactNode } from 'react'
 import { nanoid } from 'nanoid'
 import { Dialog } from '@ui/components/Dialog'
