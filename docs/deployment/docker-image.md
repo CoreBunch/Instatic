@@ -39,15 +39,6 @@ docker pull ghcr.io/corebunch/instatic:latest
 docker pull ghcr.io/corebunch/instatic:0.0.3
 ```
 
-Docker Hub is a discoverability mirror:
-
-```sh
-docker pull corebunch/instatic:latest
-docker pull corebunch/instatic:0.0.3
-```
-
-When both registries are available, prefer GHCR in Compose files because it is produced directly by the release workflow.
-
 The v0.0.3 published image is built for `linux/amd64`. Use it on Railway and x86_64 VPS/container hosts. ARM64 hosts should build from source for now, or wait for the native arm64 release job before pulling GHCR images directly.
 
 ## Run With SQLite

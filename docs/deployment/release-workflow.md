@@ -23,9 +23,8 @@ Release flow:
 3. Tag a version, e.g. `v0.0.1`.
 4. GitHub Actions runs `bun run build`, `bun test`, and `bun run lint`.
 5. GitHub Actions builds `Dockerfile`.
-6. GitHub Actions pushes the semver image, minor image, and `latest`.
-7. GitHub Actions mirrors to Docker Hub when Docker Hub secrets exist.
-8. GitHub Actions creates the GitHub Release and uploads the release bundle.
+6. GitHub Actions pushes the semver image, minor image, and `latest` to GHCR.
+7. GitHub Actions creates the GitHub Release and uploads the release bundle.
 
 ## Pre-Tag Template Updates
 
@@ -119,18 +118,12 @@ The release workflow should:
 - push `latest` for tagged releases
 - create a release bundle with the Compose files and deployment docs
 - include the Render Blueprint templates in the release bundle
-- skip the Docker Hub mirror cleanly when `DOCKERHUB_USERNAME` or `DOCKERHUB_TOKEN` is missing
 
 The first release targets `linux/amd64` because QEMU-based arm64 publishing made the tagged workflow too slow to use as a release gate. Add arm64 as a separate native-runner build before advertising multi-arch images.
 
-## Docker Hub Mirror
+## Image Registry
 
-The release workflow always publishes GHCR. It mirrors to Docker Hub only when these repository secrets exist:
-
-- `DOCKERHUB_USERNAME`
-- `DOCKERHUB_TOKEN`
-
-The mirror target is `docker.io/corebunch/instatic:<tag>`. If the secrets are absent, the workflow prints a skip message and the GHCR release still completes.
+GHCR (`ghcr.io/corebunch/instatic`) is the only published registry. It is produced directly by the release workflow, is public, and has no aggressive anonymous pull-rate limits — use it in every Compose file, template, and deployment guide. There is no Docker Hub mirror; if one is ever wanted, add a `Mirror To Docker Hub` job plus `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repository secrets.
 
 ## GHCR Visibility
 
