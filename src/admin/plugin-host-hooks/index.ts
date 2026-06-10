@@ -24,6 +24,8 @@
  */
 import { use, useEffect, useState } from 'react'
 import { useEditorStore as useHostEditorStore } from '@site/store/store'
+import { findRenderedCanvasNodes, type RenderedCanvasNode } from '@site/canvas/canvasNodeLookup'
+import { measureCanvasElementRect } from '@site/canvas/canvasOverlayGeometry'
 import type { EditorStore } from '@site/store/types'
 import type { PluginPermission } from '@core/plugin-sdk'
 import { PluginContext, type PluginContextValue } from './pluginContext'
@@ -158,31 +160,26 @@ function findCanvasOverlayLayer(): HTMLElement | null {
   return document.querySelector<HTMLElement>(`[${CANVAS_OVERLAY_LAYER_ATTRIBUTE}]`)
 }
 
-function findCanvasNodeElement(nodeId: string): HTMLElement | null {
+function findCanvasNode(nodeId: string): RenderedCanvasNode | null {
   if (typeof document === 'undefined') return null
-  // The canvas renders every node with `data-node-id="<id>"` (NodeRenderer.tsx).
-  // We escape via attribute-equals selector so node ids with special chars are
-  // safe.
-  const candidates = document.querySelectorAll<HTMLElement>(`[data-node-id="${cssEscape(nodeId)}"]`)
-  // Multiple matches happen when the same node id appears in more than one
-  // breakpoint frame. Return the first visible one — the host's selection
-  // overlay does the same thing.
+  // Canvas nodes render exclusively inside the per-breakpoint canvas iframes —
+  // the admin document's `data-node-id` carriers (layers-tree rows, overlay
+  // rings, import previews) are chrome, not the node. The node typically
+  // renders once per breakpoint frame; pick the first VISIBLE one, like the
+  // host's selection overlay does.
+  const candidates = findRenderedCanvasNodes(nodeId)
   for (const candidate of candidates) {
-    const rect = candidate.getBoundingClientRect()
+    const rect = candidate.element.getBoundingClientRect()
     if (rect.width > 0 || rect.height > 0) return candidate
   }
   return candidates[0] ?? null
 }
 
-function cssEscape(value: string): string {
-  // Avoid pulling in CSS.escape so this works in tests without a full DOM.
-  return value.replace(/"/g, '\\"')
-}
-
 /**
- * Live `CanvasNodeRect` for a rendered node. Updates on layout changes via
- * `ResizeObserver` and on canvas pan/zoom via the editor store's
- * `selectedNodeId` / `hoveredNodeId` / breakpoint subscription.
+ * Live `CanvasNodeRect` for a rendered node. Re-measured every animation
+ * frame while a node id is set (state only updates when the rect changes),
+ * which uniformly covers layout changes, canvas pan/zoom, and breakpoint
+ * frame remounts.
  *
  *   const rect = useCanvasNodeRect(useEditorStore((s) => s.selectedNodeId))
  *   if (!rect) return null
@@ -191,37 +188,32 @@ function cssEscape(value: string): string {
 export function useCanvasNodeRect(nodeId: string | null): CanvasNodeRect | null {
   const [rect, setRect] = useState<CanvasNodeRect | null>(null)
 
-  // Re-measure on every editor render (selection changes, breakpoint
-  // changes, store mutations) by depending on a tick that bumps with each
-  // editor-store emission. Uses the host's internal store hook directly —
-  // this exposes no editor state to the plugin (only DOM geometry), so it
-  // is not gated by `editor.store.read`.
-  const editorTick = useHostEditorStore((s) => s)
-  void editorTick
-
   useEffect(() => {
-    // The hook's whole purpose is to mirror DOM geometry into React state
-    // — the eslint react-hooks/set-state-in-effect rule expects effects to
-    // synchronize React → external, but `useCanvasNodeRect` synchronizes
-    // external → React. Disable for this hook only.
+    // External-system synchronization (DOM geometry → React state): the
+    // setState calls inside `measure` are the whole point of this hook.
     function measure() {
       if (!nodeId) {
         setRect((prev) => (prev === null ? prev : null))
         return
       }
       const layer = findCanvasOverlayLayer()
-      const node = findCanvasNodeElement(nodeId)
-      if (!layer || !node) {
+      const node = findCanvasNode(nodeId)
+      // The node lives inside a per-breakpoint canvas iframe; its rects are
+      // in the IFRAME's coordinate space. `measureCanvasElementRect` recovers
+      // the canvas zoom from the iframe element, translates into editor
+      // coordinates, and makes the result relative to the overlay layer.
+      const measured = node && layer
+        ? measureCanvasElementRect(node.element, node.frame, layer)
+        : null
+      if (!measured) {
         setRect((prev) => (prev === null ? prev : null))
         return
       }
-      const layerRect = layer.getBoundingClientRect()
-      const nodeRect = node.getBoundingClientRect()
       const next: CanvasNodeRect = {
-        top: nodeRect.top - layerRect.top,
-        left: nodeRect.left - layerRect.left,
-        width: nodeRect.width,
-        height: nodeRect.height,
+        top: measured.y,
+        left: measured.x,
+        width: measured.width,
+        height: measured.height,
       }
       setRect((prev) =>
         prev !== null
@@ -238,26 +230,21 @@ export function useCanvasNodeRect(nodeId: string | null): CanvasNodeRect | null 
 
     if (!nodeId) return undefined
 
-    // Track size changes on the node + layer with ResizeObserver. Track
-    // pan/zoom transforms via a window resize / scroll listener since the
-    // transform layer mutates style.transform directly without React
-    // re-renders.
-    const node = findCanvasNodeElement(nodeId)
-    const layer = findCanvasOverlayLayer()
-    const observer = typeof ResizeObserver !== 'undefined'
-      ? new ResizeObserver(() => measure())
-      : null
-    if (observer) {
-      if (node) observer.observe(node)
-      if (layer) observer.observe(layer)
+    // Re-measure every animation frame while mounted — the same pattern the
+    // host's selection rings use. ResizeObserver can't track elements inside
+    // the canvas iframes from this realm, and the transform layer mutates
+    // pan/zoom styles without React re-renders; a cheap rect read per frame
+    // (state only updates when the rect actually changes) covers layout,
+    // content, pan, zoom, and iframe remounts uniformly.
+    let frameHandle = 0
+    const tick = () => {
+      measure()
+      frameHandle = requestAnimationFrame(tick)
     }
-    window.addEventListener('resize', measure)
-    window.addEventListener('scroll', measure, true)
+    frameHandle = requestAnimationFrame(tick)
 
     return () => {
-      observer?.disconnect()
-      window.removeEventListener('resize', measure)
-      window.removeEventListener('scroll', measure, true)
+      cancelAnimationFrame(frameHandle)
     }
   }, [nodeId])
 

@@ -26,7 +26,27 @@ export function findRenderedCanvasNodeElement(
   nodeId: string,
   root: Document = document,
 ): HTMLElement | null {
+  return findRenderedCanvasNodes(nodeId, root)[0]?.element ?? null
+}
+
+/** A rendered canvas node together with the breakpoint iframe hosting it. */
+export interface RenderedCanvasNode {
+  element: HTMLElement
+  frame: HTMLIFrameElement
+}
+
+/**
+ * Every canvas frame's rendered element for a node, in frame order — one per
+ * breakpoint frame that has mounted the node, paired with its hosting iframe
+ * (geometry callers need the frame for zoom/coordinate translation, and
+ * `defaultView.frameElement` is not reliable in every environment).
+ */
+export function findRenderedCanvasNodes(
+  nodeId: string,
+  root: Document = document,
+): RenderedCanvasNode[] {
   const selector = `[data-node-id="${escapeCssAttributeValue(nodeId)}"]`
+  const nodes: RenderedCanvasNode[] = []
   for (const frame of root.querySelectorAll('iframe')) {
     let frameDoc: Document | null
     try {
@@ -38,7 +58,7 @@ export function findRenderedCanvasNodeElement(
     }
     if (!frameDoc?.body?.hasAttribute('data-breakpoint-id')) continue
     const element = frameDoc.querySelector<HTMLElement>(selector)
-    if (element) return element
+    if (element) nodes.push({ element, frame })
   }
-  return null
+  return nodes
 }
