@@ -18,7 +18,7 @@ The VPS stack uses the same production image as managed platforms. Compose only 
 SQLite is the default for most single-site installs. Postgres is for multiple simultaneous admin writers, horizontal app scale, or operators who already want Postgres.
 
 When using a published image, set `INSTATIC_IMAGE` and omit `compose.build.yml` plus `--build`.
-Before adding AI provider credentials or enabling TOTP MFA in production, set `INSTATIC_SECRET_KEY` to the output of `bun run scripts/generate-secret-key.ts`.
+Before adding AI provider credentials, saving plugin secret settings, or enabling TOTP MFA in production, set `INSTATIC_SECRET_KEY` to the output of `bun run scripts/generate-secret-key.ts`.
 
 ## Install From A Release Bundle
 
@@ -57,7 +57,7 @@ For plain SQLite without TLS, source builds use `compose.prod.yml`, `compose.sql
 
 ## SQLite Install
 
-For reversible server secrets such as AI credentials and TOTP MFA seeds, copy the env template and set `INSTATIC_SECRET_KEY` first:
+For reversible server secrets such as AI credentials, plugin secret settings, and TOTP MFA seeds, copy the env template and set `INSTATIC_SECRET_KEY` first:
 
 ```sh
 cp .env.production.example .env

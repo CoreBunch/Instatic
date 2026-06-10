@@ -18,8 +18,10 @@
  * and via the admin-app context hook. Frontend bundles read non-secret
  * values by fetching them through the plugin's own public route — the
  * host never exposes plugin settings to the published page directly.
- * The host stores settings per-plugin in the `installed_plugins.settings_json`
- * column.
+ * The host stores non-secret settings per-plugin in the
+ * `installed_plugins.settings_json` column; settings declared
+ * `secret: true` are encrypted at rest in the dedicated `plugin_secrets`
+ * table (`server/repositories/pluginSecrets.ts`).
  *
  * Why a separate concept from canvas-module schema: settings are
  * site-owner-managed, persist across plugin updates, and may carry secrets
@@ -40,14 +42,19 @@ interface PluginSettingBase {
   required?: boolean
   /**
    * When true, the value is treated as a secret:
-   *   - Masked (`'***'`) on EVERY payload the host sends to the browser —
-   *     the plugins list, the settings GET/PUT responses, admin-page route
-   *     snapshots, and editor-panel settings snapshots
-   *   - Stripped from frontend bundles
+   *   - Encrypted at rest (AES-256-GCM, master key) in the host's
+   *     `plugin_secrets` table — it never enters `settings_json`
+   *   - Presented as `'***'` (set) or `''` (unset) on EVERY payload the
+   *     host sends to the browser — the plugins list, the settings GET/PUT
+   *     responses, admin-page route snapshots, and editor-panel snapshots
    *   - Rendered as a password input in the form
    * Only server-side plugin code (`api.cms.settings.get` / `getAll` inside
    * the QuickJS worker) reads the real value. Editor-side and admin-app
    * plugin code always sees the mask.
+   *
+   * Only string-typed settings (text / textarea / password / url / color /
+   * select) may be secret — encrypting a toggle or number is rejected at
+   * definePlugin time and at the host's manifest parse.
    */
   secret?: boolean
 }
@@ -99,11 +106,12 @@ export type PluginSettingDefinition =
 export type PluginSettingsValues = Record<string, PluginSettingValue>
 
 /**
- * Sentinel the host substitutes for secret values on every browser-bound
- * payload. The settings PUT route treats an incoming secret equal to this
- * sentinel as "unchanged" and keeps the stored value — see
- * `resolveSecretSettingsUpdate`. Consequence: a secret can never be
- * literally `'***'`.
+ * Sentinel the host substitutes for stored secret values on every
+ * browser-bound payload. The settings persistence boundary
+ * (`applyPluginSecretSettings` in `server/repositories/pluginSecrets.ts`)
+ * treats an incoming secret equal to this sentinel as "unchanged" and
+ * keeps the stored encrypted row; a new string rotates it and the empty
+ * string clears it. Consequence: a secret can never be literally `'***'`.
  */
 export const SECRET_SETTING_MASK = '***'
 
@@ -131,6 +139,12 @@ export function validatePluginSettingsDefinitions(
     seen.add(s.id)
     if (!s.label || typeof s.label !== 'string') {
       throw new Error(`[plugin-sdk] Plugin "${pluginId}" setting "${s.id}" must have a label.`)
+    }
+    if (s.secret && (s.type === 'toggle' || s.type === 'number')) {
+      throw new Error(
+        `[plugin-sdk] Plugin "${pluginId}" setting "${s.id}" cannot be secret: ` +
+          `only string-typed settings may be encrypted.`,
+      )
     }
   }
 }
@@ -213,58 +227,3 @@ export function validatePluginSettingsRecord(
   return out
 }
 
-/**
- * Mask secret values in a settings record before serializing it onto any
- * browser-bound payload — the plugins list, the settings GET/PUT responses,
- * admin-page route snapshots, editor-panel snapshots. Only server-side
- * plugin code reading via `api.cms.settings.get` sees the real value.
- */
-export function maskSecretSettings(
-  settings: ReadonlyArray<PluginSettingDefinition>,
-  values: PluginSettingsValues,
-): PluginSettingsValues {
-  const out: PluginSettingsValues = { ...values }
-  for (const s of settings) {
-    if (s.secret && out[s.id] !== undefined && out[s.id] !== '') {
-      out[s.id] = SECRET_SETTING_MASK
-    }
-  }
-  return out
-}
-
-/**
- * Resolve a settings PUT against the stored record: an incoming secret equal
- * to `SECRET_SETTING_MASK` means the admin form submitted the masked GET
- * value untouched, so the stored secret is kept. Any other incoming value —
- * including the empty string, which deliberately clears the secret — wins.
- */
-export function resolveSecretSettingsUpdate(
-  settings: ReadonlyArray<PluginSettingDefinition>,
-  incoming: PluginSettingsValues,
-  stored: PluginSettingsValues,
-): PluginSettingsValues {
-  const out: PluginSettingsValues = { ...incoming }
-  for (const s of settings) {
-    if (s.secret && out[s.id] === SECRET_SETTING_MASK && stored[s.id] !== undefined) {
-      out[s.id] = stored[s.id]
-    }
-  }
-  return out
-}
-
-/**
- * Strip secret values entirely. Used when projecting settings into the
- * frontend bundle / published page where they would otherwise leak.
- */
-export function stripSecretSettings(
-  settings: ReadonlyArray<PluginSettingDefinition>,
-  values: PluginSettingsValues,
-): PluginSettingsValues {
-  const out: PluginSettingsValues = {}
-  for (const [key, value] of Object.entries(values)) {
-    const def = settings.find((s) => s.id === key)
-    if (def?.secret) continue
-    out[key] = value
-  }
-  return out
-}

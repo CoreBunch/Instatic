@@ -14,7 +14,7 @@ Run the image with:
 - `DATABASE_URL` pointing at SQLite or Postgres
 - `UPLOADS_DIR` mounted on persistent storage
 - `STATIC_DIR=/app/dist`
-- `INSTATIC_SECRET_KEY` set before configuring AI provider credentials or TOTP MFA
+- `INSTATIC_SECRET_KEY` set before configuring AI provider credentials, plugin secret settings, or TOTP MFA
 
 Use one persistent mount root when the platform only supports one app volume:
 

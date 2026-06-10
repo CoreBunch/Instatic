@@ -88,7 +88,7 @@ ipAllowList=[]
 
 Render web services use `PORT=10000` by default. The templates set `PORT` explicitly because the Docker image's default is `3001`.
 
-`INSTATIC_SECRET_KEY` uses Render's `generateValue: true` support. Operators should copy the generated value from Render's environment settings into their password manager after first deploy. Losing the value means stored AI provider credentials must be re-entered and TOTP MFA must be re-enrolled.
+`INSTATIC_SECRET_KEY` uses Render's `generateValue: true` support. Operators should copy the generated value from Render's environment settings into their password manager after first deploy. Losing the value means stored AI provider credentials and plugin secret settings must be re-entered and TOTP MFA must be re-enrolled.
 
 Do not add a separate migration command. `server/index.ts` creates the DB client from `DATABASE_URL` and runs the matching migrations before the HTTP server starts.
 

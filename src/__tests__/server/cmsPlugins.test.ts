@@ -22,6 +22,7 @@ function makeFakeDb() {
   const plugins: Record<string, unknown>[] = []
   const records: Record<string, unknown>[] = []
   const crashEvents: Record<string, unknown>[] = []
+  const secrets: Record<string, unknown>[] = []
 
   const handle = async <Row extends Record<string, unknown> = Record<string, unknown>>(
     strings: TemplateStringsArray,
@@ -133,12 +134,50 @@ function makeFakeDb() {
       row.updated_at = new Date('2026-05-01T10:06:00.000Z').toISOString()
       return { rows: [row as Row], rowCount: 1 }
     }
-    // deletePlugin — values[0]=id
+    // deletePlugin — values[0]=id. Mimic the plugin_secrets FK cascade.
     if (normalized.includes('delete from installed_plugins where id')) {
       const index = plugins.findIndex((plugin) => plugin.id === values[0])
       if (index === -1) return { rows: [], rowCount: 0 }
       plugins.splice(index, 1)
+      for (let i = secrets.length - 1; i >= 0; i--) {
+        if (secrets[i].plugin_id === values[0]) secrets.splice(i, 1)
+      }
       return { rows: [], rowCount: 1 }
+    }
+    // pluginSecrets upsert/seed — values[0..4]=pluginId, settingId, ciphertext, iv, fingerprint
+    if (normalized.includes('insert into plugin_secrets')) {
+      const existing = secrets.find(
+        (s) => s.plugin_id === values[0] && s.setting_id === values[1],
+      )
+      if (existing) {
+        if (normalized.includes('do nothing')) return { rows: [], rowCount: 0 }
+        existing.ciphertext = values[2]
+        existing.iv = values[3]
+        existing.key_fingerprint = values[4]
+        return { rows: [], rowCount: 1 }
+      }
+      secrets.push({
+        plugin_id: values[0],
+        setting_id: values[1],
+        ciphertext: values[2],
+        iv: values[3],
+        key_fingerprint: values[4],
+      })
+      return { rows: [], rowCount: 1 }
+    }
+    // deletePluginSecret — values[0]=pluginId, values[1]=settingId
+    if (normalized.includes('delete from plugin_secrets')) {
+      const index = secrets.findIndex(
+        (s) => s.plugin_id === values[0] && s.setting_id === values[1],
+      )
+      if (index === -1) return { rows: [], rowCount: 0 }
+      secrets.splice(index, 1)
+      return { rows: [], rowCount: 1 }
+    }
+    // listPluginSecretStates / resolvePluginSecretsForRuntime — values[0]=pluginId
+    if (normalized.includes('from plugin_secrets')) {
+      const rows = secrets.filter((s) => s.plugin_id === values[0])
+      return { rows: rows as Row[], rowCount: rows.length }
     }
     // recordPluginCrash — values[0..3]=id, pluginId, reason, stack
     if (normalized.includes('insert into plugin_crash_events')) {
@@ -204,7 +243,7 @@ function makeFakeDb() {
   handle.transaction = async <T>(cb: (tx: DbClient) => Promise<T>): Promise<T> =>
     cb(handle as unknown as DbClient)
 
-  return Object.assign(handle as DbClient, { admins, sessions, plugins, records, crashEvents })
+  return Object.assign(handle as DbClient, { admins, sessions, plugins, records, crashEvents, secrets })
 }
 
 async function createCookie(db: ReturnType<typeof makeFakeDb>): Promise<string> {
@@ -372,7 +411,7 @@ describe('CMS plugin handlers', () => {
     expect(db.plugins).toHaveLength(0)
   })
 
-  it('masks secret settings on every browser-bound payload and round-trips the mask sentinel on PUT', async () => {
+  it('encrypts secret settings into plugin_secrets and presents only the sentinel on browser-bound payloads', async () => {
     const db = makeFakeDb()
     const cookie = await createCookie(db)
 
@@ -401,6 +440,8 @@ describe('CMS plugin handlers', () => {
 
     const storedSettings = (): Record<string, unknown> =>
       JSON.parse(String(db.plugins[0].settings_json)) as Record<string, unknown>
+    const secretRow = () =>
+      db.secrets.find((s) => s.plugin_id === 'local.secret' && s.setting_id === 'apiKey')
 
     const putSettings = async (settings: Record<string, unknown>) =>
       handleCmsRequest(
@@ -412,14 +453,24 @@ describe('CMS plugin handlers', () => {
         db,
       )
 
-    // Save a real secret — the DB stores it, but the response masks it.
+    // Save a real secret — settings_json never receives the field; the value
+    // lands encrypted in plugin_secrets and the response shows the sentinel.
     const save = await putSettings({ apiKey: 'real-secret', mode: 'turbo' })
     expect(save.status).toBe(200)
-    expect(await save.json()).toEqual({ settings: { apiKey: '***', mode: 'turbo' } })
-    expect(storedSettings()).toEqual({ apiKey: 'real-secret', mode: 'turbo' })
+    expect(await save.json()).toEqual({
+      settings: { apiKey: '***', mode: 'turbo' },
+      secretsNeedingReentry: [],
+    })
+    expect(storedSettings()).toEqual({ mode: 'turbo' })
+    const row = secretRow()
+    expect(row).toBeDefined()
+    expect(row!.ciphertext).toBeInstanceOf(Uint8Array)
+    expect(Buffer.from(row!.ciphertext as Uint8Array).toString('latin1')).not.toContain('real-secret')
+    // No plaintext anywhere in the stored plugin row either.
+    expect(JSON.stringify(db.plugins[0])).not.toContain('real-secret')
 
-    // The plugins LIST payload masks the secret too — both on the plugin row
-    // and on the admin-page route's settings snapshot. Non-secrets untouched.
+    // The plugins LIST payload shows the sentinel too — both on the plugin
+    // row and on the admin-page route's settings snapshot.
     const list = await handleCmsRequest(
       cmsRequest('http://localhost/admin/api/cms/plugins', { headers: { cookie } }),
       db,
@@ -432,7 +483,7 @@ describe('CMS plugin handlers', () => {
     expect(listBody.plugins[0].settings).toEqual({ apiKey: '***', mode: 'turbo' })
     expect(listBody.adminPages[0].pluginSettings).toEqual({ apiKey: '***', mode: 'turbo' })
 
-    // The dedicated settings GET masks as before.
+    // The dedicated settings GET shows the sentinel for the stored secret.
     const get = await handleCmsRequest(
       cmsRequest('http://localhost/admin/api/cms/plugins/local.secret/settings', {
         headers: { cookie },
@@ -440,29 +491,39 @@ describe('CMS plugin handlers', () => {
       db,
     )
     expect(get.status).toBe(200)
-    const getBody = await get.json() as { settings: Record<string, unknown> }
+    const getBody = await get.json() as {
+      settings: Record<string, unknown>
+      secretsNeedingReentry: string[]
+    }
     expect(getBody.settings).toEqual({ apiKey: '***', mode: 'turbo' })
+    expect(getBody.secretsNeedingReentry).toEqual([])
 
     // PUT that round-trips the masked GET payload unchanged keeps the stored
-    // real secret instead of overwriting it with the literal sentinel.
+    // encrypted row (same ciphertext) instead of storing the literal sentinel.
+    const ciphertextBefore = Buffer.from(secretRow()!.ciphertext as Uint8Array)
     const unchanged = await putSettings({ apiKey: '***', mode: 'slow' })
     expect(unchanged.status).toBe(200)
-    expect(storedSettings()).toEqual({ apiKey: 'real-secret', mode: 'slow' })
+    expect(storedSettings()).toEqual({ mode: 'slow' })
+    expect(ciphertextBefore.equals(Buffer.from(secretRow()!.ciphertext as Uint8Array))).toBe(true)
 
-    // A deliberate new value still replaces the secret…
+    // A deliberate new value rotates the encrypted row…
     const rotate = await putSettings({ apiKey: 'rotated-secret', mode: 'slow' })
     expect(rotate.status).toBe(200)
-    expect(storedSettings()).toEqual({ apiKey: 'rotated-secret', mode: 'slow' })
+    expect(ciphertextBefore.equals(Buffer.from(secretRow()!.ciphertext as Uint8Array))).toBe(false)
+    expect(JSON.stringify(await rotate.json())).not.toContain('rotated-secret')
 
-    // …and an empty string deliberately clears it. The empty value is not
-    // masked on the way back out.
+    // …and an empty string deliberately clears it: the row is deleted and
+    // the field presents as empty (unset).
     const clear = await putSettings({ apiKey: '', mode: 'slow' })
     expect(clear.status).toBe(200)
-    expect(storedSettings()).toEqual({ apiKey: '', mode: 'slow' })
-    expect(await clear.json()).toEqual({ settings: { apiKey: '', mode: 'slow' } })
+    expect(secretRow()).toBeUndefined()
+    expect(await clear.json()).toEqual({
+      settings: { apiKey: '', mode: 'slow' },
+      secretsNeedingReentry: [],
+    })
 
     // State mutations return a single-plugin envelope alongside the list —
-    // it must be masked as well. Re-seed a real secret first.
+    // it must present the sentinel as well. Re-seed a real secret first.
     await putSettings({ apiKey: 'real-secret', mode: 'slow' })
     const disable = await handleCmsRequest(
       cmsRequest('http://localhost/admin/api/cms/plugins/local.secret', {
@@ -479,8 +540,36 @@ describe('CMS plugin handlers', () => {
     }
     expect(disableBody.plugin.settings).toEqual({ apiKey: '***', mode: 'slow' })
     expect(disableBody.plugins[0].settings).toEqual({ apiKey: '***', mode: 'slow' })
-    // Masking is wire-only — the stored value survives untouched.
-    expect(storedSettings()).toEqual({ apiKey: 'real-secret', mode: 'slow' })
+    // Presentation is wire-only — the encrypted row survives untouched.
+    expect(secretRow()).toBeDefined()
+
+    // Master-key rotation: a stale fingerprint surfaces as needs-re-entry on
+    // the settings GET without breaking the payload.
+    secretRow()!.key_fingerprint = 'deadbeefdeadbeef'
+    const stale = await handleCmsRequest(
+      cmsRequest('http://localhost/admin/api/cms/plugins/local.secret/settings', {
+        headers: { cookie },
+      }),
+      db,
+    )
+    expect(stale.status).toBe(200)
+    const staleBody = await stale.json() as {
+      settings: Record<string, unknown>
+      secretsNeedingReentry: string[]
+    }
+    expect(staleBody.settings).toEqual({ apiKey: '***', mode: 'slow' })
+    expect(staleBody.secretsNeedingReentry).toEqual(['apiKey'])
+
+    // Uninstall cascades the secrets rows.
+    const remove = await handleCmsRequest(
+      cmsRequest('http://localhost/admin/api/cms/plugins/local.secret', {
+        method: 'DELETE',
+        headers: { cookie },
+      }),
+      db,
+    )
+    expect(remove.status).toBe(200)
+    expect(db.secrets).toHaveLength(0)
   })
 
   it('strips caller-supplied assetBasePath from JSON-installed manifests (path-traversal sink)', async () => {

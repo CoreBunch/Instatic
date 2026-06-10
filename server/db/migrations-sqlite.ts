@@ -931,4 +931,35 @@ export const sqliteMigrations: Migration[] = [
         add column context_window integer;
     `,
   },
+  {
+    id: '016_plugin_secrets',
+    sql: `
+      -- ─── Encrypted plugin secret settings — SQLite mirror of PG 016 ──────
+      --
+      -- Plugin settings declared \`secret: true\` (third-party API keys etc.)
+      -- are encrypted at rest with the same AES-256-GCM master key used for
+      -- AI provider credentials (server/secrets/). They live in their own
+      -- table instead of installed_plugins.settings_json so the plaintext
+      -- can never ride a settings read onto a browser-bound payload.
+      --
+      -- key_fingerprint mirrors ai_provider_credentials: it records which
+      -- master key encrypted the row so a key rotation is detected and
+      -- surfaced as "re-enter this secret" instead of a decrypt failure.
+      --
+      -- Dialect translations from the PG version:
+      --   bytea            → blob
+      --   timestamptz      → text   (ISO 8601)
+      --   default now()    → default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      create table if not exists plugin_secrets (
+        plugin_id text not null references installed_plugins(id) on delete cascade,
+        setting_id text not null,
+        ciphertext blob not null,
+        iv blob not null,
+        key_fingerprint text not null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        primary key (plugin_id, setting_id)
+      );
+    `,
+  },
 ]

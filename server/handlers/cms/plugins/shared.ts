@@ -34,14 +34,20 @@ import type {
   PluginManifest,
   PluginPermission,
   PluginResource,
+  PluginSettingDefinition,
+  PluginSettingsValues,
 } from '@core/plugin-sdk'
-import { maskSecretSettings } from '@core/plugin-sdk'
+import { SECRET_SETTING_MASK } from '@core/plugin-sdk'
 import {
   getInstalledPlugin,
   listInstalledPlugins,
   listPluginCrashes,
   type InstalledPluginResult,
 } from '../../../repositories/plugins'
+import {
+  listPluginSecretStates,
+  type PluginSecretState,
+} from '../../../repositories/pluginSecrets'
 import { collectEnabledAdminPages } from '@core/plugins/manifest'
 import { assertPathWithin } from '../../../util/pathWithin'
 import { badRequest, jsonResponse } from '../../../http'
@@ -125,28 +131,63 @@ function brokenPluginStub(
 }
 
 /**
- * Mask a plugin's secret setting values before the row is serialized onto
- * any browser-bound response. Secret values must NEVER reach the admin UI
- * unmasked — server-side plugin code reads the real values through
- * `api.cms.settings.get`, which never goes through these handlers. Every
- * route that returns an `InstalledPlugin` (the list payload AND the
- * single-`plugin` envelopes on install / upgrade / enable / disable /
- * restart) MUST pass it through here.
+ * Project a plugin's secret setting fields to their wire-safe presentation:
+ * `'***'` when an encrypted `plugin_secrets` row exists, `''` when not (the
+ * admin form needs to know whether a value is set). This is also the
+ * defense-in-depth mask — it overwrites every secret field regardless of
+ * what `plugin.settings` carried, so even a value that somehow reached
+ * `settings_json` cannot escape. Pure; handlers fetch `states` via
+ * `listPluginSecretStates`.
  */
-export function maskPluginSecrets(plugin: InstalledPlugin): InstalledPlugin {
+export function projectSecretSettings(
+  declared: ReadonlyArray<PluginSettingDefinition>,
+  settings: PluginSettingsValues,
+  states: PluginSecretState[],
+): PluginSettingsValues {
+  const stored = new Set(states.map((s) => s.settingId))
+  const out: PluginSettingsValues = { ...settings }
+  for (const def of declared) {
+    if (!def.secret) continue
+    out[def.id] = stored.has(def.id) ? SECRET_SETTING_MASK : ''
+  }
+  return out
+}
+
+/**
+ * Present a plugin row for a browser-bound response. Secret setting values
+ * live encrypted in `plugin_secrets` and never enter `settings_json`, so
+ * the only thing to project is presence: `'***'` for a stored secret, `''`
+ * otherwise. Every route that returns an `InstalledPlugin` (the list
+ * payload AND the single-`plugin` envelopes on install / upgrade / enable /
+ * disable / restart) MUST pass it through here. Server-side plugin code
+ * reads the real values through `api.cms.settings.get`, which never goes
+ * through these handlers.
+ */
+export async function presentPluginSecrets(
+  db: DbClient,
+  plugin: InstalledPlugin,
+): Promise<InstalledPlugin> {
   const declared = plugin.manifest.settings ?? []
-  if (declared.length === 0) return plugin
-  return { ...plugin, settings: maskSecretSettings(declared, plugin.settings) }
+  if (!declared.some((s) => s.secret)) return plugin
+  const states = await listPluginSecretStates(db, plugin.id)
+  return { ...plugin, settings: projectSecretSettings(declared, plugin.settings, states) }
 }
 
 export async function pluginsPayload(db: DbClient) {
   const results = await listInstalledPlugins(db)
   // Materialise every result — ok or broken — as an InstalledPlugin for the
-  // wire, masking secret setting values. Broken plugins get a stub with
-  // lifecycleStatus='error' so the admin UI can surface the parse error and
-  // offer a Remove button.
-  const asPlugins = results.map((r) =>
-    r.kind === 'ok' ? maskPluginSecrets(r.plugin) : brokenPluginStub(r),
+  // wire, projecting secret settings to their `'***'`/`''` presentation.
+  // Broken plugins get a stub with lifecycleStatus='error' so the admin UI
+  // can surface the parse error and offer a Remove button.
+  const presented = await Promise.all(
+    results.map(async (r) =>
+      r.kind === 'ok'
+        ? { kind: 'ok' as const, plugin: await presentPluginSecrets(db, r.plugin) }
+        : r,
+    ),
+  )
+  const asPlugins = presented.map((r) =>
+    r.kind === 'ok' ? r.plugin : brokenPluginStub(r),
   )
   // Attach recent crash events per plugin so the admin UI can render the
   // "Recent issues" panel without an extra round trip per card. Cap at 10
@@ -160,11 +201,11 @@ export async function pluginsPayload(db: DbClient) {
   )
   // Only properly-parsed plugins contribute admin page nav entries — broken
   // plugins have stub manifests with empty adminPages arrays anyway, but
-  // filtering explicitly makes the intent clear. Masked rows feed the page
-  // routes too, because each route embeds a `pluginSettings` snapshot.
-  const okPlugins = results
-    .filter((r): r is Extract<InstalledPluginResult, { kind: 'ok' }> => r.kind === 'ok')
-    .map((r) => maskPluginSecrets(r.plugin))
+  // filtering explicitly makes the intent clear. Presented rows feed the
+  // page routes too, because each route embeds a `pluginSettings` snapshot.
+  const okPlugins = presented
+    .filter((r): r is { kind: 'ok'; plugin: InstalledPlugin } => r.kind === 'ok')
+    .map((r) => r.plugin)
   return {
     plugins: pluginsWithCrashes,
     adminPages: collectEnabledAdminPages(okPlugins),

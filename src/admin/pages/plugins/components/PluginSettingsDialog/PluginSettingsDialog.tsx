@@ -65,6 +65,13 @@ async function savePluginSettings(
 
 type SettingDefinition = PluginSettingsSchema[number]
 
+/** Human labels for the secret fields flagged as needing re-entry. */
+function reentryLabels(settingIds: string[], schema: PluginSettingsSchema | null): string {
+  return settingIds
+    .map((id) => schema?.find((field) => field.id === id)?.label ?? id)
+    .join(', ')
+}
+
 interface PluginSettingsDialogProps {
   pluginId: string
   pluginName: string
@@ -148,6 +155,11 @@ export function PluginSettingsDialog({
       {saveError && (
         <pluginAdminUi.Alert tone="danger" title="Could not save settings">
           {saveError}
+        </pluginAdminUi.Alert>
+      )}
+      {!loading && !loadError && data && data.secretsNeedingReentry.length > 0 && (
+        <pluginAdminUi.Alert tone="warning" title="Secrets need re-entry">
+          {`The server's encryption key changed since these values were saved. Re-enter: ${reentryLabels(data.secretsNeedingReentry, schema)}.`}
         </pluginAdminUi.Alert>
       )}
       {!loading && !loadError && schema && schema.length === 0 && (

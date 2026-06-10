@@ -46,6 +46,7 @@ const PluginSettingsEnvelope = Type.Object(
   {
     schema: Type.Optional(Type.Unknown()),
     settings: Type.Optional(Type.Unknown()),
+    secretsNeedingReentry: Type.Optional(Type.Array(Type.String())),
   },
   { additionalProperties: true },
 )
@@ -204,11 +205,14 @@ export async function installCmsPluginPack(
 // Plugin settings
 //
 // `GET /admin/api/cms/plugins/:id/settings` returns the declared schema +
-// the masked stored values (secrets become `'***'`). `PUT` validates against
-// the schema and persists; the host requires a fresh step-up window for the
-// PUT (see `server/handlers/cms/plugins/index.ts:requiresStepUp`), so callers
-// in the admin UI must wrap the update in `runStepUp` to surface the
-// password prompt when the window has expired.
+// the presented stored values: secret fields surface as `'***'` when an
+// encrypted value is stored and `''` when not, and `secretsNeedingReentry`
+// lists secret fields whose stored value was encrypted with a different
+// master key (rotation — the operator must re-enter them). `PUT` validates
+// against the schema and persists; the host requires a fresh step-up window
+// for the PUT (see `server/handlers/cms/plugins/index.ts:requiresStepUp`),
+// so callers in the admin UI must wrap the update in `runStepUp` to surface
+// the password prompt when the window has expired.
 // ---------------------------------------------------------------------------
 
 export type PluginSettingsValue = string | number | boolean
@@ -218,6 +222,7 @@ export type PluginSettingsSchema = NonNullable<PluginManifest['settings']>
 export interface CmsPluginSettingsResponse {
   schema: PluginSettingsSchema
   settings: PluginSettingsRecord
+  secretsNeedingReentry: string[]
 }
 
 export async function getCmsPluginSettings(
@@ -233,6 +238,7 @@ export async function getCmsPluginSettings(
   return {
     schema: (body.schema as PluginSettingsSchema | undefined) ?? [],
     settings: (body.settings as PluginSettingsRecord | undefined) ?? {},
+    secretsNeedingReentry: body.secretsNeedingReentry ?? [],
   }
 }
 

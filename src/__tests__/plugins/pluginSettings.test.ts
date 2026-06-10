@@ -1,13 +1,14 @@
 /**
  * Tests for the plugin settings SDK helpers.
+ *
+ * The secret-value semantics (encrypt at rest, `'***'` sentinel
+ * preserve / rotate / clear) live at the persistence boundary and are
+ * covered by `src/__tests__/server/pluginSecrets.test.ts` and
+ * `cmsPlugins.test.ts`.
  */
 import { describe, expect, it } from 'bun:test'
 import {
-  SECRET_SETTING_MASK,
-  maskSecretSettings,
   pluginSettingsDefaults,
-  resolveSecretSettingsUpdate,
-  stripSecretSettings,
   validatePluginSettingsDefinitions,
   validatePluginSettingsRecord,
   type PluginSettingDefinition,
@@ -109,81 +110,6 @@ describe('validatePluginSettingsRecord', () => {
   })
 })
 
-describe('maskSecretSettings / stripSecretSettings', () => {
-  it('masks secret values for UI consumption', () => {
-    const masked = maskSecretSettings(baseSchema, {
-      apiKey: 'super-secret',
-      enabled: true,
-      count: 5,
-      theme: 'dark',
-      requiredField: 'x',
-    })
-    expect(masked.apiKey).toBe('***')
-    expect(masked.enabled).toBe(true)
-  })
-
-  it('strips secret values entirely (frontend / log shipping)', () => {
-    const stripped = stripSecretSettings(baseSchema, {
-      apiKey: 'super-secret',
-      enabled: true,
-      count: 5,
-      theme: 'dark',
-      requiredField: 'x',
-    })
-    expect(stripped).not.toHaveProperty('apiKey')
-    expect(stripped.enabled).toBe(true)
-  })
-})
-
-describe('resolveSecretSettingsUpdate', () => {
-  const stored = {
-    apiKey: 'real-secret',
-    enabled: true,
-    count: 5,
-    theme: 'dark',
-    requiredField: 'x',
-  }
-
-  it('keeps the stored secret when the form round-trips the mask sentinel', () => {
-    const resolved = resolveSecretSettingsUpdate(baseSchema, {
-      apiKey: SECRET_SETTING_MASK,
-      enabled: false,
-      count: 9,
-      theme: 'light',
-      requiredField: 'y',
-    }, stored)
-    expect(resolved.apiKey).toBe('real-secret')
-    // Non-secret edits in the same PUT still win.
-    expect(resolved.enabled).toBe(false)
-    expect(resolved.count).toBe(9)
-  })
-
-  it('replaces the secret when the form submits a new value', () => {
-    const resolved = resolveSecretSettingsUpdate(baseSchema, {
-      ...stored,
-      apiKey: 'rotated-secret',
-    }, stored)
-    expect(resolved.apiKey).toBe('rotated-secret')
-  })
-
-  it('clears the secret when the form submits an empty string', () => {
-    const resolved = resolveSecretSettingsUpdate(baseSchema, {
-      ...stored,
-      apiKey: '',
-    }, stored)
-    expect(resolved.apiKey).toBe('')
-  })
-
-  it('does not treat the sentinel specially on non-secret fields', () => {
-    const resolved = resolveSecretSettingsUpdate(baseSchema, {
-      ...stored,
-      apiKey: 'kept',
-      requiredField: SECRET_SETTING_MASK,
-    }, stored)
-    expect(resolved.requiredField).toBe(SECRET_SETTING_MASK)
-  })
-})
-
 describe('validatePluginSettingsDefinitions', () => {
   it('rejects duplicate setting ids at definePlugin-time', () => {
     expect(() =>
@@ -200,5 +126,23 @@ describe('validatePluginSettingsDefinitions', () => {
         { id: '1invalid', label: 'X', type: 'text' },
       ]),
     ).toThrow(/invalid/)
+  })
+
+  it('rejects secret on non-string setting types (secrets are encrypted as strings)', () => {
+    expect(() =>
+      validatePluginSettingsDefinitions('acme.x', [
+        { id: 'flag', label: 'Flag', type: 'toggle', secret: true },
+      ]),
+    ).toThrow(/cannot be secret/)
+    expect(() =>
+      validatePluginSettingsDefinitions('acme.x', [
+        { id: 'limit', label: 'Limit', type: 'number', secret: true },
+      ]),
+    ).toThrow(/cannot be secret/)
+    expect(() =>
+      validatePluginSettingsDefinitions('acme.x', [
+        { id: 'apiKey', label: 'API key', type: 'password', secret: true },
+      ]),
+    ).not.toThrow()
   })
 })

@@ -560,6 +560,13 @@ export function parsePluginManifest(input: unknown): PluginManifest {
       if (s.type === 'select' && (!s.options || s.options.length === 0)) {
         throw new Error(`Invalid plugin manifest: setting "${s.id}" of type "select" must declare options`)
       }
+      // Secret values are encrypted at rest as strings; toggles and numbers
+      // cannot ride that path. Mirrors validatePluginSettingsDefinitions.
+      if (s.secret && (s.type === 'toggle' || s.type === 'number')) {
+        throw new Error(
+          `Invalid plugin manifest: setting "${s.id}" of type "${s.type}" cannot be secret — only string-typed settings may be encrypted`,
+        )
+      }
     }
   }
 

@@ -19,10 +19,10 @@ import type {
 import {
   loadPluginModulePack,
   loadPluginServerEntrypoint,
+  primePluginSettingsCache,
   runPluginLifecycle,
   unloadPlugin,
 } from '../../../plugins/runtime'
-import { pluginSettingsCache } from '../../../plugins/host/settingsSync'
 import {
   activateSandboxedPluginModulePack,
   deactivatePluginModulePack,
@@ -46,10 +46,10 @@ export async function runPluginLifecycleHook(
 
   try {
     // Make sure the plugin's settings cache is current before the worker
-    // seeds them into its local mirror — the row carries the canonical
-    // values and any prior in-process cache may be stale (e.g. after a
-    // settings PUT).
-    pluginSettingsCache.set(plugin.id, plugin.settings)
+    // seeds them into its local mirror — the rows carry the canonical
+    // values (non-secret settings + decrypted secrets) and any prior
+    // in-process cache may be stale (e.g. after a settings PUT).
+    await primePluginSettingsCache(db, plugin)
 
     // Canvas module pack — host-side, separate from worker. Activate when
     // entering active state; deactivate when leaving.

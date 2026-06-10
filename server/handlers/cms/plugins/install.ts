@@ -37,11 +37,11 @@ import { readPluginPackage } from '../../../plugins/package'
 import {
   loadPluginModulePack,
   loadPluginServerEntrypoint,
+  primePluginSettingsCache,
   runPluginLifecycle,
   runPluginMigrate,
   unloadPlugin,
 } from '../../../plugins/runtime'
-import { pluginSettingsCache } from '../../../plugins/host/settingsSync'
 import {
   activateSandboxedPluginModulePack,
   deactivatePluginModulePack,
@@ -54,7 +54,7 @@ import { type CmsHandlerOptions } from '../shared'
 import {
   assertPluginPermissionGrants,
   lifecycleErrorMessage,
-  maskPluginSecrets,
+  presentPluginSecrets,
   pluginManifestWithGrants,
   pluginsPayload,
   readPermissionGrants,
@@ -107,7 +107,7 @@ export async function handlePluginsCollection(
         version: plugin.version,
         occurredAt: new Date().toISOString(),
       })
-      return jsonResponse({ plugin: maskPluginSecrets(plugin), ...(await pluginsPayload(db)) }, { status: 201 })
+      return jsonResponse({ plugin: await presentPluginSecrets(db, plugin), ...(await pluginsPayload(db)) }, { status: 201 })
     } catch (err) {
       return badRequest(getErrorMessage(err, 'Invalid plugin manifest'))
     }
@@ -215,7 +215,7 @@ async function installFreshFromPackage(ctx: InstallContext): Promise<Response> {
   const installLifecycle = await runPluginLifecycleHook(db, installed, options, 'install', 'installed')
   if (!installLifecycle.ok) {
     return jsonResponse(
-      { plugin: maskPluginSecrets(installLifecycle.plugin), ...(await pluginsPayload(db)) },
+      { plugin: await presentPluginSecrets(db, installLifecycle.plugin), ...(await pluginsPayload(db)) },
       { status: 201 },
     )
   }
@@ -252,7 +252,7 @@ async function installFreshFromPackage(ctx: InstallContext): Promise<Response> {
   })
   return jsonResponse(
     {
-      plugin: maskPluginSecrets(activateLifecycle.plugin),
+      plugin: await presentPluginSecrets(db, activateLifecycle.plugin),
       ...(await pluginsPayload(db)),
       pack: packSummary,
     },
@@ -309,10 +309,10 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
   // 3. Replace DB row. `installPlugin` upserts — settings_json + installed_at
   //    are preserved by the SET clause (it doesn't reference them).
   const upgraded = await installPlugin(db, newManifest, grantedPermissions)
-  // Refresh settings cache from the upserted row so the worker's
-  // `loadPluginServerEntrypoint` seeds the right values into the worker's
-  // local mirror.
-  pluginSettingsCache.set(pluginId, upgraded.settings)
+  // Refresh settings cache from the upserted row (merging decrypted secrets)
+  // so the worker's `loadPluginServerEntrypoint` seeds the right values into
+  // the worker's local mirror.
+  await primePluginSettingsCache(db, upgraded)
 
   // 4 + 5. Try to migrate then activate. On any failure we restore the old
   //        version end-to-end.
@@ -382,7 +382,7 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
   })
   return jsonResponse(
     {
-      plugin: maskPluginSecrets(finalRow),
+      plugin: await presentPluginSecrets(db, finalRow),
       ...(await pluginsPayload(db)),
       pack: packSummary,
       upgrade: { fromVersion, toVersion: newVersion },
@@ -466,7 +466,7 @@ async function rollbackUpgrade(args: {
   deactivatePluginModulePack(pluginId)
   try {
     const restoredManifest = pluginManifestWithGrants(restored)
-    pluginSettingsCache.set(pluginId, restored.settings)
+    await primePluginSettingsCache(db, restored)
     if (
       restoredManifest.entrypoints?.modules
       && restoredManifest.grantedPermissions?.includes('modules.register')

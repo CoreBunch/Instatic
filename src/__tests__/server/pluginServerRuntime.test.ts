@@ -169,6 +169,11 @@ function makeFakeDb() {
     if (normalized.includes('update plugin_schedules')) {
       return { rows: [], rowCount: 0 }
     }
+    // listPluginSecretStates / resolvePluginSecretsForRuntime — these tests
+    // declare no secret-typed settings, so the table is always empty.
+    if (normalized.includes('from plugin_secrets')) {
+      return { rows: [], rowCount: 0 }
+    }
     throw new Error(`Unhandled SQL: ${sql}`)
   }
 
@@ -528,7 +533,7 @@ describe('server plugin runtime SDK', () => {
         { uploadsDir },
       )
       expect(put.status).toBe(200)
-      expect(await put.json()).toEqual({ settings: { apiKey: 'rotated' } })
+      expect(await put.json()).toEqual({ settings: { apiKey: 'rotated' }, secretsNeedingReentry: [] })
     } finally {
       await rm(uploadsDir, { recursive: true, force: true })
     }

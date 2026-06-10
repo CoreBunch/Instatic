@@ -4,8 +4,14 @@ import type {
   PluginManifest,
   PluginPermission,
   PluginRecord,
+  PluginSettingDefinition,
+  PluginSettingsValues,
 } from '@core/plugin-sdk'
 import { pluginSettingsDefaults } from '@core/plugin-sdk'
+import {
+  applyPluginSecretSettings,
+  seedPluginSecretDefaults,
+} from './pluginSecrets'
 import type { StorageListOptions, StorageFilterOperator } from '@core/plugin-sdk/storageSchemas'
 import { parsePluginManifest } from '@core/plugins/manifest'
 import type { DbClient, Dialect } from '../db/client'
@@ -111,18 +117,26 @@ function mapInstalledPlugin(row: InstalledPluginRow): InstalledPluginResult {
  * declared setting key has a value (defaults populated on read), and drops
  * stored keys that the current manifest doesn't declare (cleans up orphans
  * after a plugin update removes a setting).
+ *
+ * Secret settings are an invariant, not a merge: their values live encrypted
+ * in `plugin_secrets`, so `plugin.settings` always carries `''` for them —
+ * even if a value somehow landed in `settings_json`, it never surfaces.
+ * Server-side runtime reads merge the decrypted values back in via
+ * `resolvePluginSecretsForRuntime` (pluginSecrets.ts).
  */
 function mergeSettingsWithDefaults(
   manifest: PluginManifest,
   stored: unknown,
-): Record<string, string | number | boolean> {
+): PluginSettingsValues {
   const declared = manifest.settings ?? []
   const defaults = pluginSettingsDefaults(declared)
-  const out: Record<string, string | number | boolean> = { ...defaults }
+  const secretIds = new Set(declared.filter((s) => s.secret).map((s) => s.id))
+  const out: PluginSettingsValues = { ...defaults }
+  for (const id of secretIds) out[id] = ''
   if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
     const declaredIds = new Set(declared.map((s) => s.id))
     for (const [key, value] of Object.entries(stored as Record<string, unknown>)) {
-      if (!declaredIds.has(key)) continue
+      if (!declaredIds.has(key) || secretIds.has(key)) continue
       if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
         out[key] = value
       }
@@ -180,9 +194,15 @@ export async function installPlugin(
   grantedPermissions: PluginPermission[] = manifest.grantedPermissions ?? [],
 ): Promise<InstalledPlugin> {
   const manifestToStore = { ...manifest, grantedPermissions }
+  const declared = manifest.settings ?? []
   // Seed settings with the manifest's declared defaults so plugins reading
-  // their own settings on first activate see a complete record.
-  const initialSettings = pluginSettingsDefaults(manifest.settings ?? [])
+  // their own settings on first activate see a complete record. Secret
+  // defaults split off below — they are encrypted into `plugin_secrets`
+  // and never enter `settings_json`.
+  const secretIds = new Set(declared.filter((s) => s.secret).map((s) => s.id))
+  const initialSettings = Object.fromEntries(
+    Object.entries(pluginSettingsDefaults(declared)).filter(([key]) => !secretIds.has(key)),
+  )
   const { rows } = await db<InstalledPluginRow>`
     insert into installed_plugins (id, name, version, manifest_json, granted_permissions_json, settings_json, enabled, lifecycle_status, last_error)
     values (${manifest.id}, ${manifest.name}, ${manifest.version}, ${writeJson(manifestToStore)}, ${writeJson(grantedPermissions)}, ${writeJson(initialSettings)}, true, 'installed', null)
@@ -198,6 +218,10 @@ export async function installPlugin(
     returning id, name, version, enabled, lifecycle_status, last_error,
               granted_permissions_json, manifest_json, settings_json, installed_at, updated_at
   `
+  // Secret settings with a non-empty manifest default get an encrypted row.
+  // Insert-if-absent: the upgrade/rollback flows reuse this upsert and must
+  // never clobber a secret the site owner has since rotated.
+  await seedPluginSecretDefaults(db, manifest.id, declared)
   const result = mapInstalledPlugin(rows[0])
   // installPlugin is always called with a freshly-validated manifest — a
   // broken result here indicates a serialisation invariant violation.
@@ -241,14 +265,25 @@ export async function deletePlugin(db: DbClient, id: string): Promise<boolean> {
   return rowCount > 0
 }
 
+/**
+ * Persist a validated settings record — the single choke point for both the
+ * admin PUT route and the plugin's own `cms.settings.replace` api-call.
+ * Fields declared `secret: true` split off to the encrypted `plugin_secrets`
+ * table (`'***'` sentinel preserves, new value rotates, `''` clears — see
+ * `applyPluginSecretSettings`); everything else lands in `settings_json`.
+ *
+ * Throws `PluginSecretError` when secret encryption is misconfigured.
+ */
 export async function setPluginSettings(
   db: DbClient,
   id: string,
-  settings: Record<string, string | number | boolean>,
+  declared: ReadonlyArray<PluginSettingDefinition>,
+  settings: PluginSettingsValues,
 ): Promise<InstalledPluginResult | null> {
+  const plainSettings = await applyPluginSecretSettings(db, id, declared, settings)
   const { rows } = await db<InstalledPluginRow>`
     update installed_plugins
-       set settings_json = ${writeJson(settings)},
+       set settings_json = ${writeJson(plainSettings)},
            updated_at = current_timestamp
      where id = ${id}
     returning id, name, version, enabled, lifecycle_status, last_error,

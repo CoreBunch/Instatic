@@ -22,9 +22,6 @@ export {
   pluginSettingsDefaults,
   validatePluginSettingsRecord,
   validatePluginSettingsDefinitions,
-  maskSecretSettings,
-  resolveSecretSettingsUpdate,
-  stripSecretSettings,
   SECRET_SETTING_MASK,
 } from './settings'
 export type {

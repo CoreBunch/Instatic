@@ -16,8 +16,10 @@
  *   - The HTTP entrypoint for `/admin/api/cms/plugins/:id/runtime/...`
  *   - The boot-time activation loop
  *
- * The plugin settings cache (and the write-path sync that pushes settings
- * changes into running VMs) lives in `./host/settingsSync.ts`.
+ * The plugin settings cache (seeded into each worker's local `settings.get`
+ * mirror at activation) lives in `settingsCache.ts`; the write-path sync
+ * that pushes settings changes into running VMs lives in
+ * `./host/settingsSync.ts`.
  *
  * Plugin canvas-module packs (`entrypoints.modules`) now run inside their
  * own QuickJS-WASM sandbox (`server/plugins/modulePackVm.ts`) — render
@@ -60,8 +62,12 @@ import {
 import { dispatchApiCall } from './host/apiDispatch'
 import { workerCallError } from './host/workerErrors'
 import { resetPluginWorker, setApiCallDispatcher } from './host/workerPool'
-import { pluginSettingsCache } from './host/settingsSync'
 import { broadcastPluginEvent } from './eventBroadcaster'
+import {
+  dropCachedPluginSettings,
+  getCachedPluginSettings,
+  primePluginSettingsCache,
+} from './settingsCache'
 
 setApiCallDispatcher(dispatchApiCall)
 
@@ -72,6 +78,12 @@ export { clearPluginCrashCounter }
 // Re-export the host's setter so the server entry point can wire in the
 // DbClient at boot before any request arrives.
 export { setPluginWorkerDbClient }
+
+// Settings cache lives in `settingsCache.ts` — the cached record merges the
+// decrypted secret settings (plugin_secrets) over `plugin.settings`, and is
+// re-exported here for the lifecycle orchestration call sites below.
+export { primePluginSettingsCache }
+
 
 // ---------------------------------------------------------------------------
 // Plugin lifecycle helpers — wrappers around the worker host that resolve
@@ -111,7 +123,7 @@ export async function loadPluginServerEntrypoint(
   const result = await loadPluginInWorker({
     manifest,
     entryFileUrl: resolved.entryPath,
-    settings: pluginSettingsCache.get(manifest.id) ?? {},
+    settings: getCachedPluginSettings(manifest.id),
   })
   if (!result.ok) {
     throw workerCallError(result.error ?? `Failed to load plugin "${manifest.id}" in worker`, result.stack)
@@ -159,7 +171,7 @@ export async function runPluginMigrate(
  * effect.
  */
 export async function unloadPlugin(pluginId: string): Promise<void> {
-  pluginSettingsCache.delete(pluginId)
+  dropCachedPluginSettings(pluginId)
   await unloadPluginInWorker(pluginId)
 }
 
@@ -268,10 +280,10 @@ export async function reloadAndActivatePlugin(
     grantedPermissions: plugin.grantedPermissions,
   }
   if (!manifest.assetBasePath) return
-  // Refresh the in-memory settings cache from the canonical row before the
-  // worker mirror gets seeded — keeps the worker in sync if settings drifted
-  // since the last activation.
-  pluginSettingsCache.set(manifest.id, plugin.settings)
+  // Refresh the in-memory settings cache from the canonical rows (including
+  // decrypted secrets) before the worker mirror gets seeded — keeps the
+  // worker in sync if settings drifted since the last activation.
+  await primePluginSettingsCache(db, plugin)
   if (manifest.entrypoints?.server) {
     const loaded = await loadPluginServerEntrypoint(manifest, uploadsDir)
     if (loaded) await runPluginLifecycle(db, manifest.id, 'activate')
@@ -413,10 +425,10 @@ export async function activateInstalledServerPlugins(
     if (!manifest.assetBasePath) continue
 
     // Settings cache must be populated BEFORE the worker loads the plugin
-    // — `loadPluginInWorker` reads from `pluginSettingsCache` to seed the
-    // worker's local `settings.get` mirror, which plugin code may consult
-    // synchronously during `activate()`.
-    pluginSettingsCache.set(manifest.id, plugin.settings)
+    // — `loadPluginInWorker` reads the cached record (non-secret settings +
+    // decrypted secrets) to seed the worker's local `settings.get` mirror,
+    // which plugin code may consult synchronously during `activate()`.
+    await primePluginSettingsCache(db, plugin)
 
     // Phase: module-pack-load — registers canvas modules in the host registry
     // so server-rendered (publisher) and editor-rendered (canvas) pages can
