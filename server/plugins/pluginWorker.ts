@@ -246,8 +246,11 @@ async function handleRunRoute(msg: RunRouteRequest): Promise<void> {
  * the host expects. The VM returns plain JSON values (the bootstrap's
  * `__runRoute` JSON-stringifies the handler result), so we don't have an
  * actual `Response` to inspect here — the VM can't construct host
- * `Response` instances. Plugins that need custom status/headers can
- * return `{ __response: true, status, headers, body }` and we materialize it.
+ * `Response` instances. Plugins that need custom status/headers/binary
+ * bodies return `{ __response: true, status, headers, body }`; the
+ * bootstrap pre-encodes the body (string → utf8, ArrayBuffer/TypedArray →
+ * base64) and tags `bodyEncoding`, which we forward verbatim — the host's
+ * `materializeRouteResponse` decodes it back into the real `Response` body.
  */
 function serializeRouteResult(value: unknown): SerializedResponse {
   if (
@@ -255,12 +258,18 @@ function serializeRouteResult(value: unknown): SerializedResponse {
     typeof value === 'object' &&
     (value as { __response?: boolean }).__response === true
   ) {
-    const r = value as { status?: number; headers?: Record<string, string>; body?: string }
+    const r = value as {
+      status?: number
+      headers?: Record<string, string>
+      body?: string
+      bodyEncoding?: string
+    }
     return {
       kind: 'response',
       status: typeof r.status === 'number' ? r.status : 200,
       headers: r.headers ?? {},
       body: typeof r.body === 'string' ? r.body : '',
+      bodyEncoding: r.bodyEncoding === 'base64' ? 'base64' : 'utf8',
     }
   }
   return { kind: 'json', value: value === undefined ? { ok: true } : value }

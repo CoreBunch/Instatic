@@ -67,6 +67,13 @@ declare global {
   var __plugin_settings: Record<string, string | number | boolean>
   var __plugin_exports: Record<string, unknown> | undefined
 
+  // --- string-shim helpers (full-plugin VM only) ----------------------------
+  // Defined by `bootstrap/base64.ts`, which BOOTSTRAP_SOURCE evaluates before
+  // the bundled runtime. NOT part of the module-pack VM's bootstrap —
+  // `modulePackRuntime.ts` must not reference them.
+  var __bytesToBase64: (bytes: Uint8Array) => string
+  var __base64ToBytes: (base64: string) => Uint8Array
+
   // --- full-plugin runtime entry points (installed by pluginRuntime.ts) ----
   var __plugin_handlers: PluginHandlerRegistry
   var __buildApi: () => unknown

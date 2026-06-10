@@ -33,12 +33,14 @@ A plugin is a zip package containing a `plugin.json` manifest and one or more Ja
 | VM bootstrap source (typed)    | `server/plugins/quickjs/bootstrap/src/`   |
 | VM bootstrap generated artifacts | `server/plugins/quickjs/bootstrap/generated/` (run `bun run bootstrap:sync`) |
 | Gated outbound fetch + SSRF guards | `server/plugins/host/network.ts`       |
+| Byte-safe body wire format     | `server/plugins/protocol/bodyEncoding.ts` |
+| Route request/response I/O     | `server/plugins/host/routeIo.ts`          |
 | Plugin asset path containment      | `server/util/pathWithin.ts`            |
 | Plugin lifecycle (boot, install, activate, uninstall) | `server/plugins/runtime.ts`, `package.ts` |
 | Plugin scheduler               | `server/plugins/scheduler.ts`             |
 | Event broadcaster (server fan-out) | `server/plugins/eventBroadcaster.ts`  |
 | SSE event endpoint             | `server/handlers/cms/plugins/events.ts`   |
-| HTTP route bridge              | `server/handlers/cms/runtime.ts`          |
+| HTTP route forwarder           | `server/plugins/runtime.ts` (`handleServerPluginRuntimeRequest`) |
 | Plugin pages in admin          | `src/admin/pages/plugins/`                |
 | SSE event stream (client)      | `src/admin/pages/plugins/utils/pluginEventStream.ts` |
 | Admin shell event bridge hook  | `src/admin/pages/plugins/hooks/usePluginEventBridge.ts` |
@@ -218,7 +220,7 @@ Plugin server code and canvas module packs run inside QuickJS compiled to WebAss
 - **The SDK** — `api.plugin.*` and `api.cms.*` (see next section).
 - **Standard JavaScript** — `JSON`, `Math`, `Date`, `Promise`, `async`/`await`, `Map`, `Set`, `WeakMap`, `WeakSet`, ES2020+ syntax (optional chaining, nullish coalescing, BigInt literals).
 - **`console.{log, info, warn, error, debug, trace}`** — routes to `api.plugin.log`.
-- **`fetch(url, init)`** — opt-in: requires `network.outbound` permission AND the URL host on the `networkAllowedHosts` allowlist.
+- **`fetch(url, init)`** — opt-in: requires `network.outbound` permission AND the URL host on the `networkAllowedHosts` allowlist. Byte-safe: `arrayBuffer()` returns exact bytes; request bodies accept `string | ArrayBuffer | TypedArray/DataView`.
 
 ### What's denied
 
@@ -314,16 +316,19 @@ api.plugin.assetUrl(p)     // '/uploads/plugins/<id>/<version>/<path>'
 ### CMS routes — requires `cms.routes`
 
 ```js
-api.cms.routes.get('/status', 'plugins.manage', handler)
+api.cms.routes.get('/status', 'plugins.manage', handler)       // capability-gated
 api.cms.routes.post('/action', 'plugins.manage', handler)
 api.cms.routes.patch('/item/:id', 'plugins.manage', handler)
 api.cms.routes.delete('/item/:id', 'plugins.manage', handler)
-api.cms.routes.getPublic('/health', handler)  // skips auth
+api.cms.routes.authenticated.get('/me', handler)               // any logged-in user
+api.cms.routes.public.post('/subscribe', handler)              // anonymous — also requires cms.routes.public
 ```
 
 Routes mount under `/admin/api/cms/plugins/<id>/runtime/*`. The host enforces the admin session check + the declared capability before invoking the handler. Handlers receive `{ req, body, user }`. The `user` is `null` for public routes.
 
-Custom responses (status, headers, non-JSON bodies) use the raw-response escape hatch: return `{ raw: { status, headers, body } }` instead of a plain object.
+Request bodies are **byte-safe end to end**. The host reads the incoming body once as raw bytes and carries it to the sandbox tagged `utf8` (text verbatim) or `base64` (binary), so `req.text()` / `req.json()` decode correctly (including multibyte UTF-8) and `req.arrayBuffer()` returns the exact payload bytes. Pre-parsed `body` fields cover `application/json`, `application/x-www-form-urlencoded` (repeated keys become arrays), and `multipart/form-data` — text fields arrive as strings, file fields as uploaded-file facades (`{ name, type, size, arrayBuffer(), text() }`) whose bytes are uncorrupted, so plugins can accept image/PDF uploads. (De)serialization lives in `server/plugins/host/routeIo.ts`; the wire codec in `server/plugins/protocol/bodyEncoding.ts`.
+
+Custom responses (status, headers, non-JSON bodies) use the raw-response escape hatch: return `{ __response: true, status, headers, body }` instead of a plain object. `body` accepts a string (sent as UTF-8 text) or an `ArrayBuffer` / TypedArray / `DataView` (sent byte-exactly — serve images, zips, PDFs directly); anything else throws a `TypeError`.
 
 ### Plugin-owned records — requires `cms.storage`
 
@@ -516,7 +521,14 @@ api.cms.hooks.filter('content.entry.cells', (cells, { tableSlug, entryId, actor 
 ```js
 const res  = await fetch('https://api.example.com/data')
 const data = await res.json()
+
+// Binary is first-class in both directions:
+const img   = await fetch('https://cdn.example.com/pixel.png')
+const bytes = new Uint8Array(await img.arrayBuffer())   // exact upstream bytes
+await fetch('https://api.example.com/upload', { method: 'POST', body: bytes })
 ```
+
+Bodies are **byte-safe in both directions**. The host reads upstream responses as raw bytes and ships them to the sandbox tagged `utf8` (text verbatim) or `base64` (binary), so `res.text()` / `res.json()` decode correctly (including multibyte UTF-8) and `res.arrayBuffer()` returns the exact bytes — fetching images, gzip, or protobuf works. Request bodies accept `string | ArrayBuffer | TypedArray/DataView`; anything else (`FormData`, `Blob`, `URLSearchParams`, streams) throws a `TypeError` naming the supported types — serialize to a string or bytes first. Wire codec: `server/plugins/protocol/bodyEncoding.ts`.
 
 The permission alone is insufficient. `performGatedFetch` in `server/plugins/host/network.ts` enforces three checks on **every request and every redirect hop**:
 
@@ -734,7 +746,9 @@ Manifest:
   - `server/plugins/package.ts` — install / `assertSandboxSafe`
   - `server/plugins/scheduler.ts` — scheduled job dispatcher
   - `server/plugins/host/network.ts` — gated outbound fetch + SSRF guards
-  - `server/handlers/cms/runtime.ts` — plugin HTTP route bridge
+  - `server/plugins/protocol/bodyEncoding.ts` — byte-safe body wire format (utf8/base64)
+  - `server/plugins/host/routeIo.ts` — route request/response (de)serialization
+  - `server/plugins/runtime.ts` — plugin HTTP route forwarder (`handleServerPluginRuntimeRequest`)
   - `examples/plugins/template/` — example plugin
 - Gate tests:
   - `src/__tests__/architecture/plugin-rpc-target-registry.test.ts` — every schema target has a handler; every `TARGET_PERMISSIONS` key is a real target; the full target→permission table is locked to the security contract
@@ -750,6 +764,8 @@ Manifest:
   - `src/__tests__/architecture/sandbox-crypto-bridge.test.ts`
   - `src/__tests__/architecture/plugin-bootstrap-fresh.test.ts` — generated bootstrap artifacts match source; fails if `bun run bootstrap:sync` is needed
   - `src/__tests__/plugins/gatedFetchSsrf.test.ts` — SSRF guards: allowlist, DNS rebinding, redirect re-validation, redirect cap
+  - `src/__tests__/plugins/pluginBinaryIo.test.ts` — host-side byte safety: wire codec round-trips, binary fetch bodies, multipart file fields, binary route responses
+  - `src/__tests__/server/pluginVmBinaryIo.test.ts` — VM-side byte safety: fetch `arrayBuffer()`/`text()`/`json()` decoding, binary request bodies, unsupported-body TypeError, route file facades + binary `__response`
   - `src/__tests__/plugins/pluginModulePack.test.ts` — module pack activation, re-activation, deactivation, and VM disposal
   - `src/__tests__/server/pluginVmPermissions.test.ts` — VM-side permission check: declared-but-not-granted permissions are denied at the VM boundary before host dispatch
   - `src/__tests__/server/pluginVmLoopDispatch.test.ts` — loop fetch/preview dispatcher robustness (no-return fallbacks, async-preview detection)

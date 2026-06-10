@@ -8,6 +8,7 @@
  */
 
 import type { PluginManifest } from '@core/plugin-sdk'
+import type { BodyEncoding } from './bodyEncoding'
 
 // ---------------------------------------------------------------------------
 // Shared serialization helpers
@@ -18,18 +19,46 @@ export interface SerializedRequest {
   url: string
   method: string
   headers: Record<string, string>
-  /** Stringified body (typed to JSON-serializable text — large bodies aren't supported in v1). */
+  /**
+   * The raw request body — UTF-8 text carried verbatim, anything else as
+   * base64 (see `protocol/bodyEncoding.ts`). Always byte-exact: binary
+   * uploads reach the plugin's `req.arrayBuffer()` uncorrupted.
+   */
   body: string
+  bodyEncoding: BodyEncoding
+}
+
+/**
+ * A multipart file field, pre-parsed by the host from the raw request bytes
+ * and carried to the VM as a JSON-safe marker. The VM bootstrap materializes
+ * it into the `ServerPluginUploadedFile` facade (name/type/size +
+ * `arrayBuffer()`/`text()`) route handlers receive in `ctx.body`.
+ */
+export interface SerializedUploadedFile {
+  __file: true
+  name: string
+  type: string
+  size: number
+  /** The file's exact bytes, base64-encoded. */
+  dataBase64: string
 }
 
 /**
  * Serialized response from a plugin route handler. `value` is the
- * JSON-serializable return; if the plugin returned an actual `Response`
- * via `new Response(...)` the worker pre-extracts status/headers/body.
+ * JSON-serializable return; if the plugin returned the raw-response escape
+ * hatch (`{ __response: true, status, headers, body }`) the VM bootstrap
+ * pre-encodes the body (string → utf8, ArrayBuffer/TypedArray → base64)
+ * and the worker forwards it as `kind: 'response'`.
  */
 export type SerializedResponse =
   | { kind: 'json'; value: unknown }
-  | { kind: 'response'; status: number; headers: Record<string, string>; body: string }
+  | {
+      kind: 'response'
+      status: number
+      headers: Record<string, string>
+      body: string
+      bodyEncoding: BodyEncoding
+    }
 
 export interface SerializedUser {
   id: string

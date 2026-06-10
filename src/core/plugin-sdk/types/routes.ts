@@ -27,10 +27,32 @@ export interface ServerPluginRequest {
   }
   json(): Promise<unknown>
   text(): Promise<string>
+  /** The raw request body bytes — byte-exact, including binary payloads. */
+  arrayBuffer(): Promise<ArrayBuffer>
+}
+
+/**
+ * A file field from a `multipart/form-data` request body. The host parses
+ * the multipart payload from the raw request bytes, so `arrayBuffer()`
+ * returns the uploaded file byte-exactly — images, PDFs, and other binary
+ * uploads are never corrupted.
+ */
+export interface ServerPluginUploadedFile {
+  name: string
+  type: string
+  size: number
+  arrayBuffer(): Promise<ArrayBuffer>
+  text(): Promise<string>
 }
 
 export interface ServerPluginRouteContext {
   req: ServerPluginRequest
+  /**
+   * Pre-parsed body fields (`application/json` object members,
+   * `application/x-www-form-urlencoded` fields, `multipart/form-data`
+   * fields). Repeated form keys become arrays; multipart file fields are
+   * `ServerPluginUploadedFile` instances.
+   */
   body: Record<string, unknown>
   user: {
     id: string
@@ -44,8 +66,8 @@ export interface ServerPluginRouteContext {
  *
  * By default, any returned value is JSON-serialized and sent as
  * `application/json` with status 200. To control the HTTP status code,
- * response headers, or body encoding (e.g. CSV, plain text, HTML), return
- * the **raw-response escape hatch**:
+ * response headers, or body encoding (e.g. CSV, plain text, HTML, binary),
+ * return the **raw-response escape hatch**:
  *
  * ```ts
  * return {
@@ -55,9 +77,13 @@ export interface ServerPluginRouteContext {
  *     'Content-Type': 'text/csv; charset=utf-8',
  *     'Content-Disposition': 'attachment; filename="export.csv"',
  *   },
- *   body: csvString,  // must be a string
+ *   body: csvString,  // string | ArrayBuffer | TypedArray/DataView
  * }
  * ```
+ *
+ * `body` accepts a string (sent as UTF-8 text) or an
+ * ArrayBuffer / TypedArray / DataView (sent byte-exactly — serve images,
+ * zips, PDFs directly). Any other body type throws a TypeError.
  *
  * Returning `undefined` is equivalent to returning `{ ok: true }` (status 200,
  * JSON body).

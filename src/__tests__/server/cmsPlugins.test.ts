@@ -558,6 +558,105 @@ describe('CMS plugin handlers', () => {
     }
   })
 
+  it('round-trips binary multipart uploads and binary responses through plugin routes', async () => {
+    // End-to-end byte safety: a real multipart request with a binary file
+    // field travels host → worker → QuickJS VM, the plugin reads the file's
+    // exact bytes via the uploaded-file facade, and serves them back as a
+    // binary `__response` body. Any lossy text decode on the way corrupts
+    // the PNG signature bytes (0x89, 0x00, 0xff …) and fails the assert.
+    const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-binary-'))
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+    const manifest = {
+      id: 'acme.binary',
+      name: 'Binary Echo',
+      version: '1.0.0',
+      apiVersion: 1,
+      permissions: ['cms.routes'],
+      entrypoints: { server: 'server/index.js' },
+    }
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe, 0x7f])
+
+    try {
+      const formData = new FormData()
+      formData.set('file', pluginZip({
+        'plugin.json': JSON.stringify(manifest),
+        'server/index.js': `export function activate(api) {
+          api.cms.routes.post('/echo', 'plugins.read', async (ctx) => {
+            const file = ctx.body.file
+            const bytes = new Uint8Array(await file.arrayBuffer())
+            return {
+              __response: true,
+              status: 200,
+              headers: { 'content-type': file.type, 'x-file-name': file.name },
+              body: bytes,
+            }
+          })
+        }`,
+      }))
+      formData.set('grantedPermissions', JSON.stringify(manifest.permissions))
+
+      const install = await handleCmsRequest(
+        cmsFormRequest('http://localhost/admin/api/cms/plugins/package', formData, { cookie }),
+        db,
+        { uploadsDir },
+      )
+      expect(install.status).toBe(201)
+
+      // Hand-rolled multipart payload (happy-dom's test-global `Request`
+      // strips the cookie header, so the stub-request pattern from
+      // `cmsRequest` is extended with raw body bytes + iterable headers).
+      const boundary = 'InstaticTestBoundary42'
+      const te = new TextEncoder()
+      const head = te.encode(
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="file"; filename="pixel.png"\r\n` +
+        `Content-Type: image/png\r\n\r\n`,
+      )
+      const tail = te.encode(
+        `\r\n--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="label"\r\n\r\n` +
+        `tiny png\r\n` +
+        `--${boundary}--\r\n`,
+      )
+      const multipart = new Uint8Array(head.byteLength + pngBytes.byteLength + tail.byteLength)
+      multipart.set(head, 0)
+      multipart.set(pngBytes, head.byteLength)
+      multipart.set(tail, head.byteLength + pngBytes.byteLength)
+
+      const headerEntries: Record<string, string> = {
+        cookie,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      }
+      const echo = await handleCmsRequest(
+        {
+          url: 'http://localhost/admin/api/cms/plugins/acme.binary/runtime/echo',
+          method: 'POST',
+          headers: {
+            get(name: string) {
+              return headerEntries[name.toLowerCase()] ?? null
+            },
+            forEach(cb: (value: string, key: string) => void) {
+              for (const [key, value] of Object.entries(headerEntries)) cb(value, key)
+            },
+          },
+          async arrayBuffer() {
+            return multipart.buffer
+          },
+        } as unknown as Request,
+        db,
+        { uploadsDir },
+      )
+
+      expect(echo.status).toBe(200)
+      expect(echo.headers.get('content-type')).toBe('image/png')
+      expect(echo.headers.get('x-file-name')).toBe('pixel.png')
+      expect(new Uint8Array(await echo.arrayBuffer())).toEqual(pngBytes)
+    } finally {
+      await rm(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
   it('runs packaged server plugin lifecycle hooks on install, disable, enable, and remove', async () => {
     const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-lifecycle-'))
     // The QuickJS-sandboxed plugin can't touch node:fs. We use the hookBus as

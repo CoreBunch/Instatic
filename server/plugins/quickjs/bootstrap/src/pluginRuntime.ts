@@ -83,6 +83,57 @@ globalThis.__runMigrate = async function runMigrate(fromVersion) {
   await fn({ fromVersion: fromVersion }, globalThis.__buildApi())
 }
 
+/**
+ * Materialize host-serialized multipart file markers
+ * (`{ __file: true, name, type, size, dataBase64 }` — see
+ * `protocol/messages.ts:SerializedUploadedFile`) into the file facade route
+ * handlers receive: `{ name, type, size, arrayBuffer(), text() }`. Bytes are
+ * decoded lazily so text-only handlers never pay for the base64 decode.
+ * Recurses through arrays (repeated form fields) and leaves every other
+ * value untouched.
+ */
+function __materializeUploadedFiles(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(__materializeUploadedFiles)
+  if (!value || typeof value !== 'object') return value
+  const marker = value as { __file?: unknown; name?: unknown; type?: unknown; size?: unknown; dataBase64?: unknown }
+  if (marker.__file !== true || typeof marker.dataBase64 !== 'string') return value
+  const dataBase64 = marker.dataBase64
+  return {
+    name: String(marker.name ?? ''),
+    type: String(marker.type ?? ''),
+    size: typeof marker.size === 'number' ? marker.size : 0,
+    arrayBuffer: async function () {
+      const bytes = __base64ToBytes(dataBase64)
+      return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+    },
+    text: async function () { return new TextDecoder().decode(__base64ToBytes(dataBase64)) },
+  }
+}
+
+/**
+ * Encode a raw-response escape hatch (`{ __response: true, ... }`) for the
+ * wire. String bodies travel as UTF-8 text; ArrayBuffer / TypedArray /
+ * DataView bodies travel base64-tagged so the host reconstructs the exact
+ * bytes. Any other body type is a plugin bug — surface it loudly.
+ */
+function __encodeResponseBody(body: unknown): { body: string; bodyEncoding: 'utf8' | 'base64' } {
+  if (body === null || body === undefined) return { body: '', bodyEncoding: 'utf8' }
+  if (typeof body === 'string') return { body: body, bodyEncoding: 'utf8' }
+  if (body instanceof ArrayBuffer) {
+    return { body: __bytesToBase64(new Uint8Array(body)), bodyEncoding: 'base64' }
+  }
+  if (ArrayBuffer.isView(body)) {
+    return {
+      body: __bytesToBase64(new Uint8Array(body.buffer, body.byteOffset, body.byteLength)),
+      bodyEncoding: 'base64',
+    }
+  }
+  throw new TypeError(
+    'Route __response body must be a string, ArrayBuffer, or TypedArray/DataView (got '
+    + Object.prototype.toString.call(body).slice(8, -1) + ')',
+  )
+}
+
 globalThis.__runRoute = async function runRoute(routeKey, ctxJson) {
   const handler = globalThis.__plugin_handlers.routes[routeKey]
   if (!handler) throw new Error('Route handler not registered: ' + routeKey)
@@ -111,14 +162,44 @@ globalThis.__runRoute = async function runRoute(routeKey, ctxJson) {
       Object.keys(_hdrsLc).forEach(function (k) { cb(_hdrsLc[k], k) })
     },
   }
+  // The raw body crosses the boundary byte-safely: UTF-8 text verbatim,
+  // anything else base64-tagged (see protocol/bodyEncoding.ts). Decode
+  // lazily per accessor so the common JSON route never touches base64.
+  const rawBody: string = ctx.request.body || ''
+  const bodyIsBase64 = ctx.request.bodyEncoding === 'base64'
+  function requestBodyText(): string {
+    return bodyIsBase64 ? new TextDecoder().decode(__base64ToBytes(rawBody)) : rawBody
+  }
   const req = {
     url: ctx.request.url,
     method: ctx.request.method,
     headers: headersFacade,
-    json: async function () { return fromJson(ctx.request.body || '{}') },
-    text: async function () { return ctx.request.body },
+    json: async function () { return fromJson(requestBodyText() || '{}') },
+    text: async function () { return requestBodyText() },
+    arrayBuffer: async function () {
+      const bytes = bodyIsBase64 ? __base64ToBytes(rawBody) : new TextEncoder().encode(rawBody)
+      return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+    },
   }
-  const result = await handler({ req: req, body: ctx.body, user: ctx.user })
+  const body: Record<string, unknown> = {}
+  for (const key of Object.keys(ctx.body || {})) {
+    body[key] = __materializeUploadedFiles(ctx.body[key])
+  }
+  const result = await handler({ req: req, body: body, user: ctx.user })
+  if (
+    result && typeof result === 'object' &&
+    (result as { __response?: unknown }).__response === true
+  ) {
+    const r = result as { status?: unknown; headers?: unknown; body?: unknown }
+    const encoded = __encodeResponseBody(r.body)
+    return toJson({
+      __response: true,
+      status: typeof r.status === 'number' ? r.status : 200,
+      headers: r.headers && typeof r.headers === 'object' ? r.headers : {},
+      body: encoded.body,
+      bodyEncoding: encoded.bodyEncoding,
+    })
+  }
   return toJson(result, { ok: true })
 }
 

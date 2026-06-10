@@ -16,6 +16,11 @@ export const NetworkFetchInitSchema = Type.Object(
     method: Type.Optional(Type.String({ maxLength: 16 })),
     headers: Type.Optional(Type.Record(Type.String(), Type.String())),
     body: Type.Optional(Type.String()),
+    // How `body` is encoded on the wire: 'utf8' (the string IS the text,
+    // default) or 'base64' (the string encodes raw bytes — the VM's fetch
+    // shim sends ArrayBuffer / TypedArray request bodies this way). See
+    // `protocol/bodyEncoding.ts`.
+    bodyEncoding: Type.Optional(Type.Union([Type.Literal('utf8'), Type.Literal('base64')])),
     // Plugin-minted correlation id for AbortSignal cancellation. The
     // bootstrap's fetch polyfill assigns this when the call has a signal;
     // if the signal fires, the polyfill posts `network.abort` with the

@@ -74,8 +74,15 @@ export interface VmRouteContext {
     url: string
     method: string
     headers: Record<string, string>
+    /** Raw body — text verbatim for `bodyEncoding: 'utf8'`, base64 bytes otherwise. */
     body: string
+    bodyEncoding: 'utf8' | 'base64'
   }
+  /**
+   * Pre-parsed body fields. Multipart file fields arrive as
+   * `SerializedUploadedFile` markers (see `protocol/messages.ts`); the
+   * bootstrap materializes them into file facades before the handler runs.
+   */
   body: Record<string, unknown>
   user: { id: string; email: string; capabilities: string[] } | null
 }

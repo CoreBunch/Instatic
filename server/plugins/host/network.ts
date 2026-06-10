@@ -10,20 +10,27 @@
  *     is empty or missing, ALL outbound is denied — fail-closed.
  *
  * Returns a JSON-serializable response shape the VM-side `fetch` shim
- * reconstructs into a Response-like object.
- *
- * Also provides base64 helpers used by the crypto bridge.
+ * reconstructs into a Response-like object. Bodies cross the boundary
+ * byte-safely: the upstream response is read as raw bytes and carried as
+ * UTF-8 text when possible, base64 otherwise (see `protocol/bodyEncoding.ts`).
  */
 
 import { isIP } from 'node:net'
 import { lookup } from 'node:dns/promises'
+import {
+  decodeBodyBytes,
+  encodeBodyBytes,
+  type BodyEncoding,
+} from '../protocol/bodyEncoding'
 import type { HostPluginRecord } from './types'
 
 export interface SerializedNetworkResponse {
   status: number
   ok: boolean
   headers: Record<string, string>
+  /** Response body — text verbatim for `bodyEncoding: 'utf8'`, base64 bytes otherwise. */
   body: string
+  bodyEncoding: BodyEncoding
 }
 
 /**
@@ -170,7 +177,13 @@ function withoutBodyHeaders(headers: Record<string, string> | undefined): Record
 export async function performGatedFetch(
   entry: HostPluginRecord,
   urlString: string,
-  init: { method?: string; headers?: Record<string, string>; body?: string; abortId?: string },
+  init: {
+    method?: string
+    headers?: Record<string, string>
+    body?: string
+    bodyEncoding?: BodyEncoding
+    abortId?: string
+  },
   deps: GatedFetchDeps = {},
 ): Promise<SerializedNetworkResponse> {
   const manifest = entry.manifest
@@ -189,7 +202,13 @@ export async function performGatedFetch(
   let currentUrl = urlString
   let method = init.method ?? 'GET'
   let headers = init.headers
-  let body = init.body
+  // Decode the VM-supplied body once up front: a utf8 body is passed
+  // through as the string (fetch UTF-8-encodes it to the same bytes), a
+  // base64 body becomes the exact raw bytes the plugin handed to fetch.
+  let body: string | Uint8Array<ArrayBuffer> | undefined =
+    init.body !== undefined && init.bodyEncoding === 'base64'
+      ? decodeBodyBytes(init.body, 'base64')
+      : init.body
   try {
     for (let hop = 0; ; hop++) {
       // Re-validate protocol + allowlist + resolved-IP on EVERY hop. Bun is
@@ -227,47 +246,17 @@ export async function performGatedFetch(
 
       const respHeaders: Record<string, string> = {}
       response.headers.forEach((v, k) => { respHeaders[k] = v })
+      // Read the upstream body as raw bytes — `response.text()` would
+      // lossily UTF-8-decode binary payloads (images, gzip, protobuf).
+      const bytes = new Uint8Array(await response.arrayBuffer())
       return {
         status: response.status,
         ok: response.ok,
         headers: respHeaders,
-        body: await response.text(),
+        ...encodeBodyBytes(bytes),
       }
     }
   } finally {
     if (abortId) entry.inflightFetches.delete(abortId)
   }
-}
-
-// ---------------------------------------------------------------------------
-// Base64 helpers — wire format for binary payloads on the crypto bridge.
-// JSON can't carry Uint8Array; base64 is the smallest portable encoding.
-// Bun ships native btoa / atob (WHATWG-spec), which are byte-oriented
-// despite the "binary string" misnomer — exactly what we want here.
-// ---------------------------------------------------------------------------
-
-export function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  // Chunked so we don't blow the call stack on multi-MB inputs (the
-  // String.fromCharCode spread variant fails on large arrays).
-  const CHUNK = 0x8000
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
-  }
-  return btoa(binary)
-}
-
-/**
- * Decode base64 directly into a fresh, tightly-sized `ArrayBuffer`. The
- * Web Crypto `crypto.subtle` API requires `BufferSource` with an
- * `ArrayBuffer` (not `SharedArrayBuffer`); `Uint8Array.buffer` is typed
- * as `ArrayBufferLike` which TS narrows out. A fresh allocation removes
- * the narrowing problem and guarantees no sibling view past byteLength.
- */
-export function base64ToFreshArrayBuffer(base64: string): ArrayBuffer {
-  const binary = atob(base64)
-  const buffer = new ArrayBuffer(binary.length)
-  const view = new Uint8Array(buffer)
-  for (let i = 0; i < binary.length; i++) view[i] = binary.charCodeAt(i)
-  return buffer
 }

@@ -13,7 +13,7 @@
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
 import type { DbClient } from '../../../db/client'
 import { replyApiOk } from '../apiReplies'
-import { bytesToBase64, base64ToFreshArrayBuffer } from '../network'
+import { bytesToBase64, base64ToBytes } from '../../protocol/bodyEncoding'
 import type { HostPluginRecord } from '../types'
 
 export async function handleCryptoDigest(
@@ -22,7 +22,7 @@ export async function handleCryptoDigest(
   _db: DbClient,
 ): Promise<void> {
   const [{ algorithm, data }] = msg.args
-  const dataBytes = base64ToFreshArrayBuffer(data)
+  const dataBytes = base64ToBytes(data)
   const digest = await crypto.subtle.digest(algorithm, dataBytes)
   replyApiOk(msg.pluginId, msg.correlationId, bytesToBase64(new Uint8Array(digest)))
 }
@@ -33,8 +33,8 @@ export async function handleCryptoSignHmac(
   _db: DbClient,
 ): Promise<void> {
   const [{ hash, key, data }] = msg.args
-  const keyBuffer = base64ToFreshArrayBuffer(key)
-  const dataBuffer = base64ToFreshArrayBuffer(data)
+  const keyBuffer = base64ToBytes(key)
+  const dataBuffer = base64ToBytes(data)
   const importedKey = await crypto.subtle.importKey(
     'raw',
     keyBuffer,
