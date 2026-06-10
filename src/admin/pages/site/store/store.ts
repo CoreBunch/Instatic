@@ -15,6 +15,7 @@ import { createSettingsSlice, bindSettingsBridgeStoreApi } from './slices/settin
 import { createAgentSlice, siteAgentSliceConfig, setAgentStoreApi } from '@site/agent'
 import { createSitePanelSlice } from './slices/sitePanelSlice'
 import { createClipboardSlice } from './slices/clipboardSlice'
+import { createInlineEditSlice } from './slices/inlineEditSlice'
 import { bindPluginRuntimeStoreApi } from '@core/plugins/runtime'
 import { useAdminUi } from '@admin/state/adminUi'
 import { readWorkspaceLayout, workspaceFromPathname } from '@site/layout/panelLayoutStorage'
@@ -23,7 +24,7 @@ import { restoreStoredEditorLayout } from '@site/hooks/useEditorLayoutPersistenc
 /**
  * EditorStore — the central Zustand store for the visual editor.
  *
- * Composed of 11 slices (6 canonical Phase 0 + agentSlice + sitePanelSlice + filesSlice + visualComponentsSlice + clipboardSlice):
+ * Composed of 12 slices (6 canonical Phase 0 + agentSlice + sitePanelSlice + filesSlice + visualComponentsSlice + clipboardSlice + inlineEditSlice):
  *   - siteSlice:        owns SiteDocument (pages, nodes, breakpoints, settings, classes, files)
  *   - selectionSlice:      selectedNodeId, hoveredNodeId
  *   - canvasSlice:         zoom, pan, activeBreakpointId, canvasMode (Constraint #317)
@@ -35,6 +36,7 @@ import { restoreStoredEditorLayout } from '@site/hooks/useEditorLayoutPersistenc
  *   - agentSlice:          AI Agent Panel state + streaming (Phase D)
  *   - sitePanelSlice:      dependency manifest + site runtime settings
  *   - clipboardSlice:      copy / cut / paste of layer subtrees, persisted editor-wide
+ *   - inlineEditSlice:     canvas inline text edit session (double-click to edit)
  *
  * The combined `EditorStore` type lives in `./types` so each slice can import
  * it without going through this module — that's how the historical
@@ -68,6 +70,7 @@ export const useEditorStore = create<EditorStore>()(
         ...createAgentSlice(siteAgentSliceConfig)(...args),
         ...createSitePanelSlice(...args),
         ...createClipboardSlice(...args),
+        ...createInlineEditSlice(...args),
       }),
       { enableAutoFreeze: true },
     )

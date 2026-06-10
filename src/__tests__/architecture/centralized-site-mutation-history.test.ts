@@ -20,6 +20,7 @@ const SLICE_FILES = [
   'src/admin/pages/site/store/slices/styleRule/assignmentActions.ts',
   'src/admin/pages/site/store/slices/clipboardSlice.ts',
   'src/admin/pages/site/store/slices/sitePanelSlice.ts',
+  'src/admin/pages/site/store/slices/inlineEditSlice.ts',
 ]
 
 describe('Centralized SiteDocument mutation history', () => {

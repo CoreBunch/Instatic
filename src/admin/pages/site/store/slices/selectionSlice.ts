@@ -346,8 +346,9 @@ function sameTree(state: EditorStore, existingIds: string[], id: string): boolea
  * `selectActiveCanvasPage` selector. Importing that selector would create a
  * `selectionSlice ↔ store` cycle. The returned shape is `NodeTree<PageNode>`
  * so the slice's helpers can use the page-tree selectors uniformly.
+ * Also consumed by `inlineEditSlice` (same no-cycle rationale).
  */
-function getActiveTree(state: EditorStore): NodeTree<PageNode> | null {
+export function getActiveTree(state: EditorStore): NodeTree<PageNode> | null {
   if (!state.site) return null
   const activeDocument = state.activeDocument
   if (activeDocument?.kind === 'visualComponent') {
