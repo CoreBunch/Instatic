@@ -16,3 +16,4 @@ export {
   type RouteResolutionContext,
 } from './templateMatching'
 export { composeTemplateChain, type TerminalContent } from './templateCompose'
+export { firstOutletId, treeHasOutlet, subtreeHasOutlet } from './outlet'

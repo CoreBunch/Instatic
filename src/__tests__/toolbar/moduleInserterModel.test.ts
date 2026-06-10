@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it } from 'bun:test'
 import {
   DEFAULT_MODULE_INSERTER_FAVORITES,
   dedupeModuleInserterRefs,
-  getInsertableModuleItems,
+  getVisibleModuleItems,
   moduleAccentForCategory,
+  moduleAvailability,
   resolveInserterRefs,
+  type ModuleInsertionContext,
   type RegistryModuleForInserter,
 } from '@site/module-picker/moduleInserterModel'
 import { findCanvasViewportAtPoint } from '@site/module-picker/moduleInserterDropTarget'
@@ -19,6 +21,10 @@ import {
 function mod(id: string, category: string, name = id): RegistryModuleForInserter {
   return { id, category, name, description: `${name} description` }
 }
+
+const PAGE_CTX: ModuleInsertionContext = { isVCMode: false, isTemplate: false, hasOutlet: false }
+const TEMPLATE_CTX: ModuleInsertionContext = { isVCMode: false, isTemplate: true, hasOutlet: false }
+const VC_CTX: ModuleInsertionContext = { isVCMode: true, isTemplate: false, hasOutlet: false }
 
 beforeEach(() => {
   localStorage.clear()
@@ -36,11 +42,38 @@ describe('module inserter model', () => {
       mod('base.text', 'Typography', 'Text'),
     ]
 
-    const pageModeIds = getInsertableModuleItems(modules, false).map((item) => item.id)
+    const pageModeIds = getVisibleModuleItems(modules, PAGE_CTX).map((item) => item.id)
     expect(pageModeIds).toEqual(['base.container', 'base.text'])
 
-    const vcModeIds = getInsertableModuleItems(modules, true).map((item) => item.id)
+    const vcModeIds = getVisibleModuleItems(modules, VC_CTX).map((item) => item.id)
     expect(vcModeIds).toEqual(['base.container', 'base.slot-outlet', 'base.text'])
+  })
+
+  it('keeps the content outlet visible but disabled outside an insertable template context', () => {
+    const outlet = mod('base.outlet', 'CMS', 'Content Outlet')
+
+    // Regular page: visible, disabled, reason explains the template requirement.
+    const onPage = moduleAvailability(outlet, PAGE_CTX)
+    expect(onPage.kind).toBe('disabled')
+
+    // VC definition tree: disabled too — no matched content inside a component.
+    const inVC = moduleAvailability(outlet, VC_CTX)
+    expect(inVC.kind).toBe('disabled')
+
+    // Template without an outlet: insertable.
+    expect(moduleAvailability(outlet, TEMPLATE_CTX)).toEqual({ kind: 'insertable' })
+
+    // Template that already has its outlet: disabled (one per document).
+    const alreadyPlaced = moduleAvailability(outlet, { ...TEMPLATE_CTX, hasOutlet: true })
+    expect(alreadyPlaced.kind).toBe('disabled')
+
+    // Disabled items still appear in the item list, carrying the reason.
+    const items = getVisibleModuleItems([outlet], PAGE_CTX)
+    expect(items).toHaveLength(1)
+    expect(items[0].disabledReason).toBeTruthy()
+
+    // …and insertable contexts produce no disabledReason at all.
+    expect(getVisibleModuleItems([outlet], TEMPLATE_CTX)[0].disabledReason).toBeUndefined()
   })
 
   it('maps module categories to the rail-tint accent set', () => {
@@ -67,11 +100,11 @@ describe('module inserter model', () => {
   })
 
   it('resolves favorite refs against insertable items and skips missing refs', () => {
-    const items = getInsertableModuleItems([
+    const items = getVisibleModuleItems([
       mod('base.container', 'Layout', 'Container'),
       mod('base.text', 'Typography', 'Text'),
       mod('base.image', 'Media', 'Image'),
-    ], false)
+    ], PAGE_CTX)
 
     const resolved = resolveInserterRefs([
       ...DEFAULT_MODULE_INSERTER_FAVORITES,

@@ -37,6 +37,8 @@ import {
   getParent,
   pasteSubtree,
 } from '@core/page-tree'
+import { firstOutletId, treeHasOutlet } from '@core/templates'
+import { pushToast } from '@ui/components/Toast'
 import {
   CLIPBOARD_VERSION,
   type ClipboardPayload,
@@ -291,6 +293,20 @@ export const createClipboardSlice: EditorStoreSliceCreator<ClipboardSlice> = (
       if (!page) return null
       const location = resolveInsertLocation(page, targetNodeId)
       if (!location) return null
+
+      // One-outlet-per-document invariant: a copied payload can carry a
+      // base.outlet (e.g. a whole template section). Pasting it into a
+      // document that already has an outlet would mint a second, dead one —
+      // same guard as the store's insertNode / duplicateNode chokepoints.
+      if (firstOutletId(entry.nodes) !== null && treeHasOutlet(page)) {
+        pushToast({
+          kind: 'warning',
+          title: 'Only one content outlet',
+          body: 'The copied nodes include a content outlet and this document already has one.',
+          location: 'site-editor',
+        })
+        return null
+      }
 
       // Pre-compute new node IDs across ALL roots so scoped-class scope.nodeId
       // can be remapped before classes are written into the target site.

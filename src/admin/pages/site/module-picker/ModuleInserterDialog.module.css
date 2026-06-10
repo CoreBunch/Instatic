@@ -498,6 +498,36 @@
     top: var(--moduleInserterTileControlInset);
 }
 
+/* ── Disabled items ──────────────────────────────────────────────────────────
+ * Context-disabled modules (e.g. Content Outlet outside a template) stay
+ * visible but inert: dimmed preview/title, no insert/drag affordances, no
+ * hover lift. The description line carries the reason and stays readable.
+ */
+
+.itemShellDisabled .tileItem,
+.itemShellDisabled .rowItem {
+    cursor: not-allowed;
+}
+
+.itemShellDisabled .tileItem:hover,
+.itemShellDisabled .rowItem:hover,
+.itemShellDisabled .tileItem:active,
+.itemShellDisabled .rowItem:active {
+    background: var(--editor-surface-3);
+}
+
+.itemShellDisabled .tileStage,
+.itemShellDisabled .rowThumb,
+.itemShellDisabled .itemTitle {
+    opacity: 0.45;
+}
+
+.itemShellDisabled .dragGrip,
+.itemShellDisabled .tileAdd,
+.itemShellDisabled .rowGrip {
+    display: none;
+}
+
 .favoriteButton.favoriteButton {
     position: absolute;
     z-index: 4;

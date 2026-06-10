@@ -35,6 +35,8 @@ import {
 } from '@ui/components/ContextMenu'
 import { ModuleIcon } from '@site/ui/ModuleIcon'
 import { FORM_PRESETS, type FormPreset } from './formPresets'
+import { moduleAvailability } from './moduleInserterModel'
+import { useModuleInsertionContext } from './useModuleInsertionContext'
 import styles from './ModulePicker.module.css'
 
 const EMPTY_VCS: VisualComponent[] = []
@@ -66,7 +68,7 @@ export function ModulePicker({
   const [query, setQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
 
-  const activeDocument = useEditorStore((s) => s.activeDocument)
+  const insertionContext = useModuleInsertionContext()
   const visualComponents = useEditorStore(
     (s) => s.site?.visualComponents ?? EMPTY_VCS,
   )
@@ -79,26 +81,15 @@ export function ModulePicker({
   }, [autoFocusSearch])
 
   // ─── Module list + search filter ─────────────────────────────────────────
-  const isVCMode = activeDocument?.kind === 'visualComponent'
-
+  // Same hidden/disabled rules as the inserter dialog — `moduleAvailability`
+  // hides auto-materialized internals (body, VC refs, slot instances; slot
+  // outlets outside VC mode) and disables context-bound modules (e.g. Content
+  // Outlet outside a template) with a reason rendered as a tooltip.
   const moduleGroups: AnyModuleDefinition[][] = []
   for (const mods of Object.values(registry.listByCategory())) {
-    const visible = mods.filter((m) => {
-      if (m.id === 'base.body') return false
-      if (m.id === 'base.visual-component-ref') return false
-      // `base.slot-instance` is auto-materialized as a VC ref's child on the
-      // page tree by `syncSlotInstances`. It is NEVER user-insertable from
-      // the picker — surfacing it here causes a duplicate "Slot" entry next
-      // to `base.slot-outlet` in VC mode (both modules are named "Slot")
-      // and lets users insert orphan slot-instance nodes that the lock-down
-      // then refuses to delete.
-      if (m.id === 'base.slot-instance') return false
-      // `base.slot-outlet` is the VC author's marker that says "consumer
-      // content goes here". Only meaningful inside a VC definition — hide
-      // it from page mode where it has no consumer.
-      if (m.id === 'base.slot-outlet') return isVCMode
-      return true
-    })
+    const visible = mods.filter(
+      (m) => moduleAvailability(m, insertionContext).kind !== 'hidden',
+    )
     if (visible.length > 0) moduleGroups.push(visible)
   }
 
@@ -200,18 +191,25 @@ export function ModulePicker({
       {filteredModuleGroups.map((group, groupIdx) => (
         <Fragment key={`g-${groupIdx}`}>
           {(groupIdx > 0 || filteredFormPresets.length > 0) && <ContextMenuSeparator />}
-          {group.map((mod) => (
-            <ContextMenuItem
-              key={mod.id}
-              data-module-id={mod.id}
-              onClick={() => onSelectModule(mod)}
-            >
-              <span aria-hidden="true">
-                <ModuleIcon module={mod} size={13} />
-              </span>
-              {mod.name}
-            </ContextMenuItem>
-          ))}
+          {group.map((mod) => {
+            const availability = moduleAvailability(mod, insertionContext)
+            const disabledReason =
+              availability.kind === 'disabled' ? availability.reason : undefined
+            return (
+              <ContextMenuItem
+                key={mod.id}
+                data-module-id={mod.id}
+                disabled={Boolean(disabledReason)}
+                tooltip={disabledReason}
+                onClick={() => onSelectModule(mod)}
+              >
+                <span aria-hidden="true">
+                  <ModuleIcon module={mod} size={13} />
+                </span>
+                {mod.name}
+              </ContextMenuItem>
+            )
+          })}
         </Fragment>
       ))}
 

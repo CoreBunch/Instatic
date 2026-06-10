@@ -14,6 +14,7 @@ import {
 } from "@site/module-picker/moduleInserterModel";
 import { LAYOUT_PRESETS } from "@site/module-picker";
 import { useModuleInserterPreference } from "@site/module-picker/useModuleInserterPreference";
+import { useModuleInsertionContext } from "@site/module-picker/useModuleInsertionContext";
 import { resolveInsertLocation } from "@site/store/insertLocation";
 import { selectActiveCanvasPage, useEditorStore } from "@site/store/store";
 import { ModulePickerDropdown } from "@site/toolbar/ModulePickerDropdown";
@@ -48,6 +49,8 @@ export type CanvasNotchAction = {
   id: string;
   label: string;
   onClick: () => void;
+  /** Renders the action disabled, with this string as the tooltip. */
+  disabledReason?: string;
 } & (
   | { moduleId: string; icon?: never }
   | { icon: IconComponent; moduleId?: never }
@@ -137,24 +140,23 @@ function FavoriteNotchActions() {
   const insertModule = useInsertModule();
   const insertPreset = useInsertPreset();
   const { favorites, setFavorites, toggleFavorite } = useModuleInserterPreference();
-  const activeDocument = useEditorStore((s) => s.activeDocument);
+  const insertionContext = useModuleInsertionContext();
   const visualComponents = useEditorStore((s) => s.site?.visualComponents ?? EMPTY_COMPONENTS);
   const canvasPage = useEditorStore(selectActiveCanvasPage);
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId);
   const insertComponentRef = useEditorStore((s) => s.insertComponentRef);
   const [menu, setMenu] = useState<FavoriteMenuState | null>(null);
 
-  const isVCMode = activeDocument?.kind === "visualComponent";
-  const { allInsertableItems } = buildModuleInserterItems({
+  const { allItems } = buildModuleInserterItems({
     modules: registry.list(),
-    isVCMode,
+    context: insertionContext,
     layoutPresets: LAYOUT_PRESETS,
     visualComponents,
   });
-  const resolvedFavorites = resolveInserterRefs(favorites, allInsertableItems);
+  const resolvedFavorites = resolveInserterRefs(favorites, allItems);
   const favoriteItems =
     favorites.length > 0 && resolvedFavorites.length === 0
-      ? resolveInserterRefs(DEFAULT_MODULE_INSERTER_FAVORITES, allInsertableItems)
+      ? resolveInserterRefs(DEFAULT_MODULE_INSERTER_FAVORITES, allItems)
       : resolvedFavorites;
 
   function insertComponent(componentId: string) {
@@ -275,6 +277,7 @@ function actionForItem(
       label: item.name,
       moduleId: item.id,
       onClick: () => handlers.insertModule(item.module),
+      disabledReason: item.disabledReason,
     };
   }
   if (item.kind === "layout") {
@@ -310,8 +313,9 @@ function renderActionButton(
       className={styles.quickButton}
       onClick={action.onClick}
       onContextMenu={options?.onContextMenu}
+      disabled={Boolean(action.disabledReason)}
       aria-label={`Add ${action.label}`}
-      tooltip={`Add ${action.label}`}
+      tooltip={action.disabledReason ?? `Add ${action.label}`}
       data-testid={`canvas-notch-${testIdPart(action.label)}-btn`}
     >
       {ActionIcon ? (
