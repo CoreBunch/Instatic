@@ -14,6 +14,7 @@ import {
   type PageConflict,
   type RuleConflict,
   type TokenConflict,
+  type CrossSheetClassConflict,
   EmptyImportError,
   OversizeImportError,
   ZipBombError,
@@ -31,6 +32,13 @@ export function tokenConflictKey(conflict: Pick<TokenConflict, 'kind' | 'desired
   return `${conflict.kind}:${conflict.desiredVariable}`
 }
 
+/** Stable map key for a cross-sheet class conflict — one row per divergent definition. */
+export function crossSheetConflictKey(
+  conflict: Pick<CrossSheetClassConflict, 'desiredName' | 'definitionId'>,
+): string {
+  return `${conflict.desiredName}:${conflict.definitionId}`
+}
+
 /** Which import categories the user has selected to commit, keyed per kind. */
 export interface ImportSelection {
   pagesIncluded: Set<string>       // by source path
@@ -38,6 +46,7 @@ export interface ImportSelection {
   assetsIncluded: Set<string>      // by sourcePath
   fontsIncluded: Set<string>       // by font family
   scriptsIncluded: Set<string>     // by script path
+  stylesheetsIncluded: Set<string> // by kept-stylesheet path (mode 'file')
 }
 
 /** Everything selected by default — the user opts OUT in the Review step. */
@@ -51,6 +60,7 @@ export function makeDefaultSelection(plan: ImportPlan): ImportSelection {
       ...plan.googleFonts.map((f) => f.family),
     ]),
     scriptsIncluded: new Set(plan.scripts.map((s) => s.path)),
+    stylesheetsIncluded: new Set(plan.stylesheets.map((s) => s.path)),
   }
 }
 
@@ -78,10 +88,21 @@ export function filterPlanBySelection(plan: ImportPlan, selection: ImportSelecti
         pageSources: script.pageSources.filter((source) => selection.pagesIncluded.has(source)),
       }))
       .filter((script) => script.pageSources.length > 0),
+    stylesheets: plan.stylesheets
+      .filter((s) => selection.stylesheetsIncluded.has(s.path))
+      .map((sheet) => ({
+        ...sheet,
+        pageSources: sheet.pageSources.filter((source) => selection.pagesIncluded.has(source)),
+      }))
+      .filter((sheet) => sheet.pageSources.length > 0),
     conflicts: {
       ...plan.conflicts,
       tokens: plan.conflicts.tokens.filter(
         (c) => c.kind === 'color' || includedFontVars.has(c.desiredVariable),
+      ),
+      // A cross-sheet conflict only matters while ≥1 of its pages imports.
+      crossSheetClasses: plan.conflicts.crossSheetClasses.filter((c) =>
+        c.pageSources.some((source) => selection.pagesIncluded.has(source)),
       ),
     },
   }
@@ -97,6 +118,7 @@ export function buildResolvedPlan(
   pageResMap: Map<string, ConflictResolution>,
   ruleResMap: Map<string, ConflictResolution>,
   tokenResMap: Map<string, ConflictResolution>,
+  crossSheetResMap: Map<string, ConflictResolution> = new Map(),
 ): ImportPlan {
   const updatedPageConflicts: PageConflict[] = plan.conflicts.pages.map((c) => ({
     ...c,
@@ -110,6 +132,10 @@ export function buildResolvedPlan(
     ...c,
     defaultResolution: tokenResMap.get(tokenConflictKey(c)) ?? c.defaultResolution,
   }))
+  const updatedCrossSheetConflicts: CrossSheetClassConflict[] = plan.conflicts.crossSheetClasses.map((c) => ({
+    ...c,
+    defaultResolution: crossSheetResMap.get(crossSheetConflictKey(c)) ?? c.defaultResolution,
+  }))
   return applyConflictResolutions(
     {
       ...plan,
@@ -117,11 +143,13 @@ export function buildResolvedPlan(
         pages: updatedPageConflicts,
         rules: updatedRuleConflicts,
         tokens: updatedTokenConflicts,
+        crossSheetClasses: updatedCrossSheetConflicts,
       },
     },
     updatedPageConflicts,
     updatedRuleConflicts,
     updatedTokenConflicts,
+    updatedCrossSheetConflicts,
   )
 }
 

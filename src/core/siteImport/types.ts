@@ -51,12 +51,6 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  * - `duplicate-class`: two `.foo { ... }` rules with the same class selector
  *   appeared in the same file. The later rule's declarations win (CSS cascade
  *   semantics). One warning is emitted per duplicated class.
- * - `scoped-class`: a class name was defined differently across two or more
- *   source stylesheets (each page links its own). To keep every page faithful
- *   to its own CSS, the divergent definitions were scoped to distinct names
- *   (`btn`, `btn-2`, …) and the tokens on the affected pages' nodes + that
- *   stylesheet's selectors were rewritten to match. Nothing is lost; the class
- *   list just gains suffixed names. See `scopeClasses.ts`.
  *
  * Phase 2 (site import pipeline) kinds:
  * - `missing-stylesheet`: a stylesheet referenced from an HTML `<link>` or a
@@ -88,7 +82,6 @@ export type ImportWarningKind =
   | 'blocked-property'
   | 'asset-reference'
   | 'duplicate-class'
-  | 'scoped-class'
   | 'missing-stylesheet'
   | 'missing-script'
   | 'asset-upload-failed'
@@ -270,6 +263,55 @@ export interface ImportScript {
 }
 
 /**
+ * How one top-level linked stylesheet imports.
+ *
+ * - `'convert'` (default): the sheet is parsed into editable style rules —
+ *   class rules become registry classes, ambient rules, `@keyframes`, colour /
+ *   font token extraction. Converted rules merge into the site's one global
+ *   cascade, CSS-natively.
+ * - `'file'`: the sheet's CSS text imports verbatim (minus asset-URL
+ *   rewriting) as a `SiteFile` (`type: 'style'`) scoped to exactly the pages
+ *   that linked it via `site.runtime.styles`. No selector rewriting, no
+ *   generated scope classes — the file is the single source of truth, so
+ *   semantic extraction (rules, tokens, keyframes) is skipped for it.
+ */
+export type StylesheetImportMode = 'convert' | 'file'
+
+/**
+ * One top-level stylesheet linked by ≥1 imported page, as presented in the
+ * wizard's Review step. `mode` reflects the caller-chosen import mode this
+ * plan was built with (default `'convert'`).
+ */
+export interface LinkedStylesheet {
+  /** FileMap path of the `<link rel="stylesheet">` target. */
+  path: string
+  mode: StylesheetImportMode
+  /** HTML FileMap sources that link this stylesheet. */
+  pageSources: string[]
+}
+
+/**
+ * A stylesheet kept as a file (`mode: 'file'`). Committed as a `SiteFile`
+ * (`type: 'style'`) plus a page-scoped `site.runtime.styles` entry, exactly
+ * like imported scripts. `content` is the flattened CSS: the sheet's
+ * unconditional local `@import` graph inlined in cascade order, trusted
+ * Google-font `@import`s stripped (they install as self-hosted fonts), and
+ * `url(...)` payloads normalised to FileMap keys for asset rewriting.
+ */
+export interface ImportStylesheet {
+  /** FileMap path of the source file (e.g. `css/style.css`). */
+  path: string
+  /** Flattened CSS text. */
+  content: string
+  /** HTML FileMap sources that linked this stylesheet. */
+  pageSources: string[]
+  /** Final committed page IDs. Filled by `commitImportPlan` before adapter call. */
+  pageIds?: string[]
+  /** Cascade ordering within the user-stylesheet bundle; lower applies earlier. */
+  priority: number
+}
+
+/**
  * A script tag discovered while planning one HTML page, preserving source
  * order across inline executable JavaScript and external `<script src>` tags.
  */
@@ -410,6 +452,36 @@ export interface RuleConflict {
 }
 
 /**
+ * One divergent cross-sheet definition of a class name among CONVERTED
+ * stylesheets: two page cascades define the same class with different
+ * effective declarations. The first-encountered definition keeps the bare
+ * name; each later distinct definition raises one conflict.
+ *
+ * Resolutions (applied by `applyCrossSheetClassResolutions`):
+ * - `auto-rename` / `custom-rename` (default): this definition moves to
+ *   `resolvedName` — its pages' class tokens and its cascade's selectors
+ *   follow, so every page keeps rendering with its own styles.
+ * - `skip`: drop this definition; its pages bind to the first definition.
+ * - `overwrite`: this definition wins the bare name; the other definitions'
+ *   class fragments are dropped and their pages bind to this one.
+ */
+export interface CrossSheetClassConflict {
+  /** The colliding class name as authored in the source CSS. */
+  desiredName: string
+  /** Stable id of this divergent definition (hash of its effective declarations). */
+  definitionId: string
+  /**
+   * CSS file paths whose class fragments produce this definition and are not
+   * shared with the kept (first) definition's cascades.
+   */
+  sources: string[]
+  /** HTML page sources rendered with this definition. */
+  pageSources: string[]
+  /** Default resolution (auto-rename; may be overridden by the UI). */
+  defaultResolution: ConflictResolution
+}
+
+/**
  * A design-token CSS custom property (`--bg`, `--font-primary`) extracted from
  * the import that collides with an existing token in the site.
  *
@@ -495,7 +567,20 @@ export interface ImportPlan {
    * executed.
    */
   scripts: ImportScript[]
-  conflicts: { pages: PageConflict[]; rules: RuleConflict[]; tokens: TokenConflict[] }
+  /**
+   * Every top-level stylesheet linked by ≥1 imported page, with the import
+   * mode this plan was built with. Drives the wizard's per-sheet mode picker.
+   */
+  linkedStylesheets: LinkedStylesheet[]
+  /** Stylesheets kept as files (`mode: 'file'`), ready to commit as SiteFiles. */
+  stylesheets: ImportStylesheet[]
+  conflicts: {
+    pages: PageConflict[]
+    rules: RuleConflict[]
+    tokens: TokenConflict[]
+    /** Divergent cross-sheet class definitions among CONVERTED stylesheets. */
+    crossSheetClasses: CrossSheetClassConflict[]
+  }
   warnings: ImportWarning[]
   /**
    * Source text snippets of @-rules that could not be modelled
@@ -524,6 +609,8 @@ export interface ImportResult {
   fontTokens: { id: string; name: string; variable: string }[]
   /** Site scripts committed from imported JS files. */
   scripts: { id: string; path: string }[]
+  /** Stylesheets committed as page-scoped SiteFiles (`mode: 'file'`). */
+  stylesheets: { id: string; path: string }[]
   /** Resolved conflicts (mirrors ImportPlan.conflicts with final actions). */
   conflicts: ImportPlan['conflicts']
   warnings: ImportWarning[]

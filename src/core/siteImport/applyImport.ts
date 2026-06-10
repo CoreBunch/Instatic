@@ -32,7 +32,8 @@ import { extractRootFontTokens } from './fontTokens'
 import { classifyFiles } from './classifyFiles'
 import { makeHtmlPagePlan } from './htmlPagePlan'
 import { buildAssetPlan, type CssFileResult } from './assetPlan'
-import { isSharedUtilityClassName, scopeCollidingClasses } from './scopeClasses'
+import { partitionLinkedStylesheets } from './stylesheetPlan'
+import { detectCrossSheetClassConflicts, isSharedUtilityClassName } from './classCascades'
 import { rewriteInternalLinks } from './linkRewrite'
 import { nanoid } from 'nanoid'
 import { applyAssetRewrites } from './applyAssetRewrites'
@@ -48,6 +49,7 @@ import type {
   ImportScript,
   PageConflict,
   RuleConflict,
+  StylesheetImportMode,
   TokenConflict,
 } from './types'
 import type { SiteImportAdapter } from './adapter'
@@ -62,6 +64,11 @@ export interface BuildImportPlanInput {
   options?: {
     /** Tolerance in px for matching older @media max-width queries by frame width. Default: 10. */
     mediaTolerance?: number
+    /**
+     * Per-stylesheet import mode, keyed by the top-level linked CSS path
+     * (FileMap key). Unlisted paths convert to editable style rules.
+     */
+    stylesheetModes?: Record<string, StylesheetImportMode>
   }
 }
 
@@ -134,11 +141,42 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
     pageSources: [...script.pageSources],
   }))
 
+  const googleFontsByFamily = new Map<string, ImportGoogleFont>()
+
+  function collectGoogleFonts(cssSource: string): void {
+    for (const font of extractGoogleFontImports(cssSource)) {
+      const key = font.family.toLowerCase()
+      const existing = googleFontsByFamily.get(key)
+      if (!existing) {
+        googleFontsByFamily.set(key, font)
+        continue
+      }
+      existing.variants = [...new Set([...existing.variants, ...font.variants])].sort(compareVariants)
+      existing.subsets = [...new Set([...existing.subsets, ...font.subsets])]
+    }
+  }
+
+  // 2b. Catalogue top-level linked stylesheets by import mode; flatten the
+  //     kept ones (`mode: 'file'`) verbatim. See stylesheetPlan.ts.
+  const partition = partitionLinkedStylesheets(
+    rawPagePlans,
+    fileMap,
+    options?.stylesheetModes ?? {},
+    collectGoogleFonts,
+  )
+  warnings.push(...partition.warnings)
+  droppedAtRules.push(...partition.droppedAtRules)
+  const { linkedStylesheets, keptStylesheetPaths, rawStylesheetSources } = partition
+
   const cssSourcesByPath = new Map<string, string>()
   const orderedCssPaths: string[] = []
   allLinkedCssPaths.clear()
+  for (const cssPath of partition.usedCssPaths) allLinkedCssPaths.add(cssPath)
   for (const plan of rawPagePlans) {
-    const expanded = expandLinkedCssImports(plan.linkedCssPaths, fileMap)
+    // Kept stylesheets bypass conversion entirely — only the converted sheets
+    // join the page's cascade of parsed rules.
+    const convertedTopLevel = plan.linkedCssPaths.filter((cssPath) => !keptStylesheetPaths.has(cssPath))
+    const expanded = expandLinkedCssImports(convertedTopLevel, fileMap)
     warnings.push(...expanded.warnings)
     for (const w of expanded.warnings) {
       if (w.kind === 'dropped-at-rule' && w.source) droppedAtRules.push(w.source)
@@ -161,20 +199,6 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
   const colorsBySlug = new Map<string, ImportColorToken>()
   // Font tokens pulled from root-scope rules, deduped by normalized variable.
   const fontTokensByVariable = new Map<string, ImportFontToken>()
-  const googleFontsByFamily = new Map<string, ImportGoogleFont>()
-
-  function collectGoogleFonts(cssSource: string): void {
-    for (const font of extractGoogleFontImports(cssSource)) {
-      const key = font.family.toLowerCase()
-      const existing = googleFontsByFamily.get(key)
-      if (!existing) {
-        googleFontsByFamily.set(key, font)
-        continue
-      }
-      existing.variants = [...new Set([...existing.variants, ...font.variants])].sort(compareVariants)
-      existing.subsets = [...new Set([...existing.subsets, ...font.subsets])]
-    }
-  }
 
   for (const f of classified) {
     if (f.role !== 'css') continue
@@ -250,25 +274,29 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
     plan.linkedCssPaths = [...plan.linkedCssPaths, syntheticPath]
   }
 
-  // 4b. Scope class names that are defined differently across stylesheets.
-  //     A multi-page export links one stylesheet per page and reuses class
-  //     names (`.btn`, `.hero`, …) with divergent declarations; the CMS has a
-  //     single global registry, so naive merging lets one page's class clobber
-  //     another's. `scopeCollidingClasses` keeps each page faithful to its own
-  //     stylesheet by giving divergent definitions distinct names and rewriting
-  //     the affected selectors + node class tokens. Identical defs stay shared,
-  //     as do Bootstrap-like utility names whose grid contract spans rules.
-  const scoped = scopeCollidingClasses(rawPagePlans, cssFileResults)
-  warnings.push(...summariseScopeRenames(scoped.renames))
+  // 4b. Detect divergent cross-sheet class definitions among the CONVERTED
+  //     stylesheets. Converted sheets merge CSS-natively into the one global
+  //     cascade; when two page cascades define the same class differently,
+  //     that becomes an explicit conflict (default: rename with a suffix) for
+  //     the wizard's Conflicts step — applied by
+  //     `applyCrossSheetClassResolutions`, never silently here.
+  const existingClassNames = Object.values(currentSite.styleRules)
+    .filter((rule) => rule.kind === 'class')
+    .map((rule) => rule.name)
+  const crossSheetClasses = detectCrossSheetClassConflicts(
+    rawPagePlans,
+    cssFileResults,
+    existingClassNames,
+  )
   const publishableCssFileResults = preserveGloballyMatchedClassRules(
-    scoped.pagePlans,
-    scoped.cssFileResults,
+    rawPagePlans,
+    cssFileResults,
   )
 
-  // 5. Build asset plan — normalises URLs in node props and CSS values,
-  //    resolves @font-face blocks into custom fonts, collects assets to upload
-  const { normalizedPagePlans, normalizedStyleRules, styleRuleSources, fonts, assets, warnings: assetWarnings } =
-    buildAssetPlan(scoped.pagePlans, publishableCssFileResults, fileMap)
+  // 5. Build asset plan — normalises URLs in node props, CSS values, and kept
+  //    stylesheet text; resolves @font-face blocks; collects assets to upload
+  const { normalizedPagePlans, normalizedStyleRules, styleRuleSources, stylesheets, fonts, assets, warnings: assetWarnings } =
+    buildAssetPlan(rawPagePlans, publishableCssFileResults, fileMap, rawStylesheetSources)
   warnings.push(...assetWarnings)
 
   // 6. Detect conflicts against the current site — pages, class rules, and
@@ -292,7 +320,9 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
     colors: [...colorsBySlug.values()],
     fontTokens: [...fontTokensByVariable.values()],
     scripts,
-    conflicts,
+    linkedStylesheets,
+    stylesheets,
+    conflicts: { ...conflicts, crossSheetClasses },
     warnings,
     droppedAtRules,
     unusedCss,
@@ -303,22 +333,27 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
 // commitImportPlan
 // ---------------------------------------------------------------------------
 
-function resolveScriptPageScopes(
-  scripts: ImportScript[],
+/**
+ * Resolve an item's `pageSources` (HTML FileMap paths) into committed page
+ * ids. Items whose every source page was skipped are dropped — a page-scoped
+ * asset with no surviving page has nowhere to apply.
+ */
+function resolvePageScopes<T extends { pageSources: string[]; pageIds?: string[] }>(
+  items: T[],
   pageIdBySource: Map<string, string>,
-): ImportScript[] {
-  return scripts.flatMap((script) => {
-    if (script.pageSources.length === 0) return [script]
+): T[] {
+  return items.flatMap((item) => {
+    if (item.pageSources.length === 0) return [item]
     const seen = new Set<string>()
     const pageIds: string[] = []
-    for (const source of script.pageSources) {
+    for (const source of item.pageSources) {
       const pageId = pageIdBySource.get(source)
       if (!pageId || seen.has(pageId)) continue
       seen.add(pageId)
       pageIds.push(pageId)
     }
     if (pageIds.length === 0) return []
-    return [{ ...script, pageIds }]
+    return [{ ...item, pageIds }]
   })
 }
 
@@ -408,6 +443,7 @@ export async function commitImportPlan(
   const resultColors: ImportResult['colors'] = []
   const resultFontTokens: ImportResult['fontTokens'] = []
   const resultScripts: ImportResult['scripts'] = []
+  const resultStylesheets: ImportResult['stylesheets'] = []
 
   // Build conflict resolution lookup maps (source → resolution)
   const pageConflictsBySource = new Map<string, PageConflict>(
@@ -556,9 +592,14 @@ export async function commitImportPlan(
       resultPages.push({ id, title: page.title, slug: page.slug, source: page.source })
     }
 
-    const scopedScripts = resolveScriptPageScopes(rewrittenPlan.scripts ?? [], pageIdBySource)
+    const scopedScripts = resolvePageScopes(rewrittenPlan.scripts ?? [], pageIdBySource)
     if (scopedScripts.length > 0) {
       resultScripts.push(...tx.addScripts(scopedScripts))
+    }
+
+    const scopedStylesheets = resolvePageScopes(rewrittenPlan.stylesheets ?? [], pageIdBySource)
+    if (scopedStylesheets.length > 0) {
+      resultStylesheets.push(...tx.addStylesheets(scopedStylesheets))
     }
   })
 
@@ -581,6 +622,7 @@ export async function commitImportPlan(
     colors: resultColors,
     fontTokens: resultFontTokens,
     scripts: resultScripts,
+    stylesheets: resultStylesheets,
     conflicts: plan.conflicts,
     // Carry forward the plan-level warnings (CSS parser / asset planner /
     // missing stylesheet …) AND surface any per-asset upload failures from
@@ -645,36 +687,6 @@ function collectImportedNodeClassNames(pagePlans: ImportPlan['pages']): Set<stri
     }
   }
   return names
-}
-
-/**
- * Collapse per-file class renames into one `scoped-class` warning per original
- * class name, so the wizard reports "`.btn` was defined 2 different ways across
- * stylesheets → kept as btn, btn-2" rather than a flood of per-file entries.
- */
-function summariseScopeRenames(
-  renames: ReadonlyArray<{ originalName: string; scopedName: string; cssPath: string }>,
-): ImportWarning[] {
-  if (renames.length === 0) return []
-  const scopedByOriginal = new Map<string, Set<string>>()
-  for (const { originalName, scopedName } of renames) {
-    let set = scopedByOriginal.get(originalName)
-    if (!set) {
-      set = new Set<string>()
-      scopedByOriginal.set(originalName, set)
-    }
-    set.add(scopedName)
-  }
-  const warnings: ImportWarning[] = []
-  for (const [originalName, scopedNames] of scopedByOriginal) {
-    const variants = [originalName, ...[...scopedNames].filter((n) => n !== originalName)]
-    warnings.push({
-      kind: 'scoped-class',
-      message: `Class ".${originalName}" was defined differently across stylesheets; kept per-page fidelity by scoping it to: ${variants.map((n) => `.${n}`).join(', ')}`,
-      selector: `.${originalName}`,
-    })
-  }
-  return warnings
 }
 
 /**

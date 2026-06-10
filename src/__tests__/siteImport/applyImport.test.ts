@@ -49,6 +49,7 @@ interface MockTxOp {
     | 'addColorTokens'
     | 'overwriteColorTokens'
     | 'addScripts'
+    | 'addStylesheets'
   args: unknown
   id: string
 }
@@ -145,6 +146,10 @@ function makeMockAdapter(opts?: {
           ops.push({ type: 'overwriteColorTokens', args: { items }, id: '' })
           return items.map((i) => ({ slug: i.existingTokenId, value: i.value }))
         },
+        addStylesheets(stylesheets) {
+          ops.push({ type: 'addStylesheets', args: { stylesheets }, id: '' })
+          return stylesheets.map((s) => ({ id: nextId(), path: s.path }))
+        },
         addScripts(scripts) {
           ops.push({ type: 'addScripts', args: { scripts }, id: '' })
           return scripts.map((s) => ({ id: nextId(), path: s.path }))
@@ -153,14 +158,6 @@ function makeMockAdapter(opts?: {
       recipe(tx)
     },
   }
-}
-
-function importScopeOf(page: ImportPlan['pages'][number]): string {
-  const scope = page.nodeFragment.body?.classIds?.find((className) =>
-    className.startsWith('instatic-import-scope-'),
-  )
-  expect(scope).toBeDefined()
-  return scope!
 }
 
 // ---------------------------------------------------------------------------
@@ -226,9 +223,9 @@ describe('buildImportPlan — structure', () => {
     const promo = p.styleRules.find((r) => r.kind === 'class' && r.name === 'promo')
     expect(promo).toBeDefined()
     expect(promo!.styles.color).toContain('255')
-    // The ambient selector is registered too.
-    const scopeClass = importScopeOf(p.pages[0])
-    expect(p.styleRules.some((r) => r.kind === 'ambient' && r.selector === `body.${scopeClass} a:hover`)).toBe(true)
+    // The ambient selector is registered too — verbatim, no generated scoping.
+    expect(p.styleRules.some((r) => r.kind === 'ambient' && r.selector === 'a:hover')).toBe(true)
+    expect(p.pages[0].nodeFragment.body?.classIds ?? []).toEqual([])
     // The page node still carries the class NAME (linked to an id at commit time).
     const fragment = p.pages[0].nodeFragment
     const divNode = Object.values(fragment.nodes).find((n) => n.moduleId === 'base.container')
@@ -360,13 +357,10 @@ describe('buildImportPlan — structure', () => {
       currentSite,
     })
 
-    const scopeClass = importScopeOf(p.pages[0])
-    const rowRules = p.styleRules.filter((rule) =>
-      rule.selector === '.row' || rule.selector === `body.${scopeClass} .row`,
-    )
+    const rowRules = p.styleRules.filter((rule) => rule.selector === '.row')
     expect(rowRules).toHaveLength(2)
     expect(rowRules.every((rule) => rule.kind === 'ambient')).toBe(true)
-    expect(p.styleRules.find((rule) => rule.selector === `body.${scopeClass} .row > *`)?.kind).toBe('ambient')
+    expect(p.styleRules.find((rule) => rule.selector === '.row > *')?.kind).toBe('ambient')
     expect(p.styleRules.find((rule) => rule.selector === '.col-xl-3')?.kind).toBe('ambient')
     expect(p.styleRules.find((rule) => rule.selector === '.align-items-stretch')?.kind).toBe('ambient')
     expect(p.styleRules.find((rule) => rule.selector === '.custom-row')?.kind).toBe('class')
@@ -445,10 +439,9 @@ describe('buildImportPlan — structure', () => {
         fallback: 'serif',
       },
     ])
-    const scopeClass = importScopeOf(p.pages[0])
-    const root = p.styleRules.find((rule) => rule.selector === `body.${scopeClass}`)
+    const root = p.styleRules.find((rule) => rule.selector === ':root')
     expect(root?.styles).toEqual({ '--font-size-base': '16px' })
-    expect(p.styleRules.find((rule) => rule.selector === `body.${scopeClass} h1`)?.styles.fontFamily).toBe('var(--font-display)')
+    expect(p.styleRules.find((rule) => rule.selector === 'h1')?.styles.fontFamily).toBe('var(--font-display)')
   })
 
   it('plans Google Fonts @import as installed font requests', () => {
@@ -494,8 +487,7 @@ describe('buildImportPlan — structure', () => {
       },
     ])
     expect('fontImportUrl' in p).toBe(false)
-    const scopeClass = importScopeOf(p.pages[0])
-    expect(p.styleRules.find((rule) => rule.selector === `body.${scopeClass}`)?.styles).toMatchObject({
+    expect(p.styleRules.find((rule) => rule.selector === ':root')?.styles).toMatchObject({
       '--title-font': '"Plus Jakarta Sans", serif',
       '--body-font': '"Manrope", sans-serif',
     })
@@ -646,6 +638,46 @@ describe('commitImportPlan — happy path', () => {
       { path: 'scripts/vendor.js', format: 'classic', pageIds: [indexPageId], priority: 100 },
       { path: 'scripts/app.js', format: 'module', pageIds: [indexPageId], priority: 101 },
     ])
+  })
+
+  it('commits kept stylesheets (mode: file) with resolved page scope and rewritten asset URLs', async () => {
+    const encoder = new TextEncoder()
+    const html = `<!doctype html><html><head><link rel="stylesheet" href="css/style.css"></head><body><div class="cell">Hi</div></body></html>`
+    const plan = buildImportPlan({
+      fileMap: {
+        files: {
+          'index.html': { bytes: encoder.encode(html), mimeType: 'text/html' },
+          'css/style.css': {
+            bytes: encoder.encode(`.cell { color: red; background-image: url('../img/bg.png'); }`),
+            mimeType: 'text/css',
+          },
+          'img/bg.png': { bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png' },
+        },
+      },
+      currentSite: makeEmptySiteDocument(),
+      options: { stylesheetModes: { 'css/style.css': 'file' } },
+    })
+    const adapter = makeMockAdapter()
+    const result = await commitImportPlan(plan, adapter)
+
+    const addPageOp = adapter.ops.find((o) => o.type === 'addPage')
+    const pageId = (addPageOp?.args as { id?: string } | undefined)?.id
+    const addStylesheetsOp = adapter.ops.find((o) => o.type === 'addStylesheets')
+    expect(addStylesheetsOp).toBeDefined()
+    const stylesheets = (addStylesheetsOp!.args as { stylesheets: Array<{
+      path: string
+      content: string
+      pageIds?: string[]
+      priority: number
+    }> }).stylesheets
+    expect(stylesheets).toHaveLength(1)
+    expect(stylesheets[0].path).toBe('css/style.css')
+    expect(stylesheets[0].content).toContain('color: red')
+    // The kept file's url() payload points at the uploaded media URL, not the
+    // FileMap key — applyAssetRewrites covers stylesheet text too.
+    expect(stylesheets[0].content).toContain(`url('/uploads/media/img_bg.png')`)
+    expect(stylesheets[0].pageIds).toEqual([pageId])
+    expect(result.stylesheets).toHaveLength(1)
   })
 
   it('commits imported Google Fonts through installed font entries before font tokens', async () => {

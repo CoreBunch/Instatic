@@ -12,7 +12,6 @@ import { nanoid } from 'nanoid'
 import type { StoreApi } from 'zustand'
 import type { FrameworkColorToken } from '@core/framework-schema'
 import type { NodeTree, PageNode, StyleRule, SiteDocument } from '@core/page-tree'
-import type { SiteRuntimeConfig } from '@core/site-runtime'
 import { addPage, createNode, reconcileSiteExplorerInPlace, reindexNodeParents } from '@core/page-tree'
 import { syncAllVCRefSlotInstances, allTreeNodeMaps } from '../vcSlotReconcile'
 import { create } from 'mutative'
@@ -21,12 +20,9 @@ import type { ImportFragment } from '@core/htmlImport'
 import type {
   NewStyleRule,
   ImportColorToken,
-  ImportScript,
 } from '@core/siteImport'
-import type { SiteFile } from '@core/files/schemas'
-import { isSafePath, normalizePath } from '@core/files/pathValidation'
 import { normalizeFrameworkColorSlug } from '@core/framework'
-import { DEFAULT_SCRIPT_RUNTIME_CONFIG } from '@core/site-runtime'
+import { addImportedScripts, addImportedStylesheets } from './importedSiteFiles'
 import type { EditorStore } from '@site/store/types'
 import { MAX_HISTORY } from './defaults'
 import { reconcileFrameworkClasses } from './framework/reconcile'
@@ -483,6 +479,12 @@ export function buildSiteHelpers(
           if (committed.length > 0) didMutate = true
           return committed
         },
+
+        addStylesheets(stylesheets): { id: string; path: string }[] {
+          const committed = addImportedStylesheets(site, draft.siteRuntime, stylesheets)
+          if (committed.length > 0) didMutate = true
+          return committed
+        },
       }
 
       const result = fn(site as SiteDocument, helpers)
@@ -587,81 +589,3 @@ function overwriteImportedColorTokens(
   return committed
 }
 
-/**
- * Add imported JS files as `SiteFile`s (`type: 'script'`) plus page-scoped
- * `site.runtime.scripts` entries, so they run where the source HTML linked
- * them. The runtime entry is mirrored onto the live `siteRuntime` draft (the
- * canvas reads that copy) exactly as `filesSlice.deleteFile` mirrors its delete.
- *
- * Paths are normalised + made unique within `site.files`; an unsafe source path
- * falls back to a sanitised name under `src/scripts/`.
- *
- * @returns The committed `{ id, path }` for each added script.
- */
-function addImportedScripts(
-  site: Draft<SiteDocument>,
-  siteRuntime: Draft<SiteRuntimeConfig> | undefined,
-  scripts: ImportScript[],
-): { id: string; path: string }[] {
-  if (scripts.length === 0) return []
-
-  site.runtime ??= { dependencyLock: { version: 1, packages: {}, updatedAt: 0 }, scripts: {}, styles: {} }
-  site.runtime.scripts ??= {}
-
-  const usedPaths = new Set(site.files.map((f) => f.path))
-  const committed: { id: string; path: string }[] = []
-
-  for (const script of scripts) {
-    const path = uniqueFilePath(safeScriptPath(script.path), usedPaths)
-    usedPaths.add(path)
-
-    const id = nanoid()
-    const now = Date.now()
-    const file: SiteFile = {
-      id,
-      path,
-      type: 'script',
-      content: script.content,
-      createdAt: now,
-      updatedAt: now,
-    }
-    site.files.push(file)
-
-    const pageIds = Array.isArray(script.pageIds)
-      ? script.pageIds.filter((pageId): pageId is string => typeof pageId === 'string' && pageId.length > 0)
-      : []
-    const config = {
-      ...DEFAULT_SCRIPT_RUNTIME_CONFIG,
-      format: script.format,
-      priority: script.priority,
-      scope: pageIds.length > 0
-        ? { type: 'pages' as const, pageIds }
-        : DEFAULT_SCRIPT_RUNTIME_CONFIG.scope,
-    }
-    site.runtime.scripts[id] = config
-    if (siteRuntime?.scripts) siteRuntime.scripts[id] = { ...config }
-
-    committed.push({ id, path })
-  }
-
-  return committed
-}
-
-/** Normalise a source path into a safe SiteFile path, falling back to src/scripts/. */
-function safeScriptPath(rawPath: string): string {
-  const normalized = normalizePath(rawPath)
-  if (isSafePath(normalized)) return normalized
-  const base = (rawPath.split('/').pop() ?? 'script.js').replace(/[^a-zA-Z0-9._-]+/g, '-')
-  return `src/scripts/${base || 'script.js'}`
-}
-
-/** Append `-2`, `-3`, … before the extension until the path is unused. */
-function uniqueFilePath(path: string, used: Set<string>): string {
-  if (!used.has(path)) return path
-  const dot = path.lastIndexOf('.')
-  const stem = dot > path.lastIndexOf('/') ? path.slice(0, dot) : path
-  const ext = dot > path.lastIndexOf('/') ? path.slice(dot) : ''
-  let n = 2
-  while (used.has(`${stem}-${n}${ext}`)) n += 1
-  return `${stem}-${n}${ext}`
-}

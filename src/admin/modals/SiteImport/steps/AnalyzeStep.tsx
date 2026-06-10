@@ -26,8 +26,9 @@ import { BracesIcon } from 'pixel-art-icons/icons/braces'
 import { WarningDiamondSolidIcon } from 'pixel-art-icons/icons/warning-diamond-solid'
 import { ChevronRightIcon } from 'pixel-art-icons/icons/chevron-right'
 import { DragAndDropSolidIcon } from 'pixel-art-icons/icons/drag-and-drop-solid'
-import type { ImportPlan } from '@core/siteImport'
+import type { ImportPlan, StylesheetImportMode } from '@core/siteImport'
 import type { ImportSelection } from '../SiteImportModal'
+import { StylesheetModeRows } from './StylesheetModeRows'
 import { ImportStepper } from '../shared/ImportStepper'
 import { withSiteImportCategoryTints } from '../shared/importCategoryAccent'
 import { FontTokenRows } from './FontTokenRows'
@@ -84,6 +85,7 @@ interface AnalyzeStepProps {
   pageSlugOverrides: Map<string, string>
   busy: boolean
   onSelectionChange: (next: ImportSelection) => void
+  onStylesheetModeChange: (path: string, mode: StylesheetImportMode) => void
   onAddFiles: (files: File[]) => void
   onSlugOverride: (source: string, slug: string) => void
 }
@@ -95,6 +97,7 @@ export function AnalyzeStep({
   pageSlugOverrides,
   busy,
   onSelectionChange,
+  onStylesheetModeChange,
   onAddFiles,
   onSlugOverride,
 }: AnalyzeStepProps) {
@@ -114,7 +117,7 @@ export function AnalyzeStep({
 
   const counts: Record<Exclude<Category, 'skipped'>, number> = {
     pages: plan.pages.length,
-    styles: plan.styleRules.length,
+    styles: plan.styleRules.length + plan.stylesheets.length,
     media: plan.assets.length,
     colors: plan.colors.length,
     fonts: plan.fonts.length + plan.googleFonts.length,
@@ -122,7 +125,7 @@ export function AnalyzeStep({
   }
   const includeOn: Record<Exclude<Category, 'skipped'>, boolean> = {
     pages: selection.pagesIncluded.size > 0,
-    styles: selection.styleRulesIncluded.size > 0,
+    styles: selection.styleRulesIncluded.size > 0 || selection.stylesheetsIncluded.size > 0,
     media: selection.assetsIncluded.size > 0,
     colors: plan.colors.length > 0,
     fonts: selection.fontsIncluded.size > 0,
@@ -161,6 +164,9 @@ export function AnalyzeStep({
   }
   function toggleScript(path: string) {
     patch({ scriptsIncluded: toggleInSet(selection.scriptsIncluded, path) })
+  }
+  function toggleStylesheet(path: string) {
+    patch({ stylesheetsIncluded: toggleInSet(selection.stylesheetsIncluded, path) })
   }
 
   // ── Add-files (button + drag-drop) ────────────────────────────────────────
@@ -343,11 +349,18 @@ export function AnalyzeStep({
       <>
         <DetailHead
           title="Style rules"
-          sub="Grouped by source stylesheet"
+          sub="Pick how each stylesheet imports — editable rules, or a file kept as-is"
           count={selection.styleRulesIncluded.size}
           total={plan.styleRules.length}
           onAll={() => patch({ styleRulesIncluded: new Set(plan.styleRules.map((_, i) => i)) })}
           onNone={() => patch({ styleRulesIncluded: new Set() })}
+        />
+        <StylesheetModeRows
+          plan={plan}
+          stylesheetsIncluded={selection.stylesheetsIncluded}
+          busy={busy}
+          onToggleStylesheet={toggleStylesheet}
+          onStylesheetModeChange={onStylesheetModeChange}
         />
         <div className={styles.toolbar}>
           <SearchBar value={query} onValueChange={setQuery} placeholder="Search selectors…" />

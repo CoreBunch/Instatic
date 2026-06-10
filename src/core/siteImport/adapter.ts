@@ -22,6 +22,7 @@ import type {
   ImportColorToken,
   ImportFontToken,
   ImportScript,
+  ImportStylesheet,
 } from './types'
 import type { ConditionDef } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
@@ -209,4 +210,13 @@ export interface SiteImportTransaction {
    * @returns The committed `{ id, path }` for each added script.
    */
   addScripts(scripts: ImportScript[]): { id: string; path: string }[]
+
+  /**
+   * Add stylesheets kept as files (`mode: 'file'`): one `SiteFile`
+   * (`type: 'style'`) per sheet plus a page-scoped `site.runtime.styles`
+   * entry so each applies exactly where the source HTML linked it.
+   *
+   * @returns The committed `{ id, path }` for each added stylesheet.
+   */
+  addStylesheets(stylesheets: ImportStylesheet[]): { id: string; path: string }[]
 }

@@ -33,6 +33,7 @@ import type {
   ImportColorToken,
   ImportFontToken,
   ImportScript,
+  ImportStylesheet,
 } from '@core/siteImport'
 import type { FrameworkChangeImpact } from '@core/framework'
 import type { EditorStore } from '@site/store/types'
@@ -137,6 +138,14 @@ export interface SuperImportHelpers {
    * @returns The committed `{ id, path }` for each added script.
    */
   addScripts(scripts: ImportScript[]): { id: string; path: string }[]
+
+  /**
+   * Add stylesheets kept as files (`mode: 'file'`) as `SiteFile`s
+   * (`type: 'style'`) plus page-scoped `site.runtime.styles` entries, so each
+   * applies exactly where the source HTML linked it.
+   * @returns The committed `{ id, path }` for each added stylesheet.
+   */
+  addStylesheets(stylesheets: ImportStylesheet[]): { id: string; path: string }[]
 }
 
 // ---------------------------------------------------------------------------

@@ -22,6 +22,7 @@ import type {
   PageConflict,
   RuleConflict,
   TokenConflict,
+  CrossSheetClassConflict,
   ConflictResolution,
   PagePlan,
   NewStyleRule,
@@ -32,6 +33,7 @@ import type { SiteDocument, PageNode } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
 import { normalizeFrameworkColorSlug } from '@core/framework'
 import { normalizeFontTokenVariable } from '@core/fonts'
+import { applyCrossSheetClassResolutions, normalizeBindableClassRules } from './classCascades'
 
 // ---------------------------------------------------------------------------
 // Detection
@@ -134,14 +136,19 @@ function detectRuleConflicts(
 
   // Track names claimed by earlier items in the import batch
   const claimedNames = new Map<string, string>(existingClassNames)
+  // A class may arrive as several cascade fragments with one name — they
+  // rename together, so they share ONE conflict row.
+  const conflictedNames = new Set<string>()
 
   for (const rule of styleRules) {
     if (rule.kind !== 'class') continue // ambient rules never conflict
 
     const desiredName = rule.name
+    if (conflictedNames.has(desiredName)) continue
     const existingId = existingClassNames.get(desiredName)
 
     if (existingId) {
+      conflictedNames.add(desiredName)
       const resolvedName = nextAvailableName(desiredName, claimedNames)
       conflicts.push({
         source: '', // CSS file path is not tracked per-rule in NewStyleRule
@@ -299,7 +306,13 @@ export function applyConflictResolutions(
   pageResolutions: PageConflict[],
   ruleResolutions: RuleConflict[],
   tokenResolutions: TokenConflict[] = [],
+  crossSheetResolutions: CrossSheetClassConflict[] = [],
 ): ImportPlan {
+  // Cross-sheet class resolutions apply FIRST: a definition renamed to
+  // `btn-2` here no longer participates in a site-vs-import conflict on
+  // `btn`, while the kept definition still does.
+  plan = applyCrossSheetClassResolutions(plan, crossSheetResolutions)
+
   // Build lookup maps
   const pageRes = new Map(pageResolutions.map((r) => [r.source, r.defaultResolution]))
   const ruleRes = new Map(ruleResolutions.map((r) => [r.desiredName, r.defaultResolution]))
@@ -387,7 +400,11 @@ export function applyConflictResolutions(
       return renamed ? { ...token, variable: renamed } : token
     })
 
-  return { ...plan, pages, styleRules, colors, fontTokens }
+  // The registry requires unique class names: after all renames have landed,
+  // demote every repeated class-kind rule (cascade fragments of one name) to
+  // an ambient rule with the same selector — its declarations keep their
+  // cascade position; only the first fragment stays bindable.
+  return normalizeBindableClassRules({ ...plan, pages, styleRules, colors, fontTokens })
 }
 
 /** Whether a resolution moves the item to a new name (rather than skip/overwrite). */

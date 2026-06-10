@@ -14,7 +14,7 @@
 import type { ImportPlan, ConflictResolution } from '@core/siteImport'
 import { Button } from '@ui/components/Button'
 import { ConflictRow } from '../shared/ConflictRow'
-import { tokenConflictKey } from '../shared/importPlanning'
+import { crossSheetConflictKey, tokenConflictKey } from '../shared/importPlanning'
 import styles from './ConflictsStep.module.css'
 
 type BulkResolutionAction = Extract<ConflictResolution['action'], 'auto-rename' | 'overwrite' | 'skip'>
@@ -32,9 +32,11 @@ interface ConflictsStepProps {
   pageResolutions: Map<string, ConflictResolution>
   ruleResolutions: Map<string, ConflictResolution>
   tokenResolutions: Map<string, ConflictResolution>
+  crossSheetResolutions: Map<string, ConflictResolution>
   onPageResolutionChange: (source: string, resolution: ConflictResolution) => void
   onRuleResolutionChange: (desiredName: string, resolution: ConflictResolution) => void
   onTokenResolutionChange: (key: string, resolution: ConflictResolution) => void
+  onCrossSheetResolutionChange: (key: string, resolution: ConflictResolution) => void
 }
 
 export function ConflictsStep({
@@ -42,14 +44,26 @@ export function ConflictsStep({
   pageResolutions,
   ruleResolutions,
   tokenResolutions,
+  crossSheetResolutions,
   onPageResolutionChange,
   onRuleResolutionChange,
   onTokenResolutionChange,
+  onCrossSheetResolutionChange,
 }: ConflictsStepProps) {
-  const { pages: pageConflicts, rules: ruleConflicts, tokens: tokenConflicts } = plan.conflicts
+  const {
+    pages: pageConflicts,
+    rules: ruleConflicts,
+    tokens: tokenConflicts,
+    crossSheetClasses: crossSheetConflicts,
+  } = plan.conflicts
   const pageBulkOverwriteAvailable = pageConflicts.every((conflict) => conflict.existingPageId !== '')
 
-  if (pageConflicts.length === 0 && ruleConflicts.length === 0 && tokenConflicts.length === 0) {
+  if (
+    pageConflicts.length === 0 &&
+    ruleConflicts.length === 0 &&
+    tokenConflicts.length === 0 &&
+    crossSheetConflicts.length === 0
+  ) {
     return null
   }
 
@@ -68,6 +82,12 @@ export function ConflictsStep({
   function applyTokenResolutionToAll(action: BulkResolutionAction) {
     for (const conflict of tokenConflicts) {
       onTokenResolutionChange(tokenConflictKey(conflict), resolutionForAction(action, conflict))
+    }
+  }
+
+  function applyCrossSheetResolutionToAll(action: BulkResolutionAction) {
+    for (const conflict of crossSheetConflicts) {
+      onCrossSheetResolutionChange(crossSheetConflictKey(conflict), resolutionForAction(action, conflict))
     }
   }
 
@@ -184,6 +204,58 @@ export function ConflictsStep({
                 onChange={(next) => onRuleResolutionChange(conflict.desiredName, next)}
               />
             ))}
+          </div>
+        </section>
+      )}
+
+      {crossSheetConflicts.length > 0 && (
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h3 className={styles.heading}>
+              Stylesheets disagree ({crossSheetConflicts.length})
+            </h3>
+            <fieldset className={styles.bulkActions}>
+              <legend className={styles.bulkLegend}>Bulk cross-stylesheet conflict actions</legend>
+              <Button
+                variant="secondary"
+                size="xs"
+                type="button"
+                aria-label="Rename all cross-stylesheet conflicts"
+                onClick={() => applyCrossSheetResolutionToAll('auto-rename')}
+              >
+                Rename all
+              </Button>
+              <Button
+                variant="secondary"
+                size="xs"
+                type="button"
+                aria-label="Keep the first definition for all cross-stylesheet conflicts"
+                onClick={() => applyCrossSheetResolutionToAll('skip')}
+              >
+                Keep first all
+              </Button>
+            </fieldset>
+          </div>
+          <p className={styles.hint}>
+            Two imported stylesheets define the same class differently. Rename
+            keeps each page faithful to its own stylesheet (the listed pages
+            move to the new name); skip uses the first definition everywhere;
+            overwrite makes this definition win the original name.
+          </p>
+          <div className={styles.rows}>
+            {crossSheetConflicts.map((conflict) => {
+              const key = crossSheetConflictKey(conflict)
+              return (
+                <ConflictRow
+                  key={key}
+                  kind="rule"
+                  source={`${conflict.sources.join(', ') || 'imported stylesheets'} · ${conflict.pageSources.join(', ')}`}
+                  desired={conflict.desiredName}
+                  current={crossSheetResolutions.get(key) ?? conflict.defaultResolution}
+                  onChange={(next) => onCrossSheetResolutionChange(key, next)}
+                />
+              )
+            })}
           </div>
         </section>
       )}

@@ -34,6 +34,7 @@ import {
   type ImportPlan,
   type ImportResult,
   type ConflictResolution,
+  type StylesheetImportMode,
 } from '@core/siteImport'
 import { useAdminUi } from '@admin/state/adminUi'
 import { useEditorStore } from '@site/store/store'
@@ -48,6 +49,7 @@ import { describeCmsBundleLoadError, useCmsBundleImport } from './shared/useCmsB
 import {
   type ImportSelection,
   tokenConflictKey,
+  crossSheetConflictKey,
   makeDefaultSelection,
   filterPlanBySelection,
   buildResolvedPlan,
@@ -102,6 +104,8 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   const [pageResolutions, setPageResolutions] = useState<Map<string, ConflictResolution>>(new Map())
   const [ruleResolutions, setRuleResolutions] = useState<Map<string, ConflictResolution>>(new Map())
   const [tokenResolutions, setTokenResolutions] = useState<Map<string, ConflictResolution>>(new Map())
+  const [crossSheetResolutions, setCrossSheetResolutions] = useState<Map<string, ConflictResolution>>(new Map())
+  const [stylesheetModes, setStylesheetModes] = useState<Record<string, StylesheetImportMode>>({})
   const [pageSlugOverrides, setPageSlugOverrides] = useState<Map<string, string>>(new Map())
   const [runProgress, setRunProgress] = useState<RunProgress>(makeInitialRunProgress)
   const [result, setResult] = useState<ImportResult | null>(null)
@@ -172,12 +176,12 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     }
   }
 
-  async function finalizePlan(map: FileMap) {
+  async function finalizePlan(map: FileMap, modes: Record<string, StylesheetImportMode> = stylesheetModes) {
     const currentSite = await ensureCurrentSiteForStaticImport()
     const importPlan = buildImportPlan({
       fileMap: map,
       currentSite,
-      options: { mediaTolerance: 10 },
+      options: { mediaTolerance: 10, stylesheetModes: modes },
     })
     setFileMap(map)
     setPlan(importPlan)
@@ -191,9 +195,23 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     setTokenResolutions(
       new Map(importPlan.conflicts.tokens.map((c) => [tokenConflictKey(c), c.defaultResolution])),
     )
+    setCrossSheetResolutions(
+      new Map(importPlan.conflicts.crossSheetClasses.map((c) => [crossSheetConflictKey(c), c.defaultResolution])),
+    )
     setPageSlugOverrides(new Map())
     setBusy(false)
     setStep('analyze')
+  }
+
+  // Re-analyse with a changed per-stylesheet import mode. The plan rebuild is
+  // synchronous and pure, so flipping a sheet between "editable rules" and
+  // "keep as stylesheet" instantly refreshes rules, conflicts, and selection.
+  function handleStylesheetModeChange(path: string, mode: StylesheetImportMode) {
+    if (!fileMap) return
+    const modes = { ...stylesheetModes, [path]: mode }
+    setStylesheetModes(modes)
+    setBusy(true)
+    void finalizePlan(fileMap, modes)
   }
 
   // ── Step navigation ───────────────────────────────────────────────────────
@@ -214,7 +232,8 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     const hasConflicts =
       filtered.conflicts.pages.length > 0 ||
       filtered.conflicts.rules.length > 0 ||
-      filtered.conflicts.tokens.length > 0
+      filtered.conflicts.tokens.length > 0 ||
+      filtered.conflicts.crossSheetClasses.length > 0
 
     if (hasConflicts) {
       setPlan(filtered)
@@ -251,7 +270,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     ruleResMap: Map<string, ConflictResolution>,
     tokenResMap: Map<string, ConflictResolution>,
   ) {
-    const resolvedPlan = buildResolvedPlan(planToRun, pageResMap, ruleResMap, tokenResMap)
+    const resolvedPlan = buildResolvedPlan(planToRun, pageResMap, ruleResMap, tokenResMap, crossSheetResolutions)
 
     // Totals come from the plan being committed. Media is the only genuinely
     // incremental phase (per-asset uploads); everything else lands in one atomic
@@ -260,7 +279,8 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     initial.phase = 'uploading'
     initial.categories = {
       pages: { done: 0, total: resolvedPlan.pages.length },
-      styles: { done: 0, total: resolvedPlan.styleRules.length },
+      // Kept stylesheet files count alongside converted rules — one "styles" row.
+      styles: { done: 0, total: resolvedPlan.styleRules.length + resolvedPlan.stylesheets.length },
       media: { done: 0, total: resolvedPlan.assets.length },
       colors: { done: 0, total: resolvedPlan.colors.length },
       fonts: {
@@ -317,7 +337,10 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
         currentItem: '',
         categories: {
           pages: { done: importResult.pages.length, total: importResult.pages.length },
-          styles: { done: importResult.styleRules.length, total: importResult.styleRules.length },
+          styles: {
+            done: importResult.styleRules.length + importResult.stylesheets.length,
+            total: importResult.styleRules.length + importResult.stylesheets.length,
+          },
           media: { done: importResult.assets.length, total: importResult.assets.length },
           colors: { done: importResult.colors.length, total: importResult.colors.length },
           fonts: {
@@ -535,6 +558,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
             pageSlugOverrides={pageSlugOverrides}
             busy={busy}
             onSelectionChange={setSelection}
+            onStylesheetModeChange={handleStylesheetModeChange}
             onAddFiles={(files) => { void handleAddFiles(files) }}
             onSlugOverride={(source, slug) => {
               setPageSlugOverrides((prev) => {
@@ -568,6 +592,14 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
             }}
             onTokenResolutionChange={(key, resolution) => {
               setTokenResolutions((prev) => {
+                const next = new Map(prev)
+                next.set(key, resolution)
+                return next
+              })
+            }}
+            crossSheetResolutions={crossSheetResolutions}
+            onCrossSheetResolutionChange={(key, resolution) => {
+              setCrossSheetResolutions((prev) => {
                 const next = new Map(prev)
                 next.set(key, resolution)
                 return next

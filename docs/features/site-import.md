@@ -9,11 +9,12 @@ The static-site pipeline has two parts: a pure analysis function (`buildImportPl
 ## TL;DR
 
 - Entry: global admin-shell modal, opened from Spotlight or workspace actions. Drop files, a folder, a `.zip`, or a CMS-exported `.json` bundle. Static files use the four-stage modal (Drop → Review → Conflicts → Import, with completion shown inside the Import stage). CMS bundles use Drop → Review bundle → Import.
-- `buildImportPlan({ fileMap, currentSite })` — pure, synchronous — produces an `ImportPlan` with pages, style rules, media, color tokens, custom fonts, Google font install requests, font tokens, and scripts.
+- `buildImportPlan({ fileMap, currentSite, options })` — pure, synchronous — produces an `ImportPlan` with pages, style rules, kept stylesheet files, media, color tokens, custom fonts, Google font install requests, font tokens, and scripts.
+- **Per-stylesheet import modes:** each top-level linked stylesheet either converts to editable style rules (default) or imports verbatim as a page-scoped `SiteFile` stylesheet (`options.stylesheetModes`, picked in the Review step). There are no generated scope classes — page isolation comes from the kept file's runtime scope.
 - `commitImportPlan(plan, adapter)` — uploads assets, then wraps all store writes in a single `adapter.commit` call → one Cmd+Z reverts the whole import.
 - Static imports load the current CMS draft into the editor store on demand when launched outside `/admin/site`; if no draft exists, the modal creates an empty site before analysis.
-- Conflict resolution: rename with a numeric suffix (default), overwrite, skip, or custom-rename — per page slug, per class name, and per design token (colour / font CSS variable), with category-level bulk actions for rename / skip / overwrite. Token renames rewrite `var(--x)` references so imports stay faithful.
-- What imports: pages, linked CSS plus unconditional local CSS `@import` graphs, `kind:'class'` and `kind:'ambient'` style rules, `@keyframes`, uploadable media/font files, root CSS color tokens, root CSS font tokens, `@font-face` families, known external font stylesheet imports, safe extra HTML attributes on base modules, body-level classes/attributes/style metadata, bare DOM text nodes in mixed content, and executable HTML scripts as page-scoped runtime scripts.
+- Conflict resolution: rename with a numeric suffix (default), overwrite, skip, or custom-rename — per page slug, per class name, per design token (colour / font CSS variable), and per divergent cross-stylesheet class definition, with category-level bulk actions. Token renames rewrite `var(--x)` references so imports stay faithful.
+- What imports: pages, linked CSS plus unconditional local CSS `@import` graphs, `kind:'class'` and `kind:'ambient'` style rules, stylesheets kept as page-scoped files, `@keyframes`, uploadable media/font files, root CSS color tokens, root CSS font tokens, `@font-face` families, known external font stylesheet imports, safe extra HTML attributes on base modules, body-level classes/attributes/style metadata, bare DOM text nodes in mixed content, and executable HTML scripts as page-scoped runtime scripts.
 - CMS bundle import preserves exported tables, rows, optional site shell, and embedded media using the same merge strategies as site transfer (`replace`, `merge-add`, `merge-overwrite`).
 - HTML forms import through the shared HTML importer as first-class form primitives (`base.form`, controls, labels, submit buttons), not as custom containers.
 - What cannot be modeled: `@layer`, conditional local CSS `@import`, and arbitrary external `@import` — surfaced as warnings when the CSS engine exposes them, never silently dropped.
@@ -35,7 +36,7 @@ src/core/siteImport/
 ├── fontTokens.ts        — extract root --font-* custom properties as ImportFontToken[] from :root/html/body rules
 ├── fontImports.ts       — resolve trusted Google CSS2 @import rules into installed-font requests
 ├── cssImports.ts        — expand unconditional local CSS @import graphs while preserving each source path
-├── scopeClasses.ts      — scope colliding class names and ambient selectors across per-page stylesheet cascades
+├── classCascades.ts     — cross-sheet class semantics: detect divergent class definitions as explicit conflicts; apply rename / keep-first / overwrite; enforce one bindable class rule per name
 ├── mimeTypes.ts         — extension → MIME fallback for FileMap entries that carry no MIME type (e.g. ZIP)
 ├── assetPlan.ts         — normalise URL props/HTML attributes in node fragments + CSS/@keyframes url(); resolve @font-face; collect assets
 ├── applyAssetRewrites.ts — patch fragment props + CSS/@keyframes url() with new media URLs (post-upload)
@@ -104,12 +105,16 @@ User drops files / folder / .zip / CMS bundle JSON
     │   → rules (minus :root --font-* props) + ImportFontToken[]     │
     └────────────────────────────────────────────────────────────────┘
             │
-    scopeCollidingClasses(pagePlans, cssFileResults)
-            │  renames divergent same-named classes per stylesheet
+    detectCrossSheetClassConflicts(pagePlans, cssFileResults, existingClassNames)
+            │  flags DIVERGENT same-named class definitions across page cascades
+            │  as explicit conflicts (default: rename with suffix) — applied later
+            │  by applyConflictResolutions, never silently
             ▼
-    buildAssetPlan(pagePlans, cssFileResults, fileMap)
-            │  normalizes url() in node props, HTML attributes, CSS values, and raw @keyframes CSS to FileMap keys
+    buildAssetPlan(pagePlans, cssFileResults, fileMap, rawStylesheetSources)
+            │  normalizes url() in node props, HTML attributes, CSS values, raw @keyframes
+            │  CSS, and kept-stylesheet text to FileMap keys
             │  resolves @font-face → ImportFontFamily[]
+            │  flattens kept stylesheets (mode 'file') → ImportStylesheet[]
             │  collects deduplicated asset list
             ▼
     detectConflicts(currentSite, pagePlans, styleRules, colorTokens, fontTokens)
@@ -125,7 +130,7 @@ User drops files / folder / .zip / CMS bundle JSON
                 tx.addConditions / tx.addColorTokens / tx.overwriteColorTokens / tx.addScripts
                 tx.addFonts / tx.addFontTokens / tx.overwriteFontTokens
                 tx.addStyleRule / tx.overwriteStyleRule
-                tx.addPage / tx.overwritePage
+                tx.addPage / tx.overwritePage / tx.addStylesheets
             │
             ▼
     ImportResult → ImportStep complete state (summary + per-category counts)
@@ -147,7 +152,14 @@ interface ImportPlan {
   assets:          { sourcePath: string; mimeType: string; bytes: Uint8Array }[]
   colors:          ImportColorToken[]
   scripts:         ImportScript[]
-  conflicts:       { pages: PageConflict[]; rules: RuleConflict[]; tokens: TokenConflict[] }
+  linkedStylesheets: LinkedStylesheet[]   // every top-level linked sheet + its import mode
+  stylesheets:     ImportStylesheet[]     // sheets kept as files (mode 'file')
+  conflicts:       {
+    pages: PageConflict[]
+    rules: RuleConflict[]
+    tokens: TokenConflict[]
+    crossSheetClasses: CrossSheetClassConflict[]
+  }
   warnings:        ImportWarning[]
   droppedAtRules:  string[]     // source text of un-modelable @-rules
   unusedCss:       string[]     // CSS files present but not linked by any page
@@ -170,6 +182,7 @@ All URL-shaped values inside `pages[].nodeFragment` props, imported `htmlAttribu
 | **Fonts** | Self-hosted `@font-face` families with at least one bundled file, plus trusted Google CSS2 imports | `buildFontFamilies` in `assetPlan.ts` picks the best bundled format (woff2 → woff → ttf → otf); `extractGoogleFontImports` turns Google CSS2 `@import` rules into install requests. Commit uploads custom files via `tx.addFonts`, installs Google families through the CMS Google-font installer, then merges those returned `FontEntry` records via `tx.addInstalledFonts` |
 | **Font tokens** | Root `--font-*` variables with font-family stacks | `extractRootFontTokens` pulls them into `ImportFontToken[]`; committed via `tx.addFontTokens` after fonts so matching imported families can be assigned. A `--font-*` that collides with an existing font token surfaces as a `TokenConflict` (rename / skip / overwrite) |
 | **Scripts** | Executable inline scripts and JS files linked by imported HTML | Preserved in source order and committed via `tx.addScripts` with page scope from the source HTML. Classic scripts remain plain `<script>` assets and bypass bundling; `type="module"` scripts keep module semantics. Non-executable script data such as `application/json`, import maps, and templates is skipped. |
+| **Stylesheets (kept)** | Top-level linked sheets the user opted into `mode: 'file'` | Flattened `@import` graph, Google imports stripped, `url()` normalised; committed via `tx.addStylesheets` as a `SiteFile` (`type: 'style'`) + `site.runtime.styles` entry scoped to the linking pages. Editable afterwards in the Site panel's Styles section and the code editor. |
 
 ---
 
@@ -190,31 +203,45 @@ All URL-shaped values inside `pages[].nodeFragment` props, imported `htmlAttribu
 
 ---
 
-## Class scoping across stylesheets
+## Per-stylesheet import modes
+
+Every top-level linked stylesheet imports in one of two user-selectable modes (`StylesheetImportMode`, picked in the Review step's Style rules pane, default `'convert'`):
+
+- **`'convert'`** — the sheet is parsed into editable style rules: class rules become registry classes, ambient rules, `@keyframes`, colour/font token extraction. Converted sheets merge into the site's ONE global cascade, CSS-natively — exactly like a browser loading them all.
+- **`'file'`** — the sheet's CSS imports verbatim as a `SiteFile` (`type: 'style'`) plus a `site.runtime.styles` entry scoped to **exactly the pages that linked it**. No selector rewriting, no generated classes — page isolation comes from the runtime scope, and the file is immediately editable in the Site panel / code editor and rendered in the canvas via the user-stylesheet pipeline. Kept sheets skip ALL semantic extraction (no rules, no tokens — the file is the single source of truth); only two things still touch them: `url(...)` payloads normalise to FileMap keys so referenced media/fonts upload and rewrite (`buildAssetPlan.normalizeRawCssUrls`), and trusted Google CSS2 `@import`s are stripped + installed as self-hosted fonts. The sheet's unconditional local `@import` graph is flattened into the file in cascade order (each part keeps a `/* source path */` header). Nodes keep their class-name tokens; commit auto-creates bare style-less registry classes for them (the standard `linkImportedClassNames` step), so pills and pickers work and panel overrides can layer on top.
+
+## Cross-sheet class conflicts (converted sheets)
 
 A multi-page site typically links one stylesheet per page, and those stylesheets routinely use the same class name (`.btn`, `.hero`) with different declarations. The CMS has a single global style rule registry, so a naïve merge would let one page's class clobber another's.
 
-`scopeCollidingClasses` (`scopeClasses.ts`) runs after CSS parsing and before the asset plan. It compares the effective class definitions produced by each page's ordered linked CSS cascade, not isolated CSS files, so base stylesheet rules and responsive/context stylesheet fragments for the same class stay bound to the same imported node class:
+`detectCrossSheetClassConflicts` (`classCascades.ts`) compares the effective class definitions produced by each page's ordered linked CSS cascade (fragments merged in source order, not isolated files):
 
-- **One distinct definition** across all stylesheets → bare name kept; the class is shared.
-- **N distinct definitions** → first keeps the bare name; the rest get a numeric suffix (`btn`, `btn-2`, …). Definitions that are identical share a name.
-- **Bootstrap-like shared utility names** (`row`, `col-xl-3`, `d-flex`, `align-items-stretch`, spacing/gutter utilities, etc.) stay unscoped even when their declaration bags differ. Those classes are framework vocabulary rather than component classes: their behaviour is often assembled from multiple rules and selectors such as `.row`, `.row > *`, and `.col-*`. Splitting them would break the grid contract.
+- **One distinct definition** across all cascades → no conflict; the class is shared. Repeated fragments stay in cascade order (see normalization below).
+- **N distinct definitions** → the first keeps the bare name; each later distinct definition becomes one `CrossSheetClassConflict` row in the wizard's Conflicts step ("Stylesheets disagree"), default `auto-rename` to the next free suffix (free among imported AND existing site class names). Nothing is renamed silently.
+- **Bootstrap-like shared utility names** (`row`, `col-xl-3`, `d-flex`, `align-items-stretch`, spacing/gutter utilities, etc.) never conflict. Those classes are framework vocabulary rather than component classes: their behaviour is often assembled from multiple rules and selectors such as `.row`, `.row > *`, and `.col-*`. Splitting them would break the grid contract.
 
-The rename is applied consistently: the `kind:'class'` rule's `name` + `selector`, every ambient selector in that stylesheet that references the class as a token, and the `classIds` tokens on every node of every page linked to that stylesheet. A `scoped-class` warning is emitted per scoped name.
+Resolutions apply in `applyCrossSheetClassResolutions` (via `applyConflictResolutions`, before site-vs-import rule conflicts):
 
-Imported ambient selectors are also prefixed under a generated body class for the page's stylesheet cascade (`h1` → `body.instatic-import-scope-* h1`, `body` → `body.instatic-import-scope-*`). This keeps global resets or demo/documentation-page CSS from one imported HTML file from overriding another imported page while still importing every authored HTML page.
+- **rename** — the divergent definition is materialised as ONE class rule under the new name carrying the cascade-merged declarations; the affected cascades' exclusive class fragments for the old name are dropped, class tokens in their exclusive ambient selectors follow the rename, and the affected pages' node class tokens move to the new name. Fragments in stylesheets *shared* with a kept cascade stay put (they also feed the kept definition; their declarations are still present in the materialised rule).
+- **skip** — keep the first definition: the divergent cascades' exclusive fragments are dropped and their pages bind to the kept definition by name.
+- **overwrite** — this definition wins the bare name: every OTHER cascade's exclusive fragments for it are dropped.
 
-After scoping, two groups of single-class rules are converted to `kind:'ambient'`: classes that no imported node actually uses, and the shared Bootstrap-like utility names above. Static templates often create or toggle unused classes from JavaScript (`.mt-cursor`, `.is-open`, `.show`, etc.); leaving those as editable class rules would let publisher class tree-shaking drop them because no imported node owns their `classIds`. Shared utilities are ambient for a different reason: nodes keep the plain class token, while every source rule for that token remains publishable in cascade order.
+After all renames, `normalizeBindableClassRules` enforces the registry's unique-class-name invariant: per final name, the FIRST class-kind rule (in cascade source order) stays bindable; every later same-name class fragment becomes an ambient rule with the same selector — its declarations keep their cascade position, so within-cascade overrides (`base.css .btn` + `page.css .btn`) still compose like real CSS.
+
+Separately, two groups of single-class rules are converted to `kind:'ambient'` at plan time (`preserveGloballyMatchedClassRules`): classes that no imported node actually uses, and the shared Bootstrap-like utility names above. Static templates often create or toggle unused classes from JavaScript (`.mt-cursor`, `.is-open`, `.show`, etc.); leaving those as editable class rules would let publisher class tree-shaking drop them because no imported node owns their `classIds`. Shared utilities are ambient for a different reason: nodes keep the plain class token, while every source rule for that token remains publishable in cascade order.
+
+The escape hatch for "this sheet's resets/styles must not leak into other pages at all" is no longer a generated scope class — it is keeping that sheet as a file (`mode: 'file'`), page-scoped via runtime config.
 
 ---
 
 ## Conflict resolution
 
-`detectConflicts(currentSite, pagePlans, styleRules, colorTokens, fontTokens)` produces three lists:
+`detectConflicts(currentSite, pagePlans, styleRules, colorTokens, fontTokens)` produces three lists; a fourth — `crossSheetClasses` — comes from `detectCrossSheetClassConflicts` (see above):
 
 - **`PageConflict`** — a desired slug collides with an existing page slug or with another slug in the same import batch.
-- **`RuleConflict`** — a `kind:'class'` rule's name collides with an existing class name. Ambient rules never conflict.
+- **`RuleConflict`** — a `kind:'class'` rule's name collides with an existing class name. Ambient rules never conflict. One row per name even when the name arrives as several cascade fragments (they rename together).
 - **`TokenConflict`** — a design-token CSS custom property collides with an existing token. One type covers both colour tokens (keyed by `--<slug>`, against `framework.colors.tokens`) and font tokens (keyed by `--font-*`, against `fonts.tokens`), since both are just a `--var` contract referenced by `var(--x)` in the imported CSS. Imported tokens are deduped per kind upstream, so only site-vs-import collisions occur.
+- **`CrossSheetClassConflict`** — two imported page cascades define the same class differently (see "Cross-sheet class conflicts" above). Keyed by `(desiredName, definitionId)`; resolutions apply FIRST in `applyConflictResolutions` so a renamed definition no longer participates in the site-vs-import conflict on the original name.
 
 Page slugs can be slash-delimited public paths. Root `index.html` stays the homepage slug `index`; nested `index.html` files use their directory route, so `documentation/index.html` imports as `/documentation` and does not collide with `download-version/index.html`.
 
@@ -241,7 +268,7 @@ The conflict wizard renders bulk controls in each of the three conflict categori
 | Phase | Guarantee |
 |---|---|
 | Asset uploads (Step A) | Network, not reversible. Per-asset failures are caught, recorded as `asset-upload-failed` warnings, and the import continues. Orphaned uploads are harmless — left in the media library for manual cleanup. |
-| Store mutation (Step C) | Single `adapter.commit` call. The admin adapter wraps it in one `mutateAllPagesAndSite` call — one patch-based undo entry. Cmd+Z reverts pages, style rules, fonts, color tokens, and scripts together in one step. |
+| Store mutation (Step C) | Single `adapter.commit` call. The admin adapter wraps it in one `mutateAllPagesAndSite` call — one patch-based undo entry. Cmd+Z reverts pages, style rules, stylesheet files, fonts, color tokens, and scripts together in one step. |
 
 ---
 
@@ -257,7 +284,7 @@ The modal is mounted once at the authenticated admin shell (`AuthenticatedAdmin.
 
 **Analyze (Review)** — category navigator. Left column: one nav entry per import category with its count and include-toggle, plus "Add more files" (files can be added at any point — re-ingests and rebuilds the plan) and a "Can't import" entry for skipped items. Right pane: detail view per category:
 - **Pages** — checkbox + inline slug editor per page.
-- **Style rules** — grouped by source stylesheet with a search bar and per-rule checkboxes. Groups up to 60 rules expanded; remaining are collapsed into "+N more".
+- **Style rules** — a per-stylesheet mode picker first (each top-level linked sheet: "Editable style rules" vs "Keep as stylesheet"; flipping a mode synchronously rebuilds the plan), then converted rules grouped by source stylesheet with a search bar and per-rule checkboxes. Groups up to 60 rules expanded; remaining are collapsed into "+N more". Kept sheets show as a single row with an include checkbox and their page scope.
 - **Media** — tiles grouped by MIME class (Images / SVG / GIF / Video / Other) with a per-group Switch.
 - **Color tokens** — read-only swatches; all colors always import.
 - **Fonts** — Switch per font family; extracted root font variables are shown in the same category and follow the selected family when they reference one.
@@ -281,7 +308,6 @@ On success the same step switches to its **complete** state — a success mark, 
 | `invalid-rule` | A CSS rule caused `replaceSync` to throw (sheet-level parse error) |
 | `blocked-property` | A CSS property name is on the security denylist (`behavior`, `-moz-binding`, …) — declaration dropped |
 | `duplicate-class` | Two `.foo {}` rules in the same file; later declarations win |
-| `scoped-class` | A class was defined differently across stylesheets; definitions scoped to distinct names |
 | `missing-stylesheet` | A `<link rel="stylesheet">` href was not found in the FileMap |
 | `asset-upload-failed` | An individual asset upload was rejected by the server; the original FileMap path remains in the import |
 | `external-font` | An `@font-face` with no bundled file (all `src` entries are external URLs) — skipped |
@@ -314,7 +340,7 @@ On success the same step switches to its **complete** state — a success mark, 
   - `src/core/siteImport/fontTokens.ts` — `extractRootFontTokens`
   - `src/core/siteImport/fontImports.ts` — `extractGoogleFontImports`
   - `src/core/siteImport/cssImports.ts` — `expandLinkedCssImports`
-  - `src/core/siteImport/scopeClasses.ts` — cascade-aware class scoping for shared class names across imported stylesheets
+  - `src/core/siteImport/classCascades.ts` — cross-sheet class conflict detection + resolution; bindable-class normalization; shared-utility vocabulary
   - `src/core/siteImport/conflicts.ts` — `detectConflicts`, `applyConflictResolutions`
   - `src/admin/modals/SiteImport/SiteImportModal.tsx` — wizard shell
   - `src/admin/modals/SiteImport/steps/AnalyzeStep.tsx` — category navigator + detail panes

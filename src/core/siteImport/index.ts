@@ -32,10 +32,14 @@ export type { HtmlPagePlanResult } from './htmlPagePlan'
 export { buildAssetPlan } from './assetPlan'
 export type { CssFileResult, AssetPlanResult } from './assetPlan'
 
-// ── Phase 2 — cross-stylesheet class scoping ─────────────────────────────────
+// ── Phase 2 — cross-stylesheet class semantics ───────────────────────────────
 
-export { scopeCollidingClasses } from './scopeClasses'
-export type { ScopeClassesResult } from './scopeClasses'
+export {
+  detectCrossSheetClassConflicts,
+  applyCrossSheetClassResolutions,
+  normalizeBindableClassRules,
+  isSharedUtilityClassName,
+} from './classCascades'
 
 // ── Phase 2 — internal link rewriting (→ dynamic page refs) ──────────────────
 
@@ -87,8 +91,12 @@ export type {
   PageConflict,
   RuleConflict,
   TokenConflict,
+  CrossSheetClassConflict,
   ImportPlan,
   ImportResult,
+  StylesheetImportMode,
+  LinkedStylesheet,
+  ImportStylesheet,
   // @font-face import
   ParsedFontFace,
   ImportFontFile,

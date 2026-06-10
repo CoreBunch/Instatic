@@ -97,7 +97,9 @@ function makeMinimalPlan(overrides: Partial<ImportPlan> = {}): ImportPlan {
     assets: overrides.assets ?? [],
     colors: overrides.colors ?? [],
     scripts: overrides.scripts ?? [],
-    conflicts: overrides.conflicts ?? { pages: [], rules: [], tokens: [] },
+    linkedStylesheets: overrides.linkedStylesheets ?? [],
+    stylesheets: overrides.stylesheets ?? [],
+    conflicts: overrides.conflicts ?? { pages: [], rules: [], tokens: [], crossSheetClasses: [] },
     warnings: overrides.warnings ?? [],
     droppedAtRules: overrides.droppedAtRules ?? [],
     unusedCss: overrides.unusedCss ?? [],
@@ -113,7 +115,8 @@ function makeMinimalResult(overrides: Partial<ImportResult> = {}): ImportResult 
     assets: overrides.assets ?? [],
     colors: overrides.colors ?? [],
     scripts: overrides.scripts ?? [],
-    conflicts: overrides.conflicts ?? { pages: [], rules: [], tokens: [] },
+    stylesheets: overrides.stylesheets ?? [],
+    conflicts: overrides.conflicts ?? { pages: [], rules: [], tokens: [], crossSheetClasses: [] },
     warnings: overrides.warnings ?? [],
   }
 }
@@ -993,6 +996,7 @@ describe('ConflictsStep — conflict rendering', () => {
     const plan = makeMinimalPlan({
       conflicts: {
         tokens: [],
+        crossSheetClasses: [],
         pages: [
           {
             source: 'about.html',
@@ -1020,6 +1024,7 @@ describe('ConflictsStep — conflict rendering', () => {
     const plan = makeMinimalPlan({
       conflicts: {
         tokens: [],
+        crossSheetClasses: [],
         pages: [],
         rules: [
           {
@@ -1047,6 +1052,7 @@ describe('ConflictsStep — conflict rendering', () => {
     const plan = makeMinimalPlan({
       conflicts: {
         tokens: [],
+        crossSheetClasses: [],
         pages: [
           {
             source: 'about.html',
@@ -1082,6 +1088,7 @@ describe('ConflictsStep — conflict rendering', () => {
     const plan = makeMinimalPlan({
       conflicts: {
         tokens: [],
+        crossSheetClasses: [],
         pages: [
           {
             source: 'home.html',
@@ -1112,6 +1119,7 @@ describe('ConflictsStep — conflict rendering', () => {
     const plan = makeMinimalPlan({
       conflicts: {
         tokens: [],
+        crossSheetClasses: [],
         pages: [
           {
             source: 'about.html',
@@ -1147,6 +1155,7 @@ describe('ConflictsStep — conflict rendering', () => {
     const plan = makeMinimalPlan({
       conflicts: {
         tokens: [],
+        crossSheetClasses: [],
         pages: [
           {
             source: 'about.html',
@@ -1178,6 +1187,7 @@ describe('ConflictsStep — conflict rendering', () => {
     const plan = makeMinimalPlan({
       conflicts: {
         tokens: [],
+        crossSheetClasses: [],
         pages: [],
         rules: [
           {
@@ -1212,6 +1222,7 @@ describe('ConflictsStep — conflict rendering', () => {
     const plan = makeMinimalPlan({
       conflicts: {
         tokens: [],
+        crossSheetClasses: [],
         pages: [],
         rules: [
           {
@@ -1260,6 +1271,7 @@ describe('ConflictsStep — conflict rendering', () => {
     const plan = makeMinimalPlan({
       conflicts: {
         tokens: [],
+        crossSheetClasses: [],
         pages: [
           {
             source: 'about.html',
@@ -1378,6 +1390,7 @@ describe('AnalyzeStep — MEDIA group renders from plan.assets only', () => {
     assetsIncluded: new Set(['assets/logo.png']),
     fontsIncluded: new Set(),
     scriptsIncluded: new Set(),
+    stylesheetsIncluded: new Set(),
   }
 
   // The navigator no longer needs the FileMap (it binds to the plan), but the
@@ -1394,6 +1407,7 @@ describe('AnalyzeStep — MEDIA group renders from plan.assets only', () => {
         pageSlugOverrides={new Map()}
         busy={false}
         onSelectionChange={() => {}}
+        onStylesheetModeChange={() => {}}
         onAddFiles={() => {}}
         onSlugOverride={() => {}}
       />,
@@ -1611,6 +1625,7 @@ describe('commitImportPlan — overwrite with no existing target falls back to a
       ],
       conflicts: {
         tokens: [],
+        crossSheetClasses: [],
         // Intra-batch collision → empty existingPageId, but user chose overwrite.
         pages: [
           {
@@ -1648,6 +1663,7 @@ describe('commitImportPlan — overwrite with no existing target falls back to a
       ],
       conflicts: {
         tokens: [],
+        crossSheetClasses: [],
         pages: [
           {
             source: 'home.html',

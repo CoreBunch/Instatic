@@ -20,7 +20,7 @@
 
 import type { PageNode } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
-import type { ImportPlan, NewStyleRule, ImportFontFamily } from './types'
+import type { ImportPlan, ImportStylesheet, NewStyleRule, ImportFontFamily } from './types'
 
 // ---------------------------------------------------------------------------
 // Props that may carry normalised FileMap keys in page nodes
@@ -53,7 +53,20 @@ export function applyAssetRewrites(
     })),
     styleRules: plan.styleRules.map((r) => rewriteRule(r, rewriteMap)),
     fonts: (plan.fonts ?? []).map((f) => rewriteFontFamily(f, rewriteMap)),
+    stylesheets: (plan.stylesheets ?? []).map((s) => rewriteStylesheet(s, rewriteMap)),
   }
+}
+
+/**
+ * Rewrite `url('key')` payloads inside a kept stylesheet's flattened CSS text
+ * — the keys were normalised by `buildAssetPlan.normalizeRawCssUrls`.
+ */
+function rewriteStylesheet(
+  sheet: ImportStylesheet,
+  rewriteMap: Record<string, string>,
+): ImportStylesheet {
+  const content = rewriteUrlsInCssValue(sheet.content, rewriteMap)
+  return content === sheet.content ? sheet : { ...sheet, content }
 }
 
 /**

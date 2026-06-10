@@ -34,6 +34,7 @@ import type {
   ParsedFontFace,
   ImportFontFamily,
   ImportFontFile,
+  ImportStylesheet,
 } from './types'
 import { guessMimeType, isImportUploadableMimeType } from './mimeTypes'
 
@@ -58,6 +59,22 @@ export interface CssFileResult {
   fontFaces?: ParsedFontFace[]
 }
 
+/**
+ * A stylesheet kept as a file (`mode: 'file'`), pre-flattening. Each part is
+ * one source file of the sheet's expanded `@import` graph, in cascade order —
+ * kept separate until url() normalisation because relative `url(...)` paths
+ * resolve against the PART's own directory, not the top-level sheet's.
+ */
+export interface RawStylesheetSource {
+  /** FileMap key of the top-level linked CSS file. */
+  path: string
+  /** HTML FileMap sources that linked this stylesheet. */
+  pageSources: string[]
+  /** Cascade ordering within the user-stylesheet bundle. */
+  priority: number
+  parts: Array<{ cssPath: string; cssText: string }>
+}
+
 export interface AssetPlanResult {
   /** pagePlans with URL props in node fragments normalised to FileMap keys. */
   normalizedPagePlans: PagePlan[]
@@ -65,6 +82,8 @@ export interface AssetPlanResult {
   normalizedStyleRules: NewStyleRule[]
   /** Index-aligned with `normalizedStyleRules`: the source stylesheet path each rule came from. */
   styleRuleSources: string[]
+  /** Kept stylesheets, flattened with url() payloads normalised to FileMap keys. */
+  stylesheets: ImportStylesheet[]
   /**
    * Custom font families resolved from `@font-face` blocks. Each file's `src`
    * is a FileMap key (rewritten to a media URL later by `applyAssetRewrites`).
@@ -108,6 +127,7 @@ export function buildAssetPlan(
   pagePlans: PagePlan[],
   cssFileResults: CssFileResult[],
   fileMap: FileMap,
+  rawStylesheetSources: RawStylesheetSource[] = [],
 ): AssetPlanResult {
   const warnings: ImportWarning[] = []
   /** Deduplicated assets by FileMap key. */
@@ -133,6 +153,25 @@ export function buildAssetPlan(
     for (let i = 0; i < normalized.length; i++) styleRuleSources.push(cssPath)
   }
 
+  // --- Flatten + normalise kept stylesheets (mode 'file') ---
+  // Each part's url(...) payloads resolve against ITS source file's directory
+  // before the parts are joined, so a sub-sheet's `../img/x.png` still finds
+  // the right FileMap entry. The per-part comment header keeps the origin
+  // visible in the committed SiteFile.
+  const stylesheets: ImportStylesheet[] = rawStylesheetSources.map((sheet) => ({
+    path: sheet.path,
+    pageSources: sheet.pageSources,
+    priority: sheet.priority,
+    content: sheet.parts
+      .map((part) => {
+        const normalized = normalizeRawCssUrls(part.cssText, part.cssPath, fileMap, assetMap)
+        return sheet.parts.length > 1
+          ? `/* ${part.cssPath.replace(/\*\//g, '*\\/')} */\n${normalized}`
+          : normalized
+      })
+      .join('\n\n'),
+  }))
+
   // --- Resolve @font-face blocks into custom font families ---
   const fonts = buildFontFamilies(cssFileResults, fileMap, assetMap, warnings)
 
@@ -155,7 +194,28 @@ export function buildAssetPlan(
 
   const assets = Array.from(assetMap.values())
 
-  return { normalizedPagePlans, normalizedStyleRules, styleRuleSources, fonts, assets, warnings }
+  return { normalizedPagePlans, normalizedStyleRules, styleRuleSources, stylesheets, fonts, assets, warnings }
+}
+
+/**
+ * Normalise every `url(...)` payload in raw CSS text to its FileMap key,
+ * registering each referenced asset for upload — the raw-text sibling of
+ * `normalizeCssBag` for stylesheets kept as files. External URLs and
+ * unresolved paths pass through untouched.
+ */
+function normalizeRawCssUrls(
+  cssText: string,
+  basePath: string,
+  fileMap: FileMap,
+  assetMap: Map<string, { sourcePath: string; mimeType: string; bytes: Uint8Array }>,
+): string {
+  return cssText.replace(
+    /url\(\s*(['"]?)([^'")\n]+)\1\s*\)/g,
+    (match, _quote: string, rawUrl: string) => {
+      const fileMapKey = resolveAndRecord(rawUrl.trim(), basePath, fileMap, assetMap)
+      return fileMapKey ? `url('${fileMapKey}')` : match
+    },
+  )
 }
 
 // ---------------------------------------------------------------------------
