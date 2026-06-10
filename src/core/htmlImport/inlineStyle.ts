@@ -19,6 +19,11 @@
  */
 
 import { isEmittableProperty } from '@core/publisher'
+import {
+  decodeSubstitutionProperty,
+  encodeSubstitutionDeclarationList,
+  SUBSTITUTION_FN_RE,
+} from '@core/css-substitution'
 
 /** Match the first `url(...)` payload in a CSS value (quoted or bare). */
 const URL_PAYLOAD_RE = /url\(\s*(['"]?)([^'")\n]+)\1\s*\)/i
@@ -56,9 +61,12 @@ function normalizeBackgroundImage(style: CSSStyleDeclaration, out: Record<string
 export function extractInlineStyles(style: CSSStyleDeclaration): Record<string, string> {
   const out: Record<string, string> = {}
   for (let i = 0; i < style.length; i++) {
-    const kebab = style[i]
-    const value = style.getPropertyValue(kebab).trim()
+    const rawKebab = style[i]
+    const value = style.getPropertyValue(rawKebab).trim()
     if (!value) continue
+    // Substitution declarations were encoded as marker custom properties by
+    // `harvestInlineStyles` so they survive the engine parse verbatim.
+    const kebab = decodeSubstitutionProperty(rawKebab) ?? rawKebab
     const camel = kebabToCamel(kebab)
     if (!isEmittableProperty(camel)) continue
     out[camel] = value
@@ -79,6 +87,17 @@ export function harvestInlineStyles(doc: Document): Map<Element, Record<string, 
     // hand-rolled CSS parser and matches the engine the publisher trusts.
     const styledEl = el as Element & { style?: CSSStyleDeclaration }
     if (!styledEl.style || !el.hasAttribute('style')) continue
+    // Declarations whose value uses `var()`/`env()` are lossy/engine-divergent
+    // through CSSStyleDeclaration (see @core/css-substitution). The authored
+    // attribute text is still at hand here — re-set it with those declarations
+    // encoded as marker custom properties, which every engine preserves
+    // verbatim; `extractInlineStyles` decodes them back. The document is the
+    // importer's own parse artifact and `stripUnsafe` removes the attribute
+    // afterwards, so mutating it is safe.
+    const authored = el.getAttribute('style') ?? ''
+    if (SUBSTITUTION_FN_RE.test(authored)) {
+      el.setAttribute('style', encodeSubstitutionDeclarationList(authored))
+    }
     const bag = extractInlineStyles(styledEl.style)
     if (Object.keys(bag).length > 0) result.set(el, bag)
   }

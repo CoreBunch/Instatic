@@ -857,6 +857,18 @@ describe('inline style="" → node.inlineStyles', () => {
     expect(Object.keys(node.inlineStyles ?? {}).length).toBeGreaterThan(0)
   })
 
+  it('preserves shorthand+var() declarations byte-faithfully', () => {
+    // CSSOM views of substitution declarations are lossy and engine-divergent;
+    // the harvest re-encodes them as marker custom properties before parsing
+    // (see @core/css-substitution).
+    const node = single(`<div style="border: 1px solid var(--rule); color: var(--ink); padding: 4px">x</div>`)
+    expect(node.inlineStyles?.border).toBe('1px solid var(--rule)')
+    expect(node.inlineStyles?.color).toBe('var(--ink)')
+    expect(node.inlineStyles?.paddingTop).toBe('4px')
+    // No mangled longhand artifacts carrying the bare var() text.
+    expect(node.inlineStyles?.borderLeftWidth).toBeUndefined()
+  })
+
   it('leaves nodes without inline styles free of inlineStyles', () => {
     const result = importHtml('<div><p>Plain</p></div>')
     for (const node of Object.values(result.nodes)) {

@@ -42,6 +42,7 @@ import type { StyleRuleKind, Condition, ConditionDef } from '@core/page-tree'
 import { conditionId, makeConditionDef } from '@core/page-tree'
 import { formatVariant } from '@core/fonts'
 import { processKeyframesRule } from './keyframesToStyleRule'
+import { decodeSubstitutionProperty, encodeSubstitutionDeclarations } from '@core/css-substitution'
 import { matchMediaQueryToViewport } from './mediaQueryMatch'
 import type {
   ImportWarning,
@@ -203,10 +204,16 @@ export function parseDeclarations(
 ): Record<string, unknown> {
   const decls: Record<string, unknown> = {}
   for (let i = 0; i < style.length; i++) {
-    const kebab = style[i]
-    const value = style.getPropertyValue(kebab).trim()
+    const rawKebab = style[i]
+    const value = style.getPropertyValue(rawKebab).trim()
     if (!value) continue
 
+    // Substitution declarations (`var()`/`env()` values) were encoded as
+    // marker custom properties before the engine parse so they survive
+    // verbatim in every engine — decode them back to their real property.
+    // See substitutionEncode.ts.
+    const kebab = decodeSubstitutionProperty(rawKebab) ?? rawKebab
+
     const camel = kebabToCamel(kebab)
     if (!isEmittableProperty(camel)) {
       warnings.push({
@@ -220,95 +227,8 @@ export function parseDeclarations(
 
     decls[camel] = value
   }
-
-  // Recover shorthand declarations whose value uses a CSS substitution function
-  // (var()/env()). See `recoverSubstitutionShorthands` — Chromium expands such a
-  // shorthand into longhands that all report an EMPTY getPropertyValue, so the
-  // loop above drops the entire declaration. The shorthand text survives in
-  // `style.cssText`, which is where we recover it from.
-  recoverSubstitutionShorthands(style.cssText, decls, selectorForWarning, warnings)
 
   return decls
-}
-
-/**
- * Split a serialised CSS declaration block (`"a: 1; b: var(--x, y)"`) into
- * `[property, value]` pairs. Declarations are separated by `;` at paren-depth 0
- * so a `;` inside `url(...)` / `var(..., ...)` never splits a value. Each pair
- * is split on its FIRST `:` so values containing `:` (e.g. a `url(http://…)`)
- * stay intact.
- */
-function splitCssDeclarations(cssText: string): Array<[string, string]> {
-  const out: Array<[string, string]> = []
-  let depth = 0
-  let start = 0
-
-  const flush = (end: number): void => {
-    const chunk = cssText.slice(start, end).trim()
-    start = end + 1
-    if (!chunk) return
-    const colon = chunk.indexOf(':')
-    if (colon === -1) return
-    const prop = chunk.slice(0, colon).trim()
-    const value = chunk.slice(colon + 1).trim()
-    if (prop && value) out.push([prop, value])
-  }
-
-  for (let i = 0; i < cssText.length; i++) {
-    const ch = cssText[i]
-    if (ch === '(') depth++
-    else if (ch === ')') depth = Math.max(0, depth - 1)
-    else if (ch === ';' && depth === 0) flush(i)
-  }
-  flush(cssText.length)
-  return out
-}
-
-/** A value that contains a `var(` or `env(` substitution function. */
-const SUBSTITUTION_FN_RE = /\b(?:var|env)\(/
-
-/**
- * Recover shorthand declarations that the CSSStyleDeclaration enumeration
- * dropped because their value is a "pending-substitution value".
- *
- * Chromium behaviour (validated in HeadlessChrome 148): assigning a SHORTHAND
- * (`background`, `transition`, `gap`, `padding`, `font`, `border`, …) a value
- * containing `var()`/`env()` stores one un-expandable pending-substitution
- * value. `style.length` then enumerates the shorthand's LONGHANDS, but
- * `getPropertyValue(longhand)` returns `""` for every one — so the main loop's
- * `if (!value) continue` skips them all and the declaration vanishes. The
- * original shorthand text is preserved verbatim in `style.cssText`.
- *
- * This recovers any such declaration: a cssText entry whose value uses a
- * substitution function and whose camelCase property is NOT already present in
- * `decls`. A longhand-with-var (`color: var(--ink)`) is already captured by the
- * enumeration, so it's skipped here (no duplication). happy-dom keeps the
- * shorthand enumerated with its value, so this is a harmless no-op under test.
- */
-export function recoverSubstitutionShorthands(
-  cssText: string | undefined,
-  decls: Record<string, unknown>,
-  selectorForWarning: string,
-  warnings: ImportWarning[],
-): void {
-  if (!cssText) return
-  for (const [kebab, value] of splitCssDeclarations(cssText)) {
-    if (!SUBSTITUTION_FN_RE.test(value)) continue
-    const camel = kebabToCamel(kebab)
-    if (camel in decls) continue // longhand-with-var already captured
-
-    if (!isEmittableProperty(camel)) {
-      warnings.push({
-        kind: 'blocked-property',
-        message: `Property "${camel}" (${kebab}) is blocked for security and was dropped`,
-        selector: selectorForWarning,
-        property: camel,
-      })
-      continue
-    }
-
-    decls[camel] = value
-  }
 }
 
 /**
@@ -395,7 +315,11 @@ export function cssToStyleRules(
   let sheet: CSSStyleSheet
   try {
     sheet = new SheetCtor()
-    sheet.replaceSync(cssText)
+    // Substitution declarations (`var()`/`env()`) are encoded as marker
+    // custom properties first — every engine preserves custom properties
+    // verbatim, where shorthand-with-var handling is lossy and
+    // engine-divergent. `parseDeclarations` decodes them back.
+    sheet.replaceSync(encodeSubstitutionDeclarations(cssText))
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     warnings.push({

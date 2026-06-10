@@ -107,7 +107,7 @@ const GRANDFATHERED: Record<string, number> = {
   // clone. See docs/reference/page-tree.md (parentId).
   'src/core/page-tree/mutations.ts': 880,
   'server/plugins/host/handlers/content.ts': 786,
-  'src/core/siteImport/cssToStyleRules.ts': 829,
+  'src/core/siteImport/cssToStyleRules.ts': 742,
   'src/admin/pages/site/panels/TypographyPanel/FontsSection/AddGoogleFontDialog.tsx': 751,
   'src/core/markdown/markdownDocument.ts': 748,
   'src/admin/pages/dashboard/DashboardPage.tsx': 732,
