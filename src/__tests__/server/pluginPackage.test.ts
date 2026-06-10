@@ -16,7 +16,7 @@ describe('plugin package reader', () => {
       name: 'Workflow Tools',
       version: '1.0.0',
       apiVersion: 1,
-      permissions: ['editor.toolbar', 'editor.commands'],
+      permissions: ['editor.code', 'editor.toolbar', 'editor.commands'],
       entrypoints: {
         editor: 'editor/index.js',
       },
@@ -30,7 +30,7 @@ describe('plugin package reader', () => {
 
     expect(pkg.manifest).toMatchObject({
       id: 'acme.workflow',
-      permissions: ['editor.toolbar', 'editor.commands'],
+      permissions: ['editor.code', 'editor.toolbar', 'editor.commands'],
       entrypoints: { editor: 'editor/index.js' },
     })
     expect(pkg.files['editor/index.js']).toContain('activate')
@@ -42,7 +42,7 @@ describe('plugin package reader', () => {
       name: 'Workflow Tools',
       version: '1.0.0',
       apiVersion: 1,
-      permissions: ['editor.toolbar'],
+      permissions: ['editor.code', 'editor.toolbar'],
       entrypoints: {
         editor: 'editor/index.js',
       },
@@ -60,6 +60,7 @@ describe('plugin package reader', () => {
       name: 'Workflow Tools',
       version: '1.0.0',
       apiVersion: 1,
+      permissions: ['admin.navigation', 'editor.code'],
       adminPages: [{
         id: 'dashboard',
         title: 'Dashboard',

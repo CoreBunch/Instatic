@@ -194,6 +194,7 @@ function PluginReactSubtree({
     pluginVersion: page.pluginVersion,
     surfaceId: page.id,
     surfaceLabel: page.title,
+    grantedPermissions: page.pluginGrantedPermissions,
     settings: page.pluginSettings,
     routes: buildPluginRoutesHelper(page.pluginId),
     runCommand: (commandId) => pluginRuntime.runCommand(commandId),

@@ -12,28 +12,67 @@
  *
  * Like `@instatic/host-ui`, this is an externalized package — plugin
  * bundles compile against the named exports but resolve the runtime at
- * mount time through the host's import map. Plugins still need the
- * matching permission to call mutating hooks (e.g. `useEditorTransaction`
- * requires `editor.store.write`).
+ * mount time through the host's import map.
+ *
+ * Permission-gated hooks resolve the calling plugin from `PluginContext`
+ * (populated per-mount by `PluginEditorPanel`, `PluginPageRenderer`, and
+ * `PluginCanvasOverlayLayer`) and throw when the operator did not grant
+ * the required permission: `useEditorStore` requires `editor.store.read`.
+ * There is NO write-capable store accessor in this package — editor-store
+ * mutations go through `api.editor.store.transaction` in the plugin's
+ * editor entrypoint, which enforces `editor.store.write`.
  */
 import { use, useEffect, useState } from 'react'
-import { useEditorStore } from '@site/store/store'
-import { PluginContext } from './pluginContext'
+import { useEditorStore as useHostEditorStore } from '@site/store/store'
+import type { EditorStore } from '@site/store/types'
+import type { PluginPermission } from '@core/plugin-sdk'
+import { PluginContext, type PluginContextValue } from './pluginContext'
 
 /** Marker attribute the host puts on the canvas overlay layer host element. */
 export const CANVAS_OVERLAY_LAYER_ATTRIBUTE = 'data-canvas-overlay-layer'
 
 /**
+ * Throw a precise, plugin-attributed error when a permission-gated hook is
+ * used without the matching grant (or outside any plugin surface).
+ */
+function assertHookPermission(
+  ctx: PluginContextValue,
+  permission: PluginPermission,
+  hookName: string,
+): void {
+  if (!ctx.pluginId) {
+    throw new Error(`${hookName} called outside a plugin surface`)
+  }
+  if (!ctx.grantedPermissions.includes(permission)) {
+    throw new Error(
+      `[plugin:${ctx.pluginId}] ${hookName} requires the "${permission}" permission, which is not granted.`,
+    )
+  }
+}
+
+/**
  * Subscribe to a slice of the editor store. Same selector signature as the
  * underlying Zustand hook — pass a function that picks the slice you want
- * to react to. Returns `undefined` if called outside an editor surface
- * (admin pages don't have an editor mounted, so the underlying store is
- * empty there).
+ * to react to (or no selector for the full state). Returns `undefined`
+ * slices outside an editor surface (admin pages don't have an editor
+ * mounted, so the underlying store is empty there).
  *
- * Re-exported under the plugin SDK's `@instatic/host-hooks` import-map
- * name so plugin bundles don't need to know the host's internal store path.
+ * Requires the `editor.store.read` permission — throws (caught by the
+ * surface's ErrorBoundary) when the grant is missing. Unlike the host's
+ * internal store hook, this wrapper deliberately does NOT expose
+ * `getState` / `setState` / `subscribe`: reads go through the selector,
+ * writes go through `api.editor.store.transaction` (gated by
+ * `editor.store.write`).
  */
-export { useEditorStore }
+export function useEditorStore(): EditorStore
+export function useEditorStore<T>(selector: (state: EditorStore) => T): T
+export function useEditorStore<T>(selector?: (state: EditorStore) => T): T | EditorStore {
+  const ctx = use(PluginContext)
+  assertHookPermission(ctx, 'editor.store.read', 'useEditorStore')
+  const select: (state: EditorStore) => T | EditorStore =
+    selector ?? ((state: EditorStore) => state)
+  return useHostEditorStore(select)
+}
 
 /**
  * Read the current plugin's persisted settings as a typed snapshot.
@@ -154,8 +193,10 @@ export function useCanvasNodeRect(nodeId: string | null): CanvasNodeRect | null 
 
   // Re-measure on every editor render (selection changes, breakpoint
   // changes, store mutations) by depending on a tick that bumps with each
-  // editor-store emission.
-  const editorTick = useEditorStore((s) => s)
+  // editor-store emission. Uses the host's internal store hook directly —
+  // this exposes no editor state to the plugin (only DOM geometry), so it
+  // is not gated by `editor.store.read`.
+  const editorTick = useHostEditorStore((s) => s)
   void editorTick
 
   useEffect(() => {

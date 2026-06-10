@@ -120,6 +120,35 @@ describe('instatic-plugin lint', () => {
     expect(offenders[0].message).toContain('require(')
   })
 
+  it('errors when an editor source exists without the editor.code permission', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir)
+      await mkdir(join(dir, 'editor'), { recursive: true })
+      await writeFile(
+        join(dir, 'editor', 'index.ts'),
+        `export function activate() {}\n`,
+        'utf-8',
+      )
+    })
+    const offenders = result.findings.filter((f) => f.severity === 'error')
+    expect(offenders).toHaveLength(1)
+    expect(offenders[0].scope).toBe('manifest')
+    expect(offenders[0].message).toContain('editor.code')
+  })
+
+  it('does not flag an editor source when editor.code is requested', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: ['editor.code'] })
+      await mkdir(join(dir, 'editor'), { recursive: true })
+      await writeFile(
+        join(dir, 'editor', 'index.ts'),
+        `export function activate() {}\n`,
+        'utf-8',
+      )
+    })
+    expect(result.findings).toEqual([])
+  })
+
   it('reports a config-level error when instatic-plugin.config.ts is missing', async () => {
     const result = await withTempPlugin(async () => {
       // Intentionally do not write any config file.

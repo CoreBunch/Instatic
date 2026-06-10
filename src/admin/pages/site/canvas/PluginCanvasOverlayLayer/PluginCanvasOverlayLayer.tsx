@@ -9,11 +9,20 @@
  * Plugins position children using `useCanvasNodeRect(nodeId)` from
  * `@instatic/host-hooks`, which returns layer-relative coordinates
  * already mapped through any pan/zoom transform on the canvas.
+ *
+ * Each overlay is mounted under a `PluginContext.Provider` carrying the
+ * plugin's identity + granted permissions, so permission-gated hooks
+ * (`useEditorStore` → `editor.store.read`) resolve and enforce correctly.
  */
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { ErrorBoundary } from '@ui/components/ErrorBoundary'
-import { CANVAS_OVERLAY_LAYER_ATTRIBUTE } from '@admin/plugin-host-hooks'
+import {
+  CANVAS_OVERLAY_LAYER_ATTRIBUTE,
+  PluginContext,
+  type PluginContextValue,
+} from '@admin/plugin-host-hooks'
 import { pluginRuntime } from '@core/plugins/runtime'
+import { buildPluginRoutesHelper } from '@core/plugins/adminRuntime'
 import type { RegisteredPluginCanvasOverlay } from '@core/plugin-sdk'
 import styles from './PluginCanvasOverlayLayer.module.css'
 
@@ -60,6 +69,18 @@ function PluginCanvasOverlaySlot({ overlay }: { overlay: RegisteredPluginCanvasO
     void Component
   }, [Component])
 
+  const manifest = pluginRuntime.getCanvasOverlayManifest(overlay.id)
+  const contextValue: PluginContextValue = {
+    pluginId: overlay.pluginId,
+    pluginVersion: manifest?.version ?? '',
+    surfaceId: overlay.id,
+    surfaceLabel: overlay.id,
+    grantedPermissions: manifest?.grantedPermissions ?? [],
+    settings: pluginRuntime.getPluginSettings(overlay.pluginId),
+    routes: buildPluginRoutesHelper(overlay.pluginId),
+    runCommand: (commandId) => pluginRuntime.runCommand(commandId),
+  }
+
   return (
     <ErrorBoundary
       location="plugin-canvas-overlay"
@@ -70,7 +91,9 @@ function PluginCanvasOverlaySlot({ overlay }: { overlay: RegisteredPluginCanvasO
         data-plugin-id={overlay.pluginId}
         data-overlay-id={overlay.id}
       >
-        <Component overlay={{ id: overlay.id, pluginId: overlay.pluginId }} />
+        <PluginContext.Provider value={contextValue}>
+          <Component overlay={{ id: overlay.id, pluginId: overlay.pluginId }} />
+        </PluginContext.Provider>
       </div>
     </ErrorBoundary>
   )

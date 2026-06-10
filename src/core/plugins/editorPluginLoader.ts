@@ -136,30 +136,55 @@ export async function activateInstalledEditorPlugins(
     // Module pack — load first so plugins that ship both an editor entry
     // AND modules can rely on their modules being registered when the
     // editor entry's `activate()` runs.
-    if (manifest.entrypoints?.modules && plugin.grantedPermissions.includes('modules.register')) {
-      try {
-        const mod = await importModulePack(
-          joinAssetPath(manifest.assetBasePath, manifest.entrypoints.modules),
-          cacheKey,
-        )
-        activatePluginModulePack(manifest, mod, options.componentFactory)
-        result.modulePacksLoaded.push(plugin.id)
-      } catch (error) {
-        result.failed.push({ pluginId: plugin.id, error })
+    if (manifest.entrypoints?.modules) {
+      if (!plugin.grantedPermissions.includes('modules.register')) {
+        // A declared-but-ungranted module pack must surface on the plugin
+        // card, not vanish silently — the site owner installed a plugin
+        // whose modules will never appear in the library.
+        result.failed.push({
+          pluginId: plugin.id,
+          error: new Error(
+            'Module pack was not loaded: the "modules.register" permission is not granted.',
+          ),
+        })
+      } else {
+        try {
+          const mod = await importModulePack(
+            joinAssetPath(manifest.assetBasePath, manifest.entrypoints.modules),
+            cacheKey,
+          )
+          activatePluginModulePack(manifest, mod, options.componentFactory)
+          result.modulePacksLoaded.push(plugin.id)
+        } catch (error) {
+          result.failed.push({ pluginId: plugin.id, error })
+        }
       }
     }
 
     // Editor entrypoint — toolbar, commands, store transactions, etc.
+    // This is unsandboxed plugin JavaScript dynamically imported into the
+    // admin window, so the host refuses to load it without the explicit
+    // `editor.code` grant — even if the bundle is present on disk.
     if (manifest.entrypoints?.editor) {
-      try {
-        const mod = await importEditorModule(
-          joinAssetPath(manifest.assetBasePath, manifest.entrypoints.editor),
-          cacheKey,
-        )
-        await activateEditorPlugin(manifest, mod, fetchImpl)
-        editorActivated = true
-      } catch (error) {
-        result.failed.push({ pluginId: plugin.id, error })
+      if (!plugin.grantedPermissions.includes('editor.code')) {
+        result.failed.push({
+          pluginId: plugin.id,
+          error: new Error(
+            'Editor entrypoint was not loaded: the "editor.code" permission is not granted. ' +
+            'Editor entrypoints run unsandboxed in the admin window and require it.',
+          ),
+        })
+      } else {
+        try {
+          const mod = await importEditorModule(
+            joinAssetPath(manifest.assetBasePath, manifest.entrypoints.editor),
+            cacheKey,
+          )
+          await activateEditorPlugin(manifest, mod, fetchImpl)
+          editorActivated = true
+        } catch (error) {
+          result.failed.push({ pluginId: plugin.id, error })
+        }
       }
     }
 

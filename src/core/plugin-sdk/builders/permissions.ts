@@ -21,6 +21,9 @@ export const permissions = {
   // dialog can flag the plugin as exposing public endpoints.
   cmsRoutesPublic: 'cms.routes.public',
   cmsHooks: 'cms.hooks',
+  // Unsandboxed admin-window code — required for `entrypoints.editor` and
+  // app-kind admin pages. See `capabilities.ts` for the trust implications.
+  editorCode: 'editor.code',
   editorToolbar: 'editor.toolbar',
   editorCommands: 'editor.commands',
   editorStoreRead: 'editor.store.read',

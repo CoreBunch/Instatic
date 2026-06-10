@@ -31,6 +31,14 @@ export const PLUGIN_PERMISSION_VALUES = [
   // system tables). Listed separately as `dangerous` because adding a
   // table is a change a future plugin upgrade then has to clean up.
   'cms.content.tables.manage',
+  // Unsandboxed admin-window code. REQUIRED for `entrypoints.editor` and for
+  // `adminPages[].content` of kind `app` — both are plugin JavaScript that
+  // the host dynamically imports into the main admin window, where it runs
+  // with full admin-origin privileges (admin API with credentials,
+  // localStorage, DOM). Everything below in the `editor.*` family gates a
+  // specific host API surface; this one gates whether the plugin's own code
+  // is loaded into the admin window at all.
+  'editor.code',
   // Editor surfaces
   'editor.toolbar',
   'editor.commands',

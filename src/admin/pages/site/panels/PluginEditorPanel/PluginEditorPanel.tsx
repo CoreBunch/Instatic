@@ -89,6 +89,7 @@ function PluginEditorPanelContent({ panelId }: PluginEditorPanelProps) {
         panelId={panel.id}
         pluginId={panel.pluginId}
         pluginVersion={manifest.version}
+        grantedPermissions={manifest.grantedPermissions ?? []}
         label={panel.label}
         settings={settings}
         PanelComponent={PanelComponent}
@@ -107,6 +108,7 @@ function PluginPanelSubtree({
   panelId,
   pluginId,
   pluginVersion,
+  grantedPermissions,
   label,
   settings,
   PanelComponent,
@@ -114,6 +116,7 @@ function PluginPanelSubtree({
   panelId: string
   pluginId: string
   pluginVersion: string
+  grantedPermissions: import('@core/plugin-sdk').PluginPermission[]
   label: string
   settings: Record<string, string | number | boolean>
   PanelComponent: import('@core/plugin-sdk').PluginEditorPanelComponent
@@ -123,6 +126,7 @@ function PluginPanelSubtree({
     pluginVersion,
     surfaceId: panelId,
     surfaceLabel: label,
+    grantedPermissions,
     settings,
     routes: buildPluginRoutesHelper(pluginId),
     runCommand: (commandId) => pluginRuntime.runCommand(commandId),

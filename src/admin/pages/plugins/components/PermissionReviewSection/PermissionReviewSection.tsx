@@ -127,6 +127,13 @@ export function PermissionReviewSection({
 
   const newCount = rows.filter((row) => row.status === 'new').length
 
+  // `editor.code` means the host will dynamically import plugin JavaScript
+  // into the admin window — unsandboxed, with full admin-session privileges.
+  // That deserves its own unmissable callout on top of the permission row.
+  const runsUnsandboxedCode = pending.manifest.permissions.includes('editor.code')
+  const hasAppPages = pending.manifest.adminPages.some((page) => page.content.kind === 'app')
+  const hasEditorEntrypoint = Boolean(pending.manifest.entrypoints?.editor)
+
   return (
     <section
       className={styles.review}
@@ -136,14 +143,37 @@ export function PermissionReviewSection({
         <h2 id="plugin-permissions-title">
           {isUpgrade
             ? `Update ${pending.manifest.name}`
-            : 'Approve Plugin Permissions'}
+            : `Review ${pending.manifest.name}`}
         </h2>
         <p>
           {isUpgrade
             ? `Updating from ${pending.upgradeFromVersion} to ${pending.manifest.version}. Existing settings and stored data are preserved; the plugin runs its migrate hook before re-activating.`
-            : `${pending.manifest.name} requests access before activation.`}
+            : rows.length > 0
+              ? `${pending.manifest.name} requests access before activation.`
+              : `${pending.manifest.name} is ready to install.`}
         </p>
       </div>
+
+      {runsUnsandboxedCode && (
+        <div
+          className={`${styles.alert} ${styles.alertDanger}`}
+          role="alert"
+          data-testid="unsandboxed-code-alert"
+        >
+          <span>
+            This plugin runs its own JavaScript <strong>directly in the admin
+            window, outside the plugin sandbox</strong>
+            {hasEditorEntrypoint && hasAppPages
+              ? ' (an editor entrypoint and admin app pages)'
+              : hasAppPages
+                ? ' (admin app pages)'
+                : ' (an editor entrypoint)'}
+            . That code has the same access as the admin UI itself — your
+            admin session, every admin API, and this browser tab. Only
+            continue if you trust the plugin author.
+          </span>
+        </div>
+      )}
 
       {isUpgrade && newCount > 0 && (
         <div className={styles.alert} role="alert" data-testid="permission-diff-alert">
@@ -155,6 +185,13 @@ export function PermissionReviewSection({
       {isUpgrade && newCount === 0 && rows.length > 0 && (
         <div className={styles.alert} role="status" data-testid="permission-diff-noop">
           No new permissions in this update.
+        </div>
+      )}
+
+      {rows.length === 0 && (
+        <div className={styles.empty} role="status" data-testid="permission-review-empty">
+          No permissions requested — this plugin is purely declarative and
+          gets no access to CMS data, editor state, or the network.
         </div>
       )}
 

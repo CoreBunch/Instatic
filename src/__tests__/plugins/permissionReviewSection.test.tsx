@@ -70,7 +70,7 @@ describe('computePermissionDiff', () => {
 })
 
 describe('PermissionReviewSection — fresh install', () => {
-  it('shows "Approve Plugin Permissions" + lists every permission with no badges', () => {
+  it('shows the review heading + lists every permission with no badges', () => {
     render(
       <PermissionReviewSection
         pending={{
@@ -81,13 +81,74 @@ describe('PermissionReviewSection — fresh install', () => {
         onConfirm={() => {}}
       />,
     )
-    expect(screen.getByText('Approve Plugin Permissions')).toBeDefined()
+    expect(screen.getByText('Review Acme Plugin')).toBeDefined()
     expect(
       screen.getByRole('button', { name: 'Approve and Install' }),
     ).toBeDefined()
     // Fresh install doesn't show diff badges.
     expect(screen.queryByText('Already approved')).toBeNull()
     expect(screen.queryByText('No longer requested')).toBeNull()
+  })
+
+  it('renders a "no permissions requested" notice for a zero-permission install', () => {
+    render(
+      <PermissionReviewSection
+        pending={{ manifest: { ...baseManifest, permissions: [] } }}
+        uploading={false}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    const empty = screen.getByTestId('permission-review-empty')
+    expect(empty.textContent).toContain('No permissions requested')
+    expect(
+      screen.getByRole('button', { name: 'Approve and Install' }),
+    ).toBeDefined()
+    // No unsandboxed-code callout for a declarative plugin.
+    expect(screen.queryByTestId('unsandboxed-code-alert')).toBeNull()
+  })
+
+  it('flags editor.code installs with an unsandboxed-code alert', () => {
+    render(
+      <PermissionReviewSection
+        pending={{
+          manifest: {
+            ...baseManifest,
+            permissions: ['editor.code', 'editor.commands'] satisfies PluginPermission[],
+            entrypoints: { editor: 'editor/index.js' },
+          },
+        }}
+        uploading={false}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    const alert = screen.getByTestId('unsandboxed-code-alert')
+    expect(alert.textContent).toContain('outside the plugin sandbox')
+    expect(alert.textContent).toContain('editor entrypoint')
+  })
+
+  it('names app pages in the unsandboxed-code alert when the manifest ships them', () => {
+    render(
+      <PermissionReviewSection
+        pending={{
+          manifest: {
+            ...baseManifest,
+            permissions: ['admin.navigation', 'editor.code'] satisfies PluginPermission[],
+            adminPages: [{
+              id: 'dashboard',
+              title: 'Dashboard',
+              route: '/admin/plugins/acme.test/dashboard',
+              content: { kind: 'app', heading: 'Dashboard', entry: 'admin/dashboard.js' },
+            }],
+          },
+        }}
+        uploading={false}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    expect(screen.getByTestId('unsandboxed-code-alert').textContent).toContain('admin app pages')
   })
 })
 

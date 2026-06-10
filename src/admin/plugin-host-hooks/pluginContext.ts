@@ -1,10 +1,13 @@
 /**
  * `PluginContext` — shared React context populated by the host's mount
- * components (`PluginEditorPanel`, `PluginPageRenderer`) so plugin code
- * can resolve plugin-scoped APIs through hooks.
+ * components (`PluginEditorPanel`, `PluginPageRenderer`,
+ * `PluginCanvasOverlayLayer`) so plugin code can resolve plugin-scoped
+ * APIs through hooks.
  *
  * The context value is built per-mount and includes:
  *   • Plugin identity (id, version, surface name)
+ *   • The operator-granted permission set — permission-gated hooks
+ *     (`useEditorStore` requires `editor.store.read`) check against it
  *   • A live settings snapshot
  *   • A scoped HTTP routes helper (already namespaced to the plugin's URL)
  *   • A command-runner that delegates to the shared editor command bus
@@ -14,12 +17,15 @@
  */
 import { createContext } from 'react'
 import type { TSchema, Static } from '@sinclair/typebox'
+import type { PluginPermission } from '@core/plugin-sdk'
 
 export interface PluginContextValue {
   pluginId: string
   pluginVersion: string
   surfaceId: string
   surfaceLabel: string
+  /** Permissions the operator granted at install time. */
+  grantedPermissions: readonly PluginPermission[]
   settings: Record<string, string | number | boolean>
   routes: {
     fetch: (path: string, init?: RequestInit) => Promise<Response>
@@ -46,6 +52,7 @@ export const PluginContext = createContext<PluginContextValue>({
   pluginVersion: '',
   surfaceId: '',
   surfaceLabel: '',
+  grantedPermissions: [],
   settings: {},
   routes: defaultRoutes,
   runCommand: defaultRunCommand,

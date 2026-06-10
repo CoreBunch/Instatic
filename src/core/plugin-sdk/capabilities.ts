@@ -15,9 +15,16 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
   {
     permission: 'admin.navigation',
     label: 'Add pages to the admin navigation',
-    description: 'Allows the plugin to add pages to the CMS admin sidebar and plugin page router.',
-    risk: 'low',
+    description: 'Allows the plugin to add pages to the CMS admin sidebar and plugin page router. Declarative page kinds (markdown, map, resource) render host-owned UI; app-kind pages additionally require `editor.code` because they run plugin JavaScript in the admin window.',
+    risk: 'medium',
     surfaces: ['manifest', 'admin'],
+  },
+  {
+    permission: 'editor.code',
+    label: 'Run plugin JavaScript in the admin window (unsandboxed)',
+    description: 'Allows the host to load the plugin\'s editor entrypoint and app-kind admin pages directly into the admin window. This code is NOT sandboxed — it runs with the same privileges as the CMS admin UI itself (admin API calls with your session, browser storage, the full page). Only grant this to plugins whose code you trust.',
+    risk: 'dangerous',
+    surfaces: ['manifest', 'admin', 'editor'],
   },
   {
     permission: 'cms.storage',

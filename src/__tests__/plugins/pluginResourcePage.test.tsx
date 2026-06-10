@@ -167,6 +167,7 @@ describe('PluginPageRenderer resource pages', () => {
             entry: 'admin/dashboard.js',
             assetPath: '/uploads/plugins/acme.demo/1.0.0',
           },
+          pluginGrantedPermissions: ['editor.code'],
         }}
         importModule={async (url) => {
           // The host appends a `?v=<timestamp>` cache-buster — assert the
@@ -197,6 +198,7 @@ describe('PluginPageRenderer resource pages', () => {
         entry: 'admin/dashboard.js',
         assetPath: '/uploads/plugins/acme.demo/1.0.0',
       },
+      pluginGrantedPermissions: ['editor.code'],
     }
 
     type Resolver = (mod: { default: PluginAdminAppComponent }) => void
@@ -228,5 +230,39 @@ describe('PluginPageRenderer resource pages', () => {
     await waitFor(() => {
       expect(screen.getAllByText('Plugin dashboard subtree')).toHaveLength(1)
     })
+  })
+
+  it('refuses to import an app page without the editor.code grant and renders the refusal', async () => {
+    const appPage: PluginAdminPageRoute = {
+      pluginId: 'acme.demo',
+      pluginName: 'Demo Plugin',
+      id: 'dashboard',
+      title: 'Dashboard',
+      route: '/admin/plugins/acme.demo/dashboard',
+      content: {
+        kind: 'app',
+        heading: 'Demo Dashboard',
+        entry: 'admin/dashboard.js',
+        assetPath: '/uploads/plugins/acme.demo/1.0.0',
+      },
+      // Grant set without `editor.code` — the loader must refuse BEFORE the
+      // dynamic import and the page body must show why.
+      pluginGrantedPermissions: ['admin.navigation'],
+    }
+
+    const imports: string[] = []
+    render(
+      <PluginPageRenderer
+        page={appPage}
+        importModule={async (url) => {
+          imports.push(url)
+          return { default: () => null }
+        }}
+      />,
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('editor.code')
+    expect(imports).toHaveLength(0)
   })
 })

@@ -14,6 +14,7 @@ describe('plugin manifest validation', () => {
       version: '1.0.0',
       apiVersion: 1,
       description: 'Adds a map workspace to the admin.',
+      permissions: ['admin.navigation'],
       adminPages: [
         {
           id: 'overview',
@@ -45,7 +46,7 @@ describe('plugin manifest validation', () => {
       version: '1.0.0',
       apiVersion: 1,
       description: 'Adds a backend-backed books database.',
-      permissions: ['cms.storage'],
+      permissions: ['cms.storage', 'admin.navigation'],
       resources: [
         {
           id: 'books',
@@ -147,6 +148,7 @@ describe('plugin manifest validation', () => {
       name: 'Insights Dashboard',
       version: '1.0.0',
       apiVersion: 1,
+      permissions: ['admin.navigation', 'editor.code'],
       resources: [
         {
           id: 'metrics',
@@ -184,6 +186,7 @@ describe('plugin manifest validation', () => {
         name: 'Bad App',
         version: '1.0.0',
         apiVersion: 1,
+        permissions: ['admin.navigation', 'editor.code'],
         adminPages: [{
           id: 'dashboard',
           title: 'Dashboard',
@@ -282,6 +285,7 @@ describe('plugin manifest validation', () => {
       name: 'Enabled',
       version: '1.0.0',
       apiVersion: 1,
+      permissions: ['admin.navigation'],
       adminPages: [{ id: 'dashboard', title: 'Enabled', content: { kind: 'markdown', body: 'Visible' } }],
     })
     const disabled = parsePluginManifest({
@@ -289,6 +293,7 @@ describe('plugin manifest validation', () => {
       name: 'Disabled',
       version: '1.0.0',
       apiVersion: 1,
+      permissions: ['admin.navigation'],
       adminPages: [{ id: 'dashboard', title: 'Disabled', content: { kind: 'markdown', body: 'Hidden' } }],
     })
 
@@ -306,6 +311,7 @@ describe('plugin manifest validation', () => {
       name: 'Broken',
       version: '1.0.0',
       apiVersion: 1,
+      permissions: ['admin.navigation'],
       adminPages: [{ id: 'dashboard', title: 'Broken', content: { kind: 'markdown', body: 'Hidden' } }],
     })
 
@@ -322,6 +328,7 @@ describe('plugin manifest validation', () => {
       name: 'Silent',
       version: '1.0.0',
       apiVersion: 1,
+      permissions: ['admin.navigation'],
       adminPages: [{ id: 'dashboard', title: 'Silent', content: { kind: 'markdown', body: 'Hidden' } }],
     })
 
@@ -330,6 +337,151 @@ describe('plugin manifest validation', () => {
         { manifest, enabled: true, grantedPermissions: [] },
       ]),
     ).toEqual([])
+  })
+
+  // -------------------------------------------------------------------------
+  // `editor.code` coherence — unsandboxed admin-window code must be declared.
+  // -------------------------------------------------------------------------
+
+  it('rejects an editor entrypoint without the editor.code permission', () => {
+    expect(() =>
+      parsePluginManifest({
+        id: 'acme.workflow',
+        name: 'Workflow',
+        version: '1.0.0',
+        apiVersion: 1,
+        permissions: ['editor.commands'],
+        entrypoints: { editor: 'editor/index.js' },
+      }),
+    ).toThrow(/`entrypoints\.editor`.*requires the `editor\.code` permission/)
+  })
+
+  it('accepts an editor entrypoint when editor.code is declared', () => {
+    const manifest = parsePluginManifest({
+      id: 'acme.workflow',
+      name: 'Workflow',
+      version: '1.0.0',
+      apiVersion: 1,
+      permissions: ['editor.code', 'editor.commands'],
+      entrypoints: { editor: 'editor/index.js' },
+    })
+    expect(manifest.entrypoints?.editor).toBe('editor/index.js')
+  })
+
+  it('rejects a modules entrypoint without the modules.register permission', () => {
+    expect(() =>
+      parsePluginManifest({
+        id: 'acme.blocks',
+        name: 'Blocks',
+        version: '1.0.0',
+        apiVersion: 1,
+        permissions: [],
+        entrypoints: { modules: 'modules/index.js' },
+      }),
+    ).toThrow(/`entrypoints\.modules` requires the `modules\.register` permission/)
+  })
+
+  it('rejects app-kind admin pages without the editor.code permission', () => {
+    expect(() =>
+      parsePluginManifest({
+        id: 'acme.insights',
+        name: 'Insights',
+        version: '1.0.0',
+        apiVersion: 1,
+        permissions: ['admin.navigation'],
+        adminPages: [{
+          id: 'dashboard',
+          title: 'Dashboard',
+          content: { kind: 'app', heading: 'Dashboard', entry: 'admin/dashboard.js' },
+        }],
+      }),
+    ).toThrow(/kind "app".*requires the `editor\.code` permission/)
+  })
+
+  it('rejects adminPages without the admin.navigation permission', () => {
+    expect(() =>
+      parsePluginManifest({
+        id: 'acme.silent',
+        name: 'Silent',
+        version: '1.0.0',
+        apiVersion: 1,
+        adminPages: [{ id: 'page', title: 'Page', content: { kind: 'markdown', body: 'Hi' } }],
+      }),
+    ).toThrow(/`adminPages` requires the `admin\.navigation` permission/)
+  })
+
+  // -------------------------------------------------------------------------
+  // `adminPages[].content.assetPath` containment — the only manifest path
+  // that feeds the admin shell's dynamic import() must stay inside the
+  // plugin's own asset subtree.
+  // -------------------------------------------------------------------------
+
+  it('accepts an app page assetPath inside the plugin asset subtree', () => {
+    const manifest = parsePluginManifest({
+      id: 'acme.insights',
+      name: 'Insights',
+      version: '1.0.0',
+      apiVersion: 1,
+      permissions: ['admin.navigation', 'editor.code'],
+      adminPages: [{
+        id: 'dashboard',
+        title: 'Dashboard',
+        content: {
+          kind: 'app',
+          heading: 'Dashboard',
+          entry: 'admin/dashboard.js',
+          assetPath: '/uploads/plugins/acme.insights/1.0.0',
+        },
+      }],
+    })
+    const content = manifest.adminPages[0].content
+    expect(content.kind === 'app' && content.assetPath).toBe('/uploads/plugins/acme.insights/1.0.0')
+  })
+
+  it('rejects an app page assetPath pointing at another plugin', () => {
+    expect(() =>
+      parsePluginManifest({
+        id: 'atk.evil',
+        name: 'Evil',
+        version: '1.0.0',
+        apiVersion: 1,
+        permissions: ['admin.navigation', 'editor.code'],
+        adminPages: [{
+          id: 'dashboard',
+          title: 'Dashboard',
+          content: {
+            kind: 'app',
+            heading: 'Dashboard',
+            entry: 'admin/dashboard.js',
+            assetPath: '/uploads/plugins/legit.workflow/2.0.0',
+          },
+        }],
+      }),
+    ).toThrow(/assetPath must stay within "\/uploads\/plugins\/atk\.evil\/1\.0\.0"/)
+  })
+
+  it('rejects app page assetPath escapes (traversal, remote URLs, foreign paths)', () => {
+    for (const assetPath of [
+      '/uploads/plugins/atk.evil/1.0.0/../../legit.workflow/2.0.0',
+      'https://evil.example.com/bundle',
+      '/uploads/media',
+      '/etc',
+    ]) {
+      expect(() =>
+        parsePluginManifest({
+          id: 'atk.evil',
+          name: 'Evil',
+          version: '1.0.0',
+          apiVersion: 1,
+          permissions: ['admin.navigation', 'editor.code'],
+          adminPages: [{
+            id: 'dashboard',
+            title: 'Dashboard',
+            content: { kind: 'app', heading: 'Dashboard', entry: 'admin/dashboard.js', assetPath },
+          }],
+        }),
+      ).toThrow('Invalid plugin manifest')
+    }
   })
 
   it('validates plugin record input against a declared resource schema', () => {

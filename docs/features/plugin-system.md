@@ -83,7 +83,10 @@ All `.js` entrypoints are pre-bundled IIFEs that assign to a host-recognized glo
   "permissions": [
     "cms.routes",
     "cms.storage",
-    "cms.hooks"
+    "cms.hooks",
+    "admin.navigation",   // required by adminPages[]
+    "editor.code",        // required by entrypoints.editor (unsandboxed admin-window code)
+    "modules.register"    // required by entrypoints.modules
   ],
 
   "entrypoints": {
@@ -220,6 +223,20 @@ The client-side `EventSource` connection is lazy: it opens on the first subscrib
 ## The sandbox
 
 Plugin server code and canvas module packs run inside QuickJS compiled to WebAssembly. The sandbox is a separate JavaScript engine — it has its own globals, its own runtime, no FFI, no syscalls.
+
+### What is NOT sandboxed — `editor.code`
+
+Editor entrypoints (`entrypoints.editor`) and app-kind admin pages (`adminPages[].content.kind === "app"`) are **not sandboxed**. The host dynamically `import()`s those bundles into the main admin window, where they run with the same privileges as the admin UI itself: every admin API with the operator's session cookie, browser storage, the full DOM. This is deliberate — editor extensions need real React and real host UI — but it is a categorically different trust level than the QuickJS surfaces.
+
+That trust level is gated by one permission: **`editor.code`** (risk: dangerous).
+
+- The manifest parser rejects an editor entrypoint or app-kind admin page that doesn't declare `editor.code` (`parsePluginManifest` coherence checks; `instatic-plugin lint` reports the same error pre-upload).
+- The editor loader (`src/core/plugins/editorPluginLoader.ts`) refuses to import an editor entrypoint without the `editor.code` *grant*, and records a visible "permission not granted" failure on the plugin card instead of skipping silently. Module packs get the same treatment for `modules.register`.
+- The admin-app loader (`src/core/plugins/adminRuntime.ts`) refuses to import an app page without the grant; the page body renders the refusal.
+- `adminPages[].content.assetPath` is pinned to the plugin's own `/uploads/plugins/{id}/{version}` subtree so a manifest can't point the dynamic import at foreign code.
+- The install review dialog (always shown — even for zero-permission plugins) calls out `editor.code` with a dedicated unsandboxed-code warning.
+
+Inside the admin window, plugin React surfaces (panels, app pages, canvas overlays) mount under a `PluginContext` carrying the granted permission set; permission-gated host hooks enforce against it — `useEditorStore` from `@instatic/host-hooks` requires `editor.store.read` and exposes no write accessor (writes go through `api.editor.store.transaction`, which requires `editor.store.write`).
 
 ### What's available inside
 
@@ -602,6 +619,8 @@ The DNS SSRF guard in `performGatedFetch` remains the load-bearing defense; the 
 
 Permissions are requested in `plugin.json` and approved by the site owner at install time. Granted permissions are stored on the plugin row. Every SDK call checks the **granted** permission set, not just the request.
 
+The install endpoints enforce **grants = declared**, in both directions: every declared permission must be granted (install is all-or-nothing — there is no optional-permissions concept), and every granted permission must be declared (`assertPluginPermissionGrants` in `server/handlers/cms/plugins/shared.ts` rejects a tampered client that grants capabilities the manifest never disclosed). The install review dialog is shown for **every** install and upgrade — a zero-permission plugin renders "No permissions requested" rather than installing silently.
+
 **One authority, three checkpoints.** The declared `permissions` array (what the
 plugin *asked for*) is used only by the install/consent UI. Enforcement always
 validates against `grantedPermissions` (what the operator *approved*), at three
@@ -634,7 +653,8 @@ Risk levels:
 
 | Permission                  | Surface              | Risk      | Meaning                                                                 |
 |-----------------------------|----------------------|-----------|-------------------------------------------------------------------------|
-| `admin.navigation`          | Admin                | Low       | Add admin navigation entries                                            |
+| `admin.navigation`          | Admin                | Medium    | Add admin navigation entries (declarative pages; app pages also need `editor.code`) |
+| `editor.code`               | Admin / editor       | Dangerous | Run plugin JavaScript **unsandboxed** in the admin window (editor entrypoint, app-kind admin pages) |
 | `cms.storage`               | Admin / editor / server| Medium  | Read/write plugin-owned records                                         |
 | `cms.routes`                | Server               | High      | Register authenticated backend routes                                   |
 | `cms.hooks`                 | Server               | High      | Listen to CMS events / filter values                                    |

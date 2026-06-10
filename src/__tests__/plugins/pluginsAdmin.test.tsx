@@ -16,6 +16,7 @@ const mapManifest = {
   name: 'Map Studio',
   version: '1.0.0',
   apiVersion: 1,
+  permissions: ['admin.navigation'],
   adminPages: [{
     id: 'overview',
     title: 'Map Studio',
@@ -245,6 +246,13 @@ describe('PluginsPage', () => {
       },
     })
 
+    // Every install now goes through the review dialog — nothing installs
+    // silently, even a near-declarative manifest.
+    expect(await screen.findByText('Review Map Studio')).toBeDefined()
+    expect(calls.some((call) => String(call.input) === '/admin/api/cms/plugins' && call.init?.method === 'POST')).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: /approve and install/i }))
+
     await waitFor(() => {
       const installCall = calls.find((call) =>
         String(call.input) === '/admin/api/cms/plugins' &&
@@ -252,9 +260,8 @@ describe('PluginsPage', () => {
       )
       expect(installCall).toBeDefined()
       expect(JSON.parse(String(installCall?.init?.body))).toMatchObject({
-        id: 'local.map',
-        permissions: [],
-        resources: [],
+        manifest: { id: 'local.map' },
+        grantedPermissions: ['admin.navigation'],
       })
     })
   })
@@ -265,7 +272,7 @@ describe('PluginsPage', () => {
       ...mapManifest,
       id: 'acme.workflow',
       name: 'Workflow Tools',
-      permissions: ['editor.toolbar', 'editor.commands', 'editor.store.write', 'cms.storage'],
+      permissions: ['admin.navigation', 'editor.code', 'editor.toolbar', 'editor.commands', 'editor.store.write', 'cms.storage'],
       entrypoints: { editor: 'editor/index.js' },
     }
 
@@ -297,7 +304,7 @@ describe('PluginsPage', () => {
       },
     })
 
-    expect(await screen.findByText('Approve Plugin Permissions')).toBeDefined()
+    expect(await screen.findByText('Review Workflow Tools')).toBeDefined()
     expect(screen.getByText('Add controls to the editor toolbar')).toBeDefined()
     expect(screen.getByText('Register editor commands')).toBeDefined()
     expect(screen.getByText('Allows the plugin to mutate editor store state through a host transaction.')).toBeDefined()

@@ -126,11 +126,22 @@ interface PanelRecord {
 /** Palette provider stored alongside the registering plugin id. */
 type RegisteredPaletteProvider = PluginPaletteProvider & { pluginId: string }
 
+/**
+ * Internal canvas-overlay record — same shape rationale as `PanelRecord`:
+ * the live manifest rides along so the host's overlay mount can build a
+ * permission-aware `PluginContext` (granted permissions, settings) without
+ * a fresh round-trip to the plugins endpoint.
+ */
+interface CanvasOverlayRecord {
+  overlay: RegisteredPluginCanvasOverlay
+  manifest: PluginManifest
+}
+
 class PluginRuntime {
   private commands = new Map<string, PluginCommand & { pluginId: string }>()
   private toolbarButtons = new Map<string, RegisteredPluginToolbarButton>()
   private panels = new Map<string, PanelRecord>()
-  private canvasOverlays = new Map<string, RegisteredPluginCanvasOverlay>()
+  private canvasOverlays = new Map<string, CanvasOverlayRecord>()
   private paletteProviders = new Map<string, RegisteredPaletteProvider>()
   private pluginSettings = new Map<string, Record<string, string | number | boolean>>()
   private listeners = new Set<RuntimeListener>()
@@ -196,8 +207,8 @@ class PluginRuntime {
     for (const [key, record] of this.panels) {
       if (record.panel.pluginId === pluginId) this.panels.delete(key)
     }
-    for (const [key, overlay] of this.canvasOverlays) {
-      if (overlay.pluginId === pluginId) this.canvasOverlays.delete(key)
+    for (const [key, record] of this.canvasOverlays) {
+      if (record.overlay.pluginId === pluginId) this.canvasOverlays.delete(key)
     }
     for (const [key, provider] of this.paletteProviders) {
       if (provider.pluginId === pluginId) this.paletteProviders.delete(key)
@@ -321,14 +332,21 @@ class PluginRuntime {
    * Register a canvas overlay on behalf of a plugin. Caller MUST have
    * already asserted the `editor.canvas` permission. The overlay id must
    * be namespace-locked under the plugin id (`<pluginId>.<rest>`).
+   *
+   * The manifest is captured alongside the overlay (same as `registerPanel`)
+   * so the host's overlay mount can provide a permission-aware
+   * `PluginContext` to the overlay component.
    */
-  registerCanvasOverlay(pluginId: string, overlay: PluginCanvasOverlay): void {
-    if (!overlay.id.startsWith(`${pluginId}.`)) {
+  registerCanvasOverlay(manifest: PluginManifest, overlay: PluginCanvasOverlay): void {
+    if (!overlay.id.startsWith(`${manifest.id}.`)) {
       throw new Error(
-        `Plugin "${pluginId}" cannot register canvas overlay "${overlay.id}" — id must start with "${pluginId}.".`,
+        `Plugin "${manifest.id}" cannot register canvas overlay "${overlay.id}" — id must start with "${manifest.id}.".`,
       )
     }
-    this.canvasOverlays.set(overlay.id, { ...overlay, pluginId })
+    this.canvasOverlays.set(overlay.id, {
+      overlay: { ...overlay, pluginId: manifest.id },
+      manifest,
+    })
     this.canvasOverlaysSnapshot = null
     this.emit()
   }
@@ -378,9 +396,18 @@ class PluginRuntime {
    */
   getCanvasOverlays(): RegisteredPluginCanvasOverlay[] {
     if (this.canvasOverlaysSnapshot === null) {
-      this.canvasOverlaysSnapshot = [...this.canvasOverlays.values()]
+      this.canvasOverlaysSnapshot = [...this.canvasOverlays.values()].map((record) => record.overlay)
     }
     return this.canvasOverlaysSnapshot
+  }
+
+  /**
+   * Resolve the manifest a canvas overlay was registered with — used by
+   * `PluginCanvasOverlayLayer` to provide a permission-aware
+   * `PluginContext` at mount time. Returns `undefined` for unknown ids.
+   */
+  getCanvasOverlayManifest(overlayId: string): PluginManifest | undefined {
+    return this.canvasOverlays.get(overlayId)?.manifest
   }
 
   async runCommand(commandId: string): Promise<PluginCommandResult> {
@@ -442,7 +469,7 @@ export function createEditorPluginApi(
       canvas: {
         registerOverlay(overlay) {
           assertPluginPermission(manifest, 'editor.canvas')
-          pluginRuntime.registerCanvasOverlay(manifest.id, overlay)
+          pluginRuntime.registerCanvasOverlay(manifest, overlay)
         },
       },
       store: {

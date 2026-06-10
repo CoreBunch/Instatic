@@ -192,9 +192,36 @@ export async function lintPlugin(sourceDir: string): Promise<LintResult> {
   }
   if (definition.modules.length > 0) {
     entrypointSources.push({ kind: 'modules', path: 'modules/' })
+    // Same rationale as the editor check below: the built manifest gets
+    // `entrypoints.modules` auto-added, which the host rejects without
+    // `modules.register`.
+    if (!manifest.permissions.includes('modules.register')) {
+      findings.push({
+        severity: 'error',
+        scope: 'manifest',
+        message:
+          'Canvas modules are defined but the `modules.register` permission is not requested. ' +
+          'Add `permissions.modulesRegister`.',
+      })
+    }
   }
   if (await findEntrypointSource(absoluteSource, 'editor')) {
     entrypointSources.push({ kind: 'editor', path: 'editor/' })
+    // `instatic-plugin build` auto-adds `entrypoints.editor` when an
+    // `editor/` source exists — but the config manifest validated above
+    // doesn't carry that auto-added entrypoint, so the host-side
+    // `editor.code` coherence check can't fire here. Re-check explicitly
+    // so the author learns about the missing permission pre-upload
+    // instead of at install time.
+    if (!manifest.permissions.includes('editor.code')) {
+      findings.push({
+        severity: 'error',
+        scope: 'manifest',
+        message:
+          'An editor entrypoint source exists (`editor/`) but the `editor.code` permission is not requested. ' +
+          'Editor entrypoints run unsandboxed in the admin window and require it — add `permissions.editorCode`.',
+      })
+    }
   }
   if (await findEntrypointSource(absoluteSource, 'frontend')) {
     entrypointSources.push({ kind: 'frontend', path: 'frontend/' })

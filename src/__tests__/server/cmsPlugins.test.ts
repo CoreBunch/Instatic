@@ -637,7 +637,7 @@ describe('CMS plugin handlers', () => {
       ...mapManifest,
       id: 'acme.workflow',
       name: 'Workflow Tools',
-      permissions: ['editor.toolbar', 'editor.store.write', 'cms.routes', 'cms.storage'],
+      permissions: ['admin.navigation', 'editor.code', 'editor.toolbar', 'editor.store.write', 'cms.routes', 'cms.storage'],
       entrypoints: {
         editor: 'editor/index.js',
         server: 'server/index.js',
@@ -687,6 +687,33 @@ describe('CMS plugin handlers', () => {
       .toEqual(privilegedManifest.permissions)
   })
 
+  it('rejects grants the manifest never declared (tampered client)', async () => {
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+
+    // A tampered admin client tries to grant `cms.routes` (a real
+    // permission) on top of the declared set. The runtime enforces against
+    // grantedPermissions, so an undeclared grant would silently expand the
+    // plugin's capabilities past everything the consent screen showed.
+    const res = await handleCmsRequest(
+      cmsRequest('http://localhost/admin/api/cms/plugins', {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          manifest: mapManifest,
+          grantedPermissions: ['admin.navigation', 'cms.routes'],
+        }),
+      }),
+      db,
+    )
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining('not declared'),
+    })
+    expect(db.plugins).toHaveLength(0)
+  })
+
   it('installs zip plugin packages, writes assets, and activates backend routes', async () => {
     const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-plugins-'))
     const db = makeFakeDb()
@@ -696,7 +723,7 @@ describe('CMS plugin handlers', () => {
       name: 'Workflow Tools',
       version: '1.0.0',
       apiVersion: 1,
-      permissions: ['admin.navigation', 'cms.routes'],
+      permissions: ['admin.navigation', 'editor.code', 'cms.routes'],
       entrypoints: {
         server: 'server/index.js',
       },

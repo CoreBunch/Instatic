@@ -24,8 +24,8 @@ const baseManifest: PluginManifest = {
   version: '1.0.0',
   apiVersion: 1,
   description: 'Canvas overlay test plugin',
-  permissions: ['editor.canvas'],
-  grantedPermissions: ['editor.canvas'],
+  permissions: ['editor.code', 'editor.canvas'],
+  grantedPermissions: ['editor.code', 'editor.canvas'],
   entrypoints: { editor: 'editor/index.js' },
   resources: [],
   adminPages: [],
@@ -112,7 +112,7 @@ describe('pluginRuntime canvas overlay registry', () => {
   })
 
   it('returns a referentially stable getCanvasOverlays() snapshot until a mutation', () => {
-    pluginRuntime.registerCanvasOverlay('acme.workflow', {
+    pluginRuntime.registerCanvasOverlay(baseManifest, {
       id: 'acme.workflow.pin',
       component: NoopOverlay,
     })
@@ -120,7 +120,7 @@ describe('pluginRuntime canvas overlay registry', () => {
     const b = pluginRuntime.getCanvasOverlays()
     expect(a).toBe(b)
 
-    pluginRuntime.registerCanvasOverlay('acme.workflow', {
+    pluginRuntime.registerCanvasOverlay(baseManifest, {
       id: 'acme.workflow.ruler',
       component: NoopOverlay,
     })
@@ -130,7 +130,7 @@ describe('pluginRuntime canvas overlay registry', () => {
   })
 
   it('reset() clears registered overlays', () => {
-    pluginRuntime.registerCanvasOverlay('acme.workflow', {
+    pluginRuntime.registerCanvasOverlay(baseManifest, {
       id: 'acme.workflow.pin',
       component: NoopOverlay,
     })
@@ -153,11 +153,11 @@ describe('PluginCanvasOverlayLayer host mount', () => {
     function GoodbyePin() {
       return <span>Goodbye pin</span>
     }
-    pluginRuntime.registerCanvasOverlay('acme.workflow', {
+    pluginRuntime.registerCanvasOverlay(baseManifest, {
       id: 'acme.workflow.hello',
       component: HelloPin,
     })
-    pluginRuntime.registerCanvasOverlay('acme.workflow', {
+    pluginRuntime.registerCanvasOverlay(baseManifest, {
       id: 'acme.workflow.bye',
       component: GoodbyePin,
     })
@@ -174,7 +174,7 @@ describe('PluginCanvasOverlayLayer host mount', () => {
       captured.push(overlay)
       return null
     }
-    pluginRuntime.registerCanvasOverlay('acme.workflow', {
+    pluginRuntime.registerCanvasOverlay(baseManifest, {
       id: 'acme.workflow.cap',
       component: CapturingOverlay,
     })

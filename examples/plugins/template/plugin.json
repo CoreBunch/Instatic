@@ -6,6 +6,7 @@
   "description": "Starter template demonstrating the Instatic plugin SDK — server lifecycle hooks, editor commands, and Command Spotlight (⌘K) integration.",
   "permissions": [
     "cms.routes",
+    "editor.code",
     "editor.commands",
     "editor.toolbar"
   ],

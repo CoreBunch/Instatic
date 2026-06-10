@@ -303,14 +303,16 @@ describe('server plugin runtime SDK', () => {
     const cookie = await createCookie(db)
     try {
       const install = await installPlugin({
-        manifest: baseManifest,
+        // Public-access routes require BOTH cms.routes (to register
+        // anything) AND cms.routes.public (to allow the anonymous form) —
+        // declared in the manifest AND granted (grants must be a subset
+        // of the declared set).
+        manifest: { ...baseManifest, permissions: ['cms.routes', 'cms.routes.public'] },
         serverEntrypoint: `
           export function activate(api) {
             api.cms.routes.public.get('/status', () => ({ ok: true, plugin: api.plugin.id }))
           }
         `,
-        // Public-access routes require BOTH cms.routes (to register
-        // anything) AND cms.routes.public (to allow the anonymous form).
         grantedPermissions: ['cms.routes', 'cms.routes.public'],
         uploadsDir,
         db,

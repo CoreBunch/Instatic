@@ -47,6 +47,29 @@
     line-height: 1.5;
 }
 
+/*
+ * Unsandboxed-code callout — the strongest warning in the dialog.
+ * `editor.code` plugins run JavaScript in the admin window with full
+ * admin-session privileges, so the alert uses the danger state tokens
+ * instead of the warning tint shared by permission-diff notices.
+ */
+.alertDanger {
+    background: var(--editor-danger-bg);
+    border-color: var(--editor-danger-border);
+    color: var(--editor-danger-text);
+}
+
+/* Zero-permission install — informational, not a warning. */
+.empty {
+    padding: 12px 14px;
+    border-radius: var(--editor-radius-sm);
+    background: var(--editor-bg-subtle);
+    border: 1px solid var(--editor-border);
+    color: var(--editor-text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
 .list {
     list-style: none;
     padding: 0;

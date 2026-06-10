@@ -250,6 +250,7 @@ const booksPlugin = {
   name: 'Books',
   version: '1.0.0',
   apiVersion: 1,
+  permissions: ['admin.navigation', 'cms.storage'],
   resources: [
     {
       id: 'books',
@@ -289,7 +290,7 @@ describe('CMS plugin resource handlers', () => {
     const install = await handleCmsRequest(cmsRequest('http://localhost/admin/api/cms/plugins', {
       method: 'POST',
       headers: { cookie, 'content-type': 'application/json' },
-      body: JSON.stringify(booksPlugin),
+      body: JSON.stringify({ manifest: booksPlugin, grantedPermissions: booksPlugin.permissions }),
     }), db)
     expect(install.status).toBe(201)
 
@@ -344,7 +345,7 @@ describe('CMS plugin resource handlers', () => {
     await handleCmsRequest(cmsRequest('http://localhost/admin/api/cms/plugins', {
       method: 'POST',
       headers: { cookie, 'content-type': 'application/json' },
-      body: JSON.stringify(booksPlugin),
+      body: JSON.stringify({ manifest: booksPlugin, grantedPermissions: booksPlugin.permissions }),
     }), db)
 
     const res = await handleCmsRequest(cmsRequest(

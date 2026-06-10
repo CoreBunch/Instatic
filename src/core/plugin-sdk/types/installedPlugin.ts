@@ -71,6 +71,14 @@ export interface PluginAdminPageRoute extends Omit<PluginAdminPage, 'route'> {
   pluginSettings: Record<string, string | number | boolean>
   /** The full settings schema declared by the plugin manifest. */
   pluginSettingsSchema: PluginManifest['settings']
+  /**
+   * Permissions the operator granted to the plugin at install time. The
+   * host's admin-app loader refuses to dynamically import an app page
+   * without `editor.code` here, and plugin-surface hooks
+   * (`useEditorStore`, …) enforce their grants against this set via
+   * `PluginContext`.
+   */
+  pluginGrantedPermissions: PluginPermission[]
 }
 
 // ---------------------------------------------------------------------------

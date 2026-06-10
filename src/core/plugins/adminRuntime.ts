@@ -94,6 +94,17 @@ export async function loadPluginAdminAppComponent(
   if (page.content.kind !== 'app') {
     throw new Error('Plugin admin app loader requires app page content')
   }
+  // App pages are unsandboxed plugin JavaScript imported into the admin
+  // window — the host refuses to import the module without the explicit
+  // `editor.code` grant. The thrown error surfaces in the page body via
+  // PluginAppPage's error state, so an ungranted page is a visible
+  // refusal rather than a silent skip.
+  if (!page.pluginGrantedPermissions.includes('editor.code')) {
+    throw new Error(
+      `Plugin admin app "${page.pluginId}:${page.id}" requires the "editor.code" permission, ` +
+      `which is not granted. App pages run unsandboxed in the admin window.`,
+    )
+  }
   if (!page.content.assetPath) {
     throw new Error(`Plugin admin app "${page.pluginId}:${page.id}" is missing an asset path`)
   }

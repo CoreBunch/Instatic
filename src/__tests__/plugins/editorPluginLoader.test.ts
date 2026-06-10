@@ -8,8 +8,8 @@ const workflowManifest: PluginManifest = {
   name: 'Workflow Tools',
   version: '1.0.0',
   apiVersion: 1,
-  permissions: ['editor.commands', 'editor.toolbar'],
-  grantedPermissions: ['editor.commands', 'editor.toolbar'],
+  permissions: ['editor.code', 'editor.commands', 'editor.toolbar'],
+  grantedPermissions: ['editor.code', 'editor.commands', 'editor.toolbar'],
   entrypoints: {
     editor: 'editor/index.js',
   },
@@ -33,7 +33,7 @@ describe('installed editor plugin loader', () => {
         enabled: true,
         lifecycleStatus: 'active',
         lastError: null,
-        grantedPermissions: ['editor.commands', 'editor.toolbar'],
+        grantedPermissions: ['editor.code', 'editor.commands', 'editor.toolbar'],
         manifest: workflowManifest,
         installedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -93,7 +93,7 @@ describe('installed editor plugin loader', () => {
           enabled: false,
           lifecycleStatus: 'disabled',
           lastError: null,
-          grantedPermissions: ['editor.commands', 'editor.toolbar'],
+          grantedPermissions: ['editor.code', 'editor.commands', 'editor.toolbar'],
           manifest: workflowManifest,
           installedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -125,7 +125,7 @@ describe('installed editor plugin loader', () => {
           enabled: true,
           lifecycleStatus: 'error',
           lastError: 'activate exploded',
-          grantedPermissions: ['editor.commands', 'editor.toolbar'],
+          grantedPermissions: ['editor.code', 'editor.commands', 'editor.toolbar'],
           manifest: workflowManifest,
           installedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -145,5 +145,84 @@ describe('installed editor plugin loader', () => {
       failed: [],
       modulePacksLoaded: [],
     })
+  })
+
+  it('refuses to import an editor entrypoint without the editor.code grant and records a visible failure', async () => {
+    const imported: string[] = []
+
+    const result = await activateInstalledEditorPlugins({
+      fetchImpl: async () => Response.json({
+        adminPages: [],
+        plugins: [{
+          id: workflowManifest.id,
+          name: workflowManifest.name,
+          version: workflowManifest.version,
+          enabled: true,
+          lifecycleStatus: 'active',
+          lastError: null,
+          // Tampered / legacy row: entrypoint declared, grant absent.
+          grantedPermissions: ['editor.commands', 'editor.toolbar'],
+          manifest: workflowManifest,
+          installedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }],
+      } satisfies CmsPluginsPayload),
+      importEditorModule: async (url) => {
+        imported.push(url)
+        return { activate() {} }
+      },
+    })
+
+    // The bundle must never be imported — the gate sits BEFORE the dynamic
+    // import, not just before activate().
+    expect(imported).toEqual([])
+    expect(result.activated).toEqual([])
+    expect(result.failed).toHaveLength(1)
+    expect(result.failed[0].pluginId).toBe('acme.workflow')
+    expect(String((result.failed[0].error as Error).message)).toContain('editor.code')
+  })
+
+  it('records a visible failure for a modules entrypoint without the modules.register grant', async () => {
+    const modulesManifest: PluginManifest = {
+      id: 'acme.blocks',
+      name: 'Blocks',
+      version: '1.0.0',
+      apiVersion: 1,
+      permissions: ['modules.register'],
+      grantedPermissions: [],
+      entrypoints: { modules: 'modules/index.js' },
+      assetBasePath: '/uploads/plugins/acme.blocks/1.0.0',
+      resources: [],
+      adminPages: [],
+    }
+    const imported: string[] = []
+
+    const result = await activateInstalledEditorPlugins({
+      fetchImpl: async () => Response.json({
+        adminPages: [],
+        plugins: [{
+          id: modulesManifest.id,
+          name: modulesManifest.name,
+          version: modulesManifest.version,
+          enabled: true,
+          lifecycleStatus: 'active',
+          lastError: null,
+          grantedPermissions: [],
+          manifest: modulesManifest,
+          installedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }],
+      } satisfies CmsPluginsPayload),
+      importModulePack: async (url) => {
+        imported.push(url)
+        return { modules: [] }
+      },
+    })
+
+    expect(imported).toEqual([])
+    expect(result.modulePacksLoaded).toEqual([])
+    expect(result.failed).toHaveLength(1)
+    expect(result.failed[0].pluginId).toBe('acme.blocks')
+    expect(String((result.failed[0].error as Error).message)).toContain('modules.register')
   })
 })

@@ -16,9 +16,11 @@ import {
 } from '@core/plugin-sdk'
 import { collectEnabledAdminPages, pluginAdminPageRoute } from './manifestAdminPages'
 
-// Admin-page route helpers live in a sibling module (responsibility split);
-// re-exported here so `@core/plugins/manifest` stays the public surface.
+// Admin-page route helpers and resource-record helpers live in sibling
+// modules (responsibility split); re-exported here so
+// `@core/plugins/manifest` stays the public surface.
 export { collectEnabledAdminPages, pluginAdminPageRoute }
+export { findPluginResource, validatePluginRecordData } from './resourceRecords'
 
 const PLUGIN_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/
 /**
@@ -43,6 +45,11 @@ const SAFE_ASSET_PATH_PATTERN = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[a-zA-Z0-9._/-
 // sinks (`loadServerPluginModule`, `removePluginAssets`).
 const ASSET_BASE_PATH_PATTERN =
   /^\/uploads\/plugins\/[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+\/\d+\.\d+\.\d+(?:[-+][0-9a-zA-Z.-]+)?\/?$/
+// `adminPages[].content.assetPath` (app pages) — must look like an uploads
+// path with no `.`/`..` segments. The post-check in `parsePluginManifest`
+// further pins it to the declaring plugin's own asset subtree.
+const ADMIN_APP_ASSET_PATH_PATTERN =
+  /^(?!.*(?:^|\/)\.{1,2}(?:\/|$))\/uploads\/plugins\/[a-zA-Z0-9._/-]+$/
 // Outbound network allowlist: lowercase hostname, optional leading `*.`
 // wildcard. No paths, ports, query strings — just the host. This is the
 // allowlist the host's `network.fetch` bridge checks against.
@@ -84,7 +91,16 @@ const contentSchema = Type.Union([
     kind: Type.Literal('app'),
     heading: Type.String({ minLength: 1, maxLength: 120 }),
     entry: Type.String({ pattern: SAFE_ASSET_PATH_PATTERN.source }),
-    assetPath: Type.Optional(Type.String()),
+    // Optional override for where the host resolves `entry` from; defaults
+    // to the plugin's `assetBasePath`. The schema pattern rejects dot
+    // segments and foreign URL shapes; parsePluginManifest additionally
+    // pins the path to THIS plugin's own `/uploads/plugins/{id}/{version}`
+    // subtree so a manifest can't point the admin shell's dynamic import()
+    // at an arbitrary location.
+    assetPath: Type.Optional(Type.String({
+      pattern: ADMIN_APP_ASSET_PATH_PATTERN.source,
+      maxLength: 500,
+    })),
   }),
 ])
 
@@ -403,6 +419,27 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     }
   }
 
+  // Entrypoint ↔ permission coherence. Editor entrypoints are unsandboxed
+  // plugin JavaScript dynamically imported into the admin window, so they
+  // require the `editor.code` permission — without this check a
+  // "zero-permission" manifest could ship admin-window code that installs
+  // with no consent screen ever naming the capability. Module packs are
+  // similarly gated: declaring `entrypoints.modules` without
+  // `modules.register` would otherwise be silently skipped at load time.
+  if (data.entrypoints?.editor && !data.permissions.includes('editor.code')) {
+    throw new Error(
+      `Invalid plugin manifest: \`entrypoints.editor\` runs unsandboxed JavaScript ` +
+      `in the admin window and requires the \`editor.code\` permission. ` +
+      `Add "editor.code" to \`permissions\`.`,
+    )
+  }
+  if (data.entrypoints?.modules && !data.permissions.includes('modules.register')) {
+    throw new Error(
+      `Invalid plugin manifest: \`entrypoints.modules\` requires the ` +
+      `\`modules.register\` permission. Add "modules.register" to \`permissions\`.`,
+    )
+  }
+
   const duplicateResources = new Set<string>()
   const resources: PluginResource[] = data.resources.map((resource) => {
     if (duplicateResources.has(resource.id)) {
@@ -421,6 +458,17 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     return resource as PluginResource
   })
 
+  // Admin pages mount in the CMS sidebar — that surface is gated by the
+  // `admin.navigation` permission. A manifest declaring pages without the
+  // permission used to be silently skipped at mount time; fail loudly at
+  // parse time instead so the author sees the problem before upload.
+  if (data.adminPages.length > 0 && !data.permissions.includes('admin.navigation')) {
+    throw new Error(
+      `Invalid plugin manifest: \`adminPages\` requires the \`admin.navigation\` ` +
+      `permission. Add "admin.navigation" to \`permissions\`.`,
+    )
+  }
+
   const duplicatePages = new Set<string>()
   const adminPages: PluginAdminPage[] = data.adminPages.map((page) => {
     if (duplicatePages.has(page.id)) {
@@ -429,6 +477,32 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     duplicatePages.add(page.id)
     if (page.content.kind === 'resource' && !duplicateResources.has(page.content.resource)) {
       throw new Error(`Invalid plugin manifest: resource page "${page.id}" references unknown resource "${page.content.resource}"`)
+    }
+    if (page.content.kind === 'app') {
+      // App pages are unsandboxed plugin JavaScript in the admin window —
+      // the same trust surface as `entrypoints.editor`, gated by the same
+      // permission.
+      if (!data.permissions.includes('editor.code')) {
+        throw new Error(
+          `Invalid plugin manifest: admin page "${page.id}" has kind "app", which runs ` +
+          `unsandboxed JavaScript in the admin window and requires the \`editor.code\` ` +
+          `permission. Add "editor.code" to \`permissions\`.`,
+        )
+      }
+      // Pin `assetPath` to THIS plugin's own asset subtree. The schema
+      // pattern already rejects dot segments; this check stops a manifest
+      // from pointing the admin shell's dynamic import() at another
+      // plugin's files (or any other uploads path).
+      if (page.content.assetPath) {
+        const expectedBase = `/uploads/plugins/${data.id}/${data.version}`
+        const normalized = page.content.assetPath.replace(/\/+$/, '')
+        if (normalized !== expectedBase && !normalized.startsWith(`${expectedBase}/`)) {
+          throw new Error(
+            `Invalid plugin manifest: admin page "${page.id}" assetPath must stay within ` +
+            `"${expectedBase}"`,
+          )
+        }
+      }
     }
 
     // Normalise the content: apply the pins default for map pages explicitly,
@@ -617,57 +691,3 @@ export function permissionLabel(permission: PluginPermission): string {
   return sdkPermissionLabel(permission)
 }
 
-export function findPluginResource(
-  manifest: Pick<PluginManifest, 'resources'>,
-  resourceId: string,
-): PluginResource | null {
-  return manifest.resources.find((resource) => resource.id === resourceId) ?? null
-}
-
-export function validatePluginRecordData(
-  resource: PluginResource,
-  input: unknown,
-  options: { partial?: boolean } = {},
-): Record<string, unknown> {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    throw new Error('Plugin record data must be an object')
-  }
-
-  const raw = input as Record<string, unknown>
-  const data: Record<string, unknown> = {}
-
-  for (const field of resource.fields) {
-    const value = raw[field.id]
-    const missing = value === undefined || value === null || value === ''
-
-    if (missing) {
-      if (field.required && !options.partial) {
-        throw new Error(`Missing required field "${field.label}"`)
-      }
-      continue
-    }
-
-    if (field.type === 'number') {
-      if (typeof value !== 'number' || !Number.isFinite(value)) {
-        throw new Error(`Field "${field.label}" must be a number`)
-      }
-      data[field.id] = value
-      continue
-    }
-
-    if (field.type === 'boolean') {
-      if (typeof value !== 'boolean') {
-        throw new Error(`Field "${field.label}" must be a boolean`)
-      }
-      data[field.id] = value
-      continue
-    }
-
-    if (typeof value !== 'string') {
-      throw new Error(`Field "${field.label}" must be text`)
-    }
-    data[field.id] = value.trim()
-  }
-
-  return data
-}

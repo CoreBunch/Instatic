@@ -304,8 +304,7 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
 
       // Detect upgrade vs. fresh install client-side so we can render the
       // right copy in the confirmation dialog. The server detects upgrades
-      // independently — this is purely a UX hint (and a way to force the
-      // dialog to show even when no new permissions are being requested).
+      // independently — this is purely a UX hint.
       const existing = payload.plugins.find((p) => p.id === manifest.id)
       const upgradeFromVersion =
         existing && existing.version !== manifest.version ? existing.version : undefined
@@ -314,29 +313,19 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         : undefined
       const previousNetworkAllowedHosts = existing?.manifest.networkAllowedHosts
 
-      // Always show the dialog for upgrades, even with zero new permissions
-      // — including when the only change is the external-host allowlist.
-      // The site owner deserves to see a "yes, upgrade 1.0.0 → 1.1.0"
-      // confirmation before we replace a working plugin, and a network-host
-      // change is just as security-relevant as a permission change.
-      const hasNetworkHosts = (manifest.networkAllowedHosts ?? []).length > 0
-        || (previousNetworkAllowedHosts ?? []).length > 0
-      if (manifest.permissions.length > 0 || upgradeFromVersion || hasNetworkHosts) {
-        setPendingInstall({
-          manifest,
-          file: isZip ? file : undefined,
-          upgradeFromVersion,
-          previouslyGrantedPermissions,
-          ...(previousNetworkAllowedHosts !== undefined
-            ? { previousNetworkAllowedHosts }
-            : {}),
-        })
-      } else {
-        await installPendingPlugin(
-          { manifest, file: isZip ? file : undefined },
-          [],
-        )
-      }
+      // EVERY install and upgrade goes through the review dialog — including
+      // a zero-permission declarative plugin, which renders "No permissions
+      // requested" so the operator consciously approves what lands in their
+      // CMS. Nothing installs silently.
+      setPendingInstall({
+        manifest,
+        file: isZip ? file : undefined,
+        upgradeFromVersion,
+        previouslyGrantedPermissions,
+        ...(previousNetworkAllowedHosts !== undefined
+          ? { previousNetworkAllowedHosts }
+          : {}),
+      })
     } catch (err) {
       setError(getErrorMessage(err, 'Could not install plugin'))
     }

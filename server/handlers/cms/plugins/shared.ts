@@ -30,6 +30,7 @@ import {
   findPluginResource,
   missingPluginPermissionGrants,
 } from '@core/plugins/manifest'
+import { isPluginPermission } from '@core/plugin-sdk'
 import type {
   InstalledPlugin,
   PluginManifest,
@@ -232,16 +233,39 @@ export function lifecycleErrorMessage(err: unknown): string {
 
 export function readPermissionGrants(value: unknown): PluginPermission[] {
   if (!Array.isArray(value)) return []
-  return value.filter((item): item is PluginPermission => typeof item === 'string') as PluginPermission[]
+  // Boundary validation: only strings that name a registered plugin
+  // permission survive. Unknown strings are dropped here and — if the
+  // client genuinely tried to grant something exotic — rejected by the
+  // grants ⊆ declared check in `assertPluginPermissionGrants`.
+  return value.filter(isPluginPermission)
 }
 
+/**
+ * Validate the operator's grant set against the manifest:
+ *
+ *   1. Every DECLARED permission must be granted (install is all-or-nothing
+ *      today — there is no optional-permissions concept).
+ *   2. Every GRANTED permission must be declared. Without this check a
+ *      tampered admin client could grant capabilities the manifest never
+ *      disclosed, and the runtime — which enforces against
+ *      `grantedPermissions` — would happily honour them.
+ */
 export function assertPluginPermissionGrants(
   manifest: PluginManifest,
   grantedPermissions: PluginPermission[],
 ): Response | null {
   const missing = missingPluginPermissionGrants(manifest, grantedPermissions)
-  if (missing.length === 0) return null
-  return badRequest(`Plugin install requires permission grants: ${missing.join(', ')}`)
+  if (missing.length > 0) {
+    return badRequest(`Plugin install requires permission grants: ${missing.join(', ')}`)
+  }
+  const declared = new Set(manifest.permissions)
+  const undeclared = grantedPermissions.filter((permission) => !declared.has(permission))
+  if (undeclared.length > 0) {
+    return badRequest(
+      `Granted permissions are not declared by the plugin manifest: ${undeclared.join(', ')}`,
+    )
+  }
+  return null
 }
 
 export function pluginManifestWithGrants(plugin: InstalledPlugin): PluginManifest {

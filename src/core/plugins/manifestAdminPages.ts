@@ -50,6 +50,7 @@ export function collectEnabledAdminPages(
           route: page.route ?? pluginAdminPageRoute(plugin.manifest.id, page.id),
           pluginSettings: plugin.settings ?? {},
           pluginSettingsSchema: plugin.manifest.settings,
+          pluginGrantedPermissions: plugin.grantedPermissions ?? [],
         }
       }),
     )

@@ -97,10 +97,13 @@ The template requests:
 | Permission | Why |
 |---|---|
 | `cms.routes` | Register a `/status` health-check route |
+| `editor.code` | Required for `entrypoints.editor` — editor entrypoints run **unsandboxed** in the admin window |
 | `editor.commands` | Register commands + palette commands and providers |
 | `editor.toolbar` | Add a toolbar button |
 
 Remove permissions you don't need — users see the full permission list before installing.
+A plugin that drops its editor entrypoint (and any app-kind admin pages) can drop
+`editor.code` too; everything else then runs inside the QuickJS sandbox.
 
 ## Further reading
 
