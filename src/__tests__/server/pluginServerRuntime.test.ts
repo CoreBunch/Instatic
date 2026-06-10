@@ -669,9 +669,14 @@ describe('server plugin runtime SDK', () => {
 
   it('aborts a plugin that hangs in an infinite loop instead of blocking the worker', async () => {
     // Direct sandbox-level test — go straight at the VM so we can assert the
-    // 5-second deadline kills the runaway. Going through the full install
+    // wall-clock deadline kills the runaway. Going through the full install
     // flow would just propagate the same error wrapped in lifecycle prose.
     const { createPluginVm } = await import('../../../server/plugins/quickjs/vm')
+    // `evalTimeoutMs` also bounds the one-time bootstrap-bundle compile inside
+    // `createPluginVm`, so it must sit comfortably above worst-case compile on a
+    // loaded CI runner (a 50ms budget flaked there). 1s keeps the test fast while
+    // the runaway `activate` loop still aborts well within it.
+    const evalTimeoutMs = 1_000
     const vm = await createPluginVm({
       pluginSource: `
         ;(function () {
@@ -691,7 +696,7 @@ describe('server plugin runtime SDK', () => {
         hostCall: async () => null,
         log: () => {},
       },
-      evalTimeoutMs: 50,
+      evalTimeoutMs,
     })
     try {
       const start = Date.now()
@@ -702,13 +707,14 @@ describe('server plugin runtime SDK', () => {
         caught = err
       }
       const elapsed = Date.now() - start
-      // The QuickJS interrupt handler aborts with `InternalError: interrupted`.
-      // Use a short test-only deadline so the regression coverage does not
-      // make the full suite sleep through the production 5s budget.
+      // The QuickJS interrupt handler aborts the runaway with
+      // `InternalError: interrupted` once the deadline elapses — the worker
+      // is never wedged. Allow generous slack over `evalTimeoutMs` so the
+      // assertion is timing-robust on a loaded CI runner.
       expect(caught).not.toBeNull()
-      expect(elapsed).toBeLessThan(1_000)
+      expect(elapsed).toBeLessThan(evalTimeoutMs + 2_000)
     } finally {
       vm.dispose()
     }
-  }, 3_000)
+  }, 8_000)
 })
