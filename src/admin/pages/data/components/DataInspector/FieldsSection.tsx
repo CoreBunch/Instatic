@@ -14,6 +14,7 @@ import { Button } from '@ui/components/Button'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { NewFieldDialog } from '@admin/pages/data/components/NewFieldDialog/NewFieldDialog'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
+import { StepUpCancelledMessage } from '@admin/shared/StepUp'
 import {
   POST_TYPE_OPTIONAL_BUILTIN_FIELD_IDS,
   type DataField,
@@ -45,6 +46,10 @@ import styles from './DataInspector.module.css'
 // when nested inside a component function).
 // ---------------------------------------------------------------------------
 
+function isStepUpCancelled(err: unknown): boolean {
+  return err instanceof Error && err.message === StepUpCancelledMessage
+}
+
 async function saveFieldEdit(
   editingFieldId: string,
   editState: FieldEditState,
@@ -69,6 +74,7 @@ async function saveFieldEdit(
     setEditingFieldId(null)
     setEditState(null)
   } catch (err) {
+    if (isStepUpCancelled(err)) return
     console.error('[FieldsSection] Save failed:', err)
     setEditError(getErrorMessage(err, 'Could not save field'))
   } finally {
@@ -156,6 +162,7 @@ export function FieldsSection({
 
     setUpdateError(null)
     onUpdateTable({ fields: reordered }).catch((err) => {
+      if (isStepUpCancelled(err)) return
       console.error('[FieldsSection] Reorder failed:', err)
       setUpdateError(getErrorMessage(err, 'Could not reorder fields'))
     })
@@ -238,6 +245,7 @@ export function FieldsSection({
         const updatedFields = table.fields.filter((f) => f.id !== field.id)
         setUpdateError(null)
         onUpdateTable({ fields: updatedFields }).catch((err) => {
+          if (isStepUpCancelled(err)) return
           console.error('[FieldsSection] Delete field failed:', err)
           setUpdateError(getErrorMessage(err, 'Could not delete field'))
         })

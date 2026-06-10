@@ -5,6 +5,7 @@ import { Input } from '@ui/components/Input'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { buildPostTypeDefaultFields } from '@core/data/fields'
 import { type CreateDataTableInput, type DataTableKind } from '@core/data/schemas'
+import { StepUpCancelledMessage } from '@admin/shared/StepUp'
 import styles from './NewTableDialog.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
@@ -131,6 +132,10 @@ export function NewTableDialog({
       await onCreate(input)
       resetForm()
     } catch (err) {
+      if (err instanceof Error && err.message === StepUpCancelledMessage) {
+        setSaving(false)
+        return
+      }
       setSubmitError(errorMessage(err))
       setSaving(false)
     }

@@ -9,79 +9,26 @@ import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { DataFieldSchema, type DataField, type DataFieldType, type DataSelectOption, type DataTable } from '@core/data/schemas'
 import { buildPostTypeDefaultFields } from '@core/data/fields'
 import { safeParseValue, formatValueErrors } from '@core/utils/typeboxHelpers'
+import { StepUpCancelledMessage } from '@admin/shared/StepUp'
 import styles from './NewFieldDialog.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const FIELD_TYPE_OPTIONS: ReadonlyArray<{ value: DataFieldType; label: string }> = [
-  { value: 'text', label: 'Text' },
-  { value: 'longText', label: 'Long text' },
-  { value: 'richText', label: 'Rich text' },
-  { value: 'number', label: 'Number' },
-  { value: 'boolean', label: 'Boolean' },
-  { value: 'date', label: 'Date' },
-  { value: 'dateTime', label: 'Date & time' },
-  { value: 'select', label: 'Select' },
-  { value: 'multiSelect', label: 'Multi-select' },
-  { value: 'url', label: 'URL' },
-  { value: 'email', label: 'Email' },
-  { value: 'media', label: 'Media' },
-  { value: 'relation', label: 'Relation' },
-]
-
-const FIELD_ID_PATTERN = /^[a-z][a-z0-9_]*$/
-
-const RICH_TEXT_FORMAT_OPTIONS = [
-  { value: 'markdown', label: 'Markdown' },
-  { value: 'html', label: 'HTML' },
-]
-
-const NUMBER_FORMAT_OPTIONS = [
-  { value: 'number', label: 'Number' },
-  { value: 'currency', label: 'Currency' },
-  { value: 'percent', label: 'Percent' },
-]
-
-const MEDIA_KIND_OPTIONS = [
-  { value: 'any', label: 'Any' },
-  { value: 'image', label: 'Image' },
-  { value: 'video', label: 'Video' },
-]
-
-// ---------------------------------------------------------------------------
-// Draft option type (pre-uuid assignment)
-// ---------------------------------------------------------------------------
-
-interface DraftOption {
-  id: string
-  label: string
-  value: string
-}
+import {
+  FIELD_TYPE_OPTIONS,
+  MEDIA_KIND_OPTIONS,
+  NUMBER_FORMAT_OPTIONS,
+  RICH_TEXT_FORMAT_OPTIONS,
+  fieldIdError,
+  makeOption,
+  slugifyOptionValue,
+  type DraftOption,
+} from './newFieldDialogModel'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function slugifyOptionValue(label: string): string {
-  return label
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-}
-
-function makeOption(label: string): DraftOption {
-  return { id: crypto.randomUUID(), label, value: slugifyOptionValue(label) }
-}
-
-function fieldIdError(id: string, existingIds: string[]): string | null {
-  if (!id) return null
-  if (!FIELD_ID_PATTERN.test(id)) return 'Must start with a lowercase letter; use letters, numbers, underscores only.'
-  if (existingIds.includes(id)) return 'This ID is already in use.'
-  return null
+function isStepUpCancelled(err: unknown): boolean {
+  return err instanceof Error && err.message === StepUpCancelledMessage
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +300,10 @@ export function NewFieldDialog({
       await onCreate(result.value)
       resetForm()
     } catch (err) {
+      if (isStepUpCancelled(err)) {
+        setSaving(false)
+        return
+      }
       setSubmitError(getErrorMessage(err, 'Could not create field').replace(/^\[[^\]]+\]\s*/, ''))
       setSaving(false)
     }
@@ -373,6 +324,10 @@ export function NewFieldDialog({
       await onCreate(field)
       handleClose()
     } catch (err) {
+      if (isStepUpCancelled(err)) {
+        setSaving(false)
+        return
+      }
       setSubmitError(getErrorMessage(err, 'Could not add field').replace(/^\[[^\]]+\]\s*/, ''))
       setSaving(false)
     }

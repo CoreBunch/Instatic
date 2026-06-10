@@ -10,6 +10,7 @@ import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import { useNavigate } from '@admin/lib/routing'
 import { useEditorStore } from '@site/store/store'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
+import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { CMS_SITE_BUNDLE_IMPORTED_EVENT } from '@admin/state/adminEvents'
 import { useAdminUi } from '@admin/state/adminUi'
 import {
@@ -62,6 +63,7 @@ export function DataPage() {
   const setPropertiesPanel = useEditorStore((s) => s.setPropertiesPanel)
   const openSiteImport = useAdminUi((s) => s.openSiteImport)
   const confirmDelete = useConfirmDelete()
+  const { runStepUp } = useStepUp()
 
   const [newTableDialogOpen, setNewTableDialogOpen] = useState(false)
   const [exportDialog, setExportDialog] = useState<ExportDialogState>({ kind: 'closed' })
@@ -165,7 +167,8 @@ export function DataPage() {
         : 'This cannot be undone.',
       confirmLabel: 'Delete table',
       commit: () => {
-        workspace.deleteTable(tableId).catch((err) => {
+        runStepUp(() => workspace.deleteTable(tableId)).catch((err) => {
+          if (err instanceof Error && err.message === StepUpCancelledMessage) return
           console.error('[DataPage] Delete table failed:', err)
         })
       },
@@ -208,10 +211,10 @@ export function DataPage() {
       rows={workspace.rows}
       onSaveRow={handleSaveRow}
       onUpdateTable={async (input) => {
-        return workspace.updateTable(selectedTable.id, input)
+        return runStepUp(() => workspace.updateTable(selectedTable.id, input))
       }}
       onDeleteTable={async () => {
-        await workspace.deleteTable(selectedTable.id)
+        await runStepUp(() => workspace.deleteTable(selectedTable.id))
       }}
       onEditInContent={handleEditInContent}
       onOpenInSiteEditor={handleOpenInSiteEditor}
@@ -287,7 +290,7 @@ export function DataPage() {
           open={newTableDialogOpen}
           onClose={() => setNewTableDialogOpen(false)}
           onCreate={async (input) => {
-            await workspace.createTable(input)
+            await runStepUp(() => workspace.createTable(input))
             setNewTableDialogOpen(false)
           }}
         />

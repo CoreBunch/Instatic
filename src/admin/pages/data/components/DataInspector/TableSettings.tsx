@@ -12,6 +12,7 @@ import { ListBoxSolidIcon } from 'pixel-art-icons/icons/list-box-solid'
 import { BoxSolidIcon } from 'pixel-art-icons/icons/box-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
+import { StepUpCancelledMessage } from '@admin/shared/StepUp'
 import type { DataTable, DataRow, UpdateDataTableInput } from '@core/data/schemas'
 import { FieldsSection } from './FieldsSection'
 import styles from './DataInspector.module.css'
@@ -42,6 +43,10 @@ interface SettingsDraft {
   primaryFieldId: string
 }
 
+function isStepUpCancelled(err: unknown): boolean {
+  return err instanceof Error && err.message === StepUpCancelledMessage
+}
+
 // ---------------------------------------------------------------------------
 // Module-level helpers — extracted so the React Compiler can auto-memoize the
 // TableSettings component body (try/catch in async causes compiler bailout
@@ -62,8 +67,10 @@ async function saveTableField(
   try {
     await onUpdateTable({ [key]: value })
   } catch (err) {
-    console.error('[TableSettings] Save failed:', err)
-    setSaveError(getErrorMessage(err, 'Could not save'))
+    if (!isStepUpCancelled(err)) {
+      console.error('[TableSettings] Save failed:', err)
+      setSaveError(getErrorMessage(err, 'Could not save'))
+    }
     // Revert the draft field to the last known-good value from the table.
     setDraft((prev) => ({
       ...prev,
@@ -87,8 +94,10 @@ async function savePrimaryField(
   try {
     await onUpdateTable({ primaryFieldId: fieldId })
   } catch (err) {
-    console.error('[TableSettings] Primary field save failed:', err)
-    setSaveError(getErrorMessage(err, 'Could not save'))
+    if (!isStepUpCancelled(err)) {
+      console.error('[TableSettings] Primary field save failed:', err)
+      setSaveError(getErrorMessage(err, 'Could not save'))
+    }
     setDraft((prev) => ({ ...prev, primaryFieldId: table.primaryFieldId }))
   } finally {
     setSaving(false)
@@ -174,6 +183,7 @@ export function TableSettings({
       confirmLabel: 'Delete table',
       commit: () => {
         onDeleteTable().catch((err) => {
+          if (isStepUpCancelled(err)) return
           console.error('[TableSettings] Delete table failed:', err)
         })
       },

@@ -5,14 +5,18 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import reactCompiler from 'eslint-plugin-react-compiler'
 import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // React Compiler ESLint rule surfaces functions the compiler can't safely
 // memoize (Rules-of-React violations, mutating render-time state, etc.) so
 // they're caught at lint time rather than as a build-time bailout. The
 // compiler itself is wired in `vite.config.ts`.
 
+const configDir = path.dirname(fileURLToPath(import.meta.url))
+
 export default defineConfig([
-  globalIgnores(['dist', '.worktrees']),
+  globalIgnores(['dist', '.worktrees', '.claude']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -24,6 +28,9 @@ export default defineConfig([
     ],
     languageOptions: {
       globals: globals.browser,
+      parserOptions: {
+        tsconfigRootDir: configDir,
+      },
     },
     rules: {
       // `varsIgnorePattern` includes `Schema$` because TypeBox's idiom is

@@ -237,7 +237,7 @@ if (stepUp) return stepUp
 
 ## Step-up auth
 
-Sensitive actions (delete user, revoke another device, sign out all devices, change owner email, regenerate MFA) call `requireStepUp(req, db, user)` in `server/auth/authz.ts`, passing the user the handler already resolved. When `users.step_up_auth_mode = 'required'`, the current session must have `sessions.step_up_expires_at > now()`. The default policy is required with a 15-minute window; Account -> Security can change the mode to `disabled` or set `users.step_up_window_minutes` to 5, 15, 30, or 60.
+Sensitive actions (delete user, revoke another device, sign out all devices, change owner email, regenerate MFA, mutate Data table schemas, replace-import a site bundle) call `requireStepUp(req, db, user)` in `server/auth/authz.ts`, passing the user the handler already resolved. When `users.step_up_auth_mode = 'required'`, the current session must have `sessions.step_up_expires_at > now()`. The default policy is required with a 15-minute window; Account -> Security can change the mode to `disabled` or set `users.step_up_window_minutes` to 5, 15, 30, or 60.
 
 The Account -> Security policy endpoint (`PATCH /admin/api/cms/me/security/step-up`) calls `requireStepUp(req, db, user, { policy: 'always' })`, so changing the policy itself still requires a fresh password even when normal sensitive-action step-up is disabled.
 
