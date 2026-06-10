@@ -213,7 +213,9 @@ class PluginRuntime {
    * Cache the live settings snapshot for a plugin so panel api factories
    * can hand it to the plugin's render code without a per-mount round-trip.
    * Refreshed by `activateInstalledEditorPlugins` on every editor reload
-   * and by the Plugins admin page after a settings PUT.
+   * and by the Plugins admin page after a settings PUT. The snapshot comes
+   * from the admin HTTP payload, where secret values are masked (`'***'`)
+   * — editor-side plugin code never sees real secrets.
    */
   setPluginSettings(pluginId: string, settings: Record<string, string | number | boolean>): void {
     this.pluginSettings.set(pluginId, { ...settings })

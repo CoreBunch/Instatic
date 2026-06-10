@@ -40,11 +40,14 @@ interface PluginSettingBase {
   required?: boolean
   /**
    * When true, the value is treated as a secret:
-   *   - Masked in `GET /settings` responses (`'***'`)
+   *   - Masked (`'***'`) on EVERY payload the host sends to the browser —
+   *     the plugins list, the settings GET/PUT responses, admin-page route
+   *     snapshots, and editor-panel settings snapshots
    *   - Stripped from frontend bundles
    *   - Rendered as a password input in the form
-   * Plugin-side reads (server `api.cms.settings.get`, admin app) still
-   * see the real value.
+   * Only server-side plugin code (`api.cms.settings.get` / `getAll` inside
+   * the QuickJS worker) reads the real value. Editor-side and admin-app
+   * plugin code always sees the mask.
    */
   secret?: boolean
 }
@@ -95,6 +98,15 @@ export type PluginSettingDefinition =
 
 export type PluginSettingsValues = Record<string, PluginSettingValue>
 
+/**
+ * Sentinel the host substitutes for secret values on every browser-bound
+ * payload. The settings PUT route treats an incoming secret equal to this
+ * sentinel as "unchanged" and keeps the stored value — see
+ * `resolveSecretSettingsUpdate`. Consequence: a secret can never be
+ * literally `'***'`.
+ */
+export const SECRET_SETTING_MASK = '***'
+
 const SAFE_SETTING_ID = /^[a-zA-Z_][a-zA-Z0-9_-]*$/
 
 /**
@@ -129,7 +141,7 @@ export function validatePluginSettingsDefinitions(
  * a freshly-installed plugin's empty Settings panel.
  */
 export function pluginSettingsDefaults(
-  settings: PluginSettingDefinition[],
+  settings: ReadonlyArray<PluginSettingDefinition>,
 ): PluginSettingsValues {
   const out: PluginSettingsValues = {}
   for (const s of settings) {
@@ -147,7 +159,7 @@ export function pluginSettingsDefaults(
  * record (extra keys dropped, missing required fields throw).
  */
 export function validatePluginSettingsRecord(
-  settings: PluginSettingDefinition[],
+  settings: ReadonlyArray<PluginSettingDefinition>,
   input: unknown,
 ): PluginSettingsValues {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -202,18 +214,39 @@ export function validatePluginSettingsRecord(
 }
 
 /**
- * Mask secret values in a settings record before returning to a UI that
- * shouldn't see them (e.g. the admin form re-render after save). Plugins
- * reading their own settings via `api.cms.settings.get` see the real value.
+ * Mask secret values in a settings record before serializing it onto any
+ * browser-bound payload — the plugins list, the settings GET/PUT responses,
+ * admin-page route snapshots, editor-panel snapshots. Only server-side
+ * plugin code reading via `api.cms.settings.get` sees the real value.
  */
 export function maskSecretSettings(
-  settings: PluginSettingDefinition[],
+  settings: ReadonlyArray<PluginSettingDefinition>,
   values: PluginSettingsValues,
 ): PluginSettingsValues {
   const out: PluginSettingsValues = { ...values }
   for (const s of settings) {
     if (s.secret && out[s.id] !== undefined && out[s.id] !== '') {
-      out[s.id] = '***'
+      out[s.id] = SECRET_SETTING_MASK
+    }
+  }
+  return out
+}
+
+/**
+ * Resolve a settings PUT against the stored record: an incoming secret equal
+ * to `SECRET_SETTING_MASK` means the admin form submitted the masked GET
+ * value untouched, so the stored secret is kept. Any other incoming value —
+ * including the empty string, which deliberately clears the secret — wins.
+ */
+export function resolveSecretSettingsUpdate(
+  settings: ReadonlyArray<PluginSettingDefinition>,
+  incoming: PluginSettingsValues,
+  stored: PluginSettingsValues,
+): PluginSettingsValues {
+  const out: PluginSettingsValues = { ...incoming }
+  for (const s of settings) {
+    if (s.secret && out[s.id] === SECRET_SETTING_MASK && stored[s.id] !== undefined) {
+      out[s.id] = stored[s.id]
     }
   }
   return out
@@ -224,7 +257,7 @@ export function maskSecretSettings(
  * frontend bundle / published page where they would otherwise leak.
  */
 export function stripSecretSettings(
-  settings: PluginSettingDefinition[],
+  settings: ReadonlyArray<PluginSettingDefinition>,
   values: PluginSettingsValues,
 ): PluginSettingsValues {
   const out: PluginSettingsValues = {}

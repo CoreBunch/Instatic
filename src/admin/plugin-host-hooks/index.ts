@@ -39,6 +39,11 @@ export { useEditorStore }
  * Read the current plugin's persisted settings as a typed snapshot.
  * Updates flow through `setPluginSettings(...)` from `@instatic/host-hooks`
  * (round-trips through the host's settings PUT endpoint).
+ *
+ * Settings declared `secret: true` always read as the mask (`'***'`) here —
+ * real secret values never reach the browser. Server-side plugin code reads
+ * them via `api.cms.settings.get`; proxy through a plugin server route when
+ * an admin surface needs a secret-derived capability.
  */
 export function usePluginSettings<
   T extends Record<string, string | number | boolean> = Record<string, string | number | boolean>,

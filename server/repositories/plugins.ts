@@ -117,7 +117,7 @@ function mergeSettingsWithDefaults(
   stored: unknown,
 ): Record<string, string | number | boolean> {
   const declared = manifest.settings ?? []
-  const defaults = pluginSettingsDefaults(declared as Parameters<typeof pluginSettingsDefaults>[0])
+  const defaults = pluginSettingsDefaults(declared)
   const out: Record<string, string | number | boolean> = { ...defaults }
   if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
     const declaredIds = new Set(declared.map((s) => s.id))
@@ -182,9 +182,7 @@ export async function installPlugin(
   const manifestToStore = { ...manifest, grantedPermissions }
   // Seed settings with the manifest's declared defaults so plugins reading
   // their own settings on first activate see a complete record.
-  const initialSettings = pluginSettingsDefaults(
-    (manifest.settings ?? []) as Parameters<typeof pluginSettingsDefaults>[0],
-  )
+  const initialSettings = pluginSettingsDefaults(manifest.settings ?? [])
   const { rows } = await db<InstalledPluginRow>`
     insert into installed_plugins (id, name, version, manifest_json, granted_permissions_json, settings_json, enabled, lifecycle_status, last_error)
     values (${manifest.id}, ${manifest.name}, ${manifest.version}, ${writeJson(manifestToStore)}, ${writeJson(grantedPermissions)}, ${writeJson(initialSettings)}, true, 'installed', null)

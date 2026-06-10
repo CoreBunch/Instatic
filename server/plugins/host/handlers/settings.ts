@@ -12,7 +12,6 @@
  * No permission gate — any active plugin may update its own settings.
  */
 
-import type { PluginSettingDefinition } from '@core/plugin-sdk'
 import { validatePluginSettingsRecord } from '@core/plugin-sdk'
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
 import type { DbClient } from '../../../db/client'
@@ -26,8 +25,7 @@ export async function handleSettingsReplace(
   db: DbClient,
 ): Promise<void> {
   const [next] = msg.args
-  const declared = (entry.manifest.settings ?? []) as PluginSettingDefinition[]
-  const cleaned = validatePluginSettingsRecord(declared, next)
+  const cleaned = validatePluginSettingsRecord(entry.manifest.settings ?? [], next)
   const merged = await persistAndSyncPluginSettings(db, msg.pluginId, cleaned)
   replyApiOk(msg.pluginId, msg.correlationId, merged)
 }

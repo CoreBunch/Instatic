@@ -54,6 +54,7 @@ import { type CmsHandlerOptions } from '../shared'
 import {
   assertPluginPermissionGrants,
   lifecycleErrorMessage,
+  maskPluginSecrets,
   pluginManifestWithGrants,
   pluginsPayload,
   readPermissionGrants,
@@ -106,7 +107,7 @@ export async function handlePluginsCollection(
         version: plugin.version,
         occurredAt: new Date().toISOString(),
       })
-      return jsonResponse({ plugin, ...(await pluginsPayload(db)) }, { status: 201 })
+      return jsonResponse({ plugin: maskPluginSecrets(plugin), ...(await pluginsPayload(db)) }, { status: 201 })
     } catch (err) {
       return badRequest(getErrorMessage(err, 'Invalid plugin manifest'))
     }
@@ -214,7 +215,7 @@ async function installFreshFromPackage(ctx: InstallContext): Promise<Response> {
   const installLifecycle = await runPluginLifecycleHook(db, installed, options, 'install', 'installed')
   if (!installLifecycle.ok) {
     return jsonResponse(
-      { plugin: installLifecycle.plugin, ...(await pluginsPayload(db)) },
+      { plugin: maskPluginSecrets(installLifecycle.plugin), ...(await pluginsPayload(db)) },
       { status: 201 },
     )
   }
@@ -251,7 +252,7 @@ async function installFreshFromPackage(ctx: InstallContext): Promise<Response> {
   })
   return jsonResponse(
     {
-      plugin: activateLifecycle.plugin,
+      plugin: maskPluginSecrets(activateLifecycle.plugin),
       ...(await pluginsPayload(db)),
       pack: packSummary,
     },
@@ -381,7 +382,7 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
   })
   return jsonResponse(
     {
-      plugin: finalRow,
+      plugin: maskPluginSecrets(finalRow),
       ...(await pluginsPayload(db)),
       pack: packSummary,
       upgrade: { fromVersion, toVersion: newVersion },

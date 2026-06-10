@@ -19,9 +19,11 @@ export interface InstalledPlugin {
   /**
    * Current user-edited settings values, keyed by setting id. Always
    * contains every setting declared in `manifest.settings` — defaults
-   * are populated on install. Secret values are masked (`'***'`) when
-   * the plugin row is read by the admin UI; plugins reading their own
-   * settings via `api.cms.settings.get` see the real value.
+   * are populated on install. Secret values are masked (`'***'`) on every
+   * payload the host sends to the browser — list, install/upgrade/state
+   * responses, admin-page snapshots, and editor-panel snapshots — so
+   * editor-side and admin-app plugin code never sees the real value. Only
+   * server-side plugin code reading via `api.cms.settings.get` does.
    */
   settings: Record<string, string | number | boolean>
   installedAt: string
@@ -63,7 +65,8 @@ export interface PluginAdminPageRoute extends Omit<PluginAdminPage, 'route'> {
   /**
    * Snapshot of the plugin's persisted settings at the moment the host
    * rendered the page. Plugin admin apps read via the `usePluginSettings`
-   * hook which returns this snapshot synchronously.
+   * hook which returns this snapshot synchronously. Secret values are
+   * masked (`'***'`) — admin-app code never sees real secrets.
    */
   pluginSettings: Record<string, string | number | boolean>
   /** The full settings schema declared by the plugin manifest. */

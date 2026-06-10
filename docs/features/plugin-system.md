@@ -438,6 +438,10 @@ Settings are typed (`string` / `number` / `boolean` / `secret`) and rendered aut
 
 Settings writes go live immediately. When an operator saves the admin form (or the plugin calls `settings.replace`), the host persists the record, refreshes its load-time cache, pushes the merged-with-defaults values into the running VM's mirror (an `update-settings` worker message — a no-op when the plugin isn't loaded), and only then emits the `settings.changed` hook. `api.cms.settings.get(...)` therefore returns the new value without a plugin reload — including inside a `settings.changed` listener.
 
+**Secrets never reach the browser.** A setting declared with `secret: true` is masked to `'***'` on every payload the host sends to the admin UI — the plugins list, install/upgrade/enable/disable/restart responses, the settings GET/PUT responses, admin-page route snapshots (`usePluginSettings`), and editor-panel settings snapshots. Only server-side plugin code running in the QuickJS worker reads the real value, via `api.cms.settings.get` / `getAll`. Editor-side and admin-app plugin code that needs a secret-derived capability must proxy through a plugin server route instead of reading the value directly.
+
+The settings form round-trips the mask: a PUT where a secret field still carries the `'***'` sentinel keeps the stored value, a PUT with a new string replaces it, and a PUT with an empty string clears it (which also means a secret can never literally be `'***'`). The sentinel logic lives next to the masking helper in `src/core/plugin-sdk/builders/settings.ts` (`maskSecretSettings` / `resolveSecretSettingsUpdate` / `SECRET_SETTING_MASK`).
+
 ### Scheduled jobs — requires `cms.schedule`
 
 ```js

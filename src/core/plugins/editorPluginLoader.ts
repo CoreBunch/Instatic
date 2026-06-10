@@ -118,6 +118,8 @@ export async function activateInstalledEditorPlugins(
     // synchronously inside their render(). Done unconditionally — even for
     // plugins without an editor entrypoint, since the snapshot might be
     // consulted by another plugin's panel via cross-plugin runCommand etc.
+    // Secret values arrive masked (`'***'`) — the server masks them on every
+    // admin payload, so editor-side code never holds real secrets.
     pluginRuntime.setPluginSettings(plugin.id, plugin.settings)
     if (!plugin.enabled || plugin.lifecycleStatus === 'error' || !manifest.assetBasePath) {
       continue

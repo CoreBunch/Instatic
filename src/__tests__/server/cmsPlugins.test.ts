@@ -372,6 +372,117 @@ describe('CMS plugin handlers', () => {
     expect(db.plugins).toHaveLength(0)
   })
 
+  it('masks secret settings on every browser-bound payload and round-trips the mask sentinel on PUT', async () => {
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+
+    const secretManifest = {
+      ...mapManifest,
+      id: 'local.secret',
+      name: 'Secret Keeper',
+      settings: [
+        { id: 'apiKey', type: 'password', label: 'API key', secret: true },
+        { id: 'mode', type: 'text', label: 'Mode', default: 'fast' },
+      ],
+    }
+
+    const install = await handleCmsRequest(
+      cmsRequest('http://localhost/admin/api/cms/plugins', {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          manifest: secretManifest,
+          grantedPermissions: ['admin.navigation'],
+        }),
+      }),
+      db,
+    )
+    expect(install.status).toBe(201)
+
+    const storedSettings = (): Record<string, unknown> =>
+      JSON.parse(String(db.plugins[0].settings_json)) as Record<string, unknown>
+
+    const putSettings = async (settings: Record<string, unknown>) =>
+      handleCmsRequest(
+        cmsRequest('http://localhost/admin/api/cms/plugins/local.secret/settings', {
+          method: 'PUT',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: JSON.stringify({ settings }),
+        }),
+        db,
+      )
+
+    // Save a real secret — the DB stores it, but the response masks it.
+    const save = await putSettings({ apiKey: 'real-secret', mode: 'turbo' })
+    expect(save.status).toBe(200)
+    expect(await save.json()).toEqual({ settings: { apiKey: '***', mode: 'turbo' } })
+    expect(storedSettings()).toEqual({ apiKey: 'real-secret', mode: 'turbo' })
+
+    // The plugins LIST payload masks the secret too — both on the plugin row
+    // and on the admin-page route's settings snapshot. Non-secrets untouched.
+    const list = await handleCmsRequest(
+      cmsRequest('http://localhost/admin/api/cms/plugins', { headers: { cookie } }),
+      db,
+    )
+    expect(list.status).toBe(200)
+    const listBody = await list.json() as {
+      plugins: Array<{ settings: Record<string, unknown> }>
+      adminPages: Array<{ pluginSettings: Record<string, unknown> }>
+    }
+    expect(listBody.plugins[0].settings).toEqual({ apiKey: '***', mode: 'turbo' })
+    expect(listBody.adminPages[0].pluginSettings).toEqual({ apiKey: '***', mode: 'turbo' })
+
+    // The dedicated settings GET masks as before.
+    const get = await handleCmsRequest(
+      cmsRequest('http://localhost/admin/api/cms/plugins/local.secret/settings', {
+        headers: { cookie },
+      }),
+      db,
+    )
+    expect(get.status).toBe(200)
+    const getBody = await get.json() as { settings: Record<string, unknown> }
+    expect(getBody.settings).toEqual({ apiKey: '***', mode: 'turbo' })
+
+    // PUT that round-trips the masked GET payload unchanged keeps the stored
+    // real secret instead of overwriting it with the literal sentinel.
+    const unchanged = await putSettings({ apiKey: '***', mode: 'slow' })
+    expect(unchanged.status).toBe(200)
+    expect(storedSettings()).toEqual({ apiKey: 'real-secret', mode: 'slow' })
+
+    // A deliberate new value still replaces the secret…
+    const rotate = await putSettings({ apiKey: 'rotated-secret', mode: 'slow' })
+    expect(rotate.status).toBe(200)
+    expect(storedSettings()).toEqual({ apiKey: 'rotated-secret', mode: 'slow' })
+
+    // …and an empty string deliberately clears it. The empty value is not
+    // masked on the way back out.
+    const clear = await putSettings({ apiKey: '', mode: 'slow' })
+    expect(clear.status).toBe(200)
+    expect(storedSettings()).toEqual({ apiKey: '', mode: 'slow' })
+    expect(await clear.json()).toEqual({ settings: { apiKey: '', mode: 'slow' } })
+
+    // State mutations return a single-plugin envelope alongside the list —
+    // it must be masked as well. Re-seed a real secret first.
+    await putSettings({ apiKey: 'real-secret', mode: 'slow' })
+    const disable = await handleCmsRequest(
+      cmsRequest('http://localhost/admin/api/cms/plugins/local.secret', {
+        method: 'PATCH',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ enabled: false }),
+      }),
+      db,
+    )
+    expect(disable.status).toBe(200)
+    const disableBody = await disable.json() as {
+      plugin: { settings: Record<string, unknown> }
+      plugins: Array<{ settings: Record<string, unknown> }>
+    }
+    expect(disableBody.plugin.settings).toEqual({ apiKey: '***', mode: 'slow' })
+    expect(disableBody.plugins[0].settings).toEqual({ apiKey: '***', mode: 'slow' })
+    // Masking is wire-only — the stored value survives untouched.
+    expect(storedSettings()).toEqual({ apiKey: 'real-secret', mode: 'slow' })
+  })
+
   it('strips caller-supplied assetBasePath from JSON-installed manifests (path-traversal sink)', async () => {
     const db = makeFakeDb()
     const cookie = await createCookie(db)

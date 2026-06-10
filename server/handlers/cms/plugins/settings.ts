@@ -16,7 +16,7 @@ import { getInstalledPlugin } from '../../../repositories/plugins'
 import {
   validatePluginSettingsRecord,
   maskSecretSettings,
-  type PluginSettingDefinition,
+  resolveSecretSettingsUpdate,
   type PluginSettingsValues,
 } from '@core/plugin-sdk'
 import { persistAndSyncPluginSettings } from '../../../plugins/host/settingsSync'
@@ -41,7 +41,7 @@ export async function handlePluginSettings(
     )
   }
   const plugin = result.plugin
-  const declared = (plugin.manifest.settings ?? []) as PluginSettingDefinition[]
+  const declared = plugin.manifest.settings ?? []
   if (declared.length === 0) {
     return badRequest(`Plugin "${pluginId}" does not declare settings`)
   }
@@ -63,6 +63,10 @@ export async function handlePluginSettings(
     } catch (err) {
       return badRequest(getErrorMessage(err, 'Invalid settings payload'))
     }
+    // The admin form round-trips the masked GET payload, so an unchanged
+    // secret comes back as the `'***'` sentinel — swap the stored real value
+    // back in before persisting. An empty string still clears the secret.
+    cleaned = resolveSecretSettingsUpdate(declared, cleaned, plugin.settings)
     // Persists, refreshes the host cache, pushes the merged record into the
     // plugin's running VM (no-op when it isn't loaded), then emits
     // `settings.changed` — in that order, so hook listeners reading

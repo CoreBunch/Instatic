@@ -31,6 +31,7 @@ import { Type } from '@core/utils/typeboxHelpers'
 import { type CmsHandlerOptions } from '../shared'
 import {
   lifecycleErrorMessage,
+  maskPluginSecrets,
   pluginNotFound,
   pluginsPayload,
   recordPluginAuditEvent,
@@ -92,7 +93,7 @@ async function setPluginEnabledFromRequest(
     enabled ? 'plugin.enable' : 'plugin.disable',
     pluginId,
   )
-  return jsonResponse({ plugin: lifecycle.plugin, ...(await pluginsPayload(db)) })
+  return jsonResponse({ plugin: maskPluginSecrets(lifecycle.plugin), ...(await pluginsPayload(db)) })
 }
 
 export async function handlePluginItem(
@@ -223,5 +224,5 @@ export async function handlePluginRestart(
   })
   const finalResult = await getInstalledPlugin(db, pluginId)
   const finalRow = (finalResult?.kind === 'ok' ? finalResult.plugin : null) ?? plugin
-  return jsonResponse({ plugin: finalRow, ...(await pluginsPayload(db)) })
+  return jsonResponse({ plugin: maskPluginSecrets(finalRow), ...(await pluginsPayload(db)) })
 }
