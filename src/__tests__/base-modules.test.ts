@@ -826,3 +826,32 @@ describe('base.link — render() specifics', () => {
     ).not.toThrow()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Inline text edit declarations (docs/superpowers/specs/
+// 2026-06-10-inline-text-editing-design.md) — the canvas resolves these
+// generically; the declaration IS the feature's per-module surface.
+// ---------------------------------------------------------------------------
+
+describe('inline text edit declarations', () => {
+  it('base.text edits the multiline `text` prop', () => {
+    expect(TextModule.inlineTextEdit).toEqual({ prop: 'text', multiline: true })
+  })
+
+  it('base.button edits the single-line `label` prop', () => {
+    expect(ButtonModule.inlineTextEdit).toEqual({ prop: 'label' })
+  })
+
+  it('base.link edits the single-line `text` prop (childless render path)', () => {
+    expect(LinkModule.inlineTextEdit).toEqual({ prop: 'text' })
+  })
+
+  it('every declared prop exists in the module schema with a string default', () => {
+    expect(Object.keys(TextModule.schema)).toContain('text')
+    expect(typeof TextModule.defaults.text).toBe('string')
+    expect(Object.keys(ButtonModule.schema)).toContain('label')
+    expect(typeof ButtonModule.defaults.label).toBe('string')
+    expect(Object.keys(LinkModule.schema)).toContain('text')
+    expect(typeof LinkModule.defaults.text).toBe('string')
+  })
+})

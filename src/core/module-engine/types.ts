@@ -213,6 +213,18 @@ export interface ModuleDefinition<
   canHaveChildren: boolean
 
   /**
+   * Opt-in canvas inline text editing (double-click a node on the canvas).
+   * `prop` names the single string prop the overlay edits; `multiline: true`
+   * renders a `<textarea>` instead of an `<input>`. Modules without this
+   * field keep the no-op double-click. The canvas resolves the contract
+   * generically — no per-module branches (a node with children never starts
+   * a session, which is how `base.link`'s children-over-text render rule is
+   * honoured). See docs/features/canvas-iframe-per-frame.md → "Inline text
+   * editing (parent-doc overlay)".
+   */
+  inlineTextEdit?: { prop: string; multiline?: boolean }
+
+  /**
    * How the publisher's node walker dispatches this module. Makes the
    * otherwise-invisible two-tier render contract explicit on the definition:
    *

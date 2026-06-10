@@ -36,6 +36,9 @@ export const LinkModule: ModuleDefinition<LinkStoredProps> = {
   icon: LinkIcon,
   trusted: true,
   canHaveChildren: true,
+  // Inline-editable only while childless — the canvas's generic
+  // children-guard mirrors linkUsesChildren() in render().
+  inlineTextEdit: { prop: 'text' },
 
   schema: {
     href: { type: 'url', label: 'URL' },

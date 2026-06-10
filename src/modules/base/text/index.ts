@@ -50,6 +50,7 @@ export const TextModule: ModuleDefinition<TextStoredProps> = {
   icon: TextStartTIcon,
   trusted: true,
   canHaveChildren: false,
+  inlineTextEdit: { prop: 'text', multiline: true },
 
   schema: {
     text: { type: 'textarea', label: 'Text', rows: 4, placeholder: 'Enter text...' },

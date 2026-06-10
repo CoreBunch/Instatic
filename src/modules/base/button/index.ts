@@ -37,6 +37,7 @@ export const ButtonModule: ModuleDefinition<ButtonStoredProps> = {
   icon: CursorClickSolidIcon,
   trusted: true,
   canHaveChildren: false,
+  inlineTextEdit: { prop: 'label' },
 
   schema: {
     label: { type: 'text', label: 'Label', placeholder: 'Button text...' },
