@@ -1,239 +1,233 @@
+<div align="center">
+
 # Instatic
 
-A self-hosted visual CMS for people who want ownership without giving up a modern editing experience.
+**Own your site. Love building it.**
 
-Build visually. Manage real content. Publish fast, lightweight websites with clean HTML and CSS instead of bloated page-builder output. Host it yourself, extend it with plugins, and keep your site portable.
+The self-hosted visual CMS with a canvas editor that feels like a design tool,
+a real content engine underneath, and published pages so clean you'll want to view source.
 
-[Quick start](#quick-start) · [Deploy](#deploying-instatic) · [Docs](docs/README.md) · [Plugins](docs/features/plugin-system.md)
+[![Release](https://img.shields.io/github/v/release/corebunch/instatic?color=black&labelColor=black)](https://github.com/corebunch/instatic/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-black?labelColor=black&color=blue)](LICENSE)
+[![Runtime: Bun](https://img.shields.io/badge/runtime-Bun-black?labelColor=black&color=f9f1e1)](https://bun.sh)
+[![TypeScript](https://img.shields.io/badge/TypeScript-everywhere-black?labelColor=black&color=3178c6)](https://www.typescriptlang.org/)
 
-Instatic is open source under the MIT license.
+[One-Click Deploy](#deploy-in-one-click) · [Quick Start](#quick-start) · [Docs](docs/README.md) · [Plugins](docs/features/plugin-system.md) · [Roadmap](#this-is-the-inception)
 
-## Highlights
+<br>
 
-- A canvas-style visual editor for building pages directly.
-- Responsive editing with real mobile, tablet, and desktop previews.
-- A focused content editor for posts and collections, plus live mode to edit inside the final site design.
-- A built-in CodeMirror editor for CSS, scripts, site files, and advanced customization.
-- Reusable visual components, templates, loops, forms, and media workflows.
-- Lightweight published sites with clean HTML and CSS, built the way a senior developer would ship by hand.
-- Self-hosted, portable, MIT licensed, and not tied to a SaaS account.
-- SQLite for simple installs, Postgres when your team or infrastructure needs it.
+<img src="docs/assets/readme/hero-editor.webp" alt="The Instatic visual editor — canvas-first, multiple breakpoints side by side" width="100%">
 
-## Why Instatic?
+</div>
 
-Instatic sits somewhere between a visual site builder, a real CMS, and a developer-grade publishing system.
+<br>
 
-If you are coming from **WordPress**, you get the familiar idea of owning your site and managing real content, but without plugin sprawl, theme archaeology, or page-builder markup soup.
+> WordPress gives you ownership wrapped in 2003.
+> Webflow and Framer give you 2026 — as long as you keep paying rent.
+>
+> **Instatic is what happens when you refuse to choose.**
 
-If you are coming from **Webflow** or **Framer**, you get a modern visual canvas and polished authoring workflow, but your site stays self-hosted, portable, and open source.
+For twenty years the deal has been the same. Want to own your site? Enjoy plugin roulette, theme archaeology, and page builders that publish markup soup. Want a modern visual editor? Hand your site to someone else's cloud, behind someone else's subscription, exporting someone else's idea of your content — forever.
 
-If you like designing in **Figma**, the editor should feel natural: canvas-first, visual, responsive, and direct. But instead of handing designs off to rebuild elsewhere, you publish from the same system.
+We think that deal is expired.
 
-If you have fought with **Gutenberg**, Instatic gives you a calmer writing flow: write focused content, switch to live mode, and edit inside the actual design of your site without block-editor friction.
+Instatic is a canvas editor that feels like Figma, a content engine that works like a real CMS, and a publisher that ships plain, semantic HTML with hand-clean CSS — the kind of output a senior developer would write by hand. No framework runtime injected into your pages. No builder watermark in your markup. All of it on one Bun server, on hardware you choose, under a license that never asks for your credit card.
 
-## What You Can Build
+**MIT licensed. Self-hosted. Yours.**
 
-Instatic is built for real websites, not just landing-page demos:
+<br>
 
-- Marketing sites and small-business websites.
-- Blogs, docs, changelogs, and content-heavy sites.
-- Portfolios, directories, resource libraries, and product catalogs.
-- Client sites that need roles, media, forms, reusable sections, and a clean handoff.
-- Plugin-powered sites that need custom admin pages, modules, data, jobs, or integrations.
+## Deploy in one click
 
-## The Editor
+The fastest way to a running Instatic is Railway. One click, ~2 minutes, no terminal — secret keys generated, volumes attached, health checks configured. Truly one click, not "one click and then forty minutes of environment variables."
 
-The site editor is a visual canvas, not a form pretending to be a website builder.
+<div align="center">
 
-- Build pages from modules like containers, text, images, buttons, video, lists, loops, forms, and visual component refs.
-- Edit in design mode with multiple breakpoint frames side by side, or live mode with a single real-size editable page.
-- Create reusable Visual Components with typed parameters and slots.
-- Use templates for shared headers, footers, layouts, and post-type designs.
-- Bind loops to content entries, pages, media, or plugin-provided data sources.
-- Add CSS classes, ambient selectors, responsive conditions, and site-level files when visual controls are not enough.
+<img src="docs/assets/readme/railway-deploy.gif" alt="Deploying Instatic to Railway — from template to a live CMS in under a minute" width="80%">
 
-The Content workspace is for writing and publishing structured content. It has a focused writing surface for posts and collections, plus live mode so authors can see and edit content inside the actual site design.
+*One minute to live. Unedited.*
 
-The Data workspace is for custom tables, schemas, raw rows, imports, exports, and form submissions. Pages, posts, components, custom collections, and arbitrary data all share one content model.
+<br><br>
 
-The Media workspace gives you folders, reusable assets, metadata, upload queues, smart folders, replacement workflows, and plugin-backed storage adapters.
+[![Deploy on Railway — SQLite](https://railway.com/button.svg)](https://railway.com/deploy/instatic-cms-sqlite?referralCode=Zm9bVJ&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
-## Clean Output
+**SQLite** — one service, one volume. The right default for a single site, a blog, a portfolio, a small business.
 
-Instatic is a visual CMS, but it does not publish like a bloated page builder.
+[![Deploy on Railway — Postgres](https://railway.com/button.svg)](https://railway.com/deploy/instatic-cms-postgres?referralCode=Zm9bVJ&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
-Public pages are emitted as semantic HTML with compact CSS. The visitor-facing site stays lightweight, inspectable, and easy to host. The admin app, editor runtime, React, Vite, and builder internals stay out of your public pages.
+**Postgres** — for multi-author editorial teams, managed database backups, and room to scale out.
 
-For static pages, Instatic bakes HTML files to disk at publish time and swaps them atomically. Dynamic parts are detected automatically and rendered through a small runtime only where the page actually needs it.
+</div>
 
-The result is fast-loading websites that do not feel trapped inside the tool that made them.
-
-## Content, Forms, And Imports
-
-Instatic is not only a page canvas.
-
-- Manage posts, pages, custom collections, and arbitrary structured tables.
-- Build CMS-native forms visually and store submissions in your own data tables.
-- Import pasted HTML into editable page nodes.
-- Import static-site bundles with pages, CSS, images, fonts, scripts, and conflicts reviewed before commit.
-- Export and import full CMS bundles to move a site between instances.
-- Keep draft content separate from published content, so unpublished edits do not leak to visitors.
-
-## Plugins
-
-Plugins are first-class, but they are not trusted blindly.
-
-Instatic plugins ship as zip packages with a `plugin.json` manifest. Server entrypoints and canvas module packs run inside a QuickJS-WASM sandbox with no host file system, no environment variables, and no network unless the site owner grants it. Plugins can add routes, storage, hooks, loop sources, scheduled jobs, modules, admin pages, media adapters, and frontend assets through the SDK.
-
-Start here:
-
-- [Plugin system](docs/features/plugin-system.md)
-- [Template plugin](examples/plugins/template/README.md)
-
-## Quick Start
-
-You need [Bun](https://bun.sh). Docker is optional for local development.
-
-Install dependencies:
-
-```sh
-bun install
-```
-
-Start Instatic with SQLite and no external services:
-
-```sh
-bun run dev
-```
-
-Open the editor:
-
-```txt
-http://localhost:5173
-```
-
-The first visit creates the site and owner account.
-
-`bun run dev` starts two processes:
-
-- Vite on `http://localhost:5173` for the admin UI.
-- The CMS server on `http://localhost:3001` for the API and public routes.
-
-To run locally in production mode, with the built admin app served by the Bun server:
-
-```sh
-bun run start
-```
-
-Then open:
-
-```txt
-http://localhost:3001/admin
-```
-
-## Deploying Instatic
-
-The default self-host install is **SQLite + one container**. That is the right starting point for most single sites, hobby projects, small businesses, portfolios, blogs, and small editorial teams.
-
-Download the release bundle from the latest GitHub Release, unpack it on the server, then run:
+Prefer your own metal? Instatic ships as a single Docker image:
 
 ```sh
 INSTATIC_IMAGE=ghcr.io/corebunch/instatic:latest docker compose -f compose.prod.yml -f compose.sqlite.yml up -d
 ```
 
-Pin a version for predictable upgrades:
+Full guides — VPS, Postgres, HTTPS via Caddy, Render, backups: [docs/deployment](docs/deployment/README.md).
+
+<br>
+
+## One tool, the whole cycle
+
+Most tools pick one verb and outsource the rest. Instatic was built to carry a website through its entire life — **design it, build it, manage it, understand it, extend it** — without ever leaving the tool or losing ownership.
+
+### 🎨 Design
+
+<img src="docs/assets/readme/design-framework.webp" alt="Core Framework scales inside Instatic — a fluid spacing scale with mathematical ratios, edited live next to the canvas" width="100%">
+
+The editor is a real canvas, not a form pretending to be a website builder. Multiple breakpoint frames sit side by side — edit the desktop, watch the mobile react. Or flip to live mode and edit a single real-size page in place.
+
+And here's the part the incumbents can't copy: **[Core Framework](https://coreframework.com) is built in natively.** The design-token engine trusted by thousands of WordPress professionals lives inside Instatic — not as a plugin, as a core system:
+
+- **Color tokens with generated shades** — define a brand color, get a full tuned shade scale.
+- **Typography scales** — fluid, mathematical type ramps instead of forty hand-picked font sizes.
+- **Spacing scales** — consistent rhythm across every page, every breakpoint.
+- **Utility class generators** — locked, generated classes emitted into one compact `framework.css`.
+
+Your design system is data, not vibes.
+
+### 🧱 Build
+
+<img src="docs/assets/readme/build-components.webp" alt="Editing a Visual Component — a typed text param with a default value, bound to a node in the component's own tree" width="100%">
+
+- **Modules** — containers, text, images, buttons, video, lists, and more, composed by drag and drop.
+- **Visual Components** — reusable components with **typed parameters and slots**. Change the definition, every instance updates.
+- **Templates and loops** — shared headers and footers, post-type layouts, loops bound to content entries, media, or plugin data sources.
+- **CMS-native forms** — build forms visually from semantic primitives, submissions land in your own data tables. No third-party form SaaS.
+- **An AI agent in the editor** — describe what you want, it builds it on the canvas as real, editable nodes. Bring your own model: Claude, OpenAI, OpenRouter, or local Ollama.
+- **Imports that actually work** — paste raw HTML and get editable nodes. Drop an entire static site (HTML, CSS, images, fonts) and Super Import converts it into pages, style rules, and media — conflicts reviewed before commit.
+
+### 🗂 Manage
+
+<img src="docs/assets/readme/manage-media.webp" alt="The Media workspace — an OS-style file manager for every asset on the site" width="100%">
+
+- **Content workspace** — a focused writing surface for posts and collections, plus live mode so authors edit inside the real design of the site.
+- **Data workspace** — pages, posts, components, custom collections, and arbitrary structured tables all share **one universal content model**. Schemas, raw rows, imports, exports, form submissions.
+- **Media workspace** — an OS-style file manager: folders, smart folders, bulk operations, usage tracking, replacement workflows, pluggable storage adapters.
+- **Real access control** — roles, capabilities, sessions, TOTP MFA with encrypted secrets.
+- **⌘K everything** — Spotlight, a fuzzy command palette over the entire admin.
+- **Drafts stay drafts** — unpublished edits never leak to visitors.
+
+### 📊 Analyze
+
+<img src="docs/assets/readme/analyze-dashboard.webp" alt="The Instatic dashboard — site stats, activity feed, and status widgets on a customizable grid" width="100%">
+
+A customizable dashboard with a widget registry, a full **audit log** of every meaningful admin action, and form submissions stored in your own tables — queryable, exportable, yours. This is the youngest pillar of the cycle and the one we're most actively growing — see the [roadmap](#this-is-the-inception).
+
+### 🔌 Extend
+
+<!-- TODO shot — extend-plugins.webp: Plugins page showing a plugin's permission prompts.
+<img src="docs/assets/readme/extend-plugins.webp" alt="The plugin system — sandboxed, permissioned, first-class" width="100%">
+-->
+
+Every CMS says it has plugins. Ours come with a containment policy.
+
+Instatic plugins ship as zip packages with a manifest and run inside a **QuickJS-WASM sandbox** — no file system, no environment variables, no network unless the site owner explicitly grants it, host by host. **Plugins are guests, not roommates.** The twenty years of "a plugin took down my site and emailed my database to a stranger" stops here.
+
+Inside that sandbox, the SDK is genuinely powerful: routes, storage, lifecycle hooks, loop data sources, scheduled jobs, canvas modules, admin pages, media storage adapters, frontend assets.
+
+Start with the [plugin system docs](docs/features/plugin-system.md) and the [template plugin](examples/plugins/template/README.md).
+
+<br>
+
+## View source. That's the pitch.
+
+<!-- TODO shot — clean-output.webp: devtools view-source of a published page next to the rendered page.
+<img src="docs/assets/readme/clean-output.webp" alt="A published Instatic page and its source — semantic HTML, compact CSS" width="100%">
+-->
+
+Open any page published by a typical page builder and look at the source. We'll wait.
+
+Instatic publishes **semantic HTML and compact CSS** — no React in your public pages, no editor runtime, no div-soup wrappers, no `data-builder-id` confetti. The admin app and everything that built the page stay out of the page.
+
+Under the hood it's a three-layer pipeline:
+
+- **Static pages are baked to disk at publish time** and swapped atomically — visitors are served files, not renders.
+- **Dynamic routes** hit an in-memory render cache that's invalidated wholesale on every publish.
+- **Request-dependent fragments** are auto-detected and lazy-loaded by a runtime that weighs **~0.7 kB** — smaller than this paragraph's HTML.
+
+The result: websites that load like static files, because mostly they are — and never feel trapped inside the tool that made them. Full design: [the publisher](docs/features/publisher.md).
+
+<br>
+
+## Quick start
+
+You need [Bun](https://bun.sh). That's it — the default dev setup is SQLite, zero external services.
 
 ```sh
-INSTATIC_IMAGE=ghcr.io/corebunch/instatic:0.0.2 docker compose -f compose.prod.yml -f compose.sqlite.yml up -d
+git clone https://github.com/corebunch/instatic.git
+cd instatic
+bun install
+bun run dev
 ```
 
-Use **Postgres** when you have a multi-author editorial team, need horizontal app scale-out, or already operate Postgres:
+Open `http://localhost:5173` — the first visit creates your site and owner account.
+
+To run production mode locally (built admin served by the Bun server): `bun run start`, then `http://localhost:3001/admin`.
+
+> **Backups, in one sentence:** back up the database (Postgres dump or the SQLite file) *and* the uploads volume — [details](docs/deployment/backup-restore.md).
+
+<br>
+
+## From the team behind Motion.page & Core Framework
+
+Instatic isn't our first rodeo. We're the team behind **[Motion.page](https://motion.page)** and **[Core Framework](https://coreframework.com)** — tools used by thousands of professionals who build websites for a living, mostly inside the WordPress ecosystem.
+
+We spent years making other platforms more bearable. Eventually the question became unavoidable: *what if the platform itself was just… right?* No legacy to route around, no markup we're not allowed to clean, no business model that requires holding your site hostage.
+
+So we built it. And we brought Core Framework with us — natively integrated, so the color shades, typography scales, spacing systems, and utility generators our users love are a core part of Instatic, not an add-on you install and pray over.
+
+<br>
+
+## This is the inception
+
+Here's the uncomfortable fact for everyone else: **this is version 0.0.x.**
+
+The visual canvas, the Core Framework integration, the universal content model, the sandboxed plugin runtime, the AI agent, forms, loops, templates, media management, MFA, audit logging, one-click deploys, the clean-output publisher — all of that is the *starting point*. Where we're heading:
+
+- **Deeper analytics** — first-party, privacy-respecting insight into your site, completing the analyze pillar.
+- **A growing module and plugin ecosystem** — more first-party blocks, more SDK surface, more examples.
+- **A more capable AI agent** — broader tools, deeper site awareness.
+- **Sharper everything** — we're pre-1.0 on purpose: young enough to keep the architecture clean, remove bad ideas, and build the CMS we actually want to use.
+
+APIs and workflows may still change before a stable 1.0. If you're allergic to motion, wait for 1.0. If you want to shape what the next twenty years of website ownership looks like — you're early, and early is the best seat.
+
+<br>
+
+## For developers
+
+One Bun server. A Vite-built React admin. A publisher that emits pages you'd be proud to write by hand.
+
+| | |
+|---|---|
+| **Runtime** | Bun — server and tooling |
+| **Language** | TypeScript everywhere |
+| **Admin app** | React 19 (React Compiler enabled), Vite, Zustand + Mutative, CodeMirror, dnd-kit |
+| **Server** | `Bun.serve` with a hand-written router |
+| **Database** | SQLite or Postgres — one `DbClient` interface, selected by `DATABASE_URL` |
+| **Validation** | TypeBox at every untyped boundary — schemas are the source of truth |
+| **Plugins** | QuickJS-WASM sandbox, owner-granted permissions |
+| **AI** | Provider-agnostic drivers over raw HTTP/SSE — no provider SDKs |
+| **Output** | Semantic HTML, compact CSS, static artefacts + auto-detected dynamic holes |
+
+The codebase is opinionated and the opinions are enforced — architectural rules live in `src/__tests__/architecture/` as tests, so the clean structure stays clean.
 
 ```sh
-cp .env.production.example .env
-# Set POSTGRES_PASSWORD and INSTATIC_SECRET_KEY in .env.
-INSTATIC_IMAGE=ghcr.io/corebunch/instatic:latest docker compose -f compose.prod.yml up -d
-```
-
-To put HTTPS in front with Caddy and Let's Encrypt, add the TLS override and set `DOMAIN` in `.env`:
-
-```sh
-# SQLite + TLS
-INSTATIC_IMAGE=ghcr.io/corebunch/instatic:latest docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.tls.yml up -d
-
-# Postgres + TLS
-INSTATIC_IMAGE=ghcr.io/corebunch/instatic:latest docker compose -f compose.prod.yml -f compose.tls.yml up -d
-```
-
-Without `compose.tls.yml`, the app is reachable at `http://server-ip:3001/admin`. With it, only Caddy is exposed on ports 80 and 443, and certificates are provisioned automatically.
-
-Deployment docs:
-
-- [Deployment overview](docs/deployment/README.md)
-- [VPS / Docker Compose](docs/deployment/vps.md)
-- [Railway](docs/deployment/railway.md)
-- [Render](docs/deployment/render.md)
-- [Generic Docker image](docs/deployment/docker-image.md)
-- [HTTPS via Caddy](docs/deployment/tls-caddy.md)
-- [Backup and restore](docs/deployment/backup-restore.md)
-- [Release workflow](docs/deployment/release-workflow.md)
-
-## Backups
-
-Back up both pieces of production data:
-
-- The database: Postgres (`pg_dump`) or SQLite (`cms.db`, ideally with a proper snapshot or continuous replication).
-- The uploads directory or uploads volume.
-
-Do not run `docker compose -f compose.prod.yml down -v` unless you intentionally want to delete CMS data.
-
-See [Backup and restore](docs/deployment/backup-restore.md).
-
-## For Developers
-
-Instatic is one Bun server with a Vite-built React admin app and a publishing pipeline that emits clean public pages.
-
-At a glance:
-
-- Runtime: Bun.
-- Language: TypeScript.
-- Admin app: React 19, Vite, Zustand, Mutative, CodeMirror, Tiptap, dnd-kit.
-- Server: `Bun.serve` with a hand-written router.
-- Database: SQLite or Postgres selected by `DATABASE_URL`.
-- Validation: TypeBox at every untyped boundary.
-- Publishing: semantic HTML, compact CSS bundles, static artefacts where possible, dynamic holes where needed.
-- Plugins: QuickJS-WASM sandbox, owner-approved permissions, SDK surface.
-
-Start with:
-
-- [Docs index](docs/README.md)
-- [Architecture](docs/architecture.md)
-- [Editor](docs/editor.md)
-- [Server](docs/server.md)
-- [Publisher](docs/features/publisher.md)
-- [Plugin system](docs/features/plugin-system.md)
-
-Useful commands:
-
-```sh
-bun run build
+bun run build   # tsc -b && vite build
 bun test
 bun run lint
-docker build -t instatic:local .
-docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.build.yml up -d --build
-curl http://localhost:3001/health
 ```
 
-## Project Status
+Dive in: [docs index](docs/README.md) · [architecture](docs/architecture.md) · [editor](docs/editor.md) · [server](docs/server.md) · [publisher](docs/features/publisher.md) · [plugin system](docs/features/plugin-system.md)
 
-Instatic is early and moving quickly. The core editing, content, publishing, deployment, and plugin foundations are in place, but APIs and workflows may still change before a stable 1.0.
-
-That is also the point: the project is still young enough to keep the architecture clean, remove bad ideas, and build the CMS we actually want to use.
+<br>
 
 ## Thanks
 
-Instatic's interface uses [Pixelarticons](https://pixelarticons.com/) by Gerrit Halfmann. A special thanks to Gerrit for making such a distinctive icon set and for kindly allowing it to be used in this open-source project.
+Instatic's interface uses [Pixelarticons](https://pixelarticons.com/) by Gerrit Halfmann. A special thanks to Gerrit for making such a distinctive icon set and for kindly allowing its use in this open-source project.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). No tiers, no "open core", no asterisks.
