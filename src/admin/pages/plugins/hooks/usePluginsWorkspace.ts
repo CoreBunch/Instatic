@@ -31,6 +31,7 @@ import {
 import { notifyCmsPluginsChanged } from '../utils/pluginEvents'
 import { subscribePluginEvents } from '../utils/pluginEventStream'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { ApiError } from '@core/http'
 import { pushToast } from '@ui/components/Toast'
 
 /**
@@ -63,6 +64,26 @@ export interface PendingInstall {
 }
 
 /**
+ * Confirmation-dialog state for plugin removal. `force: true` means the
+ * server will skip the plugin's lifecycle hooks — offered only after a
+ * normal uninstall failed on a hook error.
+ */
+export interface PendingRemove {
+  plugin: InstalledPlugin
+  force: boolean
+}
+
+/**
+ * A normal uninstall that failed because a lifecycle hook (`deactivate` /
+ * `uninstall`) threw or the entry file could not load. Rendered as an alert
+ * with a "Remove anyway" action that re-runs the removal with `force: true`.
+ */
+export interface RemoveFailure {
+  plugin: InstalledPlugin
+  message: string
+}
+
+/**
  * Read-only view-model returned to `PluginsPage`. Splits state, mutators that
  * drive dialogs, and async actions so the render component stays declarative.
  */
@@ -75,13 +96,15 @@ export interface PluginsWorkspaceVM extends WorkspaceLoadState {
   pendingInstall: PendingInstall | null
   settingsPluginId: string | null
   schedulesPluginId: string | null
-  pendingRemove: InstalledPlugin | null
+  pendingRemove: PendingRemove | null
+  removeFailure: RemoveFailure | null
 
   // Dialog open / close mutators.
   setPendingInstall: (value: PendingInstall | null) => void
   setSettingsPluginId: (value: string | null) => void
   setSchedulesPluginId: (value: string | null) => void
-  setPendingRemove: (value: InstalledPlugin | null) => void
+  setPendingRemove: (value: PendingRemove | null) => void
+  setRemoveFailure: (value: RemoveFailure | null) => void
 
   // Async actions.
   loadPlugins: () => Promise<void>
@@ -93,7 +116,7 @@ export interface PluginsWorkspaceVM extends WorkspaceLoadState {
   togglePlugin: (plugin: InstalledPlugin) => Promise<void>
   restartPlugin: (plugin: InstalledPlugin) => Promise<void>
   installPluginPack: (plugin: InstalledPlugin) => Promise<void>
-  executeRemovePlugin: (plugin: InstalledPlugin) => Promise<void>
+  executeRemovePlugin: (plugin: InstalledPlugin, force: boolean) => Promise<void>
 }
 
 const emptyPayload: CmsPluginsPayload = { plugins: [], adminPages: [] }
@@ -161,7 +184,8 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
   const [pendingInstall, setPendingInstall] = useState<PendingInstall | null>(null)
   const [settingsPluginId, setSettingsPluginId] = useState<string | null>(null)
   const [schedulesPluginId, setSchedulesPluginId] = useState<string | null>(null)
-  const [pendingRemove, setPendingRemove] = useState<InstalledPlugin | null>(null)
+  const [pendingRemove, setPendingRemove] = useState<PendingRemove | null>(null)
+  const [removeFailure, setRemoveFailure] = useState<RemoveFailure | null>(null)
 
   // Editor-side activation failures (per pluginId → error message). Populated
   // by `useInstalledEditorPlugins` after each refresh; surfaced on the plugin
@@ -374,11 +398,12 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
     setBusyPluginId(null)
   }
 
-  async function executeRemovePlugin(plugin: InstalledPlugin): Promise<void> {
+  async function executeRemovePlugin(plugin: InstalledPlugin, force: boolean): Promise<void> {
     setBusyPluginId(plugin.id)
     setError(null)
+    setRemoveFailure(null)
     try {
-      await runStepUp(() => removeCmsPlugin(plugin.id))
+      await runStepUp(() => removeCmsPlugin(plugin.id, force))
       setPayload((current) => ({
         plugins: current.plugins.filter((candidate) => candidate.id !== plugin.id),
         adminPages: current.adminPages.filter((page) => page.pluginId !== plugin.id),
@@ -386,13 +411,20 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
       notifyCmsPluginsChanged()
     } catch (err) {
       if (!(err instanceof Error && err.message === StepUpCancelledMessage)) {
-        // The host's DELETE handler runs the plugin's `uninstall` lifecycle
-        // hook, removes runtime registrations, drops the DB row, and deletes
-        // the on-disk asset folder. If that flow returns an error we'd land
-        // in a confusing state where the plugin row may have been deleted
-        // server-side but the UI still shows it. Re-fetch the canonical list
+        const message = getErrorMessage(err, 'Could not remove plugin')
+        // A 400 from the DELETE endpoint means a lifecycle hook
+        // (`deactivate` / `uninstall`) threw, or the entry file could not
+        // load — the one failure class where the server offers the
+        // force-remove escape hatch. Surface it as a removal failure with
+        // a "Remove anyway" action instead of a dead-end error.
+        if (!force && err instanceof ApiError && err.status === 400) {
+          setRemoveFailure({ plugin, message })
+        } else {
+          setError(message)
+        }
+        // The DELETE flow mutates several server-side things before it can
+        // fail (lifecycle status, worker state). Re-fetch the canonical list
         // so the card reflects reality regardless of the failure mode.
-        setError(getErrorMessage(err, 'Could not remove plugin'))
         await loadPlugins()
       }
     }
@@ -440,10 +472,12 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
     settingsPluginId,
     schedulesPluginId,
     pendingRemove,
+    removeFailure,
     setPendingInstall,
     setSettingsPluginId,
     setSchedulesPluginId,
     setPendingRemove,
+    setRemoveFailure,
     loadPlugins,
     handleUpload,
     installPendingPlugin,

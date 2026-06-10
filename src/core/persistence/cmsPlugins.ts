@@ -152,12 +152,20 @@ export async function setCmsPluginEnabled(
   }
 }
 
+/**
+ * DELETE /admin/api/cms/plugins/:id — uninstall a plugin. With `force: true`
+ * the server skips the plugin's lifecycle hooks (`deactivate` / `uninstall`)
+ * and tears everything down anyway — the escape hatch for a plugin whose
+ * uninstall hook throws or whose entry file can no longer load.
+ */
 export async function removeCmsPlugin(
   pluginId: string,
+  force = false,
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
 ): Promise<void> {
-  await apiRequest(`${basePath}/plugins/${encodeURIComponent(pluginId)}`, {
+  const query = force ? '?force=true' : ''
+  await apiRequest(`${basePath}/plugins/${encodeURIComponent(pluginId)}${query}`, {
     method: 'DELETE',
     fetchImpl,
     fallbackMessage: 'CMS plugin delete failed',

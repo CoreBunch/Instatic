@@ -8,8 +8,9 @@
  *    `assertPluginPermissionGrants`, `pluginManifestWithGrants`) — every
  *    route that loads a manifest needs to re-attach the user's granted
  *    permission set before passing it to the runtime.
- *  - `removePluginAssets` / `writePluginPackageFiles` / `readPluginPackageForm`
- *    — the on-disk side of zip install / uninstall.
+ *  - `removeAllPluginAssets` / `removePluginVersionAssets` /
+ *    `writePluginPackageFiles` / `readPluginPackageForm` — the on-disk side
+ *    of zip install / upgrade / uninstall.
  *  - `recordPluginAuditEvent` — the audit envelope shared by every mutation
  *    endpoint (install / update / enable / disable / delete).
  *  - `getEnabledPluginResource` — DB lookup used by the record CRUD routes.
@@ -311,20 +312,23 @@ export async function writePluginPackageFiles(
   }
 }
 
-export async function removePluginAssets(plugin: InstalledPlugin, uploadsDir?: string): Promise<void> {
-  const assetBasePath = plugin.manifest.assetBasePath
-  if (!uploadsDir || !assetBasePath?.startsWith('/uploads/plugins/')) return
-  const relativeBasePath = assetBasePath.replace(/^\/uploads\/?/, '')
-  const target = join(uploadsDir, relativeBasePath)
-  // Defense-in-depth: a string-prefix match on `/uploads/plugins/` does not
-  // block `..` traversal that the schema is supposed to reject — re-assert
+/**
+ * Delete a plugin's entire on-disk tree — `uploads/plugins/<id>/` with every
+ * version dir inside it. Used by uninstall (normal, forced, and corrupt-
+ * manifest), which must also sweep stale version dirs left behind by
+ * interrupted upgrades — deleting only the current version's dir would leak
+ * them forever once the DB row is gone.
+ */
+export async function removeAllPluginAssets(uploadsDir: string, pluginId: string): Promise<void> {
+  const target = join(uploadsDir, 'plugins', pluginId)
+  // Defense-in-depth: the manifest schema rejects ids with path separators
+  // and the caller only passes ids that exist as DB rows, but re-assert
   // containment after `path.join` normalises the segments so a corrupted
-  // stored manifest (or a future schema regression) can't trigger an
-  // arbitrary `rm -rf`.
+  // stored id can't trigger an arbitrary `rm -rf`.
   try {
     assertPathWithin(uploadsDir, target)
   } catch (err) {
-    console.error('[plugins] removePluginAssets refused to delete escaping path:', err)
+    console.error('[plugins] removeAllPluginAssets refused to delete escaping path:', err)
     return
   }
   await rm(target, { recursive: true, force: true })
@@ -333,7 +337,7 @@ export async function removePluginAssets(plugin: InstalledPlugin, uploadsDir?: s
 /**
  * Delete a specific plugin version's on-disk dir. Used by the upgrade flow
  * (drop the old version after a successful upgrade, drop the new version
- * during rollback). `removePluginAssets` deletes the entire plugin tree;
+ * during rollback). `removeAllPluginAssets` deletes the entire plugin tree;
  * this one is version-scoped.
  */
 export async function removePluginVersionAssets(

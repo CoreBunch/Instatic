@@ -1,14 +1,19 @@
 /**
  * Plugin state-mutation routes — flip enabled, uninstall, restart.
  *
- *   PATCH  /admin/api/cms/plugins/:id            — enable / disable
- *   DELETE /admin/api/cms/plugins/:id            — uninstall + delete on-disk assets
- *   POST   /admin/api/cms/plugins/:id/restart    — manual restart for a parked plugin
+ *   PATCH  /admin/api/cms/plugins/:id              — enable / disable
+ *   DELETE /admin/api/cms/plugins/:id[?force=true] — uninstall + delete on-disk assets
+ *   POST   /admin/api/cms/plugins/:id/restart      — manual restart for a parked plugin
  *
  * Every route runs the matching lifecycle hook (`activate`, `deactivate`,
  * `uninstall`), broadcasts the event, and emits one audit record. The
- * uninstall route additionally removes the on-disk asset dir and re-activates
- * the surviving plugins so they pick their hooks back up.
+ * uninstall route runs `deactivate` first when the plugin is active, then
+ * `uninstall`; `?force=true` skips the hooks entirely (the escape hatch for
+ * a throwing or unloadable hook). All uninstall variants — normal, forced,
+ * corrupt-manifest — converge on one teardown (`removePluginCompletely`)
+ * that drops the worker, the DB row, crash bookkeeping, schedule run
+ * history, and the plugin's whole on-disk tree, then re-activates the
+ * surviving plugins so they pick their hooks back up.
  */
 import type { DbClient } from '../../../db/client'
 import type { AuthUser } from '../../../repositories/users'
@@ -28,6 +33,8 @@ import {
 import { broadcastPluginEvent } from '../../../plugins/eventBroadcaster'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../../http'
 import { Type } from '@core/utils/typeboxHelpers'
+import { deactivatePluginModulePack } from '@core/plugins/modulePackLoader'
+import { clearPluginScheduleRuns } from '../../../repositories/pluginSchedules'
 import { type CmsHandlerOptions } from '../shared'
 import {
   lifecycleErrorMessage,
@@ -35,10 +42,10 @@ import {
   pluginNotFound,
   pluginsPayload,
   recordPluginAuditEvent,
-  removePluginAssets,
-  removePluginVersionAssets,
+  removeAllPluginAssets,
 } from './shared'
 import { runPluginLifecycleHook } from './lifecycle'
+import type { InstalledPlugin } from '@core/plugin-sdk'
 
 /**
  * PATCH `enabled` on a single plugin. Both branches flip the enabled flag,
@@ -121,49 +128,95 @@ export async function handlePluginItem(
   }
 
   if (req.method === 'DELETE') {
+    const force = new URL(req.url).searchParams.get('force') === 'true'
     const lookup = await getInstalledPlugin(db, pluginId)
     if (!lookup) return pluginNotFound()
 
-    if (lookup.kind === 'broken') {
-      // Manifest is corrupt — skip lifecycle hooks (no valid plugin to uninstall).
-      // Delete the DB row and do a best-effort asset removal using the version
-      // stored in the row's own columns (reliable even when manifest_json is broken).
-      const deleted = await deletePlugin(db, pluginId)
-      if (!deleted) return pluginNotFound()
-      if (options.uploadsDir) {
-        await removePluginVersionAssets(options.uploadsDir, lookup.id, lookup.version)
+    // Lifecycle hooks run only on the normal path with a parseable manifest:
+    // `?force=true` is the operator's escape hatch for a throwing or
+    // unloadable hook, and a corrupt manifest has no valid plugin to run
+    // hooks on. Both skip straight to teardown.
+    if (!force && lookup.kind === 'ok') {
+      let current = lookup.plugin
+      // Uninstall contract: "(if active) deactivate → uninstall". Run
+      // deactivate first so the plugin tears down its active-state
+      // resources before the uninstall hook does its permanent cleanup.
+      if (current.lifecycleStatus === 'active') {
+        const deactivated = await runPluginLifecycleHook(db, current, options, 'deactivate', 'disabled')
+        if (!deactivated.ok) return uninstallHookFailure('deactivate', deactivated.plugin)
+        current = deactivated.plugin
       }
-      await activateInstalledServerPlugins(db, options.uploadsDir)
-      await recordPluginAuditEvent(db, user, req, 'plugin.delete', lookup.id)
-      broadcastPluginEvent({
-        kind: 'uninstalled',
-        pluginId: lookup.id,
-        occurredAt: new Date().toISOString(),
-      })
-      return jsonResponse({ ok: true })
+      const uninstalled = await runPluginLifecycleHook(db, current, options, 'uninstall', current.lifecycleStatus)
+      if (!uninstalled.ok) return uninstallHookFailure('uninstall', uninstalled.plugin)
     }
 
-    const current = lookup.plugin
-    const lifecycle = await runPluginLifecycleHook(db, current, options, 'uninstall', current.lifecycleStatus)
-    if (!lifecycle.ok) {
-      return badRequest(lifecycle.plugin.lastError ?? 'Plugin uninstall failed')
-    }
-
-    const deleted = await deletePlugin(db, pluginId)
-    if (!deleted) return pluginNotFound()
-    await unloadPlugin(pluginId)
-    await removePluginAssets(current, options.uploadsDir)
-    await activateInstalledServerPlugins(db, options.uploadsDir)
-    await recordPluginAuditEvent(db, user, req, 'plugin.delete', pluginId)
-    broadcastPluginEvent({
-      kind: 'uninstalled',
-      pluginId,
-      occurredAt: new Date().toISOString(),
-    })
-    return jsonResponse({ ok: true })
+    return removePluginCompletely(req, db, options, user, pluginId, force)
   }
 
   return methodNotAllowed()
+}
+
+/**
+ * 400 for a lifecycle hook that threw during a normal uninstall. The plugin
+ * row survives (parked in `error` with `lastError` set by the hook runner);
+ * the message tells the operator the force-remove escape hatch exists so a
+ * broken hook can never permanently block removal.
+ */
+function uninstallHookFailure(
+  hook: 'deactivate' | 'uninstall',
+  plugin: InstalledPlugin,
+): Response {
+  const detail = plugin.lastError ?? 'Plugin lifecycle hook failed'
+  return badRequest(
+    `Plugin ${hook} hook failed during uninstall: ${detail} — the plugin is still installed. Fix the plugin, or force-remove it to skip its cleanup hooks.`,
+  )
+}
+
+/**
+ * The single uninstall teardown — every removal variant (normal after
+ * successful hooks, `?force=true`, corrupt manifest) lands here. Drops the
+ * DB row (settings live on it; records and schedules cascade via FK), the
+ * worker, host-side canvas modules, crash bookkeeping and schedule run
+ * history (neither has an FK, so they'd outlive the row without an explicit
+ * sweep), and the plugin's whole `uploads/plugins/<id>/` tree — including
+ * stale version dirs left behind by interrupted upgrades.
+ */
+async function removePluginCompletely(
+  req: Request,
+  db: DbClient,
+  options: CmsHandlerOptions,
+  user: AuthUser,
+  pluginId: string,
+  forced: boolean,
+): Promise<Response> {
+  const deleted = await deletePlugin(db, pluginId)
+  if (!deleted) return pluginNotFound()
+  // Idempotent on the normal path (the uninstall hook runner already
+  // unloaded the worker and deactivated the module pack) — required on the
+  // force / corrupt-manifest paths, which skip the hook runner.
+  await unloadPlugin(pluginId)
+  deactivatePluginModulePack(pluginId)
+  clearPluginCrashCounter(pluginId)
+  await clearPluginCrashes(db, pluginId)
+  await clearPluginScheduleRuns(db, pluginId)
+  if (options.uploadsDir) {
+    await removeAllPluginAssets(options.uploadsDir, pluginId)
+  }
+  await activateInstalledServerPlugins(db, options.uploadsDir)
+  await recordPluginAuditEvent(
+    db,
+    user,
+    req,
+    'plugin.delete',
+    pluginId,
+    forced ? { forced: true } : {},
+  )
+  broadcastPluginEvent({
+    kind: 'uninstalled',
+    pluginId,
+    occurredAt: new Date().toISOString(),
+  })
+  return jsonResponse({ ok: true })
 }
 
 /**

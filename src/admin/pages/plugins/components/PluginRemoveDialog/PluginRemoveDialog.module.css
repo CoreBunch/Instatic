@@ -33,3 +33,12 @@
     color: var(--editor-text-muted);
     font-size: 12px;
 }
+
+/* Force-remove caveat — state color (warning), not decoration: the plugin's
+   own cleanup code is skipped and external resources may remain. */
+.warning {
+    margin: 0;
+    color: var(--editor-warning-text);
+    font-size: 12px;
+    line-height: 1.5;
+}

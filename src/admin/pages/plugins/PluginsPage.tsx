@@ -30,6 +30,7 @@ export function PluginsPage() {
     settingsPluginId,
     schedulesPluginId,
     pendingRemove,
+    removeFailure,
   } = vm
 
   return (
@@ -80,6 +81,36 @@ export function PluginsPage() {
           </div>
         )}
 
+        {removeFailure && (
+          <div role="alert" className={styles.removeFailure}>
+            <p className={styles.error}>{removeFailure.message}</p>
+            <p className={styles.errorHint}>
+              Removing anyway skips the plugin&rsquo;s cleanup code — external
+              resources it created (webhooks, third-party registrations) may
+              remain.
+            </p>
+            <div className={styles.removeFailureActions}>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={busyPluginId === removeFailure.plugin.id}
+                onClick={() =>
+                  vm.setPendingRemove({ plugin: removeFailure.plugin, force: true })
+                }
+              >
+                Remove anyway
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => vm.setRemoveFailure(null)}
+              >
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
+
         {pendingInstall && (
           <PermissionReviewSection
             pending={pendingInstall}
@@ -117,7 +148,7 @@ export function PluginsPage() {
                 onRestart={(p) => void vm.restartPlugin(p)}
                 onReinstall={() => fileInputRef.current?.click()}
                 onToggle={(p) => void vm.togglePlugin(p)}
-                onRemove={(p) => vm.setPendingRemove(p)}
+                onRemove={(p) => vm.setPendingRemove({ plugin: p, force: false })}
               />
             ))
           )}
@@ -151,13 +182,14 @@ export function PluginsPage() {
 
         {pendingRemove && (
           <PluginRemoveDialog
-            plugin={pendingRemove}
-            busy={busyPluginId === pendingRemove.id}
+            plugin={pendingRemove.plugin}
+            force={pendingRemove.force}
+            busy={busyPluginId === pendingRemove.plugin.id}
             onClose={() => vm.setPendingRemove(null)}
             onConfirm={async () => {
               const target = pendingRemove
               vm.setPendingRemove(null)
-              await vm.executeRemovePlugin(target)
+              await vm.executeRemovePlugin(target.plugin, target.force)
             }}
           />
         )}

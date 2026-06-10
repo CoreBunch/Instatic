@@ -542,7 +542,7 @@ export async function listPluginCrashes(
   return rows.map(mapPluginCrashEvent)
 }
 
-/** Drop every crash event for a plugin. Called on uninstall + on manual restart. */
+/** Drop every crash event for a plugin. Called on every uninstall path + on manual restart. */
 export async function clearPluginCrashes(db: DbClient, pluginId: string): Promise<void> {
   await db`delete from plugin_crash_events where plugin_id = ${pluginId}`
 }

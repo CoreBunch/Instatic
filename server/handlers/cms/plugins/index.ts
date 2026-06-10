@@ -9,7 +9,8 @@
  *   POST   /admin/api/cms/plugins/inspect-package                   — read a plugin .zip without installing
  *   POST   /admin/api/cms/plugins/package                           — install (or upgrade) from a .zip
  *   PATCH  /admin/api/cms/plugins/:id                               — enable / disable an installed plugin
- *   DELETE /admin/api/cms/plugins/:id                               — uninstall + delete on-disk assets
+ *   DELETE /admin/api/cms/plugins/:id[?force=true]                  — uninstall + delete on-disk assets
+ *                                                                     (`force` skips lifecycle hooks)
  *   POST   /admin/api/cms/plugins/:id/pack/install                  — manual pack re-sync into the draft site
  *   GET    /admin/api/cms/plugins/:id/settings                      — masked settings
  *   PUT    /admin/api/cms/plugins/:id/settings                      — update settings, push into the running VM, fire `settings.changed`

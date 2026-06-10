@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
@@ -198,6 +198,11 @@ function makeFakeDb() {
         .filter((c) => c.plugin_id === values[0])
         .slice(0, Number(values[1] ?? 10))
       return { rows: rows as Row[], rowCount: rows.length }
+    }
+    // clearPluginScheduleRuns — values[0]=pluginId (uninstall teardown sweep;
+    // nothing inserts runs in these tests, so deleting is a no-op)
+    if (normalized.includes('delete from plugin_schedule_runs')) {
+      return { rows: [], rowCount: 0 }
     }
     // clearPluginCrashes — values[0]=pluginId
     if (normalized.includes('delete from plugin_crash_events')) {
@@ -985,7 +990,12 @@ describe('CMS plugin handlers', () => {
         { uploadsDir },
       )
       expect(remove.status).toBe(200)
-      expect(readMarkers()).toContain('uninstall:acme.lifecycle')
+      // Uninstall contract: the plugin was active, so `deactivate` runs
+      // before `uninstall` — in that order.
+      expect(readMarkers().slice(-2)).toEqual([
+        'deactivate:acme.lifecycle',
+        'uninstall:acme.lifecycle',
+      ])
       expect(db.plugins).toHaveLength(0)
     } finally {
       hookBus.unregisterPlugin('test')
@@ -1097,6 +1107,152 @@ describe('CMS plugin handlers', () => {
         },
       })
       expect(db.plugins).toHaveLength(1)
+    } finally {
+      await rm(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
+  // ─── Force-uninstall ──────────────────────────────────────────────────────
+  //
+  // A throwing (or unloadable) uninstall hook must never permanently block
+  // removal. The normal DELETE fails with a 400 pointing at the force-remove
+  // escape hatch; `DELETE ?force=true` skips the hooks and tears everything
+  // down: DB row, crash events, and the plugin's whole on-disk tree —
+  // including stale version dirs left behind by interrupted upgrades.
+
+  it('uninstall hook failure leaves the plugin installed; force-remove tears everything down', async () => {
+    const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-force-'))
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+    const manifest = {
+      id: 'acme.stuck',
+      name: 'Stuck Plugin',
+      version: '1.0.0',
+      apiVersion: 1,
+      permissions: ['cms.routes'],
+      entrypoints: { server: 'server/index.js' },
+      resources: [],
+      adminPages: [],
+    }
+
+    try {
+      const formData = new FormData()
+      formData.set('file', pluginZip({
+        'plugin.json': JSON.stringify(manifest),
+        'server/index.js': `
+          export function activate() {}
+          export function uninstall() { throw new Error('uninstall exploded') }
+        `,
+      }))
+      formData.set('grantedPermissions', JSON.stringify(['cms.routes']))
+      const install = await handleCmsRequest(
+        cmsFormRequest('http://localhost/admin/api/cms/plugins/package', formData, { cookie }),
+        db,
+        { uploadsDir },
+      )
+      expect(install.status).toBe(201)
+
+      // Simulate the hygiene gaps force-remove must sweep: a stale version
+      // dir from an interrupted upgrade, and historical crash events (the
+      // crash table has no FK to installed_plugins).
+      await mkdir(join(uploadsDir, 'plugins/acme.stuck/0.9.0'), { recursive: true })
+      const { recordPluginCrash } = await import('../../../server/repositories/plugins')
+      await recordPluginCrash(db, { id: 'crash_stuck', pluginId: 'acme.stuck', reason: 'old crash' })
+
+      // Normal uninstall — the throwing hook must NOT delete anything, and
+      // the error must point at the force-remove escape hatch.
+      const failed = await handleCmsRequest(
+        cmsRequest('http://localhost/admin/api/cms/plugins/acme.stuck', {
+          method: 'DELETE',
+          headers: { cookie },
+        }),
+        db,
+        { uploadsDir },
+      )
+      expect(failed.status).toBe(400)
+      const failedBody = await failed.json() as { error: string }
+      expect(failedBody.error).toMatch(/uninstall hook failed/)
+      expect(failedBody.error).toMatch(/uninstall exploded/)
+      expect(failedBody.error).toMatch(/force-remove/)
+      expect(db.plugins).toHaveLength(1)
+      expect(db.plugins[0].lifecycle_status).toBe('error')
+
+      // Force remove — skips hooks, drops the row, the crash events, and the
+      // whole on-disk tree (current AND stale version dirs).
+      const forced = await handleCmsRequest(
+        cmsRequest('http://localhost/admin/api/cms/plugins/acme.stuck?force=true', {
+          method: 'DELETE',
+          headers: { cookie },
+        }),
+        db,
+        { uploadsDir },
+      )
+      expect(forced.status).toBe(200)
+      expect(await forced.json()).toEqual({ ok: true })
+      expect(db.plugins).toHaveLength(0)
+      expect(db.crashEvents.filter((c) => c.plugin_id === 'acme.stuck')).toHaveLength(0)
+      const { existsSync } = await import('node:fs')
+      expect(existsSync(join(uploadsDir, 'plugins/acme.stuck'))).toBe(false)
+    } finally {
+      await rm(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
+  it('force-remove works when the server entry file is missing from disk', async () => {
+    const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-missing-entry-'))
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+    // Seed the row directly: the manifest points at an entry file that does
+    // not exist on disk (e.g. the uploads volume was wiped). The lifecycle
+    // hook runner can't even load the entrypoint, so a normal uninstall is
+    // permanently stuck without the force path.
+    db.plugins.push({
+      id: 'acme.gone',
+      name: 'Gone Plugin',
+      version: '1.0.0',
+      enabled: true,
+      lifecycle_status: 'active',
+      last_error: null,
+      manifest_json: JSON.stringify({
+        id: 'acme.gone',
+        name: 'Gone Plugin',
+        version: '1.0.0',
+        apiVersion: 1,
+        permissions: ['cms.routes'],
+        entrypoints: { server: 'server/index.js' },
+        resources: [],
+        adminPages: [],
+        assetBasePath: '/uploads/plugins/acme.gone/1.0.0',
+      }),
+      granted_permissions_json: JSON.stringify(['cms.routes']),
+      settings_json: '{}',
+      installed_at: '2026-05-01T10:00:00.000Z',
+      updated_at: '2026-05-01T10:00:00.000Z',
+    })
+
+    try {
+      const failed = await handleCmsRequest(
+        cmsRequest('http://localhost/admin/api/cms/plugins/acme.gone', {
+          method: 'DELETE',
+          headers: { cookie },
+        }),
+        db,
+        { uploadsDir },
+      )
+      expect(failed.status).toBe(400)
+      expect(((await failed.json()) as { error: string }).error).toMatch(/force-remove/)
+      expect(db.plugins).toHaveLength(1)
+
+      const forced = await handleCmsRequest(
+        cmsRequest('http://localhost/admin/api/cms/plugins/acme.gone?force=true', {
+          method: 'DELETE',
+          headers: { cookie },
+        }),
+        db,
+        { uploadsDir },
+      )
+      expect(forced.status).toBe(200)
+      expect(db.plugins).toHaveLength(0)
     } finally {
       await rm(uploadsDir, { recursive: true, force: true })
     }

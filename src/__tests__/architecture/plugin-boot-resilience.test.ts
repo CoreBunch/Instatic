@@ -259,14 +259,22 @@ describe('plugin boot resilience — boot loop structure', () => {
     expect(source).toMatch(/setPluginEnabled[\s\S]*?Promise<InstalledPluginResult \| null>/)
   })
 
-  test('remove handler handles broken plugins without lifecycle hooks', async () => {
+  test('remove handler skips lifecycle hooks for broken plugins and force removals', async () => {
     const source = await readFile(join(ROOT, 'server/handlers/cms/plugins/state.ts'), 'utf-8')
-    // DELETE path must check kind === 'broken' and take an early bypass.
-    expect(source).toMatch(/lookup\.kind\s*===\s*['"]broken['"]/)
-    // It must call deletePlugin directly (skipping lifecycle hooks).
+    // Hooks run only on the normal path with a parseable manifest — corrupt
+    // manifests and `?force=true` bypass them. The negated-force + kind:'ok'
+    // guard is the single gate in front of the hook runner.
+    expect(source).toMatch(/!force\s*&&\s*lookup\.kind\s*===\s*['"]ok['"]/)
+    // Every removal variant (normal, forced, corrupt manifest) converges on
+    // ONE teardown — no parallel delete implementations.
+    expect(source).toMatch(/removePluginCompletely\(/)
+    // The teardown deletes the DB row and sweeps the plugin's whole on-disk
+    // tree (stale version dirs included), not just the current version.
     expect(source).toContain('deletePlugin(db,')
-    // It must call removePluginVersionAssets with lookup.id and lookup.version.
-    expect(source).toMatch(/removePluginVersionAssets\(/)
+    expect(source).toMatch(/removeAllPluginAssets\(/)
+    // Crash bookkeeping has no FK to installed_plugins — the teardown must
+    // sweep it explicitly so it can't outlive the row.
+    expect(source).toMatch(/clearPluginCrashes\(db,/)
   })
 
   test('PATCH (enable/disable) and restart handlers reject broken plugins with 409', async () => {

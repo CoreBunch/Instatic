@@ -41,6 +41,20 @@
     text-decoration: underline;
 }
 
+/* Failed-uninstall alert — error message plus the force-remove escape
+   hatch ("Remove anyway") and a dismiss action. */
+.removeFailure {
+    display: grid;
+    gap: 6px;
+    justify-items: start;
+}
+
+.removeFailureActions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
 .emptyState {
     padding: 28px;
     border: 1px dashed var(--panel-border);

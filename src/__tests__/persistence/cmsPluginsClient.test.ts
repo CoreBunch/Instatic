@@ -79,7 +79,7 @@ describe('CMS plugins client', () => {
       })
     })
 
-    await removeCmsPlugin('local.map', async (input, init) => {
+    await removeCmsPlugin('local.map', false, async (input, init) => {
       calls.push({ input, init })
       return new Response(JSON.stringify({ ok: true }), { status: 200 })
     })

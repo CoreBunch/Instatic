@@ -167,6 +167,12 @@ export function uninstall(api)      {}
 export function migrate(ctx, api)   {} // ctx = { fromVersion: '1.0.0' }
 ```
 
+### Force-uninstall
+
+A throwing (or unloadable) hook must never be able to block removal permanently. When a normal uninstall fails on a hook error, the plugin stays installed (parked in `error` with `lastError` set) and the response says force-remove is available. `DELETE /admin/api/cms/plugins/:id?force=true` skips the lifecycle hooks entirely and tears everything down anyway: the worker, canvas modules, the DB row (settings live on it; records and schedules cascade via FK), crash events and schedule run history (no FK — swept explicitly), and the plugin's whole `uploads/plugins/<id>/` tree, including stale version dirs left behind by interrupted upgrades. The same teardown serves corrupt-manifest plugins, which have no valid code to run hooks on.
+
+The admin UI offers force-removal as "Remove anyway" after a failed uninstall, behind an explicit confirmation that warns the plugin's own cleanup code is skipped — external resources the plugin set up (webhooks, third-party registrations) may remain. Capability and step-up requirements are identical to a normal uninstall (`plugins.install` + step-up); the audit event carries `forced: true`.
+
 ### Crash recovery
 
 Each plugin's server entrypoint runs in its own worker. If the worker crashes:

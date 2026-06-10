@@ -543,3 +543,13 @@ export async function trimScheduleRunHistory(
     )
   `
 }
+
+/**
+ * Drop the full run history for one plugin. Called on uninstall —
+ * `plugin_schedule_runs` carries no FK to `installed_plugins` (unlike
+ * `plugin_schedules`, which cascades), so without this sweep the history
+ * rows would outlive the plugin row forever.
+ */
+export async function clearPluginScheduleRuns(db: DbClient, pluginId: string): Promise<void> {
+  await db`delete from plugin_schedule_runs where plugin_id = ${pluginId}`
+}

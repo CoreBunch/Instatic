@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import React, { type ReactNode } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from '@admin/lib/routing'
 import { PluginsPage } from '@plugins/PluginsPage'
 import { AdminSessionProvider } from '@admin/session'
@@ -315,6 +315,62 @@ describe('PluginsPage', () => {
         manifest: { id: 'acme.workflow' },
         grantedPermissions: privilegedManifest.permissions,
       })
+    })
+  })
+
+  it('offers force-remove after a hook-failed uninstall and confirms before forcing', async () => {
+    const hookError =
+      'Plugin uninstall hook failed during uninstall: uninstall exploded — the plugin is still installed. Fix the plugin, or force-remove it to skip its cleanup hooks.'
+    const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ input, init })
+      const url = String(input)
+      if (url === '/admin/api/cms/plugins' && init?.method === 'GET') {
+        return json({ plugins: [pluginRow(true)], adminPages: [] })
+      }
+      if (url === '/admin/api/cms/plugins/local.map' && init?.method === 'DELETE') {
+        return json({ error: hookError }, 400)
+      }
+      if (url === '/admin/api/cms/plugins/local.map?force=true' && init?.method === 'DELETE') {
+        return json({ ok: true })
+      }
+      const ambient = ambientFetchFallback(url)
+      if (ambient) return ambient
+      return json({ error: `Unhandled ${url}` }, 500)
+    }
+
+    render(
+      <Wrapper>
+        <PluginsPage />
+      </Wrapper>,
+    )
+
+    expect(await screen.findByText('Map Studio')).toBeDefined()
+
+    // Normal removal: card button → confirm dialog → DELETE fails with the
+    // hook error.
+    fireEvent.click(screen.getByRole('button', { name: /remove map studio/i }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove plugin' }))
+
+    // Failure surfaces as an alert with the server message and a
+    // "Remove anyway" escape hatch.
+    expect(await screen.findByText(hookError)).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove anyway' }))
+
+    // Force-removal is gated by its own confirmation dialog with skip-hooks
+    // warning copy — the forced DELETE only fires after confirming there.
+    const dialog = await screen.findByRole('alertdialog')
+    expect(within(dialog).getByText(/cleanup code will be skipped/i)).toBeDefined()
+    expect(
+      calls.some((call) => String(call.input) === '/admin/api/cms/plugins/local.map?force=true'),
+    ).toBe(false)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove anyway' }))
+
+    await waitFor(() => {
+      expect(calls.some((call) =>
+        String(call.input) === '/admin/api/cms/plugins/local.map?force=true' &&
+        call.init?.method === 'DELETE'
+      )).toBe(true)
     })
   })
 
