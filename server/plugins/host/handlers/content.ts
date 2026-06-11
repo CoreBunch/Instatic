@@ -29,7 +29,9 @@ import {
   createDataTable,
   listDataRowsWithFilter,
   getDataRow,
+  getDataRowMany,
   getDataRowBySlug,
+  countDataRows,
   searchDataRows,
   createDataRow,
   createDataRowMany,
@@ -139,14 +141,17 @@ export async function handleContentTablesGet(
     replyApiOk(msg.pluginId, msg.correlationId, null)
     return
   }
-  // Row count — single small query reused from listDataTablesWithCounts.
-  const tables = await listDataTablesWithCounts(db)
-  const enriched = tables.find((t) => t.id === table.id)
-  const slugLookup = new Map(tables.map((t) => [t.id, t.slug]))
+  // One COUNT for this table + the id→slug lookup the relation-field
+  // projection needs — no per-table COUNT subselects for tables we don't
+  // return.
+  const [rowCount, slugLookup] = await Promise.all([
+    countDataRows(db, table.id),
+    buildTableSlugLookup(db),
+  ])
   replyApiOk(
     msg.pluginId,
     msg.correlationId,
-    tableSchema(table, enriched?.rowCount ?? 0, slugLookup),
+    tableSchema(table, rowCount, slugLookup),
   )
 }
 
@@ -394,10 +399,14 @@ export async function handleContentEntriesUpdateMany(
   const table = await resolveTableBySlug(db, tableSlug)
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
 
-  // Apply filter + diff per-row before the transaction.
+  // Read every targeted row in ONE IN-list query, then apply filter + diff
+  // per-row before the transaction. Iterating `updates` in input order
+  // preserves the first-bad-id error semantics of the old per-row reads.
+  const existingRows = await getDataRowMany(db, updates.map((u) => u.id))
+  const existingById = new Map(existingRows.map((row) => [row.id, row]))
   const prepared: Array<{ id: string; input: { cells: Record<string, unknown>; slug: string }; changedIds: string[] }> = []
   for (const { id, patch } of updates) {
-    const existing = await getDataRow(db, id)
+    const existing = existingById.get(id)
     if (!existing || existing.tableId !== table.id) {
       throw new Error(`Entry "${id}" not found in table "${tableSlug}"`)
     }
@@ -438,9 +447,12 @@ export async function handleContentEntriesDeleteMany(
   assertContentTableAccess(entry, tableSlug, 'delete')
   const table = await resolveTableBySlug(db, tableSlug)
   // Validate every id belongs to this table BEFORE the transaction so a
-  // bad id aborts cleanly without partially-applied deletes.
+  // bad id aborts cleanly without partially-applied deletes. One IN-list
+  // read for the whole batch; input order preserves first-bad-id errors.
+  const rows = await getDataRowMany(db, ids)
+  const rowsById = new Map(rows.map((row) => [row.id, row]))
   for (const id of ids) {
-    const row = await getDataRow(db, id)
+    const row = rowsById.get(id)
     if (!row || row.tableId !== table.id) {
       throw new Error(`Entry "${id}" not found in table "${tableSlug}"`)
     }

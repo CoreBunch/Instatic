@@ -13,7 +13,7 @@ import type {
 } from '@core/plugin-sdk/contentSchemas'
 import type { DataField, DataRow, DataTable } from '@core/data/schemas'
 import type { DbClient } from '../../../db/client'
-import { listDataTables } from '../../../repositories/data'
+import { getDataTableBySlug, listDataTables } from '../../../repositories/data'
 
 /**
  * Project the host's full `DataField` union onto the narrowed
@@ -124,12 +124,15 @@ export function rowToEntry(row: DataRow, tableSlug: string): ContentEntry {
   }
 }
 
+/**
+ * Resolve a table by slug or throw the canonical not-found error. Runs on
+ * EVERY `cms.content.*` api-call — one indexed lookup, never a full list.
+ */
 export async function resolveTableBySlug(
   db: DbClient,
   slug: string,
 ): Promise<DataTable> {
-  const all = await listDataTables(db)
-  const found = all.find((t) => t.slug === slug)
+  const found = await getDataTableBySlug(db, slug)
   if (!found) throw new Error(`Content table "${slug}" not found`)
   return found
 }

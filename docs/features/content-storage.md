@@ -155,8 +155,8 @@ This is the single source of truth for slug derivation used by all admin write p
 
 | File                                             | Owns                                                                  |
 |--------------------------------------------------|-----------------------------------------------------------------------|
-| `server/repositories/data/tables.ts`             | CRUD on `data_tables`: list (system tables first: pages → posts → components, then custom by `created_at`), get, create, update, delete (system-protected) |
-| `server/repositories/data/rows/read.ts`          | Hydrated read queries: `listDataRows`, `getDataRow`, `getDataRowBySlug`, `listDataAuthorOptions` |
+| `server/repositories/data/tables.ts`             | CRUD on `data_tables`: list (system tables first: pages → posts → components, then custom by `created_at`), get, get-by-slug (indexed via `data_tables_slug_active_idx`), create, update, delete (system-protected) |
+| `server/repositories/data/rows/read.ts`          | Hydrated read queries: `listDataRows`, `getDataRow`, `getDataRowMany` (one IN-list query for bulk validation), `getDataRowBySlug`, `countDataRows`, `listDataAuthorOptions` |
 | `server/repositories/data/rows/mutations.ts`     | Single-row writes: create, save draft, soft-delete, move to table, update status / author. `softDeleteDataRow` returns the narrow `DeletedRowSummary` (not a full `DataRow`) — the row's `deleted_at is null` filter makes re-reading impossible, and callers only need `id / tableId / slug / status / deletedAt`. |
 | `server/repositories/data/rows/bulk.ts`          | Transactional batch writes: `createDataRowMany`, `saveDataRowDraftMany`, `softDeleteDataRowMany` |
 | `server/repositories/data/rows/filter.ts`        | Operator-object filter querying with pagination (`listDataRowsWithFilter`) — used by the plugin content surface |

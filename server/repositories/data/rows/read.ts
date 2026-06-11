@@ -5,7 +5,9 @@
  *                           to rows owned by the calling user
  *   getDataRow            — a single hydrated row (the canonical re-read every
  *                           mutation funnels through)
+ *   getDataRowMany        — many hydrated rows by id, one IN-list query
  *   getDataRowBySlug      — a single row by its denormalized slug
+ *   countDataRows         — non-deleted row count for a table
  *   listDataAuthorOptions — active users for the author picker
  */
 import type { DbClient } from '../../../db/client'
@@ -82,6 +84,24 @@ export async function getDataRow(
 }
 
 /**
+ * Read many non-deleted hydrated rows by id in ONE IN-list query. Rows come
+ * back in no particular order — callers index them by id; an id absent from
+ * the result is missing or soft-deleted. Used by the bulk plugin-content
+ * handlers to validate/diff a batch without one round-trip per row.
+ */
+export async function getDataRowMany(
+  db: DbClient,
+  rowIds: ReadonlyArray<string>,
+): Promise<DataRow[]> {
+  if (rowIds.length === 0) return []
+  const placeholders = rowIds.map((_, i) => placeholder(db.dialect, i + 1)).join(', ')
+  return selectHydratedDataRows(db, {
+    where: `data_rows.id in (${placeholders}) and data_rows.deleted_at is null`,
+    params: [...rowIds],
+  })
+}
+
+/**
  * Read a non-deleted row in a table by its denormalized slug. Plain ANSI
  * SQL — the `data_rows_table_slug_active_idx` index covers this query
  * (the `where slug <> ''` partial guard does not exclude the lookup here
@@ -100,6 +120,17 @@ export async function getDataRowBySlug(
     limit 1
   `
   return rows[0] ? getDataRow(db, rows[0].id) : null
+}
+
+/** Count non-deleted rows in a table — one indexed COUNT. */
+export async function countDataRows(db: DbClient, tableId: string): Promise<number> {
+  const { rows } = await db<{ count: number | string }>`
+    select count(*) as count
+    from data_rows
+    where table_id = ${tableId}
+      and deleted_at is null
+  `
+  return Number(rows[0]?.count ?? 0)
 }
 
 export async function listDataAuthorOptions(
