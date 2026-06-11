@@ -8,6 +8,7 @@
 
 import { Checkbox } from '@ui/components/Checkbox'
 import { Select } from '@ui/components/Select'
+import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
 import type { ImportPlan, StylesheetImportMode } from '@core/siteImport'
 import styles from './AnalyzeStep.module.css'
 
@@ -30,7 +31,7 @@ export function StylesheetModeRows({
   if (plan.linkedStylesheets.length === 0) return null
 
   return (
-    <div className={styles.rows}>
+    <div className={styles.modeRows}>
       {plan.linkedStylesheets.map((sheet) => {
         const kept = sheet.mode === 'file'
         const keptEntry = kept ? plan.stylesheets.find((s) => s.path === sheet.path) : undefined
@@ -46,7 +47,9 @@ export function StylesheetModeRows({
                 aria-label={`Include stylesheet ${sheet.path}`}
               />
             ) : (
-              <span className={styles.chip}>css</span>
+              <span className={styles.fileBadge} aria-hidden="true">
+                <FileTextSolidIcon size={14} />
+              </span>
             )}
             <div className={styles.info}>
               <span className={styles.title}>{sheet.path}</span>

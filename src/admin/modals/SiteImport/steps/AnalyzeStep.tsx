@@ -399,7 +399,6 @@ export function AnalyzeStep({
                 {isOpen && (
                   <div className={styles.groupRules}>
                     {visible.map((i) => {
-                      const rule = plan.styleRules[i]
                       const on = selection.styleRulesIncluded.has(i)
                       return (
                         <div key={styleRuleKey(plan, i)} className={styles.ruleRow}>
@@ -412,7 +411,6 @@ export function AnalyzeStep({
                           <span className={styles.ruleName} data-off={on ? undefined : 'true'}>
                             {ruleText(plan, i)}
                           </span>
-                          <span className={styles.chip}>{rule.kind}</span>
                         </div>
                       )
                     })}

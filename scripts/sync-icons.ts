@@ -56,6 +56,18 @@ const UPSTREAM = resolve(
 const UPSTREAM_ICONS_DIR = join(UPSTREAM, 'icons')
 const UPSTREAM_TYPES_FILE = join(UPSTREAM, 'types.ts')
 
+/**
+ * Icons authored in-house, NOT sourced from the upstream catalog.
+ *
+ * The upstream pixel-art set ships an `underline` glyph but no strikethrough,
+ * so `strike` is hand-drawn and committed directly to `vendor/`. In-house
+ * icons are never copied from (nor reported as missing in) upstream — but they
+ * must still exist as a vendored `.tsx` source, get built into `dist/` like any
+ * other icon, and stay imported (an unused in-house icon is an orphan, same as
+ * any other). The sync therefore leaves these vendored sources untouched.
+ */
+const IN_HOUSE_ICONS = new Set(['strike'])
+
 const SCANNED_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mts', '.mjs'])
 const IMPORT_RE = /from\s+["']pixel-art-icons\/icons\/([a-z0-9-]+)["']/g
 const ICON_NAME_RE = /^[a-z0-9][a-z0-9-]*$/
@@ -133,6 +145,18 @@ function copyFromUpstream(names: Set<string>, options: SyncOptions): void {
 
   const missing: string[] = []
   for (const name of names) {
+    // In-house icons have no upstream source; keep the vendored .tsx as-is.
+    if (IN_HOUSE_ICONS.has(name)) {
+      const vendoredFile = join(VENDOR_ICONS_DIR, `${name}.tsx`)
+      if (!existsSync(vendoredFile)) {
+        throw new Error(
+          `[sync-icons] In-house icon "${name}" is listed in IN_HOUSE_ICONS but ` +
+            `vendor/pixel-art-icons/icons/${name}.tsx does not exist. Restore the ` +
+            `hand-authored source, or remove the import and the IN_HOUSE_ICONS entry.`,
+        )
+      }
+      continue
+    }
     const upstreamFile = join(UPSTREAM_ICONS_DIR, `${name}.tsx`)
     if (!existsSync(upstreamFile)) {
       missing.push(name)
@@ -147,7 +171,8 @@ function copyFromUpstream(names: Set<string>, options: SyncOptions): void {
     throw new Error(
       `[sync-icons] ${missing.length} icon(s) imported by src/ are missing in upstream:\n` +
         missing.map((n) => `  - ${n}`).join('\n') +
-        `\n\nEither add them to the upstream pixel-art-icons repo, or remove the imports.`,
+        `\n\nAdd them to the upstream pixel-art-icons repo, remove the imports, or — ` +
+        `if hand-authored — list them in IN_HOUSE_ICONS.`,
     )
   }
 }

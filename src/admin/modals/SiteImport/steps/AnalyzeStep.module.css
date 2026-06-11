@@ -247,6 +247,14 @@
   flex-direction: column;
   gap: 2px;
 }
+
+/* Per-stylesheet mode pickers sit above the search; keep them clear of it. */
+.modeRows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 14px;
+}
 .info {
   display: flex;
   flex-direction: column;
@@ -337,7 +345,7 @@
 }
 .ruleRow {
   display: grid;
-  grid-template-columns: 16px 1fr auto;
+  grid-template-columns: 16px 1fr;
   align-items: center;
   gap: 9px;
   padding: 4px 10px 4px 0;
@@ -367,6 +375,15 @@
   font-size: 10px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* CSS-file marker on a converted stylesheet mode row (sits in the checkbox column). */
+.fileBadge {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--editor-text-muted);
 }
 
 /* ── Media + colour grids ────────────────────────────────────────────────── */
