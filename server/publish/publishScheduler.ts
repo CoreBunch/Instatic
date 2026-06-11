@@ -31,7 +31,7 @@
  */
 import type { DbClient } from '../db/client'
 import { withSchedulerLeaderLock } from '../db/advisoryLock'
-import { publishDataRow } from '../repositories/data/publish'
+import { publishDataRow } from './publishRow'
 import { emitContentEntryUpdated } from './contentEvents'
 import {
   cancelScheduledPublish,

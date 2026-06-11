@@ -31,7 +31,7 @@ src/core/templates/
 └── tokenInterpolation.ts             — parseTokenString, interpolateTokens, walkFieldPath
 
 src/modules/base/outlet/               — base.outlet module (Content Outlet)
-server/repositories/data/templateSeeding.ts  — seed + backfill for default entry templates
+server/publish/templateSeeding.ts  — seed + backfill for default entry templates
 server/publish/publicRouter.ts         — isTemplatePage guard on direct slug routing
 server/publish/publicRenderer.ts       — chain-aware render paths
 ```
@@ -136,7 +136,7 @@ The composer remains defensive for data that pre-dates or bypasses the guard: no
 Template pages are never served at their own slug:
 
 - **Live router** (`server/publish/publicRouter.ts`): after fetching `pageSnapshot` by slug, skips the page if `isTemplatePage(page)` and falls through to the row/redirect/not-found path.
-- **Static bake** (`server/repositories/publish.ts`): the `publishDraftSiteLocked` bake loop skips any page where `isTemplatePage(page)` so no `/<template-slug>.html` artefact is written.
+- **Static bake** (`server/publish/publishSite.ts`): the `publishDraftSiteLocked` bake loop skips any page where `isTemplatePage(page)` so no `/<template-slug>.html` artefact is written.
 
 ---
 
@@ -305,7 +305,7 @@ Store action: `convertTemplateToPage(pageId)` in `siteSlice`.
 
 ## Seeding — default entry templates
 
-When a postType `data_table` is created, `ensureDefaultEntryTemplate(db, table)` in `server/repositories/data/templateSeeding.ts` inserts a default template page (idempotent — it no-ops if one already targets the table):
+When a postType `data_table` is created, `ensureDefaultEntryTemplate(db, table)` in `server/publish/templateSeeding.ts` inserts a default template page (idempotent — it no-ops if one already targets the table):
 
 - `templateEnabled: true`, `templateTarget: { kind: 'postTypes', tableSlugs: [table.slug] }`, `templatePriority: 0`
 - Page tree: `base.body` > `base.text` (`<h1>` bound to `currentEntry.title` via token interpolation) + `base.outlet` (bound to `currentEntry.body` via `html` format)
@@ -390,7 +390,7 @@ node.props.text = 'Posted by {currentEntry.author.displayName} on {currentEntry.
   - `src/admin/pages/site/hooks/useTemplatePreviewContext.ts` — synthetic preview context for the canvas
   - `src/admin/pages/site/hooks/useActiveLivePath.ts` — resolves the toolbar "Open live page" path for templates
   - `src/core/templates/templatePreviewData.ts` — `buildPreviewCells`, `dataTablePreviewToLoopItem`
-  - `server/repositories/data/templateSeeding.ts` — default-template seeding
+  - `server/publish/templateSeeding.ts` — default-template seeding
   - `server/publish/publicRenderer.ts` — chain-aware render paths
   - `src/admin/pages/site/hooks/useInsertModule.ts` — hook-level outlet guard (toast + null return)
   - `src/admin/pages/site/store/slices/site/nodeActions.ts` — store-level outlet backstop in `insertNode`

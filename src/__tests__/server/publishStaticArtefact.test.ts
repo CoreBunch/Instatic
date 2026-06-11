@@ -322,7 +322,7 @@ describe('publishDraftSite — Layer A static artefacts', () => {
 
     const db = buildFakeDb(staticPage, dynamicPage)
 
-    const { publishDraftSite } = await import('../../../server/repositories/publish')
+    const { publishDraftSite } = await import('../../../server/publish/publishSite')
     const result = await publishDraftSite(db, 'user-1', uploadsDir)
 
     expect(result.publishedPages).toBe(2)
@@ -389,7 +389,7 @@ describe('publishDraftSite — Layer A static artefacts', () => {
     dynamicPage.title = 'Empty'
 
     const db = buildFakeDb(page, dynamicPage)
-    const { publishDraftSite } = await import('../../../server/repositories/publish')
+    const { publishDraftSite } = await import('../../../server/publish/publishSite')
     const result = await publishDraftSite(db, 'user-1')  // no uploadsDir
 
     expect(result.publishedPages).toBe(2)
@@ -415,7 +415,7 @@ describe('publishDraftSite — Layer A static artefacts', () => {
     page2.title = 'Flip2'
 
     const db = buildFakeDb(page, page2)
-    const { publishDraftSite } = await import('../../../server/repositories/publish')
+    const { publishDraftSite } = await import('../../../server/publish/publishSite')
 
     // First publish: writes to inactive slot (b), flips current → b
     await publishDraftSite(db, 'user-1', uploadsDir)

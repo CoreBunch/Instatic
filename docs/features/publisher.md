@@ -388,7 +388,7 @@ Plugins shouldn't need to know about the publisher internals — they get the HT
 POST /admin/api/cms/publish/site
     │
     ▼
-publishDraftSite (server/repositories/publish.ts)
+publishDraftSite (server/publish/publishSite.ts)
     │
     ├─→ load draft site shell + all page-table rows + all VC rows
     ├─→ build runtime scripts + runtime package importmap

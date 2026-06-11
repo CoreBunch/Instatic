@@ -354,7 +354,7 @@ All SQL lives in `server/repositories/`. Each file owns one resource:
 | `mediaStorageAdapters.ts`  | Registered storage backends                       |
 | `pluginSchedules.ts`       | Plugin-registered scheduled jobs                  |
 | `plugins.ts`               | Installed plugins + lifecycle state               |
-| `publish.ts`               | Published-page roster                             |
+| `publish.ts`               | Published-page roster: snapshot getters + the transactional publish write (orchestration lives in `server/publish/publishSite.ts`) |
 | `roles.ts`                 | System and custom roles                           |
 | `runtimeAsset.ts`          | Published runtime assets (JS, CSS, fonts)         |
 | `sessions.ts`              | User sessions                                     |
@@ -506,6 +506,9 @@ Server-side publishing helpers live in `server/publish/`:
 | `staticArtefact.ts`               | Layer A. Two-slot symlink swap (`current → slot-{a,b}`), atomic per-file `tmp + rename`, slot-aware read/write/purge. |
 | `renderCache.ts`                  | Layer B. Bounded LRU keyed by `(urlPath, queryString)`, entries versioned. Single-flight on cache miss. `bumpPublishVersion()` invalidates lazily; version captured at render start so mid-flight publishes discard without caching stale HTML. |
 | `holeRuntime.ts`                  | Layer C client-side runtime (~668 B). Exports `runInstaticHoleRuntime` (TS source) and `HOLE_RUNTIME_JS` (IIFE-serialized for browser delivery). |
+| `publishSite.ts`                  | Full-site publish orchestrator (`publishDraftSite`): phase-1 builds, the short `persistSitePublish` transaction, Layer A bake + slot swap, Layer B bump. |
+| `publishRow.ts`                   | Per-row publish orchestrator (`publishDataRow`) + `removeDataRowArtefact`: persist via the data repository, in-place artefact update, Layer B bump. |
+| `templateSeeding.ts`              | Default entry-template seeding for postType tables (creates + publishes a page row; called by table-creation entry points, boot, and post-import backfill). |
 | `publicRenderer.ts`               | `renderPublishedSnapshot`, `renderPublishedDataRowTemplate` — snapshot-aware wrappers around `publishPage`. |
 | `publishedHtmlPipeline.ts`        | Plugin frontend-asset injection + `publish.html` filter chain. Runs at publish time for every baked page (complete doc or hole shell); also runs in the Layer B factory for query-string / live renders (cached). |
 | `siteCssBundle.ts`                | Per-site reset / framework / style CSS bundles (hashed filenames).  |

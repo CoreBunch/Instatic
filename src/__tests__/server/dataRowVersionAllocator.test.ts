@@ -1,8 +1,9 @@
 /**
  * `nextDataRowVersionNumber` is the single allocator of `data_row_versions`
- * version numbers. Both publish paths — the per-row publish (`data/publish.ts`)
- * and the whole-site publish pipeline (`repositories/publish.ts`) — must route
- * through it so the "next = max(existing) + 1" invariant has exactly one home.
+ * version numbers. Both publish paths — the per-row publish persistence
+ * (`repositories/data/publish.ts`) and the whole-site publish orchestrator
+ * (`server/publish/publishSite.ts`) — must route through it so the
+ * "next = max(existing) + 1" invariant has exactly one home.
  */
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
@@ -47,7 +48,7 @@ describe('nextDataRowVersionNumber', () => {
 
 describe('single version allocator across publish paths', () => {
   const publishPaths = [
-    'server/repositories/publish.ts',
+    'server/publish/publishSite.ts',
     'server/repositories/data/publish.ts',
   ]
 

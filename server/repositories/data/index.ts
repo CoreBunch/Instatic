@@ -8,7 +8,9 @@
  *   tables.ts   — data_tables CRUD
  *   rows/       — data_rows repository, split by responsibility (read, search,
  *                 filter, mutations, bulk, schedule, import); see rows/index.ts
- *   publish.ts  — data_row_versions + redirects + public-route lookups
+ *   publish.ts  — publish persistence + redirects + public-route lookups
+ *                 (the publish ORCHESTRATION — lock, artefacts, cache bump —
+ *                 lives in server/publish/publishRow.ts)
  *
  * Domain types (`DataRow`, `DataTable`, `PublishedDataRow`, `DataRowRedirect`,
  * `DataRowVersion`, `DataUserReference`) are TypeBox schemas in
@@ -54,15 +56,8 @@ export {
 export type { ListDataRowsFilterOptions, ListDataRowsWithFilterResult } from './rows'
 
 export {
-  publishDataRow,
-  removeDataRowArtefact,
   getPublishedDataRowByRoute,
   getDataRowRedirectByRoute,
 } from './publish'
-
-export {
-  ensureDefaultEntryTemplate,
-  backfillDefaultEntryTemplates,
-} from './templateSeeding'
 
 export { nextDataRowVersionNumber } from './versions'
