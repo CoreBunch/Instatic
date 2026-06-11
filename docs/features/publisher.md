@@ -38,7 +38,7 @@ src/core/publisher/
 ├── frameworkCss.ts                 — site framework CSS (spacing scale, typography)
 ├── userStylesheets.ts              — site-level user stylesheets
 ├── siteCssBundle.ts                — hash-named bundle composition (reset + framework + style)
-├── sizesResolver.ts                — `<img sizes>` auto-resolution from viewport contexts
+├── sizesResolver.ts                — `<img sizes>` derived from the layout: linear width model (caps, fractions, grid tracks) per viewport tier
 ├── dynamicDetection.ts             — Single walker for the 4 auto-detection rules; powers Layers A and C
 └── utils.ts                        — escapeHtml, isSafeUrl, sanitiseCssValue (re-exported from @core/css-sanitize)
 

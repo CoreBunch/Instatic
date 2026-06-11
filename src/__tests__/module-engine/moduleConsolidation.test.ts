@@ -100,7 +100,6 @@ describe('F4 image alt escaping', () => {
       {
         src: '/uploads/hero.webp',
         loading: 'lazy',
-        sizes: 'auto',
         fetchPriority: 'auto',
         decoding: 'async',
         _resolvedMediaByKey: { src: makeMedia({ altText: 'a & b <c> "d"' }) },
