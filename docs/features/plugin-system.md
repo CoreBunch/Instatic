@@ -449,6 +449,10 @@ When a `base.loop` is bound to a `requestDependent` / `perVisitor` source, the p
 
 See [docs/features/publisher.md](publisher.md) for the full three-layer pipeline.
 
+### Module JS on published pages — requires `frontend.assets`
+
+A plugin module's `render()` may return `js` (see `PluginRenderOutput`). It crosses the QuickJS boundary string-typed (non-strings are dropped by the VM normalizer) and is then gated host-side in `moduleAdapter.ts`: unless the plugin's **granted** permissions include `frontend.assets` — the same authority that already controls script tags via `frontend.assets[]` — the `js` is dropped with one `console.warn` per module. Enforcement always checks `grantedPermissions`, never the declared `permissions` array. With the grant, the JS is deduped per moduleId and served at `/_instatic/module-js/<moduleId>.js` on pages that use the module. Manifest format is unchanged.
+
 ### Settings — declared in `plugin.json`
 
 ```js
@@ -673,7 +677,7 @@ Risk levels:
 | `modules.register`          | Editor / manifest    | High      | Ship new modules to the canvas module library                           |
 | `loops.register`            | Editor / server / manifest | Medium | Register custom `base.loop` sources                                  |
 | `visualComponents.register` | Admin / manifest     | Medium    | Ship VCs / page templates / class packs (via `pack/site.json`)          |
-| `frontend.assets`           | Frontend / manifest  | High      | Inject declarative tags into every published page                       |
+| `frontend.assets`           | Frontend / manifest  | High      | Inject declarative tags into every published page; also gates module render() `js` |
 | `network.outbound`          | Server               | High      | Make outbound HTTP requests (with `networkAllowedHosts` allowlist)      |
 | `unstable.internals`        | Admin / editor / server | Dangerous | Reserved for trusted first-party plugins                            |
 

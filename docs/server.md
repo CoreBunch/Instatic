@@ -67,7 +67,7 @@ const routes: readonly RouteHandler[] = [
   tryServeLoop,                    // /_instatic/loop/*       → handlers/cms/loop.ts
   tryServeHoleRuntimeAsset,        // /_instatic/hole-runtime.js (fixed CMS asset)
   tryServeHole,                    // /_instatic/hole/*       → handlers/cms/hole.ts
-  tryServePublicFormRuntimeAsset,  // /_instatic/form-runtime.js (fixed CMS asset)
+  tryServeModuleJsAsset,           // /_instatic/module-js/*  → handlers/cms/moduleJs.ts
   tryServePublicForm,              // /_instatic/form/*       → forms/handler.ts
   tryServeRuntimeAsset,            // /_instatic/assets/*     → published runtime assets
   tryServeRuntimePackageNamespace, // /_instatic/runtime/cache/<hash>/<...> → bun install workspace
