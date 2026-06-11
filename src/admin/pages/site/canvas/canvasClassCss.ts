@@ -1,14 +1,14 @@
 import {
   bagToCSS,
-  compareViewportContextCascade,
-  conditionPrelude,
+  createStyleRuleCssEmitter,
+  generateClassCSS,
   PUBLISHER_RESET_CSS,
   type ViewportContext,
 } from '@core/publisher'
 import { generateFrameworkRootCss } from '@core/framework'
 import { generateFontsCss } from '@core/fonts'
-import { breakpointMediaQuery, styleRuleSelector } from '@core/page-tree'
-import type { StyleRule, Condition, ConditionDef } from '@core/page-tree'
+import { styleRuleSelector } from '@core/page-tree'
+import type { StyleRule, ConditionDef } from '@core/page-tree'
 import type { SiteFontsSettings } from '@core/fonts'
 import type {
   FrameworkColorSettings,
@@ -52,62 +52,12 @@ function buildCanvasClassCSS(
   })
   if (frameworkCss) blocks.push(frameworkCss)
 
-  // Cascade order matches the publisher: rules sorted by `order` ascending so
-  // a later, more-specific override appears later in source and wins on equal
-  // specificity. See generateClassCSS for the matching publisher invariant.
-  const orderedClasses = Object.values(classes).slice().sort((a, b) => {
-    const ao = typeof a.order === 'number' ? a.order : 0
-    const bo = typeof b.order === 'number' ? b.order : 0
-    return ao - bo
-  })
-
-  const breakpointById = new Map<string, { breakpoint: ViewportContext; index: number }>(
-    breakpoints.map((bp, index) => [bp.id, { breakpoint: bp, index }]),
-  )
-  // Condition id → (condition, registry index) for stable ordering.
-  const conditionById = new Map<string, { condition: Condition; index: number }>(
-    conditions.map((c, index) => [c.id, { condition: c.condition, index }]),
-  )
-
-  for (const cls of orderedClasses) {
-    const baseDecls = bagToCSS(cls.styles)
-    if (baseDecls) {
-      blocks.push(`${styleRuleSelector(cls)} {\n${baseDecls}\n}`)
-    }
-
-    // Unified contextStyles: a key is either a viewport context or a custom
-    // condition. Both emit real @-rule wrappers here so each iframe evaluates
-    // the same conditions as the published page.
-    const conditionEntries: Array<{ bag: Record<string, unknown>; condition: Condition; index: number }> = []
-    const bpEntries: Array<{ bag: Record<string, unknown>; breakpoint: ViewportContext; index: number }> = []
-    for (const [contextId, bag] of Object.entries(cls.contextStyles ?? {})) {
-      const cond = conditionById.get(contextId)
-      if (cond) {
-        conditionEntries.push({ bag, condition: cond.condition, index: cond.index })
-        continue
-      }
-      const breakpointEntry = breakpointById.get(contextId)
-      if (breakpointEntry) bpEntries.push({ bag, ...breakpointEntry })
-    }
-
-    conditionEntries.sort((a, b) => a.index - b.index)
-    for (const { bag, condition } of conditionEntries) {
-      const decls = bagToCSS(bag)
-      if (!decls) continue
-      const prelude = conditionPrelude(condition)
-      if (!prelude) continue
-      blocks.push(`${prelude} {\n  ${styleRuleSelector(cls)} {\n${decls}\n  }\n}`)
-    }
-
-    bpEntries.sort(compareViewportContextCascade)
-    for (const { bag, breakpoint } of bpEntries) {
-      const decls = bagToCSS(bag)
-      if (!decls) continue
-      const prelude = conditionPrelude({ kind: 'media', query: breakpointMediaQuery(breakpoint) })
-      if (!prelude) continue
-      blocks.push(`${prelude} {\n  ${styleRuleSelector(cls)} {\n${decls}\n  }\n}`)
-    }
-  }
+  // The registry CSS is the publisher's own generator — the canvas ships the
+  // exact bytes a publish would (rule order, condition/viewport cascade, and
+  // sanitized raw @keyframes rules included), so the preview cannot drift
+  // from the published output.
+  const classCss = generateClassCSS(classes, breakpoints, conditions)
+  if (classCss) blocks.push(classCss)
 
   return blocks.join('\n\n')
 }
@@ -172,8 +122,8 @@ export function createCanvasClassCssMemo(
 
 /**
  * Generate the canvas class-registry CSS (publisher reset + fonts +
- * framework root CSS + every style rule with its breakpoint/condition
- * overrides). Identity-memoized — see `createCanvasClassCssMemo`.
+ * framework root CSS + the publisher's `generateClassCSS` output).
+ * Identity-memoized — see `createCanvasClassCssMemo`.
  */
 export const generateCanvasClassCSS: CanvasClassCssGenerator = createCanvasClassCssMemo()
 
@@ -219,7 +169,7 @@ export interface ForcedStateInflight {
  * state wins over the element's base class rules while leaving unspecified
  * properties to fall through.
  *
- * Crucially this mirrors `generateCanvasClassCSS`'s per-rule emission: the base
+ * The emission itself is the publisher's `createStyleRuleCssEmitter`: the base
  * styles AND every `contextStyles` override are emitted under their real
  * `@media`/`@container`/`@supports` preludes. Because each canvas frame is an
  * iframe at a fixed width, those queries evaluate per-frame exactly as on the
@@ -235,20 +185,10 @@ export function generateForcedStateCSS(
 ): string {
   const rawSelector = `[data-node-id="${escapeCssAttribute(nodeId)}"]`
   const selector = `${rawSelector}${rawSelector}`
-  const blocks: string[] = []
 
   const baseStyles = inflight && inflight.contextId === null
     ? { ...rule.styles, ...inflight.styles }
     : rule.styles
-  const baseDecls = bagToCSS(baseStyles)
-  if (baseDecls) blocks.push(`${selector} {\n${baseDecls}\n}`)
-
-  const breakpointById = new Map<string, { breakpoint: ViewportContext; index: number }>(
-    breakpoints.map((bp, index) => [bp.id, { breakpoint: bp, index }]),
-  )
-  const conditionById = new Map<string, { condition: Condition; index: number }>(
-    conditions.map((c, index) => [c.id, { condition: c.condition, index }]),
-  )
 
   // Merge any in-flight edit into the context it targets so a brand-new
   // context override previews live too.
@@ -257,37 +197,8 @@ export function generateForcedStateCSS(
     contextStyles[inflight.contextId] = { ...(contextStyles[inflight.contextId] ?? {}), ...inflight.styles }
   }
 
-  const conditionEntries: Array<{ bag: Record<string, unknown>; condition: Condition; index: number }> = []
-  const bpEntries: Array<{ bag: Record<string, unknown>; breakpoint: ViewportContext; index: number }> = []
-  for (const [contextId, bag] of Object.entries(contextStyles)) {
-    const cond = conditionById.get(contextId)
-    if (cond) {
-      conditionEntries.push({ bag, condition: cond.condition, index: cond.index })
-      continue
-    }
-    const breakpointEntry = breakpointById.get(contextId)
-    if (breakpointEntry) bpEntries.push({ bag, ...breakpointEntry })
-  }
-
-  conditionEntries.sort((a, b) => a.index - b.index)
-  for (const { bag, condition } of conditionEntries) {
-    const decls = bagToCSS(bag)
-    if (!decls) continue
-    const prelude = conditionPrelude(condition)
-    if (!prelude) continue
-    blocks.push(`${prelude} {\n  ${selector} {\n${decls}\n  }\n}`)
-  }
-
-  bpEntries.sort(compareViewportContextCascade)
-  for (const { bag, breakpoint } of bpEntries) {
-    const decls = bagToCSS(bag)
-    if (!decls) continue
-    const prelude = conditionPrelude({ kind: 'media', query: breakpointMediaQuery(breakpoint) })
-    if (!prelude) continue
-    blocks.push(`${prelude} {\n  ${selector} {\n${decls}\n  }\n}`)
-  }
-
-  return blocks.join('\n\n')
+  const emitRule = createStyleRuleCssEmitter(breakpoints, conditions)
+  return emitRule(selector, baseStyles, contextStyles).join('\n\n')
 }
 
 function escapeCssAttribute(value: string): string {

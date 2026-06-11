@@ -37,12 +37,11 @@ export { escapeHtml, isSafeUrl, safeUrl, sanitiseCssValue } from './utils'
 
 export {
   bagToCSS,
-  compareViewportContextCascade,
-  conditionPrelude,
+  createStyleRuleCssEmitter,
   generateClassCSS,
   isEmittableProperty,
 } from './classCss'
-export type { ViewportContext } from './classCss'
+export type { StyleRuleCssEmitter, ViewportContext } from './classCss'
 
 export { collectClassCSS, CssCollector, sanitizeModuleCSS } from './cssCollector'
 
