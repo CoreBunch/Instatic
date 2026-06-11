@@ -152,9 +152,33 @@ bindPluginRuntimeStoreApi(useEditorStore)
 // to keep component subscriptions granular and avoid unnecessary re-renders.
 // ---------------------------------------------------------------------------
 
-/** Select the active page from the site */
-export const selectActivePage = (s: EditorStore) =>
-  s.site?.pages.find((p) => p.id === s.activePageId) ?? null
+// Single-slot memo for the active-page lookup. Zustand re-runs EVERY
+// subscriber's selector on every store set, and each canvas NodeRenderer
+// mounts several subscriptions that resolve the active page — so an
+// unmemoized `pages.find` here costs O(nodes × pages) per store change.
+// Keying on (site, activePageId) identity makes the first selector after a
+// set pay the O(pages) scan once; every other subscriber in the same sweep
+// hits the cache. Mutative copy-on-write replaces `site` exactly when
+// anything inside it changes, so invalidation is automatic — and the cached
+// page is the same object `find` would return, so subscriber outputs keep
+// their referential stability.
+let _activePageCache: { site: object; activePageId: string; page: Page | null } | null = null
+
+/** Select the active page from the site (one `pages` scan per store update). */
+export const selectActivePage = (s: EditorStore): Page | null => {
+  const { site, activePageId } = s
+  if (!site || !activePageId) return null
+  if (
+    _activePageCache &&
+    _activePageCache.site === site &&
+    _activePageCache.activePageId === activePageId
+  ) {
+    return _activePageCache.page
+  }
+  const page = site.pages.find((p) => p.id === activePageId) ?? null
+  _activePageCache = { site, activePageId, page }
+  return page
+}
 
 /** Select whether the docked right sidebar is currently taking layout space. */
 export const selectRightSidebarExpanded = (s: EditorStore) =>
