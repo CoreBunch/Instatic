@@ -46,6 +46,7 @@
     "bench": "bun run scripts/bench/index.ts",
     "bench:bundle": "bun run scripts/bench/index.ts --only=bundle",
     "bench:publisher": "bun run scripts/bench/index.ts --only=publisher",
+    "bench:publish": "bun run scripts/bench/index.ts --only=publish",
     "bench:editor-store": "bun run scripts/bench/index.ts --only=editor-store",
     "bench:http": "bun run scripts/bench/index.ts --only=http",
     "bench:db": "bun run scripts/bench/index.ts --only=db",

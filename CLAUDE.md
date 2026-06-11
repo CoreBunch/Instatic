@@ -218,7 +218,7 @@ Detailed: [`docs/reference/database-dialects.md`](docs/reference/database-dialec
 
 Detailed: [`docs/reference/page-tree.md`](docs/reference/page-tree.md). The rule:
 
-Every mutation in `src/core/page-tree/mutations.ts` takes a `NodeTree<TNode>` and is **tree-agnostic** — it knows nothing about pages vs. Visual Components. The only place that knows which tree is active is `mutateActiveTree(fn)` in `src/admin/pages/site/store/slices/site/`.
+Every mutation in `src/core/page-tree/mutations.ts` takes a `NodeTree<TNode>` and is **tree-agnostic** — it knows nothing about pages vs. Visual Components. The only place that knows which tree is active is `resolveActiveTreeTarget` in `src/admin/pages/site/store/slices/site/helpers.ts`, consumed through `mutateActiveTree(fn)`.
 
 The 11 named tree-mutation store actions (`insertNode`, `deleteNode`, `updateNodeProps`, `setBreakpointOverride`, `clearBreakpointOverride`, `renameNode`, `toggleNodeLocked`, `toggleNodeHidden`, `moveNode`, `duplicateNode`, `wrapNode`) are one-liners that call `mutateActiveTree`. They MUST NOT contain their own `kind === 'visualComponent'` routing branch — gated by `no-vc-mode-branches-in-mutations.test.ts`.
 

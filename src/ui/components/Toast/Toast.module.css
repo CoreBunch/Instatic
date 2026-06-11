@@ -5,15 +5,16 @@
  * the stack itself doesn't capture clicks behind it because the toasts are
  * the only interactive elements.
  *
- * z-index sits above the editor toolbar (60) and modals (variable) but below
- * the tooltip layer (2000) — toasts are non-blocking surfaces.
+ * --toast-z-index sits above every modal layer (incl. the spotlight backdrop
+ * at 9000 — a toast fired while a dialog is open must stay visible) and below
+ * the tooltip layer (10001) — toasts are non-blocking surfaces.
  */
 
 .stack {
     position: fixed;
     right: 16px;
     bottom: 16px;
-    z-index: 1500;
+    z-index: var(--toast-z-index);
     display: flex;
     flex-direction: column-reverse;
     gap: 8px;

@@ -13,7 +13,7 @@ Instatic is a self-hosted CMS with a built-in visual editor. One Bun process ser
 - **One content model**: posts, pages, and visual components all live in `data_tables` + `data_rows`. No separate `pages` table. Page trees and VC trees both use the `NodeTree<TNode>` primitive.
 - **Two frontends, one bundle**: the admin app (`src/admin/`) shells the visual editor (`src/admin/pages/site/`). Both run in the same Vite-built SPA, mounted under `/admin/*`.
 - **Plugins run sandboxed**: server entrypoints and canvas module packs execute inside a QuickJS-WASM VM with no host access. They reach the CMS through the SDK at `src/core/plugin-sdk/`.
-- **One public-route surface, three publishing layers**: every visitor request for HTML — stand-alone pages and content rows alike — flows through `server/publish/publicRouter.ts:renderPublicResolution`. **Layer A** bakes fully-static pages to `uploads/published/current/<route>.html` at publish time via a two-slot symlink swap (atomic). **Layer B** is an in-memory LRU keyed by `(urlPath, queryString)` for dynamic routes — per-entry version tracking; bumps evict lazily on every publish, and version is captured at render start so mid-flight publishes discard results rather than caching stale HTML. **Layer C** auto-detects dynamic nodes (modules flagged `dynamic: true`, request-dependent bindings or loop sources, VC refs containing dynamic content) and emits `<instatic-hole>` placeholders that lazy-fetch their content via `/_instatic/hole/<nodeId>` using a ~668 B `IntersectionObserver` runtime. Authors don't toggle — `findDynamicNodeIds` in `src/core/publisher/dynamicDetection.ts` classifies automatically. The `PublishedPageSnapshot` (JSON) on `data_row_versions.snapshot_json` remains the canonical audit record. Output is plain semantic HTML + a single hashed CSS bundle per page, no framework runtime on the page.
+- **One public-route surface, three publishing layers**: every visitor request for HTML — stand-alone pages and content rows alike — flows through `server/publish/publicRouter.ts:renderPublicResolution`. **Layer A** bakes fully-static pages to `uploads/published/current/<route>.html` at publish time via a two-slot symlink swap (atomic). **Layer B** is an in-memory LRU keyed by `(urlPath, queryString)` for dynamic routes — per-entry version tracking; bumps evict lazily on every publish, and version is captured at render start so mid-flight publishes discard results rather than caching stale HTML. **Layer C** auto-detects dynamic nodes (modules flagged `dynamic: true`, request-dependent bindings or loop sources, VC refs containing dynamic content) and emits `<instatic-hole>` placeholders that lazy-fetch their content via `/_instatic/hole/<nodeId>` using a ~668 B `IntersectionObserver` runtime. Authors don't toggle — `findDynamicNodeIds` in `src/core/publisher/dynamicDetection.ts` classifies automatically. The published `SiteDocument` is stored once per publish in `site_snapshots`; page versions reference it via `data_row_versions.site_snapshot_id`, and the reassembled `PublishedPageSnapshot` remains the canonical audit record. Output is plain semantic HTML + a single hashed CSS bundle per page, no framework runtime on the page.
 - **Multi-instance HA on Postgres**: both schedulers (plugin tick + scheduled publish) share a leader-election primitive in `server/db/advisoryLock.ts` (`withSchedulerLeaderLock`) that wraps `pg_try_advisory_lock`, so running multiple containers behind a load balancer doesn't double-fire scheduled work. Each scheduler passes its own distinct lock key; on SQLite (single-instance by definition) the module returns a no-op sentinel.
 - **Every untyped boundary uses TypeBox.** HTTP responses, request bodies, persisted JSON, plugin manifests, settings. `zod` is banned repo-wide — drivers talk directly to each provider's REST API and pass TypeBox schemas through as JSON Schema; `zod` has been removed from `package.json`. Gated by `ai-driver-isolation.test.ts`.
 
@@ -215,13 +215,16 @@ Editor state (Zustand store)
     ▼
 publishDraftSite / publishDataRow      ← server/repositories/publish.ts
     │
-    │  1. write PublishedPageSnapshot to data_row_versions.snapshot_json
-    │  2. bake CSS bundles + runtime JS to the slot (writeStaticAsset)   ← Layer A
-    │  3. for each page (complete doc, or static shell with <instatic-hole>):
+    │  1. write the SiteDocument once to site_snapshots; each page's
+    │     data_row_versions row references it via site_snapshot_id
+    │  2. for each page (complete doc, or static shell with <instatic-hole>):
     │       render via publishPage + applyPublishedHtmlPipeline
     │       writeArtefact(<inactive slot>, urlPath, html)   ← Layer A
-    │  4. swapSlot — atomic symlink flip of uploads/published/current
-    │  5. bumpPublishVersion()  → invalidates Layer B cache
+    │  3. bake every published data-row route through its entry template
+    │       into the same slot (bakeDataRows.ts)            ← Layer A
+    │  4. bake CSS bundles + runtime JS to the slot (writeStaticAsset)
+    │  5. swapSlot — atomic symlink flip of uploads/published/current
+    │  6. bumpPublishVersion()  → invalidates Layer B cache
     │
     ▼
 visitor request → server/router.ts → tryServePublicRoute
@@ -235,11 +238,12 @@ visitor request → server/router.ts → tryServePublicRoute
     │     hit → stream HTML, 0.6–1.4 ms, no DB, no render
     │
     ├─ Layer B: in-memory LRU cache (live-render fallback)
-    │     resolvePublicRoute → page / row / redirect / not-found
-    │     redirects + not-founds bypass the cache
-    │     pages/rows: getOrRender(key + publishVersion)
-    │       miss → publishPage + applyPublishedHtmlPipeline
-    │       hit  → ~0.8 ms
+    │     warm peek FIRST: a version-matched cached 200 is served with zero
+    │       DB work (route retractions bump publishVersion, so this is safe)
+    │     miss → resolvePublicRoute → page / row / redirect / not-found
+    │       redirects + not-founds bypass the cache
+    │       pages/rows: getOrRender(key + publishVersion)
+    │         → publishPage + applyPublishedHtmlPipeline
     │       single-flight: concurrent identical keys → one factory call
     │     bumpPublishVersion() invalidates lazily on next read
     │
@@ -258,7 +262,7 @@ Key properties:
 - **Atomic publishing.** `uploads/published/current` is a symlink that targets either `slot-a/` or `slot-b/`. Full publishes build the inactive slot then atomic-rename the symlink — `rename(2)` of a symlink is a single-inode swap and is atomic across POSIX filesystems. There is no moment when `current` is missing or partially populated. In-flight readers that already resolved the old symlink hold file descriptors into the old slot — Unix semantics keep those files alive until they close. Incremental row publish (`publishDataRow`) writes a single file via tmp + rename into the active slot.
 - **Auto-detection is the seam.** `findDynamicNodeIds(page, site, registry)` is backed by the single walker that powers Layer A's shell-vs-complete decision and Layer C's placeholder emission. The detection rules — `dynamic: true` modules, request-dependent bindings, request-dependent loop sources, loop-body promotion, VC-ref recursion — live in exactly one file. Cannot drift between layers.
 - **`publish.html` runs at publish time** for static routes (baked into the disk artefact). For dynamic routes, the filter still fires inside the Layer B factory but caches the result so it runs at most once per `(url, querystring, publishVersion)` triple.
-- **Three layers, automatic routing.** Layer A bakes fully-static pages to disk at publish time (`uploads/published/current/<route>.html`, atomic two-slot symlink swap). Layer B is an in-memory LRU keyed by `(urlPath, queryString)` for dynamic routes — single-flight, lazily invalidated on publish; version is captured at render start so a publish landing mid-render discards the result rather than caching stale HTML. Layer C emits `<instatic-hole>` placeholders for nodes that auto-detect as request-dependent; a tiny client runtime lazy-loads each fragment via `IntersectionObserver`. The `PublishedPageSnapshot` (JSON) on `data_row_versions.snapshot_json` remains the canonical audit record from which all three layers derive.
+- **Three layers, automatic routing.** Layer A bakes fully-static pages to disk at publish time (`uploads/published/current/<route>.html`, atomic two-slot symlink swap). Layer B is an in-memory LRU keyed by `(urlPath, queryString)` for dynamic routes — single-flight, lazily invalidated on publish; version is captured at render start so a publish landing mid-render discards the result rather than caching stale HTML. Layer C emits `<instatic-hole>` placeholders for nodes that auto-detect as request-dependent; a tiny client runtime lazy-loads each fragment via `IntersectionObserver`. The published `SiteDocument` lives once per publish in `site_snapshots` (referenced by `data_row_versions.site_snapshot_id`); the reassembled `PublishedPageSnapshot` remains the canonical audit record from which all three layers derive.
 - **Pure render, no framework runtime on the page.** Published HTML is plain semantic HTML + CSS. Plugins can inject frontend assets (`server/publish/frontendInjections.ts`). The only first-party client script is the ~668 B Layer C hole runtime, and it's injected ONLY on pages that contain at least one `<instatic-hole>` — fully-static pages ship zero JS from us.
 - **Sanitization happens at the publisher boundary.** DOMPurify in `src/core/sanitize.ts` cleans rich-text, HTML strings, AND `staticPlaceholder` output before they're frozen into a snapshot or baked into a disk artefact. Browser code uses the browser DOM; the Bun server installs an explicit happy-dom-backed DOMPurify runtime from `server/richtextSanitizer.ts` without adding DOM globals. CSS property values are sanitised at the value level by `sanitiseCssValue` from `src/core/css-sanitize/` — a dependency-free leaf shared by both `@core/publisher` (every value emitted via `bagToCSS` / `bagToInlineStyle`) and `@core/framework` (every `:root {}` token variable), blocking `expression()`, `javascript:`, `{}` selector breakout, and `</` RAWTEXT escape.
 - **Visual components are inlined.** Each VC instance is expanded with its slot fills materialized as locked child nodes in the consumer page tree. The publisher pairs each `base.slot-instance` with the matching `base.slot-outlet` by `slotName`. A VC ref whose definition tree contains any dynamic node becomes a single `<instatic-hole>` at the ref boundary (the inner subtree renders inside the hole endpoint).

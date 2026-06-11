@@ -525,12 +525,43 @@ export const sqliteMigrations: Migration[] = [
     `,
   },
   {
-    id: '003_page_version_snapshot',
+    id: '003_published_site_snapshots',
     sql: `
-      -- Add snapshot_json to data_row_versions so the publish pipeline can
-      -- store the full SiteDocument (shell + all pages) alongside each
-      -- published page version. SQLite mirror of the Postgres migration.
-      alter table data_row_versions add column snapshot_json text;
+      -- One published SiteDocument per publish, shared by every page version
+      -- created in that publish. Page versions reference it via
+      -- site_snapshot_id instead of each carrying a full copy of the site —
+      -- publishing N pages stores the site document once, not N times.
+      -- SQLite mirror of the Postgres migration.
+      --
+      -- content_hash is the SHA-256 of the canonical-JSON serialisation of
+      -- site_json, stamped at publish time so the publish-status check can
+      -- compare draft vs published without parsing any snapshot.
+      --
+      -- importmap_body is the pre-serialised runtime package importmap (exact
+      -- bytes the CSP hash was computed over) — TEXT, never re-encoded.
+      create table if not exists site_snapshots (
+        id text primary key,
+        site_json text not null,
+        content_hash text not null,
+        importmap_body text,
+        importmap_sha256 text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      alter table data_row_versions add column site_snapshot_id text references site_snapshots(id) on delete set null;
+
+      -- Per-page runtime script manifest (page-scoped, unlike the shared site
+      -- document), parsed automatically via the *_json naming convention.
+      alter table data_row_versions add column runtime_assets_json text;
+
+      -- Published row-route lookup (route_base + version slug): without these
+      -- two indexes the planner enumerates every published row of the table
+      -- and PK-probes its active version per visitor request.
+      create index if not exists data_row_versions_slug_idx
+        on data_row_versions (slug);
+
+      create index if not exists data_rows_active_version_idx
+        on data_rows (active_version_id);
     `,
   },
   {
@@ -665,6 +696,12 @@ export const sqliteMigrations: Migration[] = [
       create index if not exists data_rows_scheduled_publish_idx
         on data_rows (scheduled_publish_at)
         where status = 'scheduled' and deleted_at is null;
+
+      -- Re-create the published-route join index from migration 003 — the
+      -- drop+rename rebuild above takes every data_rows index with it, so
+      -- ALL of them must be re-created here.
+      create index if not exists data_rows_active_version_idx
+        on data_rows (active_version_id);
     `,
   },
   {

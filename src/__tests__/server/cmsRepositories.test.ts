@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test'
 import { createTestDb } from '../helpers/createTestDb'
-import { createSite, getSetupStatus } from '../../../server/repositories/setup'
+import {
+  createSite,
+  getSetupStatus,
+  getSetupStatusCached,
+  resetSetupStatusCacheForTests,
+} from '../../../server/repositories/setup'
 import { createUser, findUserByEmail } from '../../../server/repositories/users'
 import { createCustomRole, listRoles } from '../../../server/repositories/roles'
 import { createSession, findUserBySessionHash, revokeSessionByHash } from '../../../server/auth/sessions'
@@ -35,6 +40,61 @@ describe('CMS repositories', () => {
       })
     } finally {
       await cleanup()
+    }
+  })
+
+  it('getSetupStatusCached re-queries while pending, then memoizes the settled status', async () => {
+    const { db, cleanup } = await createTestDb()
+    try {
+      // Pending: every call queries live so an in-progress setup is observed.
+      expect((await getSetupStatusCached(db)).needsSetup).toBe(true)
+      await createSite(db, 'Example Site', {})
+      expect((await getSetupStatusCached(db)).needsSetup).toBe(true) // owner still missing
+      await createUser(db, {
+        id: 'owner_1',
+        email: 'owner@example.com',
+        displayName: 'Owner',
+        passwordHash: await hashPassword('long-enough-password'),
+        roleId: 'owner',
+        allowOwnerRole: true,
+      })
+      expect((await getSetupStatusCached(db)).needsSetup).toBe(false)
+
+      // Settled: the memo answers without touching the DB. Prove it by
+      // removing the owner out-of-band — the app itself never allows this,
+      // which is exactly why the memo is sound.
+      await db`delete from users`
+      expect((await getSetupStatusCached(db)).needsSetup).toBe(false)
+      expect((await getSetupStatus(db)).needsSetup).toBe(true) // live variant sees raw truth
+
+      // The test-only reset drops the memo and querying resumes.
+      resetSetupStatusCacheForTests()
+      expect((await getSetupStatusCached(db)).needsSetup).toBe(true)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('getSetupStatusCached keys its memo per DbClient — fresh databases stay isolated', async () => {
+    const settled = await createTestDb()
+    const fresh = await createTestDb()
+    try {
+      await createSite(settled.db, 'Example Site', {})
+      await createUser(settled.db, {
+        id: 'owner_1',
+        email: 'owner@example.com',
+        displayName: 'Owner',
+        passwordHash: await hashPassword('long-enough-password'),
+        roleId: 'owner',
+        allowOwnerRole: true,
+      })
+      expect((await getSetupStatusCached(settled.db)).needsSetup).toBe(false)
+
+      // A different client must not inherit the settled memo.
+      expect((await getSetupStatusCached(fresh.db)).needsSetup).toBe(true)
+    } finally {
+      await settled.cleanup()
+      await fresh.cleanup()
     }
   })
 

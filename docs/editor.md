@@ -408,6 +408,8 @@ Selection rings and hover rings are absolutely-positioned overlay divs portaled 
 
 Ring and toolbar positions are computed on each animation frame via a RAF loop (simpler than wiring ResizeObserver/MutationObserver/IntersectionObserver to every mutation source — scroll, layout shift, zoom, content animation). The loop only starts when `hasOverlayWork` is true — at least one selection ring, hover ring, selector-affinity highlight, or toolbar is visible. When there is no overlay work the effect returns early so idle breakpoint frames incur no RAF cost. **When adding a new visible overlay type to `BreakpointSelectionOverlay`, update `hasOverlayWork`** so the loop arms correctly.
 
+Each tick is split into a read phase and a write phase to keep the loop cheap at 60fps. The read phase resolves tracked elements through a `CanvasNodeElementCache` (`canvasNodeLookup.ts` — cached until the element disconnects or the iframe swaps documents, so no per-frame `querySelector` document scans), snapshots the shared iframe/canvas-root geometry once per tick via `createCanvasOverlayMeasureSession` (`canvasOverlayGeometry.ts`), and measures every rect — the toolbar anchors to the union of the ring rects already measured, never a second query/measure pass. The write phase then applies styles, skipping any write whose rect is already applied. Steady-state frames are therefore a few cached-layout reads with zero writes, and because no write lands between reads, changing rects never force per-ring reflows. **Keep new overlay work inside this read-then-write structure.**
+
 ### CSS injection into the iframe
 
 Each iframe `<head>` receives five `<style>` elements (three from `ClassStyleInjector`, one each from the others), in this order:

@@ -91,9 +91,17 @@ function makeFakeDb(snapshot: ReturnType<typeof makeSnapshot> | null): DbClient 
     const sql = strings.reduce<string>((acc, str, i) => (i === 0 ? str : `${acc}$${i}${str}`), '')
     const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase()
 
-    if (normalized.includes('select data_row_versions.snapshot_json')) {
+    if (normalized.includes('site_snapshots.site_json')) {
       return {
-        rows: snapshot ? [{ snapshot_json: snapshot } as Row] : [],
+        rows: snapshot
+          ? [{
+              row_id: snapshot.pageRowId,
+              site_json: snapshot.site,
+              runtime_assets_json: null,
+              importmap_body: null,
+              importmap_sha256: null,
+            } as unknown as Row]
+          : [],
         rowCount: snapshot ? 1 : 0,
       }
     }
@@ -124,10 +132,19 @@ function makeCountingDb(snapshot: ReturnType<typeof makeSnapshot>): {
   ): Promise<DbResult<Row>> => {
     const sql = strings.reduce<string>((acc, str, i) => (i === 0 ? str : `${acc}$${i}${str}`), '')
     const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase()
-    if (normalized.includes('select data_row_versions.snapshot_json')) {
+    if (normalized.includes('site_snapshots.site_json')) {
       loads++
       await Promise.resolve() // let other in-flight callers join before resolving
-      return { rows: [{ snapshot_json: snapshot } as Row], rowCount: 1 }
+      return {
+        rows: [{
+          row_id: snapshot.pageRowId,
+          site_json: snapshot.site,
+          runtime_assets_json: null,
+          importmap_body: null,
+          importmap_sha256: null,
+        } as unknown as Row],
+        rowCount: 1,
+      }
     }
     return { rows: [], rowCount: 0 }
   }

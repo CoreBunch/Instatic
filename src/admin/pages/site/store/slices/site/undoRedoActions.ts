@@ -12,6 +12,7 @@
 import { apply } from 'mutative'
 import { clonePackageJson } from '@core/site-dependencies/manifest'
 import { cloneSiteRuntimeConfig } from '@core/site-runtime'
+import { collectDirtyFromSitePatches, mergeDirtyMarks } from './dirtyTracking'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
 export type UndoRedoActions = Pick<SiteSlice, 'undo' | 'redo'>
@@ -25,6 +26,9 @@ export function createUndoRedoActions({ get, set }: SiteSliceHelpers): UndoRedoA
       const restored = apply(site, entry.inverse)
       const packageJson = clonePackageJson(restored.packageJson)
       const siteRuntime = cloneSiteRuntimeConfig(restored.runtime)
+      // Undo changes the same paths the original mutation did — the restored
+      // pages/VCs must be re-saved.
+      const dirty = collectDirtyFromSitePatches(entry.inverse, restored)
       set((state) => {
         state._historyPast.pop()
         state._historyFuture.push(entry)
@@ -37,6 +41,7 @@ export function createUndoRedoActions({ get, set }: SiteSliceHelpers): UndoRedoA
         state.canUndo = state._historyPast.length > 0
         state.canRedo = true
         state.hasUnsavedChanges = true
+        mergeDirtyMarks(state._dirtySave, dirty)
         // Keep activePageId valid
         if (!state.site.pages.find((p) => p.id === state.activePageId)) {
           state.activePageId = state.site.pages[0]?.id ?? null
@@ -51,6 +56,8 @@ export function createUndoRedoActions({ get, set }: SiteSliceHelpers): UndoRedoA
       const restored = apply(site, entry.forward)
       const packageJson = clonePackageJson(restored.packageJson)
       const siteRuntime = cloneSiteRuntimeConfig(restored.runtime)
+      // Redo re-applies the mutation's paths — mark the replayed pages/VCs.
+      const dirty = collectDirtyFromSitePatches(entry.forward, restored)
       set((state) => {
         state._historyFuture.pop()
         state._historyPast.push(entry)
@@ -61,6 +68,7 @@ export function createUndoRedoActions({ get, set }: SiteSliceHelpers): UndoRedoA
         state.canUndo = true
         state.canRedo = state._historyFuture.length > 0
         state.hasUnsavedChanges = true
+        mergeDirtyMarks(state._dirtySave, dirty)
         // Keep activePageId valid
         if (!state.site.pages.find((p) => p.id === state.activePageId)) {
           state.activePageId = state.site.pages[0]?.id ?? null

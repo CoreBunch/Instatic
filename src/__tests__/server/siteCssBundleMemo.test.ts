@@ -103,19 +103,37 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
     expect(after.style).not.toBe(before.style)
   })
 
-  it('recomputes for a different site object at the same publish version', () => {
+  it('memo key is the publish version ALONE — a different site object at the same version reuses it', () => {
+    // Every consumer loads the published snapshot fresh from the DB (a new
+    // JSON-parsed object per query), so a site-identity key would never hit.
+    // Published content is fixed per version (every snapshot writer bumps), so
+    // the version alone is a sound key — and two distinct site objects at the
+    // same version must share one walk.
     const firstSite = makeMultiPageSite()
     const secondSite = makeMultiPageSite()
-    secondSite.pages = [
-      makePage({ id: 'p4', root: { moduleId: 'base.text', props: { text: 'D' } } }),
-    ]
 
-    buildPublishedSiteCssBundle(firstSite, registry, firstSite.pages[0])
+    const first = buildPublishedSiteCssBundle(firstSite, registry, firstSite.pages[0])
     const callsAfterFirstSite = renderCalls
 
-    buildPublishedSiteCssBundle(secondSite, registry, secondSite.pages[0])
+    const second = buildPublishedSiteCssBundle(secondSite, registry, secondSite.pages[0])
 
-    expect(renderCalls).toBeGreaterThan(callsAfterFirstSite)
+    expect(renderCalls).toBe(callsAfterFirstSite)
+    expect(second.framework).toBe(first.framework)
+    expect(second.style).toBe(first.style)
+  })
+
+  it('an explicit publishVersion argument (publish-time bake) gets its own memo slot', () => {
+    // The bake renders the NEXT version's content before bumpPublishVersion()
+    // runs, passing `nextPublishVersion` explicitly — it must not be served the
+    // current version's cached bundles.
+    const site = makeMultiPageSite()
+
+    const current = buildPublishedSiteCssBundle(site, registry, site.pages[0])
+    const callsAfterCurrent = renderCalls
+
+    const next = buildPublishedSiteCssBundle(site, registry, site.pages[0], 1)
+    expect(renderCalls).toBeGreaterThan(callsAfterCurrent)
+    expect(next.framework).not.toBe(current.framework)
   })
 
   it('emits byte-identical CSS to the un-memoised builder', () => {

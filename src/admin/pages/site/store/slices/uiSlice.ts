@@ -1,5 +1,6 @@
 import type { EditorStore, EditorStoreSliceCreator } from '@site/store/types'
 import { clearCanvasSelectionDraft } from './selectionSlice'
+import { emptyDirtyMarks, mergeDirtyMarks, type DirtyMarks } from './site/dirtyTracking'
 
 export type FocusedPanel = 'canvas' | 'domTree' | 'properties' | null
 export type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'
@@ -79,6 +80,20 @@ export interface UiSlice {
 
   // Unsaved changes guard
   hasUnsavedChanges: boolean
+
+  /**
+   * Patch-derived save-dirty accumulator — which pages/VCs changed since the
+   * last successful save (see slices/site/dirtyTracking.ts). Autosave takes a
+   * snapshot (which resets this), ships only the named ids, and merges the
+   * snapshot back on save failure so nothing is lost.
+   */
+  _dirtySave: DirtyMarks
+  /** Conservative full-save mark (imports, fresh sites). */
+  markAllDirtyForSave: () => void
+  /** Return the accumulated marks and reset the accumulator. */
+  takeDirtySaveSnapshot: () => DirtyMarks
+  /** Merge a failed save's snapshot back so the next save retries it. */
+  restoreDirtySaveSnapshot: (marks: DirtyMarks) => void
 
   // Module insert picker
   insertPickerOpen: boolean
@@ -306,6 +321,7 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
   previewOpen: false,
   formPreviewStates: {},
   hasUnsavedChanges: false,
+  _dirtySave: emptyDirtyMarks(),
   insertPickerOpen: false,
   insertPickerParentId: null,
   componentizeEditorRequest: null,
@@ -408,6 +424,29 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
     }),
 
   setHasUnsavedChanges: (value) => set({ hasUnsavedChanges: value }),
+
+  markAllDirtyForSave: () =>
+    set((state) => {
+      state._dirtySave.all = true
+    }),
+
+  takeDirtySaveSnapshot: () => {
+    const current = get()._dirtySave
+    const snapshot: DirtyMarks = {
+      all: current.all,
+      pageIds: new Set(current.pageIds),
+      componentIds: new Set(current.componentIds),
+    }
+    set((state) => {
+      state._dirtySave = emptyDirtyMarks()
+    })
+    return snapshot
+  },
+
+  restoreDirtySaveSnapshot: (marks) =>
+    set((state) => {
+      mergeDirtyMarks(state._dirtySave, marks)
+    }),
 
   openInsertPicker: (parentId) =>
     set({ insertPickerOpen: true, insertPickerParentId: parentId }),

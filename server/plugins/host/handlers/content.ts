@@ -19,23 +19,19 @@
  */
 
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
-import type {
-  ContentEntry,
-  ContentTableSchema as ContentTableSchemaShape,
-  ContentTableSummary,
-  PublishedSnapshot,
-} from '@core/plugin-sdk/contentSchemas'
-import type { DataField, DataRow, DataTable } from '@core/data/schemas'
+import type { ContentTableSummary, PublishedSnapshot } from '@core/plugin-sdk/contentSchemas'
+import type { DataRow, DataTable } from '@core/data/schemas'
 import { applyTreeOperation, parsePageNodeTree } from '@core/page-tree'
 import { hookBus } from '@core/plugins/hookBus'
 import {
-  listDataTables,
   listDataTablesWithCounts,
   getDataTable,
   createDataTable,
   listDataRowsWithFilter,
   getDataRow,
+  getDataRowMany,
   getDataRowBySlug,
+  countDataRows,
   searchDataRows,
   createDataRow,
   createDataRowMany,
@@ -48,147 +44,23 @@ import {
   publishDataRow,
 } from '../../../repositories/data'
 import { republishAllPages } from '../../../publish/republish'
+import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import { applyContentEntryCellsFilter } from '../../../publish/contentEvents'
 import type { DbClient } from '../../../db/client'
 import { assertContentTableAccess } from '../registry'
 import { buildContentTableIdLookup, pluginContentFieldsToDataFields } from '../contentFieldMapping'
+import {
+  buildTableSlugLookup,
+  denormalizeSlug,
+  resolveTableBySlug,
+  rowToEntry,
+  tableSchema,
+  tableSummary,
+} from './contentProjection'
 import { replyApiOk } from '../apiReplies'
 import type { HostPluginRecord } from '../types'
 
-// ---------------------------------------------------------------------------
-// Projection helpers — DB → wire shapes
-// ---------------------------------------------------------------------------
-
-/**
- * Project the host's full `DataField` union onto the narrowed
- * `PluginContentField` projection (see `types/content.ts`). Drops the
- * recursive `fieldSchema` type and reduces `relation` / `pageTree` to
- * marker shapes the plugin can introspect.
- *
- * `tableSlugById` maps the host's internal `targetTableId` to the
- * public-facing slug so the plugin boundary never leaks DB ids.
- */
-function projectFields(
-  fields: DataField[],
-  tableSlugById: Map<string, string>,
-): ContentTableSchemaShape['fields'] {
-  const out: ContentTableSchemaShape['fields'] = []
-  for (const f of fields) {
-    switch (f.type) {
-      case 'text':
-      case 'longText':
-      case 'richText':
-      case 'number':
-        out.push({ type: f.type, id: f.id, label: f.label, required: f.required })
-        break
-      case 'boolean':
-      case 'date':
-      case 'dateTime':
-      case 'url':
-      case 'email':
-      case 'media':
-        out.push({ type: f.type, id: f.id, label: f.label })
-        break
-      case 'select':
-      case 'multiSelect':
-        out.push({
-          type: f.type,
-          id: f.id,
-          label: f.label,
-          options: (f.options ?? []).map((o) => ({ value: o.value, label: o.label })),
-        })
-        break
-      case 'relation':
-        out.push({
-          type: 'relation',
-          id: f.id,
-          label: f.label,
-          targetTableSlug: tableSlugById.get(f.targetTableId) ?? '',
-        })
-        break
-      case 'pageTree':
-        out.push({ type: 'pageTree', id: f.id, label: f.label })
-        break
-      case 'fieldSchema':
-        // Intentionally omitted from the v1 projection — too rich/recursive
-        // for the JSON RPC boundary.
-        break
-    }
-  }
-  return out
-}
-
-function tableSummary(
-  table: DataTable,
-  rowCount: number,
-): ContentTableSummary {
-  return {
-    slug: table.slug,
-    name: table.name,
-    kind: table.kind,
-    routeBase: table.routeBase,
-    system: table.system,
-    primaryFieldId: table.primaryFieldId,
-    fieldCount: table.fields.length,
-    rowCount,
-  }
-}
-
-function tableSchema(
-  table: DataTable,
-  rowCount: number,
-  tableSlugById: Map<string, string>,
-): ContentTableSchemaShape {
-  return {
-    ...tableSummary(table, rowCount),
-    singularLabel: table.singularLabel,
-    pluralLabel: table.pluralLabel,
-    fields: projectFields(table.fields, tableSlugById),
-  }
-}
-
-async function buildTableSlugLookup(db: DbClient): Promise<Map<string, string>> {
-  const tables = await listDataTables(db)
-  return new Map(tables.map((t) => [t.id, t.slug]))
-}
-
-function rowToEntry(row: DataRow, tableSlug: string): ContentEntry {
-  return {
-    id: row.id,
-    tableSlug,
-    slug: row.slug,
-    status: row.status,
-    cells: row.cells,
-    authorUserId: row.authorUserId,
-    pluginActorId: (row as { pluginActorId?: string | null }).pluginActorId ?? null,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    publishedAt: row.publishedAt,
-    scheduledPublishAt: row.scheduledPublishAt,
-  }
-}
-
-async function resolveTableBySlug(
-  db: DbClient,
-  slug: string,
-): Promise<DataTable> {
-  const all = await listDataTables(db)
-  const found = all.find((t) => t.slug === slug)
-  if (!found) throw new Error(`Content table "${slug}" not found`)
-  return found
-}
-
-/**
- * Compute the denormalized slug for a row. Mirrors what the host's CMS
- * handlers do at the boundary: prefer `cells.slug` when the table has a
- * slug field; fall back to an empty string for tables without one.
- */
-function denormalizeSlug(table: DataTable, cells: Record<string, unknown>): string {
-  const hasSlugField = table.fields.some((f) => f.id === 'slug')
-  if (!hasSlugField) return ''
-  const value = cells['slug']
-  return typeof value === 'string' ? value : ''
-}
+// Projection helpers (DB → wire shapes) live in `contentProjection.ts`.
 
 // ---------------------------------------------------------------------------
 // Hook emission — actor-attributed `content.entry.*` events
@@ -269,14 +141,17 @@ export async function handleContentTablesGet(
     replyApiOk(msg.pluginId, msg.correlationId, null)
     return
   }
-  // Row count — single small query reused from listDataTablesWithCounts.
-  const tables = await listDataTablesWithCounts(db)
-  const enriched = tables.find((t) => t.id === table.id)
-  const slugLookup = new Map(tables.map((t) => [t.id, t.slug]))
+  // One COUNT for this table + the id→slug lookup the relation-field
+  // projection needs — no per-table COUNT subselects for tables we don't
+  // return.
+  const [rowCount, slugLookup] = await Promise.all([
+    countDataRows(db, table.id),
+    buildTableSlugLookup(db),
+  ])
   replyApiOk(
     msg.pluginId,
     msg.correlationId,
-    tableSchema(table, enriched?.rowCount ?? 0, slugLookup),
+    tableSchema(table, rowCount, slugLookup),
   )
 }
 
@@ -433,6 +308,8 @@ export async function handleContentEntriesDelete(
   }
   const deleted = await softDeleteDataRow(db, entryId)
   if (deleted) {
+    // A published row's route is retracted — invalidate the render cache.
+    if (deleted.status === 'published') await bumpPublishVersionSerialized()
     await emitEntryDeleted(tableSlug, entryId, { kind: 'plugin', pluginId: msg.pluginId })
   }
   replyApiOk(msg.pluginId, msg.correlationId, undefined)
@@ -522,10 +399,14 @@ export async function handleContentEntriesUpdateMany(
   const table = await resolveTableBySlug(db, tableSlug)
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
 
-  // Apply filter + diff per-row before the transaction.
+  // Read every targeted row in ONE IN-list query, then apply filter + diff
+  // per-row before the transaction. Iterating `updates` in input order
+  // preserves the first-bad-id error semantics of the old per-row reads.
+  const existingRows = await getDataRowMany(db, updates.map((u) => u.id))
+  const existingById = new Map(existingRows.map((row) => [row.id, row]))
   const prepared: Array<{ id: string; input: { cells: Record<string, unknown>; slug: string }; changedIds: string[] }> = []
   for (const { id, patch } of updates) {
-    const existing = await getDataRow(db, id)
+    const existing = existingById.get(id)
     if (!existing || existing.tableId !== table.id) {
       throw new Error(`Entry "${id}" not found in table "${tableSlug}"`)
     }
@@ -566,19 +447,25 @@ export async function handleContentEntriesDeleteMany(
   assertContentTableAccess(entry, tableSlug, 'delete')
   const table = await resolveTableBySlug(db, tableSlug)
   // Validate every id belongs to this table BEFORE the transaction so a
-  // bad id aborts cleanly without partially-applied deletes.
+  // bad id aborts cleanly without partially-applied deletes. One IN-list
+  // read for the whole batch; input order preserves first-bad-id errors.
+  const rows = await getDataRowMany(db, ids)
+  const rowsById = new Map(rows.map((row) => [row.id, row]))
   for (const id of ids) {
-    const row = await getDataRow(db, id)
+    const row = rowsById.get(id)
     if (!row || row.tableId !== table.id) {
       throw new Error(`Entry "${id}" not found in table "${tableSlug}"`)
     }
   }
   const result = await softDeleteDataRowMany(db, ids, null)
+  // Published rows' routes were retracted — one cache invalidation per batch.
+  if (result.publishedDeleted > 0) await bumpPublishVersionSerialized()
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
   for (const id of ids) {
     await emitEntryDeleted(tableSlug, id, actor)
   }
-  replyApiOk(msg.pluginId, msg.correlationId, result)
+  // Reply shape is part of the plugin API — only `deleted` is exposed.
+  replyApiOk(msg.pluginId, msg.correlationId, { deleted: result.deleted })
 }
 
 // ---------------------------------------------------------------------------

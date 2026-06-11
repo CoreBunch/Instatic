@@ -32,8 +32,10 @@ import {
   reindexNodeParents,
 } from '@core/page-tree'
 import type { NodeTree, PageNode, SiteDocument } from '@core/page-tree'
+import { subtreeHasOutlet, treeHasOutlet } from '@core/templates'
 import { wouldCreateCycle, syncSlotInstances, applySlotSyncResult } from '@core/visualComponents'
-import { depthInTree } from './helpers'
+import { pushToast } from '@ui/components/Toast'
+import { depthInTree, resolveActiveTreeTarget } from './helpers'
 import { pruneCanvasSelectionDraft } from '../selectionSlice'
 import { indexStyleRulesByName, linkImportedClassNames, mergeImportedStyleRules } from './importLinking'
 import type { SiteSlice, SiteSliceHelpers } from './types'
@@ -116,12 +118,19 @@ function recordPatchChanges(
   return Object.entries(patch).some(([key, value]) => !Object.is(current[key], value))
 }
 
-/** Whether a tree already contains a `base.outlet` node (≤1 allowed per tree). */
-function treeHasOutlet(tree: NodeTree<PageNode>): boolean {
-  for (const id in tree.nodes) {
-    if (tree.nodes[id].moduleId === 'base.outlet') return true
-  }
-  return false
+/**
+ * Surface a blocked one-outlet-per-document mutation to the user. The store is
+ * the chokepoint every mutation path runs through (picker, drag-drop, context
+ * menus, keyboard shortcuts, spotlight, agent), so the feedback lives here too
+ * — the toast bus is explicitly designed for store-side producers.
+ */
+function toastOutletBlocked(body: string): void {
+  pushToast({
+    kind: 'warning',
+    title: 'Only one content outlet',
+    body,
+    location: 'site-editor',
+  })
 }
 
 /**
@@ -151,6 +160,7 @@ export function createNodeActions(helpers: SiteSliceHelpers): NodeActions {
       const resolvedDefaults = { ...(mod?.defaults ?? {}), ...defaults }
       const newNode = createNode(moduleId, resolvedDefaults)
       let inserted = false
+      let blockedByOutlet = false
       mutateActiveTree((tree) => {
         // Structural invariant: a document tree holds AT MOST ONE base.outlet.
         // Matched content (a page or the current entry body) flows into a single
@@ -159,15 +169,20 @@ export function createNodeActions(helpers: SiteSliceHelpers): NodeActions {
         // render as a dead, empty placeholder. This is the mutation chokepoint
         // every insert path runs through (picker, drag-drop, programmatic), so
         // blocking the second outlet here keeps the invariant no matter the
-        // caller. The user-facing message lives in `useInsertModule`.
+        // caller. `duplicateNode(s)` and `pasteNode` carry the same guard.
         if (moduleId === 'base.outlet' && treeHasOutlet(tree)) {
-          console.warn('[outlet] blocked inserting a second base.outlet into the document')
+          blockedByOutlet = true
           return false
         }
         insertNode(tree, newNode, parentId, index)
         inserted = true
         return true
       })
+      if (blockedByOutlet) {
+        toastOutletBlocked(
+          'This document already has a content outlet — matched content can flow into just one.',
+        )
+      }
       return inserted ? newNode.id : ''
     },
 
@@ -415,43 +430,74 @@ export function createNodeActions(helpers: SiteSliceHelpers): NodeActions {
 
     duplicateNode: (nodeId) => {
       let newId = ''
+      let blockedByOutlet = false
       // Per-node "module-style" classes (scope.type === 'node') must be cloned
       // alongside the node — otherwise the duplicate's classIds carry the
       // source's class id and editing one node restyles both. F-0005.
       mutateActiveTreeAndSite((tree, site) => {
         if (!tree.nodes[nodeId]) return false
+        // One-outlet-per-document invariant: the source subtree still holds the
+        // outlet, so duplicating it would mint a second one.
+        if (subtreeHasOutlet(tree.nodes, nodeId)) {
+          blockedByOutlet = true
+          return false
+        }
         newId = duplicateNodeWithScopedClasses(tree, site, nodeId)
         return newId ? true : false
       })
+      if (blockedByOutlet) {
+        toastOutletBlocked(
+          'Duplicating this would create a second content outlet — a document can hold just one.',
+        )
+      }
       return newId
     },
 
     duplicateNodes: (nodeIds) => {
       if (nodeIds.length === 0) return []
       const newIds: string[] = []
+      let blockedByOutlet = false
       mutateActiveTreeAndSite((tree, site) => {
         for (const id of nodeIds) {
           // Skip the root and any id missing from the tree — duplicateNode
           // throws on the root, and silently skipping orphans matches the
           // delete/move guards.
           if (!tree.nodes[id] || id === tree.rootNodeId) continue
+          // One-outlet-per-document invariant — same guard as duplicateNode.
+          if (subtreeHasOutlet(tree.nodes, id)) {
+            blockedByOutlet = true
+            continue
+          }
           newIds.push(duplicateNodeWithScopedClasses(tree, site, id))
         }
         return newIds.length > 0
       })
+      if (blockedByOutlet) {
+        toastOutletBlocked(
+          'Duplicating the content outlet was skipped — a document can hold just one.',
+        )
+      }
       return newIds
     },
 
     deleteNodes: (nodeIds) => {
       if (nodeIds.length === 0) return
+      // Precompute depths ONCE against the FROZEN pre-mutation tree: sorting
+      // inside the recipe would walk ancestor chains through the Mutative
+      // draft (every node access materializes a draft proxy), twice per
+      // comparison. Sorting against pre-draft state is safe because the
+      // recipe re-checks `tree.nodes[id]` before each delete.
+      const target = resolveActiveTreeTarget(get())
+      if (!target) return
+      const depthById = new Map<string, number>()
+      for (const id of nodeIds) depthById.set(id, depthInTree(target.tree, id))
+      // Sort by depth-DESC so leaves go first — descendants of an
+      // already-deleted id are gone, and the "node not found" guard handles
+      // the redundant case cleanly.
+      const ordered = [...nodeIds].sort(
+        (a, b) => depthById.get(b)! - depthById.get(a)!,
+      )
       const deleted = mutateActiveTree((tree) => {
-        // Delete each id; descendants of an already-deleted id are gone, so the
-        // helper's "node not found" branch handles the redundant case cleanly.
-        // We sort by depth-DESC so leaves go first, avoiding noisy throws when
-        // a parent is deleted before its child in the same batch.
-        const ordered = [...nodeIds].sort(
-          (a, b) => depthInTree(tree, b) - depthInTree(tree, a),
-        )
         let changed = false
         for (const id of ordered) {
           if (id === tree.rootNodeId) continue

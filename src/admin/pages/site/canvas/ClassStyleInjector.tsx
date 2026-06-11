@@ -28,13 +28,19 @@
  * - Only known CSS property names from CSSPropertyBag interface are emitted.
  *
  * Performance:
- * - Subscribes with a shallow-equality selector so re-renders only happen when
- *   classes actually change (not on every site edit).
+ * - Subscribes with granular selectors so re-renders only happen when the
+ *   relevant slices actually change (not on every site edit).
+ * - `generateCanvasClassCSS` is identity-memoized on its 8 inputs (see
+ *   `createCanvasClassCssMemo`). All breakpoint-frame injectors render with
+ *   the same store snapshot in the same commit, so the full registry CSS is
+ *   generated ONCE per change and frames 2..N reuse the cached string. Only
+ *   the per-frame viewport-unit resolution still runs per injector — its
+ *   output genuinely differs per frame width.
  */
 
 import { useEffect } from 'react'
 import { useEditorStore } from '@site/store/store'
-import { styleRuleSelector, type ConditionDef } from '@core/page-tree'
+import { styleRuleSelector, type ConditionDef, type StyleRule } from '@core/page-tree'
 import { selectorStatePseudo } from '@site/cssStatePseudo'
 import { generateCanvasClassCSS, generateForcedStateCSS, generatePreviewClassCSS } from './canvasClassCss'
 import { resolveViewportUnitsForCanvas, type CanvasViewport } from './resolveViewportUnits'
@@ -74,6 +80,13 @@ const EMPTY_BREAKPOINTS: Array<{ id: string; width: number }> = []
 /** Stable empty fallback for the conditions selector (Guideline #239). */
 const EMPTY_CONDITIONS: ConditionDef[] = []
 
+/**
+ * Stable empty registry passed to `generateCanvasClassCSS` when the site has
+ * no style rules. An inline `{}` literal would mint a new identity per effect
+ * run, defeating the generator's input-identity memo across frames.
+ */
+const EMPTY_STYLE_RULES: Record<string, StyleRule> = {}
+
 export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjectorProps = {}) {
   // Subscribe to class registry — shallow equality so we only re-run when
   // the classes object reference changes (Immer always creates a new ref on mutation)
@@ -105,7 +118,7 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
     const forCanvas = (css: string) => (viewport ? resolveViewportUnitsForCanvas(css, viewport) : css)
 
     const generated = generateCanvasClassCSS(
-      classes && Object.keys(classes).length > 0 ? classes : {},
+      classes ?? EMPTY_STYLE_RULES,
       breakpoints,
       conditions,
       frameworkColors,

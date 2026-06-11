@@ -18,21 +18,17 @@
  */
 
 import type { Page, SiteDocument } from '@core/page-tree'
-import { resolveTemplateChain, type RouteResolutionContext } from '@core/templates'
+import {
+  resolveTemplateChain,
+  treeHasOutlet,
+  type RouteResolutionContext,
+} from '@core/templates'
 
 /** Breadth rank: lower wraps higher. Non-template pages are the innermost. */
 function levelRank(page: Page): number {
   const target = page.template?.target
   if (!target) return 2
   return target.kind === 'everywhere' ? 0 : 1
-}
-
-/** Whether a template tree contains a `base.outlet` to host the wrapped content. */
-function hasOutlet(page: Page): boolean {
-  for (const id in page.nodes) {
-    if (page.nodes[id].moduleId === 'base.outlet') return true
-  }
-  return false
 }
 
 /**
@@ -59,6 +55,6 @@ export function resolveEditorWrapperTemplates(site: SiteDocument, activeDoc: Pag
   // postTypes winner for the same route never wraps another postTypes template)
   // that actually have an outlet to host the wrapped content.
   return resolveTemplateChain(site, ctx).filter(
-    (page) => page.id !== activeDoc.id && levelRank(page) < myRank && hasOutlet(page),
+    (page) => page.id !== activeDoc.id && levelRank(page) < myRank && treeHasOutlet(page),
   )
 }

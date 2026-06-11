@@ -152,11 +152,13 @@ export interface AiProvider {
   readonly id: AiProviderId
   readonly label: string
   /**
-   * Which auth modes this provider supports. The credential UI uses this
-   * to gate the auth-mode picker per provider.
+   * Which credential shapes this provider accepts. Current providers expose
+   * exactly one shape, so the admin UI derives it from the provider instead
+   * of showing a separate auth-mode picker.
    *
    *   anthropic → ['apiKey']
    *   openai    → ['apiKey']
+   *   openrouter → ['apiKey']
    *   ollama    → ['baseUrl']
    */
   readonly supportedAuthModes: readonly AiAuthMode[]

@@ -10,6 +10,7 @@ import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { StarSolidIcon } from 'pixel-art-icons/icons/star-solid'
 import { ModuleIcon } from '@site/ui/ModuleIcon'
 import { Button } from '@ui/components/Button'
+import { cn } from '@ui/cn'
 import {
   itemDescription,
   type ModuleInserterAccent,
@@ -57,6 +58,7 @@ export function ModuleInserterItemButton({
   onPointerDown,
 }: InserterItemButtonProps) {
   const isList = view === 'list'
+  const disabled = Boolean(item.disabledReason)
   const favoriteLabel = favorite
     ? `Remove ${item.name} from notch favorites`
     : `Add ${item.name} to notch favorites`
@@ -68,7 +70,10 @@ export function ModuleInserterItemButton({
   }
 
   return (
-    <div className={styles.itemShell} data-accent={item.accent}>
+    <div
+      className={cn(styles.itemShell, disabled && styles.itemShellDisabled)}
+      data-accent={item.accent}
+    >
       <Button
         variant="ghost"
         size="sm"
@@ -78,6 +83,8 @@ export function ModuleInserterItemButton({
         onFocus={onSelect}
         onClick={onPick}
         onPointerDown={(event) => onPointerDown(item, event)}
+        disabled={disabled}
+        tooltip={item.disabledReason}
         data-selected={selected ? 'true' : undefined}
         data-accent={item.accent}
         data-module-id={item.kind === 'module' ? item.id : undefined}

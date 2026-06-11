@@ -133,6 +133,7 @@ export async function handleRowPreview(
       pageId: merged.id,
       slug: merged.slug,
       siteId: snapshot.site.id,
+      cssBundle,
       jsModuleIds: published.jsModuleIds.filter((id) => moduleJsMap.has(id)),
       publishVersion: getPublishVersion(),
     },

@@ -7,8 +7,12 @@
  * across many attacker IPs.
  *
  * Storage is a `Map<key, number[]>` of attempt timestamps. Old entries fall
- * out of the window lazily on each access; a periodic prune keeps the map
- * from growing unbounded for keys that go quiet.
+ * out of the window lazily on each access; `consume()` additionally runs an
+ * opportunistic full prune — every `PRUNE_INTERVAL` calls, or as soon as the
+ * map exceeds `PRUNE_SIZE_THRESHOLD` keys — so attacker-controlled
+ * `(ip, email)` keys that go quiet cannot grow the map unbounded in a
+ * long-lived process. The common path stays allocation-free: one counter
+ * bump and a size check.
  *
  * Why in-memory instead of Redis or a DB table?
  *   - The CMS deploys as a single Bun process (the SQLite trade-off applies
@@ -39,8 +43,14 @@ export interface RateLimiterOptions {
 }
 
 export class RateLimiter {
+  /** `consume()` calls between opportunistic prune sweeps. */
+  static readonly PRUNE_INTERVAL = 1024
+  /** Bucket count that forces a prune sweep on the next `consume()`. */
+  static readonly PRUNE_SIZE_THRESHOLD = 4096
+
   private readonly buckets = new Map<string, Bucket>()
   private readonly options: RateLimiterOptions
+  private callsSincePrune = 0
 
   constructor(options: RateLimiterOptions) {
     if (options.limit < 1) throw new Error('RateLimiter: limit must be >= 1')
@@ -50,13 +60,27 @@ export class RateLimiter {
 
   /**
    * Record an attempt against `key` and return whether it is allowed under
-   * the current sliding window. Always records — even on rejection — so a
-   * sustained attacker doesn't get to retry the moment the oldest attempt
-   * expires.
+   * the current sliding window. Rejected attempts are NOT recorded
+   * (sliding-window-log semantics): the window stays anchored to accepted
+   * attempts, so a spamming client can neither grow its bucket unboundedly
+   * nor push back the moment its oldest accepted attempt ages out.
    *
    * Pass `now` explicitly in tests; production callers omit it.
    */
   consume(key: string, now: number = Date.now()): RateLimitDecision {
+    // Opportunistic housekeeping (see module header). Runs BEFORE the bucket
+    // lookup so this call can never push onto a bucket the sweep just
+    // deleted. Pruning only drops fully-aged-out attempts, which the
+    // per-bucket filter below ignores anyway — limit decisions are unchanged.
+    this.callsSincePrune += 1
+    if (
+      this.callsSincePrune >= RateLimiter.PRUNE_INTERVAL ||
+      this.buckets.size > RateLimiter.PRUNE_SIZE_THRESHOLD
+    ) {
+      this.callsSincePrune = 0
+      this.prune(now)
+    }
+
     const { limit, windowMs } = this.options
     const cutoff = now - windowMs
 
@@ -94,8 +118,10 @@ export class RateLimiter {
   }
 
   /**
-   * Drop empty / fully-aged-out buckets. Optional housekeeping; the per-call
-   * filter in `consume()` already prevents stale data from affecting decisions.
+   * Drop empty / fully-aged-out buckets. Invoked opportunistically from
+   * `consume()`; the per-call filter there already prevents stale data from
+   * affecting decisions, so pruning only frees memory — it never changes a
+   * limit decision.
    */
   prune(now: number = Date.now()): void {
     const cutoff = now - this.options.windowMs

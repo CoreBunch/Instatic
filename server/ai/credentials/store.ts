@@ -227,8 +227,9 @@ export async function resolveCredentialForDriver(
 // ---------------------------------------------------------------------------
 
 /**
- * Insert a new credential row. Encrypts the API key with the live master
- * key + stores the key fingerprint so the UI can later detect rotation.
+ * Insert a new credential row. Encrypts any recoverable secret material with
+ * the live master key + stores the key fingerprint so the UI can later detect
+ * rotation.
  *
  * Throws CredentialError on:
  *   - duplicate (user_id, provider_id, display_label) — surfaced as 409

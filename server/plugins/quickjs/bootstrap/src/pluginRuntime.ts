@@ -228,7 +228,7 @@ globalThis.__runLoopFetch = async function runLoopFetch(sourceId, ctxJson) {
   const result = await source.fetch(fromJson(ctxJson))
   // Fallback for a fetch() that forgets to return: send the empty result shape
   // the host's runLoopFetch parses back ({ items, totalItems }) rather than the
-  // JS `undefined` primitive, which would make the host's evalString throw a
+  // JS `undefined` primitive, which would make the host's callString throw a
   // cryptic "not a string". Every data-returning dispatcher supplies a fallback.
   return toJson(result, { items: [], totalItems: 0 })
 }
@@ -237,7 +237,8 @@ globalThis.__runLoopPreview = function runLoopPreview(sourceId, ctxJson) {
   const source = globalThis.__plugin_handlers.loopSources[sourceId]
   if (!source) throw new Error('Loop source not registered: ' + sourceId)
   const result = source.preview(fromJson(ctxJson))
-  // preview() is contractually SYNCHRONOUS — the host calls it via a sync eval.
+  // preview() is contractually SYNCHRONOUS — the host drives it through the
+  // same settle pipeline as the async runners; a sync return settles instantly.
   // An async preview returns a Promise, which JSON.stringify flattens to '{}',
   // and the host would silently parse that to an empty preview. Surface the
   // author's bug loudly instead of swallowing it.
@@ -246,7 +247,7 @@ globalThis.__runLoopPreview = function runLoopPreview(sourceId, ctxJson) {
   }
   // Fallback for a preview() that forgets to return: '[]' (the empty array the
   // host parses) instead of the JS `undefined` primitive that would crash the
-  // host's evalString.
+  // host's callString.
   return toJson(result, [])
 }
 
@@ -285,7 +286,7 @@ globalThis.__runSchedule = async function runSchedule(scheduleId) {
  *
  * argsJson is the JSON-encoded argument array for the method (so
  * beginWrite receives one object, delete receives one string, etc.). The
- * runner returns JSON-stringified value so the host's evalString helper
+ * runner returns JSON-stringified value so the host's callString helper
  * can carry the result back.
  */
 globalThis.__runMediaAdapterCall = async function runMediaAdapterCall(adapterId, method, argsJson) {
@@ -323,7 +324,7 @@ globalThis.__detectExportedHooks = function detectExportedHooks() {
   // evalJson, which already wraps the result in JSON.stringify. Returning
   // a string would double-encode and the host would receive a string like
   // [["activate"]]. The runner-style helpers (__runRoute / __runLoopFetch
-  // / ...) DO return JSON strings because their callers use evalString.
+  // / ...) DO return JSON strings because the host reads them via callString.
   const known = ['install', 'activate', 'deactivate', 'uninstall', 'migrate']
   const mod: Record<string, unknown> = __resolvePluginModule() || {}
   const out: string[] = []

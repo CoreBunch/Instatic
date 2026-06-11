@@ -1,30 +1,12 @@
 import type { Page, PageNode } from '@core/page-tree'
 import { reindexNodeParents } from '@core/page-tree'
+import { firstOutletId, treeHasOutlet } from './outlet'
 
 export type TerminalContent =
   | { kind: 'page'; page: Page }
   | { kind: 'entry' }
 
 type Nodes = Record<string, PageNode>
-
-/**
- * The first base.outlet id in a tree, or null when there is none.
- *
- * The composer is deliberately forgiving: a template with NO outlet is an
- * unfinished template (the author's business, not a hard error) and is simply
- * skipped; a template with MORE THAN ONE outlet uses the first and leaves the
- * rest to render empty. Nothing here throws — an unfinished template never
- * breaks publishing.
- */
-function firstOutletId(nodes: Nodes): string | null {
-  for (const id in nodes) if (nodes[id].moduleId === 'base.outlet') return id
-  return null
-}
-
-/** Whether a template tree contains at least one base.outlet to host content. */
-function hasOutlet(page: Page): boolean {
-  return firstOutletId(page.nodes) !== null
-}
 
 function hasMeaningfulBodyProps(node: PageNode): boolean {
   return Object.keys(node.props ?? {}).length > 0
@@ -122,7 +104,7 @@ function spliceIntoOutlet(host: Nodes, hostRoot: string, inner: Nodes, innerRoot
  *    chrome only (no body) until the author adds an outlet.
  */
 export function composeTemplateChain(chain: Page[], terminal: TerminalContent): Page {
-  const effective = chain.filter(hasOutlet)
+  const effective = chain.filter(treeHasOutlet)
 
   if (effective.length === 0) {
     if (terminal.kind === 'page') return terminal.page
