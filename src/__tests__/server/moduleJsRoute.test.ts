@@ -69,9 +69,19 @@ function makeFakeDb(snapshot: ReturnType<typeof makeSnapshot> | null): DbClient 
   ): Promise<DbResult<Row>> => {
     const sql = strings.reduce<string>((acc, str, i) => (i === 0 ? str : `${acc}$${i}${str}`), '')
     const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase()
-    if (normalized.includes('select data_row_versions.snapshot_json')) {
+    // The snapshot getters join site_snapshots and reassemble the
+    // PublishedPageSnapshot shape from this row (see repositories/publish.ts).
+    if (normalized.includes('site_snapshots.site_json')) {
       return {
-        rows: snapshot ? [{ snapshot_json: snapshot } as Row] : [],
+        rows: snapshot
+          ? [{
+              row_id: snapshot.pageRowId,
+              site_json: snapshot.site,
+              runtime_assets_json: null,
+              importmap_body: null,
+              importmap_sha256: null,
+            } as unknown as Row]
+          : [],
         rowCount: snapshot ? 1 : 0,
       }
     }
