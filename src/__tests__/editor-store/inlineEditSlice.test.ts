@@ -211,3 +211,42 @@ describe('cancelInlineEdit', () => {
     expect(nodeText(nodeId)).toBe('Hello')
   })
 })
+
+describe('force-close', () => {
+  it('clears the session when the edited node is deleted', () => {
+    const { nodeId } = setupSiteWithTextNode()
+    useEditorStore.getState().startInlineEdit(nodeId, 'bp')
+    useEditorStore.getState().deleteNode(nodeId)
+    expect(useEditorStore.getState().activeInlineEdit).toBeNull()
+  })
+
+  it('clears the session when the edited node is swept with a deleted ancestor', () => {
+    const store = useEditorStore.getState()
+    const site = store.createSite('Inline Edit Test Site')
+    const rootId = site.pages[0].rootNodeId
+    const containerId = useEditorStore.getState().insertNode('base.container', {}, rootId)
+    const textId = useEditorStore.getState().insertNode('base.text', { text: 'Hi' }, containerId)
+    useEditorStore.getState().startInlineEdit(textId, 'bp')
+    expect(useEditorStore.getState().activeInlineEdit).not.toBeNull()
+    useEditorStore.getState().deleteNode(containerId)
+    expect(useEditorStore.getState().activeInlineEdit).toBeNull()
+  })
+
+  it('clears the session on page switch', () => {
+    const { nodeId, pageId } = setupSiteWithTextNode()
+    // addPage activates the new page — hop back before starting the session.
+    const pageB = useEditorStore.getState().addPage('Second', 'second')
+    useEditorStore.getState().openPageInCanvas(pageId)
+    useEditorStore.getState().startInlineEdit(nodeId, 'bp')
+    expect(useEditorStore.getState().activeInlineEdit).not.toBeNull()
+    useEditorStore.getState().openPageInCanvas(pageB.id)
+    expect(useEditorStore.getState().activeInlineEdit).toBeNull()
+  })
+
+  it('clears the session on active-document switch', () => {
+    const { nodeId } = setupSiteWithTextNode()
+    useEditorStore.getState().startInlineEdit(nodeId, 'bp')
+    useEditorStore.getState().setActiveDocument({ kind: 'visualComponent', vcId: 'vc-x' })
+    expect(useEditorStore.getState().activeInlineEdit).toBeNull()
+  })
+})
