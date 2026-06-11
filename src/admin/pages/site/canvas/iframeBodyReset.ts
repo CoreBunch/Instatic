@@ -33,6 +33,14 @@ const CANVAS_CHROME_CSS = [
   '  -webkit-user-select: none !important;',
   '  -webkit-tap-highlight-color: transparent !important;',
   '}',
+  // The inline text editor IS a real element in the frame. Restore text
+  // selection + the I-beam on it (and its descendants) so the author can click
+  // to place the caret, double-click a word, and drag-select while editing.
+  '[contenteditable], [contenteditable] * {',
+  '  cursor: text !important;',
+  '  user-select: text !important;',
+  '  -webkit-user-select: text !important;',
+  '}',
   '*:focus, *:focus-visible {',
   '  outline: none !important;',
   '}',

@@ -127,22 +127,14 @@ export interface ModuleComponentProps<
 
 /**
  * What the canvas hands a text module so its own element becomes the inline
- * editor. The element is made `contentEditable`; its content is seeded ONCE
- * from `initialHtml` (stable across re-renders so React never resets the
- * caret while live edits flow to other frames), and the canvas reads the
- * edited text back through `ref` + the handlers.
+ * editor: the module spreads these onto its element to make it
+ * `contentEditable` and wire the live-edit handlers. The canvas itself seeds
+ * the element's content imperatively (React must not own it) and reads the
+ * edited text back through `ref` + the handlers — see `inlineEditableElementProps`.
  */
 export interface InlineEditBinding {
-  /** Ref the canvas attaches to focus the element and read it on commit. */
+  /** Ref the canvas attaches to focus + seed the element and read it on commit. */
   ref: Ref<HTMLElement>
-  /**
-   * The prop's value at session start. The module seeds the element's content
-   * from this ONCE (via its own text→HTML mapping). It is constant for the
-   * whole session, so React's `dangerouslySetInnerHTML` diff is a no-op on
-   * every live re-render and never resets the caret while edits flow to the
-   * other breakpoint frames.
-   */
-  initialValue: string
   /** Fires on every edit — the canvas reads `innerText` and commits live. */
   onInput: FormEventHandler<HTMLElement>
   /** Escape cancels, Enter commits/breaks per the module's multiline flag. */
@@ -268,13 +260,14 @@ export interface ModuleDefinition<
 
   /**
    * Opt-in canvas inline text editing (double-click a node on the canvas).
-   * `prop` names the single string prop the overlay edits; `multiline: true`
-   * renders a `<textarea>` instead of an `<input>`. Modules without this
-   * field keep the no-op double-click. The canvas resolves the contract
-   * generically — no per-module branches (a node with children never starts
-   * a session, which is how `base.link`'s children-over-text render rule is
-   * honoured). See docs/features/canvas-iframe-per-frame.md → "Inline text
-   * editing (parent-doc overlay)".
+   * `prop` names the single string prop edited in place; the node's own
+   * element becomes `contentEditable` (there is no overlay). `multiline: true`
+   * (e.g. `base.text`) lets plain Enter insert a hard line break; otherwise
+   * Enter commits. Modules without this field keep the no-op double-click. The
+   * canvas resolves the contract generically — no per-module branches (a node
+   * with children never starts a session, which is how `base.link`'s
+   * children-over-text render rule is honoured). See
+   * docs/features/canvas-iframe-per-frame.md → "Inline text editing".
    */
   inlineTextEdit?: { prop: string; multiline?: boolean }
 

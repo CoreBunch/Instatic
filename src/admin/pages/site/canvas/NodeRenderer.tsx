@@ -173,6 +173,10 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   // (same-origin); focusing it focuses the iframe in the parent — no
   // cross-frame negotiation needed. Deps are constant for the whole session, so
   // this runs once per session (never mid-edit, which would wipe the edits).
+  // Trade-off: a programmatic mutation that swaps the node's element mid-session
+  // (e.g. an RPC changing base.text's `tag`) remounts a fresh, unseeded element
+  // and is not re-seeded. Unreachable from the UI — interacting with the
+  // Properties panel blurs the editor, which ends the session first.
   useLayoutEffect(() => {
     if (!isInlineEditing) return
     const el = editableRef.current
@@ -358,7 +362,6 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   const inlineEditBinding: InlineEditBinding | undefined = isInlineEditing
     ? {
         ref: editableRef,
-        initialValue: inlineEditInitialValue ?? '',
         onInput: (e) => applyInlineEditValue(readInlineEditableText(e.currentTarget as HTMLElement)),
         onKeyDown: (e) => {
           if (e.key === 'Escape') {

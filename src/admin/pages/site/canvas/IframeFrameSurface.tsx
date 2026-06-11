@@ -83,6 +83,7 @@ import { useCanvasFormControlSuppression } from './useCanvasFormControlSuppressi
 import { CANVAS_VIEWPORT_HEIGHT, type CanvasViewport } from './resolveViewportUnits'
 import { useIframeFrameAutoHeight } from './useIframeFrameAutoHeight'
 import { applyIframeBodyReset, type IframeInteraction } from './iframeBodyReset'
+import { useEditorStore } from '@site/store/store'
 import styles from './IframeFrameSurface.module.css'
 
 const IFRAME_SRC_DOC = '<!doctype html><html><head></head><body></body></html>'
@@ -458,6 +459,17 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
         }
       }
       const onKeyDown = (e: KeyboardEvent) => {
+        // While inline text editing, the contentEditable node owns the keyboard.
+        // Stand the whole canvas key layer down: don't track space-pan, don't
+        // block Tab, and DON'T forward the keystroke to the parent document.
+        // Forwarding re-dispatches a clone on `document`, where native handlers
+        // (undo/redo, zoom reset, panel rail, space-pan) guard only on
+        // `e.target.isContentEditable` — but the clone's target is `document`,
+        // not the cross-realm editing element, so they'd fire mid-edit. The
+        // worst is Cmd+Z running the store `undo()` (reverting the whole
+        // coalesced session) while the DOM keeps the text — store/DOM diverge.
+        // The element's own React onKeyDown still owns Escape/Enter.
+        if (useEditorStore.getState().activeInlineEdit) return
         if (e.code === 'Space' && !e.repeat) spaceHeld = true
         // Block Tab navigation inside the canvas iframe. The author is
         // designing, not using, the page — letting Tab walk through

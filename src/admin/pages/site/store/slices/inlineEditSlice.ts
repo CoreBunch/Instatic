@@ -61,8 +61,14 @@ export const createInlineEditSlice: EditorStoreSliceCreator<InlineEditSlice> = (
     const state = get()
     const node = getActiveTree(state)?.nodes[nodeId]
     if (!node) return
-    const spec = registry.get(node.moduleId)?.inlineTextEdit
+    const def = registry.get(node.moduleId)
+    const spec = def?.inlineTextEdit
     if (!spec) return
+    // Sandboxed (untrusted plugin) modules render in a ModuleSandboxFrame, which
+    // never receives the inlineEdit binding — so there'd be no contentEditable
+    // element to focus/commit and the session would be stuck. Mirror
+    // NodeRenderer's `shouldRenderSandbox` check and never start for them.
+    if (def?.editorRuntime?.sandbox && !def.trusted) return
     // A node rendering children doesn't render its text prop (base.link).
     if (node.children.length > 0) return
     // A dynamically-bound prop isn't literal-editable — the binding would

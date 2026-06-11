@@ -1,5 +1,7 @@
 # Inline Text Editing Implementation Plan
 
+> **⚠️ SUPERSEDED — historical record.** This plan implemented the parent-document **overlay** approach (a `<textarea>`/`<input>` floated over the node, typography mirrored from the iframe, doubled text hidden). That approach was later replaced by editing the **real node element in place** via `contentEditable` for 100% fidelity. Everything below describing `InlineTextEditOverlay`, `mirrorInlineEditTypography`, `ParentDocumentSiteFontsInjector`, the `data-instatic-inline-editing` hide rule, and `white-space`-dependent newlines no longer reflects the code. The module contract, the `inlineEditSlice` session, and the live-commit/undo model are still accurate. For current behaviour see the superseding note in `docs/superpowers/specs/2026-06-10-inline-text-editing-design.md` and `docs/features/canvas-iframe-per-frame.md` → "Inline text editing".
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Double-click a text-bearing canvas node (`base.text`, `base.button`, childless `base.link`) and edit its text in a parent-document overlay positioned over the node inside the breakpoint iframe, with live per-keystroke commit, one undo entry per session, and Escape-to-cancel.
