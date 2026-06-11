@@ -251,6 +251,14 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.code === 'Space' && !e.repeat) {
+        // Inline text editing owns the keyboard. The edited element lives in a
+        // breakpoint iframe and forwards its keystrokes here as a clone
+        // dispatched on `document`, so `e.target` is the document — the
+        // contentEditable check below can't see it. Without this guard the
+        // space-pan would preventDefault every spacebar press, so the author
+        // could never type a space. The editing element handles Escape/Enter
+        // itself; every other key (space included) must reach it untouched.
+        if (useEditorStore.getState().activeInlineEdit) return
         const target = e.target as HTMLElement
         // Don't intercept space in inputs/textareas
         if (

@@ -20,6 +20,7 @@ import { readFileSync } from 'fs'
 const CANVAS_ROOT = new URL('../../admin/pages/site/canvas/CanvasRoot.tsx', import.meta.url)
 const NODE_RENDERER = new URL('../../admin/pages/site/canvas/NodeRenderer.tsx', import.meta.url)
 const KEYBOARD_SHORTCUTS = new URL('../../admin/pages/site/canvas/useCanvasKeyboardShortcuts.ts', import.meta.url)
+const USE_CANVAS = new URL('../../admin/pages/site/hooks/useCanvas.ts', import.meta.url)
 const BREAKPOINT_FRAME = new URL('../../admin/pages/site/canvas/BreakpointFrame.tsx', import.meta.url)
 const CONTEXTS = new URL('../../admin/pages/site/canvas/CanvasContexts.ts', import.meta.url)
 
@@ -60,6 +61,14 @@ describe('inline text editing wiring (in-place contentEditable)', () => {
 
   it('the canvas keyboard handler bails while an inline edit is active', () => {
     const src = readFileSync(KEYBOARD_SHORTCUTS, 'utf-8')
+    expect(src).toContain('if (useEditorStore.getState().activeInlineEdit) return')
+  })
+
+  it('space-to-pan bails while an inline edit is active so the spacebar types a space', () => {
+    // The edited element forwards its keystrokes to the parent document, where
+    // the space-pan handler would otherwise preventDefault the spacebar and the
+    // author could never type a space mid-word.
+    const src = readFileSync(USE_CANVAS, 'utf-8')
     expect(src).toContain('if (useEditorStore.getState().activeInlineEdit) return')
   })
 
