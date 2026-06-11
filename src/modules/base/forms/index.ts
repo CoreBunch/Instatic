@@ -9,6 +9,7 @@ import { registry } from '@core/module-engine'
 import { Type, Value, type Static } from '@core/utils/typeboxHelpers'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
 import { safeUrl } from '@modules/base/utils/escape'
+import { FORM_RUNTIME_JS } from './formRuntimeJs'
 import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
 import { TextStartTIcon } from 'pixel-art-icons/icons/text-start-t'
 import { CheckboxSolidIcon } from 'pixel-art-icons/icons/checkbox-solid'
@@ -204,7 +205,12 @@ export const FormModule: ModuleDefinition<FormProps> = {
     const honeypot = props.mode === 'cms'
       ? `<input type="text" name="${props.honeypotName}" autocomplete="off" tabindex="-1" data-instatic-honeypot hidden>`
       : ''
-    return { html: `<form ${attrs}>${honeypot}${renderedChildren.join('')}</form>` }
+    return {
+      html: `<form ${attrs}>${honeypot}${renderedChildren.join('')}</form>`,
+      // CMS-native forms need the browser runtime; custom-action forms are
+      // plain HTML form submissions and ship zero JS.
+      ...(props.mode === 'cms' ? { js: FORM_RUNTIME_JS } : {}),
+    }
   },
 }
 
