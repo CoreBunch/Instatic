@@ -12,6 +12,11 @@
  *   - Node insertion / deletion / movement at 100 / 1k / 10k node trees
  *   - History push (undo stack growth) and memory bookkeeping
  *   - Node-class assignment with huge class catalogues
+ *   - Multi-delete: one `deleteNodes(ids)` batch on a large tree
+ *   - VC-mode keystroke sweep: `updateNodeProps` on a Visual Component text
+ *     node while the site holds many pages (slot-sync propagation cost)
+ *   - Undo coalescing burst: a long single-prop typing burst and the memory
+ *     the history stack retains afterwards
  *
  * The user-facing question this answers:
  *   "If I add 10,000 CSS classes, does the builder start dropping frames?"
@@ -67,6 +72,86 @@ function estimateSiteHeap(useStore: Awaited<ReturnType<typeof loadStore>>): numb
   } catch {
     return -1
   }
+}
+
+// ---------------------------------------------------------------------------
+// Synthetic site assembly — used by the multi-delete and VC-mode scenarios to
+// hydrate a large document through the public `loadSite` action instead of
+// paying N insertNode round-trips per node.
+// ---------------------------------------------------------------------------
+
+interface StoreNode {
+  id: string
+  moduleId: string
+  props: Record<string, unknown>
+  breakpointOverrides: Record<string, unknown>
+  children: string[]
+  classIds: string[]
+}
+
+interface StorePage {
+  id: string
+  slug: string
+  title: string
+  nodes: Record<string, StoreNode>
+  rootNodeId: string
+}
+
+/**
+ * Build a ~`target`-node page (base.body root, base.container / base.text
+ * children, 4 children per parent) — same synthetic shape the publisher bench
+ * uses. Node ids are minted in BFS order, so an even-stride pick over
+ * `Object.keys(nodes)` selects nodes across the whole depth range.
+ */
+function buildStorePage(prefix: string, slug: string, target: number): StorePage {
+  const nodes: Record<string, StoreNode> = {}
+  const rootId = `${prefix}-n0`
+  nodes[rootId] = { id: rootId, moduleId: 'base.body', props: {}, breakpointOverrides: {}, children: [], classIds: [] }
+  let counter = 1
+  const queue: string[] = [rootId]
+  while (counter < target && queue.length > 0) {
+    const parentId = queue.shift()!
+    const childCount = Math.min(4, target - counter)
+    const kids: string[] = []
+    for (let i = 0; i < childCount; i++) {
+      const childId = `${prefix}-n${counter++}`
+      const isContainer = i < 2
+      nodes[childId] = {
+        id: childId,
+        moduleId: isContainer ? 'base.container' : 'base.text',
+        props: isContainer ? { tag: 'div' } : { text: `node ${childId}`, tag: 'p' },
+        breakpointOverrides: {},
+        children: [],
+        classIds: [],
+      }
+      if (isContainer) queue.push(childId)
+      kids.push(childId)
+    }
+    nodes[parentId].children = kids
+  }
+  return { id: `${prefix}-page`, slug, title: `Bench ${prefix}`, nodes, rootNodeId: rootId }
+}
+
+/**
+ * Hydrate the store with a synthetic multi-page document: clone the default
+ * site that `createSite` mints (keeps settings/framework/runtime canonical),
+ * swap in the synthetic pages, and load it through the public `loadSite`
+ * action — which reindexes parents and resets history exactly like a real
+ * site load.
+ */
+function loadSyntheticSite(useStore: Awaited<ReturnType<typeof loadStore>>, pages: StorePage[]): void {
+  setupSite(useStore)
+  const baseSite = (useStore.getState() as { site: object | null }).site
+  if (!baseSite) throw new Error('createSite produced no site — store layout has changed; update editor-store bench.')
+  const clone = structuredClone(baseSite) as { pages: StorePage[] }
+  clone.pages = pages
+  const state = useStore.getState() as { loadSite: (site: unknown) => void }
+  state.loadSite(clone)
+}
+
+function unavailableRow(label: string, err: unknown): BenchRow {
+  const message = err instanceof Error ? err.message : String(err)
+  return { label, metrics: { status: `unavailable: ${message}` } }
 }
 
 interface ClassResults {
@@ -304,6 +389,138 @@ export const editorStoreBench: BenchModule = {
       }
     }
 
+    // ---- Multi-delete -----------------------------------------------------
+    log.step('Multi-delete (one deleteNodes batch)')
+    const multiDeleteRows: BenchRow[] = []
+    {
+      const TREE = ctx.quick ? 2_000 : 10_000
+      const PICK = ctx.quick ? 100 : 500
+      const RUNS = 3
+      try {
+        const totals: number[] = []
+        for (let run = 0; run < RUNS; run++) {
+          const page = buildStorePage(`md${run}`, 'index', TREE)
+          loadSyntheticSite(useStore, [page])
+          // Even-stride pick over BFS-ordered ids → selection spans all depths.
+          const candidates = Object.keys(page.nodes).filter((id) => id !== page.rootNodeId)
+          const ids: string[] = []
+          for (let i = 0; i < PICK; i++) {
+            ids.push(candidates[Math.floor((i * candidates.length) / PICK)])
+          }
+          const state = useStore.getState() as { deleteNodes: (nodeIds: string[]) => void }
+          const t0 = performance.now()
+          state.deleteNodes(ids)
+          totals.push(performance.now() - t0)
+          log.detail(`    run ${run + 1}/${RUNS}: ${fmtMs(totals[totals.length - 1])}`)
+        }
+        const s = summarize(totals)
+        multiDeleteRows.push({
+          label: `delete ${fmtNum(PICK)} of ${fmtNum(TREE)} nodes`,
+          inputs: { tree_nodes: TREE, deleted_ids: PICK, runs: RUNS },
+          metrics: {
+            mean_total: fmtMs(s.mean),
+            min: fmtMs(s.min),
+            max: fmtMs(s.max),
+            mean_per_id: fmtMs(s.mean / PICK),
+          },
+        })
+      } catch (err) {
+        multiDeleteRows.push(unavailableRow(`delete ${fmtNum(PICK)} of ${fmtNum(TREE)} nodes`, err))
+      }
+    }
+
+    // ---- VC-mode keystroke sweep -------------------------------------------
+    log.step('VC-mode keystroke sweep (updateNodeProps on a Visual Component)')
+    const vcSweepRows: BenchRow[] = []
+    {
+      const PAGES = ctx.quick ? 5 : 20
+      const NODES = ctx.quick ? 200 : 500
+      const ITERS = ctx.quick ? 50 : 200
+      try {
+        const pages = Array.from({ length: PAGES }, (_, i) =>
+          buildStorePage(`vcp${i}`, i === 0 ? 'index' : `vc-page-${i}`, NODES),
+        )
+        loadSyntheticSite(useStore, pages)
+        const state = useStore.getState() as {
+          createVisualComponent: (name: string) => string
+          setActiveDocument: (doc: { kind: 'visualComponent'; vcId: string }) => void
+          insertNode: (moduleId: string, defaults: Record<string, unknown>, parentId: string) => string
+          updateNodeProps: (nodeId: string, patch: Record<string, unknown>) => void
+        }
+        const vcId = state.createVisualComponent('Bench VC')
+        state.setActiveDocument({ kind: 'visualComponent', vcId })
+        const vc = (useStore.getState() as {
+          site: { visualComponents: Array<{ id: string; tree: { rootNodeId: string } }> }
+        }).site.visualComponents.find((v) => v.id === vcId)
+        if (!vc) throw new Error('createVisualComponent did not register the VC in site.visualComponents')
+        // insertNode routes through mutateActiveTree → VC mode, so the text
+        // node lands in the VC's own tree.
+        const textNodeId = state.insertNode('base.text', { text: 'seed', tag: 'p' }, vc.tree.rootNodeId)
+        if (!textNodeId) throw new Error('insertNode into the VC tree returned no id')
+        const samples: number[] = []
+        for (let i = 0; i < ITERS; i++) {
+          const t0 = performance.now()
+          state.updateNodeProps(textNodeId, { text: 'x'.repeat(i + 1) })
+          samples.push(performance.now() - t0)
+        }
+        const s = summarize(samples)
+        vcSweepRows.push({
+          label: `${fmtNum(ITERS)} keystrokes, ${fmtNum(PAGES)} pages × ${fmtNum(NODES)} nodes`,
+          inputs: { pages: PAGES, nodes_per_page: NODES, keystrokes: ITERS },
+          metrics: {
+            mean_per_op: fmtMs(s.mean),
+            p95: fmtMs(s.p95),
+            throughput: `${fmtNum(Math.floor(1000 / s.mean))} ops/s`,
+          },
+        })
+        log.detail(`    per-op mean=${fmtMs(s.mean)} p95=${fmtMs(s.p95)}`)
+      } catch (err) {
+        vcSweepRows.push(unavailableRow(`${fmtNum(ITERS)} keystrokes, ${fmtNum(PAGES)} pages × ${fmtNum(NODES)} nodes`, err))
+      }
+    }
+
+    // ---- Undo coalescing burst ----------------------------------------------
+    log.step('Undo coalescing burst (single-prop typing burst + retained history)')
+    const coalesceRows: BenchRow[] = []
+    {
+      const KEYS = ctx.quick ? 300 : 2_000
+      try {
+        setupSite(useStore)
+        const page = readActivePage(useStore)
+        if (!page) throw new Error('No active page after createSite — store layout has changed; update editor-store bench.')
+        const state = useStore.getState() as {
+          insertNode: (moduleId: string, defaults: Record<string, unknown>, parentId: string) => string
+          updateNodeProps: (nodeId: string, patch: Record<string, unknown>) => void
+        }
+        const textNodeId = state.insertNode('base.text', { text: '', tag: 'p' }, page.rootNodeId)
+        // A single-key patch is exactly what the Properties panel sends per
+        // keystroke — `updateNodeProps` derives the `props:<nodeId>:text`
+        // coalesce key from it, so the whole burst folds into ONE undo entry.
+        const samples: number[] = []
+        for (let i = 0; i < KEYS; i++) {
+          const t0 = performance.now()
+          state.updateNodeProps(textNodeId, { text: 'x'.repeat(i + 1) })
+          samples.push(performance.now() - t0)
+        }
+        const s = summarize(samples)
+        const past = (useStore.getState() as { _historyPast: unknown[] })._historyPast
+        const historyBytes = JSON.stringify(past).length
+        coalesceRows.push({
+          label: `${fmtNum(KEYS)}-keystroke burst on one text node`,
+          inputs: { keystrokes: KEYS },
+          metrics: {
+            mean_per_op: fmtMs(s.mean),
+            p95_per_op: fmtMs(s.p95),
+            history_entries: fmtNum(past.length),
+            history_bytes: fmtBytes(historyBytes),
+          },
+        })
+        log.detail(`    per-op p95=${fmtMs(s.p95)} history=${fmtNum(past.length)} entries, ${fmtBytes(historyBytes)}`)
+      } catch (err) {
+        coalesceRows.push(unavailableRow(`${fmtNum(KEYS)}-keystroke burst on one text node`, err))
+      }
+    }
+
     // Headline picks the worst-case class creation so it's visible if it
     // ever becomes bad. The other slots pull whatever the largest tree /
     // lookup test we ran was (covers both quick and full modes).
@@ -311,6 +528,8 @@ export const editorStoreBench: BenchModule = {
     const worstClassP95 = lastResult ? fmtMs(lastResult.perCreateP95) : '—'
     const largestTreeRow = treeRows[treeRows.length - 1]
     const largestLookupRow = lookupRows[lookupRows.length - 1]
+    const multiDeleteRow = multiDeleteRows[0]
+    const vcSweepRow = vcSweepRows[0]
     return {
       name: this.name,
       title: this.title,
@@ -318,6 +537,8 @@ export const editorStoreBench: BenchModule = {
         [`createClass p95 @ ${fmtNum(worstClassN)} classes`]: worstClassP95,
         [`${largestTreeRow?.label ?? 'tree'} insert mean`]: largestTreeRow?.metrics.insert_mean_per_op ?? '—',
         [`${largestLookupRow?.label ?? 'lookup'} ns/op`]: largestLookupRow?.metrics.ns_per_lookup ?? '—',
+        [`multi-${multiDeleteRow?.label ?? 'delete'}`]: multiDeleteRow?.metrics.mean_total ?? '—',
+        [`VC sweep ${vcSweepRow?.label ?? ''} mean`]: vcSweepRow?.metrics.mean_per_op ?? '—',
       },
       sections: [
         {
@@ -342,6 +563,24 @@ export const editorStoreBench: BenchModule = {
           intro:
             'Assigning class IDs to a single node when the site already has N classes defined. Tests whether classlist append is sensitive to catalogue size.',
           rows: assignRows,
+        },
+        {
+          title: 'Multi-delete',
+          intro:
+            'ONE `deleteNodes(ids)` call removing hundreds of ids (spread across all depths) from a large tree, repeated on fresh trees. This is the canvas multi-select → Delete path; it pays per-id depth ordering plus subtree removal in one undo step.',
+          rows: multiDeleteRows,
+        },
+        {
+          title: 'VC-mode keystroke sweep',
+          intro:
+            'Per-keystroke `updateNodeProps` on a text node inside a Visual Component while the site holds many pages. Every VC-mode mutation re-syncs slot instances across all consumer trees, so this measures whether typing inside a VC scales with total site size.',
+          rows: vcSweepRows,
+        },
+        {
+          title: 'Undo coalescing burst',
+          intro:
+            'A long single-prop typing burst on one text node — the Properties-panel per-keystroke path, which coalesces into a single undo entry. `history_bytes` is the JSON size of the retained `_historyPast` stack after the burst: what one typing session keeps pinned in memory.',
+          rows: coalesceRows,
         },
       ],
     }
