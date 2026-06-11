@@ -385,3 +385,30 @@ describe('handleHoleRequest — snapshot single-flight', () => {
     expect(count()).toBe(2)
   })
 })
+
+// ---------------------------------------------------------------------------
+// handleHoleRequest — CMS form token stamping
+// ---------------------------------------------------------------------------
+
+describe('hole fragments and CMS forms', () => {
+  it('stamps form page tokens + page id onto CMS-native forms inside fragments', async () => {
+    registry.registerOrReplace(
+      makeModule('test.cmsform', {
+        render: () => ({
+          html: '<form data-instatic-form-mode="cms" data-instatic-form-id="contact"></form>',
+        }),
+      }),
+    )
+    const snapshot = makeSnapshot()
+    snapshot.site.pages[0].nodes['text-node'].moduleId = 'test.cmsform'
+
+    const version = getPublishVersion()
+    const url = new URL(`http://localhost/_instatic/hole/text-node?v=${version}`)
+    const res = await handleHoleRequest(new Request(url), url, { db: makeFakeDb(snapshot) })
+
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    expect(html).toContain('data-instatic-page-token=')
+    expect(html).toContain('data-instatic-page-id="page_1"')
+  })
+})

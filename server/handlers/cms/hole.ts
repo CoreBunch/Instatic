@@ -28,6 +28,10 @@
  * Known v1 limitation: a hole that sits inside a per-entry content-template
  * page does not yet resolve `currentEntry.*` (no entry id is forwarded). Holes
  * are intended for `route.query`, live external data, and per-visitor content.
+ *
+ * Fragments get form page tokens stamped (stampFormPageTokens) so CMS forms
+ * inside holes can submit; the form runtime itself reaches the page via the
+ * module-JS channel's static hole-subtree walk.
  */
 
 import type { DbClient } from '../../db/client'
@@ -42,6 +46,7 @@ import { prefetchLoopData } from '../../publish/loopPrefetch'
 import { getOrRender } from '../../publish/renderCache'
 import { createVersionedSingleFlight, getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
+import { stampFormPageTokens } from '../../forms/formRuntime'
 
 const HOLE_RUNTIME_PATH = '/_instatic/hole-runtime.js'
 const HOLE_PATH_PREFIX = '/_instatic/hole/'
@@ -176,7 +181,10 @@ async function renderHoleFragment(
     infiniteLoopIds: new Set(),
     holeNodeIds: new Set(),
   }
-  return renderNode(nodeId, config, acc)
+  // Hole fragments bypass the published-HTML pipeline, so CMS forms inside
+  // them would never receive their page token. Stamp here — tokens are
+  // stateless HMAC signatures, safe to store in the Layer B fragment cache.
+  return stampFormPageTokens(renderNode(nodeId, config, acc), page.id)
 }
 
 /**
