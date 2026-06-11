@@ -274,11 +274,13 @@ In the editor, `useLoopPreviewItems` (`src/admin/pages/site/canvas/useLoopPrevie
 | Source | Canvas path |
 |---|---|
 | `data.rows` | GETs `/data/tables/:id/loop-preview` — same projection as the publisher. Falls back to synthetic items from the table's field definitions when no published rows exist yet. |
-| `site.pages` | Reads pages from the in-memory site document. Applies `filterPagesForLoop` + `pageToLoopItem` imported from `@core/loops` — identical to the publisher path. |
+| `site.pages` | Reads pages from the in-memory site document via `selectSitePagesLoopItems`. Applies `filterPagesForLoop` + `pageToLoopItem` imported from `@core/loops` — identical to the publisher path. |
 | `site.media` | Fetches via `listCmsMediaAssets()`, filters by MIME prefix, sorts + slices client-side. |
 | Plugin sources | Calls `source.preview(ctx)` synchronously. |
 
 The canvas caps preview results at 6 items (`CANVAS_MAX_ITEMS`) regardless of the loop's configured `limit`. Published pages render the full set.
+
+Subscription granularity: the hook never subscribes to the whole `site` document for built-in sources. `site.pages` loops subscribe through `selectSitePagesLoopItems`, which keeps the items array (and each `LoopItem`) referentially stable across site mutations that don't change the loop's actual items — so typing in an unrelated text node doesn't re-render loop body subtrees. Only the plugin-source fallback subscribes to `site` (its `preview()` contractually receives the full document), and only while such a source is selected. Stability is gated by `src/__tests__/loops/loopPreviewItemStability.test.ts`.
 
 ---
 
