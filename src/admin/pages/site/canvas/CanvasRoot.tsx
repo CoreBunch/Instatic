@@ -36,6 +36,7 @@ import { useRuntimeScriptBuild } from './useRuntimeScriptBuild'
 import { CanvasNotch } from './CanvasNotch'
 import { CanvasModeToggle } from './CanvasModeToggle'
 import { CanvasContextSelector } from './CanvasContextSelector'
+import { ParentDocumentSiteFontsInjector } from './ParentDocumentSiteFontsInjector'
 import { CanvasSelectionContext, CanvasViewportActionsContext } from './CanvasContexts'
 // Class / user-stylesheet injectors are now mounted per breakpoint frame
 // (inside each iframe's document) by `IframeFrameSurface`. CanvasRoot no
@@ -366,6 +367,10 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   return (
     <CanvasViewportActionsContext.Provider value={viewportActionsContextValue}>
       <CanvasSelectionContext.Provider value={selectionContextValue}>
+        {/* Mirror the site's @font-face into the parent document so parent-doc
+            overlays (the inline text-edit field) render site fonts identically
+            to the canvas iframe. */}
+        <ParentDocumentSiteFontsInjector />
         <div
           ref={canvasRef}
           role="region"
