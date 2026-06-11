@@ -479,6 +479,102 @@ export const editorStoreBench: BenchModule = {
       }
     }
 
+    // ---- set() latency with N canvas-like subscribers -----------------------
+    // Zustand re-runs EVERY subscriber's selector on EVERY store set. The
+    // canvas mounts ~6 per-node subscriptions per rendered node per breakpoint
+    // frame (NodeRenderer), so the hottest editor events — hoverNode on every
+    // mouse crossing, updateNodeProps on every keystroke — pay a full selector
+    // sweep. This scenario registers the same selectors NodeRenderer uses and
+    // measures the set() cost they add. Without subscribers (the scenarios
+    // above) this cost is invisible.
+    log.step('set() latency with N canvas-like subscribers')
+    const subscriberSweepRows: BenchRow[] = []
+    {
+      const PAGES = ctx.quick ? 5 : 20
+      const NODES = ctx.quick ? 200 : 500
+      const FRAMES = 3
+      const HOVERS = ctx.quick ? 100 : 300
+      const KEYS = ctx.quick ? 50 : 150
+      try {
+        const { selectActiveCanvasPage } = await import('../../../src/admin/pages/site/store/store')
+        const { getCanvasNodeClassName } = await import('../../../src/admin/pages/site/canvas/canvasNodeClassName')
+        const { resolveEditorFormPreviewState, resolveEditorFormPreviewSuccessMessage } = await import(
+          '../../../src/admin/pages/site/canvas/canvasFormPreview'
+        )
+
+        const pages = Array.from({ length: PAGES }, (_, i) =>
+          buildStorePage(`sw${i}`, i === 0 ? 'index' : `sweep-page-${i}`, NODES),
+        )
+        loadSyntheticSite(useStore, pages)
+        const state = useStore.getState() as {
+          site: { pages: Array<{ id: string; nodes: Record<string, StoreNode> }> }
+          activePageId: string
+          hoverNode: (nodeId: string | null, breakpointId?: string | null) => void
+          updateNodeProps: (nodeId: string, patch: Record<string, unknown>) => void
+        }
+        const activePage = state.site.pages.find((p) => p.id === state.activePageId)
+        if (!activePage) throw new Error('No active page after loadSite — update editor-store bench.')
+        const nodeIds = Object.keys(activePage.nodes)
+
+        type S = Parameters<typeof selectActiveCanvasPage>[0]
+        const noop = () => {}
+        const unsubs: Array<() => void> = []
+        for (let frame = 0; frame < FRAMES; frame++) {
+          for (const nodeId of nodeIds) {
+            unsubs.push(useStore.subscribe((s: S) => selectActiveCanvasPage(s)?.nodes[nodeId] ?? null, noop))
+            unsubs.push(useStore.subscribe((s: S) => s.selectedNodeIds.includes(nodeId), noop))
+            unsubs.push(useStore.subscribe((s: S) => s.hoveredNodeId === nodeId, noop))
+            unsubs.push(useStore.subscribe(
+              (s: S) => (s.previewClassAssignment?.nodeId === nodeId ? s.previewClassAssignment : null),
+              noop,
+            ))
+            unsubs.push(useStore.subscribe((s: S) => resolveEditorFormPreviewState(s, nodeId), noop))
+            unsubs.push(useStore.subscribe((s: S) => resolveEditorFormPreviewSuccessMessage(s, nodeId), noop))
+            unsubs.push(useStore.subscribe((s: S) => {
+              const canvasNode = selectActiveCanvasPage(s)?.nodes[nodeId]
+              const preview = s.previewClassAssignment?.nodeId === nodeId ? s.previewClassAssignment : null
+              return getCanvasNodeClassName(canvasNode?.classIds, preview, nodeId, s.site?.styleRules)
+            }, noop))
+          }
+        }
+
+        try {
+          const hoverSamples: number[] = []
+          for (let i = 0; i < HOVERS; i++) {
+            const target = nodeIds[i % nodeIds.length]
+            const t0 = performance.now()
+            state.hoverNode(target)
+            hoverSamples.push(performance.now() - t0)
+          }
+          const textNodeId = nodeIds.find((id) => activePage.nodes[id].moduleId === 'base.text')
+          if (!textNodeId) throw new Error('Synthetic page has no text node — update editor-store bench.')
+          const keySamples: number[] = []
+          for (let i = 0; i < KEYS; i++) {
+            const t0 = performance.now()
+            state.updateNodeProps(textNodeId, { text: 'x'.repeat(i + 1) })
+            keySamples.push(performance.now() - t0)
+          }
+          const hover = summarize(hoverSamples)
+          const keys = summarize(keySamples)
+          subscriberSweepRows.push({
+            label: `${fmtNum(unsubs.length)} subscribers (${fmtNum(NODES)} nodes × ${FRAMES} frames), ${fmtNum(PAGES)} pages`,
+            inputs: { pages: PAGES, nodes: NODES, frames: FRAMES, subscribers: unsubs.length },
+            metrics: {
+              hover_mean: fmtMs(hover.mean),
+              hover_p95: fmtMs(hover.p95),
+              keystroke_mean: fmtMs(keys.mean),
+              keystroke_p95: fmtMs(keys.p95),
+            },
+          })
+          log.detail(`    hover mean=${fmtMs(hover.mean)} p95=${fmtMs(hover.p95)}  keystroke mean=${fmtMs(keys.mean)} p95=${fmtMs(keys.p95)}`)
+        } finally {
+          for (const unsub of unsubs) unsub()
+        }
+      } catch (err) {
+        subscriberSweepRows.push(unavailableRow(`${fmtNum(NODES)} nodes × ${FRAMES} frames canvas subscriber sweep`, err))
+      }
+    }
+
     // ---- Undo coalescing burst ----------------------------------------------
     log.step('Undo coalescing burst (single-prop typing burst + retained history)')
     const coalesceRows: BenchRow[] = []
@@ -575,6 +671,12 @@ export const editorStoreBench: BenchModule = {
           intro:
             'Per-keystroke `updateNodeProps` on a text node inside a Visual Component while the site holds many pages. Every VC-mode mutation re-syncs slot instances across all consumer trees, so this measures whether typing inside a VC scales with total site size.',
           rows: vcSweepRows,
+        },
+        {
+          title: 'set() latency with canvas-like subscribers',
+          intro:
+            'hoverNode / updateNodeProps latency with NodeRenderer-equivalent per-node Zustand subscriptions registered (nodes × 3 frames × 7 selectors). Measures the selector-sweep cost every canvas-visible store set pays — the cost the zero-subscriber scenarios above cannot see.',
+          rows: subscriberSweepRows,
         },
         {
           title: 'Undo coalescing burst',
