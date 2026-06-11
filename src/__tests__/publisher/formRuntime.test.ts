@@ -2,12 +2,8 @@ import { describe, expect, it } from 'bun:test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import {
-  FORM_RUNTIME_JS,
-  FORM_RUNTIME_PATH,
-  injectFormRuntime,
-  serveFormRuntimeAsset,
-} from '../../../server/forms/formRuntime'
+import { stampFormPageTokens } from '../../../server/forms/formRuntime'
+import { FORM_RUNTIME_JS } from '../../modules/base/forms/formRuntimeJs'
 
 const PAGE_WITH_CMS_FORM = `<!doctype html>
 <html>
@@ -19,51 +15,34 @@ const PAGE_WITH_CMS_FORM = `<!doctype html>
 </body>
 </html>`
 
-describe('published form runtime', () => {
-  it('injects the external runtime and relaxes CSP for CMS-native forms', () => {
-    const html = injectFormRuntime(PAGE_WITH_CMS_FORM, 'page-home')
-
-    expect(html).toContain(`src="${FORM_RUNTIME_PATH}"`)
-    expect(html).toContain('data-instatic-form-runtime')
-    expect(html).toContain('data-instatic-page-id="page-home"')
+describe('stampFormPageTokens', () => {
+  it('stamps a page token and page id onto every CMS-native form tag', () => {
+    const html = stampFormPageTokens(PAGE_WITH_CMS_FORM, 'page-home')
     expect(html).toContain('data-instatic-page-token=')
-    expect(html).toContain("script-src 'self';")
-    expect(html).toContain("worker-src 'none';")
+    expect(html).toContain('data-instatic-page-id="page-home"')
   })
 
-  it('does not inject anything when no CMS-native form is present', () => {
-    const html = injectFormRuntime(
-      PAGE_WITH_CMS_FORM.replace('data-instatic-form-mode="cms"', 'data-instatic-form-mode="external"'),
+  it('leaves non-CMS forms untouched', () => {
+    const html = stampFormPageTokens(
+      PAGE_WITH_CMS_FORM.replace('data-instatic-form-mode="cms"', 'data-instatic-form-mode="custom"'),
       'page-home',
     )
-
-    expect(html).not.toContain(FORM_RUNTIME_PATH)
-    expect(html).toContain("script-src 'none';")
+    expect(html).not.toContain('data-instatic-page-token=')
+    expect(html).not.toContain('data-instatic-page-id=')
   })
 
   it('is idempotent', () => {
-    const once = injectFormRuntime(PAGE_WITH_CMS_FORM, 'page-home')
-    const twice = injectFormRuntime(once, 'page-home')
-
-    expect(twice.match(new RegExp(FORM_RUNTIME_PATH, 'g'))?.length).toBe(1)
+    const once = stampFormPageTokens(PAGE_WITH_CMS_FORM, 'page-home')
+    const twice = stampFormPageTokens(once, 'page-home')
     expect(twice).toBe(once)
+    expect(twice.match(/data-instatic-page-token=/g)?.length).toBe(1)
   })
+})
 
-  it('serves the browser runtime as a fixed public asset', async () => {
-    const response = serveFormRuntimeAsset()
-    const body = await response.text()
-
-    expect(response.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
-    expect(response.headers.get('cache-control')).toBe('public, max-age=3600')
-    expect(body).toContain('/_instatic/form/challenge')
-    expect(body).toContain('/_instatic/form/submit')
-    expect(body).toContain('pageToken')
-  })
-
-  it('prefetches the submit challenge on attach and reuses it on submit', async () => {
+describe('form runtime browser behaviour', () => {
+  it('prefetches the submit challenge on attach and submits via document-level delegation', async () => {
     document.body.innerHTML = `
-      <script data-instatic-form-runtime data-instatic-page-id="page-home"></script>
-      <form data-instatic-form-mode="cms" data-instatic-form-id="contact" data-instatic-page-token="page-token">
+      <form data-instatic-form-mode="cms" data-instatic-form-id="contact" data-instatic-page-id="page-home" data-instatic-page-token="page-token">
         <input name="email" value="ai@example.com">
         <button type="submit">Send</button>
         <p data-instatic-form-message="status"></p>
@@ -104,14 +83,17 @@ describe('published form runtime', () => {
       await flushRuntime()
 
       expect(calls.map((call) => call.path)).toEqual(['/_instatic/form/challenge'])
+      expect(calls[0].payload.pageId).toBe('page-home')
 
       const form = document.querySelector('form')
       expect(form).not.toBeNull()
+      // No per-form listener — submit is intercepted at document level.
       form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
       await waitForCalls(calls, 2)
 
       expect(calls[0].path).toBe('/_instatic/form/challenge')
       expect(calls[1].path).toBe('/_instatic/form/submit')
+      expect(calls[1].payload.pageId).toBe('page-home')
       expect(calls[1].payload.token).toBe('prefetched-token')
       expect(calls[1].payload.challenge).toBe('prefetched-challenge')
     } finally {

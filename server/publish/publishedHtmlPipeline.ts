@@ -10,10 +10,12 @@
  *
  *   1. `publish.before` event — gives plugins a chance to set up per-page
  *      state (SEO Suite records the current pageId for its filter, etc.).
- *   2. `injectFrontendAssets` — splices declarative `frontend.assets[]`
- *      tags from every enabled plugin at four placement anchors and
- *      rewrites the page CSP based on what's in the plan. Pure host
- *      substrate: no host-shipped tag content.
+ *   2. `injectFrontendAssets` → `stampFormPageTokens` → `injectModuleScripts`
+ *      — splices declarative `frontend.assets[]` tags from every enabled
+ *      plugin at four placement anchors and rewrites the page CSP based on
+ *      what's in the plan (pure host substrate: no host-shipped tag
+ *      content); stamps the per-page HMAC token + page id onto CMS-native
+ *      `<form>` tags; appends the page's module-JS `<script defer>` tags.
  *   3. `publish.html` filter — the escape hatch for non-tag mutations
  *      (link rewriting, redaction, JSON-LD enrichment). Plugins
  *      transform the document by string ops here.
@@ -32,7 +34,8 @@ import {
   collectFrontendInjections,
   injectFrontendAssets,
 } from './frontendInjections'
-import { injectFormRuntime } from '../forms/formRuntime'
+import { stampFormPageTokens } from '../forms/formRuntime'
+import { injectModuleScripts } from './moduleJsBundle'
 import type { RendererOutput } from './publicRenderer'
 
 export async function applyPublishedHtmlPipeline(
@@ -45,8 +48,17 @@ export async function applyPublishedHtmlPipeline(
   })
   const injections = await collectFrontendInjections(db)
   const withInjections = injectFrontendAssets(rendered.html, injections)
-  const withFormRuntime = injectFormRuntime(withInjections, rendered.pageId)
-  const filtered = await hookBus.applyFilter('publish.html', withFormRuntime, {
+  // Token stamping is an HTML mutation (needs the server signing secret) —
+  // its own step, independent of JS injection.
+  const withFormTokens = stampFormPageTokens(withInjections, rendered.pageId)
+  // Module-JS channel: one external <script defer> per moduleId the page
+  // needs; relaxes CSP script-src to 'self' iff at least one tag landed.
+  const withModuleScripts = injectModuleScripts(
+    withFormTokens,
+    rendered.jsModuleIds,
+    rendered.publishVersion,
+  )
+  const filtered = await hookBus.applyFilter('publish.html', withModuleScripts, {
     siteId: rendered.siteId,
     pageId: rendered.pageId,
     slug: rendered.slug,
