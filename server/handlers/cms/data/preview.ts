@@ -125,7 +125,7 @@ export async function handleRowPreview(
   }).html
 
   const finalHtml = await applyPublishedHtmlPipeline(
-    { html, pageId: merged.id, slug: merged.slug, siteId: snapshot.site.id },
+    { html, pageId: merged.id, slug: merged.slug, siteId: snapshot.site.id, cssBundle },
     db,
   )
 

@@ -377,11 +377,19 @@ The shell is saved independently of pages / VCs. Three save paths:
 
 | Endpoint                                    | Saves                                          |
 |---------------------------------------------|------------------------------------------------|
-| `PUT /admin/api/cms/site`                   | The shell — settings, breakpoints, classes, files |
-| `PUT /admin/api/cms/pages`                  | Page roster (batch upsert)                     |
-| `PUT /admin/api/cms/components`             | VC roster (batch upsert)                       |
+| `PUT /admin/api/cms/site`                   | The shell — settings, breakpoints, classes, files (always written) |
+| `PUT /admin/api/cms/pages`                  | `{ changedPages, pageIds, baselinePageIds? }` — only changed pages; full id roster drives reaping |
+| `PUT /admin/api/cms/components`             | `{ changedComponents, componentIds }` — only changed VCs; cross-VC rules run on the merged roster |
 
-The editor's auto-save scheduler (`usePersistence.ts`) batches dirty changes and fires the matching save endpoint. Granular write gates (`SITE_WRITE_CAPABILITIES`) enforce what each role can actually change inside the diff.
+Saves are **incremental**: the editor store derives which pages/VCs changed
+from the same Mutative patches that power undo
+(`src/admin/pages/site/store/slices/site/dirtyTracking.ts`), and
+`usePersistence.ts` ships only those — a one-prop edit uploads one page, not
+the site. The full id rosters always go along, so the server's
+delete-what's-missing reconcile keeps full-replace semantics (including the
+ISS-041 baseline). Anything the tracker can't attribute marks `all` and falls
+back to a full save. Granular write gates (`SITE_WRITE_CAPABILITIES`)
+enforce what each role can actually change inside the diff.
 
 The page and component roster endpoints are fail-closed: because each reconcile soft-deletes stored rows missing from the incoming roster, malformed entries reject the whole save instead of being repaired by dropping entries. Page and VC trees must have a valid root, matching node-map keys, resolvable child IDs, and no reachable child cycles. Component saves also reject duplicate IDs/names, missing VC refs, and dependency cycles. Tolerant repair remains limited to reads of persisted data where dropping bad entries cannot be misread as an intentional delete request.
 

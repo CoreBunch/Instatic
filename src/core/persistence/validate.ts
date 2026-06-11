@@ -168,6 +168,97 @@ export function validatePages(
 }
 
 /**
+ * Strict-write validation for a PARTIAL page save: only the pages the editor
+ * actually changed are parsed, tree-checked, slot-synced, ref-stripped, and
+ * sanitized — the cross-page slug-uniqueness rule is enforced against
+ * `otherSlugs`, the (id, slug) pairs of every stored page NOT in this batch.
+ * Validation depth per page is identical to `validatePages` strict mode; only
+ * the roster scope shrinks, so a save after a one-page edit costs O(change)
+ * instead of O(site).
+ */
+export function validatePagesForPartialSave(
+  rawChangedPages: unknown[],
+  visualComponents: VisualComponent[],
+  otherSlugs: ReadonlyArray<{ id: string; slug: string }>,
+): Page[] {
+  let pages: Page[] = []
+  for (let i = 0; i < rawChangedPages.length; i++) {
+    try {
+      pages.push(parsePage(rawChangedPages[i], i))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : `page ${i} is invalid`
+      throw new SiteValidationError(message, extractSiteErrorPath(message))
+    }
+  }
+  // Slug rules: each changed page's slug must be valid AND unique across the
+  // changed batch + every other stored page (excluding rows this batch
+  // replaces, matched by id).
+  const changedIds = new Set(pages.map((p) => p.id))
+  const takenSlugs = new Map<string, string>() // slug → owner id
+  for (const other of otherSlugs) {
+    if (!changedIds.has(other.id)) takenSlugs.set(other.slug, other.id)
+  }
+  for (let i = 0; i < pages.length; i++) {
+    const { slug, id } = pages[i]
+    const slugErr = pageSlugError(slug)
+    if (slugErr) throw new SiteValidationError(slugErr, `site.pages[${i}].slug`)
+    const owner = takenSlugs.get(slug)
+    if (owner !== undefined && owner !== id) {
+      throw new SiteValidationError(`duplicate slug: Duplicate page slug "/${slug}".`, `site.pages[${i}].slug`)
+    }
+    takenSlugs.set(slug, id)
+  }
+  pages = validatePageNodeTreesList(pages, false)
+  syncVCSlotInstancesInTrees(pages.map((p) => p.nodes as Record<string, BaseNode>), visualComponents)
+  stripDanglingVCRefsInPages(pages, new Set(visualComponents.map((vc) => vc.id)))
+  sanitizePageNodeRichtextProps(pages)
+  return pages
+}
+
+/**
+ * Strict-write validation for a PARTIAL Visual Component save. The cross-VC
+ * rules (name/id identity, ref targets, dependency-graph acyclicity) are
+ * inherently roster-wide — a changed VC can create a cycle THROUGH an
+ * unchanged one — so they run against the POST-SAVE roster: `existing`
+ * (validated VCs already in storage) with rows missing from `keptIds` removed
+ * and the changed batch merged over it by id. Only the changed VCs pay
+ * parse + tree-invariant + sanitize costs.
+ *
+ * Returns the parsed CHANGED components only (what the caller writes); the
+ * roster checks are validation side-effects.
+ */
+export function validateVisualComponentsForPartialWrite(
+  rawChangedVCs: unknown[],
+  existing: VisualComponent[],
+  keptIds: ReadonlySet<string>,
+): VisualComponent[] {
+  const parsed: VisualComponent[] = []
+  for (let i = 0; i < rawChangedVCs.length; i++) {
+    const vc = parseVisualComponent(rawChangedVCs[i])
+    if (!vc) {
+      throw new SiteValidationError('invalid Visual Component', `site.visualComponents[${i}]`)
+    }
+    try {
+      assertValidNodeTree(vc.tree, `site.visualComponents[${i}].tree`)
+    } catch (err) {
+      throw siteValidationErrorFromTreeInvariant(err, `site.visualComponents[${i}].tree`)
+    }
+    parsed.push({ ...vc, name: vc.name.trim() })
+  }
+
+  const changedById = new Map(parsed.map((vc) => [vc.id, vc]))
+  const merged: VisualComponent[] = [
+    ...existing.filter((vc) => keptIds.has(vc.id) && !changedById.has(vc.id)),
+    ...parsed,
+  ]
+  validateStrictVCIdentity(merged)
+  validateStrictVCRefs(merged)
+  validateStrictVCDependencyGraph(merged)
+  sanitizeVCNodeRichtextProps(parsed)
+  return parsed
+}
+
+/**
  * Parse and validate an array of raw VisualComponent objects (loaded via
  * `visualComponentFromRow` from `data_rows where table_id = 'components'`).
  *
@@ -213,28 +304,6 @@ export function validateVisualComponents(rawVCs: unknown[]): VisualComponent[] {
  * The caller is about to reconcile the complete roster in storage, so a dropped
  * item would be interpreted as an intentional delete.
  */
-export function validateVisualComponentsForWrite(rawVCs: unknown[]): VisualComponent[] {
-  const parsed: VisualComponent[] = []
-
-  for (let i = 0; i < rawVCs.length; i++) {
-    const vc = parseVisualComponent(rawVCs[i])
-    if (!vc) {
-      throw new SiteValidationError('invalid Visual Component', `site.visualComponents[${i}]`)
-    }
-    try {
-      assertValidNodeTree(vc.tree, `site.visualComponents[${i}].tree`)
-    } catch (err) {
-      throw siteValidationErrorFromTreeInvariant(err, `site.visualComponents[${i}].tree`)
-    }
-    parsed.push({ ...vc, name: vc.name.trim() })
-  }
-
-  validateStrictVCIdentity(parsed)
-  validateStrictVCRefs(parsed)
-  validateStrictVCDependencyGraph(parsed)
-  sanitizeVCNodeRichtextProps(parsed)
-  return parsed
-}
 
 function siteValidationErrorFromTreeInvariant(err: unknown, fallbackPath: string): SiteValidationError {
   const message = err instanceof Error ? err.message : 'invalid node tree'

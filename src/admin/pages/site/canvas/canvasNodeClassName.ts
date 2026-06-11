@@ -6,17 +6,21 @@ export function getCanvasNodeClassIds(
   classIds: readonly string[] | undefined,
   previewClassAssignment: ClassPreviewAssignment | null,
   nodeId: string,
-): string[] | undefined {
-  const ids = classIds ? [...classIds] : []
-
-  if (
+): readonly string[] | undefined {
+  const previewClassId =
     previewClassAssignment?.nodeId === nodeId &&
-    !ids.includes(previewClassAssignment.classId)
-  ) {
-    ids.push(previewClassAssignment.classId)
+    !classIds?.includes(previewClassAssignment.classId)
+      ? previewClassAssignment.classId
+      : null
+
+  if (previewClassId === null) {
+    // No preview to merge — pass the node's own (store-immutable) list
+    // through. This runs in a per-node selector on every store set, so
+    // copying here would allocate O(nodes) arrays per store change.
+    return classIds && classIds.length > 0 ? classIds : undefined
   }
 
-  return ids.length > 0 ? ids : undefined
+  return classIds ? [...classIds, previewClassId] : [previewClassId]
 }
 
 export function getCanvasNodeClassName(

@@ -57,19 +57,26 @@ export async function saveDataRowDraftMany(
 /**
  * Bulk-soft-delete N rows in a single transaction. Returns the number of
  * rows that were actually deleted (skips rows that were already missing
- * or soft-deleted).
+ * or soft-deleted), plus how many of those were `published` — callers use
+ * that to invalidate the public render cache AFTER the transaction commits
+ * (a published row's route is retracted by deletion; the bump must never
+ * run inside the transaction because it serializes on the publish lock).
  */
 export async function softDeleteDataRowMany(
   db: DbClient,
   rowIds: ReadonlyArray<string>,
   actorUserId: string | null = null,
-): Promise<{ deleted: number }> {
+): Promise<{ deleted: number; publishedDeleted: number }> {
   return db.transaction(async (tx) => {
     let deleted = 0
+    let publishedDeleted = 0
     for (const id of rowIds) {
       const result = await softDeleteDataRow(tx, id, actorUserId)
-      if (result) deleted++
+      if (result) {
+        deleted++
+        if (result.status === 'published') publishedDeleted++
+      }
     }
-    return { deleted }
+    return { deleted, publishedDeleted }
   })
 }

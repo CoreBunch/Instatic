@@ -14,6 +14,7 @@ import {
   getDataRowRedirectByRoute,
 } from '../../../server/repositories/data'
 import { handleServerRequest } from '../../../server/router'
+import { resetForTests } from '../../../server/publish/renderCache'
 import { createFakeDb } from './dbTestFake'
 
 type QueryHandler = (sql: string, params: unknown[]) => DbResult | undefined
@@ -418,6 +419,9 @@ describe('data CMS repository', () => {
 
 describe('data CMS public routes', () => {
   it('returns 404 when a postType row has no matching entry template', async () => {
+    // The row route consults the version-keyed published-snapshot memo; reset
+    // publish state so a snapshot cached by another test file can't leak in.
+    resetForTests()
     // Defensive contract: `createDataTable` auto-seeds an entry template
     // for every postType table, and the boot backfill catches any older
     // table that's missing one. So `renderPublishedDataRowTemplate`
@@ -433,8 +437,9 @@ describe('data CMS public routes', () => {
         return undefined
       },
       (sql) => {
-        // getPublishedPageBySlug — no snapshot for this slug.
-        if (sql.startsWith('select data_row_versions.snapshot_json')) {
+        // getPublishedPageBySlug / getLatestPublishedSiteSnapshot — no
+        // published snapshot at all (both run the same site_snapshots join).
+        if (sql.includes('site_snapshots.site_json')) {
           return { rows: [], rowCount: 0 }
         }
         return undefined

@@ -2,9 +2,18 @@ import { describe, expect, it } from 'bun:test'
 import {
   SiteValidationError,
   validateVisualComponents,
-  validateVisualComponentsForWrite,
+  validateVisualComponentsForPartialWrite,
 } from '@core/persistence/validate'
 import type { VisualComponent } from '@core/visualComponents'
+
+/**
+ * Full-roster write = the partial-write validator with an empty stored
+ * roster: every component is "changed", nothing is merged in. The old
+ * dedicated full-write validator was deleted in favour of this shape.
+ */
+function validateVisualComponentsForWrite(rawVCs: unknown[]): VisualComponent[] {
+  return validateVisualComponentsForPartialWrite(rawVCs, [], new Set<string>())
+}
 
 function vc(overrides: Partial<VisualComponent> = {}): VisualComponent {
   return {
@@ -41,7 +50,7 @@ function refNode(id: string, componentId: string) {
   }
 }
 
-describe('validateVisualComponentsForWrite', () => {
+describe('validateVisualComponentsForPartialWrite (full-roster mode)', () => {
   it('preserves valid Visual Components', () => {
     const components = validateVisualComponentsForWrite([vc()])
 

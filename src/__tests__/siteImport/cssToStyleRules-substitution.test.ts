@@ -1,150 +1,132 @@
 /**
- * Regression tests for the Chromium "pending-substitution value" drop.
+ * Substitution-declaration fidelity (`var()` / `env()` values).
  *
- * When a CSS *shorthand* (background, transition, gap, padding, …) is set to a
- * value containing `var()`/`env()`, Chromium stores one un-expandable
- * pending-substitution value: `style.length` enumerates the shorthand's
- * LONGHANDS, but `getPropertyValue(longhand)` returns `""` for every one. The
- * old parser's `if (!value) continue` then dropped the whole declaration (e.g.
- * `html, body { background: var(--bg) }` lost its background entirely on import).
+ * CSS engines disagree about what their CSSOM exposes for declarations whose
+ * value contains a substitution function: Chromium enumerates the shorthand's
+ * longhands with EMPTY values (the text survives only in cssText), while
+ * happy-dom destroys the declaration entirely (each longhand reports the bare
+ * `var(...)` text; `1px solid` is gone from cssText too).
  *
- * This behaviour does NOT reproduce under happy-dom (which keeps the shorthand
- * enumerated with its value), so these tests simulate Chromium's CSSStyleDeclaration
- * directly, using values captured from HeadlessChrome 148:
- *   background: var(--bg)  → 9 empty background-* longhands, cssText keeps shorthand
- *   transition: …var(…)    → 5 empty transition-* longhands
- *   gap: var(--g)          → empty row-gap/column-gap
- *   padding: 13px var(--p) → 4 empty padding-* longhands
+ * `@core/css-substitution` removes the divergence at the source: every
+ * substitution declaration is encoded as a marker custom property BEFORE the
+ * engine parse (all engines preserve custom properties verbatim) and decoded
+ * after. These tests run through the REAL engine (happy-dom here, Chromium in
+ * production) and assert byte-faithful output.
  */
 
 import { describe, it, expect } from 'bun:test'
+import { cssToStyleRules } from '@core/siteImport'
 import {
-  parseDeclarations,
-  recoverSubstitutionShorthands,
-} from '@core/siteImport/cssToStyleRules'
-import type { ImportWarning } from '@core/siteImport'
+  encodeSubstitutionDeclarations,
+  encodeSubstitutionDeclarationList,
+  decodeSubstitutionProperty,
+  SUBSTITUTION_PROP_MARKER,
+} from '@core/css-substitution'
 
-// ---------------------------------------------------------------------------
-// Mock CSSStyleDeclaration that mimics Chromium's pending-substitution
-// enumeration: empty longhands + a faithful cssText.
-// ---------------------------------------------------------------------------
+describe('cssToStyleRules — substitution declarations survive verbatim', () => {
+  it('preserves shorthand+var declarations byte-faithfully', () => {
+    const { rules, warnings } = cssToStyleRules(`
+      .plan { padding: 40px; border-left: 1px solid var(--rule); }
+      .plans { border: 1px solid var(--rule); }
+      html, body { background: var(--bg); }
+      .btn { transition: background 140ms var(--easing); gap: var(--g); }
+    `)
 
-function mockStyle(
-  enumerated: Array<[kebab: string, value: string]>,
-  cssText: string,
-): CSSStyleDeclaration {
-  const values = new Map(enumerated)
-  const indexed = enumerated.map(([k]) => k)
-  const obj: Record<string | number, unknown> = {
-    length: indexed.length,
-    cssText,
-    getPropertyValue: (k: string) => values.get(k) ?? '',
-  }
-  indexed.forEach((k, i) => {
-    obj[i] = k
-  })
-  return obj as unknown as CSSStyleDeclaration
-}
-
-// ---------------------------------------------------------------------------
-// parseDeclarations — Chromium pending-substitution recovery
-// ---------------------------------------------------------------------------
-
-describe('parseDeclarations — recovers shorthand+var dropped by Chromium', () => {
-  it('recovers background: var(--bg) from empty background-* longhands', () => {
-    const warnings: ImportWarning[] = []
-    const style = mockStyle(
-      [
-        ['background-image', ''],
-        ['background-position-x', ''],
-        ['background-position-y', ''],
-        ['background-size', ''],
-        ['background-repeat', ''],
-        ['background-attachment', ''],
-        ['background-origin', ''],
-        ['background-clip', ''],
-        ['background-color', ''],
-        ['color', 'var(--ink)'],
-      ],
-      'background: var(--bg); color: var(--ink);',
-    )
-    const decls = parseDeclarations(style, 'html, body', warnings)
-    expect(decls.background).toBe('var(--bg)')
-    // The longhand-with-var is captured by enumeration, not duplicated.
-    expect(decls.color).toBe('var(--ink)')
-    expect(decls.backgroundColor).toBeUndefined()
+    const bySel = Object.fromEntries(rules.map((r) => [r.selector, r.styles]))
+    expect(bySel['.plan'].borderLeft).toBe('1px solid var(--rule)')
+    // The non-var shorthand still expands through the engine as usual.
+    expect(bySel['.plan'].paddingTop).toBe('40px')
+    expect(bySel['.plans'].border).toBe('1px solid var(--rule)')
+    expect(bySel['html, body'].background).toBe('var(--bg)')
+    expect(bySel['.btn'].transition).toBe('background 140ms var(--easing)')
+    expect(bySel['.btn'].gap).toBe('var(--g)')
     expect(warnings).toHaveLength(0)
+
+    // No engine-mangled longhand artifacts (`borderLeftWidth: var(--rule)`).
+    for (const styles of Object.values(bySel)) {
+      for (const [prop, value] of Object.entries(styles)) {
+        if (prop.startsWith('border') && prop !== 'border' && prop !== 'borderLeft') {
+          expect(String(value)).not.toContain('var(')
+        }
+      }
+    }
   })
 
-  it('recovers transition / gap / padding shorthands that use var()', () => {
-    const warnings: ImportWarning[] = []
-    const style = mockStyle(
-      [
-        ['transition-property', ''],
-        ['transition-duration', ''],
-        ['transition-timing-function', ''],
-        ['transition-delay', ''],
-        ['row-gap', ''],
-        ['column-gap', ''],
-        ['padding-top', ''],
-        ['padding-right', ''],
-        ['padding-bottom', ''],
-        ['padding-left', ''],
-      ],
-      'transition: background 140ms var(--easing); gap: var(--g); padding: 13px var(--p);',
-    )
-    const decls = parseDeclarations(style, '.btn', warnings)
-    expect(decls.transition).toBe('background 140ms var(--easing)')
-    expect(decls.gap).toBe('var(--g)')
-    expect(decls.padding).toBe('13px var(--p)')
+  it('preserves longhand var() declarations and authored custom properties', () => {
+    const { rules } = cssToStyleRules(`.x { color: var(--ink); --own: 12px; }`)
+    expect(rules[0].styles.color).toBe('var(--ink)')
+    expect(rules[0].styles['--own']).toBe('12px')
   })
 
-  it('does not clobber a longhand the enumeration already resolved', () => {
-    const warnings: ImportWarning[] = []
-    // backgroundColor resolved (non-var) AND a separate background-image var().
-    const style = mockStyle(
-      [['background-color', 'rgb(255, 0, 0)']],
-      'background-color: rgb(255, 0, 0); background-image: var(--img);',
-    )
-    const decls = parseDeclarations(style, '.x', warnings)
-    expect(decls.backgroundColor).toBe('rgb(255, 0, 0)') // untouched
-    expect(decls.backgroundImage).toBe('var(--img)') // recovered longhand-var
+  it('preserves var() declarations inside @media overrides', () => {
+    const { rules } = cssToStyleRules(`
+      .plan { color: red; }
+      @media (max-width: 700px) { .plan { border-top: 1px solid var(--rule) } }
+    `)
+    const plan = rules.find((r) => r.selector === '.plan')!
+    const contexts = Object.values(plan.contextStyles ?? {})
+    expect(contexts).toHaveLength(1)
+    expect((contexts[0] as Record<string, unknown>).borderTop).toBe('1px solid var(--rule)')
+  })
+
+  it('blocks a security-denied property even when its value uses var()', () => {
+    const { rules, warnings } = cssToStyleRules(`.x { behavior: var(--evil); }`)
+    expect(rules[0]?.styles?.behavior).toBeUndefined()
+    expect(warnings.some((w) => w.kind === 'blocked-property' && w.property === 'behavior')).toBe(true)
+  })
+
+  it('keeps @keyframes raw CSS free of encode markers', () => {
+    const { rules } = cssToStyleRules(`
+      @keyframes pulse { from { opacity: var(--lo); } to { opacity: 1; } }
+      .x { animation: pulse 1s var(--easing) infinite; }
+    `)
+    const keyframes = rules.find((r) => typeof r.rawCss === 'string')
+    expect(keyframes).toBeDefined()
+    expect(keyframes!.rawCss).not.toContain(SUBSTITUTION_PROP_MARKER)
+    expect(rules.find((r) => r.selector === '.x')?.styles.animation).toBe('pulse 1s var(--easing) infinite')
   })
 })
 
-// ---------------------------------------------------------------------------
-// recoverSubstitutionShorthands — unit behaviour
-// ---------------------------------------------------------------------------
-
-describe('recoverSubstitutionShorthands', () => {
-  it('skips declarations already present in decls (longhand var)', () => {
-    const warnings: ImportWarning[] = []
-    const decls: Record<string, unknown> = { color: 'var(--ink)' }
-    recoverSubstitutionShorthands('color: var(--ink); background: var(--bg);', decls, 's', warnings)
-    expect(decls.color).toBe('var(--ink)') // unchanged
-    expect(decls.background).toBe('var(--bg)') // added
+describe('encodeSubstitutionDeclarations', () => {
+  it('rewrites only substitution declarations, byte-preserving everything else', () => {
+    const css = `/* c */ .a:hover { color: red; border: 1px solid var(--x); }`
+    expect(encodeSubstitutionDeclarations(css)).toBe(
+      `/* c */ .a:hover { color: red; ${SUBSTITUTION_PROP_MARKER}border: 1px solid var(--x); }`,
+    )
   })
 
-  it('ignores declarations without a substitution function', () => {
-    const warnings: ImportWarning[] = []
-    const decls: Record<string, unknown> = {}
-    recoverSubstitutionShorthands('background: #fff; margin: 0px;', decls, 's', warnings)
-    expect(Object.keys(decls)).toHaveLength(0)
+  it('does not re-encode custom properties or split values on nested separators', () => {
+    const css = `.a { --token: var(--x); content: "a;b{c}"; background: url("x;y.png") var(--bg); }`
+    const encoded = encodeSubstitutionDeclarations(css)
+    expect(encoded).toContain(`--token: var(--x)`)
+    expect(encoded).toContain(`content: "a;b{c}"`)
+    expect(encoded).toContain(`${SUBSTITUTION_PROP_MARKER}background: url("x;y.png") var(--bg)`)
   })
 
-  it('does not split a value on a `;` nested inside parens', () => {
-    const warnings: ImportWarning[] = []
-    const decls: Record<string, unknown> = {}
-    // A (contrived) nested semicolon inside var() must not terminate the value.
-    recoverSubstitutionShorthands('grid-template: var(--a, "x;y");', decls, 's', warnings)
-    expect(decls.gridTemplate).toBe('var(--a, "x;y")')
+  it('leaves @keyframes and @font-face blocks untouched, including vendor prefixes', () => {
+    const css = [
+      `@keyframes spin { to { transform: rotate(var(--turn)); } }`,
+      `@-webkit-keyframes spin { to { transform: rotate(var(--turn)); } }`,
+      `@font-face { font-family: X; src: local(var(--nope)); }`,
+      `@media (min-width: 700px) { .x { gap: var(--g); } }`,
+    ].join('\n')
+    const encoded = encodeSubstitutionDeclarations(css)
+    expect(encoded.split(SUBSTITUTION_PROP_MARKER)).toHaveLength(2) // only the @media declaration
+    expect(encoded).toContain(`${SUBSTITUTION_PROP_MARKER}gap: var(--g)`)
+    expect(encoded).toContain('transform: rotate(var(--turn))')
   })
 
-  it('handles an empty / undefined cssText without throwing', () => {
-    const warnings: ImportWarning[] = []
-    const decls: Record<string, unknown> = {}
-    recoverSubstitutionShorthands('', decls, 's', warnings)
-    recoverSubstitutionShorthands(undefined, decls, 's', warnings)
-    expect(Object.keys(decls)).toHaveLength(0)
+  it('round-trips through decodeSubstitutionProperty', () => {
+    expect(decodeSubstitutionProperty(`${SUBSTITUTION_PROP_MARKER}border-left`)).toBe('border-left')
+    expect(decodeSubstitutionProperty('--own-prop')).toBeNull()
+    expect(decodeSubstitutionProperty('border-left')).toBeNull()
+  })
+})
+
+describe('encodeSubstitutionDeclarationList — style attributes', () => {
+  it('encodes substitution declarations in a bare declaration list', () => {
+    expect(encodeSubstitutionDeclarationList('color: red; border: 1px solid var(--x)')).toBe(
+      `color: red; ${SUBSTITUTION_PROP_MARKER}border: 1px solid var(--x)`,
+    )
   })
 })

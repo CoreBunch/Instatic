@@ -104,7 +104,7 @@ describe('server router — Layer A disk artefact fast-path', () => {
     const trackingDb = Object.assign(
       async (strings: TemplateStringsArray, ...values: unknown[]): Promise<DbResult> => {
         const sql = strings.reduce<string>((acc, s, i) => (i === 0 ? s : `${acc}$${i}${s}`), '')
-        if (sql.toLowerCase().includes('snapshot_json')) snapshotQueried = true
+        if (sql.toLowerCase().includes('site_snapshots')) snapshotQueried = true
         return originalHandle(strings, ...values)
       },
       { transaction: db.transaction, unsafe: db.unsafe },

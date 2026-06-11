@@ -29,6 +29,7 @@ import type { BenchModule, BenchResult, BenchContext } from './lib/types'
 
 import { bundleBench } from './benches/bundle'
 import { publisherBench } from './benches/publisher'
+import { publishBench } from './benches/publish'
 import { editorStoreBench } from './benches/editor-store'
 import { httpBench } from './benches/http'
 import { dbBench } from './benches/db'
@@ -48,6 +49,7 @@ const REPO_ROOT = resolve(import.meta.dir, '../..')
 const DEFAULT_BENCHES: readonly BenchModule[] = [
   bundleBench,
   publisherBench,
+  publishBench,
   editorStoreBench,
   httpBench,
   dbBench,

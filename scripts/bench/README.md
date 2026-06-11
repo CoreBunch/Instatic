@@ -1,6 +1,6 @@
 # Benchmark suite
 
-A reusable performance suite for the instatic. Spans both ends of the stack: bundle composition, publisher render speed, the editor store under class/tree stress, HTTP latency + throughput, SQLite performance, plugin sandbox cost, repo footprint, and code-health snapshot.
+A reusable performance suite for the instatic. Spans both ends of the stack: bundle composition, publisher render speed, the full publish pipeline + public serving, the editor store under class/tree stress, HTTP latency + throughput, SQLite performance, plugin sandbox cost, repo footprint, and code-health snapshot.
 
 Everything writes to `.tmp/benchmarks/` (gitignored). One run produces a single `REPORT.md` plus per-bench logs.
 
@@ -19,6 +19,7 @@ The orchestrator writes `.tmp/benchmarks/REPORT.md` and prints a one-line summar
 ```bash
 bun run bench:bundle        # just dist/ composition
 bun run bench:publisher     # just the page-tree → HTML pipeline
+bun run bench:publish       # full publish pipeline + public serving (DB-backed)
 bun run bench:editor-store  # editor store mutations + class system stress
 bun run bench:http          # HTTP latency + throughput (auto starts a server)
 bun run bench:db            # SQLite performance
@@ -71,12 +72,25 @@ Drives `publishPage()` (the core page-tree → HTML/CSS function) against synthe
 
 This is the *user-facing output speed* — what visitors will see.
 
+### publish
+Exercises the FULL publish pipeline and the public serving path against an isolated SQLite DB (the same migrations the production server runs), seeded through the real repositories (`saveDraftSite` + `createDataRow`). Each scenario reports an `unavailable: <reason>` row instead of crashing the suite when seeding fails. Scenarios:
+- **Full publish wall time scaling** — `publishDraftSite` over N draft pages of ~150 nodes each (10 / 40; quick 5 / 15), including the snapshot bake and the Layer A artefact write to a tmp uploads dir. Also reports the on-disk SQLite growth (main + WAL) per publish — the snapshot storage amplification.
+- **Publish status check** — `getDraftPublishStatus` on the published site: the draft-vs-published comparison the admin UI polls.
+- **Warm dynamic-route serving** — repeated `renderPublicResolution` for one published page WITHOUT an uploadsDir, forcing the dynamic path (route resolution + the module-level Layer B LRU). The first call warms the cache; the timed calls are real warm hits.
+- **404 probe cost** — `renderPublicResolution` on a missing path plus `getSetupStatus`, modelling what the router pays per unmatched GET.
+- **Published row-route lookup** — `getPublishedDataRowByRoute` against a data table with 10,000 published rows (quick 2,000), each with an active version. Sensitive to indexing on the versions join.
+
+Where the `publisher` bench measures the pure render function, this bench measures the whole DB-backed publish + serve lifecycle.
+
 ### editor-store
 Drives the live Zustand store. **This is the "is the builder laggy at scale?" bench.** Scenarios:
 - **Class creation scaling:** `createClass()` 100 → 100,000 times. Per-op p95 should stay flat — climbing means linear scans somewhere in the slice.
 - **Class lookup throughput:** `site.classes[id]` random reads. Floor below which any class-related UI rendering must live.
 - **Node tree mutations:** `insertNode` / `deleteNode` at 100 / 1k / 5k / 10k node trees.
 - **Node-class assignment with huge catalogues:** `addNodeClass` when there are 100k classes defined.
+- **Multi-delete:** ONE `deleteNodes(ids)` call removing 500 ids (quick 100) spread across all depths of a 10k-node tree (quick 2k), repeated on 3 fresh trees. The canvas multi-select → Delete path.
+- **VC-mode keystroke sweep:** per-keystroke `updateNodeProps` on a text node inside a Visual Component while the site holds 20 pages × 500 nodes (quick 5 × 200). Every VC-mode mutation re-syncs slot instances across all consumer trees, so this answers "does typing inside a VC scale with total site size?".
+- **Undo coalescing burst:** a 2,000-keystroke (quick 300) single-prop typing burst on one text node — the Properties-panel path, which folds the whole burst into one undo entry. Reports per-op p95 plus the JSON size of the retained `_historyPast` stack after the burst.
 
 If the numbers stay reasonable here, any actual UI lag is a rendering problem, not a state problem.
 
@@ -176,6 +190,7 @@ scripts/bench/
   benches/
     bundle.ts                 ← Dist composition
     publisher.ts              ← Page-tree → HTML pipeline
+    publish.ts                ← Full publish pipeline + public serving (DB-backed)
     editor-store.ts           ← Class & tree mutation stress
     http.ts                   ← Network latency + throughput
     db.ts                     ← SQLite performance

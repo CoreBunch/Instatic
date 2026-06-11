@@ -21,19 +21,20 @@
  *
  * The base64 helpers also back the crypto bridge (`crypto.digest` /
  * `crypto.signHmac`), which moves raw bytes the same way.
+ *
+ * Both helpers run in the Bun host process / Bun plugin worker, so they use
+ * native `Buffer` base64 — an order of magnitude faster than a per-byte JS
+ * loop on multi-MB bodies. The QuickJS VM has its own pure-JS shim
+ * (`quickjs/bootstrap/base64.ts`, no Buffer in the sandbox); the two
+ * produce bit-identical output.
  */
 
 export type BodyEncoding = 'utf8' | 'base64'
 
 export function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  // Chunked so we don't blow the call stack on multi-MB inputs (the
-  // String.fromCharCode spread variant fails on large arrays).
-  const CHUNK = 0x8000
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
-  }
-  return btoa(binary)
+  // Buffer.from(buffer, offset, length) wraps the existing bytes without
+  // copying; toString('base64') encodes them natively.
+  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('base64')
 }
 
 /**
@@ -43,9 +44,12 @@ export function bytesToBase64(bytes: Uint8Array): string {
  * `Response`) without slicing.
  */
 export function base64ToBytes(base64: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(base64)
-  const bytes = new Uint8Array(new ArrayBuffer(binary.length))
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  // Buffer.from(b64, 'base64') decodes natively but may live in Bun's
+  // shared Buffer pool (an ArrayBuffer with sibling views) — copy into a
+  // fresh ArrayBuffer to uphold the no-sibling-view guarantee above.
+  const decoded = Buffer.from(base64, 'base64')
+  const bytes = new Uint8Array(new ArrayBuffer(decoded.byteLength))
+  bytes.set(decoded)
   return bytes
 }
 

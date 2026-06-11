@@ -108,15 +108,12 @@ All six helpers in `SiteSliceHelpers` delegate to `runHistoricMutation`:
 
 ## Coalescing
 
-Per-keystroke mutations (text edits, number sliders) pass a stable `coalesceKey` such as `props:<nodeId>:<prop>`. While the incoming key matches `_historyCoalesceKey`, `commitHistory` folds the new entry into the existing top entry:
+Per-keystroke mutations (text edits, number sliders) pass a stable `coalesceKey` such as `props:<nodeId>:<prop>`. While the incoming key matches `_historyCoalesceKey`, `commitHistory` folds the new entry into the existing top entry **per patch path** (`foldIntoCoalescedEntry` in `helpers.ts`):
 
-```ts
-// Fold: newest undo first, oldest redo first
-top.inverse = [...entry.inverse, ...top.inverse]
-top.forward = [...top.forward,   ...entry.forward]
-```
+- **inverse**: the OLDEST patch per path wins (undo restores the pre-burst value); new paths append.
+- **forward**: the NEWEST patch's value per path wins (redo replays the final value), preserving the oldest patch's op (an `add` stays an `add` so redo works from the post-undo state where the prop is absent).
 
-A whole typing burst becomes one undo step. Patch arrays for a text burst are tiny (one path per keystroke), so concatenation cost is negligible.
+A whole typing burst becomes one undo step holding at most one inverse + one forward patch per touched path — a 2,000-keystroke burst retains 2 paths' worth of patches, not 4,000 progressively-longer string snapshots.
 
 Any non-coalescing mutation, `undo`, `redo`, or a site (re)load resets `_historyCoalesceKey` to `null`.
 

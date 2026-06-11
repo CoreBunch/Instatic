@@ -22,6 +22,16 @@
  *   - any other source — falls back to the source's synchronous
  *     `preview()` method (plugin sources can ship synthetic data;
  *     follow-up work will let plugins declare a server fetch endpoint).
+ *
+ * Subscription granularity: the hook never subscribes to the whole `site`
+ * document for built-in sources. `site.pages` loops subscribe through
+ * `selectSitePagesLoopItems`, whose output keeps a stable identity (per-page
+ * WeakMap projection cache + previous-array reuse) when an unrelated edit
+ * replaces the `pages` array without changing the loop's actual items — so
+ * typing in an unrelated text node no longer re-renders every loop body
+ * subtree in every breakpoint frame. Only the plugin-source fallback (whose
+ * `preview()` contractually receives the full document) subscribes to
+ * `site`, and only when such a source is selected.
  */
 
 import { useEffect, useState } from 'react'
@@ -141,8 +151,79 @@ function mediaAssetToLoopItem(asset: CmsMediaAsset): LoopItem {
 // than re-deriving it — keeping editor previews and published output in sync.
 
 // ---------------------------------------------------------------------------
+// site.pages selection — identity-stable across unrelated site mutations
+// ---------------------------------------------------------------------------
+
+/** Stable empty result shared by every inactive branch of the selectors. */
+const EMPTY_ITEMS: LoopItem[] = []
+
+// page → LoopItem projection cache. Mutative structural sharing keeps
+// untouched page objects identical across site mutations, so the projected
+// item keeps its identity too — which is what lets the items-array reuse
+// below actually hit.
+const pageLoopItemCache = new WeakMap<Page, LoopItem>()
+
+function cachedPageToLoopItem(page: Page): LoopItem {
+  let item = pageLoopItemCache.get(page)
+  if (!item) {
+    item = pageToLoopItem(page)
+    pageLoopItemCache.set(page, item)
+  }
+  return item
+}
+
+interface SitePagesItemsCacheEntry {
+  pages: readonly Page[]
+  items: LoopItem[]
+}
+
+// Per-loop-node result cache, keyed on the node object. The node keeps its
+// identity until ITS OWN props change (structural sharing again), so the
+// entry self-invalidates on filter/order/limit edits; the `pages` field
+// detects site mutations. Shared across the 3 breakpoint frames rendering
+// the same node — frames 2..N hit the first frame's entry.
+const sitePagesItemsCache = new WeakMap<PageNode, SitePagesItemsCacheEntry>()
+
+function sameItems(a: readonly LoopItem[], b: readonly LoopItem[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
+/**
+ * Project `pages` into the loop items for a `site.pages`-bound loop node,
+ * keeping the result referentially stable:
+ *
+ *  - same (node, pages) identities → cached array, no recompute;
+ *  - new `pages` identity whose relevant pages are untouched → recomputes,
+ *    then returns the PREVIOUS array because every member is identical.
+ *
+ * Runs inside a Zustand selector on every store set, so the steady-state
+ * path is two identity checks; the recompute path is O(pages log pages).
+ */
+export function selectSitePagesLoopItems(node: PageNode, pages: readonly Page[] | null): LoopItem[] {
+  if (!pages) return EMPTY_ITEMS
+
+  const cached = sitePagesItemsCache.get(node)
+  if (cached && cached.pages === pages) return cached.items
+
+  const { filters, orderBy, direction, offset, limit } = readLoopProps(node)
+  const filtered = filterPagesForLoop(pages, filters)
+  const sorted = sortPages(filtered, orderBy || 'definition', direction)
+  let items = sorted.slice(offset, offset + limit).map(cachedPageToLoopItem)
+  if (cached && sameItems(cached.items, items)) items = cached.items
+
+  sitePagesItemsCache.set(node, { pages, items })
+  return items
+}
+
+// ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
+
+const BUILT_IN_SOURCE_IDS = new Set(['data.rows', 'site.media', 'site.pages'])
 
 export function useLoopPreviewItems(node: PageNode): LoopItem[] {
   // `readLoopProps()` reuses the shared `EMPTY_FILTERS` sentinel when the
@@ -154,10 +235,17 @@ export function useLoopPreviewItems(node: PageNode): LoopItem[] {
   const { sourceId, filters, orderBy, direction, offset, limit } = readLoopProps(node)
   const tableId = typeof filters.tableId === 'string' ? filters.tableId : ''
   const mimePrefix = typeof filters.mimePrefix === 'string' ? filters.mimePrefix : ''
+  const isPluginSource = sourceId !== '' && !BUILT_IN_SOURCE_IDS.has(sourceId)
 
-  // Subscribe reactively so site.pages updates trigger re-renders.
-  const site = useEditorStore((s) => s.site)
-  const sitePages = useEditorStore((s) => s.site?.pages ?? null)
+  // Narrow, identity-stable subscriptions (see module header). Inactive
+  // branches resolve to stable constants so the subscription never fires
+  // for them.
+  const sitePagesItems = useEditorStore((s) =>
+    sourceId === 'site.pages' ? selectSitePagesLoopItems(node, s.site?.pages ?? null) : EMPTY_ITEMS,
+  )
+  // Plugin `preview()` contractually receives the whole site document, so
+  // this is the one branch that genuinely depends on it.
+  const pluginSite = useEditorStore((s) => (isPluginSource ? s.site : null))
 
   // Raw fetched data for async sources — sort/offset/limit applied below.
   const [asyncDataTable, setAsyncDataTable] = useState<DataTable | null>(null)
@@ -223,7 +311,7 @@ export function useLoopPreviewItems(node: PageNode): LoopItem[] {
   }, [sourceId])
 
   // ── Sort + offset + limit pipeline ──────────────────────────────────
-  if (!sourceId) return []
+  if (!sourceId) return EMPTY_ITEMS
 
   if (sourceId === 'data.rows') {
     // Prefer real published rows (server already applied orderBy /
@@ -233,13 +321,13 @@ export function useLoopPreviewItems(node: PageNode): LoopItem[] {
     // items from the table's field definitions so the loop body stays
     // visible in the canvas. The author can lay out the template; once
     // rows are published the preview switches over automatically.
-    if (!asyncDataTable) return []
+    if (!asyncDataTable) return EMPTY_ITEMS
     const previewItem = dataTablePreviewToLoopItem(asyncDataTable)
     return Array.from({ length: Math.min(limit, 3) }, () => previewItem)
   }
 
   if (sourceId === 'site.media') {
-    if (asyncMedia.length === 0) return []
+    if (asyncMedia.length === 0) return EMPTY_ITEMS
     const filtered = mimePrefix
       ? asyncMedia.filter((a) => a.mimeType.startsWith(mimePrefix))
       : asyncMedia
@@ -247,21 +335,16 @@ export function useLoopPreviewItems(node: PageNode): LoopItem[] {
     return sorted.slice(offset, offset + limit).map(mediaAssetToLoopItem)
   }
 
-  if (sourceId === 'site.pages') {
-    if (!sitePages) return []
-    const filtered = filterPagesForLoop(sitePages, filters)
-    const sorted = sortPages(filtered, orderBy || 'definition', direction)
-    return sorted.slice(offset, offset + limit).map(pageToLoopItem)
-  }
+  if (sourceId === 'site.pages') return sitePagesItems
 
   // Plugin source fallback — synchronous preview() with no client-side
   // sort. Plugins that need ordering should apply it inside their own
   // preview() implementation.
   const source = loopSourceRegistry.get(sourceId)
-  if (!source || !site) return []
+  if (!source || !pluginSite) return EMPTY_ITEMS
   try {
-    return source.preview({ site, filters, limit }).slice(offset, offset + limit)
+    return source.preview({ site: pluginSite, filters, limit }).slice(offset, offset + limit)
   } catch {
-    return []
+    return EMPTY_ITEMS
   }
 }

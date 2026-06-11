@@ -90,7 +90,11 @@ export function createSqliteClient(filename: string): DbClient {
     ...values: unknown[]
   ): Promise<DbResult<Row>> => {
     const { sql, params } = renderTemplate(strings, values)
-    const stmt = db.prepare(sql)
+    // db.query() returns a prepared statement cached by the exact SQL string
+    // (db.prepare() recompiles on every call). Tagged-template call sites
+    // render an identical SQL string per site, so steady-state queries skip
+    // compilation entirely; params are still bound fresh on each .all()/.run().
+    const stmt = db.query(sql)
     if (isSelectishStatement(sql)) {
       const rows = stmt.all(...params) as Row[]
       return { rows: rows.map(parseJsonColumns), rowCount: rows.length }
@@ -104,12 +108,14 @@ export function createSqliteClient(filename: string): DbClient {
     params?: unknown[],
   ): Promise<DbResult<Row>> => {
     // Multi-statement migration blocks arrive as a single SQL string with
-    // semicolons. db.exec() handles them correctly; prepare() + all() does not.
+    // semicolons. db.exec() handles them correctly; a prepared statement
+    // (db.query) only runs the first statement.
     if (params === undefined && rawSql.includes(';')) {
       db.exec(rawSql)
       return { rows: [], rowCount: 0 }
     }
-    const stmt = db.prepare(rawSql)
+    // Cached prepared statement — same rationale as the template path above.
+    const stmt = db.query(rawSql)
     const bindParams = (params ?? []).map(toBindable)
     const rows = stmt.all(...bindParams) as Row[]
     return { rows: rows.map(parseJsonColumns), rowCount: rows.length }

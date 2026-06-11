@@ -30,9 +30,9 @@ import {
   type ResolvedLoopRenderData,
 } from '@core/publisher'
 import { jsonResponse } from '../../http'
-import { getLatestPublishedSiteSnapshot, getPublishedPageBySlug } from '../../repositories/publish'
-import { collectLoopNodes, readLoopProps } from '../../publish/loopPrefetch'
-import { publicSlugFromPath } from '../../publish/publicRouter'
+import { readLoopProps } from '../../publish/loopPrefetch'
+import { getPublishedLoopIndexForVersion } from '../../publish/publishedSnapshotCache'
+import { getPublishVersion } from '../../publish/publishState'
 import { LOOP_RUNTIME_JS } from '../../publish/loopRuntime'
 
 const LOOP_RUNTIME_PATH = '/_instatic/assets/loop-runtime.js'
@@ -72,33 +72,22 @@ export async function handleLoopRequest(
 
   const pageNumberRaw = url.searchParams.get('page') ?? '1'
   const pageNumber = Math.max(1, Number.parseInt(pageNumberRaw, 10) || 1)
-  const pagePath = url.searchParams.get('pagePath') ?? '/'
 
-  // Find the page that contains this loop. We try by slug first (public
-  // pages); content-template loops live inside a published template page
-  // and are addressable via the latest snapshot.
-  const slugSnapshot = await getPublishedPageBySlug(ctx.db, publicSlugFromPath(pagePath))
-  const fallbackSnapshot = slugSnapshot ?? (await getLatestPublishedSiteSnapshot(ctx.db))
-  if (!fallbackSnapshot) {
+  // Find the page that contains this loop via the per-publish-version
+  // loopId → { page, node } index. Every page version in one publish shares
+  // the same site document, so the index covers regular pages and template
+  // pages alike (the runtime's `pagePath` hint is no longer needed) — and the
+  // old per-request full-snapshot parse + all-pages tree walk is gone.
+  const loopIndex = await getPublishedLoopIndexForVersion(ctx.db, getPublishVersion())
+  if (!loopIndex) {
     return jsonResponse({ error: 'Site not published' }, { status: 404 })
   }
-
-  // Search for the loop node across all pages in the snapshot — easiest
-  // way to handle both regular pages and template pages from one entry.
-  let loopNode = null
-  let containingPage = null
-  for (const page of fallbackSnapshot.site.pages) {
-    const nodes = collectLoopNodes(page, fallbackSnapshot.site)
-    const match = nodes.find((n) => n.id === loopId)
-    if (match) {
-      loopNode = match
-      containingPage = page
-      break
-    }
-  }
-  if (!loopNode || !containingPage) {
+  const indexed = loopIndex.loops.get(loopId)
+  if (!indexed) {
     return jsonResponse({ error: 'Loop not found' }, { status: 404 })
   }
+  const { page: containingPage, node: loopNode } = indexed
+  const site = loopIndex.site
 
   const props = readLoopProps(loopNode)
   if (props.pagination !== 'infinite') {
@@ -115,7 +104,7 @@ export async function handleLoopRequest(
   try {
     result = await source.fetch({
       db: ctx.db,
-      site: fallbackSnapshot.site,
+      site,
       filters: props.filters,
       orderBy: props.orderBy || (source.orderByOptions[0]?.id ?? ''),
       direction: props.direction,
@@ -140,7 +129,7 @@ export async function handleLoopRequest(
   }
   const baseConfig: RenderConfig = {
     page: containingPage,
-    site: fallbackSnapshot.site,
+    site,
     registry,
     breakpointId: undefined,
     templateContext: { entryStack: [] },

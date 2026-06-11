@@ -180,10 +180,18 @@ function makeFakeDb(
     ..._values: unknown[]
   ): Promise<DbResult<Row>> => {
     const sql = strings.join(' ').replace(/\s+/g, ' ').trim().toLowerCase()
-    if (sql.includes('select data_row_versions.snapshot_json')) {
+    if (sql.includes('site_snapshots.site_json')) {
       if (counters) counters.snapshotLoads++
       return {
-        rows: snapshot ? [{ snapshot_json: snapshot } as Row] : [],
+        rows: snapshot
+          ? [{
+              row_id: snapshot.pageRowId,
+              site_json: snapshot.site,
+              runtime_assets_json: null,
+              importmap_body: null,
+              importmap_sha256: null,
+            } as unknown as Row]
+          : [],
         rowCount: snapshot ? 1 : 0,
       }
     }

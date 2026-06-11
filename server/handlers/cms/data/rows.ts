@@ -40,6 +40,7 @@ import {
 import { findUserById } from '../../../repositories/users'
 import { slugForTable } from '@core/data/cells'
 import { badRequest, jsonResponse, readValidatedBody } from '../../../http'
+import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import type { CmsHandlerOptions } from '../shared'
 import { CMS_API_PREFIX, requestAuditContext } from '../shared'
 import { runRouteTable, type Route, type RouteParams } from '../routeTable'
@@ -213,6 +214,9 @@ async function handleRowItemDelete(
       console.error('[publish:row] failed to remove artefact for deleted row', rowId, err)
     })
   }
+  // Layer B mirror of the artefact prune: a published row's route is
+  // retracted, so the render cache must stop serving it.
+  if (row.status === 'published') await bumpPublishVersionSerialized()
   await emitContentEntryDeleted(db, rowId, { kind: 'user', userId: user.id })
   await recordRowAuditEvent(db, user, req, 'data.row.delete', row)
   return jsonResponse({ row })
