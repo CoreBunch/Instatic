@@ -2,7 +2,7 @@
  * adminUi — admin-shell-wide UI state, intentionally kept small and
  * independent of the editor store.
  *
- * The editor store (`@site/store/store`) carries 11 slices and weighs
+ * The editor store (`@site/store/store`) carries 12 slices and weighs
  * ~165 KB in its own chunk. Any module that subscribes to it transitively
  * drags that chunk into its graph. AdminPageLayout (Plugins / Users /
  * Account / plugin admin pages) only needs a few cross-shell signals —
