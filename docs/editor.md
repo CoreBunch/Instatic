@@ -325,7 +325,7 @@ Organization is persisted in `site.explorer` on the site shell. Folders are deco
 
 **Undo/redo** uses patch-based history: every undoable mutation captures Mutative `[next, forward, inverse]` patch pairs scoped to the `SiteDocument`. Undo applies `entry.inverse`, redo applies `entry.forward` — O(change) in both time and memory, not O(site). A 50-deep history holds kilobytes of patches instead of hundreds of megabytes of full-site clones. See [`docs/reference/editor-history.md`](../reference/editor-history.md).
 
-The store is composed of **11 slices**, each created by a factory in `store/slices/`:
+The store is composed of **12 slices**, each created by a factory in `store/slices/`:
 
 | Slice                  | Owns                                                                       |
 |------------------------|----------------------------------------------------------------------------|
@@ -340,6 +340,7 @@ The store is composed of **11 slices**, each created by a factory in `store/slic
 | `agentSlice`           | AI Agent Panel state + streaming                                           |
 | `sitePanelSlice`       | Dependency manifest + site runtime settings                                |
 | `clipboardSlice`       | Copy / cut / paste of layer subtrees, persisted editor-wide                |
+| `inlineEditSlice`      | `activeInlineEdit` — the canvas inline text-edit session (double-click to edit) |
 
 The combined `EditorStore` type lives at `store/types.ts` so each slice can import it without going through `store.ts` (this eliminates the historical store ↔ slice cycles).
 
@@ -407,6 +408,10 @@ Selection rings and hover rings are absolutely-positioned overlay divs portaled 
 `BreakpointSelectionOverlay` owns these rings and all other canvas-local action chrome that must escape iframe overflow: the selected-layer toolbar and the Alt/Option inspect ladder. The selected-layer toolbar carries four actions, left to right: drag-to-reorder, **insert module** (`CanvasInsertModuleButton` — opens the full `ModuleInserterDialog`, the same modal command surface as the main toolbar's "+ Add" button, rather than an anchored dropdown that would mis-position against the zoom/transform-scaled canvas and its breakpoint iframes), duplicate, and delete. Both inserter entry points share the `useInsertInserterItem` hook, so the picked node routes through `resolveInsertLocation` against the current selection — nesting as a last child of a container target or landing as a sibling-after of a leaf target, identical to every other insert flow. Holding Alt/Option while hovering a canvas element opens a momentary tree-shaped target picker in the parent canvas root, anchored above or below the hovered element and clamped to the visible canvas. The picker is built from the active `NodeTree`, not raw DOM parents: ancestors appear above the hovered node, the hovered node is the current row, and the first visible child appears below it. ArrowUp/ArrowDown move the highlighted target, Enter commits selection, clicking a row commits immediately, and releasing Alt/Option or pressing Escape dismisses the ladder. Committing through the ladder changes the selected node without taking focus from the current side panel, so the Properties panel stays open while users retarget parent or child layers.
 
 Ring and toolbar positions are computed on each animation frame via a RAF loop (simpler than wiring ResizeObserver/MutationObserver/IntersectionObserver to every mutation source — scroll, layout shift, zoom, content animation). The loop only starts when `hasOverlayWork` is true — at least one selection ring, hover ring, selector-affinity highlight, or toolbar is visible. When there is no overlay work the effect returns early so idle breakpoint frames incur no RAF cost. **When adding a new visible overlay type to `BreakpointSelectionOverlay`, update `hasOverlayWork`** so the loop arms correctly.
+
+### Inline text editing (double-click)
+
+Double-clicking a node whose module declares `inlineTextEdit` (`base.text`, `base.button`, childless `base.link`) opens `InlineTextEditOverlay` — a real `<textarea>`/`<input>` in the parent document, portaled into the canvas root and RAF-tracked over the node's rect inside the breakpoint iframe (same portal + RAF pattern as the selection rings). Typography is mirrored from the live element via the iframe's `getComputedStyle`, scaled by the iframe zoom factor. Every keystroke commits live through `updateNodeProps`, so all breakpoint frames preview the edit while the session's own frame hides the node's text (`data-instatic-inline-editing` + a canvas-chrome rule). The whole burst coalesces into one undo entry; Enter/blur commit + close, Escape reverts via a single `undo()`. Session state is `activeInlineEdit` in `inlineEditSlice`. Full design: [`docs/features/canvas-iframe-per-frame.md`](features/canvas-iframe-per-frame.md) → "Inline text editing (parent-doc overlay)".
 
 ### CSS injection into the iframe
 
@@ -484,6 +489,7 @@ Canvas-internal values are not CSS tokens — they are raw integers intentionall
 | `canvasOverlayGeometry.ts`      | Cross-iframe element rect → canvas-root coords; CSS attribute value escaping |
 | `canvasSelectionUtils.ts`       | Selection helpers                                               |
 | `BreakpointSelectionOverlay.tsx`| Selection / hover rings, selection toolbar, inspect ladder integration |
+| `InlineTextEditOverlay.tsx`     | Parent-doc inline text editor floated over a node in the breakpoint iframe (double-click to edit) |
 | `CanvasInsertModuleButton.tsx`  | "Insert module" button in the canvas selection toolbar — opens `ModuleInserterDialog` |
 | `canvasTreeLadder.ts`           | Alt/Option inspect ladder tree model                            |
 | `CanvasTreeLadderOverlay.tsx`   | `useCanvasTreeLadderOverlay` — wires the ladder model to canvas events and portal |

@@ -151,6 +151,24 @@ Live frames skip wheel/pointer/keyboard forwarding — they scroll natively, hav
 
 ---
 
+## Inline text editing (parent-doc overlay)
+
+Double-click a text-bearing node to edit its text in place. The editor is a real `<textarea>`/`<input>` in the **parent document** (`InlineTextEditOverlay.tsx`), portaled into the canvas root and positioned over the node inside the breakpoint iframe with the same RAF tracking the selection rings use — no cross-frame focus negotiation, which is what made the old in-iframe `contentEditable` editor unshippable.
+
+- **Module contract:** `ModuleDefinition.inlineTextEdit?: { prop: string; multiline?: boolean }`. Declared by `base.text` (`text`, multiline), `base.button` (`label`), and `base.link` (`text`). Modules without the field keep the no-op double-click; the canvas has no per-module branches. A node with children never starts a session (`base.link` renders `text` only when childless), and dynamically-bound props are not literal-editable.
+- **Session state:** `activeInlineEdit { nodeId, prop, breakpointId, multiline, initialValue, committed }` in `store/slices/inlineEditSlice.ts`. One session globally, owned by the frame that was double-clicked. Design mode only.
+- **Live commit:** every keystroke calls `updateNodeProps(nodeId, { [prop]: value })`. Single-field patches coalesce under `props:<nodeId>:<prop>`, so the whole burst is ONE undo entry and every other frame previews the edit live. `startInlineEdit`/`endInlineEdit` reset `_historyCoalesceKey` so the session burst never folds into a Properties-panel burst for the same prop.
+- **Hidden doubled text:** the edited node — in the session's frame only — carries `data-instatic-inline-editing`, and the canvas-chrome CSS paints it with `-webkit-text-fill-color: transparent` (NOT `color: transparent`: the overlay mirrors the element's computed `color` for the field's own text).
+- **Typography mirroring:** `mirrorInlineEditTypography` (canvasOverlayGeometry.ts) copies font family/weight/style, color, text-align, and text-transform from `iframe.contentWindow.getComputedStyle(el)` and scales font-size / line-height / letter-spacing by the iframe zoom factor on every RAF tick.
+- **End:** Enter or Cmd/Ctrl+Enter commits + closes — plain Enter commits even in multiline mode because `base.text` renders raw text into HTML where newlines collapse; Shift+Enter inserts a native newline for authors who add `white-space: pre-wrap` themselves. Blur commits + closes. Escape cancels: a single `undo()` iff the session committed anything.
+- **Force-close:** node deleted (pruned in `pruneCanvasSelectionDraft`), document/page switch (`clearCanvasSelectionDraft`), frame unmount (breakpoint collapsed, live-mode switch), or an unmeasurable rect mid-session.
+
+Keyboard interplay: the field lives in the parent document, so the existing `isTextInputTarget` guards already keep Delete/clipboard shortcuts out, and the field stops propagation of every keystroke so the canvas-root handler (Escape-clears-selection, duplicate, zoom keys) never sees them.
+
+Design doc: `docs/superpowers/specs/2026-06-10-inline-text-editing-design.md`.
+
+---
+
 ## Plugin module sandboxing (`ModuleSandboxFrame`)
 
 Plugin canvas modules render inside `ModuleSandboxFrame.tsx`, a separate component that is NOT `IframeFrameSurface`. Plugin modules run in a `sandbox="allow-scripts"` iframe with no `allow-same-origin` — they communicate with the host via `postMessage`. This is distinct from the page tree iframes described above.
@@ -158,12 +176,6 @@ Plugin canvas modules render inside `ModuleSandboxFrame.tsx`, a separate compone
 ---
 
 ## Known limitations
-
-### Inline text editing removed
-
-Double-click to edit text/button content in-place was removed when the iframe move landed. The cross-frame focus model (iframe needs system focus, body competes, React StrictMode double-mount races) made every fix fragile. Text and button content is edited through the Properties panel.
-
-When revisited, the shape worth considering is a parent-doc overlay positioned over the iframe element — a real `<input>`/`<textarea>` in the parent doc, no iframe focus negotiation needed.
 
 ### Test environment — iframe globals
 
