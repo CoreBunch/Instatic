@@ -6,6 +6,7 @@ import type { Page } from './page'
 import type { SiteDocument } from './siteDocument'
 import type { VisualComponent } from '@core/visualComponents'
 import { isHomePage } from './slugs'
+import { addFolderPrefixes, parentPathForPath } from './explorerPaths'
 
 export const STRUCTURAL_SITE_EXPLORER_SECTION_IDS = [
   'pages',
@@ -274,15 +275,6 @@ function structuralRowsForFiles(files: readonly SiteFile[], type: 'style' | 'scr
   return { folders, items, itemPaths }
 }
 
-function addFolderPrefixes(folders: Set<string>, path: string): void {
-  const segments = path.split('/').filter(Boolean)
-  let current = ''
-  for (let index = 0; index < segments.length - 1; index += 1) {
-    current = current ? `${current}/${segments[index]}` : segments[index]
-    folders.add(current)
-  }
-}
-
 function reconcileStructuralSection(
   section: StructuralExplorerSection,
   rows: StructuralRows,
@@ -304,11 +296,6 @@ function reconcileStructuralSection(
       return rows.items.has(entry.id) && rows.items.get(entry.id) === entry.parentPath
     }),
   }
-}
-
-function parentPathForPath(path: string): string | undefined {
-  const index = path.lastIndexOf('/')
-  return index === -1 ? undefined : path.slice(0, index)
 }
 
 function reconcileSection(section: DecorativeExplorerSection, sourceIds: readonly string[]): DecorativeExplorerSection {

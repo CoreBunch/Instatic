@@ -15,11 +15,13 @@ import {
   renameExplorerFolder as renameExplorerFolderInOrganization,
   renamePage as renamePageInSite,
   wrapExplorerItemsInFolder as wrapExplorerItemsInFolderInOrganization,
+  sameStructuralParent,
+  compareStructuralRows,
+  structuralRowsForSection,
 } from '@core/page-tree'
 import type {
   SiteDocument,
   SiteExplorerSectionId,
-  StructuralExplorerRowOrder,
   StructuralSiteExplorerSectionId,
 } from '@core/page-tree'
 import type { SiteSlice, SiteSliceHelpers } from './types'
@@ -42,13 +44,6 @@ export type ExplorerActions = Pick<
   | 'moveStructuralExplorerRow'
   | 'setPageAsHomepage'
 >
-
-type StructuralRowTarget = Omit<StructuralExplorerRowOrder, 'order'>
-
-interface StructuralExplorerRowModel extends StructuralRowTarget {
-  order: number
-  naturalOrder: number
-}
 
 export function createExplorerActions({
   get,
@@ -191,7 +186,7 @@ export function createExplorerActions({
       mutateSite((site) => {
         reconcileSiteExplorerInPlace(site)
         const siblings = structuralRowsForSection(site, sectionId)
-          .filter((entry) => sameParent(entry.parentPath, row.parentPath))
+          .filter((entry) => sameStructuralParent(entry.parentPath, row.parentPath))
           .sort(compareStructuralRows)
         const currentIndex = siblings.findIndex((entry) => entry.kind === row.kind && entry.id === row.id)
         if (currentIndex === -1) return false
@@ -200,7 +195,7 @@ export function createExplorerActions({
         siblings.splice(clampIndex(nextIndex, siblings.length), 0, target)
         const parentPath = row.parentPath
         site.explorer[sectionId].rowOrder = [
-          ...site.explorer[sectionId].rowOrder.filter((entry) => !sameParent(entry.parentPath, parentPath)),
+          ...site.explorer[sectionId].rowOrder.filter((entry) => !sameStructuralParent(entry.parentPath, parentPath)),
           ...siblings.map((entry, order) => ({
             kind: entry.kind,
             id: entry.id,
@@ -299,73 +294,6 @@ function structuralPathInUse(
     && (!file.generated || file.ejected)
     && (file.path === path || file.path.startsWith(`${path}/`))
   )
-}
-
-function structuralRowsForSection(
-  site: SiteDocument,
-  sectionId: StructuralSiteExplorerSectionId,
-): StructuralExplorerRowModel[] {
-  const rows: StructuralRowTarget[] = []
-  const folderPaths = new Set(site.explorer[sectionId].emptyFolders)
-  if (sectionId === 'pages') {
-    for (const page of site.pages) {
-      if (page.template || page.slug === 'index') continue
-      rows.push({ kind: 'item', id: page.id, ...optionalParentPath(parentPathForPath(page.slug)) })
-      addFolderPrefixes(folderPaths, page.slug)
-    }
-  } else {
-    const type = sectionId === 'styles' ? 'style' : 'script'
-    for (const file of site.files) {
-      if (file.type !== type || (file.generated && !file.ejected)) continue
-      rows.push({ kind: 'item', id: file.id, ...optionalParentPath(parentPathForPath(file.path)) })
-      addFolderPrefixes(folderPaths, file.path)
-    }
-  }
-
-  for (const folderPath of folderPaths) {
-    rows.push({ kind: 'folder', id: folderPath, ...optionalParentPath(parentPathForPath(folderPath)) })
-  }
-
-  const orderByKey = new Map(
-    site.explorer[sectionId].rowOrder.map((entry) => [structuralRowKey(entry), entry.order]),
-  )
-  return rows.map((row, naturalOrder) => ({
-    ...row,
-    order: orderByKey.get(structuralRowKey(row)) ?? Number.POSITIVE_INFINITY,
-    naturalOrder,
-  }))
-}
-
-function addFolderPrefixes(folders: Set<string>, path: string): void {
-  const segments = path.split('/').filter(Boolean)
-  let current = ''
-  for (let index = 0; index < segments.length - 1; index += 1) {
-    current = current ? `${current}/${segments[index]}` : segments[index]
-    folders.add(current)
-  }
-}
-
-function parentPathForPath(path: string): string | undefined {
-  const index = path.lastIndexOf('/')
-  return index === -1 ? undefined : path.slice(0, index)
-}
-
-function optionalParentPath(parentPath: string | undefined): { parentPath?: string } {
-  return parentPath ? { parentPath } : {}
-}
-
-function structuralRowKey(row: StructuralRowTarget): string {
-  return `${row.kind}:${row.parentPath ?? ''}:${row.id}`
-}
-
-function sameParent(left: string | undefined, right: string | undefined): boolean {
-  return (left ?? '') === (right ?? '')
-}
-
-function compareStructuralRows(left: StructuralExplorerRowModel, right: StructuralExplorerRowModel): number {
-  return left.order - right.order
-    || left.naturalOrder - right.naturalOrder
-    || left.id.localeCompare(right.id)
 }
 
 function clampIndex(index: number, max: number): number {

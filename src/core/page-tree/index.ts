@@ -189,3 +189,12 @@ export type { PageTreeDropPosition, PageTreeDropTarget } from './dnd'
 export {
   selectVisualComponentById,
 } from './siteSelectors'
+
+export {
+  compareStructuralRows,
+  sameStructuralParent,
+  structuralRowKey,
+  structuralRowsForSection,
+} from './structuralRows'
+export type { StructuralExplorerRow } from './structuralRows'
+export { parentPathForPath } from './explorerPaths'

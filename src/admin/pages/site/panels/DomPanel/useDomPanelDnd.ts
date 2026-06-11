@@ -12,6 +12,7 @@ import {
   type DomDropTarget,
 } from './domPanelDnd'
 import type { DomPanelDndContextValue } from './DomPanelDndContext'
+import { getDragPoint, getEventPoint } from '@admin/lib/dndPointer'
 
 interface Point {
   x: number
@@ -311,28 +312,6 @@ export function useDomPanelDnd({
     handleDragEnd,
     handleDragCancel,
   }
-}
-
-function getDragPoint(event: DragMoveEvent, startPoint: Point | null): Point | null {
-  const start = startPoint ?? getEventPoint(event.activatorEvent)
-  if (!start) return null
-  return {
-    x: start.x + event.delta.x,
-    y: start.y + event.delta.y,
-  }
-}
-
-function getEventPoint(event: Event): Point | null {
-  if ('clientX' in event && 'clientY' in event) {
-    const maybePointer = event as MouseEvent | PointerEvent
-    return { x: maybePointer.clientX, y: maybePointer.clientY }
-  }
-  if ('touches' in event) {
-    const touchEvent = event as TouchEvent
-    const touch = touchEvent.touches[0] ?? touchEvent.changedTouches[0]
-    return touch ? { x: touch.clientX, y: touch.clientY } : null
-  }
-  return null
 }
 
 function getRowCenter(element: HTMLElement | undefined): Point | null {
