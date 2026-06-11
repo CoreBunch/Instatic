@@ -330,7 +330,7 @@ interface RenderResolvedMedia {
 }
 ```
 
-`buildMediaSrcset(media)` returns a `srcset` string sorted by ascending width with the original appended, or `null` when no variants exist. `pickMediaVariantUrl(media, targetWidth)` returns the smallest variant ≥ `targetWidth` (safe URL-escaped).
+`buildMediaSrcset(media)` returns a `srcset` string of the variants sorted by ascending width, or `null` when no variants exist. The original file is never included — any srcset candidate is selectable, and the original may be a multi-MB unoptimized source; the ladder's intrinsic-width WebP rung is the full-quality ceiling instead. `pickMediaVariantUrl(media, targetWidth)` returns the smallest variant ≥ `targetWidth` (safe URL-escaped).
 
 ---
 

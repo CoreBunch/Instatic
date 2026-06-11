@@ -3,9 +3,11 @@
  *
  * Published HTML uses the full responsive pipeline produced by the
  * `prefetchMediaAssets` publisher pre-pass:
- *   - `srcset` built from `/uploads/<id>-w<width>.webp` variants
- *   - `sizes` hint (`'auto'` resolves to `100vw` for v1; users can supply
- *     a custom string like `(min-width: 1024px) 50vw, 100vw`)
+ *   - `srcset` built from `/uploads/<id>-w<width>.webp` variants only —
+ *     the original never appears in srcset (see buildMediaSrcset)
+ *   - `sizes` hint (`'auto'` emits `auto, <ancestor-cap-or-100vw>` on lazy
+ *     images so Chrome 121+ selects by actual rendered width; users can
+ *     supply a custom string like `(min-width: 1024px) 50vw, 100vw`)
  *   - intrinsic `width` / `height` to prevent CLS
  *   - `loading` / `decoding` / `fetchpriority` perf hints
  *   - BlurHash data URL as a CSS background while the variant streams in
@@ -40,9 +42,11 @@ export const ImagePropsSchema = Type.Object({
   src: Type.String({ default: '' }),
   loading: Type.Union([Type.Literal('lazy'), Type.Literal('eager')], { default: 'lazy' }),
   /**
-   * `sizes` attribute. `'auto'` resolves to `100vw` at publish time —
-   * future work: derive from canvas breakpoints. A custom string is
-   * emitted verbatim.
+   * `sizes` attribute. `'auto'` emits `auto, <fallback>` on lazy images
+   * (Chrome 121+ selects by actual rendered width); the fallback is the
+   * publisher's ancestor max-width resolution, else `100vw`. Eager images
+   * emit the fallback alone (the `auto` keyword is lazy-only per spec).
+   * A custom string is emitted verbatim.
    */
   sizes: Type.String({ default: 'auto' }),
   /**
@@ -92,12 +96,21 @@ type ImageProps = ImageStoredProps & {
  * Resolve the `sizes` attribute the publisher should emit.
  *
  * Rules:
- *   - Empty / 'auto' AND publisher computed a smarter string → use it.
- *   - Empty / 'auto' AND no smart resolution → fall back to `'100vw'`.
+ *   - Empty / 'auto' → `auto, <fallback>` for LAZY images: browsers that
+ *     implement `sizes=auto` (Chrome 121+) select by the image's actual
+ *     rendered width — far tighter than any publish-time estimate for
+ *     images laid out smaller than their container cap (grids, cards).
+ *     Others skip the unknown keyword and use the fallback. The spec only
+ *     allows `auto` on `loading="lazy"`, so eager images emit the fallback
+ *     alone. The fallback is the publisher's resolved ancestor cap, else
+ *     `'100vw'`.
  *   - Anything else → emit the user's verbatim value (already escaped).
  */
-function resolveSizes(prop: string, autoResolved: string | undefined): string {
-  if (!prop || prop === 'auto') return autoResolved ?? '100vw'
+function resolveSizes(prop: string, autoResolved: string | undefined, lazy: boolean): string {
+  if (!prop || prop === 'auto') {
+    const fallback = autoResolved ?? '100vw'
+    return lazy ? `auto, ${fallback}` : fallback
+  }
   return prop
 }
 
@@ -229,7 +242,7 @@ export const ImageModule: ModuleDefinition<ImageProps> = {
     // pure attribute-safe string (numbers + `min-width` keyword + `px`),
     // so no further escape is needed.
     const sizes = srcset
-      ? resolveSizes(String(props.sizes ?? 'auto'), props._resolvedAutoSizes)
+      ? resolveSizes(String(props.sizes ?? 'auto'), props._resolvedAutoSizes, loading === 'lazy')
       : null
     const width = media?.width ?? null
     const height = media?.height ?? null
