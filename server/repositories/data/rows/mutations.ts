@@ -71,6 +71,23 @@ export async function saveDataRowDraft(
   actorUserId: string | null = null,
   pluginActorId: string | null = null,
 ): Promise<DataRow | null> {
+  const updated = await updateDataRowDraftCells(db, rowId, input, actorUserId, pluginActorId)
+  return updated ? getDataRow(db, rowId) : null
+}
+
+/**
+ * The write half of `saveDataRowDraft`, without the hydrated re-read. The
+ * roster reconcilers (PUT /pages, PUT /components) discard the row anyway —
+ * re-reading every saved row through the user-ref joins doubled their query
+ * count per save. Returns whether a (non-deleted) row matched.
+ */
+export async function updateDataRowDraftCells(
+  db: DbClient,
+  rowId: string,
+  input: UpdateDataRowDraftInput,
+  actorUserId: string | null = null,
+  pluginActorId: string | null = null,
+): Promise<boolean> {
   const { rows } = await db<{ id: string }>`
     update data_rows
     set cells_json = ${input.cells},
@@ -82,7 +99,7 @@ export async function saveDataRowDraft(
       and deleted_at is null
     returning id
   `
-  return rows[0] ? getDataRow(db, rows[0].id) : null
+  return rows.length > 0
 }
 
 /**

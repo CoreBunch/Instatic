@@ -234,50 +234,103 @@ async function publishDraftSiteLocked(
   adminUserId: string,
   uploadsDir?: string,
 ): Promise<PublishResult> {
-  const { publishedPages, snapshots, runtimeAssetFiles } = await db.transaction(async (tx) => {
-    const shell = await getDraftSite(tx)
-    if (!shell) throw new Error('draft site not found')
+  // ── Phase 1: read inputs + run every expensive non-DB build ──────────────
+  // Dependency installs (`bun install` on a cold cache) and per-page esbuild
+  // runs take seconds; the SQLite adapter serializes ALL transactions through
+  // one chain, so doing this inside the transaction stalled every concurrent
+  // write (autosaves, row publishes) behind it. `withPublishLock` already
+  // serializes publishes, and version numbers are only allocated by publish
+  // paths under that same lock, so reading outside the transaction is stable.
+  const shell = await getDraftSite(db)
+  if (!shell) throw new Error('draft site not found')
 
-    const [pageRows, vcRows] = await Promise.all([
-      listDataRows(tx, 'pages'),
-      listDataRows(tx, 'components'),
-    ])
-    const pages = pageRows.map(pageFromRow)
-    const visualComponents = validateVisualComponents(
-      vcRows.flatMap((r) => { const vc = visualComponentFromRow(r); return vc ? [vc] : [] })
-    )
-    const site: SiteDocument = { ...shell, pages, visualComponents }
+  const [pageRows, vcRows] = await Promise.all([
+    listDataRows(db, 'pages'),
+    listDataRows(db, 'components'),
+  ])
+  const pages = pageRows.map(pageFromRow)
+  const visualComponents = validateVisualComponents(
+    vcRows.flatMap((r) => { const vc = visualComponentFromRow(r); return vc ? [vc] : [] })
+  )
+  const site: SiteDocument = { ...shell, pages, visualComponents }
 
-    const runtime = normalizeSiteRuntimeConfig(site.runtime)
-    const dependencyCache = Object.keys(runtime.dependencyLock.packages).length > 0
-      ? await ensureRuntimeDependencyCache(runtime.dependencyLock)
-      : undefined
-    // Build the package importmap once per publish — the JSON is identical
-    // for every page sharing the same lock, so its SHA-256 stays stable
-    // across snapshots. Module plugins use bare imports (`import "three"`)
-    // and the browser resolves them through this map at page load.
-    const packageImportmap = dependencyCache
-      ? await buildRuntimePackageImportmap(runtime.dependencyLock, dependencyCache)
-      : null
-    const serializedImportmap = packageImportmap
-      ? await serializeImportmapForCsp(packageImportmap.importmap)
-      : null
-    const runtimePackageImportmap: PublishedRuntimePackageImportmap | undefined = serializedImportmap
-      ? { body: serializedImportmap.body, sha256: serializedImportmap.sha256 }
-      : undefined
+  const runtime = normalizeSiteRuntimeConfig(site.runtime)
+  const dependencyCache = Object.keys(runtime.dependencyLock.packages).length > 0
+    ? await ensureRuntimeDependencyCache(runtime.dependencyLock)
+    : undefined
+  // Build the package importmap once per publish — the JSON is identical
+  // for every page sharing the same lock, so its SHA-256 stays stable
+  // across snapshots. Module plugins use bare imports (`import "three"`)
+  // and the browser resolves them through this map at page load.
+  const packageImportmap = dependencyCache
+    ? await buildRuntimePackageImportmap(runtime.dependencyLock, dependencyCache)
+    : null
+  const serializedImportmap = packageImportmap
+    ? await serializeImportmapForCsp(packageImportmap.importmap)
+    : null
+  const runtimePackageImportmap: PublishedRuntimePackageImportmap | undefined = serializedImportmap
+    ? { body: serializedImportmap.body, sha256: serializedImportmap.sha256 }
+    : undefined
 
-    const publishedSite: SiteDocument = {
-      ...site,
-      pages: site.pages.map((page) => ({
-        ...page,
-        updatedByUserId: adminUserId,
-      })),
+  const publishedSite: SiteDocument = {
+    ...site,
+    pages: site.pages.map((page) => ({
+      ...page,
+      updatedByUserId: adminUserId,
+    })),
+  }
+
+  const siteSnapshotId = nanoid()
+  const snapshots: PublishedPageSnapshot[] = []
+  // Runtime JS bytes for every page, collected for the Layer A disk write so
+  // published pages serve their scripts straight off disk (not the DB).
+  const runtimeAssetFiles: Array<{ publicPath: string; bytes: Uint8Array }> = []
+  const builtPages: Array<{
+    page: SiteDocument['pages'][number]
+    versionId: string
+    versionNumber: number
+    runtimeAssets: PublishedPageRuntimeAssets | null
+    runtimeFiles: Awaited<ReturnType<typeof buildSiteRuntimeScripts>>['files']
+  }> = []
+  for (const page of publishedSite.pages) {
+    const versionNumber = await nextDataRowVersionNumber(db, page.id)
+    const versionId = nanoid()
+    const runtimeBuild = await buildSiteRuntimeScripts({
+      site: publishedSite,
+      page,
+      target: 'publish',
+      assetBasePath: `/_instatic/assets/${versionId}/`,
+      dependencyCache,
+    })
+    const runtimeErrors = runtimeBuild.diagnostics.filter((d) => d.severity === 'error')
+    if (runtimeErrors.length > 0) {
+      throw new Error(`runtime build failed: ${runtimeErrors.map((d) => d.message).join('; ')}`)
     }
 
+    const snapshot = createSnapshot(
+      publishedSite,
+      page.id,
+      runtimeBuild.runtimeAssets,
+      runtimePackageImportmap,
+    )
+    snapshots.push(snapshot)
+    builtPages.push({
+      page,
+      versionId,
+      versionNumber,
+      runtimeAssets: snapshot.runtimeAssets ?? null,
+      runtimeFiles: runtimeBuild.files,
+    })
+    for (const file of runtimeBuild.files) {
+      runtimeAssetFiles.push({ publicPath: file.publicPath, bytes: file.bytes })
+    }
+  }
+
+  // ── Phase 2: short transaction — DB writes only ───────────────────────────
+  await db.transaction(async (tx) => {
     // The site document is stored ONCE per publish; every page version row
     // references it. The content hash powers the publish-status check without
     // ever re-fetching the document.
-    const siteSnapshotId = nanoid()
     await tx`
       insert into site_snapshots (id, site_json, content_hash, importmap_body, importmap_sha256)
       values (
@@ -289,66 +342,42 @@ async function publishDraftSiteLocked(
       )
     `
 
-    const snapshots: PublishedPageSnapshot[] = []
-    // Runtime JS bytes for every page, collected for the Layer A disk write so
-    // published pages serve their scripts straight off disk (not the DB).
-    const runtimeAssetFiles: Array<{ publicPath: string; bytes: Uint8Array }> = []
-    for (const page of publishedSite.pages) {
-      const version = await nextDataRowVersionNumber(tx, page.id)
-      const versionId = nanoid()
-      const runtimeBuild = await buildSiteRuntimeScripts({
-        site: publishedSite,
-        page,
-        target: 'publish',
-        assetBasePath: `/_instatic/assets/${versionId}/`,
-        dependencyCache,
-      })
-      const runtimeErrors = runtimeBuild.diagnostics.filter((d) => d.severity === 'error')
-      if (runtimeErrors.length > 0) {
-        throw new Error(`runtime build failed: ${runtimeErrors.map((d) => d.message).join('; ')}`)
-      }
-
-      const snapshot = createSnapshot(
-        publishedSite,
-        page.id,
-        runtimeBuild.runtimeAssets,
-        runtimePackageImportmap,
-      )
-      snapshots.push(snapshot)
-
+    for (const built of builtPages) {
       await tx`
         insert into data_row_versions
           (id, row_id, version_number, cells_json, slug, site_snapshot_id, runtime_assets_json, published_by_user_id)
         values (
-          ${versionId},
-          ${page.id},
-          ${version},
-          ${{ title: page.title, slug: page.slug }},
-          ${page.slug},
+          ${built.versionId},
+          ${built.page.id},
+          ${built.versionNumber},
+          ${{ title: built.page.title, slug: built.page.slug }},
+          ${built.page.slug},
           ${siteSnapshotId},
-          ${snapshot.runtimeAssets ?? null},
+          ${built.runtimeAssets},
           ${adminUserId}
         )
       `
-      await savePublishedRuntimeAssets(tx, versionId, runtimeBuild.files)
-      for (const file of runtimeBuild.files) {
-        runtimeAssetFiles.push({ publicPath: file.publicPath, bytes: file.bytes })
-      }
-      await tx`
+      await savePublishedRuntimeAssets(tx, built.versionId, built.runtimeFiles)
+      const { rowCount } = await tx`
         update data_rows
-        set active_version_id = ${versionId},
+        set active_version_id = ${built.versionId},
             status = 'published',
             published_by_user_id = ${adminUserId},
             published_at = current_timestamp,
             updated_by_user_id = ${adminUserId},
             updated_at = current_timestamp
-        where id = ${page.id}
+        where id = ${built.page.id}
           and deleted_at is null
       `
+      // The page was read before the transaction opened; if a concurrent save
+      // reaped it in between, don't leave an orphan version pointing at it.
+      if (rowCount === 0) {
+        await tx`delete from data_row_versions where id = ${built.versionId}`
+      }
     }
-
-    return { publishedPages: publishedSite.pages.length, snapshots, runtimeAssetFiles }
   })
+
+  const publishedPages = publishedSite.pages.length
 
   // Layer A: write static artefacts outside the transaction. Disk artefacts
   // are derived state — a write failure is logged but does not roll back the

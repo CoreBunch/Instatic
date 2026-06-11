@@ -6,19 +6,22 @@
  *                                   adapter converts these to VisualComponent[]
  *                                   via visualComponentFromRow + validateVisualComponents.
  *
- *   PUT /admin/api/cms/components — batch upsert the full component roster. The
- *                                   body carries `{ components: VisualComponent[] }`
- *                                   (the in-memory representation from the editor
- *                                   store). The server validates them, converts to
- *                                   cells via visualComponentToCells, and reconciles
- *                                   create/update/delete in one transaction.
+ *   PUT /admin/api/cms/components — incremental roster save. The body carries
+ *                                   `{ changedComponents, componentIds }`: only
+ *                                   the VCs the editor changed are validated
+ *                                   and written; `componentIds` is the client's
+ *                                   full roster and rows missing from it are
+ *                                   reaped — identical deletion semantics to
+ *                                   the old full-replace protocol. Cross-VC
+ *                                   rules run against the merged post-save
+ *                                   roster (see validateVisualComponentsForPartialWrite).
  *
  *                                   **Gated by `site.structure.edit`** — the
  *                                   reconcile soft-deletes any VC not in the
- *                                   incoming set. The previous `SITE_WRITE_*`
+ *                                   incoming roster. The previous `SITE_WRITE_*`
  *                                   gate let a Client with `site.content.edit`
  *                                   only wipe every Visual Component by sending
- *                                   `{ components: [] }`. (A1 fix.)
+ *                                   an empty roster. (A1 fix.)
  *
  * The GET response returns raw DataRow objects (not VisualComponent objects) so
  * the client adapter can reconstruct VCs via visualComponentFromRow without a
@@ -29,15 +32,17 @@ import type { DbClient } from '../../db/client'
 import { requireCapability } from '../../auth/authz'
 import {
   listDataRows,
+  listDataRowIdSlugs,
   createDataRow,
-  saveDataRowDraft,
+  updateDataRowDraftCells,
   softDeleteDataRow,
 } from '../../repositories/data'
 import {
   visualComponentToCells,
   vcSlugFromName,
+  visualComponentFromRow,
 } from '../../../src/core/data/componentFromRow'
-import { SiteValidationError, validateVisualComponentsForWrite } from '@core/persistence/validate'
+import { SiteValidationError, validateVisualComponentsForPartialWrite } from '@core/persistence/validate'
 import { VisualComponentSchema, type VisualComponent } from '@core/visualComponents'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
 import { Type } from '@core/utils/typeboxHelpers'
@@ -61,15 +66,35 @@ export async function handleComponentsRoutes(req: Request, db: DbClient): Promis
     if (user instanceof Response) return user
 
     const ComponentsBodySchema = Type.Object({
-      components: Type.Array(VisualComponentSchema),
+      // Only the VCs the editor changed since its last save.
+      changedComponents: Type.Array(VisualComponentSchema),
+      // The client's FULL component-id roster; rows missing from it are reaped.
+      componentIds: Type.Array(Type.String()),
     }, { additionalProperties: false })
     const body = await readValidatedBody(req, ComponentsBodySchema)
     if (!body) return badRequest('Invalid request body')
-    const rawComponents = body.components
+
+    const componentIds = new Set(body.componentIds)
+
+    // The cross-VC rules (identity, refs, dependency-graph acyclicity) are
+    // roster-wide — a changed VC can create a cycle THROUGH an unchanged one —
+    // so validation merges the changed batch over the stored roster. This runs
+    // OUTSIDE the transaction (sanitization is CPU work; the SQLite adapter
+    // serializes every transaction through one chain).
+    const existingRows = await listDataRows(db, 'components')
+    const existingVCs = existingRows.flatMap((r) => {
+      const vc = visualComponentFromRow(r)
+      return vc ? [vc] : []
+    })
 
     let components: VisualComponent[]
     try {
-      components = validateVisualComponentsForWrite(rawComponents)
+      components = validateVisualComponentsForPartialWrite(body.changedComponents, existingVCs, componentIds)
+      for (const vc of components) {
+        if (!componentIds.has(vc.id)) {
+          throw new SiteValidationError(`changed component "${vc.id}" missing from componentIds roster`, 'componentIds')
+        }
+      }
     } catch (err) {
       if (err instanceof SiteValidationError) {
         return badRequest(err.message)
@@ -77,25 +102,23 @@ export async function handleComponentsRoutes(req: Request, db: DbClient): Promis
       throw err
     }
 
-    // Batch reconcile: create / update / soft-delete in a transaction
+    // Batch reconcile: create / update / soft-delete in one short transaction.
     await db.transaction(async (tx) => {
-      const existingRows = await listDataRows(tx, 'components')
-      const existingById = new Map(existingRows.map((r) => [r.id, r]))
-      const incomingIds = new Set(components.map((vc) => vc.id))
+      const existingIds = new Set((await listDataRowIdSlugs(tx, 'components')).map((r) => r.id))
 
       for (const vc of components) {
         const cells = visualComponentToCells(vc)
         const slug = vcSlugFromName(vc.name)
-        if (existingById.has(vc.id)) {
-          await saveDataRowDraft(tx, vc.id, { cells, slug }, user.id)
+        if (existingIds.has(vc.id)) {
+          await updateDataRowDraftCells(tx, vc.id, { cells, slug }, user.id)
         } else {
           await createDataRow(tx, { id: vc.id, tableId: 'components', cells, slug }, user.id)
         }
       }
 
-      // Soft-delete rows no longer in the incoming set
-      for (const [rowId] of existingById) {
-        if (!incomingIds.has(rowId)) {
+      // Soft-delete rows no longer in the client's roster
+      for (const rowId of existingIds) {
+        if (!componentIds.has(rowId)) {
           await softDeleteDataRow(tx, rowId, user.id)
         }
       }

@@ -46,6 +46,29 @@ export async function listDataRows(
   return dataRows
 }
 
+export interface DataRowIdSlug {
+  id: string
+  slug: string
+}
+
+/**
+ * Lightweight (id, slug) projection of a table's non-deleted rows. The roster
+ * reconcilers (PUT /pages, PUT /components) need exactly this — the reap diff
+ * and the cross-row slug-uniqueness check — so they must not pay the hydrated
+ * SELECT's full `cells_json` parse per row per save.
+ */
+export async function listDataRowIdSlugs(
+  db: DbClient,
+  tableId: string,
+): Promise<DataRowIdSlug[]> {
+  const { rows } = await db<DataRowIdSlug>`
+    select id, slug from data_rows
+    where table_id = ${tableId}
+      and deleted_at is null
+  `
+  return rows
+}
+
 export async function getDataRow(
   db: DbClient,
   rowId: string,

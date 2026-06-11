@@ -15,6 +15,7 @@ import {
 } from '@core/site-runtime'
 import { clearCanvasSelectionDraft } from '../selectionSlice'
 import { createDefaultSiteDocument } from './defaults'
+import { emptyDirtyMarks } from './dirtyTracking'
 import { reconcileFrameworkClasses } from './framework/reconcile'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
@@ -62,6 +63,8 @@ export function createLifecycleActions({
         state.canUndo = false
         state.canRedo = false
         state.hasUnsavedChanges = false
+        // A brand-new site has no stored rows at all — first save is full.
+        state._dirtySave = { ...emptyDirtyMarks(), all: true }
       })
       return site
     },
@@ -91,6 +94,7 @@ export function createLifecycleActions({
         state.canUndo = false
         state.canRedo = false
         state.hasUnsavedChanges = false
+        state._dirtySave = emptyDirtyMarks()
       })
     },
 
@@ -108,6 +112,7 @@ export function createLifecycleActions({
         state._historyCoalesceKey = null
         state.canUndo = false
         state.canRedo = false
+        state._dirtySave = emptyDirtyMarks()
       })
     },
 

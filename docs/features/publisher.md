@@ -382,9 +382,14 @@ publishDraftSite (server/repositories/publish.ts)
     │
     ├─→ load draft site shell + all page-table rows + all VC rows
     ├─→ build runtime scripts + runtime package importmap
-    ├─→ write the SiteDocument ONCE into site_snapshots (content hash stamped
-    │     for the publish-status check); each page's data_row_versions row
-    │     references it via site_snapshot_id + carries its runtime_assets_json
+    ├─→ build EVERYTHING expensive first, outside any transaction — dependency
+    │     cache (`bun install`), importmap, per-page esbuild runtime builds.
+    │     The SQLite adapter serializes all transactions through one chain, so
+    │     this work inside the transaction would stall every concurrent write.
+    ├─→ short transaction: write the SiteDocument ONCE into site_snapshots
+    │     (content hash stamped for the publish-status check); each page's
+    │     data_row_versions row references it via site_snapshot_id + carries
+    │     its runtime_assets_json
     ├─→ flip data_rows.status = 'published', set active_version_id
     │
     ├─→ Layer A bake — every page (complete doc, or static shell with <instatic-hole>):

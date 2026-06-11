@@ -24,6 +24,7 @@ import type {
 } from '@core/siteImport'
 import { normalizeFrameworkColorSlug } from '@core/framework'
 import { addImportedScripts, addImportedStylesheets } from './importedSiteFiles'
+import { collectDirtyFromSitePatches, mergeDirtyMarks } from './dirtyTracking'
 import type { EditorStore } from '@site/store/types'
 import { MAX_HISTORY } from './defaults'
 import { reconcileFrameworkClasses } from './framework/reconcile'
@@ -294,6 +295,9 @@ export function buildSiteHelpers(
 
       if (siteForward.length > 0) {
         commitHistory(state, { inverse: siteInverse, forward: siteForward, coalesceKey })
+        // The same patches drive save-dirty attribution: autosave ships only
+        // the pages/VCs these paths name (see dirtyTracking.ts).
+        mergeDirtyMarks(state._dirtySave, collectDirtyFromSitePatches(siteForward, next.site!))
       }
       state.hasUnsavedChanges = true
     })

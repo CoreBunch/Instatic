@@ -15,7 +15,7 @@
  * Domain types (`DataRow`, etc.) are TypeBox schemas in `@core/data/schemas`.
  */
 
-export { listDataRows, getDataRow, getDataRowBySlug, listDataAuthorOptions } from './read'
+export { listDataRows, listDataRowIdSlugs, getDataRow, getDataRowBySlug, listDataAuthorOptions } from './read'
 
 export { searchDataRows } from './search'
 export type { DataRowSearchResult } from './search'
@@ -26,6 +26,7 @@ export type { ListDataRowsFilterOptions, ListDataRowsWithFilterResult } from './
 export {
   createDataRow,
   saveDataRowDraft,
+  updateDataRowDraftCells,
   softDeleteDataRow,
   updateDataRowTable,
   updateDataRowStatus,

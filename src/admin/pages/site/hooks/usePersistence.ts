@@ -129,18 +129,27 @@ export function usePersistence(
   // Exception #1: referenced in the auto-save and Cmd/Ctrl+S useEffect dep arrays,
   // so exhaustive-deps requires a stable identity here.
   const saveCurrentSite = useCallback(async () => {
-    const { site, setHasUnsavedChanges } = useEditorStore.getState()
+    const { site, setHasUnsavedChanges, takeDirtySaveSnapshot, restoreDirtySaveSnapshot } =
+      useEditorStore.getState()
     if (!site) return
 
     setSaveStatus({ state: 'saving', message: 'Saving draft' })
+    // Snapshot-and-reset the dirty marks BEFORE the await: edits landing while
+    // the save is in flight accumulate fresh marks for the NEXT save, and a
+    // failed save merges this snapshot back so nothing is lost.
+    const dirty = takeDirtySaveSnapshot()
     try {
-      await adapterRef.current.saveSite(site, syncedPageIdsRef.current)
+      await adapterRef.current.saveSite(site, {
+        baselinePageIds: syncedPageIdsRef.current,
+        dirty,
+      })
       // The save just reconciled storage to this client's roster; that set is
       // the new concurrency baseline for the next save.
       syncedPageIdsRef.current = site.pages.map((p) => p.id)
       setHasUnsavedChanges(false)
       setSaveStatus({ state: 'saved', lastSavedAt: Date.now() })
     } catch (err) {
+      restoreDirtySaveSnapshot(dirty)
       setSaveStatus({ state: 'error', message: errorMessage(err, 'Save failed') })
       throw err
     }
@@ -227,7 +236,10 @@ export function usePersistence(
         loadedRef.current = true
         syncedPageIdsRef.current = created.pages.map((p) => p.id)
         try {
-          await adapterRef.current.saveSite(created, syncedPageIdsRef.current)
+          // Full save (no dirty hints): the site doesn't exist in storage yet.
+          await adapterRef.current.saveSite(created, { baselinePageIds: syncedPageIdsRef.current })
+          // Storage now matches the store — drop the createSite all-dirty mark.
+          useEditorStore.getState().takeDirtySaveSnapshot()
           setSaveStatus({ state: 'saved', lastSavedAt: Date.now() })
         } catch (err) {
           setHasUnsavedChanges(true)
@@ -323,12 +335,16 @@ export function usePersistence(
     // The 30s debounce means the last unsaved edit would be dropped without this.
     // Fire-and-forget: beforeunload can't await async work.
     function flushOnUnload() {
-      const { site, hasUnsavedChanges } = useEditorStore.getState()
+      const { site, hasUnsavedChanges, _dirtySave } = useEditorStore.getState()
       if (!site || !loadedRef.current || !hasUnsavedChanges) return
       clearTimeout(timer)
-      void adapterRef.current.saveSite(site, syncedPageIdsRef.current).catch((err) => {
-        console.error('[persistence] beforeunload save failed:', err)
-      })
+      // Read the marks without resetting them: if the unload is cancelled and
+      // this fire-and-forget save failed, the next autosave still has them.
+      void adapterRef.current
+        .saveSite(site, { baselinePageIds: syncedPageIdsRef.current, dirty: _dirtySave })
+        .catch((err) => {
+          console.error('[persistence] beforeunload save failed:', err)
+        })
     }
 
     window.addEventListener('beforeunload', flushOnUnload)

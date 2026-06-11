@@ -47,12 +47,12 @@ async function loadServer() {
   const { sqliteMigrations } = await import('../../../server/db/migrations-sqlite')
   const { saveDraftSite } = await import('../../../server/repositories/site')
   const { publishDraftSite, getDraftPublishStatus } = await import('../../../server/repositories/publish')
-  const { createDataRow, listDataRows, saveDataRowDraft } = await import('../../../server/repositories/data')
+  const { createDataRow, listDataRows, listDataRowIdSlugs, updateDataRowDraftCells } = await import('../../../server/repositories/data')
   const { getPublishedDataRowByRoute } = await import('../../../server/repositories/data/publish')
   const { getSetupStatus } = await import('../../../server/repositories/setup')
   const { renderPublicResolution } = await import('../../../server/publish/publicRouter')
   const { pageToCells, pageFromRow } = await import('../../../src/core/data/pageFromRow')
-  const { validatePages } = await import('../../../src/core/persistence/validate')
+  const { validatePagesForPartialSave } = await import('../../../src/core/persistence/validate')
   const { normalizeSiteRuntimeConfig } = await import('../../../src/core/site-runtime')
   return {
     createSqliteClient,
@@ -63,13 +63,14 @@ async function loadServer() {
     getDraftPublishStatus,
     createDataRow,
     listDataRows,
-    saveDataRowDraft,
+    listDataRowIdSlugs,
+    updateDataRowDraftCells,
     getPublishedDataRowByRoute,
     getSetupStatus,
     renderPublicResolution,
     pageToCells,
     pageFromRow,
-    validatePages,
+    validatePagesForPartialSave,
     normalizeSiteRuntimeConfig,
   }
 }
@@ -470,19 +471,25 @@ export const publishBench: BenchModule = {
             pages[iter % pages.length] = edited
 
             // What the editor ships and what the PUT /pages handler then does:
-            // validate the saved roster + reconcile every saved row's cells.
-            payloadBytes = JSON.stringify({ pages }).length
+            // validate the CHANGED pages against the stored (id, slug) roster,
+            // then reconcile only those rows (roster diff drives reaping).
+            const pageIds = pages.map((p) => p.id)
+            payloadBytes = JSON.stringify({ changedPages: [edited], pageIds }).length
             const t0 = performance.now()
-            const validated = api.validatePages(shell, pages, [])
+            const existingIdSlugs = await api.listDataRowIdSlugs(fresh.db, 'pages')
+            const validated = api.validatePagesForPartialSave([edited], [], existingIdSlugs)
             const db = fresh.db
             await db.transaction(async (tx) => {
+              const existingIds = new Set((await api.listDataRowIdSlugs(tx, 'pages')).map((r) => r.id))
               for (const page of validated) {
-                await api.saveDataRowDraft(
-                  tx,
-                  page.id,
-                  { cells: api.pageToCells(page), slug: page.slug },
-                  ADMIN_USER_ID,
-                )
+                if (existingIds.has(page.id)) {
+                  await api.updateDataRowDraftCells(
+                    tx,
+                    page.id,
+                    { cells: api.pageToCells(page), slug: page.slug },
+                    ADMIN_USER_ID,
+                  )
+                }
               }
             })
             samples.push(performance.now() - t0)
