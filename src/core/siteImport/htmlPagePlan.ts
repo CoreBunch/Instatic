@@ -14,6 +14,7 @@
  *   5. Call `importHtml(source)` to produce the body node fragment.
  */
 
+import { dirname, joinPaths } from './paths'
 import { importHtml } from '@core/htmlImport'
 import { normalizePageSlug } from '@core/page-tree'
 import type { FileMap, ImportWarning, PagePlan, PageScript } from './types'
@@ -303,33 +304,6 @@ export function resolveHref(href: string, htmlFilePath: string): string | null {
   return normalized
 }
 
-/** Return the directory part of a path (everything before the last `/`). */
-function dirname(filePath: string): string {
-  const slash = filePath.lastIndexOf('/')
-  return slash >= 0 ? filePath.slice(0, slash) : ''
-}
-
-/**
- * Join a base directory path with a relative path, resolving `.` and `..`.
- * Returns a normalized relative path with no leading `./`.
- */
-function joinPaths(dir: string, relative: string): string {
-  const base = dir ? dir.split('/') : []
-  const parts = [...base, ...relative.split('/')]
-  const resolved: string[] = []
-
-  for (const part of parts) {
-    if (part === '.' || part === '') continue
-    if (part === '..') {
-      if (resolved.length > 0) resolved.pop()
-      // Ignore `..` that would escape to a parent of root
-    } else {
-      resolved.push(part)
-    }
-  }
-
-  return resolved.join('/')
-}
 
 // ---------------------------------------------------------------------------
 // Slug and title derivation

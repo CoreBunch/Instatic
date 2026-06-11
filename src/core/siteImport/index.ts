@@ -2,7 +2,8 @@
  * siteImport — public barrel for the Super Import pipeline.
  *
  * Phase 1: cssToStyleRules + associated types.
- * Phase 2: ingestInput, classifyFiles, buildImportPlan, commitImportPlan,
+ * Phase 2: ingestInput, classifyFiles, buildImportPlan (buildPlan.ts),
+ *          commitImportPlan (commitPlan.ts),
  *          applyConflictResolutions + all plan/result types.
  *
  * @see docs/features/site-import.md
@@ -69,8 +70,9 @@ export type { SiteImportAdapter, SiteImportTransaction } from './adapter'
 
 // ── Phase 2 — top-level orchestration ────────────────────────────────────────
 
-export { buildImportPlan, commitImportPlan } from './applyImport'
-export type { BuildImportPlanInput } from './applyImport'
+export { buildImportPlan } from './buildPlan'
+export type { BuildImportPlanInput } from './buildPlan'
+export { commitImportPlan } from './commitPlan'
 
 // ── Shared types ──────────────────────────────────────────────────────────────
 

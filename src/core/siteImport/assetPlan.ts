@@ -22,6 +22,7 @@
  * asset list; only files present in the FileMap are included.
  */
 
+import { dirname, joinPaths } from './paths'
 import type { PageNode } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
 import type { FontFileFormat } from '@core/fonts'
@@ -595,28 +596,3 @@ function replaceRawUrlInValue(value: string, rawUrl: string, fileMapKey: string)
   return value.replace(re, `url('${fileMapKey}')`)
 }
 
-// ---------------------------------------------------------------------------
-// Path utilities (duplicated from htmlPagePlan to keep modules self-contained)
-// ---------------------------------------------------------------------------
-
-function dirname(filePath: string): string {
-  const slash = filePath.lastIndexOf('/')
-  return slash >= 0 ? filePath.slice(0, slash) : ''
-}
-
-function joinPaths(dir: string, relative: string): string {
-  const base = dir ? dir.split('/') : []
-  const parts = [...base, ...relative.split('/')]
-  const resolved: string[] = []
-
-  for (const part of parts) {
-    if (part === '.' || part === '') continue
-    if (part === '..') {
-      if (resolved.length > 0) resolved.pop()
-    } else {
-      resolved.push(part)
-    }
-  }
-
-  return resolved.join('/')
-}
