@@ -17,7 +17,7 @@ import type {
   FrameworkTypographySettings,
 } from '@core/framework-schema'
 
-export function generateCanvasClassCSS(
+function buildCanvasClassCSS(
   classes: Record<string, StyleRule>,
   breakpoints: ViewportContext[],
   conditions: ReadonlyArray<ConditionDef> = [],
@@ -111,6 +111,71 @@ export function generateCanvasClassCSS(
 
   return blocks.join('\n\n')
 }
+
+type CanvasClassCssGenerator = typeof buildCanvasClassCSS
+
+/**
+ * Wrap the registry-CSS generator in a single-slot identity memo.
+ *
+ * Every breakpoint-frame `ClassStyleInjector` regenerates this CSS with the
+ * SAME store-snapshot inputs in the same commit — the generation is pure and
+ * all inputs are Mutative-immutable, so comparing the 8 argument identities
+ * is exact: frames 2..N (and any re-run with unchanged inputs) return the
+ * cached string instead of re-sorting and re-emitting the whole registry.
+ *
+ * The factory shape exists so tests can inject a counting generator; runtime
+ * code uses the bound `generateCanvasClassCSS` singleton below.
+ */
+export function createCanvasClassCssMemo(
+  generate: CanvasClassCssGenerator = buildCanvasClassCSS,
+): CanvasClassCssGenerator {
+  let lastInputs: readonly unknown[] | null = null
+  let lastCss = ''
+  return (
+    classes,
+    breakpoints,
+    conditions = [],
+    frameworkColors,
+    frameworkTypography,
+    frameworkSpacing,
+    frameworkPreferences,
+    fonts,
+  ) => {
+    const inputs = [
+      classes,
+      breakpoints,
+      conditions,
+      frameworkColors,
+      frameworkTypography,
+      frameworkSpacing,
+      frameworkPreferences,
+      fonts,
+    ]
+    const prev = lastInputs
+    if (prev && inputs.every((value, i) => Object.is(value, prev[i]))) {
+      return lastCss
+    }
+    lastCss = generate(
+      classes,
+      breakpoints,
+      conditions,
+      frameworkColors,
+      frameworkTypography,
+      frameworkSpacing,
+      frameworkPreferences,
+      fonts,
+    )
+    lastInputs = inputs
+    return lastCss
+  }
+}
+
+/**
+ * Generate the canvas class-registry CSS (publisher reset + fonts +
+ * framework root CSS + every style rule with its breakpoint/condition
+ * overrides). Identity-memoized — see `createCanvasClassCssMemo`.
+ */
+export const generateCanvasClassCSS: CanvasClassCssGenerator = createCanvasClassCssMemo()
 
 /**
  * Generate a higher-specificity preview rule for a single class, used by

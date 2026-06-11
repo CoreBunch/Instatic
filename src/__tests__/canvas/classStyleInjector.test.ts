@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'bun:test'
-import { generateCanvasClassCSS, generateForcedStateCSS } from '@site/canvas/canvasClassCss'
+import {
+  createCanvasClassCssMemo,
+  generateCanvasClassCSS,
+  generateForcedStateCSS,
+} from '@site/canvas/canvasClassCss'
 import { generateFrameworkColorUtilityClasses } from '@core/framework'
 import { classKindSelector, type StyleRule } from '@core/page-tree'
 
@@ -104,6 +108,53 @@ describe('generateCanvasClassCSS', () => {
     expect(css).toContain('--primary: hsla(238, 100%, 62%, 1);')
     expect(css).toContain('.text-primary')
     expect(css).toContain('color: var(--primary);')
+  })
+})
+
+describe('createCanvasClassCssMemo', () => {
+  const classes = { title: makeClass('title', { fontSize: '64px' }) }
+  const breakpoints = [{ id: 'mobile', width: 375, mediaQuery: '(min-width: 375px)' }]
+  const conditions: never[] = []
+
+  function countingMemo() {
+    let calls = 0
+    const memo = createCanvasClassCssMemo((...args) => {
+      calls++
+      return `generated-${calls}-${Object.keys(args[0]).length}`
+    })
+    return { memo, calls: () => calls }
+  }
+
+  it('generates once per identity-equal input set — frames 2..N hit the cache', () => {
+    const { memo, calls } = countingMemo()
+
+    // 3 breakpoint-frame injectors re-running with the SAME store snapshot.
+    const first = memo(classes, breakpoints, conditions, null, null, null, null, null)
+    const second = memo(classes, breakpoints, conditions, null, null, null, null, null)
+    const third = memo(classes, breakpoints, conditions, null, null, null, null, null)
+
+    expect(calls()).toBe(1)
+    expect(second).toBe(first)
+    expect(third).toBe(first)
+  })
+
+  it('regenerates when any input identity changes', () => {
+    const { memo, calls } = countingMemo()
+    memo(classes, breakpoints, conditions, null, null, null, null, null)
+
+    // Same content, new identity — a store commit always mints new refs.
+    memo({ ...classes }, breakpoints, conditions, null, null, null, null, null)
+    expect(calls()).toBe(2)
+
+    memo({ ...classes }, [...breakpoints], conditions, null, null, null, null, null)
+    expect(calls()).toBe(3)
+  })
+
+  it('the exported generator produces identical CSS for cached and fresh inputs', () => {
+    const cached = generateCanvasClassCSS(classes, breakpoints)
+    expect(generateCanvasClassCSS(classes, breakpoints)).toBe(cached)
+    // Fresh identities regenerate, but the output text is byte-identical.
+    expect(generateCanvasClassCSS({ ...classes }, [...breakpoints])).toBe(cached)
   })
 })
 
