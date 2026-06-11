@@ -1,7 +1,20 @@
 # Inline text editing on the canvas (double-click to edit) — Design
 
 Date: 2026-06-10
-Status: approved (approach 1A: parent-doc overlay editor)
+Status: **superseded in implementation** — approach 1A (parent-doc overlay) was replaced by in-place `contentEditable` editing of the real element. The module contract, the editor-store session (`activeInlineEdit` in `inlineEditSlice`), the live-commit-coalescing-into-one-undo model, and Escape-cancel-via-one-`undo()` below are all still accurate. Only the *editing surface* changed.
+
+> ## Superseding note (implementation)
+>
+> The parent-document overlay editor (a `<textarea>`/`<input>` floated over the node, with computed typography mirrored from the iframe and the site's fonts injected into the parent doc) was dropped in favour of editing the **real node element in place**. `NodeRenderer` builds an `InlineEditBinding`; the module spreads `inlineEditableElementProps(binding)` (`src/modules/base/shared/inlineText.ts`) onto its own root element, making it `contentEditable="plaintext-only"`, seeded once via `dangerouslySetInnerHTML` from the escaped initial value. Because the author edits the actual published element, fidelity is 100% — no overlay, no typography mirroring, no parent-doc font injection, no hidden/doubled text.
+>
+> Key facts that differ from the body below:
+> - **No `InlineTextEditOverlay`, no `data-instatic-inline-editing` attribute, no canvas-chrome hide rule, no `mirrorInlineEditTypography` / `ParentDocumentSiteFontsInjector`** — all removed.
+> - **Line breaks** (user's decision): the value stores newlines as `\n` and both render surfaces map each `\n` → `<br>` (`textToBreakHtml` publisher path, `rawTextToBreakHtml` canvas path; DOMPurify allows `<br>`). For multiline `base.text`, plain Enter inserts a hard break and Cmd/Ctrl+Enter commits; single-line modules commit on Enter.
+> - **Read-back:** `readInlineEditableText(el)` returns `el.innerText` (resolves `<br>`/block boundaries to `\n`), fed to `applyInlineEditValue` on every `onInput`.
+> - **Focus:** a `useLayoutEffect` in `NodeRenderer` focuses the element and collapses the caret to the end on session start.
+> - **Keyboard:** `useCanvasKeyboardShortcuts` bails on `activeInlineEdit`, so Delete/Cmd+D never fire mid-edit; the element's own `onKeyDown` owns Escape/Enter.
+>
+> Current behaviour lives in `docs/features/canvas-iframe-per-frame.md` → "Inline text editing (in-place `contentEditable`)".
 
 ## Goal
 

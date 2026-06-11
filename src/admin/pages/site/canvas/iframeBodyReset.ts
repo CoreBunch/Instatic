@@ -36,15 +36,6 @@ const CANVAS_CHROME_CSS = [
   '*:focus, *:focus-visible {',
   '  outline: none !important;',
   '}',
-  // Inline text edit: hide the edited node's own text in the session's
-  // frame only (NodeRenderer sets the attribute per-frame). Uses
-  // -webkit-text-fill-color — NOT color — because the parent-doc overlay
-  // mirrors iframe getComputedStyle(el).color for the floating field's own
-  // text; color:transparent would mirror to an invisible field.
-  '[data-instatic-inline-editing="true"] {',
-  '  -webkit-text-fill-color: transparent !important;',
-  '  text-shadow: none !important;',
-  '}',
   'iframe { pointer-events: none; }',
 ].join('\n')
 

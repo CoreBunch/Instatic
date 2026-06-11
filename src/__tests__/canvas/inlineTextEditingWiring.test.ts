@@ -1,22 +1,29 @@
 /**
  * Inline text editing — canvas wiring gates.
  *
- * Source-assertion tests (canvasNotch.test.ts convention) for the pieces
- * that only manifest inside live iframes and the full canvas mount:
- * double-click → startInlineEdit, the per-frame hidden-text attribute, and
- * the canvas-chrome CSS rule that must NOT use `color: transparent`
- * (the overlay mirrors computed color for the field's own text).
+ * Source-assertion tests (canvasNotch.test.ts convention) for the pieces that
+ * only manifest inside live iframes and the full canvas mount. The editor was
+ * rewritten from a parent-document overlay to editing the REAL node element in
+ * place via `contentEditable`, so these gates assert the in-place wiring:
+ *
+ *   - double-click → startInlineEdit, gated to design mode (CanvasRoot);
+ *   - NodeRenderer builds an `InlineEditBinding`, passes `inlineEdit` to the
+ *     component, and focuses the element via `useLayoutEffect`;
+ *   - the canvas keyboard handler bails on `activeInlineEdit` so Delete/Cmd+D
+ *     never fire mid-edit;
+ *   - BreakpointFrame no longer mounts an inline-edit overlay (the node itself
+ *     is the editor now).
  */
 import { describe, it, expect } from 'bun:test'
 import { readFileSync } from 'fs'
 
 const CANVAS_ROOT = new URL('../../admin/pages/site/canvas/CanvasRoot.tsx', import.meta.url)
 const NODE_RENDERER = new URL('../../admin/pages/site/canvas/NodeRenderer.tsx', import.meta.url)
-const IFRAME_BODY_RESET = new URL('../../admin/pages/site/canvas/iframeBodyReset.ts', import.meta.url)
+const KEYBOARD_SHORTCUTS = new URL('../../admin/pages/site/canvas/useCanvasKeyboardShortcuts.ts', import.meta.url)
 const BREAKPOINT_FRAME = new URL('../../admin/pages/site/canvas/BreakpointFrame.tsx', import.meta.url)
 const CONTEXTS = new URL('../../admin/pages/site/canvas/CanvasContexts.ts', import.meta.url)
 
-describe('inline text editing wiring', () => {
+describe('inline text editing wiring (in-place contentEditable)', () => {
   it('CanvasRoot starts a session on node double-click, gated to design mode', () => {
     const src = readFileSync(CANVAS_ROOT, 'utf-8')
     expect(src).toContain('startInlineEdit')
@@ -28,24 +35,38 @@ describe('inline text editing wiring', () => {
     expect(src).toContain('onNodeDoubleClick: (nodeId: string, e: MouseEvent, breakpointId?: string) => void')
   })
 
-  it('NodeRenderer flags the edited node in the session frame only', () => {
+  it('NodeRenderer builds an InlineEditBinding for the edited node in the session frame', () => {
     const src = readFileSync(NODE_RENDERER, 'utf-8')
-    expect(src).toContain("'data-instatic-inline-editing'")
+    // Edits flow live: read the contentEditable text back, commit through the store.
+    expect(src).toContain('const inlineEditBinding: InlineEditBinding | undefined = isInlineEditing')
+    expect(src).toContain('applyInlineEditValue(readInlineEditableText')
+    // Session is scoped to the one frame that owns it.
     expect(src).toContain('s.activeInlineEdit.breakpointId === breakpointId')
   })
 
-  it('the canvas chrome hides doubled text via text-fill-color, never color', () => {
-    const src = readFileSync(IFRAME_BODY_RESET, 'utf-8')
-    expect(src).toContain('[data-instatic-inline-editing="true"]')
-    expect(src).toContain('-webkit-text-fill-color: transparent !important')
-    // The overlay mirrors getComputedStyle(el).color — color:transparent
-    // would feed transparent back into the field's own text. The [^-]
-    // guard skips -webkit-*-color longhands, which are fine.
-    expect(src).not.toMatch(/[^-]color: transparent !important/)
+  it('NodeRenderer passes inlineEdit to the module component (the element IS the editor)', () => {
+    const src = readFileSync(NODE_RENDERER, 'utf-8')
+    expect(src).toContain('inlineEdit={inlineEditBinding}')
+    // No overlay, no per-frame hidden-text attribute — those were the old design.
+    expect(src).not.toContain("'data-instatic-inline-editing'")
+    expect(src).not.toContain('InlineTextEditOverlay')
   })
 
-  it('BreakpointFrame mounts the overlay next to the selection overlay', () => {
+  it('NodeRenderer focuses the now-editable element on session start via a layout effect', () => {
+    const src = readFileSync(NODE_RENDERER, 'utf-8')
+    expect(src).toContain('useLayoutEffect(() => {')
+    expect(src).toContain('el.focus()')
+  })
+
+  it('the canvas keyboard handler bails while an inline edit is active', () => {
+    const src = readFileSync(KEYBOARD_SHORTCUTS, 'utf-8')
+    expect(src).toContain('if (useEditorStore.getState().activeInlineEdit) return')
+  })
+
+  it('BreakpointFrame no longer mounts an inline-edit overlay', () => {
     const src = readFileSync(BREAKPOINT_FRAME, 'utf-8')
-    expect(src).toContain('<InlineTextEditOverlay')
+    expect(src).not.toContain('InlineTextEditOverlay')
+    // The selection-ring overlay is still mounted — it is a different component.
+    expect(src).toContain('<BreakpointSelectionOverlay')
   })
 })

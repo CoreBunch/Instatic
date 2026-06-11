@@ -1,27 +1,45 @@
 /**
- * canvasOverlayGeometry — pure-function tests for the inline-edit typography
- * scaling. (measureCanvasElementRect is exercised indirectly by the existing
- * overlay integration paths; the scaler is the new, directly-testable logic.)
+ * canvasOverlayGeometry — pure-function tests for the overlay coordinate
+ * helpers. `unionCanvasOverlayRects` is fully deterministic and directly
+ * testable; `measureCanvasElementRect`'s null/zero-size guards are too. The
+ * scaled-measurement path needs a live, transformed iframe (covered by the
+ * canvas integration paths), so only the guards are asserted here.
  */
 import { describe, it, expect } from 'bun:test'
-import { scaleCssLength } from '@site/canvas/canvasOverlayGeometry'
+import {
+  measureCanvasElementRect,
+  unionCanvasOverlayRects,
+  type CanvasOverlayRect,
+} from '@site/canvas/canvasOverlayGeometry'
 
-describe('scaleCssLength', () => {
-  it('scales px lengths by the iframe scale factor', () => {
-    expect(scaleCssLength('32px', 0.5)).toBe('16px')
+describe('unionCanvasOverlayRects', () => {
+  const a: CanvasOverlayRect = { x: 0, y: 0, width: 10, height: 10 }
+
+  it('returns b unchanged when a is null', () => {
+    const b: CanvasOverlayRect = { x: 5, y: 5, width: 4, height: 4 }
+    expect(unionCanvasOverlayRects(null, b)).toEqual(b)
   })
 
-  it('passes keywords through untouched', () => {
-    expect(scaleCssLength('normal', 0.5)).toBe('normal')
+  it('produces the smallest rect containing both inputs', () => {
+    const b: CanvasOverlayRect = { x: 20, y: 30, width: 10, height: 10 }
+    expect(unionCanvasOverlayRects(a, b)).toEqual({ x: 0, y: 0, width: 30, height: 40 })
   })
 
-  it('handles fractional and negative px values', () => {
-    expect(scaleCssLength('1.5px', 2)).toBe('3px')
-    expect(scaleCssLength('-0.5px', 2)).toBe('-1px')
+  it('handles a fully-contained rect (union equals the outer rect)', () => {
+    const inner: CanvasOverlayRect = { x: 2, y: 2, width: 4, height: 4 }
+    expect(unionCanvasOverlayRects(a, inner)).toEqual(a)
   })
 
-  it('leaves non-px values untouched (unitless line-height, em)', () => {
-    expect(scaleCssLength('1.4', 0.5)).toBe('1.4')
-    expect(scaleCssLength('0.02em', 0.5)).toBe('0.02em')
+  it('handles negative origins', () => {
+    const neg: CanvasOverlayRect = { x: -5, y: -5, width: 2, height: 2 }
+    expect(unionCanvasOverlayRects(a, neg)).toEqual({ x: -5, y: -5, width: 15, height: 15 })
+  })
+})
+
+describe('measureCanvasElementRect', () => {
+  it('returns null for a null target without touching the iframe', () => {
+    // iframe is never read on the null-target fast path, so a bare object is fine.
+    const fakeIframe = {} as unknown as HTMLIFrameElement
+    expect(measureCanvasElementRect(null, fakeIframe, null)).toBeNull()
   })
 })

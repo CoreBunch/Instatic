@@ -1,4 +1,11 @@
-import type { ComponentType, ReactNode } from 'react'
+import type {
+  ComponentType,
+  FocusEventHandler,
+  FormEventHandler,
+  KeyboardEventHandler,
+  ReactNode,
+  Ref,
+} from 'react'
 import type { IconComponent } from 'pixel-art-icons/types'
 import type { TSchema } from '@core/utils/typeboxHelpers'
 import type { PropertySchema } from './propertySchema'
@@ -106,6 +113,42 @@ export interface ModuleComponentProps<
    * — modules should treat absence as "render plain published markup".
    */
   nodeWrapperProps?: NodeWrapperProps
+  /**
+   * Present only while THIS node is being inline-edited in THIS frame (the
+   * canvas double-click editor). A text module (`inlineTextEdit` declared)
+   * MUST, when this is set, render its text element as the editable surface:
+   * spread `inlineEdit` onto the element instead of rendering the text as
+   * children. The element becomes the real editing surface — there is no
+   * overlay — so what the author edits is byte-identical to what publishes.
+   * See `inlineEditableElementProps` in `@modules/base/shared/inlineText`.
+   */
+  inlineEdit?: InlineEditBinding
+}
+
+/**
+ * What the canvas hands a text module so its own element becomes the inline
+ * editor. The element is made `contentEditable`; its content is seeded ONCE
+ * from `initialHtml` (stable across re-renders so React never resets the
+ * caret while live edits flow to other frames), and the canvas reads the
+ * edited text back through `ref` + the handlers.
+ */
+export interface InlineEditBinding {
+  /** Ref the canvas attaches to focus the element and read it on commit. */
+  ref: Ref<HTMLElement>
+  /**
+   * The prop's value at session start. The module seeds the element's content
+   * from this ONCE (via its own text→HTML mapping). It is constant for the
+   * whole session, so React's `dangerouslySetInnerHTML` diff is a no-op on
+   * every live re-render and never resets the caret while edits flow to the
+   * other breakpoint frames.
+   */
+  initialValue: string
+  /** Fires on every edit — the canvas reads `innerText` and commits live. */
+  onInput: FormEventHandler<HTMLElement>
+  /** Escape cancels, Enter commits/breaks per the module's multiline flag. */
+  onKeyDown: KeyboardEventHandler<HTMLElement>
+  /** Blur commits and ends the session. */
+  onBlur: FocusEventHandler<HTMLElement>
 }
 
 /**
@@ -124,15 +167,6 @@ export interface NodeWrapperProps {
   tabIndex?: 0
   'data-canvas-selected'?: 'true'
   'data-hovered'?: 'true'
-  /**
-   * Present on the node's root element in the breakpoint frame that owns an
-   * active inline text-edit session. The canvas-chrome CSS
-   * (CANVAS_CHROME_CSS in the canvas iframeBodyReset module) keys off it to paint the
-   * node's own text transparent while the parent-document overlay floats
-   * over it — in that one frame only; other frames keep showing the
-   * live-updating text.
-   */
-  'data-instatic-inline-editing'?: 'true'
   /**
    * Read-only region markers, spread onto every element of a non-editable
    * composed subtree (`ReadOnlyNodeTree`). The canvas reads the nearest

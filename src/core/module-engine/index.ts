@@ -12,6 +12,7 @@ export type {
   ModuleDependencies,
   RenderOutput,
   ModuleComponentProps,
+  InlineEditBinding,
   NodeWrapperProps,
 } from './types'
 

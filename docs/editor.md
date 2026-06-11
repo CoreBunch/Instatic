@@ -413,7 +413,7 @@ Each tick is split into a read phase and a write phase to keep the loop cheap at
 
 ### Inline text editing (double-click)
 
-Double-clicking a node whose module declares `inlineTextEdit` (`base.text`, `base.button`, childless `base.link`) opens `InlineTextEditOverlay` — a real `<textarea>`/`<input>` in the parent document, portaled into the canvas root and RAF-tracked over the node's rect inside the breakpoint iframe (same portal + RAF pattern as the selection rings). Typography is mirrored from the live element via the iframe's `getComputedStyle`, scaled by the iframe zoom factor. Every keystroke commits live through `updateNodeProps`, so all breakpoint frames preview the edit while the session's own frame hides the node's text (`data-instatic-inline-editing` + a canvas-chrome rule). The whole burst coalesces into one undo entry; Enter/blur commit + close, Escape reverts via a single `undo()`. Session state is `activeInlineEdit` in `inlineEditSlice`. Full design: [`docs/features/canvas-iframe-per-frame.md`](features/canvas-iframe-per-frame.md) → "Inline text editing (parent-doc overlay)".
+Double-clicking a node whose module declares `inlineTextEdit` (`base.text`, `base.button`, childless `base.link`) edits the text **in place**: the node's own element inside the breakpoint iframe becomes the editor. `NodeRenderer` builds an `InlineEditBinding` and the module spreads `inlineEditableElementProps(binding)` onto its real root element, making it `contentEditable="plaintext-only"` (seeded once via `dangerouslySetInnerHTML` from the escaped initial value, with `\n` → `<br>`). There is no overlay and no typography mirroring — the author edits the actual published element, so the editing surface is byte-identical to what publishes. Every keystroke reads the text back with `readInlineEditableText(el)` (`el.innerText`) and commits live through `updateNodeProps`, so all breakpoint frames preview the edit; the burst coalesces into one undo entry. For single-line modules Enter commits + closes; for multiline `base.text`, Enter inserts a hard break (stored as `\n`, rendered as `<br>` everywhere) and Cmd/Ctrl+Enter commits. Blur commits + closes; Escape reverts via a single `undo()`. Canvas shortcuts (Delete/Cmd+D) are suppressed mid-edit by the `activeInlineEdit` guard in `useCanvasKeyboardShortcuts`. Session state is `activeInlineEdit` in `inlineEditSlice`. Full design: [`docs/features/canvas-iframe-per-frame.md`](features/canvas-iframe-per-frame.md) → "Inline text editing (in-place `contentEditable`)".
 
 ### CSS injection into the iframe
 
@@ -488,10 +488,9 @@ Canvas-internal values are not CSS tokens — they are raw integers intentionall
 | `CanvasLayerContextMenu.tsx`    | Right-click on a layer                                          |
 | `canvasDnd.ts`                  | Drag-and-drop (insert / move / wrap)                            |
 | `canvasDomGeometry.ts`          | Cross-iframe DOM measurement; `panToCenterBreakpointFrame` viewport centering geometry |
-| `canvasOverlayGeometry.ts`      | Cross-iframe element rect → canvas-root coords; CSS attribute value escaping |
+| `canvasOverlayGeometry.ts`      | Cross-iframe element rect → canvas-root coords; overlay rect union |
 | `canvasSelectionUtils.ts`       | Selection helpers                                               |
 | `BreakpointSelectionOverlay.tsx`| Selection / hover rings, selection toolbar, inspect ladder integration |
-| `InlineTextEditOverlay.tsx`     | Parent-doc inline text editor floated over a node in the breakpoint iframe (double-click to edit) |
 | `CanvasInsertModuleButton.tsx`  | "Insert module" button in the canvas selection toolbar — opens `ModuleInserterDialog` |
 | `canvasTreeLadder.ts`           | Alt/Option inspect ladder tree model                            |
 | `CanvasTreeLadderOverlay.tsx`   | `useCanvasTreeLadderOverlay` — wires the ladder model to canvas events and portal |

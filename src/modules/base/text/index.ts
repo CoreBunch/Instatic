@@ -13,6 +13,7 @@ import {
   htmlAttributesControl,
   HtmlAttributesPropSchemaOptions,
 } from '@modules/base/shared/htmlAttributes'
+import { textToBreakHtml } from '@modules/base/shared/inlineText'
 import { TextEditor } from './TextEditor'
 import { normalizeTag } from './tags'
 
@@ -92,13 +93,16 @@ export const TextModule: ModuleDefinition<TextStoredProps> = {
   },
 
   render: (props) => {
+    // props.text is pre-escaped by escapeProps — only turn newlines into the
+    // hard <br> breaks the author typed (sanitizer allows <br>).
+    const text = textToBreakHtml(String(props.text))
     const tag = normalizeTag(props.tag)
     if (tag === 'none') {
-      return { html: String(props.text) }
+      return { html: text }
     }
     const attrs = htmlAttributesAttr(props.htmlAttributes)
     return {
-      html: `<${tag}${attrs}>${String(props.text)}</${tag}>`,
+      html: `<${tag}${attrs}>${text}</${tag}>`,
     }
   },
 }

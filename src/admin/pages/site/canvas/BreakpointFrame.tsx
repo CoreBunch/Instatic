@@ -22,7 +22,6 @@ import type { Page, Breakpoint } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { CanvasComposedTree } from './CanvasComposedTree'
 import { BreakpointSelectionOverlay } from './BreakpointSelectionOverlay'
-import { InlineTextEditOverlay } from './InlineTextEditOverlay'
 import { CanvasBreakpointContext, CanvasTemplateContext } from './CanvasContexts'
 import { IframeFrameSurface, type IframeFrameSurfaceHandle } from './IframeFrameSurface'
 import { CanvasFrameSkeleton } from '@admin/shared/CanvasFrameSkeleton'
@@ -257,13 +256,6 @@ export function BreakpointFrame({
         <BreakpointSelectionOverlay
           breakpointId={breakpoint.id}
           viewportRef={viewportRef}
-          iframeElement={iframeEl}
-        />
-        {/* Inline text editor — parent-doc field floated over the edited
-            node in THIS frame. Renders only while this frame owns the
-            active inline-edit session. */}
-        <InlineTextEditOverlay
-          breakpointId={breakpoint.id}
           iframeElement={iframeEl}
         />
         <CursorTooltip

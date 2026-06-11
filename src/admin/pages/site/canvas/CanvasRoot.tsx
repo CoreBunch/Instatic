@@ -36,7 +36,6 @@ import { useRuntimeScriptBuild } from './useRuntimeScriptBuild'
 import { CanvasNotch } from './CanvasNotch'
 import { CanvasModeToggle } from './CanvasModeToggle'
 import { CanvasContextSelector } from './CanvasContextSelector'
-import { ParentDocumentSiteFontsInjector } from './ParentDocumentSiteFontsInjector'
 import { CanvasSelectionContext, CanvasViewportActionsContext } from './CanvasContexts'
 // Class / user-stylesheet injectors are now mounted per breakpoint frame
 // (inside each iframe's document) by `IframeFrameSurface`. CanvasRoot no
@@ -293,11 +292,10 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
    * childless base.link — `startInlineEdit` resolves the contract and
    * no-ops for everything else, so other modules keep the old no-op).
    *
-   * Design-canvas only: the InlineTextEditOverlay mounts per
-   * BreakpointFrame, so a live-mode double-click must not open a session
-   * that nothing renders. Entering VC canvas mode on double-click stays
-   * removed — VC entry works from the Site panel and Spotlight (see
-   * `docs/features/canvas-iframe-per-frame.md`).
+   * Design-canvas only: the editing element lives inside a breakpoint iframe,
+   * so a live-mode double-click must not open a session. Entering VC canvas
+   * mode on double-click stays removed — VC entry works from the Site panel
+   * and Spotlight (see `docs/features/canvas-iframe-per-frame.md`).
    */
   const onNodeDoubleClick = (nodeId: string, e: React.MouseEvent, breakpointId?: string) => {
     e.stopPropagation()
@@ -367,10 +365,6 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   return (
     <CanvasViewportActionsContext.Provider value={viewportActionsContextValue}>
       <CanvasSelectionContext.Provider value={selectionContextValue}>
-        {/* Mirror the site's @font-face into the parent document so parent-doc
-            overlays (the inline text-edit field) render site fonts identically
-            to the canvas iframe. */}
-        <ParentDocumentSiteFontsInjector />
         <div
           ref={canvasRef}
           role="region"

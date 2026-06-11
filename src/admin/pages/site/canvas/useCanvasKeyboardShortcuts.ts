@@ -143,6 +143,14 @@ export function useCanvasKeyboardShortcuts(
   } = deps
 
   return (event: CanvasKeyEvent) => {
+    // While inline editing, the contentEditable node (inside a breakpoint
+    // iframe) owns the keyboard. Its keystrokes bubble through React to this
+    // parent handler, and the per-shortcut `isTextInputTarget` guard can't see
+    // a cross-realm iframe element, so suppress ALL canvas shortcuts up front —
+    // Delete/Cmd+D/copy/paste must never fire mid-edit. The editing element's
+    // own onKeyDown handles Escape (cancel) and Enter (commit).
+    if (useEditorStore.getState().activeInlineEdit) return
+
     // Zoom / pan keys always run, regardless of selection state.
     canvasKeyDown(event)
 
