@@ -230,7 +230,7 @@ describe('data CMS repository', () => {
       pluralLabel: 'Products',
       primaryFieldId: 'title',
       fields: defaultFields,
-    }, null)
+    })
     expect(table).toMatchObject({
       id: 'products',
       name: 'Products',
