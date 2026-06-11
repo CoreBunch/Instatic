@@ -8,6 +8,7 @@ import { getSetupStatus } from './repositories/setup'
 import { getPublishedRuntimeAsset } from './repositories/runtimeAsset'
 import { handleLoopRequest, isLoopRuntimeAssetPath, serveLoopRuntimeAsset } from './handlers/cms/loop'
 import { handleHoleRequest, isHoleRuntimeAssetPath, serveHoleRuntimeAsset } from './handlers/cms/hole'
+import { handleModuleJsAssetRequest, isModuleJsAssetPath } from './handlers/cms/moduleJs'
 import { handlePublicFormRequest } from './forms/handler'
 import { FORM_RUNTIME_PATH, serveFormRuntimeAsset } from './forms/formRuntime'
 import { isRuntimePackagePath, tryServeRuntimePackage } from './publish/runtime/packageServer'
@@ -69,6 +70,7 @@ const routes: readonly RouteHandler[] = [
   tryServeLoop,
   tryServeHoleRuntimeAsset,
   tryServeHole,
+  tryServeModuleJsAsset,
   tryServePublicFormRuntimeAsset,
   tryServePublicForm,
   tryServeRuntimeAsset,
@@ -166,6 +168,16 @@ function tryServeHoleRuntimeAsset(req: Request, _runtime: ServerRuntime, _url: U
 function tryServeHole(req: Request, runtime: ServerRuntime, url: URL, pathname: string): Promise<Response> | null {
   if (!pathname.startsWith('/_instatic/hole/')) return null
   return handleHoleRequest(req, url, { db: runtime.db })
+}
+
+/**
+ * Per-module published JS — `/_instatic/module-js/<moduleId>.js`. Prefix-
+ * namespaced: unknown paths under the prefix 404 inside the handler rather
+ * than falling through to the public-slug resolver.
+ */
+function tryServeModuleJsAsset(req: Request, runtime: ServerRuntime, url: URL, pathname: string): Promise<Response> | null {
+  if (!isModuleJsAssetPath(pathname)) return null
+  return handleModuleJsAssetRequest(req, url, { db: runtime.db })
 }
 
 function tryServePublicFormRuntimeAsset(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Response | null {
