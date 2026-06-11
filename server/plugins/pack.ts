@@ -1,6 +1,6 @@
 /**
- * Plugin pack — importable Visual Components, page templates, and class
- * definitions delivered alongside a plugin.
+ * Plugin pack — importable Visual Components, page templates, class
+ * definitions, and saved layouts delivered alongside a plugin.
  *
  * The plugin manifest declares `pack: { path: 'pack/site.json' }` (path is
  * relative to the package zip). When the site owner triggers an "install
@@ -26,8 +26,10 @@ import type {
   Page,
   SiteDocument,
 } from '@core/page-tree'
+import { assertValidNodeTree } from '@core/page-tree'
 import { parseVisualComponent } from '@core/visualComponents'
 import type { VisualComponent } from '@core/visualComponents'
+import { parseSavedLayout, type SavedLayout } from '@core/layouts'
 import { parseValue, safeParseValue } from '@core/utils/typeboxHelpers'
 import { compiledCheck } from '@core/utils/typeboxCompiler'
 import { Type } from '@sinclair/typebox'
@@ -39,6 +41,7 @@ export interface PluginPackContents {
   visualComponents: VisualComponent[]
   pages: Page[]
   classes: StyleRule[]
+  layouts: SavedLayout[]
 }
 
 export interface PluginPackInstallResult {
@@ -48,6 +51,7 @@ export interface PluginPackInstallResult {
     visualComponents: string[]
     pages: string[]
     classes: string[]
+    layouts: string[]
   }
 }
 
@@ -62,6 +66,7 @@ const PluginPackFileSchema = Type.Object({
   visualComponents: Type.Optional(Type.Array(Type.Unknown())),
   pages: Type.Optional(Type.Array(Type.Unknown())),
   classes: Type.Optional(Type.Array(Type.Unknown())),
+  layouts: Type.Optional(Type.Array(Type.Unknown())),
 })
 
 export async function loadPluginPackFile(
@@ -132,7 +137,31 @@ export function parsePluginPack(pluginId: string, raw: unknown): PluginPackConte
     classes.push(cls)
   }
 
-  return { visualComponents, pages, classes }
+  const layouts: SavedLayout[] = []
+  for (const rawLayout of parsed.value.layouts ?? []) {
+    const layout = parseSavedLayout(rawLayout)
+    if (!layout) {
+      throw new PluginPackError(`Plugin "${pluginId}" pack contains an invalid saved layout entry`)
+    }
+    try {
+      assertValidNodeTree(layout, `pack.layouts.${layout.id}`)
+    } catch (err) {
+      throw new PluginPackError(
+        `Plugin "${pluginId}" pack layout "${layout.id}" has an incoherent snapshot tree: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+    // Same ownership rule as classes: pack layout ids must be namespaced so
+    // re-installs replace the plugin's own rows and can never collide with a
+    // user's saved layouts (which use generated ids).
+    if (!layout.id.startsWith(`${pluginId}/`) && !layout.id.startsWith(`${pluginId}.`)) {
+      throw new PluginPackError(
+        `Plugin "${pluginId}" pack layout "${layout.id}" must be namespaced under the plugin id (e.g. "${pluginId}/${layout.id}").`,
+      )
+    }
+    layouts.push(layout)
+  }
+
+  return { visualComponents, pages, classes, layouts }
 }
 
 const CSS_CLASS_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]*$/
@@ -153,9 +182,10 @@ function suggestClassName(pluginId: string, classId: string): string {
  * entries by id. Returns the next site document and a list of replaced ids
  * per category.
  *
- * NOTE: Visual Components are no longer merged into the shell. They are
- * returned separately in `pack.visualComponents` so the caller can upsert
- * them as `data_rows` (table_id = 'components') via the data API.
+ * NOTE: Visual Components and saved layouts are not merged into the shell —
+ * both are row-backed (`data_rows` table_id 'components' / 'layouts'), so the
+ * caller upserts them directly and this function only records which existing
+ * ids the pack replaces.
  * See `installPluginPackToSite` in `server/handlers/cms/plugins/pack.ts`.
  */
 export function applyPluginPackToSite(
@@ -166,13 +196,19 @@ export function applyPluginPackToSite(
     visualComponents: [],
     pages: [],
     classes: [],
+    layouts: [],
   }
 
-  // VCs are handled separately by the caller (upserted as data_rows).
-  // Record which existing VC ids would be replaced.
+  // VCs and layouts are handled separately by the caller (upserted as
+  // data_rows). Record which existing ids would be replaced.
   for (const vc of pack.visualComponents) {
     if (site.visualComponents.some((v) => v.id === vc.id)) {
       replaced.visualComponents.push(vc.id)
+    }
+  }
+  for (const layout of pack.layouts) {
+    if (site.layouts.some((l) => l.id === layout.id)) {
+      replaced.layouts.push(layout.id)
     }
   }
 

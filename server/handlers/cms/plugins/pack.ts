@@ -2,8 +2,8 @@
  * Plugin pack installation.
  *
  * A plugin "pack" is the optional bundle of Visual Components, page
- * templates, and class definitions a plugin ships alongside its server /
- * module code. When a plugin manifest declares `pack` and the user has
+ * templates, class definitions, and saved layouts a plugin ships alongside
+ * its server / module code. When a plugin manifest declares `pack` and the user has
  * granted `visualComponents.register`, importing the pack is what they
  * expected — both for fresh installs and upgrades. The route here is the
  * explicit re-sync trigger from the admin UI; the install flow imports
@@ -30,6 +30,7 @@ import {
 } from '../../../repositories/data'
 import { pageFromRow, pageToCells } from '../../../../src/core/data/pageFromRow'
 import { visualComponentToCells, vcSlugFromName } from '../../../../src/core/data/componentFromRow'
+import { savedLayoutFromRow, savedLayoutToCells, layoutSlugFromName } from '../../../../src/core/data/layoutFromRow'
 import { badRequest, jsonResponse, methodNotAllowed } from '../../../http'
 import { type CmsHandlerOptions, requestAuditContext } from '../shared'
 import { pluginNotFound } from './shared'
@@ -39,8 +40,9 @@ export interface PluginPackSummary {
     visualComponents: { id: string; name: string }[]
     pages: { id: string; title: string }[]
     classes: { id: string; name: string }[]
+    layouts: { id: string; name: string }[]
   }
-  replaced: { visualComponents: string[]; pages: string[]; classes: string[] }
+  replaced: { visualComponents: string[]; pages: string[]; classes: string[]; layouts: string[] }
 }
 
 /**
@@ -66,22 +68,27 @@ async function installPluginPackToSite(
   if (!shell) return null
 
   // Assemble a temporary SiteDocument for the pack merge function.
-  // VCs are included so applyPluginPackToSite can detect replaced ids.
-  const [pageRows, vcRows] = await Promise.all([
+  // VCs and layouts are included so applyPluginPackToSite can detect
+  // replaced ids.
+  const [pageRows, vcRows, layoutRows] = await Promise.all([
     listDataRows(db, 'pages'),
     listDataRows(db, 'components'),
+    listDataRows(db, 'layouts'),
   ])
   const { visualComponentFromRow } = await import('../../../../src/core/data/componentFromRow')
   const existingVCs = vcRows.flatMap((r) => {
     const vc = visualComponentFromRow(r)
     return vc ? [vc] : []
   })
+  const existingLayouts = layoutRows.flatMap((r) => {
+    const layout = savedLayoutFromRow(r)
+    return layout ? [layout] : []
+  })
   const tempSiteDoc = {
     ...shell,
     pages: pageRows.map(pageFromRow),
     visualComponents: existingVCs,
-    // Saved layouts are editor-only; pack installs don't touch them.
-    layouts: [],
+    layouts: existingLayouts,
   }
 
   const { site: nextSiteDoc, replaced } = applyPluginPackToSite(tempSiteDoc, pack)
@@ -113,6 +120,18 @@ async function installPluginPackToSite(
     }
   }
 
+  // Upsert pack layouts as data_rows
+  const existingLayoutRowsById = new Map(layoutRows.map((r) => [r.id, r]))
+  for (const layout of pack.layouts) {
+    const cells = savedLayoutToCells(layout)
+    const slug = layoutSlugFromName(layout.name)
+    if (existingLayoutRowsById.has(layout.id)) {
+      await saveDataRowDraft(db, layout.id, { cells, slug }, actorUserId)
+    } else {
+      await createDataRow(db, { id: layout.id, tableId: 'layouts', cells, slug }, actorUserId)
+    }
+  }
+
   await createAuditEvent(db, {
     actorUserId,
     action: 'plugin.pack.install',
@@ -123,9 +142,11 @@ async function installPluginPackToSite(
       installedVisualComponents: pack.visualComponents.length,
       installedPages: pack.pages.length,
       installedClasses: pack.classes.length,
+      installedLayouts: pack.layouts.length,
       replacedVisualComponents: replaced.visualComponents,
       replacedPages: replaced.pages,
       replacedClasses: replaced.classes,
+      replacedLayouts: replaced.layouts,
     },
     ...requestAuditContext(req),
   })
@@ -134,6 +155,7 @@ async function installPluginPackToSite(
       visualComponents: pack.visualComponents.map((vc) => ({ id: vc.id, name: vc.name })),
       pages: pack.pages.map((p) => ({ id: p.id, title: p.title })),
       classes: pack.classes.map((c) => ({ id: c.id, name: c.name })),
+      layouts: pack.layouts.map((l) => ({ id: l.id, name: l.name })),
     },
     replaced,
   }

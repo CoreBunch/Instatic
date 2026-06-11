@@ -362,11 +362,13 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
       const installedCount =
         summary.installed.visualComponents.length +
         summary.installed.pages.length +
-        summary.installed.classes.length
+        summary.installed.classes.length +
+        summary.installed.layouts.length
       const replacedCount =
         summary.replaced.visualComponents.length +
         summary.replaced.pages.length +
-        summary.replaced.classes.length
+        summary.replaced.classes.length +
+        summary.replaced.layouts.length
       pushToast({
         kind: 'success',
         title: `Installed pack from ${plugin.name}`,
@@ -374,8 +376,8 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         location: 'plugins:install-pack',
       })
       notifyCmsPluginsChanged()
-      // The pack writes Visual Components, pages, and classes directly to the
-      // draft site at the DB level. Tell the editor's persistence layer to
+      // The pack writes Visual Components, pages, classes, and layouts
+      // directly to the draft site at the DB level. Tell the editor's persistence layer to
       // re-pull so the new content shows up in the Site Explorer / canvas
       // without a full browser reload.
       notifyCmsSiteReload()

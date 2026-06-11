@@ -35,6 +35,7 @@ const baselineSite: SiteDocument = {
   styleRules: {},
   files: [],
   visualComponents: [],
+  layouts: [],
   packageJson: { name: 'site', dependencies: {}, devDependencies: {} },
   runtime: { dependencyLock: { version: 1, packages: {}, updatedAt: 0 }, scripts: {} },
   createdAt: 0,
@@ -136,6 +137,7 @@ describe('applyPluginPackToSite', () => {
         createdAt: 0,
         updatedAt: 0,
       }],
+      layouts: [],
     }
 
     const { site, replaced } = applyPluginPackToSite(baselineSite, pack)
@@ -158,6 +160,7 @@ describe('applyPluginPackToSite', () => {
         createdAt: 0,
         updatedAt: 0,
       }],
+      layouts: [],
     }
     const seeded: SiteDocument = {
       ...baselineSite,
@@ -178,5 +181,80 @@ describe('applyPluginPackToSite', () => {
     const { site, replaced } = applyPluginPackToSite(seeded, pack)
     expect(site.styleRules['acme.canvas/hero'].name).toBe('Hero v2')
     expect(replaced.classes).toEqual(['acme.canvas/hero'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Saved layouts in packs
+// ---------------------------------------------------------------------------
+
+function packLayout(id: string, name = 'Hero section') {
+  return {
+    id,
+    name,
+    rootNodeId: 'l-root',
+    nodes: {
+      'l-root': {
+        id: 'l-root',
+        moduleId: 'base.container',
+        props: {},
+        breakpointOverrides: {},
+        children: [],
+        classIds: [],
+      },
+    },
+    classes: {},
+    createdAt: 0,
+  }
+}
+
+describe('parsePluginPack — layouts', () => {
+  it('accepts plugin-namespaced layout ids', () => {
+    const pack = parsePluginPack('acme.canvas', {
+      layouts: [packLayout('acme.canvas/hero-section')],
+    })
+    expect(pack.layouts).toHaveLength(1)
+    expect(pack.layouts[0].name).toBe('Hero section')
+  })
+
+  it('rejects layouts that are not namespaced under the plugin id', () => {
+    expect(() =>
+      parsePluginPack('acme.canvas', { layouts: [packLayout('hero-section')] }),
+    ).toThrow(PluginPackError)
+  })
+
+  it('rejects malformed layout entries', () => {
+    expect(() =>
+      parsePluginPack('acme.canvas', { layouts: [{ id: 'acme.canvas/broken' }] }),
+    ).toThrow(PluginPackError)
+  })
+
+  it('rejects layouts with an incoherent snapshot tree', () => {
+    const broken = packLayout('acme.canvas/dangling')
+    broken.nodes['l-root'].children = ['ghost']
+    expect(() =>
+      parsePluginPack('acme.canvas', { layouts: [broken] }),
+    ).toThrow(PluginPackError)
+  })
+})
+
+describe('applyPluginPackToSite — layouts', () => {
+  it('reports replaced layout ids without merging into the site doc (caller upserts rows)', () => {
+    const pack = {
+      visualComponents: [],
+      pages: [],
+      classes: [],
+      layouts: [packLayout('acme.canvas/hero-section')],
+    }
+    const fresh = applyPluginPackToSite(baselineSite, pack)
+    expect(fresh.replaced.layouts).toEqual([])
+    expect(fresh.site.layouts).toEqual([])
+
+    const seeded: SiteDocument = {
+      ...baselineSite,
+      layouts: [packLayout('acme.canvas/hero-section')],
+    }
+    const resync = applyPluginPackToSite(seeded, pack)
+    expect(resync.replaced.layouts).toEqual(['acme.canvas/hero-section'])
   })
 })

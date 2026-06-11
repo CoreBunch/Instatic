@@ -62,7 +62,7 @@ editor/index.js          ← editor entrypoint (optional)
 admin/dashboard.js       ← admin pages entrypoint (optional)
 modules/index.js         ← canvas module pack (optional)
 frontend/tracker.js      ← published-page asset (optional)
-pack/site.json           ← Visual Components / pages / classes pack (optional)
+pack/site.json           ← Visual Components / pages / classes / layouts pack (optional)
 assets/                  ← static assets shipped in the zip (optional)
 ```
 
@@ -132,6 +132,7 @@ All `.js` entrypoints are pre-bundled IIFEs that assign to a host-recognized glo
 | `resources[].id`, `adminPages[].id` | URL path segment — lowercase kebab-case             | `seo-entries`, `subscribers` |
 | `resources[].fields[].id`   | JSON key — any common identifier convention                | `email`, `subscribedAt`   |
 | Pack `classes[].id`         | Namespaced under the plugin ID                             | `acme.workflow/hero-root` |
+| Pack `layouts[].id`         | Namespaced under the plugin ID                             | `acme.workflow/hero-section` |
 
 `parsePluginManifest` validates all of these and produces a clear error message. `bun instatic-plugin lint` runs the same checks before upload.
 
@@ -676,7 +677,7 @@ Risk levels:
 | `editor.panels`             | Editor               | Medium    | Register left-sidebar panels. Use `definePluginPanel({ id, label, iconName, accent? })` from the SDK — `accent` pins a specific rail tint; omit it to let the host derive one automatically from the panel identity. |
 | `modules.register`          | Editor / manifest    | High      | Ship new modules to the canvas module library                           |
 | `loops.register`            | Editor / server / manifest | Medium | Register custom `base.loop` sources                                  |
-| `visualComponents.register` | Admin / manifest     | Medium    | Ship VCs / page templates / class packs (via `pack/site.json`)          |
+| `visualComponents.register` | Admin / manifest     | Medium    | Ship VCs / page templates / class / layout packs (via `pack/site.json`) |
 | `frontend.assets`           | Frontend / manifest  | High      | Inject declarative tags into every published page; also gates module render() `js` |
 | `network.outbound`          | Server               | High      | Make outbound HTTP requests (with `networkAllowedHosts` allowlist)      |
 | `unstable.internals`        | Admin / editor / server | Dangerous | Reserved for trusted first-party plugins                            |

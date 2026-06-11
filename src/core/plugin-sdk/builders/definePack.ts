@@ -30,11 +30,13 @@
 import type { StyleRule, Page } from '@core/page-tree'
 import { classKindSelector } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
+import type { SavedLayout } from '@core/layouts'
 
 export interface PluginPackContents {
   visualComponents: VisualComponent[]
   pages: Page[]
   classes: StyleRule[]
+  layouts: SavedLayout[]
 }
 
 interface DefinePackConfig {
@@ -49,7 +51,17 @@ interface DefinePackConfig {
    * override the derived classname.
    */
   classes?: Record<string, ClassPackEntry>
+  /**
+   * Saved layouts — subtree snapshots offered in the module inserter's
+   * Layouts section. Each entry is the snapshot shape the editor saves
+   * (`rootNodeId` + flat `nodes` + the `classes` registry the nodes
+   * reference). Ids are auto-namespaced to `<pluginId>/<id>` (re-installs
+   * replace by id); `createdAt` is optional and defaults to 0.
+   */
+  layouts?: LayoutPackEntry[]
 }
+
+type LayoutPackEntry = Omit<SavedLayout, 'createdAt'> & { createdAt?: number }
 
 type ClassPackEntry =
   | Record<string, unknown>
@@ -110,9 +122,22 @@ export function definePack(config: DefinePackConfig): PluginPackContents {
     })
   }
 
+  const layouts: SavedLayout[] = (config.layouts ?? []).map((layout) => ({
+    ...layout,
+    id: namespacedLayoutId(config.pluginId, layout.id),
+    createdAt: layout.createdAt ?? 0,
+  }))
+
   return {
     visualComponents: config.visualComponents ?? [],
     pages: config.pages ?? [],
     classes,
+    layouts,
   }
+}
+
+/** Auto-namespace a pack layout id unless the author already prefixed it. */
+function namespacedLayoutId(pluginId: string, id: string): string {
+  if (id.startsWith(`${pluginId}/`) || id.startsWith(`${pluginId}.`)) return id
+  return `${pluginId}/${id}`
 }

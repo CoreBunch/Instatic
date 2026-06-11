@@ -321,11 +321,13 @@ export const CmsPluginPackInstallSummarySchema = Type.Object(
       visualComponents: Type.Array(Type.Object({ id: Type.String(), name: Type.String() })),
       pages: Type.Array(Type.Object({ id: Type.String(), title: Type.String() })),
       classes: Type.Array(Type.Object({ id: Type.String(), name: Type.String() })),
+      layouts: Type.Array(Type.Object({ id: Type.String(), name: Type.String() })),
     }),
     replaced: Type.Object({
       visualComponents: Type.Array(Type.String()),
       pages: Type.Array(Type.String()),
       classes: Type.Array(Type.String()),
+      layouts: Type.Array(Type.String()),
     }),
   },
   { additionalProperties: true },
