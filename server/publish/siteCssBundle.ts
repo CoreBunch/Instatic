@@ -13,9 +13,9 @@
  * Two entry points, two cost profiles:
  *
  * - `buildSiteCssBundle` rebuilds all four files from scratch. The `framework`
- *   file requires walking EVERY page's node tree (`collectAllModuleCss`) to
- *   harvest module CSS — work that scales with whole-site size, not the
- *   rendered page. Callers that pass draft / arbitrary sites at the live
+ *   file requires walking EVERY page's node tree (`collectSiteModuleAssets` in
+ *   `siteModuleAssets.ts`) to harvest module CSS — work that scales with
+ *   whole-site size, not the rendered page. Callers that pass draft / arbitrary sites at the live
  *   publish version (preview, AI render, the CSS-route fallback) use this:
  *   memoising across them would cross-contaminate unpublished content.
  *
@@ -36,16 +36,14 @@ import {
   PUBLISHER_RESET_CSS,
   collectClassCSS,
   buildSiteFrameworkCss,
-  renderNode,
   collectUserStylesheetCss,
 } from '@core/publisher'
 import type {
-  RenderConfig,
-  RenderAccumulators,
   CssBundleFile,
   SiteCssBundle,
   SiteCssBundleId,
 } from '@core/publisher'
+import { collectSiteModuleAssets } from './siteModuleAssets'
 import { getPublishVersion, registerVersionedCacheReset } from './publishState'
 
 /**
@@ -148,44 +146,8 @@ function memoizedPageInvariantBundles(
  */
 function buildFrameworkCss(site: SiteDocument, registry: IModuleRegistry): string {
   const frameworkCss = buildSiteFrameworkCss(site)
-  const moduleCss = collectAllModuleCss(site, registry)
+  const moduleCss = Array.from(collectSiteModuleAssets(site, registry).cssMap.values()).join('\n')
   return [frameworkCss, moduleCss].filter(Boolean).join('\n')
-}
-
-/**
- * Walk every page's node tree and accumulate module CSS deduped by moduleId.
- *
- * The walker is `renderNode`, which also produces HTML strings — those are
- * thrown away here. Discarding the HTML is cheaper than maintaining a
- * separate CSS-only walker that would drift from the canonical render path
- * over time. The cssMap is shared across pages, so a module's CSS is
- * collected at most once for the whole site even if it appears on every page.
- *
- * Note: every base module emits `css: ''` — they are pure semantic-HTML
- * emitters and styling comes exclusively from user classes. The module-CSS
- * path exists for plugin modules that *might* emit CSS via their `render()`
- * return.
- */
-function collectAllModuleCss(site: SiteDocument, registry: IModuleRegistry): string {
-  // One accumulator shared across every page so a module's CSS is collected at
-  // most once for the whole site. infiniteLoopIds / holeNodeIds are unused here
-  // (we throw the HTML away) but still owned up-front — no lazy undefined.
-  const acc: RenderAccumulators = {
-    cssMap: new Map<string, string>(),
-    jsMap: new Map<string, string>(),
-    infiniteLoopIds: new Set<string>(),
-    holeNodeIds: new Set<string>(),
-  }
-  for (const page of site.pages) {
-    const config: RenderConfig = {
-      page,
-      site,
-      registry,
-      breakpointId: undefined,
-    }
-    renderNode(page.rootNodeId, config, acc)
-  }
-  return Array.from(acc.cssMap.values()).join('\n')
 }
 
 /**
