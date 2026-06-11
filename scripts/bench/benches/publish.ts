@@ -47,11 +47,12 @@ async function loadServer() {
   const { sqliteMigrations } = await import('../../../server/db/migrations-sqlite')
   const { saveDraftSite } = await import('../../../server/repositories/site')
   const { publishDraftSite, getDraftPublishStatus } = await import('../../../server/repositories/publish')
-  const { createDataRow } = await import('../../../server/repositories/data')
+  const { createDataRow, listDataRows, saveDataRowDraft } = await import('../../../server/repositories/data')
   const { getPublishedDataRowByRoute } = await import('../../../server/repositories/data/publish')
   const { getSetupStatus } = await import('../../../server/repositories/setup')
   const { renderPublicResolution } = await import('../../../server/publish/publicRouter')
-  const { pageToCells } = await import('../../../src/core/data/pageFromRow')
+  const { pageToCells, pageFromRow } = await import('../../../src/core/data/pageFromRow')
+  const { validatePages } = await import('../../../src/core/persistence/validate')
   const { normalizeSiteRuntimeConfig } = await import('../../../src/core/site-runtime')
   return {
     createSqliteClient,
@@ -61,10 +62,14 @@ async function loadServer() {
     publishDraftSite,
     getDraftPublishStatus,
     createDataRow,
+    listDataRows,
+    saveDataRowDraft,
     getPublishedDataRowByRoute,
     getSetupStatus,
     renderPublicResolution,
     pageToCells,
+    pageFromRow,
+    validatePages,
     normalizeSiteRuntimeConfig,
   }
 }
@@ -417,10 +422,94 @@ export const publishBench: BenchModule = {
         }
       }
 
+      // ---- Site save round-trip (editor autosave cost) ---------------------
+      log.step('Site save round-trip (one-edit autosave)')
+      const saveRows: BenchRow[] = []
+      {
+        const SAVE_PAGES = ctx.quick ? 15 : 60
+        const SAVE_NODES = ctx.quick ? 100 : 300
+        let fresh: { db: Db; path: string } | null = null
+        try {
+          fresh = await freshDb(api, 'save-roundtrip')
+          await fresh.db`
+            insert into users (id, email, email_normalized, display_name, password_hash, role_id)
+            values (${ADMIN_USER_ID}, 'bench@example.com', 'bench@example.com', 'Bench Admin', 'bench-hash', 'owner')
+          `
+          const shell = makeShell(api)
+          await api.saveDraftSite(fresh.db, shell)
+          for (let i = 0; i < SAVE_PAGES; i++) {
+            const page = makeBenchPage(i, SAVE_NODES)
+            await api.createDataRow(
+              fresh.db,
+              { id: page.id, tableId: 'pages', cells: api.pageToCells(page), slug: page.slug },
+              ADMIN_USER_ID,
+            )
+          }
+          const rows = await api.listDataRows(fresh.db, 'pages')
+          const pages = rows.map(api.pageFromRow)
+
+          const iters = ctx.quick ? 3 : 8
+          const samples: number[] = []
+          let payloadBytes = 0
+          for (let iter = 0; iter < iters; iter++) {
+            // One-prop edit on one page — the canonical autosave trigger.
+            const target = pages[iter % pages.length]
+            const textNodeId = Object.keys(target.nodes).find(
+              (id) => target.nodes[id].moduleId === 'base.text',
+            )!
+            const edited: Page = {
+              ...target,
+              nodes: {
+                ...target.nodes,
+                [textNodeId]: {
+                  ...target.nodes[textNodeId],
+                  props: { ...target.nodes[textNodeId].props, text: `edited ${iter}` },
+                },
+              },
+            }
+            pages[iter % pages.length] = edited
+
+            // What the editor ships and what the PUT /pages handler then does:
+            // validate the saved roster + reconcile every saved row's cells.
+            payloadBytes = JSON.stringify({ pages }).length
+            const t0 = performance.now()
+            const validated = api.validatePages(shell, pages, [])
+            const db = fresh.db
+            await db.transaction(async (tx) => {
+              for (const page of validated) {
+                await api.saveDataRowDraft(
+                  tx,
+                  page.id,
+                  { cells: api.pageToCells(page), slug: page.slug },
+                  ADMIN_USER_ID,
+                )
+              }
+            })
+            samples.push(performance.now() - t0)
+          }
+          const s = summarize(samples)
+          saveRows.push({
+            label: `one-prop edit, ${fmtNum(SAVE_PAGES)} pages × ~${fmtNum(SAVE_NODES)} nodes`,
+            inputs: { pages: SAVE_PAGES, nodes_per_page: SAVE_NODES, iters },
+            metrics: {
+              payload: fmtBytes(payloadBytes),
+              mean: fmtMs(s.mean),
+              p95: fmtMs(s.p95),
+            },
+          })
+          log.detail(`    payload=${fmtBytes(payloadBytes)} mean=${fmtMs(s.mean)}`)
+        } catch (err) {
+          saveRows.push(unavailableRow('site save round-trip', err))
+        } finally {
+          if (fresh) cleanupDbFiles(fresh.path)
+        }
+      }
+
       const largestPublishRow = publishRows[publishRows.length - 1]
       const statusRow = statusRows[0]
       const warmRow = warmRows[0]
       const rowRouteRow = rowRouteRows[0]
+      const saveRow = saveRows[0]
 
       return {
         name: this.name,
@@ -430,6 +519,7 @@ export const publishBench: BenchModule = {
           'status check (mean)': statusRow?.metrics.mean ?? '—',
           'warm dynamic GET (mean)': warmRow?.metrics.mean ?? '—',
           'row-route lookup (mean)': rowRouteRow?.metrics.mean ?? '—',
+          'save round-trip (mean)': saveRow?.metrics.mean ?? '—',
         },
         sections: [
           {
@@ -461,6 +551,12 @@ export const publishBench: BenchModule = {
             intro:
               'Cost of `getPublishedDataRowByRoute` (the `/posts/<slug>` public lookup) against a table with thousands of published rows, each with an active version. Sensitive to indexing on the versions join.',
             rows: rowRouteRows,
+          },
+          {
+            title: 'Site save round-trip',
+            intro:
+              'Models the editor autosave after a ONE-PROP edit: the JSON payload the client ships to PUT /pages plus the server-side work the handler performs (validatePages over the saved roster + the reconcile transaction). HTTP/auth overhead excluded. This section mirrors the save protocol of the commit it runs at.',
+            rows: saveRows,
           },
         ],
       }
