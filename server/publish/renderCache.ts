@@ -107,6 +107,32 @@ export function __setMaxEntriesForTests(n: number): void {
 }
 
 /**
+ * Return the cached response for `key` if one exists at the current publish
+ * version, WITHOUT invoking any factory. A hit promotes the entry (LRU) and
+ * counts toward the hit statistic; a miss counts nothing — the caller is
+ * expected to follow up with `getOrRender`, which records the miss.
+ *
+ * This is the request fast-path: `renderPublicResolution` peeks BEFORE doing
+ * route resolution, so a warm dynamic route skips its DB round-trips and the
+ * full-site snapshot parse entirely. Safe because every mutation that changes
+ * what a published URL serves — full publish, incremental row publish,
+ * unpublish, soft-delete, table move — bumps the publish version, which makes
+ * every cached entry miss here.
+ */
+export function peek(key: RenderCacheKey): CachedResponse | null {
+  const k = cacheKey(key)
+  const existing = map.get(k)
+  if (existing !== undefined && existing.publishVersion === getPublishVersion()) {
+    // LRU promotion: delete + re-set moves the entry to most-recent position.
+    map.delete(k)
+    map.set(k, existing)
+    hits++
+    return existing.response
+  }
+  return null
+}
+
+/**
  * Return a cached response for `key`, invoking `factory` only on a miss.
  *
  * Hit: entry exists and its publishVersion matches the current version.

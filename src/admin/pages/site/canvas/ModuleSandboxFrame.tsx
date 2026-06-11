@@ -27,10 +27,10 @@ interface ModuleSandboxFrameProps {
   nodeId: string
   isSelected: boolean
   mcClassName?: string
-  classIds?: string[]
+  classIds?: readonly string[]
 }
 
-function getNodeClassCSS(site: SiteDocument | null, classIds: string[] | undefined): string {
+function getNodeClassCSS(site: SiteDocument | null, classIds: readonly string[] | undefined): string {
   if (!site || !classIds?.length) return ''
 
   const classes: SiteDocument['styleRules'] = {}

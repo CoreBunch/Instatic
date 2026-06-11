@@ -121,7 +121,7 @@ export interface RenderConfig {
 }
 
 /**
- * Mutable outputs of a render pass. `publishPage` initialises all three
+ * Mutable outputs of a render pass. `publishPage` initialises all of them
  * up-front and threads the SAME instances down the whole tree; every renderer
  * appends to them. The container references are `readonly` (never swapped),
  * but their contents are mutated on purpose — that is the entire point of an
@@ -136,6 +136,13 @@ export interface RenderAccumulators {
    * Decision #308: keying by moduleId is O(1); at 200 nodes saves ~60–80% CSS vs naive concat.
    */
   readonly cssMap: Map<string, string>
+  /**
+   * JS deduplication map: moduleId → module runtime JS. Mirrors `cssMap` —
+   * each module type contributes at most one entry regardless of instance
+   * count. Served as external per-module files (never inlined), so no
+   * `</script>` sanitisation is applied on store.
+   */
+  readonly jsMap: Map<string, string>
   /**
    * Set of loop nodeIds on the page that requested the infinite-scroll
    * runtime. The publisher reads `.size` after rendering to decide whether

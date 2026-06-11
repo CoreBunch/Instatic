@@ -284,6 +284,13 @@
      * its trigger lives on. */
     --tooltip-z-index: 10001;
 
+    /* ─── Toast ──────────────────────────────────────────────────────────── */
+    /* Toasts are non-blocking notifications that must never be occluded — they
+     * sit above every modal layer (spotlight dialogs at 9000, body slash menu
+     * at 10000; a toast never overlaps the caret-anchored slash menu spatially)
+     * and below tooltips, which stay the topmost layer. */
+    --toast-z-index: 10000;
+
     /* ─── Spotlight (Cmd+K command palette) ──────────────────────────────── */
     --spotlight-backdrop: rgba(0, 0, 0, 0.5);
     --spotlight-backdrop-blur: 8px;

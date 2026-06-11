@@ -49,9 +49,11 @@ describe('plugin schedule invariants', () => {
     expect(apiSource).toContain('globalThis.__plugin_handlers')
     expect(apiSource).toContain('schedules: {}')
     expect(apiSource).toContain('globalThis.__runSchedule')
-    // Schedule handlers cross the boundary via __runSchedule only —
-    // never via a host-side function handle.
-    expect(vmSource).toContain("`__runSchedule(${JSON.stringify(scheduleId)})`")
+    // Schedule handlers cross the boundary by ID through the bootstrap's
+    // __runSchedule dispatcher (a persistent handle to the BOOTSTRAP
+    // function, grabbed before plugin code evaluates) — the host never
+    // holds a handle to the plugin's own handler function.
+    expect(vmSource).toContain("callVoid(ctx, dispatcher('__runSchedule'), [scheduleId]")
   })
 
   it('the schedule register schema rejects unsupported cadence intervals', async () => {

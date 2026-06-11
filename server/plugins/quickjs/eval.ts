@@ -1,20 +1,32 @@
 /**
- * Eval helpers — drive a VM expression to a fully-resolved value.
+ * Eval/call helpers — drive a VM execution to a fully-resolved value.
  *
- * Polling pattern (no asyncify):
- *   1. evalCode runs the synchronous portion of the expression
- *   2. If the result is a Promise (e.g. from `async function` call),
+ * Two entry styles share one settle pipeline:
+ *   - `evalString` / `evalJson` compile + run a small SOURCE STRING. Used
+ *     only for one-time setup expressions (hook detection, pack init) where
+ *     the code is tiny and fixed-size.
+ *   - `callString` / `callVoid` invoke a persistent VM FUNCTION HANDLE with
+ *     string arguments (`ctx.newString` — a direct memcpy into the VM, no
+ *     compile, no escaping stringify). This is the hot path for every
+ *     host→VM dispatch (`__runRoute`, `__runHookFilter`, …): the payload
+ *     crosses as a plain string argument instead of being embedded in
+ *     payload-sized JS source that QuickJS would have to tokenize/compile.
+ *
+ * Settle pattern (no asyncify):
+ *   1. evalCode / callFunction runs the synchronous portion
+ *   2. If the result is a Promise (e.g. from an `async function` call),
  *      we poll its state via getPromiseState
  *   3. Between polls: executePendingJobs() advances VM microtasks
  *   4. If no jobs ran and the Promise is still pending, yield to the host
  *      event loop so __hostCall's host-side .then can fire deferred.resolve
  *   5. Once fulfilled/rejected, return the value or throw the error
  *
- * Deadline guard: every entry into VM execution (async eval, sync eval,
- * timer-callback pump) registers a wall-clock deadline in a per-runtime
- * registry; ONE persistent interrupt handler aborts the runtime when the
- * clock passes the latest active deadline. A plugin stuck in a tight loop
- * is therefore always aborted, no matter which code path it spins on.
+ * Deadline guard: every entry into VM execution (async eval/call, sync
+ * eval/call, timer-callback pump) registers a wall-clock deadline in a
+ * per-runtime registry; ONE persistent interrupt handler aborts the runtime
+ * when the clock passes the latest active deadline. A plugin stuck in a
+ * tight loop is therefore always aborted, no matter which code path it
+ * spins on.
  */
 
 import type { QuickJSContext, QuickJSHandle, QuickJSRuntime } from 'quickjs-emscripten'
@@ -133,7 +145,8 @@ export function withSyncDeadline<T>(ctx: QuickJSContext, timeoutMs: number, body
  * Synchronous string eval — module-pack code is fully synchronous (no host
  * calls, no Promises), so a one-shot evalCode + getString under a deadline is
  * enough. Throws via `unwrapResult` if the eval errors; a runaway eval is
- * aborted by the interrupt deadline.
+ * aborted by the interrupt deadline. Reserved for one-time setup expressions
+ * (pack init) — per-render dispatch goes through `callStringSync`.
  */
 export function evalStringSync(
   ctx: QuickJSContext,
@@ -151,6 +164,36 @@ export function evalStringSync(
   })
 }
 
+/**
+ * Synchronous sibling of `callString` — invokes a persistent VM function
+ * handle with string arguments and reads the string it returns. Module-pack
+ * `render()` / `preview()` are contractually synchronous (no host calls,
+ * no Promises), so no settle loop is needed. The arguments cross via
+ * `ctx.newString` — no source compile, no escaping stringify.
+ */
+export function callStringSync(
+  ctx: QuickJSContext,
+  fnHandle: QuickJSHandle,
+  args: readonly string[],
+  timeoutMs: number,
+): string {
+  return withSyncDeadline(ctx, timeoutMs, () => {
+    const argHandles = args.map((arg) => ctx.newString(arg))
+    let callResult: ReturnType<QuickJSContext['callFunction']>
+    try {
+      callResult = ctx.callFunction(fnHandle, ctx.undefined, argHandles)
+    } finally {
+      for (const handle of argHandles) handle.dispose()
+    }
+    const resultHandle = ctx.unwrapResult(callResult)
+    try {
+      return ctx.getString(resultHandle)
+    } finally {
+      resultHandle.dispose()
+    }
+  })
+}
+
 function evalResolved<T>(
   ctx: QuickJSContext,
   code: string,
@@ -159,20 +202,52 @@ function evalResolved<T>(
 ): Promise<T> {
   // Run inside a wall-clock deadline — runaway plugin code is aborted
   // with a QuickJS `InternalError: interrupted` rather than blocking
-  // the worker forever. Schedules pass a higher per-call budget derived
-  // from their declared `maxDurationMs`.
-  return withDeadline(ctx, timeoutMs, () => evalResolvedInner(ctx, code, read))
+  // the worker forever.
+  return withDeadline(ctx, timeoutMs, async () => {
+    const evalHandle = ctx.unwrapResult(ctx.evalCode(code, 'instatic-eval.js'))
+    return settleResolved(ctx, evalHandle, read)
+  })
 }
 
-async function evalResolvedInner<T>(
+/**
+ * Invoke a persistent VM function handle with string arguments and drive
+ * the result (sync value or Promise) to settlement. The hot-path sibling of
+ * `evalResolved`: arguments enter the VM via `ctx.newString` (a memcpy), so
+ * the payload is never compiled as JS source and never double-stringified.
+ * Same wall-clock deadline semantics — schedules pass a higher per-call
+ * budget derived from their declared `maxDurationMs`.
+ */
+function callResolved<T>(
   ctx: QuickJSContext,
-  code: string,
+  fnHandle: QuickJSHandle,
+  args: readonly string[],
+  read: (handle: QuickJSHandle) => T,
+  timeoutMs: number,
+): Promise<T> {
+  return withDeadline(ctx, timeoutMs, async () => {
+    const argHandles = args.map((arg) => ctx.newString(arg))
+    let callResult: ReturnType<QuickJSContext['callFunction']>
+    try {
+      callResult = ctx.callFunction(fnHandle, ctx.undefined, argHandles)
+    } finally {
+      for (const handle of argHandles) handle.dispose()
+    }
+    return settleResolved(ctx, ctx.unwrapResult(callResult), read)
+  })
+}
+
+/**
+ * Drive an owned result handle (from `evalCode` or `callFunction`) to a
+ * settled value: non-promises are read directly; promises are pumped via
+ * the jobs-queue/host-event-loop poll until they fulfill or reject.
+ * Consumes `evalHandle`.
+ */
+async function settleResolved<T>(
+  ctx: QuickJSContext,
+  evalHandle: QuickJSHandle,
   read: (handle: QuickJSHandle) => T,
 ): Promise<T> {
-  const evalResult = ctx.evalCode(code, 'instatic-eval.js')
-  const evalHandle = ctx.unwrapResult(evalResult)
-
-  // Drain any microtasks scheduled by the eval's synchronous portion.
+  // Drain any microtasks scheduled by the execution's synchronous portion.
   drainJobs(ctx)
 
   // Probe Promise state. For non-promises, `getPromiseState` returns a
@@ -258,15 +333,25 @@ function drainJobs(ctx: QuickJSContext): number {
   return 0
 }
 
-export function evalVoid(ctx: QuickJSContext, code: string, timeoutMs: number): Promise<void> {
-  return evalResolved(ctx, code, () => undefined, timeoutMs)
+export function callVoid(
+  ctx: QuickJSContext,
+  fnHandle: QuickJSHandle,
+  args: readonly string[],
+  timeoutMs: number,
+): Promise<void> {
+  return callResolved(ctx, fnHandle, args, () => undefined, timeoutMs)
 }
 
-export function evalString(ctx: QuickJSContext, code: string, timeoutMs: number): Promise<string> {
-  return evalResolved(ctx, code, (h) => ctx.getString(h), timeoutMs)
+export function callString(
+  ctx: QuickJSContext,
+  fnHandle: QuickJSHandle,
+  args: readonly string[],
+  timeoutMs: number,
+): Promise<string> {
+  return callResolved(ctx, fnHandle, args, (h) => ctx.getString(h), timeoutMs)
 }
 
 export async function evalJson<T>(ctx: QuickJSContext, code: string, timeoutMs: number): Promise<T> {
-  const raw = await evalString(ctx, `JSON.stringify((${code}))`, timeoutMs)
+  const raw = await evalResolved(ctx, `JSON.stringify((${code}))`, (h) => ctx.getString(h), timeoutMs)
   return JSON.parse(raw) as T
 }

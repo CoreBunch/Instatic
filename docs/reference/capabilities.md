@@ -120,7 +120,7 @@ Was a single `ai.use`. Split so a Client persona can have chat assistance withou
 |------------------------|---------------------------------------------------------------------|---------------|
 | `ai.chat`              | Open AI conversations; use read-only tools (snapshot, search). The chat handler registers ONLY non-mutating tools with the driver for callers without `ai.tools.write`. | Owner, Admin |
 | `ai.tools.write`       | Enable canvas write tools (`setNodeProps`, `insertNode`, `deleteNode`, etc.) in registered AI conversations. Without this, the model has no write tools at all. | Owner, Admin |
-| `ai.providers.manage`  | Create / update / delete API-key credentials + per-scope defaults   | Owner, Admin |
+| `ai.providers.manage`  | Create / update / delete AI provider credentials + per-scope defaults | Owner, Admin |
 | `ai.audit.read`        | Read site-wide AI usage, cost, and error events across all users    | Owner, Admin |
 
 ---

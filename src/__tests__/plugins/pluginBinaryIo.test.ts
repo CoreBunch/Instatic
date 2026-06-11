@@ -47,6 +47,49 @@ describe('bodyEncoding — wire codec', () => {
       expect(base64ToBytes(bytesToBase64(bytes))).toEqual(bytes)
     }
   })
+
+  test('native Buffer codec is bit-identical to the pure-JS reference (the VM shim algorithm)', () => {
+    // Reference implementations: the chunked String.fromCharCode + btoa /
+    // atob + per-byte loop pair that bodyEncoding used before switching to
+    // native Buffer, and that quickjs/bootstrap/base64.ts still mirrors
+    // inside the VM. Host and VM MUST agree byte-for-byte on the wire.
+    const referenceEncode = (bytes: Uint8Array): string => {
+      let binary = ''
+      const CHUNK = 0x8000
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+      }
+      return btoa(binary)
+    }
+    const referenceDecode = (base64: string): Uint8Array => {
+      const binary = atob(base64)
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      return bytes
+    }
+    // Deterministic pseudo-random bytes (xorshift32) across padding lengths
+    // and a chunk-boundary-crossing size.
+    let state = 0x12345678
+    const next = () => {
+      state ^= state << 13
+      state ^= state >>> 17
+      state ^= state << 5
+      return state & 0xff
+    }
+    for (const len of [0, 1, 2, 3, 63, 64, 65, 0x8000 - 1, 0x8000, 0x8000 + 1, 200_000]) {
+      const bytes = new Uint8Array(Array.from({ length: len }, next))
+      const encoded = bytesToBase64(bytes)
+      expect(encoded).toBe(referenceEncode(bytes))
+      expect(base64ToBytes(encoded)).toEqual(bytes)
+      expect(base64ToBytes(encoded)).toEqual(referenceDecode(encoded))
+    }
+  })
+
+  test('decoded bytes are backed by a fresh, tightly-sized ArrayBuffer (no sibling views)', () => {
+    const bytes = base64ToBytes(bytesToBase64(PNG_BYTES))
+    expect(bytes.byteOffset).toBe(0)
+    expect(bytes.buffer.byteLength).toBe(bytes.byteLength)
+  })
 })
 
 function makeEntry(allowlist: string[]): HostPluginRecord {

@@ -48,6 +48,21 @@ export function getPublishVersion(): number {
   return publishVersion
 }
 
+/**
+ * Bump the publish version under the publish lock. The serialization matters
+ * (ISS-038): a bare bump racing a publish's read-version → bake → bump window
+ * would mis-stamp its baked hole shells as permanently stale. Call this from
+ * every content mutation that retracts or moves a published route outside a
+ * publish — unpublish, soft-delete, table move — so the render cache and the
+ * versioned snapshot memos stop serving the retracted route.
+ *
+ * NEVER call inside an open DB transaction: the publish lock may be held by a
+ * publish that is itself queued behind the transaction chain (deadlock).
+ */
+export function bumpPublishVersionSerialized(): Promise<void> {
+  return withPublishLock(async () => { bumpPublishVersion() })
+}
+
 // ---------------------------------------------------------------------------
 // Publish serialization
 // ---------------------------------------------------------------------------

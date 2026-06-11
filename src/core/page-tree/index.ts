@@ -135,13 +135,16 @@ export {
   pasteSubtree,
   wrapNode,
   wrapNodes,
+  applyTreeOperation,
+} from './mutations'
+
+export {
   addPage,
   deletePage,
   renamePage,
   reorderPages,
   duplicatePage,
-  applyTreeOperation,
-} from './mutations'
+} from './pageMutations'
 
 export { reindexNodeParents } from './parentIndex'
 

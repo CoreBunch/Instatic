@@ -13,20 +13,19 @@
  * Two entry points, two cost profiles:
  *
  * - `buildSiteCssBundle` rebuilds all four files from scratch. The `framework`
- *   file requires walking EVERY page's node tree (`collectAllModuleCss`) to
- *   harvest module CSS — work that scales with whole-site size, not the
- *   rendered page. Callers that pass draft / arbitrary sites at the live
+ *   file requires walking EVERY page's node tree (`collectSiteModuleAssets` in
+ *   `siteModuleAssets.ts`) to harvest module CSS — work that scales with
+ *   whole-site size, not the rendered page. Callers that pass draft / arbitrary sites at the live
  *   publish version (preview, AI render, the CSS-route fallback) use this:
  *   memoising across them would cross-contaminate unpublished content.
  *
  * - `buildPublishedSiteCssBundle` is the hot path for the published-snapshot
- *   renderer (`publicRenderer.ts`). There the site is fixed for a given publish
- *   version, so the three page-invariant files (reset / framework / style) are
- *   memoised by `publishVersion` + the site object being rendered and reused
- *   across every render for that pair — the expensive all-pages walk runs once
- *   per publish snapshot, not once per request. Only `userStyles` (page-scoped)
- *   is rebuilt per call. The memo is invalidated automatically by
- *   `bumpPublishVersion()`.
+ *   renderer (`publicRenderer.ts`). There the site content is fixed for a
+ *   given publish version, so the three page-invariant files (reset /
+ *   framework / style) are memoised by `publishVersion` and reused across
+ *   every render at that version — the expensive all-pages walk runs once per
+ *   publish, not once per request. Only `userStyles` (page-scoped) is rebuilt
+ *   per call. The memo is invalidated automatically by `bumpPublishVersion()`.
  */
 
 import { createHash } from 'node:crypto'
@@ -36,16 +35,14 @@ import {
   PUBLISHER_RESET_CSS,
   collectClassCSS,
   buildSiteFrameworkCss,
-  renderNode,
   collectUserStylesheetCss,
 } from '@core/publisher'
 import type {
-  RenderConfig,
-  RenderAccumulators,
   CssBundleFile,
   SiteCssBundle,
   SiteCssBundleId,
 } from '@core/publisher'
+import { collectSiteModuleAssets } from './siteModuleAssets'
 import { getPublishVersion, registerVersionedCacheReset } from './publishState'
 
 /**
@@ -82,24 +79,30 @@ export function buildSiteCssBundle(
 
 /**
  * Published-render variant of `buildSiteCssBundle`. Memoises the three
- * page-invariant files (reset / framework / style) by `publishVersion` and
- * site object, so the O(all-pages) module-CSS walk runs once per published
- * snapshot instead of once per render. Only `userStyles` is rebuilt per call
- * (it is page-scoped).
+ * page-invariant files (reset / framework / style) by `publishVersion`, so
+ * the O(all-pages) module-CSS walk runs once per publish version instead of
+ * once per render. Only `userStyles` is rebuilt per call (it is page-scoped).
  *
- * Safe ONLY for the published-snapshot render path, where all pages in one
- * snapshot share a single `site` object. Callers that pass draft / arbitrary
- * sites at the live version (preview, AI render, CSS-route fallback) must use
- * `buildSiteCssBundle` — sharing a render-path cache across them would serve
- * stale CSS.
+ * Memo key = publish version ALONE. The published site content is fixed for a
+ * given version: `publishDraftSite` is the only snapshot writer and it bumps
+ * the version right after committing, and incremental row publishes never
+ * write the site document (they bump too, which just re-primes the memo with
+ * identical content). The publish-time bake renders the NEXT version's content
+ * before the bump, so it passes `nextPublishVersion` explicitly — its entries
+ * can never collide with pre-publish renders at the old version.
+ *
+ * Safe ONLY for published-snapshot content. Callers that pass draft /
+ * arbitrary sites (preview, AI render) must use `buildSiteCssBundle` —
+ * sharing a render-path cache across them would serve stale CSS.
  */
 export function buildPublishedSiteCssBundle(
   site: SiteDocument,
   registry: IModuleRegistry,
   page?: Page,
+  publishVersion: number = getPublishVersion(),
 ): SiteCssBundle {
   return {
-    ...memoizedPageInvariantBundles(site, registry),
+    ...memoizedPageInvariantBundles(site, registry, publishVersion),
     userStyles: makeBundleFile('userStyles', collectUserStylesheetCss(site, page)),
   }
 }
@@ -119,26 +122,29 @@ function computePageInvariantBundles(
 // Page-invariant bundle memo, keyed by publish version. A bump invalidates it
 // (the next read sees a new version → recompute), so a content change can never
 // serve stale framework/style CSS. Registered with the shared test-reset hook.
-let pageInvariantCache: { version: number; site: SiteDocument; bundles: PageInvariantBundles } | null = null
+//
+// Deliberately NOT keyed on the site object: every consumer loads the snapshot
+// fresh (DB JSON parse per query), so an identity key would never hit — that
+// was exactly the bug that made every Layer B miss re-walk the whole site.
+let pageInvariantCache: { version: number; bundles: PageInvariantBundles } | null = null
 registerVersionedCacheReset(() => {
   pageInvariantCache = null
 })
 
 /**
- * Return the page-invariant bundles for the current publish version + site
- * object, computing them once and reusing the cached files on later renders of
- * the same snapshot.
+ * Return the page-invariant bundles for `version`, computing them once and
+ * reusing the cached files on later renders of the same publish version.
  */
 function memoizedPageInvariantBundles(
   site: SiteDocument,
   registry: IModuleRegistry,
+  version: number,
 ): PageInvariantBundles {
-  const version = getPublishVersion()
-  if (pageInvariantCache && pageInvariantCache.version === version && pageInvariantCache.site === site) {
+  if (pageInvariantCache && pageInvariantCache.version === version) {
     return pageInvariantCache.bundles
   }
   const bundles = computePageInvariantBundles(site, registry)
-  pageInvariantCache = { version, site, bundles }
+  pageInvariantCache = { version, bundles }
   return bundles
 }
 
@@ -148,43 +154,8 @@ function memoizedPageInvariantBundles(
  */
 function buildFrameworkCss(site: SiteDocument, registry: IModuleRegistry): string {
   const frameworkCss = buildSiteFrameworkCss(site)
-  const moduleCss = collectAllModuleCss(site, registry)
+  const moduleCss = Array.from(collectSiteModuleAssets(site, registry).cssMap.values()).join('\n')
   return [frameworkCss, moduleCss].filter(Boolean).join('\n')
-}
-
-/**
- * Walk every page's node tree and accumulate module CSS deduped by moduleId.
- *
- * The walker is `renderNode`, which also produces HTML strings — those are
- * thrown away here. Discarding the HTML is cheaper than maintaining a
- * separate CSS-only walker that would drift from the canonical render path
- * over time. The cssMap is shared across pages, so a module's CSS is
- * collected at most once for the whole site even if it appears on every page.
- *
- * Note: every base module emits `css: ''` — they are pure semantic-HTML
- * emitters and styling comes exclusively from user classes. The module-CSS
- * path exists for plugin modules that *might* emit CSS via their `render()`
- * return.
- */
-function collectAllModuleCss(site: SiteDocument, registry: IModuleRegistry): string {
-  // One accumulator shared across every page so a module's CSS is collected at
-  // most once for the whole site. infiniteLoopIds / holeNodeIds are unused here
-  // (we throw the HTML away) but still owned up-front — no lazy undefined.
-  const acc: RenderAccumulators = {
-    cssMap: new Map<string, string>(),
-    infiniteLoopIds: new Set<string>(),
-    holeNodeIds: new Set<string>(),
-  }
-  for (const page of site.pages) {
-    const config: RenderConfig = {
-      page,
-      site,
-      registry,
-      breakpointId: undefined,
-    }
-    renderNode(page.rootNodeId, config, acc)
-  }
-  return Array.from(acc.cssMap.values()).join('\n')
 }
 
 /**

@@ -20,6 +20,7 @@ export { DEFAULT_SITE_SETTINGS }
 export function makeAccumulators(): RenderAccumulators {
   return {
     cssMap: new Map<string, string>(),
+    jsMap: new Map<string, string>(),
     infiniteLoopIds: new Set<string>(),
     holeNodeIds: new Set<string>(),
   }

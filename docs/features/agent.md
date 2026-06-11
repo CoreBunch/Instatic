@@ -31,7 +31,7 @@ server/ai/
 │   ├── chat.ts             — POST /admin/api/ai/chat/:scope  (NDJSON stream)
 │   ├── toolResult.ts       — POST /admin/api/ai/tool-result  (bridge POST)
 │   ├── conversations.ts    — CRUD for ai_conversations rows
-│   ├── credentials.ts      — CRUD for ai_credentials rows (encrypted API keys); auto-seeds defaults on create
+│   ├── credentials.ts      — CRUD for ai_credentials rows (encrypted secrets + endpoint credentials); auto-seeds defaults on create
 │   ├── defaults.ts         — GET /admin/api/ai/defaults (per-scope defaults)
 │   ├── models.ts           — list available models per provider; enriches Anthropic/OpenAI with catalogue prices + context windows
 │   └── audit.ts            — GET /admin/api/ai/audit (usage rollups for the Audit tab; gated by ai.audit.read)
@@ -105,7 +105,7 @@ src/admin/pages/ai/
 ├── AiPage.tsx              — /admin/ai workspace; three tabs gated by ai.providers.manage + ai.audit.read
 ├── AiPage.module.css
 └── tabs/
-    ├── ProvidersTab.tsx    — CRUD for ai_credentials rows (encrypted API keys)
+    ├── ProvidersTab.tsx    — CRUD for ai_credentials rows (provider-derived API key or endpoint credential shape)
     ├── DefaultsTab.tsx     — per-scope model defaults editor
     ├── AuditTab.tsx        — usage audit view: totals strip, by-model/user/scope tables, daily bar chart
     ├── UsageTablePanel.tsx — shared table scaffolding (title + hint header, numeric-aligned columns, empty row)

@@ -89,7 +89,12 @@ export function activatePluginModulePack(
   deactivatePluginModulePack(manifest.id)
   const ids = new Set<string>()
   for (const definition of definitions) {
-    const hostModule = pluginModuleToHostModule(manifest.id, definition, componentFactory)
+    const hostModule = pluginModuleToHostModule(
+      manifest.id,
+      definition,
+      componentFactory,
+      manifest.grantedPermissions ?? [],
+    )
     registry.registerOrReplace(hostModule)
     ids.add(hostModule.id)
   }
@@ -159,8 +164,8 @@ export interface SandboxedModulePack {
     /** Optional iframe-backed editor preview source. */
     editorRuntime?: PluginEditorRuntime
   }>
-  render(moduleId: string, props: Record<string, unknown>, children: string[]): { html: string; css?: string }
-  preview(moduleId: string, props: Record<string, unknown>, children: string[]): { html: string; css?: string }
+  render(moduleId: string, props: Record<string, unknown>, children: string[]): { html: string; css?: string; js?: string }
+  preview(moduleId: string, props: Record<string, unknown>, children: string[]): { html: string; css?: string; js?: string }
   dispose(): void
 }
 
@@ -205,7 +210,12 @@ export function activateSandboxedPluginModulePack(
         ? (props, children) => pack.preview(meta.id, props, children)
         : undefined,
     }
-    const hostModule = pluginModuleToHostModule(manifest.id, definition, STUB_COMPONENT_FACTORY)
+    const hostModule = pluginModuleToHostModule(
+      manifest.id,
+      definition,
+      STUB_COMPONENT_FACTORY,
+      manifest.grantedPermissions ?? [],
+    )
     registry.registerOrReplace(hostModule)
     ids.add(hostModule.id)
   }

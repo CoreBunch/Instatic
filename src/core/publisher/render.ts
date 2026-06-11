@@ -46,6 +46,7 @@ import type { PublishedPageRuntimeAssets } from '@core/site-runtime/schemas'
 import { hasPublishedRuntimeScripts, scriptTagsForRuntimeAssets } from '@core/site-runtime'
 import { renderNode } from './renderNode'
 import { findDynamicNodeIds } from './dynamicDetection'
+import { collectHoleSubtreeModuleIds } from './holeSubtreeModules'
 import type {
   RenderConfig,
   RenderAccumulators,
@@ -72,6 +73,13 @@ interface PublishedPage {
   filename: string
   /** Complete <!DOCTYPE html> document — no editor dependencies */
   html: string
+  /**
+   * Sorted module-JS CANDIDATES for this page: moduleIds that emitted `js`
+   * during this render ∪ every moduleId inside this page's hole subtrees.
+   * The server intersects this with the site module-JS map before injecting
+   * `<script>` tags (see `server/publish/moduleJsBundle.ts`).
+   */
+  jsModuleIds: string[]
 }
 
 export interface PublishPageOptions {
@@ -510,12 +518,14 @@ export function publishPage(
   }
 
   // Mutable outputs, owned here and threaded by reference through the whole
-  // walk. All three are initialised up-front (no lazy undefined): the walk
-  // appends module CSS to `cssMap`, infinite-loop ids to `infiniteLoopIds`,
-  // and the ids of nodes that actually emitted a `<instatic-hole>` to
-  // `holeNodeIds`. After the walk, the head builders read their `.size`.
+  // walk. All four are initialised up-front (no lazy undefined): the walk
+  // appends module CSS to `cssMap`, module JS to `jsMap`, infinite-loop ids
+  // to `infiniteLoopIds`, and the ids of nodes that actually emitted a
+  // `<instatic-hole>` to `holeNodeIds`. After the walk, the head builders
+  // read their `.size`.
   const acc: RenderAccumulators = {
     cssMap: new Map<string, string>(),
+    jsMap: new Map<string, string>(),
     infiniteLoopIds: new Set<string>(),
     holeNodeIds: new Set<string>(),
   }
@@ -524,6 +534,16 @@ export function publishPage(
   // into `acc.cssMap`; in external mode that result is discarded because the
   // same data is already in the pre-built `framework.css` bundle.
   const bodyHtml = renderNode(page.rootNodeId, config, acc)
+
+  // Per-page module-JS candidates: render-emitted ids ∪ static hole-subtree
+  // ids. Hole subtrees are NOT rendered here, so the static walk is the only
+  // way to know what their request-time fragments will need.
+  const jsModuleIds = [
+    ...new Set([
+      ...acc.jsMap.keys(),
+      ...collectHoleSubtreeModuleIds(page, site, dynamicNodeIds),
+    ]),
+  ].sort()
 
   // Cascade order (both inline/external): reset → framework (tokens +
   // generated utilities + module CSS) → user class CSS. User classes load
@@ -559,5 +579,6 @@ export function publishPage(
   return {
     filename: slugToFilename(page.slug, page.title),
     html,
+    jsModuleIds,
   }
 }

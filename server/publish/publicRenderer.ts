@@ -4,12 +4,14 @@ import { registry } from '@core/module-engine'
 import { publishPage } from '@core/publisher'
 import { buildRouteFrame } from '@core/templates/contextFrames'
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
+import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
 import { resolveTemplateChain, composeTemplateChain } from '@core/templates'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { prefetchLoopData, publishedDataRowToLoopItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { getPublishVersion } from './publishState'
 import type { Page } from '@core/page-tree'
+import type { SiteCssBundle } from '@core/publisher'
 import type { PublishedDataRow } from '@core/data/schemas'
 import type { DbClient } from '../db/client'
 import type { PublishedPageSnapshot } from '../repositories/publish'
@@ -39,6 +41,26 @@ export interface RendererOutput {
   pageId: string
   slug: string
   siteId: string
+  /**
+   * Sorted moduleIds whose published JS this page must load — already
+   * intersected with the site module-JS map, so `injectModuleScripts` can
+   * emit tags without any further lookup.
+   */
+  jsModuleIds: string[]
+  /**
+   * Publish version this page was rendered at (the bake passes the NEXT
+   * version, live renders the current one) — stamped into module-js `?v=`
+   * URLs so they cache-bust in lockstep with hole placeholders.
+   */
+  publishVersion: number
+  /**
+   * The CSS bundle this render's HTML actually references (`<link href>`
+   * hashes). The publish-time bake writes these exact files into the slot so
+   * every baked artefact's CSS is on disk — including hashes that only exist
+   * for template-composed renders (entry templates wrap rows in a merged page
+   * whose page-scoped `userStyles` hash can differ from any raw page's).
+   */
+  cssBundle: SiteCssBundle
 }
 
 export interface RenderPublishedSnapshotContext {
@@ -68,13 +90,15 @@ async function renderMergedTemplate(
   snapshot: PublishedPageSnapshot,
   templateContext: TemplateRenderDataContext | undefined,
   ctx: RenderPublishedSnapshotContext,
-): Promise<string> {
-  const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged)
+): Promise<{ html: string; jsModuleIds: string[]; publishVersion: number; cssBundle: SiteCssBundle }> {
+  const publishVersion = ctx.publishVersion ?? getPublishVersion()
+  const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged, publishVersion)
+  const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
   const [loopData, mediaAssets] = await Promise.all([
     prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url),
     prefetchMediaAssets(merged, snapshot.site, registry, ctx.db),
   ])
-  return publishPage(merged, snapshot.site, registry, {
+  const published = publishPage(merged, snapshot.site, registry, {
     templateContext,
     runtimeAssets: snapshot.runtimeAssets,
     runtimePackageImportmap: snapshot.runtimePackageImportmap,
@@ -84,8 +108,13 @@ async function renderMergedTemplate(
     loopData,
     mediaAssets,
     loopEndpointBaseUrl: LOOP_ENDPOINT_BASE_URL,
-    publishVersion: ctx.publishVersion ?? getPublishVersion(),
-  }).html
+    publishVersion,
+  })
+  // Per-page injection set = candidates from the render (emitted ∪ hole
+  // subtrees) ∩ the site module-JS map — over-inclusive candidates from
+  // unbaked holes are filtered down to modules that actually ship JS.
+  const jsModuleIds = published.jsModuleIds.filter((id) => moduleJsMap.has(id))
+  return { html: published.html, jsModuleIds, publishVersion, cssBundle }
 }
 
 export async function renderPublishedSnapshot(
@@ -108,8 +137,8 @@ export async function renderPublishedSnapshot(
     ? { entryStack: [], route: buildRouteFrame(ctx.url.toString()) }
     : undefined
 
-  const html = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
-  return { html, pageId: snapshot.pageRowId, slug: page.slug, siteId: snapshot.site.id }
+  const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
+  return { ...rendered, pageId: snapshot.pageRowId, slug: page.slug, siteId: snapshot.site.id }
 }
 
 export async function renderPublishedDataRowTemplate(
@@ -132,6 +161,6 @@ export async function renderPublishedDataRowTemplate(
     ...(ctx.url ? { route: buildRouteFrame(ctx.url.toString()) } : {}),
   }
 
-  const html = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
-  return { html, pageId: merged.id, slug: merged.slug, siteId: snapshot.site.id }
+  const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
+  return { ...rendered, pageId: merged.id, slug: merged.slug, siteId: snapshot.site.id }
 }

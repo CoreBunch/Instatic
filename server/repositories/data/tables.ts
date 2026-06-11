@@ -5,6 +5,7 @@
  *                          first in a fixed order (pages, posts, components);
  *                          custom tables follow, ordered by created_at.
  *   getDataTable         — read a single table by id (or null)
+ *   getDataTableBySlug   — read a single table by slug (indexed; or null)
  *   createDataTable      — insert a new table
  *   updateDataTable      — partial update (all fields optional)
  *   softDeleteDataTable      — set deleted_at; refuses if rows exist or if the
@@ -13,6 +14,7 @@
  */
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../../db/client'
+import { countDataRows } from './rows/read'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { normalizeDataTableFields } from '@core/data/fields'
 import type {
@@ -153,6 +155,25 @@ export async function getDataTable(db: DbClient, tableId: string): Promise<DataT
            created_by_user_id, updated_by_user_id, created_at, updated_at
     from data_tables
     where id = ${tableId}
+      and deleted_at is null
+    limit 1
+  `
+  return rows[0] ? mapTable(rows[0]) : null
+}
+
+/**
+ * Read a single non-deleted table by slug. One indexed lookup — the partial
+ * unique index `data_tables_slug_active_idx` covers it — so per-call code
+ * paths (every `cms.content.*` plugin api-call resolves its table this way)
+ * never scan and re-parse the whole table list.
+ */
+export async function getDataTableBySlug(db: DbClient, slug: string): Promise<DataTable | null> {
+  const { rows } = await db<DataTableRow>`
+    select id, name, slug, kind, route_base, singular_label, plural_label,
+           primary_field_id, fields_json, system,
+           created_by_user_id, updated_by_user_id, created_at, updated_at
+    from data_tables
+    where slug = ${slug}
       and deleted_at is null
     limit 1
   `
@@ -303,13 +324,7 @@ export async function softDeleteDataTable(
   if (!table) return null
   if (table.system === true) return null
 
-  const { rows: countRows } = await db<{ count: number }>`
-    select count(*) as count
-    from data_rows
-    where table_id = ${tableId}
-      and deleted_at is null
-  `
-  if (Number(countRows[0]?.count ?? 0) > 0) return null
+  if (await countDataRows(db, tableId) > 0) return null
 
   const { rows } = await db<DataTableRow>`
     update data_tables

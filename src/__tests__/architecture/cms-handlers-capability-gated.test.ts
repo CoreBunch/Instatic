@@ -68,6 +68,9 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   // pages, not a CMS admin route. Reached only via the public router.
   ['loop.ts', 'Published-page runtime endpoint; not a /admin/api/cms/ route.'],
   ['hole.ts', 'Published-page runtime endpoint; not a /admin/api/cms/ route.'],
+  // Module-JS assets — `/_instatic/module-js/<moduleId>.js` serves published
+  // module runtimes to anonymous visitors, same trust model as hole/loop.
+  ['moduleJs.ts', 'Published-page runtime endpoint; not a /admin/api/cms/ route.'],
   // Plugins sub-handlers — the dispatcher at plugins/index.ts resolves
   // capability + step-up via `resolvePluginRoutePolicy` and runs the gate
   // before delegating to any of these.

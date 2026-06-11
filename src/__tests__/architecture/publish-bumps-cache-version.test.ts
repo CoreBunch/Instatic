@@ -1,12 +1,15 @@
 /**
  * Architecture gate: every publish/unpublish entry point in
- * `server/repositories/` calls `bumpPublishVersion()` and imports it from
- * the publish-state module.
+ * `server/repositories/` bumps the publish version — either the bare
+ * `bumpPublishVersion()` (publishes, which already hold the publish lock) or
+ * `bumpPublishVersionSerialized()` (retractions outside a publish: unpublish,
+ * soft-delete, table move) — and imports it from the publish-state module.
  *
  * Covered files:
  *   - server/repositories/publish.ts            (publishDraftSite)
  *   - server/repositories/data/publish.ts       (publishDataRow)
- *   - server/repositories/data/rows/mutations.ts (updateDataRowStatus — unpublish)
+ *   - server/repositories/data/rows/mutations.ts (updateDataRowStatus — unpublish;
+ *                                                 updateDataRowTable — route move)
  *
  * A simple text scan is sufficient — no AST parsing needed. The check matches
  * the pattern used by other architecture tests in this directory.
@@ -35,9 +38,12 @@ const FILES_UNDER_TEST = Object.keys(EXPECTED_IMPORT_PATHS)
 
 describe('publish-bumps-cache-version', () => {
   for (const file of FILES_UNDER_TEST) {
-    it(`${file} calls bumpPublishVersion()`, () => {
+    it(`${file} bumps the publish version`, () => {
       const src = read(file)
-      expect(src).toContain('bumpPublishVersion()')
+      const bumps =
+        src.includes('bumpPublishVersion()') ||
+        src.includes('bumpPublishVersionSerialized()')
+      expect(bumps).toBe(true)
     })
 
     it(`${file} imports bumpPublishVersion from the publish-state module`, () => {

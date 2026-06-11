@@ -172,6 +172,13 @@ function renderStandardNode(
     acc.cssMap.set(node.moduleId, sanitizeModuleCSS(output.css))
   }
 
+  // JS dedup — one entry per moduleId, mirroring CSS. No escaping needed:
+  // module JS is served as an external file (`/_instatic/module-js/<id>.js`),
+  // never inlined into the document.
+  if (output.js && !acc.jsMap.has(node.moduleId)) {
+    acc.jsMap.set(node.moduleId, output.js)
+  }
+
   // base.body has no wrapper element — its classIds + inline styles go on
   // <body> in publishPage.
   if (node.moduleId === 'base.body') return output.html

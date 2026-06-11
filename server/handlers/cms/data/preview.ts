@@ -24,6 +24,8 @@ import { resolveTemplateChain, composeTemplateChain } from '@core/templates'
 import { buildRouteFrame } from '@core/templates/contextFrames'
 import { publishPage } from '@core/publisher'
 import { buildSiteCssBundle } from '../../../publish/siteCssBundle'
+import { buildPublishedSiteModuleJsMap } from '../../../publish/moduleJsBundle'
+import { getPublishVersion } from '../../../publish/publishState'
 import { prefetchLoopData, publishedDataRowToLoopItem } from '../../../publish/loopPrefetch'
 import { prefetchMediaAssets } from '../../../publish/mediaPrefetch'
 import { registry } from '@core/module-engine'
@@ -109,7 +111,7 @@ export async function handleRowPreview(
   const publicPath = buildEntryPublicPath(table.routeBase, draftPublishedRow.slug)
   const syntheticUrl = new URL(`http://localhost${publicPath}`)
 
-  const html = publishPage(merged, snapshot.site, registry, {
+  const published = publishPage(merged, snapshot.site, registry, {
     templateContext: {
       entryStack: [publishedDataRowToLoopItem(draftPublishedRow)],
       route: buildRouteFrame(syntheticUrl.toString()),
@@ -122,10 +124,19 @@ export async function handleRowPreview(
     loopData,
     mediaAssets,
     loopEndpointBaseUrl: LOOP_ENDPOINT_BASE_URL,
-  }).html
+  })
+  const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
 
   const finalHtml = await applyPublishedHtmlPipeline(
-    { html, pageId: merged.id, slug: merged.slug, siteId: snapshot.site.id },
+    {
+      html: published.html,
+      pageId: merged.id,
+      slug: merged.slug,
+      siteId: snapshot.site.id,
+      cssBundle,
+      jsModuleIds: published.jsModuleIds.filter((id) => moduleJsMap.has(id)),
+      publishVersion: getPublishVersion(),
+    },
     db,
   )
 

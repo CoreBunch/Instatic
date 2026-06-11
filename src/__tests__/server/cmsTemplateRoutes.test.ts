@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { DbResult } from '../../../server/db'
 import { handleServerRequest } from '../../../server/router'
+import { resetForTests } from '../../../server/publish/renderCache'
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
 import { makePage, makeSite } from '../publisher/helpers'
 import { createFakeDb } from './dbTestFake'
@@ -31,6 +32,13 @@ function rowDate(value: string) {
 }
 
 describe('CMS dynamic template routes', () => {
+  // Each test serves a different snapshot fixture at the same publish version.
+  // Reset the render cache + version-keyed snapshot memos so one test's
+  // published site can't leak into the next (or in from another test file).
+  beforeEach(() => {
+    resetForTests()
+  })
+
   it('renders a published data row through the highest priority page template', async () => {
     const page = makePage({
       root: { moduleId: 'base.body', props: {}, children: ['title'] },
@@ -72,7 +80,7 @@ describe('CMS dynamic template routes', () => {
         return undefined
       },
       (sql, params) => {
-        if (!sql.startsWith('select data_row_versions.snapshot_json')) return undefined
+        if (!sql.includes('site_snapshots.site_json')) return undefined
 
         // getPublishedPageBySlug — has data_rows.slug parameter; return empty
         // (no published page at 'posts/dynamic-post')
@@ -83,7 +91,16 @@ describe('CMS dynamic template routes', () => {
 
         // getLatestPublishedSiteSnapshot — return the snapshot so the template
         // renderer can find the matching template page
-        return { rows: [{ snapshot_json: snapshot }], rowCount: 1 }
+        return {
+          rows: [{
+            row_id: snapshot.pageRowId,
+            site_json: snapshot.site,
+            runtime_assets_json: null,
+            importmap_body: null,
+            importmap_sha256: null,
+          }],
+          rowCount: 1,
+        }
       },
       (sql, params) => {
         if (!sql.startsWith('select data_row_versions.id')) return undefined
@@ -135,7 +152,7 @@ describe('CMS dynamic template routes', () => {
       // DB that would error if the snapshot path were consulted
       const db = createFakeDb(async (sql: string): Promise<DbResult> => {
         const s = sql.toLowerCase()
-        if (s.includes('snapshot_json')) {
+        if (s.includes('site_snapshots')) {
           throw new Error('Snapshot queried despite disk artefact hit')
         }
         if (s.includes('count(*) as count from site')) return { rows: [{ count: 1 }], rowCount: 1 }
@@ -201,12 +218,21 @@ describe('CMS dynamic template routes', () => {
           }
           return undefined
         },
-        (sql, params) => {
-          if (!sql.startsWith('select data_row_versions.snapshot_json')) return undefined
+        (sql) => {
+          if (!sql.includes('site_snapshots.site_json')) return undefined
           if (sql.includes('data_rows.slug =')) {
             return { rows: [], rowCount: 0 }
           }
-          return { rows: [{ snapshot_json: snapshot }], rowCount: 1 }
+          return {
+            rows: [{
+              row_id: snapshot.pageRowId,
+              site_json: snapshot.site,
+              runtime_assets_json: null,
+              importmap_body: null,
+              importmap_sha256: null,
+            }],
+            rowCount: 1,
+          }
         },
         (sql, params) => {
           if (!sql.startsWith('select data_row_versions.id')) return undefined
@@ -255,7 +281,7 @@ describe('CMS dynamic template routes', () => {
   it('redirects an old published data row slug to the active published slug', async () => {
     const db = makeTemplateRouteFakeDb([
       (sql, params) => {
-        if (!sql.startsWith('select data_row_versions.snapshot_json')) return undefined
+        if (!sql.includes('site_snapshots.site_json')) return undefined
         // getPublishedPageBySlug — return empty (no published page at this slug)
         if (sql.includes('data_rows.slug =')) {
           expect(params).toEqual(['posts/untitled'])

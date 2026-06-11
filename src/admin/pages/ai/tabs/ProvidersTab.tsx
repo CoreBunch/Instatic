@@ -30,13 +30,13 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 type ProviderId = 'anthropic' | 'openai' | 'ollama' | 'openrouter'
 type AuthMode = 'apiKey' | 'baseUrl'
 
-// Anthropic + OpenAI + OpenRouter require an API key. Ollama uses a local
-// endpoint URL with an optional bearer token for proxied installs.
-const PROVIDERS: Array<{ id: ProviderId; label: string; modes: AuthMode[] }> = [
-  { id: 'anthropic', label: 'Anthropic (Claude)', modes: ['apiKey'] },
-  { id: 'openai', label: 'OpenAI', modes: ['apiKey'] },
-  { id: 'openrouter', label: 'OpenRouter', modes: ['apiKey'] },
-  { id: 'ollama', label: 'Ollama (local)', modes: ['baseUrl'] },
+// Each provider has exactly one credential shape; the UI derives it instead
+// of asking the user to choose an auth mode that cannot vary.
+const PROVIDERS: Array<{ id: ProviderId; label: string; authMode: AuthMode }> = [
+  { id: 'anthropic', label: 'Anthropic (Claude)', authMode: 'apiKey' },
+  { id: 'openai', label: 'OpenAI', authMode: 'apiKey' },
+  { id: 'openrouter', label: 'OpenRouter', authMode: 'apiKey' },
+  { id: 'ollama', label: 'Ollama (local)', authMode: 'baseUrl' },
 ]
 
 const AUTH_MODE_LABEL: Record<AuthMode, string> = {
@@ -131,7 +131,7 @@ export function ProvidersTab() {
       <div className={styles.sectionHeader}>
         <div>
           <h2>Credentials</h2>
-          <p>API keys for each AI provider. Plaintext is encrypted at rest.</p>
+          <p>Provider credentials for AI features. Secrets are encrypted at rest.</p>
         </div>
         <Button type="button" variant="primary" size="sm" onClick={() => setShowDialog(true)}>
           <PlusIcon size={14} aria-hidden="true" />
@@ -270,14 +270,12 @@ function AddCredentialDialog({
   onCreated: () => void
 }) {
   const providerInputId = useId()
-  const authModeInputId = useId()
   const labelInputId = useId()
   const apiKeyInputId = useId()
   const baseUrlInputId = useId()
   const formId = useId()
 
   const [providerId, setProviderId] = useState<ProviderId>('anthropic')
-  const [authMode, setAuthMode] = useState<AuthMode>('apiKey')
   const [displayLabel, setDisplayLabel] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState('http://localhost:11434')
@@ -285,10 +283,7 @@ function AddCredentialDialog({
   const [error, setError] = useState<string | null>(null)
 
   const providerSpec = PROVIDERS.find((p) => p.id === providerId)!
-  const availableModes = providerSpec.modes
-
-  // Coerce auth mode when provider changes if it's no longer supported.
-  const effectiveAuthMode = availableModes.includes(authMode) ? authMode : availableModes[0]!
+  const effectiveAuthMode = providerSpec.authMode
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -321,16 +316,6 @@ function AddCredentialDialog({
             value={providerId}
             onChange={(e) => setProviderId(e.currentTarget.value as ProviderId)}
             options={PROVIDERS.map((p) => ({ value: p.id, label: p.label }))}
-          />
-        </div>
-
-        <div className={styles.dialogField}>
-          <label htmlFor={authModeInputId} className={styles.dialogFieldLabel}>Authentication</label>
-          <Select
-            id={authModeInputId}
-            value={effectiveAuthMode}
-            onChange={(e) => setAuthMode(e.currentTarget.value as AuthMode)}
-            options={availableModes.map((m) => ({ value: m, label: AUTH_MODE_LABEL[m] }))}
           />
         </div>
 

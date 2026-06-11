@@ -10,7 +10,7 @@ CMS-native forms let the visual editor build semantic HTML forms from primitive 
 - Paste HTML, agent HTML insert/replace, and Super Import all use `@core/htmlImport`, so semantic HTML form tags import as these same primitive modules.
 - CMS form snapshots are derived at publish/request time by `src/core/forms/snapshot.ts`.
 - Public submissions go through `POST /_instatic/form/challenge` and `POST /_instatic/form/submit`, implemented in `server/forms/handler.ts`.
-- Published pages that contain CMS-native forms get `/_instatic/form-runtime.js` injected by `server/forms/formRuntime.ts`.
+- The browser runtime ships through the module-JS channel: `base.form`'s render() emits it as `js` when `mode === 'cms'` (`src/modules/base/forms/formRuntimeJs.ts`), published pages load it from `/_instatic/module-js/base.form.js`, and `server/forms/formRuntime.ts`'s `stampFormPageTokens` stamps `data-instatic-page-token` + `data-instatic-page-id` onto every CMS form tag — on baked pages and on hole fragments.
 
 ## Editor Model
 

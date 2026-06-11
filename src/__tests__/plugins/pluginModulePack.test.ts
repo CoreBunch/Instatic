@@ -96,7 +96,7 @@ describe('sandboxed module-pack VM disposal', () => {
 
 describe('pluginModuleToHostModule', () => {
   it('produces a host module definition that delegates render to the plugin', () => {
-    const hostModule = pluginModuleToHostModule('acme.canvas', counterDefinition, () => () => null)
+    const hostModule = pluginModuleToHostModule('acme.canvas', counterDefinition, () => () => null, [])
     expect(hostModule.id).toBe('acme.canvas.counter')
     expect(hostModule.trusted).toBe(false)
     expect(hostModule.render({ count: 5 }, [])).toEqual({
@@ -106,10 +106,10 @@ describe('pluginModuleToHostModule', () => {
 
   it('rejects module ids that do not start with the plugin id', () => {
     expect(() =>
-      pluginModuleToHostModule('acme.canvas', { ...counterDefinition, id: 'evil.canvas.counter' }, () => () => null),
+      pluginModuleToHostModule('acme.canvas', { ...counterDefinition, id: 'evil.canvas.counter' }, () => () => null, []),
     ).toThrow(PluginModuleValidationError)
     expect(() =>
-      pluginModuleToHostModule('acme.canvas', { ...counterDefinition, id: 'base.text' }, () => () => null),
+      pluginModuleToHostModule('acme.canvas', { ...counterDefinition, id: 'base.text' }, () => () => null, []),
     ).toThrow(PluginModuleValidationError)
   })
 
@@ -121,8 +121,38 @@ describe('pluginModuleToHostModule', () => {
 
   it('rejects modules without render', () => {
     expect(() =>
-      pluginModuleToHostModule('acme.canvas', { ...counterDefinition, render: undefined as unknown as typeof counterDefinition.render }, () => () => null),
+      pluginModuleToHostModule('acme.canvas', { ...counterDefinition, render: undefined as unknown as typeof counterDefinition.render }, () => () => null, []),
     ).toThrow(/must export a render/)
+  })
+
+  it('drops render() js without the frontend.assets grant and warns once per module', () => {
+    const jsDefinition = {
+      ...counterDefinition,
+      id: 'acme.canvas.jsy',
+      render: () => ({ html: '<div></div>', js: '(function(){})();' }),
+    }
+    const warnings: string[] = []
+    const originalWarn = console.warn
+    console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')) }
+    try {
+      const hostModule = pluginModuleToHostModule('acme.canvas', jsDefinition, () => () => null, [])
+      expect(hostModule.render({}, []).js).toBeUndefined()
+      expect(hostModule.render({}, []).js).toBeUndefined()
+      expect(warnings.filter((w) => w.includes('frontend.assets')).length).toBe(1)
+      expect(warnings[0]).toContain('[plugin-module:acme.canvas.jsy]')
+    } finally {
+      console.warn = originalWarn
+    }
+  })
+
+  it('passes render() js through with the frontend.assets grant', () => {
+    const jsDefinition = {
+      ...counterDefinition,
+      id: 'acme.canvas.jsy',
+      render: () => ({ html: '<div></div>', js: '(function(){})();' }),
+    }
+    const hostModule = pluginModuleToHostModule('acme.canvas', jsDefinition, () => () => null, ['frontend.assets'])
+    expect(hostModule.render({}, []).js).toBe('(function(){})();')
   })
 })
 

@@ -19,7 +19,7 @@
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../../../db/client'
 import type { DataRow, DataRowStatus, DeletedRowSummary } from '@core/data/schemas'
-import { bumpPublishVersion, withPublishLock } from '../../../publish/publishState'
+import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import { type InsertDataRowInput, type UpdateDataRowDraftInput } from './mapper'
 import { isoDateOrNull } from '@core/utils/isoDate'
 import { getDataRow } from './read'
@@ -71,6 +71,23 @@ export async function saveDataRowDraft(
   actorUserId: string | null = null,
   pluginActorId: string | null = null,
 ): Promise<DataRow | null> {
+  const updated = await updateDataRowDraftCells(db, rowId, input, actorUserId, pluginActorId)
+  return updated ? getDataRow(db, rowId) : null
+}
+
+/**
+ * The write half of `saveDataRowDraft`, without the hydrated re-read. The
+ * roster reconcilers (PUT /pages, PUT /components) discard the row anyway —
+ * re-reading every saved row through the user-ref joins doubled their query
+ * count per save. Returns whether a (non-deleted) row matched.
+ */
+export async function updateDataRowDraftCells(
+  db: DbClient,
+  rowId: string,
+  input: UpdateDataRowDraftInput,
+  actorUserId: string | null = null,
+  pluginActorId: string | null = null,
+): Promise<boolean> {
   const { rows } = await db<{ id: string }>`
     update data_rows
     set cells_json = ${input.cells},
@@ -82,7 +99,7 @@ export async function saveDataRowDraft(
       and deleted_at is null
     returning id
   `
-  return rows[0] ? getDataRow(db, rows[0].id) : null
+  return rows.length > 0
 }
 
 /**
@@ -174,6 +191,10 @@ export async function updateDataRowTable(
   if (!rows[0]) return { ok: false, reason: 'row_not_found' }
   const updated = await getDataRow(db, rows[0].id)
   if (!updated) return { ok: false, reason: 'row_not_found' }
+  // Moving a published row changes its public route (the route base comes
+  // from the table) — invalidate the render cache so the old URL stops
+  // being served.
+  if (row.status === 'published') await bumpPublishVersionSerialized()
   return { ok: true, row: updated }
 }
 
@@ -201,9 +222,8 @@ export async function updateDataRowStatus(
     returning id
   `
   if (!rows[0]) return null
-  // Invalidate the render cache. Serialize the bump with publishes so it can't
-  // strand a concurrent publish's baked shells (ISS-038).
-  await withPublishLock(async () => { bumpPublishVersion() })
+  // Invalidate the render cache — the route's published state changed.
+  await bumpPublishVersionSerialized()
   return getDataRow(db, rows[0].id)
 }
 

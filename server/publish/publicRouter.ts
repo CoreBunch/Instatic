@@ -28,11 +28,15 @@
  *      immediately (no DB, no render). On a miss, it falls through to
  *      `resolvePublicRoute` + Layer B.
  *
- *      Layer B: redirects and not-founds are resolved before the cache
- *      so they are never stored. The render factory is invoked at most
- *      once per concurrent key burst (single-flight) and its result is
+ *      Layer B: a warm cache entry (only ever a 200 render at the current
+ *      publish version) is served BEFORE route resolution, so cache hits do
+ *      zero DB work. On a miss, redirects and not-founds resolve before the
+ *      factory so they are never stored. The render factory is invoked at
+ *      most once per concurrent key burst (single-flight) and its result is
  *      stored in the LRU keyed by (urlPath, queryString, publishVersion).
- *      The cache is invalidated on every publish via `bumpPublishVersion`.
+ *      The cache is invalidated by `bumpPublishVersion`, which fires on
+ *      every mutation that changes what a published URL serves (publish,
+ *      unpublish, soft-delete, table move).
  *
  * The `publicSlugFromPath` helper is exported because the loop runtime
  * (`server/handlers/cms/loop.ts`) needs the same path → slug
@@ -62,17 +66,16 @@ import {
   getDataRowRedirectByRoute,
   getPublishedDataRowByRoute,
 } from '../repositories/data/publish'
-import {
-  getLatestPublishedSiteSnapshot,
-  getPublishedPageBySlug,
-} from '../repositories/publish'
+import { getPublishedPageBySlug } from '../repositories/publish'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import {
   renderPublishedDataRowTemplate,
   renderPublishedSnapshot,
 } from './publicRenderer'
 import { readArtefact } from './staticArtefact'
-import { getOrRender } from './renderCache'
+import { getOrRender, peek } from './renderCache'
+import { getLatestSnapshotForVersion } from './publishedSnapshotCache'
+import { getPublishVersion } from './publishState'
 import { canonicalRenderQuery } from './loopPrefetch'
 
 // ---------------------------------------------------------------------------
@@ -166,8 +169,9 @@ export async function resolvePublicRoute(
     // into the `pages` table on creation (and the boot backfill catches
     // any pre-existing table that's missing one). So a missing
     // siteSnapshot here means a corrupt install — surface that as
-    // not-found rather than half-rendering.
-    const siteSnapshot = await getLatestPublishedSiteSnapshot(db)
+    // not-found rather than half-rendering. The snapshot is memoised per
+    // publish version, so warm row requests skip the full-site parse.
+    const siteSnapshot = await getLatestSnapshotForVersion(db, getPublishVersion())
     if (!siteSnapshot) return { kind: 'not-found' }
     return { kind: 'row', snapshot: siteSnapshot, row }
   }
@@ -231,8 +235,19 @@ export async function renderPublicResolution(
     }
   }
 
-  // Resolve once outside the cache factory so redirects and not-founds are
-  // never stored in the LRU.
+  // ── Layer B fast-path: serve a warm cached render before resolving ───────
+  // Only 200 renders are ever stored, so a version-matched hit can be served
+  // without touching the DB. Route retractions (unpublish, soft-delete, table
+  // move) bump the publish version, which turns every cached entry into a
+  // miss — a deleted route can never be served from a stale entry.
+  const cacheKey = { urlPath: url.pathname, queryString: canonicalQuery }
+  const warm = peek(cacheKey)
+  if (warm) {
+    return new Response(warm.body, { headers: warm.headers, status: warm.status })
+  }
+
+  // Resolve outside the cache factory so redirects and not-founds are never
+  // stored in the LRU.
   const resolution = await resolvePublicRoute(db, url)
   if (resolution.kind === 'not-found') return null
   if (resolution.kind === 'redirect') {
@@ -244,7 +259,7 @@ export async function renderPublicResolution(
 
   // ── Layer B: in-memory LRU cache for the expensive render path ───────────
   const cached = await getOrRender(
-    { urlPath: url.pathname, queryString: canonicalQuery },
+    cacheKey,
     async () => {
       const rendered = resolution.kind === 'page'
         ? await renderPublishedSnapshot(resolution.snapshot, { db, url })

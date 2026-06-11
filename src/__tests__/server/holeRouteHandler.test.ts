@@ -91,9 +91,17 @@ function makeFakeDb(snapshot: ReturnType<typeof makeSnapshot> | null): DbClient 
     const sql = strings.reduce<string>((acc, str, i) => (i === 0 ? str : `${acc}$${i}${str}`), '')
     const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase()
 
-    if (normalized.includes('select data_row_versions.snapshot_json')) {
+    if (normalized.includes('site_snapshots.site_json')) {
       return {
-        rows: snapshot ? [{ snapshot_json: snapshot } as Row] : [],
+        rows: snapshot
+          ? [{
+              row_id: snapshot.pageRowId,
+              site_json: snapshot.site,
+              runtime_assets_json: null,
+              importmap_body: null,
+              importmap_sha256: null,
+            } as unknown as Row]
+          : [],
         rowCount: snapshot ? 1 : 0,
       }
     }
@@ -124,10 +132,19 @@ function makeCountingDb(snapshot: ReturnType<typeof makeSnapshot>): {
   ): Promise<DbResult<Row>> => {
     const sql = strings.reduce<string>((acc, str, i) => (i === 0 ? str : `${acc}$${i}${str}`), '')
     const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase()
-    if (normalized.includes('select data_row_versions.snapshot_json')) {
+    if (normalized.includes('site_snapshots.site_json')) {
       loads++
       await Promise.resolve() // let other in-flight callers join before resolving
-      return { rows: [{ snapshot_json: snapshot } as Row], rowCount: 1 }
+      return {
+        rows: [{
+          row_id: snapshot.pageRowId,
+          site_json: snapshot.site,
+          runtime_assets_json: null,
+          importmap_body: null,
+          importmap_sha256: null,
+        } as unknown as Row],
+        rowCount: 1,
+      }
     }
     return { rows: [], rowCount: 0 }
   }
@@ -383,5 +400,32 @@ describe('handleHoleRequest — snapshot single-flight', () => {
     const url1 = new URL(`http://localhost/_instatic/hole/text-node?v=${v1}`)
     await handleHoleRequest(new Request(url1), url1, { db })
     expect(count()).toBe(2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// handleHoleRequest — CMS form token stamping
+// ---------------------------------------------------------------------------
+
+describe('hole fragments and CMS forms', () => {
+  it('stamps form page tokens + page id onto CMS-native forms inside fragments', async () => {
+    registry.registerOrReplace(
+      makeModule('test.cmsform', {
+        render: () => ({
+          html: '<form data-instatic-form-mode="cms" data-instatic-form-id="contact"></form>',
+        }),
+      }),
+    )
+    const snapshot = makeSnapshot()
+    snapshot.site.pages[0].nodes['text-node'].moduleId = 'test.cmsform'
+
+    const version = getPublishVersion()
+    const url = new URL(`http://localhost/_instatic/hole/text-node?v=${version}`)
+    const res = await handleHoleRequest(new Request(url), url, { db: makeFakeDb(snapshot) })
+
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    expect(html).toContain('data-instatic-page-token=')
+    expect(html).toContain('data-instatic-page-id="page_1"')
   })
 })

@@ -32,10 +32,35 @@ import { getQuickJS, type QuickJSContext, type QuickJSHandle, type QuickJSWASMMo
 import { BOOTSTRAP_SOURCE } from './bootstrap/index'
 import { DEFAULT_EVAL_TIMEOUT_MS, DEFAULT_MEMORY_LIMIT_BYTES, DEFAULT_STACK_SIZE_BYTES } from './limits'
 import { jsToHandle } from './marshal'
-import { evalJson, evalString, evalVoid, withSyncDeadline } from './eval'
+import { callString, callVoid, evalJson, withSyncDeadline } from './eval'
 import type { PluginVm, PluginVmEnv } from './types'
 
 export type { PluginVm, PluginVmEnv } from './types'
+
+/**
+ * The bootstrap's `__run*` dispatcher entry points. The host grabs a
+ * persistent function handle for each one right after the bootstrap
+ * evaluates and dispatches every call through `ctx.callFunction` (see
+ * `callString` / `callVoid` in `eval.ts`). Payloads cross the boundary as
+ * plain string arguments — `ctx.newString` is a memcpy — instead of being
+ * embedded in payload-sized JS source that QuickJS (WASM-interpreted)
+ * would have to tokenize and compile on every call.
+ */
+const DISPATCHER_NAMES = [
+  '__runLifecycle',
+  '__runMigrate',
+  '__runRoute',
+  '__runHookListener',
+  '__runHookFilter',
+  '__runLoopFetch',
+  '__runLoopPreview',
+  '__runSchedule',
+  '__updateSettings',
+  '__runMediaAdapterCall',
+  '__runMediaUrlTransformer',
+] as const
+
+type DispatcherName = (typeof DISPATCHER_NAMES)[number]
 
 // ---------------------------------------------------------------------------
 // Singleton WASM module — one per worker, shared across every QuickJS context
@@ -88,6 +113,22 @@ export async function createPluginVm(args: {
    * They get released alongside the context in `dispose()` below.
    */
   const hostFunctionHandles: QuickJSHandle[] = []
+
+  /**
+   * Persistent handles to the bootstrap's `__run*` dispatchers, populated
+   * right after the bootstrap evaluates — BEFORE the plugin bundle runs, so
+   * a plugin that reassigns `globalThis.__runRoute` cannot intercept host
+   * dispatch. Owned handles; released in `dispose()` alongside
+   * `hostFunctionHandles`.
+   */
+  const dispatcherHandles = new Map<DispatcherName, QuickJSHandle>()
+  const dispatcher = (name: DispatcherName): QuickJSHandle => {
+    const handle = dispatcherHandles.get(name)
+    // Populated for every name during createPluginVm; missing only if a
+    // dispatch were attempted before the bootstrap evaluated.
+    if (!handle) throw new Error(`VM dispatcher ${name} is not initialized`)
+    return handle
+  }
 
   /**
    * Pending host-side timers. Bun.setTimeout returns a Timer handle (Node-
@@ -265,6 +306,10 @@ export async function createPluginVm(args: {
     withSyncDeadline(ctx, evalTimeoutMs, () => {
       ctx.unwrapResult(ctx.evalCode(BOOTSTRAP_SOURCE, 'instatic-bootstrap.js')).dispose()
     })
+    // Grab the dispatcher function handles the bootstrap just installed.
+    for (const name of DISPATCHER_NAMES) {
+      dispatcherHandles.set(name, ctx.getProp(ctx.global, name))
+    }
     withSyncDeadline(ctx, evalTimeoutMs, () => {
       ctx.unwrapResult(ctx.evalCode(args.pluginSource, `plugin:${args.env.pluginId}`)).dispose()
     })
@@ -283,28 +328,28 @@ export async function createPluginVm(args: {
       exportedHooks,
 
       async runLifecycle(hook) {
-        await evalVoid(ctx, `__runLifecycle(${JSON.stringify(hook)})`, evalTimeoutMs)
+        await callVoid(ctx, dispatcher('__runLifecycle'), [hook], evalTimeoutMs)
       },
 
       async runMigrate(fromVersion) {
-        await evalVoid(ctx, `__runMigrate(${JSON.stringify(fromVersion)})`, evalTimeoutMs)
+        await callVoid(ctx, dispatcher('__runMigrate'), [fromVersion], evalTimeoutMs)
       },
 
       async runRoute(routeKey, routeCtx) {
-        const ctxJson = JSON.stringify(routeCtx)
-        const json = await evalString(
+        const json = await callString(
           ctx,
-          `__runRoute(${JSON.stringify(routeKey)}, ${JSON.stringify(ctxJson)})`,
+          dispatcher('__runRoute'),
+          [routeKey, JSON.stringify(routeCtx)],
           evalTimeoutMs,
         )
         return JSON.parse(json) as unknown
       },
 
       async runHookListener(listenerId, payload) {
-        const payloadJson = JSON.stringify(payload ?? null)
-        await evalVoid(
+        await callVoid(
           ctx,
-          `__runHookListener(${JSON.stringify(listenerId)}, ${JSON.stringify(payloadJson)})`,
+          dispatcher('__runHookListener'),
+          [listenerId, JSON.stringify(payload ?? null)],
           evalTimeoutMs,
         )
       },
@@ -313,24 +358,25 @@ export async function createPluginVm(args: {
         const valueJson = JSON.stringify(value ?? null)
         // Strip pluginId from context extras before sending — the bootstrap
         // re-adds it from __plugin_meta so we don't double-carry it over the
-        // wire. Passing undefined contextJson is fine; the bootstrap handles it.
+        // wire. The 'null' JSON string parses to a clean empty context.
         const contextExtras = context
           ? (({ pluginId: _p, ...rest }) => Object.keys(rest).length > 0 ? rest : undefined)(context as Record<string, unknown>)
           : undefined
         const contextJson = contextExtras !== undefined ? JSON.stringify(contextExtras) : 'null'
-        const resultJson = await evalString(
+        const resultJson = await callString(
           ctx,
-          `__runHookFilter(${JSON.stringify(filterId)}, ${JSON.stringify(valueJson)}, ${JSON.stringify(contextJson)})`,
+          dispatcher('__runHookFilter'),
+          [filterId, valueJson, contextJson],
           evalTimeoutMs,
         )
         return JSON.parse(resultJson) as unknown
       },
 
       async runLoopFetch(sourceId, loopCtx) {
-        const ctxJson = JSON.stringify(loopCtx ?? null)
-        const json = await evalString(
+        const json = await callString(
           ctx,
-          `__runLoopFetch(${JSON.stringify(sourceId)}, ${JSON.stringify(ctxJson)})`,
+          dispatcher('__runLoopFetch'),
+          [sourceId, JSON.stringify(loopCtx ?? null)],
           evalTimeoutMs,
         )
         const parsed = JSON.parse(json) as { items?: unknown[]; totalItems?: number }
@@ -341,10 +387,10 @@ export async function createPluginVm(args: {
       },
 
       async runLoopPreview(sourceId, loopCtx) {
-        const ctxJson = JSON.stringify(loopCtx ?? null)
-        const json = await evalString(
+        const json = await callString(
           ctx,
-          `__runLoopPreview(${JSON.stringify(sourceId)}, ${JSON.stringify(ctxJson)})`,
+          dispatcher('__runLoopPreview'),
+          [sourceId, JSON.stringify(loopCtx ?? null)],
           evalTimeoutMs,
         )
         const parsed = JSON.parse(json) as unknown
@@ -354,30 +400,29 @@ export async function createPluginVm(args: {
       async runSchedule(scheduleId, maxDurationMs) {
         // Per-schedule deadline replaces the VM's default 5s budget for
         // this single call only — its registry token is released when the
-        // eval settles, so subsequent calls fall back to the default.
-        await evalVoid(ctx, `__runSchedule(${JSON.stringify(scheduleId)})`, maxDurationMs ?? evalTimeoutMs)
+        // call settles, so subsequent calls fall back to the default.
+        await callVoid(ctx, dispatcher('__runSchedule'), [scheduleId], maxDurationMs ?? evalTimeoutMs)
       },
 
       async updateSettings(next) {
-        const json = JSON.stringify(next)
-        await evalVoid(ctx, `__updateSettings(${JSON.stringify(json)})`, evalTimeoutMs)
+        await callVoid(ctx, dispatcher('__updateSettings'), [JSON.stringify(next)], evalTimeoutMs)
       },
 
       async runMediaAdapterCall(adapterId, method, callArgs) {
-        const argsJson = JSON.stringify(callArgs ?? [])
-        const resultJson = await evalString(
+        const resultJson = await callString(
           ctx,
-          `__runMediaAdapterCall(${JSON.stringify(adapterId)}, ${JSON.stringify(method)}, ${JSON.stringify(argsJson)})`,
+          dispatcher('__runMediaAdapterCall'),
+          [adapterId, method, JSON.stringify(callArgs ?? [])],
           evalTimeoutMs,
         )
         return JSON.parse(resultJson) as unknown
       },
 
       async runMediaUrlTransformer(transformerId, payload) {
-        const payloadJson = JSON.stringify(payload)
-        const resultJson = await evalString(
+        const resultJson = await callString(
           ctx,
-          `__runMediaUrlTransformer(${JSON.stringify(transformerId)}, ${JSON.stringify(payloadJson)})`,
+          dispatcher('__runMediaUrlTransformer'),
+          [transformerId, JSON.stringify(payload)],
           evalTimeoutMs,
         )
         const parsed = JSON.parse(resultJson) as unknown
@@ -405,6 +450,10 @@ export async function createPluginVm(args: {
           try { deferred.dispose() } catch {/* already disposed */}
         }
         pendingDeferreds.clear()
+        for (const h of dispatcherHandles.values()) {
+          try { if (h.alive) h.dispose() } catch {/* already disposed */}
+        }
+        dispatcherHandles.clear()
         for (const h of hostFunctionHandles) {
           try { if (h.alive) h.dispose() } catch {/* already disposed */}
         }
@@ -421,6 +470,10 @@ export async function createPluginVm(args: {
       try { deferred.dispose() } catch {/* ignore */}
     }
     pendingDeferreds.clear()
+    for (const h of dispatcherHandles.values()) {
+      try { if (h.alive) h.dispose() } catch {/* ignore */}
+    }
+    dispatcherHandles.clear()
     for (const h of hostFunctionHandles) {
       try { if (h.alive) h.dispose() } catch {/* ignore */}
     }

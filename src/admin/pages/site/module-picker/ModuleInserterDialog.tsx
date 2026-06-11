@@ -68,6 +68,7 @@ import {
 } from './ModuleInserterItemButton'
 import { ModuleInserterShortcuts } from './ModuleInserterShortcuts'
 import { ModuleWireframe } from './ModuleWireframe'
+import { useModuleInsertionContext } from './useModuleInsertionContext'
 import { useModuleInserterPreference } from './useModuleInserterPreference'
 import styles from './ModuleInserterDialog.module.css'
 
@@ -114,28 +115,27 @@ export function ModuleInserterDialog({
   const suppressClickRef = useRef(false)
   const selectionSourceRef = useRef<ModuleInserterSelectionSource>('pointer')
 
-  const activeDocument = useEditorStore((s) => s.activeDocument)
   const visualComponents = useEditorStore((s) => s.site?.visualComponents ?? EMPTY_COMPONENTS)
   const setActiveBreakpoint = useEditorStore((s) => s.setActiveBreakpoint)
   const canvasPage = useEditorStore(selectActiveCanvasPage)
+  const insertionContext = useModuleInsertionContext()
   const {
     isFavorite,
     toggleFavorite,
   } = useModuleInserterPreference()
 
-  const isVCMode = activeDocument?.kind === 'visualComponent'
   const {
     moduleItems,
     layoutItems,
     componentItems,
-    allInsertableItems,
+    allItems,
   } = buildModuleInserterItems({
     modules: registry.list(),
-    isVCMode,
+    context: insertionContext,
     layoutPresets: LAYOUT_PRESETS,
     visualComponents,
   })
-  const recentItems = resolveRecentItems(recentRefs, allInsertableItems)
+  const recentItems = resolveRecentItems(recentRefs, allItems)
 
   const filteredModules = filterInserterItems(moduleItems, query)
   const filteredLayouts = filterInserterItems(layoutItems, query)
@@ -191,6 +191,7 @@ export function ModuleInserterDialog({
     target: InsertLocation | undefined,
     mode: 'click' | 'drop',
   ): boolean => {
+    if (item.disabledReason) return false
     const inserted = onInsertItem(item, target, mode)
     if (!inserted) return false
     trackModuleInserterRecent(recentRefForItem(item))
@@ -327,6 +328,8 @@ export function ModuleInserterDialog({
     event: ReactPointerEvent<HTMLButtonElement>,
   ) {
     if (event.button !== 0) return
+    // Disabled items can't be dragged to the canvas either.
+    if (item.disabledReason) return
     const startX = event.clientX
     const startY = event.clientY
     let started = false
