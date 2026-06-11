@@ -23,11 +23,15 @@
  *   - The host's `ModuleDefinition` wrapping (registry, error boundaries,
  *     React component factory for editor preview — already host-only)
  *
- * Performance note: render is called possibly hundreds of times per publish.
- * Each call is a sync QuickJS eval — sub-millisecond on typical hardware.
- * Publishes are background jobs; the cost is acceptable.
+ * Performance note: render is called possibly hundreds of times per publish,
+ * and per request for Layer C holes. Each call goes through a persistent
+ * function handle (`callStringSync`) — props and accumulated children HTML
+ * cross the boundary as plain string arguments (`ctx.newString` memcpys),
+ * never as payload-sized JS source the WASM interpreter would have to
+ * compile per call.
  */
 
+import type { QuickJSHandle } from 'quickjs-emscripten'
 import { MODULE_PACK_BOOTSTRAP_SOURCE } from './quickjs/bootstrap/generated/modulePackBootstrap'
 import { getWasmModule } from './quickjs/vm'
 import {
@@ -35,7 +39,7 @@ import {
   DEFAULT_STACK_SIZE_BYTES,
   MODULE_PACK_EVAL_TIMEOUT_MS,
 } from './quickjs/limits'
-import { evalStringSync, withSyncDeadline } from './quickjs/eval'
+import { callStringSync, evalStringSync, withSyncDeadline } from './quickjs/eval'
 import { wrapEsmAsGlobal } from './quickjs/esmShim'
 
 // ---------------------------------------------------------------------------
@@ -126,6 +130,11 @@ export async function createModulePackVm(args: {
   ctx.runtime.setMemoryLimit(DEFAULT_MEMORY_LIMIT_BYTES)
   ctx.runtime.setMaxStackSize(DEFAULT_STACK_SIZE_BYTES)
 
+  // Persistent dispatcher handles, populated after the bootstrap evaluates.
+  // Tracked outside the try so the failure path can release them before
+  // tearing down the context.
+  const dispatcherHandles: QuickJSHandle[] = []
+
   try {
     // Evaluate the pack — the shared ESM shim maps its default export to a
     // `globalThis.__module_pack = ...` assignment.
@@ -138,6 +147,13 @@ export async function createModulePackVm(args: {
     withSyncDeadline(ctx, MODULE_PACK_EVAL_TIMEOUT_MS, () => {
       ctx.unwrapResult(ctx.evalCode(BOOTSTRAP_SOURCE, 'modulepack-bootstrap.js')).dispose()
     })
+
+    // Persistent handles to the bootstrap's render/preview dispatchers —
+    // every render() call goes through ctx.callFunction on these instead of
+    // compiling a payload-sized source string. Released in dispose().
+    const renderHandle = ctx.getProp(ctx.global, '__renderModule')
+    const previewHandle = ctx.getProp(ctx.global, '__previewModule')
+    dispatcherHandles.push(renderHandle, previewHandle)
 
     // Initialize the pack — pulls metadata out, builds the id-keyed lookup.
     const modulesJson = evalStringSync(
@@ -155,26 +171,35 @@ export async function createModulePackVm(args: {
       modules,
 
       render(moduleId, props, children) {
-        const propsJson = JSON.stringify(props)
-        const childrenJson = JSON.stringify(children)
-        const code = `__renderModule(${JSON.stringify(moduleId)}, ${JSON.stringify(propsJson)}, ${JSON.stringify(childrenJson)})`
-        const result = evalStringSync(ctx, code, MODULE_PACK_EVAL_TIMEOUT_MS, 'modulepack-eval.js')
+        const result = callStringSync(
+          ctx,
+          renderHandle,
+          [moduleId, JSON.stringify(props), JSON.stringify(children)],
+          MODULE_PACK_EVAL_TIMEOUT_MS,
+        )
         return JSON.parse(result) as ModulePackRenderOutput
       },
 
       preview(moduleId, props, children) {
-        const propsJson = JSON.stringify(props)
-        const childrenJson = JSON.stringify(children)
-        const code = `__previewModule(${JSON.stringify(moduleId)}, ${JSON.stringify(propsJson)}, ${JSON.stringify(childrenJson)})`
-        const result = evalStringSync(ctx, code, MODULE_PACK_EVAL_TIMEOUT_MS, 'modulepack-eval.js')
+        const result = callStringSync(
+          ctx,
+          previewHandle,
+          [moduleId, JSON.stringify(props), JSON.stringify(children)],
+          MODULE_PACK_EVAL_TIMEOUT_MS,
+        )
         return JSON.parse(result) as ModulePackRenderOutput
       },
 
       dispose() {
+        try { if (renderHandle.alive) renderHandle.dispose() } catch {/* already disposed */}
+        try { if (previewHandle.alive) previewHandle.dispose() } catch {/* already disposed */}
         try { ctx.dispose() } catch {/* already disposed */}
       },
     }
   } catch (err) {
+    for (const handle of dispatcherHandles) {
+      try { if (handle.alive) handle.dispose() } catch {/* ignore */}
+    }
     try { ctx.dispose() } catch {/* ignore */}
     throw err
   }
