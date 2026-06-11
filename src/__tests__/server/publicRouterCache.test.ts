@@ -76,10 +76,18 @@ function makeFakeDb(snapshot: PublishedPageSnapshot | null): DbClient {
     const sql = strings.reduce<string>((acc, str, i) => (i === 0 ? str : `${acc}$${i}${str}`), '')
     const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase()
 
-    // getPublishedPageBySlug — queries data_row_versions.snapshot_json
-    if (normalized.includes('select data_row_versions.snapshot_json')) {
+    // getPublishedPageBySlug — joins data_row_versions to site_snapshots
+    if (normalized.includes('site_snapshots.site_json')) {
       return {
-        rows: snapshot ? [{ snapshot_json: snapshot } as Row] : [],
+        rows: snapshot
+          ? [{
+              row_id: snapshot.pageRowId,
+              site_json: snapshot.site,
+              runtime_assets_json: snapshot.runtimeAssets ?? null,
+              importmap_body: snapshot.runtimePackageImportmap?.body ?? null,
+              importmap_sha256: snapshot.runtimePackageImportmap?.sha256 ?? null,
+            } as unknown as Row]
+          : [],
         rowCount: snapshot ? 1 : 0,
       }
     }
@@ -111,7 +119,7 @@ function makeRedirectDb(): DbClient {
     const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase()
 
     // getPublishedPageBySlug → not found
-    if (normalized.includes('select data_row_versions.snapshot_json')) {
+    if (normalized.includes('site_snapshots.site_json')) {
       return { rows: [], rowCount: 0 }
     }
     // getDataRowRedirectByRoute → return a redirect

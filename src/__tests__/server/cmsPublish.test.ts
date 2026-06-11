@@ -17,14 +17,15 @@ function createPublishFakeDb() {
     site: null as Record<string, unknown> | null,
     dataRows: [] as Record<string, unknown>[],
     dataRowVersions: [] as Record<string, unknown>[],
+    siteSnapshots: [] as Record<string, unknown>[],
     runtimeAssets: [] as Record<string, unknown>[],
   }
 
   const db = createFakeDb(async (rawSql, params): Promise<DbResult> => {
     const sql = rawSql.replace(/\s+/g, ' ').trim().toLowerCase()
 
-    // saveDraftSite — insert or update site row
-    if (sql.startsWith('insert into site')) {
+    // saveDraftSite — insert or update site row (NOT site_snapshots)
+    if (sql.startsWith('insert into site (')) {
       state.site = {
         id: 'default',
         name: params[0],
@@ -104,7 +105,20 @@ function createPublishFakeDb() {
       const nextVersion = Math.max(0, ...rowVersions.map((v) => Number(v.version_number))) + 1
       return { rows: [{ next_version: nextVersion }], rowCount: 1 }
     }
+    // insert into site_snapshots — one per publish, referenced by version rows
+    if (sql.startsWith('insert into site_snapshots')) {
+      state.siteSnapshots.push({
+        id: params[0],
+        site_json: params[1],
+        content_hash: params[2],
+        importmap_body: params[3],
+        importmap_sha256: params[4],
+      })
+      return { rows: [], rowCount: 1 }
+    }
     // insert into data_row_versions
+    // columns: (id, row_id, version_number, cells_json, slug, site_snapshot_id,
+    //           runtime_assets_json, published_by_user_id)
     if (sql.startsWith('insert into data_row_versions')) {
       state.dataRowVersions.push({
         id: params[0],
@@ -112,8 +126,9 @@ function createPublishFakeDb() {
         version_number: params[2],
         cells_json: params[3],
         slug: params[4],
-        snapshot_json: params[5],
-        published_by_user_id: params[6],
+        site_snapshot_id: params[5],
+        runtime_assets_json: params[6],
+        published_by_user_id: params[7],
         published_at: new Date('2026-01-03').toISOString(),
       })
       return { rows: [], rowCount: 1 }
@@ -145,25 +160,39 @@ function createPublishFakeDb() {
       }
       return { rows: [], rowCount: row ? 1 : 0 }
     }
-    // getPublishedPageBySlug — join data_rows + data_row_versions
-    if (sql.includes('select data_row_versions.snapshot_json') && sql.includes('data_rows.slug')) {
+    // getPublishedPageBySlug — join data_rows + data_row_versions + site_snapshots
+    if (sql.includes('site_snapshots.site_json') && sql.includes('data_rows.slug')) {
       const slug = params[0] as string
       const row = state.dataRows.find((r) => r.slug === slug && r.status === 'published')
       const version = row ? state.dataRowVersions.find((v) => v.id === row.active_version_id) : null
+      const snap = version
+        ? state.siteSnapshots.find((s) => s.id === version.site_snapshot_id)
+        : null
       return {
-        rows: version ? [{ snapshot_json: version.snapshot_json }] : [],
-        rowCount: version ? 1 : 0,
+        rows: version && snap
+          ? [{
+              row_id: version.row_id,
+              site_json: snap.site_json,
+              runtime_assets_json: version.runtime_assets_json,
+              importmap_body: snap.importmap_body,
+              importmap_sha256: snap.importmap_sha256,
+            }]
+          : [],
+        rowCount: version && snap ? 1 : 0,
       }
     }
-    // getDraftPublishStatus — published rows join
-    if (sql.includes('from data_rows') && sql.includes('join data_row_versions') && sql.includes('created_at asc')) {
+    // getDraftPublishStatus — published rows join (selects the per-publish content hash)
+    if (sql.includes('site_snapshots.content_hash') && sql.includes('created_at asc')) {
       const rows = state.dataRows
         .filter((r) => r.status === 'published' && r.active_version_id && !r.deleted_at)
         .map((r) => {
           const ver = state.dataRowVersions.find((v) => v.id === r.active_version_id)
-          return ver ? {
+          const snap = ver
+            ? state.siteSnapshots.find((s) => s.id === ver.site_snapshot_id)
+            : null
+          return ver && snap ? {
             row_id: r.id,
-            snapshot_json: ver.snapshot_json,
+            content_hash: snap.content_hash,
             published_at: ver.published_at,
           } : null
         })

@@ -212,15 +212,13 @@ PATCH /admin/api/cms/data/rows/:id  { status: 'published' }
 handlePublishRoute / publishDataRow
     │
     ├─→ load the row (with draft cells)
-    ├─→ freeze the current site shape into a `PublishedPageSnapshot` (JSON)
-    │     and write it to data_row_versions.snapshot_json
     ├─→ insert into data_row_versions with current cells + version_number = next
     ├─→ update row: status = 'published', published_at = now, published_by_user_id, etc.
     ├─→ if dependent pages reference this row (loops / queries), republish them
     └─→ emit publish.after hook
 ```
 
-The `PublishedPageSnapshot` in `data_row_versions.snapshot_json` is the canonical audit record. After it's written, the publisher routes through the three-layer pipeline:
+The published `SiteDocument` is stored ONCE per full publish in `site_snapshots` (with a content hash used by the publish-status check); each page's `data_row_versions` row references it via `site_snapshot_id` and carries only its page-scoped `runtime_assets_json`. Readers reassemble the `PublishedPageSnapshot` from the join — that snapshot is the canonical audit record. After it's written, the publisher routes through the three-layer pipeline:
 
 - **Layer A** — the publisher renders **every** page (for postType rows, the matched entry template), runs the full `applyPublishedHtmlPipeline`, and writes the final HTML to `uploads/published/<inactive-slot>/<route>.html` — a fully-static page bakes a complete document, a page with dynamic nodes bakes a static shell with `<instatic-hole>` placeholders. The CSS bundles + runtime JS are baked into the same slot. After all pages are written the symlink `current` atomic-flips to the new slot. Served entirely from disk — no DB for HTML/CSS/JS.
 - **Layer B** — the in-memory render cache evicts lazily via `bumpPublishVersion()`.

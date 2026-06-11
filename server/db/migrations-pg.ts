@@ -584,14 +584,44 @@ export const pgMigrations: Migration[] = [
     `,
   },
   {
-    id: '003_page_version_snapshot',
+    id: '003_published_site_snapshots',
     sql: `
-      -- Add snapshot_json to data_row_versions so the publish pipeline can
-      -- store the full SiteDocument (shell + all pages) alongside each
-      -- published page version. This powers the public renderer without an
-      -- extra DB round-trip for the site shell.
+      -- One published SiteDocument per publish, shared by every page version
+      -- created in that publish. Page versions reference it via
+      -- site_snapshot_id instead of each carrying a full copy of the site —
+      -- publishing N pages stores the site document once, not N times.
+      --
+      -- content_hash is the SHA-256 of the canonical-JSON serialisation of
+      -- site_json, stamped at publish time so the publish-status check can
+      -- compare draft vs published without parsing any snapshot.
+      --
+      -- importmap_body is the pre-serialised runtime package importmap (exact
+      -- bytes the CSP hash was computed over) — TEXT, never re-encoded.
+      create table if not exists site_snapshots (
+        id text primary key,
+        site_json jsonb not null,
+        content_hash text not null,
+        importmap_body text,
+        importmap_sha256 text,
+        created_at timestamptz not null default now()
+      );
+
       alter table data_row_versions
-        add column if not exists snapshot_json jsonb;
+        add column if not exists site_snapshot_id text references site_snapshots(id) on delete set null;
+
+      -- Per-page runtime script manifest (page-scoped, unlike the shared site
+      -- document).
+      alter table data_row_versions
+        add column if not exists runtime_assets_json jsonb;
+
+      -- Published row-route lookup (route_base + version slug): without these
+      -- two indexes the planner enumerates every published row of the table
+      -- and PK-probes its active version per visitor request.
+      create index if not exists data_row_versions_slug_idx
+        on data_row_versions (slug);
+
+      create index if not exists data_rows_active_version_idx
+        on data_rows (active_version_id);
     `,
   },
   {

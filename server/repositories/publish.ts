@@ -1,10 +1,13 @@
 /**
  * Publish pipeline repository.
  *
- * Pages are stored in `data_rows` (table_id = 'pages'). Each published
- * version is a row in `data_row_versions` that carries `snapshot_json`
- * containing the full `PublishedPageSnapshot` (site document + runtime
- * assets). This replaces the old `page_versions` table.
+ * Pages are stored in `data_rows` (table_id = 'pages'). A full publish
+ * stores the published `SiteDocument` ONCE in `site_snapshots` (with a
+ * content hash and the pre-serialised runtime importmap); each published
+ * page version is a row in `data_row_versions` that references it via
+ * `site_snapshot_id` and carries only its page-scoped `runtime_assets_json`.
+ * Readers reassemble the `PublishedPageSnapshot` shape from the join, so
+ * publishing N pages stores the site document once instead of N times.
  *
  * Public API:
  *   publishDraftSite          — build + store snapshots for all draft pages
@@ -12,10 +15,11 @@
  *   getLatestPublishedSiteSnapshot — first published page snapshot (for 404s etc.)
  *   getDraftPublishStatus     — compare draft vs published state for the UI
  */
+import { createHash } from 'node:crypto'
 import { nanoid } from 'nanoid'
 import type { SiteDocument } from '@core/page-tree'
 import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
-import type { PublishedRuntimePackageImportmap } from '@core/publisher'
+import type { PublishedRuntimePackageImportmap, SiteCssBundle } from '@core/publisher'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { registry } from '@core/module-engine'
 import type { DbClient } from '../db/client'
@@ -35,7 +39,8 @@ import { renderPublishedSnapshot } from '../publish/publicRenderer'
 import { isTemplatePage } from '@core/templates'
 import { applyPublishedHtmlPipeline } from '../publish/publishedHtmlPipeline'
 import { prepareInactiveSlot, writeArtefact, writeStaticAsset, swapSlot } from '../publish/staticArtefact'
-import { buildSiteCssBundle } from '../publish/siteCssBundle'
+import { buildPublishedSiteCssBundle } from '../publish/siteCssBundle'
+import { bakePublishedDataRowArtefacts } from '../publish/bakeDataRows'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from '../publish/publishState'
 
 // ---------------------------------------------------------------------------
@@ -69,10 +74,19 @@ interface DraftPublishStatus {
   lastPublishedAt?: string
 }
 
-interface ActivePublishedRow {
+interface PublishStatusRow {
   row_id: string
-  snapshot_json: PublishedPageSnapshot
+  content_hash: string
   published_at: string | Date
+}
+
+/** Shared SELECT shape for the snapshot getters below. */
+interface SnapshotQueryRow {
+  row_id: string
+  site_json: SiteDocument
+  runtime_assets_json: PublishedPageRuntimeAssets | null
+  importmap_body: string | null
+  importmap_sha256: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +106,22 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(value)
 }
 
+/**
+ * Canonical content hash of a site document, stamped on `site_snapshots` at
+ * publish time. The publish-status check compares the draft's hash against
+ * it — equality is observationally identical to comparing the canonical JSON
+ * strings, without fetching or parsing any stored snapshot.
+ */
+function siteContentHash(site: SiteDocument): string {
+  return createHash('sha256').update(canonicalJson(site)).digest('hex')
+}
+
+/**
+ * Assemble the in-memory snapshot for one page. The `site` object is SHARED
+ * across every snapshot of a publish (it is frozen content — nothing mutates
+ * it after creation), so building N snapshots costs N small objects, not N
+ * deep clones of the whole site.
+ */
 function createSnapshot(
   site: SiteDocument,
   pageRowId: string,
@@ -101,9 +131,24 @@ function createSnapshot(
   return {
     cmsSnapshotVersion: 1,
     pageRowId,
-    site: structuredClone(site),
+    site,
     ...(runtimeAssets && runtimeAssets.scripts.length > 0 ? { runtimeAssets } : {}),
     ...(runtimePackageImportmap ? { runtimePackageImportmap } : {}),
+  }
+}
+
+/** Reassemble the `PublishedPageSnapshot` shape from the getter join. */
+function snapshotFromQueryRow(row: SnapshotQueryRow): PublishedPageSnapshot {
+  return {
+    cmsSnapshotVersion: 1,
+    pageRowId: row.row_id,
+    site: row.site_json,
+    ...(row.runtime_assets_json && row.runtime_assets_json.scripts.length > 0
+      ? { runtimeAssets: row.runtime_assets_json }
+      : {}),
+    ...(row.importmap_body && row.importmap_sha256
+      ? { runtimePackageImportmap: { body: row.importmap_body, sha256: row.importmap_sha256 } }
+      : {}),
   }
 }
 
@@ -135,25 +180,30 @@ export async function getDraftPublishStatus(db: DbClient): Promise<DraftPublishS
     visualComponents,
   }
 
-  const { rows: publishedRows } = await db<ActivePublishedRow>`
+  // Only the per-publish content hash is fetched — never the stored site
+  // document. Comparing the draft's hash against each row's stamped hash is
+  // observationally identical to comparing canonical JSON strings, but costs
+  // one draft serialisation instead of one per published page.
+  const { rows: publishedRows } = await db<PublishStatusRow>`
     select data_rows.id as row_id,
-           data_row_versions.snapshot_json,
+           site_snapshots.content_hash,
            data_row_versions.published_at
     from data_rows
     join data_row_versions on data_row_versions.id = data_rows.active_version_id
+    join site_snapshots on site_snapshots.id = data_row_versions.site_snapshot_id
     where data_rows.table_id = 'pages'
       and data_rows.status = 'published'
       and data_rows.deleted_at is null
     order by data_rows.created_at asc
   `
 
-  const draftSiteJson = canonicalJson(draftSite)
+  const draftSiteHash = siteContentHash(draftSite)
   const draftPageIds = new Set(draftSite.pages.map((page) => page.id))
   const draftMatchesPublished =
     publishedRows.length === draftSite.pages.length &&
     publishedRows.every((row) =>
       draftPageIds.has(row.row_id) &&
-      canonicalJson(row.snapshot_json.site) === draftSiteJson
+      row.content_hash === draftSiteHash
     )
   const lastPublishedAt = publishedRows
     .map((row) => new Date(row.published_at).getTime())
@@ -224,6 +274,21 @@ async function publishDraftSiteLocked(
       })),
     }
 
+    // The site document is stored ONCE per publish; every page version row
+    // references it. The content hash powers the publish-status check without
+    // ever re-fetching the document.
+    const siteSnapshotId = nanoid()
+    await tx`
+      insert into site_snapshots (id, site_json, content_hash, importmap_body, importmap_sha256)
+      values (
+        ${siteSnapshotId},
+        ${publishedSite},
+        ${siteContentHash(publishedSite)},
+        ${serializedImportmap?.body ?? null},
+        ${serializedImportmap?.sha256 ?? null}
+      )
+    `
+
     const snapshots: PublishedPageSnapshot[] = []
     // Runtime JS bytes for every page, collected for the Layer A disk write so
     // published pages serve their scripts straight off disk (not the DB).
@@ -253,14 +318,15 @@ async function publishDraftSiteLocked(
 
       await tx`
         insert into data_row_versions
-          (id, row_id, version_number, cells_json, slug, snapshot_json, published_by_user_id)
+          (id, row_id, version_number, cells_json, slug, site_snapshot_id, runtime_assets_json, published_by_user_id)
         values (
           ${versionId},
           ${page.id},
           ${version},
           ${{ title: page.title, slug: page.slug }},
           ${page.slug},
-          ${snapshot},
+          ${siteSnapshotId},
+          ${snapshot.runtimeAssets ?? null},
           ${adminUserId}
         )
       `
@@ -308,26 +374,27 @@ async function publishDraftSiteLocked(
     try {
       const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
 
-      // Every distinct static asset referenced by ANY published page.
+      // Every distinct static asset referenced by ANY baked artefact.
       // Content-hashed filenames dedupe identical bytes across pages to a
-      // single write.
+      // single write. The page-invariant CSS trio (reset/framework/style) is
+      // computed ONCE per publish via the version-keyed memo — the all-pages
+      // walk no longer repeats per page. Only `userStyles` is page-scoped.
       const assetsByPath = new Map<string, Uint8Array>()
       const encoder = new TextEncoder()
-      for (const snapshot of snapshots) {
-        const page = snapshot.site.pages.find((p) => p.id === snapshot.pageRowId)
-        if (!page || isTemplatePage(page)) continue // template pages only ever wrap; never baked at their own slug
-        const cssBundle = buildSiteCssBundle(snapshot.site, registry, page)
+      const collectCssFiles = (cssBundle: SiteCssBundle): void => {
         for (const file of [cssBundle.reset, cssBundle.framework, cssBundle.style, cssBundle.userStyles]) {
           if (file.content.length === 0) continue
           const publicPath = `/_instatic/css/${file.filename}`
           if (!assetsByPath.has(publicPath)) assetsByPath.set(publicPath, encoder.encode(file.content))
         }
       }
+      for (const snapshot of snapshots) {
+        const page = snapshot.site.pages.find((p) => p.id === snapshot.pageRowId)
+        if (!page || isTemplatePage(page)) continue // template pages only ever wrap; never baked at their own slug
+        collectCssFiles(buildPublishedSiteCssBundle(snapshot.site, registry, page, nextPublishVersion))
+      }
       for (const asset of runtimeAssetFiles) {
         if (!assetsByPath.has(asset.publicPath)) assetsByPath.set(asset.publicPath, asset.bytes)
-      }
-      for (const [publicPath, bytes] of assetsByPath) {
-        await writeStaticAsset(slotDir, publicPath, bytes)
       }
 
       // HTML artefacts (or hole shells) for every page. A page that fails to
@@ -346,9 +413,23 @@ async function publishDraftSiteLocked(
           })
           const html = await applyPublishedHtmlPipeline(rendered, db)
           await writeArtefact(slotDir, urlPath, html)
+          // The render's own bundle covers template-composed hashes the raw
+          // page bundle above cannot (the merged page's userStyles).
+          collectCssFiles(rendered.cssBundle)
         } catch (err) {
           console.error('[publish:site] failed to bake artefact for', urlPath, '(falls through to live renderer):', err)
         }
+      }
+
+      // Data-row artefacts: every published row whose table has an entry
+      // template bakes into the same slot. Without this the slot swap would
+      // strand every previously-baked row artefact in the inactive slot and
+      // ALL row routes would fall to the live renderer after a full publish.
+      const rowBake = await bakePublishedDataRowArtefacts(db, slotDir, nextPublishVersion)
+      for (const cssBundle of rowBake.cssBundles) collectCssFiles(cssBundle)
+
+      for (const [publicPath, bytes] of assetsByPath) {
+        await writeStaticAsset(slotDir, publicPath, bytes)
       }
       await swapSlot(uploadsDir, slot)
     } catch (err) {
@@ -370,50 +451,65 @@ export async function getPublishedPageBySlug(
   db: DbClient,
   slug: string,
 ): Promise<PublishedPageSnapshot | null> {
-  const { rows } = await db<{ snapshot_json: PublishedPageSnapshot }>`
-    select data_row_versions.snapshot_json
+  const { rows } = await db<SnapshotQueryRow>`
+    select data_rows.id as row_id,
+           site_snapshots.site_json,
+           data_row_versions.runtime_assets_json,
+           site_snapshots.importmap_body,
+           site_snapshots.importmap_sha256
     from data_rows
     join data_row_versions on data_row_versions.id = data_rows.active_version_id
+    join site_snapshots on site_snapshots.id = data_row_versions.site_snapshot_id
     where data_rows.table_id = 'pages'
       and data_rows.slug = ${slug}
       and data_rows.status = 'published'
       and data_rows.deleted_at is null
     limit 1
   `
-  return rows[0]?.snapshot_json ?? null
+  return rows[0] ? snapshotFromQueryRow(rows[0]) : null
 }
 
 export async function getPublishedPageSnapshotById(
   db: DbClient,
   pageId: string,
 ): Promise<PublishedPageSnapshot | null> {
-  const { rows } = await db<{ snapshot_json: PublishedPageSnapshot }>`
-    select data_row_versions.snapshot_json
+  const { rows } = await db<SnapshotQueryRow>`
+    select data_rows.id as row_id,
+           site_snapshots.site_json,
+           data_row_versions.runtime_assets_json,
+           site_snapshots.importmap_body,
+           site_snapshots.importmap_sha256
     from data_rows
     join data_row_versions on data_row_versions.id = data_rows.active_version_id
+    join site_snapshots on site_snapshots.id = data_row_versions.site_snapshot_id
     where data_rows.id = ${pageId}
       and data_rows.table_id = 'pages'
       and data_rows.status = 'published'
       and data_rows.deleted_at is null
     limit 1
   `
-  return rows[0]?.snapshot_json ?? null
+  return rows[0] ? snapshotFromQueryRow(rows[0]) : null
 }
 
 export async function getLatestPublishedSiteSnapshot(
   db: DbClient,
 ): Promise<PublishedPageSnapshot | null> {
-  const { rows } = await db<{ snapshot_json: PublishedPageSnapshot }>`
-    select data_row_versions.snapshot_json
+  const { rows } = await db<SnapshotQueryRow>`
+    select data_rows.id as row_id,
+           site_snapshots.site_json,
+           data_row_versions.runtime_assets_json,
+           site_snapshots.importmap_body,
+           site_snapshots.importmap_sha256
     from data_rows
     join data_row_versions on data_row_versions.id = data_rows.active_version_id
+    join site_snapshots on site_snapshots.id = data_row_versions.site_snapshot_id
     where data_rows.table_id = 'pages'
       and data_rows.status = 'published'
       and data_rows.deleted_at is null
     order by data_rows.created_at asc
     limit 1
   `
-  return rows[0]?.snapshot_json ?? null
+  return rows[0] ? snapshotFromQueryRow(rows[0]) : null
 }
 
 // `listPluginPageSummaries` was removed alongside the `api.cms.pages.*`

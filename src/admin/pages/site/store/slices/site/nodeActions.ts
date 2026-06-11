@@ -33,7 +33,7 @@ import {
 } from '@core/page-tree'
 import type { NodeTree, PageNode, SiteDocument } from '@core/page-tree'
 import { wouldCreateCycle, syncSlotInstances, applySlotSyncResult } from '@core/visualComponents'
-import { depthInTree } from './helpers'
+import { depthInTree, resolveActiveTreeTarget } from './helpers'
 import { pruneCanvasSelectionDraft } from '../selectionSlice'
 import { indexStyleRulesByName, linkImportedClassNames, mergeImportedStyleRules } from './importLinking'
 import type { SiteSlice, SiteSliceHelpers } from './types'
@@ -444,14 +444,22 @@ export function createNodeActions(helpers: SiteSliceHelpers): NodeActions {
 
     deleteNodes: (nodeIds) => {
       if (nodeIds.length === 0) return
+      // Precompute depths ONCE against the FROZEN pre-mutation tree: sorting
+      // inside the recipe would walk ancestor chains through the Mutative
+      // draft (every node access materializes a draft proxy), twice per
+      // comparison. Sorting against pre-draft state is safe because the
+      // recipe re-checks `tree.nodes[id]` before each delete.
+      const target = resolveActiveTreeTarget(get())
+      if (!target) return
+      const depthById = new Map<string, number>()
+      for (const id of nodeIds) depthById.set(id, depthInTree(target.tree, id))
+      // Sort by depth-DESC so leaves go first — descendants of an
+      // already-deleted id are gone, and the "node not found" guard handles
+      // the redundant case cleanly.
+      const ordered = [...nodeIds].sort(
+        (a, b) => depthById.get(b)! - depthById.get(a)!,
+      )
       const deleted = mutateActiveTree((tree) => {
-        // Delete each id; descendants of an already-deleted id are gone, so the
-        // helper's "node not found" branch handles the redundant case cleanly.
-        // We sort by depth-DESC so leaves go first, avoiding noisy throws when
-        // a parent is deleted before its child in the same batch.
-        const ordered = [...nodeIds].sort(
-          (a, b) => depthInTree(tree, b) - depthInTree(tree, a),
-        )
         let changed = false
         for (const id of ordered) {
           if (id === tree.rootNodeId) continue

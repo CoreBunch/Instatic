@@ -37,10 +37,10 @@ import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/publisher'
 import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
-import { getLatestPublishedSiteSnapshot } from '../../repositories/publish'
 import { prefetchLoopData } from '../../publish/loopPrefetch'
 import { getOrRender } from '../../publish/renderCache'
-import { createVersionedSingleFlight, getPublishVersion } from '../../publish/publishState'
+import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
+import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
 
 const HOLE_RUNTIME_PATH = '/_instatic/hole-runtime.js'
@@ -66,41 +66,9 @@ export interface HoleHandlerContext {
   db: DbClient
 }
 
-// ---------------------------------------------------------------------------
-// Versioned snapshot cache + nodeId → page index
-//
-// The published snapshot (the entire SiteDocument) changes only on publish.
-// Loading + JSON-parsing it on every hole request — then linearly scanning all
-// pages for the node — was the per-fragment cost flagged in the architecture
-// review. Instead we memoise the snapshot for the current publish version and
-// build a `nodeId → page` index once, so request-time lookup is O(1) and warm
-// requests do zero DB I/O. The version-keyed single-flight primitive from
-// `publishState` owns the memo + the concurrent-load dedup + the test reset, so
-// this endpoint carries no bespoke module-level cache state of its own — a
-// version change simply misses and reloads against the fresh snapshot.
-// ---------------------------------------------------------------------------
-
-interface HoleSnapshot {
-  site: SiteDocument
-  nodeIndex: Map<string, Page>
-}
-
-const snapshotCache = createVersionedSingleFlight<HoleSnapshot>()
-
-function loadSnapshotForVersion(db: DbClient, version: number): Promise<HoleSnapshot | null> {
-  return snapshotCache.get(version, async () => {
-    const snapshot = await getLatestPublishedSiteSnapshot(db)
-    if (!snapshot) return null
-    const nodeIndex = new Map<string, Page>()
-    for (const page of snapshot.site.pages) {
-      for (const nodeId of Object.keys(page.nodes)) {
-        // First page wins on the (extremely unlikely) duplicate node id.
-        if (!nodeIndex.has(nodeId)) nodeIndex.set(nodeId, page)
-      }
-    }
-    return { site: snapshot.site, nodeIndex }
-  })
-}
+// The versioned snapshot memo + nodeId → page index live in
+// `publish/publishedSnapshotCache.ts`, shared with the public router and the
+// loop endpoint — request-time lookup is O(1) and warm requests do zero DB I/O.
 
 // ---------------------------------------------------------------------------
 // Request helpers
@@ -218,7 +186,7 @@ export async function handleHoleRequest(
   }
 
   // Load (memoised) snapshot for this version and find the node's page in O(1).
-  const snap = await loadSnapshotForVersion(ctx.db, currentVersion)
+  const snap = await getPublishedNodeIndexForVersion(ctx.db, currentVersion)
   if (!snap) {
     return new Response('Site not published', {
       status: 404,

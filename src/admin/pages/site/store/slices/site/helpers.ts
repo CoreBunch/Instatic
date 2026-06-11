@@ -13,7 +13,8 @@ import type { StoreApi } from 'zustand'
 import type { FrameworkColorToken } from '@core/framework-schema'
 import type { NodeTree, PageNode, StyleRule, SiteDocument } from '@core/page-tree'
 import { addPage, createNode, reconcileSiteExplorerInPlace, reindexNodeParents } from '@core/page-tree'
-import { syncAllVCRefSlotInstances, allTreeNodeMaps } from '../vcSlotReconcile'
+import type { VisualComponent } from '@core/visualComponents'
+import { syncAllVCRefSlotInstances, allTreeNodeMaps, collectVCSlotOutletNames } from '../vcSlotReconcile'
 import { create } from 'mutative'
 import type { Draft, Patches } from 'mutative'
 import type { ImportFragment } from '@core/htmlImport'
@@ -31,12 +32,18 @@ import { addImportedFonts, addImportedFontTokens, addInstalledFontEntries, overw
 import type { HistoryEntry, SiteMutationResult, SiteSliceHelpers, SiteSliceRecipe, SuperImportHelpers } from './types'
 
 /**
- * Compute a node's depth in the active tree by walking up to root.
+ * Compute a node's depth in a tree by walking the O(1) `parentId` pointer up
+ * to the root — O(depth), no node-map scans. `parentId` is the engine's
+ * denormalised parent cache (see `reindexNodeParents` / `getParent` in
+ * `@core/page-tree`): restamped at every load boundary and maintained by every
+ * tree mutation, so it is reliably consistent for any tree in the store.
+ *
  * Used by `deleteNodes` to delete leaves before parents within a single batch
  * so descendants aren't double-removed (which would throw inside the helper).
  *
- * Returns 0 for the root, +Infinity for orphans (sorts last in DESC order →
- * effectively a no-op when the orphan slot is reached).
+ * Returns 0 for the root, +Infinity for orphans — a `null` (or dangling)
+ * `parentId` on a non-root node (sorts last in DESC order → effectively a
+ * no-op when the orphan slot is reached).
  */
 export function depthInTree(tree: NodeTree<PageNode>, nodeId: string): number {
   if (nodeId === tree.rootNodeId) return 0
@@ -45,13 +52,110 @@ export function depthInTree(tree: NodeTree<PageNode>, nodeId: string): number {
   const visited = new Set<string>()
   while (!visited.has(current)) {
     visited.add(current)
-    const parent = Object.values(tree.nodes).find((n) => n.children.includes(current))
-    if (!parent) return Infinity
+    const parentId = tree.nodes[current]?.parentId
+    if (!parentId || !tree.nodes[parentId]) return Infinity
     depth++
-    if (parent.id === tree.rootNodeId) return depth
-    current = parent.id
+    if (parentId === tree.rootNodeId) return depth
+    current = parentId
   }
   return depth
+}
+
+/**
+ * Resolve the tree the `mutateActiveTree*` helpers route to, from either the
+ * frozen store state or a Mutative draft of it:
+ *   - VC mode (`activeDocument.kind === 'visualComponent'`): the VC's tree,
+ *     returned alongside the owning VisualComponent so callers can propagate
+ *     slot-outlet changes.
+ *   - Page mode (null or `kind === 'page'`): the active Page — Page IS
+ *     NodeTree<PageNode>, so no conversion is needed (`vc` is null).
+ *
+ * This is the single implementation of the `kind === 'visualComponent'` tree
+ * routing (CLAUDE.md §"Mutation API"). `deleteNodes` also calls it against the
+ * frozen pre-mutation state to precompute deletion depths without touching
+ * draft proxies.
+ */
+export function resolveActiveTreeTarget(
+  state: Pick<EditorStore, 'site' | 'activeDocument' | 'activePageId'>,
+): { tree: NodeTree<PageNode>; vc: VisualComponent | null } | null {
+  const { site, activeDocument } = state
+  if (!site) return null
+
+  if (activeDocument?.kind === 'visualComponent') {
+    const vc = site.visualComponents.find((v) => v.id === activeDocument.vcId)
+    if (!vc) return null
+    // VCNode is structurally compatible with PageNode (dynamicBindings is optional).
+    return { tree: vc.tree as NodeTree<PageNode>, vc }
+  }
+
+  const pageId = activeDocument?.kind === 'page' ? activeDocument.pageId : state.activePageId
+  const page = site.pages.find((p) => p.id === pageId)
+  return page ? { tree: page, vc: null } : null
+}
+
+function stringArraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
+/** Serialize a patch path so fold dedup can key on it. */
+function patchPathKey(path: Patches[number]['path']): string {
+  return JSON.stringify(path)
+}
+
+/**
+ * Fold one coalesced keystroke's patch pair into the in-progress burst entry,
+ * deduplicating by patch path: the entry holds AT MOST one inverse and one
+ * forward patch per touched path, instead of accumulating 2K pairs (each
+ * carrying the full prop value at that instant) over a K-keystroke burst.
+ *
+ *  - inverse (undo): the OLDEST patch per path wins — it restores the
+ *    pre-burst value. Patches for newly-touched paths are prepended, keeping
+ *    the previous newest-first replay order for hierarchically-overlapping
+ *    paths.
+ *  - forward (redo): the NEWEST value per path wins, but the stored patch
+ *    keeps the op of the OLDEST forward patch: if the burst CREATED the prop,
+ *    the folded patch stays 'add'-shaped so redo replays from the post-undo
+ *    state where the prop is absent. Mutative's `apply` treats 'add' and
+ *    'replace' identically for plain-object keys (verified against
+ *    mutative@1.3.0 `src/apply.ts`, pinned by `historyCoalescingFold.test.ts`)
+ *    — they differ only for array indices, which coalescing recipes never
+ *    patch — so preserving the op is exactness, not necessity. When a
+ *    'remove' op is involved on either side, the incoming patch replaces the
+ *    stored one wholesale: deleting an absent object key is a no-op, so the
+ *    newest patch already describes the burst's net effect for that path.
+ *
+ * Undo/redo results are bit-identical to the previous concat behavior —
+ * replaying [newest…oldest] inverses leaves the oldest value per path, and
+ * replaying [oldest…newest] forwards leaves the newest.
+ */
+function foldIntoCoalescedEntry(top: Draft<HistoryEntry>, entry: HistoryEntry): void {
+  const knownInverse = new Set<string>()
+  for (const p of top.inverse) knownInverse.add(patchPathKey(p.path))
+  const freshInverse = entry.inverse.filter((p) => !knownInverse.has(patchPathKey(p.path)))
+  if (freshInverse.length > 0) top.inverse = [...freshInverse, ...top.inverse]
+
+  const forward = [...top.forward]
+  const forwardIndexByPath = new Map<string, number>()
+  forward.forEach((p, i) => forwardIndexByPath.set(patchPathKey(p.path), i))
+  for (const incoming of entry.forward) {
+    const key = patchPathKey(incoming.path)
+    const i = forwardIndexByPath.get(key)
+    if (i === undefined) {
+      forwardIndexByPath.set(key, forward.length)
+      forward.push(incoming)
+      continue
+    }
+    const oldest = forward[i]!
+    forward[i] =
+      oldest.op === 'remove' || incoming.op === 'remove'
+        ? incoming
+        : { op: oldest.op, path: incoming.path, value: incoming.value }
+  }
+  top.forward = forward
 }
 
 function applyImportedBodyAttributes(
@@ -87,9 +191,10 @@ function applyImportedBodyAttributes(
  *   - `mutateSiteState`:  the full editor-state draft plus the SiteDocument draft.
  *   - `mutateActiveTree`: the active NodeTree<PageNode>, routed by `activeDocument`.
  *
- * `mutateActiveTree` is the SOLE place that branches on `kind === 'visualComponent'`
- * — every named tree-mutation action delegates to it. Gated by
- * `src/__tests__/architecture/no-vc-mode-branches-in-mutations.test.ts`.
+ * `resolveActiveTreeTarget` (above) is the SOLE implementation of the
+ * `kind === 'visualComponent'` tree routing; `mutateActiveTree` is the only
+ * mutation path through it — every named tree-mutation action delegates there.
+ * Gated by `src/__tests__/architecture/no-vc-mode-branches-in-mutations.test.ts`.
  */
 export function buildSiteHelpers(
   set: (recipe: SiteSliceRecipe) => void,
@@ -103,11 +208,10 @@ export function buildSiteHelpers(
    * Commit one transaction's site-scoped patch pair to undo history.
    *
    * Coalescing: when the incoming key matches the in-progress burst, the entry
-   * folds into the existing top entry instead of pushing a new one — the new
-   * inverse is PREPENDED (so undo reverts newest-change-first back to the
-   * pre-burst state) and the new forward is APPENDED (redo replays in order).
-   * A whole typing burst is therefore one undo step. Patch arrays stay tiny
-   * (one path per keystroke), so the concatenation cost is negligible.
+   * folds into the existing top entry instead of pushing a new one — deduped
+   * by patch path via `foldIntoCoalescedEntry` (oldest inverse wins, newest
+   * forward value wins), so a whole typing burst is one undo step holding at
+   * most one patch pair per touched path.
    */
   function commitHistory(state: Draft<EditorStore>, entry: HistoryEntry): void {
     const coalescing =
@@ -115,9 +219,7 @@ export function buildSiteHelpers(
       entry.coalesceKey === state._historyCoalesceKey &&
       state._historyPast.length > 0
     if (coalescing) {
-      const top = state._historyPast[state._historyPast.length - 1]!
-      top.inverse = [...entry.inverse, ...top.inverse]
-      top.forward = [...top.forward, ...entry.forward]
+      foldIntoCoalescedEntry(state._historyPast[state._historyPast.length - 1]!, entry)
       state._historyFuture = []
       state.canRedo = false
       return
@@ -199,48 +301,63 @@ export function buildSiteHelpers(
   }
 
   /**
+   * Shared recipe core for `mutateActiveTree` / `mutateActiveTreeAndSite`.
+   *
+   * Routes to the active tree via `resolveActiveTreeTarget`, runs `fn`, and —
+   * in VC mode — propagates any change in the VC's slot-outlet set to every
+   * consumer VC ref, across all pages AND every other VC's tree (refs nested
+   * inside other VCs, ISS-026), via `syncAllVCRefSlotInstances`. The sweep
+   * runs INSIDE the recipe so those writes land in the same patch set.
+   *
+   * The sweep is GATED on an actual change of the VC's ordered slot-outlet
+   * name sequence: the pre-mutation sequence is read from the frozen store
+   * state (cheap — no draft proxies), the post-mutation sequence from the
+   * VC-tree-sized draft. That sequence is the ONLY input `syncSlotInstances`
+   * reads from the VC, so an unchanged sequence makes the sweep a guaranteed
+   * no-op — and running it anyway rewrites every consumer ref's `children`
+   * array, turning each per-keystroke VC prop edit into a site-wide sweep.
+   * Gating on the ordered sequence (not the name SET) keeps outlet reorders
+   * propagating, since slot-instance order follows outlet order.
+   */
+  function runActiveTreeRecipe(
+    draft: Draft<EditorStore>,
+    fn: (tree: NodeTree<PageNode>) => SiteMutationResult,
+  ): SiteMutationResult {
+    const target = resolveActiveTreeTarget(draft)
+    if (!target) return false
+    const { tree, vc } = target
+    if (!vc) return fn(tree)
+
+    // `get()` is the frozen pre-mutation state — the VC is guaranteed present
+    // there because the draft (where it was just found) mirrors it.
+    const frozenVc = get().site?.visualComponents.find((v) => v.id === vc.id)
+    const outletNamesBefore = frozenVc ? collectVCSlotOutletNames(frozenVc.tree) : null
+
+    const result = fn(tree)
+    if (result === false) return false
+
+    const outletNamesAfter = collectVCSlotOutletNames(vc.tree)
+    if (outletNamesBefore === null || !stringArraysEqual(outletNamesBefore, outletNamesAfter)) {
+      syncAllVCRefSlotInstances(allTreeNodeMaps(draft.site!), vc.id, vc)
+    }
+    return result
+  }
+
+  /**
    * Mutate the active node tree — auto-records undo history on real changes.
    *
-   * Routes to the correct tree based on `activeDocument`:
+   * Routes based on `activeDocument` (see `resolveActiveTreeTarget`):
    *   - Page mode (null or kind === 'page'): passes the active Page directly —
    *     Page IS NodeTree<PageNode> so no conversion needed.
-   *   - VC mode (kind === 'visualComponent'): passes vc.tree directly —
-   *     VCNode (= BaseNode) is structurally compatible with PageNode (which only
-   *     adds optional `dynamicBindings`), so the cast is safe for all tree
-   *     mutations that operate on BaseNode-level fields.
-   *     After the mutation, propagates any change in the VC's slot-outlet set
-   *     to every consumer VC ref — across all pages AND every other VC's tree
-   *     (refs nested inside other VCs, ISS-026) — via
-   *     `syncAllVCRefSlotInstances`, run INSIDE the recipe so those writes are
-   *     captured in the same patch set.
+   *   - VC mode (kind === 'visualComponent'): passes vc.tree directly, then
+   *     propagates slot-outlet changes to every consumer VC ref when the
+   *     outlet sequence changed (see `runActiveTreeRecipe`).
    */
   function mutateActiveTree(
     fn: (tree: NodeTree<PageNode>) => SiteMutationResult,
     opts?: { coalesceKey?: string },
   ): boolean {
-    return runHistoricMutation((draft) => {
-      const site = draft.site!
-      const { activeDocument } = draft
-
-      if (activeDocument?.kind === 'visualComponent') {
-        const vc = site.visualComponents.find((v) => v.id === activeDocument.vcId)
-        if (!vc) return false
-        // VCNode is structurally compatible with PageNode (dynamicBindings is optional).
-        const result = fn(vc.tree as NodeTree<PageNode>)
-        if (result === false) return false
-        // Propagate slot-outlet changes to every consumer VC ref — in pages AND
-        // nested inside other VC trees. Idempotent when the slot-outlet set is
-        // unchanged.
-        syncAllVCRefSlotInstances(allTreeNodeMaps(site), vc.id, vc)
-        return result
-      }
-
-      // Page mode (activeDocument is null or kind === 'page').
-      const pageId = activeDocument?.kind === 'page' ? activeDocument.pageId : draft.activePageId
-      const page = site.pages.find((p) => p.id === pageId)
-      if (!page) return false
-      return fn(page)
-    }, opts?.coalesceKey ?? null)
+    return runHistoricMutation((draft) => runActiveTreeRecipe(draft, fn), opts?.coalesceKey ?? null)
   }
 
   /** Mutate the site — auto-records undo history on real changes. */
@@ -270,9 +387,10 @@ export function buildSiteHelpers(
 
   /**
    * Mutate the active node tree AND the surrounding site — records undo history
-   * on real changes. Same active-document routing as `mutateActiveTree`, but
-   * also hands the recipe a `SiteDocument` draft so it can read or write
-   * site-level state alongside the tree mutation in one transaction.
+   * on real changes. Same routing and slot-outlet propagation contract as
+   * `mutateActiveTree` (shared via `runActiveTreeRecipe`), but also hands the
+   * recipe a `SiteDocument` draft so it can read or write site-level state
+   * alongside the tree mutation in one transaction.
    *
    * Used by duplicate operations that must clone scoped classes (which live
    * on `site.styleRules`) atomically with the node duplication. Without this
@@ -282,25 +400,10 @@ export function buildSiteHelpers(
   function mutateActiveTreeAndSite(
     fn: (tree: NodeTree<PageNode>, site: SiteDocument) => SiteMutationResult,
   ): boolean {
-    return runHistoricMutation((draft) => {
-      const site = draft.site!
-      const { activeDocument } = draft
-
-      if (activeDocument?.kind === 'visualComponent') {
-        const vc = site.visualComponents.find((v) => v.id === activeDocument.vcId)
-        if (!vc) return false
-        const result = fn(vc.tree as NodeTree<PageNode>, site)
-        if (result === false) return false
-        // Mirror mutateActiveTree's slot-outlet propagation contract.
-        syncAllVCRefSlotInstances(allTreeNodeMaps(site), vc.id, vc)
-        return result
-      }
-
-      const pageId = activeDocument?.kind === 'page' ? activeDocument.pageId : draft.activePageId
-      const page = site.pages.find((p) => p.id === pageId)
-      if (!page) return false
-      return fn(page, site)
-    }, null)
+    return runHistoricMutation(
+      (draft) => runActiveTreeRecipe(draft, (tree) => fn(tree, draft.site!)),
+      null,
+    )
   }
 
   /**

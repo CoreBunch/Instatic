@@ -382,17 +382,24 @@ publishDraftSite (server/repositories/publish.ts)
     │
     ├─→ load draft site shell + all page-table rows + all VC rows
     ├─→ build runtime scripts + runtime package importmap
-    ├─→ for each page: freeze into a PublishedPageSnapshot (JSON)
-    ├─→ insert into data_row_versions with snapshot_json = that snapshot
+    ├─→ write the SiteDocument ONCE into site_snapshots (content hash stamped
+    │     for the publish-status check); each page's data_row_versions row
+    │     references it via site_snapshot_id + carries its runtime_assets_json
     ├─→ flip data_rows.status = 'published', set active_version_id
-    │
-    ├─→ Layer A bake — CSS bundles + runtime JS → writeStaticAsset(<slot>)
     │
     ├─→ Layer A bake — every page (complete doc, or static shell with <instatic-hole>):
     │     ├── renderPublishedSnapshot(snapshot, { db, url, publishVersion }) → HTML
     │     ├── applyPublishedHtmlPipeline(rendered, db) → final HTML
     │     │   (plugin filters + frontend asset injection baked in)
     │     └── writeArtefact(<inactiveSlot>, urlPath, html)
+    │
+    ├─→ Layer A bake — every published data-row route (bakeDataRows.ts):
+    │     entry-template render through the same pipeline → writeArtefact
+    │     (without this, the slot swap would strand every row artefact)
+    │
+    ├─→ Layer A bake — CSS bundles + runtime JS → writeStaticAsset(<slot>)
+    │     (page-invariant CSS trio computed once per publish via the
+    │      version-keyed memo in siteCssBundle.ts; userStyles per page)
     │         (atomic per-file: tmp + rename; per-page try/catch)
     │
     ├─→ swapSlot(uploadsDir, newActiveSlot)
@@ -420,13 +427,20 @@ tryServePublicRoute (server/router.ts)
           │     hit → stream HTML (~0.6–1.4 ms, no DB, no render, no filter)
           │     (URLs with only junk params hit Layer A just like bare URLs)
           │
+          ├─→ Layer B peek (warm fast-path): a version-matched cached 200 for
+          │     (urlPath, canonicalQuery) is served immediately — zero DB work.
+          │     Safe because every route retraction (unpublish, soft-delete,
+          │     table move) bumps publishVersion, evicting the whole cache.
+          │
           ├─→ resolvePublicRoute(db, url) → page | row | redirect | not-found
           │     page slug hit skipped when page.template.enabled === true (template pages
           │     are never directly routable — falls through to row/redirect/not-found)
+          │     row resolutions read the site snapshot via the per-version memo
+          │     (publishedSnapshotCache.ts) — no per-request full-site parse
           │     redirects → 301 (not cached)
           │     not-found → null (router falls through to next handler)
           │
-          └─→ Layer B in-memory LRU:
+          └─→ Layer B in-memory LRU (miss path):
                 getOrRender({urlPath, queryString: canonicalQuery}, async () => {
                   publishPage(page, site, registry, options) using snapshot bytes
                   applyPublishedHtmlPipeline (plugin filters)
@@ -443,7 +457,7 @@ The visitor-facing artefacts are:
 2. **In-memory LRU entries** — for dynamic routes (loops, request-dependent bindings). Filled lazily, evicted on every publish.
 3. **`<instatic-hole>` fragment responses** at `/_instatic/hole/<nodeId>` — for dynamic nodes inside otherwise-cacheable pages. Fetched lazily by the IntersectionObserver runtime; also cached in Layer B.
 
-The `PublishedPageSnapshot` (JSON) in `data_row_versions.snapshot_json` remains the canonical audit record — all three layers derive from it.
+The published `SiteDocument` is stored once per publish in `site_snapshots` and referenced by `data_row_versions.site_snapshot_id`; the `PublishedPageSnapshot` reassembled from that join remains the canonical audit record — all three layers derive from it. At request time it is memoised per publish version (`server/publish/publishedSnapshotCache.ts`, shared by the public router's row resolution, the hole endpoint, and the loop endpoint), and `renderPublicResolution` serves a warm Layer B entry *before* any route resolution — a cache hit does zero DB work.
 
 ---
 

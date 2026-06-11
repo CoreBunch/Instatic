@@ -106,7 +106,8 @@ const GRANDFATHERED: Record<string, number> = {
   // (cloneNode.ts) so the three duplicate/paste/duplicatePage callers share one
   // clone. See docs/reference/page-tree.md (parentId).
   'src/core/page-tree/mutations.ts': 880,
-  'server/plugins/host/handlers/content.ts': 786,
+  // server/plugins/host/handlers/content.ts graduated (786 → 661) when the
+  // DB→wire projection helpers moved to contentProjection.ts.
   'src/core/siteImport/cssToStyleRules.ts': 742,
   'src/admin/pages/site/panels/TypographyPanel/FontsSection/AddGoogleFontDialog.tsx': 751,
   'src/core/markdown/markdownDocument.ts': 748,

@@ -15,7 +15,7 @@ The server is a single `Bun.serve` process that boots the DB, runs migrations, a
 - **DB:** one `DbClient` interface (`server/db/client.ts`) — tagged-template callable returning `{ rows, rowCount }`. Two adapters: `postgres.ts` (via `Bun.sql`) and `sqlite.ts` (via `bun:sqlite`). Selected by `DATABASE_URL`.
 - **Repositories** (`server/repositories/`) hold all SQL. Handlers never write SQL directly.
 - **Plugins:** `server/plugins/runtime.ts` activates installed plugins at boot; per-plugin code runs in QuickJS-WASM sandboxes (`server/plugins/quickjs/vm.ts`, `modulePackVm.ts`).
-- **Published pages and content rows** are served by `tryServePublicRoute`, which delegates resolution + render to `server/publish/publicRouter.ts` (live render from the JSON snapshot stored in `data_row_versions.snapshot_json`). Uploads + admin SPA assets are served from disk by `tryServeUpload` and `tryServeStaticAsset`.
+- **Published pages and content rows** are served by `tryServePublicRoute`, which delegates resolution + render to `server/publish/publicRouter.ts`. A warm Layer B cache entry is served before any DB work; on a miss the live render reads the published `SiteDocument` from `site_snapshots` (stored once per publish, referenced by `data_row_versions.site_snapshot_id`, memoised per publish version). Uploads + admin SPA assets are served from disk by `tryServeUpload` and `tryServeStaticAsset`.
 
 ---
 
@@ -468,11 +468,14 @@ Authors don't toggle anything. `src/core/publisher/dynamicDetection.ts:findDynam
                                 ↓
             publishDraftSite / publishDataRow
                                 │
-              ├── write PublishedPageSnapshot → data_row_versions.snapshot_json
-              ├── bake CSS bundles + runtime JS → writeStaticAsset(inactiveSlot)
+              ├── write SiteDocument once → site_snapshots
+              │     (page versions reference it via site_snapshot_id)
               ├── for each page (complete doc, or static shell with <instatic-hole>):
               │     publishPage + applyPublishedHtmlPipeline
               │     writeArtefact(inactiveSlot, urlPath, html)
+              ├── bake every published data-row route into the same slot
+              │     (bakeDataRows.ts — entry-template render, same pipeline)
+              ├── bake CSS bundles + runtime JS → writeStaticAsset(inactiveSlot)
               ├── swapSlot — atomic symlink rename of uploads/published/current
               └── bumpPublishVersion() — Layer B cache evicts lazily
 

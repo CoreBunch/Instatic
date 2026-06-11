@@ -10,6 +10,7 @@ import { prefetchLoopData, publishedDataRowToLoopItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { getPublishVersion } from './publishState'
 import type { Page } from '@core/page-tree'
+import type { SiteCssBundle } from '@core/publisher'
 import type { PublishedDataRow } from '@core/data/schemas'
 import type { DbClient } from '../db/client'
 import type { PublishedPageSnapshot } from '../repositories/publish'
@@ -39,6 +40,14 @@ export interface RendererOutput {
   pageId: string
   slug: string
   siteId: string
+  /**
+   * The CSS bundle this render's HTML actually references (`<link href>`
+   * hashes). The publish-time bake writes these exact files into the slot so
+   * every baked artefact's CSS is on disk — including hashes that only exist
+   * for template-composed renders (entry templates wrap rows in a merged page
+   * whose page-scoped `userStyles` hash can differ from any raw page's).
+   */
+  cssBundle: SiteCssBundle
 }
 
 export interface RenderPublishedSnapshotContext {
@@ -68,13 +77,14 @@ async function renderMergedTemplate(
   snapshot: PublishedPageSnapshot,
   templateContext: TemplateRenderDataContext | undefined,
   ctx: RenderPublishedSnapshotContext,
-): Promise<string> {
-  const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged)
+): Promise<{ html: string; cssBundle: SiteCssBundle }> {
+  const publishVersion = ctx.publishVersion ?? getPublishVersion()
+  const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged, publishVersion)
   const [loopData, mediaAssets] = await Promise.all([
     prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url),
     prefetchMediaAssets(merged, snapshot.site, registry, ctx.db),
   ])
-  return publishPage(merged, snapshot.site, registry, {
+  const html = publishPage(merged, snapshot.site, registry, {
     templateContext,
     runtimeAssets: snapshot.runtimeAssets,
     runtimePackageImportmap: snapshot.runtimePackageImportmap,
@@ -84,8 +94,9 @@ async function renderMergedTemplate(
     loopData,
     mediaAssets,
     loopEndpointBaseUrl: LOOP_ENDPOINT_BASE_URL,
-    publishVersion: ctx.publishVersion ?? getPublishVersion(),
+    publishVersion,
   }).html
+  return { html, cssBundle }
 }
 
 export async function renderPublishedSnapshot(
@@ -108,8 +119,8 @@ export async function renderPublishedSnapshot(
     ? { entryStack: [], route: buildRouteFrame(ctx.url.toString()) }
     : undefined
 
-  const html = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
-  return { html, pageId: snapshot.pageRowId, slug: page.slug, siteId: snapshot.site.id }
+  const { html, cssBundle } = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
+  return { html, pageId: snapshot.pageRowId, slug: page.slug, siteId: snapshot.site.id, cssBundle }
 }
 
 export async function renderPublishedDataRowTemplate(
@@ -132,6 +143,6 @@ export async function renderPublishedDataRowTemplate(
     ...(ctx.url ? { route: buildRouteFrame(ctx.url.toString()) } : {}),
   }
 
-  const html = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
-  return { html, pageId: merged.id, slug: merged.slug, siteId: snapshot.site.id }
+  const { html, cssBundle } = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
+  return { html, pageId: merged.id, slug: merged.slug, siteId: snapshot.site.id, cssBundle }
 }

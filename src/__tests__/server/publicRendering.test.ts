@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect, it } from 'bun:test'
 import type { DbClient, DbResult } from '../../../server/db'
+import { resetForTests } from '../../../server/publish/renderCache'
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
 import {
   renderPublishedSnapshot,
@@ -72,10 +73,19 @@ function makeFakeDb(
       const row = runtimeAssets.find((asset) => asset.public_path === values[0])
       return { rows: row ? [row as Row] : [], rowCount: row ? 1 : 0 }
     }
-    // getPublishedPageBySlug — queries data_row_versions.snapshot_json
-    if (normalized.includes('select data_row_versions.snapshot_json')) {
+    // getPublishedPageBySlug / getLatestPublishedSiteSnapshot — joins
+    // data_row_versions to site_snapshots
+    if (normalized.includes('site_snapshots.site_json')) {
       return {
-        rows: activeSnapshot ? [{ snapshot_json: activeSnapshot } as Row] : [],
+        rows: activeSnapshot
+          ? [{
+              row_id: activeSnapshot.pageRowId,
+              site_json: activeSnapshot.site,
+              runtime_assets_json: activeSnapshot.runtimeAssets ?? null,
+              importmap_body: activeSnapshot.runtimePackageImportmap?.body ?? null,
+              importmap_sha256: activeSnapshot.runtimePackageImportmap?.sha256 ?? null,
+            } as unknown as Row]
+          : [],
         rowCount: activeSnapshot ? 1 : 0,
       }
     }
@@ -96,6 +106,13 @@ function makeFakeDb(
 }
 
 describe('public rendering', () => {
+  // Each test serves a different snapshot/db at the same publish version, and
+  // the public router now peeks the Layer B cache BEFORE resolving the route —
+  // without a reset, one test's cached `/` render would be served to the next.
+  beforeEach(() => {
+    resetForTests()
+  })
+
   it('renders complete HTML from a published snapshot', async () => {
     const snap = snapshot('Visible to public')
     const { html } = await renderPublishedSnapshot(snap, { db: makeFakeDb(snap) })

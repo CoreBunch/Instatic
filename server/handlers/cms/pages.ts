@@ -42,6 +42,7 @@ import { visualComponentFromRow } from '../../../src/core/data/componentFromRow'
 import { validatePages, SiteValidationError } from '@core/persistence/validate'
 import type { Page } from '@core/page-tree'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
+import { bumpPublishVersionSerialized } from '../../publish/publishState'
 import { Type } from '@core/utils/typeboxHelpers'
 import { CMS_API_PREFIX } from './shared'
 
@@ -115,6 +116,7 @@ export async function handlePagesRoutes(req: Request, db: DbClient): Promise<Res
     }
 
     // Batch reconcile: create / update / soft-delete in a transaction
+    let reapedPublished = false
     await db.transaction(async (tx) => {
       const existingRows = await listDataRows(tx, 'pages')
       const existingById = new Map(existingRows.map((r) => [r.id, r]))
@@ -133,9 +135,16 @@ export async function handlePagesRoutes(req: Request, db: DbClient): Promise<Res
       // Soft-delete only the rows the client knew about and dropped — never a
       // concurrently-created sibling page (ISS-041).
       for (const rowId of pagesToReap([...existingById.keys()], incomingIds, baselineIds)) {
-        await softDeleteDataRow(tx, rowId, user.id)
+        const deleted = await softDeleteDataRow(tx, rowId, user.id)
+        if (deleted?.status === 'published') reapedPublished = true
       }
     })
+
+    // Reaping a published page retracts its public route — invalidate the
+    // render cache AFTER the transaction commits (never inside it: the bump
+    // serializes against the publish lock, which itself waits on the
+    // transaction chain).
+    if (reapedPublished) await bumpPublishVersionSerialized()
 
     return jsonResponse({ ok: true })
   }

@@ -116,8 +116,20 @@ function makeDb(options: {
   const tableRows = options.tableRows ?? { newsletter_submissions: newsletterTableRow }
   const db = createFakeDb(async (rawSql, params): Promise<DbResult> => {
     const sql = rawSql.replace(/\s+/g, ' ').trim().toLowerCase()
-    if (sql.startsWith('select data_row_versions.snapshot_json')) {
-      return { rows: [{ snapshot_json: snapshot }], rowCount: 1 }
+    // getPublishedPageSnapshotById — joins data_row_versions to site_snapshots.
+    // Must be matched before the generic `select data_rows.id` branch below
+    // (the snapshot getter's SELECT also starts with `select data_rows.id`).
+    if (sql.includes('site_snapshots.site_json')) {
+      return {
+        rows: [{
+          row_id: snapshot.pageRowId,
+          site_json: snapshot.site,
+          runtime_assets_json: snapshot.runtimeAssets ?? null,
+          importmap_body: snapshot.runtimePackageImportmap?.body ?? null,
+          importmap_sha256: snapshot.runtimePackageImportmap?.sha256 ?? null,
+        }],
+        rowCount: 1,
+      }
     }
     if (sql.startsWith('select id, name, slug, kind, route_base')) {
       const row = tableRows[String(params[0])]

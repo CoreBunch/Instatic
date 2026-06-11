@@ -192,16 +192,16 @@ renameNode, toggleNodeLocked, toggleNodeHidden,
 moveNode, duplicateNode, wrapNode
 ```
 
-Every one of them is a **one-liner** that delegates to `mutateActiveTree(fn)` — the sole place that branches on page-mode vs. VC-mode:
+Every one of them is a **one-liner** that delegates to `mutateActiveTree(fn)`, which routes via `resolveActiveTreeTarget` — the sole implementation of the page-mode vs. VC-mode branch:
 
 ```ts
-// src/admin/pages/site/store/slices/site/ (canonical pattern)
+// src/admin/pages/site/store/slices/site/helpers.ts (canonical pattern)
+function resolveActiveTreeTarget(state): NodeTree<PageNode> {
+  // page mode → the active Page (Page IS NodeTree<PageNode>)
+  // VC mode   → the VC's tree (VCNode === BaseNode structurally)
+}
 function mutateActiveTree(fn: (tree: NodeTree<PageNode>) => void): void {
-  if (mode === 'page') {
-    fn(activePage)                              // Page IS NodeTree<PageNode>
-  } else {
-    fn(vc.tree as NodeTree<PageNode>)           // VCNode === BaseNode structurally
-  }
+  fn(resolveActiveTreeTarget(draft))
 }
 
 // All 11 actions follow this shape:

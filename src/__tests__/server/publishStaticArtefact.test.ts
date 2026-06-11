@@ -67,10 +67,38 @@ function buildFakeDb(
   const staticSnapshot = makeSnapshot(staticPage)
   const dynamicSnapshot = makeSnapshot(dynamicPage)
 
+  /** Row shape the snapshot getters' 3-way join returns. */
+  const toSnapshotRow = (snapshot: PublishedPageSnapshot) => ({
+    row_id: snapshot.pageRowId,
+    site_json: snapshot.site,
+    runtime_assets_json: snapshot.runtimeAssets ?? null,
+    importmap_body: snapshot.runtimePackageImportmap?.body ?? null,
+    importmap_sha256: snapshot.runtimePackageImportmap?.sha256 ?? null,
+  })
+
   let insertCallCount = 0
 
   return createFakeDb(async (sql: string, params: unknown[]): Promise<DbResult> => {
     const s = sql.replace(/\s+/g, ' ').trim().toLowerCase()
+
+    // ── snapshot getters (live render fallback / row bake) ────────────────
+    // MUST precede the listDataRows branch below: getLatestPublishedSiteSnapshot
+    // also contains `select data_rows.id` + `order by`.
+    if (s.includes('site_snapshots.site_json')) {
+      // getPublishedPageBySlug — parameterised on data_rows.slug.
+      if (s.includes('data_rows.slug =')) {
+        const slug = typeof params[0] === 'string' ? params[0] : ''
+        if (slug === staticPage.slug || slug === 'index') {
+          return { rows: [toSnapshotRow(staticSnapshot)], rowCount: 1 }
+        }
+        if (slug === dynamicPage.slug) {
+          return { rows: [toSnapshotRow(dynamicSnapshot)], rowCount: 1 }
+        }
+        return { rows: [], rowCount: 0 }
+      }
+      // getLatestPublishedSiteSnapshot
+      return { rows: [toSnapshotRow(staticSnapshot)], rowCount: 1 }
+    }
 
     // ── getDraftSite ───────────────────────────────────────────────────────
     if (s.startsWith('select id, name, version, enabled, lifecycle_status')) {
@@ -195,6 +223,11 @@ function buildFakeDb(
       return { rows: [{ next_version: 1 }], rowCount: 1 }
     }
 
+    // ── insert into site_snapshots (one per publish) ──────────────────────
+    if (s.includes('insert into site_snapshots')) {
+      return { rows: [], rowCount: 1 }
+    }
+
     // ── insert into data_row_versions ─────────────────────────────────────
     if (s.includes('insert into data_row_versions')) {
       insertCallCount++
@@ -212,23 +245,6 @@ function buildFakeDb(
     // ── update data_rows (status=published) ───────────────────────────────
     if (s.includes('update data_rows') && s.includes("status = 'published'")) {
       return { rows: [], rowCount: 1 }
-    }
-
-    // ── getPublishedPageBySlug (live render fallback) ─────────────────────
-    if (s.includes('select data_row_versions.snapshot_json') && s.includes('data_rows.slug =')) {
-      const slug = typeof params[0] === 'string' ? params[0] : ''
-      if (slug === staticPage.slug || slug === 'index') {
-        return { rows: [{ snapshot_json: staticSnapshot }], rowCount: 1 }
-      }
-      if (slug === dynamicPage.slug) {
-        return { rows: [{ snapshot_json: dynamicSnapshot }], rowCount: 1 }
-      }
-      return { rows: [], rowCount: 0 }
-    }
-
-    // ── getLatestPublishedSiteSnapshot ────────────────────────────────────
-    if (s.includes('select data_row_versions.snapshot_json') && !s.includes('slug')) {
-      return { rows: [{ snapshot_json: staticSnapshot }], rowCount: 1 }
     }
 
     // ── collectFrontendInjections: active_media_storage_adapter ──────────
@@ -344,7 +360,7 @@ describe('publishDraftSite — Layer A static artefacts', () => {
     let snapshotLookupCalled = false
     const diskCssDb = createFakeDb(async (sql: string): Promise<DbResult> => {
       const s = sql.toLowerCase()
-      if (s.includes('snapshot_json')) snapshotLookupCalled = true
+      if (s.includes('site_snapshots')) snapshotLookupCalled = true
       return { rows: [], rowCount: 0 }
     })
     const cssRes = await handleServerRequest(
@@ -448,7 +464,7 @@ describe('publicRouter — Layer A disk fast-path', () => {
     let snapshotLookupCalled = false
     const db = createFakeDb(async (sql: string): Promise<DbResult> => {
       const s = sql.toLowerCase()
-      if (s.includes('snapshot_json')) {
+      if (s.includes('site_snapshots')) {
         snapshotLookupCalled = true
       }
       if (s.includes('count(*) as count from site')) {
