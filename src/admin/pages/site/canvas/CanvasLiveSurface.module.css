@@ -90,10 +90,3 @@
     pointer-events: none;
     user-select: none;
 }
-
-.emptyState {
-    height: 100%;
-    pointer-events: none;
-    user-select: none;
-    font-family: system-ui, sans-serif;
-}

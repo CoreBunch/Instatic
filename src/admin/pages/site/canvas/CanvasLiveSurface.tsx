@@ -21,6 +21,11 @@
  * Runtime scripts: when the "Run scripts" toggle is on, CanvasRoot passes the
  * bundled scripts down via `runtimeScripts`; they execute inside this frame
  * just as they do in the design frames.
+ *
+ * Loading: while the page / breakpoints are still hydrating, the surface
+ * renders the shared `CanvasFrameSkeleton` inside the live frame's width
+ * model — the same treatment the design canvas's `CanvasTransformLayer`
+ * gives a null page, so both views load consistently.
  */
 
 import {
@@ -38,7 +43,7 @@ import { BreakpointSelectionOverlay } from './BreakpointSelectionOverlay'
 import { CanvasBreakpointContext, CanvasTemplateContext } from './CanvasContexts'
 import { IframeFrameSurface, type IframeFrameSurfaceHandle } from './IframeFrameSurface'
 import type { InjectableRuntimeScript } from './useRuntimeScriptBuild'
-import { EmptyState } from '@ui/components/EmptyState'
+import { CanvasFrameSkeleton } from '@admin/shared/CanvasFrameSkeleton'
 import styles from './CanvasLiveSurface.module.css'
 
 /**
@@ -196,12 +201,21 @@ export function CanvasLiveSurface({
           </div>
         </div>
       ) : (
-        <EmptyState
-          variant="centered"
-          className={styles.emptyState}
-          title="No page selected"
-          description="Open a page to edit it live."
-        />
+        // Same loading treatment as the design canvas: while the page (or the
+        // site's breakpoints) are still hydrating, show the shared frame
+        // skeleton in the live frame's own width model instead of a misleading
+        // empty state. CanvasTransformLayer does the equivalent per breakpoint.
+        <div
+          className={styles.frame}
+          style={{
+            '--live-width': effectiveWidth !== null ? `${effectiveWidth}px` : '100%',
+          } as CSSProperties}
+          data-testid="canvas-live-loading-frame"
+        >
+          <div className={styles.iframeViewport}>
+            <CanvasFrameSkeleton breakpointId={activeBreakpoint?.id ?? 'live'} />
+          </div>
+        </div>
       )}
     </div>
   )
