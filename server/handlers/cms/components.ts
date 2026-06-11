@@ -30,20 +30,10 @@
  */
 import type { DbClient } from '../../db/client'
 import { requireCapability } from '../../auth/authz'
-import {
-  listDataRows,
-  listDataRowIdSlugs,
-  createDataRow,
-  updateDataRowDraftCells,
-  softDeleteDataRow,
-} from '../../repositories/data'
-import {
-  visualComponentToCells,
-  vcSlugFromName,
-  visualComponentFromRow,
-} from '../../../src/core/data/componentFromRow'
+import { listDataRows, reconcileDataRowRoster } from '../../repositories/data'
+import { visualComponentToCells, visualComponentFromRow } from '../../../src/core/data/componentFromRow'
 import { SiteValidationError, validateVisualComponentsForPartialWrite } from '@core/persistence/validate'
-import { VisualComponentSchema, type VisualComponent } from '@core/visualComponents'
+import { VisualComponentSchema, vcSlugFromName, type VisualComponent } from '@core/visualComponents'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
 import { Type } from '@core/utils/typeboxHelpers'
 import { CMS_API_PREFIX } from './shared'
@@ -102,26 +92,17 @@ export async function handleComponentsRoutes(req: Request, db: DbClient): Promis
       throw err
     }
 
-    // Batch reconcile: create / update / soft-delete in one short transaction.
-    await db.transaction(async (tx) => {
-      const existingIds = new Set((await listDataRowIdSlugs(tx, 'components')).map((r) => r.id))
-
-      for (const vc of components) {
-        const cells = visualComponentToCells(vc)
-        const slug = vcSlugFromName(vc.name)
-        if (existingIds.has(vc.id)) {
-          await updateDataRowDraftCells(tx, vc.id, { cells, slug }, user.id)
-        } else {
-          await createDataRow(tx, { id: vc.id, tableId: 'components', cells, slug }, user.id)
-        }
-      }
-
-      // Soft-delete rows no longer in the client's roster
-      for (const rowId of existingIds) {
-        if (!componentIds.has(rowId)) {
-          await softDeleteDataRow(tx, rowId, user.id)
-        }
-      }
+    // Batch reconcile: soft-delete / create / update in one short transaction
+    // (reap-first + two-phase slug writes — see rows/reconcile.ts).
+    await reconcileDataRowRoster(db, {
+      tableId: 'components',
+      writes: components.map((vc) => ({
+        id: vc.id,
+        cells: visualComponentToCells(vc),
+        slug: vcSlugFromName(vc.name),
+      })),
+      keepIds: componentIds,
+      actorUserId: user.id,
     })
 
     return jsonResponse({ ok: true })

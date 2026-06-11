@@ -13,7 +13,7 @@
  */
 
 import type { DataRow, DataRowCells } from '@core/data/schemas'
-import { parseSavedLayout, type SavedLayout } from '@core/layouts'
+import { layoutSlugFromName, parseSavedLayout, type SavedLayout } from '@core/layouts'
 
 // ---------------------------------------------------------------------------
 // DataRow → SavedLayout
@@ -73,18 +73,4 @@ export function savedLayoutToCells(layout: SavedLayout): DataRowCells {
     },
     classes: layout.classes,
   }
-}
-
-/**
- * Derive the storage slug from a saved-layout name.
- * Converts to lower-kebab-case; falls back to 'layout' on empty input.
- */
-export function layoutSlugFromName(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
-    .replace(/^-+|-+$/g, '')
-  return slug || 'layout'
 }

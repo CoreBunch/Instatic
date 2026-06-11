@@ -15,7 +15,7 @@ export type { VisualComponent, VCNode, VCParam, VCParamType } from './schemas'
 export { instantiateVCAtRef } from './instantiate'
 export type { InstantiatedVCNode } from './instantiate'
 
-export { validateComponentName, validateParamName } from './nameValidation'
+export { validateComponentName, validateParamName, vcSlugFromName } from './nameValidation'
 
 export { getReferencedComponentIds, wouldCreateCycle } from './recursionGuard'
 

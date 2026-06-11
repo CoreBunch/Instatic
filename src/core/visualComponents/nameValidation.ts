@@ -7,6 +7,10 @@
  *
  *   1. Name must not be empty / whitespace-only.
  *   2. Name must be unique within the site (selfId skips own entry on rename).
+ *      Uniqueness is judged on the DERIVED SLUG, not the raw string — names
+ *      are stored as `data_rows.slug` via `vcSlugFromName`, which lowercases
+ *      and strips symbols, so "Button" and "button" are the same identity
+ *      (`data_rows_table_slug_active_idx` would reject the second row).
  *
  * Param names follow the same logic at validateParamName():
  *   1. Name must not be empty.
@@ -14,6 +18,20 @@
  *
  * Constraint #269: This file must NOT import from editor/ or editor-store/.
  */
+
+/**
+ * Derive the storage slug from a Visual Component name.
+ * Converts to lower-kebab-case; falls back to 'component' on empty input.
+ */
+export function vcSlugFromName(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/^-+|-+$/g, '')
+  return slug || 'component'
+}
 
 // ---------------------------------------------------------------------------
 // NameError codes — one per failure reason
@@ -62,13 +80,17 @@ export function validateComponentName(
 
   const trimmed = name.trim()
 
-  // Rule 2 — must be unique within the site (skip own entry on rename via selfId)
-  const duplicate = existing.find((vc) => vc.id !== selfId && vc.name === trimmed)
+  // Rule 2 — must be unique within the site (skip own entry on rename via
+  // selfId). Identity is the derived storage slug, not the raw string.
+  const slug = vcSlugFromName(trimmed)
+  const duplicate = existing.find((vc) => vc.id !== selfId && vcSlugFromName(vc.name) === slug)
   if (duplicate) {
     return {
       ok: false,
       error: 'PROJECT_DUPLICATE',
-      reason: `Another component is already named "${trimmed}".`,
+      reason: duplicate.name === trimmed
+        ? `Another component is already named "${trimmed}".`
+        : `"${trimmed}" conflicts with the existing component "${duplicate.name}" — both store as "${slug}".`,
     }
   }
 

@@ -29,8 +29,10 @@ import {
   saveDataRowDraft,
 } from '../../../repositories/data'
 import { pageFromRow, pageToCells } from '../../../../src/core/data/pageFromRow'
-import { visualComponentToCells, vcSlugFromName } from '../../../../src/core/data/componentFromRow'
-import { savedLayoutFromRow, savedLayoutToCells, layoutSlugFromName } from '../../../../src/core/data/layoutFromRow'
+import { visualComponentToCells } from '../../../../src/core/data/componentFromRow'
+import { savedLayoutFromRow, savedLayoutToCells } from '../../../../src/core/data/layoutFromRow'
+import { vcSlugFromName } from '@core/visualComponents'
+import { layoutSlugFromName } from '@core/layouts'
 import { badRequest, jsonResponse, methodNotAllowed } from '../../../http'
 import { type CmsHandlerOptions, requestAuditContext } from '../shared'
 import { pluginNotFound } from './shared'

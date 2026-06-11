@@ -28,21 +28,11 @@
  */
 import type { DbClient } from '../../db/client'
 import { requireCapability } from '../../auth/authz'
-import {
-  listDataRows,
-  listDataRowIdSlugs,
-  createDataRow,
-  updateDataRowDraftCells,
-  softDeleteDataRow,
-} from '../../repositories/data'
-import {
-  savedLayoutFromRow,
-  savedLayoutToCells,
-  layoutSlugFromName,
-} from '../../../src/core/data/layoutFromRow'
+import { listDataRows, reconcileDataRowRoster } from '../../repositories/data'
+import { savedLayoutFromRow, savedLayoutToCells } from '../../../src/core/data/layoutFromRow'
 import { SiteValidationError } from '@core/persistence/validate'
 import { validateSavedLayoutsForPartialWrite } from '@core/persistence/validateLayouts'
-import { SavedLayoutSchema, type SavedLayout } from '@core/layouts'
+import { SavedLayoutSchema, layoutSlugFromName, type SavedLayout } from '@core/layouts'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
 import { Type } from '@core/utils/typeboxHelpers'
 import { CMS_API_PREFIX } from './shared'
@@ -100,26 +90,17 @@ export async function handleLayoutsRoutes(req: Request, db: DbClient): Promise<R
       throw err
     }
 
-    // Batch reconcile: create / update / soft-delete in one short transaction.
-    await db.transaction(async (tx) => {
-      const existingIds = new Set((await listDataRowIdSlugs(tx, 'layouts')).map((r) => r.id))
-
-      for (const layout of layouts) {
-        const cells = savedLayoutToCells(layout)
-        const slug = layoutSlugFromName(layout.name)
-        if (existingIds.has(layout.id)) {
-          await updateDataRowDraftCells(tx, layout.id, { cells, slug }, user.id)
-        } else {
-          await createDataRow(tx, { id: layout.id, tableId: 'layouts', cells, slug }, user.id)
-        }
-      }
-
-      // Soft-delete rows no longer in the client's roster
-      for (const rowId of existingIds) {
-        if (!layoutIds.has(rowId)) {
-          await softDeleteDataRow(tx, rowId, user.id)
-        }
-      }
+    // Batch reconcile: soft-delete / create / update in one short transaction
+    // (reap-first + two-phase slug writes — see rows/reconcile.ts).
+    await reconcileDataRowRoster(db, {
+      tableId: 'layouts',
+      writes: layouts.map((layout) => ({
+        id: layout.id,
+        cells: savedLayoutToCells(layout),
+        slug: layoutSlugFromName(layout.name),
+      })),
+      keepIds: layoutIds,
+      actorUserId: user.id,
     })
 
     return jsonResponse({ ok: true })

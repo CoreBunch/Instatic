@@ -49,6 +49,8 @@ export {
   scheduleDataRowPublish,
   cancelScheduledPublish,
   listDuePublishSchedules,
+  reconcileDataRowRoster,
+  rowsToReap,
 } from './rows'
 
 export type { ListDataRowsFilterOptions, ListDataRowsWithFilterResult } from './rows'
