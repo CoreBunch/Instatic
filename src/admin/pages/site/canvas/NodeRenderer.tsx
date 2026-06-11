@@ -59,6 +59,15 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
       s.hoveredNodeId === nodeId &&
       (!s.hoveredBreakpointId || s.hoveredBreakpointId === breakpointId),
   )
+  // Inline text edit session — true only in the SESSION'S frame, so the
+  // doubled text is hidden where the overlay floats while every other
+  // breakpoint frame keeps previewing the live-updating text.
+  const isInlineEditing = useEditorStore(
+    (s) =>
+      s.activeInlineEdit !== null &&
+      s.activeInlineEdit.nodeId === nodeId &&
+      s.activeInlineEdit.breakpointId === breakpointId,
+  )
   const previewClassAssignment = useEditorStore(
     (s) => s.previewClassAssignment?.nodeId === nodeId ? s.previewClassAssignment : null,
   )
@@ -192,6 +201,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
     ...(isSelected ? { 'data-canvas-selected': 'true' as const } : {}),
     ...(inlineStyle ? { style: inlineStyle } : {}),
     ...(isHovered && !isSelected ? { 'data-hovered': 'true' as const } : {}),
+    ...(isInlineEditing ? { 'data-instatic-inline-editing': 'true' as const } : {}),
     onPointerDownCapture: (e) => {
       if (!shouldSuppressAuthoredFormControlEvent(e.target, e.currentTarget)) return
       e.preventDefault()
@@ -235,7 +245,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
       if (isCanvasEditorControlTarget(e.target, e.currentTarget)) return
       e.preventDefault()
       e.stopPropagation()
-      onNodeDoubleClick(nodeId, e as unknown as React.MouseEvent)
+      onNodeDoubleClick(nodeId, e as unknown as React.MouseEvent, breakpointId)
     },
     onDoubleClick: (e) => {
       if (!isClosestCanvasNodeTarget(e.target, e.currentTarget)) return
@@ -245,7 +255,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
       }
       e.preventDefault()
       e.stopPropagation()
-      onNodeDoubleClick(nodeId, e as unknown as React.MouseEvent)
+      onNodeDoubleClick(nodeId, e as unknown as React.MouseEvent, breakpointId)
     },
     onContextMenuCapture: (e) => {
       if (!isClosestCanvasNodeTarget(e.target, e.currentTarget)) return

@@ -5,7 +5,7 @@ interface CanvasSelectionContextValue {
   onNodeClick: (nodeId: string, e: MouseEvent, breakpointId?: string) => void
   onNodeHover: (nodeId: string | null, breakpointId?: string) => void
   onNodeContextMenu: (nodeId: string, e: MouseEvent, breakpointId?: string) => void
-  onNodeDoubleClick: (nodeId: string, e: MouseEvent) => void
+  onNodeDoubleClick: (nodeId: string, e: MouseEvent, breakpointId?: string) => void
 }
 
 export const CanvasSelectionContext = createContext<CanvasSelectionContextValue>({

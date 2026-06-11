@@ -109,12 +109,14 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   const cutNodes = useEditorStore((s) => s.cutNodes)
   const pasteNode = useEditorStore((s) => s.pasteNode)
   const setActiveBreakpoint = useEditorStore((s) => s.setActiveBreakpoint)
+  const startInlineEdit = useEditorStore((s) => s.startInlineEdit)
   const setFocusedPanel = useEditorStore((s) => s.setFocusedPanel)
   const setActiveDocument = useEditorStore((s) => s.setActiveDocument)
   const activeDocument = useEditorStore((s) => s.activeDocument)
   const templatePreviewContext = useTemplatePreviewContext(canvasPage)
-  // Permission context — controls which double-click actions are available:
-  //   canEditStructure → enter VC canvas (structural navigation)
+  // Permission context — gates canvas affordances:
+  //   canEditContent → double-click inline text editing
+  //   canEditStyle / canEditStructure → properties sidebar
   const permissions = useEditorPermissions()
   // Auto-dim non-active breakpoints when a layer is selected and the
   // properties panel is open — gated by the `dimInactiveBreakpoints` user
@@ -285,22 +287,21 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   }
 
   /**
-   * Double-click on a canvas node.
+   * Double-click on a canvas node → start an inline text-edit session when
+   * the node's module declares `inlineTextEdit` (base.text, base.button,
+   * childless base.link — `startInlineEdit` resolves the contract and
+   * no-ops for everything else, so other modules keep the old no-op).
    *
-   * Intentionally a no-op for now. The previous behaviours — entering VC
-   * canvas mode on `base.visual-component-ref`, and opening inline text
-   * edit on text-like modules — were both removed. VC entry still works
-   * from the Site panel and from Spotlight; inline text editing was
-   * removed pending a re-design (see
-   * `docs/features/canvas-iframe-per-frame.md` for context).
-   *
-   * The plumbing (`SelectionContext.onNodeDoubleClick`, the
-   * `onDoubleClick` / `onDoubleClickCapture` entries on `nodeWrapperProps`)
-   * stays in place so a future double-click behaviour can be wired in
-   * without revisiting every module.
+   * Design-canvas only: the InlineTextEditOverlay mounts per
+   * BreakpointFrame, so a live-mode double-click must not open a session
+   * that nothing renders. Entering VC canvas mode on double-click stays
+   * removed — VC entry works from the Site panel and Spotlight (see
+   * `docs/features/canvas-iframe-per-frame.md`).
    */
-  const onNodeDoubleClick = (_nodeId: string, _e: React.MouseEvent) => {
-    // no-op
+  const onNodeDoubleClick = (nodeId: string, e: React.MouseEvent, breakpointId?: string) => {
+    e.stopPropagation()
+    if (isLive || !editable || !permissions.canEditContent) return
+    startInlineEdit(nodeId, breakpointId ?? activeBreakpointId)
   }
 
   // Context carries only stable callbacks — selectedNodeId/hoveredNodeId are

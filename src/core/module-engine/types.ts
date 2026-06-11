@@ -114,6 +114,15 @@ export interface NodeWrapperProps {
   'data-canvas-selected'?: 'true'
   'data-hovered'?: 'true'
   /**
+   * Present on the node's root element in the breakpoint frame that owns an
+   * active inline text-edit session. The canvas-chrome CSS
+   * (CANVAS_CHROME_CSS in the canvas iframeBodyReset module) keys off it to paint the
+   * node's own text transparent while the parent-document overlay floats
+   * over it — in that one frame only; other frames keep showing the
+   * live-updating text.
+   */
+  'data-instatic-inline-editing'?: 'true'
+  /**
    * Read-only region markers, spread onto every element of a non-editable
    * composed subtree (`ReadOnlyNodeTree`). The canvas reads the nearest
    * ancestor carrying these to show a "part of X — double-click to edit" hint

@@ -14,7 +14,7 @@
  * keystroke commits live through `applyInlineEditValue` → `updateNodeProps`,
  * so all OTHER frames preview the change while THIS frame hides the node's
  * own text (`data-instatic-inline-editing` in NodeRenderer + the
- * CANVAS_CHROME_CSS rule in IframeFrameSurface).
+ * CANVAS_CHROME_CSS rule in iframeBodyReset.ts).
  *
  * End-of-session semantics (mirrors the removed in-iframe editor):
  *   - Enter / Cmd+Enter / Ctrl+Enter → commit + close. base.text does not
