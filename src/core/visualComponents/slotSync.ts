@@ -20,7 +20,7 @@ import { deleteSubtree, type BaseNode } from '@core/page-tree'
 import type { VisualComponent } from './schemas'
 
 // ---------------------------------------------------------------------------
-// extractSlotNamesFromVCTree — pure helper
+// collectSlotOutletNames — pure helper
 // ---------------------------------------------------------------------------
 
 /**
@@ -36,14 +36,17 @@ import type { VisualComponent } from './schemas'
  *
  * Returns an empty array when the VC has no slot-outlets.
  */
-function extractSlotNamesFromVCTree(vc: VisualComponent): string[] {
+export function collectSlotOutletNames(tree: {
+  rootNodeId: string
+  nodes: Record<string, BaseNode>
+}): string[] {
   const result: string[] = []
   const seen = new Set<string>()
-  const stack: string[] = [vc.tree.rootNodeId]
+  const stack: string[] = [tree.rootNodeId]
 
   while (stack.length > 0) {
     const id = stack.pop()!
-    const node = vc.tree.nodes[id]
+    const node = tree.nodes[id]
     if (!node) continue
 
     if (node.moduleId === 'base.slot-outlet') {
@@ -163,7 +166,7 @@ export function syncSlotInstances(
   // Slot names sourced directly from `base.slot-outlet` nodes in the VC tree
   // (the slot-outlet IS the slot — no separate vc.params slot entry required).
   // This is the single source of truth for "what slots does this VC declare?".
-  const slotNames = extractSlotNamesFromVCTree(vc)
+  const slotNames = collectSlotOutletNames(vc.tree)
   const targetNames = new Set(slotNames)
 
   // Classify existing children of the VC ref.
