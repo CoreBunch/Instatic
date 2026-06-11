@@ -9,7 +9,6 @@ export type {
   ModuleDefinition,
   AnyModuleDefinition,
   IModuleRegistry,
-  ModuleDependencies,
   RenderOutput,
   ModuleComponentProps,
   InlineEditBinding,
@@ -36,7 +35,6 @@ export {
 } from './runtimeResolver'
 
 export type {
-  NormalizedModuleDependency,
   SiteModuleDependencyUsage,
 } from './dependencies'
 

@@ -25,7 +25,7 @@ import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 // transient failures.
 // ---------------------------------------------------------------------------
 
-export class PageNotPublishedError extends Error {
+class PageNotPublishedError extends Error {
   readonly pageId: string
   constructor(pageId: string) {
     super(`Page "${pageId}" is not currently published`)
@@ -47,7 +47,7 @@ export class PageNotPublishedError extends Error {
  * Throws `PageNotPublishedError` if the page is not found or is not
  * currently published.
  */
-export async function republishSinglePage(db: DbClient, pageId: string): Promise<void> {
+async function republishSinglePage(db: DbClient, pageId: string): Promise<void> {
   // Typed read through the publish repository — the snapshot column is parsed
   // by the DbClient (`*_json` auto-parse) and typed as `PublishedPageSnapshot`,
   // so there is no boundary cast here.

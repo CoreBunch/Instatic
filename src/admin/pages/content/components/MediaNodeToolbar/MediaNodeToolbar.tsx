@@ -33,7 +33,7 @@ import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import styles from './MediaNodeToolbar.module.css'
 
-export interface MediaNodeToolbarProps {
+interface MediaNodeToolbarProps {
   editor: Editor
   /**
    * Opens the host's media-picker modal. The host's existing pick

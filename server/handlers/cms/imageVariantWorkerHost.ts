@@ -140,7 +140,7 @@ function drainQueue(): void {
   }
 }
 
-export type ImageVariantJobInput = Omit<ImageVariantJobRequest, 'kind' | 'correlationId'>
+type ImageVariantJobInput = Omit<ImageVariantJobRequest, 'kind' | 'correlationId'>
 
 /**
  * Submit one image-variant job and await its result. The input `bytes`
@@ -170,24 +170,3 @@ export function isImageVariantOk(
   return response.ok === true
 }
 
-/**
- * Terminate the pool and reject all pending jobs. Exported so test suites
- * can clean up between integration runs; production code never calls it
- * (the workers live for the life of the process and auto-terminate on
- * exit).
- */
-export async function resetImageVariantWorkerPool(): Promise<void> {
-  for (const slot of slots) {
-    try {
-      slot.worker.terminate()
-    } catch {
-      /* noop */
-    }
-  }
-  slots.length = 0
-  for (const [, job] of pending) {
-    job.reject(new Error('image-variant worker pool reset'))
-  }
-  pending.clear()
-  queue.length = 0
-}

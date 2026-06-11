@@ -48,10 +48,7 @@ export {
   updateDataRowAuthor,
   scheduleDataRowPublish,
   cancelScheduledPublish,
-  listDuePublishSchedules,
 } from './rows'
-
-export type { ListDataRowsFilterOptions, ListDataRowsWithFilterResult } from './rows'
 
 export {
   publishDataRow,
@@ -61,7 +58,6 @@ export {
 } from './publish'
 
 export {
-  ensureDefaultEntryTemplate,
   backfillDefaultEntryTemplates,
 } from './templateSeeding'
 

@@ -30,7 +30,7 @@ import type { DbClient } from '../../db/client'
 import { localDayKeyFactory } from '../../time'
 import type { AiProviderId, ToolScope } from '../runtime/types'
 
-export interface UsageRow {
+interface UsageRow {
   promptTokens: number
   completionTokens: number
   costUsd: number
@@ -40,21 +40,21 @@ export interface UsageRow {
   cacheCreationTokens: number
 }
 
-export interface UsageByUserRow extends UsageRow {
+interface UsageByUserRow extends UsageRow {
   userId: string
   userLabel: string
 }
 
-export interface UsageByScopeRow extends UsageRow {
+interface UsageByScopeRow extends UsageRow {
   scope: ToolScope
 }
 
-export interface UsageByDayRow extends UsageRow {
+interface UsageByDayRow extends UsageRow {
   /** Calendar date in YYYY-MM-DD. */
   day: string
 }
 
-export interface UsageByModelRow extends UsageRow {
+interface UsageByModelRow extends UsageRow {
   providerId: AiProviderId
   modelId: string
 }

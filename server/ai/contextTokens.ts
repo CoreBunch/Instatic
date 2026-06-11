@@ -15,7 +15,7 @@
 
 import type { AiProviderId } from './runtime/types'
 
-export interface ContextUsageTokens {
+interface ContextUsageTokens {
   promptTokens: number
   cacheReadTokens?: number
   cacheCreationTokens?: number

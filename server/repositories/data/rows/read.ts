@@ -48,7 +48,7 @@ export async function listDataRows(
   return dataRows
 }
 
-export interface DataRowIdSlug {
+interface DataRowIdSlug {
   id: string
   slug: string
 }

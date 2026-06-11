@@ -30,7 +30,7 @@ import {
 import type { CmsHandlerOptions } from '../shared'
 import { lifecycleErrorMessage, pluginManifestWithGrants } from './shared'
 
-export interface LifecycleHookResult {
+interface LifecycleHookResult {
   plugin: InstalledPlugin
   ok: boolean
 }

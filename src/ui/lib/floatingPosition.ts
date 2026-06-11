@@ -18,7 +18,7 @@ export type FloatingSide = 'top' | 'bottom' | 'left' | 'right' | 'auto'
 export type FloatingAlign = 'start' | 'center' | 'end'
 export type ResolvedFloatingSide = 'top' | 'bottom' | 'left' | 'right'
 
-export interface FloatingRect {
+interface FloatingRect {
   left: number
   top: number
   right: number
@@ -27,7 +27,7 @@ export interface FloatingRect {
   height: number
 }
 
-export interface FloatingPosition {
+interface FloatingPosition {
   /** Final clamped x coordinate (left edge) in viewport pixels. */
   x: number
   /** Final clamped y coordinate (top edge) in viewport pixels. */
@@ -42,7 +42,7 @@ export interface FloatingPosition {
   arrowOffset: number
 }
 
-export interface FloatingPositionOptions {
+interface FloatingPositionOptions {
   /** Floating element width. */
   floatingWidth: number
   /** Floating element height. */

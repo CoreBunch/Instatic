@@ -227,7 +227,7 @@ export type PluginSettingsValue = string | number | boolean
 export type PluginSettingsRecord = Record<string, PluginSettingsValue>
 export type PluginSettingsSchema = NonNullable<PluginManifest['settings']>
 
-export interface CmsPluginSettingsResponse {
+interface CmsPluginSettingsResponse {
   schema: PluginSettingsSchema
   settings: PluginSettingsRecord
   secretsNeedingReentry: string[]
@@ -299,7 +299,7 @@ export interface CmsPluginScheduleRunSummary {
   triggeredBy: 'tick' | 'run-now'
 }
 
-export interface CmsPluginSchedulesResponse {
+interface CmsPluginSchedulesResponse {
   schedules: CmsPluginScheduleSummary[]
   recent: Record<string, CmsPluginScheduleRunSummary[]>
 }

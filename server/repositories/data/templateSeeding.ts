@@ -35,7 +35,7 @@
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../../db/client'
 import type { DataTable } from '@core/data/schemas'
-import { getDataTable, listDataTables } from './tables'
+import { listDataTables } from './tables'
 import { createDataRow } from './rows'
 import { publishDataRow } from './publish'
 
@@ -219,4 +219,4 @@ export async function backfillDefaultEntryTemplates(db: DbClient): Promise<void>
 
 // Re-exported for the createDataTable helper that wants to seed under the
 // id of the just-created table (rather than re-reading via getDataTable).
-export { getDataTable }
+

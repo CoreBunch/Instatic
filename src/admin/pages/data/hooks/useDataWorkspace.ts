@@ -43,7 +43,7 @@ function tableBacksSiteDocument(table: DataTableListItem | null): boolean {
  * loadingTables/loadingRows and tablesError/rowsError fields are kept instead
  * of a single composite loading/error pair.
  */
-export interface DataWorkspace {
+interface DataWorkspace {
   tables: DataTableListItem[]
   loadingTables: boolean
   tablesError: string | null

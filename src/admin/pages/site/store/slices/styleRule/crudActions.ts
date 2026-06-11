@@ -14,7 +14,7 @@ import type { SiteSliceHelpers } from '../site/types'
 import type { StyleRuleSlice } from './types'
 import { nextRuleOrder, hasStylePatchChanges } from './helpers'
 
-export type CrudActions = Pick<
+type CrudActions = Pick<
   StyleRuleSlice,
   | 'createClass'
   | 'createAmbientRule'

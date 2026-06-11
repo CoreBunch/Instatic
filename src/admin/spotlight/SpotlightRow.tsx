@@ -163,7 +163,7 @@ const isMac = isPlatformMac()
 
 // ─── SpotlightRow ─────────────────────────────────────────────────────────────
 
-export interface SpotlightRowProps {
+interface SpotlightRowProps {
   id: string
   command: Command
   isHighlighted: boolean

@@ -58,7 +58,7 @@ import type { SiteImportAdapter } from './adapter'
 // buildImportPlan
 // ---------------------------------------------------------------------------
 
-export interface BuildImportPlanInput {
+interface BuildImportPlanInput {
   fileMap: FileMap
   currentSite: SiteDocument
   options?: {
@@ -634,8 +634,6 @@ export async function commitImportPlan(
 // ---------------------------------------------------------------------------
 // Re-export applyConflictResolutions for callers that need to override defaults
 // ---------------------------------------------------------------------------
-
-export { applyConflictResolutions } from './conflicts'
 
 // ---------------------------------------------------------------------------
 // Helpers

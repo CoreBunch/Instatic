@@ -19,7 +19,7 @@ import {
   serializeImportmapForCsp,
 } from './packageImportmap'
 
-export interface RuntimePreviewDocumentInput {
+interface RuntimePreviewDocumentInput {
   site: SiteDocument
   page: Page
   registry: IModuleRegistry
@@ -41,7 +41,7 @@ export interface RuntimePreviewDocumentInput {
   db?: DbClient
 }
 
-export interface RuntimePreviewDocumentResult extends SiteRuntimeBuildResult {
+interface RuntimePreviewDocumentResult extends SiteRuntimeBuildResult {
   html: string
   files: BuiltRuntimeAssetFile[]
 }

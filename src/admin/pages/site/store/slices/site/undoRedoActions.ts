@@ -15,7 +15,7 @@ import { cloneSiteRuntimeConfig } from '@core/site-runtime'
 import { collectDirtyFromSitePatches, mergeDirtyMarks } from './dirtyTracking'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
-export type UndoRedoActions = Pick<SiteSlice, 'undo' | 'redo'>
+type UndoRedoActions = Pick<SiteSlice, 'undo' | 'redo'>
 
 export function createUndoRedoActions({ get, set }: SiteSliceHelpers): UndoRedoActions {
   return {

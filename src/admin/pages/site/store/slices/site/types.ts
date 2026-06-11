@@ -205,14 +205,14 @@ export type UpdateFrameworkSpacingGroupPatch = Partial<{
   manualSizes: FrameworkScaleManualSize[]
 }>
 
-export interface CreateFontTokenInput {
+interface CreateFontTokenInput {
   name: string
   variable?: string
   familyId?: string | null
   fallback?: string
 }
 
-export type UpdateFontTokenPatch = Partial<{
+type UpdateFontTokenPatch = Partial<{
   name: string
   variable: string
   familyId: string | null

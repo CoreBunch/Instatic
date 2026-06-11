@@ -2,7 +2,7 @@ import type { Page, PageNode } from '@core/page-tree'
 import { reindexNodeParents } from '@core/page-tree'
 import { firstOutletId, treeHasOutlet } from './outlet'
 
-export type TerminalContent =
+type TerminalContent =
   | { kind: 'page'; page: Page }
   | { kind: 'entry' }
 

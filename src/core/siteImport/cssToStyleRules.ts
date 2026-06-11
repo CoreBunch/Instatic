@@ -56,7 +56,7 @@ import type {
 // Public interface
 // ---------------------------------------------------------------------------
 
-export interface CssToStyleRulesOptions {
+interface CssToStyleRulesOptions {
   /**
    * Site viewport contexts used to match `@media` queries.
    * Defaults to `[]` (all @media queries are treated as unmatched).
@@ -70,7 +70,7 @@ export interface CssToStyleRulesOptions {
   mediaTolerance?: number
 }
 
-export interface CssToStyleRulesResult {
+interface CssToStyleRulesResult {
   rules: NewStyleRule[]
   warnings: ImportWarning[]
   assetRefs: AssetRef[]
@@ -197,7 +197,7 @@ function extractUrlPayloads(value: string): string[] {
  * The brief specifies using `.length` + index access (not `for...of`) since
  * CSSStyleDeclaration doesn't enumerate properties via Symbol.iterator.
  */
-export function parseDeclarations(
+function parseDeclarations(
   style: CSSStyleDeclaration,
   selectorForWarning: string,
   warnings: ImportWarning[],

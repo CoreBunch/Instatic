@@ -17,7 +17,7 @@ import styles from './RightSidebar.module.css'
  * - `hidden`   — Site viewer (no `pages.draft.save` capability). Always
  *                closed; renders nothing inside.
  */
-export type RightSidebarMode = 'site' | 'hidden'
+type RightSidebarMode = 'site' | 'hidden'
 
 interface RightSidebarProps {
   mode: RightSidebarMode

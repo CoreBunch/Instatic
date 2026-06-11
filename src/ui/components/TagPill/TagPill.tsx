@@ -19,9 +19,9 @@ import { cn } from '@ui/cn'
 import { pillAccent, type PillAccent } from '@ui/pillAccent'
 import styles from './TagPill.module.css'
 
-export type TagPillSize = 'xs' | 'sm'
+type TagPillSize = 'xs' | 'sm'
 
-export interface TagPillProps {
+interface TagPillProps {
   label: string
   colorKey?: string
   accent?: PillAccent

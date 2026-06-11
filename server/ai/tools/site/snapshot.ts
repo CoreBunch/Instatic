@@ -28,7 +28,7 @@ export interface SnapshotTokens {
   fonts: SnapshotFontToken[]
 }
 
-export interface SnapshotTokenRef {
+interface SnapshotTokenRef {
   /** CSS custom property incl. leading dashes, e.g. "--primary". */
   cssVar: string
   /** `var(--…)` expression ready to drop into a style value. */
@@ -39,24 +39,24 @@ export interface SnapshotTokenRef {
   utilityClasses: string[]
 }
 
-export interface SnapshotColorVariant extends SnapshotTokenRef {
+interface SnapshotColorVariant extends SnapshotTokenRef {
   /** Variant label, e.g. "d-1" (shade), "l-2" (tint), "30" (transparent). */
   variant: string
 }
 
-export interface SnapshotColorToken extends SnapshotTokenRef {
+interface SnapshotColorToken extends SnapshotTokenRef {
   slug: string
   category: string
   darkValue?: string
   variants: SnapshotColorVariant[]
 }
 
-export interface SnapshotScaleStep extends SnapshotTokenRef {
+interface SnapshotScaleStep extends SnapshotTokenRef {
   /** Step label, e.g. "xs","m","2xl". */
   step: string
 }
 
-export interface SnapshotScaleGroup {
+interface SnapshotScaleGroup {
   id: string
   family: 'typography' | 'spacing'
   name: string
@@ -65,7 +65,7 @@ export interface SnapshotScaleGroup {
   steps: SnapshotScaleStep[]
 }
 
-export interface SnapshotFontToken {
+interface SnapshotFontToken {
   name: string
   cssVar: string
   ref: string

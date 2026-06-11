@@ -36,7 +36,7 @@ function toKebab(camel: string): string {
  * vectors (IE `behavior`, Mozilla XBL `-moz-binding`), so we drop them outright
  * regardless of value. Lowercased for comparison.
  */
-export const DENIED_PROPS = new Set<string>([
+const DENIED_PROPS = new Set<string>([
   'behavior',
   '-moz-binding',
   '-ms-behavior',

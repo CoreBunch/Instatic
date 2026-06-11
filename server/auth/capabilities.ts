@@ -12,10 +12,10 @@
  */
 import { CORE_CAPABILITIES, type CoreCapability } from '@core/capabilities'
 
-export { CORE_CAPABILITIES }
+
 export type { CoreCapability }
 
-export interface SystemRoleDefinition {
+interface SystemRoleDefinition {
   id: string
   slug: string
   name: string

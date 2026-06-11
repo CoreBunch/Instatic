@@ -12,7 +12,7 @@
 import type { SitePackageJson } from '@core/site-dependencies/manifest'
 import type { LockedSiteDependency } from '@core/site-runtime'
 
-export type DependencyLockStatus =
+type DependencyLockStatus =
   | { kind: 'in-sync' }
   | { kind: 'unresolved'; missing: string[] }
   | { kind: 'stale'; missing: string[]; mismatched: string[]; orphan: string[] }

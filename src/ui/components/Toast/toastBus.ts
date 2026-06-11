@@ -21,7 +21,7 @@
 
 export type ToastKind = 'info' | 'success' | 'warning' | 'error'
 
-export interface ToastInput {
+interface ToastInput {
   /** Visual + a11y kind. Errors and warnings render with role="alert". */
   kind: ToastKind
   /** Short headline (one line). */
@@ -46,7 +46,7 @@ export interface ToastInput {
   action?: ToastAction
 }
 
-export interface ToastAction {
+interface ToastAction {
   label: string
   /**
    * Called when the action is clicked. If it returns a promise, the toast

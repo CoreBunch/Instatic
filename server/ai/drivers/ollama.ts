@@ -161,7 +161,7 @@ export type ChatMessage =
 // turn carries text + tool_calls in one message, but several tool results fan
 // out into several `role:'tool'` messages), so the loop's `TMessage` is a
 // message *array* and the request body flattens before sending.
-export type ChatTurn = ChatMessage[]
+type ChatTurn = ChatMessage[]
 
 // ---------------------------------------------------------------------------
 // AiMessage[] → chat/completions messages[]

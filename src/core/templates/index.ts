@@ -8,12 +8,11 @@
  */
 
 export {
-  normalizeRouteBase,
   isTemplatePage,
   primaryTemplateTableSlug,
   templateTargetLabel,
   resolveTemplateChain,
   type RouteResolutionContext,
 } from './templateMatching'
-export { composeTemplateChain, type TerminalContent } from './templateCompose'
+export { composeTemplateChain } from './templateCompose'
 export { firstOutletId, treeHasOutlet, subtreeHasOutlet } from './outlet'

@@ -24,4 +24,4 @@ export function resolveFrameworkPreferences(
   return raw ? { ...DEFAULT_FRAMEWORK_PREFERENCES, ...raw } : { ...DEFAULT_FRAMEWORK_PREFERENCES }
 }
 
-export { DEFAULT_FRAMEWORK_PREFERENCES, type FrameworkPreferences }
+export { DEFAULT_FRAMEWORK_PREFERENCES }

@@ -7,9 +7,9 @@ import { useEvent } from '@ui/lib/useEvent'
  * play before the caller unmounts it. MUST stay ≥ the `contextMenuExit`
  * animation duration in `ContextMenu.module.css`.
  */
-export const EXIT_DURATION_MS = 110
+const EXIT_DURATION_MS = 110
 
-export interface DeferredClose {
+interface DeferredClose {
   /** True while the exit animation is playing. */
   closing: boolean
   /**

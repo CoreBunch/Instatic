@@ -32,9 +32,9 @@ import { methodNotAllowed } from '../../http'
 
 export type RouteParams = Record<string, string>
 
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
-export type RouteHandler<Extra extends unknown[]> = (
+type RouteHandler<Extra extends unknown[]> = (
   req: Request,
   db: DbClient,
   params: RouteParams,

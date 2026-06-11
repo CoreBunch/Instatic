@@ -78,7 +78,7 @@ export interface MediaAssetRow {
   externally_hosted: boolean | number
 }
 
-export function parseTags(value: unknown): string[] {
+function parseTags(value: unknown): string[] {
   if (Array.isArray(value)) return value.filter((tag): tag is string => typeof tag === 'string')
   if (typeof value !== 'string') return []
   try {
@@ -133,7 +133,7 @@ export function parseVariants(value: unknown): MediaVariant[] {
   return result
 }
 
-export function numberOrNull(value: number | string | null | undefined): number | null {
+function numberOrNull(value: number | string | null | undefined): number | null {
   if (value == null) return null
   const n = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(n) ? n : null

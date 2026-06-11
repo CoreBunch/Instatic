@@ -26,7 +26,7 @@ import {
 } from '@core/persistence/responseSchemas'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
-export type UploadStatus = 'queued' | 'uploading' | 'succeeded' | 'failed' | 'cancelled'
+type UploadStatus = 'queued' | 'uploading' | 'succeeded' | 'failed' | 'cancelled'
 
 export interface UploadItem {
   id: string

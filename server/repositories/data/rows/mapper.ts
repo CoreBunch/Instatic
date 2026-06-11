@@ -50,7 +50,7 @@ export interface UpdateDataRowDraftInput {
 // Raw row shape returned by the hydrated SELECT
 // ---------------------------------------------------------------------------
 
-export interface DataRowRow extends UserJoinColumns {
+interface DataRowRow extends UserJoinColumns {
   id: string
   table_id: string
   cells_json: Record<string, unknown>
@@ -71,7 +71,7 @@ export interface DataRowRow extends UserJoinColumns {
 // Mapper
 // ---------------------------------------------------------------------------
 
-export function mapRow(row: DataRowRow): DataRow {
+function mapRow(row: DataRowRow): DataRow {
   return {
     id: row.id,
     tableId: row.table_id,
@@ -142,7 +142,7 @@ const DATA_ROW_JOINS = `from data_rows
  * with the matching values supplied in `params`. The SQL stays dialect-naive
  * (ANSI joins + CTE, no Postgres-isms).
  */
-export interface HydratedDataRowsQuery {
+interface HydratedDataRowsQuery {
   /**
    * Optional CTE body spliced as `with <cte> select …`. Provide the full
    * `name as ( … )` clause. Lets callers inline a filtered/paginated id set so

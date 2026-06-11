@@ -40,11 +40,11 @@ export interface SiteExplorerTreeSectionModel<TTarget> {
   }>
 }
 
-export interface SiteExplorerStructuralItem<TTarget> extends SiteExplorerTreeItem<TTarget> {
+interface SiteExplorerStructuralItem<TTarget> extends SiteExplorerTreeItem<TTarget> {
   path: string
 }
 
-export interface SiteExplorerStructuralFolder extends SiteExplorerTreeFolder {
+interface SiteExplorerStructuralFolder extends SiteExplorerTreeFolder {
   path: string
 }
 

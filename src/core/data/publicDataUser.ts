@@ -5,7 +5,7 @@
  * publisher and frontend templates need to render bylines safely.
  */
 
-export interface PublicDataUserReference {
+interface PublicDataUserReference {
   displayName: string
   roleSlug: string | null
   roleName: string | null

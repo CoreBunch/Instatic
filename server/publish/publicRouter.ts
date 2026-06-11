@@ -88,7 +88,7 @@ import { canonicalRenderQuery } from './loopPrefetch'
  *
  * Shared with the loop runtime so per-page slug resolution stays consistent.
  */
-export function publicSlugFromPath(pathname: string): string {
+function publicSlugFromPath(pathname: string): string {
   const trimmed = pathname.replace(/^\/+|\/+$/g, '')
   return trimmed === '' ? 'index' : trimmed
 }
@@ -118,7 +118,7 @@ function contentRouteFromPath(pathname: string): { tableRouteBase: string; rowSl
  * to the next handler (e.g. the setup-wizard redirect). `redirect` is
  * an old row-slug → new path mapping; the caller emits a 301.
  */
-export type PublicRouteResolution =
+type PublicRouteResolution =
   | { kind: 'page'; snapshot: PublishedPageSnapshot }
   | { kind: 'row'; snapshot: PublishedPageSnapshot; row: PublishedDataRow }
   | { kind: 'redirect'; location: string }
@@ -143,7 +143,7 @@ export type PublicRouteResolution =
  * template; when there isn't one (corrupt install / nothing published),
  * we return `not-found` rather than inventing a fallback document.
  */
-export async function resolvePublicRoute(
+async function resolvePublicRoute(
   db: DbClient,
   url: URL,
 ): Promise<PublicRouteResolution> {

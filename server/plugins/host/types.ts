@@ -20,7 +20,7 @@ export type HostRouteAccess =
   | { kind: 'authenticated' }
   | { kind: 'public' }
 
-export interface HostRouteEntry {
+interface HostRouteEntry {
   pluginId: string
   method: string
   path: string
@@ -28,27 +28,27 @@ export interface HostRouteEntry {
   routeKey: string
 }
 
-export interface HostHookListenerEntry {
+interface HostHookListenerEntry {
   pluginId: string
   listenerId: string
 }
 
-export interface HostHookFilterEntry {
+interface HostHookFilterEntry {
   pluginId: string
   filterId: string
 }
 
-export interface HostLoopSourceEntry {
+interface HostLoopSourceEntry {
   pluginId: string
   sourceId: string
 }
 
-export interface HostMediaAdapterEntry {
+interface HostMediaAdapterEntry {
   pluginId: string
   adapterId: string
 }
 
-export interface HostMediaTransformerEntry {
+interface HostMediaTransformerEntry {
   pluginId: string
   transformerId: string
 }

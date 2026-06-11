@@ -10,7 +10,7 @@
 
 // Schemas — exported as both runtime constants (for parse/compiled validation)
 // and types (via Static<typeof X>).
-export { BaseNodeSchema, parsePropBindings, parseBaseNodeFields } from './baseNode'
+export { BaseNodeSchema,  parseBaseNodeFields } from './baseNode'
 export { asPlainObject } from './parseHelpers'
 export { NodeTreeSchema } from './treeSchema'
 export { PageNodeSchema, parsePageNode } from './pageNode'
@@ -28,7 +28,7 @@ export {
   parseStyleRule,
 } from './styleRule'
 export { SiteShellSchema } from './siteDocument'
-export { PageTemplateConfigSchema, TemplateTargetSchema, parsePageTemplate } from './pageTemplate'
+export {   parsePageTemplate } from './pageTemplate'
 
 // Types — derived from schemas. Schemas are the source of truth.
 export type { Breakpoint } from './breakpoint'
@@ -43,7 +43,6 @@ export type { Condition, ConditionDef } from './condition'
 export type { SiteSettings } from './siteSettings'
 export type { SiteShell, SiteDocument } from './siteDocument'
 export type {
-  DecorativeExplorerSection,
   DecorativeSiteExplorerSectionId,
   SiteExplorerFolder,
   SiteExplorerItemPlacement,
@@ -65,9 +64,7 @@ export { parseBreakpoint } from './breakpoint'
 export { parsePage } from './page'
 export { parseSiteDocument } from './siteDocument'
 export {
-  DECORATIVE_SITE_EXPLORER_SECTION_IDS,
   SITE_EXPLORER_SECTION_IDS,
-  STRUCTURAL_SITE_EXPLORER_SECTION_IDS,
   createDefaultSiteExplorerOrganization,
   createExplorerFolder,
   deleteExplorerFolder,
@@ -86,12 +83,7 @@ export {
   buildMoveExplorerItemPlan,
   buildRenameExplorerFolderPlan,
   commitExplorerPathPlan,
-  type ExplorerPathChangeBlocker,
   type ExplorerPathChangePlan,
-  type ExplorerPathChangeWarning,
-  type ExplorerPathDeletedItem,
-  type ExplorerPathPlanKind,
-  type ExplorerPathRewriteChange,
 } from './explorerPathPlans'
 
 // Slug → public path + internal page-reference links.
@@ -112,7 +104,7 @@ export {
 } from './pageRef'
 
 // Other re-exports unrelated to the schemas split
-export type { FontEntry } from '@core/fonts'
+
 
 export type { BaseNode } from './baseNode'
 

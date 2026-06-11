@@ -50,7 +50,7 @@ import {
 } from './dataGridRows'
 import styles from './DataGrid.module.css'
 
-export interface DataGridProps {
+interface DataGridProps {
   table: DataTable
   rows: DataRow[]
   /** Full tables list — for resolving relation target metadata. */

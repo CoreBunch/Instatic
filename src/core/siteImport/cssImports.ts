@@ -1,12 +1,12 @@
 import { resolveHref } from './htmlPagePlan'
 import type { FileMap, ImportWarning } from './types'
 
-export interface ExpandedCssSource {
+interface ExpandedCssSource {
   cssPath: string
   cssSource: string
 }
 
-export interface ExpandLinkedCssImportsResult {
+interface ExpandLinkedCssImportsResult {
   cssPaths: string[]
   sources: ExpandedCssSource[]
   warnings: ImportWarning[]

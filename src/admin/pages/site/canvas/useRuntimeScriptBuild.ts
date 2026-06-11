@@ -48,7 +48,7 @@ export interface InjectableRuntimeScript {
   content: string
 }
 
-export interface RuntimeScriptBuildState {
+interface RuntimeScriptBuildState {
   /** Bundled scripts to inject, ordered by priority. Empty until first build. */
   scripts: InjectableRuntimeScript[]
   /** Build lifecycle status. */

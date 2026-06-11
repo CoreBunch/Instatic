@@ -71,7 +71,7 @@ interface PrewarmedLazyOptions {
 }
 
 /** The wrapped component, with a `preload` method attached. */
-export type PrewarmedComponent<TProps> = ComponentType<TProps> & {
+type PrewarmedComponent<TProps> = ComponentType<TProps> & {
   /**
    * Fire the dynamic import (idempotent). Subsequent calls return the
    * same promise. Returns a promise that resolves when the underlying

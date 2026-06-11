@@ -60,7 +60,7 @@ import { requestAuditContext } from '../shared'
 // Audit
 // ---------------------------------------------------------------------------
 
-export type PluginAuditAction =
+type PluginAuditAction =
   | 'plugin.install'
   | 'plugin.update'
   | 'plugin.enable'
@@ -279,7 +279,7 @@ export function pluginManifestWithGrants(plugin: InstalledPlugin): PluginManifes
 // Zip-package form parsing
 // ---------------------------------------------------------------------------
 
-export interface PluginPackageForm {
+interface PluginPackageForm {
   file: File | null
   grantedPermissions: PluginPermission[]
 }

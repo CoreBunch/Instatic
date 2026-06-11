@@ -3,9 +3,9 @@ import { TypeCompiler, type TypeCheck } from '@sinclair/typebox/compiler'
 
 const compiledCache = new WeakMap<TSchema, TypeCheck<TSchema>>()
 
-export type CompiledType<T extends TSchema> = TypeCheck<T>
+type CompiledType<T extends TSchema> = TypeCheck<T>
 
-export type CompiledSchemaResult<T extends TSchema> =
+type CompiledSchemaResult<T extends TSchema> =
   | { ok: true; value: TBStatic<T> }
   | { ok: false; errors: ReadonlyArray<{ path: string; message: string }> }
 

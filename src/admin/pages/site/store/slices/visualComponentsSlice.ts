@@ -227,7 +227,7 @@ function clonePageSubtreeToFlatNodes(
 // Slice interface
 // ---------------------------------------------------------------------------
 
-export interface VisualComponentsSlice {
+interface VisualComponentsSlice {
   /**
    * Create a new Visual Component with the given (free-form) name.
    * Returns the new VC's id.

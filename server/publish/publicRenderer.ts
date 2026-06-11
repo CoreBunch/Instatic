@@ -63,7 +63,7 @@ export interface RendererOutput {
   cssBundle: SiteCssBundle
 }
 
-export interface RenderPublishedSnapshotContext {
+interface RenderPublishedSnapshotContext {
   db: DbClient
   /** Optional request URL — when present, drives per-loop pagination. */
   url?: URL

@@ -75,7 +75,7 @@ export interface RawStylesheetSource {
   parts: Array<{ cssPath: string; cssText: string }>
 }
 
-export interface AssetPlanResult {
+interface AssetPlanResult {
   /** pagePlans with URL props in node fragments normalised to FileMap keys. */
   normalizedPagePlans: PagePlan[]
   /** Flat list of all style rules (from all CSS files) with url() values normalised. */
