@@ -52,6 +52,7 @@ export function InlineTextEditOverlay({ breakpointId, iframeElement }: InlineTex
   const endInlineEdit = useEditorStore((s) => s.endInlineEdit)
   const cancelInlineEdit = useEditorStore((s) => s.cancelInlineEdit)
   const fieldRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
+  const ringRef = useRef<HTMLDivElement | null>(null)
   const viewportActions = use(CanvasViewportActionsContext)
 
   // Stable per-session identity. The session OBJECT is replaced when
@@ -81,6 +82,27 @@ export function InlineTextEditOverlay({ breakpointId, iframeElement }: InlineTex
     field.style.width = `${rect.width}px`
     field.style.height = `${rect.height}px`
     mirrorInlineEditTypography(field, target, iframeElement)
+    // The affordance ring tracks the NODE's own box (like the normal selection
+    // ring), independent of the field growing below for the no-scroll fix.
+    const ring = ringRef.current
+    if (ring) {
+      ring.style.transform = `translate(${rect.x}px, ${rect.y}px)`
+      ring.style.width = `${rect.width}px`
+      ring.style.height = `${rect.height}px`
+    }
+    // A <textarea> scrolls its own content to keep the caret visible whenever
+    // the text is taller than the box — which happens for any node with
+    // line-height < 1 (negative leading makes glyphs overflow the line boxes,
+    // exactly how the block node renders them with overflow:visible). Grow the
+    // field to its full content height (measured AFTER typography is mirrored)
+    // so there is nothing to scroll, then pin any residual offset. Without this
+    // the text shifts as the caret moves between lines. `scrollHeight` is the
+    // greater of content and box height, so single-line / line-height ≥ 1 nodes
+    // leave the height at the node's rect.
+    const contentHeight = field.scrollHeight
+    if (contentHeight > rect.height) field.style.height = `${contentHeight}px`
+    if (field.scrollTop !== 0) field.scrollTop = 0
+    if (field.scrollLeft !== 0) field.scrollLeft = 0
   })
 
   // Position + typography RAF loop, armed only while this frame owns the
@@ -175,6 +197,7 @@ export function InlineTextEditOverlay({ breakpointId, iframeElement }: InlineTex
 
   return createPortal(
     <div className={styles.layer} data-canvas-inline-edit-mode={positionMode}>
+      <div className={styles.ring} ref={ringRef} aria-hidden="true" />
       {session.multiline ? (
         <textarea
           key={sessionKey}

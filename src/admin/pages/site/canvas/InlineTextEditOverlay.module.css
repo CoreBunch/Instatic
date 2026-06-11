@@ -41,5 +41,18 @@
     overflow: hidden;
     resize: none;
     pointer-events: auto;
+}
+
+/* The editing affordance ring. A separate element so it can bound the node's
+   own box (matching the normal selection ring) while the field itself grows
+   to its full content height to stop the textarea scroll-shifting multi-line
+   text (negative line-heights make text taller than the box). */
+.ring {
+    position: absolute;
+    top: 0;
+    left: 0;
+    box-sizing: border-box;
+    border-radius: 1px;
+    pointer-events: none;
     box-shadow: var(--canvas-selection-ring);
 }
