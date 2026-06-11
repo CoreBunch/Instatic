@@ -13,6 +13,7 @@ export function useModuleInsertionContext(): ModuleInsertionContext {
   const isVCMode = activeDocument?.kind === 'visualComponent'
   return {
     isVCMode,
+    activeVcId: activeDocument?.kind === 'visualComponent' ? activeDocument.vcId : null,
     isTemplate: !isVCMode && canvasPage !== null && isTemplatePage(canvasPage),
     hasOutlet: canvasPage !== null && treeHasOutlet(canvasPage),
   }

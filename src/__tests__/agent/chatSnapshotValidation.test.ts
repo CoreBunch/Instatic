@@ -19,7 +19,7 @@ function validSnapshot() {
   // explorer/runtime defaults a real editor snapshot always carries, then
   // re-attach the page + VC arrays the parser strips out.
   const base = makeSite({ pages: [page] })
-  const site = { ...parseSiteDocument(base), pages: [page], visualComponents: [] }
+  const site = { ...parseSiteDocument(base), pages: [page], visualComponents: [], layouts: [] }
   return { page, site, selectedNodeId: null, activeBreakpointId: 'desktop' }
 }
 

@@ -52,6 +52,12 @@ function installAmbientFetch() {
         headers: { 'content-type': 'application/json' },
       })
     }
+    if (url.endsWith('/admin/api/cms/layouts')) {
+      return new Response(JSON.stringify({ rows: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
     if (url.endsWith('/admin/api/cms/publish/status')) {
       return new Response(JSON.stringify({
         hasPublishedVersion: false,
@@ -248,6 +254,9 @@ describe('AdminCanvasLayout — CMS site hydration gate', () => {
         return new Response(JSON.stringify({ rows }), { status: 200 })
       }
       if (url.includes('/admin/api/cms/components')) {
+        return new Response(JSON.stringify({ rows: [] }), { status: 200 })
+      }
+      if (url.includes('/admin/api/cms/layouts')) {
         return new Response(JSON.stringify({ rows: [] }), { status: 200 })
       }
       if (url.includes('/admin/api/cms/site')) {

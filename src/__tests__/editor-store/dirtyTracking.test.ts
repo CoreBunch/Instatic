@@ -142,11 +142,13 @@ describe('mergeDirtyMarks', () => {
       all: false,
       pageIds: new Set(['page-a']),
       componentIds: new Set(['vc-one']),
+      layoutIds: new Set(),
     }
     mergeDirtyMarks(target, {
       all: false,
       pageIds: new Set(['page-b']),
       componentIds: new Set(),
+      layoutIds: new Set(),
     })
     expect(target.all).toBe(false)
     expect([...target.pageIds].sort()).toEqual(['page-a', 'page-b'])
@@ -160,7 +162,7 @@ describe('mergeDirtyMarks', () => {
 
   it('never clears all once set, even when incoming is partial', () => {
     const target: DirtyMarks = { ...emptyDirtyMarks(), all: true }
-    mergeDirtyMarks(target, { all: false, pageIds: new Set(['page-a']), componentIds: new Set() })
+    mergeDirtyMarks(target, { all: false, pageIds: new Set(['page-a']), componentIds: new Set(), layoutIds: new Set() })
     expect(target.all).toBe(true)
   })
 })

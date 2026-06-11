@@ -34,6 +34,7 @@ function makeRuntimeSite(page: Page): SiteDocument {
     name: 'Runtime Test Site',
     pages: [page],
     visualComponents: [],
+    layouts: [],
     breakpoints: [
       { id: 'desktop', label: 'Desktop', width: 1440, icon: 'monitor' },
     ],

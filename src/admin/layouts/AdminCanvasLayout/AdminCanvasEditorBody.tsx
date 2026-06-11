@@ -10,6 +10,7 @@ import { CanvasRoot } from '@admin/pages/site/canvas'
 import { CodeEditorPanel, CodeEditorSkeleton } from '@admin/pages/site/code-editor'
 import { useActiveLivePath } from '@admin/pages/site/hooks/useActiveLivePath'
 import { useAutoResolveDependencies } from '@admin/pages/site/hooks/useAutoResolveDependencies'
+import { LayoutNameDialog } from '@admin/pages/site/dialogs/LayoutNameDialog'
 import { PropertiesPanel } from '@admin/pages/site/panels/PropertiesPanel'
 import { LeftSidebar } from '@admin/pages/site/sidebars/LeftSidebar'
 import { RightSidebar } from '@admin/pages/site/sidebars/RightSidebar'
@@ -118,6 +119,10 @@ export function AdminCanvasEditorBody({
           6 bundle (~600 kB) is lazy-loaded inside the panel only when the
           user opens a text file. */}
       <CodeEditorPanel />
+
+      {/* Naming step for "Save as layout" / saved-layout rename. Renders null
+          until a layoutNameDialogRequest is set on the ui slice. */}
+      <LayoutNameDialog />
 
       {/* Import HTML modal — opens from Spotlight or right-click "Paste HTML here…".
           The modal implementation is rarely used and pulls in the importer,

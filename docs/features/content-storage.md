@@ -9,7 +9,7 @@ There are **no other content tables**. There is no `pages` table, no `page_versi
 ## TL;DR
 
 - Two tables, four kinds. `data_tables.kind`: `postType | data | page | component`.
-- Three system tables seeded at boot — `pages` (kind `page`), `posts` (kind `postType`), `components` (kind `component`) — protected from rename / delete (but users can still add custom fields). `listDataTables` and `listDataTablesWithCounts` pin them at positions 0–2 in that order; custom tables follow sorted by `created_at`.
+- Four system tables seeded at boot — `pages` (kind `page`), `posts` (kind `postType`), `components` (kind `component`), `layouts` (kind `layout`) — protected from rename / delete (but users can still add custom fields). `listDataTables` and `listDataTablesWithCounts` pin them at positions 0–3 in that order; custom tables follow sorted by `created_at`.
 - Every row's cells live in `cells_json` keyed by field id. `slug` and `status` are denormalized columns for index / route lookup.
 - Post-type rows have a workflow: `draft | published | unpublished | scheduled`, with a version history (`data_row_versions`) for the published copy.
 - "Data" tables are simple key-value grids — no workflow, no built-in fields.
@@ -155,7 +155,7 @@ This is the single source of truth for slug derivation used by all admin write p
 
 | File                                             | Owns                                                                  |
 |--------------------------------------------------|-----------------------------------------------------------------------|
-| `server/repositories/data/tables.ts`             | CRUD on `data_tables`: list (system tables first: pages → posts → components, then custom by `created_at`), get, get-by-slug (indexed via `data_tables_slug_active_idx`), create, update, delete (system-protected) |
+| `server/repositories/data/tables.ts`             | CRUD on `data_tables`: list (system tables first: pages → posts → components → layouts, then custom by `created_at`), get, get-by-slug (indexed via `data_tables_slug_active_idx`), create, update, delete (system-protected) |
 | `server/repositories/data/rows/read.ts`          | Hydrated read queries: `listDataRows`, `getDataRow`, `getDataRowMany` (one IN-list query for bulk validation), `getDataRowBySlug`, `countDataRows`, `listDataAuthorOptions` |
 | `server/repositories/data/rows/mutations.ts`     | Single-row writes: create, save draft, soft-delete, move to table, update status / author. `softDeleteDataRow` returns the narrow `DeletedRowSummary` (not a full `DataRow`) — the row's `deleted_at is null` filter makes re-reading impossible, and callers only need `id / tableId / slug / status / deletedAt`. |
 | `server/repositories/data/rows/bulk.ts`          | Transactional batch writes: `createDataRowMany`, `saveDataRowDraftMany`, `softDeleteDataRowMany` |
@@ -350,7 +350,7 @@ Events are emitted from `server/publish/contentEvents.ts`, which also exports `a
   - `src/core/data/componentFromRow.ts` — VC ↔ row
   - `server/repositories/data/` — `tables.ts`, `rows/` (split by responsibility), `publish.ts`, `templateSeeding.ts`, `shared.ts`
   - `server/handlers/cms/data/` — generic data endpoints
-  - `server/handlers/cms/pages.ts`, `components.ts` — typed endpoints for the system tables
+  - `server/handlers/cms/pages.ts`, `components.ts`, `layouts.ts` — typed endpoints for the system tables
   - `server/publish/publishScheduler.ts` — scheduled-publish tick
 - Gate tests:
   - `src/__tests__/architecture/data-tables-system-flag.test.ts`

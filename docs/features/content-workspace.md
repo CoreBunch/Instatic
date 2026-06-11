@@ -104,7 +104,7 @@ The content editor is a document surface (one ProseMirror doc), not a visual edi
 
 ## Collections and entries
 
-Collections are `data_tables` with `kind: 'postType'`. The three system tables (`posts`, `pages`, `components`) are present on every install; additional collections are created via `ContentCollectionCreateDialog`.
+Collections are `data_tables` with `kind: 'postType'`. The four system tables (`posts`, `pages`, `components`, `layouts`) are present on every install; additional collections are created via `ContentCollectionCreateDialog`.
 
 `ContentExplorerPanel` renders all collections and their entries. Per-entry operations (publish, convert to draft, rename, duplicate, delete, move to collection) are exposed via context menus (`ContextMenu` per row).
 

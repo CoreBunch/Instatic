@@ -1,6 +1,7 @@
 /**
  * LayerNodeContextMenu — right-click menu for nodes in the DOM panel and
- * canvas. Hosts rename / duplicate / cut / copy / paste / wrap / delete
+ * canvas. Hosts rename / duplicate / componentize / save-as-layout / cut /
+ * copy / paste / wrap / delete
  * actions and an "Insert module here" `ContextMenuSubmenu` that shows the
  * shared `ModulePicker` (search + categorized module list, including site
  * Visual Components) as a true second-level dropdown — same primitive,
@@ -63,6 +64,7 @@ import { AppGridPlusGlyphIcon } from 'pixel-art-icons/icons/app-grid-plus-glyph'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { BoxSolidIcon } from 'pixel-art-icons/icons/box-solid'
+import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { EyeSolidIcon } from 'pixel-art-icons/icons/eye-solid'
 import styles from './LayerNodeContextMenu.module.css'
 
@@ -184,6 +186,22 @@ export function LayerNodeContextMenu({
     const node = tree?.nodes[nodeId]
     return canComponentizeNode(s.activeDocument, node)
   })
+
+  // "Save as layout" mirrors Componentize's mode gate (page mode, single
+  // selection) but stays VISIBLE on the page root — disabled with the reason
+  // inline, so authors learn why the whole body can't be a layout.
+  const isPageRoot = nodeId !== null && activePage?.rootNodeId === nodeId
+  const showSaveAsLayout = useEditorStore((s) => {
+    if (isMulti || !nodeId || lockedSlotInstance) return false
+    if (s.activeDocument?.kind === 'visualComponent') return false
+    return selectActiveCanvasPage(s)?.nodes[nodeId] !== undefined
+  })
+
+  const dispatchSaveAsLayout = () => {
+    if (!nodeId) return
+    useEditorStore.getState().openLayoutNameDialog({ mode: 'create', nodeId })
+    onClose()
+  }
 
   const hideActionTargetIds = targetIds.filter((id) => id !== activePage?.rootNodeId)
   const canToggleHidden = !lockedSlotInstance && hideActionTargetIds.length > 0
@@ -361,6 +379,17 @@ export function LayerNodeContextMenu({
             <ContextMenuItem onClick={dispatchComponentize}>
               <span aria-hidden="true"><BoxSolidIcon size={13} /></span>
               Componentize
+            </ContextMenuItem>
+          )}
+
+          {showSaveAsLayout && (
+            <ContextMenuItem
+              onClick={dispatchSaveAsLayout}
+              disabled={isPageRoot}
+              title={isPageRoot ? 'The page body cannot be saved as a layout — save a section inside it instead.' : undefined}
+            >
+              <span aria-hidden="true"><LayoutSolidIcon size={13} /></span>
+              Save as layout…
             </ContextMenuItem>
           )}
 

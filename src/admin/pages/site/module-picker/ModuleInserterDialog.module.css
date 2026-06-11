@@ -353,6 +353,18 @@
     align-content: start;
 }
 
+/* Layouts-section group separators ("Saved" / "Built-in") — full-width rows
+ * inside the item grid. */
+.groupLabel {
+    grid-column: 1 / -1;
+    padding: 10px 4px 4px;
+    color: var(--editor-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
 .itemShell {
     --moduleInserterItemRadius: var(--card-radius);
     --moduleInserterTilePadding: 6px;

@@ -50,6 +50,7 @@ export const DataTableKindSchema = Type.Union([
   Type.Literal('data'),
   Type.Literal('page'),
   Type.Literal('component'),
+  Type.Literal('layout'),
 ])
 
 export type DataTableKind = Static<typeof DataTableKindSchema>
@@ -569,12 +570,7 @@ const DataMetaTableSchema = Type.Object({
   id: Type.String(),
   slug: Type.String(),
   name: Type.String(),
-  kind: Type.Union([
-    Type.Literal('postType'),
-    Type.Literal('data'),
-    Type.Literal('page'),
-    Type.Literal('component'),
-  ]),
+  kind: DataTableKindSchema,
   singularLabel: Type.String(),
   pluralLabel: Type.String(),
   primaryFieldId: Type.String(),

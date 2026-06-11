@@ -13,7 +13,7 @@
 export { BaseNodeSchema, parsePropBindings, parseBaseNodeFields } from './baseNode'
 export { asPlainObject } from './parseHelpers'
 export { NodeTreeSchema } from './treeSchema'
-export { PageNodeSchema } from './pageNode'
+export { PageNodeSchema, parsePageNode } from './pageNode'
 export {
   TreeOperationSchema,
   TreeMutateResultSchema,

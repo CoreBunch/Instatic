@@ -38,6 +38,7 @@ export function createDefaultSiteDocument(name: string): SiteDocument {
     pages: [homePage],
     files: [],             // Contribution #595 — files data layer
     visualComponents: [],  // Contribution #619 — visual components data layer
+    layouts: [],           // user-saved layouts data layer
     packageJson: clonePackageJson(DEFAULT_SITE_PACKAGE_JSON),
     runtime: cloneSiteRuntimeConfig(DEFAULT_SITE_RUNTIME),
     breakpoints: DEFAULT_BREAKPOINTS,

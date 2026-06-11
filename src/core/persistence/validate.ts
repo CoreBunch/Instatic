@@ -40,7 +40,6 @@ import {
   syncSlotInstances,
   applySlotSyncResult,
 } from '@core/visualComponents'
-import { sanitizeRichtext, isRichtextPropKey } from '@core/sanitize'
 import { normalizeSitePackageJson } from '@core/site-dependencies/manifest'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { pageSlugDuplicateError, pageSlugError } from '@core/page-tree'
@@ -51,14 +50,15 @@ import type { BaseNode } from '@core/page-tree'
 // Error type
 // ---------------------------------------------------------------------------
 
-export class SiteValidationError extends Error {
-  readonly path: string
-  constructor(message: string, path: string) {
-    super(`[persistence/validate] ${path}: ${message}`)
-    this.name = 'SiteValidationError'
-    this.path = path
-  }
-}
+// The error type + small helpers shared with `validateLayouts.ts` live in
+// `validationShared.ts`; this module remains the canonical import path for
+// `SiteValidationError`.
+export { SiteValidationError } from './validationShared'
+import {
+  SiteValidationError,
+  sanitizeNodeProps,
+  siteValidationErrorFromTreeInvariant,
+} from './validationShared'
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -304,29 +304,6 @@ export function validateVisualComponents(rawVCs: unknown[]): VisualComponent[] {
  * The caller is about to reconcile the complete roster in storage, so a dropped
  * item would be interpreted as an intentional delete.
  */
-
-function siteValidationErrorFromTreeInvariant(err: unknown, fallbackPath: string): SiteValidationError {
-  const message = err instanceof Error ? err.message : 'invalid node tree'
-  const colonIndex = message.indexOf(': ')
-  const path = colonIndex > 0 ? message.slice(0, colonIndex) : fallbackPath
-  return new SiteValidationError(message, path)
-}
-
-/**
- * Walk a node's props and sanitize richtext-keyed values in-place.
- * Operates on a single flat node — no childNodes recursion (VC trees are now flat).
- */
-function sanitizeNodeProps(node: unknown): void {
-  if (!node || typeof node !== 'object' || Array.isArray(node)) return
-  const n = node as { props?: Record<string, unknown> }
-  if (n.props && typeof n.props === 'object') {
-    for (const [key, val] of Object.entries(n.props)) {
-      if (isRichtextPropKey(key) && typeof val === 'string') {
-        n.props[key] = sanitizeRichtext(val)
-      }
-    }
-  }
-}
 
 // ---------------------------------------------------------------------------
 // stripDanglingVCRefs — exported for unit tests and pack installer.

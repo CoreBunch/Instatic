@@ -34,7 +34,7 @@ describe('data_tables.system column', () => {
   })
 
   it('reads system=true for the seeded system tables', async () => {
-    for (const id of ['pages', 'posts', 'components']) {
+    for (const id of ['pages', 'posts', 'components', 'layouts']) {
       const table = await getDataTable(db, id)
       expect(table).not.toBeNull()
       expect(table?.system).toBe(true)
@@ -54,6 +54,6 @@ describe('data_tables.system column', () => {
   it('list and read agree on system flags', async () => {
     const tables = await listDataTables(db)
     const systemSlugs = tables.filter((t) => t.system).map((t) => t.slug).sort()
-    expect(systemSlugs).toEqual(['components', 'pages', 'posts'])
+    expect(systemSlugs).toEqual(['components', 'layouts', 'pages', 'posts'])
   })
 })

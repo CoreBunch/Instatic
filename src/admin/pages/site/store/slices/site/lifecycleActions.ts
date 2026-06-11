@@ -34,6 +34,7 @@ export type LifecycleActions = Pick<
 function reindexSiteTreeParents(site: SiteDocument): void {
   for (const page of site.pages) reindexNodeParents(page.nodes)
   for (const vc of site.visualComponents ?? []) reindexNodeParents(vc.tree.nodes)
+  for (const layout of site.layouts ?? []) reindexNodeParents(layout.nodes)
 }
 
 export function createLifecycleActions({

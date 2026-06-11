@@ -41,6 +41,15 @@ interface InserterItemButtonProps {
     item: ModuleInserterItem,
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => void
+  /**
+   * Right-click handler — saved layouts open a manage (rename/delete) menu.
+   * Attached to the item shell (not the inner button) so it still fires on
+   * disabled items.
+   */
+  onContextMenu?: (
+    item: ModuleInserterItem,
+    event: ReactMouseEvent<HTMLDivElement>,
+  ) => void
 }
 
 function stopFavoritePointer(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -56,6 +65,7 @@ export function ModuleInserterItemButton({
   favorite,
   onToggleFavorite,
   onPointerDown,
+  onContextMenu,
 }: InserterItemButtonProps) {
   const isList = view === 'list'
   const disabled = Boolean(item.disabledReason)
@@ -73,6 +83,7 @@ export function ModuleInserterItemButton({
     <div
       className={cn(styles.itemShell, disabled && styles.itemShellDisabled)}
       data-accent={item.accent}
+      onContextMenu={onContextMenu ? (event) => onContextMenu(item, event) : undefined}
     >
       <Button
         variant="ghost"
@@ -89,6 +100,7 @@ export function ModuleInserterItemButton({
         data-accent={item.accent}
         data-module-id={item.kind === 'module' ? item.id : undefined}
         data-layout-id={item.kind === 'layout' ? item.id : undefined}
+        data-saved-layout-id={item.kind === 'savedLayout' ? item.id : undefined}
         data-vc-id={item.kind === 'component' ? item.id : undefined}
       >
         {isList ? <ItemRow item={item} /> : <ItemTile item={item} />}
@@ -157,7 +169,7 @@ function ItemIcon({ item }: { item: ModuleInserterItem }) {
   if (item.kind === 'module') {
     return <ModuleIcon module={item.module} size={13} aria-hidden="true" />
   }
-  if (item.kind === 'layout') {
+  if (item.kind === 'layout' || item.kind === 'savedLayout') {
     return <LayoutSolidIcon size={13} aria-hidden="true" />
   }
   if (item.kind === 'component') {

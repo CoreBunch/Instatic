@@ -178,6 +178,7 @@ export async function getDraftPublishStatus(db: DbClient): Promise<DraftPublishS
     ...shell,
     pages: pageRows.map(pageFromRow),
     visualComponents,
+    layouts: [], // saved layouts are editor-only; publishing ignores them
   }
 
   // Only the per-publish content hash is fetched — never the stored site
@@ -252,7 +253,8 @@ async function publishDraftSiteLocked(
   const visualComponents = validateVisualComponents(
     vcRows.flatMap((r) => { const vc = visualComponentFromRow(r); return vc ? [vc] : [] })
   )
-  const site: SiteDocument = { ...shell, pages, visualComponents }
+  // Saved layouts are editor-only; publishing ignores them.
+  const site: SiteDocument = { ...shell, pages, visualComponents, layouts: [] }
 
   const runtime = normalizeSiteRuntimeConfig(site.runtime)
   const dependencyCache = Object.keys(runtime.dependencyLock.packages).length > 0

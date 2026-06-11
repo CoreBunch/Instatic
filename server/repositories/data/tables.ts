@@ -2,8 +2,8 @@
  * CRUD for data tables.
  *
  *   listDataTables       — read every non-deleted table. System tables sort
- *                          first in a fixed order (pages, posts, components);
- *                          custom tables follow, ordered by created_at.
+ *                          first in a fixed order (pages, posts, components,
+ *                          layouts); custom tables follow, ordered by created_at.
  *   getDataTable         — read a single table by id (or null)
  *   getDataTableBySlug   — read a single table by slug (indexed; or null)
  *   createDataTable      — insert a new table
@@ -107,7 +107,8 @@ export async function listDataTables(db: DbClient): Promise<DataTable[]> {
         when 'page' then 0
         when 'postType' then 1
         when 'component' then 2
-        else 3
+        when 'layout' then 3
+        else 4
       end,
       created_at asc
   `
@@ -138,7 +139,8 @@ export async function listDataTablesWithCounts(db: DbClient): Promise<DataTableL
         when 'page' then 0
         when 'postType' then 1
         when 'component' then 2
-        else 3
+        when 'layout' then 3
+        else 4
       end,
       t.created_at asc
   `

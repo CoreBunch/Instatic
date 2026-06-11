@@ -5,10 +5,11 @@
  *
  * Pages live in `data_rows` where `table_id = 'pages'`.
  * Visual Components live in `data_rows` where `table_id = 'components'`.
+ * Saved layouts live in `data_rows` where `table_id = 'layouts'`.
  *
- * Neither pages nor VCs are embedded in the shell. The adapter assembles the
- * full `SiteDocument` (shell + pages + visualComponents) on load; the shell is
- * saved independently on each PUT /admin/api/cms/site call.
+ * None of those collections are embedded in the shell. The adapter assembles
+ * the full `SiteDocument` (shell + pages + visualComponents + layouts) on
+ * load; the shell is saved independently on each PUT /admin/api/cms/site call.
  *
  * Resilience semantics (via parseSiteDocument):
  *   THROWS (no fallback) if missing / wrong type:
@@ -41,6 +42,7 @@ import { SiteRuntimeConfigSchema, type SiteRuntimeConfig } from '@core/site-runt
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime/runtimeConfig'
 import { SitePackageJsonSchema, type SitePackageJson } from '@core/site-dependencies/manifest'
 import { type VisualComponent } from '@core/visualComponents'
+import type { SavedLayout } from '@core/layouts'
 import type { Page } from './page'
 import {
   SiteExplorerOrganizationSchema,
@@ -83,19 +85,25 @@ const SiteDocumentSchema = Type.Object({
 })
 
 /**
- * The persisted site shell: everything except pages and visual components.
+ * The persisted site shell: everything except pages, visual components, and
+ * saved layouts.
  * Pages live in `data_rows` (table_id = 'pages').
  * Visual Components live in `data_rows` (table_id = 'components').
- * Both are loaded separately and assembled into `SiteDocument`.
+ * Saved layouts live in `data_rows` (table_id = 'layouts').
+ * All three are loaded separately and assembled into `SiteDocument`.
  */
 export const SiteShellSchema = SiteDocumentSchema
 export type SiteShell = Static<typeof SiteShellSchema>
 
 /**
- * In-memory site document: the full shell plus pages and visual components.
- * Assembled by the adapter on load; never stored directly.
+ * In-memory site document: the full shell plus pages, visual components, and
+ * saved layouts. Assembled by the adapter on load; never stored directly.
  */
-export type SiteDocument = SiteShell & { pages: Page[]; visualComponents: VisualComponent[] }
+export type SiteDocument = SiteShell & {
+  pages: Page[]
+  visualComponents: VisualComponent[]
+  layouts: SavedLayout[]
+}
 
 // ---------------------------------------------------------------------------
 // Tolerant parsing

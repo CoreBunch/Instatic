@@ -2,6 +2,7 @@ import { useState, type MouseEvent, type ReactNode, type SyntheticEvent } from "
 import { createPortal } from "react-dom";
 import { registry } from "@core/module-engine";
 import type { VisualComponent } from "@core/visualComponents";
+import type { SavedLayout } from "@core/layouts";
 import { useInsertModule } from "@site/hooks/useInsertModule";
 import { useInsertPreset } from "@site/hooks/useInsertPreset";
 import {
@@ -37,6 +38,7 @@ import styles from "./CanvasNotch.module.css";
 
 const ADD_TRIGGER_TEST_ID = "canvas-notch-add-btn";
 const EMPTY_COMPONENTS: VisualComponent[] = [];
+const EMPTY_SAVED_LAYOUTS: SavedLayout[] = [];
 
 /**
  * Notch action — supplies either a `moduleId` (icon resolved through the
@@ -142,6 +144,8 @@ function FavoriteNotchActions() {
   const { favorites, setFavorites, toggleFavorite } = useModuleInserterPreference();
   const insertionContext = useModuleInsertionContext();
   const visualComponents = useEditorStore((s) => s.site?.visualComponents ?? EMPTY_COMPONENTS);
+  const savedLayouts = useEditorStore((s) => s.site?.layouts ?? EMPTY_SAVED_LAYOUTS);
+  const insertLayout = useEditorStore((s) => s.insertLayout);
   const canvasPage = useEditorStore(selectActiveCanvasPage);
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId);
   const insertComponentRef = useEditorStore((s) => s.insertComponentRef);
@@ -151,6 +155,7 @@ function FavoriteNotchActions() {
     modules: registry.list(),
     context: insertionContext,
     layoutPresets: LAYOUT_PRESETS,
+    savedLayouts,
     visualComponents,
   });
   const resolvedFavorites = resolveInserterRefs(favorites, allItems);
@@ -201,6 +206,7 @@ function FavoriteNotchActions() {
           insertModule,
           insertPreset,
           insertComponent,
+          insertLayout,
         });
         if (!action) return null;
         return renderActionButton(action, {
@@ -269,6 +275,7 @@ function actionForItem(
     insertModule: ReturnType<typeof useInsertModule>;
     insertPreset: ReturnType<typeof useInsertPreset>;
     insertComponent: (componentId: string) => void;
+    insertLayout: (layoutId: string) => string | null;
   },
 ): CanvasNotchAction | null {
   if (item.kind === "module") {
@@ -286,6 +293,15 @@ function actionForItem(
       label: item.name,
       icon: LayoutSolidIcon,
       onClick: () => handlers.insertPreset(item.preset),
+    };
+  }
+  if (item.kind === "savedLayout") {
+    return {
+      id: item.key,
+      label: item.name,
+      icon: LayoutSolidIcon,
+      onClick: () => handlers.insertLayout(item.id),
+      disabledReason: item.disabledReason,
     };
   }
   if (item.kind === "component") {

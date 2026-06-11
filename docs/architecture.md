@@ -167,7 +167,7 @@ A user-defined collection — a "post type" in WordPress terms. Has a `kind`:
 | `page`       | Stand-alone pages with URLs                   |
 | `component`  | Visual components (reusable subtrees)         |
 
-The three system tables (`posts`, `pages`, `components`) are seeded by the baseline migration and are locked from rename/delete.
+The four system tables (`posts`, `pages`, `components`, `layouts`) are seeded by the baseline migration and are locked from rename/delete.
 
 ### `data_rows`
 

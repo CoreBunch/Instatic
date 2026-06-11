@@ -80,12 +80,14 @@ async function installPluginPackToSite(
     ...shell,
     pages: pageRows.map(pageFromRow),
     visualComponents: existingVCs,
+    // Saved layouts are editor-only; pack installs don't touch them.
+    layouts: [],
   }
 
   const { site: nextSiteDoc, replaced } = applyPluginPackToSite(tempSiteDoc, pack)
 
-  // Extract shell (strip pages and visualComponents) and save
-  const { pages: packPages, visualComponents: _vcs, ...nextShell } = nextSiteDoc
+  // Extract shell (strip pages, visualComponents, and layouts) and save
+  const { pages: packPages, visualComponents: _vcs, layouts: _layouts, ...nextShell } = nextSiteDoc
   await saveDraftSite(db, nextShell, actorUserId)
 
   // Upsert pack pages as data_rows

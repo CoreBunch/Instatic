@@ -25,7 +25,7 @@
  */
 
 import { registry } from '@core/module-engine'
-import type { Page } from '@core/page-tree'
+import type { NodeTree, PageNode } from '@core/page-tree'
 
 export interface InsertLocation {
   parentId: string
@@ -38,7 +38,7 @@ export interface InsertLocation {
  * Returns null only when the target has no parent (e.g. the root) — that's
  * the genuine dead-end case where the caller has nowhere to place content.
  */
-function siblingAfter(page: Page, targetNodeId: string): InsertLocation | null {
+function siblingAfter(page: NodeTree<PageNode>, targetNodeId: string): InsertLocation | null {
   const parent = Object.values(page.nodes).find((n) =>
     n.children.includes(targetNodeId),
   )
@@ -48,7 +48,7 @@ function siblingAfter(page: Page, targetNodeId: string): InsertLocation | null {
 }
 
 export function resolveInsertLocation(
-  page: Page,
+  page: NodeTree<PageNode>,
   targetNodeId: string,
 ): InsertLocation | null {
   const target = page.nodes[targetNodeId]

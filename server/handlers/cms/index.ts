@@ -40,6 +40,7 @@ import { handleAuditRoutes } from './audit'
 import { handleSiteRoutes } from './site'
 import { handlePagesRoutes } from './pages'
 import { handleComponentsRoutes } from './components'
+import { handleLayoutsRoutes } from './layouts'
 import { handleRuntimeRoutes } from './runtime'
 import { handleMediaRoutes } from './media'
 import { handleMediaFolderRoutes } from './mediaFolders'
@@ -87,6 +88,7 @@ export async function handleCmsRequest(
     ?? (await handleSiteRoutes(req, db))
     ?? (await handlePagesRoutes(req, db))
     ?? (await handleComponentsRoutes(req, db))
+    ?? (await handleLayoutsRoutes(req, db))
     ?? (await handleRuntimeRoutes(req, db))
     // The folder routes match `/admin/api/cms/media/folders/...` so they must
     // run BEFORE the asset routes whose `/admin/api/cms/media/:id` pattern

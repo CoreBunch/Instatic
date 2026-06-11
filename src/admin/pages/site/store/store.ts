@@ -16,6 +16,8 @@ import { createAgentSlice, siteAgentSliceConfig, setAgentStoreApi } from '@site/
 import { createSitePanelSlice } from './slices/sitePanelSlice'
 import { createClipboardSlice } from './slices/clipboardSlice'
 import { createInlineEditSlice } from './slices/inlineEditSlice'
+import { createLayoutsSlice } from './slices/layoutsSlice'
+import { createSaveTrackingSlice } from './slices/saveTrackingSlice'
 import { bindPluginRuntimeStoreApi } from '@core/plugins/runtime'
 import { useAdminUi } from '@admin/state/adminUi'
 import { readWorkspaceLayout, workspaceFromPathname } from '@site/layout/panelLayoutStorage'
@@ -24,7 +26,7 @@ import { restoreStoredEditorLayout } from '@site/hooks/useEditorLayoutPersistenc
 /**
  * EditorStore — the central Zustand store for the visual editor.
  *
- * Composed of 12 slices (6 canonical Phase 0 + agentSlice + sitePanelSlice + filesSlice + visualComponentsSlice + clipboardSlice + inlineEditSlice):
+ * Composed of 14 slices (6 canonical Phase 0 + agentSlice + sitePanelSlice + filesSlice + visualComponentsSlice + clipboardSlice + inlineEditSlice + layoutsSlice + saveTrackingSlice):
  *   - siteSlice:        owns SiteDocument (pages, nodes, breakpoints, settings, classes, files)
  *   - selectionSlice:      selectedNodeId, hoveredNodeId
  *   - canvasSlice:         zoom, pan, activeBreakpointId, canvasMode (Constraint #317)
@@ -37,6 +39,8 @@ import { restoreStoredEditorLayout } from '@site/hooks/useEditorLayoutPersistenc
  *   - sitePanelSlice:      dependency manifest + site runtime settings
  *   - clipboardSlice:      copy / cut / paste of layer subtrees, persisted editor-wide
  *   - inlineEditSlice:     canvas inline text edit session (double-click to edit)
+ *   - layoutsSlice:        user-saved layouts (save / insert / rename / delete)
+ *   - saveTrackingSlice:   unsaved-changes flag + patch-derived save-dirty accumulator
  *
  * The combined `EditorStore` type lives in `./types` so each slice can import
  * it without going through this module — that's how the historical
@@ -71,6 +75,8 @@ export const useEditorStore = create<EditorStore>()(
         ...createSitePanelSlice(...args),
         ...createClipboardSlice(...args),
         ...createInlineEditSlice(...args),
+        ...createLayoutsSlice(...args),
+        ...createSaveTrackingSlice(...args),
       }),
       { enableAutoFreeze: true },
     )

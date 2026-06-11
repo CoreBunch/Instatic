@@ -603,12 +603,18 @@ Site-specific controls that were previously sections of this modal (Pages roster
 Data sources:
 
 - **Modules:** `registry.list()` filtered by the same editor insertion rules as the compact picker (`base.body`, `base.visual-component-ref`, and `base.slot-instance` hidden; `base.slot-outlet` only in Visual Component mode).
-- **Layouts:** seeded `LAYOUT_PRESETS`, built from the same serialized subtree shape as `FORM_PRESETS`.
+- **Layouts:** two groups, saved above built-in. User-saved layouts come from `site.layouts` (see "Saved layouts" below); built-in presets are the seeded `LAYOUT_PRESETS`, built from the same serialized subtree shape as `FORM_PRESETS`.
 - **Components:** `site.visualComponents`.
 - **Recent:** per-browser local state in `instatic-module-inserter-v1`, validated with TypeBox before use.
 - **Favorites:** per-user server state in `user_preferences` key `module-inserter`, validated with TypeBox by `src/core/persistence/userPreferences.ts` and used by `CanvasNotch`.
 
 The modal uses the tile-card pattern from `docs/design.md`: `--editor-surface` parent, 1px grid gap, `--editor-surface-2` tiles, `--card-radius`, rail-tint accents via `data-accent`, and an achromatic `--editor-focus-ring` selection state. Wireframe image regions reuse `--canvas-placeholder-bg`.
+
+### Saved layouts
+
+Right-clicking a layer (DOM panel or canvas) offers **Save as layout…** — page mode only, disabled with an inline reason on the page root. The action opens `LayoutNameDialog` (`src/admin/pages/site/dialogs/`), then `saveNodeAsLayout` captures the node + its whole subtree **and every referenced style rule** into a `SavedLayout` (`@core/layouts`) on `site.layouts`. The snapshot shape deliberately mirrors the clipboard payload, and both flows share one engine (`@site/store/subtreeSnapshot`): collecting a subtree + its classes, and restoring a snapshot with fresh node ids, scoped classes cloned with remapped `scope.nodeId`, framework classes re-matched by name, and regular classes reused-or-reimported. Inserting a saved layout therefore reproduces the original selection exactly, the same way paste would.
+
+Saved layouts persist as rows in the `layouts` system table (`savedLayoutFromRow` / `savedLayoutToCells` in `@core/data/layoutFromRow`) through the same incremental roster save as pages and components (`PUT /admin/api/cms/layouts`, dirty-tracked per layout id). In the inserter, snapshot-borne hazards disable items inline instead of failing on click: a snapshot carrying a `base.outlet` follows the outlet module's own placement rules, and in VC mode a snapshot whose component refs would create a dependency cycle is disabled. Refs to since-deleted Visual Components are stripped at insertion time. Right-clicking a saved layout in the inserter offers Rename… (closes the inserter and reopens `LayoutNameDialog`) and Delete (immediate — it's an undoable site mutation — confirmed via toast).
 
 ---
 

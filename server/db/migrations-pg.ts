@@ -229,7 +229,7 @@ export const pgMigrations: Migration[] = [
         created_at timestamptz not null default now(),
         updated_at timestamptz not null default now(),
         deleted_at timestamptz,
-        constraint data_tables_kind_check check (kind in ('postType', 'data', 'page', 'component'))
+        constraint data_tables_kind_check check (kind in ('postType', 'data', 'page', 'component', 'layout'))
       );
 
       create unique index if not exists data_tables_slug_active_idx
@@ -238,7 +238,7 @@ export const pgMigrations: Migration[] = [
 
       -- ─── System table seeds ────────────────────────────────────────────────
       --
-      -- Three system tables are seeded at boot. They are protected from rename
+      -- Four system tables are seeded at boot. They are protected from rename
       -- and delete (system = true). Users can add custom fields to them.
 
       insert into data_tables (id, name, slug, kind, route_base, singular_label, plural_label, primary_field_id, system, fields_json)
@@ -276,6 +276,22 @@ export const pgMigrations: Migration[] = [
       insert into data_tables (id, name, slug, kind, route_base, singular_label, plural_label, primary_field_id, system, fields_json)
       values ('components', 'Components', 'components', 'component', '', 'Component', 'Components', 'name', true,
         '[{"type":"text","id":"name","label":"Name","required":true,"builtIn":true},{"type":"text","id":"slug","label":"Slug","required":true,"builtIn":true},{"type":"pageTree","id":"body","label":"Body","required":true,"builtIn":true},{"type":"fieldSchema","id":"params","label":"Params","builtIn":true},{"type":"longText","id":"classIds","label":"Classes","builtIn":true}]'::jsonb)
+      on conflict (id) do update
+        set name = excluded.name,
+            slug = excluded.slug,
+            kind = excluded.kind,
+            route_base = excluded.route_base,
+            singular_label = excluded.singular_label,
+            plural_label = excluded.plural_label,
+            primary_field_id = excluded.primary_field_id,
+            system = excluded.system,
+            fields_json = excluded.fields_json,
+            updated_at = current_timestamp,
+            deleted_at = null;
+
+      insert into data_tables (id, name, slug, kind, route_base, singular_label, plural_label, primary_field_id, system, fields_json)
+      values ('layouts', 'Layouts', 'layouts', 'layout', '', 'Layout', 'Layouts', 'name', true,
+        '[{"type":"text","id":"name","label":"Name","required":true,"builtIn":true},{"type":"text","id":"slug","label":"Slug","required":true,"builtIn":true},{"type":"pageTree","id":"body","label":"Body","required":true,"builtIn":true},{"type":"longText","id":"classes","label":"Classes","builtIn":true}]'::jsonb)
       on conflict (id) do update
         set name = excluded.name,
             slug = excluded.slug,

@@ -14,6 +14,7 @@ export interface SaveDirtyHints {
   all: boolean
   pageIds: ReadonlySet<string>
   componentIds: ReadonlySet<string>
+  layoutIds: ReadonlySet<string>
 }
 
 export interface SaveSiteOptions {

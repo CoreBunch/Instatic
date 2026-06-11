@@ -1,6 +1,5 @@
 import type { EditorStore, EditorStoreSliceCreator } from '@site/store/types'
 import { clearCanvasSelectionDraft } from './selectionSlice'
-import { emptyDirtyMarks, mergeDirtyMarks, type DirtyMarks } from './site/dirtyTracking'
 
 export type FocusedPanel = 'canvas' | 'domTree' | 'properties' | null
 export type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'
@@ -58,6 +57,15 @@ export interface ComponentizeEditorRequest {
   requestId: number
 }
 
+/**
+ * Pending layout naming flow rendered by `LayoutNameDialog`:
+ *   - `create` — capture `nodeId` + its subtree as a new saved layout.
+ *   - `rename` — rename the existing saved layout `layoutId`.
+ */
+export type LayoutNameDialogRequest =
+  | { mode: 'create'; nodeId: string }
+  | { mode: 'rename'; layoutId: string }
+
 
 export interface UiSlice {
   // Panel visibility / layout
@@ -78,29 +86,19 @@ export interface UiSlice {
   // Editor-only form state preview, keyed by base.form node id.
   formPreviewStates: Record<string, FormPreviewState>
 
-  // Unsaved changes guard
-  hasUnsavedChanges: boolean
-
-  /**
-   * Patch-derived save-dirty accumulator — which pages/VCs changed since the
-   * last successful save (see slices/site/dirtyTracking.ts). Autosave takes a
-   * snapshot (which resets this), ships only the named ids, and merges the
-   * snapshot back on save failure so nothing is lost.
-   */
-  _dirtySave: DirtyMarks
-  /** Conservative full-save mark (imports, fresh sites). */
-  markAllDirtyForSave: () => void
-  /** Return the accumulated marks and reset the accumulator. */
-  takeDirtySaveSnapshot: () => DirtyMarks
-  /** Merge a failed save's snapshot back so the next save retries it. */
-  restoreDirtySaveSnapshot: (marks: DirtyMarks) => void
-
   // Module insert picker
   insertPickerOpen: boolean
   insertPickerParentId: string | null
 
   // Inline Visual Component extraction editor in the Properties panel.
   componentizeEditorRequest: ComponentizeEditorRequest | null
+
+  /**
+   * Pending layout naming flow — `create` captures the node's subtree as a
+   * new saved layout, `rename` renames an existing one. Rendered by
+   * `LayoutNameDialog` (mounted once in the editor body).
+   */
+  layoutNameDialogRequest: LayoutNameDialogRequest | null
 
   // Site explorer — user-facing site concepts, not generated source files
   siteExplorerPanelOpen: boolean
@@ -146,12 +144,12 @@ export interface UiSlice {
   closePreview: () => void
   setFormPreviewState: (formNodeId: string, state: FormPreviewState) => void
 
-  setHasUnsavedChanges: (value: boolean) => void
-
   openInsertPicker: (parentId: string) => void
   closeInsertPicker: () => void
   openComponentizeEditor: (nodeId: string) => void
   clearComponentizeEditorRequest: (requestId: number) => void
+  openLayoutNameDialog: (request: LayoutNameDialogRequest) => void
+  closeLayoutNameDialog: () => void
 
   setSiteExplorerPanelOpen: (open: boolean) => void
   setSelectorsPanelOpen: (open: boolean) => void
@@ -320,11 +318,10 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
   focusedPanel: 'canvas',
   previewOpen: false,
   formPreviewStates: {},
-  hasUnsavedChanges: false,
-  _dirtySave: emptyDirtyMarks(),
   insertPickerOpen: false,
   insertPickerParentId: null,
   componentizeEditorRequest: null,
+  layoutNameDialogRequest: null,
   siteExplorerPanelOpen: false,
   selectorsPanelOpen: false,
   colorsPanelOpen: false,
@@ -423,31 +420,6 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
       state.formPreviewStates[formNodeId] = previewState
     }),
 
-  setHasUnsavedChanges: (value) => set({ hasUnsavedChanges: value }),
-
-  markAllDirtyForSave: () =>
-    set((state) => {
-      state._dirtySave.all = true
-    }),
-
-  takeDirtySaveSnapshot: () => {
-    const current = get()._dirtySave
-    const snapshot: DirtyMarks = {
-      all: current.all,
-      pageIds: new Set(current.pageIds),
-      componentIds: new Set(current.componentIds),
-    }
-    set((state) => {
-      state._dirtySave = emptyDirtyMarks()
-    })
-    return snapshot
-  },
-
-  restoreDirtySaveSnapshot: (marks) =>
-    set((state) => {
-      mergeDirtyMarks(state._dirtySave, marks)
-    }),
-
   openInsertPicker: (parentId) =>
     set({ insertPickerOpen: true, insertPickerParentId: parentId }),
 
@@ -475,6 +447,10 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
     if (get().componentizeEditorRequest?.requestId !== requestId) return
     set({ componentizeEditorRequest: null })
   },
+
+  openLayoutNameDialog: (request) => set({ layoutNameDialogRequest: request }),
+
+  closeLayoutNameDialog: () => set({ layoutNameDialogRequest: null }),
 
   setSiteExplorerPanelOpen: (open) => set({ siteExplorerPanelOpen: open }),
 

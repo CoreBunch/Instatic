@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
+import type { SavedLayout } from '@core/layouts'
 import { CmsAdapter } from '@core/persistence/cms'
 
 function makePage(id: string, slug: string): Page {
@@ -44,6 +45,26 @@ function makeVC(id: string, name: string): VisualComponent {
   }
 }
 
+function makeLayout(id: string, name: string): SavedLayout {
+  return {
+    id,
+    name,
+    rootNodeId: 'layout-root',
+    nodes: {
+      'layout-root': {
+        id: 'layout-root',
+        moduleId: 'base.container',
+        props: {},
+        breakpointOverrides: {},
+        children: [],
+        classIds: [],
+      },
+    },
+    classes: {},
+    createdAt: 1000,
+  }
+}
+
 function site(): SiteDocument {
   return {
     id: 'project_1',
@@ -51,6 +72,7 @@ function site(): SiteDocument {
     pages: [makePage('page_home', 'index')],
     files: [],
     visualComponents: [],
+    layouts: [],
     breakpoints: [
       { id: 'desktop', label: 'Desktop', width: 1440, icon: 'monitor' },
     ],
@@ -119,13 +141,15 @@ describe('CmsAdapter', () => {
 // ---------------------------------------------------------------------------
 // Incremental save wire shapes
 //
-// saveSite PUTs three bodies:
-//   /site       → { site: <shell — no pages, no visualComponents> }
+// saveSite PUTs four bodies:
+//   /site       → { site: <shell — no pages, visualComponents, or layouts> }
 //   /pages      → { changedPages, pageIds, baselinePageIds? }
 //   /components → { changedComponents, componentIds }
+//   /layouts    → { changedLayouts, layoutIds }
 //
-// Only the pages/components named by opts.dirty ship in changed*; the FULL id
-// rosters always go along so server-side reaping keeps full-replace semantics.
+// Only the pages/components/layouts named by opts.dirty ship in changed*; the
+// FULL id rosters always go along so server-side reaping keeps full-replace
+// semantics.
 // ---------------------------------------------------------------------------
 
 describe('CmsAdapter incremental save wire shapes', () => {
@@ -134,6 +158,7 @@ describe('CmsAdapter incremental save wire shapes', () => {
       ...site(),
       pages: [makePage('page-1', 'index'), makePage('page-2', 'about')],
       visualComponents: [makeVC('vc-1', 'Card'), makeVC('vc-2', 'Hero')],
+      layouts: [makeLayout('layout-1', 'Hero section'), makeLayout('layout-2', 'Footer')],
     }
   }
 
@@ -169,6 +194,7 @@ describe('CmsAdapter incremental save wire shapes', () => {
     const shell = shellBody.site as Record<string, unknown>
     expect('pages' in shell).toBe(false)
     expect('visualComponents' in shell).toBe(false)
+    expect('layouts' in shell).toBe(false)
 
     const pagesBody = bodyOf(calls, '/admin/api/cms/pages')
     expect(ids(pagesBody.changedPages)).toEqual(['page-1', 'page-2'])
@@ -178,28 +204,36 @@ describe('CmsAdapter incremental save wire shapes', () => {
     const componentsBody = bodyOf(calls, '/admin/api/cms/components')
     expect(ids(componentsBody.changedComponents)).toEqual(['vc-1', 'vc-2'])
     expect(componentsBody.componentIds).toEqual(['vc-1', 'vc-2'])
+
+    const layoutsBody = bodyOf(calls, '/admin/api/cms/layouts')
+    expect(ids(layoutsBody.changedLayouts)).toEqual(['layout-1', 'layout-2'])
+    expect(layoutsBody.layoutIds).toEqual(['layout-1', 'layout-2'])
   })
 
   it('dirty save ships ONLY the named pages but always the FULL pageIds roster', async () => {
     const { adapter, calls } = recordingAdapter()
     await adapter.saveSite(multiDocSite(), {
-      dirty: { all: false, pageIds: new Set(['page-2']), componentIds: new Set() },
+      dirty: { all: false, pageIds: new Set(['page-2']), componentIds: new Set(), layoutIds: new Set() },
     })
 
     const pagesBody = bodyOf(calls, '/admin/api/cms/pages')
     expect(ids(pagesBody.changedPages)).toEqual(['page-2'])
     expect(pagesBody.pageIds).toEqual(['page-1', 'page-2'])
 
-    // Nothing marked on the component side — empty changed batch, full roster.
+    // Nothing marked on the component/layout side — empty changed batch, full roster.
     const componentsBody = bodyOf(calls, '/admin/api/cms/components')
     expect(componentsBody.changedComponents).toEqual([])
     expect(componentsBody.componentIds).toEqual(['vc-1', 'vc-2'])
+
+    const layoutsBody = bodyOf(calls, '/admin/api/cms/layouts')
+    expect(layoutsBody.changedLayouts).toEqual([])
+    expect(layoutsBody.layoutIds).toEqual(['layout-1', 'layout-2'])
   })
 
   it('components PUT mirrors the pages contract: named changedComponents, full componentIds roster', async () => {
     const { adapter, calls } = recordingAdapter()
     await adapter.saveSite(multiDocSite(), {
-      dirty: { all: false, pageIds: new Set(), componentIds: new Set(['vc-2']) },
+      dirty: { all: false, pageIds: new Set(), componentIds: new Set(['vc-2']), layoutIds: new Set() },
     })
 
     const componentsBody = bodyOf(calls, '/admin/api/cms/components')
@@ -211,11 +245,25 @@ describe('CmsAdapter incremental save wire shapes', () => {
     expect(pagesBody.pageIds).toEqual(['page-1', 'page-2'])
   })
 
+  it('layouts PUT mirrors the same contract: named changedLayouts, full layoutIds roster', async () => {
+    const { adapter, calls } = recordingAdapter()
+    await adapter.saveSite(multiDocSite(), {
+      dirty: { all: false, pageIds: new Set(), componentIds: new Set(), layoutIds: new Set(['layout-2']) },
+    })
+
+    const layoutsBody = bodyOf(calls, '/admin/api/cms/layouts')
+    expect(ids(layoutsBody.changedLayouts)).toEqual(['layout-2'])
+    expect(layoutsBody.layoutIds).toEqual(['layout-1', 'layout-2'])
+
+    const pagesBody = bodyOf(calls, '/admin/api/cms/pages')
+    expect(pagesBody.changedPages).toEqual([])
+  })
+
   it('includes baselinePageIds when provided and omits the key otherwise', async () => {
     const { adapter, calls } = recordingAdapter()
     await adapter.saveSite(multiDocSite(), {
       baselinePageIds: ['page-1'],
-      dirty: { all: false, pageIds: new Set(['page-2']), componentIds: new Set() },
+      dirty: { all: false, pageIds: new Set(['page-2']), componentIds: new Set(), layoutIds: new Set() },
     })
 
     const pagesBody = bodyOf(calls, '/admin/api/cms/pages')
@@ -229,7 +277,7 @@ describe('CmsAdapter incremental save wire shapes', () => {
   it('dirty.all = true sends everything despite narrower id sets', async () => {
     const { adapter, calls } = recordingAdapter()
     await adapter.saveSite(multiDocSite(), {
-      dirty: { all: true, pageIds: new Set(['page-2']), componentIds: new Set() },
+      dirty: { all: true, pageIds: new Set(['page-2']), componentIds: new Set(), layoutIds: new Set() },
     })
 
     const pagesBody = bodyOf(calls, '/admin/api/cms/pages')
@@ -239,5 +287,9 @@ describe('CmsAdapter incremental save wire shapes', () => {
     const componentsBody = bodyOf(calls, '/admin/api/cms/components')
     expect(ids(componentsBody.changedComponents)).toEqual(['vc-1', 'vc-2'])
     expect(componentsBody.componentIds).toEqual(['vc-1', 'vc-2'])
+
+    const layoutsBody = bodyOf(calls, '/admin/api/cms/layouts')
+    expect(ids(layoutsBody.changedLayouts)).toEqual(['layout-1', 'layout-2'])
+    expect(layoutsBody.layoutIds).toEqual(['layout-1', 'layout-2'])
   })
 })

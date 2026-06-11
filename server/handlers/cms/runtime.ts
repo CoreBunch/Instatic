@@ -174,7 +174,8 @@ export async function handleRuntimeRoutes(req: Request, db: DbClient): Promise<R
       const pages = validatePages(shell, rawPages, visualComponents, {
         storedVcIds: new Set(parsedVCs.map((vc) => vc.id)),
       })
-      const site: SiteDocument = { ...shell, pages, visualComponents }
+      // Saved layouts are editor-only; preview rendering ignores them.
+      const site: SiteDocument = { ...shell, pages, visualComponents, layouts: [] }
       const page = resolvePreviewPage(site, pageId)
       if (!page) return jsonResponse({ error: 'Page not found' }, { status: 404 })
 

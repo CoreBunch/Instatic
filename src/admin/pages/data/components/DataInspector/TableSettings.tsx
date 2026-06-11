@@ -124,6 +124,7 @@ const KIND_LABELS: Record<DataTable['kind'], string> = {
   data: 'Data table',
   page: 'Page',
   component: 'Component',
+  layout: 'Layout',
 }
 
 // ---------------------------------------------------------------------------

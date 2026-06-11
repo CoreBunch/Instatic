@@ -45,6 +45,7 @@ const KIND_DESCRIPTIONS: Record<DataTableKind, string> = {
   postType: 'Authored content with title, body, slug, and publish workflow.',
   page: 'System table for page content (managed internally).',
   component: 'System table for visual component definitions (managed internally).',
+  layout: 'System table for saved layout snapshots (managed internally).',
 }
 
 const FORM_ID = 'new-table-dialog-form'

@@ -75,6 +75,7 @@ export type DashboardLayoutPreference = Static<typeof DashboardLayoutSchema>
 const ModuleInserterItemKindSchema = Type.Union([
   Type.Literal('module'),
   Type.Literal('layout'),
+  Type.Literal('savedLayout'),
   Type.Literal('component'),
 ])
 

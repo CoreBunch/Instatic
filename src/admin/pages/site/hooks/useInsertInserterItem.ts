@@ -25,6 +25,8 @@ export function useInsertInserterItem() {
   const insertModule = useInsertModule()
   const insertPreset = useInsertPreset()
 
+  const insertLayoutAction = useEditorStore((s) => s.insertLayout)
+
   const insertVC = (vcId: string, explicitTarget?: InsertLocation): boolean => {
     if (!canvasPage) return false
     // Same target → location resolution as every other insert flow: explicit
@@ -48,9 +50,11 @@ export function useInsertInserterItem() {
         ? Boolean(insertModule(item.module, target))
         : item.kind === 'layout'
           ? Boolean(insertPreset(item.preset, target))
-          : item.kind === 'component'
-            ? insertVC(item.id, target)
-            : false
+          : item.kind === 'savedLayout'
+            ? Boolean(insertLayoutAction(item.id, target))
+            : item.kind === 'component'
+              ? insertVC(item.id, target)
+              : false
 
     if (!inserted) return false
 

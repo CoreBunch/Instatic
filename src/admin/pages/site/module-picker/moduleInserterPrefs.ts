@@ -18,6 +18,7 @@ const InserterViewSchema = Type.Union([
 const RecentKindSchema = Type.Union([
   Type.Literal('module'),
   Type.Literal('layout'),
+  Type.Literal('savedLayout'),
   Type.Literal('component'),
 ])
 

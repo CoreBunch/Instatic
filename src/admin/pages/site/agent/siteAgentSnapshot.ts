@@ -14,18 +14,21 @@
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { PageSchema, SiteShellSchema, type Page, type SiteDocument } from '@core/page-tree'
 import { VisualComponentSchema } from '@core/visualComponents'
+import { SavedLayoutSchema } from '@core/layouts'
 
 /**
  * In-memory site document validated as a single value: the persisted shell
- * (`SiteShellSchema`) plus the pages and visual components the adapter assembles
- * onto it. Mirrors the `SiteDocument` type from `@core/page-tree`, but as a
- * runtime-checkable schema so the snapshot boundary can validate it.
+ * (`SiteShellSchema`) plus the pages, visual components, and saved layouts the
+ * adapter assembles onto it. Mirrors the `SiteDocument` type from
+ * `@core/page-tree`, but as a runtime-checkable schema so the snapshot
+ * boundary can validate it.
  */
 const SiteDocumentSchema = Type.Composite([
   SiteShellSchema,
   Type.Object({
     pages: Type.Array(PageSchema),
     visualComponents: Type.Array(VisualComponentSchema),
+    layouts: Type.Array(SavedLayoutSchema),
   }),
 ])
 
@@ -58,7 +61,10 @@ export function buildSiteAgentSnapshot(
   const pages = site.pages.map((p) => (p.id === page.id ? p : { ...p, nodes: {} }))
   return {
     page,
-    site: { ...site, pages },
+    // Saved layouts are editor-only insertion templates — the agent never
+    // reads them, so they ship emptied (same payload bounding as non-active
+    // pages).
+    site: { ...site, pages, layouts: [] },
     selectedNodeId: options.selectedNodeId,
     activeBreakpointId: options.activeBreakpointId,
   }

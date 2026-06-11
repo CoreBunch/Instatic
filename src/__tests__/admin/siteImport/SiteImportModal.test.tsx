@@ -216,6 +216,9 @@ function mockDraftSiteLoad(site: SiteDocument): string[] {
     if (url === '/admin/api/cms/components') {
       return jsonResponse({ rows: [] })
     }
+    if (url === '/admin/api/cms/layouts') {
+      return jsonResponse({ rows: [] })
+    }
     return jsonResponse({ error: `Unexpected request: ${url}` }, 500)
   }
   return requested
@@ -470,6 +473,7 @@ describe('SiteImportModal — global static import', () => {
       '/admin/api/cms/site',
       '/admin/api/cms/pages',
       '/admin/api/cms/components',
+      '/admin/api/cms/layouts',
     ])
   })
 })
