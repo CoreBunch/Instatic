@@ -138,3 +138,47 @@ describe('modulePackVm — shared sandbox limits', () => {
     }
   }, 10_000)
 })
+
+describe('modulePackVm — render js boundary', () => {
+  const JS_PACK = `
+const widget = {
+  id: 'acme.canvas.widget',
+  name: 'Widget',
+  category: 'Acme',
+  version: '1.0.0',
+  defaults: {},
+  schema: {},
+  render: () => ({ html: '<div></div>', js: '(function(){})();' }),
+};
+const badJs = {
+  id: 'acme.canvas.badjs',
+  name: 'BadJs',
+  category: 'Acme',
+  version: '1.0.0',
+  defaults: {},
+  schema: {},
+  render: () => ({ html: '<div></div>', js: 42 }),
+};
+export default [widget, badJs];
+`
+
+  it('passes string render() js through the VM boundary', async () => {
+    const vm = await createModulePackVm({ pluginId: 'acme.canvas', packSource: JS_PACK })
+    try {
+      const out = vm.render('acme.canvas.widget', {}, [])
+      expect(out.html).toBe('<div></div>')
+      expect(out.js).toBe('(function(){})();')
+    } finally {
+      vm.dispose()
+    }
+  })
+
+  it('drops non-string js at the VM boundary', async () => {
+    const vm = await createModulePackVm({ pluginId: 'acme.canvas', packSource: JS_PACK })
+    try {
+      expect(vm.render('acme.canvas.badjs', {}, []).js).toBeUndefined()
+    } finally {
+      vm.dispose()
+    }
+  })
+})

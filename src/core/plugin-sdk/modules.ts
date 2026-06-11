@@ -46,6 +46,15 @@ export type PluginPropertySchema = Record<string, PluginPropertyControl>
 export interface PluginRenderOutput {
   html: string
   css?: string
+  /**
+   * Optional vanilla-JS runtime for this module TYPE — deduped per moduleId
+   * and served as an external per-module asset on published pages
+   * (`/_instatic/module-js/<moduleId>.js`). Requires the plugin's GRANTED
+   * `frontend.assets` permission; without the grant the host drops it (one
+   * console warning per module). Must be a self-contained IIFE binding via
+   * document-level event delegation; never executed in the admin canvas.
+   */
+  js?: string
 }
 
 export type PluginRenderFn = (

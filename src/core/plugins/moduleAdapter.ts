@@ -120,6 +120,11 @@ export function pluginModuleToHostModule(
   pluginId: string,
   definition: PluginModuleDefinition,
   componentFactory: PluginModuleComponentFactory,
+  /**
+   * The plugin's GRANTED permissions (never the declared `permissions`
+   * array) — authority for the `frontend.assets` gate on module JS.
+   */
+  grantedPermissions: readonly string[],
 ): ModuleDefinition<Record<string, unknown>> {
   validatePluginModuleId(pluginId, definition.id)
 
@@ -129,6 +134,14 @@ export function pluginModuleToHostModule(
       `${pluginId}:${definition.id}`,
     )
   }
+
+  // `frontend.assets` is the existing permission meaning "may put script tags
+  // on published pages" (enforced against grantedPermissions the same way in
+  // server/publish/frontendInjections.ts). Module render() `js` rides the
+  // same authority; without the grant it is dropped with ONE warning per
+  // module so a publish over hundreds of nodes doesn't spam the log.
+  const allowModuleJs = grantedPermissions.includes('frontend.assets')
+  let warnedDroppedJs = false
 
   return {
     id: definition.id,
@@ -171,7 +184,16 @@ export function pluginModuleToHostModule(
     render: (props, children) => {
       try {
         const out = definition.render(props, children)
-        return { html: out.html, css: out.css }
+        if (out.js !== undefined && !allowModuleJs) {
+          if (!warnedDroppedJs) {
+            warnedDroppedJs = true
+            console.warn(
+              `[plugin-module:${definition.id}] render() emitted js but plugin "${pluginId}" was not granted "frontend.assets" — module JS dropped.`,
+            )
+          }
+          return { html: out.html, css: out.css }
+        }
+        return { html: out.html, css: out.css, js: out.js }
       } catch (err) {
         console.error(`[plugin-module:${definition.id}] render() threw:`, err)
         return { html: `<!-- instatic: plugin module "${definition.id}" render failed -->` }
