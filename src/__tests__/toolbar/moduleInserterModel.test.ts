@@ -1,14 +1,19 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
 import {
   DEFAULT_MODULE_INSERTER_FAVORITES,
+  composeLayoutsSection,
   dedupeModuleInserterRefs,
+  getLayoutPresetItems,
+  getSavedLayoutItems,
   getVisibleModuleItems,
+  layoutPluginId,
   moduleAccentForCategory,
   moduleAvailability,
   resolveInserterRefs,
   type ModuleInsertionContext,
   type RegistryModuleForInserter,
 } from '@site/module-picker/moduleInserterModel'
+import type { SavedLayout } from '@core/layouts'
 import { findCanvasViewportAtPoint } from '@site/module-picker/moduleInserterDropTarget'
 import { scrollSelectedItemIntoView } from '@site/module-picker/moduleInserterSelectionScroll'
 import {
@@ -22,9 +27,9 @@ function mod(id: string, category: string, name = id): RegistryModuleForInserter
   return { id, category, name, description: `${name} description` }
 }
 
-const PAGE_CTX: ModuleInsertionContext = { isVCMode: false, isTemplate: false, hasOutlet: false }
-const TEMPLATE_CTX: ModuleInsertionContext = { isVCMode: false, isTemplate: true, hasOutlet: false }
-const VC_CTX: ModuleInsertionContext = { isVCMode: true, isTemplate: false, hasOutlet: false }
+const PAGE_CTX: ModuleInsertionContext = { isVCMode: false, activeVcId: null, isTemplate: false, hasOutlet: false }
+const TEMPLATE_CTX: ModuleInsertionContext = { isVCMode: false, activeVcId: null, isTemplate: true, hasOutlet: false }
+const VC_CTX: ModuleInsertionContext = { isVCMode: true, activeVcId: 'vc-1', isTemplate: false, hasOutlet: false }
 
 beforeEach(() => {
   localStorage.clear()
@@ -230,5 +235,85 @@ describe('module inserter selection scrolling', () => {
     expect(scrollOptions?.behavior).toBe('smooth')
     expect(scrollOptions?.top).toBe(84)
     expect(container.scrollTop).toBe(104)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Layouts section composition (Saved · per-plugin · Built-in)
+// ---------------------------------------------------------------------------
+
+function savedLayout(id: string, name: string): SavedLayout {
+  return {
+    id,
+    name,
+    rootNodeId: 'root',
+    nodes: {
+      root: {
+        id: 'root',
+        moduleId: 'base.container',
+        props: {},
+        breakpointOverrides: {},
+        children: [],
+        classIds: [],
+      },
+    },
+    classes: {},
+    createdAt: 0,
+  }
+}
+
+describe('layouts section composition', () => {
+  it('detects the owning plugin from the namespaced id', () => {
+    expect(layoutPluginId(savedLayout('V1StGXR8_Z5jdHi6B-myT', 'Mine'))).toBeNull()
+    expect(layoutPluginId(savedLayout('acme.kit/hero', 'Hero'))).toBe('acme.kit')
+  })
+
+  it('orders user layouts, per-plugin groups (by display name), then built-ins — with labels', () => {
+    const saved = getSavedLayoutItems(
+      [
+        savedLayout('zzz.kit/footer', 'Footer'),
+        savedLayout('user-layout-id1', 'My hero'),
+        savedLayout('acme.kit/hero', 'Hero'),
+      ],
+      PAGE_CTX,
+      [],
+    )
+    const presets = getLayoutPresetItems([
+      {
+        id: 'two-column',
+        name: 'Two column',
+        description: 'Side-by-side',
+        kind: 'layout',
+        root: { moduleId: 'base.container' },
+        wire: { tag: 'box', children: [] },
+      },
+    ])
+
+    const { items, labelByKey } = composeLayoutsSection(saved, presets, (pluginId) =>
+      pluginId === 'acme.kit' ? 'Acme UI Kit' : null,
+    )
+
+    expect(items.map((i) => i.name)).toEqual(['My hero', 'Hero', 'Footer', 'Two column'])
+    expect(labelByKey.get(items[0].key)).toBe('Saved')
+    expect(labelByKey.get(items[1].key)).toBe('Acme UI Kit')
+    // No display name registered → falls back to the plugin id.
+    expect(labelByKey.get(items[2].key)).toBe('zzz.kit')
+    expect(labelByKey.get(items[3].key)).toBe('Built-in')
+  })
+
+  it('renders no labels when only one group is present', () => {
+    const presets = getLayoutPresetItems([
+      {
+        id: 'two-column',
+        name: 'Two column',
+        description: 'Side-by-side',
+        kind: 'layout',
+        root: { moduleId: 'base.container' },
+        wire: { tag: 'box', children: [] },
+      },
+    ])
+    const { items, labelByKey } = composeLayoutsSection([], presets, () => null)
+    expect(items).toHaveLength(1)
+    expect(labelByKey.size).toBe(0)
   })
 })

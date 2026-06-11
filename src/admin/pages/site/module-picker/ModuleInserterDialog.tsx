@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { registry } from '@core/module-engine'
+import { pluginRuntime } from '@core/plugins/runtime'
 import type { SavedLayout } from '@core/layouts'
 import type { VisualComponent } from '@core/visualComponents'
 import type { InsertLocation } from '@site/store/insertLocation'
@@ -38,6 +39,7 @@ import {
 } from './insertionPresets'
 import {
   buildModuleInserterItems,
+  composeLayoutsSection,
   filterInserterItems,
   itemDescription,
   recentRefForItem,
@@ -151,21 +153,22 @@ export function ModuleInserterDialog({
   const filteredLayouts = filterInserterItems(layoutItems, query)
   const filteredComponents = filterInserterItems(componentItems, query)
   const filteredRecent = filterInserterItems(recentItems, query)
+  // Layouts section order: the user's saved layouts, one group per plugin
+  // (labelled with the plugin's display name), then the built-in presets.
+  const layoutsSection = composeLayoutsSection(
+    filteredSavedLayouts,
+    filteredLayouts,
+    (pluginId) => pluginRuntime.getPluginName(pluginId),
+  )
   const items = itemsForSection(section, {
     modules: filteredModules,
-    // Saved layouts lead the Layouts section; built-in presets follow.
-    layouts: [...filteredSavedLayouts, ...filteredLayouts],
+    layouts: layoutsSection.items,
     components: filteredComponents,
     recent: filteredRecent,
   })
 
-  // Group labels for the Layouts section — rendered only when both the saved
-  // and built-in groups are present, keyed by each group's first item.
-  const groupLabelByKey = new Map<string, string>()
-  if (section === 'layouts' && filteredSavedLayouts.length > 0 && filteredLayouts.length > 0) {
-    groupLabelByKey.set(filteredSavedLayouts[0].key, 'Saved')
-    groupLabelByKey.set(filteredLayouts[0].key, 'Built-in')
-  }
+  // Group labels for the Layouts section, keyed by each group's first item.
+  const groupLabelByKey = section === 'layouts' ? layoutsSection.labelByKey : new Map<string, string>()
   const selectedKey =
     selectedKeyOverride && items.some((item) => item.key === selectedKeyOverride)
       ? selectedKeyOverride
@@ -174,7 +177,7 @@ export function ModuleInserterDialog({
   const selectedSection = SECTIONS.find((item) => item.id === section) ?? SECTIONS[0]
   const sectionCounts = {
     modules: filteredModules.length,
-    layouts: filteredSavedLayouts.length + filteredLayouts.length,
+    layouts: layoutsSection.items.length,
     components: filteredComponents.length,
     recent: filteredRecent.length,
   }

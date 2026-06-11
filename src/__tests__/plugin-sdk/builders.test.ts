@@ -18,6 +18,8 @@ import {
   safeUrl,
   vc,
 } from '@core/plugin-sdk'
+// Layout compilation maps HTML elements to base.* modules via the registry.
+import '@modules/base'
 
 describe('html tag', () => {
   it('escapes interpolated values', () => {
@@ -208,6 +210,86 @@ describe('definePack', () => {
         x: { name: 'my class', styles: {} },
       },
     })).toThrow(/CSS name/)
+  })
+
+  it('compiles HTML layout entries into namespaced SavedLayout snapshots', () => {
+    const pack = definePack({
+      pluginId: 'acme.ui-kit',
+      layouts: [{
+        id: 'hero-section',
+        name: 'Hero section',
+        html: '<section class="hero missing-rule"><h2>Big claim</h2></section>',
+        css: '.hero { padding: 96px; text-align: center; }',
+      }],
+    })
+
+    expect(pack.layouts).toHaveLength(1)
+    const layout = pack.layouts[0]
+    expect(layout.id).toBe('acme.ui-kit/hero-section')
+    expect(layout.name).toBe('Hero section')
+
+    const root = layout.nodes[layout.rootNodeId]
+    expect(root).toBeDefined()
+    // The class with a CSS rule links to a deterministic namespaced id; the
+    // class name without one is dropped (it would be dropped at insert time).
+    expect(root.classIds).toEqual(['acme.ui-kit/hero-section/hero'])
+    const heroClass = layout.classes['acme.ui-kit/hero-section/hero']
+    expect(heroClass?.name).toBe('hero')
+    // The CSS engine expands shorthands to longhands.
+    expect(heroClass?.styles.paddingTop).toBe('96px')
+    expect(heroClass?.styles.textAlign).toBe('center')
+
+    // The heading made it into the subtree.
+    const allNodes = Object.values(layout.nodes)
+    expect(allNodes.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('harvests <style> blocks from the layout HTML as CSS', () => {
+    const pack = definePack({
+      pluginId: 'acme.ui-kit',
+      layouts: [{
+        id: 'styled',
+        name: 'Styled',
+        html: '<style>.card { border-radius: 16px; }</style><div class="card">Hi</div>',
+      }],
+    })
+    const layout = pack.layouts[0]
+    expect(layout.classes['acme.ui-kit/styled/card']?.styles.borderTopLeftRadius).toBe('16px')
+    expect(layout.nodes[layout.rootNodeId].classIds).toEqual(['acme.ui-kit/styled/card'])
+  })
+
+  it('wraps multi-root layout HTML in a single container root', () => {
+    const pack = definePack({
+      pluginId: 'acme.ui-kit',
+      layouts: [{
+        id: 'two-parts',
+        name: 'Two parts',
+        html: '<header>Top</header><footer>Bottom</footer>',
+      }],
+    })
+    const layout = pack.layouts[0]
+    const root = layout.nodes[layout.rootNodeId]
+    expect(root.moduleId).toBe('base.container')
+    expect(root.children).toHaveLength(2)
+  })
+
+  it('compiles deterministic class ids across rebuilds', () => {
+    const entry = {
+      id: 'hero-section',
+      name: 'Hero section',
+      html: '<section class="hero">Hi</section>',
+      css: '.hero { color: red; }',
+    }
+    const a = definePack({ pluginId: 'acme.ui-kit', layouts: [entry] })
+    const b = definePack({ pluginId: 'acme.ui-kit', layouts: [entry] })
+    expect(Object.keys(a.layouts[0].classes)).toEqual(Object.keys(b.layouts[0].classes))
+  })
+
+  it('rejects layout HTML that produces no elements', () => {
+    expect(() => definePack({
+      pluginId: 'acme.ui-kit',
+      layouts: [{ id: 'empty', name: 'Empty', html: '   ' }],
+    })).toThrow(/no elements/)
   })
 })
 

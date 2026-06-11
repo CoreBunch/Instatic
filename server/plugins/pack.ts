@@ -152,8 +152,10 @@ export function parsePluginPack(pluginId: string, raw: unknown): PluginPackConte
     }
     // Same ownership rule as classes: pack layout ids must be namespaced so
     // re-installs replace the plugin's own rows and can never collide with a
-    // user's saved layouts (which use generated ids).
-    if (!layout.id.startsWith(`${pluginId}/`) && !layout.id.startsWith(`${pluginId}.`)) {
+    // user's saved layouts (which use generated ids). Layouts require the
+    // `<pluginId>/` form specifically — the editor splits on the first slash
+    // to group plugin layouts in the inserter.
+    if (!layout.id.startsWith(`${pluginId}/`)) {
       throw new PluginPackError(
         `Plugin "${pluginId}" pack layout "${layout.id}" must be namespaced under the plugin id (e.g. "${pluginId}/${layout.id}").`,
       )

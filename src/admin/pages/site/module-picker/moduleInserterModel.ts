@@ -67,6 +67,13 @@ export interface ModuleInserterSavedLayoutItem extends BaseInserterItem {
   kind: 'savedLayout'
   layout: SavedLayout
   blocks: number
+  /**
+   * Owning plugin when the layout was installed by a pack (pack layout ids
+   * are namespaced `<pluginId>/<rest>`; user-saved layouts use generated ids
+   * that never contain a slash). Drives the per-plugin groups in the
+   * inserter's Layouts section.
+   */
+  pluginId: string | null
 }
 
 export interface ModuleInserterComponentItem extends BaseInserterItem {
@@ -248,6 +255,12 @@ function savedLayoutDisabledReason(
   return undefined
 }
 
+/** Owning plugin id for a pack-installed layout, or null for user layouts. */
+export function layoutPluginId(layout: SavedLayout): string | null {
+  const slash = layout.id.indexOf('/')
+  return slash > 0 ? layout.id.slice(0, slash) : null
+}
+
 export function getSavedLayoutItems(
   layouts: readonly SavedLayout[],
   context: ModuleInsertionContext,
@@ -255,20 +268,72 @@ export function getSavedLayoutItems(
 ): ModuleInserterSavedLayoutItem[] {
   return layouts.map((layout) => {
     const disabledReason = savedLayoutDisabledReason(layout, context, visualComponents)
+    const pluginId = layoutPluginId(layout)
     return {
       key: recentKey({ kind: 'savedLayout', id: layout.id }),
       id: layout.id,
       kind: 'savedLayout',
       name: layout.name,
-      description: 'Saved layout',
+      description: pluginId ? 'Plugin layout' : 'Saved layout',
       accent: 'sky',
       layout,
       blocks: Object.keys(layout.nodes).length,
+      pluginId,
       wire: wireFromTree({ nodes: layout.nodes, rootNodeId: layout.rootNodeId }),
-      searchText: searchText([layout.name, layout.id, 'saved layout']),
+      searchText: searchText([
+        layout.name,
+        layout.id,
+        pluginId ? `plugin layout ${pluginId}` : 'saved layout',
+      ]),
       ...(disabledReason ? { disabledReason } : {}),
     }
   })
+}
+
+/**
+ * Compose the Layouts section: the user's saved layouts first, then one
+ * group per plugin (labelled with the plugin's display name), then the
+ * built-in presets. Group labels render only when more than one group is
+ * present; `labelByKey` keys each label to its group's first item.
+ */
+export function composeLayoutsSection(
+  savedItems: readonly ModuleInserterSavedLayoutItem[],
+  presetItems: readonly ModuleInserterLayoutItem[],
+  pluginNameFor: (pluginId: string) => string | null,
+): {
+  items: (ModuleInserterSavedLayoutItem | ModuleInserterLayoutItem)[]
+  labelByKey: Map<string, string>
+} {
+  const userItems = savedItems.filter((item) => item.pluginId === null)
+  const byPlugin = new Map<string, ModuleInserterSavedLayoutItem[]>()
+  for (const item of savedItems) {
+    if (item.pluginId === null) continue
+    const group = byPlugin.get(item.pluginId) ?? []
+    group.push(item)
+    byPlugin.set(item.pluginId, group)
+  }
+  const pluginGroups = [...byPlugin.entries()]
+    .map(([pluginId, items]) => ({
+      label: pluginNameFor(pluginId) ?? pluginId,
+      items,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+
+  const groupCount =
+    (userItems.length > 0 ? 1 : 0) + pluginGroups.length + (presetItems.length > 0 ? 1 : 0)
+
+  const items = [
+    ...userItems,
+    ...pluginGroups.flatMap((group) => group.items),
+    ...presetItems,
+  ]
+  const labelByKey = new Map<string, string>()
+  if (groupCount > 1) {
+    if (userItems.length > 0) labelByKey.set(userItems[0].key, 'Saved')
+    for (const group of pluginGroups) labelByKey.set(group.items[0].key, group.label)
+    if (presetItems.length > 0) labelByKey.set(presetItems[0].key, 'Built-in')
+  }
+  return { items, labelByKey }
 }
 
 export function getComponentItems(
@@ -387,7 +452,7 @@ export function itemDescription(item: ModuleInserterItem): string {
   if (item.disabledReason) return item.disabledReason
   if (item.kind === 'layout') return `${item.blocks} blocks · ${item.description}`
   if (item.kind === 'savedLayout') {
-    return item.blocks === 1 ? '1 block · Saved layout' : `${item.blocks} blocks · Saved layout`
+    return item.blocks === 1 ? `1 block · ${item.description}` : `${item.blocks} blocks · ${item.description}`
   }
   if (item.kind === 'component') {
     const count = item.component.params.length

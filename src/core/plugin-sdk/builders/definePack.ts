@@ -13,6 +13,12 @@
  *       section: { paddingTop: '72px', maxWidth: '1120px' },
  *       'heading-xl': { fontSize: 'clamp(2.4rem, 4vw, 3.4rem)', fontWeight: '700' },
  *     },
+ *     layouts: [{
+ *       id: 'hero-section',
+ *       name: 'Hero section',
+ *       html: '<section class="hero"><h1>Big claim</h1></section>',
+ *       css: '.hero { padding: 96px 24px; text-align: center; }',
+ *     }],
  *   })
  *
  * Wins over hand-rolled JSON:
@@ -31,6 +37,7 @@ import type { StyleRule, Page } from '@core/page-tree'
 import { classKindSelector } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import type { SavedLayout } from '@core/layouts'
+import { compilePackLayout, type LayoutPackEntry } from './packLayouts'
 
 export interface PluginPackContents {
   visualComponents: VisualComponent[]
@@ -52,16 +59,13 @@ interface DefinePackConfig {
    */
   classes?: Record<string, ClassPackEntry>
   /**
-   * Saved layouts — subtree snapshots offered in the module inserter's
-   * Layouts section. Each entry is the snapshot shape the editor saves
-   * (`rootNodeId` + flat `nodes` + the `classes` registry the nodes
-   * reference). Ids are auto-namespaced to `<pluginId>/<id>` (re-installs
-   * replace by id); `createdAt` is optional and defaults to 0.
+   * Saved layouts — offered in the module inserter's Layouts section under
+   * the plugin's name. Authored as clean HTML (+ optional CSS); compiled to
+   * the host's snapshot format at build time by `compilePackLayout`. Ids are
+   * auto-namespaced to `<pluginId>/<id>`; re-installs replace by id.
    */
   layouts?: LayoutPackEntry[]
 }
-
-type LayoutPackEntry = Omit<SavedLayout, 'createdAt'> & { createdAt?: number }
 
 type ClassPackEntry =
   | Record<string, unknown>
@@ -122,11 +126,9 @@ export function definePack(config: DefinePackConfig): PluginPackContents {
     })
   }
 
-  const layouts: SavedLayout[] = (config.layouts ?? []).map((layout) => ({
-    ...layout,
-    id: namespacedLayoutId(config.pluginId, layout.id),
-    createdAt: layout.createdAt ?? 0,
-  }))
+  const layouts: SavedLayout[] = (config.layouts ?? []).map((entry) =>
+    compilePackLayout(config.pluginId, entry),
+  )
 
   return {
     visualComponents: config.visualComponents ?? [],
@@ -134,10 +136,4 @@ export function definePack(config: DefinePackConfig): PluginPackContents {
     classes,
     layouts,
   }
-}
-
-/** Auto-namespace a pack layout id unless the author already prefixed it. */
-function namespacedLayoutId(pluginId: string, id: string): string {
-  if (id.startsWith(`${pluginId}/`) || id.startsWith(`${pluginId}.`)) return id
-  return `${pluginId}/${id}`
 }

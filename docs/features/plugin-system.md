@@ -62,7 +62,10 @@ editor/index.js          ← editor entrypoint (optional)
 admin/dashboard.js       ← admin pages entrypoint (optional)
 modules/index.js         ← canvas module pack (optional)
 frontend/tracker.js      ← published-page asset (optional)
-pack/site.json           ← Visual Components / pages / classes / layouts pack (optional)
+pack/site.json           ← Visual Components / pages / classes / layouts pack (optional;
+                           layouts are authored as clean HTML + CSS in
+                           definePack({ layouts }) and compiled to snapshot
+                           form at build time)
 assets/                  ← static assets shipped in the zip (optional)
 ```
 

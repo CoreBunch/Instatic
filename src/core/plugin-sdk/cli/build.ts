@@ -27,6 +27,7 @@ import { pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
 import type { PluginDefinition } from '../builders/definePlugin'
 import { assertSandboxSafe } from '@core/plugins/sandboxScan'
+import { installPackCompileEnvironment } from './packCompileEnvironment'
 
 export interface PluginBuildResult {
   pluginId: string
@@ -35,6 +36,9 @@ export interface PluginBuildResult {
 }
 
 export async function readPluginDefinition(sourceDir: string): Promise<PluginDefinition> {
+  // The config may call definePack({ layouts }) which compiles HTML — give it
+  // a DOM + the base module registry before it is evaluated.
+  installPackCompileEnvironment()
   const configPath = join(sourceDir, 'instatic-plugin.config.ts')
   if (!existsSync(configPath)) {
     throw new Error(`instatic-plugin.config.ts not found at ${configPath}`)

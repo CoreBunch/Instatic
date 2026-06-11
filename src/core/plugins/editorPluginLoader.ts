@@ -121,6 +121,7 @@ export async function activateInstalledEditorPlugins(
     // Secret values arrive masked (`'***'`) — the server masks them on every
     // admin payload, so editor-side code never holds real secrets.
     pluginRuntime.setPluginSettings(plugin.id, plugin.settings)
+    pluginRuntime.setPluginName(plugin.id, plugin.name)
     if (!plugin.enabled || plugin.lifecycleStatus === 'error' || !manifest.assetBasePath) {
       continue
     }

@@ -144,6 +144,7 @@ class PluginRuntime {
   private canvasOverlays = new Map<string, CanvasOverlayRecord>()
   private paletteProviders = new Map<string, RegisteredPaletteProvider>()
   private pluginSettings = new Map<string, Record<string, string | number | boolean>>()
+  private pluginNames = new Map<string, string>()
   private listeners = new Set<RuntimeListener>()
 
   /**
@@ -171,6 +172,7 @@ class PluginRuntime {
     this.canvasOverlays.clear()
     this.paletteProviders.clear()
     this.pluginSettings.clear()
+    this.pluginNames.clear()
     this.toolbarButtonsSnapshot = null
     this.panelsSnapshot = null
     this.canvasOverlaysSnapshot = null
@@ -234,6 +236,20 @@ class PluginRuntime {
 
   getPluginSettings(pluginId: string): Record<string, string | number | boolean> {
     return { ...(this.pluginSettings.get(pluginId) ?? {}) }
+  }
+
+  /**
+   * Cache an installed plugin's display name so editor UI (e.g. the module
+   * inserter's per-plugin layout groups) can label plugin-owned content
+   * synchronously. Set for every installed plugin — enabled or not — by
+   * `activateInstalledEditorPlugins`.
+   */
+  setPluginName(pluginId: string, name: string): void {
+    this.pluginNames.set(pluginId, name)
+  }
+
+  getPluginName(pluginId: string): string | null {
+    return this.pluginNames.get(pluginId) ?? null
   }
 
   registerCommand(pluginId: string, command: PluginCommand): void {
