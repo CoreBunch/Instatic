@@ -12,7 +12,6 @@
  *   - keybindings.ts           — registry itself (defines match functions)
  *   - HelpKeybindingsList.tsx  — reads from registry, renders <kbd> tags
  *   - SpotlightRow.tsx         — reads from registry, renders <kbd> tags
- *   - PanelRail.tsx            — uses getKeybindingForCommand().match(e)
  *   - CanvasRoot.tsx           — uses getKeybindingForCommand().match(e)
  *   - usePersistence.ts        — uses getKeybindingForCommand().match(e)
  *   - SpotlightRoot.tsx        — uses getKeybindingForCommand().match(e)
@@ -39,7 +38,6 @@ const ALLOWLIST = new Set([
   // ⌘ symbol appears only in a JSDoc comment, not JSX output
   'admin/spotlight/Spotlight.tsx',
   // Handlers that use getKeybindingForCommand().match(e)
-  'admin/pages/site/sidebars/PanelRail/PanelRail.tsx',
   'admin/pages/site/canvas/CanvasRoot.tsx',
   'admin/pages/site/hooks/usePersistence.ts',
   'admin/spotlight/SpotlightRoot.tsx',

@@ -161,43 +161,7 @@ export const KEYBINDINGS: ReadonlyArray<KeybindingDefinition> = [
     ignoreInEditableField: true,
   },
 
-  // ── Panels (sidebar panel toggles) ─────────────────────────────────────────
-
-  {
-    commandId: 'panels.toggleSiteExplorer',
-    shortcut: { mac: 'Ctrl+⇧E', win: 'Ctrl+Shift+E' },
-    ariaKeyshortcuts: 'Control+Shift+E',
-    match: (e) => e.ctrlKey && e.shiftKey && e.key === 'E',
-    scope: 'panels',
-    ignoreInEditableField: true,
-  },
-
-  {
-    commandId: 'panels.toggleMedia',
-    shortcut: { mac: 'Ctrl+⇧M', win: 'Ctrl+Shift+M' },
-    ariaKeyshortcuts: 'Control+Shift+M',
-    match: (e) => e.ctrlKey && e.shiftKey && e.key === 'M',
-    scope: 'panels',
-    ignoreInEditableField: true,
-  },
-
-  {
-    commandId: 'panels.toggleProperties',
-    shortcut: { mac: 'Ctrl+⇧R', win: 'Ctrl+Shift+R' },
-    ariaKeyshortcuts: 'Control+Shift+R',
-    match: (e) => e.ctrlKey && e.shiftKey && e.key === 'R',
-    scope: 'panels',
-    ignoreInEditableField: true,
-  },
-
-  {
-    commandId: 'panels.toggleAgent',
-    shortcut: { mac: '⌘I', win: 'Ctrl+I' },
-    ariaKeyshortcuts: isPlatformMac() ? 'Meta+I' : 'Control+I',
-    match: (e) => (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'i',
-    scope: 'panels',
-    ignoreInEditableField: true,
-  },
+  // ── Panels (sidebar focus cycling) ──────────────────────────────────────────
 
   {
     commandId: 'panels.cycleFocus',

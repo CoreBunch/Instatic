@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore, type CSSProperties } from 'react'
+import { useSyncExternalStore, type CSSProperties } from 'react'
 import { useEditorStore } from '@site/store/store'
 import type { LeftSidebarPanelId } from '@site/store/slices/uiSlice'
 import type { IconComponent } from 'pixel-art-icons/types'
@@ -14,7 +14,6 @@ import { RulerDimensionSolidIcon } from 'pixel-art-icons/icons/ruler-dimension-s
 import { Button } from '@ui/components/Button'
 import { assignRailAccents, railTintVar, type RailAccent } from '@ui/railAccent'
 import { pluginRuntime } from '@core/plugins/runtime'
-import { getKeybindingForCommand, formatShortcut } from '@admin/spotlight/keybindings'
 import { resolvePluginPanelIcon } from './pluginPanelIcons'
 import styles from './PanelRail.module.css'
 
@@ -23,12 +22,6 @@ interface PrimaryRailItem {
   label: string
   icon: IconComponent
   iconName: string
-  /**
-   * commandId links this panel button to a keybinding in the registry.
-   * The ariaKeyshortcuts and shortcutLabel tooltip are derived from it
-   * at runtime — do NOT hardcode shortcut strings here.
-   */
-  commandId?: string
 }
 
 interface RailItem {
@@ -41,7 +34,7 @@ interface RailItem {
   disabled?: boolean
   onToggle: () => void
   disabledTitle?: string
-  ariaKeyshortcuts?: string
+  /** Plugin-supplied shortcut hint shown in the button tooltip. */
   shortcutLabel?: string
 }
 
@@ -51,14 +44,12 @@ const PRIMARY_RAIL_ITEMS: PrimaryRailItem[] = [
     label: 'Layers',
     icon: DatabaseSolidIcon,
     iconName: 'database-solid',
-    // No keyboard shortcut registered for the Layers panel.
   },
   {
     id: 'site',
     label: 'Site',
     icon: FilesStack2SolidIcon,
     iconName: 'files-stack-2',
-    commandId: 'panels.toggleSiteExplorer',
   },
   {
     id: 'selectors',
@@ -89,7 +80,6 @@ const PRIMARY_RAIL_ITEMS: PrimaryRailItem[] = [
     label: 'Media',
     icon: ImagesSolidIcon,
     iconName: 'images',
-    commandId: 'panels.toggleMedia',
   },
   {
     id: 'dependencies',
@@ -105,7 +95,6 @@ const GLOBAL_RAIL_ITEMS: PrimaryRailItem[] = [
     label: 'AI assistant',
     icon: AiSettingsSolidIcon,
     iconName: 'ai-settings-solid',
-    commandId: 'panels.toggleAgent',
   },
 ]
 
@@ -144,52 +133,6 @@ export function PanelRail({ workspace = 'site', editable = true }: PanelRailProp
     () => SERVER_PLUGIN_PANELS_SNAPSHOT,
   )
 
-  useEffect(() => {
-    // Keyboard shortcuts for switching panels are wired up for every caller.
-    // Read-only viewers should still be able to press the shortcut to flip
-    // to Layers / Site Explorer / Media. The toggle handler in the store is
-    // a no-op when nothing is actually written, so this is safe; the gating
-    // of *content* (and the AI assistant) happens in the panels themselves.
-    // Agent shortcut is opt-in below — only registered for editors since the
-    // agent panel itself is editor-only.
-
-    // All match predicates come from the keybindings registry — single source of truth.
-    const kbSiteExplorer = getKeybindingForCommand('panels.toggleSiteExplorer')
-    const kbMedia        = getKeybindingForCommand('panels.toggleMedia')
-    const kbProperties   = getKeybindingForCommand('panels.toggleProperties')
-    const kbAgent        = editable ? getKeybindingForCommand('panels.toggleAgent') : null
-
-    function isTypingTarget(target: EventTarget | null) {
-      const element = target as HTMLElement | null
-      return Boolean(element && (
-        element.tagName === 'INPUT' ||
-        element.tagName === 'TEXTAREA' ||
-        element.isContentEditable
-      ))
-    }
-
-    function onKeyDown(e: KeyboardEvent) {
-      if (isTypingTarget(e.target)) return
-
-      if (kbSiteExplorer?.match(e)) {
-        e.preventDefault()
-        useEditorStore.getState().toggleLeftSidebarPanel('site')
-      } else if (kbMedia?.match(e)) {
-        e.preventDefault()
-        useEditorStore.getState().toggleLeftSidebarPanel('media')
-      } else if (kbProperties?.match(e)) {
-        e.preventDefault()
-        useEditorStore.getState().togglePropertiesPanel()
-      } else if (kbAgent?.match(e)) {
-        e.preventDefault()
-        useEditorStore.getState().toggleLeftSidebarPanel('agent')
-      }
-    }
-
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [editable])
-
   const panelOpenById = {
     layers: domOpen,
     agent: agentOpen,
@@ -220,18 +163,11 @@ export function PanelRail({ workspace = 'site', editable = true }: PanelRailProp
   }
 
   function toRailItem(item: PrimaryRailItem, accent: RailAccent): RailItem {
-    const label = railLabel(item)
-    // Shortcut labels and ARIA keyshortcuts come from the keybindings registry.
-    const kb = item.commandId ? getKeybindingForCommand(item.commandId) : undefined
-    const shortcutLabel = kb ? formatShortcut(kb.shortcut) : undefined
-    const ariaKeyshortcuts = kb?.ariaKeyshortcuts
     return {
       ...item,
-      label,
+      label: railLabel(item),
       open: panelOpenById[item.id],
       onToggle: () => toggleLeftSidebarPanel(item.id),
-      shortcutLabel,
-      ariaKeyshortcuts,
       accent,
     }
   }
@@ -319,7 +255,6 @@ function RailButton({ item }: { item: RailItem }) {
       iconOnly
       pressed={item.open}
       aria-label={`${action} ${item.label} panel`}
-      aria-keyshortcuts={item.ariaKeyshortcuts}
       disabled={item.disabled}
       tooltip={title}
       data-testid={`panel-rail-${item.id}`}

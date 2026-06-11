@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import React from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { MemoryRouter } from '@admin/lib/routing'
@@ -398,10 +398,9 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
     fireEvent.keyDown(canvas, { key: 'Backspace' })
     expect(Object.keys(useEditorStore.getState().site?.pages[0]?.nodes ?? {})).toEqual(beforeNodeIds)
 
-    // Site Explorer is a navigation panel available to read-only callers, so
-    // the rail keybinding (Ctrl+Shift+E) DOES toggle it open even without
-    // edit capabilities — they can browse the page roster but not edit it.
-    fireEvent.keyDown(document, { key: 'E', ctrlKey: true, shiftKey: true })
+    // Site Explorer is a navigation panel available to read-only callers — they
+    // can open it from the rail to browse the page roster, but not edit it.
+    fireEvent.click(within(rail).getByRole('button', { name: /open site panel/i }))
     expect(useEditorStore.getState().siteExplorerPanelOpen).toBe(true)
   })
 
@@ -650,34 +649,8 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
     const sidebar = screen.getByTestId('left-sidebar')
     const rail = within(sidebar).getByRole('navigation', { name: /panel dock/i })
 
+    // Properties lives in the right sidebar, never as a left-rail panel button.
     expect(within(rail).queryByRole('button', { name: /properties panel/i })).toBeNull()
-
-    act(() => {
-      useEditorStore.setState({
-        propertiesPanel: { collapsed: false, x: 0, y: 0, width: 360 },
-        selectedNodeId: 'selected-for-shortcut',
-      } as Parameters<typeof useEditorStore.setState>[0])
-    })
-    fireEvent.keyDown(document, { key: 'R', ctrlKey: true, shiftKey: true })
-
     expect(sidebar.getAttribute('data-active-panel')).toBe('layers')
-    expect(useEditorStore.getState().propertiesPanel.collapsed).toBe(true)
-  })
-
-  it('keeps panel keyboard shortcuts on the permanent rail', () => {
-    renderEditorLayout()
-
-    fireEvent.keyDown(document, { key: 'E', ctrlKey: true, shiftKey: true })
-    expect(useEditorStore.getState().siteExplorerPanelOpen).toBe(true)
-
-    fireEvent.keyDown(document, { key: 'M', ctrlKey: true, shiftKey: true })
-    expect(useEditorStore.getState().mediaExplorerPanelOpen).toBe(true)
-    expect(useEditorStore.getState().siteExplorerPanelOpen).toBe(false)
-
-    fireEvent.keyDown(document, { key: 'R', ctrlKey: true, shiftKey: true })
-    expect(useEditorStore.getState().propertiesPanel.collapsed).toBe(true)
-
-    fireEvent.keyDown(document, { key: 'i', metaKey: true })
-    expect(useEditorStore.getState().isAgentOpen).toBe(true)
   })
 })
