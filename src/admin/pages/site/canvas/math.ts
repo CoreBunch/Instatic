@@ -10,7 +10,10 @@
 
 export const MIN_ZOOM = 0.1
 export const MAX_ZOOM = 4
-export const DEFAULT_ZOOM = 1
+/** Zoom the design canvas opens at — 50% keeps several breakpoint frames in view. */
+export const INITIAL_ZOOM = 0.5
+/** Zoom that "reset view" (Cmd/Ctrl+0, the toolbar % button) returns to. */
+export const RESET_ZOOM = 1
 
 /**
  * Maximum pan offset in each direction (pixels in document space).

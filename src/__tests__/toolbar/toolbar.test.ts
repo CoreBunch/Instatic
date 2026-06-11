@@ -23,6 +23,9 @@
 import { describe, it, expect, beforeEach } from 'bun:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { cleanup, render } from '@testing-library/react'
+import { ZoomControls } from '@site/toolbar/ZoomControls'
+import { useEditorStore } from '@site/store/store'
 
 // ─── Guideline #224 constants ─────────────────────────────────────────────────
 
@@ -55,6 +58,49 @@ describe('ZoomControls — zoom percentage display', () => {
 
   it('converts zoom 0.1 to "10%" (min zoom)', () => {
     expect(Math.round(0.1 * 100)).toBe(10)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 1b — Live mode: zoom pinned to 100% and disabled
+// ---------------------------------------------------------------------------
+
+describe('ZoomControls — live mode', () => {
+  // renderToStaticMarkup would render zustand's INITIAL state (server
+  // snapshot) and ignore setState — these two need a live client render.
+  beforeEach(() => {
+    cleanup()
+  })
+
+  it('pins the display to 100% and disables every control with the reason', () => {
+    useEditorStore.setState({ canvasView: 'live', zoom: 0.5 })
+    const { container } = render(React.createElement(ZoomControls))
+
+    // Display ignores the stored design-canvas zoom (50%), which is preserved
+    // for the return to design mode.
+    expect(container.textContent).toContain('100%')
+    expect(container.textContent).not.toContain('50%')
+    // disabled+tooltip renders aria-disabled (not native disabled) so the
+    // explanatory tooltip still shows on hover — the Button primitive's
+    // zero-friction path.
+    const buttons = [...container.querySelectorAll('button')]
+    expect(buttons).toHaveLength(3)
+    for (const button of buttons) {
+      expect(button.getAttribute('aria-disabled')).toBe('true')
+    }
+    // The reason is surfaced accessibly on the % readout, not only on hover.
+    expect(container.innerHTML).toContain('Live mode always shows 100% zoom.')
+  })
+
+  it('keeps the stored design zoom interactive in design mode', () => {
+    useEditorStore.setState({ canvasView: 'design', zoom: 0.5 })
+    const { container } = render(React.createElement(ZoomControls))
+
+    expect(container.textContent).toContain('50%')
+    for (const button of container.querySelectorAll('button')) {
+      expect(button.getAttribute('aria-disabled')).toBeNull()
+      expect(button.hasAttribute('disabled')).toBe(false)
+    }
   })
 })
 

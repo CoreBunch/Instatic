@@ -27,7 +27,8 @@ import * as canvasMath from '@site/canvas/math'
 import {
   MIN_ZOOM,
   MAX_ZOOM,
-  DEFAULT_ZOOM,
+  INITIAL_ZOOM,
+  RESET_ZOOM,
   ZOOM_STEPS,
   clampZoom,
   nearestZoomStep,
@@ -55,10 +56,11 @@ describe('math.ts — exported constants', () => {
     expect(MAX_ZOOM).toBeLessThanOrEqual(10)
   })
 
-  it('ZOOM_STEPS are ordered boundaries and include the default zoom', () => {
+  it('ZOOM_STEPS are ordered boundaries and include the initial + reset zooms', () => {
     expect(ZOOM_STEPS[0]).toBe(MIN_ZOOM)
     expect(ZOOM_STEPS[ZOOM_STEPS.length - 1]).toBe(MAX_ZOOM)
-    expect(ZOOM_STEPS).toContain(DEFAULT_ZOOM)
+    expect(ZOOM_STEPS).toContain(INITIAL_ZOOM)
+    expect(ZOOM_STEPS).toContain(RESET_ZOOM)
     for (let i = 1; i < ZOOM_STEPS.length; i++) {
       expect(ZOOM_STEPS[i]).toBeGreaterThan(ZOOM_STEPS[i - 1])
     }

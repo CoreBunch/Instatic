@@ -22,7 +22,8 @@ import { useEditorStore } from '@site/store/store'
 import {
   MIN_ZOOM,
   MAX_ZOOM,
-  DEFAULT_ZOOM,
+  INITIAL_ZOOM,
+  RESET_ZOOM,
   MAX_PAN,
   clampZoom,
   clampPan,
@@ -34,7 +35,7 @@ import {
 
 beforeEach(() => {
   useEditorStore.setState({
-    zoom: DEFAULT_ZOOM,
+    zoom: RESET_ZOOM,
     panX: 0,
     panY: 0,
     canvasMode: 'select',
@@ -327,10 +328,11 @@ describe('zoomIn / zoomOut', () => {
 // ---------------------------------------------------------------------------
 
 describe('resetView', () => {
-  it('resets zoom to DEFAULT_ZOOM', () => {
+  it('resets zoom to RESET_ZOOM (100%), not the 50% initial design zoom', () => {
     useEditorStore.setState({ zoom: 2.5 })
     useEditorStore.getState().resetView()
-    expect(canvas().zoom).toBe(DEFAULT_ZOOM)
+    expect(canvas().zoom).toBe(RESET_ZOOM)
+    expect(INITIAL_ZOOM).toBe(0.5)
   })
 
   it('resets pan to (0, 0)', () => {
@@ -345,7 +347,7 @@ describe('resetView', () => {
     useEditorStore.setState({ zoom: MAX_ZOOM, panX: MAX_PAN, panY: -MAX_PAN })
     useEditorStore.getState().resetView()
     const { zoom, panX, panY } = canvas()
-    expect(zoom).toBe(DEFAULT_ZOOM)
+    expect(zoom).toBe(RESET_ZOOM)
     expect(panX).toBe(0)
     expect(panY).toBe(0)
   })

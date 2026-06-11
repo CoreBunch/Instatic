@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { useRef } from 'react'
 import { act, cleanup as cleanupRender, fireEvent, render, screen } from '@testing-library/react'
 import { useEditorStore } from '@site/store/store'
-import { DEFAULT_ZOOM } from '@site/canvas/math'
+import { RESET_ZOOM } from '@site/canvas/math'
 import { useCanvas } from '@site/hooks/useCanvas'
 import { installAdminZoomGuard } from '@admin/shared/AdminZoomGuard'
 
@@ -35,7 +35,7 @@ function dispatchWheel(target: Element, props: Record<string, unknown>) {
 
 beforeEach(() => {
   useEditorStore.setState({
-    zoom: DEFAULT_ZOOM,
+    zoom: RESET_ZOOM,
     panX: 0,
     panY: 0,
     hoveredNodeId: null,

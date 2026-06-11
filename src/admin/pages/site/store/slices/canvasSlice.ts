@@ -1,6 +1,7 @@
 import type { EditorStoreSliceCreator } from '@site/store/types'
 import {
-  DEFAULT_ZOOM,
+  INITIAL_ZOOM,
+  RESET_ZOOM,
   clampZoom,
   clampPan,
   nearestZoomStep,
@@ -105,7 +106,7 @@ declare module '@site/store/types' {
 }
 
 export const createCanvasSlice: EditorStoreSliceCreator<CanvasSlice> = (set, get) => ({
-  zoom: DEFAULT_ZOOM,
+  zoom: INITIAL_ZOOM,
   panX: 0,
   panY: 0,
   activeBreakpointId: 'desktop',
@@ -147,7 +148,7 @@ export const createCanvasSlice: EditorStoreSliceCreator<CanvasSlice> = (set, get
     else s.collapsedBreakpointIds.splice(idx, 1)
   }),
 
-  resetView: () => set({ zoom: DEFAULT_ZOOM, panX: 0, panY: 0 }),
+  resetView: () => set({ zoom: RESET_ZOOM, panX: 0, panY: 0 }),
 
   zoomIn: (originX, originY) => {
     const { zoom, panX, panY, zoomTo } = get()
