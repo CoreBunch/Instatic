@@ -26,7 +26,7 @@
  *   - Escape → cancel (single undo of the coalesced burst iff committed).
  *   - Node unmounted / rect unmeasurable / frame unmount → force-close.
  */
-import { use, useEffect, useEffectEvent, useRef } from 'react'
+import { use, useEffect, useEffectEvent, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useEditorStore } from '@site/store/store'
 import { CanvasViewportActionsContext } from './CanvasContexts'
@@ -106,10 +106,13 @@ export function InlineTextEditOverlay({ breakpointId, iframeElement }: InlineTex
   })
 
   // Position + typography RAF loop, armed only while this frame owns the
-  // session. The first tick runs synchronously so the field never flashes at
-  // (0,0); focus + select-all mirror the removed in-iframe editor's
-  // enter-edit-mode behaviour (commit 934df7d4).
-  useEffect(() => {
+  // session. The first tick + focus run in a LAYOUT effect — synchronously
+  // BEFORE the browser paints — so the field is positioned and type-matched on
+  // its very first painted frame. A plain `useEffect` runs after paint, which
+  // flashed the field unpositioned (default font at the canvas origin) for one
+  // frame on every double-click. focus + select-all mirror the removed
+  // in-iframe editor's enter-edit-mode behaviour (commit 934df7d4).
+  useLayoutEffect(() => {
     if (!sessionKey || !iframeElement) return
     tickOnce()
     const field = fieldRef.current
