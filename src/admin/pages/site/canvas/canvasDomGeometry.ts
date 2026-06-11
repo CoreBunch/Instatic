@@ -1,6 +1,5 @@
 import type { PageNode } from '@core/page-tree'
 import type { NodeTree } from '@core/page-tree'
-import { escapeCssAttributeValue } from './canvasNodeLookup'
 import type {
   CanvasDropAxis,
   CanvasDropCandidate,
@@ -98,75 +97,6 @@ export function panToCenterBreakpointFrame(
   }
 }
 
-export function measureCanvasNodeClientUnionRect(
-  viewport: HTMLElement,
-  nodeIds: readonly string[],
-  /**
-   * Optional iframe hosting the canvas content. When provided, `[data-node-id]`
-   * lookups happen inside `iframe.contentDocument` and each measured rect is
-   * translated from iframe-internal coordinates into editor-document
-   * coordinates (by adding the iframe's own client rect AND multiplying by
-   * the canvas zoom — inner rects come back unscaled, since the iframe
-   * document is its own viewport).
-   */
-  iframe?: HTMLIFrameElement | null,
-): CanvasRect | null {
-  let union: CanvasRect | null = null
-  const queryScope: ParentNode | null = iframe?.contentDocument ?? viewport
-  const iframeRect = iframe?.getBoundingClientRect() ?? null
-  // See the analogous comment in BreakpointSelectionOverlay.positionRing:
-  // the iframe ELEMENT is scaled by the canvas transform, but
-  // `getBoundingClientRect()` inside the iframe document returns rects in
-  // the iframe's own (un-transformed) viewport. We must multiply each inner
-  // rect by `iframeRect.width / iframe.offsetWidth` before adding the
-  // iframe's outer offset so the result stays in consistent editor-doc px.
-  const iframeScale =
-    iframe && iframe.offsetWidth > 0 && iframeRect ? iframeRect.width / iframe.offsetWidth : 1
-
-  for (const id of nodeIds) {
-    const target = queryCanvasNodeElement(queryScope, id)
-    if (!target) continue
-
-    const rectInsideScope = target.getBoundingClientRect()
-    if (rectInsideScope.width === 0 && rectInsideScope.height === 0) continue
-
-    // Translate iframe-internal coords to editor-document coords by
-    // multiplying by the canvas zoom and adding the iframe's own client
-    // rect. For the legacy in-document path (no iframe), the rect is
-    // already in editor coords so we skip the translation.
-    const rect = iframeRect
-      ? {
-          left: iframeRect.left + rectInsideScope.left * iframeScale,
-          top: iframeRect.top + rectInsideScope.top * iframeScale,
-          right: iframeRect.left + rectInsideScope.right * iframeScale,
-          bottom: iframeRect.top + rectInsideScope.bottom * iframeScale,
-          width: rectInsideScope.width * iframeScale,
-          height: rectInsideScope.height * iframeScale,
-        }
-      : {
-          left: rectInsideScope.left,
-          top: rectInsideScope.top,
-          right: rectInsideScope.right,
-          bottom: rectInsideScope.bottom,
-          width: rectInsideScope.width,
-          height: rectInsideScope.height,
-        }
-
-    union = union
-      ? {
-          left: Math.min(union.left, rect.left),
-          top: Math.min(union.top, rect.top),
-          right: Math.max(union.right, rect.right),
-          bottom: Math.max(union.bottom, rect.bottom),
-          width: Math.max(union.right, rect.right) - Math.min(union.left, rect.left),
-          height: Math.max(union.bottom, rect.bottom) - Math.min(union.top, rect.top),
-        }
-      : rect
-  }
-
-  return union
-}
-
 export function measureCanvasDropCandidates(
   viewport: HTMLElement,
   tree: NodeTree<PageNode>,
@@ -184,8 +114,8 @@ export function measureCanvasDropCandidates(
   const iframeRect = iframe?.getBoundingClientRect() ?? null
   // Inner rects come back unscaled (iframe document is its own viewport);
   // multiply by the canvas zoom recovered from the iframe element before
-  // adding the iframe's outer offset. See the matching comment in
-  // `measureCanvasNodeClientUnionRect`.
+  // adding the iframe's outer offset. See the matching explanation in
+  // `canvasOverlayGeometry.ts`.
   const iframeScale =
     iframe && iframe.offsetWidth > 0 && iframeRect ? iframeRect.width / iframe.offsetWidth : 1
   const candidates: CanvasDropCandidate[] = []
@@ -224,23 +154,6 @@ export function measureCanvasDropCandidates(
   }
 
   return candidates
-}
-
-/**
- * Look up the rendered DOM element for a page-tree node. Each module spreads
- * `nodeWrapperProps` (which carries `data-node-id`) directly onto its own root
- * tag — there is no wrapping `<div class="nodeWrapper">` anymore — so the
- * `[data-node-id]` match IS the rendered element. Returning it directly is
- * what every caller wants: for a grid container with multiple columns, the
- * rect spans the whole grid; for a single text node, the rect is the text.
- */
-function queryCanvasNodeElement(
-  scope: ParentNode,
-  nodeId: string,
-): HTMLElement | null {
-  return scope.querySelector<HTMLElement>(
-    `[data-node-id="${escapeCssAttributeValue(nodeId)}"]`,
-  )
 }
 
 /**

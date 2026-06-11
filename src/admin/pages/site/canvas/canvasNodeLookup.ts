@@ -22,6 +22,43 @@ export function escapeCssAttributeValue(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 }
 
+/**
+ * Per-overlay cache of nodeId → rendered element inside one breakpoint
+ * iframe.
+ *
+ * The selection overlay's RAF tick used to `querySelector` every tracked
+ * node on every frame — an O(document) attribute scan per ring at 60fps.
+ * Caching the resolved element makes the steady-state tick O(1) per ring;
+ * a cached entry is re-queried only when it has been unmounted
+ * (`!isConnected` — e.g. the node re-rendered) or when the iframe swapped
+ * documents (a srcDoc reload leaves stale elements connected to the OLD
+ * document, so `ownerDocument` must match the live one).
+ *
+ * Call `retainOnly` with the ids tracked this tick so entries for
+ * deselected nodes don't pin detached DOM subtrees in memory.
+ */
+export class CanvasNodeElementCache {
+  private elements = new Map<string, HTMLElement>()
+
+  resolve(doc: Document, nodeId: string): HTMLElement | null {
+    const cached = this.elements.get(nodeId)
+    if (cached && cached.isConnected && cached.ownerDocument === doc) return cached
+
+    const element = doc.querySelector<HTMLElement>(
+      `[data-node-id="${escapeCssAttributeValue(nodeId)}"]`,
+    )
+    if (element) this.elements.set(nodeId, element)
+    else this.elements.delete(nodeId)
+    return element
+  }
+
+  retainOnly(nodeIds: ReadonlySet<string>): void {
+    for (const id of this.elements.keys()) {
+      if (!nodeIds.has(id)) this.elements.delete(id)
+    }
+  }
+}
+
 export function findRenderedCanvasNodeElement(
   nodeId: string,
   root: Document = document,

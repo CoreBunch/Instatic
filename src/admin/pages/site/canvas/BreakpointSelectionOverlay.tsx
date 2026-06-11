@@ -35,9 +35,21 @@
  *   the old `<div class="nodeWrapper">` design and produced a selection ring
  *   the size of the first child only.
  * - Computes the rect relative to the canvas root on every animation frame
- *   while a ring is visible (cheap; getBoundingClientRect + style write).
- *   Polling via RAF is simpler than wiring ResizeObserver/MutationObserver/
- *   IntersectionObserver to every possible mutation source.
+ *   while a ring is visible. Polling via RAF is simpler than wiring
+ *   ResizeObserver/MutationObserver/IntersectionObserver to every possible
+ *   mutation source (scroll, layout shift, zoom/pan, CSS animation) — but
+ *   each tick must stay cheap, so it is structured as:
+ *     1. READ phase — one `createCanvasOverlayMeasureSession` snapshots the
+ *        iframe + canvas-root geometry shared by every ring, tracked
+ *        elements resolve through a `CanvasNodeElementCache` (no per-frame
+ *        `querySelector` scans), and every rect is measured up front. The
+ *        toolbar anchors to the union of the ring rects already measured —
+ *        nothing is queried or measured twice.
+ *     2. WRITE phase — styles are applied after all reads, and writes are
+ *        skipped when a rect matches what's already applied. Steady-state
+ *        frames therefore do a handful of cached-layout reads and zero
+ *        writes; no read/write interleaving means no forced reflows while
+ *        rects are actually changing.
  * - Clears style positioning when the tracked node disappears or the
  *   selection/hover clears.
  * - Renders the selected-layer toolbar AND the selection / hover rings
@@ -71,10 +83,13 @@ import { HandGrabSolidIcon } from 'pixel-art-icons/icons/hand-grab-solid'
 import { CanvasViewportActionsContext } from './CanvasContexts'
 import { CanvasInsertModuleButton } from './CanvasInsertModuleButton'
 import { useCanvasReorderDrag } from './useCanvasReorderDrag'
-import { measureCanvasNodeClientUnionRect } from './canvasDomGeometry'
 import { useCanvasTreeLadderOverlay } from './CanvasTreeLadderOverlay'
-import { escapeCssAttributeValue } from './canvasNodeLookup'
-import { measureCanvasElementRect } from './canvasOverlayGeometry'
+import { CanvasNodeElementCache } from './canvasNodeLookup'
+import {
+  createCanvasOverlayMeasureSession,
+  unionCanvasOverlayRects,
+  type CanvasOverlayRect,
+} from './canvasOverlayGeometry'
 import type {
   CanvasDropAxis,
   CanvasDropTarget,
@@ -93,10 +108,9 @@ interface BreakpointSelectionOverlayProps {
    */
   breakpointId: string
   /**
-   * Ref to the outer viewport `<div>` (which contains the iframe). Used for
-   * zoom recovery (`offsetWidth` vs `getBoundingClientRect().width`), the
-   * toolbar's canvas-root container, and reorder-drag drop-candidate
-   * measurement against the wrapping layout box.
+   * Ref to the outer viewport `<div>` (which contains the iframe). Used by
+   * the reorder drag for drop-candidate measurement against the wrapping
+   * layout box.
    */
   viewportRef: React.RefObject<HTMLElement | null>
   /**
@@ -170,6 +184,10 @@ export function BreakpointSelectionOverlay({
   // from React state — there's no node-id list to map over.
   const selectorHighlightRef = useRef<HTMLDivElement>(null)
   const toolbarRef = useRef<HTMLDivElement>(null)
+  // nodeId → rendered iframe element, reused across RAF ticks so the
+  // steady-state tick never pays a per-frame `querySelector` document scan.
+  const nodeElementCacheRef = useRef<CanvasNodeElementCache | null>(null)
+  if (nodeElementCacheRef.current === null) nodeElementCacheRef.current = new CanvasNodeElementCache()
   const viewportActions = use(CanvasViewportActionsContext)
 
   // Selection toolbar (drag / duplicate / delete) is purely structural —
@@ -228,36 +246,69 @@ export function BreakpointSelectionOverlay({
   // which specific nodes are tracked.
   //
   // Bridge inputs:
-  //  - `viewport` is the outer `<div>` (parent doc). Used for drop-indicator
-  //    positioning (which stays viewport-local, transform-scaled) and as the
-  //    fallback positioning origin when no canvas root is wired in (tests).
   //  - `iframe` is the breakpoint's iframe element. `[data-node-id]` lookups
-  //    happen inside `iframe.contentDocument`, then `positionRing` /
-  //    `positionToolbar` translate from iframe-document coordinates into
-  //    canvas-root-local (screen-px, NOT scaled) coordinates so the 1px
-  //    border on each ring stays exactly 1px at every zoom level.
+  //    happen inside `iframe.contentDocument`, then the measure session
+  //    translates from iframe-document coordinates into canvas-root-local
+  //    (screen-px, NOT scaled) coordinates so the 1px border on each ring
+  //    stays exactly 1px at every zoom level.
   //  - `canvasRoot` is the editor canvas surface — the rings and toolbar are
   //    portaled into it (see render output below) and positioned in its
-  //    coordinate space, escaping the transform layer's scale.
-  const tickOnce = useEffectEvent((viewport: HTMLElement, iframe: HTMLIFrameElement | null) => {
+  //    coordinate space, escaping the transform layer's scale. Null in the
+  //    fixed/body fallback mode (tests, transient mount race), where overlay
+  //    coords stay in viewport (client) space.
+  //
+  // The tick is split into a READ phase (resolve cached elements, measure
+  // every rect through one shared geometry session) and a WRITE phase
+  // (apply styles, skipping writes whose rect is already applied) — see the
+  // header comment. Reordering measurements/writes here can reintroduce
+  // per-frame forced reflows.
+  const tickOnce = useEffectEvent((iframe: HTMLIFrameElement | null) => {
     const canvasRoot = viewportActions?.canvasRootRef.current ?? null
-    for (const id of selectedNodeIds) {
-      positionRing(ringRefs.current?.get(id) ?? null, id, iframe, canvasRoot)
+    const iframeDoc = iframe?.contentDocument ?? null
+    const elementCache = nodeElementCacheRef.current!
+
+    if (!iframe || !iframeDoc) {
+      // Nothing measurable (iframe not mounted yet / reloading) — hide all
+      // chrome. Pure writes; they no-op once everything is already hidden.
+      for (const id of selectedNodeIds) hideOverlayElement(ringRefs.current?.get(id) ?? null)
+      hideOverlayElement(hoverRef.current)
+      if (selectorHighlightRef.current) hideSurplusRings(selectorHighlightRef.current, 0)
+      hideOverlayElement(toolbarRef.current)
+      return
     }
-    positionRing(hoverRef.current, showHover ? hoverRingNodeId : null, iframe, canvasRoot)
-    syncSelectorHighlightRings(
-      selectorHighlightRef.current,
+
+    // ── READ phase ──────────────────────────────────────────────────────
+    const session = createCanvasOverlayMeasureSession(iframe, canvasRoot)
+    const trackedIds = new Set<string>()
+
+    const ringPlacements: Array<{ ring: HTMLDivElement | null; rect: CanvasOverlayRect | null }> = []
+    let toolbarUnion: CanvasOverlayRect | null = null
+    for (const id of selectedNodeIds) {
+      trackedIds.add(id)
+      const rect = session.measure(elementCache.resolve(iframeDoc, id))
+      ringPlacements.push({ ring: ringRefs.current?.get(id) ?? null, rect })
+      if (showToolbar && rect) toolbarUnion = unionCanvasOverlayRects(toolbarUnion, rect)
+    }
+
+    const hoverId = showHover ? hoverRingNodeId : null
+    let hoverRect: CanvasOverlayRect | null = null
+    if (hoverId) {
+      trackedIds.add(hoverId)
+      hoverRect = session.measure(elementCache.resolve(iframeDoc, hoverId))
+    }
+    elementCache.retainOnly(trackedIds)
+
+    const selectorRects = measureSelectorHighlightRects(
       showSelectorHighlight ? highlightedSelector : null,
-      iframe,
-      canvasRoot,
+      iframeDoc,
+      session,
     )
-    positionToolbar(
-      toolbarRef.current,
-      showToolbar ? selectedNodeIds : [],
-      viewport,
-      iframe,
-      canvasRoot,
-    )
+
+    // ── WRITE phase ─────────────────────────────────────────────────────
+    for (const { ring, rect } of ringPlacements) positionOverlayElement(ring, rect)
+    positionOverlayElement(hoverRef.current, hoverRect)
+    syncSelectorHighlightRings(selectorHighlightRef.current, selectorRects)
+    positionToolbar(toolbarRef.current, showToolbar ? toolbarUnion : null, session.canvasRect)
   })
 
   // The RAF loop exists to re-position overlay chrome as the tracked element
@@ -275,15 +326,13 @@ export function BreakpointSelectionOverlay({
 
   useEffect(() => {
     if (!hasOverlayWork) return
-    const viewport = viewportRef.current
-    if (!viewport) return
 
     let frame = 0
     let cancelled = false
 
     const tick = () => {
       if (cancelled) return
-      tickOnce(viewport, iframeElement)
+      tickOnce(iframeElement)
       frame = requestAnimationFrame(tick)
     }
     frame = requestAnimationFrame(tick)
@@ -292,7 +341,7 @@ export function BreakpointSelectionOverlay({
       cancelled = true
       cancelAnimationFrame(frame)
     }
-  }, [hasOverlayWork, viewportRef, iframeElement])
+  }, [hasOverlayWork, iframeElement])
 
   const toolbar = showToolbar ? (
     <div
@@ -420,67 +469,56 @@ export function BreakpointSelectionOverlay({
 }
 
 // ---------------------------------------------------------------------------
-// Positioning helper
+// Positioning helpers — WRITE phase only. Every rect is measured up front in
+// the tick's READ phase; these apply the results, skipping writes that match
+// what is already on the element so steady-state frames touch no styles.
 // ---------------------------------------------------------------------------
 
 /**
- * Move/resize a ring div to overlay the rendered element of `nodeId`. Hides
- * the ring (display: none) if the element is not currently mounted — happens
- * transiently during page swaps, breakpoint changes, or when the selection
- * points into a hidden subtree.
- *
- * The ring lives in the canvas root's coordinate space (or document.body's
- * when `canvasRoot` is null — tests / transient mount race), NOT inside the
- * transform-scaled layer. So we want POST-transform, screen-px coordinates:
- * the ring's width/height directly mirror the visual size of the selected
- * element on screen, and its 1px box-shadow stays 1px at every zoom.
- *
- * `getBoundingClientRect()` inside the iframe returns un-transformed coords
- * (the iframe document is its own viewport, never transformed). The iframe
- * ELEMENT in the parent doc IS scaled by the canvas transform layer. So we
- * recover the canvas zoom from the iframe element itself (clientRect.width
- * / offsetWidth) and multiply the inner rect by that scale, then add the
- * iframe's outer offset — the result is in editor-document (post-transform)
- * screen-px coords. Subtracting the canvas-root client rect (or zero, in
- * fixed-position fallback mode) gives the ring's own coordinate space.
+ * Last placement applied per overlay element ('hidden' or the exact rect).
+ * Lets the WRITE phase no-op when nothing moved — same-value style writes
+ * are not guaranteed free across engines, and skipping them keeps the
+ * steady-state tick read-only.
  */
-function positionRing(
-  ring: HTMLDivElement | null,
-  nodeId: string | null,
-  iframe: HTMLIFrameElement | null,
-  canvasRoot: HTMLElement | null,
-): void {
-  if (!ring) return
+const appliedOverlayPlacements = new WeakMap<HTMLElement, CanvasOverlayRect | 'hidden'>()
 
-  if (!nodeId) {
-    ring.style.display = 'none'
-    return
-  }
-
-  // `[data-node-id]` elements live inside the iframe's document now. Query
-  // there. Each module spreads `nodeWrapperProps` directly onto its own root
-  // tag (the `<a>` / `<h1>` / grid `<div>` / …), so the matched element IS
-  // the rendered element and its `getBoundingClientRect()` spans the full
-  // visual extent — every column of a grid, every row of a flex container.
-  // Reading the rect off `firstElementChild` was a leftover from when a
-  // wrapping `<div class="nodeWrapper">` sat between `data-node-id` and the
-  // rendered tag; it produced a selection ring the size of the first child.
-  const iframeDoc = iframe?.contentDocument
-  if (!iframeDoc) {
-    ring.style.display = 'none'
-    return
-  }
-  const target = iframeDoc.querySelector<HTMLElement>(
-    `[data-node-id="${escapeCssAttributeValue(nodeId)}"]`,
-  )
-
-  const rect = measureCanvasElementRect(target, iframe, canvasRoot)
+/**
+ * Move/resize an overlay div (selection ring, hover ring, affinity ring) to
+ * `rect`, in canvas-root-local coordinates (or viewport coordinates in the
+ * fixed/body fallback). `rect === null` hides the element — the tracked node
+ * is unmounted (page swap, hidden subtree) or the ring is inactive.
+ */
+function positionOverlayElement(element: HTMLElement | null, rect: CanvasOverlayRect | null): void {
+  if (!element) return
   if (!rect) {
-    ring.style.display = 'none'
+    hideOverlayElement(element)
     return
   }
+  const prev = appliedOverlayPlacements.get(element)
+  if (
+    prev !== undefined &&
+    prev !== 'hidden' &&
+    prev.x === rect.x &&
+    prev.y === rect.y &&
+    prev.width === rect.width &&
+    prev.height === rect.height
+  ) {
+    return
+  }
+  Object.assign(element.style, {
+    display: '',
+    transform: `translate(${rect.x}px, ${rect.y}px)`,
+    width: `${rect.width}px`,
+    height: `${rect.height}px`,
+  })
+  appliedOverlayPlacements.set(element, rect)
+}
 
-  applyOverlayRectStyle(ring, rect)
+function hideOverlayElement(element: HTMLElement | null): void {
+  if (!element) return
+  if (appliedOverlayPlacements.get(element) === 'hidden') return
+  element.style.display = 'none'
+  appliedOverlayPlacements.set(element, 'hidden')
 }
 
 /**
@@ -494,26 +532,16 @@ function positionRing(
 const SELECTOR_HIGHLIGHT_RING_CAP = 300
 
 /**
- * Sync the orange affinity rings to the set of elements matching `selector`
- * inside the breakpoint iframe. Reuses a pool of ring divs under `container`:
- * grows it to match the live match count (capped), positions each over its
- * element, and hides any surplus from a previous, larger match set.
- *
- * Passing `selector === null` (or an absent container/iframe) clears the pool.
+ * READ-phase half of the selector-affinity highlight: measure every element
+ * matching `selector` inside the breakpoint iframe (capped). Returns null
+ * when the highlight is inactive (clears the pool in the write phase).
  */
-function syncSelectorHighlightRings(
-  container: HTMLDivElement | null,
+function measureSelectorHighlightRects(
   selector: string | null,
-  iframe: HTMLIFrameElement | null,
-  canvasRoot: HTMLElement | null,
-): void {
-  if (!container) return
-
-  const iframeDoc = iframe?.contentDocument
-  if (!selector || !iframeDoc) {
-    hideSurplusRings(container, 0)
-    return
-  }
+  iframeDoc: Document,
+  session: ReturnType<typeof createCanvasOverlayMeasureSession>,
+): CanvasOverlayRect[] | null {
+  if (!selector) return null
 
   // Ambient selectors are arbitrary author/CSS-importer strings; a malformed
   // one makes querySelectorAll throw. Treat that as "matches nothing" rather
@@ -522,12 +550,35 @@ function syncSelectorHighlightRings(
   try {
     matches = iframeDoc.querySelectorAll<HTMLElement>(selector)
   } catch {
+    return []
+  }
+
+  const count = Math.min(matches.length, SELECTOR_HIGHLIGHT_RING_CAP)
+  const rects: CanvasOverlayRect[] = []
+  for (let i = 0; i < count; i++) {
+    const rect = session.measure(matches[i])
+    if (rect) rects.push(rect)
+  }
+  return rects
+}
+
+/**
+ * WRITE-phase half: sync the orange affinity ring pool under `container` to
+ * the measured `rects` — grows the pool as needed, positions each ring, and
+ * hides any surplus from a previous, larger match set (rings are reused, not
+ * removed). `rects === null` clears the pool.
+ */
+function syncSelectorHighlightRings(
+  container: HTMLDivElement | null,
+  rects: CanvasOverlayRect[] | null,
+): void {
+  if (!container) return
+  if (!rects) {
     hideSurplusRings(container, 0)
     return
   }
 
-  const count = Math.min(matches.length, SELECTOR_HIGHLIGHT_RING_CAP)
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < rects.length; i++) {
     let ring = container.children[i] as HTMLDivElement | undefined
     if (!ring) {
       ring = container.ownerDocument.createElement('div')
@@ -535,106 +586,75 @@ function syncSelectorHighlightRings(
       ring.setAttribute('data-canvas-selector-highlight-ring', 'true')
       container.appendChild(ring)
     }
-    const rect = measureCanvasElementRect(matches[i], iframe!, canvasRoot)
-    if (!rect) {
-      ring.style.display = 'none'
-      continue
-    }
-    applyOverlayRectStyle(ring, rect)
+    positionOverlayElement(ring, rects[i])
   }
-  hideSurplusRings(container, count)
-}
-
-function applyOverlayRectStyle(
-  element: HTMLElement,
-  rect: { x: number; y: number; width: number; height: number },
-): void {
-  Object.assign(element.style, {
-    display: '',
-    transform: `translate(${rect.x}px, ${rect.y}px)`,
-    width: `${rect.width}px`,
-    height: `${rect.height}px`,
-  })
+  hideSurplusRings(container, rects.length)
 }
 
 /** Hide every pooled ring from index `keep` onward (they're reused, not removed). */
 function hideSurplusRings(container: HTMLDivElement, keep: number): void {
   for (let i = keep; i < container.children.length; i++) {
-    ;(container.children[i] as HTMLElement).style.display = 'none'
+    hideOverlayElement(container.children[i] as HTMLElement)
   }
 }
 
+/**
+ * Anchor the selection toolbar to `union` — the union of the selection-ring
+ * rects already measured this tick (no second query/measure pass). Hides the
+ * toolbar when there is no measurable selection or when the selection sits
+ * entirely outside the canvas root's visible area — otherwise the toolbar
+ * would "hang on screen" detached from the element it belongs to. For
+ * partial overlap, the canvas root's overflow:hidden clips it.
+ *
+ * Scoped path: toolbar lives inside the canvas root (position: absolute), so
+ * the CSS variables are in canvas-root-local coordinates — exactly the
+ * coordinate space `union` is measured in. Fixed path (fallback,
+ * `canvasRect === null`): toolbar lives in document.body (position: fixed)
+ * and the same values are viewport (client) coordinates.
+ */
 function positionToolbar(
   toolbar: HTMLDivElement | null,
-  nodeIds: readonly string[],
-  viewport: HTMLElement,
-  iframe: HTMLIFrameElement | null,
-  canvasRoot: HTMLElement | null,
+  union: CanvasOverlayRect | null,
+  canvasRect: DOMRect | null,
 ): void {
-  if (!toolbar || nodeIds.length === 0) {
-    if (toolbar) toolbar.style.display = 'none'
+  if (!toolbar) return
+  if (!union) {
+    hideOverlayElement(toolbar)
     return
   }
 
-  // Pass the iframe through so the helper queries the right document AND
-  // translates each measured rect from iframe-internal coords into editor
-  // coords. Without this the toolbar would anchor to (0,0) of the editor.
-  const rect = measureCanvasNodeClientUnionRect(viewport, nodeIds, iframe)
-  if (!rect) {
-    toolbar.style.display = 'none'
-    return
-  }
-
-  // When the selected element has been panned/zoomed entirely outside the
-  // canvas root's visible area, hide the toolbar rather than leaving it
-  // anchored to an off-canvas position. Otherwise the toolbar appears to
-  // "hang on screen" detached from the element it belongs to. This also
-  // covers the case where overflow:hidden clipping would only partially hide
-  // the toolbar — once the element is gone, hide the chrome cleanly.
-  if (canvasRoot) {
-    const canvasRect = canvasRoot.getBoundingClientRect()
+  if (canvasRect) {
     const elementFullyOutOfBounds =
-      rect.right <= canvasRect.left ||
-      rect.left >= canvasRect.right ||
-      rect.bottom <= canvasRect.top ||
-      rect.top >= canvasRect.bottom
+      union.x + union.width <= 0 ||
+      union.x >= canvasRect.width ||
+      union.y + union.height <= 0 ||
+      union.y >= canvasRect.height
     if (elementFullyOutOfBounds) {
-      toolbar.style.display = 'none'
+      hideOverlayElement(toolbar)
       return
     }
-  }
-
-  toolbar.style.display = ''
-
-  // Scoped path: toolbar lives inside the canvas root (position: absolute),
-  // so the CSS variables are in canvas-root-local coordinates. The canvas
-  // root's overflow:hidden then clips the toolbar when it lands outside the
-  // visible canvas area (e.g. anchored to an element near a frame edge that
-  // the user has panned partly out of view).
-  //
-  // Fixed path (fallback): toolbar lives in document.body (position: fixed),
-  // so the CSS variables remain in viewport (client) coordinates.
-  let originLeft = 0
-  let originTop = 0
-  if (canvasRoot) {
-    const canvasRect = canvasRoot.getBoundingClientRect()
-    originLeft = canvasRect.left
-    originTop = canvasRect.top
   }
 
   // No horizontal clamping: the toolbar anchors to the selected element's
   // left edge. A previous `Math.max(4, x)` clamp kept the toolbar visible at
   // the canvas-left edge when the element panned off-screen left, but that
   // decoupled the toolbar from the element and left it "hanging" far from
-  // the actual selection. The element-out-of-bounds check above already
-  // hides the toolbar when the selection is fully off-canvas; for partial
-  // overlap, overflow:hidden clips the toolbar so it can't bleed into the
-  // sidebars.
-  const x = rect.left - originLeft
-  const y = rect.top - originTop - TOOLBAR_VERTICAL_OFFSET
+  // the actual selection.
+  const placement: CanvasOverlayRect = {
+    x: union.x,
+    y: union.y - TOOLBAR_VERTICAL_OFFSET,
+    width: union.width,
+    height: union.height,
+  }
+  const prev = appliedOverlayPlacements.get(toolbar)
+  if (prev !== undefined && prev !== 'hidden' && prev.x === placement.x && prev.y === placement.y) {
+    return
+  }
 
-  toolbar.style.setProperty('--canvas-toolbar-x', `${x}px`)
-  toolbar.style.setProperty('--canvas-toolbar-y', `${y}px`)
+  toolbar.style.display = ''
+  toolbar.style.setProperty('--canvas-toolbar-x', `${placement.x}px`)
+  toolbar.style.setProperty('--canvas-toolbar-y', `${placement.y}px`)
+  appliedOverlayPlacements.set(toolbar, placement)
 }
 
 function dropIndicatorStyle(target: CanvasDropTarget): CSSProperties {
