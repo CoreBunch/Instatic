@@ -40,12 +40,18 @@ export function readInlineEditableText(el: HTMLElement): string {
 /**
  * Props a text module spreads onto its element to BECOME the inline editor.
  * The element is `contentEditable` (plaintext-only — no rich formatting or
- * pasted markup) and seeded once via `dangerouslySetInnerHTML`. That HTML is
- * `rawTextToBreakHtml` output: the value is HTML-escaped first, so the only
- * markup is the `<br>`s we insert — never user-injected HTML.
+ * pasted markup) and carries the live-edit handlers + ref.
  *
- * Spread LAST so it overrides the element's normal `dangerouslySetInnerHTML`
- * and key/blur handlers; do not pass React children alongside it.
+ * Critically it provides NEITHER `dangerouslySetInnerHTML` NOR children: React
+ * must not own the element's content while it is being edited. React 19
+ * re-applies `dangerouslySetInnerHTML` on EVERY commit of an element (it does
+ * not skip on an unchanged `__html`), and the live-commit re-renders fire one
+ * commit per keystroke — so a React-owned content prop would overwrite the
+ * user's typing and collapse the caret to the start every keystroke. Instead
+ * the canvas seeds the element's content imperatively once (see
+ * `seedInlineEditableContent`) and React leaves the contentEditable DOM alone.
+ *
+ * The module must render NO children alongside these props.
  */
 export function inlineEditableElementProps(binding: InlineEditBinding) {
   return {
@@ -58,8 +64,15 @@ export function inlineEditableElementProps(binding: InlineEditBinding) {
     onInput: binding.onInput,
     onKeyDown: binding.onKeyDown,
     onBlur: binding.onBlur,
-    // Escaped value (only the inserted <br>s are markup) seeded once; constant
-    // for the session so React never resets the caret. Safe — see rawTextToBreakHtml.
-    dangerouslySetInnerHTML: { __html: rawTextToBreakHtml(binding.initialValue) },
   }
+}
+
+/**
+ * Seed the inline-editor element's content from the session's initial value,
+ * imperatively (NOT through React). The value is HTML-escaped, so the only
+ * markup is the `<br>`s we insert from newlines — never user HTML. Call once,
+ * when the session opens, before placing the caret.
+ */
+export function seedInlineEditableContent(el: HTMLElement, initialValue: string): void {
+  el.innerHTML = rawTextToBreakHtml(initialValue)
 }

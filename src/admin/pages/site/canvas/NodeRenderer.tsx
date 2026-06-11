@@ -21,7 +21,7 @@
 
 import { memo, use, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import type { InlineEditBinding } from '@core/module-engine'
-import { readInlineEditableText } from '@modules/base/shared/inlineText'
+import { readInlineEditableText, seedInlineEditableContent } from '@modules/base/shared/inlineText'
 import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
 import { resolveProps } from '@core/page-tree'
 import { registry } from '@core/module-engine'
@@ -166,14 +166,18 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
     registry.generation.bind(registry),
   )
 
-  // On session start, focus the now-editable element and drop the caret at the
-  // end. Layout effect → runs before paint, so the editor is live on the first
-  // frame. The element lives in the breakpoint iframe (same-origin); focusing
-  // it focuses the iframe in the parent — no cross-frame negotiation needed.
+  // On session start, seed the editable element's content imperatively (React
+  // does NOT own it — see inlineEditableElementProps), then focus and drop the
+  // caret at the end. Layout effect → runs before paint, so the editor is live
+  // on the first frame. The element lives in the breakpoint iframe
+  // (same-origin); focusing it focuses the iframe in the parent — no
+  // cross-frame negotiation needed. Deps are constant for the whole session, so
+  // this runs once per session (never mid-edit, which would wipe the edits).
   useLayoutEffect(() => {
     if (!isInlineEditing) return
     const el = editableRef.current
     if (!el) return
+    seedInlineEditableContent(el, inlineEditInitialValue ?? '')
     el.focus()
     const doc = el.ownerDocument
     const sel = doc.defaultView?.getSelection()
@@ -183,7 +187,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
     range.collapse(false)
     sel.removeAllRanges()
     sel.addRange(range)
-  }, [isInlineEditing])
+  }, [isInlineEditing, inlineEditInitialValue])
 
   if (!node) return null
   if (node.hidden) return null
