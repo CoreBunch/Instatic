@@ -163,7 +163,7 @@ export async function handleContentTablesCreate(
   const [input] = msg.args
   // System tables are seeded only; the underlying repository does not accept
   // a `system: true` flag from this entry point — defense-in-depth here too.
-  if (input.slug === 'pages' || input.slug === 'posts' || input.slug === 'components') {
+  if (input.slug === 'pages' || input.slug === 'posts' || input.slug === 'components' || input.slug === 'layouts') {
     throw new Error(`Cannot create a table with the reserved system slug "${input.slug}"`)
   }
   const tableIdBySlug = input.fields?.some((field) => field.type === 'relation')

@@ -209,7 +209,7 @@ export const sqliteMigrations: Migration[] = [
         created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
         updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
         deleted_at text,
-        constraint data_tables_kind_check check (kind in ('postType', 'data', 'page', 'component', 'layout'))
+        constraint data_tables_kind_check check (kind in ('postType', 'data', 'page', 'component'))
       );
 
       create unique index if not exists data_tables_slug_active_idx
@@ -218,7 +218,7 @@ export const sqliteMigrations: Migration[] = [
 
       -- ─── System table seeds ────────────────────────────────────────────────
       --
-      -- Four system tables are seeded at boot. They are protected from rename
+      -- Three system tables are seeded at boot. They are protected from rename
       -- and delete (system = 1). Users can add custom fields to them.
 
       insert into data_tables (id, name, slug, kind, route_base, singular_label, plural_label, primary_field_id, system, fields_json)
@@ -256,22 +256,6 @@ export const sqliteMigrations: Migration[] = [
       insert into data_tables (id, name, slug, kind, route_base, singular_label, plural_label, primary_field_id, system, fields_json)
       values ('components', 'Components', 'components', 'component', '', 'Component', 'Components', 'name', 1,
         '[{"type":"text","id":"name","label":"Name","required":true,"builtIn":true},{"type":"text","id":"slug","label":"Slug","required":true,"builtIn":true},{"type":"pageTree","id":"body","label":"Body","required":true,"builtIn":true},{"type":"fieldSchema","id":"params","label":"Params","builtIn":true},{"type":"longText","id":"classIds","label":"Classes","builtIn":true}]')
-      on conflict (id) do update
-        set name = excluded.name,
-            slug = excluded.slug,
-            kind = excluded.kind,
-            route_base = excluded.route_base,
-            singular_label = excluded.singular_label,
-            plural_label = excluded.plural_label,
-            primary_field_id = excluded.primary_field_id,
-            system = excluded.system,
-            fields_json = excluded.fields_json,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
-            deleted_at = null;
-
-      insert into data_tables (id, name, slug, kind, route_base, singular_label, plural_label, primary_field_id, system, fields_json)
-      values ('layouts', 'Layouts', 'layouts', 'layout', '', 'Layout', 'Layouts', 'name', 1,
-        '[{"type":"text","id":"name","label":"Name","required":true,"builtIn":true},{"type":"text","id":"slug","label":"Slug","required":true,"builtIn":true},{"type":"pageTree","id":"body","label":"Body","required":true,"builtIn":true},{"type":"longText","id":"classes","label":"Classes","builtIn":true}]')
       on conflict (id) do update
         set name = excluded.name,
             slug = excluded.slug,
@@ -1013,6 +997,85 @@ export const sqliteMigrations: Migration[] = [
         updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
         primary key (plugin_id, setting_id)
       );
+    `,
+  },
+  {
+    id: '017_layouts_system_table',
+    // FK enforcement must be off for this rebuild: data_rows.table_id is
+    // ON DELETE RESTRICT, which fires immediately even under
+    // defer_foreign_keys, so the populated parent can't be dropped. See the
+    // runner's `Migration.disableForeignKeys` doc for the full story; the
+    // runner verifies `pragma foreign_key_check` before re-enabling
+    // enforcement.
+    disableForeignKeys: true,
+    sql: `
+      -- ─── Saved layouts: fourth system table — SQLite mirror of PG 017 ────
+      --
+      -- Adds 'layout' to the data_tables.kind enum and seeds the locked
+      -- 'layouts' system table (snapshot rows live in data_rows like every
+      -- other collection).
+      --
+      -- SQLite can't ALTER a CHECK constraint, so the kind enum is widened by
+      -- rebuilding data_tables (same dance as migration 012): copy rows into
+      -- a widened twin, drop the original, rename the twin into place, then
+      -- re-create the index. Runs with foreign_keys OFF (see
+      -- disableForeignKeys above) because data_rows.table_id RESTRICTs the
+      -- drop; data_rows itself is never touched, and the runner integrity-
+      -- checks before re-enabling enforcement. Safe on a fresh install too —
+      -- the rebuild reproduces the baseline table plus the widened check.
+
+      create table data_tables__migr017 (
+        id text primary key,
+        name text not null,
+        slug text not null,
+        kind text not null default 'data',
+        route_base text not null default '',
+        singular_label text not null,
+        plural_label text not null,
+        primary_field_id text not null default 'title',
+        fields_json text not null default '[]',
+        system integer not null default 0,
+        created_by_user_id text references users(id) on delete set null,
+        updated_by_user_id text references users(id) on delete set null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        deleted_at text,
+        constraint data_tables_kind_check check (kind in ('postType', 'data', 'page', 'component', 'layout'))
+      );
+
+      insert into data_tables__migr017 (
+        id, name, slug, kind, route_base, singular_label, plural_label,
+        primary_field_id, fields_json, system,
+        created_by_user_id, updated_by_user_id, created_at, updated_at, deleted_at
+      )
+      select
+        id, name, slug, kind, route_base, singular_label, plural_label,
+        primary_field_id, fields_json, system,
+        created_by_user_id, updated_by_user_id, created_at, updated_at, deleted_at
+      from data_tables;
+
+      drop table data_tables;
+      alter table data_tables__migr017 rename to data_tables;
+
+      create unique index if not exists data_tables_slug_active_idx
+        on data_tables (slug)
+        where deleted_at is null;
+
+      insert into data_tables (id, name, slug, kind, route_base, singular_label, plural_label, primary_field_id, system, fields_json)
+      values ('layouts', 'Layouts', 'layouts', 'layout', '', 'Layout', 'Layouts', 'name', 1,
+        '[{"type":"text","id":"name","label":"Name","required":true,"builtIn":true},{"type":"text","id":"slug","label":"Slug","required":true,"builtIn":true},{"type":"pageTree","id":"body","label":"Body","required":true,"builtIn":true},{"type":"longText","id":"classes","label":"Classes","builtIn":true}]')
+      on conflict (id) do update
+        set name = excluded.name,
+            slug = excluded.slug,
+            kind = excluded.kind,
+            route_base = excluded.route_base,
+            singular_label = excluded.singular_label,
+            plural_label = excluded.plural_label,
+            primary_field_id = excluded.primary_field_id,
+            system = excluded.system,
+            fields_json = excluded.fields_json,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+            deleted_at = null;
     `,
   },
 ]

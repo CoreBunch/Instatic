@@ -348,13 +348,25 @@ describe('with strategies — handler-level roundtrip', () => {
       cells: { title: 'Home', slug: 'home', body: { nodes: {}, rootNodeId: 'root' } },
       slug: 'home',
     })
+    // A saved layout — rides the same generic table/row pipeline; the
+    // replace strategy must restore it into the seeded system table.
+    await createDataRow(sourceDb, {
+      tableId: 'layouts',
+      cells: {
+        name: 'Hero',
+        slug: 'hero',
+        body: { nodes: { root: { id: 'root', moduleId: 'base.container', props: {}, breakpointOverrides: {}, children: [], classIds: [] } }, rootNodeId: 'root' },
+        classes: {},
+      },
+      slug: 'hero',
+    })
 
     sourceBundle = await exportBundle(sourceDb, sourceCookie)
   })
 
-  test('source bundle has 4 rows and at least 3 tables', () => {
-    expect(sourceBundle.rows.length).toBe(4)
-    expect(sourceBundle.tables.length).toBeGreaterThanOrEqual(3)
+  test('source bundle has 5 rows and at least 4 tables', () => {
+    expect(sourceBundle.rows.length).toBe(5)
+    expect(sourceBundle.tables.length).toBeGreaterThanOrEqual(4)
   })
 
   describe('strategy: replace into empty DB', () => {

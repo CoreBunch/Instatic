@@ -57,8 +57,8 @@ import {
 } from '@core/data/bundleSchema'
 import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
 
-// The three system table ids that are always seeded and never deleted.
-const SYSTEM_TABLE_IDS = new Set(['posts', 'pages', 'components'])
+// The four system table ids that are always seeded and never deleted.
+const SYSTEM_TABLE_IDS = new Set(['posts', 'pages', 'components', 'layouts'])
 
 export async function handleImportRoute(
   req: Request,

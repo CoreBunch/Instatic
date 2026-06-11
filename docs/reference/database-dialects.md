@@ -224,9 +224,11 @@ create unique index if not exists my_table_unique_idx on my_table (col_a, col_b)
 
 `pragma defer_foreign_keys = on` is transaction-scoped — it defers FK enforcement to COMMIT so foreign keys that reference `my_table` don't break during the drop+recreate. SQLite re-enables FK enforcement automatically at COMMIT.
 
+**Exception — parents referenced by `ON DELETE RESTRICT`:** RESTRICT actions fire immediately even under `defer_foreign_keys`, so a populated parent table (e.g. `data_tables`, referenced by `data_rows.table_id`) cannot be dropped mid-rebuild — and renaming it away doesn't help, because since SQLite 3.25 a RENAME always rewrites child FK clauses to follow it. For these rebuilds set `disableForeignKeys: true` on the migration: the runner toggles `PRAGMA foreign_keys` off around that migration's transaction (the pragma is a no-op inside one) and verifies `pragma foreign_key_check` before re-enabling enforcement. SQLite-only — never set it on a PG migration.
+
 The rebuilt table produces the same schema as the updated `CREATE TABLE` statement in the original migration, so the migration is safe to run on both existing and fresh installs.
 
-Examples in the codebase: `migrations-sqlite.ts` migration `006_data_rows_scheduled_publish` (drop status CHECK) and `012_ai_drop_provider_check` (drop provider_id CHECK).
+Examples in the codebase: `migrations-sqlite.ts` migration `006_data_rows_scheduled_publish` (drop status CHECK), `012_ai_drop_provider_check` (drop provider_id CHECK), and `017_layouts_system_table` (widen the data_tables kind CHECK — a RESTRICT-referenced parent, so it uses `disableForeignKeys`).
 
 ### Adding a new repository
 

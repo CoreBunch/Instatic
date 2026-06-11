@@ -43,7 +43,7 @@ beforeAll(async () => {
   const { rows } = await db<DataTableSeedRow>`
     select id, system, fields_json
     from data_tables
-    where id in ('posts', 'pages', 'components')
+    where id in ('posts', 'pages', 'components', 'layouts')
     order by id asc
   `
   seededRows = rows
@@ -53,13 +53,13 @@ beforeAll(async () => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('data_tables system seeds — three tables present after fresh boot', () => {
-  test('all three system tables exist', () => {
+describe('data_tables system seeds — four tables present after fresh boot', () => {
+  test('all four system tables exist', () => {
     const ids = seededRows.map((r) => r.id).sort()
-    expect(ids).toEqual(['components', 'pages', 'posts'])
+    expect(ids).toEqual(['components', 'layouts', 'pages', 'posts'])
   })
 
-  test('all three system tables have system = 1', () => {
+  test('all four system tables have system = 1', () => {
     for (const row of seededRows) {
       expect(row.system).toBe(1)
     }
@@ -106,6 +106,27 @@ describe('data_tables system seeds — three tables present after fresh boot', (
     expect(builtInIds).toContain('body')
     expect(builtInIds).toContain('params')
     expect(builtInIds).toContain('classIds')
+  })
+
+  test('layouts fields_json parses and contains expected builtIn field ids', () => {
+    const layouts = seededRows.find((r) => r.id === 'layouts')
+    expect(layouts).toBeDefined()
+    const raw = Array.isArray(layouts!.fields_json) ? layouts!.fields_json : []
+    const fields = filterArray(DataFieldSchema, raw)
+    const builtInIds = fields.filter((f) => f.builtIn).map((f) => f.id)
+    expect(builtInIds).toContain('name')
+    expect(builtInIds).toContain('slug')
+    expect(builtInIds).toContain('body')
+    expect(builtInIds).toContain('classes')
+  })
+
+  test('layouts body field has type pageTree', () => {
+    const layouts = seededRows.find((r) => r.id === 'layouts')
+    expect(layouts).toBeDefined()
+    const raw = Array.isArray(layouts!.fields_json) ? layouts!.fields_json : []
+    const fields = filterArray(DataFieldSchema, raw)
+    const body = fields.find((f) => f.id === 'body')
+    expect(body?.type).toBe('pageTree')
   })
 
   test('pages body field has type pageTree', () => {
