@@ -35,15 +35,8 @@ import { cn } from '@ui/cn'
 import { useEditorPermissions } from '@site/editorPermissionsContext'
 import { useEditorStore } from '@site/store/store'
 import { clientPointToEditorDoc } from './canvasDomGeometry'
+import { closestReadonlyRegion } from './readonlyRegion'
 import styles from './BreakpointFrame.module.css'
-
-/**
- * Cross-realm-safe Element check — the iframe is a different realm, so
- * `instanceof Element` is false for nodes inside it. Duck-type `closest`.
- */
-function isElementLike(value: EventTarget | null): value is Element {
-  return value != null && typeof (value as { closest?: unknown }).closest === 'function'
-}
 
 interface BreakpointFrameProps {
   page: Page
@@ -142,11 +135,10 @@ export function BreakpointFrame({
     }
     // On the active frame, hovering read-only composed content (template
     // chrome, an inlined component, an outlet preview) shows a hint naming its
-    // source. Editable content carries no read-only markers, so it clears it.
-    const target = event.target
-    const region = isElementLike(target)
-      ? target.closest('[data-instatic-readonly-label]')
-      : null
+    // source. `closestReadonlyRegion` resolves the nearest boundary, so the
+    // active page's editable content — spliced inside the template wrapper —
+    // does NOT show the hint.
+    const region = closestReadonlyRegion(event.target)
     const label = region?.getAttribute('data-instatic-readonly-label') ?? null
     setReadonlyHint(
       label ? { text: `Part of ${label} — double-click to edit`, point: clientPointToEditorDoc(event) } : null,

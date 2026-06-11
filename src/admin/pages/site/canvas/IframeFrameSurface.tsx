@@ -84,6 +84,7 @@ import { CANVAS_VIEWPORT_HEIGHT, type CanvasViewport } from './resolveViewportUn
 import { useIframeFrameAutoHeight } from './useIframeFrameAutoHeight'
 import { applyIframeBodyReset, type IframeInteraction } from './iframeBodyReset'
 import { useEditorStore } from '@site/store/store'
+import { closestReadonlyRegion, isElementLike } from './readonlyRegion'
 import styles from './IframeFrameSurface.module.css'
 
 const IFRAME_SRC_DOC = '<!doctype html><html><head></head><body></body></html>'
@@ -98,16 +99,6 @@ const EMPTY_RUNTIME_SCRIPTS: InjectableRuntimeScript[] = []
  * covered there even though it isn't matched here.
  */
 const NAVIGABLE_SELECTOR = 'a[href], area[href], button[type="submit"], input[type="submit"], input[type="image"]'
-
-/**
- * Cross-realm-safe "is this an Element?" check. The canvas iframe is same-origin
- * but a different realm, so `target instanceof Element` (the host realm's class)
- * is false for nodes inside the iframe — duck-type `closest` instead. Mirrors
- * the same helper in `NodeRenderer`.
- */
-function isElementLike(value: EventTarget | null): value is Element {
-  return value != null && typeof (value as { closest?: unknown }).closest === 'function'
-}
 
 interface IframeFrameSurfaceProps {
   /** Stable id used to tag the iframe's `<body>` with `data-breakpoint-id`. */
@@ -305,15 +296,14 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
     // ── Read-only region open ────────────────────────────────────────────
     // Double-clicking read-only composed content (template chrome, an inlined
     // component, an outlet preview) opens its source document for editing.
-    // The nearest ancestor carrying `data-instatic-readonly-*` markers names
-    // the source; editable nodes carry no such markers, so their own
-    // double-click (enter / inline-edit) is untouched.
+    // `closestReadonlyRegion` resolves the NEAREST boundary, so the active
+    // document's own editable nodes — spliced inside the template wrapper — keep
+    // their own double-click (enter / inline-edit) instead of opening the
+    // wrapping template.
     useEffect(() => {
       if (!iframeDoc || !onReadonlyOpen) return
       const handleDblClick = (event: MouseEvent) => {
-        const target = event.target
-        if (!isElementLike(target)) return
-        const region = target.closest('[data-instatic-readonly-id]')
+        const region = closestReadonlyRegion(event.target)
         if (!region) return
         const id = region.getAttribute('data-instatic-readonly-id')
         const kind = region.getAttribute('data-instatic-readonly-kind')
