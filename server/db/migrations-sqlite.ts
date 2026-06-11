@@ -696,6 +696,12 @@ export const sqliteMigrations: Migration[] = [
       create index if not exists data_rows_scheduled_publish_idx
         on data_rows (scheduled_publish_at)
         where status = 'scheduled' and deleted_at is null;
+
+      -- Re-create the published-route join index from migration 003 — the
+      -- drop+rename rebuild above takes every data_rows index with it, so
+      -- ALL of them must be re-created here.
+      create index if not exists data_rows_active_version_idx
+        on data_rows (active_version_id);
     `,
   },
   {
