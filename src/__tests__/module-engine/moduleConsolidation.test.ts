@@ -63,10 +63,19 @@ function makeMedia(overrides: Partial<RenderResolvedMedia> = {}): RenderResolved
 // ---------------------------------------------------------------------------
 
 describe('F3 buildMediaSrcset / pickMediaVariantUrl', () => {
-  it('builds an ascending srcset and appends the original at full width', () => {
+  it('builds an ascending srcset from the variants ONLY — never the original', () => {
+    // The original is excluded deliberately: it may be a multi-MB PNG, and
+    // any srcset candidate is selectable (a 1280px slot on a 2x display asks
+    // for 2560px — if the original tops the ladder, every retina visitor
+    // downloads it). The ladder's top rung is the intrinsic-width WebP.
     expect(buildMediaSrcset(makeMedia())).toBe(
-      '/uploads/hero-w320.webp 320w, /uploads/hero-w640.webp 640w, /uploads/hero.webp 1200w',
+      '/uploads/hero-w320.webp 320w, /uploads/hero-w640.webp 640w',
     )
+  })
+
+  it('never includes the original even when it is the only large candidate', () => {
+    const srcset = buildMediaSrcset(makeMedia({ publicPath: '/uploads/hero.png', width: 2688 }))
+    expect(srcset).not.toContain('.png')
   })
 
   it('returns null when there are no variants', () => {

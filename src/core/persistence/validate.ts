@@ -36,6 +36,7 @@ import { isSafePath, normalizePath } from '@core/files/pathValidation'
 import {
   parseVisualComponent,
   validateComponentName,
+  vcSlugFromName,
   getReferencedComponentIds,
   syncSlotInstances,
   applySlotSyncResult,
@@ -446,20 +447,28 @@ function normalizeFrameworkColors(shell: SiteShell): void {
 // VC post-checks (used by validateVisualComponents)
 // ---------------------------------------------------------------------------
 
-/** Deduplicate VCs by name (first-wins; invalid names dropped). */
+/**
+ * Deduplicate VCs by derived slug (first-wins; invalid names dropped). Names
+ * are stored as `data_rows.slug` via `vcSlugFromName`, so two names with the
+ * same slug ("Button" / "button") are one identity.
+ */
 function dedupeVCsByName(vcs: VisualComponent[]): VisualComponent[] {
   const seen = new Set<string>()
   return vcs.filter((vc) => {
     if (!validateComponentName(vc.name, []).ok) return false
-    if (seen.has(vc.name)) return false
-    seen.add(vc.name)
+    const slug = vcSlugFromName(vc.name)
+    if (seen.has(slug)) return false
+    seen.add(slug)
     return true
   })
 }
 
 function validateStrictVCIdentity(vcs: VisualComponent[]): void {
   const seenIds = new Map<string, number>()
-  const seenNames = new Map<string, number>()
+  // Keyed by derived slug — the actual storage identity on data_rows. Two
+  // distinct names with one slug would pass a raw-string check and then die
+  // on data_rows_table_slug_active_idx as an opaque 500.
+  const seenSlugs = new Map<string, VisualComponent>()
 
   for (let i = 0; i < vcs.length; i++) {
     const vc = vcs[i]
@@ -476,13 +485,17 @@ function validateStrictVCIdentity(vcs: VisualComponent[]): void {
       throw new SiteValidationError(nameValidation.reason, `site.visualComponents[${i}].name`)
     }
 
-    if (seenNames.has(vc.name)) {
+    const slug = vcSlugFromName(vc.name)
+    const collision = seenSlugs.get(slug)
+    if (collision) {
       throw new SiteValidationError(
-        `duplicate Visual Component name "${vc.name}"`,
+        collision.name === vc.name
+          ? `duplicate Visual Component name "${vc.name}"`
+          : `Visual Component name "${vc.name}" conflicts with "${collision.name}" — both store as "${slug}"`,
         `site.visualComponents[${i}].name`,
       )
     }
-    seenNames.set(vc.name, i)
+    seenSlugs.set(slug, vc)
   }
 }
 

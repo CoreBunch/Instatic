@@ -241,12 +241,30 @@ export function compareViewportContextCascade(
   return a.index - b.index
 }
 
-export function generateClassCSS(
-  classes: Record<string, StyleRule>,
+/**
+ * Emit the CSS blocks for ONE style rule under an arbitrary selector: the base
+ * declaration block plus every `contextStyles` override wrapped in its real
+ * `@media`/`@container`/`@supports` prelude.
+ *
+ * This is the single emission engine behind every surface that renders style
+ * rules — the published page (`generateClassCSS`) and the editor canvas
+ * (registry CSS and forced-state previews) — so the cascade can never drift
+ * between what the editor shows and what a publish ships.
+ *
+ * Cascade order (precedence Q-A): base → custom conditions (registry order) →
+ * viewport @media contexts (see `compareViewportContextCascade`). Context keys
+ * matching neither registry are skipped (orphaned overrides).
+ */
+export type StyleRuleCssEmitter = (
+  selector: string,
+  styles: Record<string, unknown>,
+  contextStyles?: Record<string, Record<string, unknown>>,
+) => string[]
+
+export function createStyleRuleCssEmitter(
   breakpoints: ViewportContext[],
   conditions: ReadonlyArray<ConditionDef> = [],
-): string {
-  const blocks: string[] = []
+): StyleRuleCssEmitter {
   const breakpointById = new Map<string, { breakpoint: ViewportContext; index: number }>(
     breakpoints.map((bp, index) => [bp.id, { breakpoint: bp, index }]),
   )
@@ -256,25 +274,10 @@ export function generateClassCSS(
     conditions.map((c, index) => [c.id, { condition: c.condition, index }]),
   )
 
-  // Cascade order: rules with a smaller `order` are emitted first so a later,
-  // more-specific override appears later in source and wins on equal
-  // specificity. Imported rules carry the source stylesheet's position;
-  // user-created rules append at the end (see classSlice.nextRuleOrder).
-  const orderedClasses = Object.values(classes).slice().sort((a, b) => {
-    const ao = typeof a.order === 'number' ? a.order : 0
-    const bo = typeof b.order === 'number' ? b.order : 0
-    return ao - bo
-  })
+  return (selector, styles, contextStyles) => {
+    const blocks: string[] = []
 
-  for (const cls of orderedClasses) {
-    if (typeof cls.rawCss === 'string') {
-      const rawCss = sanitizeRawKeyframesCss(cls.rawCss)
-      if (rawCss) blocks.push(rawCss)
-      continue
-    }
-
-    const selector = styleRuleSelector(cls)
-    const baseDecls = bagToCSS(cls.styles)
+    const baseDecls = bagToCSS(styles)
     if (baseDecls) {
       blocks.push(`${selector} {\n${baseDecls}\n}`)
     }
@@ -283,7 +286,7 @@ export function generateClassCSS(
     // entries. Keys matching neither registry are skipped (orphaned overrides).
     const conditionEntries: Array<{ bag: Record<string, unknown>; condition: Condition; index: number }> = []
     const bpEntries: Array<{ bag: Record<string, unknown>; breakpoint: ViewportContext; index: number }> = []
-    for (const [contextId, bag] of Object.entries(cls.contextStyles ?? {})) {
+    for (const [contextId, bag] of Object.entries(contextStyles ?? {})) {
       const cond = conditionById.get(contextId)
       if (cond) {
         conditionEntries.push({ bag, condition: cond.condition, index: cond.index })
@@ -312,6 +315,37 @@ export function generateClassCSS(
       if (!prelude) continue
       blocks.push(`${prelude} {\n  ${selector} {\n${decls}\n  }\n}`)
     }
+
+    return blocks
+  }
+}
+
+export function generateClassCSS(
+  classes: Record<string, StyleRule>,
+  breakpoints: ViewportContext[],
+  conditions: ReadonlyArray<ConditionDef> = [],
+): string {
+  const blocks: string[] = []
+  const emitRule = createStyleRuleCssEmitter(breakpoints, conditions)
+
+  // Cascade order: rules with a smaller `order` are emitted first so a later,
+  // more-specific override appears later in source and wins on equal
+  // specificity. Imported rules carry the source stylesheet's position;
+  // user-created rules append at the end (see classSlice.nextRuleOrder).
+  const orderedClasses = Object.values(classes).slice().sort((a, b) => {
+    const ao = typeof a.order === 'number' ? a.order : 0
+    const bo = typeof b.order === 'number' ? b.order : 0
+    return ao - bo
+  })
+
+  for (const cls of orderedClasses) {
+    if (typeof cls.rawCss === 'string') {
+      const rawCss = sanitizeRawKeyframesCss(cls.rawCss)
+      if (rawCss) blocks.push(rawCss)
+      continue
+    }
+
+    blocks.push(...emitRule(styleRuleSelector(cls), cls.styles, cls.contextStyles))
   }
 
   return blocks.join('\n\n')
@@ -354,9 +388,9 @@ function isSafeConditionText(text: string): boolean {
  * Build the `@<kind> <query>` prelude for a custom condition. Returns null when
  * the query / container name fails the structural safety check (the override is
  * then dropped, not emitted). Viewport contexts also call this helper after
- * resolving their configured media query in `generateClassCSS`.
+ * resolving their configured media query in `createStyleRuleCssEmitter`.
  */
-export function conditionPrelude(condition: Condition): string | null {
+function conditionPrelude(condition: Condition): string | null {
   switch (condition.kind) {
     case 'media':
       return isSafeConditionText(condition.query) ? `@media ${condition.query}` : null

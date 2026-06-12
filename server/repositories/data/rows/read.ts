@@ -71,6 +71,24 @@ export async function listDataRowIdSlugs(
   return rows
 }
 
+/**
+ * Ids of a table's SOFT-DELETED rows. The roster reconcile needs them to tell
+ * "create a new row" apart from "revive a reaped row whose id the client
+ * re-submitted" (undo of a delete) — a plain insert on the latter would hit
+ * the soft-deleted row's primary key.
+ */
+export async function listSoftDeletedDataRowIds(
+  db: DbClient,
+  tableId: string,
+): Promise<string[]> {
+  const { rows } = await db<{ id: string }>`
+    select id from data_rows
+    where table_id = ${tableId}
+      and deleted_at is not null
+  `
+  return rows.map((r) => r.id)
+}
+
 export async function getDataRow(
   db: DbClient,
   rowId: string,

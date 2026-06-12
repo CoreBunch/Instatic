@@ -114,8 +114,24 @@ export function parseSavedLayout(raw: unknown): SavedLayout | null {
 // ---------------------------------------------------------------------------
 
 /**
+ * Derive the storage slug from a saved-layout name.
+ * Converts to lower-kebab-case; falls back to 'layout' on empty input.
+ */
+export function layoutSlugFromName(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/^-+|-+$/g, '')
+  return slug || 'layout'
+}
+
+/**
  * Validate a saved-layout name: non-empty after trimming and unique within the
- * site (names derive the storage slug, which is unique per table).
+ * site. Uniqueness is judged on the DERIVED SLUG (names are stored as
+ * `data_rows.slug` via `layoutSlugFromName`), so "Hero!" and "Hero?" — distinct
+ * strings, identical slugs — count as duplicates.
  *
  * @param selfId  When renaming, the layout's own id — excluded from the
  *                duplicate check so renaming to the current name is allowed.
@@ -128,7 +144,12 @@ export function layoutNameError(
 ): string | null {
   const trimmed = name.trim()
   if (trimmed.length === 0) return 'Layout name is required.'
-  const duplicate = existing.find((l) => l.id !== selfId && l.name === trimmed)
-  if (duplicate) return `Another layout is already named "${trimmed}".`
+  const slug = layoutSlugFromName(trimmed)
+  const duplicate = existing.find((l) => l.id !== selfId && layoutSlugFromName(l.name) === slug)
+  if (duplicate) {
+    return duplicate.name === trimmed
+      ? `Another layout is already named "${trimmed}".`
+      : `"${trimmed}" conflicts with the existing layout "${duplicate.name}" — both store as "${slug}".`
+  }
   return null
 }

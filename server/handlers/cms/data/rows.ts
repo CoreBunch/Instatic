@@ -28,8 +28,6 @@ import {
   getDataRow,
   getDataTable,
   listDataAuthorOptions,
-  publishDataRow,
-  removeDataRowArtefact,
   saveDataRowDraft,
   scheduleDataRowPublish,
   softDeleteDataRow,
@@ -37,6 +35,7 @@ import {
   updateDataRowStatus,
   updateDataRowTable,
 } from '../../../repositories/data'
+import { publishDataRow, removeDataRowArtefact } from '../../../publish/publishRow'
 import { findUserById } from '../../../repositories/users'
 import { slugForTable } from '@core/data/cells'
 import { badRequest, jsonResponse, readValidatedBody } from '../../../http'

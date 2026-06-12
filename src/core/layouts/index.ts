@@ -7,5 +7,6 @@ export {
   SavedLayoutSchema,
   parseSavedLayout,
   layoutNameError,
+  layoutSlugFromName,
 } from './schemas'
 export type { SavedLayout } from './schemas'

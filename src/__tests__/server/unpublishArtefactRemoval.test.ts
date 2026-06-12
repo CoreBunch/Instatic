@@ -3,7 +3,7 @@ import * as os from 'node:os'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import { createTestDb } from '../helpers/createTestDb'
-import { removeDataRowArtefact } from '../../../server/repositories/data/publish'
+import { removeDataRowArtefact } from '../../../server/publish/publishRow'
 import {
   getActiveSlot,
   readArtefact,

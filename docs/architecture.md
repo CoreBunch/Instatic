@@ -213,7 +213,7 @@ Editor state (Zustand store)
     │
     │  user clicks Publish (or `publishDataRow` for posts/etc.)
     ▼
-publishDraftSite / publishDataRow      ← server/repositories/publish.ts
+publishDraftSite / publishDataRow      ← server/publish/publishSite.ts / publishRow.ts
     │
     │  1. write the SiteDocument once to site_snapshots; each page's
     │     data_row_versions row references it via site_snapshot_id

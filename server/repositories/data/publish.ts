@@ -1,7 +1,8 @@
 /**
- * Publishing flow + public-route lookups for data rows.
+ * Data access for published data rows.
  *
- *   publishDataRow                — append a new data_row_versions row, flip
+ *   persistDataRowPublish         — transactional write of one row publish:
+ *                                   append a new data_row_versions row, flip
  *                                   the row to `published`, write
  *                                   `active_version_id`, and (when the slug
  *                                   changed) record a redirect from the
@@ -14,24 +15,23 @@
  *   getDataRowRedirectByRoute     — resolve a public URL to a redirect target
  *                                   when the URL belongs to a
  *                                   previously-published slug
+ *   listPublishedRowRoutes        — every published row route (for the bake)
+ *   getRowTableRouteInfo          — route base + table slug for one row
+ *   getRowTableRouteBase          — route base only, ignoring soft deletes
+ *
+ * Data access ONLY. The row-publish orchestration (publish lock, Layer A
+ * artefact writes, cache bump) lives in `server/publish/publishRow.ts` and
+ * calls down into this repository.
  */
 import { nanoid } from 'nanoid'
 import { placeholder, type DbClient } from '../../db/client'
 import { userRefColumns, userRefJoin } from './shared'
 import type { DataRow, DataRowVersion, DataRowRedirect, PublishedDataRow } from '@core/data/schemas'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
-import { resolveTemplateChain } from '@core/templates'
 import { readFeaturedMediaCell } from '@core/data/cells'
 import { getDataRow } from './rows'
 import { nextDataRowVersionNumber } from './versions'
 import { isoDate } from '@core/utils/isoDate'
-import { getLatestPublishedSiteSnapshot } from '../publish'
-import {
-  renderPublishedDataRowTemplate,
-} from '../../publish/publicRenderer'
-import { applyPublishedHtmlPipeline } from '../../publish/publishedHtmlPipeline'
-import { removeArtefactInPlace, updateArtefactInPlace } from '../../publish/staticArtefact'
-import { bumpPublishVersion, getPublishVersion, withPublishLock } from '../../publish/publishState'
 
 // ---------------------------------------------------------------------------
 // Internal row shapes
@@ -76,42 +76,60 @@ interface MediaAssetRow {
   public_path: string | null
 }
 
-interface PublishDataRowResult {
+// ---------------------------------------------------------------------------
+// Public shapes
+// ---------------------------------------------------------------------------
+
+/** The public route a row's previously-published version was served under. */
+export interface PreviousPublishedRoute {
+  slug: string
+  routeBase: string
+}
+
+export interface PersistDataRowPublishResult {
   row: DataRow
   version: DataRowVersion
+  /**
+   * The route of the version that was active BEFORE this publish, or `null`
+   * on a first publish. The orchestrator uses it to prune the stale Layer A
+   * artefact when the slug changed.
+   */
+  previousRoute: PreviousPublishedRoute | null
+}
+
+export interface RowTableRouteInfo {
+  tableRouteBase: string
+  tableSlug: string
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function publicDataPath(routeBase: string, slug: string): string {
+/** Public URL path for a row: `<normalized route base>/<slug>`. */
+export function publicDataPath(routeBase: string, slug: string): string {
   const normalizedBase = normalizeRouteBase(routeBase)
   return `${normalizedBase === '/' ? '' : normalizedBase}/${slug}`
 }
 
-function previousRouteChanged(previous: PreviousPublishedRouteRow, currentSlug: string): boolean {
+/** True when the previously-published route differs from the current slug's. */
+export function previousRouteChanged(previous: PreviousPublishedRoute, currentSlug: string): boolean {
   return (
-    previous.previous_slug.length > 0 &&
-    publicDataPath(previous.previous_route_base, previous.previous_slug) !==
-      publicDataPath(previous.previous_route_base, currentSlug)
+    previous.slug.length > 0 &&
+    publicDataPath(previous.routeBase, previous.slug) !==
+      publicDataPath(previous.routeBase, currentSlug)
   )
 }
 
 // ---------------------------------------------------------------------------
-// Internal shape for table route info lookup
+// Publish persistence
 // ---------------------------------------------------------------------------
 
-interface RowTableRouteInfo {
-  tableRouteBase: string
-  tableSlug: string
-}
-
-// ---------------------------------------------------------------------------
-// Publish
-// ---------------------------------------------------------------------------
-
-export async function publishDataRow(
+/**
+ * Transactional write of one row publish. DB writes only — the publish lock,
+ * artefact bake, and cache bump are owned by `server/publish/publishRow.ts`.
+ */
+export async function persistDataRowPublish(
   db: DbClient,
   rowId: string,
   /**
@@ -123,28 +141,12 @@ export async function publishDataRow(
    * null publisher round-trips cleanly through the schema.
    */
   publisherUserId: string | null,
-  uploadsDir?: string,
-): Promise<PublishDataRowResult> {
-  // Serialize against every other publish so the version read→bake→bump window
-  // can't interleave and mis-stamp baked hole shells (ISS-038).
-  return withPublishLock(() => publishDataRowLocked(db, rowId, publisherUserId, uploadsDir))
-}
-
-async function publishDataRowLocked(
-  db: DbClient,
-  rowId: string,
-  publisherUserId: string | null,
-  uploadsDir?: string,
-): Promise<PublishDataRowResult> {
-  // Capture previous route inside the transaction and extract it for
-  // use in the post-transaction disk artefact write.
-  let capturedPreviousRoute: PreviousPublishedRouteRow | null = null
-
-  const result = await db.transaction(async (tx) => {
+): Promise<PersistDataRowPublishResult> {
+  return db.transaction(async (tx) => {
     const row = await getDataRow(tx, rowId)
     if (!row) throw new Error('data row not found')
 
-    capturedPreviousRoute = await readPreviousPublishedRoute(tx, rowId)
+    const previousRoute = await readPreviousPublishedRoute(tx, rowId)
     const versionNumber = await nextDataRowVersionNumber(tx, rowId)
     const versionId = nanoid()
 
@@ -175,14 +177,14 @@ async function publishDataRowLocked(
     `
     if (!updateRows[0]) throw new Error('data row publish update failed')
 
-    if (capturedPreviousRoute && previousRouteChanged(capturedPreviousRoute, row.slug)) {
+    if (previousRoute && previousRouteChanged(previousRoute, row.slug)) {
       await tx`
         insert into data_row_redirects (id, table_id, from_route_base, from_slug, target_row_id)
         values (
           ${nanoid()},
           ${row.tableId},
-          ${normalizeRouteBase(capturedPreviousRoute.previous_route_base)},
-          ${capturedPreviousRoute.previous_slug},
+          ${normalizeRouteBase(previousRoute.routeBase)},
+          ${previousRoute.slug},
           ${row.id}
         )
         on conflict (from_route_base, from_slug) do update
@@ -207,93 +209,42 @@ async function publishDataRowLocked(
         publishedAt,
         createdAt: publishedAt,
       },
+      previousRoute,
     }
   })
-
-  // Layer A: incremental artefact update outside the transaction.
-  // Disk artefacts are derived state — errors are logged but do not fail
-  // the publish. The next full publish (publishDraftSite) will rebuild.
-  if (uploadsDir) {
-    // Bake with the NEXT publish version — `bumpPublishVersion()` below is the
-    // synchronous statement right after this await resolves, so a hole-shell
-    // baked here carries the version that becomes current with no gap.
-    const nextPublishVersion = getPublishVersion() + 1
-    await writeDataRowArtefact(db, uploadsDir, result.row, capturedPreviousRoute, nextPublishVersion).catch((err) => {
-      console.error('[publish:row] static artefact write failed (live renderer remains active):', err)
-    })
-  }
-
-  // Layer B: invalidate the in-memory render cache so the next visitor request
-  // re-renders against the freshly committed row version.
-  bumpPublishVersion()
-
-  return result
 }
 
-/**
- * After a successful `publishDataRow` transaction, write (or remove) the disk
- * artefact for the row's entry-template page.
- *
- * The artefact is baked whether or not the template is fully static: a static
- * template bakes a complete document; a template with dynamic nodes bakes its
- * static SHELL with `<instatic-hole>` placeholders (the hole runtime hydrates each
- * fragment from `/_instatic/hole/`). Either way HTML + CSS + JS come from disk.
- *
- * Steps:
- *   1. Remove the old artefact if the slug changed (old URL no longer valid).
- *   2. Look up the table route info and site snapshot.
- *   3. Render through the template (stamping `publishVersion`) and write the
- *      artefact into the active slot.
- */
-async function writeDataRowArtefact(
+async function readPreviousPublishedRoute(
   db: DbClient,
-  uploadsDir: string,
-  publishedRow: DataRow,
-  previousRoute: PreviousPublishedRouteRow | null,
-  publishVersion: number,
-): Promise<void> {
-  const tableInfo = await getRowTableRouteInfo(db, publishedRow.id)
-  if (!tableInfo) return
-
-  // Remove old artefact when the slug changed (old URL is now stale).
-  if (previousRoute && previousRouteChanged(previousRoute, publishedRow.slug)) {
-    const oldPath = publicDataPath(previousRoute.previous_route_base, previousRoute.previous_slug)
-    await removeArtefactInPlace(uploadsDir, oldPath).catch((err) => {
-      console.error('[publish:row] failed to remove stale artefact at', oldPath, err)
-    })
-  }
-
-  // Resolve the full template chain for this row's table (everywhere layout +
-  // entry template). No chain → no entry route to bake.
-  const siteSnapshot = await getLatestPublishedSiteSnapshot(db)
-  if (!siteSnapshot) return
-
-  const chain = resolveTemplateChain(siteSnapshot.site, { kind: 'entry', tableSlug: tableInfo.tableSlug })
-  if (chain.length === 0) return
-
-  // Fetch the full PublishedDataRow (needed for templateContext + media path).
-  const publishedDataRow = await getPublishedDataRowByRoute(db, tableInfo.tableRouteBase, publishedRow.slug)
-  if (!publishedDataRow) return
-
-  const newPath = publicDataPath(tableInfo.tableRouteBase, publishedRow.slug)
-  const syntheticUrl = new URL(`http://localhost${newPath}`)
-  const rendered = await renderPublishedDataRowTemplate(siteSnapshot, publishedDataRow, {
-    db,
-    url: syntheticUrl,
-    publishVersion,
-  })
-  if (!rendered) return
-
-  const html = await applyPublishedHtmlPipeline(rendered, db)
-  await updateArtefactInPlace(uploadsDir, newPath, html)
+  rowId: string,
+): Promise<PreviousPublishedRoute | null> {
+  const { rows } = await db<PreviousPublishedRouteRow>`
+    select data_row_versions.slug as previous_slug,
+           data_tables.route_base as previous_route_base
+    from data_rows
+    join data_tables on data_tables.id = data_rows.table_id
+    join data_row_versions on data_row_versions.id = data_rows.active_version_id
+    where data_rows.id = ${rowId}
+      and data_rows.deleted_at is null
+      and data_tables.deleted_at is null
+    limit 1
+  `
+  return rows[0]
+    ? { slug: rows[0].previous_slug, routeBase: rows[0].previous_route_base }
+    : null
 }
+
+// ---------------------------------------------------------------------------
+// Route info lookups
+// ---------------------------------------------------------------------------
 
 /**
  * Fetch the `route_base` and `slug` of the `data_tables` row that owns
- * the given data row. Used by `writeDataRowArtefact` to resolve
- * the public URL path without joining the table into every other query.
+ * the given data row. Used by the artefact writer in
+ * `server/publish/publishRow.ts` to resolve the public URL path without
+ * joining the table into every other query.
  */
-async function getRowTableRouteInfo(
+export async function getRowTableRouteInfo(
   db: DbClient,
   rowId: string,
 ): Promise<RowTableRouteInfo | null> {
@@ -315,20 +266,14 @@ async function getRowTableRouteInfo(
 }
 
 /**
- * Remove a data row's baked Layer-A artefact from the active slot. Called when
- * a row leaves public visibility (unpublish, revert-to-draft, soft-delete) so
- * the static file stops being served — Layer A reads the disk slot with no
- * publishVersion awareness, so without this a retracted row stays public
- * (ISS-039). The route is resolved WITHOUT the `deleted_at is null` filter so
- * it still works after a soft delete. Best-effort: unresolved route or missing
- * file is a no-op (removeArtefactInPlace never throws on a missing file).
+ * The owning table's raw `route_base` for a row, resolved WITHOUT the
+ * `deleted_at is null` filters — artefact removal must still resolve the
+ * route after a soft delete (ISS-039).
  */
-export async function removeDataRowArtefact(
+export async function getRowTableRouteBase(
   db: DbClient,
-  uploadsDir: string,
   rowId: string,
-  slug: string,
-): Promise<void> {
+): Promise<string | null> {
   const { rows } = await db<{ route_base: string }>`
     select data_tables.route_base
     from data_rows
@@ -336,26 +281,7 @@ export async function removeDataRowArtefact(
     where data_rows.id = ${rowId}
     limit 1
   `
-  if (!rows[0]) return
-  await removeArtefactInPlace(uploadsDir, publicDataPath(rows[0].route_base, slug))
-}
-
-async function readPreviousPublishedRoute(
-  db: DbClient,
-  rowId: string,
-): Promise<PreviousPublishedRouteRow | null> {
-  const { rows } = await db<PreviousPublishedRouteRow>`
-    select data_row_versions.slug as previous_slug,
-           data_tables.route_base as previous_route_base
-    from data_rows
-    join data_tables on data_tables.id = data_rows.table_id
-    join data_row_versions on data_row_versions.id = data_rows.active_version_id
-    where data_rows.id = ${rowId}
-      and data_rows.deleted_at is null
-      and data_tables.deleted_at is null
-    limit 1
-  `
-  return rows[0] ?? null
+  return rows[0]?.route_base ?? null
 }
 
 // ---------------------------------------------------------------------------

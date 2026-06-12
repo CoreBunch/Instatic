@@ -148,6 +148,7 @@ const TemplateTargetInputSchema = Type.Union([
     kind: Type.Literal('postTypes'),
     tableSlugs: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
   }),
+  Type.Object({ kind: Type.Literal('notFound') }),
 ])
 
 export const SetPageTemplateInputSchema = Type.Object({

@@ -4,8 +4,12 @@
  *
  * The single rule for picking a variant: pick the smallest variant whose
  * width is greater-than-or-equal-to the target rendered width, accounting
- * for devicePixelRatio. If no variant is large enough (or the asset has no
- * variants at all), fall back to the original `publicPath`.
+ * for devicePixelRatio. If no variant is large enough, the LARGEST variant
+ * wins — never the original. Same policy as the publisher's
+ * `buildMediaSrcset` (src/modules/base/utils/mediaAttrs.ts): the original
+ * may be a multi-MB PNG, and the ladder's top rung is the intrinsic-width
+ * WebP, so falling back to the original buys nothing but bytes. The
+ * original is used only when the asset has no variants at all.
  */
 import { decode as decodeBlurHash } from 'blurhash'
 import type { CmsMediaAsset, CmsMediaVariant } from '@core/persistence/cmsMedia'
@@ -29,28 +33,29 @@ export function pickVariantUrl(
   for (const v of sorted) {
     if (v.width >= targetPx) return v.path
   }
-  // No variant is large enough → the original is necessarily larger
-  // (variants are only generated for widths strictly less than the
-  // original), so prefer that over the biggest variant.
-  return asset.publicPath
+  // No variant is large enough → the largest variant still beats the
+  // original: new ladders top at the intrinsic-width WebP (same pixels,
+  // fraction of the bytes), and even legacy 2048-capped ladders trade a
+  // marginal resolution shortfall for not downloading a multi-MB PNG.
+  return sorted[sorted.length - 1].path
 }
 
 /**
- * Build the `srcset` attribute string from the variant ladder. Includes
- * the original asset as the largest entry (so it stays selectable when the
- * browser wants the full resolution). Returns `undefined` when there are
- * no variants — callers should omit the attribute entirely in that case.
+ * Build the `srcset` attribute string from the variant ladder — variants
+ * ONLY, never the original (any srcset candidate is selectable, and on a
+ * high-DPI display the original would be the selected one; see
+ * `buildMediaSrcset`). Returns `undefined` when there are no variants —
+ * callers should omit the attribute entirely in that case.
  */
 export function buildVariantSrcset(
-  asset: Pick<CmsMediaAsset, 'publicPath' | 'variants' | 'width'>,
+  asset: Pick<CmsMediaAsset, 'publicPath' | 'variants'>,
 ): string | undefined {
   if (!asset.variants.length) return undefined
-  const entries = asset.variants
+  return asset.variants
     .slice()
     .sort((a, b) => a.width - b.width)
     .map((v) => `${v.path} ${v.width}w`)
-  if (asset.width) entries.push(`${asset.publicPath} ${asset.width}w`)
-  return entries.join(', ')
+    .join(', ')
 }
 
 // ──────────────────────────────────────────────────────────────────────────

@@ -36,7 +36,10 @@ import { toArrayBuffer } from '../../binary'
  * Target widths for the responsive variant ladder. Chosen to cover the
  * common breakpoints we serve in the editor (mobile 375 / tablet 768 /
  * desktop 1024 / wide 1600+) plus a tiny 64 the admin grid uses for
- * fast-loading thumbnails, plus a 2048 high-DPI variant.
+ * fast-loading thumbnails, plus a 2048 high-DPI variant. The worker also
+ * encodes one rung at the source's INTRINSIC width, so the srcset's top
+ * candidate is always a full-quality WebP and the original never has to
+ * appear in srcset (see buildMediaSrcset).
  *
  * Sorted ascending so the variant array stays small-to-large for callers
  * doing a linear "smallest >= target" pick.
@@ -253,6 +256,13 @@ function buildDelegateVariants(
   const format = delegate.formats[0] ?? 'webp'
   const path = originPathForDelegate(parentStoragePath)
   const out: MediaVariantRecord[] = []
+  // Declared widths below intrinsic ONLY — no host-synthesized intrinsic
+  // rung here, unlike the local worker. The plugin's `widths` array is a
+  // contract ("widths the renderer should emit in srcset", schema-bounded
+  // to 16..8192): minting an undeclared probed width could exceed the
+  // service's allowlist or output cap and put a broken URL at the TOP of
+  // the srcset. The original is excluded from srcset by buildMediaSrcset
+  // regardless, so the largest declared rung is the delegate's ceiling.
   for (const width of delegate.widths) {
     if (width >= originalWidth) continue
     const url = fillDelegateTemplate(delegate.variantUrlTemplate, {
