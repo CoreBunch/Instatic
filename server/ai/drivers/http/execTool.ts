@@ -42,14 +42,16 @@ export async function executeAiTool(
     return { ok: false, error: message }
   }
 
+  // Defence in depth: `selectToolsForScope` should never have offered a
+  // tool the caller can't use, but re-check before dispatching to either
+  // the server handler or the browser bridge anyway.
+  if (!toolAllowedForCapabilities(aiTool, toolContextBase.capabilities)) {
+    return { ok: false, error: `Tool ${aiTool.name} is not permitted for this user.` }
+  }
+
   if (aiTool.execution === 'server') {
     if (!aiTool.handler) {
       return { ok: false, error: `Tool ${aiTool.name} declares execution='server' but has no handler.` }
-    }
-    // Defence in depth: `selectToolsForScope` should never have offered a
-    // tool the caller can't use, but re-check before touching the db anyway.
-    if (!toolAllowedForCapabilities(aiTool, toolContextBase.capabilities)) {
-      return { ok: false, error: `Tool ${aiTool.name} is not permitted for this user.` }
     }
     try {
       const ctx: ToolContext = { ...toolContextBase, signal }
