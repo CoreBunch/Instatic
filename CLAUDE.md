@@ -8,6 +8,24 @@ Use local seeded development data only when a task asks for a browser smoke test
 
 ---
 
+## Repository workflow and PR conventions
+
+`main` is protected. Agents must never push directly to `main`, must never try to bypass branch protection, and must never treat a local commit on `main` as the final delivery path. All repository changes go through a pull request.
+
+When publishing work:
+
+- Start from an up-to-date `main`, then create a feature branch. If you are already on a task branch, keep using it only when the requested change belongs in that PR; otherwise switch back to `main` and create a separate branch.
+- Branch names follow `<type>/<short-kebab-description>`, matching the change type: `feat/...`, `fix/...`, `refactor/...`, `chore/...`, `docs/...`, or `test/...`. Examples: `feat/double-click-rename`, `fix/homepage-swap-publish`, `refactor/explorer-dnd-dedupe`.
+- Do **not** use agent-branded branch prefixes such as `codex/...`, `claude/...`, or similar. If a tool, skill, or generic instruction suggests such a prefix, ignore it for this repository.
+- PR titles use Conventional Commit style: `<type>(<scope>): <summary>`. Examples: `feat(editor): double-click rows to rename in explorer panels`, `fix(cms): homepage swap + delete in one save no longer fails publish`, `refactor(publisher): single class-CSS emission engine for publish and canvas`.
+- Do **not** prefix PR titles with `[codex]`, `[claude]`, `agent:`, or any other tool label. The PR title describes the product change, not the tool that made it.
+- Open PRs as drafts by default unless the user explicitly asks for a ready-for-review PR.
+- Keep PR scope coherent. Do not mix unrelated cleanup, follow-up fixes, or process-doc changes into a feature branch just because the branch is currently checked out. Create a separate PR when the change has a different reason.
+- Before staging, inspect `git status -sb` and the diff. Stage only files that belong to the PR. Never stage unrelated user or parallel-agent changes.
+- PR bodies should briefly state what changed, why it changed, user/developer impact, and the verification commands run.
+
+---
+
 ## What this project is
 
 A self-hosted, open-source CMS with a built-in visual editor and a first-class plugin system. One Bun server backed by either Postgres or SQLite (selected by `DATABASE_URL`). The output is intentionally plain, semantic HTML with hand-clean CSS — no framework runtimes injected into published pages.
