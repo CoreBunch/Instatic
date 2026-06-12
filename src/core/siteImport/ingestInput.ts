@@ -44,13 +44,13 @@ const DEFAULT_MAX_ZIP_UNCOMPRESSED = 5 * 1024 * 1024 * 1024 // 5 GB
 // Input type
 // ---------------------------------------------------------------------------
 
-export type IngestInput =
+type IngestInput =
   | File
   | File[]
   | { zipBytes: Uint8Array }
   | { fileMap: FileMap }
 
-export interface IngestOptions {
+interface IngestOptions {
   /** Max aggregate compressed bytes across all files. Default: 1 GB */
   maxBytes?: number
   /** Max number of files. Default: 10 000 */

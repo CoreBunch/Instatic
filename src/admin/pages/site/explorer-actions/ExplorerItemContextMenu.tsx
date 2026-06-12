@@ -9,7 +9,7 @@ import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
 import styles from './ExplorerItemContextMenu.module.css'
 
-export interface ExplorerContextMenuAction {
+interface ExplorerContextMenuAction {
   kind?: 'action'
   label: string
   action: () => void
@@ -18,7 +18,7 @@ export interface ExplorerContextMenuAction {
   disabled?: boolean
 }
 
-export interface ExplorerContextMenuSubmenu {
+interface ExplorerContextMenuSubmenu {
   kind: 'submenu'
   label: string
   icon: ReactNode

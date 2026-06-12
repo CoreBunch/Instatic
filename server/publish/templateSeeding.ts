@@ -7,12 +7,18 @@
  * `/<route-base>/<row-slug>` has no template to bind the row into and the
  * dispatcher 404s. We seed a minimal default template automatically:
  *
- *   - On `createDataTable` when `kind === 'postType'` (handled by the
- *     repository's `createDataTable`).
- *   - On server boot via `backfillDefaultEntryTemplates`, which walks
- *     every postType table and seeds anything that's missing — covers the
- *     seeded `posts` table from the baseline migration and any future
- *     install where a partial backup was restored.
+ *   - At every table-creation entry point when `kind === 'postType'`
+ *     (the admin tables handler and the plugin-host content API call
+ *     `ensureDefaultEntryTemplate` right after `createDataTable`).
+ *   - On server boot — and after a CMS bundle import — via
+ *     `backfillDefaultEntryTemplates`, which walks every postType table and
+ *     seeds anything that's missing. Covers the seeded `posts` table from
+ *     the baseline migration, imported bundles that carry postType tables
+ *     without their own template, and any install where a partial backup
+ *     was restored.
+ *
+ * Seeding PUBLISHES a page row, so this is orchestration, not data access —
+ * it lives in the publish layer and calls down into the repositories.
  *
  * The seed is intentionally minimal:
  *
@@ -33,11 +39,10 @@
  */
 
 import { nanoid } from 'nanoid'
-import type { DbClient } from '../../db/client'
+import type { DbClient } from '../db/client'
 import type { DataTable } from '@core/data/schemas'
-import { getDataTable, listDataTables } from './tables'
-import { createDataRow } from './rows'
-import { publishDataRow } from './publish'
+import { createDataRow, listDataTables } from '../repositories/data'
+import { publishDataRow } from './publishRow'
 
 /**
  * True when at least one published page in the `pages` table targets the
@@ -45,10 +50,6 @@ import { publishDataRow } from './publish'
  * `cells_json` on `data_rows`) — published versions are derived from
  * those, so a draft with `templateEnabled=true` is sufficient evidence
  * that a template exists for this slug.
- *
- * Uses Bun.sql's JSON path syntax which works on both Postgres (via
- * `->>`) and SQLite (via `json_extract`). The host's adapter layer
- * normalises both; we use the dialect-naive form here.
  */
 async function hasEntryTemplate(db: DbClient, tableSlug: string): Promise<boolean> {
   // SQLite doesn't support `->>`; Postgres doesn't support `json_extract`
@@ -194,9 +195,10 @@ export async function ensureDefaultEntryTemplate(
 
 /**
  * Walk every postType table and ensure each has a default entry template.
- * Called from server boot AFTER migrations so the seeded `posts` system
- * table (and any custom postType table imported pre-feature) gets its
- * template without operator intervention.
+ * Called from server boot AFTER migrations — and after a CMS bundle import
+ * commits — so the seeded `posts` system table (and any custom postType
+ * table created or imported without a template) gets its template without
+ * operator intervention.
  *
  * Errors on individual tables are logged and don't abort the loop — a
  * broken-but-published row in `pages` shouldn't keep the rest of the
@@ -209,14 +211,10 @@ export async function backfillDefaultEntryTemplates(db: DbClient): Promise<void>
     try {
       const result = await ensureDefaultEntryTemplate(db, table, null)
       if (result) {
-        console.log(`[template-seeding] seeded default entry template for "${table.slug}" (page id: ${result})`)
+        console.warn(`[template-seeding] seeded default entry template for "${table.slug}" (page id: ${result})`)
       }
     } catch (err) {
       console.error(`[template-seeding] failed to seed "${table.slug}":`, err)
     }
   }
 }
-
-// Re-exported for the createDataTable helper that wants to seed under the
-// id of the just-created table (rather than re-reading via getDataTable).
-export { getDataTable }

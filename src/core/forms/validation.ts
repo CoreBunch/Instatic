@@ -11,7 +11,7 @@ import type {
 const DEFAULT_MAX_FIELDS = 100
 const DEFAULT_MAX_STRING_LENGTH = 10_000
 
-export type FormValidationResult =
+type FormValidationResult =
   | { ok: true; cells: Record<string, unknown> }
   | { ok: false; errors: FormValidationError[] }
 

@@ -16,6 +16,7 @@
  *   - postTypes template       → the previewed published row's permalink.
  *     Defaults to the first published row (newest first), again matching the
  *     preview-source dropdown.
+ *   - notFound template        → `/404`, the baked 404 artefact's path.
  *
  * Mounted once from `AdminCanvasEditorBody` (the lazy editor body) so the CMS
  * data fetch needed for the postTypes case stays out of the always-loaded admin
@@ -28,7 +29,7 @@ import { useAdminUi } from '@admin/state/adminUi'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { selectActivePage, useEditorStore } from '@site/store/store'
 import { isTemplatePage, primaryTemplateTableSlug } from '@core/templates'
-import { pagePublicPath } from '@core/page-tree'
+import { pagePublicPath, type TemplateTarget } from '@core/page-tree'
 import { getCmsDataTableBySlug, previewCmsDataLoopItems } from '@core/persistence/cmsData'
 import type { LoopItem } from '@core/loops/types'
 
@@ -85,10 +86,10 @@ export function useActiveLivePath(): void {
   }, [livePath, publish])
 }
 
-export interface ResolveArgs {
+interface ResolveArgs {
   activePage: ReturnType<typeof selectActivePage>
   isTemplate: boolean
-  targetKind: 'everywhere' | 'postTypes' | null
+  targetKind: TemplateTarget['kind'] | null
   selection: string | null
   sitePages: ReturnType<typeof selectActivePage>[] | null
   rows: LoopItem[]
@@ -127,6 +128,10 @@ export function resolveLivePath({
     const permalink = previewed?.fields.permalink
     return typeof permalink === 'string' && permalink ? permalink : null
   }
+
+  // notFound template: `/404` serves its baked artefact (the same body every
+  // unmatched URL gets with status 404), so it is the natural live preview.
+  if (targetKind === 'notFound') return '/404'
 
   return null
 }

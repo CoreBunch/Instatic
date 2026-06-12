@@ -7,7 +7,7 @@ import { sqliteMigrations } from './migrations-sqlite'
 import type { DbClient, DbResult } from './client'
 import type { Migration } from './runMigrations'
 
-export type { DbClient, DbResult, Migration }
+export type { DbClient, DbResult }
 
 /**
  * True for any DATABASE_URL that selects the SQLite adapter:

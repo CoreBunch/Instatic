@@ -56,20 +56,7 @@ import type { DashboardRequestContext } from './types'
 // JSON response (currently `src/admin/pages/dashboard/hooks/
 // useDashboardStats.ts` mirrors them by hand) can import from the
 // folder barrel rather than reaching into the types file directly.
-export type {
-  PagesStats,
-  PostsStats,
-  MediaStats,
-  MediaStatsThumb,
-  PluginsStats,
-  PluginsStatsRow,
-  PublishLineupRow,
-  PublishLineupStats,
-  RecentActivityActor,
-  RecentActivityEntry,
-  RecentActivityStats,
-  StorageStats,
-} from './types'
+
 
 type DashboardReader = (
   db: DbClient,

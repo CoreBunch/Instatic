@@ -33,7 +33,7 @@ export const LOCKOUT_INITIAL_MS = 15 * 60 * 1000
 /** Maximum lockout duration (24 h). */
 export const LOCKOUT_CAP_MS = 24 * 60 * 60 * 1000
 
-export interface LockoutDecision {
+interface LockoutDecision {
   /** True when this failure crosses the threshold (caller should set locked_until). */
   triggered: boolean
   /** When `triggered`, the absolute time at which the lock expires. Null otherwise. */
@@ -42,7 +42,7 @@ export interface LockoutDecision {
   failedLoginCount: number
 }
 
-export interface LockState {
+interface LockState {
   locked: boolean
   /** When `locked`, milliseconds until `lockedUntil` (>= 0). */
   retryAfterMs: number

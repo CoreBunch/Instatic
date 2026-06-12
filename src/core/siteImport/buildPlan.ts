@@ -33,7 +33,7 @@ import type {
   StylesheetImportMode,
 } from './types'
 
-export interface BuildImportPlanInput {
+interface BuildImportPlanInput {
   fileMap: FileMap
   currentSite: SiteDocument
   options?: {

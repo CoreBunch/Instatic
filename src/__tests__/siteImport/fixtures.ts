@@ -45,7 +45,7 @@ function txt(s: string): Uint8Array { return enc.encode(s) }
 // Sample HTML pages
 // ---------------------------------------------------------------------------
 
-export const INDEX_HTML = `<!DOCTYPE html>
+const INDEX_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -63,7 +63,7 @@ export const INDEX_HTML = `<!DOCTYPE html>
 </body>
 </html>`
 
-export const ABOUT_HTML = `<!DOCTYPE html>
+const ABOUT_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -77,7 +77,7 @@ export const ABOUT_HTML = `<!DOCTYPE html>
 </body>
 </html>`
 
-export const CONTACT_HTML = `<!DOCTYPE html>
+const CONTACT_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -95,7 +95,7 @@ export const CONTACT_HTML = `<!DOCTYPE html>
 // Sample CSS files
 // ---------------------------------------------------------------------------
 
-export const MAIN_CSS = `.hero-title {
+const MAIN_CSS = `.hero-title {
   color: red;
   font-size: 2rem;
 }
@@ -114,7 +114,7 @@ body {
 }
 `
 
-export const THEME_CSS = `.btn-primary {
+const THEME_CSS = `.btn-primary {
   background: green;
   color: white;
 }

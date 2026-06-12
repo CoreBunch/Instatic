@@ -21,7 +21,7 @@ import type { ConversationsPersister } from './persister'
 import type { AiProvider, AiStreamRequest } from '../drivers/types'
 import type { AiStreamEvent } from './types'
 
-export interface RunChatArgs {
+interface RunChatArgs {
   driver: AiProvider
   request: AiStreamRequest
   persister: ConversationsPersister

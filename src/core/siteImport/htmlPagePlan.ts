@@ -24,7 +24,7 @@ import type { SiteScriptFormat } from '@core/site-runtime'
 // Public function
 // ---------------------------------------------------------------------------
 
-export interface HtmlPagePlanResult {
+interface HtmlPagePlanResult {
   pagePlan: PagePlan
   warnings: ImportWarning[]
   /**

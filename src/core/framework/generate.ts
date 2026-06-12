@@ -37,7 +37,7 @@ export interface FrameworkGenerationSettings {
  * The two framework CSS outputs the publisher needs, built together: the merged
  * `:root` variable block (+ color theme scopes) and the locked utility classes.
  */
-export interface FrameworkPlan {
+interface FrameworkPlan {
   rootCss: string
   utilityClasses: Record<string, StyleRule>
 }

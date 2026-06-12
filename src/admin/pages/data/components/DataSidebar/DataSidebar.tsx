@@ -32,7 +32,7 @@ import styles from './DataSidebar.module.css'
 // Props
 // ---------------------------------------------------------------------------
 
-export interface DataSidebarProps {
+interface DataSidebarProps {
   // TODO: each table now carries `rowCount` — consider rendering a count chip
   // next to the kind badge once the sidebar layout has a natural slot for it.
   tables: DataTableListItem[]

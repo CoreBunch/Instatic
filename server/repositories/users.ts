@@ -17,7 +17,7 @@ import {
 import type { UserRow, UserStatus } from '../types'
 import { Type, filterArray } from '@core/utils/typeboxHelpers'
 
-export interface UserRole {
+interface UserRole {
   id: string
   slug: string
   name: string
@@ -26,7 +26,7 @@ export interface UserRole {
   capabilities: CoreCapability[]
 }
 
-export interface CmsUser {
+interface CmsUser {
   id: string
   email: string
   displayName: string

@@ -190,7 +190,7 @@ export const PropertySchemaSchema = Type.Unsafe<Record<string, PropertyControl>>
 export type PropertyCondition = Static<typeof PropertyConditionSchema>
 export type PropertyControlLayout = Static<typeof PropertyControlLayoutSchema>
 export type TextControlNormalize = Static<typeof TextControlNormalizeSchema>
-export type PropertyControlCategory = Static<typeof PropertyControlCategorySchema>
+type PropertyControlCategory = Static<typeof PropertyControlCategorySchema>
 export type PropertySchema = Static<typeof PropertySchemaSchema>
 
 // ---------------------------------------------------------------------------

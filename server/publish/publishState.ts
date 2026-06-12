@@ -93,7 +93,7 @@ export function withPublishLock<T>(fn: () => Promise<T>): Promise<T> {
 // ---------------------------------------------------------------------------
 
 /** A version-keyed single-flight memo created by `createVersionedSingleFlight`. */
-export interface VersionedSingleFlight<T> {
+interface VersionedSingleFlight<T> {
   /**
    * Return the memoised value for `version`, invoking `load` only on a miss.
    *

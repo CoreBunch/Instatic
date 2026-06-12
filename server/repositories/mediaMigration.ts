@@ -103,7 +103,7 @@ function parseVariantsFromJson(value: unknown): MediaVariant[] {
 // Backlog counts
 // ---------------------------------------------------------------------------
 
-export interface MigrationBacklog {
+interface MigrationBacklog {
   /** Total `media_assets` rows whose storage_adapter_id != target. */
   originals: number
   /**
@@ -111,7 +111,7 @@ export interface MigrationBacklog {
    * Computed JS-side from `variants_json` because the value is a JSON blob
    * (no per-variant DB row exists). For sites with thousands of assets the
    * JS pass is still fast — variants per asset are bounded by the
-   * `TARGET_WIDTHS` ladder (≤ 6).
+   * `TARGET_WIDTHS` ladder plus the intrinsic rung (≤ 7).
    */
   variants: number
 }

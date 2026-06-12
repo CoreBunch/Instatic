@@ -41,8 +41,9 @@ import {
   softDeleteDataRowMany,
   updateDataRowTable,
   scheduleDataRowPublish,
-  publishDataRow,
 } from '../../../repositories/data'
+import { publishDataRow } from '../../../publish/publishRow'
+import { ensureDefaultEntryTemplate } from '../../../publish/templateSeeding'
 import { republishAllPages } from '../../../publish/republish'
 import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import { applyContentEntryCellsFilter } from '../../../publish/contentEvents'
@@ -180,6 +181,9 @@ export async function handleContentTablesCreate(
     primaryFieldId: input.primaryFieldId ?? 'title',
     fields,
   })
+  // postType tables need a default entry template so the public route
+  // `/<route-base>/<row-slug>` resolves immediately (no-op for `data` kind).
+  await ensureDefaultEntryTemplate(db, created, null)
   const slugLookup = await buildTableSlugLookup(db)
   replyApiOk(msg.pluginId, msg.correlationId, tableSchema(created, 0, slugLookup))
 }

@@ -21,7 +21,7 @@ import type {
   StylesheetImportMode,
 } from './types'
 
-export interface StylesheetPartition {
+interface StylesheetPartition {
   /** Every top-level linked sheet with its import mode, in discovery order. */
   linkedStylesheets: LinkedStylesheet[]
   /** Top-level paths kept as files — excluded from the conversion cascade. */

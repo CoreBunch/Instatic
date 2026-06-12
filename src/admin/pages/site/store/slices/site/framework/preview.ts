@@ -13,7 +13,7 @@ import { previewFrameworkClassRemovals } from '@core/framework'
 import { reconcileFrameworkClasses } from './reconcile'
 import type { SiteSlice, SiteSliceHelpers } from '@site/store/slices/site/types'
 
-export type FrameworkPreviewActions = Pick<SiteSlice, 'previewFrameworkChange'>
+type FrameworkPreviewActions = Pick<SiteSlice, 'previewFrameworkChange'>
 
 export function createFrameworkPreviewActions({
   get,

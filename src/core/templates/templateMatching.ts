@@ -34,7 +34,9 @@ export function primaryTemplateTableSlug(page: Page): string | null {
 export function templateTargetLabel(page: Page): string {
   const target = page.template?.target
   if (!target) return ''
-  return target.kind === 'everywhere' ? 'Everywhere' : target.tableSlugs.join(', ')
+  if (target.kind === 'everywhere') return 'Everywhere'
+  if (target.kind === 'notFound') return 'Not found'
+  return target.tableSlugs.join(', ')
 }
 
 /**
@@ -59,6 +61,22 @@ function matchesLevel(
 }
 
 const LEVELS = ['everywhere', 'postTypes'] as const
+
+/**
+ * The page that renders public 404s, or null when the site doesn't define
+ * one. A `notFound` template never participates in `resolveTemplateChain` —
+ * it isn't a breadth level; route resolution never "matches" a 404. The
+ * public router calls this directly when a GET falls through every route,
+ * then composes the winner like a regular page (wrapped by the `everywhere`
+ * layout chain). Highest priority wins, document order breaks ties.
+ */
+export function resolveNotFoundTemplate(site: SiteDocument): Page | null {
+  return site.pages
+    .map((page, index) => ({ page, index }))
+    .filter(({ page }) => isTemplatePage(page) && page.template?.target.kind === 'notFound')
+    .sort((a, b) => ((b.page.template?.priority ?? 0) - (a.page.template?.priority ?? 0)) || a.index - b.index)[0]
+    ?.page ?? null
+}
 
 /**
  * Collect every template matching the route, ordered outer → inner. At most

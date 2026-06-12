@@ -13,7 +13,7 @@
  */
 
 import { assertValidNodeTree } from '@core/page-tree'
-import { layoutNameError, parseSavedLayout, type SavedLayout } from '@core/layouts'
+import { layoutNameError, layoutSlugFromName, parseSavedLayout, type SavedLayout } from '@core/layouts'
 import {
   SiteValidationError,
   sanitizeNodeProps,
@@ -28,7 +28,8 @@ import {
  *   1. Parse each via `parseSavedLayout` — silently drops malformed entries.
  *   2. Drop layouts whose snapshot tree is incoherent (root missing, dangling
  *      child ids, cycles).
- *   3. Deduplicate by name (first-wins; empty names dropped).
+ *   3. Deduplicate by derived slug (first-wins; empty names dropped) — names
+ *      are stored as `data_rows.slug`, so same-slug names are one identity.
  *   4. Sanitize richtext-keyed props in snapshot nodes (XSS — Constraint #299).
  *
  * Layouts are self-contained snapshots: VC refs inside them are intentionally
@@ -47,11 +48,12 @@ export function validateSavedLayouts(rawLayouts: unknown[]): SavedLayout[] {
     return [layout]
   })
 
-  const seenNames = new Set<string>()
+  const seenSlugs = new Set<string>()
   const deduped = parsed.filter((layout) => {
     if (layoutNameError(layout.name, []) !== null) return false
-    if (seenNames.has(layout.name)) return false
-    seenNames.add(layout.name)
+    const slug = layoutSlugFromName(layout.name)
+    if (seenSlugs.has(slug)) return false
+    seenSlugs.add(slug)
     return true
   })
   sanitizeLayoutNodeRichtextProps(deduped)

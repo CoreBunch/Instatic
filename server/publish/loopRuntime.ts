@@ -21,7 +21,7 @@
  * infinite-mode loop exists on the page.
  */
 
-export function runInstaticLoopRuntime(): void {
+function runInstaticLoopRuntime(): void {
   const scriptEl = document.currentScript
   const endpointBase =
     (scriptEl && scriptEl.getAttribute('data-instatic-loop-endpoint')) || '/_instatic/loop/'

@@ -601,6 +601,18 @@ describe('DomPanel — tree keyboard navigation', () => {
     expect(screen.getByRole('treeitem', { name: /hero group/i })).toBeDefined()
   })
 
+  it('opens inline tree rename from a double-clicked layer row', () => {
+    loadContainerSite()
+    render(<DomPanel />)
+
+    const containerItem = screen.getByRole('treeitem', { name: /container/i })
+    fireEvent.doubleClick(containerItem)
+
+    expect(screen.getByRole('textbox', {
+      name: /rename (base\.container|container)/i,
+    })).toBeDefined()
+  })
+
   it('keeps hidden nodes in the tree and marks them with a hidden badge', () => {
     loadContainerSite()
     act(() => {

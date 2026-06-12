@@ -282,7 +282,7 @@ const DEFAULT_TREE_SHAPE: readonly SkeletonTreeRowShape[] = [
   { depth: 1, branch: false, labelWidth: '42%' },
 ]
 
-export interface SkeletonTreeProps {
+interface SkeletonTreeProps {
   /**
    * How many rows to render. Defaults to the built-in silhouette length.
    * Rows beyond the silhouette cycle back through it.
@@ -355,7 +355,7 @@ export function SkeletonTree({
 // Low-level primitives — for bespoke cases the three named shapes can't cover.
 // ---------------------------------------------------------------------------
 
-export interface SkeletonProps {
+interface SkeletonProps {
   /** Width — any CSS length. `'100%'` to fill the parent. */
   width?: string | number
   /** Height — any CSS length. Defaults to `'1em'` (matches surrounding text). */
@@ -393,7 +393,7 @@ export function Skeleton({
   )
 }
 
-export interface SkeletonCircleProps {
+interface SkeletonCircleProps {
   /** Diameter in px (sets both width and height). */
   size: number
   /** Optional className escape hatch. */

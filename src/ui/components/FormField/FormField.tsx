@@ -33,9 +33,9 @@ import type { ReactNode } from 'react'
 import { cn } from '@ui/cn'
 import styles from './FormField.module.css'
 
-export type FormFieldLayout = 'stacked' | 'inline-end' | 'inline-start'
+type FormFieldLayout = 'stacked' | 'inline-end' | 'inline-start'
 
-export interface FormFieldProps {
+interface FormFieldProps {
   /** Visible label rendered next to (or above) the control. */
   label?: ReactNode
   /** Optional secondary hint shown underneath the label. */

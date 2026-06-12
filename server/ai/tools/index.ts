@@ -58,4 +58,4 @@ export function selectToolsForScope(
   return tools.filter((t) => !t.mutates)
 }
 
-export type { AiTool, ToolScope } from './types'
+

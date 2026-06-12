@@ -19,7 +19,7 @@ export interface CanvasOverlayRect {
   height: number
 }
 
-export interface CanvasOverlayMeasureSession {
+interface CanvasOverlayMeasureSession {
   /** Canvas-root client rect, or null in the fixed/body fallback mode. */
   canvasRect: DOMRect | null
   /** Measure one iframe element into overlay (canvas-root-local) coords. */

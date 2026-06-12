@@ -20,10 +20,10 @@
  * @see src/__tests__/architecture/json-extract-egress.test.ts — egress gate
  */
 
-import type { DbClient, Dialect } from './client'
+import type { Dialect } from './client'
 
 // Re-export Dialect so callers can import it from this module alongside JsonFieldExpr.
-export type { Dialect } from './client'
+
 
 /**
  * Branded SQL fragment produced by `jsonField`.
@@ -31,7 +31,7 @@ export type { Dialect } from './client'
  * was validated and constructed exclusively by `jsonField`. Values are kept
  * parameterised by the caller.
  */
-export type JsonFieldExpr = { readonly __brand: 'JsonFieldExpr'; readonly sql: string }
+type JsonFieldExpr = { readonly __brand: 'JsonFieldExpr'; readonly sql: string }
 
 /** Column and field names must be plain ASCII identifiers — no dots, no quotes, no hyphens. */
 const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/
@@ -71,4 +71,4 @@ export function jsonField(column: string, field: string, dialect: Dialect): Json
 // convenience wrappers that accept a DbClient and read its .dialect.
 // The import is type-only and erased at runtime; it does not create a
 // circular dependency.
-export type { DbClient }
+

@@ -70,6 +70,46 @@ describe('generateCanvasClassCSS', () => {
     expect(css).not.toContain('[data-breakpoint-id="mobile"] .title')
   })
 
+  it('emits sanitized raw @keyframes rules, matching the published output', () => {
+    // Regression: the canvas used to skip `rawCss` rules entirely, so
+    // imported keyframe animations published fine but never played in the
+    // editor preview. The canvas now routes through the publisher's
+    // `generateClassCSS`, which emits them through the same safety gate.
+    const pulse: StyleRule = {
+      id: 'pulse',
+      name: '@keyframes pulse',
+      kind: 'ambient',
+      selector: '@keyframes pulse',
+      order: 0,
+      styles: {},
+      contextStyles: {},
+      rawCss: '@keyframes pulse {\n  0% {\n    opacity: 0;\n  }\n  100% {\n    opacity: 1;\n  }\n}',
+      createdAt: 0,
+      updatedAt: 0,
+    }
+
+    const css = generateCanvasClassCSS({ pulse }, [])
+    expect(css).toContain('@keyframes pulse')
+    expect(css).toContain('opacity: 0')
+  })
+
+  it('drops unsupported raw CSS, matching the published output', () => {
+    const bad: StyleRule = {
+      id: 'bad',
+      name: 'bad',
+      kind: 'ambient',
+      selector: '.bad',
+      order: 0,
+      styles: {},
+      contextStyles: {},
+      rawCss: '@media screen { .bad { color: red; } }',
+      createdAt: 0,
+      updatedAt: 0,
+    }
+
+    expect(generateCanvasClassCSS({ bad }, [])).not.toContain('.bad')
+  })
+
   it('includes framework color variables for editor preview', () => {
     const colors = {
       tokens: [

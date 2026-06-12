@@ -27,7 +27,7 @@ const NpmPackageMetadataSchema = Type.Object({
 
 type NpmPackageMetadata = Static<typeof NpmPackageMetadataSchema>
 
-export interface ResolveSiteDependencyLockOptions {
+interface ResolveSiteDependencyLockOptions {
   fetch?: typeof fetch
   now?: () => number
   registryUrl?: string

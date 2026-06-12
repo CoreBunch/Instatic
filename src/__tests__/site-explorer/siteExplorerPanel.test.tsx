@@ -920,6 +920,15 @@ describe('SiteExplorerPanel', () => {
     expect(renamed).toBeUndefined()
   })
 
+  it('opens inline page rename from a double-clicked site row', () => {
+    loadSite()
+    render(<SiteExplorerPanel variant="docked" />)
+
+    fireEvent.doubleClick(screen.getByRole('button', { name: /open page pricing/i }))
+
+    expect(screen.getByRole('textbox', { name: 'Rename Pricing' })).toBeDefined()
+  })
+
   it('renames and deletes components from the site row context menu', () => {
     loadSite()
     render(<SiteExplorerPanel variant="docked" />)

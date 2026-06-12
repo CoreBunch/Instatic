@@ -26,10 +26,10 @@ import {
 import { loadCachedCatalogue, saveCachedCatalogue } from './store'
 
 export { pricingKey } from './openrouterCatalogue'
-export type { TokenPrices, ModelCatalogue, ModelCatalogueEntry } from './openrouterCatalogue'
+export type { TokenPrices } from './openrouterCatalogue'
 
 /** Token breakdown for one usage event, as the driver reported it. */
-export interface UsageTokens {
+interface UsageTokens {
   /** Provider-native `input_tokens`. For Anthropic this EXCLUDES the cache
    *  buckets; for OpenAI it INCLUDES cached tokens as a subset. */
   promptTokens: number

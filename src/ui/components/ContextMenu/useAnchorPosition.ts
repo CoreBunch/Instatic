@@ -17,7 +17,7 @@ import { useEvent } from '@ui/lib/useEvent'
  */
 const DROPDOWN_AUTO_PRIORITY = ['bottom', 'top', 'right', 'left'] as const
 
-export interface AnchorPosition {
+interface AnchorPosition {
   x: number
   y: number
   side: ResolvedFloatingSide

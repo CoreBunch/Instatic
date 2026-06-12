@@ -45,7 +45,7 @@ export class FontInstallError extends Error {
   }
 }
 
-export interface InstallGoogleFontInput {
+interface InstallGoogleFontInput {
   family: string
   variants: readonly string[]
   subsets: readonly string[]
@@ -112,12 +112,6 @@ function resolveGoogleRequest(input: InstallGoogleFontInput): {
  */
 const cssResponseCache = new Map<string, Promise<string>>()
 
-/** @internal exported for tests so they can verify cache hit behaviour. */
-export function _resetFontCachesForTests(): void {
-  cssResponseCache.clear()
-  woff2SizeCache.clear()
-}
-
 /**
  * Pull the full CSS2 stylesheet for the family × all-requested-variants in a
  * single request. We deliberately do NOT pass `&subset=` — empirically the
@@ -148,7 +142,7 @@ async function fetchFamilyCss(family: string, axisSpec: string): Promise<string>
 }
 
 /** @internal exported only for unit tests in `src/__tests__/server/fontsCss.test.ts`. */
-export interface ParsedFace {
+interface ParsedFace {
   weight: number
   italic: boolean
   url: string
@@ -308,7 +302,7 @@ async function fetchWoff2Size(url: string): Promise<number | null> {
   }
 }
 
-export interface EstimateGoogleFontResult {
+interface EstimateGoogleFontResult {
   /** Sum of `Content-Length` across every resolved woff2 URL. */
   totalBytes: number
   /** Number of woff2 files whose size contributed to `totalBytes`. */

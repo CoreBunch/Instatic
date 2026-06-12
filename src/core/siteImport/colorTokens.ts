@@ -20,8 +20,6 @@
 import type { NewStyleRule, ImportColorToken } from './types'
 import { isRootScopeSelector } from './rootScope'
 
-export type { ImportColorToken }
-
 // ---------------------------------------------------------------------------
 // Colour-value detection
 // ---------------------------------------------------------------------------

@@ -22,7 +22,7 @@
  *     restart still has to start over from scratch on the next attempt set.
  */
 
-export interface RateLimitDecision {
+interface RateLimitDecision {
   ok: boolean
   /** When `ok === false`, ms until the oldest in-window attempt expires. */
   retryAfterMs: number
@@ -35,7 +35,7 @@ interface Bucket {
   attempts: number[]
 }
 
-export interface RateLimiterOptions {
+interface RateLimiterOptions {
   /** Maximum allowed attempts per window. */
   limit: number
   /** Sliding window duration in milliseconds. */

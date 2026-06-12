@@ -7,7 +7,7 @@ import {
   type PageTreeDropTarget,
 } from '@core/page-tree'
 
-export interface CanvasPoint {
+interface CanvasPoint {
   x: number
   y: number
 }
@@ -44,7 +44,7 @@ export interface CanvasInsertionTarget {
   axis: CanvasDropAxis
 }
 
-export interface CanvasInvalidDropTarget {
+interface CanvasInvalidDropTarget {
   overId: string
   rect: CanvasRect
   axis: CanvasDropAxis

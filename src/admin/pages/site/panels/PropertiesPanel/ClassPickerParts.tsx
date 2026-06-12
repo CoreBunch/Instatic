@@ -28,7 +28,7 @@ interface AssignedClassPillProps {
   onRemove: () => void
 }
 
-export function AssignedClassPill({
+function AssignedClassPill({
   cls,
   isActive,
   onToggle,
@@ -63,7 +63,7 @@ export function AssignedClassPill({
   )
 }
 
-export function AmbientSelectorPill({
+function AmbientSelectorPill({
   pill,
   onToggle,
 }: {
@@ -90,7 +90,7 @@ export function AmbientSelectorPill({
   )
 }
 
-export function InlineStylePill({
+function InlineStylePill({
   isActive,
   onToggle,
   onRemove,
@@ -123,7 +123,7 @@ export function InlineStylePill({
   )
 }
 
-export interface SelectorPillStackProps {
+interface SelectorPillStackProps {
   pills: readonly SelectorPillItem[]
   showInlinePill: boolean
   inlineStyleEditing: boolean
@@ -182,7 +182,7 @@ export function SelectorPillStack({
   )
 }
 
-export interface SelectorInputAreaProps {
+interface SelectorInputAreaProps {
   inputRowRef: RefObject<HTMLDivElement | null>
   inputRef: RefObject<HTMLInputElement | null>
   trailingAction?: ReactNode
@@ -276,7 +276,7 @@ export function UnmatchedSelectorNotice({
   )
 }
 
-export interface RankedSuggestionsListProps {
+interface RankedSuggestionsListProps {
   filteredSuggestions: readonly StyleRule[]
   selectorSuggestions: readonly SelectorSuggestionItem[]
   highlightedClassId: string | null
@@ -292,7 +292,7 @@ export interface RankedSuggestionsListProps {
   clearPreviewClass: (classId: string) => void
 }
 
-export function RankedSuggestionsList({
+function RankedSuggestionsList({
   filteredSuggestions,
   selectorSuggestions,
   highlightedClassId,
@@ -375,19 +375,19 @@ export function RankedSuggestionsList({
   )
 }
 
-export interface SelectorSuggestionsVisibility {
+interface SelectorSuggestionsVisibility {
   open: boolean
   hasRows: boolean
   canCreate: boolean
   emptyQuery: boolean
 }
 
-export interface SelectorSuggestionsSections {
+interface SelectorSuggestionsSections {
   showAllHeader: boolean
   surfacedCount: number
 }
 
-export interface SelectorSuggestionsPortalProps {
+interface SelectorSuggestionsPortalProps {
   visibility: SelectorSuggestionsVisibility
   sections: SelectorSuggestionsSections
   inputRowRef: RefObject<HTMLDivElement | null>
@@ -505,7 +505,7 @@ function InvalidSelectorSuggestionRow({ message }: { message: string }) {
   )
 }
 
-export interface ClassSuggestionSectionsProps {
+interface ClassSuggestionSectionsProps {
   recentIds: readonly string[]
   frequentIds: readonly string[]
   remainingClasses: readonly StyleRule[]
@@ -520,7 +520,7 @@ export interface ClassSuggestionSectionsProps {
   highlightedSelectorId: string | null
 }
 
-export function ClassSuggestionSections({
+function ClassSuggestionSections({
   recentIds,
   frequentIds,
   remainingClasses,

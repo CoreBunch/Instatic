@@ -70,7 +70,7 @@ interface RangeState {
   unit: string
 }
 
-export interface ConditionBuilderProps {
+interface ConditionBuilderProps {
   kind: ConditionKind
   query: string
   onQueryChange: (query: string) => void

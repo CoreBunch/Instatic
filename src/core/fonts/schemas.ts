@@ -52,18 +52,6 @@ const EXTENSION_FOR_FONT_FORMAT: Record<FontFileFormat, string> = {
   otf: '.otf',
 }
 
-/**
- * Strict legacy check: a `.woff2` file under `/uploads/fonts/` with no traversal
- * sequences. Retained as a named export for the bundle export/import schema,
- * whose font parser only round-trips self-hosted Google (woff2) installs. New
- * code paths use `isSafeFontSrc`, which also accepts media-backed custom fonts.
- */
-const LEGACY_FONT_PATH_PATTERN = /^\/uploads\/fonts\/[^"<>\\\s]+\.woff2$/
-
-export function isSafeFontPath(path: string): boolean {
-  return LEGACY_FONT_PATH_PATTERN.test(path) && !path.includes('..')
-}
-
 // ---------------------------------------------------------------------------
 // FontFile
 // ---------------------------------------------------------------------------

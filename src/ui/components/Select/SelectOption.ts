@@ -31,7 +31,7 @@ export interface NormalizedSelectOption {
 }
 
 /** A real, selectable option — not a disabled item and not a group header. */
-export function isSelectableOption(option: NormalizedSelectOption): boolean {
+function isSelectableOption(option: NormalizedSelectOption): boolean {
   return !option.disabled && !option.header
 }
 
@@ -45,7 +45,7 @@ export function hasTextValue(value: unknown): value is string {
   return typeof value === 'string' && value !== ''
 }
 
-export function getNodeText(node: ReactNode): string {
+function getNodeText(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node)
   if (Array.isArray(node)) return node.map(getNodeText).join('')
   if (isValidElement(node)) {

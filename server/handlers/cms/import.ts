@@ -47,6 +47,7 @@ import {
   type DataRowImportInput,
 } from '../../repositories/data/rows'
 import { importMediaAsset } from '../../repositories/media'
+import { backfillDefaultEntryTemplates } from '../../publish/templateSeeding'
 import { jsonResponse, readValidatedBody } from '../../http'
 import { parseValue } from '@core/utils/typeboxHelpers'
 import {
@@ -299,6 +300,16 @@ export async function handleImportRoute(
       }
     })
   }
+
+  // ---------------------------------------------------------------------------
+  // Default entry templates — AFTER the transaction commits
+  // ---------------------------------------------------------------------------
+  // Seeding publishes a page row (publish lock + cache bump), so it must not
+  // run inside the import transaction. Running the idempotent backfill after
+  // the rows have landed also means a bundle that carries its own entry
+  // templates is left alone — only postType tables that arrived without one
+  // get the default seed.
+  await backfillDefaultEntryTemplates(db)
 
   // ---------------------------------------------------------------------------
   // Media — outside the DB transaction (filesystem writes)

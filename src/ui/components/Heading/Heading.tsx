@@ -13,7 +13,7 @@ import type { ReactNode } from 'react'
 import { cn } from '@ui/cn'
 import styles from './Heading.module.css'
 
-export interface HeadingProps {
+interface HeadingProps {
   level: 1 | 2 | 3 | 4 | 5 | 6
   className?: string
   children?: ReactNode

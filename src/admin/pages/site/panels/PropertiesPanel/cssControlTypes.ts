@@ -41,7 +41,7 @@ type CSSControlType = 'color' | 'select' | 'text'
  * SpacingBoxControl) are not in this map because their visual blocks
  * already wire token suggestions in directly.
  */
-export type CSSPropertyTokenSource = 'spacing' | 'typography'
+type CSSPropertyTokenSource = 'spacing' | 'typography'
 
 // ---------------------------------------------------------------------------
 // CSSPropertyBag keys whose store type is `number`, not `string`.

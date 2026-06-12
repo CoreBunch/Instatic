@@ -29,7 +29,7 @@ export type LoginAttemptResult =
   | 'rate_limited'
   | 'mfa_failed'
 
-export interface LoginAttempt {
+interface LoginAttempt {
   id: string
   attemptedAt: string
   emailNorm: string | null

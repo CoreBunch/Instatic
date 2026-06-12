@@ -33,9 +33,9 @@ import styles from './ParamRow.module.css'
 // Public types
 // ---------------------------------------------------------------------------
 
-export type ParamRowMode = 'default-edit' | 'override-edit' | 'plain'
+type ParamRowMode = 'default-edit' | 'override-edit' | 'plain'
 
-export interface ParamRowProps {
+interface ParamRowProps {
   mode: ParamRowMode
   /** Free-form param name (uniqueness validated at the slice boundary) */
   paramName: string

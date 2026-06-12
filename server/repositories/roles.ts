@@ -9,7 +9,7 @@ import {
 } from '../auth/capabilities'
 import type { RoleRow } from '../types'
 
-export interface Role {
+interface Role {
   id: string
   slug: string
   name: string

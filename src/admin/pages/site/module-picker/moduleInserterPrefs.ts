@@ -1,10 +1,7 @@
 import { Type, type Static } from '@sinclair/typebox'
 import { parseJsonWithFallback } from '@core/utils/jsonValidate'
 import type { ModuleInserterItemRef } from '@core/persistence/userPreferences'
-import {
-  recentKey,
-  type ModuleInserterItemKind,
-} from './moduleInserterModel'
+import { recentKey } from './moduleInserterModel'
 
 export const MODULE_INSERTER_STORAGE_KEY = 'instatic-module-inserter-v1'
 
@@ -33,7 +30,7 @@ const ModuleInserterPrefsSchema = Type.Object({
 }, { additionalProperties: false })
 
 type ModuleInserterView = Static<typeof InserterViewSchema>
-export type ModuleInserterPrefs = Static<typeof ModuleInserterPrefsSchema>
+type ModuleInserterPrefs = Static<typeof ModuleInserterPrefsSchema>
 export type ModuleInserterRecentRef = ModuleInserterItemRef
 
 const DEFAULT_PREFS: ModuleInserterPrefs = {
@@ -76,4 +73,4 @@ function writeModuleInserterPrefs(prefs: ModuleInserterPrefs): void {
   }
 }
 
-export type { ModuleInserterItemKind }
+

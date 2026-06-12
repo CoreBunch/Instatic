@@ -6,7 +6,7 @@
  * Constraint #309) and the registration/publisher path (`index.ts`) import
  * the same `normalizeTag` instead of each carrying a copy.
  */
-export type TextTag =
+type TextTag =
   | 'none'
   | 'p'
   | 'h1'

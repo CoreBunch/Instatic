@@ -104,7 +104,7 @@ export type MigrationRole = 'original' | 'variant'
  * NDJSON frame so malformed frames are silently skipped rather than
  * trusted via a cast.
  */
-export const CmsMediaMigrationEventSchema = Type.Union([
+const CmsMediaMigrationEventSchema = Type.Union([
   Type.Object({ kind: Type.Literal('started'), total: Type.Number(), role: Type.Union([Type.Literal('original'), Type.Literal('variant')]), toAdapterId: Type.String() }),
   Type.Object({ kind: Type.Literal('progress'), id: Type.String(), ok: Type.Boolean(), migrated: Type.Number(), total: Type.Number(), error: Type.Optional(Type.String()) }),
   Type.Object({ kind: Type.Literal('done'), migrated: Type.Number(), failed: Type.Number(), total: Type.Number() }),
@@ -285,12 +285,12 @@ function parseSseFrames(buffer: string): { frames: Array<{ event: string; data: 
   return { frames, rest: buffer.slice(cursor) }
 }
 
-export interface StartMigrationInput {
+interface StartMigrationInput {
   role: MigrationRole
   toAdapterId: string
 }
 
-export interface StartMigrationResult {
+interface StartMigrationResult {
   /**
    * AsyncIterable of progress events. Each event corresponds to one SSE
    * frame the server emits. The iterable closes naturally when the

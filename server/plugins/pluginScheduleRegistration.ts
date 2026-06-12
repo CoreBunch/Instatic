@@ -29,7 +29,7 @@ import {
   type OverlapPolicy,
 } from '../repositories/pluginSchedules'
 
-export interface ScheduleRegistration {
+interface ScheduleRegistration {
   pluginId: string
   scheduleId: string
   cadence: Cadence

@@ -24,7 +24,7 @@
  */
 import { create } from 'zustand'
 
-export interface AdminUiState {
+interface AdminUiState {
   /** True when the global Settings modal should be mounted + visible. */
   settingsOpen: boolean
   /** Section the modal opens to (e.g. "general", "pages", "breakpoints"). */

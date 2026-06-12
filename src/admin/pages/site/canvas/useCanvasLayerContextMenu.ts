@@ -14,7 +14,7 @@ export interface CanvasContextMenuPosition {
   nodeId: string
 }
 
-export interface CanvasLayerContextMenuApi {
+interface CanvasLayerContextMenuApi {
   position: CanvasContextMenuPosition | null
   open: (position: CanvasContextMenuPosition) => void
   close: () => void

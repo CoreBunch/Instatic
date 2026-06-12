@@ -42,9 +42,9 @@ function readPreflightedBootPromises(): PreflightedBootPromises | null {
 // 'mfa' phase is owned by the pre-auth form (it's a sub-state of 'login' that
 // only the login submit handler can enter), so it never appears here — the
 // bootstrap can only land us in setup / login / editor.
-export type AdminBootPhase = 'setup' | 'login' | 'editor'
+type AdminBootPhase = 'setup' | 'login' | 'editor'
 
-export interface AdminBootResult {
+interface AdminBootResult {
   status: 'loading' | 'ready'
   phase: AdminBootPhase
   currentUser: CmsCurrentUser | null

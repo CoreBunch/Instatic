@@ -142,14 +142,14 @@ export type DuplicatePageInput = Static<typeof DuplicatePageInputSchema>
 // dependency-free leaf rather than pulling in the page-tree engine.
 // ---------------------------------------------------------------------------
 
-export const TemplateTargetInputSchema = Type.Union([
+const TemplateTargetInputSchema = Type.Union([
   Type.Object({ kind: Type.Literal('everywhere') }),
   Type.Object({
     kind: Type.Literal('postTypes'),
     tableSlugs: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
   }),
+  Type.Object({ kind: Type.Literal('notFound') }),
 ])
-export type TemplateTargetInput = Static<typeof TemplateTargetInputSchema>
 
 export const SetPageTemplateInputSchema = Type.Object({
   pageId: Type.String({ minLength: 1 }),
@@ -183,7 +183,6 @@ export const SetColorTokensInputSchema = Type.Object({
     { minItems: 1 },
   ),
 })
-export type SetColorTokensInput = Static<typeof SetColorTokensInputSchema>
 
 export const SetFontTokensInputSchema = Type.Object({
   tokens: Type.Array(
@@ -199,7 +198,6 @@ export const SetFontTokensInputSchema = Type.Object({
     { minItems: 1 },
   ),
 })
-export type SetFontTokensInput = Static<typeof SetFontTokensInputSchema>
 
 /** A single scale anchor (min/max breakpoint) — `fontSize` for type, `size` for spacing. */
 const ScaleBreakpointInputSchema = (sizeKey: 'fontSize' | 'size') =>
@@ -216,7 +214,6 @@ export const SetTypeScaleInputSchema = Type.Object({
   min: Type.Optional(ScaleBreakpointInputSchema('fontSize')),
   max: Type.Optional(ScaleBreakpointInputSchema('fontSize')),
 })
-export type SetTypeScaleInput = Static<typeof SetTypeScaleInputSchema>
 
 export const SetSpacingScaleInputSchema = Type.Object({
   groupId: Type.Optional(Type.String({ minLength: 1 })),
@@ -226,7 +223,6 @@ export const SetSpacingScaleInputSchema = Type.Object({
   min: Type.Optional(ScaleBreakpointInputSchema('size')),
   max: Type.Optional(ScaleBreakpointInputSchema('size')),
 })
-export type SetSpacingScaleInput = Static<typeof SetSpacingScaleInputSchema>
 
 // ---------------------------------------------------------------------------
 // render_snapshot
@@ -241,4 +237,3 @@ export const RenderSnapshotInputSchema = Type.Object({
   breakpointId: Type.Optional(Type.String({ minLength: 1 })),
   nodeId: Type.Optional(Type.String({ minLength: 1 })),
 })
-export type RenderSnapshotInput = Static<typeof RenderSnapshotInputSchema>

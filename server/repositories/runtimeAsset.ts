@@ -2,7 +2,7 @@ import { nanoid } from 'nanoid'
 import type { BuiltRuntimeAssetFile } from '../publish/runtime/bundleScripts'
 import type { DbClient } from '../db/client'
 
-export interface PublishedRuntimeAssetRecord {
+interface PublishedRuntimeAssetRecord {
   publicPath: string
   contentType: string
   bytes: Uint8Array

@@ -47,7 +47,7 @@ function normalizeBackgroundImage(style: CSSStyleDeclaration, out: Record<string
  * into a camelCase CSS bag, dropping only the security-denied property names.
  * Returns `{}` when the element has no usable inline declarations.
  */
-export function extractInlineStyles(style: CSSStyleDeclaration): Record<string, string> {
+function extractInlineStyles(style: CSSStyleDeclaration): Record<string, string> {
   const out = readCssDeclarationBag(style)
   normalizeBackgroundImage(style, out)
   return out

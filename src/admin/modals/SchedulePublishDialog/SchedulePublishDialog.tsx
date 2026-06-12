@@ -24,7 +24,7 @@ import { Button } from '@ui/components/Button'
 import { DateTimePicker } from '@ui/components/DateTimePicker'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
-export interface SchedulePublishDialogProps {
+interface SchedulePublishDialogProps {
   open: boolean
   onClose: () => void
   rowId: string

@@ -7,7 +7,7 @@ export interface SiteRow {
 }
 
 export type UserStatus = 'active' | 'suspended'
-export type UserStepUpAuthMode = 'required' | 'disabled'
+type UserStepUpAuthMode = 'required' | 'disabled'
 
 export interface RoleRow {
   id: string

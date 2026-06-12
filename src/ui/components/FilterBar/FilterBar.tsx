@@ -28,7 +28,7 @@ export interface FilterBarItem<TValue = string> {
   disabled?: boolean;
 }
 
-export interface FilterBarSearchProps {
+interface FilterBarSearchProps {
   value: string;
   onValueChange: (value: string) => void;
   onClear?: () => void;
@@ -36,7 +36,7 @@ export interface FilterBarSearchProps {
   ariaLabel?: string;
 }
 
-export interface FilterBarProps<TValue = string> {
+interface FilterBarProps<TValue = string> {
   items: FilterBarItem<TValue>[];
   value: TValue;
   onValueChange: (value: TValue) => void;

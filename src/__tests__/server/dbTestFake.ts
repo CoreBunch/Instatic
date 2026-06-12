@@ -4,7 +4,7 @@ import type { DbClient, DbResult } from '../../../server/db'
  * Reconstruct positional-parameter SQL from a tagged-template call.
  * Used by test fakes that simulate the database by inspecting the SQL string.
  */
-export function reconstructSql(
+function reconstructSql(
   strings: TemplateStringsArray,
   values: unknown[],
 ): { sql: string; params: unknown[] } {

@@ -35,9 +35,8 @@ import { requireCapability } from '../../auth/authz'
 import {
   listDataRows,
   listDataRowIdSlugs,
-  createDataRow,
-  updateDataRowDraftCells,
-  softDeleteDataRow,
+  reconcileDataRowRoster,
+  rowsToReap,
 } from '../../repositories/data'
 import { pageToCells } from '../../../src/core/data/pageFromRow'
 import { visualComponentFromRow } from '../../../src/core/data/componentFromRow'
@@ -47,23 +46,6 @@ import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '.
 import { bumpPublishVersionSerialized } from '../../publish/publishState'
 import { Type } from '@core/utils/typeboxHelpers'
 import { CMS_API_PREFIX } from './shared'
-
-/**
- * Decide which existing `pages` rows to soft-delete during a roster reconcile.
- *
- * With `baselineIds` (the page ids the saving client loaded), only reap a row
- * the client knew about and dropped — never a row another session created
- * concurrently, which the saving client never saw (ISS-041). With no baseline,
- * reap every row missing from the incoming set (authoritative full replace,
- * e.g. an import).
- */
-export function pagesToReap(
-  existingIds: string[],
-  incomingIds: ReadonlySet<string>,
-  baselineIds?: ReadonlySet<string>,
-): string[] {
-  return existingIds.filter((id) => !incomingIds.has(id) && (baselineIds ? baselineIds.has(id) : true))
-}
 
 export async function handlePagesRoutes(req: Request, db: DbClient): Promise<Response | null> {
   const url = new URL(req.url)
@@ -104,6 +86,7 @@ export async function handlePagesRoutes(req: Request, db: DbClient): Promise<Res
     if (!body) return badRequest('Invalid request body')
 
     const pageIds = new Set(body.pageIds)
+    const baselineIds = body.baselinePageIds ? new Set(body.baselinePageIds) : undefined
 
     // VC roster for slot-sync / dangling-ref context on the changed pages.
     const vcRows = await listDataRows(db, 'components')
@@ -116,11 +99,15 @@ export async function handlePagesRoutes(req: Request, db: DbClient): Promise<Res
     // and the SQLite adapter serializes every transaction through one chain.
     // The (id, slug) projection is all the slug-uniqueness check needs; the
     // unique index data_rows_table_slug_active_idx backstops the read-then-
-    // write window at the DB level.
+    // write window at the DB level. Rows this request reaps are NOT slug
+    // owners — a changed page may take the slug of a page deleted in the same
+    // batch (homepage swap + delete of the old homepage saved together).
     const existing = await listDataRowIdSlugs(db, 'pages')
+    const reapIds = new Set(rowsToReap(existing.map((r) => r.id), pageIds, baselineIds))
+    const keptSlugs = existing.filter((r) => !reapIds.has(r.id))
     let pages: Page[]
     try {
-      pages = validatePagesForPartialSave(body.changedPages, visualComponents, existing)
+      pages = validatePagesForPartialSave(body.changedPages, visualComponents, keptSlugs)
       for (const page of pages) {
         if (!pageIds.has(page.id)) {
           throw new SiteValidationError(`changed page "${page.id}" missing from pageIds roster`, 'pageIds')
@@ -131,27 +118,14 @@ export async function handlePagesRoutes(req: Request, db: DbClient): Promise<Res
       throw err
     }
 
-    // Batch reconcile: create / update / soft-delete in one short transaction.
-    let reapedPublished = false
-    await db.transaction(async (tx) => {
-      const existingIds = new Set((await listDataRowIdSlugs(tx, 'pages')).map((r) => r.id))
-      const baselineIds = body.baselinePageIds ? new Set(body.baselinePageIds) : undefined
-
-      for (const page of pages) {
-        const cells = pageToCells(page)
-        if (existingIds.has(page.id)) {
-          await updateDataRowDraftCells(tx, page.id, { cells, slug: page.slug }, user.id)
-        } else {
-          await createDataRow(tx, { id: page.id, tableId: 'pages', cells, slug: page.slug }, user.id)
-        }
-      }
-
-      // Soft-delete only the rows the client knew about and dropped — never a
-      // concurrently-created sibling page (ISS-041).
-      for (const rowId of pagesToReap([...existingIds], pageIds, baselineIds)) {
-        const deleted = await softDeleteDataRow(tx, rowId, user.id)
-        if (deleted?.status === 'published') reapedPublished = true
-      }
+    // Batch reconcile: soft-delete / create / update in one short transaction
+    // (reap-first + two-phase slug writes — see rows/reconcile.ts).
+    const { reapedPublished } = await reconcileDataRowRoster(db, {
+      tableId: 'pages',
+      writes: pages.map((page) => ({ id: page.id, cells: pageToCells(page), slug: page.slug })),
+      keepIds: pageIds,
+      baselineIds,
+      actorUserId: user.id,
     })
 
     // Reaping a published page retracts its public route — invalidate the

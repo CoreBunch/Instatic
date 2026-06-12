@@ -1,13 +1,13 @@
 /**
- * Architecture gate: every publish/unpublish entry point in
- * `server/repositories/` bumps the publish version — either the bare
- * `bumpPublishVersion()` (publishes, which already hold the publish lock) or
- * `bumpPublishVersionSerialized()` (retractions outside a publish: unpublish,
- * soft-delete, table move) — and imports it from the publish-state module.
+ * Architecture gate: every publish/unpublish entry point bumps the publish
+ * version — either the bare `bumpPublishVersion()` (publishes, which already
+ * hold the publish lock) or `bumpPublishVersionSerialized()` (retractions
+ * outside a publish: unpublish, soft-delete, table move) — and imports it
+ * from the publish-state module.
  *
  * Covered files:
- *   - server/repositories/publish.ts            (publishDraftSite)
- *   - server/repositories/data/publish.ts       (publishDataRow)
+ *   - server/publish/publishSite.ts             (publishDraftSite)
+ *   - server/publish/publishRow.ts              (publishDataRow)
  *   - server/repositories/data/rows/mutations.ts (updateDataRowStatus — unpublish;
  *                                                 updateDataRowTable — route move)
  *
@@ -29,8 +29,8 @@ function read(relative: string): string {
  * Asserted so that moving the publish-state module would break this gate.
  */
 const EXPECTED_IMPORT_PATHS: Record<string, string> = {
-  'server/repositories/publish.ts': "'../publish/publishState'",
-  'server/repositories/data/publish.ts': "'../../publish/publishState'",
+  'server/publish/publishSite.ts': "'./publishState'",
+  'server/publish/publishRow.ts': "'./publishState'",
   'server/repositories/data/rows/mutations.ts': "'../../../publish/publishState'",
 }
 

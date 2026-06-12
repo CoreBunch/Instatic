@@ -16,7 +16,7 @@ type PublicFormChallengeRecord = {
 
 const challenges = new Map<string, PublicFormChallengeRecord>()
 
-export type VerifiedPublicFormChallenge =
+type VerifiedPublicFormChallenge =
   Pick<PublicFormChallengeRecord, 'pageId' | 'formId' | 'issuedAt' | 'expiresAt'>
 
 export function issuePublicFormChallenge(input: {

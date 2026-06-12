@@ -65,7 +65,7 @@ export class SavedLayoutNameError extends Error {
   }
 }
 
-export interface LayoutsSlice {
+interface LayoutsSlice {
   /**
    * Capture `nodeId` + its subtree from the active page as a new saved
    * layout. Returns the new layout id.

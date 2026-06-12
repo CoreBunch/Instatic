@@ -50,7 +50,7 @@ export interface InstantiatedVCNode extends VCNode {
   _fromSlotContent: boolean
 }
 
-export interface InstantiatedVC {
+interface InstantiatedVC {
   /** Flat map of all nodes in the rendered instance */
   nodes: Record<string, InstantiatedVCNode>
   /** ID of the root node — entry point for VCInlineTree */

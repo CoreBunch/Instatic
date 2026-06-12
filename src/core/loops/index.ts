@@ -9,5 +9,5 @@
  * them to guarantee canvas previews and published output never diverge.
  */
 
-export type { LoopItem, LoopEntitySource, LoopSourceField } from './types'
+export type { LoopItem } from './types'
 export { pageToLoopItem, filterPagesForLoop } from './sources/sitePages'

@@ -279,6 +279,10 @@ media_assets row created, variants_json populated for raster sources
 
 SVG uploads are sanitized and stored as originals only. GIF uploads also stay original-only so animation is preserved; the responsive WebP ladder is generated only for JPEG, PNG, and WebP uploads.
 
+The ladder encodes one WebP per target width (64 / 320 / 640 / 1024 / 1600 / 2048) **below** the source's intrinsic width — never upscaled — plus one rung **at** the intrinsic width. That top rung exists so `srcset` can be built from variants alone: the original file (often a multi-MB PNG) never appears as a srcset candidate, because a high-DPI display asking for more pixels than the largest sub-intrinsic rung would otherwise select it (`sizes="1280px"` on a 2x screen requests 2560 device px). `buildMediaSrcset` (publisher) and `buildVariantSrcset` (admin surfaces) both enforce the variants-only rule at render time, and lazy images emit `sizes="auto, <fallback>"` so Chromium-based browsers select by the actual rendered width.
+
+Ladder edge rules: the intrinsic rung is clamped so neither output dimension exceeds WebP's hard 16383px cap (a 900×17000 screenshot gets a clamped top rung instead of a failed job); images smaller than every target width get **no variants** and publish as plain pixel-exact `src` (small icons are never force-re-encoded to lossy WebP). The Tier-3 delegate path emits **declared widths only** — the host never synthesizes an intrinsic-width URL the delegate's allowlist might reject; the largest declared sub-intrinsic width is that ladder's ceiling.
+
 The image-variant worker pool is sized by `IMAGE_VARIANT_WORKER_POOL_SIZE` (default 2, hard cap 8). Workers are spawned lazily on first use and reused for the life of the process; a crashed worker is dropped from the pool and a replacement spawns on the next submission.
 
 Defense in depth on the static path: `hardenUploadResponse` in `server/static.ts` adds `X-Content-Type-Options: nosniff` and `Content-Disposition: attachment` for non-inert MIME types so a stray non-allowlisted upload can't be top-level navigated and rendered as HTML on the admin origin.

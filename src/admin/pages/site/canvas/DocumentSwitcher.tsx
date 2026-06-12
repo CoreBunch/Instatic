@@ -18,7 +18,7 @@ import { Select } from '@ui/components/Select'
 import { measureToolbarValueWidth } from './measureToolbarText'
 import styles from './DocumentSwitcher.module.css'
 
-export interface DocumentSwitcherCurrent {
+interface DocumentSwitcherCurrent {
   kind: 'page' | 'component'
   id: string
   label: string

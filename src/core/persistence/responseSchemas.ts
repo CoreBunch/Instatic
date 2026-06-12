@@ -37,8 +37,6 @@ import {
   SiteDependencyLockSchema,
   SiteRuntimeDiagnosticSchema,
 } from '@core/site-runtime'
-export { BundlePreviewSchema, ImportResultSchema } from '@core/data/bundleSchema'
-export type { BundlePreview, ImportResult } from '@core/data/bundleSchema'
 
 // Re-exported types are inferred from the schemas below — these schemas are
 // the source of truth, the types follow. Removes the previous duplication
@@ -48,8 +46,6 @@ export type { BundlePreview, ImportResult } from '@core/data/bundleSchema'
 // Error envelope used by every CMS endpoint. Defined in the generic HTTP layer
 // (`@core/http`) and re-exported here for persistence-domain consumers.
 // ---------------------------------------------------------------------------
-
-export { ErrorEnvelopeSchema } from '@core/http'
 
 // ---------------------------------------------------------------------------
 // cmsAuth.ts
@@ -208,7 +204,7 @@ export const CmsRuntimeDependencyEnvelopeSchema = Type.Object({
  * build. Schema is the source of truth; `CmsRuntimePreviewAsset` in
  * `cmsRuntime.ts` is derived from it via Static<>.
  */
-export const CmsRuntimePreviewAssetSchema = Type.Object({
+const CmsRuntimePreviewAssetSchema = Type.Object({
   path: Type.String(),
   publicPath: Type.String(),
   content: Type.String(),

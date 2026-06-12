@@ -28,7 +28,7 @@ import type { DbClient } from './client'
  * For SQLite (single-instance), `tryAcquireLeader` always returns the sentinel
  * `'sqlite-leader'` because there's no one else to coordinate with.
  */
-export type LeaderToken = string | null
+type LeaderToken = string | null
 
 /** Sentinel returned when we actually hold a Postgres advisory lock. */
 const PG_TOKEN = 'pg-advisory'
