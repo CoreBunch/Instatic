@@ -66,12 +66,15 @@ export function AdminRoutes() {
         path="/admin/plugins/:pluginId/:pageId"
         element={withRouteBoundary(<AdminEntry section="pluginPage" />)}
       />
-      {/* Catch-all — an unknown URL (typo, stale deep link, /admin/login)
-          must never render an empty tree. Redirecting to the dashboard
-          shows the login form when unauthenticated and the dashboard
-          otherwise. MUST stay the last route: <Routes> takes the first
-          match in declaration order. */}
-      <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+      {/* Catch-all for ADMIN paths only — an unknown /admin URL (typo, stale
+          deep link, /admin/login) must never render an empty tree.
+          Redirecting to the dashboard shows the login form when
+          unauthenticated and the dashboard otherwise. Deliberately scoped to
+          /admin/*: public-site 404s have their own treatment (the publish
+          pipeline's NotFound template) and must never be swallowed by the
+          admin SPA. MUST stay the last route: <Routes> takes the first match
+          in declaration order. */}
+      <Route path="/admin/*" element={<Navigate to="/admin/dashboard" replace />} />
     </Routes>
   )
 }

@@ -61,7 +61,7 @@ Don't import from `react-router-dom`. It's removed from `package.json`.
   <Route path="/admin/ai"                        element={<AdminEntry section="ai" />} />
   <Route path="/admin/account"                   element={<AdminEntry section="account" />} />
   <Route path="/admin/plugins/:pluginId/:pageId" element={<AdminEntry section="pluginPage" />} />
-  <Route path="*"                                element={<Navigate to="/admin/dashboard" replace />} />
+  <Route path="/admin/*"                         element={<Navigate to="/admin/dashboard" replace />} />
 </Routes>
 ```
 
@@ -100,7 +100,7 @@ Walks its `<Route>` children in order, finds the first whose `path` matches the 
 </Routes>
 ```
 
-If no route matches, `Routes` renders `null` — which paints a blank page. That's why `AdminRoutes` ends with a `path="*"` catch-all redirecting to `/admin/dashboard`: an unknown URL (typo, stale deep link, `/admin/login`) shows the login form when unauthenticated and the dashboard otherwise, never an empty tree.
+If no route matches, `Routes` renders `null` — which paints a blank page. That's why `AdminRoutes` ends with a `path="/admin/*"` catch-all redirecting to `/admin/dashboard`: an unknown admin URL (typo, stale deep link, `/admin/login`) shows the login form when unauthenticated and the dashboard otherwise, never an empty tree. The catch-all is deliberately scoped to `/admin/*` — public-site 404s are handled by the publish pipeline (NotFound template) and must never be claimed by the admin SPA.
 
 ---
 

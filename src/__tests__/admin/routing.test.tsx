@@ -2,10 +2,12 @@
  * routing.test.tsx
  *
  * In-house admin router: wildcard (`*`) matching and the AdminRoutes
- * catch-all. Unknown admin URLs (e.g. /admin/login, a typo, a stale deep
+ * catch-all. Unknown ADMIN URLs (e.g. /admin/login, a typo, a stale deep
  * link) must never render an empty tree — they redirect to /admin/dashboard,
  * which shows the login form when unauthenticated and the dashboard when
- * authenticated.
+ * authenticated. The catch-all is scoped to /admin/* so public-site 404s —
+ * which have their own treatment in the publish pipeline (NotFound template)
+ * — are never claimed by the admin SPA.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test'
@@ -69,18 +71,29 @@ describe('Routes — catch-all route', () => {
   })
 })
 
-describe('AdminRoutes — unknown URLs never render an empty tree', () => {
-  it('declares a final catch-all redirecting to /admin/dashboard', () => {
+describe('AdminRoutes — unknown admin URLs never render an empty tree', () => {
+  it('declares a final /admin/* catch-all redirecting to /admin/dashboard', () => {
     // Inspect the declared route table (no DOM mount — AdminEntry is heavy).
     const routes = AdminRoutes()
     const routeElements = React.Children.toArray(routes.props.children) as Array<
       React.ReactElement<{ path: string; element: React.ReactElement }>
     >
     const last = routeElements[routeElements.length - 1]
-    expect(last.props.path).toBe('*')
+    expect(last.props.path).toBe('/admin/*')
     expect(last.props.element.type).toBe(Navigate)
     expect(
       (last.props.element as React.ReactElement<{ to: string; replace?: boolean }>).props.to,
     ).toBe('/admin/dashboard')
+  })
+
+  it('does not claim non-admin paths (public 404s keep their own treatment)', () => {
+    const routes = AdminRoutes()
+    const routeElements = React.Children.toArray(routes.props.children) as Array<
+      React.ReactElement<{ path: string }>
+    >
+    // No declared route may swallow an arbitrary public URL.
+    const publicPath = '/some-public-page'
+    const claiming = routeElements.filter((r) => matchPath(r.props.path, publicPath) !== null)
+    expect(claiming).toEqual([])
   })
 })
