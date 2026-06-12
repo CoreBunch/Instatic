@@ -37,7 +37,8 @@ import {
   resolveEditorFormPreviewState,
   resolveEditorFormPreviewSuccessMessage,
 } from './canvasFormPreview'
-import { getCanvasNodeClassIds, getCanvasNodeClassName, getCanvasNodeInlineStyle } from './canvasNodeClassName'
+import { bagToReactStyle } from '@core/publisher'
+import { getCanvasNodeClassIds, getCanvasNodeClassName } from './canvasNodeClassName'
 import { findEnclosingComponentRef, type AnnotatedPageNode } from './canvasSelectionUtils'
 import { useLoopPreviewItems } from './useLoopPreviewItems'
 import styles from './NodeRenderer.module.css'
@@ -250,7 +251,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   // and the canvas DOM matches the published DOM exactly.
   // Per-node inline styles → React style object on the root element, matching
   // the published `style="…"` attribute (sanitised to the same gate).
-  const inlineStyle = getCanvasNodeInlineStyle(node.inlineStyles)
+  const inlineStyle = bagToReactStyle(node.inlineStyles)
 
   const nodeWrapperProps: NodeWrapperPropsType = {
     'data-node-id': nodeId,

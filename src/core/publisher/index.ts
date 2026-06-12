@@ -37,6 +37,7 @@ export { escapeHtml, isSafeUrl, safeUrl, sanitiseCssValue } from './utils'
 
 export {
   bagToCSS,
+  bagToReactStyle,
   createStyleRuleCssEmitter,
   generateClassCSS,
   isEmittableProperty,

@@ -193,6 +193,32 @@ export function bagToInlineStyle(bag: Record<string, unknown>): string {
 }
 
 /**
+ * Convert a style bag (camelCase keys, e.g. a node's `inlineStyles`) into a
+ * React `style` object, so the editor canvas — editable AND read-only composed
+ * content — renders the same `style="…"` the publisher emits. Each value runs
+ * through the same `isEmittableProperty` / `sanitiseCssValue` gate as
+ * `bagToCSS` / `bagToInlineStyle`, so the canvas never shows a value the
+ * published page would drop. Keys stay camelCase (React's style shape — no
+ * side-shorthand collapse needed; React serialises longhands itself).
+ *
+ * Returns `undefined` when nothing survives, so callers emit no `style` prop.
+ */
+export function bagToReactStyle(
+  bag: Record<string, unknown> | undefined,
+): Record<string, string | number> | undefined {
+  if (!bag) return undefined
+  const out: Record<string, string | number> = {}
+  for (const [prop, value] of Object.entries(bag)) {
+    if (!isEmittableProperty(prop)) continue
+    if (value === undefined || value === null || value === '') continue
+    const sanitised = sanitiseCssValue(value as string | number)
+    if (sanitised === null) continue
+    out[prop] = sanitised
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/**
  * Generate the full CSS string for all classes in the registry.
  *
  * Each class has a base bag (`styles`) plus a unified `contextStyles` map keyed
