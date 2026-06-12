@@ -7,6 +7,7 @@
  * @see docs/plans/2026-05-26-ai-runtime-rewrite.md → "Drivers"
  */
 
+import type { CoreCapability } from '@core/capabilities'
 import type {
   AiAuthMode,
   AiBrowserBridge,
@@ -134,6 +135,8 @@ export interface AiStreamRequest {
 export interface ToolContextBase {
   readonly db: import('../../db/client').DbClient
   readonly userId: string
+  /** The caller's capability set — threaded into ToolContext for the re-check gate. */
+  readonly capabilities: readonly CoreCapability[]
   readonly scope: import('../runtime/types').ToolScope
   readonly conversationId: string
   /**
