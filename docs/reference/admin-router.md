@@ -10,7 +10,7 @@ Use it for every internal admin navigation, including links rendered by the site
 
 - Components: `Router`, `MemoryRouter`, `Routes`, `Route`, `Navigate`, `Link`.
 - Hooks: `useLocation`, `useNavigate`, `useParams`, `useInRouterContext`.
-- Path matching: `matchPath(pattern, pathname)` — supports static segments and `:param` placeholders. No optional segments, no nested routes.
+- Path matching: `matchPath(pattern, pathname)` (exported from the barrel) — supports static segments, `:param` placeholders, and `*` wildcard segments for catch-alls. No optional segments, no nested routes.
 - Navigation uses `history.pushState` + a custom `instatic:locationchange` event so multiple components stay in sync without re-renders ping-ponging.
 - React 19 `startTransition` wraps every navigation so Suspense boundaries can switch smoothly without flashing.
 - Internal admin links use `<Link to="/admin/...">`; button-like admin navigation uses `useAdminNavigate()`.
@@ -22,7 +22,7 @@ Use it for every internal admin navigation, including links rendered by the site
 ```ts
 import {
   Router, MemoryRouter, Routes, Route, Navigate, Link,
-  useLocation, useNavigate, useParams, useInRouterContext,
+  matchPath, useLocation, useNavigate, useParams, useInRouterContext,
 } from '@admin/lib/routing'
 ```
 
@@ -61,6 +61,7 @@ Don't import from `react-router-dom`. It's removed from `package.json`.
   <Route path="/admin/ai"                        element={<AdminEntry section="ai" />} />
   <Route path="/admin/account"                   element={<AdminEntry section="account" />} />
   <Route path="/admin/plugins/:pluginId/:pageId" element={<AdminEntry section="pluginPage" />} />
+  <Route path="*"                                element={<Navigate to="/admin/dashboard" replace />} />
 </Routes>
 ```
 
@@ -68,9 +69,10 @@ Patterns:
 
 - Static segments: `/admin/dashboard`
 - Parameter segments: `:pluginId`, `:pageId`
-- No optional segments, no wildcards (`*`), no nested routes
+- Wildcard segment: `*` matches anything, including further slashes (`*`, `/admin/*`) — used for catch-all routes
+- No optional segments, no nested routes
 
-The router walks `Routes` children top-to-bottom; the first matching `Route` wins. Order matters when patterns could overlap (none do today).
+The router walks `Routes` children top-to-bottom; the first matching `Route` wins. Order matters when patterns could overlap — the `*` catch-all MUST stay last or it shadows every route after it.
 
 ---
 
@@ -98,7 +100,7 @@ Walks its `<Route>` children in order, finds the first whose `path` matches the 
 </Routes>
 ```
 
-If no route matches, `Routes` renders `null`. Use a catchall `Route` at the end (not currently done in this codebase — the admin has 9 known paths).
+If no route matches, `Routes` renders `null` — which paints a blank page. That's why `AdminRoutes` ends with a `path="*"` catch-all redirecting to `/admin/dashboard`: an unknown URL (typo, stale deep link, `/admin/login`) shows the login form when unauthenticated and the dashboard otherwise, never an empty tree.
 
 ---
 

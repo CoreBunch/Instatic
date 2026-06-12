@@ -81,6 +81,12 @@ function compilePattern(pattern: string): CompiledPattern {
         paramNames.push(segment.slice(1))
         return '([^/]+)'
       }
+      // `*` segment — wildcard matching anything (including further slashes).
+      // Used for catch-all routes (`path="*"`, `path="/admin/*"`) so unknown
+      // URLs can redirect instead of <Routes> rendering an empty tree.
+      if (segment === '*') {
+        return '.*'
+      }
       return segment.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')
     })
     .join('/')

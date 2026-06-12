@@ -15,6 +15,7 @@ export {
   Link,
 } from './Router'
 export {
+  matchPath,
   useLocation,
   useNavigate,
   useParams,

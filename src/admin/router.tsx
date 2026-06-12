@@ -66,6 +66,12 @@ export function AdminRoutes() {
         path="/admin/plugins/:pluginId/:pageId"
         element={withRouteBoundary(<AdminEntry section="pluginPage" />)}
       />
+      {/* Catch-all — an unknown URL (typo, stale deep link, /admin/login)
+          must never render an empty tree. Redirecting to the dashboard
+          shows the login form when unauthenticated and the dashboard
+          otherwise. MUST stay the last route: <Routes> takes the first
+          match in declaration order. */}
+      <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
     </Routes>
   )
 }

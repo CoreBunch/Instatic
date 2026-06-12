@@ -9,7 +9,7 @@ The frontend is a single React 19 + Vite SPA mounted at `/admin`. Inside it, two
 ## TL;DR
 
 - **Entry:** `src/admin/main.tsx` mounts `<Router><AdminRoutes /></Router><AdminContextMenuGuard />` with React 19 root-level error callbacks. `flushSync` forces the initial render synchronous to cut LCP.
-- **Router:** `src/admin/lib/routing/` — in-house router replacing `react-router-dom`. 10 routes, all wrapped in a per-route `<ErrorBoundary>` and `<Suspense>`.
+- **Router:** `src/admin/lib/routing/` — in-house router replacing `react-router-dom`. 10 routes, all wrapped in a per-route `<ErrorBoundary>` and `<Suspense>`, plus a final `path="*"` catch-all redirecting unknown URLs to `/admin/dashboard` (login form when unauthenticated) instead of rendering an empty tree.
 - **Cold path:** entry chunk is tiny. `AuthenticatedAdmin` is `React.lazy` and only loads post-login. Each workspace page is wrapped in `prewarmedLazy(...)`: the active page fires its import at module evaluation; the remaining pages pre-warm via `requestIdleCallback` after first paint so subsequent nav is synchronous (no Suspense flicker).
 - **Workspaces:** `dashboard`, `site` (the editor), `content`, `data`, `media`, `plugins`, `users`, `ai`, `account`, `pluginPage`. Capability-gated by `canAccessWorkspace`.
 - **Editor store** lives at `src/admin/pages/site/store/`. Zustand + Mutative (`zustand-mutative`) + `subscribeWithSelector`. 12 slices, one source of truth for the page tree. Undo/redo uses patch-based history (O(change) per step, not O(site)).
