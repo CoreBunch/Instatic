@@ -22,7 +22,7 @@ import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
 import type { PublishedRuntimePackageImportmap, SiteCssBundle } from '@core/publisher'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { registry } from '@core/module-engine'
-import { isTemplatePage } from '@core/templates'
+import { isTemplatePage, resolveNotFoundTemplate } from '@core/templates'
 import type { DbClient } from '../db/client'
 import { nextDataRowVersionNumber } from '../repositories/data'
 import {
@@ -37,9 +37,15 @@ import {
   buildRuntimePackageImportmap,
   serializeImportmapForCsp,
 } from './runtime/packageImportmap'
-import { renderPublishedSnapshot } from './publicRenderer'
+import { renderPublishedNotFound, renderPublishedSnapshot } from './publicRenderer'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
-import { prepareInactiveSlot, writeArtefact, writeStaticAsset, swapSlot } from './staticArtefact'
+import {
+  NOT_FOUND_ARTEFACT_URL_PATH,
+  prepareInactiveSlot,
+  swapSlot,
+  writeArtefact,
+  writeStaticAsset,
+} from './staticArtefact'
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
@@ -220,6 +226,31 @@ async function publishDraftSiteLocked(
       }
       for (const asset of runtimeAssetFiles) {
         if (!assetsByPath.has(asset.publicPath)) assetsByPath.set(asset.publicPath, asset.bytes)
+      }
+
+      // The 404 page: bake the notFound template (wrapped in its everywhere
+      // layout chain) to `404.html`. Baked FIRST so a literal page with slug
+      // `404` — if anyone creates one — overwrites it below and stays
+      // authoritative for both `/404` and the static-export error page.
+      const notFoundPage = resolveNotFoundTemplate(publishedSite)
+      const notFoundSnapshot = notFoundPage
+        ? snapshots.find((s) => s.pageRowId === notFoundPage.id)
+        : undefined
+      if (notFoundSnapshot) {
+        try {
+          const rendered = await renderPublishedNotFound(notFoundSnapshot, {
+            db,
+            url: new URL(`http://localhost${NOT_FOUND_ARTEFACT_URL_PATH}`),
+            publishVersion: nextPublishVersion,
+          })
+          if (rendered) {
+            const html = await applyPublishedHtmlPipeline(rendered, db)
+            await writeArtefact(slotDir, NOT_FOUND_ARTEFACT_URL_PATH, html)
+            collectCssFiles(rendered.cssBundle)
+          }
+        } catch (err) {
+          console.error('[publish:site] failed to bake the 404 artefact (falls through to live renderer):', err)
+        }
       }
 
       // HTML artefacts (or hole shells) for every page. A page that fails to

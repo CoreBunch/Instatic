@@ -12,6 +12,11 @@ describe('parsePageTemplate target', () => {
     expect(t).toEqual({ enabled: true, target: { kind: 'postTypes', tableSlugs: ['posts'] }, priority: 0 })
   })
 
+  it('parses a notFound target', () => {
+    const t = parsePageTemplate({ enabled: true, target: { kind: 'notFound' }, priority: 0 })
+    expect(t).toEqual({ enabled: true, target: { kind: 'notFound' }, priority: 0 })
+  })
+
   it('rejects a postTypes target with no usable slugs', () => {
     expect(parsePageTemplate({ enabled: true, target: { kind: 'postTypes', tableSlugs: [''] }, priority: 0 })).toBeNull()
   })

@@ -210,7 +210,7 @@ const setPageTemplateTool: AiTool = {
   scope: 'site',
   execution: 'browser',
   description:
-    'Turn a page INTO a template (or update an existing template\'s target/priority). `target` is `{kind:"everywhere"}` for a site-wide layout that wraps every page+entry, or `{kind:"postTypes", tableSlugs:[…]}` to wrap entries of those post types (slugs from list_post_types). `priority` (default 100) breaks ties when several templates match at the same breadth level — higher wins. A template needs exactly one `<instatic-outlet>` (insert it via insertHtml) marking where matched content flows; a template with no outlet simply doesn\'t apply. Pass a real page id from the suffix / list_pages.',
+    'Turn a page INTO a template (or update an existing template\'s target/priority). `target` is `{kind:"everywhere"}` for a site-wide layout that wraps every page+entry, `{kind:"postTypes", tableSlugs:[…]}` to wrap entries of those post types (slugs from list_post_types), or `{kind:"notFound"}` for the page served on public 404s (status 404, wrapped by the everywhere layout; needs no outlet). `priority` (default 100) breaks ties when several templates match at the same breadth level — higher wins. An everywhere/postTypes template needs exactly one `<instatic-outlet>` (insert it via insertHtml) marking where matched content flows; a wrapper template with no outlet simply doesn\'t apply. Pass a real page id from the suffix / list_pages.',
   inputSchema: SetPageTemplateInputSchema,
 }
 

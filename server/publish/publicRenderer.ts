@@ -5,7 +5,7 @@ import { publishPage } from '@core/publisher'
 import { buildRouteFrame } from '@core/templates/contextFrames'
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
-import { resolveTemplateChain, composeTemplateChain } from '@core/templates'
+import { resolveTemplateChain, resolveNotFoundTemplate, composeTemplateChain } from '@core/templates'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { prefetchLoopData, publishedDataRowToLoopItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
@@ -139,6 +139,31 @@ export async function renderPublishedSnapshot(
 
   const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
   return { ...rendered, pageId: snapshot.pageRowId, slug: page.slug, siteId: snapshot.site.id }
+}
+
+/**
+ * Render the site's `notFound` template — the body of every public 404
+ * response. Composed exactly like a regular page: wrapped by the matching
+ * `everywhere` layout chain so the 404 page carries the site chrome. Returns
+ * `null` when the published site doesn't define a notFound template (callers
+ * fall back to the bare JSON 404).
+ */
+export async function renderPublishedNotFound(
+  snapshot: PublishedPageSnapshot,
+  ctx: RenderPublishedSnapshotContext,
+): Promise<RendererOutput | null> {
+  const page = resolveNotFoundTemplate(snapshot.site)
+  if (!page) return null
+
+  const chain = resolveTemplateChain(snapshot.site, { kind: 'page' })
+  const merged = composeTemplateChain(chain, { kind: 'page', page })
+
+  const templateContext: TemplateRenderDataContext | undefined = ctx.url
+    ? { entryStack: [], route: buildRouteFrame(ctx.url.toString()) }
+    : undefined
+
+  const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
+  return { ...rendered, pageId: page.id, slug: page.slug, siteId: snapshot.site.id }
 }
 
 export async function renderPublishedDataRowTemplate(
