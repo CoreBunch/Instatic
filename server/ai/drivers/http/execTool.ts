@@ -13,6 +13,7 @@
 
 import { parseValue, safeParseValue } from '@core/utils/typeboxHelpers'
 import { AiToolOutputSchema } from '@core/ai'
+import { toolAllowedForCapabilities } from '../../tools/capabilityGate'
 import type {
   AiBrowserBridge,
   AiTool,
@@ -44,6 +45,11 @@ export async function executeAiTool(
   if (aiTool.execution === 'server') {
     if (!aiTool.handler) {
       return { ok: false, error: `Tool ${aiTool.name} declares execution='server' but has no handler.` }
+    }
+    // Defence in depth: `selectToolsForScope` should never have offered a
+    // tool the caller can't use, but re-check before touching the db anyway.
+    if (!toolAllowedForCapabilities(aiTool, toolContextBase.capabilities)) {
+      return { ok: false, error: `Tool ${aiTool.name} is not permitted for this user.` }
     }
     try {
       const ctx: ToolContext = { ...toolContextBase, signal }
