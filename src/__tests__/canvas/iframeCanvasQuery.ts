@@ -9,17 +9,14 @@
  * first match. Callers can therefore stay agnostic about whether the
  * canvas renders directly or via iframes.
  *
- * Readiness is asynchronous. The canvas reveals breakpoint frames
- * progressively (`useProgressiveCanvasFrameLoading`: the active frame after a
- * `requestAnimationFrame`, each inactive frame behind a chained
- * `setTimeout` → `requestIdleCallback`), and only then mounts each frame's
- * iframe and portals the page tree into it. So a queried frame — especially a
- * NON-active one — can take a few hundred milliseconds to appear, and longer
- * on a loaded CI runner where those timers drift. Tests MUST therefore wait on
- * the actual condition (the frame document / node being present) rather than
- * sleeping a fixed duration: a hardcoded sleep that happens to be enough on a
- * fast laptop is exactly what makes these tests flaky in CI. Use
- * `waitForCanvasFrameDocument` / `waitForCanvasNodeInFrame` below.
+ * Readiness is asynchronous. A breakpoint frame mounts its iframe and then
+ * portals the page tree into the iframe's `contentDocument` on a later commit,
+ * so a queried node is not present on the synchronous render — it appears a
+ * tick or two later. Tests MUST therefore wait on the actual condition (the
+ * frame document / node being present) rather than sleeping a fixed duration:
+ * a hardcoded sleep that happens to be enough on a fast laptop is exactly what
+ * makes these tests flaky in CI. Use `waitForCanvasFrameDocument` /
+ * `waitForCanvasNodeInFrame` below.
  */
 
 import { waitFor } from '@testing-library/react'
@@ -28,11 +25,8 @@ import { expect } from 'bun:test'
 /**
  * CI-tolerant ceiling for canvas-frame readiness. `waitFor` returns the instant
  * the condition holds, so this adds no time on a fast machine — it only widens
- * the headroom so a slow/contended CI runner's timer drift doesn't trip the
- * default 1000 ms `waitFor` budget. The progressive reveal is bounded
- * (rAF + setTimeout + a 160 ms idle-callback timeout per inactive frame), so a
- * healthy canvas always settles well within this; an unhealthy one fails loudly
- * here instead of hanging.
+ * the headroom so a slow/contended CI runner doesn't trip the default 1000 ms
+ * `waitFor` budget while the iframe mounts and the page tree portals in.
  */
 export const CANVAS_FRAME_READY_TIMEOUT_MS = 5000
 

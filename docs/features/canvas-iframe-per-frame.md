@@ -9,7 +9,7 @@ Each viewport frame runs in its own `<iframe>` with its own `<html><body>`. The 
 ## TL;DR
 
 - `IframeFrameSurface` is the iframe primitive. It boots from an empty `srcDoc`, captures the iframe document, and mounts children via `createPortal(tree, iframeDoc.body)`.
-- **Design mode** renders one `IframeFrameSurface` per framed viewport context inside `CanvasTransformLayer` (pan/zoom), but it progressive-loads frame contents: iframe shells and skeletons paint first, the active frame's node tree mounts first, and inactive frame node trees mount during idle tasks. **Live mode** renders a single real-size `IframeFrameSurface` inside `CanvasLiveSurface` (normal scroll).
+- **Design mode** renders one `IframeFrameSurface` per framed viewport context inside `CanvasTransformLayer` (pan/zoom). All frames mount as soon as the page document is in the store — the tree is already in memory, so there is nothing to stagger; `CanvasTransformLayer` renders skeleton frames only while the document itself hasn't loaded yet (`page === null`). **Live mode** renders a single real-size `IframeFrameSurface` inside `CanvasLiveSurface` (normal scroll).
 - Both modes are fully editable — click-to-select, properties panel, structural edits all work. Neither is a read-only preview.
 - CSS arrives in each iframe via three injectors: `EditorChromeInjector` (unlayered), `ClassStyleInjector` (`@layer user-authored`), `UserStylesheetInjector` (`@layer user-authored`).
 - Wheel, pointer, and keyboard events are forwarded from inside the iframe to the parent's gesture / reorder-drag / shortcut handlers. `Tab` is blocked to prevent tab-walking inside the design preview.
@@ -68,7 +68,9 @@ Source: `src/admin/pages/site/canvas/CanvasTransformLayer.tsx`, `BreakpointFrame
 
 Viewport contexts flagged `previewFrame: false` are frameless — they're still selectable editing contexts in the context selector (overrides route to them) but don't render a canvas iframe.
 
-Large pages are staged by `useProgressiveCanvasFrameLoading`. `BreakpointFrame` mounts the iframe and a parent-document `CanvasFrameSkeleton` immediately, but `NodeRenderer` is gated by `renderTree`. The same shared skeleton frame is used by the editor-body lazy fallback and by the no-site canvas state, so startup does not step through separate text-only loading screens. The active breakpoint is revealed after the shell has painted; inactive breakpoints are revealed one at a time through idle scheduling. This keeps `/admin/site` responsive when a page has many nodes and multiple preview frames would otherwise duplicate the full render work in one commit.
+Frames mount as soon as the page document is in the store. The node tree is already in memory, so every `BreakpointFrame` mounts its iframe and `NodeRenderer` tree directly — there is no async load to stage and no per-frame stagger. `CanvasFrameSkeletonFrame` covers the only genuine wait: the document not being loaded yet (`page === null`). The same shared skeleton frame is used by the editor-body lazy fallback and the no-site canvas state, so startup does not step through separate text-only loading screens.
+
+(An earlier version staged inactive frames behind a `requestAnimationFrame` → `setTimeout` → `requestIdleCallback` chain. That was an unmeasured optimization for a cost — mounting in-memory trees — that is cheap in practice, and it could strand frames as skeletons forever whenever `requestAnimationFrame` was suspended, e.g. a backgrounded tab or a headless CI runner. It was removed in favour of mounting directly.)
 
 The active viewport context (highlighted, drives style override routing) is tracked by `activeBreakpointId` in `canvasSlice`.
 
@@ -201,9 +203,8 @@ Tests that render the canvas and query nodes must use the `iframeCanvasQuery.ts`
   - `src/admin/pages/site/canvas/IframeFrameSurface.tsx` — iframe primitive
   - `src/admin/pages/site/canvas/CanvasLiveSurface.tsx` — live mode surface
   - `src/admin/pages/site/canvas/BreakpointFrame.tsx` — design mode per-viewport frame
-  - `src/admin/pages/site/canvas/CanvasTransformLayer.tsx` — design mode pan/zoom container
-  - `src/admin/pages/site/canvas/useProgressiveCanvasFrameLoading.ts` — idle-time frame reveal scheduler
-  - `src/admin/shared/CanvasFrameSkeleton/CanvasFrameSkeleton.tsx` — shared frame skeleton for progressive loading and startup states
+  - `src/admin/pages/site/canvas/CanvasTransformLayer.tsx` — design mode pan/zoom container; renders all frames once the document loads, skeleton frames while it hasn't
+  - `src/admin/shared/CanvasFrameSkeleton/CanvasFrameSkeleton.tsx` — shared frame skeleton for the document-loading / startup states
   - `src/admin/pages/site/canvas/useIframeCursorBridge.ts` — surfaces iframe cursor movement to parent-doc callbacks
   - `src/admin/pages/site/canvas/EditorChromeInjector.tsx` — unlayered chrome CSS
   - `src/admin/pages/site/canvas/ClassStyleInjector.tsx` — class registry CSS
@@ -216,6 +217,6 @@ Tests that render the canvas and query nodes must use the `iframeCanvasQuery.ts`
   - `src/admin/pages/site/hooks/useCanvas.ts` — pan/zoom gesture hook; `centerOnBreakpointFrame`
   - `src/__tests__/canvas/canvasMode.test.tsx` — design/live toggle + script build contract
   - `src/__tests__/canvas/panToCenterBreakpointFrame.test.ts` — centering geometry unit tests
-  - `src/__tests__/canvas/progressiveCanvasLoading.test.tsx` — progressive loading contract: skeletons paint before node trees; active frame mounts first (after animation frame); idle frames load via `requestIdleCallback` fallback; design mode hides root iframe overflow, live mode leaves it scrollable
+  - `src/__tests__/canvas/canvasFrameMounting.test.tsx` — frame-mount contract: all frames mount once the document is in the store (no staggering, robust to a suspended `requestAnimationFrame`); skeleton frames render while no document is loaded; design mode hides root iframe overflow, live mode leaves it scrollable
 - Gate tests:
   - `src/__tests__/architecture/site-editor-shell-lazy-body.test.ts` — skeleton usage and lazy-boundary gates

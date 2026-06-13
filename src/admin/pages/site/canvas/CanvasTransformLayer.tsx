@@ -15,7 +15,6 @@ import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { BreakpointFrame } from './BreakpointFrame'
 import { CanvasFrameSkeletonFrame } from '@admin/shared/CanvasFrameSkeleton'
 import type { InjectableRuntimeScript } from './useRuntimeScriptBuild'
-import { useProgressiveCanvasFrameLoading } from './useProgressiveCanvasFrameLoading'
 import styles from './CanvasTransformLayer.module.css'
 
 interface CanvasTransformLayerProps {
@@ -48,13 +47,6 @@ export function CanvasTransformLayer({
     if (breakpoint.previewFrame !== false) framedBreakpoints.push(breakpoint)
   }
   const fallbackBreakpoints = framedBreakpoints.length > 0 ? framedBreakpoints : DEFAULT_BREAKPOINTS
-  const framedBreakpointIds = framedBreakpoints.map((breakpoint) => breakpoint.id)
-  const readyFrameIds = useProgressiveCanvasFrameLoading({
-    loadKey: page ? `${page.id}:${page.rootNodeId}` : 'no-page',
-    frameIds: framedBreakpointIds,
-    activeFrameId: activeBreakpointId,
-    enabled: page !== null,
-  })
 
   return (
     <div
@@ -72,6 +64,11 @@ export function CanvasTransformLayer({
         // Frame-less breakpoints are still selectable editing contexts in the
         // toolbar switcher and still publish their @media CSS — they just don't
         // spawn an editor iframe.
+        //
+        // All frames mount as soon as the page document is in the store: the
+        // tree is already in memory, so there's no async load to stagger. The
+        // skeletons above cover the only genuine wait — the document not being
+        // loaded yet (`page === null`).
         framedBreakpoints.map((bp) => (
           <BreakpointFrame
             key={bp.id}
@@ -83,7 +80,6 @@ export function CanvasTransformLayer({
             onActivate={onBreakpointActivate}
             templateContext={templateContext}
             runtimeScripts={runtimeScripts}
-            renderTree={readyFrameIds.has(bp.id)}
           />
         ))
       ) : (

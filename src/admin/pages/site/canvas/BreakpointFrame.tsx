@@ -24,7 +24,6 @@ import { CanvasComposedTree } from './CanvasComposedTree'
 import { BreakpointSelectionOverlay } from './BreakpointSelectionOverlay'
 import { CanvasBreakpointContext, CanvasTemplateContext } from './CanvasContexts'
 import { IframeFrameSurface, type IframeFrameSurfaceHandle } from './IframeFrameSurface'
-import { CanvasFrameSkeleton } from '@admin/shared/CanvasFrameSkeleton'
 import type { InjectableRuntimeScript } from './useRuntimeScriptBuild'
 import { Button } from '@ui/components/Button'
 import { CursorTooltip, type CursorTooltipPoint } from '@ui/components/Tooltip'
@@ -48,8 +47,6 @@ interface BreakpointFrameProps {
   templateContext?: TemplateRenderDataContext
   /** Opt-in runtime scripts injected into this frame; empty/undefined = none. */
   runtimeScripts?: InjectableRuntimeScript[]
-  /** Whether the heavy React page tree should mount inside this frame yet. */
-  renderTree?: boolean
 }
 
 export function BreakpointFrame({
@@ -61,7 +58,6 @@ export function BreakpointFrame({
   onActivate,
   templateContext,
   runtimeScripts,
-  renderTree = true,
 }: BreakpointFrameProps) {
   // --bp-width drives both label width and viewport width via CSS (dynamic value)
   const bpStyle = { '--bp-width': `${breakpoint.width}px` } as CSSProperties
@@ -232,15 +228,12 @@ export function BreakpointFrame({
           onReadonlyOpen={handleReadonlyOpen}
           runtimeScripts={runtimeScripts}
         >
-          {renderTree && (
-            <CanvasTemplateContext.Provider value={templateContext}>
-              <CanvasBreakpointContext.Provider value={breakpoint.id}>
-                <CanvasComposedTree page={page} />
-              </CanvasBreakpointContext.Provider>
-            </CanvasTemplateContext.Provider>
-          )}
+          <CanvasTemplateContext.Provider value={templateContext}>
+            <CanvasBreakpointContext.Provider value={breakpoint.id}>
+              <CanvasComposedTree page={page} />
+            </CanvasBreakpointContext.Provider>
+          </CanvasTemplateContext.Provider>
         </IframeFrameSurface>
-        {!renderTree && <CanvasFrameSkeleton breakpointId={breakpoint.id} />}
 
         {/* Selection / hover rings — rendered in the parent document but
             positioned over the iframe. The overlay handles the iframe-rect
