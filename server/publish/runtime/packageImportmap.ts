@@ -32,7 +32,7 @@ import {
   type RuntimeDependencyCache,
 } from './dependencyCache'
 
-export interface RuntimePackageImportmap {
+interface RuntimePackageImportmap {
   /** JSON-serializable importmap body. */
   importmap: { imports: Record<string, string> }
   /** Stable cache-lock hash — same value the URL paths embed. */
@@ -130,7 +130,7 @@ async function resolvePackageEntry(packageDir: string): Promise<string | null> {
   return '/index.js'
 }
 
-export interface BuildPackageImportmapOptions {
+interface BuildPackageImportmapOptions {
   /** URL prefix the host serves the cache from. Defaults to `/_instatic/runtime/cache/`. */
   cacheUrlPrefix?: string
 }

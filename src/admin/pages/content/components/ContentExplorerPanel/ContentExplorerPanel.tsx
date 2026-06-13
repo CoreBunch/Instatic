@@ -70,7 +70,7 @@ interface ContentExplorerPanelProps {
   onClose: () => void
 }
 
-export interface ContentEntryActions {
+interface ContentEntryActions {
   createCollection: () => void
   updateCollection: (collection: DataTable, input: UpdateDataTableInput) => void | Promise<void>
   deleteCollection: (collection: DataTable) => void | Promise<void>

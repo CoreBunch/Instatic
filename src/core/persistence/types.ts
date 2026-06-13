@@ -10,7 +10,7 @@ import type { SiteDocument } from '@core/page-tree'
  * specific pages/components). Over-marking is always safe; under-marking
  * would lose edits, so anything ambiguous must mark all.
  */
-export interface SaveDirtyHints {
+interface SaveDirtyHints {
   all: boolean
   pageIds: ReadonlySet<string>
   componentIds: ReadonlySet<string>

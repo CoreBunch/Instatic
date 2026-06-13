@@ -48,7 +48,7 @@ interface SchemaWithFallback<T extends TSchema> {
   [FALLBACK]?: TBStatic<T>
 }
 
-export type SchemaResult<T extends TSchema> =
+type SchemaResult<T extends TSchema> =
   | { ok: true; value: TBStatic<T> }
   | { ok: false; errors: ReadonlyArray<{ path: string; message: string }> }
 

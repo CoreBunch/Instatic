@@ -29,7 +29,7 @@
 import { useId, type CSSProperties } from 'react'
 import styles from './LiquidProgressRing.module.css'
 
-export interface LiquidProgressRingProps {
+interface LiquidProgressRingProps {
   value: number
   total: number
   /** Pixel size of the ring. Defaults to 112. */

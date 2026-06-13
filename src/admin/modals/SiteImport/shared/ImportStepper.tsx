@@ -11,7 +11,7 @@
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import styles from './ImportStepper.module.css'
 
-export type ImportStage = 'drop' | 'review' | 'conflicts' | 'import'
+type ImportStage = 'drop' | 'review' | 'conflicts' | 'import'
 
 const STAGES: { id: ImportStage; label: string }[] = [
   { id: 'drop', label: 'Drop' },

@@ -48,7 +48,7 @@ export const SiteAgentSnapshotSchema = Type.Object({
 
 export type SiteAgentSnapshot = Static<typeof SiteAgentSnapshotSchema>
 
-export interface SiteAgentSnapshotOptions {
+interface SiteAgentSnapshotOptions {
   selectedNodeId: string | null
   activeBreakpointId: string
 }

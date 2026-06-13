@@ -419,14 +419,24 @@ describe('with strategies — handler-level roundtrip', () => {
       }
     })
 
-    test('target DB has no extra rows beyond the bundle', async () => {
+    test('only extra rows beyond the bundle are seeded entry templates', async () => {
       const tables = await listDataTables(targetDb)
       const allRows: DataRow[] = []
       for (const t of tables) {
         const rows = await listDataRows(targetDb, t.id)
         allRows.push(...rows)
       }
-      expect(allRows.length).toBe(sourceBundle.rows.length)
+      // The post-import backfill (`backfillDefaultEntryTemplates`) seeds a
+      // default entry template for any postType table the bundle did not
+      // cover — here the system `posts` table. Those seeded template pages
+      // are the ONLY rows allowed beyond the bundle's own.
+      const bundleIds = new Set(sourceBundle.rows.map((r) => r.id))
+      const extraRows = allRows.filter((r) => !bundleIds.has(r.id))
+      for (const row of extraRows) {
+        expect(row.tableId).toBe('pages')
+        expect((row.cells as { templateEnabled?: unknown }).templateEnabled).toBe(true)
+      }
+      expect(allRows.length - extraRows.length).toBe(sourceBundle.rows.length)
     })
   })
 

@@ -48,7 +48,7 @@ const SELECT_FIELD_TYPES = new Set<DataField['type']>([
   'multiSelect',
 ])
 
-export type FormSettingsKind =
+type FormSettingsKind =
   | 'form'
   | 'control'
   | 'label'
@@ -56,7 +56,7 @@ export type FormSettingsKind =
   | 'message'
   | 'none'
 
-export interface FormSettingsWarning {
+interface FormSettingsWarning {
   code:
     | 'missing_table'
     | 'missing_field'
@@ -77,7 +77,7 @@ export interface FormContextSummary {
   targetTableId: string
 }
 
-export interface FormTargetSummary {
+interface FormTargetSummary {
   nodeId: string
   label: string
 }
@@ -298,7 +298,7 @@ export function fieldBindingPatch(field: DataField, moduleId: string): Record<st
   }
 }
 
-export function fieldCompatibleWithNode(field: DataField, moduleId: string): boolean {
+function fieldCompatibleWithNode(field: DataField, moduleId: string): boolean {
   switch (moduleId) {
     case 'base.input':
       return INPUT_FIELD_TYPES.has(field.type)

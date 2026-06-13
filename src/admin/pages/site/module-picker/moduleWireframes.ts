@@ -1,6 +1,6 @@
 import type { NodeTree, PageNode } from '@core/page-tree'
 
-export type WireNodeKind =
+type WireNodeKind =
   | 'box'
   | 'button'
   | 'check'
@@ -213,8 +213,3 @@ function wireFromNode(tree: NodeTree<PageNode>, nodeId: string): WireNode {
   )
 }
 
-export function countWireNodes(node: WireNode): number {
-  let total = 1
-  for (const child of node.children ?? []) total += countWireNodes(child)
-  return total
-}

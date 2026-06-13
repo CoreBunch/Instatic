@@ -37,14 +37,14 @@ import { PageSchema } from '@core/page-tree'
 import { parseStyleRule } from '@core/page-tree'
 import { assertPathWithin } from '../util/pathWithin'
 
-export interface PluginPackContents {
+interface PluginPackContents {
   visualComponents: VisualComponent[]
   pages: Page[]
   classes: StyleRule[]
   layouts: SavedLayout[]
 }
 
-export interface PluginPackInstallResult {
+interface PluginPackInstallResult {
   installed: PluginPackContents
   /** ids that already existed on the site and got overwritten by the pack. */
   replacedIds: {

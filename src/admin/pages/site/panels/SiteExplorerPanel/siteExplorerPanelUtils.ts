@@ -1,7 +1,7 @@
 import type { SiteFile } from '@core/files/schemas'
 import type { SiteExplorerSectionId } from '@core/page-tree'
 
-export type FileBucket = 'styles' | 'scripts'
+type FileBucket = 'styles' | 'scripts'
 
 const SECTION_ITEM_LABELS: Record<SiteExplorerSectionId, { singular: string; plural: string }> = {
   pages: { singular: 'page', plural: 'pages' },
@@ -48,7 +48,7 @@ export function groupSiteFiles(files: SiteFile[]) {
   } satisfies Record<FileBucket, SiteFile[]>
 }
 
-export function sectionItemLabel(sectionId: SiteExplorerSectionId, count: number) {
+function sectionItemLabel(sectionId: SiteExplorerSectionId, count: number) {
   const labels = SECTION_ITEM_LABELS[sectionId]
   return count === 1 ? labels.singular : labels.plural
 }

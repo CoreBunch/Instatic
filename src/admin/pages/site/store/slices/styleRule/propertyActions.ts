@@ -10,7 +10,7 @@ import { isGeneratedClassLocked } from '@core/page-tree'
 import type { SiteSliceHelpers } from '../site/types'
 import type { StyleRuleSlice } from './types'
 
-export type PropertyActions = Pick<
+type PropertyActions = Pick<
   StyleRuleSlice,
   'removeClassStyleProperty' | 'clearClassStyleProperties'
 >

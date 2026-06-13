@@ -56,7 +56,7 @@ interface ScaleFamilyTypes {
   }
 }
 
-export interface ScaleFamilyConfig<F extends 'typography' | 'spacing'> {
+interface ScaleFamilyConfig<F extends 'typography' | 'spacing'> {
   family: F
   buildDefault: (order: number) => ScaleFamilyTypes[F]['Group']
   makeFresh: (
@@ -184,7 +184,7 @@ function applyScaleGroupPatch(
 // Action factory
 // ---------------------------------------------------------------------------
 
-export interface ScaleGroupActions<F extends 'typography' | 'spacing'> {
+interface ScaleGroupActions<F extends 'typography' | 'spacing'> {
   toggleDisabled: () => void
   createGroup: () => ScaleFamilyTypes[F]['Group']
   updateGroup: (groupId: string, patch: ScaleFamilyTypes[F]['Patch']) => void

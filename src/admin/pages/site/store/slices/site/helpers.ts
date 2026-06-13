@@ -14,7 +14,8 @@ import type { FrameworkColorToken } from '@core/framework-schema'
 import type { NodeTree, PageNode, StyleRule, SiteDocument } from '@core/page-tree'
 import { addPage, createNode, reconcileSiteExplorerInPlace, reindexNodeParents } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
-import { syncAllVCRefSlotInstances, allTreeNodeMaps, collectVCSlotOutletNames } from '../vcSlotReconcile'
+import { syncAllVCRefSlotInstances, allTreeNodeMaps } from '../vcSlotReconcile'
+import { collectSlotOutletNames } from '@core/visualComponents'
 import { create } from 'mutative'
 import type { Draft, Patches } from 'mutative'
 import type { ImportFragment } from '@core/htmlImport'
@@ -30,7 +31,8 @@ import { MAX_HISTORY } from './defaults'
 import { reconcileFrameworkClasses } from './framework/reconcile'
 import { indexStyleRulesByName, linkImportedClassNames } from './importLinking'
 import { addImportedFonts, addImportedFontTokens, addInstalledFontEntries, overwriteImportedFontTokens } from './importedFonts'
-import type { HistoryEntry, SiteMutationResult, SiteSliceHelpers, SiteSliceRecipe, SuperImportHelpers } from './types'
+import type { HistoryEntry, SiteMutationResult, SiteSliceHelpers, SiteSliceRecipe } from './types'
+import type { SiteImportTransaction } from '@core/siteImport'
 
 /**
  * Compute a node's depth in a tree by walking the O(1) `parentId` pointer up
@@ -335,12 +337,12 @@ export function buildSiteHelpers(
     // `get()` is the frozen pre-mutation state — the VC is guaranteed present
     // there because the draft (where it was just found) mirrors it.
     const frozenVc = get().site?.visualComponents.find((v) => v.id === vc.id)
-    const outletNamesBefore = frozenVc ? collectVCSlotOutletNames(frozenVc.tree) : null
+    const outletNamesBefore = frozenVc ? collectSlotOutletNames(frozenVc.tree) : null
 
     const result = fn(tree)
     if (result === false) return false
 
-    const outletNamesAfter = collectVCSlotOutletNames(vc.tree)
+    const outletNamesAfter = collectSlotOutletNames(vc.tree)
     if (outletNamesBefore === null || !stringArraysEqual(outletNamesBefore, outletNamesAfter)) {
       syncAllVCRefSlotInstances(allTreeNodeMaps(draft.site!), vc.id, vc)
     }
@@ -426,7 +428,7 @@ export function buildSiteHelpers(
    * (`return false`) never produce a history entry.
    */
   function mutateAllPagesAndSite(
-    fn: (site: SiteDocument, helpers: SuperImportHelpers) => SiteMutationResult,
+    fn: (site: SiteDocument, helpers: SiteImportTransaction) => SiteMutationResult,
   ): boolean {
     return runHistoricMutation((draft) => {
       const site = draft.site!
@@ -437,7 +439,7 @@ export function buildSiteHelpers(
       // `addPage(fragment with node.classIds:['btn'])` resolves to the same id.
       const byName = indexStyleRulesByName(site.styleRules)
 
-      const helpers: SuperImportHelpers = {
+      const helpers: SiteImportTransaction = {
         addPage({ id: pageId, title, slug, nodeFragment }: { id?: string; title: string; slug: string; nodeFragment: ImportFragment }): string {
           // addPage creates a fresh base.body root, normalises the slug, and
           // pushes the page onto site.pages. We then graft the fragment nodes

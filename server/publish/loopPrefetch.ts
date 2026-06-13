@@ -32,12 +32,12 @@ import { walkRenderTree } from './renderTreeWalk'
  * `pageNumber` is 1-indexed. `hasMore` enables the infinite-loading
  * sentinel; `totalItems` powers the future numeric paginator block.
  */
-export interface ResolvedLoopData extends LoopFetchResult {
+interface ResolvedLoopData extends LoopFetchResult {
   pageNumber: number
   hasMore: boolean
 }
 
-export type LoopDataMap = Map<string, ResolvedLoopData>
+type LoopDataMap = Map<string, ResolvedLoopData>
 
 /**
  * Project a published data row into a LoopItem. The single-row route uses
@@ -137,7 +137,7 @@ export function collectLoopNodes(
  * has a sensible default so a node missing properties (e.g. just-inserted)
  * still resolves to "no data" instead of crashing the render.
  */
-export interface LoopProps {
+interface LoopProps {
   sourceId: string
   filters: Record<string, unknown>
   orderBy: string

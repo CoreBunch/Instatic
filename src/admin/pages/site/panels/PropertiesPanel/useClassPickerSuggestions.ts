@@ -40,7 +40,7 @@ import { rankBySuggestionScore } from './classPickerRanking'
 // doesn't leave the dropdown sparse.
 const SUFFICIENT_HISTORY_THRESHOLD = CLASS_USAGE_RECENT_LIMIT
 
-export interface ClassPickerSuggestionsInput {
+interface ClassPickerSuggestionsInput {
   /** Every user-visible class in the site, regardless of node assignment. */
   allClasses: readonly StyleRule[]
   /** IDs already assigned to the active node (visible or hidden). */
@@ -58,7 +58,7 @@ export interface ClassPickerSuggestionsInput {
   readUsage?: () => ClassUsageMap
 }
 
-export interface ClassPickerSuggestionsResult {
+interface ClassPickerSuggestionsResult {
   trimmedQueryRaw: string
   isEmptyQuery: boolean
 

@@ -11,7 +11,7 @@
 import type { DbClient } from '../db/client'
 import { isoDate } from '@core/utils/isoDate'
 
-export interface MediaFolder {
+interface MediaFolder {
   id: string
   parentId: string | null
   name: string
@@ -21,7 +21,7 @@ export interface MediaFolder {
   createdAt: string
 }
 
-export interface CreateMediaFolderInput {
+interface CreateMediaFolderInput {
   id: string
   parentId: string | null
   name: string

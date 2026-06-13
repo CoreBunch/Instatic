@@ -19,7 +19,7 @@ import { emptyDirtyMarks } from './dirtyTracking'
 import { reconcileFrameworkClasses } from './framework/reconcile'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
-export type LifecycleActions = Pick<
+type LifecycleActions = Pick<
   SiteSlice,
   'createSite' | 'loadSite' | 'clearSite' | 'updateSiteName'
 >

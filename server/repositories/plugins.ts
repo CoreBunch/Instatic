@@ -473,7 +473,7 @@ export async function deletePluginRecord(
 
 const MAX_CRASH_EVENTS_PER_PLUGIN = 50
 
-export interface PluginCrashEvent {
+interface PluginCrashEvent {
   id: string
   pluginId: string
   occurredAt: string

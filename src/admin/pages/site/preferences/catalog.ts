@@ -28,7 +28,7 @@
 // order the sections render in (see PreferencesSection).
 // ---------------------------------------------------------------------------
 
-export type PreferenceCategory = 'editor' | 'layers' | 'canvas' | 'properties' | 'spotlight'
+type PreferenceCategory = 'editor' | 'layers' | 'canvas' | 'properties' | 'spotlight'
 
 const PREFERENCE_CATEGORIES: ReadonlyArray<{
   id: PreferenceCategory

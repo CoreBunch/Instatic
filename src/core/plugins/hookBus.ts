@@ -33,19 +33,16 @@
  * LISTEN to these freely, but cannot emit them: plugin emits are always
  * canonicalized into the `plugin.<pluginId>.*` namespace.
  */
-export const CORE_HOOK_EVENTS = [
-  'settings.changed',
-  'content.entry.created',
-  'content.entry.updated',
-  'content.entry.deleted',
-  'publish.before',
-  'publish.after',
-] as const
-
-export type CoreHookEvent = (typeof CORE_HOOK_EVENTS)[number]
+type CoreHookEvent =
+  | 'settings.changed'
+  | 'content.entry.created'
+  | 'content.entry.updated'
+  | 'content.entry.deleted'
+  | 'publish.before'
+  | 'publish.after'
 
 /** A plugin-emitted event name, always of the form `plugin.<pluginId>.<name>`. */
-export type PluginScopedHookEvent = `plugin.${string}`
+type PluginScopedHookEvent = `plugin.${string}`
 
 /**
  * Canonical name for a plugin-emitted hook event.

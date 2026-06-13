@@ -26,7 +26,7 @@ import { MediaStorageUploadPlanSchema } from '@core/plugin-sdk'
 import { requestFromWorker } from './workerPool'
 import { describeWorkerError, workerCallError } from './workerErrors'
 
-export async function runMediaAdapterCallInWorker(
+async function runMediaAdapterCallInWorker(
   pluginId: string,
   adapterId: string,
   method: 'beginWrite' | 'finalizeWrite' | 'abortWrite' | 'delete' | 'getReadUrl' | 'verify',

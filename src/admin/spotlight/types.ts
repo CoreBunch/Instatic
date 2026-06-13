@@ -56,7 +56,7 @@ export interface CommandArg {
 // ─── Command ──────────────────────────────────────────────────────────────────
 
 /** Active document descriptor — which canvas document is currently open. */
-export type ActiveDocument =
+type ActiveDocument =
   | { kind: 'page'; pageId: string }
   | { kind: 'visualComponent'; vcId: string }
 

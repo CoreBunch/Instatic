@@ -9,10 +9,10 @@ import {
   listDataAuthorOptions,
   updateDataRowAuthor,
   saveDataRowDraft,
-  publishDataRow,
   getPublishedDataRowByRoute,
   getDataRowRedirectByRoute,
 } from '../../../server/repositories/data'
+import { ensureDefaultEntryTemplate } from '../../../server/publish/templateSeeding'
 import { handleServerRequest } from '../../../server/router'
 import { resetForTests } from '../../../server/publish/renderCache'
 import { createFakeDb } from './dbTestFake'
@@ -100,7 +100,10 @@ describe('data CMS repository', () => {
     }])
   })
 
-  it('creates a data table with persisted field settings', async () => {
+  it('creates a data table, then seeds its default entry template', async () => {
+    // `createDataTable` is pure data access; the seeding orchestration is a
+    // separate explicit call (`ensureDefaultEntryTemplate`) made by every
+    // table-creation entry point. This test exercises both in sequence.
     // Tracks rows the template-seeding path inserts so we can return
     // shaped responses to `select` queries that follow.
     let seededPageRow: { id: string; cells: Record<string, unknown>; slug: string } | null = null
@@ -130,8 +133,8 @@ describe('data CMS repository', () => {
           rowCount: 1,
         }
       },
-      // postType creation triggers default-entry-template seeding. The
-      // seeding helper:
+      // The explicit `ensureDefaultEntryTemplate` call below triggers the
+      // default-entry-template seeding. The seeding helper:
       //   1. lists existing page rows to check whether a template already
       //      targets this table's slug (returns empty → none exist),
       //   2. picks an available slug (`<slug>-template`),
@@ -218,7 +221,7 @@ describe('data CMS repository', () => {
       },
     ])
 
-    await expect(createDataTable(db, {
+    const table = await createDataTable(db, {
       name: 'Products',
       slug: 'products',
       kind: 'postType',
@@ -227,12 +230,19 @@ describe('data CMS repository', () => {
       pluralLabel: 'Products',
       primaryFieldId: 'title',
       fields: defaultFields,
-    }, null)).resolves.toMatchObject({
+    })
+    expect(table).toMatchObject({
       id: 'products',
       name: 'Products',
       slug: 'products',
       fields: defaultFields,
     })
+
+    // createDataTable is data access only — no seeding side-effect yet.
+    expect(seededPageRow).toBeNull()
+
+    // Every table-creation entry point follows up with the seeding call.
+    await ensureDefaultEntryTemplate(db, table, null)
 
     // Verify the seeding side-effect actually ran: a template page row
     // got inserted with the right template config.

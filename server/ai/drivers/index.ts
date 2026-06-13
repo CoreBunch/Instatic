@@ -29,9 +29,4 @@ export function resolveDriver(providerId: AiProviderId): AiProvider {
   return driver
 }
 
-/** List every registered driver. UI uses this to render the provider picker. */
-export function listDrivers(): AiProvider[] {
-  return Object.values(DRIVERS)
-}
 
-export type { AiProvider, AiResolvedCredential, AiProviderModel, AiStreamRequest } from './types'

@@ -39,7 +39,7 @@ export interface ImportRule {
 }
 
 /** True when the element has at least one element (non-text) child. */
-export function hasElementChild(el: Element): boolean {
+function hasElementChild(el: Element): boolean {
   return el.children.length > 0
 }
 

@@ -18,7 +18,7 @@ import type {
   SiteBundle,
 } from '@core/data/bundleSchema'
 
-export interface CmsBundleState {
+interface CmsBundleState {
   filename: string
   bundle: SiteBundle
   preview: BundlePreview | null
@@ -65,7 +65,7 @@ function buildCmsImportToastBody(result: CmsImportResult): string {
   return parts.join(' · ')
 }
 
-export function previewHasContent(preview: BundlePreview | null): boolean {
+function previewHasContent(preview: BundlePreview | null): boolean {
   if (!preview) return false
   return preview.tables.some((table) => table.inBundle > 0) || preview.totals.mediaFiles > 0
 }

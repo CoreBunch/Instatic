@@ -15,14 +15,14 @@ export type { VisualComponent, VCNode, VCParam, VCParamType } from './schemas'
 export { instantiateVCAtRef } from './instantiate'
 export type { InstantiatedVCNode } from './instantiate'
 
-export { validateComponentName, validateParamName } from './nameValidation'
+export { validateComponentName, validateParamName, vcSlugFromName } from './nameValidation'
 
 export { getReferencedComponentIds, wouldCreateCycle } from './recursionGuard'
 
 export { forEachVCRef, collectVCRefs } from './vcRefs'
-export type { VCRef } from './vcRefs'
 
-export { syncSlotInstances, applySlotSyncResult } from './slotSync'
+
+export { collectSlotOutletNames, syncSlotInstances, applySlotSyncResult } from './slotSync'
 
 export { previewVCDeletion } from './deletionImpact'
 export type { VCDeletionImpact, VCRefUsage } from './deletionImpact'

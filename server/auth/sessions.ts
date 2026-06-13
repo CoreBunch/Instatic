@@ -39,7 +39,7 @@ interface SessionRotationRow {
   step_up_expires_at: Date | string | null
 }
 
-export interface RotatedSession {
+interface RotatedSession {
   expiresAt: Date
 }
 

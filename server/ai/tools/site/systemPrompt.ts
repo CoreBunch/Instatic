@@ -108,9 +108,9 @@ function buildDynamicSuffix(snap: SiteAgentSnapshot): string {
         .map((p) => {
           const active = p.id === snap.page.id ? ' (active)' : ''
           const tpl = p.template
-            ? ` [template:${p.template.target.kind === 'everywhere'
-                ? 'everywhere'
-                : p.template.target.tableSlugs.join(',')}]`
+            ? ` [template:${p.template.target.kind === 'postTypes'
+                ? p.template.target.tableSlugs.join(',')
+                : p.template.target.kind}]`
             : ''
           return `${p.id}=${p.slug || '(no-slug)'}${active}${tpl}`
         })

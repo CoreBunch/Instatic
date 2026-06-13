@@ -45,14 +45,14 @@ import {
 } from './errorReporting'
 import styles from './ErrorBoundary.module.css'
 
-export interface ErrorBoundaryFallbackInfo {
+interface ErrorBoundaryFallbackInfo {
   location: string
   chain: ErrorChainEntry[]
   componentStack: string | null
   reset: () => void
 }
 
-export interface ErrorBoundaryProps {
+interface ErrorBoundaryProps {
   /**
    * Architectural label for this boundary. Surfaced in console logs, toasts,
    * and the dev fallback. Must be unique across the boundary placements

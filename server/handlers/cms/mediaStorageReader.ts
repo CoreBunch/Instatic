@@ -29,7 +29,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 
-export interface ReadSourceInput {
+interface ReadSourceInput {
   /** Adapter id pinned on the asset row (or `''` for local-disk). */
   storageAdapterId: string
   /** Adapter-internal handle pinned on the asset row. */
@@ -44,7 +44,7 @@ export interface ReadSourceInput {
   uploadsDir: string
 }
 
-export class MediaSourceReadError extends Error {
+class MediaSourceReadError extends Error {
   readonly storageAdapterId: string
   readonly storagePath: string
   constructor(message: string, storageAdapterId: string, storagePath: string) {

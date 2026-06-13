@@ -11,4 +11,4 @@
  */
 
 export { DynamicBindingControl } from './DynamicBindingControl'
-export { BindingPickerPopover } from './BindingPickerPopover'
+

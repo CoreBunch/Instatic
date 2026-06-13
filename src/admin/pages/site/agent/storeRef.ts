@@ -15,7 +15,7 @@
  * Wired up in `editor-store/store.ts` immediately after the store is created.
  */
 
-export interface AgentStoreApi<T = unknown> {
+interface AgentStoreApi<T = unknown> {
   getState(): T
   setState(partial: Partial<T>): void
 }

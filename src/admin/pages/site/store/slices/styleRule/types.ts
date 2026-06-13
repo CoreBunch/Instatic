@@ -21,7 +21,7 @@ import type { NewStyleRule } from '@core/siteImport'
  * Inputs accepted by `createAmbientRule`. `selector` is required (e.g.
  * `'h1 > span'`); `name` defaults to the selector text for display purposes.
  */
-export interface CreateAmbientRuleInput {
+interface CreateAmbientRuleInput {
   selector: string
   name?: string
   styles?: Partial<CSSPropertyBag>
@@ -39,7 +39,7 @@ export interface ClassPreviewAssignment {
  * canvas style injector reads this and emits a higher-specificity rule so
  * the change is visible without committing to history.
  */
-export interface ClassStylesPreview {
+interface ClassStylesPreview {
   classId: string
   /** Breakpoint id to scope the preview to, or null/undefined for the base styles. */
   breakpointId?: string | null

@@ -23,7 +23,7 @@ export const AnchorTargetSchema = Type.Union(
   { default: '_self' },
 )
 
-export type AnchorTarget = Static<typeof AnchorTargetSchema>
+type AnchorTarget = Static<typeof AnchorTargetSchema>
 
 /** Select options for the Properties-panel `target` control. */
 export const ANCHOR_TARGET_OPTIONS: ReadonlyArray<{ label: string; value: AnchorTarget }> = [

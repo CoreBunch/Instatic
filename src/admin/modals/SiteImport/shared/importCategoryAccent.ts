@@ -6,7 +6,7 @@ interface SiteImportCategoryIdentity {
   label: string
 }
 
-export type SiteImportCategoryTint<TCategory> = TCategory & {
+type SiteImportCategoryTint<TCategory> = TCategory & {
   accent: RailAccent
   tint: string
 }

@@ -26,7 +26,7 @@ import { reconcileSiteExplorerInPlace } from '@core/page-tree'
 // Slice interface
 // ---------------------------------------------------------------------------
 
-export interface FilesSlice {
+interface FilesSlice {
   /**
    * Create a new file at the given path with the given type.
    * Returns the new file's id.

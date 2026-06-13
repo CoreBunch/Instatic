@@ -1,7 +1,7 @@
 import { tryHandleAi } from './ai/handlers'
 import { handleCmsRequest } from './handlers/cms'
 import type { DbClient } from './db/client'
-import { renderPublicResolution } from './publish/publicRouter'
+import { renderNotFoundResponse, renderPublicResolution } from './publish/publicRouter'
 import { readStaticAsset } from './publish/staticArtefact'
 import { getLatestSnapshotForVersion } from './publish/publishedSnapshotCache'
 import { getPublishVersion, registerVersionedCacheReset } from './publish/publishState'
@@ -81,6 +81,7 @@ const routes: readonly RouteHandler[] = [
   tryServeAdminApp,
   tryServePublicRoute,
   trySetupRedirect,
+  tryServeNotFoundPage,
 ]
 
 export async function handleServerRequest(
@@ -439,6 +440,18 @@ async function trySetupRedirect(req: Request, runtime: ServerRuntime, _url: URL,
   return setupStatus.needsSetup
     ? new Response(null, { status: 302, headers: { location: '/admin' } })
     : null
+}
+
+/**
+ * Last route before the dispatcher's bare JSON 404: serve the site's designed
+ * 404 page (the `notFound` template) for any GET no other route claimed.
+ * Namespaced prefixes (`/admin/api/*`, `/_instatic/*`, `/uploads/*`) never
+ * reach here — they absorb their namespace and emit their own 404s. Returns
+ * null (→ JSON 404) when the published site has no notFound template.
+ */
+async function tryServeNotFoundPage(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response | null> {
+  if (req.method !== 'GET') return null
+  return await renderNotFoundResponse(runtime.db, url, runtime.uploadsDir)
 }
 
 // ---------------------------------------------------------------------------

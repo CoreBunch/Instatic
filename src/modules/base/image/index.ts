@@ -39,7 +39,7 @@ import { shouldUseBlurPlaceholder } from './placeholder'
 // so they survive the coercion step untouched.
 // ---------------------------------------------------------------------------
 
-export const ImagePropsSchema = Type.Object({
+const ImagePropsSchema = Type.Object({
   src: Type.String({ default: '' }),
   loading: Type.Union([Type.Literal('lazy'), Type.Literal('eager')], { default: 'lazy' }),
   /**

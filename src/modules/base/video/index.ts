@@ -40,7 +40,7 @@ import { parseYoutubeId, youtubeEmbedUrl } from './youtube'
 // over the cleaned props so it survives the coercion step untouched.
 // ---------------------------------------------------------------------------
 
-export const VideoPropsSchema = Type.Object({
+const VideoPropsSchema = Type.Object({
   /**
    * Source URL. Accepts:
    *   - A library path like `/uploads/intro.mp4` (resolved by the publisher)

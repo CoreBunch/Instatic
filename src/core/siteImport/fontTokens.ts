@@ -11,8 +11,6 @@ import {
 import type { NewStyleRule, ImportFontToken } from './types'
 import { isRootScopeSelector } from './rootScope'
 
-export type { ImportFontToken }
-
 const GENERIC_FAMILIES = new Set([
   'serif',
   'sans-serif',

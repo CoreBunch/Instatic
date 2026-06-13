@@ -14,7 +14,7 @@ import {
 } from '@core/page-tree'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
-export type PageActions = Pick<
+type PageActions = Pick<
   SiteSlice,
   | 'addPage'
   | 'deletePage'

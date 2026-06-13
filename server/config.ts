@@ -1,4 +1,4 @@
-export interface ServerConfig {
+interface ServerConfig {
   port: number
   databaseUrl: string
   uploadsDir: string

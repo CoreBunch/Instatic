@@ -47,7 +47,7 @@ export class MediaStorageDispatchError extends Error {
   }
 }
 
-export interface DispatchUploadInput {
+interface DispatchUploadInput {
   /** Validated bytes (post-magic-byte sniff). */
   bytes: Uint8Array
   /** Server-validated MIME. */
@@ -59,7 +59,7 @@ export interface DispatchUploadInput {
   variantOf?: string
 }
 
-export interface DispatchUploadResult {
+interface DispatchUploadResult {
   /** Persist on `media_assets.storage_path`. */
   storagePath: string
   /** Persist on `media_assets.public_path` — what the renderer emits. */

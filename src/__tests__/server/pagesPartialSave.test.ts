@@ -113,6 +113,23 @@ function putComponents(ctx: Ctx, body: Record<string, unknown>): Promise<Respons
   return ctx.harness.cms('/admin/api/cms/components', { method: 'PUT', cookie: ctx.cookie, json: body })
 }
 
+function putLayouts(ctx: Ctx, body: Record<string, unknown>): Promise<Response> {
+  return ctx.harness.cms('/admin/api/cms/layouts', { method: 'PUT', cookie: ctx.cookie, json: body })
+}
+
+/** A minimal saved layout — one container node, no captured classes. */
+function layoutPayload(id: string, name: string): Record<string, unknown> {
+  const rootId = `root-${id}`
+  return {
+    id,
+    name,
+    rootNodeId: rootId,
+    nodes: { [rootId]: vcNode(rootId, 'base.container') },
+    classes: {},
+    createdAt: 1_700_000_000_000,
+  }
+}
+
 async function expectOk(res: Response): Promise<void> {
   expect(res.status).toBe(200)
   expect(await readJson<{ ok?: boolean }>(res)).toEqual({ ok: true })
@@ -289,6 +306,108 @@ describe('PUT /admin/api/cms/pages — incremental roster save', () => {
       await ctx.harness.cleanup()
     }
   })
+
+  it('a changed page may take the slug of a row reaped in the same request (homepage swap + delete)', async () => {
+    const ctx = await setupHarness()
+    try {
+      await expectOk(await putPages(ctx, {
+        changedPages: [pagePayload('page-a', 'about')],
+        pageIds: [ctx.homeId, 'page-a'],
+      }))
+
+      // The editor batch behind "set page-a as homepage, delete the old
+      // homepage, save": page-a takes slug `index` while the row that still
+      // holds it is reaped by this same request.
+      await expectOk(await putPages(ctx, {
+        changedPages: [pagePayload('page-a', 'index')],
+        pageIds: ['page-a'],
+        baselinePageIds: [ctx.homeId, 'page-a'],
+      }))
+
+      const rows = await storedRows(ctx.harness, 'pages')
+      expect(rows.get('page-a')!.slug).toBe('index')
+      expect(rows.get('page-a')!.deleted_at).toBeNull()
+      expect(rows.get(ctx.homeId)!.deleted_at).not.toBeNull()
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('a new page may take the slug of a row reaped in the same request', async () => {
+    const ctx = await setupHarness()
+    try {
+      await expectOk(await putPages(ctx, {
+        changedPages: [pagePayload('page-fresh', 'index', 'New homepage')],
+        pageIds: ['page-fresh'],
+        baselinePageIds: [ctx.homeId],
+      }))
+
+      const rows = await storedRows(ctx.harness, 'pages')
+      expect(rows.get('page-fresh')!.slug).toBe('index')
+      expect(rows.get(ctx.homeId)!.deleted_at).not.toBeNull()
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('restores a page deleted by an earlier save when the same id is re-submitted (undo of a delete)', async () => {
+    const ctx = await setupHarness()
+    try {
+      await expectOk(await putPages(ctx, {
+        changedPages: [pagePayload('page-a', 'about')],
+        pageIds: [ctx.homeId, 'page-a'],
+      }))
+      // Delete page-a and save.
+      await expectOk(await putPages(ctx, {
+        changedPages: [],
+        pageIds: [ctx.homeId],
+        baselinePageIds: [ctx.homeId, 'page-a'],
+      }))
+      // Undo restores the page object with its ORIGINAL id; the next save
+      // ships it as a changed page again. The reaped row must be revived,
+      // not collide with its own soft-deleted primary key.
+      await expectOk(await putPages(ctx, {
+        changedPages: [pagePayload('page-a', 'about', 'About restored')],
+        pageIds: [ctx.homeId, 'page-a'],
+        baselinePageIds: [ctx.homeId],
+      }))
+
+      const rows = await storedRows(ctx.harness, 'pages')
+      expect(rows.get('page-a')!.deleted_at).toBeNull()
+      expect(rows.get('page-a')!.slug).toBe('about')
+      expect(rows.get('page-a')!.cells_json.title).toBe('About restored')
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('two changed pages may swap slugs in one batch (two-phase write)', async () => {
+    const ctx = await setupHarness()
+    try {
+      await expectOk(await putPages(ctx, {
+        changedPages: [pagePayload('page-a', 'about'), pagePayload('page-b', 'contact')],
+        pageIds: [ctx.homeId, 'page-a', 'page-b'],
+      }))
+
+      // True swap — no in-place update order avoids a transient collision
+      // with data_rows_table_slug_active_idx, so this exercises the
+      // placeholder pass. Collision-maximizing order: each page's target
+      // slug is still held by the other.
+      await expectOk(await putPages(ctx, {
+        changedPages: [pagePayload('page-a', 'contact'), pagePayload('page-b', 'about')],
+        pageIds: [ctx.homeId, 'page-a', 'page-b'],
+        baselinePageIds: [ctx.homeId, 'page-a', 'page-b'],
+      }))
+
+      const rows = await storedRows(ctx.harness, 'pages')
+      expect(rows.get('page-a')!.slug).toBe('contact')
+      expect(rows.get('page-b')!.slug).toBe('about')
+      // The placeholder slug '' must never survive the reconcile.
+      for (const row of rows.values()) expect(row.slug).not.toBe('')
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -414,6 +533,117 @@ describe('PUT /admin/api/cms/components — incremental roster save', () => {
 
       const rows = await storedRows(ctx.harness, 'components')
       expect(rows.has('vc-orphan')).toBe(false)
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('rejects two VCs whose distinct names derive the same storage slug', async () => {
+    const ctx = await setupHarness()
+    try {
+      // 'Button' and 'button' are distinct strings but identical slugs —
+      // without a validation reject this dies on the DB unique index as a 500.
+      const res = await putComponents(ctx, {
+        changedComponents: [vcPayload('vc-a', 'Button'), vcPayload('vc-b', 'button')],
+        componentIds: ['vc-a', 'vc-b'],
+      })
+      expect(res.status).toBe(400)
+      const body = await readJson<{ error: string }>(res)
+      expect(body.error).toContain('Button')
+
+      const rows = await storedRows(ctx.harness, 'components')
+      expect(rows.size).toBe(0)
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('rejects a changed VC whose name slug-collides with a kept stored VC', async () => {
+    const ctx = await setupHarness()
+    try {
+      await expectOk(await putComponents(ctx, {
+        changedComponents: [vcPayload('vc-a', 'Button')],
+        componentIds: ['vc-a'],
+      }))
+
+      const res = await putComponents(ctx, {
+        changedComponents: [vcPayload('vc-b', 'button')],
+        componentIds: ['vc-a', 'vc-b'],
+      })
+      expect(res.status).toBe(400)
+
+      const rows = await storedRows(ctx.harness, 'components')
+      expect(rows.has('vc-b')).toBe(false)
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('a created VC may reuse the name (and slug) of a VC reaped in the same request', async () => {
+    const ctx = await setupHarness()
+    try {
+      await expectOk(await putComponents(ctx, {
+        changedComponents: [vcPayload('vc-old', 'Button')],
+        componentIds: ['vc-old'],
+      }))
+
+      // Delete "Button" and create a fresh VC with the same name in one save —
+      // both rows derive the slug `button`, so the reap must free it before
+      // the create runs.
+      await expectOk(await putComponents(ctx, {
+        changedComponents: [vcPayload('vc-new', 'Button')],
+        componentIds: ['vc-new'],
+      }))
+
+      const rows = await storedRows(ctx.harness, 'components')
+      expect(rows.get('vc-old')!.deleted_at).not.toBeNull()
+      expect(rows.get('vc-new')!.deleted_at).toBeNull()
+      expect(rows.get('vc-new')!.slug).toBe(rows.get('vc-old')!.slug)
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PUT /admin/api/cms/layouts
+// ---------------------------------------------------------------------------
+
+describe('PUT /admin/api/cms/layouts — incremental roster save', () => {
+  it('rejects two layouts whose distinct names derive the same storage slug', async () => {
+    const ctx = await setupHarness()
+    try {
+      // 'Hero!' and 'Hero?' both slug to 'hero' — must reject as a 400, not
+      // die on the DB unique index as a 500.
+      const res = await putLayouts(ctx, {
+        changedLayouts: [layoutPayload('lay-a', 'Hero!'), layoutPayload('lay-b', 'Hero?')],
+        layoutIds: ['lay-a', 'lay-b'],
+      })
+      expect(res.status).toBe(400)
+
+      const rows = await storedRows(ctx.harness, 'layouts')
+      expect(rows.size).toBe(0)
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('a created layout may reuse the name of a layout reaped in the same request', async () => {
+    const ctx = await setupHarness()
+    try {
+      await expectOk(await putLayouts(ctx, {
+        changedLayouts: [layoutPayload('lay-old', 'Hero')],
+        layoutIds: ['lay-old'],
+      }))
+
+      await expectOk(await putLayouts(ctx, {
+        changedLayouts: [layoutPayload('lay-new', 'Hero')],
+        layoutIds: ['lay-new'],
+      }))
+
+      const rows = await storedRows(ctx.harness, 'layouts')
+      expect(rows.get('lay-old')!.deleted_at).not.toBeNull()
+      expect(rows.get('lay-new')!.deleted_at).toBeNull()
     } finally {
       await ctx.harness.cleanup()
     }

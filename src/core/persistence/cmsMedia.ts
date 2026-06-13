@@ -108,7 +108,7 @@ function resolveClient(base: ClientBase | undefined) {
 // Assets
 // ---------------------------------------------------------------------------
 
-export interface ListCmsMediaAssetsOptions extends ClientBase {
+interface ListCmsMediaAssetsOptions extends ClientBase {
   /** `true` returns only soft-deleted assets (Trash view). */
   trash?: boolean
 }

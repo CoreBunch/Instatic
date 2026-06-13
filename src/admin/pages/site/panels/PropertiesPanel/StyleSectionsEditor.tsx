@@ -40,7 +40,7 @@ const BORDER_SECTION_ID = 'border'
 // Props
 // ---------------------------------------------------------------------------
 
-export interface StyleSectionsEditorProps {
+interface StyleSectionsEditorProps {
   /** The bag whose set/unset state drives the rows (the active editing target). */
   storedStyles: Record<string, unknown>
   /** Base-merged bag used for placeholder / inherited values. */

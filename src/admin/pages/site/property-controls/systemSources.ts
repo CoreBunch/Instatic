@@ -18,7 +18,7 @@ import type { LoopSourceField } from '@core/loops/types'
 
 export type SystemSourceId = 'page' | 'site' | 'route'
 
-export interface SystemSource {
+interface SystemSource {
   id: SystemSourceId
   label: string
   description: string
