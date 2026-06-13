@@ -33,7 +33,7 @@ import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import { writeArtefact } from './staticArtefact'
 import { getLatestSnapshotForVersion } from './publishedSnapshotCache'
 
-export interface DataRowBakeResult {
+interface DataRowBakeResult {
   /** Routes successfully baked into the slot. */
   baked: number
   /**

@@ -70,7 +70,7 @@ export const EXTENSION_FOR_MIME = {
   'font/otf': '.otf',
 } as const
 
-export type AcceptedMediaMime = keyof typeof EXTENSION_FOR_MIME
+type AcceptedMediaMime = keyof typeof EXTENSION_FOR_MIME
 
 export const IMAGE_MIMES: ReadonlyArray<AcceptedMediaMime> = [
   'image/jpeg',

@@ -39,7 +39,7 @@ import { applyCrossSheetClassResolutions, normalizeBindableClassRules } from './
 // Detection
 // ---------------------------------------------------------------------------
 
-export interface ConflictDetectionResult {
+interface ConflictDetectionResult {
   pages: PageConflict[]
   rules: RuleConflict[]
   tokens: TokenConflict[]
@@ -313,13 +313,28 @@ export function applyConflictResolutions(
   // `btn`, while the kept definition still does.
   plan = applyCrossSheetClassResolutions(plan, crossSheetResolutions)
 
-  // Build lookup maps
   const pageRes = new Map(pageResolutions.map((r) => [r.source, r.defaultResolution]))
   const ruleRes = new Map(ruleResolutions.map((r) => [r.desiredName, r.defaultResolution]))
+  const classRenames = buildClassRenameMap(ruleResolutions)
+  const tokenMaps = buildTokenRenameMaps(tokenResolutions)
 
-  // Build the `originalName → resolvedName` rename map. Only rename actions move
-  // a class to a new name; `skip` keeps the original name (the node
-  // intentionally binds to the pre-existing same-named rule).
+  const pages = resolvePagePlans(plan.pages, pageRes, classRenames, tokenMaps.varRenames)
+  const styleRules = resolveStyleRules(plan.styleRules, ruleRes, classRenames, tokenMaps.varRenames)
+  const { colors, fontTokens } = resolveTokenLists(plan.colors, plan.fontTokens, tokenMaps)
+
+  // The registry requires unique class names: after all renames have landed,
+  // demote every repeated class-kind rule (cascade fragments of one name) to
+  // an ambient rule with the same selector — its declarations keep their
+  // cascade position; only the first fragment stays bindable.
+  return normalizeBindableClassRules({ ...plan, pages, styleRules, colors, fontTokens })
+}
+
+/**
+ * The `originalName → resolvedName` rename map. Only rename actions move a
+ * class to a new name; `skip` keeps the original name (the node intentionally
+ * binds to the pre-existing same-named rule).
+ */
+function buildClassRenameMap(ruleResolutions: RuleConflict[]): Map<string, string> {
   const classRenames = new Map<string, string>()
   for (const r of ruleResolutions) {
     const res = r.defaultResolution
@@ -327,10 +342,23 @@ export function applyConflictResolutions(
       classRenames.set(r.desiredName, res.resolvedName)
     }
   }
+  return classRenames
+}
 
-  // Token rename maps — separate per kind for transforming the imported token
-  // lists, plus a combined map for rewriting `var(--x)` references (which share
-  // one CSS custom-property namespace).
+/**
+ * Token rename maps — separate per kind for transforming the imported token
+ * lists, plus a combined map for rewriting `var(--x)` references (which share
+ * one CSS custom-property namespace).
+ */
+interface TokenResolutionMaps {
+  colorRenames: Map<string, string>
+  fontRenames: Map<string, string>
+  colorSkips: Set<string>
+  fontSkips: Set<string>
+  varRenames: Map<string, string>
+}
+
+function buildTokenRenameMaps(tokenResolutions: TokenConflict[]): TokenResolutionMaps {
   const colorRenames = new Map<string, string>()
   const fontRenames = new Map<string, string>()
   const colorSkips = new Set<string>()
@@ -345,14 +373,24 @@ export function applyConflictResolutions(
     }
   }
   const varRenames = new Map<string, string>([...colorRenames, ...fontRenames])
+  return { colorRenames, fontRenames, colorSkips, fontSkips, varRenames }
+}
 
-  // Apply page resolutions. Imported fragment nodes still carry class *names*
-  // in `classIds` (walkAndMap copies `el.classList` verbatim; names become
-  // registry ids only at commit). When a rule was renamed we MUST rewrite those
-  // names too; when a token was renamed we rewrite `var(--x)` in the node's
-  // inline styles. Otherwise the node keeps the original reference and silently
-  // binds to a different same-named rule/token at commit.
-  const pages: PagePlan[] = plan.pages.map((page) => {
+/**
+ * Apply page resolutions. Imported fragment nodes still carry class *names*
+ * in `classIds` (walkAndMap copies `el.classList` verbatim; names become
+ * registry ids only at commit). When a rule was renamed we MUST rewrite those
+ * names too; when a token was renamed we rewrite `var(--x)` in the node's
+ * inline styles. Otherwise the node keeps the original reference and silently
+ * binds to a different same-named rule/token at commit.
+ */
+function resolvePagePlans(
+  pages: PagePlan[],
+  pageRes: Map<string, PageConflict['defaultResolution']>,
+  classRenames: Map<string, string>,
+  varRenames: Map<string, string>,
+): PagePlan[] {
+  return pages.map((page) => {
     const remappedFragment = remapFragment(page.nodeFragment, classRenames, varRenames)
 
     const res = pageRes.get(page.source)
@@ -366,9 +404,16 @@ export function applyConflictResolutions(
     const resolvedSlug = res.resolvedSlug ?? page.slug
     return { ...page, slug: resolvedSlug, nodeFragment: remappedFragment }
   })
+}
 
-  // Apply rule name resolutions, then rewrite any token var references.
-  const styleRules: NewStyleRule[] = plan.styleRules.map((rule) => {
+/** Apply rule name resolutions, then rewrite any token var references. */
+function resolveStyleRules(
+  styleRules: NewStyleRule[],
+  ruleRes: Map<string, RuleConflict['defaultResolution']>,
+  classRenames: Map<string, string>,
+  varRenames: Map<string, string>,
+): NewStyleRule[] {
+  return styleRules.map((rule) => {
     let next = rule
     if (rule.kind === 'class') {
       const res = ruleRes.get(rule.name)
@@ -383,28 +428,32 @@ export function applyConflictResolutions(
     }
     return varRenames.size > 0 ? rewriteRuleVarRefs(next, varRenames) : next
   })
+}
 
-  // Transform the imported token lists: drop skipped tokens (existing wins),
-  // rename renamed tokens to their unique name. Overwrite tokens stay as-is —
-  // commit replaces the existing token's value by id.
-  const colors = plan.colors
-    .filter((token) => !colorSkips.has(token.slug))
-    .map((token) => {
-      const renamed = colorRenames.get(token.slug)
-      return renamed ? { ...token, slug: renamed } : token
-    })
-  const fontTokens = plan.fontTokens
-    .filter((token) => !fontSkips.has(token.variable))
-    .map((token) => {
-      const renamed = fontRenames.get(token.variable)
-      return renamed ? { ...token, variable: renamed } : token
-    })
-
-  // The registry requires unique class names: after all renames have landed,
-  // demote every repeated class-kind rule (cascade fragments of one name) to
-  // an ambient rule with the same selector — its declarations keep their
-  // cascade position; only the first fragment stays bindable.
-  return normalizeBindableClassRules({ ...plan, pages, styleRules, colors, fontTokens })
+/**
+ * Transform the imported token lists: drop skipped tokens (existing wins),
+ * rename renamed tokens to their unique name. Overwrite tokens stay as-is —
+ * commit replaces the existing token's value by id.
+ */
+function resolveTokenLists(
+  colors: ImportPlan['colors'],
+  fontTokens: ImportPlan['fontTokens'],
+  maps: TokenResolutionMaps,
+): { colors: ImportPlan['colors']; fontTokens: ImportPlan['fontTokens'] } {
+  return {
+    colors: colors
+      .filter((token) => !maps.colorSkips.has(token.slug))
+      .map((token) => {
+        const renamed = maps.colorRenames.get(token.slug)
+        return renamed ? { ...token, slug: renamed } : token
+      }),
+    fontTokens: fontTokens
+      .filter((token) => !maps.fontSkips.has(token.variable))
+      .map((token) => {
+        const renamed = maps.fontRenames.get(token.variable)
+        return renamed ? { ...token, variable: renamed } : token
+      }),
+  }
 }
 
 /** Whether a resolution moves the item to a new name (rather than skip/overwrite). */
@@ -427,39 +476,14 @@ function remapFragment(
   let changed = false
   const nodes: Record<string, PageNode> = {}
   for (const [id, node] of Object.entries(fragment.nodes)) {
-    let next = node
-    if (classRenames.size > 0 && next.classIds?.length) {
-      const classIds = next.classIds.map((name) => classRenames.get(name) ?? name)
-      if (classIds.some((name, i) => name !== next.classIds![i])) {
-        next = { ...next, classIds }
-      }
-    }
-    if (varRenames.size > 0 && next.inlineStyles && Object.keys(next.inlineStyles).length > 0) {
-      const inlineStyles = rewriteStyleBagVarRefs(next.inlineStyles, varRenames)
-      if (inlineStyles !== next.inlineStyles) next = { ...next, inlineStyles }
-    }
+    const next = remapNodeRefs(node, classRenames, varRenames)
     if (next !== node) changed = true
     nodes[id] = next
   }
 
   let body = fragment.body
   if (body) {
-    let nextBody = body
-    const bodyClassIds = body.classIds
-    if (classRenames.size > 0 && bodyClassIds?.length) {
-      const classIds = bodyClassIds.map((name) => classRenames.get(name) ?? name)
-      if (classIds.some((name, i) => name !== bodyClassIds[i])) {
-        nextBody = { ...nextBody, classIds }
-      }
-    }
-    if (
-      varRenames.size > 0 &&
-      body.inlineStyles &&
-      Object.keys(body.inlineStyles).length > 0
-    ) {
-      const inlineStyles = rewriteStyleBagVarRefs(body.inlineStyles, varRenames)
-      if (inlineStyles !== body.inlineStyles) nextBody = { ...nextBody, inlineStyles }
-    }
+    const nextBody = remapNodeRefs(body, classRenames, varRenames)
     if (nextBody !== body) {
       changed = true
       body = nextBody
@@ -467,6 +491,31 @@ function remapFragment(
   }
 
   return changed ? { nodes, rootIds: fragment.rootIds, ...(body ? { body } : {}) } : fragment
+}
+
+/**
+ * Remap one node-like value (a fragment node or the fragment body): class
+ * tokens in `classIds` follow class renames; `var(--x)` references in
+ * `inlineStyles` follow token renames. Returns the SAME reference when
+ * nothing changed so callers can cheaply detect no-ops.
+ */
+function remapNodeRefs<T extends { classIds?: string[]; inlineStyles?: PageNode['inlineStyles'] }>(
+  node: T,
+  classRenames: Map<string, string>,
+  varRenames: Map<string, string>,
+): T {
+  let next = node
+  if (classRenames.size > 0 && next.classIds?.length) {
+    const classIds = next.classIds.map((name) => classRenames.get(name) ?? name)
+    if (classIds.some((name, i) => name !== next.classIds![i])) {
+      next = { ...next, classIds }
+    }
+  }
+  if (varRenames.size > 0 && next.inlineStyles && Object.keys(next.inlineStyles).length > 0) {
+    const inlineStyles = rewriteStyleBagVarRefs(next.inlineStyles, varRenames)
+    if (inlineStyles !== next.inlineStyles) next = { ...next, inlineStyles }
+  }
+  return next
 }
 
 function rewriteAmbientRuleClassRefs(

@@ -26,7 +26,7 @@ import type {
 } from '@core/page-tree'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
-export type ExplorerActions = Pick<
+type ExplorerActions = Pick<
   SiteSlice,
   | 'createExplorerFolder'
   | 'renameExplorerFolder'

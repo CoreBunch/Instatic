@@ -67,7 +67,7 @@ export function serveHoleRuntimeAsset(): Response {
   })
 }
 
-export interface HoleHandlerContext {
+interface HoleHandlerContext {
   db: DbClient
 }
 

@@ -10,13 +10,6 @@ import type { IconComponent } from 'pixel-art-icons/types'
 import type { TSchema } from '@core/utils/typeboxHelpers'
 import type { PropertySchema } from './propertySchema'
 
-export type {
-  PropertyCondition,
-  PropertyControl,
-  PropertyControlLayout,
-  PropertySchema,
-} from './propertySchema'
-
 // ---------------------------------------------------------------------------
 // Module package dependencies — dependency-backed editor runtimes
 // ---------------------------------------------------------------------------

@@ -15,7 +15,7 @@
 const VC_REF_MODULE_ID = 'base.visual-component-ref'
 
 /** A discovered VC reference: the host node's id and the VC it embeds. */
-export interface VCRef {
+interface VCRef {
   nodeId: string
   componentId: string
 }

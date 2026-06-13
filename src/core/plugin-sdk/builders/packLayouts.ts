@@ -46,7 +46,7 @@ export interface LayoutPackEntry {
 }
 
 /** Auto-namespace a pack layout id unless the author already prefixed it. */
-export function namespacedLayoutId(pluginId: string, id: string): string {
+function namespacedLayoutId(pluginId: string, id: string): string {
   return id.startsWith(`${pluginId}/`) ? id : `${pluginId}/${id}`
 }
 

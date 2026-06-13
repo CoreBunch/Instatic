@@ -1,8 +1,8 @@
 import { getAncestors, type NodeTree, type PageNode } from '@core/page-tree'
 
-export type CanvasTreeLadderRelation = 'ancestor' | 'current' | 'firstChild'
-export type CanvasTreeLadderDirection = 'up' | 'down'
-export type CanvasTreeLadderPlacement = 'above' | 'below'
+type CanvasTreeLadderRelation = 'ancestor' | 'current' | 'firstChild'
+type CanvasTreeLadderDirection = 'up' | 'down'
+type CanvasTreeLadderPlacement = 'above' | 'below'
 
 export interface CanvasTreeLadderRow {
   nodeId: string
@@ -10,30 +10,30 @@ export interface CanvasTreeLadderRow {
   relation: CanvasTreeLadderRelation
 }
 
-export interface CanvasTreeLadderSelectionController {
+interface CanvasTreeLadderSelectionController {
   activeBreakpointId: string | null
   setActiveBreakpoint: (breakpointId: string) => void
   selectNode: (nodeId: string) => void
 }
 
-export interface CanvasTreeLadderRect {
+interface CanvasTreeLadderRect {
   x: number
   y: number
   width: number
   height: number
 }
 
-export interface CanvasTreeLadderBox {
+interface CanvasTreeLadderBox {
   width: number
   height: number
 }
 
-export interface CanvasTreeLadderBounds {
+interface CanvasTreeLadderBounds {
   width: number
   height: number
 }
 
-export interface CanvasTreeLadderPosition {
+interface CanvasTreeLadderPosition {
   x: number
   y: number
   pointerX: number

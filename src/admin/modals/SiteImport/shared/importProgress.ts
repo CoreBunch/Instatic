@@ -10,7 +10,7 @@
  * atomic commit, so those counts flip from 0 → committed-total together.
  */
 
-export type RunPhase = 'idle' | 'uploading' | 'applying' | 'done' | 'failed'
+type RunPhase = 'idle' | 'uploading' | 'applying' | 'done' | 'failed'
 
 export type ImportCategoryId =
   | 'pages'

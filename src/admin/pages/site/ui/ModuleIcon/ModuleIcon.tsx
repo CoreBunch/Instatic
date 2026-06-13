@@ -17,7 +17,7 @@ import type { AnyModuleDefinition } from '@core/module-engine'
 import type { IconProps } from 'pixel-art-icons/types'
 import { SquareSolidIcon } from 'pixel-art-icons/icons/square-solid'
 
-export interface ModuleIconProps extends IconProps {
+interface ModuleIconProps extends IconProps {
   /** Module id to resolve from the registry. Ignored when `module` is set. */
   moduleId?: string
   /** Already-resolved module definition. */

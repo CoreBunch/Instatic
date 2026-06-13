@@ -4,7 +4,7 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 
 const DEBOUNCE_MS = 700
 
-export interface DataRowDraft {
+interface DataRowDraft {
   cells: DataRowCells
   isDirty: boolean
   isSaving: boolean

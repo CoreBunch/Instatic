@@ -66,7 +66,7 @@ function clampSize(size: number, min: number, max: number): number {
   return Math.round(size)
 }
 
-export interface DashboardGridProps {
+interface DashboardGridProps {
   items: readonly DashboardItem[]
   /** Definitions keyed by id (registry snapshot). */
   definitions: ReadonlyMap<string, DashboardWidgetDefinition>

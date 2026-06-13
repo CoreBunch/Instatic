@@ -38,7 +38,7 @@ src/core/publisher/
 ├── frameworkCss.ts                 — site framework CSS (spacing scale, typography)
 ├── userStylesheets.ts              — site-level user stylesheets
 ├── siteCssBundle.ts                — hash-named bundle composition (reset + framework + style)
-├── sizesResolver.ts                — `<img sizes>` auto-resolution from viewport contexts
+├── sizesResolver.ts                — `<img sizes>` derived from the layout: linear width model (caps, fractions, grid tracks) per viewport tier
 ├── dynamicDetection.ts             — Single walker for the 4 auto-detection rules; powers Layers A and C
 └── utils.ts                        — escapeHtml, isSafeUrl, sanitiseCssValue (re-exported from @core/css-sanitize)
 
@@ -402,6 +402,13 @@ publishDraftSite (server/publish/publishSite.ts)
     │     its runtime_assets_json
     ├─→ flip data_rows.status = 'published', set active_version_id
     │
+    ├─→ Layer A bake — the 404 page (when a notFound template exists):
+    │     renderPublishedNotFound (notFound template wrapped in the everywhere
+    │     chain) → same pipeline → writeArtefact(<inactiveSlot>, '/404')
+    │     (`404.html` — the static-hosting convention, so Netlify/GH Pages
+    │      pick it up in a raw static export; baked first so a literal page
+    │      with slug `404` would overwrite it and stay authoritative)
+    │
     ├─→ Layer A bake — every page (complete doc, or static shell with <instatic-hole>):
     │     ├── renderPublishedSnapshot(snapshot, { db, url, publishVersion }) → HTML
     │     ├── applyPublishedHtmlPipeline(rendered, db) → final HTML
@@ -453,7 +460,11 @@ tryServePublicRoute (server/router.ts)
           │     row resolutions read the site snapshot via the per-version memo
           │     (publishedSnapshotCache.ts) — no per-request full-site parse
           │     redirects → 301 (not cached)
-          │     not-found → null (router falls through to next handler)
+          │     not-found → null (router falls through: trySetupRedirect, then
+          │     tryServeNotFoundPage → renderNotFoundResponse serves the site's
+          │     404 page — baked `404.html` artefact first, else live render
+          │     through the LRU under the reserved `/404` key — with status 404;
+          │     no notFound template → the dispatcher's bare JSON 404)
           │
           └─→ Layer B in-memory LRU (miss path):
                 getOrRender({urlPath, queryString: canonicalQuery}, async () => {

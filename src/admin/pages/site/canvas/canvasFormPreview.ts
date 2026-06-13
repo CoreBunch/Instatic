@@ -17,7 +17,7 @@
 import type { PageNode } from '@core/page-tree'
 import { selectActiveCanvasPage, type EditorStore } from '@site/store/store'
 
-export type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'
+type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'
 
 const DEFAULT_FORM_SUCCESS_MESSAGE = 'Thanks. Your submission was received.'
 

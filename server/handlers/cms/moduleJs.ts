@@ -34,7 +34,7 @@ export function isModuleJsAssetPath(pathname: string): boolean {
   return pathname.startsWith(MODULE_JS_PATH_PREFIX)
 }
 
-export interface ModuleJsHandlerContext {
+interface ModuleJsHandlerContext {
   db: DbClient
 }
 

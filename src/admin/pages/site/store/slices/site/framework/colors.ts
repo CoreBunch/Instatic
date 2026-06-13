@@ -242,7 +242,7 @@ function reorderFrameworkColorTokenInGroup(
 // Action factory
 // ---------------------------------------------------------------------------
 
-export type FrameworkColorActions = Pick<
+type FrameworkColorActions = Pick<
   SiteSlice,
   | 'createFrameworkColorToken'
   | 'updateFrameworkColorToken'

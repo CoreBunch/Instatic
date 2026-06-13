@@ -16,7 +16,7 @@ export function htmlAttributesControl(): PropertyControl {
   }
 }
 
-export function normalizeHtmlAttributes(value: unknown): Record<string, string> {
+function normalizeHtmlAttributes(value: unknown): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
 
   const attrs: Record<string, string> = {}

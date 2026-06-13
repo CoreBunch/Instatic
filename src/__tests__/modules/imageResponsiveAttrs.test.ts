@@ -1,12 +1,13 @@
 /**
  * base.image responsive attributes — `sizes` resolution.
  *
- * `sizes='auto'` (the prop default) must emit the standards-based
- * `auto, <fallback>` form on LAZY images: browsers that implement
- * `sizes=auto` (Chrome 121+) pick by the image's actual rendered width,
- * everyone else parses past the unknown keyword and uses the fallback.
- * The spec only allows `auto` on `loading="lazy"` images, so eager images
- * emit the fallback alone. Author-supplied `sizes` values are verbatim.
+ * `sizes` has no user knob: the publisher's layout resolver attaches
+ * `_resolvedAutoSizes` and the module emits it. LAZY images prefix the
+ * standards-based `auto` keyword: browsers that implement `sizes=auto`
+ * (Chrome 121+) pick by the image's actual rendered width, everyone else
+ * parses past the unknown keyword and uses the resolved fallback. The spec
+ * only allows `auto` on `loading="lazy"` images, so eager images emit the
+ * fallback alone.
  */
 import { describe, expect, it } from 'bun:test'
 import type { RenderResolvedMedia } from '@core/publisher'
@@ -50,28 +51,23 @@ function sizesAttr(html: string): string | null {
 }
 
 describe('base.image sizes resolution', () => {
-  it("lazy + sizes 'auto' with a publisher-resolved cap emits `auto, <cap>`", () => {
-    const html = renderImage({ loading: 'lazy', sizes: 'auto', _resolvedAutoSizes: '1280px' })
-    expect(sizesAttr(html)).toBe('auto, 1280px')
+  it('lazy with a publisher-resolved value emits `auto, <resolved>`', () => {
+    const html = renderImage({ loading: 'lazy', _resolvedAutoSizes: 'min(33.33vw - 16px, 410.67px)' })
+    expect(sizesAttr(html)).toBe('auto, min(33.33vw - 16px, 410.67px)')
   })
 
-  it("lazy + sizes 'auto' without a resolved cap emits `auto, 100vw`", () => {
-    const html = renderImage({ loading: 'lazy', sizes: 'auto' })
+  it('lazy without a resolved value emits `auto, 100vw`', () => {
+    const html = renderImage({ loading: 'lazy' })
     expect(sizesAttr(html)).toBe('auto, 100vw')
   })
 
-  it("eager + sizes 'auto' emits the fallback alone (`auto` keyword is lazy-only)", () => {
-    const html = renderImage({ loading: 'eager', sizes: 'auto', _resolvedAutoSizes: '1280px' })
-    expect(sizesAttr(html)).toBe('1280px')
-  })
-
-  it('an author-supplied sizes value is emitted verbatim', () => {
-    const html = renderImage({ loading: 'lazy', sizes: '(min-width: 1024px) 50vw, 100vw' })
-    expect(sizesAttr(html)).toBe('(min-width: 1024px) 50vw, 100vw')
+  it('eager emits the resolved value alone (`auto` keyword is lazy-only)', () => {
+    const html = renderImage({ loading: 'eager', _resolvedAutoSizes: 'min(100vw, 1280px)' })
+    expect(sizesAttr(html)).toBe('min(100vw, 1280px)')
   })
 
   it('srcset never contains the original file', () => {
-    const html = renderImage({ loading: 'lazy', sizes: 'auto' })
+    const html = renderImage({ loading: 'lazy' })
     const m = html.match(/srcset="([^"]*)"/)
     expect(m).not.toBeNull()
     expect(m![1]).not.toContain('.png')

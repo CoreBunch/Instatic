@@ -206,7 +206,7 @@ export interface RunScheduleRequest {
  * exposes the same set of named callbacks; routing in the VM is just a
  * property lookup on the handler object.
  */
-export type MediaAdapterMethod =
+type MediaAdapterMethod =
   | 'beginWrite'
   | 'finalizeWrite'
   | 'abortWrite'
@@ -296,20 +296,20 @@ export interface LoadPluginResult {
   hooks?: Array<'install' | 'activate' | 'deactivate' | 'uninstall' | 'migrate'>
 }
 
-export interface UnloadPluginResult {
+interface UnloadPluginResult {
   kind: 'unload-plugin-result'
   correlationId: string
   ok: boolean
 }
 
-export interface UpdateSettingsResult {
+interface UpdateSettingsResult {
   kind: 'update-settings-result'
   correlationId: string
   ok: boolean
   error?: string
 }
 
-export interface LifecycleResult {
+interface LifecycleResult {
   kind: 'lifecycle-result'
   correlationId: string
   ok: boolean
@@ -322,7 +322,7 @@ export interface LifecycleResult {
   stack?: string
 }
 
-export interface RouteResult {
+interface RouteResult {
   kind: 'route-result'
   correlationId: string
   ok: boolean
@@ -336,7 +336,7 @@ export interface RouteResult {
   stack?: string
 }
 
-export interface HookListenerResult {
+interface HookListenerResult {
   kind: 'hook-listener-result'
   correlationId: string
   ok: boolean
@@ -349,7 +349,7 @@ export interface HookListenerResult {
   stack?: string
 }
 
-export interface HookFilterResult {
+interface HookFilterResult {
   kind: 'hook-filter-result'
   correlationId: string
   ok: boolean
@@ -364,7 +364,7 @@ export interface HookFilterResult {
   stack?: string
 }
 
-export interface LoopFetchResultMessage {
+interface LoopFetchResultMessage {
   kind: 'loop-fetch-result'
   correlationId: string
   ok: boolean
@@ -379,7 +379,7 @@ export interface LoopFetchResultMessage {
   stack?: string
 }
 
-export interface LoopPreviewResult {
+interface LoopPreviewResult {
   kind: 'loop-preview-result'
   correlationId: string
   ok: boolean
@@ -400,7 +400,7 @@ export interface LoopPreviewResult {
  * overhead. `status='timeout'` is set when the VM aborted via its
  * deadline interrupt — the error message will reflect that.
  */
-export interface ScheduleResult {
+interface ScheduleResult {
   kind: 'schedule-result'
   correlationId: string
   ok: boolean
@@ -416,7 +416,7 @@ export interface ScheduleResult {
   durationMs: number
 }
 
-export interface MediaAdapterCallResult {
+interface MediaAdapterCallResult {
   kind: 'media-adapter-call-result'
   correlationId: string
   ok: boolean
@@ -430,7 +430,7 @@ export interface MediaAdapterCallResult {
   stack?: string
 }
 
-export interface MediaUrlTransformerResult {
+interface MediaUrlTransformerResult {
   kind: 'media-url-transformer-result'
   correlationId: string
   ok: boolean
@@ -467,7 +467,7 @@ export interface ApiCall {
  * Plugin `api.plugin.log(...)` — fire-and-forget, no correlation id.
  * Host prints with `[plugin:<id>]` prefix.
  */
-export interface WorkerLogEvent {
+interface WorkerLogEvent {
   kind: 'log'
   pluginId: string
   args: unknown[]

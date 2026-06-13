@@ -24,7 +24,7 @@ import styles from './DataCanvas.module.css'
 // Props
 // ---------------------------------------------------------------------------
 
-export interface DataCanvasProps {
+interface DataCanvasProps {
   table: DataTable | null
   tables: DataTable[]
   rows: DataRow[]

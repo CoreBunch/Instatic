@@ -119,6 +119,11 @@ export function ExplorerFolderRow({
           aria-label={folder.name}
           onClick={onToggle}
           onContextMenu={(event) => onContextMenu(folder, event)}
+          onDoubleClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onRename(folder)
+          }}
           onKeyDown={(event) => {
             if (event.key === 'F2') {
               event.preventDefault()
@@ -248,6 +253,11 @@ export function ExplorerItemRow<TTarget>({
           aria-current={item.active ? 'page' : undefined}
           onClick={(event) => onOpen(item, event)}
           onContextMenu={(event) => onContextMenu(item, event)}
+          onDoubleClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onRename(item)
+          }}
           onKeyDown={(event) => {
             if (event.key === 'F2') {
               event.preventDefault()

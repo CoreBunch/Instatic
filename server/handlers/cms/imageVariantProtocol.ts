@@ -19,7 +19,7 @@
  * them; once the host owns the variant bytes, the worker shouldn't either.
  */
 
-export interface ImageVariantBlurHashConfig {
+interface ImageVariantBlurHashConfig {
   /** Component count along X. Encoder requires 1 <= x <= 9. */
   readonly x: number
   /** Component count along Y. Encoder requires 1 <= y <= 9. */
@@ -75,7 +75,7 @@ export interface ImageVariantJobOk {
   readonly variants: readonly ImageVariantPayload[]
 }
 
-export interface ImageVariantJobErr {
+interface ImageVariantJobErr {
   readonly kind: 'image-variant-result'
   readonly correlationId: string
   readonly ok: false

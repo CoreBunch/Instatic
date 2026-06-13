@@ -15,7 +15,7 @@ import { useEffect, useRef } from 'react'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 
-export interface ConfirmDeleteDialogProps {
+interface ConfirmDeleteDialogProps {
   /** Short, action-style title. e.g. "Delete layer?" */
   title: string
   /** Optional secondary line shown beneath the title. */

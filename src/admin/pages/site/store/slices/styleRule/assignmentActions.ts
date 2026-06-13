@@ -12,7 +12,7 @@ import type { SiteSliceHelpers } from '../site/types'
 import type { StyleRuleSlice } from './types'
 import { findNodeWithClassIds, mutateNodeClassIds } from './helpers'
 
-export type AssignmentActions = Pick<
+type AssignmentActions = Pick<
   StyleRuleSlice,
   | 'addNodeClass'
   | 'addNodeClasses'

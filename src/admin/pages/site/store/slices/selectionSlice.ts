@@ -14,9 +14,9 @@ import { flattenSubtree, getParent } from '@core/page-tree'
  *   `id` along the active tree's depth-first walk order. Cross-parent ranges
  *   are allowed (matches Figma).
  */
-export type SelectionMode = 'replace' | 'toggle' | 'range'
+type SelectionMode = 'replace' | 'toggle' | 'range'
 
-export interface SelectionSlice {
+interface SelectionSlice {
   /**
    * The full multi-selection set, ordered. The LAST entry is the "anchor"
    * (= `selectedNodeId`). Empty array when nothing is selected.

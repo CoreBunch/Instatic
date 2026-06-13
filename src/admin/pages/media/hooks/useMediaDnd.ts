@@ -15,7 +15,7 @@ import {
   type MediaDndTarget,
 } from '../utils/mediaDnd'
 
-export interface MediaDnd {
+interface MediaDnd {
   /** True when `targetFolderId` is the folder currently highlighted as the drop target. */
   isDropTarget: (targetFolderId: string | null) => boolean
   /** Clear the highlight (e.g. on `dragEnd`). */

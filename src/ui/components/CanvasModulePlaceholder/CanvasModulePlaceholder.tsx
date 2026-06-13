@@ -29,7 +29,7 @@ import type { HTMLAttributes, ReactNode } from 'react'
 import { cn } from '@ui/cn'
 import styles from './CanvasModulePlaceholder.module.css'
 
-export interface CanvasModulePlaceholderProps extends HTMLAttributes<HTMLDivElement> {
+interface CanvasModulePlaceholderProps extends HTMLAttributes<HTMLDivElement> {
   /** Optional pixel-art icon shown above (block) or before (inline) the label. */
   icon?: ReactNode
   /** Primary line — short message identifying what's missing. */

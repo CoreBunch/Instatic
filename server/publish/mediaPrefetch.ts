@@ -30,13 +30,13 @@ import {
 import { materializeAssetMapForClient } from './mediaPresentation'
 
 /** Map keyed by the asset's `public_path` for O(1) lookup at render time. */
-export type MediaAssetMap = Map<string, MediaAsset>
+type MediaAssetMap = Map<string, MediaAsset>
 
 /**
  * Collect every `/uploads/...` path referenced by an image/media-typed prop
  * across the page tree.
  */
-export function collectMediaPaths(page: Page, site: SiteDocument, registry: IModuleRegistry): Set<string> {
+function collectMediaPaths(page: Page, site: SiteDocument, registry: IModuleRegistry): Set<string> {
   const paths = new Set<string>()
   // Descend into referenced VC definition trees so an image/media prop inside a
   // VC body is resolved too (ISS-022).

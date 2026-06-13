@@ -113,7 +113,7 @@ export interface FluidScaleStep {
   preferred: string
 }
 
-export interface FluidScaleInput {
+interface FluidScaleInput {
   minBaseSize: number
   maxBaseSize: number
   minScaleRatio: number

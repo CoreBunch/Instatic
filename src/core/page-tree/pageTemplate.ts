@@ -15,12 +15,18 @@ import { Type, type Static } from '@core/utils/typeboxHelpers'
 // TemplateTargetSchema
 // ---------------------------------------------------------------------------
 
-export const TemplateTargetSchema = Type.Union([
+const TemplateTargetSchema = Type.Union([
   Type.Object({ kind: Type.Literal('everywhere') }),
   Type.Object({
     kind: Type.Literal('postTypes'),
     tableSlugs: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
   }),
+  /**
+   * The site's 404 page. Never matched by route resolution — the public
+   * router renders it (wrapped in the `everywhere` layout chain) whenever a
+   * GET falls through every other route. Baked to `404.html` at publish time.
+   */
+  Type.Object({ kind: Type.Literal('notFound') }),
 ])
 export type TemplateTarget = Static<typeof TemplateTargetSchema>
 
@@ -47,6 +53,7 @@ function parseTarget(raw: unknown): TemplateTarget | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const r = raw as Record<string, unknown>
   if (r.kind === 'everywhere') return { kind: 'everywhere' }
+  if (r.kind === 'notFound') return { kind: 'notFound' }
   if (r.kind === 'postTypes') {
     const slugs = Array.isArray(r.tableSlugs)
       ? r.tableSlugs.filter((s): s is string => typeof s === 'string' && s.length > 0)

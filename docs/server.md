@@ -81,6 +81,9 @@ const routes: readonly RouteHandler[] = [
                                    //   resolves to page snapshot OR data row + template,
                                    //   live-renders, runs publish.html pipeline
   trySetupRedirect,                // first-run redirect → /admin/setup
+  tryServeNotFoundPage,            // fall-through GET → site's 404 page (notFound
+                                   //   template; baked 404.html artefact, else live
+                                   //   render) with status 404; null → JSON 404
 ]
 ```
 

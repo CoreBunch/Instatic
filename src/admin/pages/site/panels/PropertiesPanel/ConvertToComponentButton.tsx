@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useEditorStore } from '@site/store/store'
-import { VisualComponentNameError } from '@site/store/slices/visualComponentsSlice'
+import { VisualComponentNameError } from '@site/store/slices/vcTreeOps'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
 import styles from './ConvertToComponentButton.module.css'

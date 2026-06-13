@@ -66,7 +66,7 @@ interface ContentAgentMountProps {
  * Avoids importing the workspace hook's full type (which couples this
  * module to the workspace's internals).
  */
-export interface ContentAgentWorkspaceSurface {
+interface ContentAgentWorkspaceSurface {
   collections: DataTable[]
   entries: DataRow[]
   selectedEntry: DataRow | null
@@ -85,7 +85,7 @@ export interface ContentAgentWorkspaceSurface {
  * Subset of useContentEntryDraft's return value the bridge actually uses
  * to mutate the active document's fields.
  */
-export interface ContentAgentDraftSurface {
+interface ContentAgentDraftSurface {
   setTitle(value: string): void
   setSlug(value: string): void
   setSeoTitle(value: string): void

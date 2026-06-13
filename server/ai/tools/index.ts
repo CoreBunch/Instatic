@@ -62,4 +62,4 @@ export function selectToolsForScope(
   return scopeToolset(scope).filter((t) => toolAllowedForCapabilities(t, capabilities))
 }
 
-export type { AiTool, ToolScope } from './types'
+

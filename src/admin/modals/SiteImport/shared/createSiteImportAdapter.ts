@@ -56,7 +56,7 @@ const MediaFolderCreateResponseSchema = Type.Object(
   { additionalProperties: true },
 )
 
-export interface AdapterCallbacks {
+interface AdapterCallbacks {
   /** Stable id for the upload session (for logging). */
   sessionId: string
   /** Called before each asset upload begins. */

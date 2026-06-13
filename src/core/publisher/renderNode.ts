@@ -96,22 +96,20 @@ function attachResolvedMediaByKey(
 }
 
 /**
- * Pre-resolve `sizes='auto'` on image modules by walking the ancestor chain
- * for an explicit pixel-valued cap (typically a parent container's
- * `max-width`). The resolved string lands on `props._resolvedAutoSizes`. The
- * module's render() reads it next to its own `sizes` prop and emits the
- * result as the final `sizes` attribute. Cheap on most pages: the resolver
- * caches the parent map per Page and short-circuits as soon as it finds a
- * constraining ancestor.
+ * Pre-resolve `sizes` on image modules by modelling the node's laid-out
+ * width from its ancestor chain (pixel caps, fraction widths, grid column
+ * tracks — see sizesResolver.ts). The resolved string lands on
+ * `props._resolvedAutoSizes`; the module's render() emits it as the final
+ * `sizes` attribute (prefixed with the `auto` keyword on lazy images).
+ * There is no per-node user override — the publisher derives the value
+ * from the same layout it generates the CSS for.
  */
 function attachResolvedAutoSizes(
   safeProps: Record<string, unknown>,
   def: AnyModuleDefinition,
   node: PageNode,
-  resolvedProps: Record<string, unknown>,
   config: RenderConfig,
 ): void {
-  if (resolvedProps['sizes'] !== 'auto') return
   const hasImageProp = Object.values(def.schema).some((c) => c.type === 'image')
   if (!hasImageProp) return
   const resolvedSizes = resolveAutoSizes(node.id, config.page, config.site)
@@ -161,7 +159,7 @@ function renderStandardNode(
   // attach derived assets that survive the escape boundary unchanged.
   const safeProps = escapeProps(validatedProps, def.schema)
   attachResolvedMediaByKey(safeProps, def, validatedProps, config.mediaAssets)
-  attachResolvedAutoSizes(safeProps, def, node, validatedProps, config)
+  attachResolvedAutoSizes(safeProps, def, node, config)
 
   const output = def.render(safeProps as never, renderedChildren)
 

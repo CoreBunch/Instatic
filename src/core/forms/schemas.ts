@@ -1,6 +1,6 @@
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 
-export const FormControlBindingSchema = Type.Object({
+const FormControlBindingSchema = Type.Object({
   nodeId: Type.String({ minLength: 1 }),
   fieldId: Type.String({ minLength: 1 }),
   name: Type.Optional(Type.String({ minLength: 1 })),
@@ -15,14 +15,14 @@ export const FormControlBindingSchema = Type.Object({
 
 export type FormControlBinding = Static<typeof FormControlBindingSchema>
 
-export const FormSubmissionLimitsSchema = Type.Object({
+const FormSubmissionLimitsSchema = Type.Object({
   maxFields: Type.Optional(Type.Number()),
   maxStringLength: Type.Optional(Type.Number()),
 })
 
 export type FormSubmissionLimits = Static<typeof FormSubmissionLimitsSchema>
 
-export const FormValidationErrorSchema = Type.Object({
+const FormValidationErrorSchema = Type.Object({
   fieldId: Type.String(),
   code: Type.String(),
   message: Type.String(),
@@ -38,17 +38,13 @@ export const PublicFormSubmitBodySchema = Type.Object({
   values: Type.Record(Type.String(), Type.Unknown()),
 })
 
-export type PublicFormSubmitBody = Static<typeof PublicFormSubmitBodySchema>
-
 export const PublicFormChallengeBodySchema = Type.Object({
   formId: Type.String({ minLength: 1 }),
   pageId: Type.String({ minLength: 1 }),
   pageToken: Type.String({ minLength: 1 }),
 })
 
-export type PublicFormChallengeBody = Static<typeof PublicFormChallengeBodySchema>
-
-export const PublishedFormLabelSchema = Type.Object({
+const PublishedFormLabelSchema = Type.Object({
   nodeId: Type.String({ minLength: 1 }),
   targetNodeId: Type.String({ minLength: 1 }),
   text: Type.String(),
@@ -56,14 +52,14 @@ export const PublishedFormLabelSchema = Type.Object({
 
 export type PublishedFormLabel = Static<typeof PublishedFormLabelSchema>
 
-export const PublishedFormSubmitSchema = Type.Object({
+const PublishedFormSubmitSchema = Type.Object({
   nodeId: Type.String({ minLength: 1 }),
   label: Type.String(),
 })
 
 export type PublishedFormSubmit = Static<typeof PublishedFormSubmitSchema>
 
-export const PublishedFormMessageSchema = Type.Object({
+const PublishedFormMessageSchema = Type.Object({
   nodeId: Type.String({ minLength: 1 }),
   kind: Type.Union([Type.Literal('status'), Type.Literal('success'), Type.Literal('error')]),
   text: Type.String(),
@@ -71,7 +67,7 @@ export const PublishedFormMessageSchema = Type.Object({
 
 export type PublishedFormMessage = Static<typeof PublishedFormMessageSchema>
 
-export const PublishedFormSnapshotSchema = Type.Object({
+const PublishedFormSnapshotSchema = Type.Object({
   pageId: Type.String({ minLength: 1 }),
   nodeId: Type.String({ minLength: 1 }),
   formId: Type.String({ minLength: 1 }),

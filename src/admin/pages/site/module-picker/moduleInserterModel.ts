@@ -22,8 +22,8 @@ export type ModuleInserterSectionId =
   | 'layouts'
   | 'components'
   | 'recent'
-export type ModuleInserterItemKind = 'module' | 'layout' | 'savedLayout' | 'component'
-export type ModuleInserterRecentRef = ModuleInserterItemRef
+type ModuleInserterItemKind = 'module' | 'layout' | 'savedLayout' | 'component'
+type ModuleInserterRecentRef = ModuleInserterItemRef
 
 export interface RegistryModuleForInserter {
   id: string
@@ -49,7 +49,7 @@ interface BaseInserterItem {
   disabledReason?: string
 }
 
-export interface ModuleInserterModuleItem<
+interface ModuleInserterModuleItem<
   TModule extends RegistryModuleForInserter = AnyModuleDefinition,
 > extends BaseInserterItem {
   kind: 'module'
@@ -57,13 +57,13 @@ export interface ModuleInserterModuleItem<
   category: string
 }
 
-export interface ModuleInserterLayoutItem extends BaseInserterItem {
+interface ModuleInserterLayoutItem extends BaseInserterItem {
   kind: 'layout'
   preset: InsertionPreset
   blocks: number
 }
 
-export interface ModuleInserterSavedLayoutItem extends BaseInserterItem {
+interface ModuleInserterSavedLayoutItem extends BaseInserterItem {
   kind: 'savedLayout'
   layout: SavedLayout
   blocks: number
@@ -76,7 +76,7 @@ export interface ModuleInserterSavedLayoutItem extends BaseInserterItem {
   pluginId: string | null
 }
 
-export interface ModuleInserterComponentItem extends BaseInserterItem {
+interface ModuleInserterComponentItem extends BaseInserterItem {
   kind: 'component'
   component: VisualComponent
   uses: number
@@ -120,7 +120,7 @@ export interface ModuleInsertionContext {
   hasOutlet: boolean
 }
 
-export type ModuleAvailability =
+type ModuleAvailability =
   | { kind: 'insertable' }
   | { kind: 'hidden' }
   | { kind: 'disabled'; reason: string }
@@ -336,7 +336,7 @@ export function composeLayoutsSection(
   return { items, labelByKey }
 }
 
-export function getComponentItems(
+function getComponentItems(
   components: readonly VisualComponent[],
 ): ModuleInserterComponentItem[] {
   return components.map((component) => ({
@@ -353,7 +353,7 @@ export function getComponentItems(
   }))
 }
 
-export interface BuiltModuleInserterItems {
+interface BuiltModuleInserterItems {
   moduleItems: ModuleInserterModuleItem[]
   /** Built-in layout presets. */
   layoutItems: ModuleInserterLayoutItem[]

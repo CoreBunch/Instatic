@@ -7,7 +7,7 @@ import { nanoid } from 'nanoid'
 import type { Breakpoint } from '@core/page-tree'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
-export type BreakpointActions = Pick<
+type BreakpointActions = Pick<
   SiteSlice,
   'addBreakpoint' | 'updateBreakpoint' | 'removeBreakpoint' | 'reorderBreakpoints'
 >

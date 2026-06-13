@@ -97,7 +97,7 @@ const TINT_TOKEN: Record<WidgetTint, string> = {
  * Accepts only `span` — title / icon / tint aren't known until the
  * definition arrives; the placeholder is intentionally generic.
  */
-export interface WidgetSkeletonProps {
+interface WidgetSkeletonProps {
   /** Stable id from the layout slot — used for DnD tracking + DOM diffing. */
   widgetId: string
   /** Grid column span (1 .. 12), read from the layout slot. */

@@ -1,15 +1,16 @@
 # Templates
 
-Templates are pages that wrap other content — every page on the site (everywhere layouts) or every entry in a post type. They are the mechanism for shared headers, footers, and layout chrome.
+Templates are pages that wrap other content — every page on the site (everywhere layouts) or every entry in a post type. They are the mechanism for shared headers, footers, and layout chrome. A third target, `notFound`, designates the page served on public 404s (it doesn't wrap anything — it IS the content, wrapped by the everywhere layout like any page).
 
-A template is an ordinary `pages` row carrying a `target` (everywhere or one/more post types) and a `priority`. When the public router resolves a URL, it collects every matching template, orders them broadest→narrowest, and a composer splices each inner tree into the outer template's single `base.outlet`, producing one merged page tree. That tree feeds the existing `publishPage` pipeline unchanged.
+A template is an ordinary `pages` row carrying a `target` (everywhere, one/more post types, or notFound) and a `priority`. When the public router resolves a URL, it collects every matching template, orders them broadest→narrowest, and a composer splices each inner tree into the outer template's single `base.outlet`, producing one merged page tree. That tree feeds the existing `publishPage` pipeline unchanged.
 
 ---
 
 ## TL;DR
 
-- A template declares `target: { kind: 'everywhere' } | { kind: 'postTypes', tableSlugs }` and a `priority`.
+- A template declares `target: { kind: 'everywhere' } | { kind: 'postTypes', tableSlugs } | { kind: 'notFound' }` and a `priority`.
 - **Chain resolver:** `resolveTemplateChain(site, ctx)` in `src/core/templates/templateMatching.ts` → `Page[]` ordered outer → inner. At most one template per breadth level (highest priority wins, document order breaks ties). Two breadth levels today: `everywhere` (outermost) → `postTypes` (innermost).
+- **404 resolver:** `resolveNotFoundTemplate(site)` → the highest-priority `notFound` template or null. A `notFound` template never enters a route chain — the public router renders it directly when a GET falls through every route (see "The Not found (404) template" below).
 - **Chain composer:** `composeTemplateChain(chain, terminal)` in `src/core/templates/templateCompose.ts` → one merged `Page` ready for `publishPage`.
 - **`base.outlet`** is the polymorphic outlet content flows into. A template *should* contain one. Having NO outlet is not blocked (you add it after converting the page to a template — requiring it first would be circular). The editor enforces a one-outlet-per-document invariant at the store's mutation chokepoints (`insertNode`, `duplicateNode(s)`, `pasteNode`), each surfacing a warning toast when blocked; the module pickers additionally render the outlet as a disabled tile with the reason (non-template page, VC mode, or outlet already placed) so authors rarely hit the block at all. The composer remains defensive for data pre-dating the guard: no outlet → template skipped; multiple → first wins.
 - Template pages are never served at their own slug; the live router and the static bake both skip them.
@@ -23,7 +24,7 @@ A template is an ordinary `pages` row carrying a `target` (everywhere or one/mor
 ```text
 src/core/page-tree/pageTemplate.ts     — TemplateTarget, PageTemplateConfig, parsePageTemplate
 src/core/templates/
-├── templateMatching.ts                — resolveTemplateChain, isTemplatePage, templateTargetLabel, RouteResolutionContext
+├── templateMatching.ts                — resolveTemplateChain, resolveNotFoundTemplate, isTemplatePage, templateTargetLabel, RouteResolutionContext
 ├── templateCompose.ts                 — composeTemplateChain, TerminalContent
 ├── contextFrames.ts                   — PageFrame, SiteFrame, RouteFrame + builders
 ├── dynamicBindings.ts                 — TemplateRenderDataContext + resolveDynamicProps
@@ -45,6 +46,7 @@ server/publish/publicRenderer.ts       — chain-aware render paths
 type TemplateTarget =
   | { kind: 'everywhere' }
   | { kind: 'postTypes'; tableSlugs: string[] }   // ≥1 slug
+  | { kind: 'notFound' }                          // the public 404 page
 
 interface PageTemplateConfig {
   enabled: true
@@ -160,7 +162,7 @@ public GET /<routeBase>/<rowSlug>  →  resolvePublicRoute
                     publishPage(merged, …, templateContext: { entryStack: [row] })
 ```
 
-Render paths: `server/publish/publicRenderer.ts` — `renderPublishedSnapshot` (page route), `renderPublishedDataRowTemplate` (entry route).
+Render paths: `server/publish/publicRenderer.ts` — `renderPublishedSnapshot` (page route), `renderPublishedDataRowTemplate` (entry route), `renderPublishedNotFound` (fall-through 404).
 
 ### Chain for each route kind (v1)
 
@@ -168,12 +170,25 @@ Render paths: `server/publish/publicRenderer.ts` — `renderPublishedSnapshot` (
 |-------|--------------------|----|
 | `/about` (page)          | `[everywhere-layout?]`                           | the `/about` page tree |
 | `/posts/hello` (entry)   | `[everywhere-layout?, posts-entry-template]`     | `{ kind: 'entry' }` — outlet renders the row body |
+| any unmatched GET (404)  | `[everywhere-layout?]`                           | the `notFound` template's tree |
 
 If no `everywhere` layout exists, a plain page renders exactly as a page with no templates. If no postTypes template exists for a route, the entry URL 404s.
 
 ### Static re-bake on template edit
 
 A full `publishDraftSite` re-bakes every non-template page through `renderPublishedSnapshot`, which runs the chain each time — so editing an `everywhere` layout and publishing re-bakes all page artefacts automatically. Entry-detail artefacts (`/posts/hello.html`) are written incrementally by `publishDataRow` (chain-aware since v1) and wiped on the next full slot swap.
+
+---
+
+## The Not found (404) template
+
+A page with `target: { kind: 'notFound' }` is the site's designed 404 page. It is not a wrapper — it carries real content (no `base.outlet` needed) and is itself wrapped by the `everywhere` layout, exactly like a regular page.
+
+- **Resolution:** `resolveNotFoundTemplate(site)` (in `templateMatching.ts`) — highest `priority` wins, document order breaks ties. It never appears in `resolveTemplateChain` output; route matching never "matches" a 404.
+- **Serving:** the dispatcher's last route (`tryServeNotFoundPage` in `server/router.ts`) catches every GET no earlier route claimed and calls `renderNotFoundResponse` (`publicRouter.ts`): baked `404.html` artefact first (one disk read, no DB — what bot probes hit), else a live render through the Layer B LRU under the reserved `/404` key. Always **status 404**. Namespaced prefixes (`/admin/api/*`, `/_instatic/*`, `/uploads/*`) emit their own 404s and never reach it. No notFound template → the dispatcher's bare JSON 404, as before.
+- **Bake:** `publishDraftSite` renders the template through `renderPublishedNotFound` and writes `404.html` into the slot — deliberately the static-hosting convention, so a raw static export of the slot keeps a working error page on Netlify / GitHub Pages.
+- **`/404` direct hit:** serves the baked artefact with status 200 (same convention as static hosts). The template's own slug stays non-routable like every template.
+- **Editor:** Template settings → Applies to → "Not found (404)". No preview-source dropdown (there is no entry to preview); the toolbar's **Open live page** button resolves to `/404`.
 
 ---
 
@@ -242,13 +257,13 @@ Grouped menus rely on a small `Select` primitive capability: an `<optgroup label
 
 The preview selection lives in `templatePreviewSelection` (UI slice, `templateId → sourceId`). It is **session-only** — a pure preview convenience that never dirties or persists to the site document. Unset → the first real page / published row is previewed. Both `OutletEditor` (everywhere) and `useTemplatePreviewContext` (postTypes) read it.
 
-`useActiveLivePath` (`src/admin/pages/site/hooks/useActiveLivePath.ts`) also reads `templatePreviewSelection` to determine the target for the toolbar's **Open live page** button. Template pages have no routable slug of their own (the live router and bake loop both skip them), so opening the template slug directly would 404. Instead the hook resolves to the same source the preview dropdown shows: the previewed page's public path for `everywhere` templates, or the previewed row's permalink for `postTypes` templates. The fallback is the first real page / first published row, matching the preview dropdown's own default.
+`useActiveLivePath` (`src/admin/pages/site/hooks/useActiveLivePath.ts`) also reads `templatePreviewSelection` to determine the target for the toolbar's **Open live page** button. Template pages have no routable slug of their own (the live router and bake loop both skip them), so opening the template slug directly would 404. Instead the hook resolves to the same source the preview dropdown shows: the previewed page's public path for `everywhere` templates, or the previewed row's permalink for `postTypes` templates. A `notFound` template resolves to `/404` (its baked artefact's path). The fallback is the first real page / first published row, matching the preview dropdown's own default.
 
 ### Edit-in-context composition
 
 The design canvas renders the active document the way it publishes: **inside its matching template chain**. `CanvasComposedTree` (`src/admin/pages/site/canvas/CanvasComposedTree.tsx`) is the single render entry used by both `BreakpointFrame` and `CanvasLiveSurface`:
 
-- `resolveEditorWrapperTemplates(site, activeDoc)` (`canvasComposition.ts`) returns the templates that WRAP the active document, outermost-first — the editor-side mirror of `resolveTemplateChain`. Editing a page or a `postTypes` template ⇒ wrapped by the `everywhere` layout; editing the `everywhere` layout ⇒ nothing wraps it.
+- `resolveEditorWrapperTemplates(site, activeDoc)` (`canvasComposition.ts`) returns the templates that WRAP the active document, outermost-first — the editor-side mirror of `resolveTemplateChain`. Editing a page, a `postTypes` template, or a `notFound` template ⇒ wrapped by the `everywhere` layout; editing the `everywhere` layout ⇒ nothing wraps it.
 - Wrappers render **read-only** via `ReadOnlyNodeTree` with the editable document spliced into the innermost wrapper's `base.outlet` (the `outletSlot` prop replaces the outlet node, mirroring `spliceIntoOutlet`). Only the active document's nodes keep `data-node-id` + handlers, so selection / hover / DnD stay scoped to it; the chrome is pixel-identical but non-interactive.
 - Body ownership mirrors the publisher: the iframe `<body>` carries the OUTERMOST wrapper body's classes, and the active document renders as its body *children* (its own `base.body` is dropped, just as the composer drops the inner body).
 - `ReadOnlyNodeTree` (`src/modules/base/utils/ReadOnlyNodeTree.tsx`) is the shared non-interactive tree renderer — also used by `VCInlineTree` for inlined Visual Component bodies.
@@ -284,7 +299,7 @@ Right-click a page row → **Use as template** → the **Template settings** dia
 
 | Field | Description |
 |---|---|
-| Applies to | `Everywhere` (outer layout for all pages and entries) or `Post types` (entry template for ≥1 post-type tables) |
+| Applies to | `Everywhere` (outer layout for all pages and entries), `Post types` (entry template for ≥1 post-type tables), or `Not found (404)` (the public 404 page) |
 | Post types | Checkbox list of all post-type tables — visible when "Post types" is selected |
 | Priority | Higher number wins when multiple templates match the same breadth level |
 
@@ -335,6 +350,12 @@ When a postType is created, the system seeds a default entry template automatica
 ### Share a layout across post types
 
 In the Template settings dialog, set **Applies to** to "Post types" and check multiple post-type tables. A single template can list several `tableSlugs`: `{ kind: 'postTypes', tableSlugs: ['posts', 'news'] }`.
+
+### Add a 404 page (notFound template)
+
+1. Create a new page and design the "not found" content — no `base.outlet` needed.
+2. Set it as a template ("Template settings…"), choose target: **Not found (404)**.
+3. Publish. Every URL that matches nothing now serves this page (wrapped in the everywhere layout) with HTTP status 404, straight from the baked `404.html` artefact.
 
 ### Build a template with the AI agent
 

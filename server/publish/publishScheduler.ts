@@ -87,16 +87,6 @@ export function startPublishScheduler(db: DbClient, uploadsDir?: string): void {
 }
 
 /**
- * Stop the tick. Used by tests; production code never calls this so
- * the tick runs for the lifetime of the process.
- */
-export function stopPublishScheduler(): void {
-  if (tickTimer === null) return
-  clearInterval(tickTimer)
-  tickTimer = null
-}
-
-/**
  * One iteration of the tick. Exported for tests — production code uses
  * `startPublishScheduler` and lets `setInterval` drive.
  */

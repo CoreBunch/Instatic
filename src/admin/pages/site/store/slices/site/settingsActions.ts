@@ -8,7 +8,7 @@
 import type { SiteSlice, SiteSliceHelpers } from './types'
 import type { SiteSettings } from '@core/page-tree'
 
-export type SettingsActions = Pick<SiteSlice, 'updateSiteSettings'>
+type SettingsActions = Pick<SiteSlice, 'updateSiteSettings'>
 
 export function createSettingsActions({
   mutateSite,

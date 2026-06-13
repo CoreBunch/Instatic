@@ -69,7 +69,7 @@ export interface PluginVm {
   dispose: () => void
 }
 
-export interface VmRouteContext {
+interface VmRouteContext {
   request: {
     url: string
     method: string

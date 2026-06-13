@@ -13,8 +13,6 @@
 import { createContext, use, useSyncExternalStore } from 'react'
 import type { ExpansionStore } from './expansionStore'
 
-export type { ExpansionStore }
-
 export const ExpansionStoreContext = createContext<ExpansionStore | null>(null)
 
 export function useExpansionStore(): ExpansionStore {

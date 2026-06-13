@@ -39,6 +39,7 @@
  * output), and font-face descriptors are read by the @font-face resolver.
  */
 
+import { isEmittableProperty } from '@core/publisher'
 /** Prefix for encoded substitution declarations. */
 export const SUBSTITUTION_PROP_MARKER = '--instatic-sub-'
 
@@ -207,4 +208,54 @@ function scanUntil(css: string, start: number, stops: string): number {
     i += 1
   }
   return css.length
+}
+
+/**
+ * Convert a kebab-case CSS property name to camelCase ("font-size" →
+ * "fontSize"), the form the editor's style bags and the publisher both use.
+ * CSS custom properties (`--brand`) are case-sensitive and must be stored
+ * verbatim — camelCasing `--brand` into `-Brand` would change the property
+ * and break the cascade — so they pass through unchanged. (Vendor-prefixed
+ * names like `-webkit-foo` DO camelCase to `WebkitFoo`, matching the DOM
+ * style API.)
+ */
+function kebabToCamel(prop: string): string {
+  if (prop.startsWith('--')) return prop
+  return prop.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())
+}
+
+/**
+ * Walk a parsed `CSSStyleDeclaration` into a camelCase property bag:
+ * decodes substitution markers back to their real property
+ * (`decodeSubstitutionProperty`), converts kebab-case names to the camelCase
+ * keys the editor stores, and drops security-denied property names
+ * (`isEmittableProperty`). `onBlockedProperty` lets the caller surface a
+ * warning per dropped declaration.
+ *
+ * This is the ONE CSSOM→bag walker — both the stylesheet importer
+ * (`@core/siteImport` parseDeclarations) and the inline-style importer
+ * (`@core/htmlImport` extractInlineStyles) build on it, so the substitution
+ * decode and the security gate can never drift between the two paths.
+ *
+ * Uses `.length` + index access (not `for...of`) since CSSStyleDeclaration
+ * does not enumerate properties via Symbol.iterator.
+ */
+export function readCssDeclarationBag(
+  style: CSSStyleDeclaration,
+  onBlockedProperty?: (camel: string, kebab: string) => void,
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (let i = 0; i < style.length; i++) {
+    const rawKebab = style[i]
+    const value = style.getPropertyValue(rawKebab).trim()
+    if (!value) continue
+    const kebab = decodeSubstitutionProperty(rawKebab) ?? rawKebab
+    const camel = kebabToCamel(kebab)
+    if (!isEmittableProperty(camel)) {
+      onBlockedProperty?.(camel, kebab)
+      continue
+    }
+    out[camel] = value
+  }
+  return out
 }

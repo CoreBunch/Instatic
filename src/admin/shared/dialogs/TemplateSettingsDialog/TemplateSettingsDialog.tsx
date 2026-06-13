@@ -50,6 +50,7 @@ const FORM_ID = 'template-settings-form'
 const TARGET_KIND_OPTIONS = [
   { value: 'everywhere', label: 'Everywhere' },
   { value: 'postTypes', label: 'Post types' },
+  { value: 'notFound', label: 'Not found (404)' },
 ]
 
 export function TemplateSettingsDialog({
@@ -112,9 +113,9 @@ export function TemplateSettingsDialog({
     event.preventDefault()
     if (saveDisabled) return
 
-    const target: TemplateTarget = targetKind === 'everywhere'
-      ? { kind: 'everywhere' }
-      : { kind: 'postTypes', tableSlugs: selectedSlugs }
+    const target: TemplateTarget = targetKind === 'postTypes'
+      ? { kind: 'postTypes', tableSlugs: selectedSlugs }
+      : { kind: targetKind }
 
     onSave({
       title: trimmedTitle,

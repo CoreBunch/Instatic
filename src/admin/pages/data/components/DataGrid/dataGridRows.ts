@@ -131,7 +131,7 @@ export function getOrderedFields(
 // Filter + sort
 // ---------------------------------------------------------------------------
 
-export interface FilterRowsParams {
+interface FilterRowsParams {
   rows: DataRow[]
   table: DataTable
   hasPublishWorkflow: boolean
@@ -259,7 +259,7 @@ export function computeStatusCounts(rows: DataRow[]): StatusCounts {
 // Cell comparator — numeric > date > string fallback.
 // ---------------------------------------------------------------------------
 
-export function compareCellValues(a: unknown, b: unknown): number {
+function compareCellValues(a: unknown, b: unknown): number {
   if (a == null && b == null) return 0
   if (a == null) return 1
   if (b == null) return -1

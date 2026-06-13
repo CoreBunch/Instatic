@@ -19,7 +19,7 @@ export interface CanvasRenameDialogState {
   error: string | null
 }
 
-export interface CanvasRenameDialogApi {
+interface CanvasRenameDialogApi {
   state: CanvasRenameDialogState | null
   open: (nodeId: string) => void
   close: () => void

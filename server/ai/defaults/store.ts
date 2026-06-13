@@ -18,7 +18,7 @@ import type { ToolScope } from '../runtime/types'
 // Records + views
 // ---------------------------------------------------------------------------
 
-export interface DefaultRecord {
+interface DefaultRecord {
   readonly scope: ToolScope
   readonly credentialId: string
   readonly modelId: string
@@ -56,19 +56,6 @@ export async function listDefaults(db: DbClient): Promise<DefaultRecord[]> {
   return rows.map(rowToRecord)
 }
 
-export async function readDefaultForScope(
-  db: DbClient,
-  scope: ToolScope,
-): Promise<DefaultRecord | null> {
-  const { rows } = await db<DefaultRow>`
-    select scope, credential_id, model_id, updated_at, updated_by
-    from ai_defaults
-    where scope = ${scope}
-    limit 1
-  `
-  return rows[0] ? rowToRecord(rows[0]) : null
-}
-
 // ---------------------------------------------------------------------------
 // Write — upsert
 // ---------------------------------------------------------------------------
@@ -93,13 +80,3 @@ export async function setDefaultForScope(
   return rowToRecord(rows[0]!)
 }
 
-export async function clearDefaultForScope(
-  db: DbClient,
-  scope: ToolScope,
-): Promise<boolean> {
-  const result = await db`
-    delete from ai_defaults
-    where scope = ${scope}
-  `
-  return result.rowCount > 0
-}

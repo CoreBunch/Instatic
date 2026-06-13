@@ -157,7 +157,7 @@ export interface SourceRequestContext {
  * available — sources synthesise representative items from the site
  * document or from in-memory state.
  */
-export interface SourcePreviewContext {
+interface SourcePreviewContext {
   site: SiteDocument
   filters: Record<string, unknown>
   limit: number

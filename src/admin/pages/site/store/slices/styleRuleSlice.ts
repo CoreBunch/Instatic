@@ -44,10 +44,7 @@ import { createAssignmentActions } from './styleRule/assignmentActions'
 // Re-export the public slice + boundary types for store wiring and consumers
 // (e.g. the canvas reads `ClassPreviewAssignment`).
 export type {
-  StyleRuleSlice,
-  CreateAmbientRuleInput,
   ClassPreviewAssignment,
-  ClassStylesPreview,
 } from './styleRule/types'
 
 // Contribute this slice's fields to the combined `EditorStore` type via TS

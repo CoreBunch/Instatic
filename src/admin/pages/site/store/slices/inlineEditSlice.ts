@@ -18,7 +18,7 @@ import { registry } from '@core/module-engine'
 import type { EditorStoreSliceCreator } from '@site/store/types'
 import { getActiveTree } from './selectionSlice'
 
-export interface ActiveInlineEdit {
+interface ActiveInlineEdit {
   nodeId: string
   /** The single string prop being edited (from ModuleDefinition.inlineTextEdit). */
   prop: string
@@ -31,7 +31,7 @@ export interface ActiveInlineEdit {
   committed: boolean
 }
 
-export interface InlineEditSlice {
+interface InlineEditSlice {
   activeInlineEdit: ActiveInlineEdit | null
   /**
    * Start a session for `nodeId` in `breakpointId`'s frame. No-ops when the

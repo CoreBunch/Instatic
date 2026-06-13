@@ -34,7 +34,7 @@ export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promis
  * differently-shaped body falls through to the text/fallback branches in
  * {@link responseErrorMessage} instead of throwing.
  */
-export const ErrorEnvelopeSchema = Type.Object(
+const ErrorEnvelopeSchema = Type.Object(
   { error: Type.Optional(Type.Unknown()) },
   { additionalProperties: true },
 )
@@ -113,7 +113,7 @@ export async function readEnvelope<T extends TSchema>(
   return parseJsonResponse(res, schema)
 }
 
-export interface ApiRequestOptions<S extends TSchema = TSchema> {
+interface ApiRequestOptions<S extends TSchema = TSchema> {
   method?: string
   /**
    * Request body. A `FormData` value is sent as-is; anything else is

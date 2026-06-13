@@ -98,7 +98,7 @@ const STEPS: readonly StepDef[] = [
   },
 ]
 
-export interface OnboardingPanelProps {
+interface OnboardingPanelProps {
   facts: OnboardingFacts
   onDismiss: () => void
 }
