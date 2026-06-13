@@ -280,3 +280,29 @@ if (typeof (globalThis as { EventSource?: unknown }).EventSource === 'undefined'
   }
   ;(globalThis as { EventSource?: unknown }).EventSource = StubEventSource as unknown
 }
+
+// ---------------------------------------------------------------------------
+// Global React Testing Library cleanup after every test.
+//
+// @testing-library/react auto-registers an `afterEach(cleanup)` ONLY when
+// `afterEach` is a global (the Jest/Vitest convention). Under `bun test`
+// `afterEach` is import-only, so auto-cleanup never installs: any test that
+// renders a component and doesn't manually `cleanup()` leaves it mounted, and
+// it lingers into the NEXT test file. When a later file's own `cleanup()`
+// finally unmounts that stale tree, an effect or in-flight request that
+// resolved after the originating test surfaces inside that unrelated test's
+// `act()` as an `AggregateError` — a cross-file flake whose victim depends on
+// file ordering. Registering cleanup here (from the preload, so it applies to
+// every file) restores the intended per-test isolation. `cleanup()` is a no-op
+// when nothing is mounted, so non-React tests are unaffected.
+//
+// Imported dynamically so it runs AFTER the happy-dom globals above are
+// installed — a static top-level import would be hoisted and pull in React
+// before `document` exists.
+{
+  const { afterEach } = await import('bun:test')
+  const { cleanup } = await import('@testing-library/react')
+  afterEach(() => {
+    cleanup()
+  })
+}
