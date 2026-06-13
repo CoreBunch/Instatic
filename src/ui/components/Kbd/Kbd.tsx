@@ -14,7 +14,7 @@ import { cn } from '@ui/cn'
 import { splitShortcut } from './splitShortcut'
 import styles from './Kbd.module.css'
 
-export interface KbdProps {
+interface KbdProps {
   children: ReactNode
   className?: string
 }
@@ -23,7 +23,7 @@ export function Kbd({ children, className }: KbdProps): ReactNode {
   return <kbd className={cn(styles.kbd, className)}>{children}</kbd>
 }
 
-export interface ShortcutKeysProps {
+interface ShortcutKeysProps {
   /** Full shortcut label, e.g. "⌘K" or "Ctrl+Shift+P". */
   label: string
   /** Marked aria-hidden by default since the parent usually labels the action. */

@@ -201,7 +201,7 @@ function ScopeBreadcrumb({ scopeStack }: { scopeStack: Array<{ scopeId: string }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
-export interface SpotlightResultsProps {
+interface SpotlightResultsProps {
   listboxId: string
   highlightedIndex: number
   onHighlightChange: (index: number) => void

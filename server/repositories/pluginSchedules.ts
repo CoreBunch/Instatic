@@ -26,7 +26,7 @@ import { isoDate, isoDateOrNull } from '@core/utils/isoDate'
 // Domain types
 // ---------------------------------------------------------------------------
 
-export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
+type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
 
 /**
  * Cadence shape — what the plugin author declared. The scheduler reads
@@ -70,7 +70,7 @@ export interface PluginSchedule {
   updatedAt: string
 }
 
-export interface PluginScheduleRun {
+interface PluginScheduleRun {
   id: string
   pluginId: string
   scheduleId: string
@@ -178,7 +178,7 @@ function mapRun(row: ScheduleRunRow): PluginScheduleRun {
 // Public API
 // ---------------------------------------------------------------------------
 
-export interface ScheduleUpsertInput {
+interface ScheduleUpsertInput {
   pluginId: string
   scheduleId: string
   cadence: Cadence

@@ -55,8 +55,6 @@ export {
   rowsToReap,
 } from './rows'
 
-export type { ListDataRowsFilterOptions, ListDataRowsWithFilterResult } from './rows'
-
 export {
   getPublishedDataRowByRoute,
   getDataRowRedirectByRoute,

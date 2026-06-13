@@ -27,9 +27,9 @@ type CanvasMode = 'select' | 'pan' | 'insert'
  * is governed by the orthogonal `runScripts` flag below — it applies to both
  * views.
  */
-export type CanvasView = 'design' | 'live'
+type CanvasView = 'design' | 'live'
 
-export interface CanvasSlice {
+interface CanvasSlice {
   zoom: number
   panX: number
   panY: number

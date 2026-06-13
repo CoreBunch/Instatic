@@ -18,11 +18,6 @@
  * Each concern lives in its own helper. `publishPage` is straight-line
  * orchestration: adding a new head feature means editing one helper, not
  * threading another ternary through 150 lines.
- *
- * Re-exports: `escapeHtml` / `isSafeUrl` from `./utils`, `escapeProps` from
- * `./escapeProps`, `renderNode` from `./renderNode`, and the render-config
- * types from `./renderConfig` — kept importable from this module's path
- * so existing callers (modules, server, tests) don't need to retarget.
  */
 
 import type { Page, SiteDocument } from '@core/page-tree'
@@ -54,20 +49,6 @@ import type {
   ResolvedLoopRenderData,
 } from './renderConfig'
 
-// Re-export canonical utilities so existing imports from this file keep working
-// (render.test.ts imports escapeHtml / isSafeUrl from here; modules import
-// RenderResolvedMedia; server/handlers import renderNode + RenderConfig +
-// RenderAccumulators + ResolvedLoopRenderData; tests import escapeProps).
-export { escapeHtml, isSafeUrl } from './utils'
-export { escapeProps } from './escapeProps'
-export { renderNode } from './renderNode'
-export type {
-  RenderConfig,
-  RenderAccumulators,
-  RenderResolvedMedia,
-  ResolvedLoopRenderData,
-} from './renderConfig'
-
 interface PublishedPage {
   /** Filename for this page in the ZIP archive, e.g. "index.html", "about-us.html" */
   filename: string
@@ -82,7 +63,7 @@ interface PublishedPage {
   jsModuleIds: string[]
 }
 
-export interface PublishPageOptions {
+interface PublishPageOptions {
   breakpointId?: string
   templateContext?: TemplateRenderDataContext
   runtimeAssets?: PublishedPageRuntimeAssets

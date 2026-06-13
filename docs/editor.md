@@ -172,7 +172,7 @@ Sensitive actions (delete user, revoke another device, sign out all devices) req
 
 ### The three layouts
 
-Every admin page picks one of three root layouts from `src/admin/layouts/`. Import directly from the per-layout path (not the barrel `src/admin/layouts/index.ts`) so rolldown can split them into separate chunks.
+Every admin page picks one of three root layouts from `src/admin/layouts/`. Import directly from the per-layout path so rolldown can split them into separate chunks (there is deliberately no barrel).
 
 | Layout | Used by | Bundle contract |
 |---|---|---|

@@ -5,9 +5,10 @@
  * `prefetchMediaAssets` publisher pre-pass:
  *   - `srcset` built from `/uploads/<id>-w<width>.webp` variants only —
  *     the original never appears in srcset (see buildMediaSrcset)
- *   - `sizes` hint (`'auto'` emits `auto, <ancestor-cap-or-100vw>` on lazy
- *     images so Chrome 121+ selects by actual rendered width; users can
- *     supply a custom string like `(min-width: 1024px) 50vw, 100vw`)
+ *   - `sizes` derived automatically from the layout by the publisher's
+ *     `resolveAutoSizes` pre-pass (caps, fractions, grid columns); lazy
+ *     images prefix `auto` so Chrome 121+ selects by actual rendered
+ *     width. There is no user-facing `sizes` knob.
  *   - intrinsic `width` / `height` to prevent CLS
  *   - `loading` / `decoding` / `fetchpriority` perf hints
  *   - BlurHash data URL as a CSS background while the variant streams in
@@ -38,17 +39,9 @@ import { shouldUseBlurPlaceholder } from './placeholder'
 // so they survive the coercion step untouched.
 // ---------------------------------------------------------------------------
 
-export const ImagePropsSchema = Type.Object({
+const ImagePropsSchema = Type.Object({
   src: Type.String({ default: '' }),
   loading: Type.Union([Type.Literal('lazy'), Type.Literal('eager')], { default: 'lazy' }),
-  /**
-   * `sizes` attribute. `'auto'` emits `auto, <fallback>` on lazy images
-   * (Chrome 121+ selects by actual rendered width); the fallback is the
-   * publisher's ancestor max-width resolution, else `100vw`. Eager images
-   * emit the fallback alone (the `auto` keyword is lazy-only per spec).
-   * A custom string is emitted verbatim.
-   */
-  sizes: Type.String({ default: 'auto' }),
   /**
    * `fetchpriority` hint. Use `'high'` for hero / above-the-fold images,
    * `'low'` for offscreen marketing chrome.
@@ -83,35 +76,28 @@ type ImageProps = ImageStoredProps & {
    */
   _resolvedMediaByKey?: Record<string, RenderResolvedMedia>
   /**
-   * Internal: attached by the publisher's `resolveAutoSizes` pre-pass.
-   * A per-breakpoint `sizes` string derived from ancestor max-width
-   * constraints (e.g. `(min-width: 1201px) 1200px, 100vw`). Read only
-   * when the author left `sizes` at `'auto'` — explicit user values
-   * win.
+   * Internal: attached by the publisher's `resolveAutoSizes` pre-pass — the
+   * layout-derived per-breakpoint `sizes` string (e.g.
+   * `(max-width: 375px) 100vw, min(33.33vw - 16px, 410.67px)`). Absent when
+   * nothing in the layout constrains the image.
    */
   _resolvedAutoSizes?: string
 } & Record<string, unknown>
 
 /**
- * Resolve the `sizes` attribute the publisher should emit.
+ * Resolve the `sizes` attribute. There is no user knob — the publisher
+ * derives the value from the layout it generates the CSS for.
  *
- * Rules:
- *   - Empty / 'auto' → `auto, <fallback>` for LAZY images: browsers that
- *     implement `sizes=auto` (Chrome 121+) select by the image's actual
- *     rendered width — far tighter than any publish-time estimate for
- *     images laid out smaller than their container cap (grids, cards).
- *     Others skip the unknown keyword and use the fallback. The spec only
- *     allows `auto` on `loading="lazy"`, so eager images emit the fallback
- *     alone. The fallback is the publisher's resolved ancestor cap, else
- *     `'100vw'`.
- *   - Anything else → emit the user's verbatim value (already escaped).
+ * LAZY images prefix the `auto` keyword: browsers that implement
+ * `sizes=auto` (Chrome 121+) select by the image's actual rendered width —
+ * exact even where the publish-time estimate had to bail (flex rows);
+ * others skip the unknown keyword and use the resolved fallback. The spec
+ * only allows `auto` on `loading="lazy"`, so eager images emit the
+ * fallback alone.
  */
-function resolveSizes(prop: string, autoResolved: string | undefined, lazy: boolean): string {
-  if (!prop || prop === 'auto') {
-    const fallback = autoResolved ?? '100vw'
-    return lazy ? `auto, ${fallback}` : fallback
-  }
-  return prop
+function resolveSizes(autoResolved: string | undefined, lazy: boolean): string {
+  const fallback = autoResolved ?? '100vw'
+  return lazy ? `auto, ${fallback}` : fallback
 }
 
 /**
@@ -179,12 +165,6 @@ export const ImageModule: ModuleDefinition<ImageProps> = {
         { label: 'Eager', value: 'eager' },
       ],
     },
-    sizes: {
-      type: 'text',
-      label: 'Sizes',
-      placeholder: 'auto · or e.g. (min-width: 1024px) 50vw, 100vw',
-      layout: 'stacked',
-    },
     fetchPriority: {
       type: 'select',
       label: 'Fetch priority',
@@ -237,12 +217,11 @@ export const ImageModule: ModuleDefinition<ImageProps> = {
     // `buildMediaSrcset` already runs each variant path through `safeUrl`
     // (which HTML-escapes + sanitises). No extra escape needed.
     const srcset = media ? buildMediaSrcset(media) : null
-    // `sizes` is a plain-string user prop → already escaped by escapeProps.
-    // `_resolvedAutoSizes` comes from the publisher pre-pass and is a
-    // pure attribute-safe string (numbers + `min-width` keyword + `px`),
-    // so no further escape is needed.
+    // `_resolvedAutoSizes` comes from the publisher pre-pass and is a pure
+    // attribute-safe string (numbers, media-query keywords, CSS math
+    // functions), so no further escape is needed.
     const sizes = srcset
-      ? resolveSizes(String(props.sizes ?? 'auto'), props._resolvedAutoSizes, loading === 'lazy')
+      ? resolveSizes(props._resolvedAutoSizes, loading === 'lazy')
       : null
     const width = media?.width ?? null
     const height = media?.height ?? null

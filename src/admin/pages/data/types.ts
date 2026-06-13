@@ -1,6 +1,6 @@
 import type { DataField, DataRow } from '@core/data/schemas'
 
-export type CellEditorContext = 'grid' | 'detail'
+type CellEditorContext = 'grid' | 'detail'
 
 /**
  * Uniform props for every cell editor.

@@ -153,7 +153,7 @@ export function generatePreviewClassCSS(
  * control updates it live. `contextId` is the breakpoint/condition the edit
  * targets (`null` for the base context).
  */
-export interface ForcedStateInflight {
+interface ForcedStateInflight {
   contextId: string | null
   styles: Record<string, unknown>
 }

@@ -322,7 +322,7 @@ export class ResponsesTurnTranslator implements TurnTranslator<ResponsesTurn> {
 // Adapter factory — openai + openrouter share everything but transport
 // ---------------------------------------------------------------------------
 
-export interface ResponsesAdapterOptions {
+interface ResponsesAdapterOptions {
   readonly label: string
   readonly endpoint: string
   buildHeaders(req: AiStreamRequest): Record<string, string>

@@ -11,7 +11,7 @@
 
 import type { CommandGroup } from './types'
 
-export type SpotlightAccent =
+type SpotlightAccent =
   | 'mint'
   | 'lilac'
   | 'sky'

@@ -23,7 +23,7 @@ export interface ContentSnapshot {
   currentUser: CurrentUserInfo
 }
 
-export interface CollectionSummary {
+interface CollectionSummary {
   id: string
   slug: string
   /** Display label (`pluralLabel` from DataTable — "Posts", "Pages"). */
@@ -49,7 +49,7 @@ export interface ActiveDocument {
   updatedAt: string
 }
 
-export interface FieldInfo {
+interface FieldInfo {
   id: string
   label: string
   /** Field type tag from `@core/data/schemas` → `DataFieldType`. */
@@ -67,7 +67,7 @@ export interface FieldInfo {
   allowMultiple?: boolean
 }
 
-export interface CurrentUserInfo {
+interface CurrentUserInfo {
   id: string
   displayName: string
   email: string

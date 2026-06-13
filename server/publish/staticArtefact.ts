@@ -45,7 +45,7 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-export type Slot = 'a' | 'b'
+type Slot = 'a' | 'b'
 
 /**
  * Artefact URL path the site's `notFound` template bakes to. Maps to

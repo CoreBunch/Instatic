@@ -103,7 +103,7 @@ function parseVariantsFromJson(value: unknown): MediaVariant[] {
 // Backlog counts
 // ---------------------------------------------------------------------------
 
-export interface MigrationBacklog {
+interface MigrationBacklog {
   /** Total `media_assets` rows whose storage_adapter_id != target. */
   originals: number
   /**

@@ -50,7 +50,7 @@ export function getLatestSnapshotForVersion(
 // nodeId → page index (Layer C holes)
 // ---------------------------------------------------------------------------
 
-export interface PublishedNodeIndex {
+interface PublishedNodeIndex {
   site: SiteDocument
   /** First page wins on the (extremely unlikely) duplicate node id. */
   nodeIndex: Map<string, Page>
@@ -83,7 +83,7 @@ export function getPublishedNodeIndexForVersion(
 // loopId → page + node index (infinite-loop load-more)
 // ---------------------------------------------------------------------------
 
-export interface PublishedLoopIndex {
+interface PublishedLoopIndex {
   site: SiteDocument
   /** First page wins on a duplicate loop id, matching the old scan order. */
   loops: Map<string, { page: Page; node: PageNode }>

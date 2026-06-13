@@ -38,6 +38,7 @@ const readPageTool: AiTool = {
   name: 'read_page',
   scope: 'site',
   execution: 'server',
+  requiredCapabilities: ['site.read'],
   description:
     'Return the active page as the published HTML the agent edits: an annotated <body> where every element carries uid="<nodeId>" (pass that id verbatim to write tools), plus page-relevant CSS in a <style> block. The result is size-budgeted and includes pageInfo; when pageInfo.nextPart is not null, call read_page({ part: pageInfo.nextPart }) to continue. Browser-only @font-face blocks, unrelated cross-page selectors, long base64/data URLs, and very long URLs are omitted or summarized. Class handles are the class names you see in the CSS / `class=` attributes.',
   inputSchema: ReadPageInput,
@@ -60,6 +61,7 @@ const listModulesTool: AiTool = {
   name: 'list_modules',
   scope: 'site',
   execution: 'server',
+  requiredCapabilities: ['site.read'],
   description:
     'List registered modules with id, name, category, props schema, and style targets. `category` filters case-insensitively.',
   inputSchema: ListModulesInput,
@@ -93,6 +95,7 @@ const listTokensTool: AiTool = {
   name: 'list_tokens',
   scope: 'site',
   execution: 'server',
+  requiredCapabilities: ['site.read'],
   description:
     "List the site's design tokens — color tokens (with shades/tints), typography & spacing scale steps, and font tokens — each with its CSS variable (use as `var(--name)` in a <style> block) and the utility class(es) bound to it (e.g. `text-primary`, `text-l`, `padding-m`). Prefer these over hardcoded colors/sizes/fonts. `family` narrows to one of colors|typography|spacing|fonts.",
   inputSchema: ListTokensInput,
@@ -113,6 +116,7 @@ const listPagesTool: AiTool = {
   name: 'list_pages',
   scope: 'site',
   execution: 'server',
+  requiredCapabilities: ['site.read'],
   description:
     'List every page (id, title, slug, active, isHomepage). Homepage = slug "index". Use for site-level admin (duplicate, rename, set homepage).',
   inputSchema: ListPagesInput,
@@ -144,6 +148,7 @@ const listPostTypesTool: AiTool = {
   name: 'list_post_types',
   scope: 'site',
   execution: 'server',
+  requiredCapabilities: ['site.read'],
   description:
     'List the post types (routable collections) a `postTypes` template can target. Each entry has { slug, label, routeBase, kind }; pass the `slug` values to setPageTemplate\'s `target.tableSlugs`. Only collections with a public route appear — non-routable data tables are excluded.',
   inputSchema: ListPostTypesInput,
@@ -171,6 +176,7 @@ const listBreakpointsTool: AiTool = {
   name: 'list_breakpoints',
   scope: 'site',
   execution: 'server',
+  requiredCapabilities: ['site.read'],
   description:
     'List configured breakpoints (id, label, frame width px, media query, icon) plus the active id. Same info is already in the system suffix; only call if you lost track.',
   inputSchema: ListBreakpointsInput,

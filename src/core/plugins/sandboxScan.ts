@@ -28,7 +28,7 @@ const FORBIDDEN_SANDBOX_LITERALS = [
   'globalThis.process.env',
 ] as const
 
-export interface SandboxScanFinding {
+interface SandboxScanFinding {
   literal: string
 }
 

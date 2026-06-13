@@ -34,7 +34,7 @@ import type {
   SiteShell,
 } from '@core/page-tree'
 
-export type SiteChangeKind = 'structure' | 'content' | 'style'
+type SiteChangeKind = 'structure' | 'content' | 'style'
 
 export class ForbiddenSiteChangeError extends Error {
   // The TS `erasableSyntaxOnly` lint forbids constructor-parameter properties,

@@ -19,7 +19,7 @@ import {
   mutateNodeClassIds,
 } from './helpers'
 
-export type RegistryActions = Pick<
+type RegistryActions = Pick<
   StyleRuleSlice,
   | 'ensureNodeStyleClass'
   | 'renameClass'

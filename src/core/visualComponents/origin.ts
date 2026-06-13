@@ -17,7 +17,7 @@ import type { VisualComponent, VCParam } from './schemas'
 // Public types
 // ---------------------------------------------------------------------------
 
-export interface ParamOrigin {
+interface ParamOrigin {
   nodeId: string
   propKey: string
 }

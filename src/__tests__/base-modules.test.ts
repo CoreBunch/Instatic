@@ -415,12 +415,13 @@ describe('base.image — render() specifics', () => {
   // no editor-only chrome in published output). Tests needing <img> must supply src.
 
   it('has only content and behavior module settings', () => {
-    // N4: responsive pipeline added `sizes`, `fetchPriority`, `decoding` knobs
-    // alongside the existing `src` / `loading` settings. Alt text is sourced
-    // from the library asset row (single source of truth) — no per-instance
-    // `alt` prop exists on the module.
+    // N4: responsive pipeline added `fetchPriority` / `decoding` knobs
+    // alongside the existing `src` / `loading` settings. `sizes` has NO knob —
+    // the publisher derives it from the layout (sizesResolver.ts). Alt text
+    // is sourced from the library asset row (single source of truth) — no
+    // per-instance `alt` prop exists on the module.
     expect(Object.keys(ImageModule.schema).sort()).toEqual(
-      ['decoding', 'fetchPriority', 'htmlAttributes', 'loading', 'sizes', 'src'],
+      ['decoding', 'fetchPriority', 'htmlAttributes', 'loading', 'src'],
     )
   })
 

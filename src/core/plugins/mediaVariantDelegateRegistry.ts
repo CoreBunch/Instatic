@@ -20,7 +20,7 @@
  * see the call sites in `server/plugins/pluginWorkerHost.ts`.
  */
 
-export interface MediaVariantDelegateRecord {
+interface MediaVariantDelegateRecord {
   id: string
   /** namespaced under the plugin id; used by host code to tear down. */
   pluginId: string

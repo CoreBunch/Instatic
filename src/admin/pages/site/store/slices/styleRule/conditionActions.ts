@@ -11,7 +11,7 @@ import { isGeneratedClassLocked } from '@core/page-tree'
 import type { SiteSliceHelpers } from '../site/types'
 import type { StyleRuleSlice } from './types'
 
-export type ConditionActions = Pick<
+type ConditionActions = Pick<
   StyleRuleSlice,
   | 'addCondition'
   | 'removeCondition'

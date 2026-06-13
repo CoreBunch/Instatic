@@ -8,7 +8,7 @@ export interface ClassContextMenuState {
   classId: string
 }
 
-export interface ClassPickerUiState {
+interface ClassPickerUiState {
   query: string
   showSuggestions: boolean
   contextMenu: ClassContextMenuState | null
@@ -17,7 +17,7 @@ export interface ClassPickerUiState {
   highlightedIndex: number
 }
 
-export type ClassPickerUiAction =
+type ClassPickerUiAction =
   | { type: 'inputChanged'; query: string }
   | { type: 'openSuggestions' }
   | { type: 'closeSuggestions' }

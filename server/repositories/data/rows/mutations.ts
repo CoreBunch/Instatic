@@ -24,7 +24,7 @@ import { type InsertDataRowInput, type UpdateDataRowDraftInput } from './mapper'
 import { isoDateOrNull } from '@core/utils/isoDate'
 import { getDataRow } from './read'
 
-export type UpdateDataRowTableResult =
+type UpdateDataRowTableResult =
   | { ok: true; row: DataRow }
   | { ok: false; reason: 'row_not_found' | 'table_not_found' | 'slug_conflict' }
 

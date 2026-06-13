@@ -40,7 +40,7 @@ const MIN_WIDTH = 280
  * mirrors the panel's render flow (selection → context → module data → class
  * data → loop context → panel chrome → actions) to make it cheap to scan.
  */
-export interface PropertiesPanelData {
+interface PropertiesPanelData {
   // ─── Selection ─────────────────────────────────────────────────────────
   selectedNode: PageNode | null
   selectedNodeId: string | null

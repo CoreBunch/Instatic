@@ -2,7 +2,7 @@ import { Type } from '@sinclair/typebox'
 import { safeParseJson } from '@core/utils/jsonValidate'
 
 export const MEDIA_ASSET_DRAG_TYPE = 'application/x-instatic-media-assets'
-export const MEDIA_FOLDER_DRAG_TYPE = 'application/x-instatic-media-folder'
+const MEDIA_FOLDER_DRAG_TYPE = 'application/x-instatic-media-folder'
 
 const MediaAssetDragPayloadSchema = Type.Object({
   assetIds: Type.Array(Type.String()),

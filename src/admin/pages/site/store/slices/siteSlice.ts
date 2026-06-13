@@ -39,7 +39,7 @@ import { createFrameworkPreviewActions } from './site/framework/preview'
 import type { SiteSlice } from './site/types'
 
 // Re-export the public slice type for store wiring.
-export type { SiteSlice } from './site/types'
+
 
 // Contribute this slice's fields to the combined `EditorStore` type via TS
 // module augmentation. See `../types.ts` for why we use this pattern.

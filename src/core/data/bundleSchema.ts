@@ -73,8 +73,6 @@ export const MediaAssetExportSchema = Type.Object({
   bytesBase64: Type.String(),
 })
 
-export type MediaAssetExport = Static<typeof MediaAssetExportSchema>
-
 // ---------------------------------------------------------------------------
 // ImportStrategy
 // ---------------------------------------------------------------------------

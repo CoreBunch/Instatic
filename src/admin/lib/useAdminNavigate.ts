@@ -27,7 +27,7 @@
 import { flushSync } from 'react-dom'
 import { useNavigate } from './routing'
 
-export type AdminNavigate = (to: string) => void
+type AdminNavigate = (to: string) => void
 
 export function useAdminNavigate(): AdminNavigate {
   const navigate = useNavigate()

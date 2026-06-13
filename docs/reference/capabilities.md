@@ -118,7 +118,7 @@ Was a single `ai.use`. Split so a Client persona can have chat assistance withou
 
 | Capability             | Grants                                                              | Roles         |
 |------------------------|---------------------------------------------------------------------|---------------|
-| `ai.chat`              | Open AI conversations; use read-only tools (snapshot, search). The chat handler registers ONLY non-mutating tools with the driver for callers without `ai.tools.write`. | Owner, Admin |
+| `ai.chat`              | Open AI conversations. The agent inherits the caller's capabilities: every tool declares `requiredCapabilities` (ANY-OF, mirroring its HTTP-route gate — e.g. `list_users` → `users.manage`, document reads → the `requireDataAccess` set, `list_media` → `media.read`) and is only offered when the caller holds one. `ai.chat` is the floor, not a blanket read grant. | Owner, Admin |
 | `ai.tools.write`       | Enable canvas write tools (`setNodeProps`, `insertNode`, `deleteNode`, etc.) in registered AI conversations. Without this, the model has no write tools at all. | Owner, Admin |
 | `ai.providers.manage`  | Create / update / delete AI provider credentials + per-scope defaults | Owner, Admin |
 | `ai.audit.read`        | Read site-wide AI usage, cost, and error events across all users    | Owner, Admin |

@@ -59,7 +59,7 @@ import {
   MediaStorageDispatchError,
   buildSuggestedStoragePath,
 } from './mediaUploadDispatch'
-import { readMediaSourceBytes, MediaSourceReadError } from './mediaStorageReader'
+import { readMediaSourceBytes } from './mediaStorageReader'
 
 // ---------------------------------------------------------------------------
 // In-memory per-role lock
@@ -470,4 +470,4 @@ function extensionForMime(mime: string): string {
 // `mediaStorageReader.ts` linked to this module's call site — useful
 // when future cleanup wants to surface source-read errors distinctly
 // from upload errors in the UI.
-export { MediaSourceReadError as _migrationSourceReadErrorType }
+

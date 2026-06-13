@@ -43,7 +43,7 @@ import {
   PluginTextarea,
 } from './PluginAdminUiComponents'
 
-export interface PluginAdminUiNamespace {
+interface PluginAdminUiNamespace {
   Button: ComponentType<PluginUiButtonProps>
   Input: ComponentType<PluginUiInputProps>
   Textarea: ComponentType<PluginUiTextareaProps>

@@ -20,7 +20,7 @@ import {
 } from '@core/fonts'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
-export type FontActions = Pick<
+type FontActions = Pick<
   SiteSlice,
   | 'addFont'
   | 'removeFont'

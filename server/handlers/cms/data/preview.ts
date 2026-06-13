@@ -17,7 +17,7 @@
  * does NOT mutate the database — it's a render-only pipeline.
  */
 
-import { Type, type Static } from '@sinclair/typebox'
+import { Type } from '@sinclair/typebox'
 import type { DbClient } from '../../../db/client'
 import type { DataRow, DataRowCells, PublishedDataRow } from '@core/data/schemas'
 import { resolveTemplateChain, composeTemplateChain } from '@core/templates'
@@ -51,8 +51,6 @@ const PreviewBodySchema = Type.Object({
    */
   cells: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 })
-
-export type PreviewBody = Static<typeof PreviewBodySchema>
 
 // ---------------------------------------------------------------------------
 // Handler

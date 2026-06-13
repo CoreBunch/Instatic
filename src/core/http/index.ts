@@ -10,7 +10,5 @@ export {
   responseErrorMessage,
   ApiError,
   isAbortError,
-  ErrorEnvelopeSchema,
-  type ApiRequestOptions,
   type FetchLike,
 } from './apiClient'

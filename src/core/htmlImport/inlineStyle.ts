@@ -18,25 +18,14 @@
  * it mints for that element.
  */
 
-import { isEmittableProperty } from '@core/publisher'
 import {
-  decodeSubstitutionProperty,
   encodeSubstitutionDeclarationList,
+  readCssDeclarationBag,
   SUBSTITUTION_FN_RE,
 } from '@core/css-substitution'
 
 /** Match the first `url(...)` payload in a CSS value (quoted or bare). */
 const URL_PAYLOAD_RE = /url\(\s*(['"]?)([^'")\n]+)\1\s*\)/i
-
-/**
- * Convert a kebab-case CSS property name to camelCase, the form the editor's
- * inline-style bag and the publisher both use. Custom properties (`--brand`)
- * are case-sensitive and pass through unchanged.
- */
-function kebabToCamel(prop: string): string {
-  if (prop.startsWith('--')) return prop
-  return prop.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())
-}
 
 /**
  * Canonicalise a background `url(...)` image onto `out.backgroundImage` in the
@@ -58,19 +47,8 @@ function normalizeBackgroundImage(style: CSSStyleDeclaration, out: Record<string
  * into a camelCase CSS bag, dropping only the security-denied property names.
  * Returns `{}` when the element has no usable inline declarations.
  */
-export function extractInlineStyles(style: CSSStyleDeclaration): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (let i = 0; i < style.length; i++) {
-    const rawKebab = style[i]
-    const value = style.getPropertyValue(rawKebab).trim()
-    if (!value) continue
-    // Substitution declarations were encoded as marker custom properties by
-    // `harvestInlineStyles` so they survive the engine parse verbatim.
-    const kebab = decodeSubstitutionProperty(rawKebab) ?? rawKebab
-    const camel = kebabToCamel(kebab)
-    if (!isEmittableProperty(camel)) continue
-    out[camel] = value
-  }
+function extractInlineStyles(style: CSSStyleDeclaration): Record<string, string> {
+  const out = readCssDeclarationBag(style)
   normalizeBackgroundImage(style, out)
   return out
 }

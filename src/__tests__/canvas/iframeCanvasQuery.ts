@@ -37,7 +37,7 @@ export function queryCanvasElement<E extends Element = HTMLElement>(
  * parent document. Returned in iframe-iteration order (matches the order of
  * `<iframe>` elements in the parent DOM).
  */
-export function queryCanvasElements<E extends Element = HTMLElement>(
+function queryCanvasElements<E extends Element = HTMLElement>(
   selector: string,
 ): E[] {
   const out: E[] = []

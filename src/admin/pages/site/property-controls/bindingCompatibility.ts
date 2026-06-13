@@ -16,7 +16,7 @@ import type { DataFieldType, DataMetaField } from '@core/data/schemas'
  */
 export type PropertyControlKind = PropertyControl['type']
 
-export type DynamicBindingMode = 'token' | 'structured'
+type DynamicBindingMode = 'token' | 'structured'
 
 /**
  * Maps every PropertyControlKind to the DataFieldTypes it can accept as a

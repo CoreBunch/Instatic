@@ -151,7 +151,7 @@ function buildMonthCells(year: number, month: number): DayCell[] {
 // Component
 // ---------------------------------------------------------------------------
 
-export interface DateTimePickerProps {
+interface DateTimePickerProps {
   /**
    * Current value. `null` initialises the picker to "today at the next
    * sensible time" (rounded up to the next 5-minute mark) without

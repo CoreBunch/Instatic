@@ -53,7 +53,7 @@ export function serveLoopRuntimeAsset(): Response {
   })
 }
 
-export interface LoopHandlerContext {
+interface LoopHandlerContext {
   db: DbClient
 }
 

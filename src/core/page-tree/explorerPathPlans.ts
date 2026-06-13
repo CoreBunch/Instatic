@@ -8,9 +8,7 @@ import type { SiteDocument } from './siteDocument'
 import type { StructuralSiteExplorerSectionId } from './siteExplorer'
 import { isHomePage, pageSlugError } from './slugs'
 
-export type ExplorerPathPlanKind = 'rewrite' | 'delete'
-
-export interface ExplorerPathChangeBlocker {
+interface ExplorerPathChangeBlocker {
   code:
     | 'duplicate-page-slug'
     | 'invalid-page-slug'
@@ -23,26 +21,26 @@ export interface ExplorerPathChangeBlocker {
   target: string
 }
 
-export interface ExplorerPathChangeWarning {
+interface ExplorerPathChangeWarning {
   code: 'raw-url-not-rewritten' | 'relative-script-import'
   message: string
   sourcePath?: string
 }
 
-export interface ExplorerPathRewriteChange {
+interface ExplorerPathRewriteChange {
   id: string
   label: string
   from: string
   to: string
 }
 
-export interface ExplorerPathDeletedItem {
+interface ExplorerPathDeletedItem {
   id: string
   label: string
   path: string
 }
 
-export interface ExplorerPathRewritePlan {
+interface ExplorerPathRewritePlan {
   kind: 'rewrite'
   sectionId: StructuralSiteExplorerSectionId
   operationLabel: string
@@ -51,7 +49,7 @@ export interface ExplorerPathRewritePlan {
   warnings: ExplorerPathChangeWarning[]
 }
 
-export interface ExplorerPathDeletePlan {
+interface ExplorerPathDeletePlan {
   kind: 'delete'
   sectionId: StructuralSiteExplorerSectionId
   operationLabel: string

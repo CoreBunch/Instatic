@@ -40,7 +40,7 @@ import { pushToast } from '@ui/components/Toast'
  * `previouslyGrantedPermissions`. Lives on the workspace hook because the
  * dialog is conceptually a sub-step of the install action.
  */
-export interface PendingInstall {
+interface PendingInstall {
   manifest: PluginManifest
   file?: File
   /**
@@ -68,7 +68,7 @@ export interface PendingInstall {
  * server will skip the plugin's lifecycle hooks — offered only after a
  * normal uninstall failed on a hook error.
  */
-export interface PendingRemove {
+interface PendingRemove {
   plugin: InstalledPlugin
   force: boolean
 }
@@ -78,7 +78,7 @@ export interface PendingRemove {
  * `uninstall`) threw or the entry file could not load. Rendered as an alert
  * with a "Remove anyway" action that re-runs the removal with `force: true`.
  */
-export interface RemoveFailure {
+interface RemoveFailure {
   plugin: InstalledPlugin
   message: string
 }
@@ -87,7 +87,7 @@ export interface RemoveFailure {
  * Read-only view-model returned to `PluginsPage`. Splits state, mutators that
  * drive dialogs, and async actions so the render component stays declarative.
  */
-export interface PluginsWorkspaceVM extends WorkspaceLoadState {
+interface PluginsWorkspaceVM extends WorkspaceLoadState {
   fileInputRef: RefObject<HTMLInputElement | null>
   payload: CmsPluginsPayload
   uploading: boolean

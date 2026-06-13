@@ -12,9 +12,7 @@ export type {
   SiteRuntimeTarget,
   SiteScriptFormat,
   SiteScriptPlacement,
-  SiteScriptRuntimeConfig,
   SiteScriptTiming,
-  SiteStyleRuntimeConfig,
 } from './schemas'
 export {
   PublishedPageRuntimeAssetsSchema,

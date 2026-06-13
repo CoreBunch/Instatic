@@ -72,7 +72,7 @@ const CLASS_TOKEN_RE = /\.(?:\\.|[\w-])+/g
  * selectors anchored on a still-used class are never claimed unused — we show
  * no badge rather than assert something we can't prove.
  */
-export function isAmbientSelectorProvablyDead(
+function isAmbientSelectorProvablyDead(
   cls: StyleRule,
   classTokenUsage: Map<string, number>,
 ): boolean {
@@ -99,7 +99,7 @@ export function isAmbientSelectorProvablyDead(
   return true
 }
 
-export interface SelectorUsage {
+interface SelectorUsage {
   /** Usage text, or `null` to render no badge (ambient rule we can't assess). */
   label: string | null
   /** Whether the rule counts as "unused" for the Unused filter. */

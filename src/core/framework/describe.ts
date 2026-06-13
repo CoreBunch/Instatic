@@ -26,7 +26,7 @@ import type {
 import { generateFrameworkSpacingPlan } from './spacing'
 import { generateFrameworkTypographyPlan } from './typography'
 
-export interface TokenDescriptor {
+interface TokenDescriptor {
   /** CSS custom property incl. leading dashes, e.g. "--primary". */
   cssVar: string
   /** `var(--…)` expression ready to drop into a style value. */
@@ -37,12 +37,12 @@ export interface TokenDescriptor {
   value: string
 }
 
-export interface ColorVariantDescriptor extends TokenDescriptor {
+interface ColorVariantDescriptor extends TokenDescriptor {
   /** Variant label, e.g. "d-1" (shade), "l-2" (tint), "30" (transparent). */
   variant: string
 }
 
-export interface ColorTokenDescriptor extends TokenDescriptor {
+interface ColorTokenDescriptor extends TokenDescriptor {
   slug: string
   category: string
   /** Resolved dark-theme value, present only when the token enables dark mode. */
@@ -51,12 +51,12 @@ export interface ColorTokenDescriptor extends TokenDescriptor {
   variants: ColorVariantDescriptor[]
 }
 
-export interface ScaleStepDescriptor extends TokenDescriptor {
+interface ScaleStepDescriptor extends TokenDescriptor {
   /** Step label as authored in the group's `steps` string, e.g. "xs","m","2xl". */
   step: string
 }
 
-export interface ScaleGroupDescriptor {
+interface ScaleGroupDescriptor {
   id: string
   family: 'typography' | 'spacing'
   name: string
@@ -65,7 +65,7 @@ export interface ScaleGroupDescriptor {
   steps: ScaleStepDescriptor[]
 }
 
-export interface FrameworkTokenDigest {
+interface FrameworkTokenDigest {
   colors: ColorTokenDescriptor[]
   typography: ScaleGroupDescriptor[]
   spacing: ScaleGroupDescriptor[]

@@ -1,7 +1,7 @@
 import { styleRuleSelector, type PageNode, type StyleRule } from '@core/page-tree'
 import { readIdentifierEnd, splitSelectorList, stripStatePseudos } from '@site/cssStatePseudo'
 
-export type SelectorMatch =
+type SelectorMatch =
   | { kind: 'direct' }
   | { kind: 'inactive-pseudo'; pseudo: string }
 
@@ -19,14 +19,14 @@ export interface SelectorSuggestionItem {
   match: SelectorMatch | null
 }
 
-export interface SelectorPickerModelInput {
+interface SelectorPickerModelInput {
   rules: Record<string, StyleRule>
   node: PageNode | null
   selectedElement: Element | null
   activeRuleId: string | null
 }
 
-export interface SelectorPickerModel {
+interface SelectorPickerModel {
   pills: SelectorPillItem[]
   suggestions: SelectorSuggestionItem[]
 }

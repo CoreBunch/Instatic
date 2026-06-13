@@ -12,14 +12,16 @@
  *      `server/ai/tools/**` uses TypeBox (not Zod) — covered automatically.
  *
  * Capability filtering: `selectToolsForScope` takes the caller's capability
- * set and filters out tools tagged `mutates: true` for callers without
- * `ai.tools.write`. A `ai.chat`-only user (e.g. a Client persona that the
- * operator has granted chat but withheld write) cannot have the model
- * issue a write call — the write tools are never registered with the
- * driver in the first place.
+ * set and filters through `toolAllowedForCapabilities` — write tools need
+ * `ai.tools.write`, and any tool declaring `requiredCapabilities` (ANY-OF,
+ * mirroring its HTTP-route equivalent) is only offered to callers holding
+ * one. A `ai.chat`-only user (e.g. a Client persona granted chat) cannot
+ * have the model issue a call the user couldn't make over HTTP — gated
+ * tools are never registered with the driver in the first place.
  */
 
 import type { CoreCapability } from '../../auth/capabilities'
+import { toolAllowedForCapabilities } from './capabilityGate'
 import type { AiTool, ToolScope } from './types'
 import { siteTools } from './site'
 import { contentTools } from './content'
@@ -45,17 +47,19 @@ function scopeToolset(scope: ToolScope): AiTool[] {
  * verbatim; drivers translate each `AiTool.inputSchema` (TypeBox) into
  * their SDK's native tool format.
  *
- * Filtering rule: a caller without `ai.tools.write` does not see tools
- * tagged `mutates: true`. Read tools (`mutates: false` or undefined) are
- * always included.
+ * Filtering (see `toolAllowedForCapabilities`, the single gate):
+ *   - a caller without `ai.tools.write` does not see tools tagged
+ *     `mutates: true`;
+ *   - a tool with `requiredCapabilities` (ANY-OF) is only offered to
+ *     callers holding at least one of them — the agent inherits the
+ *     caller's capabilities by construction instead of `ai.chat` acting
+ *     as a blanket read grant.
  */
 export function selectToolsForScope(
   scope: ToolScope,
   capabilities: readonly CoreCapability[],
 ): AiTool[] {
-  const tools = scopeToolset(scope)
-  if (capabilities.includes('ai.tools.write')) return tools
-  return tools.filter((t) => !t.mutates)
+  return scopeToolset(scope).filter((t) => toolAllowedForCapabilities(t, capabilities))
 }
 
-export type { AiTool, ToolScope } from './types'
+

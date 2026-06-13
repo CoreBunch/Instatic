@@ -37,12 +37,11 @@
  * order is kept as the FIRST occurrence.
  */
 
-import { isEmittableProperty } from '@core/publisher'
 import type { StyleRuleKind, Condition, ConditionDef } from '@core/page-tree'
 import { conditionId, makeConditionDef } from '@core/page-tree'
 import { formatVariant } from '@core/fonts'
 import { processKeyframesRule } from './keyframesToStyleRule'
-import { decodeSubstitutionProperty, encodeSubstitutionDeclarations } from '@core/css-substitution'
+import { encodeSubstitutionDeclarations, readCssDeclarationBag } from '@core/css-substitution'
 import { matchMediaQueryToViewport } from './mediaQueryMatch'
 import type {
   ImportWarning,
@@ -56,7 +55,7 @@ import type {
 // Public interface
 // ---------------------------------------------------------------------------
 
-export interface CssToStyleRulesOptions {
+interface CssToStyleRulesOptions {
   /**
    * Site viewport contexts used to match `@media` queries.
    * Defaults to `[]` (all @media queries are treated as unmatched).
@@ -70,7 +69,7 @@ export interface CssToStyleRulesOptions {
   mediaTolerance?: number
 }
 
-export interface CssToStyleRulesResult {
+interface CssToStyleRulesResult {
   rules: NewStyleRule[]
   warnings: ImportWarning[]
   assetRefs: AssetRef[]
@@ -118,20 +117,6 @@ const SUPPORTS_RULE_TYPE = 12  // CSSSupportsRule
 function truncate(text: string, maxLen = 120): string {
   if (text.length <= maxLen) return text
   return `${text.slice(0, maxLen)}…`
-}
-
-/**
- * Convert a kebab-case CSS property name to camelCase.
- * "background-color" → "backgroundColor", "z-index" → "zIndex"
- *
- * CSS custom properties (`--brand`) are case-sensitive and must be stored
- * verbatim — camelCasing `--brand` into `-Brand` would change the property and
- * break the cascade. They're returned unchanged. (Vendor-prefixed names like
- * `-webkit-foo` DO camelCase to `WebkitFoo`, matching the DOM style API.)
- */
-function kebabToCamel(prop: string): string {
-  if (prop.startsWith('--')) return prop
-  return prop.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())
 }
 
 /**
@@ -197,38 +182,19 @@ function extractUrlPayloads(value: string): string[] {
  * The brief specifies using `.length` + index access (not `for...of`) since
  * CSSStyleDeclaration doesn't enumerate properties via Symbol.iterator.
  */
-export function parseDeclarations(
+function parseDeclarations(
   style: CSSStyleDeclaration,
   selectorForWarning: string,
   warnings: ImportWarning[],
 ): Record<string, unknown> {
-  const decls: Record<string, unknown> = {}
-  for (let i = 0; i < style.length; i++) {
-    const rawKebab = style[i]
-    const value = style.getPropertyValue(rawKebab).trim()
-    if (!value) continue
-
-    // Substitution declarations (`var()`/`env()` values) were encoded as
-    // marker custom properties before the engine parse so they survive
-    // verbatim in every engine — decode them back to their real property.
-    // See substitutionEncode.ts.
-    const kebab = decodeSubstitutionProperty(rawKebab) ?? rawKebab
-
-    const camel = kebabToCamel(kebab)
-    if (!isEmittableProperty(camel)) {
-      warnings.push({
-        kind: 'blocked-property',
-        message: `Property "${camel}" (${kebab}) is blocked for security and was dropped`,
-        selector: selectorForWarning,
-        property: camel,
-      })
-      continue
-    }
-
-    decls[camel] = value
-  }
-
-  return decls
+  return readCssDeclarationBag(style, (camel, kebab) => {
+    warnings.push({
+      kind: 'blocked-property',
+      message: `Property "${camel}" (${kebab}) is blocked for security and was dropped`,
+      selector: selectorForWarning,
+      property: camel,
+    })
+  })
 }
 
 /**

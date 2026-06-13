@@ -1,6 +1,6 @@
 import { sanitiseCssValue } from '@core/css-sanitize'
 
-export interface CssVariableDeclaration {
+interface CssVariableDeclaration {
   name: string
   value: string
 }

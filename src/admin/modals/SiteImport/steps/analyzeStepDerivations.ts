@@ -1,17 +1,17 @@
 import type { ImportPlan } from '@core/siteImport'
 
-export interface RuleGroup {
+interface RuleGroup {
   source: string
   label: string
   indices: number[]
 }
 
-export interface MediaGroup {
+interface MediaGroup {
   label: string
   sourcePaths: string[]
 }
 
-export interface SkippedItem {
+interface SkippedItem {
   label: string
   reason: string
   kind: string

@@ -58,7 +58,7 @@ const DashboardItemSchema = Type.Object({
   row: Type.Optional(Type.Number()),
 })
 
-export const DashboardLayoutSchema = Type.Object({
+const DashboardLayoutSchema = Type.Object({
   items: Type.Array(DashboardItemSchema),
   onboardingDismissed: Type.Boolean(),
   /**
@@ -79,12 +79,12 @@ const ModuleInserterItemKindSchema = Type.Union([
   Type.Literal('component'),
 ])
 
-export const ModuleInserterItemRefSchema = Type.Object({
+const ModuleInserterItemRefSchema = Type.Object({
   kind: ModuleInserterItemKindSchema,
   id: Type.String(),
 })
 
-export const ModuleInserterPreferenceSchema = Type.Object({
+const ModuleInserterPreferenceSchema = Type.Object({
   favorites: Type.Array(ModuleInserterItemRefSchema, { maxItems: 12 }),
 })
 
@@ -133,7 +133,7 @@ export const USER_PREFERENCE_SCHEMAS = {
   'module-inserter': ModuleInserterPreferenceSchema,
 } as const satisfies Record<UserPreferenceKey, TSchema>
 
-export type UserPreferenceValue<K extends UserPreferenceKey> = Static<
+type UserPreferenceValue<K extends UserPreferenceKey> = Static<
   (typeof USER_PREFERENCE_SCHEMAS)[K]
 >
 
@@ -205,17 +205,3 @@ export async function setUserPreference<K extends UserPreferenceKey>(
   return parseValue(USER_PREFERENCE_SCHEMAS[key], envelope.value) as UserPreferenceValue<K>
 }
 
-/**
- * Delete a single user preference, resetting it to default on the next
- * read. No envelope on success — the server returns 204 No Content.
- */
-export async function deleteUserPreference<K extends UserPreferenceKey>(
-  key: K,
-  fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
-): Promise<void> {
-  await apiRequest(`${BASE_PATH}/${encodeURIComponent(key)}`, {
-    method: 'DELETE',
-    fetchImpl,
-    fallbackMessage: `Failed to reset user preference "${key}"`,
-  })
-}

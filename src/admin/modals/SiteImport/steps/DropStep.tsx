@@ -17,7 +17,7 @@ import { FilePlusSolidIcon } from 'pixel-art-icons/icons/file-plus-solid'
 import { FolderGlyphIcon } from 'pixel-art-icons/icons/folder-glyph'
 import styles from './DropStep.module.css'
 
-export interface DropStepProps {
+interface DropStepProps {
   /** True while the modal is ingesting + analyzing the dropped files. */
   busy: boolean
   /** Error message from the last ingest attempt, or null. Shown with role="alert". */

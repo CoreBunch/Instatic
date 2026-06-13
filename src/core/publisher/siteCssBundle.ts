@@ -58,13 +58,6 @@
  */
 export type SiteCssBundleId = 'reset' | 'framework' | 'style' | 'userStyles'
 
-export const SITE_CSS_BUNDLE_IDS: readonly SiteCssBundleId[] = [
-  'reset',
-  'framework',
-  'style',
-  'userStyles',
-]
-
 /**
  * One built CSS file. `filename` already includes the content hash and `.css`
  * extension, ready to drop into the `/_instatic/css/` URL or a `<link>` href.

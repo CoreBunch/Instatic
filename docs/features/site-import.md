@@ -42,8 +42,11 @@ src/core/siteImport/
 ├── applyAssetRewrites.ts — patch fragment props + CSS/@keyframes url() with new media URLs (post-upload)
 ├── linkRewrite.ts       — rewrite intra-site <a href> to cms:page:<id> refs
 ├── conflicts.ts         — detect page-slug + class-name + design-token collisions; apply resolutions (incl. var(--x) rewrites)
-├── adapter.ts           — SiteImportAdapter + SiteImportTransaction interfaces
-└── applyImport.ts       — top-level orchestrator: buildImportPlan + commitImportPlan
+├── adapter.ts           — SiteImportAdapter + SiteImportTransaction interfaces (the ONE transaction contract; the editor store implements it directly)
+├── paths.ts             — dirname/joinPaths for FileMap-relative path resolution
+├── planCss.ts           — single CSS-source parse path (external sheets + per-page inline <style>) feeding shared plan accumulators
+├── buildPlan.ts         — buildImportPlan: pure analysis orchestrator, one named function per phase
+└── commitPlan.ts        — commitImportPlan: upload → rewrite → one atomic adapter.commit, one named function per entity kind
 
 src/admin/modals/SiteImport/
 ├── index.ts
@@ -334,7 +337,7 @@ On success the same step switches to its **complete** state — a success mark, 
 - [docs/reference/typebox-patterns.md](../reference/typebox-patterns.md) — boundary validation
 - Source-of-truth files:
   - `src/core/siteImport/types.ts` — `ImportPlan`, `ImportResult`, `ImportWarning`, `ImportFontToken`, `ImportColorToken`, error classes
-  - `src/core/siteImport/applyImport.ts` — `buildImportPlan`, `commitImportPlan`
+  - `src/core/siteImport/buildPlan.ts` — `buildImportPlan`; `src/core/siteImport/commitPlan.ts` — `commitImportPlan`
   - `src/core/siteImport/adapter.ts` — `SiteImportAdapter`, `SiteImportTransaction` interfaces
   - `src/core/siteImport/colorTokens.ts` — `extractRootColorTokens`
   - `src/core/siteImport/fontTokens.ts` — `extractRootFontTokens`

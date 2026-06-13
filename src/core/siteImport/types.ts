@@ -74,7 +74,7 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  *   than imported. The user can re-add the font by hand. Self-hosted faces
  *   (a bundled `.woff2`/`.woff`/`.ttf`/`.otf`) ARE imported as custom fonts.
  */
-export type ImportWarningKind =
+type ImportWarningKind =
   | 'dropped-at-rule'
   | 'unmatched-media-query'
   | 'invalid-rule'

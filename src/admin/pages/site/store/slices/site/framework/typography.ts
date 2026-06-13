@@ -47,7 +47,7 @@ export function applyTypographyGroupPatchPreview(
   }
 }
 
-export type FrameworkTypographyActions = Pick<
+type FrameworkTypographyActions = Pick<
   SiteSlice,
   | 'toggleFrameworkTypographyDisabled'
   | 'createFrameworkTypographyGroup'

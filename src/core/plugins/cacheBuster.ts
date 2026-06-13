@@ -21,7 +21,7 @@
  * Returns the URL with the buster appended (or the original URL if no
  * cache key is provided — useful for tests that want exact URL matches).
  */
-export interface PluginCacheKeyInput {
+interface PluginCacheKeyInput {
   version: string
   updatedAt: string
 }

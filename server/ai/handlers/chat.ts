@@ -216,6 +216,7 @@ async function handleAiChat(
         const toolContextBase = {
           db,
           userId: user.id,
+          capabilities: user.capabilities,
           scope,
           conversationId: conversation.id,
           snapshot,

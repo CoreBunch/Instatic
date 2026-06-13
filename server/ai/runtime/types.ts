@@ -17,6 +17,7 @@
 
 import type { TSchema } from '@sinclair/typebox'
 import type { AiContentBlock, AiToolOutput } from '@core/ai'
+import type { CoreCapability } from '@core/capabilities'
 export type { AiContentBlock, AiToolImage, AiToolOutput } from '@core/ai'
 
 // ---------------------------------------------------------------------------
@@ -73,7 +74,7 @@ export type AiMessage =
  *    from the browser. Use for any tool that mutates an in-browser store
  *    (the live editor) or requires DOM access (render_snapshot).
  */
-export type ToolExecution = 'server' | 'browser'
+type ToolExecution = 'server' | 'browser'
 
 /**
  * One tool, defined once. Drivers translate `inputSchema` (TypeBox) into
@@ -109,6 +110,14 @@ export interface AiTool {
    */
   readonly mutates?: boolean
   /**
+   * Capabilities that gate this tool, mirroring its HTTP-route equivalent.
+   * ANY-OF semantics: the caller needs at least one. Undefined / empty means
+   * the tool is reachable by any `ai.chat` caller (e.g. tools that only read
+   * the browser-supplied snapshot). Enforced by `toolAllowedForCapabilities`
+   * at selection time and re-checked in `executeAiTool`.
+   */
+  readonly requiredCapabilities?: readonly CoreCapability[]
+  /**
    * Server-side handler. Required when `execution === 'server'`; ignored when
    * `execution === 'browser'` (the browser bridge runs the tool instead).
    */
@@ -126,6 +135,8 @@ export interface ToolContext {
   /** Database client — server-side tool handlers query through this. */
   readonly db: import('../../db/client').DbClient
   readonly userId: string
+  /** The caller's capability set — handlers and the re-check gate read this. */
+  readonly capabilities: readonly CoreCapability[]
   readonly scope: ToolScope
   readonly conversationId: string
   readonly snapshot: unknown
@@ -196,13 +207,3 @@ export interface AiBrowserBridge {
 // per-message + per-conversation totals and compute cost from pricing.ts.
 // ---------------------------------------------------------------------------
 
-export interface AiUsage {
-  promptTokens: number
-  completionTokens: number
-  /**
-   * Optional cache reads/writes (Anthropic). Drivers that don't support
-   * prompt cache leave these undefined.
-   */
-  cacheReadTokens?: number
-  cacheWriteTokens?: number
-}

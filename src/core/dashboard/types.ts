@@ -22,14 +22,14 @@ import type { PixelArtIconComponent } from './iconLookup'
  * Custom spans (1 .. 12) work fine, but the canonical set keeps designs
  * consistent and the resize handles snap-friendly.
  */
-export type DashboardWidgetSize = 3 | 4 | 6 | 8 | 12
+type DashboardWidgetSize = 3 | 4 | 6 | 8 | 12
 
 /**
  * Tints from `src/styles/globals.css`. Widget chrome reads `--tint` from this
  * value to color the title dot and chart accents — see `Widget.tsx`. Plugins
  * pick one of these tokens so the dashboard stays visually coherent.
  */
-export type DashboardWidgetTint = 'mint' | 'lilac' | 'sky' | 'peach'
+type DashboardWidgetTint = 'mint' | 'lilac' | 'sky' | 'peach'
 
 export interface DashboardWidgetRendererProps {
   /**

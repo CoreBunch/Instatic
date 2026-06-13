@@ -31,7 +31,7 @@ import type { ReactNode } from 'react'
 import { cn } from '@ui/cn'
 import styles from './EmptyState.module.css'
 
-export interface EmptyStateProps {
+interface EmptyStateProps {
   /**
    * Visual mode.
    *  - 'card'     (default) — surfaced rounded card; sits inline in a panel.

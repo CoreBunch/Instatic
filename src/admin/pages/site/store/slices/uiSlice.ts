@@ -2,7 +2,7 @@ import type { EditorStore, EditorStoreSliceCreator } from '@site/store/types'
 import { clearCanvasSelectionDraft } from './selectionSlice'
 
 export type FocusedPanel = 'canvas' | 'domTree' | 'properties' | null
-export type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'
+type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'
 export type LeftSidebarPanelId =
   | 'site'
   | 'selectors'
@@ -43,7 +43,7 @@ export interface PanelState {
  * `updateNodeProps(nodeId, { [propKey]: content })`, so no callback needs to
  * live in store state.
  */
-export interface PropCodeBuffer {
+interface PropCodeBuffer {
   nodeId: string
   propKey: string
   /** Panel title, e.g. "Edit SVG". */
@@ -52,7 +52,7 @@ export interface PropCodeBuffer {
   language: 'html' | 'css' | 'json' | 'ts' | 'tsx' | 'markdown' | 'text'
 }
 
-export interface ComponentizeEditorRequest {
+interface ComponentizeEditorRequest {
   nodeId: string
   requestId: number
 }
@@ -67,7 +67,7 @@ export type LayoutNameDialogRequest =
   | { mode: 'rename'; layoutId: string }
 
 
-export interface UiSlice {
+interface UiSlice {
   // Panel visibility / layout
   domTreePanel: PanelState
   propertiesPanel: PanelState

@@ -29,7 +29,7 @@ const defaultFetch: FetchLike = (input, init) => globalThis.fetch(input, init)
  * Loaded plugin admin app module shape — the `default` export is the
  * `PluginAdminAppComponent` returned by `definePluginAdminApp`.
  */
-export type LoadedAdminAppModule = { default: PluginAdminAppComponent }
+type LoadedAdminAppModule = { default: PluginAdminAppComponent }
 
 export type PluginAdminAppImport = (url: string, cacheKey?: string) => Promise<LoadedAdminAppModule>
 
@@ -45,7 +45,7 @@ function runtimePath(pluginId: string, path: string): string {
   return `/admin/api/cms/plugins/${encodeURIComponent(pluginId)}/runtime/${normalized}`
 }
 
-export interface PluginRoutesHelper {
+interface PluginRoutesHelper {
   fetch: (path: string, init?: RequestInit) => Promise<Response>
   json: <T extends TSchema>(path: string, schema: T, init?: RequestInit) => Promise<Static<T>>
 }

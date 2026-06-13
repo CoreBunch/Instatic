@@ -288,7 +288,7 @@ export async function getRowTableRouteBase(
 // Public-route lookups
 // ---------------------------------------------------------------------------
 
-export interface PublishedRowRoute {
+interface PublishedRowRoute {
   rowId: string
   /** Slug of the row's ACTIVE published version (what the public URL uses). */
   rowSlug: string

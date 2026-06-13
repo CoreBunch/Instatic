@@ -15,8 +15,6 @@ import { hostPlugins } from './registry'
 import { workers, pendingRequests } from './workerState'
 import type { CrashRecoveryDecision, CrashRecoveryHandler } from './types'
 
-export type { CrashRecoveryDecision, CrashRecoveryHandler }
-
 /**
  * Crash threshold: if a plugin's worker crashes this many times within
  * CRASH_WINDOW_MS, the host stops auto-respawning and parks the plugin in

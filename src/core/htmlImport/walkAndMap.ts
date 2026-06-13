@@ -64,7 +64,7 @@ export interface ImportFragment {
   body?: ImportBodyAttributes
 }
 
-export interface ImportBodyAttributes {
+interface ImportBodyAttributes {
   classIds?: string[]
   inlineStyles?: Record<string, string>
   props?: Record<string, unknown>

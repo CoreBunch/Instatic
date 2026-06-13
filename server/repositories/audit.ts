@@ -56,7 +56,7 @@ const AuditMetadataSchema = Type.Record(
 )
 
 export type AuditAction = Static<typeof AuditActionSchema>
-export type AuditMetadata = Static<typeof AuditMetadataSchema>
+type AuditMetadata = Static<typeof AuditMetadataSchema>
 
 interface AuditEventRow {
   id: string
@@ -87,7 +87,7 @@ interface AuditEventLabels {
   metadataLabels: Record<string, string>
 }
 
-export interface AuditEvent {
+interface AuditEvent {
   id: string
   actorUserId: string | null
   action: AuditAction

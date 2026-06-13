@@ -7,12 +7,7 @@ import type {
 } from '@core/framework-schema'
 import { formatCssVariableBlock } from './cssVariables'
 
-export type {
-  FrameworkColorSettings,
-  FrameworkColorUtilityType,
-} from '@core/framework-schema'
-
-export interface FrameworkColorVariable {
+interface FrameworkColorVariable {
   name: string
   value: string
   tokenId: string
@@ -32,7 +27,7 @@ export interface FrameworkColorVariableSets {
  * Building both from a single `planColorTokens` pass means the ordered-sort,
  * slug-dedup, and variant-expansion run once per generation instead of twice.
  */
-export interface FrameworkColorPlan {
+interface FrameworkColorPlan {
   variableSets: FrameworkColorVariableSets
   utilityClasses: Record<string, StyleRule>
 }

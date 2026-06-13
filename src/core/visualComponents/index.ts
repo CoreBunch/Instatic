@@ -20,7 +20,7 @@ export { validateComponentName, validateParamName, vcSlugFromName } from './name
 export { getReferencedComponentIds, wouldCreateCycle } from './recursionGuard'
 
 export { forEachVCRef, collectVCRefs } from './vcRefs'
-export type { VCRef } from './vcRefs'
+
 
 export { collectSlotOutletNames, syncSlotInstances, applySlotSyncResult } from './slotSync'
 

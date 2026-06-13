@@ -17,7 +17,7 @@ import { CloseIcon } from 'pixel-art-icons/icons/close'
 import styles from './MediaUploadPlaceholderView.module.css'
 import type { MediaUploadPlaceholderAttributes } from './MediaUploadPlaceholder'
 
-export interface MediaUploadCancelHandler {
+interface MediaUploadCancelHandler {
   (uploadId: string): void
 }
 

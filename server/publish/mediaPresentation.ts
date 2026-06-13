@@ -67,7 +67,7 @@ async function applyTransform(payload: TransformFilterPayload): Promise<string> 
  * any transformer touched the values; returns the original reference
  * untouched when nothing changed (cheap identity check downstream).
  */
-export async function materializeAssetForClient<A extends TransformableAsset>(
+async function materializeAssetForClient<A extends TransformableAsset>(
   asset: A,
 ): Promise<A> {
   // Short-circuit: if no plugin has registered a media URL transformer,
