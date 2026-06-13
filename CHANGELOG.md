@@ -6,6 +6,52 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 
 ## Unreleased
 
+## 0.0.4 - 2026-06-13
+
+### Editor & canvas
+
+- Inline text editing on the canvas — double-click any text node to edit it in place, byte-identical to the published element.
+- User-saved layouts: save any subtree and re-insert it exactly elsewhere.
+- Double-click a row in the explorer / DOM panels to rename it.
+- Design mode now opens at 50% zoom; live mode is pinned to 100%.
+- Live mode shows the shared frame skeleton while hydrating, and the template read-only hint/open action is scoped to template chrome rather than page content.
+- Removed inconsistent panel keyboard shortcuts from the rail.
+- Fixed template-preview fidelity: composed read-only content (template chrome, outlet previews, inlined Visual Components) now carries each node's inline styles, matching the published page.
+
+### Publisher & media
+
+- `<img sizes>` is now derived automatically from the layout — the manual Sizes field is gone, and lazy images use the standards-based `sizes=auto` with a layout-resolved fallback.
+- Responsive images never serve multi-MB originals to retina screens: `srcset` is built from variants only.
+- Single class-CSS emission engine shared by publish and canvas, and one-way publisher layering (repositories never import the publish layer).
+- Per-module published-JS channel; the form runtime now rides it.
+
+### Templates & content
+
+- Added a "Not found" template target for designing 404 pages.
+- Content Outlet availability fixes and toast layering; closed outlet invariant holes.
+- Roster saves now survive slug handoffs (homepage swap, swaps, revivals).
+
+### Site import
+
+- Refactored the Super Import pipeline into one adapter contract with a phase-decomposed plan/commit flow and deduped helpers; conflict resolution split into named concerns.
+- Improved import fidelity: rgba color tokens, import-from-anywhere, and engine-proof `var()` / `env()` declarations at the import boundary.
+
+### AI & plugins
+
+- AI tools now inherit the caller's capabilities — `ai.chat` no longer acts as a blanket read grant, and write tools require `ai.tools.write`.
+- AI credential auth is derived from the provider.
+- Plugin performance: handle-based VM dispatch, native base64, and indexed content-API lookups; fixed `useCanvasNodeRect` to measure real canvas nodes.
+
+### Admin & performance
+
+- Unknown admin URLs (typos, stale deep links, `/admin/login`) now redirect to the dashboard — showing the login form when signed out — instead of rendering a blank page. Public-site 404s keep their own handling.
+- Incremental site saves with runtime builds hoisted out of the publish transaction, plus hot-path fixes across the publish pipeline, public serving, and the editor store.
+- Dead-code cleanup across the codebase (knip reports zero unused surface).
+
+### Infrastructure
+
+- Standardized container images on GHCR and dropped the Docker Hub mirror.
+
 ## 0.0.3 - 2026-06-10
 
 - Hardened the plugin QuickJS sandbox against hangs: interrupt deadlines on plugin-source and timer execution, a host-side worker RPC timeout, and preserved VM stack traces in server logs.
