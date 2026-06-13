@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import React from 'react'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { CanvasRoot } from '@site/canvas/CanvasRoot'
+import { CanvasTransformLayer } from '@site/canvas/CanvasTransformLayer'
 import { CANVAS_VIEWPORT_HEIGHT } from '@site/canvas/resolveViewportUnits'
+import { DEFAULT_BREAKPOINTS } from '@core/page-tree'
 import { useEditorStore } from '@site/store/store'
 import {
   DEFAULT_MODULE_INSERTER_PREFERENCE,
@@ -86,19 +88,29 @@ async function flushAnimationFrame() {
 
 describe('canvas frame mounting', () => {
   it('mounts every breakpoint frame once the page document is in the store — no staggering', async () => {
-    render(<CanvasRoot />)
+    // Render the transform layer directly (this is where the staggering lived)
+    // with the page already present. The page tree is in memory, so there is no
+    // per-frame stagger: the active frame and every inactive frame mount
+    // together. (The previous progressive loader deliberately delayed inactive
+    // frames behind a requestAnimationFrame → setTimeout → requestIdleCallback
+    // chain, which could strand frames as skeletons if rAF was suspended — a
+    // background tab, or a headless CI runner.)
+    const page = useEditorStore.getState().site!.pages[0]
+    render(
+      <CanvasTransformLayer
+        page={page}
+        breakpoints={DEFAULT_BREAKPOINTS}
+        activeBreakpointId="desktop"
+        onBreakpointActivate={() => {}}
+      />,
+    )
 
-    // The page tree is already in memory, so there is no per-frame stagger: the
-    // active frame and every inactive frame mount together. (The previous
-    // progressive loader deliberately delayed inactive frames behind a
-    // requestAnimationFrame → setTimeout → requestIdleCallback chain, which
-    // could strand frames as skeletons if rAF was suspended — a background tab,
-    // or a headless CI runner.)
     await waitForCanvasNodeInFrame('desktop', 'headline')
     await waitForCanvasNodeInFrame('mobile', 'headline')
     await waitForCanvasNodeInFrame('tablet', 'headline')
 
-    // No leftover skeletons once frames are mounted.
+    // No skeletons once frames are mounted (the skeleton only renders while
+    // `page === null`, exercised by the next test).
     expect(screen.queryByTestId('canvas-frame-skeleton-mobile')).toBeNull()
     expect(screen.queryByTestId('canvas-frame-skeleton-desktop')).toBeNull()
   })
