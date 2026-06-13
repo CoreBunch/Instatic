@@ -5,17 +5,16 @@ import { readFileSync } from 'fs'
 import { useEditorStore } from '@site/store/store'
 import { BreakpointFrame } from '@site/canvas/BreakpointFrame'
 import { CanvasRoot } from '@site/canvas/CanvasRoot'
-import { getCanvasFrameDocument, queryCanvasNodeInFrame } from './iframeCanvasQuery'
+import {
+  getCanvasFrameDocument,
+  queryCanvasNodeInFrame,
+  waitForCanvasFrameDocument,
+  waitForCanvasNodeInFrame,
+} from './iframeCanvasQuery'
 import '@modules/base'
 
 function renderCanvas() {
   return render(<CanvasRoot />)
-}
-
-async function flushProgressiveCanvasFrames() {
-  await act(async () => {
-    await new Promise<void>((resolve) => setTimeout(resolve, 90))
-  })
 }
 
 const BREAKPOINT_FRAME_CSS = new URL(
@@ -91,13 +90,10 @@ describe('canvas breakpoint rendering', () => {
     useEditorStore.getState().setActiveBreakpoint('desktop')
 
     renderCanvas()
-    await flushProgressiveCanvasFrames()
-
-    const mobileNode = queryCanvasNodeInFrame('mobile', textId)
-    expect(mobileNode).toBeTruthy()
+    const mobileNode = await waitForCanvasNodeInFrame('mobile', textId)
 
     act(() => {
-      fireEvent.click(mobileNode!)
+      fireEvent.click(mobileNode)
     })
 
     const state = useEditorStore.getState()
@@ -115,27 +111,23 @@ describe('canvas breakpoint rendering', () => {
     }, page.rootNodeId)
 
     renderCanvas()
-    await flushProgressiveCanvasFrames()
-
-    const mobileNode = queryCanvasNodeInFrame('mobile', textId)
-    const desktopNode = queryCanvasNodeInFrame('desktop', textId)
-    expect(mobileNode).toBeTruthy()
-    expect(desktopNode).toBeTruthy()
+    const mobileNode = await waitForCanvasNodeInFrame('mobile', textId)
+    const desktopNode = await waitForCanvasNodeInFrame('desktop', textId)
 
     act(() => {
-      fireEvent.mouseEnter(mobileNode!)
+      fireEvent.mouseEnter(mobileNode)
     })
 
-    expect(mobileNode!.getAttribute('data-hovered')).toBe('true')
-    expect(desktopNode!.hasAttribute('data-hovered')).toBe(false)
+    expect(mobileNode.getAttribute('data-hovered')).toBe('true')
+    expect(desktopNode.hasAttribute('data-hovered')).toBe(false)
 
     act(() => {
-      fireEvent.mouseLeave(mobileNode!)
-      fireEvent.mouseEnter(desktopNode!)
+      fireEvent.mouseLeave(mobileNode)
+      fireEvent.mouseEnter(desktopNode)
     })
 
-    expect(mobileNode!.hasAttribute('data-hovered')).toBe(false)
-    expect(desktopNode!.getAttribute('data-hovered')).toBe('true')
+    expect(mobileNode.hasAttribute('data-hovered')).toBe(false)
+    expect(desktopNode.getAttribute('data-hovered')).toBe('true')
   })
 
   it('dims inactive breakpoint frames only while editing a selected node in the open properties panel', () => {

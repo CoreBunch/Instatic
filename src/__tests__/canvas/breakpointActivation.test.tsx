@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { DndContext } from '@dnd-kit/core'
 import { CanvasRoot } from '@site/canvas/CanvasRoot'
 import { useEditorStore } from '@site/store/store'
 import { makeNode, makePage, makeSite } from '../fixtures'
-import { getCanvasFrameDocument, queryCanvasNodeInFrame } from './iframeCanvasQuery'
+import {
+  queryCanvasNodeInFrame,
+  waitForCanvasFrameDocument,
+  waitForCanvasNodeInFrame,
+} from './iframeCanvasQuery'
 import '@modules/base'
 
 afterEach(cleanup)
@@ -32,7 +36,7 @@ beforeEach(() => {
 describe('canvas breakpoint activation', () => {
   it('activates an inactive breakpoint without changing the selected layer on first node click', async () => {
     renderCanvas()
-    await waitForCanvasNode('mobile', 'other')
+    await waitForCanvasNodeInFrame('mobile', 'other')
     const otherNode = queryCanvasNodeInFrame('mobile', 'other')
     expect(otherNode).toBeTruthy()
 
@@ -48,7 +52,7 @@ describe('canvas breakpoint activation', () => {
 
   it('shows a cursor-following activation tooltip over inactive breakpoint frames', async () => {
     renderCanvas()
-    const mobileDoc = await waitForFrameDocument('mobile')
+    const mobileDoc = await waitForCanvasFrameDocument('mobile')
 
     act(() => {
       fireEvent.mouseMove(mobileDoc.body, { clientX: 24, clientY: 32 })
@@ -59,7 +63,7 @@ describe('canvas breakpoint activation', () => {
 
   it('does not show the activation tooltip when no layer properties context is active', async () => {
     renderCanvas({ selectedNodeId: null, selectedNodeIds: [] })
-    const mobileDoc = await waitForFrameDocument('mobile')
+    const mobileDoc = await waitForCanvasFrameDocument('mobile')
 
     act(() => {
       fireEvent.mouseMove(mobileDoc.body, { clientX: 24, clientY: 32 })
@@ -74,7 +78,7 @@ describe('canvas breakpoint activation', () => {
       selectedNodeIds: ['selected'],
       propertiesPanel: { collapsed: true, x: 0, y: 0, width: 360 },
     })
-    await waitForCanvasNode('mobile', 'other')
+    await waitForCanvasNodeInFrame('mobile', 'other')
     const otherNode = queryCanvasNodeInFrame('mobile', 'other')
     expect(otherNode).toBeTruthy()
 
@@ -129,17 +133,3 @@ function renderCanvas(
   )
 }
 
-async function waitForCanvasNode(breakpointId: string, nodeId: string): Promise<void> {
-  await waitFor(() => {
-    expect(queryCanvasNodeInFrame(breakpointId, nodeId)).toBeTruthy()
-  })
-}
-
-async function waitForFrameDocument(breakpointId: string): Promise<Document> {
-  let doc: Document | null = null
-  await waitFor(() => {
-    doc = getCanvasFrameDocument(breakpointId)
-    expect(doc?.body).toBeTruthy()
-  })
-  return doc!
-}

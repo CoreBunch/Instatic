@@ -4,17 +4,11 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { DndContext } from '@dnd-kit/core'
 import { useEditorStore } from '@site/store/store'
 import { CanvasRoot } from '@site/canvas/CanvasRoot'
-import { queryCanvasNodeInFrame } from './iframeCanvasQuery'
+import { waitForCanvasNodeInFrame } from './iframeCanvasQuery'
 import '@modules/base'
 
 function renderCanvas() {
   return render(<DndContext><CanvasRoot /></DndContext>)
-}
-
-async function flushProgressiveCanvasFrames() {
-  await act(async () => {
-    await new Promise<void>((resolve) => setTimeout(resolve, 90))
-  })
 }
 
 beforeEach(() => {
@@ -58,23 +52,20 @@ describe('canvas form controls', () => {
     }, formId)
 
     renderCanvas()
-    await flushProgressiveCanvasFrames()
 
-    const input = queryCanvasNodeInFrame<HTMLInputElement>('desktop', inputId)
-    const select = queryCanvasNodeInFrame<HTMLSelectElement>('desktop', selectId)
-    expect(input).toBeTruthy()
-    expect(select).toBeTruthy()
+    const input = await waitForCanvasNodeInFrame<HTMLInputElement>('desktop', inputId)
+    const select = await waitForCanvasNodeInFrame<HTMLSelectElement>('desktop', selectId)
 
     let inputMouseDown = true
     await act(async () => {
-      inputMouseDown = fireEvent.mouseDown(input!)
+      inputMouseDown = fireEvent.mouseDown(input)
     })
     expect(inputMouseDown).toBe(false)
     expect(useEditorStore.getState().selectedNodeId).toBe(inputId)
 
     let selectMouseDown = true
     await act(async () => {
-      selectMouseDown = fireEvent.pointerDown(select!)
+      selectMouseDown = fireEvent.pointerDown(select)
     })
     expect(selectMouseDown).toBe(false)
     expect(useEditorStore.getState().selectedNodeId).toBe(selectId)

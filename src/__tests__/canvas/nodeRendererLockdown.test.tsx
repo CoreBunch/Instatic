@@ -16,10 +16,10 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import React from 'react'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { cleanup, fireEvent, render } from '@testing-library/react'
 import { DndContext } from '@dnd-kit/core'
 import { useEditorStore } from '@site/store/store'
-import { queryCanvasElement } from './iframeCanvasQuery'
+import { queryCanvasElement, waitForCanvasElement } from './iframeCanvasQuery'
 import { CanvasRoot } from '@site/canvas/CanvasRoot'
 import { makeNode, makePage, makeSite } from '../fixtures'
 import type { PageNode } from '@core/page-tree'
@@ -56,11 +56,6 @@ function renderCanvas() {
   return render(<DndContext><CanvasRoot /></DndContext>)
 }
 
-async function flushProgressiveCanvasFrames() {
-  await act(async () => {
-    await new Promise<void>((resolve) => setTimeout(resolve, 90))
-  })
-}
 
 /**
  * Sets up a page with annotated nodes and loads it into the editor store.
@@ -150,12 +145,10 @@ describe('B3 — NodeRenderer lock-down: click routing for inlined VC body nodes
   it('clicking a VC body node (isInsideSlotContent=false) selects the enclosing ref', async () => {
     setupAnnotatedPage()
     renderCanvas()
-    await flushProgressiveCanvasFrames()
 
-    const vcBodyEl = queryCanvasElement('[data-node-id="vc-body"]')
-    expect(vcBodyEl).toBeTruthy()
+    const vcBodyEl = await waitForCanvasElement('[data-node-id="vc-body"]')
 
-    fireEvent.click(vcBodyEl!)
+    fireEvent.click(vcBodyEl)
 
     const state = useEditorStore.getState()
     // Lock-down redirected the click to ref1, not vc-body.
@@ -165,12 +158,10 @@ describe('B3 — NodeRenderer lock-down: click routing for inlined VC body nodes
   it('clicking a slot-content node (isInsideSlotContent=true) selects that node directly', async () => {
     setupAnnotatedPage()
     renderCanvas()
-    await flushProgressiveCanvasFrames()
 
-    const slotChildEl = queryCanvasElement('[data-node-id="slot-child"]')
-    expect(slotChildEl).toBeTruthy()
+    const slotChildEl = await waitForCanvasElement('[data-node-id="slot-child"]')
 
-    fireEvent.click(slotChildEl!)
+    fireEvent.click(slotChildEl)
 
     const state = useEditorStore.getState()
     // Slot content is user-editable — behaves normally (no redirect).
@@ -180,12 +171,10 @@ describe('B3 — NodeRenderer lock-down: click routing for inlined VC body nodes
   it('clicking a plain page node (no _owningRefId) selects that node directly', async () => {
     setupAnnotatedPage()
     renderCanvas()
-    await flushProgressiveCanvasFrames()
 
-    const ref1El = queryCanvasElement('[data-node-id="ref1"]')
-    expect(ref1El).toBeTruthy()
+    const ref1El = await waitForCanvasElement('[data-node-id="ref1"]')
 
-    fireEvent.click(ref1El!)
+    fireEvent.click(ref1El)
 
     const state = useEditorStore.getState()
     // Plain page node — no redirect.
@@ -195,34 +184,30 @@ describe('B3 — NodeRenderer lock-down: click routing for inlined VC body nodes
   it('hovering a VC body node clamps the hover ring to the enclosing ref', async () => {
     setupAnnotatedPage()
     renderCanvas()
-    await flushProgressiveCanvasFrames()
 
-    const vcBodyEl = queryCanvasElement('[data-node-id="vc-body"]')
+    const vcBodyEl = await waitForCanvasElement('[data-node-id="vc-body"]')
     const ref1El = queryCanvasElement('[data-node-id="ref1"]')
-    expect(vcBodyEl).toBeTruthy()
     expect(ref1El).toBeTruthy()
 
-    fireEvent.mouseEnter(vcBodyEl!)
+    fireEvent.mouseEnter(vcBodyEl)
 
     // Lock-down routed hover to ref1 → ref1 gets data-hovered, vc-body does not.
     expect(ref1El!.getAttribute('data-hovered')).toBe('true')
-    expect(vcBodyEl!.hasAttribute('data-hovered')).toBe(false)
+    expect(vcBodyEl.hasAttribute('data-hovered')).toBe(false)
   })
 
   it('hovering a slot-content node hovers that node directly (no redirect)', async () => {
     setupAnnotatedPage()
     renderCanvas()
-    await flushProgressiveCanvasFrames()
 
-    const slotChildEl = queryCanvasElement('[data-node-id="slot-child"]')
+    const slotChildEl = await waitForCanvasElement('[data-node-id="slot-child"]')
     const ref1El = queryCanvasElement('[data-node-id="ref1"]')
-    expect(slotChildEl).toBeTruthy()
     expect(ref1El).toBeTruthy()
 
-    fireEvent.mouseEnter(slotChildEl!)
+    fireEvent.mouseEnter(slotChildEl)
 
     // Slot content behaves normally — slot-child gets data-hovered.
-    expect(slotChildEl!.getAttribute('data-hovered')).toBe('true')
+    expect(slotChildEl.getAttribute('data-hovered')).toBe('true')
     expect(ref1El!.hasAttribute('data-hovered')).toBe(false)
   })
 })
