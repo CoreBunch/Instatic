@@ -86,7 +86,7 @@ export function useActiveLivePath(): void {
   }, [livePath, publish])
 }
 
-export interface ResolveArgs {
+interface ResolveArgs {
   activePage: ReturnType<typeof selectActivePage>
   isTemplate: boolean
   targetKind: TemplateTarget['kind'] | null

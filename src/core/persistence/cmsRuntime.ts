@@ -13,8 +13,6 @@ import {
   type CmsRuntimePreviewAsset,
 } from './responseSchemas'
 
-export type { CmsRuntimePreviewAsset }
-
 export interface CmsRuntimePreviewResult {
   html: string
   assets: CmsRuntimePreviewAsset[]
@@ -22,14 +20,14 @@ export interface CmsRuntimePreviewResult {
   diagnostics: SiteRuntimeDiagnostic[]
 }
 
-export interface CmsRuntimePreviewInput {
+interface CmsRuntimePreviewInput {
   site: unknown
   pageId: string
   breakpointId?: string
   templateContext?: TemplateRenderDataContext
 }
 
-export interface CmsRuntimeDependencyResolveResult {
+interface CmsRuntimeDependencyResolveResult {
   dependencyLock: SiteDependencyLock
   /**
    * Precomputed importmap from the server's `bun install` cache. Absent

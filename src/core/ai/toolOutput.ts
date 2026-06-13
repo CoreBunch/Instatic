@@ -7,7 +7,7 @@ import { Type, type Static } from '@core/utils/typeboxHelpers'
  * forward it as a NATIVE image block (Anthropic) or drop it to a one-line
  * text note (providers whose tool-result channel is text-only).
  */
-export const AiToolImageSchema = Type.Object({
+const AiToolImageSchema = Type.Object({
   mimeType: Type.String(),
   data: Type.String(),
 })

@@ -13,6 +13,7 @@
 
 import { parseValue, safeParseValue } from '@core/utils/typeboxHelpers'
 import { AiToolOutputSchema } from '@core/ai'
+import { toolAllowedForCapabilities } from '../../tools/capabilityGate'
 import type {
   AiBrowserBridge,
   AiTool,
@@ -39,6 +40,13 @@ export async function executeAiTool(
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Invalid tool input.'
     return { ok: false, error: message }
+  }
+
+  // Defence in depth: `selectToolsForScope` should never have offered a
+  // tool the caller can't use, but re-check before dispatching to either
+  // the server handler or the browser bridge anyway.
+  if (!toolAllowedForCapabilities(aiTool, toolContextBase.capabilities)) {
+    return { ok: false, error: `Tool ${aiTool.name} is not permitted for this user.` }
   }
 
   if (aiTool.execution === 'server') {

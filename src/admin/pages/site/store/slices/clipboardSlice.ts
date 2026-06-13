@@ -51,14 +51,14 @@ import { buildSiteHelpers } from './site/helpers'
  * `rootNodeIds` is ordered: a multi-select copy preserves selection order,
  * a single-node copy is a 1-length array.
  */
-export interface ClipboardEntry {
+interface ClipboardEntry {
   rootNodeIds: string[]
   nodes: Record<string, PageNode>
   classes: Record<string, StyleRule>
   copiedAt: number
 }
 
-export interface ClipboardSlice {
+interface ClipboardSlice {
   /** Latest copied / cut subtree(s). Null when the clipboard is empty. */
   clipboardEntry: ClipboardEntry | null
 

@@ -40,7 +40,7 @@ import styles from './cells.module.css'
 // Public props
 // ---------------------------------------------------------------------------
 
-export interface CellDisplayProps {
+interface CellDisplayProps {
   field: DataField
   cells: DataRowCells
   /** Full tables list — required for resolving relation target rows. */

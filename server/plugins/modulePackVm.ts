@@ -51,7 +51,7 @@ import { wrapEsmAsGlobal } from './quickjs/esmShim'
  * here so this file stays free of the SDK dependency graph; mismatches would
  * be caught by the type system at the call site.
  */
-export interface ModulePackRenderOutput {
+interface ModulePackRenderOutput {
   html: string
   css?: string
   js?: string
@@ -68,7 +68,7 @@ export interface ModulePackRenderOutput {
  * can write deps into the site's package.json and wire up the editor
  * iframe preview's import map.
  */
-export interface SerializedModuleDefinition {
+interface SerializedModuleDefinition {
   id: string
   name: string
   description?: string

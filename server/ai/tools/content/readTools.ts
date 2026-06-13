@@ -12,6 +12,7 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+import type { CoreCapability } from '@core/capabilities'
 import type { AiTool } from '../types'
 import {
   getDataRow,
@@ -27,6 +28,24 @@ import {
 } from '@core/data/cells'
 import { normalizeDataTableFields } from '@core/data/fields'
 import type { DataField, DataRow, DataTableListItem } from '@core/data/schemas'
+
+// ---------------------------------------------------------------------------
+// Capability requirements (ANY-OF) — each tool mirrors its HTTP-route gate.
+// ---------------------------------------------------------------------------
+
+// Document (data-row) content read — mirrors `requireDataAccess`
+// (DATA_ACCESS_CAPABILITIES in server/handlers/cms/data/access.ts).
+const DOCUMENT_READ_CAPS: readonly CoreCapability[] = [
+  'content.create',
+  'content.edit.own',
+  'content.edit.any',
+  'content.publish.own',
+  'content.publish.any',
+  'content.manage',
+]
+
+// Schema-level read — mirrors `requireDataTablesRead`.
+const SCHEMA_READ_CAPS: readonly CoreCapability[] = ['data.tables.read', 'data.tables.manage']
 
 // ---------------------------------------------------------------------------
 // Shared projections
@@ -102,6 +121,7 @@ const listCollectionsTool: AiTool = {
   name: 'list_collections',
   scope: 'content',
   execution: 'server',
+  requiredCapabilities: SCHEMA_READ_CAPS,
   description:
     'List every content collection (postType + page tables) with id, slug, label, kind, row count, and primary field id. Use to discover where a document lives before reading/writing.',
   inputSchema: ListCollectionsInput,
@@ -127,6 +147,7 @@ const getCollectionSchemaTool: AiTool = {
   name: 'get_collection_schema',
   scope: 'content',
   execution: 'server',
+  requiredCapabilities: SCHEMA_READ_CAPS,
   description:
     "Return one collection's field schema: each field's id, label, type, required flag, builtIn flag, and per-type extras (select options, media kind, relation target). Call BEFORE set_document_field on an unfamiliar collection so you know the field's value shape.",
   inputSchema: GetCollectionSchemaInput,
@@ -168,6 +189,7 @@ const listDocumentsTool: AiTool = {
   name: 'list_documents',
   scope: 'content',
   execution: 'server',
+  requiredCapabilities: DOCUMENT_READ_CAPS,
   description:
     'List documents in one collection. Returns id, title, slug, status, authorUserId, updatedAt — light projection. Filter by status / authorUserId, paginate with limit (default 25, max 200) + offset.',
   inputSchema: ListDocumentsInput,
@@ -201,6 +223,7 @@ const getDocumentTool: AiTool = {
   name: 'get_document',
   scope: 'content',
   execution: 'server',
+  requiredCapabilities: DOCUMENT_READ_CAPS,
   description:
     "Return one document's full state: every field value (body is a markdown string), status, author, slug, timestamps. Use for the doc the user wants to edit when it isn't the active doc, or to refresh state after another agent action.",
   inputSchema: GetDocumentInput,
@@ -241,6 +264,7 @@ const searchDocumentsTool: AiTool = {
   name: 'search_documents',
   scope: 'content',
   execution: 'server',
+  requiredCapabilities: DOCUMENT_READ_CAPS,
   description:
     "Full-text search across document slugs (the slug is a URL-safe derivative of the title — reliable text proxy for free-text lookup). Returns light summaries (id, tableId, slug, status, updatedAt). `limit` default 25, max 100.",
   inputSchema: SearchDocumentsInput,
@@ -279,6 +303,7 @@ const listUsersTool: AiTool = {
   name: 'list_users',
   scope: 'content',
   execution: 'server',
+  requiredCapabilities: ['users.manage'],
   description:
     'List active users available as document authors (id, email, displayName, roleSlug, roleName). Use to look up an author id before set_document_author.',
   inputSchema: ListUsersInput,
@@ -302,6 +327,7 @@ const listMediaTool: AiTool = {
   name: 'list_media',
   scope: 'content',
   execution: 'server',
+  requiredCapabilities: ['media.read'],
   description:
     "List existing media assets so you can pick one for a media-typed field. Returns id, filename, publicPath, mimeType, altText, width, height. Optional `query` substring-matches filename + altText (case-insensitive); `mimeType` substring-matches the mime (e.g. 'image' to filter to images). `limit` default 25, max 100. You CANNOT upload new media — only assign existing.",
   inputSchema: ListMediaInput,

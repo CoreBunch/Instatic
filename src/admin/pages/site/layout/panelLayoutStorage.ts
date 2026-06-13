@@ -52,13 +52,6 @@ export type FloatingPanelId =
  */
 export type EditorWorkspaceId = 'site' | 'content' | 'data' | 'media'
 
-const EDITOR_WORKSPACE_IDS: ReadonlySet<EditorWorkspaceId> = new Set([
-  'site',
-  'content',
-  'data',
-  'media',
-])
-
 export interface StoredWorkspaceLayout {
   /** Left sidebar pixel width (clamped to SIDEBAR_MIN/MAX_WIDTH on read). */
   leftWidth?: number
@@ -87,7 +80,7 @@ export interface StoredWorkspaceLayout {
   propertiesPanelMode?: PropertiesPanelMode
 }
 
-export interface StoredEditorLayout {
+interface StoredEditorLayout {
   version: 2
   /**
    * Floating panel positions, keyed by panel id. Each `FloatingPanelId` is
@@ -161,7 +154,7 @@ export function readEditorLayout(): StoredEditorLayout | null {
   return result.value as StoredEditorLayout
 }
 
-export function writeEditorLayout(layout: StoredEditorLayout) {
+function writeEditorLayout(layout: StoredEditorLayout) {
   if (!storageAvailable()) return
   try {
     localStorage.setItem(EDITOR_LAYOUT_STORAGE_KEY, JSON.stringify(layout))
@@ -223,15 +216,6 @@ export function writeStoredPanelPosition(panelId: FloatingPanelId, position: Pan
       [panelId]: position,
     },
   }))
-}
-
-/**
- * Type guard for narrowing a URL pathname / arbitrary string to one of the
- * canvas workspaces. Used by `store.ts` synchronous hydration to pick which
- * workspace's layout to apply on cold load.
- */
-export function isEditorWorkspaceId(value: string): value is EditorWorkspaceId {
-  return EDITOR_WORKSPACE_IDS.has(value as EditorWorkspaceId)
 }
 
 /**

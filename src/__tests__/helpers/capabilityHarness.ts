@@ -6,7 +6,7 @@ import { handleCmsRequest, type CmsHandlerOptions } from '../../../server/handle
 import { tryHandleAi } from '../../../server/ai/handlers'
 import { createTestDb, type TestDb } from './createTestDb'
 
-export const CAPABILITY_TEST_PASSWORD = 'long-enough-password'
+const CAPABILITY_TEST_PASSWORD = 'long-enough-password'
 
 let harnessSerial = 0
 
@@ -16,7 +16,7 @@ interface HarnessRequestInit extends Omit<RequestInit, 'body'> {
   json?: unknown
 }
 
-export interface TestRoleUser {
+interface TestRoleUser {
   cookie: string
   email: string
   roleId: string
@@ -76,7 +76,7 @@ export async function expectForbidden(res: Response): Promise<void> {
   expect(body.error).toBe('Forbidden')
 }
 
-export async function expectUnauthorized(res: Response): Promise<void> {
+async function expectUnauthorized(res: Response): Promise<void> {
   expect(res.status).toBe(401)
 }
 
@@ -225,4 +225,4 @@ export async function createCapabilityTestHarness(
   }
 }
 
-export type { DbClient }
+

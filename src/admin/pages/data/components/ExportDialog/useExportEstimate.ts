@@ -15,7 +15,7 @@
 // Types
 // ---------------------------------------------------------------------------
 
-export interface UseExportEstimateOpts {
+interface UseExportEstimateOpts {
   /** rowCounts[tableId] = number of rows in that table. */
   rowCounts: Record<string, number>
   /** The subset of table ids currently checked in the dialog. */
@@ -40,7 +40,7 @@ export interface UseExportEstimateOpts {
   mediaAssetCount?: number
 }
 
-export interface UseExportEstimateResult {
+interface UseExportEstimateResult {
   bytes: number
   formatted: string
 }

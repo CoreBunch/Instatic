@@ -41,7 +41,7 @@ const ToolScope = Type.Union([
   Type.Literal('plugin'),
 ])
 
-export const CredentialViewSchema = Type.Object({
+const CredentialViewSchema = Type.Object({
   id: Type.String(),
   providerId: ProviderId,
   authMode: AuthMode,
@@ -101,7 +101,7 @@ const DefaultsResponseSchema = Type.Object({
 })
 export type AiDefaults = Static<typeof DefaultsResponseSchema>['defaults']
 
-export const ConversationViewSchema = Type.Object({
+const ConversationViewSchema = Type.Object({
   id: Type.String(),
   scope: ToolScope,
   title: Type.String(),
@@ -127,7 +127,7 @@ const ConversationItemResponseSchema = Type.Object({
   conversation: ConversationViewSchema,
 })
 
-export const MessageViewSchema = Type.Object({
+const MessageViewSchema = Type.Object({
   id: Type.String(),
   position: Type.Number(),
   role: Type.Union([Type.Literal('user'), Type.Literal('assistant'), Type.Literal('tool')]),
@@ -139,7 +139,6 @@ export const MessageViewSchema = Type.Object({
   toolName: Type.Union([Type.String(), Type.Null()]),
   createdAt: Type.String(),
 })
-export type MessageView = Static<typeof MessageViewSchema>
 
 export const ConversationDetailViewSchema = Type.Composite([
   ConversationViewSchema,
@@ -185,21 +184,6 @@ export type CreateCredentialBody =
 export async function createCredential(body: CreateCredentialBody): Promise<CredentialView> {
   const parsed = await apiRequest('/admin/api/ai/credentials', {
     method: 'POST',
-    body,
-    schema: CredentialItemResponseSchema,
-  })
-  return parsed.credential
-}
-
-export interface UpdateCredentialBody {
-  displayLabel?: string
-  apiKey?: string
-  baseUrl?: string
-}
-
-export async function updateCredential(id: string, body: UpdateCredentialBody): Promise<CredentialView> {
-  const parsed = await apiRequest(`/admin/api/ai/credentials/${encodeURIComponent(id)}`, {
-    method: 'PUT',
     body,
     schema: CredentialItemResponseSchema,
   })
@@ -354,7 +338,6 @@ const AuditResponseSchema = Type.Object({
   byDay: Type.Array(UsageByDayRowSchema),
 })
 
-export type AiUsageRow = Static<typeof UsageRowSchema>
 export type AiUsageByUserRow = Static<typeof UsageByUserRowSchema>
 export type AiUsageByScopeRow = Static<typeof UsageByScopeRowSchema>
 export type AiUsageByDayRow = Static<typeof UsageByDayRowSchema>

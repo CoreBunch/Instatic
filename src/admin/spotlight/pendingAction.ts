@@ -45,7 +45,7 @@ const PENDING_ACTION_TYPES = [
   'plugins.install',
 ] as const
 
-export type PendingActionType = (typeof PENDING_ACTION_TYPES)[number]
+type PendingActionType = (typeof PENDING_ACTION_TYPES)[number]
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
@@ -56,7 +56,7 @@ const PendingActionSchema = Type.Object({
   queuedAt: Type.Number(),
 })
 
-export type PendingAction = Static<typeof PendingActionSchema>
+type PendingAction = Static<typeof PendingActionSchema>
 
 // ─── Storage ─────────────────────────────────────────────────────────────────
 

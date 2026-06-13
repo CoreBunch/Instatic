@@ -12,7 +12,6 @@ import {
   compiledDecode,
 } from '@core/utils/typeboxCompiler'
 import {
-  ALLOWED_API_TARGETS,
   ApiCallSchemas,
   isAllowedApiTarget,
   type ValidatedApiCall,
@@ -80,4 +79,4 @@ export function parseApiCall(value: unknown): ValidatedApiCall {
 }
 
 // Re-export so callers can import the full allowlist if needed.
-export { ALLOWED_API_TARGETS }
+

@@ -52,7 +52,7 @@ export function isDuplicateFontTokenVariable(
   return tokens.some((token) => token.id !== ignoreTokenId && normalizeFontTokenVariable(token.variable) === normalized)
 }
 
-export function fallbackForFontCategory(category: string | undefined): string {
+function fallbackForFontCategory(category: string | undefined): string {
   switch ((category ?? '').toLowerCase()) {
     case 'serif':
       return 'serif'

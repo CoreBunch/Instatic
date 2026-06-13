@@ -45,7 +45,7 @@ const VIDEO_EXTENSIONS = new Set([
   'webm',
 ])
 
-export function fileName(path: string) {
+function fileName(path: string) {
   return path.split('/').pop() ?? path
 }
 
@@ -57,7 +57,7 @@ export function keyboardMenuPosition(element: HTMLElement) {
   }
 }
 
-export function extension(path: string) {
+function extension(path: string) {
   const name = fileName(path)
   const index = name.lastIndexOf('.')
   return index >= 0 ? name.slice(index + 1).toLowerCase() : ''

@@ -135,7 +135,7 @@ export type BaseNode = Static<typeof BaseNodeSchema>
  * Use this at the raw-data parsing layer (page-tree/pageNode and
  * visualComponents/schemas) instead of relying on schema-level transforms.
  */
-export function parsePropBindings(
+function parsePropBindings(
   raw: unknown,
 ): Record<string, { paramId: string }> | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined

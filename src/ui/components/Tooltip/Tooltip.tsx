@@ -44,9 +44,9 @@ import styles from './Tooltip.module.css'
 // ─── Public types ─────────────────────────────────────────────────────────────
 
 export type TooltipSide = FloatingSide
-export type TooltipAlign = FloatingAlign
+type TooltipAlign = FloatingAlign
 
-export interface TooltipProps {
+interface TooltipProps {
   /** Tooltip content — string or simple JSX. */
   content: ReactNode
   /** Which side to prefer. 'auto' tries top→bottom→right→left. Default: 'auto'. */

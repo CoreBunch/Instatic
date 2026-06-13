@@ -40,7 +40,7 @@ import { pruneCanvasSelectionDraft } from '../selectionSlice'
 import { indexStyleRulesByName, linkImportedClassNames, mergeImportedStyleRules } from './importLinking'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
-export type NodeActions = Pick<
+type NodeActions = Pick<
   SiteSlice,
   | 'insertNode'
   | 'insertComponentRef'

@@ -91,7 +91,7 @@ const PREVIEW_DEFAULT_ROWS = 3
  */
 const LIBRARY_GRID_GAP = 16
 
-export interface BlockLibraryProps {
+interface BlockLibraryProps {
   /**
    * Whether the user has the expanded panel open (clicked "Add block").
    * Drives the slow slide-up / slide-down animations of the panel via

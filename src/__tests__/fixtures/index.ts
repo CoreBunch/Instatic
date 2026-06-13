@@ -27,7 +27,7 @@ import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
  * Creates a minimal, valid ModuleDefinition stub for testing.
  * render() returns a clean <div> with no props interpolation.
  */
-export function makeModule(
+function makeModule(
   id = 'test.stub',
   overrides: Partial<AnyModuleDefinition> = {}
 ): AnyModuleDefinition {

@@ -19,8 +19,6 @@ import {
   DataUserReferenceSchema,
   DeletedRowSummarySchema,
 } from '@core/data/schemas'
-import type { SiteBundle } from '@core/data/bundleSchema'
-import { SiteBundleSchema } from '@core/data/bundleSchema'
 import type { LoopItem } from '@core/loops/types'
 import { LoopItemSchema } from '@core/loops/types'
 import { apiRequest, assertOk, ApiError, type FetchLike } from '@core/http'
@@ -344,14 +342,14 @@ const LoopPreviewEnvelope = Type.Object(
   { additionalProperties: true },
 )
 
-export interface DataLoopPreviewOptions {
+interface DataLoopPreviewOptions {
   orderBy?: string
   direction?: 'asc' | 'desc'
   limit?: number
   offset?: number
 }
 
-export interface DataLoopPreviewResult {
+interface DataLoopPreviewResult {
   items: LoopItem[]
   totalItems: number
 }
@@ -390,7 +388,7 @@ export async function previewCmsDataLoopItems(
 // asserting the response is OK.
 // ---------------------------------------------------------------------------
 
-export interface PreviewCmsDataRowOptions {
+interface PreviewCmsDataRowOptions {
   /** Draft cells to merge over the row's persisted state. */
   cells?: Record<string, unknown>
   /** Abort signal so the caller can cancel a stale request. */
@@ -456,64 +454,3 @@ export async function getDataMeta(
   return body.meta
 }
 
-// ---------------------------------------------------------------------------
-// Bundle export / import
-// ---------------------------------------------------------------------------
-
-/**
- * Download the full site bundle from the server.
- * Pass `includeMedia: true` to embed media asset bytes in the bundle.
- */
-export async function exportCmsBundle(
-  options: { includeMedia?: boolean; fetchImpl?: FetchLike; basePath?: string } = {},
-): Promise<SiteBundle> {
-  const fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis)
-  const basePath = options.basePath ?? '/admin/api/cms'
-  return apiRequest(`${basePath}/export`, {
-    query: { media: options.includeMedia ? 1 : undefined },
-    schema: SiteBundleSchema,
-    fetchImpl,
-    fallbackMessage: 'CMS export failed',
-  })
-}
-
-const ImportResultEnvelope = Type.Object(
-  {
-    ok: Type.Optional(Type.Boolean()),
-    tableCount: Type.Optional(Type.Number()),
-    rowCount: Type.Optional(Type.Number()),
-    mediaCount: Type.Optional(Type.Number()),
-  },
-  { additionalProperties: true },
-)
-
-export interface ImportBundleResult {
-  tableCount: number
-  rowCount: number
-  mediaCount: number
-}
-
-/**
- * Upload a site bundle to the server and apply it, replacing all site data.
- * This is a destructive operation — all existing rows and custom tables are
- * wiped before the bundle is applied.
- */
-export async function importCmsBundle(
-  bundle: SiteBundle,
-  options: { fetchImpl?: FetchLike; basePath?: string } = {},
-): Promise<ImportBundleResult> {
-  const fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis)
-  const basePath = options.basePath ?? '/admin/api/cms'
-  const body = await apiRequest(`${basePath}/import`, {
-    method: 'POST',
-    body: bundle,
-    schema: ImportResultEnvelope,
-    fetchImpl,
-    fallbackMessage: 'CMS import failed',
-  })
-  return {
-    tableCount: body.tableCount ?? 0,
-    rowCount: body.rowCount ?? 0,
-    mediaCount: body.mediaCount ?? 0,
-  }
-}

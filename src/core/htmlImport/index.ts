@@ -22,13 +22,10 @@
  * Internal files import each other via relative paths.
  */
 
-export type { ImportBodyAttributes, ImportFragment, ImportResult } from './walkAndMap'
-export type { StripReport } from './stripUnsafe'
-export type { ImportRule } from './rules'
+export type {  ImportFragment, ImportResult } from './walkAndMap'
 
-export { HTML_TO_MODULE_RULES } from './rules'
 export { parseHtml } from './parseHtml'
-export { stripUnsafe, collectStyleCss } from './stripUnsafe'
+export { stripUnsafe } from './stripUnsafe'
 export { walkAndMap, importHtml } from './walkAndMap'
-export { harvestInlineStyles, extractInlineStyles } from './inlineStyle'
+
 export { normalizeImportedText } from './text'

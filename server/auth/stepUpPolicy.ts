@@ -1,11 +1,10 @@
-export const STEP_UP_AUTH_MODES = ['required', 'disabled'] as const
-export type StepUpAuthMode = (typeof STEP_UP_AUTH_MODES)[number]
+export type StepUpAuthMode = 'required' | 'disabled'
 
-export const STEP_UP_WINDOW_MINUTES = [5, 15, 30, 60] as const
+const STEP_UP_WINDOW_MINUTES = [5, 15, 30, 60] as const
 export type StepUpWindowMinutes = (typeof STEP_UP_WINDOW_MINUTES)[number]
 
-export const STEP_UP_DEFAULT_AUTH_MODE: StepUpAuthMode = 'required'
-export const STEP_UP_DEFAULT_WINDOW_MINUTES: StepUpWindowMinutes = 15
+const STEP_UP_DEFAULT_AUTH_MODE: StepUpAuthMode = 'required'
+const STEP_UP_DEFAULT_WINDOW_MINUTES: StepUpWindowMinutes = 15
 export const STEP_UP_DEFAULT_WINDOW_MS = STEP_UP_DEFAULT_WINDOW_MINUTES * 60 * 1000
 
 export function normalizeStepUpAuthMode(value: unknown): StepUpAuthMode {

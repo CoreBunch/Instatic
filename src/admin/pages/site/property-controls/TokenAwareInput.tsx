@@ -47,7 +47,7 @@ import styles from './TokenAwareInput.module.css'
 // Public types
 // ---------------------------------------------------------------------------
 
-export interface TokenAwareInputHandle {
+interface TokenAwareInputHandle {
   /** Focus the underlying input. */
   focus(): void
 }

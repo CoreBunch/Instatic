@@ -50,7 +50,7 @@ import styles from './FloatingActionBar.module.css'
  */
 const EXIT_DURATION_MS = 180
 
-export interface FloatingActionBarProps {
+interface FloatingActionBarProps {
   /**
    * ARIA label for the `toolbar` landmark. Required — describes what
    * the bar's actions operate on (e.g. "Bulk row actions", "Customize

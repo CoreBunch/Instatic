@@ -37,7 +37,7 @@ export interface ContentAgentCurrentUser {
   email: string
 }
 
-export interface ContentAgentCollectionSummary {
+interface ContentAgentCollectionSummary {
   id: string
   slug: string
   label: string

@@ -17,9 +17,9 @@ import type { ReactNode } from 'react'
 import { cn } from '@ui/cn'
 import styles from './Alert.module.css'
 
-export type AlertTone = 'info' | 'success' | 'warning' | 'danger'
+type AlertTone = 'info' | 'success' | 'warning' | 'danger'
 
-export interface AlertProps {
+interface AlertProps {
   /** Visual tone. Defaults to `'info'`. */
   tone?: AlertTone
   /** Optional bold title rendered above the body. */

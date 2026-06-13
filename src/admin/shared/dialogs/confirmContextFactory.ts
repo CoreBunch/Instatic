@@ -25,7 +25,7 @@
 import { createContext, use, useState, type Context as ReactContext } from 'react'
 
 /** A request that knows how to perform its own side-effect once confirmed. */
-export interface CommittableRequest {
+interface CommittableRequest {
   commit: () => void
 }
 
@@ -39,7 +39,7 @@ export type ConfirmResolution<TImpact> =
   | { status: 'handled' }
   | { status: 'confirm'; impact: TImpact }
 
-export interface PendingConfirmState<TRequest, TImpact> {
+interface PendingConfirmState<TRequest, TImpact> {
   request: TRequest
   // Captured at resolve time so the dialog renders the impact computed
   // *before* any state churn. Re-computing while the dialog is open could
@@ -47,18 +47,18 @@ export interface PendingConfirmState<TRequest, TImpact> {
   impact: TImpact
 }
 
-export interface ConfirmContextValue<TRequest> {
+interface ConfirmContextValue<TRequest> {
   confirm: (request: TRequest) => void
 }
 
-export interface ConfirmController<TRequest, TImpact> {
+interface ConfirmController<TRequest, TImpact> {
   confirm: (request: TRequest) => void
   pending: PendingConfirmState<TRequest, TImpact> | null
   handleCancel: () => void
   handleConfirm: () => void
 }
 
-export interface ConfirmContextFactory<TRequest extends CommittableRequest, TImpact> {
+interface ConfirmContextFactory<TRequest extends CommittableRequest, TImpact> {
   /** The React context object — provided by the Provider, read by `useConfirm`. */
   Context: ReactContext<ConfirmContextValue<TRequest> | null>
   /**

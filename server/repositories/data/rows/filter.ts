@@ -26,7 +26,7 @@ import { placeholder, selectHydratedDataRows } from './mapper'
  * `slug` / `status` / `created_at` / `updated_at` (recognised by suffix
  * so the SQL stays dialect-naive).
  */
-export interface ListDataRowsFilterOptions {
+interface ListDataRowsFilterOptions {
   filter?: Record<string, StorageFilterValue>
   orderBy?: Record<string, 'asc' | 'desc'>
   status?: 'any' | 'draft' | 'published' | 'scheduled'
@@ -34,7 +34,7 @@ export interface ListDataRowsFilterOptions {
   offset?: number
 }
 
-export interface ListDataRowsWithFilterResult {
+interface ListDataRowsWithFilterResult {
   rows: DataRow[]
   totalCount: number
 }

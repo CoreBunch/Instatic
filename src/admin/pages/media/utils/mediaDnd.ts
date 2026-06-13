@@ -10,7 +10,7 @@ import type { CmsMediaFolder } from '@core/persistence/cmsMedia'
 import { isFolderDescendant } from './folderTree'
 import type { MediaDropPayload } from './mediaDragDrop'
 
-export const ROOT_FOLDER_DROP_KEY = '__media-root__'
+const ROOT_FOLDER_DROP_KEY = '__media-root__'
 
 /** Stable key for a drop target; `null` (the root / "All files") maps to a sentinel. */
 export function folderDropKey(folderId: string | null): string {

@@ -51,7 +51,7 @@ import { getKeybindingForCommand } from '@admin/spotlight/keybindings'
  * this whole hook — and its editor-store dependency — into the
  * non-editor admin bundle.
  */
-export { CMS_SITE_RELOAD_EVENT } from '@admin/state/adminEvents'
+
 import { CMS_SITE_RELOAD_EVENT, consumePendingCmsSiteReload } from '@admin/state/adminEvents'
 
 export interface PersistenceSaveStatus {

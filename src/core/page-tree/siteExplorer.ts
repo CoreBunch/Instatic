@@ -8,17 +8,6 @@ import type { VisualComponent } from '@core/visualComponents'
 import { isHomePage } from './slugs'
 import { addFolderPrefixes, parentPathForPath } from './explorerPaths'
 
-export const STRUCTURAL_SITE_EXPLORER_SECTION_IDS = [
-  'pages',
-  'styles',
-  'scripts',
-] as const
-
-export const DECORATIVE_SITE_EXPLORER_SECTION_IDS = [
-  'templates',
-  'components',
-] as const
-
 export const SITE_EXPLORER_SECTION_IDS = [
   'pages',
   'templates',
@@ -27,8 +16,8 @@ export const SITE_EXPLORER_SECTION_IDS = [
   'scripts',
 ] as const
 
-export type StructuralSiteExplorerSectionId = (typeof STRUCTURAL_SITE_EXPLORER_SECTION_IDS)[number]
-export type DecorativeSiteExplorerSectionId = (typeof DECORATIVE_SITE_EXPLORER_SECTION_IDS)[number]
+export type StructuralSiteExplorerSectionId = 'pages' | 'styles' | 'scripts'
+export type DecorativeSiteExplorerSectionId = 'templates' | 'components'
 export type SiteExplorerSectionId = (typeof SITE_EXPLORER_SECTION_IDS)[number]
 
 const SiteExplorerFolderSchema = Type.Object({
@@ -73,7 +62,7 @@ export type SiteExplorerFolder = Static<typeof SiteExplorerFolderSchema>
 export type SiteExplorerItemPlacement = Static<typeof SiteExplorerItemPlacementSchema>
 export type StructuralExplorerRowOrder = Static<typeof StructuralExplorerRowOrderSchema>
 export type StructuralExplorerSection = Static<typeof StructuralExplorerSectionSchema>
-export type DecorativeExplorerSection = Static<typeof DecorativeExplorerSectionSchema>
+type DecorativeExplorerSection = Static<typeof DecorativeExplorerSectionSchema>
 export type SiteExplorerOrganization = Static<typeof SiteExplorerOrganizationSchema>
 
 type SiteExplorerRootEntry =

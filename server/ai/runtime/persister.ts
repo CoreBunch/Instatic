@@ -45,7 +45,7 @@ export interface ConversationsPersister {
   }): void
 }
 
-export interface ConversationsPersisterContext {
+interface ConversationsPersisterContext {
   /** Used to price `usage` events whose driver omits a `costUsd` value. */
   providerId: AiProviderId
   /** Used together with providerId to look up the per-million-token rates. */

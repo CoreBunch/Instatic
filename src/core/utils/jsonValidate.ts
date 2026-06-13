@@ -13,7 +13,7 @@ import {
   compiledFormatValueErrors,
 } from './typeboxCompiler'
 
-export type JsonParseResult<T> =
+type JsonParseResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: Error }
 

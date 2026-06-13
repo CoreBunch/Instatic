@@ -8,7 +8,7 @@ import type { PluginManifest } from '@core/plugin-sdk'
 const SAFE_PACKAGE_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[a-zA-Z0-9._/-]+$/
 const BINARY_EXTENSIONS = /\.(png|jpe?g|webp|svg|gif|ico|woff2?|ttf|otf)$/i
 
-export interface PluginPackage {
+interface PluginPackage {
   manifest: PluginManifest
   /**
    * Files inside the plugin zip, keyed by package-relative path. Text

@@ -120,7 +120,7 @@ export function validateSite(raw: unknown): SiteShell {
  * Returns the validated `Page[]` ready to assemble into a `SiteDocument`.
  * Throws `SiteValidationError` on the first invalid page.
  */
-export interface ValidatePagesOptions {
+interface ValidatePagesOptions {
   /**
    * Load semantics: a page that fails parse or tree-coherence is logged and
    * SKIPPED rather than aborting the whole batch — one corrupt row must not

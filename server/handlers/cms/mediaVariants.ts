@@ -64,7 +64,7 @@ const BLURHASH_Y_COMPONENTS = 3
 const BLURHASH_SAMPLE_WIDTH = 32
 const BLURHASH_SAMPLE_HEIGHT = 32
 
-export interface MediaVariantRecord {
+interface MediaVariantRecord {
   width: number
   height: number
   format: 'webp'
@@ -76,7 +76,7 @@ export interface MediaVariantRecord {
   storageAdapterId: string
 }
 
-export interface ImageProcessingResult {
+interface ImageProcessingResult {
   width: number
   height: number
   blurHash: string

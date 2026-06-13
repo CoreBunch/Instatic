@@ -30,7 +30,7 @@ export function derivePageFormSnapshots(page: Page): PublishedFormSnapshot[] {
   return snapshots
 }
 
-export function deriveFormSnapshot(
+function deriveFormSnapshot(
   page: Page,
   formNode: PageNode,
 ): PublishedFormSnapshot {

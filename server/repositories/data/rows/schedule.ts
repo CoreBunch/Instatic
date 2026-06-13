@@ -83,7 +83,7 @@ export async function cancelScheduledPublish(
  * (the tick doesn't render any UI). One small ANSI-SQL query, the same
  * filter the partial index `data_rows_scheduled_publish_idx` covers.
  */
-export interface DueScheduledRow {
+interface DueScheduledRow {
   rowId: string
   tableId: string
   scheduledPublishAt: string

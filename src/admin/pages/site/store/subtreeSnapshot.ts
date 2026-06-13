@@ -26,7 +26,7 @@ import { buildSubtreeNodeIdMap, pasteSubtree } from '@core/page-tree'
 import type { InsertLocation } from '@site/store/insertLocation'
 
 /** A captured set of subtrees plus the classes they reference. */
-export interface SubtreeSnapshot {
+interface SubtreeSnapshot {
   /** Ordered root node ids inside `nodes`. */
   rootNodeIds: string[]
   /** Flat map of every node in every captured subtree. */

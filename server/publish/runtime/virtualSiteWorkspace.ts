@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import type { SiteDocument } from '@core/page-tree'
 import { isSafePath, normalizePath } from '@core/files/pathValidation'
 
-export interface SiteScriptWorkspace {
+interface SiteScriptWorkspace {
   rootDir: string
   entryPointByFileId: Map<string, string>
   cleanup: () => Promise<void>

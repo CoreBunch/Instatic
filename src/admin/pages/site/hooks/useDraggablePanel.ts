@@ -28,8 +28,6 @@ import {
   type PanelPosition,
 } from '@site/layout/panelLayoutStorage'
 
-export type { PanelPosition }
-
 /**
  * Minimum number of pixels that must remain visible on-screen when a panel
  * is dragged towards or past a viewport edge.

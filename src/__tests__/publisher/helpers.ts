@@ -9,7 +9,7 @@ import { SquareSolidIcon } from 'pixel-art-icons/icons/square-solid'
 import { DEFAULT_SITE_SETTINGS, reindexNodeParents } from '@core/page-tree'
 
 // Re-exported because legacy publisher tests still reference it.
-export { DEFAULT_SITE_SETTINGS }
+
 
 // ---------------------------------------------------------------------------
 // Render accumulators — the mutable output bag every renderNode call needs.

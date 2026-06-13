@@ -23,6 +23,9 @@
  *
  * Class resolution mirrors the publisher: each node's `classIds` resolve
  * against the site class registry and pass to the module as `mcClassName`.
+ * Per-node `inlineStyles` are applied through the same sanitisation gate the
+ * publisher uses (`bagToReactStyle`), so composed content carries the same
+ * `style="…"` the published page does.
  */
 
 import type { ReactNode } from 'react'
@@ -30,6 +33,7 @@ import { registry } from '@core/module-engine'
 import type { NodeWrapperProps as NodeWrapperPropsType } from '@core/module-engine'
 import type { BaseNode } from '@core/page-tree'
 import { classNamesForClassIds, type StyleRuleRegistry } from '@core/page-tree'
+import { bagToReactStyle } from '@core/publisher'
 
 /**
  * Identifies the editable source a read-only region was composed from, so the
@@ -206,7 +210,19 @@ function ReadOnlyNodeRenderer({
   // Selection-forwarding nodes (the VC ref root) keep their editor bag; every
   // other read-only node carries only the read-only markers so the canvas can
   // identify and label the region.
-  const nodeWrapperProps = extraNodeWrapperProps ?? readonlyMarkers
+  const baseWrapperProps = extraNodeWrapperProps ?? readonlyMarkers
+
+  // Apply the node's inline styles, exactly as the publisher's
+  // `injectNodeInlineStyles` emits them as a `style="…"` attribute — composed
+  // content (template chrome, outlet previews, VC bodies) must not lose them.
+  // A forwarded root bag's style is appended AFTER the node's own declarations
+  // (so the owning node wins per property), mirroring the publisher's
+  // append-order in `renderVisualComponentRef`.
+  const ownStyle = bagToReactStyle(node.inlineStyles)
+  const style = ownStyle || baseWrapperProps?.style
+    ? { ...ownStyle, ...baseWrapperProps?.style }
+    : undefined
+  const nodeWrapperProps = style ? { ...baseWrapperProps, style } : baseWrapperProps
 
   return (
     <ComponentType

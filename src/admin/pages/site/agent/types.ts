@@ -161,7 +161,7 @@ export interface AgentToolCall {
  * text" sequence is visually three blocks, not "all text grouped above all
  * tools" (which mis-orders late text in front of earlier tool calls).
  */
-export type AgentMessageBlock =
+type AgentMessageBlock =
   | { kind: 'text'; text: string }
   | { kind: 'toolCall'; toolCall: AgentToolCall }
 

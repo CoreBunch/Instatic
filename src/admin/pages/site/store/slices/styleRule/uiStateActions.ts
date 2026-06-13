@@ -13,7 +13,7 @@ import type { SiteSliceHelpers } from '../site/types'
 import type { StyleRuleSlice } from './types'
 import { shallowEqualStyles } from './helpers'
 
-export type UiStateActions = Pick<
+type UiStateActions = Pick<
   StyleRuleSlice,
   | 'setActiveClass'
   | 'setInlineStyleEditing'

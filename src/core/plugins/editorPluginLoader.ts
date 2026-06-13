@@ -21,7 +21,7 @@ export interface InstalledEditorPluginActivationFailure {
   error: unknown
 }
 
-export interface InstalledEditorPluginActivationResult {
+interface InstalledEditorPluginActivationResult {
   activated: string[]
   failed: InstalledEditorPluginActivationFailure[]
   /** Plugins that registered canvas modules (for diagnostics in the editor). */

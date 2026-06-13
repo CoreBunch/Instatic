@@ -11,7 +11,7 @@
 import type { EditorStoreSliceCreator } from '@site/store/types'
 import { emptyDirtyMarks, mergeDirtyMarks, type DirtyMarks } from './site/dirtyTracking'
 
-export interface SaveTrackingSlice {
+interface SaveTrackingSlice {
   // Unsaved changes guard
   hasUnsavedChanges: boolean
   setHasUnsavedChanges: (value: boolean) => void

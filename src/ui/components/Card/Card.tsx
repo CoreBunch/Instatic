@@ -16,7 +16,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { cn } from '@ui/cn'
 import styles from './Card.module.css'
 
-export interface CardProps {
+interface CardProps {
   /** Inner padding in pixels. Defaults to `16`. */
   padding?: number
   /**

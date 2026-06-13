@@ -27,126 +27,10 @@ import type {
 } from '@core/page-tree'
 import type { FontEntry, FontToken } from '@core/fonts'
 import type { ImportFragment } from '@core/htmlImport'
-import type {
-  NewStyleRule,
-  ImportFontFamily,
-  ImportColorToken,
-  ImportFontToken,
-  ImportScript,
-  ImportStylesheet,
-} from '@core/siteImport'
+import type { NewStyleRule, SiteImportTransaction } from '@core/siteImport'
 import type { FrameworkChangeImpact } from '@core/framework'
 import type { EditorStore } from '@site/store/types'
 
-// ---------------------------------------------------------------------------
-// SuperImportHelpers — passed to mutateAllPagesAndSite recipes.
-// ---------------------------------------------------------------------------
-
-/**
- * Transaction helpers passed to the `mutateAllPagesAndSite` recipe. Each
- * method operates inside the same Immer producer so all changes land in a
- * single undoable history snapshot.
- */
-export interface SuperImportHelpers {
-  /**
-   * Add a new page with the given title, slug, and body content.
-   * Class names on fragment nodes are resolved to registry ids (auto-creating
-   * bare classes for unknown names), exactly as `insertImportedNodes` does.
-   * @returns The new page's generated id.
-   */
-  addPage(input: { id?: string; title: string; slug: string; nodeFragment: ImportFragment }): string
-
-  /**
-   * Add a new style rule to the global registry.
-   * Appended after all existing rules (order = maxExisting + 1).
-   * @returns The new rule's generated id.
-   */
-  addStyleRule(rule: NewStyleRule): string
-
-  /**
-   * Overwrite the content of an existing page (conflict: overwrite resolution).
-   * Preserves `id`, `ownerUserId`, `createdByUserId`; replaces everything else.
-   * Throws if `pageId` is not found.
-   */
-  overwritePage(pageId: string, input: { title: string; slug: string; nodeFragment: ImportFragment }): void
-
-  /**
-   * Overwrite an existing style rule (conflict: overwrite resolution).
-   * Preserves `id`, `createdAt`, `order`; replaces all other fields.
-   * Throws if `ruleId` is not found.
-   */
-  overwriteStyleRule(ruleId: string, rule: NewStyleRule): void
-
-  /**
-   * Merge reusable conditions into the site-level `site.conditions` registry,
-   * deduped by id. Imported rules reference these by id via their
-   * `contextStyles` keys.
-   */
-  addConditions(conditions: ConditionDef[]): void
-
-  /**
-   * Add custom font families (from imported `@font-face` blocks) to
-   * `site.settings.fonts`. Each file's `src` is already a final media URL.
-   * @returns The committed `{ id, family }` for each added font.
-   */
-  addFonts(fonts: ImportFontFamily[]): { id: string; family: string }[]
-
-  /**
-   * Merge already-installed font entries into `site.settings.fonts`.
-   * @returns The committed `{ id, family }` for each added/replaced font.
-   */
-  addInstalledFonts(fonts: FontEntry[]): { id: string; family: string }[]
-
-  /**
-   * Add font tokens to `site.settings.fonts.tokens`, resolving token.family to
-   * the matching installed family id when available.
-   * @returns The committed `{ id, name, variable }` for each newly-added token.
-   */
-  addFontTokens(tokens: ImportFontToken[]): { id: string; name: string; variable: string }[]
-
-  /**
-   * Overwrite existing font tokens in place (import conflict: overwrite). The
-   * existing token's id/name/variable are kept; family + fallback are replaced.
-   * @returns The `{ id, name, variable }` for each overwritten token.
-   */
-  overwriteFontTokens(
-    items: { existingTokenId: string; token: ImportFontToken }[],
-  ): { id: string; name: string; variable: string }[]
-
-  /**
-   * Add colour tokens to the framework colours system as plain base tokens
-   * (just `--<slug>`; no shades/tints/transparent or utility classes). A slug
-   * already present is skipped. Reconciles framework classes afterwards.
-   * @returns The committed `{ slug, value }` for each newly-added token.
-   */
-  addColorTokens(colors: ImportColorToken[]): { slug: string; value: string }[]
-
-  /**
-   * Overwrite existing framework colour tokens in place (import conflict:
-   * overwrite). The existing token's id/slug are kept; only `lightValue` is
-   * replaced. Reconciles framework classes afterwards.
-   * @returns The `{ slug, value }` for each overwritten token.
-   */
-  overwriteColorTokens(
-    items: { existingTokenId: string; value: string }[],
-  ): { slug: string; value: string }[]
-
-  /**
-   * Add imported JS files as `SiteFile`s (`type: 'script'`) plus page-scoped
-   * `site.runtime.scripts` entries, so they run where the source HTML linked
-   * them.
-   * @returns The committed `{ id, path }` for each added script.
-   */
-  addScripts(scripts: ImportScript[]): { id: string; path: string }[]
-
-  /**
-   * Add stylesheets kept as files (`mode: 'file'`) as `SiteFile`s
-   * (`type: 'style'`) plus page-scoped `site.runtime.styles` entries, so each
-   * applies exactly where the source HTML linked it.
-   * @returns The committed `{ id, path }` for each added stylesheet.
-   */
-  addStylesheets(stylesheets: ImportStylesheet[]): { id: string; path: string }[]
-}
 
 // ---------------------------------------------------------------------------
 // Public action surface — every method below appears as a top-level entry on
@@ -205,14 +89,14 @@ export type UpdateFrameworkSpacingGroupPatch = Partial<{
   manualSizes: FrameworkScaleManualSize[]
 }>
 
-export interface CreateFontTokenInput {
+interface CreateFontTokenInput {
   name: string
   variable?: string
   familyId?: string | null
   fallback?: string
 }
 
-export type UpdateFontTokenPatch = Partial<{
+type UpdateFontTokenPatch = Partial<{
   name: string
   variable: string
   familyId: string | null
@@ -457,7 +341,7 @@ export interface SiteSlice {
    * single press. Returns `true` when the recipe produced at least one real
    * mutation; `false` for explicit no-ops.
    */
-  mutateAllPagesAndSite(fn: (site: SiteDocument, helpers: SuperImportHelpers) => SiteMutationResult): boolean
+  mutateAllPagesAndSite(fn: (site: SiteDocument, helpers: SiteImportTransaction) => SiteMutationResult): boolean
 
   // ─── Undo / Redo ──────────────────────────────────────────────────────────
   /**
@@ -563,6 +447,6 @@ export interface SiteSliceHelpers {
    * See `SiteSlice.mutateAllPagesAndSite` for the full contract.
    */
   mutateAllPagesAndSite: (
-    fn: (site: SiteDocument, helpers: SuperImportHelpers) => SiteMutationResult,
+    fn: (site: SiteDocument, helpers: SiteImportTransaction) => SiteMutationResult,
   ) => boolean
 }

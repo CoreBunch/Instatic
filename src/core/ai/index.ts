@@ -1,5 +1,4 @@
 export {
-  AiToolImageSchema,
   AiToolOutputSchema,
   aiToolError,
   aiToolOk,
@@ -7,12 +6,8 @@ export {
 export type { AiToolImage, AiToolOutput } from './toolOutput'
 export {
   AiContentBlockSchema,
-  AiTextBlockSchema,
-  AiImageBlockSchema,
-  AiToolCallBlockSchema,
-  AiToolResultBlockSchema,
 } from './contentBlock'
-export type { AiContentBlock, AiToolResultBlock } from './contentBlock'
+export type { AiContentBlock } from './contentBlock'
 export {
   InsertHtmlInputSchema,
   GetNodeHtmlInputSchema,
@@ -29,7 +24,6 @@ export {
   DeletePageInputSchema,
   RenamePageInputSchema,
   DuplicatePageInputSchema,
-  TemplateTargetInputSchema,
   SetPageTemplateInputSchema,
   ClearPageTemplateInputSchema,
   SetColorTokensInputSchema,
@@ -54,12 +48,6 @@ export type {
   DeletePageInput,
   RenamePageInput,
   DuplicatePageInput,
-  TemplateTargetInput,
   SetPageTemplateInput,
   ClearPageTemplateInput,
-  SetColorTokensInput,
-  SetFontTokensInput,
-  SetTypeScaleInput,
-  SetSpacingScaleInput,
-  RenderSnapshotInput,
 } from './toolSchemas'

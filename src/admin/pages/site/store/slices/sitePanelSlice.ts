@@ -60,9 +60,9 @@ type PackageJson = SitePackageJson
  * surfaced by DepsSection so the user can see what's happening even when
  * the work was triggered without a click.
  */
-export type DependencyResolveStatus = 'idle' | 'resolving' | 'resolved' | 'error'
+type DependencyResolveStatus = 'idle' | 'resolving' | 'resolved' | 'error'
 
-export interface SitePanelSlice {
+interface SitePanelSlice {
   /**
    * In-memory package.json manifest.
    * Tracks intended site deps; installing is a separate bridge concern.

@@ -2,7 +2,7 @@ import { Type, type Static } from '@sinclair/typebox'
 import { apiRequest, type FetchLike } from '@core/http'
 import { CmsCurrentUserSchema, type CmsCurrentUser } from './cmsAuth'
 
-export const CmsRoleSchema = Type.Object({
+const CmsRoleSchema = Type.Object({
   id: Type.String(),
   slug: Type.String(),
   name: Type.String(),
@@ -15,7 +15,7 @@ export const CmsRoleSchema = Type.Object({
 
 export type CmsRole = Static<typeof CmsRoleSchema>
 
-export const CmsAuditEventSchema = Type.Object({
+const CmsAuditEventSchema = Type.Object({
   id: Type.String(),
   actorUserId: Type.Union([Type.String(), Type.Null()]),
   action: Type.String(),

@@ -11,7 +11,7 @@ export interface RuntimeDependencyCache {
   nodeModulesDir: string
 }
 
-export interface RuntimeInstallOptions {
+interface RuntimeInstallOptions {
   cwd: string
   env: Record<string, string>
   signal?: AbortSignal
@@ -22,7 +22,7 @@ export type RuntimeInstallRunner = (
   options: RuntimeInstallOptions,
 ) => Promise<void>
 
-export interface EnsureRuntimeDependencyCacheOptions {
+interface EnsureRuntimeDependencyCacheOptions {
   cacheRoot?: string
   bunExecutable?: string
   runInstall?: RuntimeInstallRunner

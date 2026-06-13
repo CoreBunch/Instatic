@@ -12,18 +12,18 @@ import { Type, type Static } from '@core/utils/typeboxHelpers'
  * Add a kind here and every reader/writer sees it.
  */
 
-export const AiTextBlockSchema = Type.Object({
+const AiTextBlockSchema = Type.Object({
   kind: Type.Literal('text'),
   text: Type.String(),
 })
 
-export const AiImageBlockSchema = Type.Object({
+const AiImageBlockSchema = Type.Object({
   kind: Type.Literal('image'),
   mimeType: Type.String(),
   data: Type.String(/* base64 */),
 })
 
-export const AiToolCallBlockSchema = Type.Object({
+const AiToolCallBlockSchema = Type.Object({
   kind: Type.Literal('toolCall'),
   toolCallId: Type.String(),
   toolName: Type.String(),
@@ -43,7 +43,7 @@ export const AiToolCallBlockSchema = Type.Object({
  * context for no benefit. Replay only needs `{ ok, error }` to reconstruct the
  * `AiToolOutput` envelope the driver hands back to the model.
  */
-export const AiToolResultBlockSchema = Type.Object({
+const AiToolResultBlockSchema = Type.Object({
   kind: Type.Literal('toolResult'),
   ok: Type.Boolean(),
   error: Type.Optional(Type.String()),
@@ -57,4 +57,3 @@ export const AiContentBlockSchema = Type.Union([
 ])
 
 export type AiContentBlock = Static<typeof AiContentBlockSchema>
-export type AiToolResultBlock = Static<typeof AiToolResultBlockSchema>

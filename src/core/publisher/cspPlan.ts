@@ -24,16 +24,16 @@
  */
 
 /** A CSP policy modelled as data: directive name → set of source expressions. */
-export interface CspPlan {
+interface CspPlan {
   directives: Map<string, Set<string>>
 }
 
 /** Matches the published-page CSP `<meta>` tag so its policy can be rewritten. */
-export const CSP_META_PATTERN =
+const CSP_META_PATTERN =
   /<meta http-equiv="Content-Security-Policy"\s+content="([^"]*)"\s*\/?>/i
 
 /** An empty plan. */
-export function emptyCspPlan(): CspPlan {
+function emptyCspPlan(): CspPlan {
   return { directives: new Map() }
 }
 

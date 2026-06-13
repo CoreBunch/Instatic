@@ -13,7 +13,7 @@ import { TableSettings } from './TableSettings'
 // Types
 // ---------------------------------------------------------------------------
 
-export interface DataInspectorProps {
+interface DataInspectorProps {
   table: DataTable
   /** All tables — used for relation target lookups. */
   tables: DataTable[]

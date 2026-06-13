@@ -12,7 +12,7 @@ import { isoDate } from '@core/utils/isoDate'
  * A lightweight row summary returned by spotlight content search.
  * Omits user references and cells to keep the response small.
  */
-export interface DataRowSearchResult {
+interface DataRowSearchResult {
   id: string
   tableId: string
   tableSlug: string

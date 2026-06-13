@@ -64,7 +64,7 @@ export interface DashboardItem {
   rows: number
 }
 
-export interface DashboardLayout {
+interface DashboardLayout {
   items: DashboardItem[]
   onboardingDismissed: boolean
   /**
@@ -82,12 +82,6 @@ export interface DashboardLayout {
  * a magic number duplicated across files.
  */
 export const GRID_ROW_HEIGHT = 70
-/**
- * 1px between cells in VIEW mode. The grid sits on a darker surface
- * (`--editor-surface`) than the cards themselves (`--editor-surface-2`);
- * the 1px gap reads as a hairline of the parent surface peeking through.
- */
-export const GRID_GAP = 1
 /**
  * 16px between cells in CUSTOMIZE mode. The wider gutter exposes the
  * full perimeter of every card so the 8px edge resize handles can be
@@ -107,7 +101,7 @@ export const MAX_COLS = 12
  * user can drag the top edge to resize between MIN and MAX; the value is
  * persisted alongside the grid layout.
  */
-export const LIBRARY_DEFAULT_HEIGHT = 340
+const LIBRARY_DEFAULT_HEIGHT = 340
 export const LIBRARY_MIN_HEIGHT = 200
 export const LIBRARY_MAX_HEIGHT = 720
 
@@ -308,7 +302,7 @@ function normalizeLayout(pref: DashboardLayoutPreference): DashboardLayout {
 // Public API
 // ---------------------------------------------------------------------------
 
-export interface DashboardLayoutApi {
+interface DashboardLayoutApi {
   layout: DashboardLayout
   /**
    * True while the initial server fetch is in flight. The hook always

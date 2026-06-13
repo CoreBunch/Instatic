@@ -40,7 +40,7 @@ import type { CmsMediaAsset } from '@core/persistence'
  * formats the browser can decode from a `srcset` (webp / avif). Other
  * formats are dropped — the browser falls back to the plain `src`.
  */
-export interface ImageVariantInput {
+interface ImageVariantInput {
   width: number
   height: number
   format: string
@@ -75,7 +75,7 @@ interface CommonProps {
   height?: number
 }
 
-export type ImageProps =
+type ImageProps =
   | (CommonProps & {
       /**
        * Full media asset. The component reads `publicPath` for the

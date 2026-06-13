@@ -13,7 +13,7 @@ import styles from './ConflictRow.module.css'
 
 type ResolutionAction = ConflictResolution['action']
 
-export type ConflictRowKind = 'page' | 'rule' | 'token'
+type ConflictRowKind = 'page' | 'rule' | 'token'
 
 const ACTION_OPTIONS = [
   { value: 'auto-rename', label: 'Rename', tooltip: 'Rename with a numeric suffix' },
@@ -52,7 +52,7 @@ const CUSTOM_LABEL: Record<ConflictRowKind, string> = {
   token: 'Custom token variable',
 }
 
-export interface ConflictRowProps {
+interface ConflictRowProps {
   kind: ConflictRowKind
   source: string
   desired: string

@@ -15,7 +15,7 @@ import { Type, type Static } from '@core/utils/typeboxHelpers'
 // TemplateTargetSchema
 // ---------------------------------------------------------------------------
 
-export const TemplateTargetSchema = Type.Union([
+const TemplateTargetSchema = Type.Union([
   Type.Object({ kind: Type.Literal('everywhere') }),
   Type.Object({
     kind: Type.Literal('postTypes'),

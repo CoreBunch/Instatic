@@ -30,7 +30,7 @@
  */
 import { useEffect, useState } from 'react'
 
-export interface DelayedUnmountState {
+interface DelayedUnmountState {
   /** True while the component should be in the DOM (open or exiting). */
   mounted: boolean
   /** True while the exit animation is playing. False during the entrance and at rest. */

@@ -24,9 +24,9 @@ import { ReactNodeViewRenderer } from '@tiptap/react'
 import { MediaUploadPlaceholderView } from './MediaUploadPlaceholderView'
 
 export type MediaUploadKind = 'image' | 'video'
-export type MediaUploadStatus = 'uploading' | 'failed'
+type MediaUploadStatus = 'uploading' | 'failed'
 
-export interface MediaUploadPlaceholderOptions {
+interface MediaUploadPlaceholderOptions {
   /**
    * Called when the user clicks the cancel/dismiss button on the
    * placeholder. The host aborts the in-flight upload (via the

@@ -27,7 +27,7 @@ export interface Location {
   search: string
 }
 
-export interface NavigateOptions {
+interface NavigateOptions {
   replace?: boolean
 }
 

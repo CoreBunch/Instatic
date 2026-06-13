@@ -49,7 +49,7 @@ import type {
  * "no adapter elected → fall back to local disk"; we use that same empty
  * string here so the dispatch logic doesn't carry a second sentinel.
  */
-export const LOCAL_DISK_ADAPTER_ID = '' as const
+const LOCAL_DISK_ADAPTER_ID = '' as const
 
 /**
  * Synthetic step protocol the local-disk adapter uses to communicate with
@@ -236,6 +236,3 @@ class MediaStorageRegistry {
 
 export const mediaStorageRegistry = new MediaStorageRegistry()
 
-// Re-export the type so call sites can `import { type ResolvedMediaAdapter }`
-// from one place instead of crossing the SDK package every time.
-export type ResolvedMediaAdapter = MediaStorageAdapter

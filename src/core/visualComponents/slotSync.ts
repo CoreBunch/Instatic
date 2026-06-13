@@ -74,7 +74,7 @@ export function collectSlotOutletNames(tree: {
 // ---------------------------------------------------------------------------
 
 /** Insert a new locked slot-instance node as a child of the VC ref. */
-export interface InsertSlotOp {
+interface InsertSlotOp {
   kind: 'insert'
   /** Generated ID for the new slot-instance node. */
   slotInstanceId: string
@@ -83,7 +83,7 @@ export interface InsertSlotOp {
 }
 
 /** Update the slotName prop on an existing slot-instance (rename case). */
-export interface RenameSlotOp {
+interface RenameSlotOp {
   kind: 'rename'
   /** ID of the existing slot-instance node. */
   nodeId: string
@@ -92,19 +92,19 @@ export interface RenameSlotOp {
 }
 
 /** Delete an existing slot-instance node and its entire subtree. */
-export interface DeleteSlotOp {
+interface DeleteSlotOp {
   kind: 'delete'
   /** ID of the slot-instance (or non-slot-instance child) to delete. */
   nodeId: string
 }
 
-export type SyncOp = InsertSlotOp | RenameSlotOp | DeleteSlotOp
+type SyncOp = InsertSlotOp | RenameSlotOp | DeleteSlotOp
 
 // ---------------------------------------------------------------------------
 // SyncResult
 // ---------------------------------------------------------------------------
 
-export interface SyncResult {
+interface SyncResult {
   /**
    * Operations to apply:
    *   - insert: add a new slot-instance (node is in newNodes)

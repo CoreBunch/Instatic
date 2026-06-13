@@ -31,7 +31,8 @@ import { MAX_HISTORY } from './defaults'
 import { reconcileFrameworkClasses } from './framework/reconcile'
 import { indexStyleRulesByName, linkImportedClassNames } from './importLinking'
 import { addImportedFonts, addImportedFontTokens, addInstalledFontEntries, overwriteImportedFontTokens } from './importedFonts'
-import type { HistoryEntry, SiteMutationResult, SiteSliceHelpers, SiteSliceRecipe, SuperImportHelpers } from './types'
+import type { HistoryEntry, SiteMutationResult, SiteSliceHelpers, SiteSliceRecipe } from './types'
+import type { SiteImportTransaction } from '@core/siteImport'
 
 /**
  * Compute a node's depth in a tree by walking the O(1) `parentId` pointer up
@@ -427,7 +428,7 @@ export function buildSiteHelpers(
    * (`return false`) never produce a history entry.
    */
   function mutateAllPagesAndSite(
-    fn: (site: SiteDocument, helpers: SuperImportHelpers) => SiteMutationResult,
+    fn: (site: SiteDocument, helpers: SiteImportTransaction) => SiteMutationResult,
   ): boolean {
     return runHistoricMutation((draft) => {
       const site = draft.site!
@@ -438,7 +439,7 @@ export function buildSiteHelpers(
       // `addPage(fragment with node.classIds:['btn'])` resolves to the same id.
       const byName = indexStyleRulesByName(site.styleRules)
 
-      const helpers: SuperImportHelpers = {
+      const helpers: SiteImportTransaction = {
         addPage({ id: pageId, title, slug, nodeFragment }: { id?: string; title: string; slug: string; nodeFragment: ImportFragment }): string {
           // addPage creates a fresh base.body root, normalises the slug, and
           // pushes the page onto site.pages. We then graft the fragment nodes

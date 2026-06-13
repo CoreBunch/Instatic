@@ -13,7 +13,7 @@ export interface EncryptedTotpSecret {
   keyFingerprint: string | null
 }
 
-export class TotpSecretError extends Error {
+class TotpSecretError extends Error {
   readonly status: number
 
   constructor(message: string, status = 500, options?: ErrorOptions) {
@@ -42,7 +42,7 @@ export async function encryptTotpSecret(plaintext: string): Promise<EncryptedTot
   }
 }
 
-export async function decryptTotpSecret(
+async function decryptTotpSecret(
   encrypted: EncryptedTotpSecret,
 ): Promise<string> {
   const currentFingerprint = await getMasterKeyFingerprint()

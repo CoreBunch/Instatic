@@ -51,7 +51,7 @@ import { useCallback, useEffect, useEffectEvent, useState, type DependencyList }
 import { isAbortError } from '@core/http'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
-export interface AsyncResource<T> {
+interface AsyncResource<T> {
   /** Most recent successfully-loaded value, or null before the first success. */
   data: T | null
   /** True while a load is in flight (including the initial mount load). */
@@ -62,7 +62,7 @@ export interface AsyncResource<T> {
   refresh: () => void
 }
 
-export interface UseAsyncResourceOptions {
+interface UseAsyncResourceOptions {
   /** Message used when a thrown value is not an `Error`. Default: 'Something went wrong'. */
   fallbackError?: string
   /**

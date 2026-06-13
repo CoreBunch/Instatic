@@ -21,7 +21,7 @@ import type {
 } from './state'
 
 /** Action variants that are only valid while `state.phase === 'open'`. */
-export type OpenOnlyAction = Exclude<
+type OpenOnlyAction = Exclude<
   SpotlightAction,
   { type: 'OPEN' | 'CLOSE' | 'TOGGLE' }
 >
