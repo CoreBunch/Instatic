@@ -116,6 +116,39 @@ function resolveBindingValue(
   return value
 }
 
+/**
+ * The implicit binding every `base.outlet` carries: its `html` prop is filled
+ * with the current entry's markdown body, rendered to HTML. An outlet is, by
+ * definition, the hole the current entry's body flows into — there is no UI to
+ * set this and it is never persisted on the node. Resolving it here means ANY
+ * outlet renders the body, including one a user drags onto a custom template by
+ * hand (which carries no `dynamicBindings` overlay). Outside an entry route the
+ * entry stack is empty, so `currentEntry.body` resolves to nothing and the
+ * outlet stays empty — an `everywhere` layout's outlet then hosts a whole page
+ * instead.
+ */
+const OUTLET_BODY_BINDING: DynamicPropBinding = {
+  source: 'currentEntry',
+  field: 'body',
+  format: 'html',
+}
+
+/**
+ * The bindings that actually apply to a node at render time: its persisted
+ * `dynamicBindings` overlay plus the implicit outlet body binding for
+ * `base.outlet`. Both the publisher (`renderNode`) and the editor canvas
+ * (`NodeRenderer`) resolve through this so the two surfaces render identically.
+ */
+export function effectiveNodeBindings(node: {
+  moduleId: string
+  dynamicBindings?: Record<string, DynamicPropBinding>
+}): Record<string, DynamicPropBinding> | undefined {
+  if (node.moduleId === 'base.outlet') {
+    return { ...node.dynamicBindings, html: OUTLET_BODY_BINDING }
+  }
+  return node.dynamicBindings
+}
+
 export function resolveDynamicProps(
   staticProps: Record<string, unknown>,
   bindings: Record<string, DynamicPropBinding> | undefined,

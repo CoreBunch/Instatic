@@ -18,7 +18,10 @@ describe('buildDefaultTemplateCells', () => {
     const all = Object.values(nodes)
     const outlet = all.find((n) => n.moduleId === 'base.outlet')
     expect(outlet).toBeTruthy()
-    expect(outlet?.dynamicBindings?.html).toEqual({ source: 'currentEntry', field: 'body', format: 'html' })
+    // The outlet carries NO persisted binding — the publisher fills every
+    // outlet's body implicitly (see `effectiveNodeBindings`), so a seeded
+    // outlet is identical to one a user drags in by hand.
+    expect(outlet?.dynamicBindings).toBeUndefined()
     expect(all.some((n) => n.moduleId === 'base.content')).toBe(false)
   })
 })

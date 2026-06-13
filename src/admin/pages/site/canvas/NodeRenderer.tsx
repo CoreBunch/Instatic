@@ -26,7 +26,7 @@ import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
 import { resolveProps } from '@core/page-tree'
 import { registry } from '@core/module-engine'
 import type { NodeWrapperProps as NodeWrapperPropsType } from '@core/module-engine'
-import { resolveDynamicProps, type TemplateRenderDataContext } from '@core/templates/dynamicBindings'
+import { resolveDynamicProps, effectiveNodeBindings, type TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import type { PageNode } from '@core/page-tree'
 import { WarningDiamondSolidIcon } from 'pixel-art-icons/icons/warning-diamond-solid'
 import { ErrorBoundary } from '@ui/components/ErrorBoundary'
@@ -233,7 +233,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
     node.moduleId,
     resolveDynamicProps(
     resolveProps(node, breakpointId, definition.schema),
-    node.dynamicBindings,
+    effectiveNodeBindings(node),
     templateContext,
     ),
     editorFormPreviewState,

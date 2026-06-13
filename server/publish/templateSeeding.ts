@@ -25,10 +25,9 @@
  *   - `base.body` root
  *     - `base.text` <h1> bound to `{currentEntry.title}` via static-token
  *       interpolation (cheap; no DynamicPropBinding overlay required).
- *     - `base.outlet` bound to `{currentEntry.body}` with `format: 'html'`
- *       so the publisher converts the post's markdown body to HTML before
- *       rendering. Markdown rendering is the host's responsibility for the
- *       post-type built-in `body` field.
+ *     - `base.outlet` — the publisher fills every outlet's `html` with the
+ *       current entry's body (markdown → HTML) implicitly, so the seed just
+ *       needs the bare outlet node; no per-node binding overlay is required.
  *
  * Site owners are expected to customise the template in the editor; the
  * seed exists so the public URL works the moment a row is published, and
@@ -113,20 +112,13 @@ export function buildDefaultTemplateCells(table: DataTable, slug: string): Recor
         [bodyId]: {
           id: bodyId,
           moduleId: 'base.outlet',
-          // For HTML output (markdown rendering) we need the dynamic
-          // binding overlay — token interpolation only handles strings,
-          // and we need the binding system's `format: 'html'` branch to
-          // run `renderMarkdownToHtml`.
+          // The outlet needs no binding overlay: the publisher fills every
+          // outlet's `html` with the current entry's body (markdown → HTML)
+          // implicitly (see `effectiveNodeBindings`), so the seed — like a
+          // hand-dropped outlet — just needs the bare node.
           props: { html: '' },
           breakpointOverrides: {},
           children: [],
-          dynamicBindings: {
-            html: {
-              source: 'currentEntry',
-              field: 'body',
-              format: 'html',
-            },
-          },
         },
       },
     },

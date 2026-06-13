@@ -26,7 +26,7 @@ import { isPageRef, resolvePageRef } from '@core/page-tree'
 import type { AnyModuleDefinition } from '@core/module-engine'
 import { validateNodeProps } from '@core/module-engine'
 import { resolveProps } from '@core/page-tree'
-import { resolveDynamicProps } from '@core/templates/dynamicBindings'
+import { resolveDynamicProps, effectiveNodeBindings } from '@core/templates/dynamicBindings'
 import { sanitizeModuleCSS } from './cssCollector'
 import { escapeHtml } from './utils'
 import { escapeProps } from './escapeProps'
@@ -142,7 +142,7 @@ function renderStandardNode(
   const effectiveProps = resolveProps(node, config.breakpointId, def.schema)
   const dynamicProps = resolveDynamicProps(
     effectiveProps,
-    node.dynamicBindings,
+    effectiveNodeBindings(node),
     config.templateContext,
   )
 
