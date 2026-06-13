@@ -45,7 +45,17 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-export type Slot = 'a' | 'b'
+type Slot = 'a' | 'b'
+
+/**
+ * Artefact URL path the site's `notFound` template bakes to. Maps to
+ * `404.html` in the slot — deliberately the static-hosting convention
+ * (Netlify / GitHub Pages serve `404.html` for unmatched routes), so a
+ * published slot keeps working as a self-contained static export. The
+ * dispatcher's fall-through 404 handler reads this artefact and serves it
+ * with status 404.
+ */
+export const NOT_FOUND_ARTEFACT_URL_PATH = '/404'
 
 // ---------------------------------------------------------------------------
 // Private path helpers

@@ -56,7 +56,7 @@ import {
 // Generic schema builder
 // ---------------------------------------------------------------------------
 
-export function apiCallSchema<TTarget extends string, TArgs extends TSchema>(
+function apiCallSchema<TTarget extends string, TArgs extends TSchema>(
   target: TTarget,
   args: TArgs,
 ) {

@@ -32,14 +32,14 @@ interface CmsProfileInput {
   email: string
 }
 
-export const CmsStepUpAuthModeSchema = Type.Union([
+const CmsStepUpAuthModeSchema = Type.Union([
   Type.Literal('required'),
   Type.Literal('disabled'),
 ])
 
 export type CmsStepUpAuthMode = Static<typeof CmsStepUpAuthModeSchema>
 
-export const CmsStepUpWindowMinutesSchema = Type.Union([
+const CmsStepUpWindowMinutesSchema = Type.Union([
   Type.Literal(5),
   Type.Literal(15),
   Type.Literal(30),
@@ -48,7 +48,7 @@ export const CmsStepUpWindowMinutesSchema = Type.Union([
 
 export type CmsStepUpWindowMinutes = Static<typeof CmsStepUpWindowMinutesSchema>
 
-export const CmsCurrentUserRoleSchema = Type.Object({
+const CmsCurrentUserRoleSchema = Type.Object({
   id: Type.String(),
   slug: Type.String(),
   name: Type.String(),
@@ -56,8 +56,6 @@ export const CmsCurrentUserRoleSchema = Type.Object({
   isSystem: Type.Boolean(),
   capabilities: Type.Array(Type.String()),
 })
-
-export type CmsCurrentUserRole = Static<typeof CmsCurrentUserRoleSchema>
 
 export const CmsCurrentUserSchema = Type.Object({
   id: Type.String(),

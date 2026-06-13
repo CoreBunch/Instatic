@@ -17,7 +17,7 @@
 
 import type { TSchema } from '@sinclair/typebox'
 import type { AiContentBlock, AiToolOutput } from '@core/ai'
-export type { AiContentBlock, AiToolImage, AiToolOutput } from '@core/ai'
+export type { AiContentBlock,  AiToolOutput } from '@core/ai'
 
 // ---------------------------------------------------------------------------
 // Provider identity + auth modes
@@ -73,7 +73,7 @@ export type AiMessage =
  *    from the browser. Use for any tool that mutates an in-browser store
  *    (the live editor) or requires DOM access (render_snapshot).
  */
-export type ToolExecution = 'server' | 'browser'
+type ToolExecution = 'server' | 'browser'
 
 /**
  * One tool, defined once. Drivers translate `inputSchema` (TypeBox) into
@@ -196,13 +196,3 @@ export interface AiBrowserBridge {
 // per-message + per-conversation totals and compute cost from pricing.ts.
 // ---------------------------------------------------------------------------
 
-export interface AiUsage {
-  promptTokens: number
-  completionTokens: number
-  /**
-   * Optional cache reads/writes (Anthropic). Drivers that don't support
-   * prompt cache leave these undefined.
-   */
-  cacheReadTokens?: number
-  cacheWriteTokens?: number
-}

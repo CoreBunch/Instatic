@@ -33,7 +33,7 @@ interface PendingUpload {
   previewUrl: string | null
 }
 
-export interface UseEditorMediaDropResult {
+interface UseEditorMediaDropResult {
   /** Spread into `useEditor({ editorProps })` to bind paste/drop. */
   editorProps: {
     handlePaste: (view: EditorViewLike, event: ClipboardEvent) => boolean

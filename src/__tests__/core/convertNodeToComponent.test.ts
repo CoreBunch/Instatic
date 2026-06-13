@@ -23,7 +23,7 @@ import { useEditorStore } from '@site/store/store'
 import { create } from 'mutative'
 import type { SiteDocument, PageNode, StyleRule } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
-import { VisualComponentNameError } from '@site/store/slices/visualComponentsSlice'
+import { VisualComponentNameError } from '@site/store/slices/vcTreeOps'
 // Side-effect import: registers base modules in the registry so
 // `registry.get('base.text')`, `'base.container'`, etc. resolve at runtime.
 // Required for the auto-wrap behavior in convertNodeToComponent (which checks

@@ -6,8 +6,8 @@ import { saveDraftSite } from '../../../server/repositories/site'
 import {
   getDraftPublishStatus,
   getPublishedPageBySlug,
-  publishDraftSite,
 } from '../../../server/repositories/publish'
+import { publishDraftSite } from '../../../server/publish/publishSite'
 import { createDataRow, saveDataRowDraft } from '../../../server/repositories/data'
 import { pageToCells } from '../../../src/core/data/pageFromRow'
 import { createFakeDb } from './dbTestFake'

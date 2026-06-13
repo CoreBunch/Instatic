@@ -40,7 +40,7 @@ import { isFormSettingsModule } from './formSettingsAnalysis'
 
 const PROMOTED_FORM_PROPERTY_KEYS = new Set(['mode', 'formId', 'targetTableId'])
 
-export interface ModuleTabContentArgs {
+interface ModuleTabContentArgs {
   selectedNode: PageNode | null
   selectedNodeId: string | null
   definition: AnyModuleDefinition | null | undefined

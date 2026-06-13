@@ -18,7 +18,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { cn } from '@ui/cn'
 import styles from './Stack.module.css'
 
-export interface StackProps {
+interface StackProps {
   /** Flex direction. Defaults to `'column'`. */
   direction?: 'row' | 'column'
   /** Gap between children, in px. Defaults to `8`. */

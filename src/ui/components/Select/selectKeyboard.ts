@@ -7,7 +7,7 @@ import {
   type NormalizedSelectOption,
 } from './SelectOption'
 
-export interface SelectKeyboardContext {
+interface SelectKeyboardContext {
   open: boolean
   options: NormalizedSelectOption[]
   activeIndex: number

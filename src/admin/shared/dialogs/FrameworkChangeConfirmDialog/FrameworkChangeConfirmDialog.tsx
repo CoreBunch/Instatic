@@ -22,7 +22,7 @@ import type {
 } from '@core/framework'
 import styles from './FrameworkChangeConfirmDialog.module.css'
 
-export interface FrameworkChangeConfirmDialogProps {
+interface FrameworkChangeConfirmDialogProps {
   /** What the change will remove and where each removed class is used. */
   impact: FrameworkChangeImpact
   /**

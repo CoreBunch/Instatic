@@ -25,9 +25,7 @@ import {
 } from '@site/agent'
 import { contentAgentSliceConfig } from './agentSliceConfig.content'
 
-export type ContentAgentStore = AgentSlice
-
-export type ContentAgentStoreHook = ReturnType<typeof createContentAgentStore>
+type ContentAgentStore = AgentSlice
 
 /**
  * Build a fresh Zustand store for the content workspace's agent panel.

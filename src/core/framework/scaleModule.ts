@@ -64,7 +64,7 @@ interface FrameworkScaleGroupEntry<TGroup> {
  * utility-class pass. Building it once (sort + step-label parse) means a single
  * traversal per family feeds both outputs instead of two independent ones.
  */
-export interface FrameworkScalePlan<
+interface FrameworkScalePlan<
   TGroup extends FrameworkScaleGroupCommon,
   TGenerator extends FrameworkClassGeneratorCommon,
 > {
@@ -75,7 +75,7 @@ export interface FrameworkScalePlan<
 }
 
 /** Both scale outputs derived from one shared plan. */
-export interface FrameworkScalePlanResult {
+interface FrameworkScalePlanResult {
   variables: FrameworkScaleVariable[]
   utilityClasses: Record<string, StyleRule>
 }
@@ -138,7 +138,7 @@ interface FrameworkScaleModuleConfig<TGroup extends FrameworkScaleGroupCommon> {
   classTags: string[]
 }
 
-export interface FrameworkScaleModule<
+interface FrameworkScaleModule<
   TGroup extends FrameworkScaleGroupCommon,
   TGenerator extends FrameworkClassGeneratorCommon,
 > {

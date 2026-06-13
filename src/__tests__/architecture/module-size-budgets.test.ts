@@ -94,7 +94,7 @@ const GRANDFATHERED: Record<string, number> = {
   // Grew past the ceiling via parallel work — grandfathered pending a future
   // split (extract responsibilities into sub-modules), not blessed forever.
   'src/admin/pages/site/agent/executor.ts': 730,
-  'src/admin/pages/site/store/slices/visualComponentsSlice.ts': 924,
+  'src/admin/pages/site/store/slices/visualComponentsSlice.ts': 715,
   // server/repositories/media.ts graduated: the row ↔ asset mapping unit was
   // extracted into server/repositories/mediaAssetMapping.ts, dropping media.ts
   // to 583 lines — under CEILING, so it's now held by the normal ceiling rule.
@@ -109,7 +109,7 @@ const GRANDFATHERED: Record<string, number> = {
   'src/core/page-tree/mutations.ts': 760,
   // server/plugins/host/handlers/content.ts graduated (786 → 661) when the
   // DB→wire projection helpers moved to contentProjection.ts.
-  'src/core/siteImport/cssToStyleRules.ts': 742,
+  'src/core/siteImport/cssToStyleRules.ts': 708,
   'src/admin/pages/site/panels/TypographyPanel/FontsSection/AddGoogleFontDialog.tsx': 751,
   'src/core/markdown/markdownDocument.ts': 748,
   'src/admin/pages/dashboard/DashboardPage.tsx': 732,

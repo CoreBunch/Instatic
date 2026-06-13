@@ -21,7 +21,7 @@
  * argument-less; argument-bearing pseudos are never stripped (see
  * `stripStatePseudos`).
  */
-export const SUPPORTED_PSEUDO_STATES = [
+const SUPPORTED_PSEUDO_STATES = [
   // Pointer / keyboard interaction — never active while the panel has focus.
   ':hover', ':active', ':focus', ':focus-visible', ':focus-within',
   // Navigation — not applicable inside the editing canvas.

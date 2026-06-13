@@ -7,7 +7,7 @@ import dialogStyles from '../../../shared/dialogs/SiteCreateDialog/SiteCreateDia
 import styles from './SelectorDialogs.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
-export type SelectorDialogMode = 'auto' | 'class' | 'ambient'
+type SelectorDialogMode = 'auto' | 'class' | 'ambient'
 
 const SELECTOR_NAME_FORM_ID = 'selector-name-form'
 

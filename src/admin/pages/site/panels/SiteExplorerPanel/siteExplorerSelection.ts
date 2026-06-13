@@ -7,7 +7,7 @@ import type {
   SiteExplorerTreeSectionModel,
 } from './siteExplorerModel'
 
-export interface SiteExplorerSelectionState {
+interface SiteExplorerSelectionState {
   sectionId: SiteExplorerSectionId | null
   itemIds: string[]
 }

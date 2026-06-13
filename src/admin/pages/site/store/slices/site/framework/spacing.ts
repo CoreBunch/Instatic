@@ -47,7 +47,7 @@ export function applySpacingGroupPatchPreview(
   }
 }
 
-export type FrameworkSpacingActions = Pick<
+type FrameworkSpacingActions = Pick<
   SiteSlice,
   | 'toggleFrameworkSpacingDisabled'
   | 'createFrameworkSpacingGroup'

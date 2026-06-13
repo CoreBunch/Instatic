@@ -162,7 +162,7 @@ export function getCommandAtIndex(
 // ─── Phase 3: async provider helpers ─────────────────────────────────────────
 
 /** One provider's worth of async results, keyed by provider id and label. */
-export interface AsyncProviderGroup {
+interface AsyncProviderGroup {
   providerId: string
   provider: SpotlightProvider
   commands: Command[]

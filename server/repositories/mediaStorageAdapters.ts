@@ -26,7 +26,7 @@ interface ElectedAdapterRow {
   elected_by_user_id: string | null
 }
 
-export interface ElectedAdapter {
+interface ElectedAdapter {
   role: MediaAssetRole
   adapterId: string
   electedAt: string

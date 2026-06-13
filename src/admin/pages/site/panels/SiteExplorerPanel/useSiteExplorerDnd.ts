@@ -15,8 +15,13 @@ import {
   type SiteExplorerSectionId,
   type SiteDocument,
   type StructuralSiteExplorerSectionId,
+  parentPathForPath,
+  sameStructuralParent,
+  compareStructuralRows,
+  structuralRowsForSection,
 } from '@core/page-tree'
 import { useEditorStore } from '@site/store/store'
+import { getDragPoint, getEventPoint } from '@admin/lib/dndPointer'
 
 interface Point {
   x: number
@@ -78,14 +83,6 @@ export interface SiteExplorerDropTarget {
 interface UseSiteExplorerDndOptions {
   enabled: boolean
   onStructuralPathPlan: (plan: ExplorerPathChangePlan) => void
-}
-
-interface StructuralDndRow {
-  kind: 'folder' | 'item'
-  id: string
-  parentPath?: string
-  order: number
-  naturalOrder: number
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -319,7 +316,7 @@ function handleStructuralItemDrop(
   const state = useEditorStore.getState()
   const nextParentPath = structuralNextParentPath(over, target.position)
   const currentParentPath = structuralItemParentPath(state.site, sectionId, active.itemId)
-  if (!samePath(currentParentPath, nextParentPath)) {
+  if (!sameStructuralParent(currentParentPath, nextParentPath)) {
     onStructuralPathPlan(state.previewMoveExplorerItem(sectionId, active.itemId, nextParentPath))
     return
   }
@@ -379,7 +376,7 @@ function handleStructuralFolderDrop(
   const state = useEditorStore.getState()
   const currentParentPath = parentPathForPath(active.folderId)
   const nextParentPath = structuralNextParentPath(over, target.position)
-  if (!samePath(currentParentPath, nextParentPath)) {
+  if (!sameStructuralParent(currentParentPath, nextParentPath)) {
     onStructuralPathPlan(state.previewMoveExplorerFolder(sectionId, active.folderId, nextParentPath))
     return
   }
@@ -455,78 +452,10 @@ function structuralRowIndexInParent(
   row: { kind: 'folder' | 'item'; id: string; parentPath?: string },
 ): number {
   if (!site) return -1
-  return structuralRowsForDnd(site, sectionId)
-    .filter((entry) => samePath(entry.parentPath, row.parentPath))
+  return structuralRowsForSection(site, sectionId)
+    .filter((entry) => sameStructuralParent(entry.parentPath, row.parentPath))
     .sort(compareStructuralRows)
     .findIndex((entry) => entry.kind === row.kind && entry.id === row.id)
-}
-
-function structuralRowsForDnd(
-  site: SiteDocument,
-  sectionId: StructuralSiteExplorerSectionId,
-): StructuralDndRow[] {
-  const rows: Array<Omit<StructuralDndRow, 'order' | 'naturalOrder'>> = []
-  const folders = new Set(site.explorer[sectionId].emptyFolders)
-
-  if (sectionId === 'pages') {
-    for (const page of site.pages) {
-      if (page.template || isHomePage(page)) continue
-      rows.push({ kind: 'item', id: page.id, ...optionalParentPath(parentPathForPath(page.slug)) })
-      addFolderPrefixes(folders, page.slug)
-    }
-  } else {
-    const type = sectionId === 'styles' ? 'style' : 'script'
-    for (const file of site.files) {
-      if (file.type !== type || (file.generated && !file.ejected)) continue
-      rows.push({ kind: 'item', id: file.id, ...optionalParentPath(parentPathForPath(file.path)) })
-      addFolderPrefixes(folders, file.path)
-    }
-  }
-
-  for (const folderPath of folders) {
-    rows.push({ kind: 'folder', id: folderPath, ...optionalParentPath(parentPathForPath(folderPath)) })
-  }
-
-  const orderByKey = new Map(
-    site.explorer[sectionId].rowOrder.map((entry) => [structuralRowKey(entry), entry.order]),
-  )
-  return rows.map((row, naturalOrder) => ({
-    ...row,
-    order: orderByKey.get(structuralRowKey(row)) ?? Number.POSITIVE_INFINITY,
-    naturalOrder,
-  }))
-}
-
-function addFolderPrefixes(folders: Set<string>, path: string): void {
-  const segments = path.split('/').filter(Boolean)
-  let current = ''
-  for (let index = 0; index < segments.length - 1; index += 1) {
-    current = current ? `${current}/${segments[index]}` : segments[index]
-    folders.add(current)
-  }
-}
-
-function optionalParentPath(parentPath: string | undefined): { parentPath?: string } {
-  return parentPath ? { parentPath } : {}
-}
-
-function parentPathForPath(path: string): string | undefined {
-  const index = path.lastIndexOf('/')
-  return index === -1 ? undefined : path.slice(0, index)
-}
-
-function structuralRowKey(row: { kind: 'folder' | 'item'; id: string; parentPath?: string }): string {
-  return `${row.kind}:${row.parentPath ?? ''}:${row.id}`
-}
-
-function samePath(left: string | undefined, right: string | undefined): boolean {
-  return (left ?? '') === (right ?? '')
-}
-
-function compareStructuralRows(left: StructuralDndRow, right: StructuralDndRow): number {
-  return left.order - right.order
-    || left.naturalOrder - right.naturalOrder
-    || left.id.localeCompare(right.id)
 }
 
 function positionForRect(rect: DropRect, point: Point | null): 'before' | 'after' {
@@ -579,28 +508,6 @@ function resolveDropTarget(
   if (drag.kind === 'siteExplorerItem' && drop.itemId === drag.itemId) return null
   if (drop.sectionId === 'pages' && isPinnedHomepage(drop.itemId)) return null
   return { drag, drop, position: positionForRect(event.over.rect, point) }
-}
-
-function getDragPoint(event: DragMoveEvent | DragEndEvent, startPoint: Point | null): Point | null {
-  const start = startPoint ?? getEventPoint(event.activatorEvent)
-  if (!start) return null
-  return {
-    x: start.x + event.delta.x,
-    y: start.y + event.delta.y,
-  }
-}
-
-function getEventPoint(event: Event): Point | null {
-  if ('clientX' in event && 'clientY' in event) {
-    const maybePointer = event as MouseEvent | PointerEvent
-    return { x: maybePointer.clientX, y: maybePointer.clientY }
-  }
-  if ('touches' in event) {
-    const touchEvent = event as TouchEvent
-    const touch = touchEvent.touches[0] ?? touchEvent.changedTouches[0]
-    return touch ? { x: touch.clientX, y: touch.clientY } : null
-  }
-  return null
 }
 
 export function useSiteExplorerDnd({ enabled, onStructuralPathPlan }: UseSiteExplorerDndOptions) {

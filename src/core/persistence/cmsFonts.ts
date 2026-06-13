@@ -39,7 +39,7 @@ export async function listCmsGoogleFonts(
   return payload.families
 }
 
-export interface InstallGoogleFontRequest {
+interface InstallGoogleFontRequest {
   family: string
   variants: string[]
   subsets: string[]
@@ -84,7 +84,7 @@ export async function installCmsGoogleFont(
   return payload.font
 }
 
-export interface RegisterCustomFontRequest {
+interface RegisterCustomFontRequest {
   family: string
   files: { mediaAssetId: string; variant: string }[]
 }

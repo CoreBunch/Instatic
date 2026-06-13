@@ -32,7 +32,7 @@ import { Marked, type Tokens, type Token } from 'marked'
 // this module stays usable from non-DOM contexts like Bun tests)
 // ---------------------------------------------------------------------------
 
-export interface JSONMark {
+interface JSONMark {
   type: string
   attrs?: Record<string, unknown>
 }
@@ -45,7 +45,7 @@ export interface JSONNode {
   text?: string
 }
 
-export type DocNode = JSONNode & { type: 'doc' }
+type DocNode = JSONNode & { type: 'doc' }
 
 // ---------------------------------------------------------------------------
 // Marked configuration — single instance, no globals.

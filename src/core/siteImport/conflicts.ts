@@ -39,7 +39,7 @@ import { applyCrossSheetClassResolutions, normalizeBindableClassRules } from './
 // Detection
 // ---------------------------------------------------------------------------
 
-export interface ConflictDetectionResult {
+interface ConflictDetectionResult {
   pages: PageConflict[]
   rules: RuleConflict[]
   tokens: TokenConflict[]

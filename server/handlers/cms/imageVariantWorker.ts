@@ -5,7 +5,9 @@
  *
  *   1. Probe intrinsic dimensions via `sharp`.
  *   2. Encode a BlurHash placeholder from a downsampled RGBA buffer.
- *   3. (Optional) Generate one WebP per configured target width.
+ *   3. (Optional) Generate one WebP per configured target width below the
+ *      intrinsic width, plus one at the intrinsic width (the srcset's
+ *      full-quality top rung).
  *
  * Everything else — DB lookups, delegate election, storage-adapter
  * dispatch — stays on the main thread. The worker has no DB client and
@@ -19,6 +21,9 @@ import sharp from 'sharp'
 import { encode as encodeBlurHash } from 'blurhash'
 import type { ImageVariantJobRequest, ImageVariantJobResponse, ImageVariantPayload } from './imageVariantProtocol'
 import { toArrayBuffer } from '../../binary'
+
+/** libwebp's hard cap on either output dimension. */
+const MAX_WEBP_DIMENSION = 16383
 
 function send(msg: ImageVariantJobResponse, transfer: ArrayBuffer[] = []): void {
   ;(self as unknown as { postMessage: (m: unknown, transfer?: ArrayBuffer[]) => void }).postMessage(msg, transfer)
@@ -72,8 +77,28 @@ async function handleJob(req: ImageVariantJobRequest): Promise<void> {
     const variants: ImageVariantPayload[] = []
     const transfer: ArrayBuffer[] = []
     if (req.generateLadder) {
-      for (const width of req.targetWidths) {
-        if (width >= originalWidth) continue
+      // Target rungs below the intrinsic width (never upscale), topped by
+      // one rung AT the intrinsic width: the srcset's largest candidate is
+      // then a full-quality WebP, so the renderer never needs the original
+      // (potentially a multi-MB PNG) as a high-DPI fallback.
+      //
+      // The WebP encoder refuses either OUTPUT dimension above 16383px, so
+      // the ladder is clamped to the largest width whose aspect-scaled
+      // height still fits — a 900x17000 screenshot encodes a clamped top
+      // rung instead of throwing (which would kill the whole job and strip
+      // the asset of variants, dimensions, AND BlurHash).
+      //
+      // Images smaller than every target width get NO variants at all: they
+      // publish as plain pixel-exact `src` (a 48px pixel-art icon must not
+      // be force-re-encoded to lossy WebP for zero byte savings).
+      const maxSafeWidth = Math.min(
+        MAX_WEBP_DIMENSION,
+        Math.floor((MAX_WEBP_DIMENSION * originalWidth) / originalHeight),
+      )
+      const intrinsicRung = Math.min(originalWidth, maxSafeWidth)
+      const subRungs = req.targetWidths.filter((w) => w < intrinsicRung)
+      const widths = subRungs.length ? [...subRungs, intrinsicRung] : []
+      for (const width of widths) {
         const v = await sharp(bytes)
           .resize({ width, withoutEnlargement: true })
           .webp({ quality: req.webpQuality })

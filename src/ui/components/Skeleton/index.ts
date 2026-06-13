@@ -10,7 +10,4 @@ export type {
   SkeletonBlockProps,
   SkeletonCardsProps,
   SkeletonRowsProps,
-  SkeletonTreeProps,
-  SkeletonProps,
-  SkeletonCircleProps,
 } from './Skeleton'

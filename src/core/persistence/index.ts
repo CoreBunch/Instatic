@@ -1,15 +1,13 @@
 export { cmsAdapter } from './cms'
 export { getCmsPublishStatus, publishCmsDraft } from './cmsPublish'
 export { listCmsMediaAssets } from './cmsMedia'
-export type { CmsMediaAsset, CmsMediaVariant } from './cmsMedia'
+export type { CmsMediaAsset } from './cmsMedia'
 export {
   cancelCmsDataRowSchedule,
   createCmsDataRow,
   createCmsDataTable,
   deleteCmsDataRow,
   deleteCmsDataTable,
-  exportCmsBundle,
-  importCmsBundle,
   listCmsDataAuthors,
   listCmsDataRows,
   listCmsDataTables,
@@ -21,7 +19,7 @@ export {
   updateCmsDataRowTable,
   updateCmsDataTable,
 } from './cmsData'
-export type { ImportBundleResult } from './cmsData'
+
 export {
   inspectCmsPluginPackage,
   installCmsPluginPackage,
@@ -41,8 +39,6 @@ export {
 export type {
   CmsPluginScheduleRunSummary,
   CmsPluginScheduleSummary,
-  CmsPluginSchedulesResponse,
-  CmsPluginSettingsResponse,
   PluginSettingsRecord,
   PluginSettingsSchema,
   PluginSettingsValue,
@@ -69,24 +65,18 @@ export {
   deleteCurrentUserAvatar,
   disableCurrentUserTotp,
   enableCurrentUserTotp,
-  getCmsPublicSite,
-  getCmsSetupStatus,
-  getCurrentCmsUser,
   isStepUpRequiredError,
   listCmsLoginActivity,
   listCmsSessions,
-  loginCms,
   logoutAllOtherCmsSessions,
   logoutCms,
   regenerateCurrentUserRecoveryCodes,
   revokeCmsSession,
-  setupCms,
   startCurrentUserTotpSetup,
   stepUpCms,
   updateCurrentUserStepUpSettings,
   updateCurrentUserProfile,
   uploadCurrentUserAvatar,
-  verifyCmsMfa,
 } from './cmsAuth'
 export type {
   CmsCurrentUser,
@@ -96,5 +86,5 @@ export type {
   CmsStepUpAuthMode,
   CmsStepUpWindowMinutes,
 } from './cmsAuth'
-export type { CmsPublicSite, CmsSetupStatus } from './responseSchemas'
+
 // usePersistence moved to src/editor/hooks/usePersistence.ts (Constraint #179 — no React in core)

@@ -9,11 +9,13 @@
  * active document's nodes untouched and editable, rendering only the wrapping
  * templates read-only around it (see `CanvasComposedTree`).
  *
- * Breadth levels (outer → inner): `everywhere` (0) → `postTypes` (1) → a
- * non-template page (2, the innermost terminal). A document is wrapped by every
- * matching template strictly broader than its own level:
+ * Breadth levels (outer → inner): `everywhere` (0) → `postTypes` / `notFound`
+ * (1) → a non-template page (2, the innermost terminal). A document is wrapped
+ * by every matching template strictly broader than its own level:
  *   - editing a page          → wrapped by the `everywhere` layout;
  *   - editing a postTypes tpl  → wrapped by the `everywhere` layout;
+ *   - editing a notFound tpl   → wrapped by the `everywhere` layout (matching
+ *     how the public router composes the 404 render);
  *   - editing the everywhere tpl → nothing wraps it (it is the broadest).
  */
 

@@ -15,7 +15,7 @@ import type { ReactNode } from 'react'
 import { cn } from '@ui/cn'
 import styles from './Text.module.css'
 
-export interface TextProps {
+interface TextProps {
   variant?: 'default' | 'muted' | 'strong' | 'mono'
   size?: 'sm' | 'md' | 'lg'
   className?: string

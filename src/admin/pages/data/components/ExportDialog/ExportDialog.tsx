@@ -28,7 +28,7 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 // Public props
 // ---------------------------------------------------------------------------
 
-export interface ExportDialogProps {
+interface ExportDialogProps {
   open: boolean
   onClose: () => void
   /**

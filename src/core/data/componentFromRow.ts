@@ -18,7 +18,7 @@
  */
 
 import type { DataRow, DataRowCells } from '@core/data/schemas'
-import { parseVisualComponent, type VisualComponent } from '@core/visualComponents'
+import { parseVisualComponent, vcSlugFromName, type VisualComponent } from '@core/visualComponents'
 
 // ---------------------------------------------------------------------------
 // DataRow → VisualComponent
@@ -69,7 +69,7 @@ export function visualComponentFromRow(row: DataRow): VisualComponent | null {
 export function visualComponentToCells(vc: VisualComponent): DataRowCells {
   return {
     name: vc.name,
-    slug: slugFromName(vc.name),
+    slug: vcSlugFromName(vc.name),
     body: {
       nodes: vc.tree.nodes,
       rootNodeId: vc.tree.rootNodeId,
@@ -77,22 +77,4 @@ export function visualComponentToCells(vc: VisualComponent): DataRowCells {
     params: vc.params,
     classIds: vc.classIds,
   }
-}
-
-/**
- * Derive the storage slug from a Visual Component name.
- * Converts to lower-kebab-case; falls back to 'component' on empty input.
- */
-export function vcSlugFromName(name: string): string {
-  return slugFromName(name)
-}
-
-function slugFromName(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
-    .replace(/^-+|-+$/g, '')
-  return slug || 'component'
 }

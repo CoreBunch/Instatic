@@ -68,7 +68,6 @@ const DashboardMediaThumbSchema = looseObject({
     }),
   ),
 })
-export type DashboardMediaThumb = Static<typeof DashboardMediaThumbSchema>
 
 const DashboardPluginRowSchema = looseObject({
   id: Type.String(),
@@ -106,7 +105,6 @@ const DashboardActivityActorSchema = looseObject({
   avatarUrl: Type.Union([Type.String(), Type.Null()]),
   gravatarHash: Type.String(),
 })
-export type DashboardActivityActor = Static<typeof DashboardActivityActorSchema>
 
 const DashboardActivityEntrySchema = looseObject({
   id: Type.String(),
@@ -125,7 +123,7 @@ const DashboardPagesStatsSchema = looseObject({
   scheduled: Type.Number(),
   deltaPublishedThisWeek: Type.Number(),
 })
-export type DashboardPagesStats = Static<typeof DashboardPagesStatsSchema>
+type DashboardPagesStats = Static<typeof DashboardPagesStatsSchema>
 
 const DashboardPostsStatsSchema = looseObject({
   total: Type.Number(),
@@ -133,14 +131,14 @@ const DashboardPostsStatsSchema = looseObject({
   scheduled: Type.Number(),
   daily28: Type.Array(Type.Number()),
 })
-export type DashboardPostsStats = Static<typeof DashboardPostsStatsSchema>
+type DashboardPostsStats = Static<typeof DashboardPostsStatsSchema>
 
 const DashboardMediaStatsSchema = looseObject({
   count: Type.Number(),
   totalBytes: Type.Number(),
   latestThumbs: Type.Array(DashboardMediaThumbSchema),
 })
-export type DashboardMediaStats = Static<typeof DashboardMediaStatsSchema>
+type DashboardMediaStats = Static<typeof DashboardMediaStatsSchema>
 
 const DashboardPluginsStatsSchema = looseObject({
   total: Type.Number(),
@@ -149,12 +147,12 @@ const DashboardPluginsStatsSchema = looseObject({
   errored: Type.Number(),
   rows: Type.Array(DashboardPluginRowSchema),
 })
-export type DashboardPluginsStats = Static<typeof DashboardPluginsStatsSchema>
+type DashboardPluginsStats = Static<typeof DashboardPluginsStatsSchema>
 
 const DashboardPublishLineupStatsSchema = looseObject({
   rows: Type.Array(DashboardPublishLineupRowSchema),
 })
-export type DashboardPublishLineupStats = Static<typeof DashboardPublishLineupStatsSchema>
+type DashboardPublishLineupStats = Static<typeof DashboardPublishLineupStatsSchema>
 
 /**
  * Storage widget payload. Mirrors `StorageStats` on the server (see
@@ -177,12 +175,12 @@ const DashboardStorageStatsSchema = looseObject({
   totalBytes: Type.Number(),
   dialect: Type.Union([Type.Literal('sqlite'), Type.Literal('postgres')]),
 })
-export type DashboardStorageStats = Static<typeof DashboardStorageStatsSchema>
+type DashboardStorageStats = Static<typeof DashboardStorageStatsSchema>
 
 const DashboardActivityStatsSchema = looseObject({
   rows: Type.Array(DashboardActivityEntrySchema),
 })
-export type DashboardActivityStats = Static<typeof DashboardActivityStatsSchema>
+type DashboardActivityStats = Static<typeof DashboardActivityStatsSchema>
 
 // ---------------------------------------------------------------------------
 // Generic fetch hook factory

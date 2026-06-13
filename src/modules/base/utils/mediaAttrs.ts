@@ -14,18 +14,24 @@ import type { RenderResolvedMedia } from '@core/publisher'
 import { safeUrl } from '@modules/base/utils/escape'
 
 /**
- * Build a `srcset` attribute from a variant ladder, plus the original as the
- * largest entry so high-DPI displays can pick the full-size file. Returns
- * `null` when the asset has no variants.
+ * Build a `srcset` attribute from a variant ladder. Returns `null` when the
+ * asset has no variants.
+ *
+ * The ORIGINAL file is deliberately excluded: every srcset candidate is
+ * selectable, and the original may be a multi-MB unoptimized PNG. A 1280px
+ * slot on a 2x display asks for 2560 device px — if the original tops the
+ * ladder, every retina visitor downloads it instead of a WebP ~60x smaller.
+ * The ladder's top rung is the intrinsic-width WebP the variant worker
+ * encodes, so no quality ceiling is lost. The original survives only in
+ * `src`, which width-descriptor srcsets reserve for non-srcset browsers.
  */
 export function buildMediaSrcset(media: RenderResolvedMedia): string | null {
   if (!media.variants.length) return null
-  const entries = media.variants
+  return media.variants
     .slice()
     .sort((a, b) => a.width - b.width)
     .map((v) => `${safeUrl(v.path)} ${v.width}w`)
-  if (media.width) entries.push(`${safeUrl(media.publicPath)} ${media.width}w`)
-  return entries.join(', ')
+    .join(', ')
 }
 
 /**

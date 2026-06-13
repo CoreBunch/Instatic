@@ -31,7 +31,7 @@
  */
 import type { DbClient } from '../db/client'
 import { withSchedulerLeaderLock } from '../db/advisoryLock'
-import { publishDataRow } from '../repositories/data/publish'
+import { publishDataRow } from './publishRow'
 import { emitContentEntryUpdated } from './contentEvents'
 import {
   cancelScheduledPublish,
@@ -84,16 +84,6 @@ export function startPublishScheduler(db: DbClient, uploadsDir?: string): void {
       console.error('[publish-scheduler] tick failed:', err)
     })
   }, TICK_INTERVAL_MS)
-}
-
-/**
- * Stop the tick. Used by tests; production code never calls this so
- * the tick runs for the lifetime of the process.
- */
-export function stopPublishScheduler(): void {
-  if (tickTimer === null) return
-  clearInterval(tickTimer)
-  tickTimer = null
 }
 
 /**

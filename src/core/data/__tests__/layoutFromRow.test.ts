@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { DataRow } from '@core/data/schemas'
-import { layoutSlugFromName, savedLayoutFromRow, savedLayoutToCells } from '@core/data/layoutFromRow'
-import type { SavedLayout } from '@core/layouts'
+import { savedLayoutFromRow, savedLayoutToCells } from '@core/data/layoutFromRow'
+import { layoutSlugFromName, type SavedLayout } from '@core/layouts'
 
 function makeLayout(): SavedLayout {
   return {

@@ -61,7 +61,7 @@
 import type { DbClient } from '../db/client'
 import type { PublishedPageSnapshot } from '../repositories/publish'
 import type { PublishedDataRow } from '@core/data/schemas'
-import { isTemplatePage } from '@core/templates'
+import { isTemplatePage, resolveNotFoundTemplate } from '@core/templates'
 import {
   getDataRowRedirectByRoute,
   getPublishedDataRowByRoute,
@@ -70,9 +70,10 @@ import { getPublishedPageBySlug } from '../repositories/publish'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import {
   renderPublishedDataRowTemplate,
+  renderPublishedNotFound,
   renderPublishedSnapshot,
 } from './publicRenderer'
-import { readArtefact } from './staticArtefact'
+import { NOT_FOUND_ARTEFACT_URL_PATH, readArtefact } from './staticArtefact'
 import { getOrRender, peek } from './renderCache'
 import { getLatestSnapshotForVersion } from './publishedSnapshotCache'
 import { getPublishVersion } from './publishState'
@@ -88,7 +89,7 @@ import { canonicalRenderQuery } from './loopPrefetch'
  *
  * Shared with the loop runtime so per-page slug resolution stays consistent.
  */
-export function publicSlugFromPath(pathname: string): string {
+function publicSlugFromPath(pathname: string): string {
   const trimmed = pathname.replace(/^\/+|\/+$/g, '')
   return trimmed === '' ? 'index' : trimmed
 }
@@ -118,7 +119,7 @@ function contentRouteFromPath(pathname: string): { tableRouteBase: string; rowSl
  * to the next handler (e.g. the setup-wizard redirect). `redirect` is
  * an old row-slug → new path mapping; the caller emits a 301.
  */
-export type PublicRouteResolution =
+type PublicRouteResolution =
   | { kind: 'page'; snapshot: PublishedPageSnapshot }
   | { kind: 'row'; snapshot: PublishedPageSnapshot; row: PublishedDataRow }
   | { kind: 'redirect'; location: string }
@@ -143,7 +144,7 @@ export type PublicRouteResolution =
  * template; when there isn't one (corrupt install / nothing published),
  * we return `not-found` rather than inventing a fallback document.
  */
-export async function resolvePublicRoute(
+async function resolvePublicRoute(
   db: DbClient,
   url: URL,
 ): Promise<PublicRouteResolution> {
@@ -271,4 +272,65 @@ export async function renderPublicResolution(
   )
   if (!cached) return null
   return new Response(cached.body, { headers: cached.headers, status: cached.status })
+}
+
+// ---------------------------------------------------------------------------
+// 404 page
+// ---------------------------------------------------------------------------
+
+/**
+ * Materialise the site's 404 page for a GET that fell through every route.
+ *
+ * Serving order mirrors `renderPublicResolution`:
+ *
+ *   - Layer A: the `404.html` artefact baked by the full publish — one disk
+ *     read, no DB. This is the path bot probes and crawler noise hit.
+ *   - Layer B fallback (no uploadsDir / bake failed): live render through the
+ *     LRU under the reserved `/404` key, so a burst of misses renders once.
+ *     The entry is stored as a 200 body (the cache only holds 200 renders);
+ *     status 404 is stamped on the Response here. A direct GET of `/404`
+ *     served through `renderPublicResolution` returns the same body with
+ *     status 200 — identical to how static hosts treat `404.html`.
+ *
+ * Returns `null` when the published site has no notFound template (or nothing
+ * is published at all) — the dispatcher then falls back to its bare JSON 404.
+ *
+ * The render is seeded with a synthetic `/404` URL (not the requested one) so
+ * the cached body — like the baked artefact — is identical for every missed
+ * path; request-dependent nodes are holes and hydrate per request anyway.
+ */
+export async function renderNotFoundResponse(
+  db: DbClient,
+  url: URL,
+  uploadsDir?: string,
+): Promise<Response | null> {
+  const htmlHeaders = { 'content-type': 'text/html; charset=utf-8' }
+
+  // ── Layer A: baked 404 artefact ───────────────────────────────────────────
+  if (uploadsDir) {
+    const html = await readArtefact(uploadsDir, NOT_FOUND_ARTEFACT_URL_PATH)
+    if (html !== null) {
+      return new Response(html, { status: 404, headers: htmlHeaders })
+    }
+  }
+
+  // ── Layer B: live render through the LRU under the reserved /404 key ─────
+  const cacheKey = { urlPath: NOT_FOUND_ARTEFACT_URL_PATH, queryString: '' }
+  const warm = peek(cacheKey)
+  if (warm) {
+    return new Response(warm.body, { headers: warm.headers, status: 404 })
+  }
+
+  const snapshot = await getLatestSnapshotForVersion(db, getPublishVersion())
+  if (!snapshot || !resolveNotFoundTemplate(snapshot.site)) return null
+
+  const syntheticUrl = new URL(NOT_FOUND_ARTEFACT_URL_PATH, url.origin)
+  const cached = await getOrRender(cacheKey, async () => {
+    const rendered = await renderPublishedNotFound(snapshot, { db, url: syntheticUrl })
+    if (!rendered) return null
+    const html = await applyPublishedHtmlPipeline(rendered, db)
+    return { body: html, headers: htmlHeaders, status: 200 }
+  })
+  if (!cached) return null
+  return new Response(cached.body, { headers: cached.headers, status: 404 })
 }

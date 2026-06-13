@@ -31,7 +31,7 @@ export interface SlashCommandItem {
   command: (props: { editor: Editor; range: Range }) => void
 }
 
-export interface SlashCommandOptions {
+interface SlashCommandOptions {
   /**
    * Called when the user picks an item whose effect cannot be performed
    * from inside the editor (currently: opening the media picker or the
@@ -48,7 +48,7 @@ export interface SlashCommandOptions {
   suggestion: Omit<SuggestionOptions<SlashCommandItem>, 'editor' | 'items'>
 }
 
-export const SLASH_COMMAND_NAME = 'slashCommand'
+const SLASH_COMMAND_NAME = 'slashCommand'
 
 export const SlashCommand = Extension.create<SlashCommandOptions>({
   name: SLASH_COMMAND_NAME,

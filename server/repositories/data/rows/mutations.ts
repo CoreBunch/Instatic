@@ -24,7 +24,7 @@ import { type InsertDataRowInput, type UpdateDataRowDraftInput } from './mapper'
 import { isoDateOrNull } from '@core/utils/isoDate'
 import { getDataRow } from './read'
 
-export type UpdateDataRowTableResult =
+type UpdateDataRowTableResult =
   | { ok: true; row: DataRow }
   | { ok: false; reason: 'row_not_found' | 'table_not_found' | 'slug_conflict' }
 
@@ -100,6 +100,49 @@ export async function updateDataRowDraftCells(
     returning id
   `
   return rows.length > 0
+}
+
+/**
+ * Revive a soft-deleted row with fresh draft cells — the roster reconcile's
+ * answer to a client re-submitting an id it previously reaped (undo of a
+ * delete). Clears `deleted_at` and overwrites cells/slug; the row keeps its
+ * pre-delete status (publish state transitions stay with the publish flow).
+ */
+export async function resurrectDataRow(
+  db: DbClient,
+  rowId: string,
+  input: UpdateDataRowDraftInput,
+  actorUserId: string | null = null,
+): Promise<void> {
+  await db`
+    update data_rows
+    set deleted_at = null,
+        cells_json = ${input.cells},
+        slug = ${input.slug},
+        updated_by_user_id = ${actorUserId},
+        updated_at = current_timestamp
+    where id = ${rowId}
+      and deleted_at is not null
+  `
+}
+
+/**
+ * Slug-only write — the second phase of the roster reconcile's two-phase
+ * slug update (see rows/reconcile.ts). The row's cells and audit columns were
+ * already written by `updateDataRowDraftCells` in the same transaction; this
+ * just moves the row off the placeholder slug onto its final one.
+ */
+export async function updateDataRowSlug(
+  db: DbClient,
+  rowId: string,
+  slug: string,
+): Promise<void> {
+  await db`
+    update data_rows
+    set slug = ${slug}
+    where id = ${rowId}
+      and deleted_at is null
+  `
 }
 
 /**

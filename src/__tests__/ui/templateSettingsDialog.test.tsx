@@ -70,4 +70,31 @@ describe('TemplateSettingsDialog', () => {
     expect(saved).not.toBeNull()
     expect(saved!.template.target).toEqual({ kind: 'postTypes', tableSlugs: ['posts'] })
   })
+
+  it('saves a notFound target (no post-type checkboxes shown)', () => {
+    let saved: TemplateSettingsPayload | null = null
+    render(
+      <TemplateSettingsDialog
+        page={plainPage()}
+        pages={[plainPage()]}
+        onCancel={() => {}}
+        onSave={(p) => { saved = p }}
+      />,
+    )
+    // Switch "Applies to" from Everywhere → Not found via keyboard: open,
+    // move past "Post types" onto "Not found (404)", commit.
+    const combobox = screen.getByRole('combobox', { name: /applies to/i })
+    combobox.focus()
+    fireEvent.keyDown(combobox, { key: 'ArrowDown' })
+    fireEvent.keyDown(combobox, { key: 'ArrowDown' })
+    fireEvent.keyDown(combobox, { key: 'ArrowDown' })
+    fireEvent.keyDown(combobox, { key: 'Enter' })
+
+    // The post-type picker only belongs to the postTypes kind.
+    expect(screen.queryByRole('checkbox')).toBeNull()
+
+    submit()
+    expect(saved).not.toBeNull()
+    expect(saved!.template.target).toEqual({ kind: 'notFound' })
+  })
 })

@@ -289,6 +289,11 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
           selectNode(nodeId)
           if (hasChildren && !isRoot) store.toggle(nodeId)
         }}
+        onDoubleClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          openRename()
+        }}
         onKeyDown={handleKeyDown}
         onContextMenu={(e) => {
           e.preventDefault(); e.stopPropagation()

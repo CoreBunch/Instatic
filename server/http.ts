@@ -1,7 +1,7 @@
 import { type TSchema, type Static } from '@sinclair/typebox'
 import { safeParseValue } from '@core/utils/typeboxHelpers'
 
-export interface ReadValidatedBodyOptions {
+interface ReadValidatedBodyOptions {
   maxBytes?: number
 }
 

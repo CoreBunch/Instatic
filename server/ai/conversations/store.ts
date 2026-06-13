@@ -147,7 +147,7 @@ export function toConversationView(record: ConversationRecord): ConversationView
   }
 }
 
-export function toMessageView(record: MessageRecord): MessageView {
+function toMessageView(record: MessageRecord): MessageView {
   return {
     id: record.id,
     position: record.position,

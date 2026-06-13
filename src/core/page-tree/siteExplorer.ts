@@ -6,17 +6,7 @@ import type { Page } from './page'
 import type { SiteDocument } from './siteDocument'
 import type { VisualComponent } from '@core/visualComponents'
 import { isHomePage } from './slugs'
-
-export const STRUCTURAL_SITE_EXPLORER_SECTION_IDS = [
-  'pages',
-  'styles',
-  'scripts',
-] as const
-
-export const DECORATIVE_SITE_EXPLORER_SECTION_IDS = [
-  'templates',
-  'components',
-] as const
+import { addFolderPrefixes, parentPathForPath } from './explorerPaths'
 
 export const SITE_EXPLORER_SECTION_IDS = [
   'pages',
@@ -26,8 +16,8 @@ export const SITE_EXPLORER_SECTION_IDS = [
   'scripts',
 ] as const
 
-export type StructuralSiteExplorerSectionId = (typeof STRUCTURAL_SITE_EXPLORER_SECTION_IDS)[number]
-export type DecorativeSiteExplorerSectionId = (typeof DECORATIVE_SITE_EXPLORER_SECTION_IDS)[number]
+export type StructuralSiteExplorerSectionId = 'pages' | 'styles' | 'scripts'
+export type DecorativeSiteExplorerSectionId = 'templates' | 'components'
 export type SiteExplorerSectionId = (typeof SITE_EXPLORER_SECTION_IDS)[number]
 
 const SiteExplorerFolderSchema = Type.Object({
@@ -72,7 +62,7 @@ export type SiteExplorerFolder = Static<typeof SiteExplorerFolderSchema>
 export type SiteExplorerItemPlacement = Static<typeof SiteExplorerItemPlacementSchema>
 export type StructuralExplorerRowOrder = Static<typeof StructuralExplorerRowOrderSchema>
 export type StructuralExplorerSection = Static<typeof StructuralExplorerSectionSchema>
-export type DecorativeExplorerSection = Static<typeof DecorativeExplorerSectionSchema>
+type DecorativeExplorerSection = Static<typeof DecorativeExplorerSectionSchema>
 export type SiteExplorerOrganization = Static<typeof SiteExplorerOrganizationSchema>
 
 type SiteExplorerRootEntry =
@@ -274,15 +264,6 @@ function structuralRowsForFiles(files: readonly SiteFile[], type: 'style' | 'scr
   return { folders, items, itemPaths }
 }
 
-function addFolderPrefixes(folders: Set<string>, path: string): void {
-  const segments = path.split('/').filter(Boolean)
-  let current = ''
-  for (let index = 0; index < segments.length - 1; index += 1) {
-    current = current ? `${current}/${segments[index]}` : segments[index]
-    folders.add(current)
-  }
-}
-
 function reconcileStructuralSection(
   section: StructuralExplorerSection,
   rows: StructuralRows,
@@ -304,11 +285,6 @@ function reconcileStructuralSection(
       return rows.items.has(entry.id) && rows.items.get(entry.id) === entry.parentPath
     }),
   }
-}
-
-function parentPathForPath(path: string): string | undefined {
-  const index = path.lastIndexOf('/')
-  return index === -1 ? undefined : path.slice(0, index)
 }
 
 function reconcileSection(section: DecorativeExplorerSection, sourceIds: readonly string[]): DecorativeExplorerSection {

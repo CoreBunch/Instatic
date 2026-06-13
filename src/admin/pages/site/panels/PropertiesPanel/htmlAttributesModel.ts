@@ -11,7 +11,7 @@ export interface HtmlAttributeDraftRow {
   value: string
 }
 
-export interface HtmlAttributeValidationResult {
+interface HtmlAttributeValidationResult {
   attributes: Record<string, string>
   errors: Record<string, string>
 }

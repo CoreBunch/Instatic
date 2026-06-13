@@ -27,9 +27,7 @@
 
 import type { PluginEvent } from '@core/plugins/events'
 
-export type { PluginEvent }
-
-export type PluginEventListener = (event: PluginEvent) => void
+type PluginEventListener = (event: PluginEvent) => void
 
 const listeners = new Set<PluginEventListener>()
 

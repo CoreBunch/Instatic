@@ -20,7 +20,7 @@ import { deleteSubtree, type BaseNode } from '@core/page-tree'
 import type { VisualComponent } from './schemas'
 
 // ---------------------------------------------------------------------------
-// extractSlotNamesFromVCTree — pure helper
+// collectSlotOutletNames — pure helper
 // ---------------------------------------------------------------------------
 
 /**
@@ -36,14 +36,17 @@ import type { VisualComponent } from './schemas'
  *
  * Returns an empty array when the VC has no slot-outlets.
  */
-function extractSlotNamesFromVCTree(vc: VisualComponent): string[] {
+export function collectSlotOutletNames(tree: {
+  rootNodeId: string
+  nodes: Record<string, BaseNode>
+}): string[] {
   const result: string[] = []
   const seen = new Set<string>()
-  const stack: string[] = [vc.tree.rootNodeId]
+  const stack: string[] = [tree.rootNodeId]
 
   while (stack.length > 0) {
     const id = stack.pop()!
-    const node = vc.tree.nodes[id]
+    const node = tree.nodes[id]
     if (!node) continue
 
     if (node.moduleId === 'base.slot-outlet') {
@@ -71,7 +74,7 @@ function extractSlotNamesFromVCTree(vc: VisualComponent): string[] {
 // ---------------------------------------------------------------------------
 
 /** Insert a new locked slot-instance node as a child of the VC ref. */
-export interface InsertSlotOp {
+interface InsertSlotOp {
   kind: 'insert'
   /** Generated ID for the new slot-instance node. */
   slotInstanceId: string
@@ -80,7 +83,7 @@ export interface InsertSlotOp {
 }
 
 /** Update the slotName prop on an existing slot-instance (rename case). */
-export interface RenameSlotOp {
+interface RenameSlotOp {
   kind: 'rename'
   /** ID of the existing slot-instance node. */
   nodeId: string
@@ -89,19 +92,19 @@ export interface RenameSlotOp {
 }
 
 /** Delete an existing slot-instance node and its entire subtree. */
-export interface DeleteSlotOp {
+interface DeleteSlotOp {
   kind: 'delete'
   /** ID of the slot-instance (or non-slot-instance child) to delete. */
   nodeId: string
 }
 
-export type SyncOp = InsertSlotOp | RenameSlotOp | DeleteSlotOp
+type SyncOp = InsertSlotOp | RenameSlotOp | DeleteSlotOp
 
 // ---------------------------------------------------------------------------
 // SyncResult
 // ---------------------------------------------------------------------------
 
-export interface SyncResult {
+interface SyncResult {
   /**
    * Operations to apply:
    *   - insert: add a new slot-instance (node is in newNodes)
@@ -163,7 +166,7 @@ export function syncSlotInstances(
   // Slot names sourced directly from `base.slot-outlet` nodes in the VC tree
   // (the slot-outlet IS the slot — no separate vc.params slot entry required).
   // This is the single source of truth for "what slots does this VC declare?".
-  const slotNames = extractSlotNamesFromVCTree(vc)
+  const slotNames = collectSlotOutletNames(vc.tree)
   const targetNames = new Set(slotNames)
 
   // Classify existing children of the VC ref.

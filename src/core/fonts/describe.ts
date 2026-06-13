@@ -9,7 +9,7 @@
 import type { SiteFontsSettings } from './schemas'
 import { fontTokenCssVariable, fontTokenValueExpr, resolveFontTokenStack, sortFontTokens } from './tokens'
 
-export interface FontTokenDescriptor {
+interface FontTokenDescriptor {
   /** Display name, e.g. "Primary". */
   name: string
   /** CSS custom property incl. leading dashes, e.g. "--font-primary". */

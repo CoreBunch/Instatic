@@ -17,7 +17,7 @@ import type {
  * rather than in `./types` so the type module stays free of `page-tree` imports
  * and the runtime/page-tree type cycle is broken.
  */
-export interface CollectRuntimeScriptsInput {
+interface CollectRuntimeScriptsInput {
   files: SiteFile[]
   runtime: SiteRuntimeConfig
   page: Page
@@ -25,7 +25,7 @@ export interface CollectRuntimeScriptsInput {
 }
 
 /** Input shape for `collectAppliedStyles` — the stylesheet analogue. */
-export interface CollectAppliedStylesInput {
+interface CollectAppliedStylesInput {
   files: SiteFile[]
   runtime: SiteRuntimeConfig
   page: Page

@@ -13,7 +13,7 @@ import type { ReactNode } from 'react'
 import { cn } from '@ui/cn'
 import styles from './Code.module.css'
 
-export interface CodeProps {
+interface CodeProps {
   className?: string
   children?: ReactNode
 }

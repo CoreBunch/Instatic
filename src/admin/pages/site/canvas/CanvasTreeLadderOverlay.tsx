@@ -25,7 +25,7 @@ import styles from './BreakpointSelectionOverlay.module.css'
 const EMPTY_STYLE_RULES: StyleRuleRegistry = {}
 const EMPTY_VISUAL_COMPONENTS: readonly VisualComponent[] = []
 
-export type CanvasOverlayPortalMode = 'scoped' | 'fixed'
+type CanvasOverlayPortalMode = 'scoped' | 'fixed'
 
 interface UseCanvasTreeLadderOverlayArgs {
   breakpointId: string

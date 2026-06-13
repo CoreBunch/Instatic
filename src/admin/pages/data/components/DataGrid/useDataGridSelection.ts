@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import type { DataRow } from '@core/data/schemas'
 
-export interface DataGridSelection {
+interface DataGridSelection {
   checkedIds: Set<string>
   /** How many of the currently-visible rows are checked. */
   checkedVisibleCount: number

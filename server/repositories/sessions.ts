@@ -14,7 +14,7 @@
 import type { DbClient } from '../db/client'
 import { isoDateOrNull } from '@core/utils/isoDate'
 
-export interface SessionListItem {
+interface SessionListItem {
   id: string                       // sha256 hash of the cookie token (same as session.id_hash)
   deviceLabel: string
   ipAddress: string | null

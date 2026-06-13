@@ -15,7 +15,7 @@ export interface MediaFolderNode {
   depth: number
 }
 
-export function compareFolders(a: CmsMediaFolder, b: CmsMediaFolder): number {
+function compareFolders(a: CmsMediaFolder, b: CmsMediaFolder): number {
   if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
   return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
 }

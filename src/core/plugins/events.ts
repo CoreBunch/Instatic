@@ -73,7 +73,7 @@ export const PluginEventSchema = Type.Union([
 
 export type PluginEvent = Static<typeof PluginEventSchema>
 
-export type PluginEventKind = PluginEvent['kind']
+type PluginEventKind = PluginEvent['kind']
 
 /**
  * Every event kind, derived from the schema variants. The SSE client
