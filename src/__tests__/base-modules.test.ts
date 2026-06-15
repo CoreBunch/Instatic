@@ -172,6 +172,62 @@ describe('base.text — unified text module', () => {
     expect(html).toBeCleanHTML()
     expect(html).toContain('&lt;script&gt;')
   })
+
+  // Canvas/publish DOM fidelity: `tag: none` emits NO element on the published
+  // page (render() returns bare text), so the canvas must do the same. A
+  // phantom wrapper (e.g. a `<span>`) would be caught by descendant selectors
+  // like `.parent span`, painting the text in the canvas but not on publish.
+  it('renders tag "none" as bare text with no wrapper element in the canvas', () => {
+    const { container } = renderReact(
+      React.createElement(TextModule.component, {
+        props: { text: '4', tag: 'none', htmlAttributes: {} },
+        nodeId: 'n1',
+        isSelected: false,
+        mcClassName: 'ist-x',
+        nodeWrapperProps: { 'data-node-id': 'n1', 'data-module-id': 'base.text', tabIndex: 0 },
+      } as never),
+    )
+
+    expect(container.textContent).toBe('4')
+    // No wrapping element at all — not a span, and nothing carrying the
+    // canvas identity/class that the publisher's bare text wouldn't have.
+    expect(container.querySelector('span')).toBeNull()
+    expect(container.querySelector('[data-node-id]')).toBeNull()
+    expect(container.querySelector('.ist-x')).toBeNull()
+  })
+
+  it('renders tag "none" multiline as bare text with <br> breaks and no wrapper', () => {
+    const { container } = renderReact(
+      React.createElement(TextModule.component, {
+        props: { text: 'a\nb', tag: 'none', htmlAttributes: {} },
+        nodeId: 'n1',
+        isSelected: false,
+        mcClassName: 'ist-x',
+        nodeWrapperProps: { 'data-node-id': 'n1', 'data-module-id': 'base.text', tabIndex: 0 },
+      } as never),
+    )
+
+    expect(container.querySelector('span')).toBeNull()
+    expect(container.querySelector('br')).not.toBeNull()
+    expect(container.textContent).toBe('ab')
+  })
+
+  it('still wraps a non-none tag in its element carrying the canvas identity', () => {
+    const { container } = renderReact(
+      React.createElement(TextModule.component, {
+        props: { text: '0', tag: 'span', htmlAttributes: {} },
+        nodeId: 'n1',
+        isSelected: false,
+        mcClassName: 'ist-x',
+        nodeWrapperProps: { 'data-node-id': 'n1', 'data-module-id': 'base.text', tabIndex: 0 },
+      } as never),
+    )
+
+    const span = container.querySelector('span')
+    expect(span).not.toBeNull()
+    expect(span?.getAttribute('data-node-id')).toBe('n1')
+    expect(span?.textContent).toBe('0')
+  })
 })
 
 // ---------------------------------------------------------------------------

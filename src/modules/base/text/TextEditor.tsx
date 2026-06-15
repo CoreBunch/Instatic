@@ -28,13 +28,16 @@ export const TextEditor: React.FC<ModuleComponentProps<TextStoredProps>> = ({
   inlineEdit,
 }) => {
   const tag = normalizeTag(props.tag)
-  const elementTag = tag === 'none' ? 'span' : tag
-  const Tag = elementTag as React.ElementType
 
   // Editing: the element becomes the contentEditable surface (content seeded
-  // from the frozen initial HTML inside inlineEditableElementProps).
+  // from the frozen initial HTML inside inlineEditableElementProps). `tag: none`
+  // has no published element, but an active edit session still needs a host —
+  // a `<span>` is the minimal one. This branch is effectively unreachable for
+  // tag:none from the canvas: the display branch below renders no element, so
+  // there is nothing to double-click to start a session.
   if (inlineEdit) {
-    return React.createElement(Tag, {
+    const EditTag = (tag === 'none' ? 'span' : tag) as React.ElementType
+    return React.createElement(EditTag, {
       ...nodeWrapperProps,
       ...(tag === 'none' ? {} : htmlAttributesForReact(props.htmlAttributes)),
       className: mcClassName,
@@ -42,12 +45,41 @@ export const TextEditor: React.FC<ModuleComponentProps<TextStoredProps>> = ({
     })
   }
 
+  // Display: `tag: none` emits NO element, exactly like the publisher
+  // (`src/modules/base/text/index.ts` render() returns bare text). Wrapping it
+  // in any element here would let descendant selectors such as `.parent span`
+  // paint the text in the canvas while leaving the published page untouched —
+  // a canvas/publish fidelity break. Bare text keeps the canvas DOM identical
+  // to the published DOM. The cost: a tag:none node owns no element, so it has
+  // no in-canvas selection ring / hover / inline-edit; it is selected and
+  // edited via the Layers + Properties panels instead.
+  if (tag === 'none') {
+    return <>{renderBreakNodes(props.text ?? '')}</>
+  }
+
   // Display: escaped text with newlines as <br>, matching the publisher.
   const html = rawTextToBreakHtml(props.text || 'Text')
+  const Tag = tag as React.ElementType
   return React.createElement(Tag, {
     ...nodeWrapperProps,
-    ...(tag === 'none' ? {} : htmlAttributesForReact(props.htmlAttributes)),
+    ...htmlAttributesForReact(props.htmlAttributes),
     className: mcClassName,
     dangerouslySetInnerHTML: { __html: html },
   })
+}
+
+/**
+ * Render a raw stored value as bare React nodes with `\n` → `<br>` breaks and
+ * no wrapping element. Mirrors the publisher's `textToBreakHtml` output for
+ * `tag: none` (bare text + `<br>`), but as React children so the canvas emits
+ * no host element. React escapes each text segment, matching the publisher's
+ * pre-escaped output.
+ */
+function renderBreakNodes(rawText: string): React.ReactNode {
+  return rawText.split('\n').map((segment, i) => (
+    <React.Fragment key={i}>
+      {i > 0 ? <br /> : null}
+      {segment}
+    </React.Fragment>
+  ))
 }
