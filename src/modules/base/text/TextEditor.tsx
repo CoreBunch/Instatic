@@ -54,7 +54,7 @@ export const TextEditor: React.FC<ModuleComponentProps<TextStoredProps>> = ({
   // no in-canvas selection ring / hover / inline-edit; it is selected and
   // edited via the Layers + Properties panels instead.
   if (tag === 'none') {
-    return <>{renderBreakNodes(props.text ?? '')}</>
+    return <BareText text={props.text ?? ''} />
   }
 
   // Display: escaped text with newlines as <br>, matching the publisher.
@@ -69,17 +69,18 @@ export const TextEditor: React.FC<ModuleComponentProps<TextStoredProps>> = ({
 }
 
 /**
- * Render a raw stored value as bare React nodes with `\n` → `<br>` breaks and
- * no wrapping element. Mirrors the publisher's `textToBreakHtml` output for
- * `tag: none` (bare text + `<br>`), but as React children so the canvas emits
- * no host element. React escapes each text segment, matching the publisher's
- * pre-escaped output.
+ * Bare text with `\n` → `<br>` breaks and NO wrapping element — a fragment, so
+ * it adds no host element to the canvas DOM. Mirrors the publisher's
+ * `textToBreakHtml` output for `tag: none` (bare text + `<br>`); React escapes
+ * each text segment, matching the publisher's pre-escaped output.
  */
-function renderBreakNodes(rawText: string): React.ReactNode {
-  return rawText.split('\n').map((segment, i) => (
-    <React.Fragment key={i}>
-      {i > 0 ? <br /> : null}
-      {segment}
-    </React.Fragment>
-  ))
-}
+const BareText: React.FC<{ text: string }> = ({ text }) => (
+  <>
+    {text.split('\n').map((segment, i) => (
+      <React.Fragment key={i}>
+        {i > 0 ? <br /> : null}
+        {segment}
+      </React.Fragment>
+    ))}
+  </>
+)
