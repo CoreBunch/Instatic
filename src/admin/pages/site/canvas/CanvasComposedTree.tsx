@@ -25,13 +25,14 @@
  * `OutletEditor`.
  */
 
-import { useEffect, useRef, type ReactNode } from 'react'
+import { use, useEffect, useRef, type ReactNode } from 'react'
 import type { BaseNode, Page } from '@core/page-tree'
 import { classNamesForClassIds } from '@core/page-tree'
 import { useEditorStore } from '@site/store/store'
 import { ReadOnlyNodeTree } from '@modules/base/utils/ReadOnlyNodeTree'
 import { NodeRenderer } from './NodeRenderer'
 import { resolveEditorWrapperTemplates } from './canvasComposition'
+import { CanvasTemplateContext } from './CanvasContexts'
 
 const NO_WRAPPERS: Page[] = []
 
@@ -44,6 +45,7 @@ export function CanvasComposedTree({ page }: CanvasComposedTreeProps) {
   const site = useEditorStore((s) => s.site)
   const isVcMode = useEditorStore((s) => s.activeDocument?.kind === 'visualComponent')
   const styleRules = useEditorStore((s) => s.site?.styleRules ?? null)
+  const templateContext = use(CanvasTemplateContext)
 
   // Templates wrapping the active document (outermost-first). A Visual
   // Component edit surface is never a published route, so it is never wrapped.
@@ -75,6 +77,7 @@ export function CanvasComposedTree({ page }: CanvasComposedTreeProps) {
         classes={styleRules}
         outletSlot={composed}
         readonly={{ label: `${wrapper.title} template`, kind: 'page', targetId: wrapper.id }}
+        templateContext={templateContext}
       />
     )
   }

@@ -149,6 +149,98 @@ describe('canvas template preview bindings', () => {
       expect(combinedCanvasText()).toContain('No image selected')
     })
   })
+
+  it('resolves loop currentEntry tokens when an everywhere template previews a page in its outlet', async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/admin/api/cms/data/tables/posts') {
+        return new Response(JSON.stringify({ table: postsTable }), { status: 200 })
+      }
+      if (url.startsWith('/admin/api/cms/data/tables/posts/loop-preview')) {
+        return new Response(JSON.stringify({
+          items: [
+            {
+              id: 'post-1',
+              fields: {
+                id: 'post-1',
+                title: 'Published Blog Post',
+                slug: 'published-blog-post',
+                body: 'Body',
+                permalink: '/posts/published-blog-post',
+                publishedAt: '2026-05-01T10:00:00.000Z',
+              },
+            },
+          ],
+          totalItems: 1,
+        }), { status: 200 })
+      }
+      if (url === '/admin/api/cms/data/tables') {
+        return new Response(JSON.stringify({ tables: [postsTable] }), { status: 200 })
+      }
+
+      return new Response('{}', { status: 404 })
+    }) as typeof fetch
+
+    const mainRoot = makeNode({ id: 'main-root', moduleId: 'base.body', children: ['main-outlet'] })
+    const mainOutlet = makeNode({ id: 'main-outlet', moduleId: 'base.outlet', props: {} })
+    const mainTemplate = makePage({
+      id: 'main-template',
+      title: 'Main',
+      slug: 'main',
+      rootNodeId: 'main-root',
+      nodes: { 'main-root': mainRoot, 'main-outlet': mainOutlet },
+      template: {
+        enabled: true,
+        target: { kind: 'everywhere' },
+        priority: 100,
+      },
+    })
+
+    const blogRoot = makeNode({ id: 'blog-root', moduleId: 'base.body', children: ['post-loop'] })
+    const postLoop = makeNode({
+      id: 'post-loop',
+      moduleId: 'base.loop',
+      props: {
+        sourceId: 'data.rows',
+        filters: { tableId: 'posts' },
+        orderBy: 'publishedAt',
+        direction: 'desc',
+        limit: 6,
+        offset: 0,
+        pagination: 'none',
+        pageSize: 10,
+        tag: 'section',
+        customTag: '',
+      },
+      children: ['post-title'],
+    })
+    const postTitle = makeNode({
+      id: 'post-title',
+      moduleId: 'base.text',
+      props: { text: '{currentEntry.title}', tag: 'h2' },
+    })
+    const blogPage = makePage({
+      id: 'blog',
+      title: 'Blog',
+      slug: 'blog',
+      rootNodeId: 'blog-root',
+      nodes: { 'blog-root': blogRoot, 'post-loop': postLoop, 'post-title': postTitle },
+    })
+
+    useEditorStore.setState({
+      site: makeSite({ pages: [mainTemplate, blogPage] }),
+      activePageId: mainTemplate.id,
+      activeDocument: { kind: 'page', pageId: mainTemplate.id },
+    } as Parameters<typeof useEditorStore.setState>[0])
+
+    renderCanvas()
+
+    await waitFor(() => {
+      const text = combinedCanvasText()
+      expect(text).toContain('Published Blog Post')
+      expect(text).not.toContain('{currentEntry.title}')
+    })
+  })
 })
 
 function canvasFrameDocs(): Document[] {

@@ -101,6 +101,27 @@ describe('ReadOnlyNodeTree — inline styles', () => {
   })
 })
 
+describe('ReadOnlyNodeTree — dynamic preview context', () => {
+  it('resolves currentEntry tokens in read-only template previews', () => {
+    const nodes: Record<string, BaseNode> = {
+      h1: textNode('h1', {
+        props: { text: '{currentEntry.title}', tag: 'h1', htmlAttributes: {} },
+      }),
+    }
+    const { container } = render(
+      <ReadOnlyNodeTree
+        nodes={nodes}
+        rootNodeId="h1"
+        classes={{}}
+        templateContext={{ entryStack: [{ id: 'post-1', fields: { title: 'Dynamic Post' } }] }}
+      />,
+    )
+    const h1 = container.querySelector('h1')
+    expect(h1).not.toBeNull()
+    expect(h1!.textContent).toBe('Dynamic Post')
+  })
+})
+
 describe('bagToReactStyle', () => {
   it('passes fluid values like clamp() through unchanged', () => {
     expect(bagToReactStyle({ fontSize: 'clamp(46px, 10.5vw, 138px)' })).toEqual({
