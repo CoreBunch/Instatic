@@ -17,10 +17,17 @@
  *   - Convert selection to Visual Component
  */
 
+import { getParent } from '@core/page-tree'
 import type { Command } from '../types'
 
 const hasSelection = (ctx: { editor?: { selectedNodeIds: ReadonlyArray<string> } }) =>
   (ctx.editor?.selectedNodeIds.length ?? 0) > 0
+
+async function getActiveLayerTree() {
+  const { useEditorStore, selectActiveCanvasPage } = await import('@site/store/store')
+  const store = useEditorStore.getState()
+  return { store, page: selectActiveCanvasPage(store) }
+}
 
 export function getLayersCommands(): Command[] {
   return [
@@ -286,18 +293,14 @@ export function getLayersCommands(): Command[] {
         const nodeId = ctx.editor?.selectedNodeIds[ctx.editor.selectedNodeIds.length - 1]
         if (!nodeId) return
         try {
-          const { useEditorStore } = await import('@site/store/store')
-          const store = useEditorStore.getState()
-          const page = store.site?.pages.find((p) => p.id === store.activePageId)
+          const { store, page } = await getActiveLayerTree()
           if (!page) return
-          const parentId = page.nodes[nodeId]?.parentId
-          if (!parentId) return
-          const parent = page.nodes[parentId]
+          const parent = getParent(page, nodeId)
           if (!parent) return
           const siblings = parent.children ?? []
           const idx = siblings.indexOf(nodeId)
           if (idx <= 0) return
-          store.moveNode(nodeId, parentId, idx - 1)
+          store.moveNode(nodeId, parent.id, idx - 1)
         } catch (err) {
           console.error('[spotlight] moveNode up failed:', err)
         }
@@ -320,18 +323,14 @@ export function getLayersCommands(): Command[] {
         const nodeId = ctx.editor?.selectedNodeIds[ctx.editor.selectedNodeIds.length - 1]
         if (!nodeId) return
         try {
-          const { useEditorStore } = await import('@site/store/store')
-          const store = useEditorStore.getState()
-          const page = store.site?.pages.find((p) => p.id === store.activePageId)
+          const { store, page } = await getActiveLayerTree()
           if (!page) return
-          const parentId = page.nodes[nodeId]?.parentId
-          if (!parentId) return
-          const parent = page.nodes[parentId]
+          const parent = getParent(page, nodeId)
           if (!parent) return
           const siblings = parent.children ?? []
           const idx = siblings.indexOf(nodeId)
           if (idx < 0 || idx >= siblings.length - 1) return
-          store.moveNode(nodeId, parentId, idx + 1)
+          store.moveNode(nodeId, parent.id, idx + 1)
         } catch (err) {
           console.error('[spotlight] moveNode down failed:', err)
         }
@@ -355,13 +354,11 @@ export function getLayersCommands(): Command[] {
         const nodeId = ctx.editor?.selectedNodeIds[ctx.editor.selectedNodeIds.length - 1]
         if (!nodeId) return
         try {
-          const { useEditorStore } = await import('@site/store/store')
-          const store = useEditorStore.getState()
-          const page = store.site?.pages.find((p) => p.id === store.activePageId)
+          const { store, page } = await getActiveLayerTree()
           if (!page) return
-          const parentId = page.nodes[nodeId]?.parentId
-          if (!parentId) return
-          store.selectNode(parentId)
+          const parent = getParent(page, nodeId)
+          if (!parent) return
+          store.selectNode(parent.id)
         } catch (err) {
           console.error('[spotlight] selectParent failed:', err)
         }
@@ -385,9 +382,7 @@ export function getLayersCommands(): Command[] {
         const nodeId = ctx.editor?.selectedNodeIds[ctx.editor.selectedNodeIds.length - 1]
         if (!nodeId) return
         try {
-          const { useEditorStore } = await import('@site/store/store')
-          const store = useEditorStore.getState()
-          const page = store.site?.pages.find((p) => p.id === store.activePageId)
+          const { store, page } = await getActiveLayerTree()
           if (!page) return
           const node = page.nodes[nodeId]
           const firstChild = node?.children?.[0]
