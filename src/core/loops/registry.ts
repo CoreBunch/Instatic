@@ -1,7 +1,7 @@
 /**
  * LoopSourceRegistry — singleton holding registered LoopEntitySources.
  *
- * Built-in sources (content.entries, site.pages, site.media) self-register
+ * Built-in sources (data.rows, site.pages, site.media) self-register
  * on import via `src/core/loops/sources/index.ts`. Plugins register
  * additional sources through the plugin SDK.
  *
@@ -21,7 +21,7 @@ class LoopSourceRegistry implements ILoopSourceRegistry {
     if (!id || !id.includes('.')) {
       throw new Error(
         `[LoopSourceRegistry] Invalid source ID "${id}". ` +
-          `IDs must be namespaced: "namespace.source-name" (e.g. "content.entries").`,
+          `IDs must be namespaced: "namespace.source-name" (e.g. "data.rows").`,
       )
     }
   }

@@ -10,7 +10,7 @@ The agent runs on a provider-agnostic AI runtime (`server/ai/`) that can drive a
 
 - **Structure via HTML.** `insertHtml` and `replaceNodeHtml` accept semantic HTML strings; the browser executor calls `importHtml` (the same pipeline as the paste-HTML UI) to convert them into first-class, editable `PageNode`s.
 - **Styling via CSS.** The agent emits CSS the same way a human pastes it: a `<style>` block and/or `class=` attributes inside the `insertHtml`/`replaceNodeHtml` payload, or the standalone `applyCss` tool. The importer (`cssToStyleRules`) classifies every selector — a bare `.foo {}` rule becomes a reusable Selectors-panel class bound to `class="foo"`; any other selector (`.hero a`, `a:hover`, `nav > li`) becomes an ambient rule; `style=` attributes land on the node's inline styles. There is no structured `classes` parameter — the agent never hand-builds classes node-by-node at insert time. `applyCss` is the single tool for authoring/editing CSS on its own; it **upserts**, so re-applying a selector edits the existing rule (the way descendant/pseudo rules get restyled).
-- **28 tools total.** 6 server-side read tools (resolved server-side from the posted snapshot) + 22 browser-bridged write tools.
+- **29 tools total.** 7 server-side read tools (resolved server-side from the posted snapshot / DB) + 22 browser-bridged write tools.
 - **Two-endpoint bridge.** `POST /admin/api/ai/chat/site` opens an NDJSON stream. When the model calls a write tool, the server emits `toolRequest`; the browser executor applies it to the editor store and POSTs the `AiToolOutput` result to `POST /admin/api/ai/tool-result`.
 - **Provider-agnostic.** The runtime selects a driver (Anthropic, OpenAI, OpenRouter, Ollama) from the conversation's configured credential.
 - **Tool input schemas are a single source of truth** in `@core/ai` (`src/core/ai/toolSchemas.ts`). The server tool registry (`server/ai/tools/site/writeTools.ts`) and the browser executor (`executor.ts` + `tokenRunners.ts`) import the exact same schema objects — a constraint added once is enforced on both sides at build time. Gated by `ai-tool-schema-ssot.test.ts` and `ai-tools-typebox-only.test.ts`.
@@ -49,7 +49,7 @@ server/ai/
 ├── tools/
 │   ├── site/
 │   │   ├── writeTools.ts      — 22 browser-bridged write tools (TypeBox schemas)
-│   │   ├── readTools.ts       — 6 server-side read tools
+│   │   ├── readTools.ts       — 7 server-side read tools
 │   │   ├── render.ts          — server-side page render (`renderAgentPage`) + catalog derivations (`describeAgentModules`, `describeAgentTokens`, `filterTokenFamily`)
 │   │   ├── systemPrompt.ts    — HTML-native static prefix + buildDynamicSuffix
 │   │   └── snapshot.ts        — `SiteAgentSnapshotSchema` + `SiteAgentSnapshot` re-export + catalog output types (ModuleInfo, SnapshotTokens, …)
@@ -281,9 +281,9 @@ Requires `ai.tools.write`. Calls `resolveBridgeToolResult(bridgeId, requestId, r
 
 ## Tools
 
-### Read tools — 6, server-side
+### Read tools — 7, server-side
 
-Resolved server-side from the posted `SiteAgentSnapshot` (or, for `list_post_types`, the data repositories via `ctx.db`). No browser round-trip. Results are returned directly to the model.
+Resolved server-side from the posted `SiteAgentSnapshot` or the data repositories via `ctx.db`. No browser round-trip. Results are returned directly to the model.
 
 | Tool              | What it returns                                                         |
 |-------------------|-------------------------------------------------------------------------|
@@ -292,6 +292,7 @@ Resolved server-side from the posted `SiteAgentSnapshot` (or, for `list_post_typ
 | `list_breakpoints`| Configured breakpoints + active id                                      |
 | `list_pages`      | All pages in the site (id, title, slug, active, isHomepage, and `template`: `null` or `{ target, priority }`) |
 | `list_post_types` | Routable collections eligible as a `postTypes` template target — `{ slug, label, routeBase, kind }` per entry, filtered to a non-empty `routeBase`. Queries the data repositories via `ctx.db` |
+| `list_loop_sources` | Loop source ids, source fields, order/filter options, and data-table field catalogs with valid `{currentEntry.field}` tokens. For post/custom table loops, use source id `data.rows`, the returned table `id` as `<instatic-loop data-table-id>`, and the returned tokens inside the loop body |
 | `list_tokens`     | Design tokens: colors (with shades/tints), typography/spacing scale steps, font tokens — each with CSS variable + utility classes; optional `family` filter (`colors`\|`typography`\|`spacing`\|`fonts`) |
 
 ### Write tools — 22, browser-bridged
@@ -302,7 +303,7 @@ All 22 tools carry `execution: 'browser'` in their `AiTool` definition. The serv
 
 | Tool              | Input                                  | Success `data`                        | What it does                                           |
 |-------------------|----------------------------------------|---------------------------------------|--------------------------------------------------------|
-| `insertHtml`      | `{ parentId, index?, html }`           | `{ nodeIds }` or `{ cssRulesCreated, cssRulesUpdated }` | Parse HTML (+ any `<style>` CSS) → import as `PageNode`s under `parentId`. A `<style>`-only payload (no elements) upserts CSS rules without inserting nodes (prefer `applyCss` for that) |
+| `insertHtml`      | `{ parentId, index?, html }`           | `{ nodeIds }` or `{ cssRulesCreated, cssRulesUpdated }` | Parse HTML (+ any `<style>` CSS) → import as `PageNode`s under `parentId`. Custom `<instatic-loop>` elements import as real Loop nodes; `<instatic-outlet>` imports as a template outlet. A `<style>`-only payload (no elements) upserts CSS rules without inserting nodes (prefer `applyCss` for that) |
 | `getNodeHtml`     | `{ nodeId }`                           | `{ html }`                            | Render subtree to HTML via the publisher's `renderNode`|
 | `replaceNodeHtml` | `{ nodeId, html }`                     | `{ nodeIds }` or `{ cssRulesCreated, cssRulesUpdated }` | Delete existing children; re-import HTML under the same parent. A `<style>`-only payload upserts CSS rules WITHOUT touching the children |
 
@@ -318,6 +319,21 @@ Styling rides on the `html` payload — there is no separate `classes` parameter
 **Authoring CSS with `applyCss`.** `applyCss({ css })` is the single tool for CSS that isn't attached to inserted structure. The agent passes real CSS text (e.g. `".hero a:hover { color: var(--primary) }"`); it runs through the same `cssToStyleRules` classifier and is **upserted** into the registry by `upsertCssRules`: a bare `.foo {}` selector creates or edits a reusable class, any other selector (`.hero a`, `a:hover`, `nav > li`, `::before`, `h1`) creates or edits an ambient rule, `@media` folds into per-breakpoint/condition overrides, and supported `@keyframes` become ambient raw CSS rules. Re-applying a selector **merges** onto the existing rule — so the same tool both creates new styles and restyles existing descendant/pseudo rules (the case the retired `updateClassStyles` could not express). Returns `{ cssRulesCreated, cssRulesUpdated }`. Framework-generated token/utility classes are never overwritten. `insertHtml`/`replaceNodeHtml` also accept a `<style>`-only payload and route it through the same upsert as a forgiving fallback, but `applyCss` is the canonical path.
 
 Note the deliberate split: `applyCss` and `<style>`-only payloads **upsert** (the agent's intent is to author/edit CSS), whereas a `<style>` block that accompanies *elements* in an insert is **additive** (`mergeImportedStyleRules` — it never clobbers a shared class as a side effect of dropping in structure).
+
+**Loops through HTML.** A repeated list is authored with the custom importer marker:
+
+```html
+<instatic-loop data-source-id="data.rows" data-table-id="<table id>" data-order-by="publishedAt" data-direction="desc" data-limit="3">
+  <article>
+    <a href="{currentEntry.permalink}">
+      <img src="{currentEntry.featuredMedia}">
+      <h3>{currentEntry.title}</h3>
+    </a>
+  </article>
+</instatic-loop>
+```
+
+The agent calls `list_loop_sources` first to get the valid source id, data table id, order options, and field tokens. The token grammar is single-brace `{currentEntry.field}`; aliases such as `{{post.title}}` are invalid and should never be generated.
 
 **Node edits**
 
@@ -433,7 +449,7 @@ The previous tool surface required the model to reference internal module ids (`
 
 The same importer that powers the Agent's `insertHtml` tool also powers the paste-HTML UI — see `docs/features/html-import.md`. No duplicated mapping logic.
 
-**Reads are HTML-native.** The `read_page` tool replaced the five JSON page-tree tools (`inspect_page`, `inspect_node`, `search_nodes`, `list_classes`, `inspect_class`). The `snapshot-tokens` benchmark compares that retired JSON surface with the live `read_page` tool result. `read_page` renders the active page via `publishPage(..., { annotateNodeIds: true })`, returning an annotated `<body>` where every element carries `uid="<nodeId>"`, plus page-relevant CSS rather than the public full-site CSS bundle. The response is cleaned and size-budgeted; if `pageInfo.nextPart` is set, subsequent `read_page({ part })` calls return the remaining cleaned ranges. The agent reads `uid` values from the HTML and passes them verbatim to write tools — no separate node-lookup round-trip. Catalog tools (`list_modules`, `list_tokens`, `list_pages`, `list_breakpoints`) describe things not visible in the page HTML (what is insertable, design token CSS vars, page list) and remain as JSON tools.
+**Reads are HTML-native.** The `read_page` tool replaced the five JSON page-tree tools (`inspect_page`, `inspect_node`, `search_nodes`, `list_classes`, `inspect_class`). The `snapshot-tokens` benchmark compares that retired JSON surface with the live `read_page` tool result. `read_page` renders the active page via `publishPage(..., { annotateNodeIds: true })`, returning an annotated `<body>` where every element carries `uid="<nodeId>"`, plus page-relevant CSS rather than the public full-site CSS bundle. The response is cleaned and size-budgeted; if `pageInfo.nextPart` is set, subsequent `read_page({ part })` calls return the remaining cleaned ranges. The agent reads `uid` values from the HTML and passes them verbatim to write tools — no separate node-lookup round-trip. Catalog tools (`list_modules`, `list_tokens`, `list_pages`, `list_post_types`, `list_loop_sources`, `list_breakpoints`) describe things not visible in the page HTML (what is insertable, design token CSS vars, page list, CMS route targets, and loop binding fields) and remain as JSON tools.
 
 ---
 
@@ -578,7 +594,7 @@ When `POST /admin/api/ai/credentials` creates a new credential, `seedEmptyDefaul
   - `src/core/ai/toolSchemas.ts` — all site write-tool input schemas (single source of truth; imported by both the server registry and the browser executor)
   - `src/core/ai/index.ts` — barrel re-exporting the above
   - `server/ai/tools/site/writeTools.ts` — 22 browser-bridged write tool definitions (uses `@core/ai` input schemas)
-  - `server/ai/tools/site/readTools.ts` — 6 server-side read tool definitions
+  - `server/ai/tools/site/readTools.ts` — 7 server-side read tool definitions
   - `server/ai/tools/site/render.ts` — `renderAgentPage`, `describeAgentModules`, `describeAgentTokens`, `filterTokenFamily`
   - `server/ai/tools/site/systemPrompt.ts` — HTML-native system prompt
   - `server/ai/tools/site/snapshot.ts` — `SiteAgentSnapshotSchema` + `SiteAgentSnapshot` re-export + catalog output types (`ModuleInfo`, `SnapshotTokens`, …)

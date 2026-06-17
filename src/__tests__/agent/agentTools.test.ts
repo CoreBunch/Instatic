@@ -45,6 +45,7 @@ describe('site read tools', () => {
   it('exposes exactly read_page + the catalog tools', () => {
     expect(siteReadTools.map((t) => t.name).sort()).toEqual([
       'list_breakpoints',
+      'list_loop_sources',
       'list_modules',
       'list_pages',
       'list_post_types',
@@ -58,6 +59,58 @@ describe('site read tools', () => {
     expect(tool.execution).toBe('server')
     expect(tool.mutates).toBeFalsy()
     expect(typeof tool.handler).toBe('function')
+  })
+
+  it('list_loop_sources exposes source ids, data table ids, and valid currentEntry tokens', async () => {
+    const tool = siteReadTools.find((t) => t.name === 'list_loop_sources')!
+    const ctx = {
+      snapshot: snapshot(),
+      db: async () => ({
+        rows: [
+          {
+            id: 'tbl_posts',
+            name: 'Posts',
+            slug: 'posts',
+            kind: 'postType',
+            route_base: '/posts',
+            singular_label: 'Post',
+            plural_label: 'Posts',
+            primary_field_id: 'title',
+            fields_json: [
+              { id: 'title', label: 'Title', type: 'text', required: true, builtIn: true },
+              { id: 'featuredMedia', label: 'Featured media', type: 'media', mediaKind: 'image', builtIn: true },
+              { id: 'readTime', label: 'Read time', type: 'text' },
+            ],
+            system: true,
+            created_by_user_id: null,
+            updated_by_user_id: null,
+            created_at: '2026-01-01T00:00:00.000Z',
+            updated_at: '2026-01-01T00:00:00.000Z',
+            row_count: 2,
+          },
+        ],
+      }),
+    } as unknown as ToolContext
+
+    const result = (await tool.handler!({}, ctx)) as {
+      sources: Array<{ id: string; fields: Array<{ id: string; token: string }> }>
+      dataTables: Array<{ id: string; slug: string; fields: Array<{ id: string; token: string }> }>
+    }
+
+    expect(result.sources.find((s) => s.id === 'data.rows')?.fields).toContainEqual(
+      expect.objectContaining({ id: 'permalink', token: '{currentEntry.permalink}' }),
+    )
+    expect(result.dataTables).toContainEqual(
+      expect.objectContaining({
+        id: 'tbl_posts',
+        slug: 'posts',
+        fields: expect.arrayContaining([
+          expect.objectContaining({ id: 'title', token: '{currentEntry.title}' }),
+          expect.objectContaining({ id: 'featuredMedia', token: '{currentEntry.featuredMedia}' }),
+          expect.objectContaining({ id: 'readTime', token: '{currentEntry.readTime}' }),
+        ]),
+      }),
+    )
   })
 
   it('read_page returns annotated HTML + a <style> css bundle with paging metadata', async () => {

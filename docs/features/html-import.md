@@ -96,6 +96,7 @@ Callers splice the fragment into the page tree via `insertImportedNodes(parentId
 | Selector | Module | Props set | Recurse |
 |---|---|---|---|
 | `instatic-outlet` | `base.outlet` | none (the CMS content outlet) | **No** |
+| `instatic-loop` | `base.loop` | `sourceId`, `filters.tableId`, `orderBy`, `direction`, `limit`, `offset`, `pagination`, `pageSize`, optional `tag` / `customTag` from `data-*` attrs | Yes |
 | `h1`–`h6`, `p`, `span`, `small`, `strong`, `em` | `base.text` | `text` = `el.textContent`, `tag` = tag name | No |
 | `a` with class `btn` | `base.button` | `label` = `el.textContent`, `href`, `target` | No |
 | `a` (no `btn` class) | `base.link` | `text` = `el.textContent`, `href`, `target` | No |
@@ -116,6 +117,7 @@ Callers splice the fragment into the page tree via `insertImportedNodes(parentId
 **Key details:**
 
 - **`<instatic-outlet>` → `base.outlet`.** The custom element marks where matched content flows in a CMS template. It maps to a childless `base.outlet` node (any inner markup is ignored — the composer fills it). This rule lets the AI agent and hand-authored template HTML place the single content outlet inline via the normal import path. See [templates.md](templates.md) and [agent.md](agent.md).
+- **`<instatic-loop>` → `base.loop`.** The custom element lets the AI agent and hand-authored snippets create a real Loop through the same HTML import path. Children recurse normally and become loop variants. Loop configuration is read from attributes: `data-source-id`, `data-table-id` (stored as `filters.tableId`), `data-order-by`, `data-direction`, `data-limit`, `data-offset`, `data-pagination`, `data-page-size`, and optional `data-tag` / `data-custom-tag`. See [loops.md](loops.md) and [agent.md](agent.md).
 - `base.text` uses `tag` (not a separate `level` or heading prop) — the tag name is passed through directly. Imported bare DOM text uses `tag: 'none'`, which publishes text without an element wrapper.
 - **Direct text inside a recursing container is preserved.** The walker iterates `childNodes` (not just `children`): element children route through the rules, and each significant text node becomes a synthesized `base.text` child with `tag: 'none'` in document order. That no-wrapper text mode publishes back to bare text, so `<div class="num">98%</div>` and `<li>Buy milk</li>` import as containers holding their original text without adding selector-visible wrapper elements. Whitespace-only text (indentation between tags) is skipped; internal whitespace runs collapse to single spaces, and boundary spaces are kept when the text run sits between element siblings.
 - **`<body>` metadata is preserved separately.** Classes, safe HTML attributes (`id`, ARIA, `data-*`, etc.), and harvested inline styles on `<body>` are returned as `fragment.body` rather than inserted into `rootIds`. Full-site import applies them to `base.body`; paste-style HTML import can ignore them without changing the fragment structure.

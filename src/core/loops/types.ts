@@ -14,7 +14,7 @@
  * featured media) happen in the source's `fetch()` so the resolver stays
  * a one-line lookup.
  *
- * IDs MUST be namespaced (e.g. `content.entries`, `site.pages`,
+ * IDs MUST be namespaced (e.g. `data.rows`, `site.pages`,
  * `acme.products`) so plugins can't shadow built-in sources. Enforced by
  * the registry and by the architecture test
  * `loop-source-id-format.test.ts`.
@@ -54,7 +54,7 @@ export interface LoopSourceField {
 /**
  * A single item produced by a `LoopEntitySource`. The `fields` map carries
  * resolved values — never IDs that need a second lookup. For example, a
- * `content.entries` LoopItem stores `featuredMediaPath` (the resolved
+ * `data.rows` LoopItem stores `featuredMediaPath` (the resolved
  * public URL) rather than just `featuredMediaId`.
  *
  * The shape is intentionally generic across source types so that the same
@@ -177,7 +177,7 @@ export interface LoopFetchResult {
  * (see `src/core/plugin-sdk`).
  */
 export interface LoopEntitySource {
-  /** Namespaced ID, e.g. `content.entries`, `site.pages`, `acme.products`. */
+  /** Namespaced ID, e.g. `data.rows`, `site.pages`, `acme.products`. */
   id: string
   /** Human label for the source picker. */
   label: string
@@ -191,7 +191,7 @@ export interface LoopEntitySource {
    * the Layer B render cache or a Layer C hole.
    *
    * Default (`false` / unset): the source is publish-time-deterministic.
-   * Built-in sources (`content.entries`, `site.pages`, `site.media`) all
+   * Built-in sources (`data.rows`, `site.pages`, `site.media`) all
    * leave this unset — they pull from the CMS database at publish time and
    * bake the result into the static HTML. Plugin sources that hit live
    * external APIs should set this to `true`.

@@ -75,7 +75,7 @@ const insertHtmlTool: AiTool = {
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
   description:
-    'Insert semantic HTML as a subtree of editable nodes under an existing parent. Write structure as HTML (<section>, <h1>, <a>, <button>, <img>, <ul>, ...) and style it with CSS in the same call: put a <style> block in the HTML and/or class= attributes. The importer parses every rule — a bare `.foo {}` selector becomes a reusable Selectors-panel class bound to class="foo"; any other selector (`.hero a`, `a:hover`, `nav > li`) becomes an ambient rule. Inline style= attributes land on the node\'s inline styles. To author or edit CSS on its own — pseudo/hover/descendant selectors, or restyling existing rules — use the dedicated applyCss tool instead (insertHtml is for inserting structure).',
+    'Insert semantic HTML as a subtree of editable nodes under an existing parent. Write structure as HTML (<section>, <h1>, <a>, <button>, <img>, <ul>, ...) and style it with CSS in the same call: put a <style> block in the HTML and/or class= attributes. Custom importer markers: <instatic-loop data-source-id="…" ...> creates a real Loop node (call list_loop_sources first for source/table ids and {currentEntry.*} tokens); <instatic-outlet> creates a template content outlet. The importer parses every rule — a bare `.foo {}` selector becomes a reusable Selectors-panel class bound to class="foo"; any other selector (`.hero a`, `a:hover`, `nav > li`) becomes an ambient rule. Inline style= attributes land on the node\'s inline styles. To author or edit CSS on its own — pseudo/hover/descendant selectors, or restyling existing rules — use the dedicated applyCss tool instead (insertHtml is for inserting structure).',
   inputSchema: InsertHtmlInputSchema,
 }
 
@@ -94,7 +94,7 @@ const replaceNodeHtmlTool: AiTool = {
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
   description:
-    "Replace a node subtree's children with new HTML. The target node is preserved as the parent; its existing children are rebuilt from the HTML. Style with CSS exactly as in insertHtml: a <style> block and/or class= attributes; bare `.foo` selectors become reusable classes, other selectors become ambient rules. To author or edit CSS on its own (without rebuilding children), use the dedicated applyCss tool instead.",
+    "Replace a node subtree's children with new HTML. The target node is preserved as the parent; its existing children are rebuilt from the HTML. Style with CSS exactly as in insertHtml: a <style> block and/or class= attributes; bare `.foo` selectors become reusable classes, other selectors become ambient rules. Custom importer markers work here too: <instatic-loop data-source-id=\"…\" ...> creates a real Loop node and <instatic-outlet> creates a template content outlet. To author or edit CSS on its own (without rebuilding children), use the dedicated applyCss tool instead.",
   inputSchema: ReplaceNodeHtmlInputSchema,
 }
 

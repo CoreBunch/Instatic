@@ -7,7 +7,7 @@
  * children cycle (1,2,3,1,2,3…). Empty list of children renders nothing.
  *
  * Data comes from a registered `LoopEntitySource` (see
- * `src/core/loops/types.ts`). Built-ins are content.entries, site.pages,
+ * `src/core/loops/types.ts`). Built-ins are data.rows, site.pages,
  * site.media. Plugins can register more.
  *
  * The publisher's `renderLoop()` interceptor handles rendering — this

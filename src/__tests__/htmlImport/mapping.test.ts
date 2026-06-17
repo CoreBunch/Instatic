@@ -1270,6 +1270,47 @@ describe('base.outlet — <instatic-outlet>', () => {
 })
 
 // ---------------------------------------------------------------------------
+// base.loop — <instatic-loop> custom element
+// ---------------------------------------------------------------------------
+
+describe('base.loop — <instatic-loop>', () => {
+  it('maps <instatic-loop> to a configured base.loop node with child variants', () => {
+    const result = importHtml(`
+      <instatic-loop
+        class="cards"
+        data-source-id="data.rows"
+        data-table-id="tbl_posts"
+        data-order-by="publishedAt"
+        data-direction="desc"
+        data-limit="3"
+        data-offset="1"
+        data-pagination="infinite"
+        data-page-size="2"
+      >
+        <article><h2>{currentEntry.title}</h2></article>
+      </instatic-loop>
+    `)
+
+    expect(result.rootIds).toHaveLength(1)
+    const loop = result.nodes[result.rootIds[0]!]!
+    expect(loop.moduleId).toBe('base.loop')
+    expect(loop.classIds).toEqual(['cards'])
+    expect(loop.props).toEqual(expect.objectContaining({
+      sourceId: 'data.rows',
+      filters: { tableId: 'tbl_posts' },
+      orderBy: 'publishedAt',
+      direction: 'desc',
+      limit: 3,
+      offset: 1,
+      pagination: 'infinite',
+      pageSize: 2,
+    }))
+    expect(loop.children).toHaveLength(1)
+    expect(result.nodes[loop.children[0]!]!.moduleId).toBe('base.container')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // 13. Empty input and edge cases
 // ---------------------------------------------------------------------------
 

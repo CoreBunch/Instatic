@@ -161,7 +161,7 @@ See [docs/features/visual-components.md](visual-components.md) for the VC modeli
 
 When the walker hits a `base.loop` node, it calls `renderLoop`:
 
-1. Resolves the loop's entity source (a built-in source like `content.entries`, `site.pages`, `site.media`, or a plugin-registered source).
+1. Resolves the loop's entity source (a built-in source like `data.rows`, `site.pages`, `site.media`, or a plugin-registered source).
 2. Pulls items from the loop fetch result (pre-warmed by `loopPrefetch.ts` during publish).
 3. Walks the loop's child variants in round-robin. For each item it derives a fresh child `RenderConfig` whose `templateContext.entryStack` is a **new array** `[...baseStack, item]` — there is no in-place push/pop on a shared array, so child nodes' `dynamicBindings` resolve `currentEntry.<field>` against that item while a VC ref (or nested loop) in the body sees an immutable per-iteration snapshot. The outer config is never mutated, so the loop's siblings keep seeing the outer template entry.
 4. Concatenates the rendered variant HTML and returns it. If `pagination === 'infinite'`, the loop id is added to `acc.infiniteLoopIds` so `publishPage` knows to inject the loop runtime.

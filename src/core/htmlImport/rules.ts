@@ -88,6 +88,10 @@ function optionalFormIdentifier(el: Element): string {
   return normalizeIdentifierValue(attr(el, 'form'))
 }
 
+function integerAttr(el: Element, name: string, fallback: number, min: number): number {
+  return Math.max(min, Math.floor(numberAttr(el, name, fallback)))
+}
+
 function normalizeInputType(el: Element): typeof TEXT_INPUT_TYPES[number] {
   const type = normalizedAttr(el, 'type') || 'text'
   return TEXT_INPUT_TYPES.includes(type as typeof TEXT_INPUT_TYPES[number])
@@ -105,6 +109,23 @@ function submitLabel(el: Element): string {
   return label || 'Submit'
 }
 
+function mapLoopProps(el: Element): Record<string, unknown> {
+  const tableId = attr(el, 'data-table-id')
+  const customTag = attr(el, 'data-custom-tag')
+  const tag = attr(el, 'data-tag')
+  return {
+    sourceId: attr(el, 'data-source-id'),
+    filters: tableId ? { tableId } : {},
+    orderBy: attr(el, 'data-order-by'),
+    direction: normalizedAttr(el, 'data-direction') === 'asc' ? 'asc' : 'desc',
+    limit: integerAttr(el, 'data-limit', 10, 1),
+    offset: integerAttr(el, 'data-offset', 0, 0),
+    pagination: normalizedAttr(el, 'data-pagination') === 'infinite' ? 'infinite' : 'none',
+    pageSize: integerAttr(el, 'data-page-size', 10, 1),
+    ...(customTag ? { tag: 'custom', customTag } : tag ? { tag } : {}),
+  }
+}
+
 export const HTML_TO_MODULE_RULES: ImportRule[] = [
   // CMS content outlet → base.outlet (LEAF). The agent (and any hand-authored
   // template HTML) writes `<instatic-outlet>` to mark where matched content —
@@ -113,6 +134,16 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
   {
     match: 'instatic-outlet',
     map: () => ({ moduleId: 'base.outlet', props: {} }),
+  },
+
+  // CMS loop → base.loop (RECURSE). The agent writes this custom element when
+  // it needs a real Loop module while staying in the HTML-native insert path.
+  // Children become loop variants; each iteration resolves `{currentEntry.*}`
+  // tokens against the selected source item.
+  {
+    match: 'instatic-loop',
+    map: (el) => ({ moduleId: 'base.loop', props: mapLoopProps(el) }),
+    recurse: true,
   },
 
   // Headings / paragraphs / inline phrasing → base.text (LEAF).

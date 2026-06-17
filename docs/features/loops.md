@@ -2,7 +2,7 @@
 
 The `base.loop` module — iterates a **loop entity source** and renders its child variants per item. Powers post listings, product grids, related-articles sections, media galleries, anything that displays a collection.
 
-Loop sources are pluggable: built-in sources (`content.entries`, `site.pages`, `site.media`) cover the universal store; plugins can register more via the SDK.
+Loop sources are pluggable: built-in sources (`data.rows`, `site.pages`, `site.media`) cover the universal store; plugins can register more via the SDK.
 
 ---
 
@@ -25,7 +25,7 @@ src/core/loops/
 ├── registry.ts              — LoopSourceRegistry singleton (`loopSourceRegistry`)
 └── sources/
     ├── index.ts             — register the three built-ins at boot
-    ├── dataRows.ts          — content.entries (any data_table)
+    ├── dataRows.ts          — data.rows (any data_table)
     ├── sitePages.ts         — site.pages (+ shared helpers re-exported via barrel)
     └── siteMedia.ts         — site.media
 
@@ -41,7 +41,7 @@ server/publish/loopPrefetch.ts    — server-side pre-fetch before render
 
 ```ts
 interface LoopEntitySource {
-  /** Namespaced id — 'content.entries', 'site.pages', 'site.media', 'acme.products' */
+  /** Namespaced id — 'data.rows', 'site.pages', 'site.media', 'acme.products' */
   id:           string
   label:        string
   description?: string
@@ -70,7 +70,7 @@ interface LoopEntitySource {
    * A `requestDependent` (non-perVisitor) hole is rendered at request time and
    * cached by Layer B per `(nodeId, query, publishVersion)`.
    *
-   * Built-in sources (`content.entries`, `site.pages`, `site.media`) are
+   * Built-in sources (`data.rows`, `site.pages`, `site.media`) are
    * publish-time-deterministic — leave this unset. Plugin sources that hit
    * live external APIs should set it.
    */
@@ -107,7 +107,7 @@ Sources are **stateless** — they receive everything they need via the `ctx` ar
 
 ## Built-in sources
 
-### `content.entries`
+### `data.rows`
 
 Iterates rows in any `data_table`. The user picks the table in the Properties panel; filters narrow by status, author, category-like fields, date.
 
@@ -286,16 +286,33 @@ Subscription granularity: the hook never subscribes to the whole `site` document
 
 ## Cookbook
 
-### Use the built-in `content.entries` source
+### Use the built-in `data.rows` source
 
 1. Insert a `base.loop` node into the page.
-2. In the Properties panel, set `sourceId = 'content.entries'`, pick the `data_table` (e.g. "Posts").
+2. In the Properties panel, set `sourceId = 'data.rows'`, pick the `data_table` (e.g. "Posts").
 3. Set filters (`status: published`, `category: 'tech'`).
 4. Set order (`publishedAt:desc`).
 5. Configure variants:
    - Drop a `base.container` as the loop's first child — this is variant A.
    - Add nodes inside: a heading bound to `currentEntry.title`, content bound to `currentEntry.body`, an image bound to `currentEntry.featuredMedia`.
 6. Publish. Each iteration renders the variant with the item's fields substituted.
+
+### Build a loop with the AI agent
+
+The site-scope AI agent stays on the HTML-native edit surface. It calls `list_loop_sources` to get valid source ids, table ids, order options, and `{currentEntry.field}` tokens, then inserts an `<instatic-loop>` marker through `insertHtml` / `replaceNodeHtml`:
+
+```html
+<instatic-loop data-source-id="data.rows" data-table-id="tbl_posts" data-order-by="publishedAt" data-direction="desc" data-limit="3">
+  <article>
+    <a href="{currentEntry.permalink}">
+      <img src="{currentEntry.featuredMedia}">
+      <h3>{currentEntry.title}</h3>
+    </a>
+  </article>
+</instatic-loop>
+```
+
+The HTML importer maps the marker to a real `base.loop` node, preserving classes and styles the same way it does for ordinary imported HTML. Token syntax is single-brace `{currentEntry.field}`; `{{post.title}}` and other alias-style tokens are not valid.
 
 ### Register a plugin loop source
 
@@ -402,7 +419,7 @@ For static multi-page navigation (no JS required):
 - [docs/architecture.md](../architecture.md) — universal `entryStack`
 - [docs/features/publisher.md](publisher.md) — `renderLoop` is one of two specialized renderers
 - [docs/features/templates.md](templates.md) — `currentEntry` resolves the same way for templates and loops
-- [docs/features/content-storage.md](content-storage.md) — `data_tables` + `data_rows` is the source for `content.entries`
+- [docs/features/content-storage.md](content-storage.md) — `data_tables` + `data_rows` is the source for `data.rows`
 - [docs/features/plugin-system.md](plugin-system.md) — plugin loop sources
 - Source-of-truth files:
   - `src/core/loops/index.ts` — public barrel (`pageToLoopItem`, `filterPagesForLoop`, types)
