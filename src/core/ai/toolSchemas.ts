@@ -137,6 +137,63 @@ export const RemoveClassInputSchema = Type.Object({
 export type RemoveClassInput = Static<typeof RemoveClassInputSchema>
 
 // ---------------------------------------------------------------------------
+// Code asset tools
+// ---------------------------------------------------------------------------
+
+const CodeAssetTypeSchema = Type.Union([
+  Type.Literal('script'),
+  Type.Literal('style'),
+])
+
+const CodeAssetRefInputSchema = Type.Object({
+  fileId: Type.Optional(Type.String({ minLength: 1 })),
+  path: Type.Optional(Type.String({ minLength: 1 })),
+})
+
+export const ListCodeAssetsInputSchema = Type.Object({
+  type: Type.Optional(CodeAssetTypeSchema),
+})
+export type ListCodeAssetsInput = Static<typeof ListCodeAssetsInputSchema>
+
+export const ReadCodeAssetInputSchema = Type.Composite([
+  CodeAssetRefInputSchema,
+  Type.Object({
+    part: Type.Optional(Type.Integer({ minimum: 1 })),
+    maxChars: Type.Optional(Type.Integer({ minimum: 1, maximum: 100000 })),
+  }),
+])
+export type ReadCodeAssetInput = Static<typeof ReadCodeAssetInputSchema>
+
+export const WriteCodeAssetInputSchema = Type.Object({
+  path: Type.String({ minLength: 1 }),
+  type: CodeAssetTypeSchema,
+  content: Type.String(),
+  runtime: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+})
+export type WriteCodeAssetInput = Static<typeof WriteCodeAssetInputSchema>
+
+export const PatchCodeAssetInputSchema = Type.Composite([
+  CodeAssetRefInputSchema,
+  Type.Object({
+    expectedHash: Type.String({ minLength: 1 }),
+    replacements: Type.Array(
+      Type.Object({
+        oldText: Type.String({ minLength: 1 }),
+        newText: Type.String(),
+        replaceAll: Type.Optional(Type.Boolean()),
+      }),
+      { minItems: 1 },
+    ),
+  }),
+])
+export type PatchCodeAssetInput = Static<typeof PatchCodeAssetInputSchema>
+
+export const InspectCodeRuntimeInputSchema = Type.Object({
+  document: Type.Optional(AgentDocumentRefSchema),
+})
+export type InspectCodeRuntimeInput = Static<typeof InspectCodeRuntimeInputSchema>
+
+// ---------------------------------------------------------------------------
 // Page-level write tools
 // ---------------------------------------------------------------------------
 

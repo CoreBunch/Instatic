@@ -10,8 +10,8 @@ The agent runs on a provider-agnostic AI runtime (`server/ai/`) that can drive a
 
 - **Structure via HTML.** `insertHtml` and `replaceNodeHtml` accept semantic HTML strings; the browser executor calls `importHtml` (the same pipeline as the paste-HTML UI) to convert them into first-class, editable `PageNode`s.
 - **Styling via CSS.** The agent emits CSS the same way a human pastes it: a `<style>` block and/or `class=` attributes inside the `insertHtml`/`replaceNodeHtml` payload, or the standalone `applyCss` tool. The importer (`cssToStyleRules`) classifies every selector — a bare `.foo {}` rule becomes a reusable Selectors-panel class bound to `class="foo"`; any other selector (`.hero a`, `a:hover`, `nav > li`) becomes an ambient rule; `style=` attributes land on the node's inline styles. There is no structured `classes` parameter — the agent never hand-builds classes node-by-node at insert time. `applyCss` is the single tool for authoring/editing CSS on its own; it **upserts**, so re-applying a selector edits the existing rule (the way descendant/pseudo rules get restyled).
-- **29 tools total.** 7 server-side read tools (resolved server-side from the posted snapshot / DB) + 22 browser-bridged write tools.
-- **Two-endpoint bridge.** `POST /admin/api/ai/chat/site` opens an NDJSON stream. When the model calls a write tool, the server emits `toolRequest`; the browser executor applies it to the editor store and POSTs the `AiToolOutput` result to `POST /admin/api/ai/tool-result`.
+- **35 tools total.** 6 server-side catalog read tools (resolved server-side from the posted snapshot / DB) + 29 browser-bridged tools.
+- **Two-endpoint bridge.** `POST /admin/api/ai/chat/site` opens an NDJSON stream. When the model calls a browser-bridged tool, the server emits `toolRequest`; the browser executor reads or mutates the editor store and POSTs the `AiToolOutput` result to `POST /admin/api/ai/tool-result`.
 - **Provider-agnostic.** The runtime selects a driver (Anthropic, OpenAI, OpenRouter, Ollama) from the conversation's configured credential.
 - **Tool input schemas are a single source of truth** in `@core/ai` (`src/core/ai/toolSchemas.ts`). The server tool registry (`server/ai/tools/site/writeTools.ts`) and the browser executor (`executor.ts` + `tokenRunners.ts`) import the exact same schema objects — a constraint added once is enforced on both sides at build time. Gated by `ai-tool-schema-ssot.test.ts` and `ai-tools-typebox-only.test.ts`.
 - **Capabilities.** `ai.chat` required to stream; `ai.tools.write` required for write tools. Gated by `ai-handlers-capability-gated.test.ts`.
@@ -165,7 +165,7 @@ Server: chat.ts
           │     → browser reads or opens the target page/template/visual component
           │     → result returned to model
           │
-          └─→ write tool (e.g. insertHtml)
+          └─→ browser-bridged mutating tool (e.g. insertHtml)
                 → bridge.callBrowser(toolName, input)
                 → emit { type: 'toolRequest', requestId, toolName, input }
                 → driver loop pauses; awaits tool-result POST
@@ -174,7 +174,7 @@ NDJSON stream events (one JSON object + \n per line):
     { type: 'bridgeReady', bridgeId }
     { type: 'text', text: '…' }
     { type: 'toolCall', toolCallId, toolName, input, status: 'pending' }
-    { type: 'toolRequest', requestId, toolName, input }    ← write tools only
+    { type: 'toolRequest', requestId, toolName, input }    ← browser-bridged tools only
     { type: 'toolResult', toolCallId, toolName, ok, error? }
     { type: 'usage', promptTokens, completionTokens, costUsd?, cacheReadTokens?, cacheCreationTokens? }
     { type: 'context', contextTokens }                     ← per-round meter update
@@ -192,7 +192,7 @@ Browser: processStreamEvent(event) in streamEvents.ts
     └─→ 'text' / 'toolCall' / 'toolResult' / 'done'  → update agentSlice.agentMessages
 ```
 
-The two-endpoint design keeps the **browser as editor-store authority** (write tools mutate the live Zustand store in the browser) while the **server runs the model** (driver + tool routing live server-side).
+The two-endpoint design keeps the **browser as editor-store authority** (browser-bridged tools read or mutate the live Zustand store in the browser) while the **server runs the model** (driver + tool routing live server-side).
 
 ---
 
@@ -301,9 +301,9 @@ Resolved server-side from the posted `SiteAgentSnapshot` or the data repositorie
 | `list_loop_sources` | Loop source ids, source fields, order/filter options, and data-table field catalogs with valid `{currentEntry.field}` tokens. For post/custom table loops, use source id `data.rows`, the returned table `id` as `<instatic-loop data-table-id>`, and the returned tokens inside the loop body |
 | `list_tokens`     | Design tokens: colors (with shades/tints), typography/spacing scale steps, font tokens — each with CSS variable + utility classes; optional `family` filter (`colors`\|`typography`\|`spacing`\|`fonts`) |
 
-### Browser tools — 24, browser-bridged
+### Browser tools — 29, browser-bridged
 
-All 24 tools carry `execution: 'browser'` in their `AiTool` definition. The server emits `toolRequest`; the browser executor validates input with TypeBox, runs the store action or read helper, and POSTs the canonical `AiToolOutput` result back.
+All 29 tools carry `execution: 'browser'` in their `AiTool` definition. The server emits `toolRequest`; the browser executor validates input with TypeBox, runs the store action or read helper, and POSTs the canonical `AiToolOutput` result back.
 
 **Documents**
 
@@ -365,6 +365,20 @@ The agent calls `list_loop_sources` first to get the valid source id, data table
 | `applyCss`    | `{ css }`             | `{ cssRulesCreated, cssRulesUpdated }`  | Parse CSS text and upsert every rule — classes (bare `.foo`) and ambient rules (any other selector); re-applying a selector edits it |
 | `assignClass` | `{ nodeId, classId }` | none                                    | Attach an existing class to a node; `classId` accepts id or name|
 | `removeClass` | `{ nodeId, classId }` | none                                    | Detach a class from a node (the class itself remains) |
+
+**Code assets**
+
+Scripts and user stylesheets live in `site.files[]`; runtime targeting and loading options live in `site.runtime.scripts` / `site.runtime.styles`. These tools expose that existing Code Editor storage to the agent, so behavior such as theme toggles, tabs, menus, filters, and DOM-ready interactions is authored as a real runtime script instead of attempted through HTML import.
+
+| Tool                   | Input                                      | Success `data`                          | What it does                                          |
+|------------------------|--------------------------------------------|-----------------------------------------|-------------------------------------------------------|
+| `list_code_assets`     | `{ type?: 'script' \| 'style' }`           | `{ assets }`                            | List runtime code assets with file ids, paths, full-content hashes, sizes, timestamps, and runtime config |
+| `read_code_asset`      | `{ fileId? \| path?, part?, maxChars? }`   | `{ fileId, path, type, content, hash, runtime, pageInfo }` | Read an exact script/stylesheet content slice. The `hash` is for the full file; page through with `pageInfo.nextPart` |
+| `write_code_asset`     | `{ path, type, content, runtime? }`        | asset summary + `{ action }`            | Create or replace a runtime script/stylesheet and normalize its runtime config. Existing paths are updated, new paths are created |
+| `patch_code_asset`     | `{ fileId? \| path?, expectedHash, replacements }` | asset summary + `{ replacements }` | Apply exact text replacements only when `expectedHash` matches the latest content. Ambiguous matches require a wider `oldText` or explicit `replaceAll:true` |
+| `inspect_code_runtime` | `{ document?: { type, id } }`              | `{ pageId, document, scripts, styles }` | Report which runtime scripts/stylesheets apply to the current page/template or supplied page/template document ref |
+
+`insertHtml` / `replaceNodeHtml` intentionally strip `<script>` elements and inline event handlers (`onclick`, `onload`, etc.). When a request needs behavior, the agent should use `write_code_asset({ type: "script", ... })` and then `inspect_code_runtime`, not raw `<script>` tags or event attributes in HTML.
 
 **Pages**
 
@@ -610,7 +624,7 @@ When `POST /admin/api/ai/credentials` creates a new credential, `seedEmptyDefaul
   - `src/core/ai/documentRefs.ts` — document refs/descriptors for pages, templates, and visual components
   - `src/core/ai/readSurface.ts` — runtime-agnostic `renderAgentDocument` annotated HTML + compact CSS renderer
   - `src/core/ai/index.ts` — barrel re-exporting the above
-  - `server/ai/tools/site/writeTools.ts` — 24 browser-bridged site tool definitions (uses `@core/ai` input schemas)
+  - `server/ai/tools/site/writeTools.ts` — 29 browser-bridged site tool definitions (uses `@core/ai` input schemas)
   - `server/ai/tools/site/readTools.ts` — 6 server-side catalog tool definitions
   - `server/ai/tools/site/render.ts` — `describeAgentModules`, `describeAgentTokens`, `filterTokenFamily`
   - `server/ai/tools/site/systemPrompt.ts` — HTML-native system prompt

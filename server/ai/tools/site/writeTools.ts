@@ -33,6 +33,11 @@ import {
   ApplyCssInputSchema,
   AssignClassInputSchema,
   RemoveClassInputSchema,
+  ListCodeAssetsInputSchema,
+  ReadCodeAssetInputSchema,
+  WriteCodeAssetInputSchema,
+  PatchCodeAssetInputSchema,
+  InspectCodeRuntimeInputSchema,
   AddPageInputSchema,
   DeletePageInputSchema,
   RenamePageInputSchema,
@@ -211,6 +216,60 @@ const removeClassTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
+// Code asset tools — scripts and user stylesheets in site.files + site.runtime
+// ---------------------------------------------------------------------------
+
+const listCodeAssetsTool: AiTool = {
+  name: 'list_code_assets',
+  scope: 'site',
+  execution: 'browser',
+  requiredCapabilities: ['site.read'],
+  description:
+    'List user-authored runtime code assets stored in the site file layer. Optional `type` filters to scripts or styles. Returns file ids, paths, content hashes, size metadata, and current runtime config. Use before read_code_asset / patch_code_asset when modifying existing scripts or stylesheets.',
+  inputSchema: ListCodeAssetsInputSchema,
+}
+
+const readCodeAssetTool: AiTool = {
+  name: 'read_code_asset',
+  scope: 'site',
+  execution: 'browser',
+  requiredCapabilities: ['site.read'],
+  description:
+    'Read one script or stylesheet by fileId or path. Returns the exact content slice, full-file SHA-256 hash, runtime config, and pageInfo for pagination. If pageInfo.nextPart is not null, call read_code_asset again with the same asset and part.',
+  inputSchema: ReadCodeAssetInputSchema,
+}
+
+const writeCodeAssetTool: AiTool = {
+  name: 'write_code_asset',
+  scope: 'site',
+  execution: 'browser',
+  requiredCapabilities: SITE_STRUCTURE_CAPS,
+  description:
+    'Create or replace a runtime script/style file in site.files and attach normalized site.runtime config. Use `type:"script"` for behavior such as theme toggles, menus, tabs, analytics hooks, and DOM-ready interactions; use `type:"style"` for global user stylesheets that should load as files. `path` is a safe site-relative path such as src/scripts/theme-toggle.js or src/styles/theme.css. `runtime` is optional and merges with existing/default config.',
+  inputSchema: WriteCodeAssetInputSchema,
+}
+
+const patchCodeAssetTool: AiTool = {
+  name: 'patch_code_asset',
+  scope: 'site',
+  execution: 'browser',
+  requiredCapabilities: SITE_STRUCTURE_CAPS,
+  description:
+    'Patch an existing script or stylesheet by exact text replacement. Requires the latest `expectedHash` from read_code_asset/list_code_assets to prevent stale edits. Each replacement must match exactly; if oldText occurs multiple times, either make oldText more specific or set replaceAll:true.',
+  inputSchema: PatchCodeAssetInputSchema,
+}
+
+const inspectCodeRuntimeTool: AiTool = {
+  name: 'inspect_code_runtime',
+  scope: 'site',
+  execution: 'browser',
+  requiredCapabilities: ['site.read'],
+  description:
+    'Inspect which runtime scripts and user stylesheets apply to the current page/template, or to a supplied page/template document ref. Returns each asset path, enabled state, scope applicability, priority, and script placement/timing. Use after write_code_asset to confirm a script/style is targeted correctly.',
+  inputSchema: InspectCodeRuntimeInputSchema,
+}
+
+// ---------------------------------------------------------------------------
 // Page-level write tools
 // ---------------------------------------------------------------------------
 
@@ -363,6 +422,11 @@ export const siteWriteTools: AiTool[] = [
   applyCssTool,
   assignClassTool,
   removeClassTool,
+  listCodeAssetsTool,
+  readCodeAssetTool,
+  writeCodeAssetTool,
+  patchCodeAssetTool,
+  inspectCodeRuntimeTool,
   addPageTool,
   deletePageTool,
   renamePageTool,

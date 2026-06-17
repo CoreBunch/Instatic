@@ -18,6 +18,9 @@ const READ_ONLY_NAMES_IN_WRITE_FILE = new Set([
   'getNodeHtml',
   'read_document',
   'open_document',
+  'list_code_assets',
+  'read_code_asset',
+  'inspect_code_runtime',
   'render_snapshot',
 ])
 

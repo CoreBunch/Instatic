@@ -142,6 +142,8 @@ Callers splice the fragment into the page tree via `insertImportedNodes(parentId
 | `style="…"` attributes | Declarations harvested onto `node.inlineStyles`; the attribute is removed |
 | HTML comments and processing instructions | Stripped silently — no count |
 
+The AI agent should not use stripped constructs for behavior. If an edit needs JavaScript, it writes a real runtime script with `write_code_asset({ type: "script", ... })` and verifies targeting with `inspect_code_runtime` instead of embedding `<script>` or `onclick` in an HTML import.
+
 After insert, `ImportHtmlModal` builds a toast body from the added-selector count plus the non-zero stripped counts, e.g. `"3 CSS selectors, stripped 2 <script>"`. If nothing notable happened, the toast shows only the node count.
 
 **Inline `style="…"` → `node.inlineStyles`.** Before `stripUnsafe` removes a `style` attribute, `harvestInlineStyles` (`inlineStyle.ts`) reads the element's parsed CSSOM declaration and copies **every** declaration into a camelCase bag, dropping only property names rejected by `isEmittableProperty` (the publisher's security denylist — the same gate `cssToStyleRules` uses). A `url(…)` background is canonicalised to `url('payload')` form so the Super Import asset rewriter and the editor's `BackgroundImageControl` recognise it. The bag is attached to the produced node as `node.inlineStyles` — the editor's first-class per-node `style=""` layer — which the publisher emits verbatim and the user edits via the Properties panel's inline-style mode. In Super Import any `url(…)` is uploaded to the media library and rewritten to its media URL.

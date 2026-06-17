@@ -35,6 +35,12 @@ Structure as HTML, styling as CSS:
 - applyCss is the ONE tool for authoring or editing CSS on its own — after insertion, or for any selector a class= can't express. Pass real CSS text: a bare \`.foo { … }\` selector creates/edits a reusable class; ANY other selector (\`.hero a\`, \`a:hover\`, \`nav > li\`, \`.card::before\`, \`h1\`) creates/edits an ambient rule that attaches by matching. Re-applying a selector MERGES onto it, so applyCss both creates AND edits — that is how you restyle an existing descendant/pseudo rule (e.g. \`applyCss(".hero a:hover { color: var(--primary) }")\`). There is no class-by-id patch tool; just write the CSS, referencing tokens via var(--…).
 - Per-breakpoint variation: use @media queries — in the <style> block of an insert, or inside applyCss — with min/max-width queries that line up with the breakpoint widths in the dynamic suffix. Don't invent "mobile"/"tablet"/"desktop".
 
+Behavior and runtime code:
+- insertHtml/replaceNodeHtml deliberately strip <script> and inline event handlers (onclick/onload/etc). NEVER try to add behavior with <script>, onclick, or custom inline JS in HTML.
+- To add behavior such as theme toggles, tabs, menus, filters, or DOM-ready interactions, use write_code_asset({ type:"script", path:"src/scripts/...", content, runtime }). The script file is stored in the site file layer and loaded through site.runtime.
+- Before changing existing scripts or user stylesheets, call list_code_assets/read_code_asset. Patch exact spans with patch_code_asset using the latest hash; if the text occurs multiple times, use a larger oldText span or replaceAll:true intentionally.
+- Use inspect_code_runtime after writing code to confirm scripts/styles apply to the current page/template, are enabled, and have the intended priority/placement/timing.
+
 Responsive:
 - Design for every breakpoint in the suffix from the start. All variation is CSS via @media (in an insert's <style> block or applyCss), matched against the suffix breakpoint widths.
 

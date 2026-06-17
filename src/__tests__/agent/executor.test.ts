@@ -76,6 +76,10 @@ function expectHtml(result: AiToolOutput): string {
   return expectToolData<{ html: string }>(result).html
 }
 
+function expectHash(result: AiToolOutput): string {
+  return expectToolData<{ hash: string }>(result).hash
+}
+
 function activePage() {
   const state = useEditorStore.getState()
   return state.site!.pages.find((p) => p.id === state.activePageId)!
@@ -347,6 +351,199 @@ describe('executeAgentTool — style-only payloads', () => {
     expect(
       Object.values(site.styleRules).some((c) => c.selector === '.card::before'),
     ).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// code assets
+// ---------------------------------------------------------------------------
+
+describe('executeAgentTool — code assets', () => {
+  it('write_code_asset creates a runtime script with config and list/read expose it', async () => {
+    freshStore()
+    const result = await executeAgentTool('write_code_asset', {
+      path: 'src/scripts/theme-toggle.js',
+      type: 'script',
+      content: 'document.documentElement.dataset.theme = "dark"',
+      runtime: {
+        format: 'classic',
+        placement: 'body-end',
+        timing: 'dom-ready',
+        runInCanvas: true,
+        scope: { type: 'all-pages' },
+        priority: 20,
+      },
+    })
+    const data = expectToolData<{ fileId: string; path: string; type: string; hash: string }>(result)
+    expect(data.path).toBe('src/scripts/theme-toggle.js')
+    expect(data.type).toBe('script')
+    expect(data.hash).toHaveLength(64)
+
+    const state = useEditorStore.getState()
+    const file = state.site!.files.find((item) => item.id === data.fileId)!
+    expect(file.content).toBe('document.documentElement.dataset.theme = "dark"')
+    expect(state.siteRuntime.scripts[data.fileId]).toEqual({
+      enabled: true,
+      runInCanvas: true,
+      format: 'classic',
+      placement: 'body-end',
+      timing: 'dom-ready',
+      scope: { type: 'all-pages' },
+      priority: 20,
+    })
+
+    const list = expectToolData<{
+      assets: Array<{ fileId: string; path: string; type: string; hash: string; runtime: unknown }>
+    }>(await executeAgentTool('list_code_assets', { type: 'script' }))
+    expect(list.assets).toContainEqual(
+      expect.objectContaining({
+        fileId: data.fileId,
+        path: 'src/scripts/theme-toggle.js',
+        type: 'script',
+        hash: data.hash,
+        runtime: expect.objectContaining({ format: 'classic', timing: 'dom-ready' }),
+      }),
+    )
+
+    const read = expectToolData<{
+      fileId: string
+      path: string
+      content: string
+      hash: string
+      pageInfo: { nextPart: number | null }
+    }>(await executeAgentTool('read_code_asset', { fileId: data.fileId }))
+    expect(read.path).toBe('src/scripts/theme-toggle.js')
+    expect(read.content).toBe('document.documentElement.dataset.theme = "dark"')
+    expect(read.hash).toBe(data.hash)
+    expect(read.pageInfo.nextPart).toBeNull()
+  })
+
+  it('write_code_asset creates a runtime stylesheet and inspect_code_runtime shows page applicability', async () => {
+    const { rootId } = freshStore()
+    await executeAgentTool('insertHtml', { parentId: rootId, html: '<main><h1>Home</h1></main>' })
+    const style = expectToolData<{ fileId: string }>(await executeAgentTool('write_code_asset', {
+      path: 'src/styles/theme.css',
+      type: 'style',
+      content: ':root { color-scheme: light dark; }',
+      runtime: {
+        enabled: true,
+        scope: { type: 'all-pages' },
+        priority: 5,
+      },
+    }))
+
+    const runtime = expectToolData<{
+      styles: Array<{ fileId: string; path: string; applies: boolean; priority: number }>
+      scripts: unknown[]
+    }>(await executeAgentTool('inspect_code_runtime', {}))
+    expect(runtime.styles).toContainEqual(
+      expect.objectContaining({
+        fileId: style.fileId,
+        path: 'src/styles/theme.css',
+        applies: true,
+        priority: 5,
+      }),
+    )
+    expect(runtime.scripts).toEqual([])
+  })
+
+  it('read_code_asset pages long file content and preserves a stable full hash', async () => {
+    freshStore()
+    const content = Array.from({ length: 120 }, (_, i) => `line-${i}`).join('\n')
+    const write = await executeAgentTool('write_code_asset', {
+      path: 'src/scripts/long.js',
+      type: 'script',
+      content,
+    })
+    const hash = expectHash(write)
+
+    const first = expectToolData<{
+      content: string
+      hash: string
+      pageInfo: { part: number; nextPart: number | null; totalParts: number }
+    }>(await executeAgentTool('read_code_asset', { path: 'src/scripts/long.js', maxChars: 80 }))
+    expect(first.hash).toBe(hash)
+    expect(first.pageInfo.part).toBe(1)
+    expect(first.pageInfo.nextPart).toBe(2)
+    expect(first.pageInfo.totalParts).toBeGreaterThan(1)
+    expect(first.content.length).toBeLessThanOrEqual(80)
+
+    const second = expectToolData<{
+      content: string
+      hash: string
+      pageInfo: { part: number }
+    }>(await executeAgentTool('read_code_asset', {
+      path: 'src/scripts/long.js',
+      part: 2,
+      maxChars: 80,
+    }))
+    expect(second.hash).toBe(hash)
+    expect(second.pageInfo.part).toBe(2)
+    expect(second.content).not.toBe(first.content)
+  })
+
+  it('patch_code_asset requires an expected hash and applies exact replacements safely', async () => {
+    freshStore()
+    const write = await executeAgentTool('write_code_asset', {
+      path: 'src/scripts/theme-toggle.js',
+      type: 'script',
+      content: 'const initial = "light";\nconst next = "dark";\n',
+    })
+    const oldHash = expectHash(write)
+
+    const stale = await executeAgentTool('patch_code_asset', {
+      path: 'src/scripts/theme-toggle.js',
+      expectedHash: 'not-the-current-hash',
+      replacements: [{ oldText: 'light', newText: 'dark' }],
+    })
+    expectToolError(stale)
+    expect(stale.error).toContain('hash')
+
+    const patched = expectToolData<{ hash: string; replacements: number }>(
+      await executeAgentTool('patch_code_asset', {
+        path: 'src/scripts/theme-toggle.js',
+        expectedHash: oldHash,
+        replacements: [{ oldText: 'const initial = "light";', newText: 'const initial = "dark";' }],
+      }),
+    )
+    expect(patched.replacements).toBe(1)
+    expect(patched.hash).not.toBe(oldHash)
+
+    const read = expectToolData<{ content: string; hash: string }>(
+      await executeAgentTool('read_code_asset', { path: 'src/scripts/theme-toggle.js' }),
+    )
+    expect(read.content).toContain('const initial = "dark";')
+    expect(read.content).toContain('const next = "dark";')
+    expect(read.hash).toBe(patched.hash)
+  })
+
+  it('patch_code_asset rejects ambiguous replacements unless replaceAll is explicit', async () => {
+    freshStore()
+    const write = await executeAgentTool('write_code_asset', {
+      path: 'src/scripts/repeated.js',
+      type: 'script',
+      content: 'theme = "light";\ntheme = "light";\n',
+    })
+    const oldHash = expectHash(write)
+
+    const ambiguous = await executeAgentTool('patch_code_asset', {
+      path: 'src/scripts/repeated.js',
+      expectedHash: oldHash,
+      replacements: [{ oldText: 'light', newText: 'dark' }],
+    })
+    expectToolError(ambiguous)
+    expect(ambiguous.error).toContain('ambiguous')
+
+    const patched = expectToolData<{ replacements: number }>(await executeAgentTool('patch_code_asset', {
+      path: 'src/scripts/repeated.js',
+      expectedHash: oldHash,
+      replacements: [{ oldText: 'light', newText: 'dark', replaceAll: true }],
+    }))
+    expect(patched.replacements).toBe(2)
+    const read = expectToolData<{ content: string }>(
+      await executeAgentTool('read_code_asset', { path: 'src/scripts/repeated.js' }),
+    )
+    expect(read.content).toBe('theme = "dark";\ntheme = "dark";\n')
   })
 })
 
@@ -1323,6 +1520,16 @@ describe('executeAgentTool — updateNodeProps richtext sanitization (Constraint
 // ---------------------------------------------------------------------------
 
 describe('executeAgentTool — insertHtml unsafe HTML stripping (Constraint #299)', () => {
+  it('returns actionable guidance when a script-only payload is stripped', async () => {
+    const { rootId } = freshStore()
+    const result = await executeAgentTool('insertHtml', {
+      parentId: rootId,
+      html: '<script>console.log("hi")</script>',
+    })
+    expectToolError(result)
+    expect(result.error).toContain('write_code_asset')
+  })
+
   it('strips script tags from HTML on import', async () => {
     const { rootId } = freshStore()
     const result = await executeAgentTool('insertHtml', {

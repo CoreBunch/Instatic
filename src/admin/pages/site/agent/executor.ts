@@ -16,11 +16,10 @@
  * Constraint #299 — richtext props are sanitized via DOMPurify before storage.
  */
 
-import { Type, type Static, parseValue } from '@core/utils/typeboxHelpers'
+import { Type, parseValue } from '@core/utils/typeboxHelpers'
 import {
   aiToolError,
   aiToolOk,
-  type AiToolImage,
   type AiToolOutput,
   InsertHtmlInputSchema,
   GetNodeHtmlInputSchema,
@@ -35,6 +34,11 @@ import {
   ApplyCssInputSchema,
   AssignClassInputSchema,
   RemoveClassInputSchema,
+  ListCodeAssetsInputSchema,
+  ReadCodeAssetInputSchema,
+  WriteCodeAssetInputSchema,
+  PatchCodeAssetInputSchema,
+  InspectCodeRuntimeInputSchema,
   AddPageInputSchema,
   DeletePageInputSchema,
   RenamePageInputSchema,
@@ -71,14 +75,20 @@ import type { NewStyleRule } from '@core/siteImport'
 import type { BaseNode, ConditionDef, PageTemplateConfig } from '@core/page-tree'
 import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/publisher'
 import { getAgentStoreApi } from './storeRef'
-import { captureAgentRenderSnapshot, SnapshotNodeNotFoundError } from './renderEvidence'
-import type { AgentRenderSnapshotPayload } from './types'
 import {
   runSetColorTokens,
   runSetFontTokens,
   runSetTypeScale,
   runSetSpacingScale,
 } from './tokenRunners'
+import {
+  runInspectCodeRuntime,
+  runListCodeAssets,
+  runPatchCodeAsset,
+  runReadCodeAsset,
+  runWriteCodeAsset,
+} from './codeAssetTools'
+import { runRenderSnapshot } from './renderSnapshotTool'
 import {
   activeDocumentNodes,
   activeRenderPage,
@@ -244,7 +254,7 @@ function targetNodeIdFromInput(raw: unknown): string | undefined {
  */
 function runInsertHtml(input: InsertHtmlInput): AiToolOutput {
   // (1) Parse and walk the HTML to produce a flat node fragment + any <style> CSS
-  const { nodes, rootIds, styleCss } = importHtml(input.html)
+  const { nodes, rootIds, styleCss, stripped } = importHtml(input.html)
   const { rules, conditions } = parseImportedStyleCss(styleCss)
 
   if (rootIds.length === 0) {
@@ -257,7 +267,10 @@ function runInsertHtml(input: InsertHtmlInput): AiToolOutput {
       const { created, updated } = getStoreState().upsertCssRules(rules, conditions)
       return aiToolOk({ cssRulesCreated: created, cssRulesUpdated: updated })
     }
-    return aiToolError('HTML contained no importable elements or style rules.')
+    const scriptHint = stripped.scripts > 0 || stripped.inlineHandlers > 0
+      ? ' Scripts and inline event handlers are stripped from HTML imports; create runtime behavior with write_code_asset({ type:"script", ... }) instead.'
+      : ''
+    return aiToolError(`HTML contained no importable elements or style rules.${scriptHint}`)
   }
 
   // (2) Insert via the store action — same path as the paste import modal
@@ -335,7 +348,7 @@ function runReplaceNodeHtml(input: ReplaceNodeHtmlInput): AiToolOutput {
 
   // Parse + validate the payload BEFORE mutating, so an empty / invalid payload
   // never wipes the node's existing children first and then errors out.
-  const { nodes, rootIds, styleCss } = importHtml(input.html)
+  const { nodes, rootIds, styleCss, stripped } = importHtml(input.html)
   const { rules, conditions } = parseImportedStyleCss(styleCss)
 
   if (rootIds.length === 0) {
@@ -346,7 +359,10 @@ function runReplaceNodeHtml(input: ReplaceNodeHtmlInput): AiToolOutput {
       const { created, updated } = getStoreState().upsertCssRules(rules, conditions)
       return aiToolOk({ cssRulesCreated: created, cssRulesUpdated: updated })
     }
-    return aiToolError('HTML contained no importable elements or style rules.')
+    const scriptHint = stripped.scripts > 0 || stripped.inlineHandlers > 0
+      ? ' Scripts and inline event handlers are stripped from HTML imports; create runtime behavior with write_code_asset({ type:"script", ... }) instead.'
+      : ''
+    return aiToolError(`HTML contained no importable elements or style rules.${scriptHint}`)
   }
 
   // Delete existing children so the target node is empty before insertion.
@@ -559,46 +575,6 @@ function runDuplicateNode(input: DuplicateNodeInput): AiToolOutput {
   return aiToolOk({ nodeId: newIds[0], nodeIds: newIds })
 }
 
-async function runRenderSnapshot(
-  input: Static<typeof renderSnapshotSchema>,
-): Promise<AiToolOutput> {
-  // Default true so a direct (non-server) invocation still works; the AI loop
-  // always sets this explicitly from the model's vision capability.
-  const captureScreenshot = input.captureScreenshot ?? true
-  let snapshot: AgentRenderSnapshotPayload | null
-  try {
-    snapshot = await captureAgentRenderSnapshot({
-      breakpointId: input.breakpointId,
-      nodeId: input.nodeId,
-      captureScreenshot,
-    })
-  } catch (err) {
-    if (err instanceof SnapshotNodeNotFoundError) return aiToolError(err.message)
-    throw err
-  }
-  if (!snapshot) {
-    return aiToolError('No canvas frame found for the requested breakpoint.')
-  }
-
-  // The PNG travels through the dedicated image channel (a native image block on
-  // vision providers) — NEVER inlined into `data` as base64 JSON text, which is
-  // what blew a single snapshot past a million tokens. `data` keeps the layout
-  // report plus a compact screenshot descriptor (status + dimensions only).
-  const { screenshot, ...rest } = snapshot
-  const images: AiToolImage[] = []
-  if (screenshot.status === 'ok' && screenshot.data && screenshot.mimeType) {
-    images.push({ mimeType: screenshot.mimeType, data: screenshot.data })
-  }
-  const screenshotMeta = {
-    status: screenshot.status,
-    ...(screenshot.width != null ? { width: screenshot.width } : {}),
-    ...(screenshot.height != null ? { height: screenshot.height } : {}),
-    ...(screenshot.error ? { error: screenshot.error } : {}),
-  }
-
-  return aiToolOk({ ...rest, screenshot: screenshotMeta }, images)
-}
-
 // ---------------------------------------------------------------------------
 // Public dispatch — called by the agent slice when a toolRequest event arrives
 // ---------------------------------------------------------------------------
@@ -644,6 +620,16 @@ export async function executeAgentTool(
         return runRenameNode(parseValue(RenameNodeInputSchema, rawInput))
       case 'applyCss':
         return runApplyCss(parseValue(ApplyCssInputSchema, rawInput))
+      case 'list_code_assets':
+        return await runListCodeAssets(parseValue(ListCodeAssetsInputSchema, rawInput))
+      case 'read_code_asset':
+        return await runReadCodeAsset(parseValue(ReadCodeAssetInputSchema, rawInput))
+      case 'write_code_asset':
+        return await runWriteCodeAsset(parseValue(WriteCodeAssetInputSchema, rawInput))
+      case 'patch_code_asset':
+        return await runPatchCodeAsset(parseValue(PatchCodeAssetInputSchema, rawInput))
+      case 'inspect_code_runtime':
+        return runInspectCodeRuntime(parseValue(InspectCodeRuntimeInputSchema, rawInput))
       case 'assignClass':
         return runAssignClass(parseValue(AssignClassInputSchema, rawInput))
       case 'removeClass':
