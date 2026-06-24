@@ -109,7 +109,7 @@ export function AiUsageWidget({ span, editing }: DashboardWidgetRendererProps) {
           {data.byDay.length >= 2 && (
             <Sparkline
               data={data.byDay.map((d) => d.costUsd)}
-              tint="var(--rail-tint-lilac)"
+              tint="var(--accent-2)"
               ariaLabel="AI cost per day this month"
             />
           )}

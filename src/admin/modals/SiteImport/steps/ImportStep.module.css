@@ -1,5 +1,5 @@
 /* ── Import step — calm determinate progress surface ───────────────────────── */
-/* Replaces the old terminal-style upload log. Same achromatic shell + rail-tint
+/* Replaces the old terminal-style upload log. Same achromatic shell + accent
    identity as the Review step: one headline activity, a determinate bar, a
    single-line current-item ticker, and a per-category breakdown that mirrors the
    Review navigator. */
@@ -42,9 +42,9 @@
   flex: none;
   display: grid;
   place-items: center;
-  border-radius: var(--editor-radius);
-  background: var(--editor-surface-3);
-  color: var(--editor-text-bright);
+  border-radius: var(--radius);
+  background: var(--bg-surface-3);
+  color: var(--text-bright);
 }
 .activityText {
   display: flex;
@@ -55,12 +55,12 @@
 .activityTitle {
   font-size: 14px;
   font-weight: 600;
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
   line-height: 1.2;
 }
 .activitySub {
   font-size: 11px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   font-variant-numeric: tabular-nums;
 }
 .percent {
@@ -68,7 +68,7 @@
   font-size: 26px;
   font-weight: 500;
   line-height: 1;
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
   font-variant-numeric: tabular-nums;
   flex: none;
 }
@@ -78,14 +78,14 @@
   position: relative;
   height: 6px;
   border-radius: 999px;
-  background: var(--editor-surface-3);
+  background: var(--bg-surface-3);
   overflow: hidden;
 }
 .barFill {
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--editor-text-secondary), var(--editor-text-bright));
+  background: linear-gradient(90deg, var(--text-muted), var(--text-bright));
   transition: width 280ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .bar[data-active='true'] .barFill::after {
@@ -93,7 +93,7 @@
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  background: linear-gradient(90deg, transparent, var(--editor-progress-shimmer), transparent);
+  background: linear-gradient(90deg, transparent, var(--progress-shimmer), transparent);
   animation: shimmer 1.25s linear infinite;
 }
 @keyframes shimmer {
@@ -115,7 +115,7 @@
 .currentFile {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -124,7 +124,7 @@
   width: 6px;
   height: 12px;
   flex: none;
-  background: var(--editor-text-muted);
+  background: var(--text-subtle);
   border-radius: 1px;
   animation: blink 1s steps(1) infinite;
 }
@@ -141,7 +141,7 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   margin: 0 0 -6px;
 }
 .cats {
@@ -157,8 +157,8 @@
   align-items: center;
   gap: 12px;
   padding: 11px 13px;
-  border-radius: var(--editor-radius);
-  background: var(--editor-surface-2);
+  border-radius: var(--radius);
+  background: var(--bg-surface-2);
   overflow: hidden;
   transition: opacity 200ms ease;
 }
@@ -185,12 +185,12 @@
   display: grid;
   place-items: center;
   flex: none;
-  border-radius: var(--editor-radius);
-  background: var(--editor-surface-3);
+  border-radius: var(--radius);
+  background: var(--bg-surface-3);
   color: var(--cat-tint);
 }
 .cat[data-state='pending'] .catIcon {
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 .catName {
   display: flex;
@@ -201,22 +201,22 @@
 .catTitle {
   font-size: 13px;
   font-weight: 500;
-  color: var(--editor-text);
+  color: var(--text);
 }
 .catMeta {
   font-size: 10.5px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   font-family: var(--font-mono);
 }
 .catCount {
   font-family: var(--font-mono);
   font-size: 11.5px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .cat[data-state='done'] .catCount {
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 
 /* Trailing status glyph. */
@@ -231,13 +231,13 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  border: 1.5px solid var(--editor-surface-4);
+  border: 1.5px solid var(--bg-surface-4);
 }
 .spinner {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 1.5px solid var(--editor-surface-4);
+  border: 1.5px solid var(--bg-surface-4);
   border-top-color: var(--cat-tint);
   animation: spin 0.7s linear infinite;
 }
@@ -247,7 +247,7 @@
   }
 }
 .check {
-  color: var(--rail-tint-mint);
+  color: var(--accent-1);
   display: grid;
   place-items: center;
 }
@@ -269,8 +269,8 @@
   display: grid;
   place-items: center;
   flex: none;
-  background: var(--editor-success-bg);
-  color: var(--rail-tint-mint);
+  background: var(--success-10);
+  color: var(--accent-1);
   animation: pop 360ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 @keyframes pop {
@@ -287,12 +287,12 @@
   margin: 0;
   font-size: 18px;
   font-weight: 700;
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
 }
 .doneSub {
   margin: 0;
   font-size: 12.5px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -313,20 +313,20 @@
   display: grid;
   place-items: center;
   flex: none;
-  background: var(--editor-danger-bg);
-  color: var(--editor-danger);
+  background: var(--danger-10);
+  color: var(--danger);
 }
 .failedTitle {
   margin: 0;
   font-size: 17px;
   font-weight: 700;
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
 }
 .failedSub {
   margin: 0;
   max-width: 42ch;
   font-size: 12.5px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
 }
 
 /* ── Import log (revealed from the complete state) ──────────────────────────── */
@@ -336,8 +336,8 @@
   flex-direction: column;
   gap: 10px;
   padding: 14px;
-  border-radius: var(--editor-radius);
-  background: var(--editor-surface-2);
+  border-radius: var(--radius);
+  background: var(--bg-surface-2);
 }
 .logHeading {
   margin: 0;
@@ -345,7 +345,7 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 .logList {
   list-style: none;
@@ -357,7 +357,7 @@
 }
 .logLine {
   font-size: 12px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 .warnings {
@@ -365,7 +365,7 @@
   flex-direction: column;
   gap: 6px;
   padding-top: 10px;
-  border-top: 1px solid var(--editor-border);
+  border-top: 1px solid var(--border);
 }
 .warningsHeading {
   display: flex;
@@ -374,7 +374,7 @@
   margin: 0;
   font-size: 12px;
   font-weight: 600;
-  color: var(--editor-warning);
+  color: var(--warning);
 }
 .warningItem {
   display: flex;
@@ -384,10 +384,10 @@
 .warningKind {
   font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 .warningMsg {
   font-size: 11.5px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   line-height: 1.4;
 }

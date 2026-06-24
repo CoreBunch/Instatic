@@ -5,8 +5,8 @@
  *
  * No `border-bottom` on the header — the search bar's own outlined chrome plus
  * the menu rows below it provide enough visual separation; a hard 1px line in
- * `--editor-border` (near-black) on top of the brighter menu surface
- * (`--editor-surface-4`) was too aggressive and read as visual noise.
+ * `--border` (near-black) on top of the brighter menu surface
+ * (`--bg-surface-4`) was too aggressive and read as visual noise.
  */
 
 .searchHeader {
@@ -14,28 +14,28 @@
     top: 0;
     z-index: 1;
     padding-bottom: 4px;
-    background: var(--editor-surface-4);
+    background: var(--bg-surface-4);
 }
 
-/* The shared SearchBar uses `--input-bg: transparent`, which works on dark
- * surfaces but blends into the brighter `--editor-surface-4` panel here.
+/* The shared SearchBar uses `direct transparent background`, which works on dark
+ * surfaces but blends into the brighter `--bg-surface-4` panel here.
  * Inside the picker we give the search field a darker bg so it reads as an
  * input instead of disappearing into the menu surface, and we lift the
- * placeholder + icon contrast from `--editor-text-subtle` (#52525b) — which
- * is nearly the same value as the menu surface — to `--editor-text-muted`
+ * placeholder + icon contrast from `--text-disabled` (#52525b) — which
+ * is nearly the same value as the menu surface — to `--text-subtle`
  * (#71717a), so the hint stays legible.
  *
  * The class is passed to SearchBar via its `className` prop and lands on the
  * SearchBar wrapper — that's why descendant selectors (input, svg) work
  * even though the SearchBar's own classes are hashed. */
 .searchField {
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
 }
 
 .searchField input::placeholder {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .searchField svg {
-    fill: var(--editor-text-muted);
+    fill: var(--text-subtle);
 }

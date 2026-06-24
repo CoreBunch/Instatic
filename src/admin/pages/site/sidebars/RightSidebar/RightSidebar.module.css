@@ -9,7 +9,7 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-    background: var(--editor-bg);
+    background: var(--bg-body);
     /* Width transition for user-driven open/close — same model as the
        left sidebar. The transition only fires when the user toggles
        collapsed/expanded; it does NOT fire on page load because the

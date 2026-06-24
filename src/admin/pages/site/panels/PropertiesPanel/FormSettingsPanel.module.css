@@ -2,8 +2,8 @@
     display: grid;
     gap: 10px;
     padding: 12px;
-    border-radius: var(--editor-radius);
-    background: var(--editor-surface);
+    border-radius: var(--radius);
+    background: var(--bg-surface);
 }
 
 .header {
@@ -12,7 +12,7 @@
 }
 
 .kicker {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 750;
     line-height: 1;
@@ -22,7 +22,7 @@
 .title {
     min-width: 0;
     overflow: hidden;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 13px;
     font-weight: 750;
     line-height: 1.25;
@@ -39,9 +39,9 @@
 .metaItem {
     max-width: 100%;
     overflow: hidden;
-    border-radius: var(--editor-radius-sm);
-    background: var(--editor-surface-2);
-    color: var(--editor-text-secondary);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-2);
+    color: var(--text-muted);
     font-size: 10px;
     font-weight: 700;
     line-height: 1;
@@ -77,7 +77,7 @@
 }
 
 .sectionLabel {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 750;
     line-height: 1;
@@ -95,15 +95,15 @@
     align-items: center;
     gap: 6px;
     min-height: 28px;
-    border-radius: var(--editor-radius);
-    background: var(--editor-surface-2);
+    border-radius: var(--radius);
+    background: var(--bg-surface-2);
     padding: 4px 5px 4px 8px;
 }
 
 .missingFieldName {
     min-width: 0;
     overflow: hidden;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 11px;
     font-weight: 700;
     line-height: 1.2;
@@ -112,8 +112,8 @@
 }
 
 .missingFieldType {
-    border-radius: var(--editor-radius-sm);
-    color: var(--editor-text-muted);
+    border-radius: var(--radius-sm);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 700;
     line-height: 1;
@@ -121,7 +121,7 @@
 }
 
 .relationship {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 11px;
     line-height: 1.45;
 }
@@ -132,21 +132,21 @@
 }
 
 .warning {
-    border-radius: var(--editor-radius);
-    background: var(--editor-warning-bg);
-    color: var(--editor-warning);
+    border-radius: var(--radius);
+    background: var(--warning-10);
+    color: var(--warning);
     font-size: 11px;
     line-height: 1.4;
     padding: 8px;
 }
 
 .danger {
-    background: var(--editor-danger-bg);
-    color: var(--editor-danger);
+    background: var(--danger-10);
+    color: var(--danger);
 }
 
 .inlineStatus {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     line-height: 1.45;
 }
@@ -162,7 +162,7 @@
 }
 
 .dialogLabel {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 700;
     line-height: 1.2;
@@ -170,7 +170,7 @@
 
 .dialogError {
     margin: 0;
-    color: var(--editor-danger);
+    color: var(--danger);
     font-size: 11px;
     line-height: 1.35;
 }

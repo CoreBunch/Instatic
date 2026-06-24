@@ -103,9 +103,9 @@ The resolver:
 
 The overlay highlights the resolved drop position. Geometry comes from the resolver:
 
-- **Before / After** — a thin sky-tinted line (`--rail-tint-sky` at 0.6 alpha) at the zone position.
+- **Before / After** — a thin sky-tinted line (`--accent-3` at 0.6 alpha) at the zone position.
 - **Into** — a sky-tinted dashed outline inset 4px from the target's bounding box.
-- **Invalid** — a danger-tinted outline (`--editor-danger`) + a tooltip explaining why (`'cannot drop into self'`, `'target is locked'`).
+- **Invalid** — a danger-tinted outline (`--danger`) + a tooltip explaining why (`'cannot drop into self'`, `'target is locked'`).
 
 The overlay is a separate React tree positioned with absolute coordinates derived from the canvas zoom/pan transform.
 

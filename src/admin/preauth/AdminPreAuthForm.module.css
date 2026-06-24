@@ -3,7 +3,7 @@
   align-items: center;
   gap: 10px;
   margin-bottom: 20px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   font-size: 12px;
   font-weight: 600;
 }
@@ -14,8 +14,8 @@
   height: 28px;
   place-items: center;
   border-radius: 6px;
-  background: var(--editor-overlay-white-08);
-  color: var(--editor-text);
+  background: var(--overlay-10);
+  color: var(--text);
 }
 
 /* Operator-provided favicon used as the login brand mark. Object-fit cover
@@ -38,7 +38,7 @@
 .field {
   display: grid;
   gap: 6px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   font-size: 12px;
   font-weight: 600;
 }

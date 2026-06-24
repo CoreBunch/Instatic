@@ -47,7 +47,7 @@ export {
  * Re-exported here so plugins building dashboard widgets can render the
  * same chart shapes as first-party widgets without bundling their own
  * chart code. Stay achromatic by default; tint colors come from the
- * widget chrome via the standard `--rail-tint-*` tokens.
+ * widget chrome via the standard `--accent-*` tokens.
  */
 export {
   Sparkline,

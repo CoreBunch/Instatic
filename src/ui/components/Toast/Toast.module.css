@@ -31,12 +31,12 @@
     align-items: flex-start;
     gap: 10px;
     padding: 10px 12px;
-    background: var(--panel-bg);
-    border: 1px solid var(--panel-border);
+    background: var(--bg-surface);
+    border: 1px solid var(--overlay-10);
     border-radius: var(--panel-radius);
-    box-shadow: var(--panel-shadow);
+    box-shadow: var(--shadow-panel);
     backdrop-filter: blur(var(--panel-blur));
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 12px;
     line-height: 1.4;
     animation: toast-enter 140ms ease-out;
@@ -62,31 +62,31 @@
  */
 
 .kind-error {
-    border-left: 2px solid var(--editor-danger);
+    border-left: 2px solid var(--danger);
 }
 .kind-error .icon {
-    color: var(--editor-danger-light);
+    color: var(--danger-light);
 }
 
 .kind-warning {
-    border-left: 2px solid var(--editor-warning);
+    border-left: 2px solid var(--warning);
 }
 .kind-warning .icon {
-    color: var(--editor-warning);
+    color: var(--warning);
 }
 
 .kind-success {
-    border-left: 2px solid var(--editor-success-green);
+    border-left: 2px solid var(--success);
 }
 .kind-success .icon {
-    color: var(--editor-success-green);
+    color: var(--success);
 }
 
 .kind-info {
-    border-left: 2px solid var(--editor-text-muted);
+    border-left: 2px solid var(--text-subtle);
 }
 .kind-info .icon {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 /* ── Slots ───────────────────────────────────────────────────────────────── */
@@ -109,7 +109,7 @@
 
 .title {
     margin: 0;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 12px;
     font-weight: 500;
     line-height: 1.35;
@@ -118,7 +118,7 @@
 
 .body {
     margin: 0;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 11px;
     line-height: 1.45;
     overflow-wrap: anywhere;
@@ -131,7 +131,7 @@
 
 .location {
     margin: 2px 0 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-family:
         ui-monospace,
         SFMono-Regular,

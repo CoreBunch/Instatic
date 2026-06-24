@@ -104,7 +104,7 @@
 
 .lockedPreviewCtaText {
     margin: 0;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 11px;
     line-height: 1.5;
 }
@@ -125,7 +125,7 @@
     margin: 8px 12px 14px;
     padding: 12px;
     border-radius: 12px;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
 }
 
 .generatedUtilityHeader {
@@ -134,7 +134,7 @@
 }
 
 .generatedUtilityKicker {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 750;
     line-height: 1;
@@ -144,7 +144,7 @@
 .generatedUtilityName {
     min-width: 0;
     overflow: hidden;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 13px;
     font-weight: 750;
     line-height: 1.2;
@@ -154,7 +154,7 @@
 
 .generatedUtilityCopy {
     margin: 0;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 11px;
     line-height: 1.45;
 }
@@ -167,8 +167,8 @@
 
 .generatedUtilityMeta span {
     border-radius: 999px;
-    background: var(--editor-overlay-white-06);
-    color: var(--editor-text-muted);
+    background: var(--overlay-5);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 700;
     line-height: 1;

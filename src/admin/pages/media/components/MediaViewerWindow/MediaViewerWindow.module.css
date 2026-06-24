@@ -8,10 +8,10 @@
     top: var(--panel-y);
     width: min(880px, calc(100vw - 32px));
     height: min(640px, calc(100vh - 32px));
-    background: var(--panel-bg);
-    border: 1px solid var(--panel-border);
+    background: var(--bg-surface);
+    border: 1px solid var(--overlay-10);
     border-radius: var(--panel-radius);
-    box-shadow: var(--panel-shadow);
+    box-shadow: var(--shadow-panel);
     backdrop-filter: blur(var(--panel-blur));
     display: flex;
     flex-direction: column;
@@ -32,7 +32,7 @@
     justify-content: stretch;
     min-width: 0;
     min-height: 0;
-    background: var(--editor-bg);
+    background: var(--bg-body);
 }
 
 .sidebar {
@@ -41,7 +41,7 @@
     gap: 12px;
     padding: 12px;
     overflow: auto;
-    background: var(--editor-bg);
+    background: var(--bg-body);
 }
 
 .section {
@@ -55,7 +55,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     margin: 0;
 }
 
@@ -70,7 +70,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .actionsRow {
@@ -97,7 +97,7 @@
 .detailLabel {
     flex: 0 0 70px;
     font-size: 11px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     margin: 0;
 }
 
@@ -107,7 +107,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    color: var(--editor-text);
+    color: var(--text);
     word-break: break-word;
 }
 
@@ -124,21 +124,21 @@
     display: inline-flex;
     align-items: center;
     padding: 2px 6px;
-    background: var(--editor-surface-2);
-    border: 1px solid var(--editor-border);
-    border-radius: var(--editor-radius-sm);
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
     font-size: 11px;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .placeholder {
     font-size: 11px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     margin: 0;
 }
 
 .warning {
     font-size: 11px;
-    color: var(--editor-warning);
+    color: var(--warning);
     margin: 0 0 6px 0;
 }

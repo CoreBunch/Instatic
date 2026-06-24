@@ -16,7 +16,7 @@
 }
 
 .label {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0;
@@ -24,25 +24,25 @@
 }
 
 .optional {
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     font-weight: 400;
 }
 
 .caption {
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     font-size: 11px;
     line-height: 1.3;
 }
 
 .fieldError {
-    color: var(--editor-danger);
+    color: var(--danger);
     font-size: 11px;
     line-height: 1.3;
 }
 
 .errorText {
     margin: 0;
-    color: var(--editor-danger);
+    color: var(--danger);
     font-size: 11px;
     line-height: 1.3;
 }
@@ -64,7 +64,7 @@
 }
 
 .switchLabel {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 12px;
     line-height: 1.3;
 }
@@ -94,7 +94,7 @@
 .builtInHeading {
     font-size: 11px;
     font-weight: 700;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     line-height: 1.2;
@@ -108,6 +108,6 @@
 
 .builtInDivider {
     height: 1px;
-    background: var(--editor-border);
+    background: var(--border);
     margin-top: 4px;
 }

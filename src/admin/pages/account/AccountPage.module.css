@@ -14,7 +14,7 @@
 .sectionHeader p,
 .secondaryText {
     margin: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     line-height: 1.45;
 }
@@ -39,7 +39,7 @@
 
 .sectionHeader h2 {
     margin: 0;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 18px;
     line-height: 1.25;
 }
@@ -54,12 +54,12 @@
     gap: 8px;
     padding: 16px;
     border-radius: var(--panel-radius);
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
     transition: background 0.3s;
 }
 
 .card:hover {
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 .cardHeader {
@@ -71,7 +71,7 @@
 
 .cardTitle {
     margin: 0;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 14px;
     font-weight: 800;
     line-height: 1.2;
@@ -79,7 +79,7 @@
 
 .cardDesc {
     margin: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     line-height: 1.45;
 }
@@ -101,7 +101,7 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 11px;
     font-weight: 700;
     white-space: nowrap;
@@ -109,14 +109,14 @@
 
 .cardStatus {
     margin: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 700;
     line-height: 1.4;
 }
 
 .cardStatusActive {
-    color: var(--editor-success-green);
+    color: var(--success);
 }
 
 .badge,
@@ -126,9 +126,9 @@
     width: fit-content;
     min-height: 18px;
     padding: 1px 6px;
-    border-radius: var(--editor-radius);
-    --badge-bg: var(--editor-surface-2);
-    --badge-color: var(--editor-text-muted);
+    border-radius: var(--radius);
+    --badge-bg: var(--bg-surface-2);
+    --badge-color: var(--text-subtle);
     background: linear-gradient(0deg, var(--badge-bg), transparent);
     color: var(--badge-color);
     font-size: 10px;
@@ -137,8 +137,8 @@
 }
 
 .badgeMuted {
-    --badge-bg: var(--editor-bg-subtle);
-    --badge-color: var(--editor-text);
+    --badge-bg: var(--bg-surface-3);
+    --badge-color: var(--text);
 }
 
 .profileGrid {
@@ -164,7 +164,7 @@
 
 .avatarHint {
     margin: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     line-height: 1.4;
 }
@@ -192,7 +192,7 @@
 }
 
 .profileFieldLabel {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.02em;
@@ -200,7 +200,7 @@
 }
 
 .profileFieldValue {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 13px;
     font-weight: 600;
     word-break: break-word;
@@ -213,7 +213,7 @@
 
 .error {
     margin: 0;
-    color: var(--editor-danger);
+    color: var(--danger);
     font-size: 12px;
     font-weight: 700;
     line-height: 1.45;
@@ -221,7 +221,7 @@
 
 .emptyState {
     margin: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     font-weight: 700;
     line-height: 1.45;
@@ -232,10 +232,10 @@
     align-items: center;
     gap: 8px;
     padding: 10px 12px;
-    border-radius: var(--editor-radius);
-    background: var(--editor-bg-subtle);
-    border: 1px solid var(--editor-border);
-    color: var(--editor-warning);
+    border-radius: var(--radius);
+    background: var(--bg-surface-3);
+    border: 1px solid var(--border);
+    color: var(--warning);
     font-size: 12px;
     font-weight: 700;
 }
@@ -256,14 +256,14 @@
 }
 
 .deviceLabel strong {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 13px;
     font-weight: 700;
     line-height: 1.2;
 }
 
 .deviceLabel span {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     line-height: 1.4;
 }
@@ -272,7 +272,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .activityResult {
@@ -283,15 +283,15 @@
 }
 
 .activityResultSuccess {
-    color: var(--editor-success-green);
+    color: var(--success);
 }
 
 .activityResultBad {
-    color: var(--editor-warning);
+    color: var(--warning);
 }
 
 .activityResultLocked {
-    color: var(--editor-danger);
+    color: var(--danger);
 }
 
 /* Failed-attempt count chip in the Sign-in history header. Reuses the
@@ -299,8 +299,8 @@
  * surface tokens to read as a warning rather than the default neutral
  * muted swatch. */
 .activityFailureBadge {
-    --badge-bg: var(--editor-warning);
-    --badge-color: var(--editor-warning-text);
+    --badge-bg: var(--warning);
+    --badge-color: var(--warning-text);
 }
 
 .dialogFields {
@@ -314,7 +314,7 @@
 }
 
 .dialogLabel {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.02em;
@@ -340,10 +340,10 @@
     width: 248px;
     min-height: 248px;
     padding: 12px;
-    border: 1px solid var(--editor-border);
+    border: 1px solid var(--border);
     border-radius: var(--panel-radius);
-    background: var(--editor-text-bright);
-    box-shadow: var(--panel-shadow);
+    background: var(--text-bright);
+    box-shadow: var(--shadow-panel);
 }
 
 .qrFrame img {
@@ -354,7 +354,7 @@
 
 .qrPlaceholder {
     max-width: 160px;
-    color: var(--editor-bg);
+    color: var(--bg-body);
     font-size: 12px;
     font-weight: 800;
     line-height: 1.4;
@@ -374,7 +374,7 @@
 
 .mfaStep h3 {
     margin: 0;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 15px;
     font-weight: 800;
     line-height: 1.25;
@@ -384,14 +384,14 @@
     display: grid;
     gap: 6px;
     padding: 10px;
-    border: 1px solid var(--editor-border);
-    border-radius: var(--editor-radius);
-    background: var(--editor-bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-surface-3);
 }
 
 .secretBox code,
 .recoveryGrid code {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     font-size: 12px;
     line-height: 1.4;
@@ -403,7 +403,7 @@
 }
 
 .authenticatorLink {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 12px;
     font-weight: 800;
     line-height: 1.45;
@@ -412,7 +412,7 @@
 }
 
 .authenticatorLink:hover {
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .recoveryGrid {
@@ -423,9 +423,9 @@
 
 .recoveryGrid code {
     padding: 8px;
-    border: 1px solid var(--editor-border);
-    border-radius: var(--editor-radius);
-    background: var(--editor-bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-surface-3);
 }
 
 @media (max-width: 760px) {

@@ -4,11 +4,11 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    border-radius: var(--editor-radius);
+    border-radius: var(--radius);
     padding: 12px 14px;
-    border: 1px solid var(--editor-border);
-    background: var(--panel-bg);
-    color: var(--editor-text);
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+    color: var(--text);
     font-size: 13px;
     line-height: 1.5;
 }
@@ -23,17 +23,17 @@
 }
 
 .alertInfo {
-    border-color: var(--editor-border);
+    border-color: var(--border);
 }
 
 .alertSuccess {
-    border-color: var(--editor-success-border);
+    border-color: var(--success-30);
 }
 
 .alertWarning {
-    border-color: var(--editor-warning);
+    border-color: var(--warning);
 }
 
 .alertDanger {
-    border-color: var(--editor-danger);
+    border-color: var(--danger);
 }

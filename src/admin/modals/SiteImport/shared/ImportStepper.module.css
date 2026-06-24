@@ -7,21 +7,21 @@
   margin: 0;
   padding: 11px 16px;
   list-style: none;
-  background: var(--editor-surface-2);
-  border-bottom: 1px solid var(--editor-border);
+  background: var(--bg-surface-2);
+  border-bottom: 1px solid var(--border);
 }
 .stepperItem {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 .stepperItem:not(:last-child)::after {
   content: '';
   width: 22px;
   height: 1px;
   margin: 0 10px;
-  background: var(--editor-border);
+  background: var(--border);
 }
 .stepperDot {
   display: grid;
@@ -29,24 +29,24 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--editor-surface-4);
-  color: var(--editor-text-muted);
+  background: var(--bg-surface-4);
+  color: var(--text-subtle);
   font-size: 10px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 .stepperItem[data-state='done'] .stepperDot {
-  background: var(--rail-tint-mint);
-  color: var(--editor-bg);
+  background: var(--accent-1);
+  color: var(--bg-body);
 }
 .stepperItem[data-state='current'] .stepperDot {
-  background: var(--editor-text-bright);
-  color: var(--editor-bg);
+  background: var(--text-bright);
+  color: var(--bg-body);
 }
 .stepperLabel {
   font-size: 12px;
   font-weight: 500;
 }
 .stepperItem[data-state='current'] .stepperLabel {
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
 }

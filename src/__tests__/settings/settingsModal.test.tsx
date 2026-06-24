@@ -2,7 +2,7 @@
  * SettingsModal DOM Integration Tests — J10 (Guideline #225)
  *
  * The modal shares the Spotlight / Module Inserter visual language: a
- * `--panel-*` shell, an `--editor-surface-2` rail with categorical rail-tint
+ * direct-token shell, an `--bg-surface-2` rail with categorical accent
  * icon chips, an accent-bar section header, and a shared `Esc` keycap
  * affordance (backdrop click / Esc both close — there is no dedicated close
  * button). After the consistency pass the modal carries four sections:
@@ -520,11 +520,11 @@ describe('SettingsModal — WCAG 2.4.7 input focus rings (source enforcement)', 
 
   it('Input primitive has a visible :focus / :focus-within style', () => {
     expect(inputCss).toMatch(/:focus(-within)?/)
-    expect(inputCss).toContain('--input-border-focus')
+    expect(inputCss).toContain('--overlay-50')
   })
 
   it('Select primitive has a visible focus indicator', () => {
-    expect(selectCss).toMatch(/--input-border-focus|:focus/)
+    expect(selectCss).toMatch(/--overlay-50|:focus/)
   })
 
   it('SettingsModal does not carry an inline <style> band-aid', () => {

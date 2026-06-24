@@ -16,7 +16,7 @@
 .sectionTitle {
   font-size: 11px;
   font-weight: 700;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0 0 10px;
@@ -35,19 +35,19 @@
   gap: 12px;
   padding: 12px 16px;
   border-radius: var(--panel-radius);
-  background: var(--editor-surface-2);
+  background: var(--bg-surface-2);
   font-size: 13px;
   transition: background-color 140ms ease;
 }
 
 .row:hover {
-  background: var(--editor-surface-3);
+  background: var(--bg-surface-3);
 }
 
 .rowTitle {
   flex: 1;
   min-width: 0;
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
   font-weight: 500;
 }
 

@@ -1,6 +1,6 @@
 .headerChip {
   padding: 6px 10px 4px;
   font-size: 11px;
-  color: var(--editor-text-subtle);
+  color: var(--text-disabled);
   font-weight: 600;
 }

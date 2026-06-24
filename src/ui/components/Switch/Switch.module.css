@@ -25,15 +25,15 @@
     display: block;
     width: 38px;
     height: 22px;
-    border: 1px solid var(--input-border);
+    border: 1px solid var(--overlay-20);
     border-radius: 999px;
     flex-shrink: 0;
     transition: background-color 150ms ease;
 }
 
 .trackOn {
-    background: var(--editor-surface-3);
-    border-color: var(--editor-surface-3);
+    background: var(--bg-surface-3);
+    border-color: var(--bg-surface-3);
 }
 
 .trackOff {
@@ -50,11 +50,11 @@
 }
 
 .switch[data-hit-area="true"] .trackOn {
-    background: var(--editor-accent);
+    background: var(--overlay);
 }
 
 .switch[data-hit-area="true"] .trackOff {
-    background: var(--editor-border-med);
+    background: var(--border-muted);
 }
 
 .thumb {
@@ -68,12 +68,12 @@
 
 .thumbOn {
     left: 18px;
-    background: var(--editor-text);
+    background: var(--text);
 }
 
 .thumbOff {
     left: 3px;
-    background: var(--editor-text);
+    background: var(--text);
 }
 
 .switch[data-size="sm"] .track {

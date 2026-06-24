@@ -27,7 +27,7 @@
 .sectionTitle {
     margin: 0;
     overflow: hidden;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0;
@@ -37,7 +37,7 @@
 }
 
 .sectionCount {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     line-height: 1;
 }
@@ -84,8 +84,8 @@
 .dragOverlayRow {
     width: min(240px, 70vw);
     border-radius: var(--panel-radius);
-    background: var(--panel-bg);
-    box-shadow: var(--panel-shadow);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-panel);
     pointer-events: none;
 }
 
@@ -105,7 +105,7 @@
     border: 0;
     border-radius: 8px;
     background: transparent;
-    color: var(--editor-text);
+    color: var(--text);
     cursor: pointer;
     font: inherit;
     font-size: 12px;
@@ -116,17 +116,17 @@
 }
 
 .row:hover {
-    background: var(--editor-surface);
+    background: var(--bg-surface);
 }
 
 .row:focus-visible {
-    outline: 2px solid var(--editor-accent);
+    outline: 2px solid var(--overlay);
     outline-offset: -2px;
 }
 
 .rowActive {
-    background: var(--editor-surface);
-    color: var(--editor-text);
+    background: var(--bg-surface);
+    color: var(--text);
 }
 
 .rowLabel {
@@ -139,7 +139,7 @@
 .rowMeta {
     max-width: 110px;
     overflow: hidden;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -156,9 +156,9 @@
     height: 28px;
     place-items: center;
     overflow: hidden;
-    border-radius: var(--editor-radius-sm);
-    background: var(--editor-surface);
-    color: var(--editor-text-muted);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-subtle);
 }
 
 /* Skeleton previews render a direct child span. Loaded rows render an
@@ -183,7 +183,7 @@
     text-align: left;
     white-space: normal;
     border-radius: 8px;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
     gap: 0;
     width: 100%;
     height: auto;
@@ -207,8 +207,8 @@
     width: 100%;
     place-items: center;
     overflow: hidden;
-    background: var(--editor-surface);
-    color: var(--editor-text-muted);
+    background: var(--bg-surface);
+    color: var(--text-subtle);
 }
 
 /* Same wrapper fill as `.mediaRowPreview` for the aspect-1:1 grid tile. */
@@ -243,14 +243,14 @@
 }
 
 .mediaTileLabel {
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 11px;
     font-weight: 700;
     line-height: 1.2;
 }
 
 .mediaTileMeta {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 500;
     line-height: 1.2;

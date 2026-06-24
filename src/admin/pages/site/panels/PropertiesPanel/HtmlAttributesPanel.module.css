@@ -45,7 +45,7 @@
 
 .error {
     margin: 0;
-    color: var(--editor-danger-light);
+    color: var(--danger-light);
     font-size: 10px;
     line-height: 1.35;
 }

@@ -11,7 +11,7 @@
     position: relative;
     z-index: 30;
     user-select: none;
-    background: var(--editor-bg);
+    background: var(--bg-body);
 }
 
 .siteName {
@@ -22,7 +22,7 @@
     margin-right: 4px;
     padding: 0 8px;
     overflow: hidden;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 11px;
     font-weight: 700;
     text-overflow: ellipsis;
@@ -46,7 +46,7 @@
     height: 20px;
     margin: 0 6px 0 4px;
     object-fit: cover;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
     flex-shrink: 0;
     user-select: none;
 }
@@ -58,15 +58,15 @@
     height: 28px;
     padding: 0 8px;
     border-radius: var(--input-radius);
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 700;
     text-decoration: none;
 }
 
 .adminLink:hover {
-    background: var(--editor-surface-2);
-    color: var(--editor-text);
+    background: var(--bg-surface-2);
+    color: var(--text);
 }
 
 .activeSection {
@@ -75,7 +75,7 @@
     gap: 6px;
     height: 28px;
     padding: 0 8px;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 11px;
     font-weight: 700;
 }
@@ -91,9 +91,9 @@
     height: 6px;
     margin-left: 6px;
     border-radius: 999px;
-    background: var(--editor-danger);
+    background: var(--danger);
     box-shadow: 0 0 0 2px
-        color-mix(in srgb, var(--editor-danger) 30%, transparent);
+        color-mix(in srgb, var(--danger) 30%, transparent);
 }
 
 .workspaceToolbarItems {
@@ -121,10 +121,10 @@
     align-items: center;
     height: 28px;
     padding: 0 8px;
-    border: 1px solid var(--editor-border);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    background: var(--editor-surface-2);
-    color: var(--editor-text);
+    background: var(--bg-surface-2);
+    color: var(--text);
     font-size: 11px;
     font-weight: 750;
     font-family: inherit;
@@ -133,15 +133,15 @@
 }
 
 .pluginButton:hover {
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 .pluginButton[data-state="success"] {
-    border-color: var(--editor-success-tint-35);
+    border-color: color-mix(in srgb, var(--success) 35%, transparent);
 }
 
 .pluginButton[data-state="error"] {
-    border-color: var(--editor-danger-tint-40);
+    border-color: color-mix(in srgb, var(--danger) 40%, transparent);
 }
 
 .pluginButton:disabled {
@@ -156,19 +156,19 @@
     z-index: 201;
     max-width: min(320px, calc(100vw - 24px));
     padding: 6px 10px;
-    border: 1px solid var(--editor-success-tint-35);
+    border: 1px solid color-mix(in srgb, var(--success) 35%, transparent);
     border-radius: 6px;
-    background: var(--editor-surface);
-    color: var(--editor-success-green);
+    background: var(--bg-surface);
+    color: var(--success);
     font-size: 11px;
     line-height: 1.35;
     white-space: nowrap;
-    box-shadow: 0 4px 12px var(--editor-overlay-black-40);
+    box-shadow: 0 4px 12px var(--scrim-40);
 }
 
 .pluginToastError {
-    border-color: var(--editor-danger-tint-40);
-    color: var(--editor-danger-lighter);
+    border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+    color: var(--danger-lighter);
 }
 
 /* ── ZoomControls ─────────────────────────────────────────────────────────── */
@@ -195,7 +195,7 @@
     align-items: center;
     gap: 6px;
     max-width: 132px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 700;
     overflow: hidden;
@@ -204,35 +204,35 @@
 }
 
 .publishActionStatus[data-tone="success"] {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .publishActionStatus[data-tone="warning"] {
-    color: var(--editor-warning);
+    color: var(--warning);
 }
 
 .publishActionStatus[data-tone="danger"] {
-    color: var(--editor-danger-light);
+    color: var(--danger-light);
 }
 
 .publishActionStatusDot {
     width: 6px;
     height: 6px;
     border-radius: 999px;
-    background: var(--editor-text-muted);
+    background: var(--text-subtle);
     flex-shrink: 0;
 }
 
 .publishActionStatus[data-tone="success"] .publishActionStatusDot {
-    background: var(--editor-success-green);
+    background: var(--success);
 }
 
 .publishActionStatus[data-tone="warning"] .publishActionStatusDot {
-    background: var(--editor-warning);
+    background: var(--warning);
 }
 
 .publishActionStatus[data-tone="danger"] .publishActionStatusDot {
-    background: var(--editor-danger-light);
+    background: var(--danger-light);
 }
 
 .publishActionWrapper {
@@ -260,27 +260,27 @@
     width: 26px;
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
-    box-shadow: inset 1px 0 var(--editor-overlay-white-06);
+    box-shadow: inset 1px 0 var(--overlay-5);
 }
 
 .publishToast {
     position: absolute;
     top: calc(100% + 6px);
     right: 0;
-    background: var(--editor-surface);
-    border: 1px solid var(--editor-danger-tint-40);
+    background: var(--bg-surface);
+    border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
     border-radius: 6px;
     padding: 6px 10px;
     font-size: 11px;
-    color: var(--editor-danger-lighter);
+    color: var(--danger-lighter);
     white-space: nowrap;
     z-index: 201;
-    box-shadow: 0 4px 12px var(--editor-overlay-black-40);
+    box-shadow: 0 4px 12px var(--scrim-40);
 }
 
 .publishToastStatus {
-    border-color: var(--editor-success-tint-35);
-    color: var(--editor-success-green);
+    border-color: color-mix(in srgb, var(--success) 35%, transparent);
+    color: var(--success);
 }
 
 /* ── Spinner animation ────────────────────────────────────────────────────── */

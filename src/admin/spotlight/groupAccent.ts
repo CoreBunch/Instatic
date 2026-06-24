@@ -1,5 +1,5 @@
 /**
- * groupAccent — maps a CommandGroup to a categorical rail-tint accent.
+ * groupAccent — maps a CommandGroup to a categorical accent.
  *
  * Mirrors the module inserter's section accents (lilac / sky / mint / peach /
  * rose …) so the command palette reads as the same design family: each group

@@ -37,7 +37,7 @@
  * bespoke escape hatches. Prefer one of the three named shapes above
  * whenever possible — they keep the editor visually consistent.
  *
- * The shimmer uses `--editor-surface-3` / `--editor-surface-4` directly
+ * The shimmer uses `--bg-surface-3` / `--bg-surface-4` directly
  * and runs at the previous 1.4 s cadence.
  */
 import type { CSSProperties, ReactNode } from 'react'
@@ -161,7 +161,7 @@ export interface SkeletonCardsProps {
 }
 
 /**
- * Stacked card-shaped skeletons. Each card has the same `--editor-surface-2`
+ * Stacked card-shaped skeletons. Each card has the same `--bg-surface-2`
  * background, padding, and radius as a real `PluginCard` or list item, so
  * full-page loading reads as "a list of cards is about to appear here"
  * rather than "the whole page is a single grey rectangle".
@@ -361,7 +361,7 @@ interface SkeletonProps {
   /** Height — any CSS length. Defaults to `'1em'` (matches surrounding text). */
   height?: string | number
   /**
-   * Border radius. Defaults to `--editor-radius-sm`. Pass
+   * Border radius. Defaults to `--radius-sm`. Pass
    * `'50%'` for a circular slot (or use `SkeletonCircle`).
    */
   radius?: string | number

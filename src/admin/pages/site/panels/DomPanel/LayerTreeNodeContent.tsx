@@ -46,11 +46,11 @@ export function LayerTreeNodeContent({
       />
 
       {showIcon && (
-        <TreeIconSlot iconSize={11} iconColor="var(--editor-text-subtle)">
+        <TreeIconSlot iconSize={11} iconColor="var(--text-disabled)">
           <ModuleIcon
             moduleId={moduleId}
             size={11}
-            color="var(--editor-text-subtle)"
+            color="var(--text-disabled)"
           />
         </TreeIconSlot>
       )}

@@ -13,7 +13,7 @@
  *
  * Constraints:
  *   - CSS Modules only — no Tailwind, no inline styles (#402/#403)
- *   - Strictly achromatic tokens (#376) — all colours via --editor-* vars
+ *   - Strictly achromatic tokens (#376) — all colours via direct global design tokens vars
  *   - pixel-art-icons only (#350)
  *   - No !important (#403)
  *   - default type="button" (never accidentally submits forms)

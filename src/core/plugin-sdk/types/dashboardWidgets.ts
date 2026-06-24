@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 /**
- * Tints reserved for dashboard widgets. Mirrors the four `--rail-tint-*`
+ * Tints reserved for dashboard widgets. Mirrors the four `--accent-*`
  * tokens in `src/styles/globals.css`. Widget chrome reads the value to
  * colour the title-dot and default chart accents.
  */

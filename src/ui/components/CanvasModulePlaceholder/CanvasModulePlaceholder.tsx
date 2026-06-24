@@ -21,7 +21,7 @@
  *
  * Constraints:
  *   - CSS Modules only (no Tailwind utility classes).
- *   - Strictly achromatic — colours via --editor-* tokens + color-mix.
+ *   - Strictly achromatic — colours via direct global design tokens tokens + color-mix.
  *   - Editor-only chrome — never imported from a module's `index.ts`
  *     render path; this primitive only renders inside `*Editor.tsx`.
  */

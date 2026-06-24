@@ -31,15 +31,15 @@
     gap: 6px;
     padding: 6px 12px;
     border-radius: var(--card-radius);
-    background: var(--editor-surface-2);
-    color: var(--editor-text);
+    background: var(--bg-surface-2);
+    color: var(--text);
     min-width: 0;
     transition: background-color 120ms ease;
 }
 
 .row:hover,
 .row:focus-within {
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 .rowMain {
@@ -50,7 +50,7 @@
 }
 
 .rowFamily {
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 16px;
     font-weight: 600;
     line-height: 1.2;
@@ -60,7 +60,7 @@
 }
 
 .rowMeta {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-variant-numeric: tabular-nums;
     overflow: hidden;
@@ -89,7 +89,7 @@
 
 .tokenToolbarTitle {
     min-width: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -98,7 +98,7 @@
 
 .errorAlert {
     margin: 0;
-    color: var(--editor-danger);
+    color: var(--danger);
     font-size: 11px;
     line-height: 1.4;
 }
@@ -128,14 +128,14 @@
 }
 
 .tokenFieldLabel {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     font-weight: 700;
 }
 
 .tokenNotice {
     margin: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     line-height: 1.4;
 }
@@ -149,25 +149,25 @@
     align-items: center;
     gap: 6px;
     margin-inline-end: auto;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     line-height: 1.2;
     min-width: 0;
 }
 
 .estimateHintError {
-    color: var(--editor-danger);
+    color: var(--danger);
 }
 
 .estimateValue {
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 12px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
 }
 
 .estimateMeta {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -192,7 +192,7 @@
     margin: 0;
     gap: 1px;
     border-radius: var(--card-radius);
-    background: var(--editor-surface);
+    background: var(--bg-surface);
     overflow-y: auto;
 }
 
@@ -211,8 +211,8 @@
     padding: 14px 16px;
     border-radius: var(--card-radius);
     border: 0;
-    background: var(--editor-surface-2);
-    color: var(--editor-text);
+    background: var(--bg-surface-2);
+    color: var(--text);
     font-family: inherit;
     cursor: pointer;
     text-align: left;
@@ -226,12 +226,12 @@
 
 .pickerItem:hover,
 .pickerItem:focus-visible {
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
     outline: none;
 }
 
 .pickerItem:active {
-    background: var(--editor-surface-4);
+    background: var(--bg-surface-4);
 }
 
 .pickerItem:disabled {
@@ -243,7 +243,7 @@
     font-size: 26px;
     font-weight: 500;
     line-height: 1.1;
-    color: var(--editor-text);
+    color: var(--text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -258,7 +258,7 @@
 }
 
 .pickerCategory {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 9.5px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -270,7 +270,7 @@
 }
 
 .pickerInstalled {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 9.5px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -281,13 +281,13 @@
 .pickerEmpty {
     grid-column: 1 / -1;
     padding: 32px 18px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     text-align: center;
 }
 
 .pickerInfo {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
 }
 
@@ -302,7 +302,7 @@
     gap: 8px;
     padding: 18px 20px 20px;
     border-radius: var(--card-radius);
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
     min-width: 0;
 }
 
@@ -314,7 +314,7 @@
 }
 
 .previewFamilyName {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -325,7 +325,7 @@
 }
 
 .previewCategory {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -333,7 +333,7 @@
 }
 
 .previewSample {
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 36px;
     line-height: 1.15;
     margin: 0;
@@ -364,14 +364,14 @@
 }
 
 .dialogSectionTitle {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 14px;
     font-weight: 700;
     margin: 0;
 }
 
 .dialogSectionSelectAll {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     background: transparent;
     border: 0;
@@ -383,7 +383,7 @@
 
 .dialogSectionSelectAll:hover,
 .dialogSectionSelectAll:focus-visible {
-    color: var(--editor-text);
+    color: var(--text);
     outline: none;
     text-decoration: underline;
 }
@@ -407,20 +407,20 @@
     gap: 10px;
     padding: 8px 12px;
     border-radius: var(--card-radius);
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
     border: 0;
-    color: var(--editor-text);
+    color: var(--text);
     cursor: pointer;
     line-height: 1.2;
     min-width: 0;
 }
 
 .variantRow:hover {
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 .variantRow[data-checked="true"] {
-    background: var(--editor-surface-4);
+    background: var(--bg-surface-4);
 }
 
 .variantSample {
@@ -432,7 +432,7 @@
 }
 
 .variantWeightLabel {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-variant-numeric: tabular-nums;
     text-transform: uppercase;
@@ -456,10 +456,10 @@
     align-items: center;
     gap: 6px;
     padding: 4px 10px;
-    border-radius: var(--editor-radius);
+    border-radius: var(--radius);
     border: 0;
-    background: var(--editor-surface-2);
-    color: var(--editor-text);
+    background: var(--bg-surface-2);
+    color: var(--text);
     cursor: pointer;
     font-family: inherit;
     font-size: 11px;
@@ -471,17 +471,17 @@
 }
 
 .subsetChip:hover {
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 .subsetChip[aria-pressed="true"] {
-    background: var(--editor-surface-4);
-    color: var(--editor-text);
+    background: var(--bg-surface-4);
+    color: var(--text);
 }
 
 .subsetChip:focus-visible {
     outline: none;
-    box-shadow: var(--input-shadow-focus);
+    box-shadow: var(--shadow-input-focus);
 }
 
 /* ─── Custom-font file picker ─────────────────────────────────────────── */
@@ -495,7 +495,7 @@
     margin: 0;
     padding: 0;
     border-radius: var(--card-radius);
-    background: var(--editor-surface);
+    background: var(--bg-surface);
     overflow-y: auto;
 }
 
@@ -506,19 +506,19 @@
     padding: 14px 16px;
     border-radius: var(--card-radius);
     border: 0;
-    background: var(--editor-surface-2);
-    color: var(--editor-text);
+    background: var(--bg-surface-2);
+    color: var(--text);
     min-width: 0;
     transition: background-color 120ms ease;
 }
 
 .customFontItem:hover,
 .customFontItem:focus-within {
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 .customFontItem[data-checked="true"] {
-    background: var(--editor-surface-4);
+    background: var(--bg-surface-4);
 }
 
 .customPickLabel {
@@ -537,7 +537,7 @@
 }
 
 .customFontPreviewName {
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 24px;
     font-weight: 500;
     line-height: 1.1;
@@ -547,7 +547,7 @@
 }
 
 .customFontMeta {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 9.5px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -570,7 +570,7 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 600;
     white-space: nowrap;

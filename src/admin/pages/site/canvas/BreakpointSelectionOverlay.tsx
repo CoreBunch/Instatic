@@ -368,7 +368,7 @@ export function BreakpointSelectionOverlay({
         className={cn(styles.selectionToolbarButton, styles.dragToolbarButton)}
         onPointerDown={reorderDrag.handlePointerDown}
       >
-        <HandGrabSolidIcon size={13} color="var(--editor-text)" />
+        <HandGrabSolidIcon size={13} color="var(--text)" />
       </Button>
       <CanvasInsertModuleButton buttonClassName={styles.selectionToolbarButton} />
 
@@ -381,7 +381,7 @@ export function BreakpointSelectionOverlay({
         className={styles.selectionToolbarButton}
         onClick={duplicateSelectedLayers}
       >
-        <CopyPlusSolidIcon size={13} color="var(--editor-text)" />
+        <CopyPlusSolidIcon size={13} color="var(--text)" />
       </Button>
       <Button
         variant="secondary"
@@ -393,7 +393,7 @@ export function BreakpointSelectionOverlay({
         className={styles.selectionToolbarButton}
         onClick={deleteSelectedLayers}
       >
-        <TrashSolidIcon size={13} color="var(--editor-danger-light)" />
+        <TrashSolidIcon size={13} color="var(--danger-light)" />
       </Button>
     </div>
   ) : null

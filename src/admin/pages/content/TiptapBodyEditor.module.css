@@ -8,7 +8,7 @@
  * `contenteditable` root by Tiptap (via `editorProps.attributes.class`). */
 .proseSurface {
     min-height: 220px;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 16px;
     line-height: 1.65;
     outline: none;
@@ -26,7 +26,7 @@
 .proseSurface :global(h3),
 .proseSurface :global(h4) {
     margin: 1em 0 0.35em;
-    color: var(--editor-text);
+    color: var(--text);
     font-weight: 720;
     line-height: 1.2;
     letter-spacing: -0.005em;
@@ -69,16 +69,16 @@
 }
 
 .proseSurface :global(a) {
-    color: var(--editor-accent);
+    color: var(--overlay);
     text-decoration: underline;
     text-underline-offset: 2px;
 }
 
 .proseSurface :global(code) {
     padding: 1px 5px;
-    border-radius: var(--editor-radius-sm);
-    background: var(--editor-surface-3);
-    color: var(--editor-text);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-3);
+    color: var(--text);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.92em;
 }
@@ -104,8 +104,8 @@
 .proseSurface :global(blockquote) {
     margin: 0.5em 0 0.9em;
     padding: 0.2em 0 0.2em 14px;
-    border-left: 3px solid var(--editor-border);
-    color: var(--editor-text-secondary);
+    border-left: 3px solid var(--border);
+    color: var(--text-muted);
     font-style: italic;
 }
 
@@ -115,8 +115,8 @@
     margin: 0.7em 0 0.9em;
     padding: 14px 16px;
     border-radius: var(--panel-radius);
-    background: var(--editor-surface-3);
-    color: var(--editor-text);
+    background: var(--bg-surface-3);
+    color: var(--text);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 13px;
     line-height: 1.55;
@@ -135,7 +135,7 @@
 .proseSurface :global(hr) {
     margin: 1.4em 0;
     border: 0;
-    border-top: 1px solid var(--editor-border);
+    border-top: 1px solid var(--border);
 }
 
 /* Tables */
@@ -151,13 +151,13 @@
 .proseSurface :global(th),
 .proseSurface :global(td) {
     padding: 8px 10px;
-    border: 1px solid var(--editor-border);
+    border: 1px solid var(--border);
     vertical-align: top;
     text-align: left;
 }
 
 .proseSurface :global(th) {
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
     font-weight: 700;
 }
 
@@ -178,7 +178,7 @@
     width: 100%;
     height: auto;
     border-radius: var(--panel-radius);
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 .proseSurface :global(figure[data-instatic-media].ProseMirror-selectednode) {
@@ -196,7 +196,7 @@
     pointer-events: none;
     float: left;
     height: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 /* ProseMirror gapcursor + dropcursor — keep them visible. */

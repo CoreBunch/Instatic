@@ -3,7 +3,7 @@
  *
  * Achromatic by default — all colour comes from caller-provided `tint`
  * props (which themselves resolve to design tokens like
- * `var(--rail-tint-mint)`). Sizes are driven through CSS custom
+ * `var(--accent-1)`). Sizes are driven through CSS custom
  * properties supplied by each component so consumers can compose them
  * without inline `style={{ width: ... }}` walls.
  *
@@ -34,7 +34,7 @@
     --bars-cols: 28;
     --bars-height: 76px;
     --bars-gap: 3px;
-    --bars-tint: var(--editor-chart-default-tint);
+    --bars-tint: var(--chart-default-tint);
     display: grid;
     grid-template-columns: repeat(var(--bars-cols), 1fr);
     gap: var(--bars-gap);
@@ -85,7 +85,7 @@
     flex-wrap: wrap;
     gap: 10px 14px;
     font-size: 11px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-family: var(--font-mono);
 }
 
@@ -112,7 +112,7 @@
 .statValue {
     font-size: 40px;
     font-weight: 600;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     letter-spacing: -0.025em;
     line-height: 1;
     font-feature-settings: "tnum";
@@ -130,7 +130,7 @@
     gap: 6px;
     margin-top: 10px;
     font-size: 12px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .delta {
@@ -140,13 +140,13 @@
 }
 
 .delta-up {
-    color: var(--editor-success-green);
+    color: var(--success);
 }
 
 .delta-down {
-    color: var(--editor-danger);
+    color: var(--danger);
 }
 
 .delta-flat {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }

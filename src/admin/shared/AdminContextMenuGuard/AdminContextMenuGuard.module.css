@@ -8,10 +8,10 @@
     justify-content: center;
     width: 26px;
     height: 26px;
-    border-radius: var(--editor-radius);
-    color: var(--editor-danger);
-    background: var(--editor-danger-bg);
-    box-shadow: var(--editor-focus-ring);
+    border-radius: var(--radius);
+    color: var(--danger);
+    background: var(--danger-10);
+    box-shadow: var(--focus-ring);
     pointer-events: none;
     transform: translate(-50%, -50%);
     animation: contextMenuDenied 520ms ease-out both;

@@ -58,8 +58,8 @@
 .viewport {
     width: var(--bp-width);
     min-height: 100vh;
-    background: var(--editor-accent);
-    box-shadow: 0 2px 12px var(--editor-overlay-black-30);
+    background: var(--overlay);
+    box-shadow: 0 2px 12px var(--scrim-30);
     overflow: hidden;
     position: relative;
 }

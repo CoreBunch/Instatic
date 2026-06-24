@@ -11,7 +11,7 @@ describe('DataTable visual density', () => {
   it('uses 1px row spacing and editor-surface-2 hover for every table density', () => {
     expect(dataTableCss).toContain('border-spacing: 0 1px')
     expect(dataTableCss).toContain('.row:hover .cell')
-    expect(dataTableCss).toContain('background: var(--editor-surface-2)')
+    expect(dataTableCss).toContain('background: var(--bg-surface-2)')
     expect(dataTableCss).not.toContain('border-spacing: 0 4px')
     expect(dataTableCss).not.toContain('border-spacing: 0 8px')
   })

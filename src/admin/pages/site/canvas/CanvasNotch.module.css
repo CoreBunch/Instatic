@@ -62,15 +62,15 @@
     content: "";
     width: 38px;
     height: 4px;
-    border-radius: 0 0 var(--editor-radius) var(--editor-radius);
-    background: var(--editor-border-med);
+    border-radius: 0 0 var(--radius) var(--radius);
+    background: var(--border-muted);
     /* Match the roller: the nub reappears 600ms after the pointer leaves so it
        stays in sync with the notch rolling back up. */
     transition: background 160ms ease, opacity 160ms ease 600ms;
 }
 
 .peekHandle:hover::after {
-    background: var(--editor-text-secondary);
+    background: var(--text-muted);
 }
 
 /* Once the notch is rolled down it covers the handle's job — fade the nub so
@@ -88,7 +88,7 @@
 }
 
 .notch {
-    --notch-bg: var(--editor-bg);
+    --notch-bg: var(--bg-body);
     --notch-radius: 16px;
     --notch-corner: 16px;
     --notch-corner-cut: calc(var(--notch-corner) - 0.5px);
@@ -99,7 +99,7 @@
     gap: 4px;
     padding: 4px;
     pointer-events: auto;
-    color: var(--editor-text);
+    color: var(--text);
     background: var(--notch-bg);
     border: 0;
     border-radius: 0 0 var(--notch-radius) var(--notch-radius);
@@ -137,18 +137,18 @@
 }
 
 .quickButton {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .quickButton:hover {
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .divider {
     width: 1px;
     height: 18px;
     margin: 0 2px;
-    background: var(--editor-border-med);
+    background: var(--border-muted);
 }
 
 .historyGroup {

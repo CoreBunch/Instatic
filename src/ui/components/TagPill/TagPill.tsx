@@ -16,7 +16,7 @@ import type {
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { Button } from '@ui/components/Button'
 import { cn } from '@ui/cn'
-import { pillAccent, type PillAccent } from '@ui/pillAccent'
+import { pillAccent, pillAccentVar, type PillAccent } from '@ui/pillAccent'
 import styles from './TagPill.module.css'
 
 type TagPillSize = 'xs' | 'sm'
@@ -69,7 +69,7 @@ export function TagPill({
   const resolvedAccent = accent ?? pillAccent(colorKey ?? label)
   const removable = Boolean(onRemove)
   const style = {
-    '--tag-pill-tint': `var(--tag-pill-tint-${resolvedAccent})`,
+    '--pill-accent': pillAccentVar(resolvedAccent),
   } as CSSProperties
 
   const labelContent = (

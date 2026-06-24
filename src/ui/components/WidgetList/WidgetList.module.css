@@ -23,9 +23,9 @@
     align-items: center;
     gap: 10px;
     padding: 10px 0;
-    border-top: 1px solid var(--editor-border);
+    border-top: 1px solid var(--border);
     font-size: 13px;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .row:first-child {
@@ -41,13 +41,13 @@
     gap: 8px;
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
 }
 
 .meta {
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     display: inline-flex;
     align-items: center;
     gap: 8px;

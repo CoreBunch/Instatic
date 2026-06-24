@@ -17,7 +17,7 @@
     padding-right: 12px;
     gap: 3px;
     border-radius: 8px;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 11px;
     font-weight: 500;
     line-height: 1;
@@ -40,28 +40,28 @@
 
 .row:hover,
 .rowHovered {
-    background: var(--editor-overlay-white-10);
-    color: var(--editor-text-secondary);
+    background: var(--overlay-10);
+    color: var(--text-muted);
 }
 
 .row:focus-visible,
 .rowFocused {
-    --tree-row-focus: var(--editor-overlay-white-18);
+    --tree-row-focus: var(--overlay-20);
 }
 
 .rowSelected {
-    --tree-row-accent: var(--editor-overlay-white-55);
+    --tree-row-accent: var(--overlay-60);
 
-    background: var(--editor-overlay-white-10);
-    color: var(--editor-text);
+    background: var(--overlay-10);
+    color: var(--text);
 }
 
 .rowMuted {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .rowLocked {
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
 }
 
 .rowHidden {
@@ -84,7 +84,7 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     transition: transform 120ms ease;
 }
 
@@ -107,7 +107,7 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
 }
 
 .labelGroup {
@@ -131,7 +131,7 @@
 
 .meta {
     flex-shrink: 0;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     font-size: 9px;
     line-height: 1;
 }

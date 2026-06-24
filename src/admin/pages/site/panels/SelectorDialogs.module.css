@@ -1,11 +1,11 @@
 .dialogCopy {
     margin: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     line-height: 1.5;
 }
 
 .dialogStrong {
-    color: var(--editor-text);
+    color: var(--text);
     font-weight: 700;
 }

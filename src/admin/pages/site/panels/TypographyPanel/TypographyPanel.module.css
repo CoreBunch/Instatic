@@ -4,7 +4,7 @@
     --preview-text-size: 12px;
 
     display: inline-block;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: var(--preview-text-size);
     line-height: 1.05;
     overflow: hidden;
@@ -46,7 +46,7 @@
     min-width: 0;
     height: auto;
     padding: 0;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-family: var(--font-mono);
     font-size: 10px;
     font-weight: 700;
@@ -60,7 +60,7 @@
 .typeTokenButton:hover,
 .typeTokenButton:active {
     background: transparent;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .typeTokenButton > * {
@@ -71,7 +71,7 @@
 }
 
 .typeRange {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0;
@@ -81,11 +81,11 @@
 
 .typeRangeSeparator {
     padding: 0 4px;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
 }
 
 .typeRangeUnit {
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
 }
 
 .typeSpecimenLine {
@@ -99,7 +99,7 @@
 .typeSpecimenMin,
 .typeSpecimenMax {
     display: block;
-    color: var(--editor-text);
+    color: var(--text);
     font-weight: 450;
     letter-spacing: 0;
     line-height: 0.86;
@@ -109,7 +109,7 @@
 .typeSpecimenMin {
     align-self: end;
     overflow: hidden;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: clamp(10px, var(--type-min-size), 34px);
     text-overflow: ellipsis;
 }
@@ -118,17 +118,17 @@
     justify-self: end;
     max-width: 100%;
     overflow: hidden;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: clamp(13px, var(--type-max-size), 82px);
     text-overflow: clip;
 }
 
 .typeSpecimen[data-base="true"] .typeTokenButton,
 .typeSpecimen[data-base="true"] .typeRange {
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .typeSpecimen[data-base="true"] .typeSpecimenMin,
 .typeSpecimen[data-base="true"] .typeSpecimenMax {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
 }

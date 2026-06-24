@@ -55,7 +55,7 @@ src/admin/spotlight/
 ├── spotlightControls.ts           — programmatic controls (open / close / set query)
 ├── spotlightSearch.ts             — search query parsing (scope:, action: prefixes)
 ├── telemetry.ts                   — usage logging
-├── groupAccent.ts                 — maps CommandGroup → categorical rail-tint accent
+├── groupAccent.ts                 — maps CommandGroup → categorical accent
 ├── HelpKeybindingsList.tsx        — Cmd+? help screen
 ├── pendingAction.ts               — confirm-destructive flow
 ├── types.ts                       — Command, SpotlightProvider, Scope, CommandContext
@@ -257,16 +257,16 @@ When a scope is active:
 
 ## The `Spotlight` dialog
 
-`Spotlight.tsx` is the dialog itself — search input, scope chips, result list, footer with keyboard hints. It uses the `--spotlight-*` design tokens (see [docs/reference/design-tokens.md](../reference/design-tokens.md)).
+`Spotlight.tsx` is the dialog itself — search input, scope chips, result list, footer with keyboard hints. It uses the global panel, overlay, accent, and state tokens from [docs/reference/design-tokens.md](../reference/design-tokens.md), with only z-index and width scoped to Spotlight.
 
 Key behaviors:
 
 - **Lazy chunk.** `Spotlight` is `React.lazy`-loaded inside `SpotlightRoot`; first-time open downloads the palette code.
-- **Backdrop blur** (`--spotlight-backdrop-blur: 8px`).
+- **Backdrop blur** (`--backdrop-blur: 8px`).
 - **Card rows.** Result rows have a border-radius and are laid out with a 1px gap — the same tile-card language as the module inserter and dashboard.
-- **Categorical group accents.** Each command group gets a stable rail-tint identity (e.g. `editor` → lilac, `navigation` → sky, `media` → peach). The accent drives the icon chip color and the group-header accent bar. Mapping lives in `groupAccent.ts`.
-- **Row selection** highlight via `--spotlight-row-selected-bg`.
-- **Fuzzy match highlighting** — matched characters wrapped in `<mark>` with `--spotlight-mark-bg`.
+- **Categorical group accents.** Each command group gets a stable numbered accent identity (e.g. `editor` → `--accent-2`, `navigation` → `--accent-3`, `media` → `--accent-4`). The accent drives the icon chip color and the group-header accent bar. Mapping lives in `groupAccent.ts`.
+- **Row selection** highlight via `--overlay-10`.
+- **Fuzzy match highlighting** — matched characters wrapped in `<mark>` with `--success-20`.
 - **Skeleton shimmer** while providers are in flight.
 
 ### Destructive confirm
@@ -274,7 +274,7 @@ Key behaviors:
 Commands with `destructive: true` enter a two-press confirm flow:
 
 ```text
-First Enter:  row background turns red (--spotlight-confirm-bg), label shows the confirm prompt
+First Enter:  row background turns red (--danger-10), label shows the confirm prompt
 Second Enter: command runs
 Esc / move:   resets to the normal state
 ```
@@ -453,7 +453,7 @@ run: async (ctx) => {
 - [docs/architecture.md](../architecture.md) — admin shell mount points
 - [docs/editor.md](../editor.md) — `SpotlightRoot` placement
 - [docs/features/plugin-system.md](plugin-system.md) — plugin commands + providers
-- [docs/reference/design-tokens.md](../reference/design-tokens.md) — `--spotlight-*` tokens
+- [docs/reference/design-tokens.md](../reference/design-tokens.md) — global UI token reference
 - Source-of-truth files:
   - `src/admin/spotlight/SpotlightRoot.tsx` — mount + state
   - `src/admin/spotlight/Spotlight.tsx` — the dialog
@@ -466,7 +466,7 @@ run: async (ctx) => {
   - `src/admin/spotlight/matcher.ts` — fuzzy match
   - `src/admin/spotlight/types.ts` — `Command`, `SpotlightProvider`, `Scope`, `CommandContext`
   - `src/admin/spotlight/keybindings.ts` — keybinding registry
-  - `src/admin/spotlight/groupAccent.ts` — CommandGroup → rail-tint accent mapping
+  - `src/admin/spotlight/groupAccent.ts` — CommandGroup → categorical accent mapping
 - Gate tests:
   - `src/__tests__/architecture/spotlight-no-direct-store-mutation.test.ts`
   - `src/__tests__/architecture/keybindings-registry-single-source.test.ts`

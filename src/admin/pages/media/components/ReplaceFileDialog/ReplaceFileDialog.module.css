@@ -1,17 +1,17 @@
 .body {
   margin: 0 0 12px 0;
   font-size: 13px;
-  color: var(--editor-text);
+  color: var(--text);
   line-height: 1.4;
 }
 
 .current {
   margin: 0 0 12px 0;
   padding: 8px 12px;
-  background: var(--editor-surface-2);
-  border-radius: var(--editor-radius);
+  background: var(--bg-surface-2);
+  border-radius: var(--radius);
   font-size: 12px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   display: grid;
   grid-template-columns: max-content 1fr;
   column-gap: 8px;
@@ -22,12 +22,12 @@
   text-transform: uppercase;
   font-size: 10px;
   letter-spacing: 0.06em;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 
 .current dd {
   margin: 0;
-  color: var(--editor-text);
+  color: var(--text);
 }
 
 .picker {
@@ -38,12 +38,12 @@
 
 .picked {
   font-size: 12px;
-  color: var(--editor-text);
+  color: var(--text);
   margin: 0;
 }
 
 .error {
   margin: 8px 0 0 0;
   font-size: 12px;
-  color: var(--editor-danger);
+  color: var(--danger);
 }

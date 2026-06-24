@@ -2,17 +2,17 @@
 
 The visual design system for Instatic — principles, tokens, surfaces, components.
 
-The design is a **two-layer color model**: an achromatic base (surfaces, borders, default text) with a deliberate semantic and categorical color layer on top (rail tints for identity, state tokens for meaning, canvas neon for selection). Everything is tokenized in `src/styles/globals.css`. Every primitive lives in `src/ui/components/`.
+The design is a **two-layer color model**: an achromatic base (surfaces, borders, default text) with a deliberate semantic and categorical color layer on top (numbered accents for identity, state tokens for meaning, canvas neon for selection). Everything is tokenized in `src/styles/globals.css`. Every primitive lives in `src/ui/components/`.
 
 ---
 
 ## TL;DR
 
-- **Base is achromatic; color is the layer on top.** Surfaces, borders, and default text are neutral. Color is used to convey **identity** (automatic rail tints and tag-pill tints) and **state** (danger, warning, success, info, canvas selection / hover). Color is never decorative — every colored pixel carries meaning.
-- **Borderless tile cards.** Dashboard widgets and equivalent surfaces sit on a darker parent (`--editor-surface`) with a 1px grid gap, no border, `--card-radius` (16px). The gap reveals the parent and reads as a divider. Hover lifts the surface tone, never the border. Canonical implementation: `src/ui/components/Widget/Widget.module.css`.
+- **Base is achromatic; color is the layer on top.** Surfaces, borders, and default text are neutral. Color is used to convey **identity** (`--accent-1..10`) and **state** (danger, warning, success, info, canvas selection / hover). Color is never decorative — every colored pixel carries meaning.
+- **Borderless tile cards.** Dashboard widgets and equivalent surfaces sit on a darker parent (`--bg-surface`) with a 1px grid gap, no border, `--card-radius` (16px). The gap reveals the parent and reads as a divider. Hover lifts the surface tone, never the border. Canonical implementation: `src/ui/components/Widget/Widget.module.css`.
 - **Bordered transparent inputs.** Inputs have a 1px white-alpha border, transparent background, and a pill 1em radius. Focus adds an inset achromatic glow.
-- **Floating overlay panels.** Spotlight, popovers, modals use `--panel-*` tokens: panel background, 12px radius, blur backdrop, 3-layer composite shadow.
-- **Editor controls** (toolbar buttons, chips) use `--editor-radius` (6px) for default and `--editor-radius-sm` (3px) for tight badges.
+- **Floating overlay panels.** Spotlight, popovers, and modals use direct globals: `--bg-surface`, `--overlay-10`, `--panel-radius`, `--panel-blur`, and `--shadow-panel`.
+- **Editor controls** (toolbar buttons, chips) use `--radius` (6px) for default and `--radius-sm` (3px) for tight badges.
 - **One source of truth: `src/styles/globals.css`.** No hardcoded hex / rgb / hsl in admin / ui CSS modules — gated by `css-token-policy.test.ts`.
 - **CSS Modules only.** No Tailwind utility classes — gated by `noTailwindUtilities.test.ts`. No Tailwind ecosystem deps — gated by `no-tailwind-deps.test.ts`.
 - **Every interactive control goes through a UI primitive** from `src/ui/components/`. Bare `<button>` is gated.
@@ -33,13 +33,13 @@ If a color isn't carrying information, it doesn't belong in the chrome.
 ```text
 ┌────────────────────────────────────────────────────────────────┐
 │  Layer 2 — SEMANTIC + CATEGORICAL COLOR                        │
-│  automatic rail tints, state (danger/warning/                   │
+│  numbered identity accents, state (danger/warning/               │
 │  success/info), canvas neon (selection/hover)                  │
 ├────────────────────────────────────────────────────────────────┤
 │  Layer 1 — ACHROMATIC BASE                                     │
-│  --editor-bg / --editor-surface / --editor-surface-2..5        │
-│  --editor-text / --editor-text-bright / --editor-text-muted    │
-│  --editor-border / --editor-border-med                         │
+│  --bg-body / --bg-surface / --bg-surface-2..5                    │
+│  --text-bright / --text / --text-muted / --text-subtle           │
+│  --border / --border-muted / --overlay-*                         │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -50,13 +50,13 @@ Both layers are tokenized. Layer 1 is the base every primitive paints itself wit
 The base layer uses six surface tones to convey depth without shadows or gradients on inline content. Lighter surfaces are higher in the stack:
 
 ```text
---editor-bg          #000000   ← page bottom (root, behind everything)
---editor-surface     #1b1b1b   ← darker parent of tile cards / sidebar fill
---editor-surface-2   #282828   ← tile cards themselves, panel bodies
---editor-surface-3   #323232   ← hover state for tiles, nested controls
---editor-surface-4   #4a4a4a   ← active state
---editor-surface-5   #605f5f   ← active + focused
---editor-bg-subtle   #323232   ← chips, badges inside nested surfaces
+--bg-body          #000000   ← page bottom (root, behind everything)
+--bg-surface     #1b1b1b   ← darker parent of tile cards / sidebar fill
+--bg-surface-2   #282828   ← tile cards themselves, panel bodies
+--bg-surface-3   #323232   ← hover state for tiles, nested controls
+--bg-surface-4   #4a4a4a   ← active state
+--bg-surface-5   #605f5f   ← active + focused
+--bg-surface-3   #323232   ← hover state, nested controls, chips
 ```
 
 Hover and active states change **tone**, not border. Reach for the closest tone above the current surface; skip levels only with intent.
@@ -66,9 +66,9 @@ Hover and active states change **tone**, not border. Reach for the closest tone 
 The dashboard pattern — and any surface that wants to read as a unit — is a **borderless tile** sitting on a darker parent with a 1px grid gap. The gap reveals the parent and visually separates the cards without a stroke. The card has no border, just a background and a 16px radius. Hover lifts the surface, never the edge.
 
 ```text
-Parent surface  ── --editor-surface
+Parent surface  ── --bg-surface
                    ┌──────────┐ ┌──────────┐ ┌──────────┐
-                   │  tile 1  │ │  tile 2  │ │  tile 3  │   ← --editor-surface-2
+                   │  tile 1  │ │  tile 2  │ │  tile 3  │   ← --bg-surface-2
                    └──────────┘ └──────────┘ └──────────┘
                    ▲           ▲           ▲
                    └────── 1px grid gap ───┘
@@ -85,22 +85,22 @@ This split (cards = filled & borderless, inputs = unfilled & bordered) is the lo
 
 ### 6. Identity is a color, not a label
 
-Categories of things have an associated color drawn from the **rail tints**. Each widget category has a tint; each panel rail icon has a tint; each storage breakdown segment has a tint. Color is the at-a-glance label that lets the eye sort the screen.
+Categories of things have an associated color drawn from the numbered **accent** scale. Each widget category has a tint; each panel rail icon has a tint; each storage breakdown segment has a tint. Color is the at-a-glance label that lets the eye sort the screen.
 
 | Token              | Hex       | Role                                                    |
 |--------------------|-----------|---------------------------------------------------------|
-| `--rail-tint-mint` | `#8ee6c8` | "Saved / system / status" categories                    |
-| `--rail-tint-lilac`| `#c8b6ff` | "Pages / structure" categories                          |
-| `--rail-tint-sky`  | `#9bdcff` | "Storage / data / configuration" categories             |
-| `--rail-tint-peach`| `#ffc7a8` | "Posts / media / activity" categories                   |
-| `--rail-tint-rose` | `#ffb6cd` | Secondary warm identity tint                          |
-| `--rail-tint-lime` | `#b8f28b` | Secondary green identity tint                         |
-| `--rail-tint-gold` | `#f7df72` | Secondary yellow identity tint                        |
-| `--rail-tint-cyan` | `#83e7ff` | Secondary blue identity tint                          |
-| `--rail-tint-violet` | `#f0a6ff` | Secondary violet identity tint                      |
-| `--rail-tint-coral` | `#ff9f9f` | Secondary red identity tint                          |
+| `--accent-1` | `#8ee6c8` | "Saved / system / status" categories                    |
+| `--accent-2`| `#c8b6ff` | "Pages / structure" categories                          |
+| `--accent-3`  | `#9bdcff` | "Storage / data / configuration" categories             |
+| `--accent-4`| `#ffc7a8` | "Posts / media / activity" categories                   |
+| `--accent-5` | `#ffb6cd` | Secondary warm identity tint                          |
+| `--accent-6` | `#b8f28b` | Secondary green identity tint                         |
+| `--accent-7` | `#f7df72` | Secondary yellow identity tint                        |
+| `--accent-8` | `#83e7ff` | Secondary blue identity tint                          |
+| `--accent-9` | `#f0a6ff` | Secondary violet identity tint                      |
+| `--accent-10` | `#ff9f9f` | Secondary red identity tint                          |
 
-Rail tints don't live in `src/styles/globals.css` to be decorative — they're part of the design system. Panel rails assign these tints automatically using `assignRailAccents` (multi-item surfaces, avoids repeats inside the visible group) or `railAccent` (single item) from `src/ui/railAccent.ts`. Primitives like `Widget` can still accept an explicit tint when the category is product-defined. New rail tints are added by extending the token group, not by inlining a color.
+Accent tokens don't live in `src/styles/globals.css` to be decorative — they're part of the design system. Panel rails assign these accents automatically using `assignRailAccents` (multi-item surfaces, avoids repeats inside the visible group) or `railAccent` (single item) from `src/ui/railAccent.ts`. Primitives like `Widget` can still accept an explicit tint when the category is product-defined. New identity colors are added by extending the `--accent-*` group, not by inlining a color.
 
 ### 7. The canvas owns its own palette
 
@@ -128,38 +128,36 @@ All tokens live in `src/styles/globals.css`. Anywhere you need a color, radius, 
 
 ```text
 Base surfaces (achromatic):
-  --editor-bg, --editor-bg-subtle
-  --editor-surface, --editor-surface-2..5
-  --editor-border, --editor-border-med
-  --editor-panel-border
-  --editor-scrollbar-track, --editor-scrollbar-thumb,
-  --editor-scrollbar-thumb-hover
+  --bg-body, --bg-surface-3
+  --bg-surface, --bg-surface-2..5
+  --border, --border-muted
+  --border-subtle
+  --scrollbar-track, --scrollbar-thumb,
+  --scrollbar-thumb-hover
 
 Base text (achromatic):
-  --editor-text-bright, --editor-text, --editor-text-secondary,
-  --editor-text-muted, --editor-text-subtle
+  --text-bright, --text, --text-muted,
+  --text-subtle, --text-disabled
 
-White accent (still in the base layer — alpha variants of white):
-  --editor-accent (= #ffffff)
-  --editor-accent-light (= #a1a1aa)
-  --editor-accent-violet (= white at 0.8 alpha, despite the name)
-  --editor-selection (= white at 0.08, used for selected rows / pressed states)
+Overlay scale (white alpha):
+  --overlay, --overlay-5, --overlay-10, --overlay-20, --overlay-30,
+  --overlay-40, --overlay-50, --overlay-60, --overlay-70, --overlay-80,
+  --overlay-90
 
-Rail tints (categorical identity layer):
-  --rail-tint-mint, --rail-tint-lilac, --rail-tint-sky, --rail-tint-peach,
-  --rail-tint-rose, --rail-tint-lime, --rail-tint-gold, --rail-tint-cyan,
-  --rail-tint-violet, --rail-tint-coral
+Identity accents (categorical identity layer):
+  --accent-1, --accent-2, --accent-3, --accent-4,
+  --accent-5, --accent-6, --accent-7, --accent-8,
+  --accent-9, --accent-10
 
 Semantic state (meaning layer):
-  --editor-danger, --editor-danger-light, --editor-danger-lighter,
-  --editor-danger-text, --editor-danger-bg, --editor-danger-border
-  --editor-warning, --editor-warning-text, --editor-warning-bg,
-  --editor-warning-border
-  --editor-success-green, --editor-success-bright,
-  --editor-success-text, --editor-success-text-soft, --editor-success-bg
-  --editor-info-text
-  --editor-mint-surface  ← dark mint background for "saved / active" chrome
-                          (breakpoint indicator, mode toggle)
+  --danger, --danger-light, --danger-lighter,
+  --danger-text, --danger-10, --danger-20
+  --warning, --warning-text, --warning-10,
+  --warning-30
+  --success, --success-bright,
+  --success-text, --success-text-muted, --success-10
+  --info-text
+  --accent-1-10 through --accent-10-10
 
 Canvas (selection / hover affordances):
   --canvas-chrome-shadow           (shared shadow for canvas notch chrome)
@@ -176,13 +174,13 @@ Keycap (Kbd / ShortcutKeys — scoped to those primitives):
   --kbd-highlight, --kbd-inner-shadow, --kbd-edge, --kbd-drop
 
 Code editor (GitHub Dark inspired — used inside CodeMirror only):
-  --editor-syntax-keyword, --editor-syntax-entity,
-  --editor-syntax-property, --editor-syntax-variable,
-  --editor-syntax-string, --editor-syntax-constant,
-  --editor-syntax-comment, --editor-syntax-operator, --editor-syntax-invalid
+  --syntax-keyword, --syntax-entity,
+  --syntax-property, --syntax-variable,
+  --syntax-string, --syntax-constant,
+  --syntax-comment, --syntax-operator, --syntax-invalid
 
 Charts:
-  --editor-chart-default-tint (= --rail-tint-peach)
+  --chart-default-tint (= --accent-4)
   --chart-series-min / --chart-series-min-glow
   --chart-series-max / --chart-series-max-glow
   --chart-segment-empty, --chart-segment-empty-border
@@ -193,11 +191,11 @@ Charts:
 
 | Token                       | Hex       | Means                          |
 |-----------------------------|-----------|--------------------------------|
-| `--editor-text-bright`      | `#f4f4f5` | Titles, headings, KPIs         |
-| `--editor-text`             | `#ededed` | Primary body text              |
-| `--editor-text-secondary`   | `#a1a1aa` | Labels, secondary UI           |
-| `--editor-text-muted`       | `#787878` | Muted / placeholder            |
-| `--editor-text-subtle`      | `#52525b` | Disabled / very subtle         |
+| `--text-bright`      | `#f4f4f5` | Titles, headings, KPIs         |
+| `--text`             | `#ededed` | Primary body text              |
+| `--text-muted`   | `#a1a1aa` | Labels, secondary UI           |
+| `--text-subtle`       | `#787878` | Muted / placeholder            |
+| `--text-disabled`      | `#52525b` | Disabled / very subtle         |
 
 These five are the entire text palette. Add a new tone only by adding a new token.
 
@@ -205,8 +203,8 @@ These five are the entire text palette. Add a new tone only by adding a new toke
 
 | Token                | Value | Use                                                          |
 |----------------------|-------|--------------------------------------------------------------|
-| `--editor-radius-sm` | 3px   | Tight chips, micro-badges, segmented control inner indicator |
-| `--editor-radius`    | 6px   | Default editor controls, toolbar buttons, ghost menu items   |
+| `--radius-sm` | 3px   | Tight chips, micro-badges, segmented control inner indicator |
+| `--radius`    | 6px   | Default editor controls, toolbar buttons, ghost menu items   |
 | `--panel-radius`     | 12px  | Floating overlay panels (Spotlight, modals, popovers)        |
 | `--card-radius`      | 16px  | Borderless tile cards (Widget, dashboard cells, module inserter tiles) |
 | `--input-radius`     | 1em   | Pill-shaped inputs, classes / property chips                 |
@@ -216,20 +214,20 @@ Do not introduce ad-hoc radius values. Tile-card surfaces use `--card-radius`.
 
 ### Scrollbar chrome
 
-Editor scrollbars are global chrome and stay achromatic. `globals.css` owns `--editor-scrollbar-size`, `--editor-scrollbar-radius`, `--editor-scrollbar-track`, `--editor-scrollbar-thumb`, and `--editor-scrollbar-thumb-hover`; use those tokens for both `scrollbar-color` and `::-webkit-scrollbar` styling.
+Editor scrollbars are global chrome and stay achromatic. `globals.css` owns `--scrollbar-size`, `--scrollbar-radius`, `--scrollbar-track`, `--scrollbar-thumb`, and `--scrollbar-thumb-hover`; use those tokens for both `scrollbar-color` and `::-webkit-scrollbar` styling.
 
 ### Shadow and elevation
 
 | Token                       | Use                                                     |
 |-----------------------------|---------------------------------------------------------|
-| `--editor-focus-ring`       | Achromatic 1px focus ring (`0 0 0 1px rgba(255,255,255,0.25)`) |
-| `--panel-shadow`            | Composite for floating panels: bottom-inset shadow + drop shadow |
-| `--panel-shadow-inset-bottom`| Sub-token: bottom inner shadow                         |
-| `--panel-shadow-drop`       | Sub-token: drop shadow                                  |
-| `--input-shadow-focus`      | Inset composite for focused inputs (achromatic glow)    |
-| `--tooltip-shadow`          | Tooltip drop + inner highlight                          |
+| `--focus-ring`       | Achromatic 1px focus ring (`0 0 0 1px var(--overlay-20)`) |
+| `--shadow-panel`            | Composite for floating panels: bottom-inset shadow + drop shadow |
+| `--shadow-panel-inset-bottom`| Sub-token: bottom inner shadow                         |
+| `--shadow-panel-drop`       | Sub-token: drop shadow                                  |
+| `--shadow-input-focus`      | Inset composite for focused inputs (achromatic glow)    |
+| `--shadow-tooltip`          | Tooltip drop + inner highlight                          |
 
-Use `--panel-shadow` directly when you need a floating-panel feel; don't recompose from the sub-tokens.
+Use `--shadow-panel` directly when you need a floating-panel feel; don't recompose from the sub-tokens.
 
 ### Typography
 
@@ -240,11 +238,11 @@ Use `--panel-shadow` directly when you need a floating-panel feel; don't recompo
 
 Type **sizes** are per-component and don't yet have a token scale. The patterns in actual use:
 
-- Widget titles: 11px, weight 600, uppercase, letter-spacing 0.07em, color `--editor-text-muted`
-- Widget KPI values: very large (~48–72px), weight 600, color `--editor-text-bright`
-- Body text: 13–14px, weight 400, color `--editor-text`
-- Captions / labels: 11–12px, weight 500, color `--editor-text-secondary`
-- Monospace (paths, code chips): same size as surrounding text, `--font-mono`, often with `--editor-bg-subtle` background
+- Widget titles: 11px, weight 600, uppercase, letter-spacing 0.07em, color `--text-subtle`
+- Widget KPI values: very large (~48–72px), weight 600, color `--text-bright`
+- Body text: 13–14px, weight 400, color `--text`
+- Captions / labels: 11–12px, weight 500, color `--text-muted`
+- Monospace (paths, code chips): same size as surrounding text, `--font-mono`, often with `--bg-surface-3` background
 
 If a size recurs across three or more primitives, promote it to a token.
 
@@ -252,15 +250,16 @@ If a size recurs across three or more primitives, promote it to a token.
 
 ```text
 --z-dropdown:           20
---tooltip-z-index:    2000
 --spotlight-z-index:  9000
+--toast-z-index:     10000
+--tooltip-z-index:   10001
 ```
 
 Use these for all dropdowns, tooltips, and the command palette. The visual editor has additional raw z-index values for the layout chrome (sidebars, floating panels) and a separate internal ladder inside the canvas's isolating stacking context — those are intentional exceptions documented in [`docs/reference/design-tokens.md`](reference/design-tokens.md) → "Z-index layers".
 
 ### Spotlight
 
-The Cmd+K command palette has its own token group (`--spotlight-*`) covering backdrop, row highlight, mark color, group header, footer, destructive row, confirm state, and skeleton shimmer. Spotlight-only surfaces use those tokens; chrome elsewhere shouldn't.
+The Cmd+K command palette uses the same global panel, overlay, accent, state, and skeleton tokens as the rest of the admin chrome. Only its layout layer stays spotlight-scoped: `--spotlight-z-index` and `--spotlight-width`.
 
 ---
 
@@ -268,65 +267,65 @@ The Cmd+K command palette has its own token group (`--spotlight-*`) covering bac
 
 The editor composes four kinds of surfaces. Each has its own token group, geometry, and rules.
 
-### 1. Tile cards (`--editor-surface-2` on `--editor-surface`)
+### 1. Tile cards (`--bg-surface-2` on `--bg-surface`)
 
 The dashboard pattern. Borderless tiles on a darker parent, 1px grid gap, 16px radius.
 
 ```css
 .parent {
-  background: var(--editor-surface);
+  background: var(--bg-surface);
   display: grid;
   gap: 1px;              /* the gap that becomes the visual divider */
 }
 
 .tile {
-  background: var(--editor-surface-2);
+  background: var(--bg-surface-2);
   border: 0;
   border-radius: 16px;
   /* hover lifts the tone, never the border */
 }
 .tile:hover {
-  background: var(--editor-surface-3);
+  background: var(--bg-surface-3);
 }
 ```
 
 Each tile usually carries:
 
-- A **title row** with a small rail-tint dot (7px, `--editor-radius-sm`) + uppercase 11px label
-- A **value** rendered large with `--editor-text-bright`
+- A **title row** with a small accent dot (7px, `--radius-sm`) + uppercase 11px label
+- A **value** rendered large with `--text-bright`
 - Optional micro-trend, chart, or list body
 
 This is what reads as the Instatic dashboard aesthetic. Same pattern is used by the storage breakdown, posts widget, activity feed, etc. The "Add block" tile uses `box-shadow: inset 0 0 0 1px ...` to convey emptiness without breaking the borderless rule.
 
-### 2. Floating overlay panels (`--panel-*`)
+### 2. Floating Overlay Panels
 
 Spotlight, popovers, modals, and command palettes. These sit above the editor with a blur backdrop:
 
 ```css
 .panel {
-  background: var(--panel-bg);              /* rgb(30 30 30) */
-  border: 1px solid var(--panel-border);    /* rgba(255,255,255,0.10) */
+  background: var(--bg-surface);              /* rgb(30 30 30) */
+  border: 1px solid var(--overlay-10);    /* rgba(255,255,255,0.10) */
   border-radius: var(--panel-radius);       /* 12px */
   backdrop-filter: blur(var(--panel-blur)); /* 24px */
-  box-shadow: var(--panel-shadow);          /* composite */
+  box-shadow: var(--shadow-panel);          /* composite */
 }
 ```
 
 Floating panels are the only surface that uses a visible border + blur — they're explicitly stacked above the editor, so they advertise themselves with the border and the slight transparency that the blur reveals.
 
-### 3. Inputs (`--input-*`)
+### 3. Inputs
 
 Bordered, transparent, pill-shaped:
 
 ```css
 .input {
-  background: var(--input-bg);              /* transparent */
-  border: 1px solid var(--input-border);    /* rgba(255,255,255,0.20) */
+  background: transparent;              /* transparent */
+  border: 1px solid var(--overlay-20);    /* rgba(255,255,255,0.20) */
   border-radius: var(--input-radius);       /* 1em */
-  color: var(--editor-text);
+  color: var(--text);
 }
-.input:hover  { border-color: var(--input-border-hover); }
-.input:focus  { border-color: var(--input-border-focus); box-shadow: var(--input-shadow-focus); }
+.input:hover  { border-color: var(--overlay-30); }
+.input:focus  { border-color: var(--overlay-50); box-shadow: var(--shadow-input-focus); }
 ```
 
 The border is the input's identity. Don't fill them. Don't square the corners.
@@ -337,7 +336,7 @@ The border is the input's identity. Don't fill them. Don't square the corners.
 
 ```css
 .railButton {
-  --rail-icon-tint: var(--rail-tint-mint);
+  --rail-icon-tint: var(--accent-1);
   --rail-icon-color: var(--rail-icon-tint);
   --rail-icon-active-bg: color-mix(in oklab, var(--rail-icon-tint) 16%, transparent);
 }
@@ -387,7 +386,7 @@ Every interactive control in the admin and editor goes through a primitive from 
 | `Image`              | Image with built-in blurhash fallback.                                      |
 | `CanvasModulePlaceholder`| Diagonal-stripe placeholder for empty modules.                          |
 | `ErrorBoundary`      | Component-level error containment.                                          |
-| `SkeletonBlock`, `SkeletonCards`, `SkeletonRows`, `SkeletonTree` | Loading-state shimmer primitives. Four named shapes cover nearly every loading region. `SkeletonTree` renders depth-indented placeholder rows with cascading shimmer for tree panels (Layers, Selectors). Shimmer uses `--editor-surface-3/4` tokens. |
+| `SkeletonBlock`, `SkeletonCards`, `SkeletonRows`, `SkeletonTree` | Loading-state shimmer primitives. Four named shapes cover nearly every loading region. `SkeletonTree` renders depth-indented placeholder rows with cascading shimmer for tree panels (Layers, Selectors). Shimmer uses `--bg-surface-3/4` tokens. |
 | `Kbd`, `ShortcutKeys` | Keyboard keycap and shortcut-sequence primitives. `Kbd` renders a single keycap; `ShortcutKeys` splits a full label ("⌘K", "Ctrl+Shift+P") into per-key `Kbd` spans. Single canonical style across all keyboard hint surfaces (Spotlight footer, module inserter legend, keybindings help screen). |
 
 For tree-shaped controls (DOM panel, layers panel, site tree), use `Tree*` from `src/admin/pages/site/ui/Tree/`.
@@ -448,16 +447,16 @@ src/ui/components/Button/
 Every color, gradient, and shadow in `src/admin/`, `src/admin/pages/site/`, and `src/ui/` CSS modules is a `var(--*)` reference. If the right token doesn't exist, add it to `globals.css` first. Gated by `css-token-policy.test.ts`.
 
 ❌ `color: #ededed;`
-✅ `color: var(--editor-text);`
+✅ `color: var(--text);`
 
-**Exception:** `src/modules/*` is intentionally exempt — those CSS files ship to the published page output where editor tokens aren't available.
+**Exception:** `src/modules/*` is intentionally exempt — those CSS files ship to the published page output where admin tokens are not guaranteed to exist.
 
 ### No `var(--name, fallback)` in admin / ui CSS modules
 
 Use bare `var(--name)` — never `var(--name, fallback)`. A fallback is either dead code (the token exists — drop the fallback) or a mask for a missing token (define the token in `globals.css` instead). Defaults for JS-driven custom properties belong in a CSS rule (`[data-x]` selector or `:root`), not scattered in every `var()` reader. Gated by `no-css-var-fallbacks.test.ts`.
 
-❌ `color: var(--editor-text-subtle, var(--editor-text-muted));`
-✅ `color: var(--editor-text-subtle);`
+❌ `color: var(--text-disabled, var(--text-subtle));`
+✅ `color: var(--text-disabled);`
 
 **Exception:** `src/modules/*` is exempt — those styles ship to published pages where fallbacks may be the only sensible default.
 
@@ -495,11 +494,11 @@ If you find yourself reaching for `!important`, the cascade is wrong — fix the
 
 ### Focus
 
-The achromatic focus ring is `--editor-focus-ring` (1px white at 25% alpha). Inputs use a stronger composite focus glow via `--input-shadow-focus`. Never remove focus indicators without replacing them with a visible alternative.
+The achromatic focus ring is `--focus-ring` (1px white at 20% alpha). Inputs use a stronger composite focus glow via `--shadow-input-focus`. Never remove focus indicators without replacing them with a visible alternative.
 
 ### Color contrast
 
-The text tokens (`--editor-text-bright` → `--editor-text-subtle`) pass WCAG AA against `--editor-bg`. The semantic state tokens have a `*-text` variant (e.g. `--editor-danger-text`, `--editor-success-text`) chosen for use **on a tinted background** — use those instead of pairing a raw `--editor-danger` with `--editor-bg`.
+The text tokens (`--text-bright` → `--text-disabled`) pass WCAG AA against `--bg-body`. The semantic state tokens have a `*-text` variant (e.g. `--danger-text`, `--success-text`) chosen for use **on a tinted background** — use those instead of pairing a raw `--danger` with `--bg-body`.
 
 ### No native browser dialogs
 
@@ -516,9 +515,9 @@ The HTML `title` attribute is banned for hover hints — gated by `no-native-tit
 | Pattern                                                  | Use instead                                              |
 |----------------------------------------------------------|----------------------------------------------------------|
 | `<button>` in editor / admin code                        | `<Button>` from `src/ui/components/Button`               |
-| `color: #ededed;` (hardcoded color)                      | `color: var(--editor-text);`                             |
-| `border: 1px solid #333;` (hardcoded border)             | `border: 1px solid var(--editor-border);`                |
-| `var(--editor-text, #ededed)` (var with fallback)        | `var(--editor-text)` — define the token in `globals.css` |
+| `color: #ededed;` (hardcoded color)                      | `color: var(--text);`                             |
+| `border: 1px solid #333;` (hardcoded border)             | `border: 1px solid var(--border);`                |
+| `var(--text, #ededed)` (var with fallback)        | `var(--text)` — define the token in `globals.css` |
 | `className="text-zinc-400"` (Tailwind utility)           | CSS Module class                                         |
 | `className="bg-blue-500"`, `min-h-[44px]`, etc.          | CSS Module class with a token                            |
 | `import { cn } from 'clsx'`                              | `import { cn } from '@ui/cn'`                            |
@@ -552,10 +551,10 @@ The HTML `title` attribute is banned for hover hints — gated by `no-native-tit
 
 ## Adding a new tile-card surface
 
-1. Use `--editor-surface` on the parent container with `display: grid` and `gap: 1px`.
-2. The tile body is `background: var(--editor-surface-2)`, `border: 0`, `border-radius: var(--card-radius)`.
-3. Hover lifts to `--editor-surface-3` — never recolor the border.
-4. Add a title row with a rail-tint dot (7px, `--editor-radius-sm` (3px), `background: var(--tint)`).
+1. Use `--bg-surface` on the parent container with `display: grid` and `gap: 1px`.
+2. The tile body is `background: var(--bg-surface-2)`, `border: 0`, `border-radius: var(--card-radius)`.
+3. Hover lifts to `--bg-surface-3` — never recolor the border.
+4. Add a title row with an accent dot (7px, `--radius-sm` (3px), `background: var(--tint)`).
 5. Use `assignRailAccents` from `@ui/railAccent` for multi-item surfaces (avoids repeats in the visible group) or `railAccent` for a single item. Skip if the surface has a product-defined category.
 6. Reuse `Widget` from `src/ui/components/Widget/` unless the surface fundamentally differs.
 

@@ -46,9 +46,9 @@
 .kindBox {
     height: var(--wire-h);
     min-height: 0;
-    border: 1px solid color-mix(in srgb, var(--editor-text-muted) 26%, transparent);
-    border-radius: var(--editor-radius);
-    background: color-mix(in srgb, var(--editor-text-muted) 5%, transparent);
+    border: 1px solid color-mix(in srgb, var(--text-subtle) 26%, transparent);
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--text-subtle) 5%, transparent);
 }
 
 .dashed {
@@ -56,8 +56,8 @@
 }
 
 .card {
-    border: 1px solid color-mix(in srgb, var(--editor-text-muted) 20%, transparent);
-    background: color-mix(in srgb, var(--editor-text-muted) 7%, transparent);
+    border: 1px solid color-mix(in srgb, var(--text-subtle) 20%, transparent);
+    background: color-mix(in srgb, var(--text-subtle) 7%, transparent);
 }
 
 .center {
@@ -91,8 +91,8 @@
     display: block;
     width: 100%;
     height: 5px;
-    border-radius: var(--editor-radius-sm);
-    background: color-mix(in srgb, var(--editor-text-bright) 16%, transparent);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--text-bright) 16%, transparent);
 }
 
 .kindLines .line:nth-child(2) {
@@ -105,7 +105,7 @@
 
 .big .line {
     height: 8px;
-    background: color-mix(in srgb, var(--editor-text-bright) 28%, transparent);
+    background: color-mix(in srgb, var(--text-bright) 28%, transparent);
 }
 
 .mono .line {
@@ -113,13 +113,13 @@
     border-radius: 0;
     background: repeating-linear-gradient(
         90deg,
-        color-mix(in srgb, var(--editor-text-bright) 22%, transparent) 0 6px,
+        color-mix(in srgb, var(--text-bright) 22%, transparent) 0 6px,
         transparent 6px 9px
     );
 }
 
 .link .line {
-    background: color-mix(in srgb, var(--rail-tint-sky) 70%, transparent);
+    background: color-mix(in srgb, var(--accent-3) 70%, transparent);
 }
 
 .kindImage {
@@ -129,8 +129,8 @@
     width: var(--wire-w);
     height: var(--wire-h);
     min-height: 20px;
-    border-radius: var(--editor-radius);
-    border: 1px solid color-mix(in srgb, var(--editor-text-bright) 8%, transparent);
+    border-radius: var(--radius);
+    border: 1px solid color-mix(in srgb, var(--text-bright) 8%, transparent);
     background: var(--canvas-placeholder-bg);
     overflow: hidden;
 }
@@ -148,8 +148,8 @@
     width: 18px;
     height: 18px;
     border-radius: var(--input-radius);
-    background: color-mix(in srgb, var(--editor-bg) 54%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--editor-text) 26%, transparent);
+    background: color-mix(in srgb, var(--bg-body) 54%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 26%, transparent);
 }
 
 .kindField {
@@ -158,9 +158,9 @@
     position: relative;
     width: var(--wire-w);
     min-height: var(--wire-h);
-    border: 1px solid color-mix(in srgb, var(--editor-text-muted) 24%, transparent);
+    border: 1px solid color-mix(in srgb, var(--text-subtle) 24%, transparent);
     border-radius: var(--input-radius);
-    background: color-mix(in srgb, var(--editor-text-muted) 7%, transparent);
+    background: color-mix(in srgb, var(--text-subtle) 7%, transparent);
 }
 
 .caret {
@@ -169,8 +169,8 @@
     top: 50%;
     width: 5px;
     height: 5px;
-    border-right: 1px solid color-mix(in srgb, var(--editor-text-muted) 42%, transparent);
-    border-bottom: 1px solid color-mix(in srgb, var(--editor-text-muted) 42%, transparent);
+    border-right: 1px solid color-mix(in srgb, var(--text-subtle) 42%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--text-subtle) 42%, transparent);
     transform: translateY(-65%) rotate(45deg);
 }
 
@@ -178,27 +178,27 @@
     width: var(--wire-w);
     height: 13px;
     border-radius: var(--input-radius);
-    border: 1px solid color-mix(in srgb, var(--editor-text-muted) 28%, transparent);
-    background: color-mix(in srgb, var(--editor-text-bright) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--text-subtle) 28%, transparent);
+    background: color-mix(in srgb, var(--text-bright) 12%, transparent);
 }
 
 .solid {
-    background: color-mix(in srgb, var(--editor-text-bright) 34%, transparent);
+    background: color-mix(in srgb, var(--text-bright) 34%, transparent);
 }
 
 .kindPill {
     width: var(--wire-w);
     height: 11px;
     border-radius: var(--input-radius);
-    background: color-mix(in srgb, var(--editor-text-bright) 10%, transparent);
+    background: color-mix(in srgb, var(--text-bright) 10%, transparent);
 }
 
 .kindIcon {
     width: 11px;
     height: 11px;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
     border: 0;
-    background: color-mix(in srgb, var(--editor-text-bright) 20%, transparent);
+    background: color-mix(in srgb, var(--text-bright) 20%, transparent);
 }
 
 .kindIcon.big {
@@ -212,13 +212,13 @@
     width: 8px;
     height: 8px;
     min-width: 8px;
-    background: color-mix(in srgb, var(--editor-text-bright) 32%, transparent);
+    background: color-mix(in srgb, var(--text-bright) 32%, transparent);
 }
 
 .kindCheck,
 .kindRadio {
     background: transparent;
-    border: 1px solid color-mix(in srgb, var(--editor-text-bright) 30%, transparent);
+    border: 1px solid color-mix(in srgb, var(--text-bright) 30%, transparent);
 }
 
 .kindDot {
@@ -226,7 +226,7 @@
 }
 
 .kindCheck {
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
 }
 
 .kindRadio {
@@ -236,7 +236,7 @@
 .kindRule {
     height: 1px;
     min-height: 1px;
-    background: color-mix(in srgb, var(--editor-text-bright) 14%, transparent);
+    background: color-mix(in srgb, var(--text-bright) 14%, transparent);
 }
 
 .kindRule.vertical {
@@ -253,12 +253,12 @@
 }
 
 .bar {
-    border-radius: var(--editor-radius);
-    background: color-mix(in srgb, var(--editor-text-bright) 4%, transparent);
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--text-bright) 4%, transparent);
 }
 
 .code {
-    background: color-mix(in srgb, var(--editor-bg) 35%, transparent);
+    background: color-mix(in srgb, var(--bg-body) 35%, transparent);
 }
 
 .logo {
@@ -271,5 +271,5 @@
 }
 
 .tip {
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
 }

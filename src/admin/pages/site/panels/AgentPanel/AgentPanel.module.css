@@ -13,11 +13,11 @@
   height: 480px;
   display: flex;
   flex-direction: column;
-  background: var(--panel-bg);
+  background: var(--bg-surface);
   backdrop-filter: blur(var(--panel-blur));
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--overlay-10);
   border-radius: 12px;
-  box-shadow: var(--panel-shadow);
+  box-shadow: var(--shadow-panel);
   overflow: hidden;
   outline: none;
   will-change: transform;
@@ -56,7 +56,7 @@
 /* ── Streaming badge — shown in header extra actions slot ────────────────── */
 .streamingBadge {
   font-size: 10px;
-  color: var(--editor-accent-light);
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   gap: 4px;
@@ -67,7 +67,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--editor-accent-light);
+  background: var(--text-muted);
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
@@ -89,10 +89,10 @@
 
 .errorBanner {
   padding: 8px 10px;
-  background: var(--editor-danger-bg);
-  border: 1px solid var(--editor-danger-tint-30);
+  background: var(--danger-10);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
   border-radius: 6px;
-  color: var(--editor-danger-light);
+  color: var(--danger-light);
   font-size: 11px;
   line-height: 1.5;
 }
@@ -100,7 +100,7 @@
 /* ── Input bar ───────────────────────────────────────────────────────────── */
 .inputBar {
   padding: 12px;
-  border-top: 1px solid var(--panel-border);
+  border-top: 1px solid var(--overlay-10);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -146,29 +146,29 @@
 
 .roleLabel {
   font-size: 9px;
-  color: var(--editor-text-subtle);
+  color: var(--text-disabled);
   letter-spacing: 0.05em;
 }
 
 .contentBubble {
   max-width: 90%;
   padding: 7px 10px;
-  color: var(--editor-text);
+  color: var(--text);
   font-size: 12px;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--overlay-10);
 }
 
 .contentBubbleUser {
   border-radius: 10px 10px 2px 10px;
-  background: var(--editor-overlay-white-08);
+  background: var(--overlay-10);
 }
 
 .contentBubbleAssistant {
   border-radius: 2px 10px 10px 10px;
-  background: var(--editor-overlay-white-04);
+  background: var(--overlay-5);
 }
 
 /* ── Markdown bubble typography ─────────────────────────────────────────────
@@ -199,7 +199,7 @@
 .markdownBubble h5,
 .markdownBubble h6 {
   margin: 12px 0 6px;
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -214,7 +214,7 @@
 .markdownBubble strong,
 .markdownBubble b {
   font-weight: 600;
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
 }
 
 .markdownBubble em,
@@ -237,20 +237,20 @@
 }
 
 .markdownBubble a {
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .markdownBubble a:hover {
-  color: var(--editor-accent);
+  color: var(--overlay);
 }
 
 .markdownBubble code {
   padding: 1px 5px;
-  border-radius: var(--editor-radius-sm);
-  background: var(--editor-surface-3);
-  color: var(--editor-text-bright);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-3);
+  color: var(--text-bright);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
 }
@@ -258,8 +258,8 @@
 .markdownBubble pre {
   margin: 0 0 8px;
   padding: 8px 10px;
-  border-radius: var(--editor-radius-sm);
-  background: var(--editor-surface-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
   overflow-x: auto;
   white-space: pre;
 }
@@ -273,8 +273,8 @@
 .markdownBubble blockquote {
   margin: 0 0 8px;
   padding: 2px 0 2px 10px;
-  border-left: 2px solid var(--panel-border);
-  color: var(--editor-text-secondary);
+  border-left: 2px solid var(--overlay-10);
+  color: var(--text-muted);
 }
 
 .toolCallsContainer {
@@ -291,22 +291,22 @@
   gap: 5px;
   padding: 3px 8px;
   border-radius: 20px;
-  background: var(--editor-overlay-white-04);
-  border: 1px solid var(--editor-overlay-white-08);
+  background: var(--overlay-5);
+  border: 1px solid var(--overlay-10);
   font-size: 10px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
 }
 
 .toolCallIconPending {
-  color: var(--editor-text-subtle);
+  color: var(--text-disabled);
 }
 
 .toolCallIconSuccess {
-  color: var(--editor-success-bright);
+  color: var(--success-bright);
 }
 
 .toolCallIconFailed {
-  color: var(--editor-danger-light);
+  color: var(--danger-light);
 }
 
 .toolCallType {
@@ -322,7 +322,7 @@
   margin: 2px 0 0 12px;
   font-size: 11px;
   line-height: 1.4;
-  color: var(--editor-danger-light);
+  color: var(--danger-light);
   word-break: break-word;
 }
 
@@ -334,10 +334,10 @@
   gap: 8px;
   padding: 12px;
   margin: 0 0 2px;
-  background: var(--editor-warning-bg);
-  border: 1px solid var(--editor-warning-border);
-  border-radius: var(--editor-radius);
-  color: var(--editor-warning-text);
+  background: var(--warning-10);
+  border: 1px solid var(--warning-30);
+  border-radius: var(--radius);
+  color: var(--warning-text);
 }
 
 .credentialAlertText {
@@ -355,7 +355,7 @@
 }
 
 .credentialSettingsButtonHeader {
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
 }
 
 .credentialSettingsButtonEmptyState {
@@ -364,7 +364,7 @@
 }
 
 .credentialSettingsButtonInline {
-  color: var(--editor-warning-text);
+  color: var(--warning-text);
 }
 
 /* ── Conversation history (inline children only — dropdown chrome comes
@@ -386,7 +386,7 @@
 }
 
 .historyItemTime {
-  color: var(--editor-text-subtle);
+  color: var(--text-disabled);
   font-size: 10px;
   white-space: nowrap;
 }
@@ -398,12 +398,12 @@
   padding: 2px;
   background: transparent;
   border: 0;
-  border-radius: var(--editor-radius-sm);
-  color: var(--editor-text-muted);
+  border-radius: var(--radius-sm);
+  color: var(--text-subtle);
   cursor: pointer;
 }
 
 .historyItemDelete:hover {
-  color: var(--editor-danger);
-  background: var(--editor-surface);
+  color: var(--danger);
+  background: var(--bg-surface);
 }

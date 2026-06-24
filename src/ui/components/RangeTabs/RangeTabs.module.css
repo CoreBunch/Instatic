@@ -1,7 +1,7 @@
 .seg {
     display: inline-flex;
-    background: var(--editor-surface);
-    border: 1px solid var(--editor-border);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 2px;
     gap: 0;
@@ -9,7 +9,7 @@
 
 .tab {
     /* Override Button's defaults to render as a compact pill-style tab. */
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 500;
     padding: 4px 9px;
@@ -21,6 +21,6 @@
 }
 
 .tab[data-active="true"] {
-    background: var(--editor-surface-3);
-    color: var(--editor-text-bright);
+    background: var(--bg-surface-3);
+    color: var(--text-bright);
 }

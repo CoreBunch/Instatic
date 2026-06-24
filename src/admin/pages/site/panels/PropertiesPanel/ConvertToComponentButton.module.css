@@ -35,6 +35,6 @@
 
 .errorAlert {
   font-size: 10px;
-  color: var(--editor-danger-text);
+  color: var(--danger-text);
   line-height: 1.4;
 }

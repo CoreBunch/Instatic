@@ -7,13 +7,13 @@
     width: 100%;
     margin: 0.9em 0;
     padding: 12px;
-    border: 1px dashed var(--editor-border);
+    border: 1px dashed var(--border);
     border-radius: var(--panel-radius);
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 .frame[data-instatic-upload-status='failed'] {
-    border-color: var(--editor-danger);
+    border-color: var(--danger);
 }
 
 .preview {
@@ -24,8 +24,8 @@
     height: 56px;
     place-items: center;
     overflow: hidden;
-    border-radius: var(--editor-radius-sm);
-    background: var(--editor-bg);
+    border-radius: var(--radius-sm);
+    background: var(--bg-body);
 }
 
 .thumb {
@@ -36,7 +36,7 @@
 }
 
 .thumbEmpty {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
@@ -64,13 +64,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 13px;
     font-weight: 650;
 }
 
 .status {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     line-height: 1.3;
 }
@@ -85,16 +85,16 @@
     margin-top: 10px;
     height: 4px;
     border-radius: 2px;
-    background: var(--editor-bg);
+    background: var(--bg-body);
     overflow: hidden;
 }
 
 .progressTrack[data-state='failed'] .progressFill {
-    background: var(--editor-danger);
+    background: var(--danger);
 }
 
 .progressFill {
     height: 100%;
-    background: var(--editor-accent);
+    background: var(--overlay);
     transition: width 120ms linear;
 }

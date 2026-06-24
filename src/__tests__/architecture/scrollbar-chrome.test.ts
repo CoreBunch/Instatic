@@ -29,11 +29,11 @@ describe('architecture — admin scrollbar chrome', () => {
 
   it('declares dedicated scrollbar tokens in globals.css', () => {
     for (const token of [
-      '--editor-scrollbar-size',
-      '--editor-scrollbar-radius',
-      '--editor-scrollbar-track',
-      '--editor-scrollbar-thumb',
-      '--editor-scrollbar-thumb-hover',
+      '--scrollbar-size',
+      '--scrollbar-radius',
+      '--scrollbar-track',
+      '--scrollbar-thumb',
+      '--scrollbar-thumb-hover',
     ]) {
       expect(globals).toContain(token)
     }
@@ -41,14 +41,14 @@ describe('architecture — admin scrollbar chrome', () => {
 
   it('styles both standards and WebKit scrollbar implementations with tokens', () => {
     expect(globals).toContain(
-      'scrollbar-color: var(--editor-scrollbar-thumb) var(--editor-scrollbar-track);',
+      'scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);',
     )
-    expect(globals).toContain('width: var(--editor-scrollbar-size);')
-    expect(globals).toContain('height: var(--editor-scrollbar-size);')
-    expect(globals).toContain('background: var(--editor-scrollbar-track);')
-    expect(globals).toContain('background: var(--editor-scrollbar-thumb);')
-    expect(globals).toContain('background: var(--editor-scrollbar-thumb-hover);')
-    expect(globals).toContain('border-radius: var(--editor-scrollbar-radius);')
+    expect(globals).toContain('width: var(--scrollbar-size);')
+    expect(globals).toContain('height: var(--scrollbar-size);')
+    expect(globals).toContain('background: var(--scrollbar-track);')
+    expect(globals).toContain('background: var(--scrollbar-thumb);')
+    expect(globals).toContain('background: var(--scrollbar-thumb-hover);')
+    expect(globals).toContain('border-radius: var(--scrollbar-radius);')
   })
 
   it('keeps the properties style rail clear of overlaying scrollbars', () => {

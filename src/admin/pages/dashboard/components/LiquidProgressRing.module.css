@@ -24,7 +24,7 @@
     /* A subtle drop-shadow gives the toxic liquid a faint glow halo
        around the bottle. Achromatic light isn't quite right here —
        the green tint is the whole point of the component. */
-    filter: drop-shadow(0 0 6px var(--editor-mint-tint-15));
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent-1) 15%, transparent));
 }
 
 .svg {
@@ -157,19 +157,19 @@
     font-family: var(--font-mono);
     font-size: 36px;
     font-weight: 600;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     letter-spacing: -0.04em;
     line-height: 1;
     /* The fraction sits over the moving liquid — a translucent dark
        text-shadow keeps it legible regardless of the wave's current
        crest position behind it. */
     text-shadow:
-        0 1px 2px var(--editor-overlay-black-45),
-        0 0 8px var(--editor-overlay-black-25);
+        0 1px 2px var(--scrim-50),
+        0 0 8px var(--scrim-30);
 }
 
 .fraction small {
-    color: var(--editor-overlay-white-70);
+    color: var(--overlay-70);
     font-size: 14px;
     font-weight: 500;
     letter-spacing: -0.02em;

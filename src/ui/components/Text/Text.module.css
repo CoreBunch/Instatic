@@ -2,14 +2,14 @@
 
 .text {
     margin: 0;
-    color: var(--editor-text);
+    color: var(--text);
     font-family: var(--font-sans);
     font-size: 13px;
     line-height: 1.55;
 }
 
 .textMuted {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .textStrong {

@@ -11,8 +11,8 @@
     pointer-events: auto;
     border: 0;
     border-radius: var(--vc-control-radius);
-    background: var(--editor-bg);
-    color: var(--editor-text);
+    background: var(--bg-body);
+    color: var(--text);
     box-shadow: var(--canvas-chrome-shadow);
     font-size: 12px;
 }
@@ -21,7 +21,7 @@
     min-height: 0;
     padding: 2px 6px 2px 2px;
     border-radius: calc(var(--vc-control-radius) - 6px);
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 12px;
 }
 
@@ -29,12 +29,12 @@
     width: 1px;
     align-self: stretch;
     margin: 3px 0;
-    background: var(--editor-border);
+    background: var(--border);
 }
 
 .modeLabel {
     flex-shrink: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     font-weight: 500;
     user-select: none;

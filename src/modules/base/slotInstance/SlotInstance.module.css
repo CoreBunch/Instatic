@@ -9,9 +9,9 @@
  */
 
 .container {
-  border: 1px solid var(--editor-border-med);
-  border-radius: var(--editor-radius);
-  background: var(--editor-surface);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
   overflow: hidden;
 }
 
@@ -20,9 +20,9 @@
   align-items: center;
   gap: 5px;
   padding: 3px 8px;
-  background: var(--editor-bg);
-  border-bottom: 1px dashed var(--editor-border-low);
-  color: var(--editor-text-muted);
+  background: var(--bg-body);
+  border-bottom: 1px dashed var(--border-subtle);
+  color: var(--text-subtle);
   font-size: 11px;
   line-height: 1.5;
   user-select: none;
@@ -30,7 +30,7 @@
 }
 
 .label {
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   font-size: 11px;
   font-style: italic;
 }

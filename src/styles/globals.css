@@ -12,224 +12,174 @@
 }
 
 /*
- * Global CSS custom properties — design tokens for the editor UI.
- * These map to SiteSettings.colorTokens for the canvas/published output.
- * Editor chrome uses its own tokens below.
+ * Global CSS custom properties - design tokens for the admin/editor UI.
+ * The admin chrome uses the Core Framework-style token vocabulary directly.
  */
 :root {
     --font-sans: "Inter Variable", system-ui, sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
         monospace;
 
-    /* ─── Editor Surface Hierarchy (Vercel/Linear pure-black) ─────────────── */
-    --editor-bg: #000000;
-    --editor-bg-subtle: #323232; /* subtle element bg — chips, badges inside nested surfaces */
-    --editor-surface: #1b1b1b;
-    --editor-surface-2: #282828;
-    --editor-surface-3: #323232;
-    --editor-surface-4: #4a4a4a;
-    --editor-surface-5: #605f5f;
+    /* Surfaces */
+    --bg-body: #000000;
+    --bg-surface: #1b1b1b;
+    --bg-surface-2: #282828;
+    --bg-surface-3: #323232;
+    --bg-surface-4: #4a4a4a;
+    --bg-surface-5: #605f5f;
 
-    /* ─── Borders ────────────────────────────────────────────────────────── */
-    --editor-border: #333333;
-    --editor-border-med: #2e2e2e; /* medium border (slightly elevated) */
+    /* Borders */
+    --border-subtle: #1f1f1f;
+    --border-muted: #2e2e2e;
+    --border: #333333;
+    --border-strong: #4a4a4a;
 
-    /* ─── Text Hierarchy ─────────────────────────────────────────────────── */
-    --editor-text-bright: #f4f4f5; /* zinc-100 — brightest text level (titles) */
-    --editor-text: #ededed; /* primary text */
-    --editor-text-secondary: #a1a1aa; /* labels, secondary UI text */
-    --editor-text-muted: #787878; /* muted / placeholder */
-    --editor-text-subtle: #52525b; /* disabled / very subtle */
+    /* Text */
+    --text-bright: #f4f4f5;
+    --text: #ededed;
+    --text-muted: #a1a1aa;
+    --text-subtle: #787878;
+    --text-disabled: #52525b;
 
-    /* ─── Code Syntax — GitHub Dark inspired ─────────────────────────────── */
-    --editor-syntax-keyword: #ff7b72;
-    --editor-syntax-entity: #d2a8ff;
-    --editor-syntax-property: #7ee787;
-    --editor-syntax-variable: #ffa657;
-    --editor-syntax-string: #a5d6ff;
-    --editor-syntax-constant: #79c0ff;
-    --editor-syntax-comment: #8b949e;
-    --editor-syntax-operator: #c9d1d9;
-    --editor-syntax-invalid: #ffa198;
+    /* White overlay scale. Suffix = alpha x 100. */
+    --overlay: #ffffff;
+    --overlay-5: rgba(255, 255, 255, 0.05);
+    --overlay-10: rgba(255, 255, 255, 0.1);
+    --overlay-20: rgba(255, 255, 255, 0.2);
+    --overlay-30: rgba(255, 255, 255, 0.3);
+    --overlay-40: rgba(255, 255, 255, 0.4);
+    --overlay-50: rgba(255, 255, 255, 0.5);
+    --overlay-60: rgba(255, 255, 255, 0.6);
+    --overlay-70: rgba(255, 255, 255, 0.7);
+    --overlay-80: rgba(255, 255, 255, 0.8);
+    --overlay-90: rgba(255, 255, 255, 0.9);
 
-    /* ─── Accent — white (Vercel style) + indigo for canvas selection ─────── */
-    --editor-accent: #ffffff;
-    --editor-accent-light: #a1a1aa; /* subtle accent */
-    --editor-accent-violet: rgba(
-        255,
-        255,
-        255,
-        0.8
-    ); /* canvas selection — achromatic white */
-    --editor-selection: rgba(255, 255, 255, 0.08);
+    /* Black scrim scale for shadows and modal backdrops. */
+    --scrim: #000000;
+    --scrim-10: rgba(0, 0, 0, 0.1);
+    --scrim-20: rgba(0, 0, 0, 0.2);
+    --scrim-30: rgba(0, 0, 0, 0.3);
+    --scrim-40: rgba(0, 0, 0, 0.4);
+    --scrim-50: rgba(0, 0, 0, 0.5);
+    --scrim-60: rgba(0, 0, 0, 0.6);
+    --scrim-70: rgba(0, 0, 0, 0.7);
+    --scrim-80: rgba(0, 0, 0, 0.8);
+    --scrim-90: rgba(0, 0, 0, 0.9);
 
-    /* ─── Semantic Colours ───────────────────────────────────────────────── */
-    --editor-danger: #ef4444;
-    --editor-danger-light: #f87171; /* red-400 — lighter danger for text */
-    --editor-danger-lighter: #fca5a5; /* red-300 — very light danger tint */
-    --editor-danger-text: #fecaca; /* red-200 — danger badge text */
-    --editor-danger-bg: rgba(239, 68, 68, 0.1);
-    --editor-danger-border: rgba(239, 68, 68, 0.2);
-    --editor-warning: #f59e0b;
-    --editor-warning-text: #fde68a; /* amber-200 — warning badge text */
-    --editor-warning-bg: rgba(245, 158, 11, 0.1);
-    --editor-warning-border: rgba(245, 158, 11, 0.3);
-    --editor-success-green: #34d399; /* emerald-400 — saved / ok indicator */
-    --editor-success-bright: #4ade80; /* green-400 — agent tool success */
-    --editor-success-text: #d1fae5; /* emerald-100 — success/mint badge text */
-    --editor-success-text-soft: #a7f3d0; /* emerald-200 — success hint text */
-    --editor-success-bg: rgba(
-        52,
-        211,
-        153,
-        0.1
-    ); /* emerald-400 at 10% — success pill surface */
-    --editor-success-border: rgba(
-        52,
-        211,
-        153,
-        0.3
-    ); /* emerald-400 at 30% — success pill / alert border */
-    --editor-info-text: #c4b5fd; /* violet-300 — info text */
+    /* Identity accents. Each accent has one standard 10% surface tint. */
+    --accent-1: #8ee6c8;
+    --accent-1-10: rgba(142, 230, 200, 0.1);
+    --accent-2: #c8b6ff;
+    --accent-2-10: rgba(200, 182, 255, 0.1);
+    --accent-3: #9bdcff;
+    --accent-3-10: rgba(155, 220, 255, 0.1);
+    --accent-4: #ffc7a8;
+    --accent-4-10: rgba(255, 199, 168, 0.1);
+    --accent-5: #ffb6cd;
+    --accent-5-10: rgba(255, 182, 205, 0.1);
+    --accent-6: #b8f28b;
+    --accent-6-10: rgba(184, 242, 139, 0.1);
+    --accent-7: #f7df72;
+    --accent-7-10: rgba(247, 223, 114, 0.1);
+    --accent-8: #83e7ff;
+    --accent-8-10: rgba(131, 231, 255, 0.1);
+    --accent-9: #f0a6ff;
+    --accent-9-10: rgba(240, 166, 255, 0.1);
+    --accent-10: #ff9f9f;
+    --accent-10-10: rgba(255, 159, 159, 0.1);
 
-    /* ─── Mint accent surface (canvas breakpoint chrome, mode toggle) ────── */
-    --editor-mint-surface: #1a2924; /* dark mint background */
+    /* Semantic state */
+    --danger: #ef4444;
+    --danger-light: #f87171;
+    --danger-lighter: #fca5a5;
+    --danger-text: #fecaca;
+    --danger-5: rgba(239, 68, 68, 0.05);
+    --danger-10: rgba(239, 68, 68, 0.1);
+    --danger-20: rgba(239, 68, 68, 0.2);
+    --danger-30: rgba(239, 68, 68, 0.3);
+    --danger-40: rgba(239, 68, 68, 0.4);
+    --warning: #f59e0b;
+    --warning-text: #fde68a;
+    --warning-10: rgba(245, 158, 11, 0.1);
+    --warning-20: rgba(245, 158, 11, 0.2);
+    --warning-30: rgba(245, 158, 11, 0.3);
+    --success: #34d399;
+    --success-bright: #4ade80;
+    --success-text: #d1fae5;
+    --success-text-muted: #a7f3d0;
+    --success-10: rgba(52, 211, 153, 0.1);
+    --success-20: rgba(52, 211, 153, 0.2);
+    --success-30: rgba(52, 211, 153, 0.3);
+    --success-40: rgba(52, 211, 153, 0.4);
+    --info-text: #c4b5fd;
 
-    /* ─── Panel rail accent tints (per-rail icon colour) ─────────────────── */
-    --rail-tint-mint: #8ee6c8;
-    --rail-tint-lilac: #c8b6ff;
-    --rail-tint-sky: #9bdcff;
-    --rail-tint-peach: #ffc7a8;
-    --rail-tint-rose: #ffb6cd;
-    --rail-tint-lime: #b8f28b;
-    --rail-tint-gold: #f7df72;
-    --rail-tint-cyan: #83e7ff;
-    --rail-tint-violet: #f0a6ff;
-    --rail-tint-coral: #ff9f9f;
+    /* Code syntax - GitHub Dark inspired */
+    --syntax-keyword: #ff7b72;
+    --syntax-entity: #d2a8ff;
+    --syntax-property: #7ee787;
+    --syntax-variable: #ffa657;
+    --syntax-string: #a5d6ff;
+    --syntax-constant: #79c0ff;
+    --syntax-comment: #8b949e;
+    --syntax-operator: #c9d1d9;
+    --syntax-invalid: #ffa198;
 
-    /* ─── Tag pill accent tints (first meaningful character identity) ────── */
-    --tag-pill-tint-a: #8ee6c8;
-    --tag-pill-tint-b: #9bdcff;
-    --tag-pill-tint-c: #c8b6ff;
-    --tag-pill-tint-d: #ffc7a8;
-    --tag-pill-tint-e: #ffb6cd;
-    --tag-pill-tint-f: #b8f28b;
-    --tag-pill-tint-g: #f7df72;
-    --tag-pill-tint-h: #83e7ff;
-    --tag-pill-tint-i: #a7b8ff;
-    --tag-pill-tint-j: #f0a6ff;
-    --tag-pill-tint-k: #ff9f9f;
-    --tag-pill-tint-l: #b6f3d1;
-    --tag-pill-tint-m: #d7f58f;
-    --tag-pill-tint-n: #f6c177;
-    --tag-pill-tint-o: #8fc7ff;
-    --tag-pill-tint-p: #d6b4ff;
-    --tag-pill-tint-q: #ffb4ec;
-    --tag-pill-tint-r: #9ff0f0;
-    --tag-pill-tint-s: #c3f0a8;
-    --tag-pill-tint-t: #ffd980;
-    --tag-pill-tint-u: #b8d4ff;
-    --tag-pill-tint-v: #e0c3ff;
-    --tag-pill-tint-w: #ffcfbf;
-    --tag-pill-tint-x: #adf0c4;
-    --tag-pill-tint-y: #f2ee8f;
-    --tag-pill-tint-z: #c8e0ff;
-    --tag-pill-tint-0: #8ee6c8;
-    --tag-pill-tint-1: #c8b6ff;
-    --tag-pill-tint-2: #9bdcff;
-    --tag-pill-tint-3: #ffc7a8;
-    --tag-pill-tint-4: #ffb6cd;
-    --tag-pill-tint-5: #f7df72;
-    --tag-pill-tint-6: #83e7ff;
-    --tag-pill-tint-7: #f0a6ff;
-    --tag-pill-tint-8: #b8f28b;
-    --tag-pill-tint-9: #ff9f9f;
-
-    /* ─── Chart default tint — the semantic token chart primitives
-     *     (Bars, Sparkline, StackedBar) fall back to when no per-call
-     *     tint is provided AND no Widget chrome is overriding via `--tint`.
-     *     Promoting this to a single global root token means plugins drop
-     *     a chart into any container and get a visible, on-brand colour
-     *     without having to know which rail tint to pick. */
-    --editor-chart-default-tint: var(--rail-tint-peach);
-
-    /* ─── Chart series tints — used by the spacing scale chart bars.
-     *     Two vibrant, deliberately-contrasting hues so the desktop and mobile
-     *     series read at a glance. The `-glow` tokens are the same hue at
-     *     lower alpha for shadow halos around active segments. */
+    /* Charts */
+    --chart-default-tint: var(--accent-4);
     --chart-series-min: #38bdf8; /* sky 400 — bright cyan-blue (mobile) */
     --chart-series-min-glow: rgba(56, 189, 248, 0.4);
     --chart-series-max: #4ade80; /* green 400 — neon green (desktop) */
     --chart-series-max-glow: rgba(74, 222, 128, 0.4);
-    --chart-segment-empty: rgba(255, 255, 255, 0.06);
-    --chart-segment-empty-border: rgba(255, 255, 255, 0.04);
-    --chart-track-bg: rgba(255, 255, 255, 0.04);
+    --chart-segment-empty: var(--overlay-5);
+    --chart-segment-empty-border: var(--overlay-5);
+    --chart-track-bg: var(--overlay-5);
 
-    /* ─── Focus Ring ─────────────────────────────────────────────────────── */
-    --editor-focus-ring: 0 0 0 1px rgba(255, 255, 255, 0.25);
-
-    /* ─── Border Radius ──────────────────────────────────────────────────── */
-    --editor-radius-sm: 3px;
-    --editor-radius: 6px;
+    /* Radius */
+    --radius-sm: 3px;
+    --radius: 6px;
     --card-radius: 16px;
+    --panel-radius: 12px;
+    --input-radius: 1em;
+    --tooltip-radius: 6px;
 
-    /* ─── Panels ─────────────────────────────────────────────────────────── */
-    --editor-panel-border: #1f1f1f;
-
-    /* ─── Scrollbars ─────────────────────────────────────────────────────── */
-    --editor-scrollbar-size: 6px;
-    --editor-scrollbar-radius: var(--editor-radius-sm);
-    --editor-scrollbar-track: transparent;
-    --editor-scrollbar-thumb: color-mix(in srgb, var(--editor-text-muted) 58%, transparent);
-    --editor-scrollbar-thumb-hover: color-mix(
+    /* Scrollbars */
+    --scrollbar-size: 6px;
+    --scrollbar-radius: var(--radius-sm);
+    --scrollbar-track: transparent;
+    --scrollbar-thumb: color-mix(in srgb, var(--text-subtle) 58%, transparent);
+    --scrollbar-thumb-hover: color-mix(
         in srgb,
-        var(--editor-text-secondary) 72%,
+        var(--text-muted) 72%,
         transparent
     );
 
-    /* ─── Floating Overlay Panels */
-    --panel-bg: rgb(30 30 30);
-    --panel-border: rgba(255, 255, 255, 0.1);
-    --panel-radius: 12px;
+    /* Shadows and focus */
+    --focus-ring: 0 0 0 1px var(--overlay-20);
     --panel-blur: 24px;
-    --panel-shadow-inset-bottom: inset 0 -1px 0 rgba(0, 0, 0, 0.35);
-    --panel-shadow-drop: 0 12px 40px rgba(0, 0, 0, 0.65);
-    --panel-shadow: var(--panel-shadow-inset-bottom), var(--panel-shadow-drop);
+    --shadow-panel-inset-bottom: inset 0 -1px 0 var(--scrim-40);
+    --shadow-panel-drop: 0 12px 40px rgba(0, 0, 0, 0.65);
+    --shadow-panel: var(--shadow-panel-inset-bottom), var(--shadow-panel-drop);
+    --shadow-input-focus:
+        inset 0 0 5px rgba(255, 255, 255, 0.06),
+        inset 0 -5px 8px rgba(255, 255, 255, 0.09),
+        0 0 5px rgba(0, 0, 0, 0.24);
+    --shadow-tooltip:
+        0 4px 16px var(--scrim-50), inset 0 1px 0 var(--overlay-5);
 
-    /* ─── Inline code block surface (used by the Code primitive) ─────────── */
-    --code-bg: rgba(0, 0, 0, 0.3);
-
-    /* ─── Keycap (Kbd primitive) ─────────────────────────────────────────── */
-    /* A lightly-sculpted keycap that lives inside the achromatic surface ramp:
-       the face is a restrained vertical gradient sitting one step above the
-       row it rests on, the border is the standard editor border, and the
-       depth comes from low-alpha achromatic shadows matching the house
-       panel/tooltip vocabulary (a top highlight, a soft concave shadow, a
-       1px bottom edge, and a small drop). Depth affordance, not skeuomorphism. */
+    /* Keycap */
     --kbd-face-top: #434343; /* between surface-3 and surface-4 */
     --kbd-face-bottom: #2f2f2f; /* just below surface-3 */
     --kbd-face-top-hover: #4d4d4d;
     --kbd-face-bottom-hover: #363636;
-    --kbd-border: var(--editor-border); /* achromatic, matches the rest of the UI */
-    --kbd-text: var(--editor-text-secondary); /* same register as surrounding labels */
-    --kbd-highlight: rgba(255, 255, 255, 0.06); /* top inner highlight */
-    --kbd-inner-shadow: rgba(0, 0, 0, 0.22); /* soft concave bottom inner shadow */
-    --kbd-edge: rgba(0, 0, 0, 0.3); /* 1px bottom edge — the key's thickness */
-    --kbd-drop: rgba(0, 0, 0, 0.28); /* small drop shadow beneath the cap */
+    --kbd-border: var(--border);
+    --kbd-text: var(--text-muted);
+    --kbd-highlight: var(--overlay-5);
+    --kbd-inner-shadow: var(--scrim-20);
+    --kbd-edge: var(--scrim-30);
+    --kbd-drop: var(--scrim-30);
 
-    /* ─── Editor Inputs ──────── */
-    --input-bg: transparent;
-    --input-bg-focus: trasparent;
-    --input-border: rgba(255, 255, 255, 0.2);
-    --input-border-hover: rgba(255, 255, 255, 0.25);
-    --input-border-focus: rgba(255, 255, 255, 0.5); /* achromatic focus ring */
-    --input-shadow: none;
-    --input-shadow-focus:
-        inset 0 0 5px #ffffff0f, inset 0 -5px 8px #ffffff17, 0 0px 5px #0000003d; /* achromatic glow */
-    --input-radius: 1em;
-
-    /* ─── Canvas ─────────────────────────────────────────────────────────── */
-    --canvas-chrome-shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
+    /* Canvas */
+    --canvas-chrome-shadow: 0 12px 28px var(--scrim-30);
     --canvas-selection-ring: inset 0 0 0 1px #39ff14;
     --canvas-hover-ring: inset 0 0 0 1px #ff2bd6;
     /* Bare colours for surfaces that need an `outline` / `border-color` / or
@@ -255,28 +205,21 @@
     /* Shared diagonal-stripe pattern used by every module's canvas empty
        state (image, video, content, loop, container, slot-outlet, VC ref
        placeholders). Strictly achromatic — colours derived from
-       --editor-text-muted via color-mix so it reads neutral on any canvas
+       --text-subtle via color-mix so it reads neutral on any canvas
        background. Stripe geometry: 45°, 6 px lit + 6 px empty, ~6 %
        contrast over a ~4 % surface tint. Edit here to retune the pattern
        across every module placeholder at once. */
     --canvas-placeholder-bg:
         repeating-linear-gradient(
             -45deg,
-            color-mix(in srgb, var(--editor-text-muted) 6%, transparent) 0 6px,
+            color-mix(in srgb, var(--text-subtle) 6%, transparent) 0 6px,
             transparent 6px 12px
         ),
-        color-mix(in srgb, var(--editor-text-muted) 4%, transparent);
+        color-mix(in srgb, var(--text-subtle) 4%, transparent);
 
-    /* ─── Z-index layers ─────────────────────────────────────────────────── */
+    /* Z-index layers */
     --z-dropdown: 20;
 
-    /* ─── Tooltip ────────────────────────────────────────────────────────── */
-    --tooltip-bg: #0a0a0c;
-    --tooltip-fg: #f4f4f5;
-    --tooltip-border: rgba(255, 255, 255, 0.06);
-    --tooltip-shadow:
-        0 4px 16px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    --tooltip-radius: 6px;
     /* Tooltips are transient hover hints that must sit above every modal layer,
      * including the spotlight-style dialogs (--spotlight-z-index: 9000, used by
      * the module inserter) and the body slash menu (10000). Keep this the
@@ -284,106 +227,19 @@
      * its trigger lives on. */
     --tooltip-z-index: 10001;
 
-    /* ─── Toast ──────────────────────────────────────────────────────────── */
     /* Toasts are non-blocking notifications that must never be occluded — they
      * sit above every modal layer (spotlight dialogs at 9000, body slash menu
      * at 10000; a toast never overlaps the caret-anchored slash menu spatially)
      * and below tooltips, which stay the topmost layer. */
     --toast-z-index: 10000;
 
-    /* ─── Spotlight (Cmd+K command palette) ──────────────────────────────── */
-    --spotlight-backdrop: rgba(0, 0, 0, 0.5);
-    --spotlight-backdrop-blur: 8px;
+    /* Spotlight */
+    --backdrop-blur: 8px;
     --spotlight-z-index: 9000;
     --spotlight-width: 640px;
-    /* Row highlight — single subtle bg lift, no border ring (Linear/Raycast style).
-     * 0.08 opacity over the panel surface keeps the row distinct without the
-     * visual noise of an extra border on every selected/hovered item. */
-    --spotlight-row-selected-bg: rgba(255, 255, 255, 0.08);
-    /* Match highlight — reuse success bg for <mark> characters */
-    --spotlight-mark-bg: rgba(52, 211, 153, 0.2);
-    --spotlight-mark-fg: var(--editor-text-bright);
-    /* Footer */
-    --spotlight-footer-bg: rgba(255, 255, 255, 0.03);
-    /* Destructive row */
-    --spotlight-destructive-fg: var(--editor-danger-light);
-    /* Destructive confirm state — first Enter pressed, awaiting second Enter */
-    --spotlight-confirm-bg: rgba(239, 68, 68, 0.08);
-    /* Skeleton loading shimmer (Phase 3 providers) */
-    --spotlight-skeleton-base: rgba(255, 255, 255, 0.06);
-    --spotlight-skeleton-shimmer: rgba(255, 255, 255, 0.12);
-    /* Travelling highlight on determinate progress bars (Super Import) */
-    --editor-progress-shimmer: rgba(255, 255, 255, 0.4);
+    --progress-shimmer: var(--overlay-40);
 
-    /* ─── Achromatic overlay scales ──────────────────────────────────────────
-     * Two-layer model: surfaces, borders and depth are achromatic. These are
-     * the single source of truth for the low-alpha white tints (surface lifts,
-     * hover fills, inner highlights) and black scrims/shadows used throughout
-     * editor chrome. Suffix = alpha ×100 (012 = 0.012). Use a token instead of
-     * a raw rgba() so the ramp stays consistent and tunable in one place. */
-    --editor-overlay-white-012: rgba(255, 255, 255, 0.012);
-    --editor-overlay-white-02: rgba(255, 255, 255, 0.02);
-    --editor-overlay-white-025: rgba(255, 255, 255, 0.025);
-    --editor-overlay-white-03: rgba(255, 255, 255, 0.03);
-    --editor-overlay-white-035: rgba(255, 255, 255, 0.035);
-    --editor-overlay-white-04: rgba(255, 255, 255, 0.04);
-    --editor-overlay-white-05: rgba(255, 255, 255, 0.05);
-    --editor-overlay-white-06: rgba(255, 255, 255, 0.06);
-    --editor-overlay-white-07: rgba(255, 255, 255, 0.07);
-    --editor-overlay-white-075: rgba(255, 255, 255, 0.075);
-    --editor-overlay-white-08: rgba(255, 255, 255, 0.08);
-    --editor-overlay-white-10: rgba(255, 255, 255, 0.1);
-    --editor-overlay-white-12: rgba(255, 255, 255, 0.12);
-    --editor-overlay-white-14: rgba(255, 255, 255, 0.14);
-    --editor-overlay-white-16: rgba(255, 255, 255, 0.16);
-    --editor-overlay-white-18: rgba(255, 255, 255, 0.18);
-    --editor-overlay-white-22: rgba(255, 255, 255, 0.22);
-    --editor-overlay-white-55: rgba(255, 255, 255, 0.55);
-    --editor-overlay-white-70: rgba(255, 255, 255, 0.7);
-
-    --editor-overlay-black-24: rgba(0, 0, 0, 0.24);
-    --editor-overlay-black-25: rgba(0, 0, 0, 0.25);
-    --editor-overlay-black-28: rgba(0, 0, 0, 0.28);
-    --editor-overlay-black-30: rgba(0, 0, 0, 0.3);
-    --editor-overlay-black-32: rgba(0, 0, 0, 0.32);
-    --editor-overlay-black-35: rgba(0, 0, 0, 0.35);
-    --editor-overlay-black-40: rgba(0, 0, 0, 0.4);
-    --editor-overlay-black-45: rgba(0, 0, 0, 0.45);
-    --editor-overlay-black-50: rgba(0, 0, 0, 0.5);
-    --editor-overlay-black-55: rgba(0, 0, 0, 0.55);
-    --editor-overlay-black-60: rgba(0, 0, 0, 0.6);
-    --editor-overlay-black-70: rgba(0, 0, 0, 0.7);
-    --editor-overlay-black-82: rgba(0, 0, 0, 0.82);
-    --editor-overlay-black-85: rgba(0, 0, 0, 0.85);
-
-    /* ─── Identity tint surfaces (rail hue at low alpha) ──────────────────────
-     * Categorical-identity colour used as a soft surface/border tint, derived
-     * from the matching --rail-tint-* hue. Suffix = alpha ×100. */
-    --editor-sky-tint-06: rgba(155, 220, 255, 0.06);
-    --editor-sky-tint-16: rgba(155, 220, 255, 0.16);
-    --editor-sky-tint-18: rgba(155, 220, 255, 0.18);
-    --editor-sky-tint-40: rgba(155, 220, 255, 0.4);
-    --editor-sky-tint-55: rgba(155, 220, 255, 0.55);
-    --editor-mint-tint-06: rgba(142, 230, 200, 0.06);
-    --editor-mint-tint-15: rgba(142, 230, 200, 0.15);
-    --editor-mint-tint-20: rgba(142, 230, 200, 0.2);
-
-    /* ─── State tint surfaces (semantic hue at low alpha) ─────────────────────
-     * Extra alpha steps beyond the canonical *-bg / *-border tokens above, for
-     * surfaces and borders that need a slightly different weight. */
-    --editor-success-tint-12: rgba(52, 211, 153, 0.12);
-    --editor-success-tint-35: rgba(52, 211, 153, 0.35);
-    --editor-warning-tint-08: rgba(245, 158, 11, 0.08);
-    --editor-warning-tint-22: rgba(245, 158, 11, 0.22);
-    --editor-danger-tint-08: rgba(239, 68, 68, 0.08);
-    --editor-danger-tint-30: rgba(239, 68, 68, 0.3);
-    --editor-danger-tint-40: rgba(239, 68, 68, 0.4);
-    --editor-indigo-tint-12: rgba(99, 102, 241, 0.12);
-    --editor-indigo-tint-22: rgba(99, 102, 241, 0.22);
-
-    /* ─── Bespoke surface tints ───────────────────────────────────────────────
-     * One-off colours that aren't part of a scale: the plugins hero gradient
-     * stops and the dark scrim behind the live canvas iframe overlay. */
+    /* Bespoke surface tints */
     --plugins-hero-tint-a: rgba(35, 92, 72, 0.32);
     --plugins-hero-tint-b: rgba(49, 64, 94, 0.24);
     --canvas-live-scrim: rgba(24, 24, 27, 0.82);
@@ -420,38 +276,38 @@ body,
 }
 
 body {
-    background: var(--editor-bg);
-    color: var(--editor-text);
+    background: var(--bg-body);
+    color: var(--text);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
 }
 
 /* Admin chrome scrollbars: achromatic and quiet so rail tint stays dominant. */
 * {
-    scrollbar-color: var(--editor-scrollbar-thumb) var(--editor-scrollbar-track);
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
     scrollbar-width: thin;
 }
 
 ::-webkit-scrollbar {
-    width: var(--editor-scrollbar-size);
-    height: var(--editor-scrollbar-size);
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--editor-scrollbar-track);
+    background: var(--scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--editor-scrollbar-thumb);
-    border-radius: var(--editor-scrollbar-radius);
+    background: var(--scrollbar-thumb);
+    border-radius: var(--scrollbar-radius);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--editor-scrollbar-thumb-hover);
+    background: var(--scrollbar-thumb-hover);
 }
 
 ::-webkit-scrollbar-corner {
-    background: var(--editor-scrollbar-track);
+    background: var(--scrollbar-track);
 }
 
 /* ===========================================================================

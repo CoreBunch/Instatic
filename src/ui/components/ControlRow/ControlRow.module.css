@@ -40,22 +40,22 @@
     justify-content: space-between;
     gap: 8px;
     min-height: 16px;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 11px;
     font-weight: 620;
 }
 
 .labelOverride {
-    color: var(--editor-accent-violet);
+    color: var(--overlay-80);
 }
 
 .labelUnit {
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     font-size: 10px;
 }
 
 .labelError {
-    color: var(--editor-danger-light);
+    color: var(--danger-light);
     font-size: 10px;
 }
 
@@ -63,6 +63,6 @@
 .description {
     grid-column: 1 / -1;
     font-size: 11px;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     line-height: 1.3;
 }

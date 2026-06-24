@@ -11,9 +11,9 @@
     width: var(--avatar-size);
     height: var(--avatar-size);
     border-radius: 999px;
-    border: 1px solid var(--editor-border);
-    background: var(--editor-surface-2);
-    color: var(--editor-text-bright);
+    border: 1px solid var(--border);
+    background: var(--bg-surface-2);
+    color: var(--text-bright);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -31,7 +31,7 @@
     /* Pixel-art-style identicons stay crisp at small sizes without bilinear
      * smoothing; uploaded photos handle smoothing via the browser default
      * and don't notice the hint at avatar scales. */
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
 }
 
 .initials {

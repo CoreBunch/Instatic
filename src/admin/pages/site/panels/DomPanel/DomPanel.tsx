@@ -410,7 +410,7 @@ function DomPanelInner({ variant = 'floating', editable = true }: { variant?: Pa
           <TreeIconSlot
             icon={getModuleIcon(dnd.activeModuleId)}
             iconSize={11}
-            iconColor="var(--editor-text-subtle)"
+            iconColor="var(--text-disabled)"
           />
           {dnd.activeCount > 1 ? (
             <TreeLabel>{dnd.activeCount} layers</TreeLabel>

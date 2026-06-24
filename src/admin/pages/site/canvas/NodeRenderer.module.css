@@ -22,6 +22,6 @@
  * left after the iframe refactor. Rendered inline by NodeRenderer when the
  * module id isn't found in the registry. */
 .unknownModule {
-  outline: 1px dashed var(--editor-danger);
+  outline: 1px dashed var(--danger);
   padding: 4px;
 }

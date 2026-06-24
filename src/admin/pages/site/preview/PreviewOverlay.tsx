@@ -85,7 +85,7 @@ export function PreviewOverlay() {
         <div className={styles.card}>
           {/* ── Header bar ──────────────────────────────────────────────── */}
           <div className={styles.header}>
-            <EyeSolidIcon size={14} color="var(--editor-text-secondary)" className={styles.headerIcon} />
+            <EyeSolidIcon size={14} color="var(--text-muted)" className={styles.headerIcon} />
             <span className={styles.headerTitle}>
               Preview — {activePage.title}
             </span>

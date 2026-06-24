@@ -31,7 +31,7 @@ import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
 import { cn } from '@ui/cn'
 // Reuse the editor's canvas surface so the Media page matches Site / Content:
-// rounded top-left, `--editor-surface-2` background. Keeps the look consistent.
+// rounded top-left, `--bg-surface-2` background. Keeps the look consistent.
 import canvasStyles from '@site/canvas/CanvasRoot.module.css'
 import type { CmsMediaAsset, CmsMediaFolder } from '@core/persistence/cmsMedia'
 import type { MediaSort, MediaType } from '../../utils/filters'

@@ -18,7 +18,7 @@
 .gridLayout {
     --row-h: 70px;
     /* 1px hairline — see GRID_GAP in useDashboardLayout.ts. The grid sits
-       on `--editor-surface` (darker) while each card is `--editor-surface-2`
+       on `--bg-surface` (darker) while each card is `--bg-surface-2`
        (lighter), so a 1px gap reveals the parent and reads as a
        borderless tile divider. */
     --gap: 1px;
@@ -62,7 +62,7 @@
        (the JS snap math reads the same value when computing column /
        row drop positions). */
     --gap: 16px;
-    outline-color: var(--editor-sky-tint-18);
+    outline-color: color-mix(in srgb, var(--accent-3) 18%, transparent);
     /* `--grid-min-height` is set inline by GridSurface in customize
        mode — extra empty rows below the lowest widget so the user has
        drop zones when dragging from the block library. View mode
@@ -99,7 +99,7 @@
 }
 
 .dropTarget {
-    outline: 1px dashed var(--rail-tint-sky);
+    outline: 1px dashed var(--accent-3);
     outline-offset: 4px;
     border-radius: 16px;
 }
@@ -135,7 +135,7 @@
     width: 100%;
     height: 100%;
     pointer-events: none;
-    box-shadow: 0 24px 56px var(--editor-overlay-black-60);
+    box-shadow: 0 24px 56px var(--scrim-60);
     border-radius: 16px;
     transform: scale(var(--proximity-scale));
     transition: transform 140ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -177,7 +177,7 @@
     position: absolute;
     top: 50%;
     left: 50%;
-    background: var(--rail-tint-sky);
+    background: var(--accent-3);
     border-radius: 2px;
     transform: translate(-50%, -50%);
     opacity: 0;
@@ -286,10 +286,10 @@
  */
 .dropPreview {
     position: absolute;
-    background: var(--rail-tint-sky);
+    background: var(--accent-3);
     opacity: 0.18;
     border-radius: 16px;
-    border: 1px dashed var(--editor-sky-tint-55);
+    border: 1px dashed color-mix(in srgb, var(--accent-3) 55%, transparent);
     pointer-events: none;
     z-index: 1;
     transition:
@@ -328,8 +328,8 @@
     background: transparent;
     border: 0;
     border-radius: 16px;
-    box-shadow: inset 0 0 0 1px var(--editor-border-med);
-    color: var(--editor-text-muted);
+    box-shadow: inset 0 0 0 1px var(--border-muted);
+    color: var(--text-subtle);
     cursor: pointer;
     transition:
         color 120ms ease,
@@ -340,9 +340,9 @@
 }
 
 .addWidget:hover {
-    color: var(--editor-text-bright);
-    background: var(--editor-overlay-white-02);
-    box-shadow: inset 0 0 0 1px var(--editor-text-muted);
+    color: var(--text-bright);
+    background: var(--overlay-5);
+    box-shadow: inset 0 0 0 1px var(--text-subtle);
 }
 
 .addInner {
@@ -355,11 +355,11 @@
     width: 36px;
     height: 36px;
     border-radius: 10px;
-    background: var(--editor-surface);
-    border: 1px solid var(--editor-border);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
     display: grid;
     place-items: center;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .addLabel {

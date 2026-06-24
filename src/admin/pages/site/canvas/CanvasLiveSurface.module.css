@@ -15,7 +15,7 @@
     align-items: stretch;
     justify-content: center;
     overflow: hidden;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
 }
 
 .frame {
@@ -34,7 +34,7 @@
     position: relative;
     flex: 1 1 auto;
     min-width: 0;
-    background: var(--editor-accent);
+    background: var(--overlay);
     overflow: hidden;
 }
 
@@ -53,25 +53,25 @@
 
 .resizeHandle:hover,
 .resizeHandle:focus-visible {
-    background: var(--editor-overlay-white-04);
+    background: var(--overlay-5);
     outline: none;
 }
 
 .resizeHandle:active {
-    background: var(--editor-overlay-white-08);
+    background: var(--overlay-10);
 }
 
 .resizeGrip {
     width: 2px;
     height: 36px;
     border-radius: 999px;
-    background: var(--editor-border-med);
+    background: var(--border-muted);
     transition: background-color 120ms ease;
 }
 
 .resizeHandle:hover .resizeGrip,
 .resizeHandle:active .resizeGrip {
-    background: var(--editor-text-secondary);
+    background: var(--text-muted);
 }
 
 /* Width readout — small unobtrusive badge at the bottom-centre of the frame. */
@@ -83,7 +83,7 @@
     padding: 2px 8px;
     border-radius: 999px;
     background: var(--canvas-live-scrim);
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 10px;
     font-weight: 700;
     line-height: 1.4;

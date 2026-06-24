@@ -14,21 +14,21 @@
     flex-direction: column;
     gap: 16px;
     padding: 20px 24px;
-    background: var(--editor-surface);
-    border: 1px solid var(--editor-border);
-    border-radius: var(--editor-radius);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
     margin-bottom: 16px;
 }
 
 .review h2 {
     font-size: 14px;
     font-weight: 600;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     margin: 0 0 6px;
 }
 
 .review p {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     margin: 0;
     font-size: 13px;
     line-height: 1.5;
@@ -39,10 +39,10 @@
     align-items: center;
     gap: 8px;
     padding: 10px 12px;
-    border-radius: var(--editor-radius-sm);
-    background: var(--editor-warning-bg);
-    border: 1px solid var(--editor-warning-border);
-    color: var(--editor-warning-text);
+    border-radius: var(--radius-sm);
+    background: var(--warning-10);
+    border: 1px solid var(--warning-30);
+    color: var(--warning-text);
     font-size: 12px;
     line-height: 1.5;
 }
@@ -54,18 +54,18 @@
  * instead of the warning tint shared by permission-diff notices.
  */
 .alertDanger {
-    background: var(--editor-danger-bg);
-    border-color: var(--editor-danger-border);
-    color: var(--editor-danger-text);
+    background: var(--danger-10);
+    border-color: var(--danger-20);
+    color: var(--danger-text);
 }
 
 /* Zero-permission install — informational, not a warning. */
 .empty {
     padding: 12px 14px;
-    border-radius: var(--editor-radius-sm);
-    background: var(--editor-bg-subtle);
-    border: 1px solid var(--editor-border);
-    color: var(--editor-text-secondary);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-3);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
     font-size: 12px;
     line-height: 1.5;
 }
@@ -84,19 +84,19 @@
     flex-direction: column;
     gap: 4px;
     padding: 12px 14px;
-    border-radius: var(--editor-radius-sm);
-    background: var(--editor-bg-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-3);
     border: 1px solid transparent;
 }
 
 .row[data-status="new"] {
-    background: var(--editor-warning-bg);
-    border-color: var(--editor-warning-border);
+    background: var(--warning-10);
+    border-color: var(--warning-30);
 }
 
 .row[data-status="dropped"] {
     background: transparent;
-    border-color: var(--editor-border-med);
+    border-color: var(--border-muted);
     opacity: 0.6;
 }
 
@@ -108,7 +108,7 @@
 
 .label strong {
     font-weight: 600;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 13px;
 }
 
@@ -117,7 +117,7 @@
 }
 
 .description {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 12px;
     line-height: 1.5;
 }
@@ -136,20 +136,20 @@
 }
 
 .badgeNew {
-    background: var(--editor-warning);
-    color: var(--editor-bg);
+    background: var(--warning);
+    color: var(--bg-body);
 }
 
 .badgeExisting {
-    background: var(--editor-bg-subtle);
-    color: var(--editor-text-secondary);
-    border: 1px solid var(--editor-border-med);
+    background: var(--bg-surface-3);
+    color: var(--text-muted);
+    border: 1px solid var(--border-muted);
 }
 
 .badgeDropped {
     background: transparent;
-    color: var(--editor-text-muted);
-    border: 1px solid var(--editor-border-med);
+    color: var(--text-subtle);
+    border: 1px solid var(--border-muted);
 }
 
 /*
@@ -163,7 +163,7 @@
     flex-direction: column;
     gap: 8px;
     padding-top: 8px;
-    border-top: 1px solid var(--editor-border);
+    border-top: 1px solid var(--border);
 }
 
 .networkHeader {
@@ -173,7 +173,7 @@
 }
 
 .networkHeader strong {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 13px;
     font-weight: 600;
 }
@@ -181,10 +181,10 @@
 .row code {
     font-family: var(--font-mono);
     font-size: 12px;
-    color: var(--editor-text-bright);
-    background: var(--editor-bg-subtle);
+    color: var(--text-bright);
+    background: var(--bg-surface-3);
     padding: 2px 6px;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
 }
 
 .actions {

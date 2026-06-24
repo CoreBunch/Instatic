@@ -5,7 +5,7 @@
 }
 
 .label {
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0;
@@ -19,14 +19,14 @@
   max-height: 168px;
   overflow-y: auto;
   padding: 4px;
-  border: 1px solid var(--panel-border);
-  border-radius: var(--editor-radius);
-  background: var(--editor-surface-2);
+  border: 1px solid var(--overlay-10);
+  border-radius: var(--radius);
+  background: var(--bg-surface-2);
 }
 
 .empty {
   padding: 2px 4px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   font-size: 10px;
   line-height: 1.3;
 }

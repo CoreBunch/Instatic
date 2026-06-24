@@ -20,7 +20,7 @@
  *
  * Lives under `src/ui/components/` — NOT `src/admin/pages/dashboard/` —
  * so plugins can import it via `@instatic/host-ui`. The four allowed
- * `tint` tokens are the same four `--rail-tint-*` accents declared in
+ * `tint` tokens are the same four `--accent-*` accents declared in
  * `src/styles/globals.css`.
  */
 import { type CSSProperties, type ReactNode } from 'react'
@@ -34,7 +34,7 @@ import styles from './Widget.module.css'
 
 /**
  * Accent tints reserved for dashboard widgets. Mirrors the four
- * `--rail-tint-*` tokens in `src/styles/globals.css`. The chrome reads
+ * `--accent-*` tokens in `src/styles/globals.css`. The chrome reads
  * `--tint` from the chosen value to color the title-dot and to flow
  * through to any chart primitive composed inside (via `var(--tint)` in
  * the chart's CSS module fallback).
@@ -76,10 +76,10 @@ export interface WidgetProps {
 }
 
 const TINT_TOKEN: Record<WidgetTint, string> = {
-  mint: 'var(--rail-tint-mint)',
-  lilac: 'var(--rail-tint-lilac)',
-  sky: 'var(--rail-tint-sky)',
-  peach: 'var(--rail-tint-peach)',
+  mint: 'var(--accent-1)',
+  lilac: 'var(--accent-2)',
+  sky: 'var(--accent-3)',
+  peach: 'var(--accent-4)',
 }
 
 /**

@@ -5,7 +5,7 @@
   justify-content: center;
   min-height: 0;
   padding: 12px;
-  background: var(--editor-bg);
+  background: var(--bg-body);
 }
 
 .video {

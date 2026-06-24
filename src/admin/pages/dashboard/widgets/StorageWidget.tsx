@@ -74,27 +74,27 @@ export function StorageWidget({ span, editing }: DashboardWidgetRendererProps) {
               {
                 label: 'Images',
                 value: stats.imageBytes,
-                color: 'var(--rail-tint-peach)',
+                color: 'var(--accent-4)',
               },
               {
                 label: 'Videos',
                 value: stats.videoBytes,
-                color: 'var(--rail-tint-lilac)',
+                color: 'var(--accent-2)',
               },
               {
                 label: 'Documents',
                 value: stats.documentBytes,
-                color: 'var(--rail-tint-rose)',
+                color: 'var(--accent-5)',
               },
               {
                 label: 'Plugins',
                 value: stats.pluginBytes,
-                color: 'var(--rail-tint-mint)',
+                color: 'var(--accent-1)',
               },
               {
                 label: 'Database',
                 value: stats.databaseBytes,
-                color: 'var(--rail-tint-sky)',
+                color: 'var(--accent-3)',
               },
             ]}
             total={stats.totalBytes > 0 ? stats.totalBytes : 1}

@@ -23,10 +23,10 @@
     padding: 4px 4px 4px 10px;
     margin-right: 6px;
     pointer-events: auto;
-    color: var(--editor-success-text);
-    background: var(--editor-mint-surface);
+    color: var(--success-text);
+    background: var(--accent-1-10);
     border-radius: var(--panel-radius);
-    box-shadow: 0 8px 18px var(--editor-overlay-black-24);
+    box-shadow: 0 8px 18px var(--scrim-20);
     font-size: 11px;
     font-weight: 620;
 }
@@ -39,11 +39,11 @@
 }
 
 .badgeExit.badgeExit {
-    color: var(--editor-success-text-soft);
+    color: var(--success-text-muted);
 }
 
 .notch {
-    --breakpoint-notch-bg: var(--editor-bg);
+    --breakpoint-notch-bg: var(--bg-body);
     --breakpoint-notch-radius: 16px;
     --breakpoint-notch-corner: 16px;
     --breakpoint-notch-corner-cut: calc(var(--breakpoint-notch-corner) - 0.5px);
@@ -57,7 +57,7 @@
     background: var(--breakpoint-notch-bg);
     border: 0;
     border-radius: 0 0 0 var(--breakpoint-notch-radius);
-    box-shadow: 0 8px 18px var(--editor-overlay-black-24);
+    box-shadow: 0 8px 18px var(--scrim-20);
 }
 
 .notch > * {
@@ -103,8 +103,8 @@
     padding: 0 6px;
     border-radius: 9px;
     border: 0;
-    background: var(--editor-mint-surface);
-    color: var(--editor-success-text);
+    background: var(--accent-1-10);
+    color: var(--success-text);
 }
 
 .triggerLabel {
@@ -121,10 +121,10 @@
     background:
         linear-gradient(
             180deg,
-            var(--editor-overlay-white-10),
+            var(--overlay-10),
             transparent
         ),
-        var(--editor-mint-tint-20);
+        color-mix(in srgb, var(--accent-1) 20%, transparent);
 }
 
 /* Dropdown panel — the anchored ContextMenu renders inline (not portaled), so
@@ -150,7 +150,7 @@
 }
 
 .menuRowActive.menuRowActive {
-    color: var(--editor-success-text);
+    color: var(--success-text);
 }
 
 .rowLabel {
@@ -164,27 +164,27 @@
 
 .rowDetail {
     flex: 0 0 auto;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 10px;
     font-weight: 700;
 }
 
 .rowAction.rowAction {
     flex: 0 0 auto;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .rowAction.rowAction:hover {
-    color: var(--editor-success-text);
+    color: var(--success-text);
 }
 
 .rowRemove.rowRemove {
     flex: 0 0 auto;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .rowRemove.rowRemove:hover {
-    color: var(--editor-danger-light);
+    color: var(--danger-light);
 }
 
 /* Add-condition dialog */
@@ -209,14 +209,14 @@
 }
 
 .label {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 11px;
     font-weight: 620;
 }
 
 .error {
     margin: 0;
-    color: var(--editor-danger-light);
+    color: var(--danger-light);
     font-size: 11px;
 }
 
@@ -244,7 +244,7 @@
 
 .hint {
     margin: 0;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 11px;
 }
 
@@ -257,9 +257,9 @@
 }
 
 .supportYes {
-    color: var(--editor-success-text);
+    color: var(--success-text);
 }
 
 .supportNo {
-    color: var(--editor-danger-light);
+    color: var(--danger-light);
 }

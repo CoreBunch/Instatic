@@ -32,13 +32,13 @@
 .box {
     position: relative;
     display: block;
-    border: 1px dashed var(--input-border);
-    background: var(--editor-overlay-white-012);
+    border: 1px dashed var(--overlay-20);
+    background: var(--overlay-5);
     transition: border-color 120ms ease;
 }
 
 .box:hover {
-    border-color: var(--input-border-hover);
+    border-color: var(--overlay-30);
 }
 
 /* Margin box fills the (4:3) root. */
@@ -53,7 +53,7 @@
  * per axis → padding box keeps the same 4:3 aspect ratio). */
 .box--padding {
     border-style: solid;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
 }
 
 /* ── Diagonal overlay (corner-to-corner X) ───────────────────────────────── */
@@ -74,7 +74,7 @@
 }
 
 .diagonal {
-    stroke: var(--editor-overlay-white-16);
+    stroke: var(--overlay-20);
     stroke-width: 1;
     fill: none;
     /* preserveAspectRatio="none" stretches the line geometry to exactly
@@ -84,7 +84,7 @@
 }
 
 .diagonalDashed {
-    stroke: var(--editor-overlay-white-14);
+    stroke: var(--overlay-10);
     stroke-dasharray: 3 3;
 }
 
@@ -100,11 +100,11 @@
     gap: 1px;
     height: 12px;
     padding: 0 3px;
-    background: var(--editor-bg);
+    background: var(--bg-body);
 }
 
 .boxLabel {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -120,17 +120,17 @@
 
 .linkBtn,
 .clearBtn {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .linkBtn:hover,
 .clearBtn:hover {
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .linkBtnActive,
 .linkBtnActive:hover {
-    color: var(--editor-accent);
+    color: var(--overlay);
 }
 
 /* ── Body ────────────────────────────────────────────────────────────────── */
@@ -181,12 +181,12 @@
 }
 
 .segment:hover {
-    background-color: var(--editor-overlay-white-05);
+    background-color: var(--overlay-5);
 }
 
 .segment:focus-within,
 .segmentFocused {
-    background-color: var(--editor-overlay-white-07);
+    background-color: var(--overlay-10);
 }
 
 /* Margin trapezoids — hug the gutter between margin and padding (50% nesting). */
@@ -238,7 +238,7 @@
     border-radius: 0;
     background: transparent;
     box-shadow: none;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 11px;
     font-weight: 600;
     line-height: 1;
@@ -246,11 +246,11 @@
 }
 
 .segment[data-state="unset"] .sideInput.sideInput {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .sideInput.sideInput::placeholder {
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     font-weight: 500;
 }
 
@@ -309,5 +309,5 @@
 
 /* When linked + uniform, all four sides read as one unit. */
 .segmentLinked .sideInput.sideInput {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
 }

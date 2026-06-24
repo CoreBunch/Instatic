@@ -1,17 +1,17 @@
 .help {
   margin: 0 0 8px 0;
   font-size: 11px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   line-height: 1.4;
 }
 
 .notice {
   margin: 0 0 8px 0;
   padding: 6px 8px;
-  background: var(--editor-surface-2);
-  border-radius: var(--editor-radius-sm);
+  background: var(--bg-surface-2);
+  border-radius: var(--radius-sm);
   font-size: 11px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 
 .section {
@@ -26,7 +26,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   margin: 0;
 }
 
@@ -35,7 +35,7 @@
   justify-content: flex-end;
   gap: 6px;
   padding-block: 8px;
-  border-top: 1px solid var(--editor-border);
+  border-top: 1px solid var(--border);
 }
 
 .actionsRow {
@@ -52,7 +52,7 @@
 
 .folderPickerLabel {
   font-size: 11px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 
 .folderChips {
@@ -69,8 +69,8 @@
   align-items: center;
   gap: 4px;
   padding: 2px 4px 2px 6px;
-  background: var(--editor-surface-2);
-  border-radius: var(--editor-radius-sm);
+  background: var(--bg-surface-2);
+  border-radius: var(--radius-sm);
   font-size: 11px;
 }
 

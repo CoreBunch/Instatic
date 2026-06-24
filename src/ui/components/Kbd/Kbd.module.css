@@ -23,7 +23,7 @@
     height: 19px;
     padding: 0 6px;
     border: 1px solid var(--kbd-border);
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
     background: linear-gradient(
         var(--kbd-face-top),
         var(--kbd-face-bottom)

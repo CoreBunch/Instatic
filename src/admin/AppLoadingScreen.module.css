@@ -3,8 +3,8 @@
     min-height: 100vh;
     place-items: center;
     overflow: hidden;
-    background: var(--editor-bg);
-    color: var(--editor-text);
+    background: var(--bg-body);
+    color: var(--text);
 }
 
 .banterLoader {
@@ -28,7 +28,7 @@
     top: 0;
     width: 100%;
     height: 100%;
-    background: var(--editor-text);
+    background: var(--text);
 }
 
 .banterBox:nth-child(3n) {

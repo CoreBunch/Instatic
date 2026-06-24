@@ -36,7 +36,7 @@ export function SearchBar({
     <div className={cn(styles.searchBar, className)}>
       <SearchSolidIcon
         size={11}
-        color="var(--editor-text-muted)"
+        color="var(--text-subtle)"
         aria-hidden="true"
       />
       <Input

@@ -65,9 +65,9 @@ export function CanvasFrameSkeleton({ breakpointId }: CanvasFrameSkeletonProps) 
         </div>
       </div>
       <div className={styles.grid} aria-hidden="true">
-        <Skeleton height={110} radius="var(--editor-radius)" />
-        <Skeleton height={110} radius="var(--editor-radius)" />
-        <Skeleton height={110} radius="var(--editor-radius)" />
+        <Skeleton height={110} radius="var(--radius)" />
+        <Skeleton height={110} radius="var(--radius)" />
+        <Skeleton height={110} radius="var(--radius)" />
       </div>
       <div className={styles.copy} aria-hidden="true">
         <Skeleton width="58%" height={15} />

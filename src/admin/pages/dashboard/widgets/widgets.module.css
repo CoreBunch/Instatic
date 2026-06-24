@@ -12,7 +12,7 @@
     justify-content: space-between;
     font-family: var(--font-mono);
     font-size: 10px;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     margin-top: 4px;
 }
 
@@ -31,9 +31,9 @@
     align-items: center;
     gap: 10px;
     padding: 10px 0;
-    border-top: 1px solid var(--editor-border);
+    border-top: 1px solid var(--border);
     font-size: 13px;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .wlist li:first-child {
@@ -52,7 +52,7 @@
 .wlistMeta {
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -61,7 +61,7 @@
 .wlistPath {
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
 }
 
 .deltaSpacing {
@@ -81,7 +81,7 @@
     align-items: center;
     gap: 10px;
     padding: 10px 0;
-    border-top: 1px solid var(--editor-border);
+    border-top: 1px solid var(--border);
 }
 
 .feedRow:first-child {
@@ -99,15 +99,15 @@
     border-radius: 999px;
     display: grid;
     place-items: center;
-    background: var(--editor-surface-2);
-    border: 1px solid var(--editor-border);
-    color: var(--editor-text-secondary);
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
     flex-shrink: 0;
 }
 
 .feedBody {
     font-size: 12.5px;
-    color: var(--editor-text);
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -115,14 +115,14 @@
 
 .feedBody em {
     font-style: normal;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .feedBody code {
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--editor-text-bright);
-    background: var(--editor-selection);
+    color: var(--text-bright);
+    background: var(--overlay-10);
     padding: 1px 4px;
     border-radius: 3px;
 }
@@ -130,7 +130,7 @@
 .feedTime {
     font-family: var(--font-mono);
     font-size: 10px;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     text-transform: uppercase;
     letter-spacing: 0.04em;
 }
@@ -142,7 +142,7 @@
     gap: 10px;
     align-items: center;
     padding: 9px 0;
-    border-top: 1px solid var(--editor-border);
+    border-top: 1px solid var(--border);
     font-size: 12.5px;
 }
 
@@ -154,11 +154,11 @@
     width: 28px;
     height: 28px;
     border-radius: 7px;
-    background: var(--editor-surface);
-    border: 1px solid var(--editor-border);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
     display: grid;
     place-items: center;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     overflow: hidden;
 }
 
@@ -175,7 +175,7 @@
 }
 
 .pluginName {
-    color: var(--editor-text);
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -185,7 +185,7 @@
     display: block;
     font-family: var(--font-mono);
     font-size: 10px;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     margin-top: 2px;
 }
 
@@ -198,15 +198,15 @@
 }
 
 .dotGreen {
-    background: var(--editor-success-green);
+    background: var(--success);
 }
 
 .dotAmber {
-    background: var(--editor-warning);
+    background: var(--warning);
 }
 
 .dotMuted {
-    background: var(--editor-text-subtle);
+    background: var(--text-disabled);
 }
 
 /* ── Badges (queued / live / draft) ────────────────────────────────── */
@@ -224,18 +224,18 @@
 }
 
 .badgeDraft {
-    background: var(--editor-selection);
-    color: var(--editor-text-muted);
+    background: var(--overlay-10);
+    color: var(--text-subtle);
 }
 
 .badgeLive {
-    background: var(--editor-success-bg);
-    color: var(--editor-success-green);
+    background: var(--success-10);
+    color: var(--success);
 }
 
 .badgeQueued {
-    background: var(--editor-warning-bg);
-    color: var(--editor-warning);
+    background: var(--warning-10);
+    color: var(--warning);
 }
 
 /* "PUBLISHED" pill — success tone, sibling of `.badgeLive` but
@@ -244,8 +244,8 @@
    the live site" — visually distinct from the warning-tone scheduled
    pill so the eye scans the lineup at a glance. */
 .badgePublished {
-    background: var(--editor-success-bg);
-    color: var(--editor-success-green);
+    background: var(--success-10);
+    color: var(--success);
 }
 
 /* ── Pages / posts / status row utilities ──────────────────────────── */
@@ -255,7 +255,7 @@
     gap: 16px;
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .statusRow {
@@ -263,7 +263,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 9px 0;
-    border-top: 1px solid var(--editor-border);
+    border-top: 1px solid var(--border);
 }
 
 .statusRow:first-of-type {
@@ -275,7 +275,7 @@
     align-items: center;
     gap: 8px;
     font-size: 12.5px;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .statusGrid {
@@ -288,7 +288,7 @@
 .domainName {
     font-family: var(--font-mono);
     font-size: 14px;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     margin-top: 2px;
 }
 
@@ -299,7 +299,7 @@
     gap: 6px;
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .domainList > div {
@@ -308,7 +308,7 @@
 }
 
 .domainOk {
-    color: var(--editor-success-green);
+    color: var(--success);
 }
 
 /* ── Media thumbnail grid ──────────────────────────────────────────── */
@@ -323,16 +323,16 @@
 .mediaCell {
     aspect-ratio: 1;
     border-radius: 6px;
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 .mediaCellAccent {
-    background: var(--rail-tint-peach);
+    background: var(--accent-4);
     opacity: 0.6;
 }
 
 .mediaCellEmpty {
-    background: var(--editor-surface);
+    background: var(--bg-surface);
 }
 
 /* Cell that holds a real image thumbnail. The cell is rendered as a
@@ -351,7 +351,7 @@
     gap: 0;
     border-radius: 6px;
     overflow: hidden;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
     transition: transform 120ms ease;
 }
 

@@ -431,7 +431,7 @@ Each iframe `<head>` receives five `<style>` elements (three from `ClassStyleInj
 
 The **unlayered-vs-layered** split is the cascade isolation mechanism: CSS rules outside any `@layer` always beat rules inside `@layer`-d blocks, regardless of specificity. Author CSS (both the class registry and user stylesheets) goes into `@layer user-authored`, so it can never override the editor chrome even with a high-specificity selector.
 
-`EditorChromeInjector` targets chrome elements via **stable data-attribute selectors** (`data-canvas-module-placeholder`, `data-instatic-slot-instance`, `data-instatic-unknown-module`, etc.) rather than hashed CSS-Module class names, which only exist in the parent document. At mount, it copies the required design tokens (`--editor-text-muted`, `--canvas-placeholder-bg`, `--editor-radius`, etc.) from the parent document's `:root` onto the iframe's `:root` so `var(--editor-*)` resolves correctly inside the iframe.
+`EditorChromeInjector` targets chrome elements via **stable data-attribute selectors** (`data-canvas-module-placeholder`, `data-instatic-slot-instance`, `data-instatic-unknown-module`, etc.) rather than hashed CSS-Module class names, which only exist in the parent document. At mount, it copies the required design tokens (`--text-subtle`, `--canvas-placeholder-bg`, `--radius`, etc.) from the parent document's `:root` onto the iframe's `:root` so `var(...)` references resolve correctly inside the iframe.
 
 Full details: [`docs/features/canvas-iframe-per-frame.md`](../features/canvas-iframe-per-frame.md).
 
@@ -580,7 +580,7 @@ The sidebar shell expands/collapses by animating `--*-panel-width`. The panel sl
 
 ### Settings modal
 
-`src/admin/modals/Settings/SettingsModal.tsx`. Shares the visual language of the Spotlight palette and Module Inserter: a `--panel-*`-token shell, `--editor-surface-2` rail with categorical rail-tint icon chips, accent-bar section header, card-group rows (`--editor-surface-2` fills, `--panel-radius` corners, 1px gaps showing the darker panel surface through) for section content, and an Esc keycap affordance. Backdrop click and Esc both close — there is no dedicated close button.
+`src/admin/modals/Settings/SettingsModal.tsx`. Shares the visual language of the Spotlight palette and Module Inserter: a direct-token panel shell, `--bg-surface-2` rail with categorical accent icon chips, accent-bar section header, card-group rows (`--bg-surface-2` fills, `--panel-radius` corners, 1px gaps showing the darker panel surface through) for section content, and an Esc keycap affordance. Backdrop click and Esc both close — there is no dedicated close button.
 
 **Sections** (rail nav, four entries):
 
@@ -619,7 +619,7 @@ Data sources:
 - **Recent:** per-browser local state in `instatic-module-inserter-v1`, validated with TypeBox before use.
 - **Favorites:** per-user server state in `user_preferences` key `module-inserter`, validated with TypeBox by `src/core/persistence/userPreferences.ts` and used by `CanvasNotch`.
 
-The modal uses the tile-card pattern from `docs/design.md`: `--editor-surface` parent, 1px grid gap, `--editor-surface-2` tiles, `--card-radius`, rail-tint accents via `data-accent`, and an achromatic `--editor-focus-ring` selection state. Wireframe image regions reuse `--canvas-placeholder-bg`.
+The modal uses the tile-card pattern from `docs/design.md`: `--bg-surface` parent, 1px grid gap, `--bg-surface-2` tiles, `--card-radius`, categorical accents via `data-accent`, and an achromatic `--focus-ring` selection state. Wireframe image regions reuse `--canvas-placeholder-bg`.
 
 ### Saved layouts
 

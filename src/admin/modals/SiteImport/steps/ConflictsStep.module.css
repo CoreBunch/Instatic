@@ -23,7 +23,7 @@
   margin: 0;
   font-size: 12px;
   font-weight: 600;
-  color: var(--editor-text);
+  color: var(--text);
 }
 
 .bulkActions {
@@ -52,7 +52,7 @@
 .hint {
   margin: 0;
   font-size: 12px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 
 .rows {

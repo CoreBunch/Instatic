@@ -5,7 +5,7 @@
     display: grid;
     place-items: center;
     padding: 24px;
-    background: color-mix(in srgb, var(--editor-bg) 50%, transparent);
+    background: color-mix(in srgb, var(--bg-body) 50%, transparent);
 }
 
 .dialog {
@@ -14,9 +14,9 @@
     display: grid;
     grid-template-rows: auto 1fr auto;
     border-radius: var(--panel-radius);
-    background: var(--editor-surface);
-    box-shadow: 0 18px 48px color-mix(in srgb, var(--editor-bg) 28%, transparent);
-    color: var(--editor-text);
+    background: var(--bg-surface);
+    box-shadow: 0 18px 48px color-mix(in srgb, var(--bg-body) 28%, transparent);
+    color: var(--text);
     overflow: hidden;
 }
 
@@ -45,9 +45,9 @@
     grid-template-columns: minmax(0, 1fr) 26px;
     align-items: center;
     gap: 8px;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
     padding: 12px 14px;
-    border-bottom: 1px solid var(--editor-border);
+    border-bottom: 1px solid var(--border);
 }
 
 .headerText {
@@ -63,11 +63,11 @@
     font-weight: 700;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .dialog[data-tone="danger"] .eyebrow {
-    color: var(--editor-danger);
+    color: var(--danger);
 }
 
 .title {
@@ -90,8 +90,8 @@
     justify-content: flex-end;
     gap: 8px;
     padding: 12px 14px;
-    border-top: 1px solid var(--editor-border);
-    background: var(--editor-surface-2);
+    border-top: 1px solid var(--border);
+    background: var(--bg-surface-2);
 }
 
 /* The dialog body's skeleton is rendered via the shared

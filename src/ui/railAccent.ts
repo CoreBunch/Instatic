@@ -23,6 +23,18 @@ export const RAIL_ACCENTS = [
 export type RailAccent = typeof RAIL_ACCENTS[number]
 
 const DEFAULT_RAIL_ACCENT: RailAccent = 'mint'
+const RAIL_ACCENT_TOKEN: Record<RailAccent, string> = {
+  mint: 'var(--accent-1)',
+  sky: 'var(--accent-3)',
+  lilac: 'var(--accent-2)',
+  peach: 'var(--accent-4)',
+  rose: 'var(--accent-5)',
+  lime: 'var(--accent-6)',
+  gold: 'var(--accent-7)',
+  cyan: 'var(--accent-8)',
+  violet: 'var(--accent-9)',
+  coral: 'var(--accent-10)',
+}
 
 function hashIdentity(value: string): number {
   const normalized = value.trim().toLowerCase()
@@ -42,7 +54,7 @@ export function railAccent(identity: string): RailAccent {
 }
 
 export function railTintVar(accent: RailAccent): string {
-  return `var(--rail-tint-${accent})`
+  return RAIL_ACCENT_TOKEN[accent]
 }
 
 export function assignRailAccents<TItem>(

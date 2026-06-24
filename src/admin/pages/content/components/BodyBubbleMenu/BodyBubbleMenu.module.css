@@ -4,9 +4,9 @@
     gap: 2px;
     padding: 4px;
     border-radius: var(--panel-radius);
-    border: 1px solid var(--editor-border);
-    background: var(--editor-bg);
-    box-shadow: 0 12px 32px -16px var(--editor-overlay-black-50);
+    border: 1px solid var(--border);
+    background: var(--bg-body);
+    box-shadow: 0 12px 32px -16px var(--scrim-50);
     white-space: nowrap;
 }
 
@@ -14,7 +14,7 @@
     width: 1px;
     height: 16px;
     margin: 0 4px;
-    background: var(--editor-border);
+    background: var(--border);
 }
 
 /* Square icon button. Overrides the Button primitive's inline-flex sizing
@@ -37,7 +37,7 @@
     min-width: 0;
     height: 28px;
     padding: 0 8px 0 10px;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 12px;
     font-weight: 600;
 }

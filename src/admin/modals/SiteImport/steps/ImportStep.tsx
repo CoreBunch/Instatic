@@ -3,7 +3,7 @@
  *
  * Replaces the old terminal-style upload log with a calm, determinate progress
  * surface built in the same vocabulary as the Review step: the shared
- * `ImportStepper`, rail-tint category identity, and the achromatic shell.
+ * `ImportStepper`, categorical accent identity, and the achromatic shell.
  *
  * Three states, all driven by the real import pipeline (see SiteImportModal):
  *   running   — a headline activity (phase verb + N of M), a determinate bar

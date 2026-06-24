@@ -26,8 +26,8 @@
     gap: 3px;
     padding: 3px;
     border-radius: 12px;
-    background: var(--editor-bg);
-    box-shadow: 0 6px 18px var(--editor-overlay-black-32);
+    background: var(--bg-body);
+    box-shadow: 0 6px 18px var(--scrim-30);
     pointer-events: auto;
     user-select: none;
 }
@@ -69,15 +69,15 @@
     content: "";
     width: 38px;
     height: 4px;
-    border-radius: 0 0 var(--editor-radius) var(--editor-radius);
-    background: var(--editor-border-med);
+    border-radius: 0 0 var(--radius) var(--radius);
+    background: var(--border-muted);
     /* Match the roller: the nub reappears 600ms after the pointer leaves so it
        stays in sync with the switcher rolling back up. */
     transition: background 160ms ease, opacity 160ms ease 600ms;
 }
 
 .peekHandle:hover::after {
-    background: var(--editor-text-secondary);
+    background: var(--text-muted);
 }
 
 .shellPeek:hover .peekHandle::after,
@@ -108,7 +108,7 @@
     border: 0;
     border-radius: 9px;
     background: transparent;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     line-height: 1;
     cursor: pointer;
     transition:
@@ -117,18 +117,18 @@
 }
 
 .tab:hover:not(.tabActive) {
-    color: var(--editor-text);
-    background: var(--editor-surface-3);
+    color: var(--text);
+    background: var(--bg-surface-3);
 }
 
 .tab:focus-visible {
     outline: none;
-    box-shadow: inset 0 0 0 1px var(--editor-overlay-white-22);
+    box-shadow: inset 0 0 0 1px var(--overlay-20);
 }
 
 .tabActive {
-    background: var(--editor-surface-3);
-    color: var(--editor-text);
+    background: var(--bg-surface-3);
+    color: var(--text);
 }
 
 .tab:disabled {
@@ -139,15 +139,15 @@
 /* Run-scripts toggle: tint by build status so the author can tell at a glance
    whether the injected scripts are live, rebuilding, or errored. */
 .tab[data-script-status="ready"] {
-    color: var(--editor-success-text);
+    color: var(--success-text);
 }
 
 .tab[data-script-status="building"] {
-    color: var(--editor-warning-text);
+    color: var(--warning-text);
 }
 
 .tab[data-script-status="error"] {
-    color: var(--editor-danger-text);
+    color: var(--danger-text);
 }
 
 /* Vertical separator between the design/preview toggle and the inline
@@ -157,7 +157,7 @@
     width: 1px;
     height: 16px;
     margin: 0 2px;
-    background: var(--editor-border-med);
+    background: var(--border-muted);
 }
 
 /* Inline breakpoint icon row — only rendered in preview mode. Sits flush in

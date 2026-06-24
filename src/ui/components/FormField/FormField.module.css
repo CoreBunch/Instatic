@@ -31,12 +31,12 @@
 .label {
     font-size: 12px;
     font-weight: 600;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .description {
     font-size: 11px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     line-height: 1.4;
     margin: 0;
 }

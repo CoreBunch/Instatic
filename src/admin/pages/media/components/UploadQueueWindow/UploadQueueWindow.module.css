@@ -1,6 +1,6 @@
 .summary {
   font-size: 11px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   padding: 0 4px 8px 4px;
 }
 
@@ -19,20 +19,20 @@
   align-items: start;
   gap: 8px;
   padding: 6px;
-  background: var(--editor-surface-2);
-  border-radius: var(--editor-radius-sm);
+  background: var(--bg-surface-2);
+  border-radius: var(--radius-sm);
 }
 
 .preview {
   width: 28px;
   height: 28px;
-  background: var(--editor-bg);
-  border-radius: var(--editor-radius-sm);
+  background: var(--bg-body);
+  border-radius: var(--radius-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 
 .previewImage {
@@ -50,7 +50,7 @@
 
 .name {
   font-size: 12px;
-  color: var(--editor-text);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -61,12 +61,12 @@
   align-items: center;
   gap: 6px;
   font-size: 10px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 
 .error {
   font-size: 10px;
-  color: var(--editor-danger);
+  color: var(--danger);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -74,8 +74,8 @@
 .progressBar {
   display: block;
   height: 3px;
-  background: var(--editor-bg);
-  border-radius: var(--editor-radius-sm);
+  background: var(--bg-body);
+  border-radius: var(--radius-sm);
   overflow: hidden;
   margin-top: 4px;
 }
@@ -88,12 +88,12 @@
 }
 
 .progressFill[data-status='succeeded'] {
-  background: var(--editor-success-bright);
+  background: var(--success-bright);
 }
 
 .progressFill[data-status='failed'],
 .progressFill[data-status='cancelled'] {
-  background: var(--editor-danger);
+  background: var(--danger);
 }
 
 .actions {
@@ -110,14 +110,14 @@
   align-items: center;
   gap: 2px;
   padding: 1px 4px;
-  border-radius: var(--editor-radius-sm);
+  border-radius: var(--radius-sm);
   font-size: 9px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
-.badgeBusy { color: var(--editor-text-muted); }
-.badgeSuccess { color: var(--editor-success-bright); }
-.badgeError { color: var(--editor-danger); }
-.badgeMuted { color: var(--editor-text-muted); }
+.badgeBusy { color: var(--text-subtle); }
+.badgeSuccess { color: var(--success-bright); }
+.badgeError { color: var(--danger); }
+.badgeMuted { color: var(--text-subtle); }

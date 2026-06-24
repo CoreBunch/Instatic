@@ -1,8 +1,8 @@
 /* AccountMenuButton — toolbar avatar trigger + account dropdown
  *
  * Achromatic to match the rest of the editor chrome (Guideline #356,
- * achromatic-color-policy.test.ts). Tones lean on `--editor-surface-*` and
- * `--editor-text*` tokens — no hardcoded hex.
+ * achromatic-color-policy.test.ts). Tones lean on `--bg-surface-*` and
+ * `--text*` tokens — no hardcoded hex.
  */
 
 .trigger {
@@ -10,9 +10,9 @@
     height: 28px;
     padding: 0;
     border-radius: 999px;
-    border: 1px solid var(--editor-border);
-    background: var(--editor-surface-2);
-    color: var(--editor-text);
+    border: 1px solid var(--border);
+    background: var(--bg-surface-2);
+    color: var(--text);
     font-size: 11px;
     font-weight: 750;
     line-height: 1;
@@ -36,16 +36,16 @@
 }
 
 .trigger:hover {
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 .trigger[data-active="true"] {
-    background: var(--editor-surface-3);
-    border-color: var(--editor-border);
+    background: var(--bg-surface-3);
+    border-color: var(--border);
 }
 
 .trigger:focus-visible {
-    box-shadow: var(--editor-focus-ring);
+    box-shadow: var(--focus-ring);
 }
 
 /* ── Dropdown header (display name + email + role badge) ─────────────────── */
@@ -60,7 +60,7 @@
 .headerName {
     font-size: 11px;
     font-weight: 700;
-    color: var(--editor-text);
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -69,7 +69,7 @@
 .headerEmail {
     font-size: 11px;
     font-weight: 500;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -88,9 +88,9 @@
     height: 16px;
     padding: 0 6px;
     border-radius: 999px;
-    background: var(--editor-surface-2);
-    border: 1px solid var(--editor-border);
-    color: var(--editor-text-secondary);
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.02em;
@@ -102,9 +102,9 @@
     padding: 4px 10px 8px;
     font-size: 10px;
     line-height: 1.4;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .statusError {
-    color: var(--editor-danger-light);
+    color: var(--danger-light);
 }

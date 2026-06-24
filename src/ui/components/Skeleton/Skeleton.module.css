@@ -8,14 +8,14 @@
  *   • `.skeletonRows`   — vertical stack of thin shimmer rows
  *
  * Plus the `.skeletonCard` card-chrome utility that matches the
- * real `--editor-surface-2` cards on Plugins / Users / Posts pages.
+ * real `--bg-surface-2` cards on Plugins / Users / Posts pages.
  */
 
 /* --- low-level shimmer bar --- */
 .skeleton {
     --skeleton-width: 100%;
     --skeleton-height: 1em;
-    --skeleton-radius: var(--editor-radius-sm);
+    --skeleton-radius: var(--radius-sm);
 
     display: inline-block;
     width: var(--skeleton-width);
@@ -26,12 +26,12 @@
     vertical-align: middle;
     user-select: none;
     border-radius: var(--skeleton-radius);
-    background-color: var(--editor-surface-3);
+    background-color: var(--bg-surface-3);
     background-image: linear-gradient(
         90deg,
-        var(--editor-surface-3) 0%,
-        var(--editor-surface-4) 50%,
-        var(--editor-surface-3) 100%
+        var(--bg-surface-3) 0%,
+        var(--bg-surface-4) 50%,
+        var(--bg-surface-3) 100%
     );
     background-size: 200% 100%;
     animation: instaticSkeletonShimmer 1.4s ease-in-out infinite;
@@ -57,7 +57,7 @@
 }
 
 .skeletonCard {
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
     border-radius: 16px;
     padding: 14px 16px;
 }

@@ -40,7 +40,7 @@
 
 .railButton {
     position: relative;
-    --rail-icon-tint: var(--rail-tint-mint);
+    --rail-icon-tint: var(--accent-1);
     --rail-icon-color: var(--rail-icon-tint);
     --rail-icon-active-bg: color-mix(in oklab, var(--rail-icon-tint) 16%, transparent);
     --rail-icon-hover-bg: color-mix(in oklab, var(--rail-icon-tint) 10%, transparent);

@@ -1,6 +1,6 @@
 /* AI workspace page — Providers / Defaults / Audit tabs.
    Same visual conventions as UsersPage: stacked sections, 28px gutters,
-   `--editor-text-bright` for headings, `--editor-text-muted` for descriptions. */
+   `--text-bright` for headings, `--text-subtle` for descriptions. */
 
 .body {
     display: grid;
@@ -27,7 +27,7 @@
 
 .sectionHeader h2 {
     margin: 0;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     letter-spacing: 0;
     font-size: 18px;
     line-height: 1.25;
@@ -36,7 +36,7 @@
 .sectionHeader p,
 .secondaryText {
     margin: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     line-height: 1.45;
 }
@@ -44,8 +44,8 @@
 .emptyState {
     padding: 32px 16px;
     text-align: center;
-    color: var(--editor-text-muted);
-    background: var(--editor-surface-2);
+    color: var(--text-subtle);
+    background: var(--bg-surface-2);
     border-radius: 16px;
 }
 
@@ -53,7 +53,7 @@
     display: grid;
     grid-template-columns: 1fr;
     gap: 1px;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
     border-radius: 16px;
     overflow: hidden;
 }
@@ -64,7 +64,7 @@
     align-items: center;
     gap: 16px;
     padding: 16px;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
 }
 
 .credentialIdentity {
@@ -74,14 +74,14 @@
 }
 
 .credentialLabel {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 14px;
     font-weight: 500;
     line-height: 1.3;
 }
 
 .credentialMeta {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     line-height: 1.4;
     display: flex;
@@ -99,44 +99,44 @@
     display: inline-flex;
     align-items: center;
     padding: 2px 8px;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
     font-size: 11px;
     font-weight: 500;
-    background: var(--editor-surface);
-    color: var(--editor-text-muted);
+    background: var(--bg-surface);
+    color: var(--text-subtle);
 }
 
 .statusBadge.success {
-    color: var(--editor-success-text);
+    color: var(--success-text);
 }
 
 .statusBadge.warning {
-    color: var(--editor-warning-text);
+    color: var(--warning-text);
 }
 
 .statusBadge.danger {
-    color: var(--editor-danger);
+    color: var(--danger);
 }
 
 .testResult {
     margin: 0;
     font-size: 12px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .testResult.success {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
 }
 
 .testResult.danger {
-    color: var(--editor-danger);
+    color: var(--danger);
 }
 
 .errorAlert {
     padding: 12px 16px;
-    border-radius: var(--editor-radius);
-    background: var(--editor-surface-2);
-    color: var(--editor-danger);
+    border-radius: var(--radius);
+    background: var(--bg-surface-2);
+    color: var(--danger);
     font-size: 13px;
     margin: 0;
 }
@@ -153,12 +153,12 @@
     align-items: center;
     gap: 12px;
     padding: 16px;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
     border-radius: 16px;
 }
 
 .defaultScopeLabel {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 14px;
     font-weight: 500;
     text-transform: capitalize;
@@ -191,7 +191,7 @@
 }
 
 .dialogFieldLabel {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 700;
     line-height: 1.3;
@@ -200,7 +200,7 @@
 .dialogError {
     grid-column: 1 / -1;
     margin: 0;
-    color: var(--editor-danger);
+    color: var(--danger);
     font-size: 11px;
     line-height: 1.3;
 }
@@ -214,7 +214,7 @@
 }
 
 .auditSinceLabel {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     white-space: nowrap;
 }
@@ -223,27 +223,27 @@
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 1px;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
     border-radius: 16px;
     overflow: hidden;
 }
 
 .auditTotalCard {
     padding: 16px;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
     display: grid;
     gap: 4px;
 }
 
 .auditTotalLabel {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
 }
 
 .auditTotalValue {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 20px;
     font-weight: 600;
     line-height: 1.2;
@@ -251,7 +251,7 @@
 }
 
 .auditTotalHint {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     line-height: 1.3;
 }
@@ -269,7 +269,7 @@
 }
 
 .auditPanel {
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
     border-radius: 16px;
     padding: 16px;
     display: grid;
@@ -285,13 +285,13 @@
 
 .auditPanelTitle {
     margin: 0;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 14px;
     font-weight: 600;
 }
 
 .auditPanelHint {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
 }
 
@@ -303,12 +303,12 @@
 
 .auditTable thead th {
     text-align: left;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-weight: 500;
     font-size: 11px;
     letter-spacing: 0.02em;
     padding: 6px 8px;
-    border-bottom: 1px solid var(--editor-surface);
+    border-bottom: 1px solid var(--bg-surface);
 }
 
 .auditTable thead th.numeric {
@@ -316,15 +316,15 @@
 }
 
 .auditTable tbody td {
-    color: var(--editor-text);
+    color: var(--text);
     padding: 8px;
-    border-bottom: 1px solid var(--editor-surface);
+    border-bottom: 1px solid var(--bg-surface);
 }
 
 .auditTable tbody td.numeric {
     text-align: right;
     font-variant-numeric: tabular-nums;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
 }
 
 .auditTable tbody tr:last-child td {
@@ -333,7 +333,7 @@
 
 .auditEmptyRow {
     text-align: center;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     padding: 20px 8px;
 }
 
@@ -363,19 +363,19 @@
 .auditDayBar {
     height: 6px;
     border-radius: 3px;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
     overflow: hidden;
 }
 
 .auditDayBarFill {
     height: 100%;
     width: var(--day-bar-pct);
-    background: var(--rail-tint-mint);
+    background: var(--accent-1);
     border-radius: 3px;
 }
 
 .auditDayCost {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
 }
 
 .auditScopeLabel {

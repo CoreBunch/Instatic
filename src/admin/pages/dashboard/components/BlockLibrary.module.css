@@ -25,9 +25,9 @@
        No CSS fallback — the inline style always defines the variable
        before this rule runs. */
     height: var(--lib-height);
-    background: var(--panel-bg);
-    border-top: 1px solid var(--panel-border);
-    box-shadow: 0 -16px 48px var(--editor-overlay-black-45);
+    background: var(--bg-surface);
+    border-top: 1px solid var(--overlay-10);
+    box-shadow: 0 -16px 48px var(--scrim-50);
     display: flex;
     flex-direction: column;
     z-index: 50;
@@ -123,10 +123,10 @@
     padding: 0 18px;
     height: 44px;
     border-radius: 999px;
-    background: var(--panel-bg);
-    border: 1px solid var(--panel-border);
-    box-shadow: 0 16px 40px var(--editor-overlay-black-50);
-    color: var(--editor-text);
+    background: var(--bg-surface);
+    border: 1px solid var(--overlay-10);
+    box-shadow: 0 16px 40px var(--scrim-50);
+    color: var(--text);
     font-size: 12px;
     z-index: 50;
     animation: pillIn 180ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -157,16 +157,16 @@
    commit point for removal. Slightly larger / more attention-grabbing
    so the user notices the affordance. */
 .pillRemove {
-    border-color: var(--rail-tint-sky);
+    border-color: var(--accent-3);
 }
 
 /* Hover state — pointer is currently over the pill, drop is committed
    on release. Ramp to success-green so the gesture reads as "OK,
    landing here". */
 .pillActive {
-    background: var(--editor-success-bg);
-    border-color: var(--editor-success-green);
-    color: var(--editor-success-green);
+    background: var(--success-10);
+    border-color: var(--success);
+    color: var(--success);
     transform: translate(-50%, -2px);
 }
 
@@ -174,15 +174,15 @@
     width: 22px;
     height: 22px;
     border-radius: 999px;
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
     display: grid;
     place-items: center;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .pillActive .pillIcon {
-    background: var(--editor-success-green);
-    color: var(--editor-bg);
+    background: var(--success);
+    color: var(--bg-body);
 }
 
 .pillLabel {
@@ -216,19 +216,19 @@
     width: 56px;
     height: 4px;
     border-radius: 999px;
-    background: var(--editor-border-strong);
+    background: var(--border-strong);
     transition:
         background 120ms ease,
         transform 120ms ease;
 }
 
 .resize:hover .resizeBar {
-    background: var(--editor-text-muted);
+    background: var(--text-subtle);
     transform: scaleX(1.2);
 }
 
 .resizeActive .resizeBar {
-    background: var(--editor-text);
+    background: var(--text);
     transform: scaleX(1.2);
 }
 
@@ -239,20 +239,20 @@
     align-items: center;
     gap: 16px;
     padding: 14px 20px 12px;
-    border-bottom: 1px solid var(--panel-border);
+    border-bottom: 1px solid var(--overlay-10);
 }
 
 .title h3 {
     margin: 0;
     font-size: 13px;
     font-weight: 600;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
 }
 
 .title p {
     margin: 2px 0 0;
     font-size: 11px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .headEnd {
@@ -268,10 +268,10 @@
     width: 240px;
     height: 30px;
     padding: 0 10px;
-    background: var(--editor-surface);
-    border: 1px solid var(--editor-border);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
     border-radius: 10px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
 }
 
@@ -280,7 +280,7 @@
     background: transparent;
     border: 0;
     outline: none;
-    color: var(--editor-text);
+    color: var(--text);
     font: inherit;
     font-size: 12px;
 }
@@ -312,7 +312,7 @@
 
 .empty {
     font-size: 12px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     text-align: center;
     padding: 40px 8px;
     margin: 0;
@@ -327,16 +327,16 @@
     gap: 10px;
     padding: 32px 24px;
     border-radius: 12px;
-    background: var(--editor-surface);
-    border: 1px dashed var(--editor-border-strong);
-    color: var(--editor-text-muted);
+    background: var(--bg-surface);
+    border: 1px dashed var(--border-strong);
+    color: var(--text-subtle);
     font-size: 12px;
     text-align: center;
     line-height: 1.5;
 }
 
 .everythingPlaced strong {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-weight: 600;
     font-size: 13px;
 }
@@ -345,8 +345,8 @@
     width: 32px;
     height: 32px;
     border-radius: 999px;
-    background: var(--editor-surface-3);
-    color: var(--editor-text);
+    background: var(--bg-surface-3);
+    color: var(--text);
     display: grid;
     place-items: center;
 }
@@ -371,12 +371,12 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
 }
 
 .groupDescription {
     font-size: 11px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     flex: 1;
     min-width: 0;
     /* Truncate noisy descriptions to keep the row compact. */
@@ -388,7 +388,7 @@
 .groupCount {
     font-family: var(--font-mono);
     font-size: 10px;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
 }
 
 /* The strip is a 12-column grid that mirrors the dashboard's
@@ -418,8 +418,8 @@
     display: grid;
     grid-template-rows: auto auto;
     border-radius: 14px;
-    background: var(--editor-surface);
-    border: 1px solid var(--editor-border);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
     overflow: hidden;
     transition:
         border-color 120ms ease,
@@ -431,8 +431,8 @@
 }
 
 .item:hover {
-    border-color: var(--editor-border-strong);
-    box-shadow: 0 6px 18px var(--editor-overlay-black-35);
+    border-color: var(--border-strong);
+    box-shadow: 0 6px 18px var(--scrim-40);
 }
 
 .itemDragging {
@@ -449,7 +449,7 @@
 .itemSurface {
     appearance: none;
     border: 0;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
     padding: 0;
     width: 100%;
     /* Height is set inline from BlockLibrary.tsx to exactly the
@@ -465,7 +465,7 @@
     display: block;
     position: relative;
     text-align: left;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .itemSurface:disabled {
@@ -501,8 +501,8 @@
     align-items: center;
     gap: 10px;
     padding: 8px 12px;
-    background: var(--editor-surface);
-    border-top: 1px solid var(--editor-border);
+    background: var(--bg-surface);
+    border-top: 1px solid var(--border);
 }
 
 .itemMeta {
@@ -513,7 +513,7 @@
     display: block;
     font-size: 12px;
     font-weight: 500;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -522,7 +522,7 @@
 .itemDescription {
     display: block;
     font-size: 10px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-family: var(--font-mono);
     white-space: nowrap;
     overflow: hidden;
@@ -538,8 +538,8 @@
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--editor-text-muted);
-    background: var(--editor-surface-3);
+    color: var(--text-subtle);
+    background: var(--bg-surface-3);
     padding: 4px 8px;
     border-radius: 999px;
 }

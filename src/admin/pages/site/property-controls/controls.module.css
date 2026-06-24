@@ -26,7 +26,7 @@
 
 .controlError {
   font-size: 12px;
-  color: var(--editor-danger);
+  color: var(--danger);
 }
 
 /* ── SvgControl (preview tile + open-in-code-editor) ─────────────────────── */
@@ -43,19 +43,19 @@
   justify-content: center;
   min-height: 96px;
   padding: 12px;
-  border-radius: var(--editor-radius);
+  border-radius: var(--radius);
   /* A checkerboard neutral so SVGs of any colour stay visible — the panel
      can't load the site's classes that normally tint the mark. */
   background:
-    repeating-conic-gradient(var(--editor-surface) 0% 25%, var(--editor-surface-2) 0% 50%)
+    repeating-conic-gradient(var(--bg-surface) 0% 25%, var(--bg-surface-2) 0% 50%)
       50% / 16px 16px;
-  color: var(--editor-text);
+  color: var(--text);
   overflow: hidden;
 }
 
 .svgPreview[data-empty='true'] {
-  background: var(--editor-surface-2);
-  color: var(--editor-text-subtle);
+  background: var(--bg-surface-2);
+  color: var(--text-disabled);
 }
 
 /* Constrain whatever SVG is dropped in so it fits the tile, and give it a
@@ -69,7 +69,7 @@
   align-items: center;
   justify-content: center;
   max-width: 100%;
-  color: var(--editor-text);
+  color: var(--text);
 }
 
 .svgPreviewInner :global(svg) {
@@ -94,7 +94,7 @@
 
 .svgError {
   font-size: 12px;
-  color: var(--editor-danger);
+  color: var(--danger);
 }
 
 /* ── ColorControl ────────────────────────────────────────────────────────── */
@@ -127,14 +127,14 @@
 }
 
 .colorField .colorInlineSwatch:hover {
-    border-color: var(--input-border-focus);
+    border-color: var(--overlay-50);
     box-shadow: none;
 }
 
 .colorField .colorInlineSwatch:focus-within {
-    border-color: var(--input-border-focus);
+    border-color: var(--overlay-50);
     box-shadow: 0 0 0 2px
-        color-mix(in srgb, var(--editor-accent) 12%, transparent);
+        color-mix(in srgb, var(--overlay) 12%, transparent);
 }
 
 .colorField .colorInlineSwatch:active {
@@ -145,8 +145,8 @@
     border-radius: 8px;
     box-shadow:
         inset 0 0 0 1px
-            color-mix(in srgb, var(--editor-accent) 16%, transparent),
-        inset 0 -5px 8px color-mix(in srgb, var(--editor-bg) 16%, transparent);
+            color-mix(in srgb, var(--overlay) 16%, transparent),
+        inset 0 -5px 8px color-mix(in srgb, var(--bg-body) 16%, transparent);
 }
 
 .colorText {
@@ -170,11 +170,11 @@
     max-height: 184px;
     overflow: auto;
     padding: 4px;
-    border: 1px solid var(--editor-border-med);
+    border: 1px solid var(--border-muted);
     border-radius: 8px;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
     box-shadow: 0 12px 28px
-        color-mix(in srgb, var(--editor-bg) 42%, transparent);
+        color-mix(in srgb, var(--bg-body) 42%, transparent);
 }
 
 .colorTokenOption {
@@ -187,7 +187,7 @@
     border: 0;
     border-radius: 6px;
     background: transparent;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     cursor: pointer;
     font: inherit;
     padding: 4px 6px;
@@ -196,28 +196,28 @@
 
 .colorTokenOption:hover,
 .colorTokenOption[aria-selected="true"] {
-    background: color-mix(in srgb, var(--editor-accent) 8%, transparent);
-    color: var(--editor-text);
+    background: color-mix(in srgb, var(--overlay) 8%, transparent);
+    color: var(--text);
 }
 
 .colorTokenOptionSwatch {
     display: block;
-    --color-token-option-value: var(--editor-bg);
+    --color-token-option-value: var(--bg-body);
     width: 18px;
     height: 18px;
     border-radius: 7px;
     background:
         linear-gradient(
             45deg,
-            color-mix(in srgb, var(--editor-accent) 12%, transparent) 25%,
+            color-mix(in srgb, var(--overlay) 12%, transparent) 25%,
             transparent 25% 75%,
-            color-mix(in srgb, var(--editor-accent) 12%, transparent) 75%
+            color-mix(in srgb, var(--overlay) 12%, transparent) 75%
         ),
         linear-gradient(
             45deg,
-            color-mix(in srgb, var(--editor-accent) 12%, transparent) 25%,
+            color-mix(in srgb, var(--overlay) 12%, transparent) 25%,
             transparent 25% 75%,
-            color-mix(in srgb, var(--editor-accent) 12%, transparent) 75%
+            color-mix(in srgb, var(--overlay) 12%, transparent) 75%
         ),
         var(--color-token-option-value);
     background-position:
@@ -230,8 +230,8 @@
         auto;
     box-shadow:
         inset 0 0 0 1px
-            color-mix(in srgb, var(--editor-accent) 18%, transparent),
-        inset 0 -5px 8px color-mix(in srgb, var(--editor-bg) 18%, transparent);
+            color-mix(in srgb, var(--overlay) 18%, transparent),
+        inset 0 -5px 8px color-mix(in srgb, var(--bg-body) 18%, transparent);
 }
 
 .colorTokenOptionText {
@@ -252,7 +252,7 @@
 }
 
 .colorTokenOptionMeta {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 650;
     line-height: 1.2;
@@ -265,8 +265,8 @@
     height: 80px;
     border-radius: var(--input-radius);
     overflow: hidden;
-    border: 1px solid var(--editor-border);
-    background: var(--editor-surface-2);
+    border: 1px solid var(--border);
+    background: var(--bg-surface-2);
 }
 
 .imagePreviewImg {
@@ -299,10 +299,10 @@
 .mediaStatus {
     min-height: 42px;
     padding: 10px;
-    border: 1px solid var(--editor-border);
-    border-radius: var(--editor-radius);
-    background: var(--editor-surface);
-    color: var(--editor-text-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-surface);
+    color: var(--text-disabled);
     font-size: 11px;
 }
 
@@ -323,8 +323,8 @@
     min-height: 34px;
     padding: 0 10px;
     border-radius: var(--input-radius);
-    background: var(--editor-surface);
-    color: var(--editor-text-subtle);
+    background: var(--bg-surface);
+    color: var(--text-disabled);
     font-size: 11px;
 }
 
@@ -341,7 +341,7 @@
     font-weight: 500;
     user-select: none;
     cursor: pointer;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .toggleLabelDisabled {
@@ -349,7 +349,7 @@
 }
 
 .toggleLabelOverride {
-    color: var(--editor-accent-violet);
+    color: var(--overlay-80);
 }
 
 /* ── GroupSection ────────────────────────────────────────────────────────── */
@@ -364,11 +364,11 @@
     width: 100%;
     min-height: 32px;
     padding: 0 9px;
-    background: var(--editor-overlay-white-025);
-    border: 1px solid var(--panel-border);
-    border-radius: var(--editor-radius);
+    background: var(--overlay-5);
+    border: 1px solid var(--overlay-10);
+    border-radius: var(--radius);
     cursor: pointer;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.06em;

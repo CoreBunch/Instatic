@@ -347,7 +347,7 @@ export function DepsSection() {
         <div className={styles.addRow}>
           <div className={styles.addInputArea}>
             <div className={styles.addInputWrapper}>
-              <PackageSolidIcon size={11} color="var(--editor-text-subtle)" aria-hidden="true" />
+              <PackageSolidIcon size={11} color="var(--text-disabled)" aria-hidden="true" />
               <Input
                 data-testid="add-dep-input"
                 type="text"

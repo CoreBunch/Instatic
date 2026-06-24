@@ -13,11 +13,11 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    background: var(--panel-bg);
+    background: var(--bg-surface);
     backdrop-filter: blur(var(--panel-blur));
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--overlay-10);
     border-radius: 12px;
-    box-shadow: var(--panel-shadow);
+    box-shadow: var(--shadow-panel);
     transition: width 150ms ease-in-out;
     outline: none;
     will-change: transform;
@@ -68,15 +68,15 @@
 
 .dragOverlayRow {
     width: min(240px, var(--panel-w));
-    background: var(--panel-bg);
+    background: var(--bg-surface);
     border-radius: 12px;
-    box-shadow: 0 8px 24px var(--editor-overlay-black-32);
+    box-shadow: 0 8px 24px var(--scrim-30);
     pointer-events: none;
 }
 
 .noMatchMsg {
     padding: 16px;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     font-size: 12px;
 }
 

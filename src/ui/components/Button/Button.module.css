@@ -1,7 +1,7 @@
 /* Button — shared action button primitive (Task #462 / Task #458 Phase 2)
  * Achromatic palette only (Guideline #376).
  * No !important, no Tailwind, no inline styles (Constraints #402/#403).
- * All colours via --editor-* tokens.
+ * All colours via direct global design tokens tokens.
  */
 
 /* ── Base ─────────────────────────────────────────────────────────────────── */
@@ -31,7 +31,7 @@
 
 .btn:focus-visible {
     outline: none;
-    box-shadow: var(--editor-focus-ring);
+    box-shadow: var(--focus-ring);
 }
 
 .btn:disabled {
@@ -151,17 +151,17 @@
 /* ── Variant: ghost ───────────────────────────────────────────────────────── */
 .variant-ghost {
     background: transparent;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .variant-ghost:hover {
-    background: var(--editor-surface-4);
-    color: var(--editor-text);
+    background: var(--bg-surface-4);
+    color: var(--text);
 }
 
 .variant-ghost:active {
-    background: var(--editor-surface);
-    color: var(--editor-text);
+    background: var(--bg-surface);
+    color: var(--text);
 }
 
 /* dangerHover: destructive icon affordance — brighten the icon on hover, no
@@ -170,58 +170,58 @@
 .variant-ghost[data-danger-hover="true"]:hover,
 .variant-ghost[data-danger-hover="true"]:active {
     background: transparent;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 /* ── Variant: primary ─────────────────────────────────────────────────────── */
 .variant-primary {
-    background: var(--editor-surface-4);
-    color: var(--editor-text);
+    background: var(--bg-surface-4);
+    color: var(--text);
 }
 
 .variant-primary:hover {
-    background: var(--editor-surface-5);
+    background: var(--bg-surface-5);
 }
 
 .variant-primary:active {
-    background: var(--editor-surface-4);
+    background: var(--bg-surface-4);
 }
 
 /* ── Variant: secondary ───────────────────────────────────────────────────── */
 .variant-secondary {
-    background: var(--editor-surface-2);
-    color: var(--editor-text-secondary);
+    background: var(--bg-surface-2);
+    color: var(--text-muted);
 }
 
 .variant-secondary:hover {
-    background: var(--editor-surface-3);
-    color: var(--editor-text);
+    background: var(--bg-surface-3);
+    color: var(--text);
 }
 
 .variant-secondary:active {
-    background: var(--editor-surface);
+    background: var(--bg-surface);
 }
 
 .variant-secondary[data-active="true"],
 .variant-secondary[aria-pressed="true"] {
-    background: var(--editor-surface);
-    color: var(--editor-text);
+    background: var(--bg-surface);
+    color: var(--text);
 }
 
 .variant-secondary[data-tone="danger"] {
-    background: var(--editor-danger-bg);
-    color: var(--editor-danger);
+    background: var(--danger-10);
+    color: var(--danger);
 }
 
 .variant-secondary[data-tone="danger"]:hover {
-    background: var(--editor-danger-bg);
-    color: var(--editor-danger-light);
+    background: var(--danger-10);
+    color: var(--danger-light);
 }
 
 /* ── Variant: destructive ─────────────────────────────────────────────────── */
 .variant-destructive {
-    background: var(--editor-danger-bg);
-    color: var(--editor-danger);
+    background: var(--danger-10);
+    color: var(--danger);
 }
 
 .variant-destructive:hover {
@@ -246,16 +246,16 @@
     font-size: 13px;
     font-weight: 500;
     text-align: left;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .navItem:hover {
-    color: var(--editor-text-secondary);
-    background: var(--editor-overlay-white-03);
+    color: var(--text-muted);
+    background: var(--overlay-5);
 }
 
 .navItem[data-active="true"] {
-    background: var(--editor-overlay-white-05);
-    border-left-color: var(--editor-text);
-    color: var(--editor-text);
+    background: var(--overlay-5);
+    border-left-color: var(--text);
+    color: var(--text);
 }

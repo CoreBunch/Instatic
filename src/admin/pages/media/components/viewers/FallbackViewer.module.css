@@ -7,13 +7,13 @@
   gap: 8px;
   padding: 24px;
   min-height: 0;
-  background: var(--editor-surface-2);
-  color: var(--editor-text-muted);
+  background: var(--bg-surface-2);
+  color: var(--text-subtle);
 }
 
 .title {
   font-size: 13px;
-  color: var(--editor-text);
+  color: var(--text);
   margin: 0;
   word-break: break-word;
   text-align: center;

@@ -31,7 +31,7 @@
 }
 
 .groupTitle {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 11px;
     font-weight: 620;
 }
@@ -68,7 +68,7 @@
 }
 
 .fieldLabel {
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     font-size: 11px;
     font-weight: 600;
 }
@@ -87,15 +87,15 @@
     position: relative;
     width: 72px;
     height: 72px;
-    border-radius: var(--editor-radius);
-    background: var(--editor-surface);
+    border-radius: var(--radius);
+    background: var(--bg-surface);
 }
 
 .sideBoxCore {
     position: absolute;
     inset: 18px;
-    border-radius: var(--editor-radius-sm);
-    background: var(--editor-surface-2);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-2);
     pointer-events: none;
 }
 
@@ -104,26 +104,26 @@
     border: none;
     padding: 0;
     margin: 0;
-    background: var(--input-border);
+    background: var(--overlay-20);
     border-radius: 2px;
     cursor: pointer;
     transition: background-color 120ms ease;
 }
 
 .sideEdge:hover {
-    background: var(--input-border-hover);
+    background: var(--overlay-30);
 }
 
 .sideEdgeSet {
-    background: var(--editor-text-muted);
+    background: var(--text-subtle);
 }
 
 .sideEdgeActive {
-    background: var(--editor-accent);
+    background: var(--overlay);
 }
 
 .sideEdgeActive:hover {
-    background: var(--editor-accent-light);
+    background: var(--text-muted);
 }
 
 /* Edge geometry — each edge is a thin bar inset from the box corners. */
@@ -165,15 +165,15 @@
     position: relative;
     width: 72px;
     height: 72px;
-    border-radius: var(--editor-radius);
-    background: var(--editor-surface);
+    border-radius: var(--radius);
+    background: var(--bg-surface);
 }
 
 .cornerDot {
     position: absolute;
     width: 14px;
     height: 14px;
-    border: 2px solid var(--input-border);
+    border: 2px solid var(--overlay-20);
     background: transparent;
     padding: 0;
     margin: 0;
@@ -182,15 +182,15 @@
 }
 
 .cornerDot:hover {
-    border-color: var(--input-border-hover);
+    border-color: var(--overlay-30);
 }
 
 .cornerDotActive {
-    border-color: var(--editor-accent);
+    border-color: var(--overlay);
 }
 
 .cornerDotActive:hover {
-    border-color: var(--editor-accent-light);
+    border-color: var(--text-muted);
 }
 
 /* Each dot sits at its corner and rounds the OUTER corner so the curve
@@ -234,5 +234,5 @@
     flex-direction: column;
     gap: 6px;
     padding-top: 8px;
-    border-top: 1px solid var(--input-border);
+    border-top: 1px solid var(--overlay-20);
 }

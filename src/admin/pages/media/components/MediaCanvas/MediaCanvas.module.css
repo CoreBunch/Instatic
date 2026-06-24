@@ -1,12 +1,12 @@
 .canvas {
     /* Composes with `CanvasRoot.module.css .canvas` which owns the
-     surface chrome (rounded top-left, --editor-surface-2 background) so the
+     surface chrome (rounded top-left, --bg-surface-2 background) so the
      Media canvas matches Site / Content visually. We only add the flex
      layout the inner content needs. */
     display: flex;
     flex-direction: column;
     min-height: 0;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .canvasDropping::after {
@@ -14,7 +14,7 @@
     position: absolute;
     inset: 8px;
     border: 2px dashed var(--canvas-selection-ring-color);
-    border-radius: var(--editor-radius);
+    border-radius: var(--radius);
     pointer-events: none;
 }
 
@@ -25,7 +25,7 @@
 .statusBar {
     padding: 4px 12px;
     font-size: 11px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .body {
@@ -64,7 +64,7 @@
     height: 100%;
     align-items: stretch;
     justify-content: flex-start;
-    border-radius: var(--editor-radius);
+    border-radius: var(--radius);
 }
 
 /* Higher specificity (.tile.tileSelected over .tile) so the Button
@@ -92,10 +92,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--editor-surface-2);
-    border-radius: var(--editor-radius-sm);
+    background: var(--bg-surface-2);
+    border-radius: var(--radius-sm);
     overflow: hidden;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .folderPreview {
@@ -104,9 +104,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--editor-surface-2);
-    border-radius: var(--editor-radius-sm);
-    color: var(--editor-text-muted);
+    background: var(--bg-surface-2);
+    border-radius: var(--radius-sm);
+    color: var(--text-subtle);
 }
 
 .folderTile {
@@ -114,7 +114,7 @@
 }
 
 .parentFolderTile .folderPreview {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .parentFolderIcon {
@@ -130,7 +130,7 @@
     position: absolute;
     right: 2px;
     bottom: 2px;
-    filter: drop-shadow(0 0 2px var(--editor-surface-2));
+    filter: drop-shadow(0 0 2px var(--bg-surface-2));
 }
 
 .folderDropActive {
@@ -167,7 +167,7 @@
 .tileLabel {
     font-size: 12px;
     font-weight: 500;
-    color: var(--editor-text);
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -175,7 +175,7 @@
 
 .tileMeta {
     font-size: 10px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 /* ── List view ─────────────────────────────────────────────────────────── */
@@ -200,11 +200,11 @@
     padding: 4px 8px;
     width: 100%;
     justify-content: flex-start;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
 }
 
 .row.rowSelected {
-    background: var(--editor-selection);
+    background: var(--overlay-10);
     box-shadow: inset 0 0 0 1px var(--canvas-selection-ring-color);
 }
 
@@ -213,7 +213,7 @@
 }
 
 .parentFolderRow {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .parentFolderRow .parentFolderIcon {
@@ -232,9 +232,9 @@
     height: 24px;
     align-items: center;
     justify-content: center;
-    background: var(--editor-surface-2);
-    border-radius: var(--editor-radius-sm);
-    color: var(--editor-text-muted);
+    background: var(--bg-surface-2);
+    border-radius: var(--radius-sm);
+    color: var(--text-subtle);
     overflow: hidden;
 }
 
@@ -264,5 +264,5 @@
 .rowMeta {
     flex: 0 0 auto;
     font-size: 11px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }

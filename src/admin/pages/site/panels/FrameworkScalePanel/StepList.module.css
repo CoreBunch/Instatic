@@ -3,9 +3,9 @@
     display: grid;
     align-content: start;
     gap: 4px;
-    border: 1px solid var(--panel-border);
-    border-radius: var(--editor-radius);
-    background: var(--editor-surface);
+    border: 1px solid var(--overlay-10);
+    border-radius: var(--radius);
+    background: var(--bg-surface);
     padding: 6px;
     overflow: hidden;
 }
@@ -17,7 +17,7 @@
     align-items: center;
     gap: 6px;
     padding: 2px 4px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 9.5px;
     font-weight: 700;
     letter-spacing: 0.06em;
@@ -42,14 +42,14 @@
     grid-template-rows: auto auto;
     gap: 6px;
     padding: 8px 10px;
-    border-radius: var(--editor-radius-sm);
-    background: var(--editor-bg);
-    color: var(--editor-text);
+    border-radius: var(--radius-sm);
+    background: var(--bg-body);
+    color: var(--text);
     min-width: 0;
 }
 
 .stepRow[data-active="true"] {
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
 }
 
 .stepHeader {
@@ -61,7 +61,7 @@
 }
 
 .stepHeaderMeta {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -76,7 +76,7 @@
     width: 100%;
     min-width: 0;
     padding-inline: 0;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 11px;
     font-weight: 700;
     text-align: left;
@@ -104,14 +104,14 @@
     grid-template-columns: minmax(34px, auto) minmax(0, 1fr);
     align-items: center;
     gap: 6px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-variant-numeric: tabular-nums;
     min-width: 0;
 }
 
 .stepNumeric {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

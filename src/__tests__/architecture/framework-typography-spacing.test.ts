@@ -98,8 +98,8 @@ describe('architecture — typography / spacing panels', () => {
     expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
     // Must reference the canonical token names so a refactor of globals.css
     // does not silently break the panel.
-    expect(css).toContain('var(--editor-text)')
-    expect(css).toContain('var(--editor-surface)')
+    expect(css).toContain('var(--text)')
+    expect(css).toContain('var(--bg-surface)')
   })
 
   it('panels do NOT pull tinted Tailwind color classes', () => {

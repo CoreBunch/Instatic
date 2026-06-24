@@ -30,9 +30,9 @@ describe('EditorChromeInjector font isolation', () => {
     expect(css).not.toBe('')
 
     // The chrome font is exposed as a namespaced var carrying the editor font…
-    expect(css).toContain('--editor-chrome-font-sans: "Inter Variable", system-ui, sans-serif;')
+    expect(css).toContain('--chrome-font-sans: "Inter Variable", system-ui, sans-serif;')
     // …and chrome rules reference it.
-    expect(css).toContain('font-family: var(--editor-chrome-font-sans);')
+    expect(css).toContain('font-family: var(--chrome-font-sans);')
 
     // It must NEVER set the site's own --font-sans on :root, nor reference it —
     // doing so clobbers the site's font tokens for all canvas content.

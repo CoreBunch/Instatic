@@ -11,7 +11,7 @@
     align-items: center;
     justify-content: center;
     padding: 24px;
-    background: var(--editor-overlay-black-60);
+    background: var(--scrim-60);
     backdrop-filter: blur(20px);
 }
 
@@ -20,10 +20,10 @@
     flex-direction: column;
     width: min(1280px, 100%);
     height: min(820px, 100%);
-    background: var(--panel-bg);
-    border: 1px solid var(--panel-border);
+    background: var(--bg-surface);
+    border: 1px solid var(--overlay-10);
     border-radius: var(--panel-radius);
-    box-shadow: var(--panel-shadow);
+    box-shadow: var(--shadow-panel);
     overflow: hidden;
 }
 
@@ -39,7 +39,7 @@
     margin: 0;
     font-size: 14px;
     font-weight: 600;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .body {
@@ -64,8 +64,8 @@
     justify-content: space-between;
     gap: 16px;
     padding: 10px 16px;
-    border-top: 1px solid var(--editor-border);
-    background: var(--editor-bg);
+    border-top: 1px solid var(--border);
+    background: var(--bg-body);
 }
 
 .footerActions {
@@ -77,7 +77,7 @@
 .pickedEmpty {
     margin: 0;
     font-size: 12px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .picked {
@@ -91,12 +91,12 @@
     display: inline-flex;
     width: 40px;
     height: 40px;
-    background: var(--editor-surface-2);
-    border-radius: var(--editor-radius-sm);
+    background: var(--bg-surface-2);
+    border-radius: var(--radius-sm);
     overflow: hidden;
     align-items: center;
     justify-content: center;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     flex: 0 0 40px;
 }
 
@@ -116,7 +116,7 @@
 
 .pickedName {
     font-size: 12px;
-    color: var(--editor-text);
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -125,5 +125,5 @@
 
 .pickedWrongKind {
     font-size: 11px;
-    color: var(--editor-danger);
+    color: var(--danger);
 }

@@ -1,5 +1,5 @@
 .backdrop {
-    --moduleInserterAccent: var(--rail-tint-lilac);
+    --moduleInserterAccent: var(--accent-2);
     --drop-left: 0px;
     --drop-top: 0px;
     --drop-width: 0px;
@@ -13,8 +13,8 @@
     display: grid;
     place-items: center;
     padding: 32px;
-    background: var(--spotlight-backdrop);
-    backdrop-filter: blur(var(--spotlight-backdrop-blur));
+    background: var(--scrim-50);
+    backdrop-filter: blur(var(--backdrop-blur));
 }
 
 .backdrop[data-dragging="true"] {
@@ -24,23 +24,23 @@
 }
 
 .backdrop [data-accent="mint"] {
-    --moduleInserterAccent: var(--rail-tint-mint);
+    --moduleInserterAccent: var(--accent-1);
 }
 
 .backdrop [data-accent="lilac"] {
-    --moduleInserterAccent: var(--rail-tint-lilac);
+    --moduleInserterAccent: var(--accent-2);
 }
 
 .backdrop [data-accent="sky"] {
-    --moduleInserterAccent: var(--rail-tint-sky);
+    --moduleInserterAccent: var(--accent-3);
 }
 
 .backdrop [data-accent="peach"] {
-    --moduleInserterAccent: var(--rail-tint-peach);
+    --moduleInserterAccent: var(--accent-4);
 }
 
 .backdrop [data-accent="rose"] {
-    --moduleInserterAccent: var(--rail-tint-rose);
+    --moduleInserterAccent: var(--accent-5);
 }
 
 .panel {
@@ -51,9 +51,9 @@
     display: grid;
     grid-template-columns: 236px minmax(0, 1fr);
     overflow: hidden;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--overlay-10);
     border-radius: var(--panel-radius);
-    background: var(--editor-surface);
+    background: var(--bg-surface);
     transition:
         opacity 120ms ease,
         transform 120ms ease;
@@ -81,7 +81,7 @@
     flex-direction: column;
     min-width: 0;
     padding: 20px 16px;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
 }
 
 .brand {
@@ -90,7 +90,7 @@
     gap: 10px;
     min-height: 34px;
     padding: 0 6px 18px;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 14px;
     font-weight: 700;
 }
@@ -106,22 +106,22 @@
     padding: 4px;
     padding-right: 12px;
     border-radius: var(--panel-radius);
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     background: transparent;
 }
 
 .sectionButton:hover {
-    color: var(--editor-text);
-    background: var(--editor-surface-2);
+    color: var(--text);
+    background: var(--bg-surface-2);
 }
 
 .sectionButton.sectionButtonActive {
-    color: var(--editor-text);
-    background: var(--editor-surface-3);
+    color: var(--text);
+    background: var(--bg-surface-3);
 }
 
 .sectionButton.sectionButtonActive:hover {
-    background: var(--editor-surface-4);
+    background: var(--bg-surface-4);
 }
 
 .sectionLabel {
@@ -166,7 +166,7 @@
 
 .sectionCount {
     min-width: 22px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-variant-numeric: tabular-nums;
     text-align: right;
@@ -182,11 +182,11 @@
     gap: 7px;
     padding: 13px;
     border-radius: var(--panel-radius);
-    background: color-mix(in srgb, var(--editor-text-bright) 4%, transparent);
+    background: color-mix(in srgb, var(--text-bright) 4%, transparent);
 }
 
 .detailKind {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 700;
     text-transform: capitalize;
@@ -202,13 +202,13 @@
 }
 
 .detailName {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 13px;
     font-weight: 650;
 }
 
 .detailDescription {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     line-height: 1.5;
 }
@@ -217,7 +217,7 @@
     width: 7px;
     height: 7px;
     min-width: 7px;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
     background: var(--moduleInserterAccent);
 }
 
@@ -230,7 +230,7 @@
     display: grid;
     gap: 8px;
     padding-top: 16px;
-    border-top: 1px solid var(--panel-border);
+    border-top: 1px solid var(--overlay-10);
 }
 
 .shortcutHint {
@@ -238,7 +238,7 @@
     align-items: center;
     gap: 6px;
     flex-wrap: wrap;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
 }
 
@@ -284,14 +284,14 @@
 }
 
 .searchField input {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 20px;
     font-weight: 500;
     letter-spacing: 0;
 }
 
 .searchField input::placeholder {
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
 }
 
 .escHint {
@@ -304,25 +304,25 @@
     gap: 9px;
     min-height: 32px;
     padding: 0 24px 0px;
-    box-shadow: 0px 10px 10px 0 var(--editor-surface);
+    box-shadow: 0px 10px 10px 0 var(--bg-surface);
     z-index: 2;
 }
 
 .sectionBar {
     width: 4px;
     height: 18px;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
     background: var(--moduleInserterAccent);
 }
 
 .sectionTitle {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 16px;
     font-weight: 700;
 }
 
 .headerCount {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
 }
 
@@ -358,7 +358,7 @@
 .groupLabel {
     grid-column: 1 / -1;
     padding: 10px 4px 4px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
@@ -377,7 +377,7 @@
         var(--moduleInserterItemRadius) - var(--moduleInserterTilePadding)
     );
     --moduleInserterTileControlRadius: calc(
-        var(--moduleInserterTileInnerRadius) - var(--editor-radius-sm)
+        var(--moduleInserterTileInnerRadius) - var(--radius-sm)
     );
 
     position: relative;
@@ -400,13 +400,13 @@
 
 .tileItem,
 .rowItem {
-    --button-bg-hover: var(--editor-surface-4);
+    --button-bg-hover: var(--bg-surface-4);
 
     position: relative;
     border: 0;
     border-radius: var(--moduleInserterItemRadius);
-    color: var(--editor-text);
-    background: var(--editor-surface-3);
+    color: var(--text);
+    background: var(--bg-surface-3);
     white-space: normal;
     overflow: hidden;
     box-shadow: none;
@@ -415,17 +415,17 @@
 
 .tileItem:hover,
 .rowItem:hover {
-    background: var(--editor-surface-4);
+    background: var(--bg-surface-4);
 }
 
 .tileItem:active,
 .rowItem:active {
-    background: var(--editor-surface-5);
+    background: var(--bg-surface-5);
 }
 
 .tileItem[data-selected="true"],
 .rowItem[data-selected="true"] {
-    background: var(--editor-surface-4);
+    background: var(--bg-surface-4);
     box-shadow: none;
 }
 
@@ -449,7 +449,7 @@
 .dragGrip,
 .tileAdd,
 .rowGrip {
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     opacity: 0;
     transition:
         opacity 140ms ease,
@@ -472,13 +472,13 @@
 }
 
 .dragGrip {
-    color: var(--editor-text-secondary);
-    background: color-mix(in srgb, var(--editor-bg) 70%, transparent);
+    color: var(--text-muted);
+    background: color-mix(in srgb, var(--bg-body) 70%, transparent);
     transform: translateY(1px);
 }
 
 .tileAdd {
-    color: var(--editor-bg);
+    color: var(--bg-body);
     background: var(--moduleInserterAccent);
     transform: scale(0.8);
 }
@@ -525,7 +525,7 @@
 .itemShellDisabled .rowItem:hover,
 .itemShellDisabled .tileItem:active,
 .itemShellDisabled .rowItem:active {
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 .itemShellDisabled .tileStage,
@@ -554,8 +554,8 @@
     min-height: var(--moduleInserterTileControlSize);
     padding: 0;
     border-radius: var(--moduleInserterTileControlRadius);
-    color: var(--editor-text-muted);
-    background: color-mix(in srgb, var(--editor-bg) 72%, transparent);
+    color: var(--text-subtle);
+    background: color-mix(in srgb, var(--bg-body) 72%, transparent);
     opacity: 1;
     transform: none;
     transition:
@@ -571,18 +571,18 @@
 }
 
 .favoriteButton:hover {
-    color: var(--editor-text-bright);
-    background: var(--editor-surface-5);
+    color: var(--text-bright);
+    background: var(--bg-surface-5);
 }
 
 .favoriteButton[aria-pressed="true"] {
-    color: var(--editor-bg);
-    background: var(--editor-accent);
+    color: var(--bg-body);
+    background: var(--overlay);
 }
 
 .favoriteButton[aria-pressed="true"]:hover {
-    color: var(--editor-bg);
-    background: var(--editor-text-bright);
+    color: var(--bg-body);
+    background: var(--text-bright);
 }
 
 .tileStage,
@@ -595,9 +595,9 @@
     min-width: 0;
     overflow: hidden;
     border: 1px solid
-        color-mix(in srgb, var(--editor-text-bright) 5%, transparent);
+        color-mix(in srgb, var(--text-bright) 5%, transparent);
     border-radius: var(--moduleInserterTileInnerRadius);
-    background: color-mix(in srgb, var(--editor-surface) 82%, var(--editor-bg));
+    background: color-mix(in srgb, var(--bg-surface) 82%, var(--bg-body));
 }
 
 .tileStage {
@@ -634,7 +634,7 @@
 
 .itemTitle {
     width: 100%;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 14px;
     font-weight: 650;
 }
@@ -650,7 +650,7 @@
 }
 
 .itemDescription {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     line-height: 1.45;
 }
@@ -698,9 +698,9 @@
     gap: 6px;
     padding: 5px 8px;
     border-radius: var(--input-radius);
-    background: var(--panel-bg);
-    color: var(--editor-text);
-    box-shadow: var(--panel-shadow);
+    background: var(--bg-surface);
+    color: var(--text);
+    box-shadow: var(--shadow-panel);
     font-size: 11px;
 }
 
@@ -714,23 +714,23 @@
         calc(var(--ghost-x) + 14px),
         calc(var(--ghost-y) + 14px)
     );
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--overlay-10);
     border-radius: var(--panel-radius);
     overflow: hidden;
-    background: var(--panel-bg);
-    box-shadow: var(--panel-shadow);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-panel);
 }
 
 .ghostWire {
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
 }
 
 .ghostLabel {
     width: 100%;
     padding: 9px 10px;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 12px;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
 }
 
 @media (max-width: 720px) {
@@ -747,7 +747,7 @@
 
     .rail {
         border-right: 0;
-        border-bottom: 1px solid var(--panel-border);
+        border-bottom: 1px solid var(--overlay-10);
     }
 
     .sectionList {

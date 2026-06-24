@@ -5,7 +5,7 @@
 
 .widget {
     /* Default tint — overridden by the inline `--tint` from Widget.tsx. */
-    --tint: var(--editor-text-muted);
+    --tint: var(--text-subtle);
 
     position: relative;
     /* Fill the grid cell — each cell's height comes from the widget's
@@ -14,7 +14,7 @@
        height and the grid would still allocate the full row, leaving
        the visible card stranded at the top of an empty cell. */
     height: 100%;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
     /* Borderless tile look — the 1px grid gap on the darker parent
        surface visually separates cards (see DashboardGrid.module.css). */
     border: 0;
@@ -32,7 +32,7 @@
 .widget:hover {
     /* No border to recolour — lift the surface tone instead. Stays
        achromatic per the editor's design-token policy. */
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 .editing {
@@ -41,11 +41,11 @@
        customise mode is still legible without breaking the borderless
        look (CSS box-shadow doesn't affect layout the way a border
        would). */
-    box-shadow: inset 0 0 0 1px var(--editor-sky-tint-18);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-3) 18%, transparent);
 }
 
 .editing:hover {
-    box-shadow: inset 0 0 0 1px var(--editor-sky-tint-40);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-3) 40%, transparent);
 }
 
 .head {
@@ -64,7 +64,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.07em;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .dot {
@@ -88,7 +88,7 @@
     border-radius: 6px;
     background: transparent;
     border: 0;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     cursor: pointer;
     opacity: 0;
     transition:
@@ -101,8 +101,8 @@
 }
 
 .menu:hover {
-    background: var(--editor-selection);
-    color: var(--editor-text);
+    background: var(--overlay-10);
+    color: var(--text);
 }
 
 .handle {
@@ -110,7 +110,7 @@
     height: 22px;
     display: grid;
     place-items: center;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     cursor: grab;
 }
 
@@ -124,7 +124,7 @@
  * the real Widget chrome's tint-dot + title row so the layout slot
  * reads as "loading" instead of an empty hole. */
 .dotPlaceholder {
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 .titlePlaceholder {
@@ -136,13 +136,13 @@
     display: inline-block;
     width: 84px;
     height: 9px;
-    border-radius: var(--editor-radius-sm);
-    background-color: var(--editor-surface-3);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-surface-3);
     background-image: linear-gradient(
         90deg,
-        var(--editor-surface-3) 0%,
-        var(--editor-surface-4) 50%,
-        var(--editor-surface-3) 100%
+        var(--bg-surface-3) 0%,
+        var(--bg-surface-4) 50%,
+        var(--bg-surface-3) 100%
     );
     background-size: 200% 100%;
     background-repeat: no-repeat;

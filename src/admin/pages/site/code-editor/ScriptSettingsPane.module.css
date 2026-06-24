@@ -7,8 +7,8 @@
   height: 100%;
   padding: 10px;
   overflow-y: auto;
-  border-right: 1px solid var(--panel-border);
-  background: var(--editor-overlay-white-025);
+  border-right: 1px solid var(--overlay-10);
+  background: var(--overlay-5);
 }
 
 .header {
@@ -21,7 +21,7 @@
 
 .title {
   overflow: hidden;
-  color: var(--editor-text);
+  color: var(--text);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0;
@@ -36,7 +36,7 @@
   justify-content: space-between;
   gap: 8px;
   min-height: 28px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   cursor: pointer;
   font-size: 11px;
   user-select: none;
@@ -49,7 +49,7 @@
 }
 
 .label {
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0;
@@ -62,7 +62,7 @@
   gap: 5px;
   margin-top: 2px;
   padding-top: 8px;
-  border-top: 1px solid var(--panel-border);
+  border-top: 1px solid var(--overlay-10);
 }
 
 .importList {
@@ -75,10 +75,10 @@
   max-width: 100%;
   overflow: hidden;
   padding: 2px 5px;
-  border: 1px solid var(--editor-indigo-tint-22);
+  border: 1px solid color-mix(in srgb, var(--info-text) 22%, transparent);
   border-radius: 999px;
-  background: var(--editor-indigo-tint-12);
-  color: var(--editor-info-text);
+  background: color-mix(in srgb, var(--info-text) 12%, transparent);
+  color: var(--info-text);
   font-family: monospace;
   font-size: 9px;
   font-weight: 700;
@@ -89,7 +89,7 @@
 
 .diagnostic {
   overflow: hidden;
-  color: var(--editor-warning);
+  color: var(--warning);
   font-size: 10px;
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -97,5 +97,5 @@
 }
 
 .diagnostic[data-severity='error'] {
-  color: var(--editor-danger-light);
+  color: var(--danger-light);
 }

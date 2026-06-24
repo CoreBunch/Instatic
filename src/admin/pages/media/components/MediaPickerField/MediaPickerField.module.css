@@ -2,7 +2,7 @@
  * MediaPickerField — picked-media tile + action buttons.
  *
  * Single consistent shape across empty + populated states. The tile is
- * borderless and sits on `--editor-surface` so it reads as a soft slot
+ * borderless and sits on `--bg-surface` so it reads as a soft slot
  * rather than a panel. The clickable variant (rendered as a Button
  * primitive) overrides Button's defaults so it lines up pixel-for-pixel
  * with the non-clickable `<div>` tile but gains a hover/focus affordance.
@@ -25,7 +25,7 @@
     min-width: 0;
     padding: 8px;
     border-radius: var(--input-radius);
-    background: var(--editor-surface);
+    background: var(--bg-surface);
 }
 
 /*
@@ -44,7 +44,7 @@
     padding: 8px;
     min-width: 0;
     border-radius: var(--input-radius);
-    background: var(--editor-surface);
+    background: var(--bg-surface);
     text-align: left;
     cursor: pointer;
     transition: background-color 90ms ease;
@@ -52,7 +52,7 @@
 
 .tileClickable:hover,
 .tileClickable:focus-visible {
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
 }
 
 .thumb {
@@ -64,8 +64,8 @@
     height: 44px;
     overflow: hidden;
     border-radius: calc(var(--input-radius) - 4px);
-    background: var(--editor-surface-2);
-    color: var(--editor-text-muted);
+    background: var(--bg-surface-2);
+    color: var(--text-subtle);
 }
 
 .thumb img,
@@ -83,7 +83,7 @@
 }
 
 .empty {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     line-height: 1.3;
     overflow: hidden;
@@ -92,7 +92,7 @@
 }
 
 .name {
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 12px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -100,7 +100,7 @@
 }
 
 .sub {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     overflow: hidden;
     text-overflow: ellipsis;

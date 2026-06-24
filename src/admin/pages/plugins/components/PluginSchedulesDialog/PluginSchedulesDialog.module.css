@@ -9,9 +9,9 @@
     flex-direction: column;
     gap: 8px;
     padding: 12px 14px;
-    border: 1px solid var(--panel-border);
-    border-radius: var(--editor-radius);
-    background: var(--editor-surface);
+    border: 1px solid var(--overlay-10);
+    border-radius: var(--radius);
+    background: var(--bg-surface);
 }
 
 .scheduleHeader {
@@ -25,7 +25,7 @@
     margin: 0;
     font-size: 13px;
     font-weight: 600;
-    color: var(--editor-text);
+    color: var(--text);
     font-family: var(--font-mono);
 }
 
@@ -36,7 +36,7 @@
     row-gap: 4px;
     margin: 0;
     font-size: 12px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .scheduleMeta dt {
@@ -45,7 +45,7 @@
 
 .scheduleMeta dd {
     margin: 0;
-    color: var(--editor-text);
+    color: var(--text);
     font-variant-numeric: tabular-nums;
 }
 
@@ -58,7 +58,7 @@
 .statusBadge {
     display: inline-block;
     padding: 2px 8px;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
@@ -66,33 +66,33 @@
 }
 
 .statusOk {
-    background: var(--editor-success-bg);
-    color: var(--editor-success-green);
+    background: var(--success-10);
+    color: var(--success);
 }
 
 .statusError,
 .statusTimeout {
-    background: var(--editor-danger-bg);
-    color: var(--editor-danger);
+    background: var(--danger-10);
+    color: var(--danger);
 }
 
 .statusNever {
-    background: var(--panel-border);
-    color: var(--editor-text-muted);
+    background: var(--overlay-10);
+    color: var(--text-subtle);
 }
 
 .statusPaused {
-    background: var(--editor-warning-bg);
-    color: var(--editor-warning);
+    background: var(--warning-10);
+    color: var(--warning);
 }
 
 .errorLine {
     margin: 0;
     padding: 8px 10px;
-    background: var(--editor-danger-bg);
-    border-left: 3px solid var(--editor-danger);
-    border-radius: var(--editor-radius-sm);
-    color: var(--editor-text);
+    background: var(--danger-10);
+    border-left: 3px solid var(--danger);
+    border-radius: var(--radius-sm);
+    color: var(--text);
     font-family: var(--font-mono);
     font-size: 11px;
     word-break: break-word;
@@ -105,7 +105,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .recentRuns {
@@ -124,15 +124,15 @@
     align-items: center;
     padding: 4px 0;
     font-size: 11px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-variant-numeric: tabular-nums;
 }
 
 .recentRuns li[data-status="error"],
 .recentRuns li[data-status="timeout"] {
-    color: var(--editor-danger);
+    color: var(--danger);
 }
 
 .recentRuns li[data-status="ok"] {
-    color: var(--editor-text);
+    color: var(--text);
 }

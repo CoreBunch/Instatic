@@ -25,11 +25,11 @@
 
     padding: 6px 9px;
 
-    background: var(--tooltip-bg);
-    color: var(--tooltip-fg);
-    border: 1px solid var(--tooltip-border);
+    background: var(--bg-body);
+    color: var(--text-bright);
+    border: 1px solid var(--overlay-5);
     border-radius: var(--tooltip-radius);
-    box-shadow: var(--tooltip-shadow);
+    box-shadow: var(--shadow-tooltip);
 
     font-size: 12px;
     font-weight: 500;
@@ -61,7 +61,7 @@
     position: absolute;
     width: 6px;
     height: 6px;
-    background: var(--tooltip-bg);
+    background: var(--bg-body);
     transform: rotate(45deg);
 }
 
@@ -69,32 +69,32 @@
 .bubble[data-side='top'] .arrow {
     bottom: -3px;
     left: calc(var(--tooltip-arrow-offset) - 3px);
-    border-right: 1px solid var(--tooltip-border);
-    border-bottom: 1px solid var(--tooltip-border);
+    border-right: 1px solid var(--overlay-5);
+    border-bottom: 1px solid var(--overlay-5);
 }
 
 /* Tooltip below trigger → arrow at top, pointing up */
 .bubble[data-side='bottom'] .arrow {
     top: -3px;
     left: calc(var(--tooltip-arrow-offset) - 3px);
-    border-top: 1px solid var(--tooltip-border);
-    border-left: 1px solid var(--tooltip-border);
+    border-top: 1px solid var(--overlay-5);
+    border-left: 1px solid var(--overlay-5);
 }
 
 /* Tooltip left of trigger → arrow at right edge, pointing right */
 .bubble[data-side='left'] .arrow {
     right: -3px;
     top: calc(var(--tooltip-arrow-offset) - 3px);
-    border-top: 1px solid var(--tooltip-border);
-    border-right: 1px solid var(--tooltip-border);
+    border-top: 1px solid var(--overlay-5);
+    border-right: 1px solid var(--overlay-5);
 }
 
 /* Tooltip right of trigger → arrow at left edge, pointing left */
 .bubble[data-side='right'] .arrow {
     left: -3px;
     top: calc(var(--tooltip-arrow-offset) - 3px);
-    border-bottom: 1px solid var(--tooltip-border);
-    border-left: 1px solid var(--tooltip-border);
+    border-bottom: 1px solid var(--overlay-5);
+    border-left: 1px solid var(--overlay-5);
 }
 
 /* ── Reduced motion ─────────────────────────────────────────────────────────── */

@@ -1,10 +1,10 @@
 /* Code — shared monospace code-block primitive. */
 
 .code {
-    background: var(--code-bg);
-    color: var(--editor-text);
-    border: 1px solid var(--editor-border);
-    border-radius: var(--editor-radius);
+    background: var(--scrim-30);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
     padding: 10px 12px;
     margin: 0;
     font-family: var(--font-mono);

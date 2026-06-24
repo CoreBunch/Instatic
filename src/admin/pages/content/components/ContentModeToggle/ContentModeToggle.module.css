@@ -15,8 +15,8 @@
     gap: 3px;
     padding: 3px;
     border-radius: 12px;
-    background: var(--editor-bg);
-    box-shadow: 0 6px 18px var(--editor-overlay-black-32);
+    background: var(--bg-body);
+    box-shadow: 0 6px 18px var(--scrim-30);
     pointer-events: auto;
     user-select: none;
 }
@@ -31,7 +31,7 @@
     border: 0;
     border-radius: 9px;
     background: transparent;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     line-height: 1;
     cursor: pointer;
     transition:
@@ -40,16 +40,16 @@
 }
 
 .tab:hover:not(.tabActive) {
-    color: var(--editor-text);
-    background: var(--editor-surface-3);
+    color: var(--text);
+    background: var(--bg-surface-3);
 }
 
 .tab:focus-visible {
     outline: none;
-    box-shadow: inset 0 0 0 1px var(--editor-overlay-white-22);
+    box-shadow: inset 0 0 0 1px var(--overlay-20);
 }
 
 .tabActive {
-    background: var(--editor-surface-3);
-    color: var(--editor-text);
+    background: var(--bg-surface-3);
+    color: var(--text);
 }

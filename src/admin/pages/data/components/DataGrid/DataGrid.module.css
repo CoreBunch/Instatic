@@ -6,7 +6,7 @@
  * for status dots (success / warning / surface-4).
  *
  * Layout principles:
- *   - Card surface uses --editor-bg so sticky cells mask scrolled content
+ *   - Card surface uses --bg-body so sticky cells mask scrolled content
  *     without needing alternating row backgrounds.
  *   - Bare <button> grid cells (column-header, group-header) explicitly
  *     zero the user-agent border + outline so the grid never shows the
@@ -24,7 +24,7 @@
     flex: 1;
     overflow: hidden;
     position: relative;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
     border-bottom: 0;
     border-top-left-radius: 16px;
     border-top-right-radius: 16px;
@@ -35,7 +35,7 @@
 .toolbar {
     display: flex;
     flex-direction: column;
-    border-bottom: 1px solid var(--editor-border);
+    border-bottom: 1px solid var(--border);
     flex-shrink: 0;
 }
 
@@ -64,13 +64,13 @@
 .title {
     font-size: 14px;
     font-weight: 600;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     letter-spacing: -0.01em;
 }
 
 .subtitle {
     font-size: 12px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
@@ -101,7 +101,7 @@
 
 .sortArrow {
     display: inline-flex;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .sortArrow[data-dir="asc"] {
@@ -121,8 +121,8 @@
 }
 
 .pill[aria-pressed="true"] {
-    background: var(--editor-surface);
-    color: var(--editor-text-bright);
+    background: var(--bg-surface);
+    color: var(--text-bright);
 }
 
 .pillDot {
@@ -133,25 +133,25 @@
 }
 
 .pillDot[data-status="published"] {
-    background: var(--editor-success-green);
+    background: var(--success);
 }
 .pillDot[data-status="draft"] {
-    background: var(--editor-warning);
+    background: var(--warning);
 }
 .pillDot[data-status="scheduled"] {
-    background: var(--rail-tint-sky);
+    background: var(--accent-3);
 }
 .pillDot[data-status="unpublished"] {
-    background: var(--editor-surface-4);
+    background: var(--bg-surface-4);
 }
 
 .pillCount {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-variant-numeric: tabular-nums;
 }
 
 .pill[aria-pressed="true"] .pillCount {
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 /* ─── Scroll container ───────────────────────────────────────────────────── */
@@ -200,9 +200,9 @@
     gap: 8px;
     padding: 0 14px;
     height: 36px;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
     border: 0;
-    border-bottom: 1px solid var(--editor-border);
+    border-bottom: 1px solid var(--border);
     border-radius: 0;
     outline: none;
     appearance: none;
@@ -212,7 +212,7 @@
     z-index: 3;
     font-size: 10.5px;
     font-weight: 500;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     letter-spacing: 0.06em;
     text-transform: uppercase;
     white-space: nowrap;
@@ -224,16 +224,16 @@
 }
 
 .headerCell:focus-visible {
-    box-shadow: var(--editor-focus-ring);
+    box-shadow: var(--focus-ring);
 }
 
 .headerCell:hover {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .headerCell[data-sorted="asc"],
 .headerCell[data-sorted="desc"] {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
 }
 
 .headerCell[data-sticky="checkbox"] {
@@ -245,7 +245,7 @@
 
 .headerCell[data-sticky="primary"] {
     z-index: 4;
-    box-shadow: 1px 0 0 var(--editor-border);
+    box-shadow: 1px 0 0 var(--border);
 }
 
 .headerLabel {
@@ -255,13 +255,13 @@
 
 .headerIcon {
     display: inline-flex;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     flex-shrink: 0;
 }
 
 .headerSort {
     margin-left: auto;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     display: inline-flex;
     opacity: 0;
     flex-shrink: 0;
@@ -278,7 +278,7 @@
 }
 
 .requiredIndicator {
-    color: var(--editor-danger);
+    color: var(--danger);
     font-size: 11px;
     line-height: 1;
     flex-shrink: 0;
@@ -314,7 +314,7 @@
     right: 0;
     bottom: 6px;
     width: 1px;
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
     opacity: 0;
     transition:
         opacity 0.1s,
@@ -324,7 +324,7 @@
 .resizeHandle:hover::after,
 .resizeHandle:active::after {
     opacity: 1;
-    background: var(--editor-text-secondary);
+    background: var(--text-muted);
 }
 
 /* ─── Group header rows ──────────────────────────────────────────────────── */
@@ -340,9 +340,9 @@
     /* Padding moves to the inner element so the inner span hugs the left
      * edge of the scroll viewport (after the inner sticky-left kicks in). */
     padding: 0;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
     border: 0;
-    border-bottom: 1px solid var(--editor-border);
+    border-bottom: 1px solid var(--border);
     border-radius: 0;
     outline: none;
     appearance: none;
@@ -385,15 +385,15 @@
 }
 
 .groupHeader:focus-visible {
-    box-shadow: var(--editor-focus-ring);
+    box-shadow: var(--focus-ring);
 }
 
 .groupHeader:hover .groupTitle {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
 }
 
 .groupChev {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     display: inline-flex;
     transition: transform 0.12s;
 }
@@ -410,16 +410,16 @@
 }
 
 .groupDot[data-status="published"] {
-    background: var(--editor-success-green);
+    background: var(--success);
 }
 .groupDot[data-status="draft"] {
-    background: var(--editor-warning);
+    background: var(--warning);
 }
 .groupDot[data-status="scheduled"] {
-    background: var(--rail-tint-sky);
+    background: var(--accent-3);
 }
 .groupDot[data-status="unpublished"] {
-    background: var(--editor-surface-4);
+    background: var(--bg-surface-4);
 }
 
 .groupTitle {
@@ -428,14 +428,14 @@
     gap: 8px;
     font-size: 10.5px;
     font-weight: 600;
-    color: var(--editor-text);
+    color: var(--text);
     letter-spacing: 0.06em;
     text-transform: uppercase;
 }
 
 .groupCount {
     font-size: 11px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-variant-numeric: tabular-nums;
     font-weight: 500;
     letter-spacing: 0;
@@ -456,7 +456,7 @@
  * content bleed through.
  */
 .row > .cell {
-    background-color: var(--editor-surface-2);
+    background-color: var(--bg-surface-2);
     background-image: none;
     transition:
         background-color 0.08s,
@@ -466,20 +466,20 @@
 
 .row:hover > .cell {
     background-image: linear-gradient(
-        var(--editor-overlay-white-025),
-        var(--editor-overlay-white-025)
+        var(--overlay-5),
+        var(--overlay-5)
     );
 }
 
 .row[data-checked="true"] > .cell {
     background-image: linear-gradient(
-        var(--editor-overlay-white-04),
-        var(--editor-overlay-white-04)
+        var(--overlay-5),
+        var(--overlay-5)
     );
 }
 
 .row[data-selected="true"] > .cell {
-    background-color: var(--editor-border);
+    background-color: var(--border);
     background-image: none;
 }
 
@@ -488,12 +488,12 @@
 .cell {
     padding: 0 14px;
     height: 48px;
-    border-bottom: 1px solid var(--editor-border);
+    border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
     min-width: 0;
     font-size: 13px;
-    color: var(--editor-text);
+    color: var(--text);
     position: relative;
 }
 
@@ -507,7 +507,7 @@
 .cell[data-sticky="primary"] {
     position: sticky;
     z-index: 1;
-    box-shadow: 1px 0 0 var(--editor-border);
+    box-shadow: 1px 0 0 var(--border);
     gap: 10px;
 }
 
@@ -529,7 +529,7 @@
 .primaryTitle {
     font-size: 13px;
     font-weight: 500;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -537,7 +537,7 @@
 
 .primarySubtitle {
     font-size: 11.5px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     white-space: nowrap;
     overflow: hidden;
@@ -546,7 +546,7 @@
 
 /* Em-dash for empty primary titles (same look as cells/.empty). */
 .empty {
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
 }
 
 /* When horizontally scrolled, give the sticky primary cell a soft shadow
@@ -555,8 +555,8 @@
 .row[data-checked="true"] > .cell[data-sticky="primary"],
 .row[data-selected="true"] > .cell[data-sticky="primary"] {
     box-shadow:
-        1px 0 0 var(--editor-border),
-        8px 0 12px -8px var(--editor-overlay-black-50);
+        1px 0 0 var(--border),
+        8px 0 12px -8px var(--scrim-50);
 }
 
 /* ─── Status dot (primary cell, postType) ────────────────────────────────── */
@@ -569,19 +569,19 @@
 }
 
 .statusDot[data-status="published"] {
-    background: var(--editor-success-green);
-    box-shadow: 0 0 0 3px var(--editor-success-bg);
+    background: var(--success);
+    box-shadow: 0 0 0 3px var(--success-10);
 }
 .statusDot[data-status="draft"] {
-    background: var(--editor-warning);
-    box-shadow: 0 0 0 3px var(--editor-warning-bg);
+    background: var(--warning);
+    box-shadow: 0 0 0 3px var(--warning-10);
 }
 .statusDot[data-status="scheduled"] {
-    background: var(--rail-tint-sky);
-    box-shadow: 0 0 0 3px var(--editor-surface-3);
+    background: var(--accent-3);
+    box-shadow: 0 0 0 3px var(--bg-surface-3);
 }
 .statusDot[data-status="unpublished"] {
-    background: var(--editor-surface-4);
+    background: var(--bg-surface-4);
 }
 
 /* ─── Actions cell ───────────────────────────────────────────────────────── */
@@ -589,7 +589,7 @@
 .actionsCell {
     padding: 0 8px;
     height: 48px;
-    border-bottom: 1px solid var(--editor-border);
+    border-bottom: 1px solid var(--border);
     background-image: none;
     display: flex;
     align-items: center;
@@ -603,20 +603,20 @@
 
 .row:hover > .actionsCell {
     background-image: linear-gradient(
-        var(--editor-overlay-white-025),
-        var(--editor-overlay-white-025)
+        var(--overlay-5),
+        var(--overlay-5)
     );
 }
 
 .row[data-checked="true"] > .actionsCell {
     background-image: linear-gradient(
-        var(--editor-overlay-white-04),
-        var(--editor-overlay-white-04)
+        var(--overlay-5),
+        var(--overlay-5)
     );
 }
 
 .row[data-selected="true"] > .actionsCell {
-    background-color: var(--editor-surface-2);
+    background-color: var(--bg-surface-2);
     background-image: none;
 }
 
@@ -675,7 +675,7 @@
 }
 
 .skeletonCell {
-    background-color: var(--editor-surface-2);
+    background-color: var(--bg-surface-2);
     background-image: none !important;
     cursor: default;
 }
@@ -686,13 +686,13 @@
 
 .errorText {
     font-size: 13px;
-    color: var(--editor-danger);
+    color: var(--danger);
 }
 
 .errorHint {
     margin-top: 4px;
     font-size: 12px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 /* ─── Floating bulk action bar ───────────────────────────────────────────── */
@@ -707,5 +707,5 @@
 }
 
 .bulkBarBtn:hover {
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
 }

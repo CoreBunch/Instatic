@@ -8,7 +8,7 @@
     gap: 8px;
     padding: 2px 2px 6px;
     font-size: 10px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .label {
@@ -23,8 +23,8 @@
     flex: 1;
     min-width: 0;
     height: 4px;
-    border-radius: var(--editor-radius-sm);
-    background: var(--editor-surface-3);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-3);
     overflow: hidden;
 }
 
@@ -33,17 +33,17 @@
     inset-block: 0;
     inset-inline-start: 0;
     width: var(--ctx-fill);
-    border-radius: var(--editor-radius-sm);
-    background: var(--editor-text-muted);
+    border-radius: var(--radius-sm);
+    background: var(--text-subtle);
     transition: width 240ms ease;
 }
 
 .track[data-tone="warning"] .fill {
-    background: var(--editor-warning);
+    background: var(--warning);
 }
 
 .track[data-tone="danger"] .fill {
-    background: var(--editor-danger);
+    background: var(--danger);
 }
 
 .count {

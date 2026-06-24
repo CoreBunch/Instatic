@@ -17,12 +17,12 @@
     gap: 10px;
     height: 40px;
     padding: 0 6px 0 14px;
-    background: var(--editor-surface);
-    border: 1px solid var(--editor-surface-3);
+    background: var(--bg-surface);
+    border: 1px solid var(--bg-surface-3);
     border-radius: 20px;
     box-shadow:
-        0 10px 28px var(--editor-overlay-black-55),
-        inset 0 1px 0 var(--editor-overlay-white-06);
+        0 10px 28px var(--scrim-60),
+        inset 0 1px 0 var(--overlay-5);
     /* Above editor panels but below the spotlight palette and global
        modals. The 50 figure matches the dashboard block picker so the
        two never collide visually. */
@@ -78,19 +78,19 @@
 
 .label {
     font-size: 12.5px;
-    color: var(--editor-text);
+    color: var(--text);
     font-weight: 500;
 }
 
 .label strong {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-weight: 600;
 }
 
 .sep {
     width: 1px;
     height: 18px;
-    background: var(--editor-border-med);
+    background: var(--border-muted);
     flex-shrink: 0;
 }
 

@@ -15,22 +15,22 @@
     display: grid;
     gap: 4px;
     font-size: 13px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .checklist code {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11px;
     padding: 1px 5px;
-    background: var(--panel-bg);
-    border: 1px solid var(--panel-border);
+    background: var(--bg-surface);
+    border: 1px solid var(--overlay-10);
     border-radius: 4px;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .note {
     margin: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
 }
 
@@ -38,7 +38,7 @@
    own cleanup code is skipped and external resources may remain. */
 .warning {
     margin: 0;
-    color: var(--editor-warning-text);
+    color: var(--warning-text);
     font-size: 12px;
     line-height: 1.5;
 }

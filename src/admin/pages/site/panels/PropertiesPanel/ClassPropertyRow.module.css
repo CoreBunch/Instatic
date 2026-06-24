@@ -5,15 +5,15 @@
 /* ── Outer wrapper (position:relative for the remove button overlay) ──────── */
 .propertyRowWrap {
     position: relative;
-    color: var(--editor-text);
+    color: var(--text);
     --class-remove-label-column: 100px;
     --class-remove-row-center: 14px;
     --class-remove-button-size: 22px;
     --class-remove-fade-width: 36px;
-    --class-remove-row-bg: var(--editor-bg);
+    --class-remove-row-bg: var(--bg-body);
 }
 .propertyRowWrap label {
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .propertyRowWrap[data-state="set"] {
@@ -44,7 +44,7 @@
 }
 
 .propertyRowUnset {
-    --class-row-label-color: var(--editor-text-muted);
+    --class-row-label-color: var(--text-subtle);
 }
 
 .propertyRowUnset :global(label) {
@@ -75,14 +75,14 @@
     height: var(--class-remove-button-size);
     border-radius: 10px;
     background: transparent;
-    color: var(--editor-text-secondary);
-    background: var(--editor-bg);
-    border: 1px solid var(--editor-border-med);
+    color: var(--text-muted);
+    background: var(--bg-body);
+    border: 1px solid var(--border-muted);
 }
 
 .removeBtn.removeBtn:hover,
 .removeBtn.removeBtn:focus-visible {
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .propertyRowWrap:hover .removeBtn,

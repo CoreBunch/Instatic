@@ -15,7 +15,7 @@
     grid-template-columns: minmax(360px, 1.1fr) minmax(280px, 0.9fr);
     height: min(68vh, 640px);
     min-height: 480px;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
 }
 
 .previewColumn,
@@ -24,11 +24,11 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
 }
 
 .editorColumn {
-    border-right: 1px solid var(--editor-border);
+    border-right: 1px solid var(--border);
 }
 
 .columnHeader {
@@ -38,13 +38,13 @@
     align-items: center;
     gap: 10px;
     padding: 0 14px;
-    border-bottom: 1px solid var(--editor-border);
-    background: var(--editor-surface-2);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-surface-2);
 }
 
 .columnTitle {
     margin: 0;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -61,7 +61,7 @@
 
 .previewSummary {
     margin: 0 0 8px 12px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 600;
     line-height: 1;
@@ -74,7 +74,7 @@
 .previewEmpty {
     margin: 0;
     padding: 12px 14px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     line-height: 1.5;
 }
@@ -101,7 +101,7 @@
     height: 100%;
     display: grid;
     place-items: center;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
 }
 
@@ -109,7 +109,7 @@
     min-width: 0;
     margin-left: auto;
     overflow: hidden;
-    color: var(--editor-danger);
+    color: var(--danger);
     font-size: 11px;
     font-weight: 600;
     line-height: 1.2;
@@ -130,6 +130,6 @@
     .editorColumn {
         min-height: 190px;
         border-right: 0;
-        border-bottom: 1px solid var(--editor-border);
+        border-bottom: 1px solid var(--border);
     }
 }

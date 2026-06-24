@@ -19,11 +19,11 @@
   height: 500px;
   display: flex;
   flex-direction: column;
-  background: var(--panel-bg);
+  background: var(--bg-surface);
   backdrop-filter: blur(var(--panel-blur));
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--overlay-10);
   border-radius: 12px;
-  box-shadow: var(--panel-shadow);
+  box-shadow: var(--shadow-panel);
   overflow: hidden;
   outline: none;
   will-change: transform;
@@ -76,7 +76,7 @@
   flex: 1;
   display: flex;
   flex-direction: row;
-  background: var(--editor-surface);
+  background: var(--bg-surface);
   overflow: hidden;
   /* Slight delay before the skeleton becomes visible — avoids a flash of
      skeleton on cache hits where the chunk is already loaded and resolves
@@ -87,8 +87,8 @@
 .loadingGutter {
   width: 36px;
   flex-shrink: 0;
-  background: var(--editor-surface);
-  border-right: 1px solid var(--editor-border-med);
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-muted);
   padding: 12px 6px;
   display: flex;
   flex-direction: column;
@@ -99,12 +99,12 @@
 .loadingGutterLine {
   width: 14px;
   height: 8px;
-  border-radius: var(--editor-radius-sm);
+  border-radius: var(--radius-sm);
   background: linear-gradient(
     90deg,
-    var(--editor-surface-2) 0%,
-    var(--editor-surface-3) 50%,
-    var(--editor-surface-2) 100%
+    var(--bg-surface-2) 0%,
+    var(--bg-surface-3) 50%,
+    var(--bg-surface-2) 100%
   );
   background-size: 240% 100%;
   animation: instaticCodeEditorSkeletonShimmer 1400ms ease-in-out infinite;
@@ -123,12 +123,12 @@
   --skeleton-line-width: 100%;
   width: var(--skeleton-line-width);
   height: 8px;
-  border-radius: var(--editor-radius-sm);
+  border-radius: var(--radius-sm);
   background: linear-gradient(
     90deg,
-    var(--editor-surface-2) 0%,
-    var(--editor-surface-3) 50%,
-    var(--editor-surface-2) 100%
+    var(--bg-surface-2) 0%,
+    var(--bg-surface-3) 50%,
+    var(--bg-surface-2) 100%
   );
   background-size: 240% 100%;
   animation: instaticCodeEditorSkeletonShimmer 1400ms ease-in-out infinite;

@@ -11,8 +11,8 @@
     align-items: center;
     gap: 8px;
     border-radius: 12px;
-    background: var(--editor-surface);
-    color: var(--editor-text);
+    background: var(--bg-surface);
+    color: var(--text);
     font: inherit;
     padding: 6px 8px;
 }
@@ -46,7 +46,7 @@
 .rowTitle {
     min-width: 0;
     overflow: hidden;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 12px;
     font-weight: 750;
     line-height: 1.2;
@@ -55,7 +55,7 @@
 }
 
 .rowMeta {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 600;
     line-height: 1.2;

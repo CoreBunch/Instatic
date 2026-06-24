@@ -11,7 +11,7 @@
 }
 
 .rightPanelNotch {
-    --workspace-right-notch-bg: var(--editor-bg);
+    --workspace-right-notch-bg: var(--bg-body);
     --workspace-right-notch-radius: 16px;
     --workspace-right-notch-corner: 16px;
     --workspace-right-notch-corner-cut: calc(var(--workspace-right-notch-corner) - 0.5px);
@@ -25,7 +25,7 @@
     background: var(--workspace-right-notch-bg);
     border: 0;
     border-radius: 0 0 0 var(--workspace-right-notch-radius);
-    box-shadow: var(--panel-shadow-drop);
+    box-shadow: var(--shadow-panel-drop);
 }
 
 .rightPanelNotch > * {
@@ -64,11 +64,11 @@
 }
 
 .rightPanelNotchButton.rightPanelNotchButton {
-    background: var(--editor-surface-3);
-    color: var(--editor-text-secondary);
+    background: var(--bg-surface-3);
+    color: var(--text-muted);
 }
 
 .rightPanelNotchButton.rightPanelNotchButton:hover {
-    background: var(--editor-surface-4);
-    color: var(--editor-text);
+    background: var(--bg-surface-4);
+    color: var(--text);
 }

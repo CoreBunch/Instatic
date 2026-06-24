@@ -31,7 +31,7 @@
 /* ── Dropdown menu — section headers + token rows ──────────────────────── */
 .menuHeader {
     padding: 6px 10px 4px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.04em;
@@ -56,14 +56,14 @@
 }
 
 .menuToken {
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
 }
 
 .menuVar {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-variant-numeric: tabular-nums;
     overflow: hidden;

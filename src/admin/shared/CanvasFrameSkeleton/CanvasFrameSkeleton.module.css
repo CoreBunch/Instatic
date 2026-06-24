@@ -25,7 +25,7 @@
   width: var(--bp-width);
   min-height: 100vh;
   overflow: hidden;
-  background: var(--editor-accent);
+  background: var(--overlay);
   box-shadow: var(--canvas-chrome-shadow);
 }
 
@@ -38,7 +38,7 @@
   gap: 24px;
   min-height: 100vh;
   padding: 28px;
-  background: var(--editor-surface);
+  background: var(--bg-surface);
   pointer-events: none;
 }
 

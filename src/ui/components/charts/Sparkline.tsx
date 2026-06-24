@@ -19,16 +19,16 @@ export interface SparklineProps {
   data: readonly number[]
   /**
    * Stroke/fill colour. When omitted, falls back to the global
-   * `--editor-chart-default-tint` token (currently `var(--rail-tint-peach)`).
+   * `--chart-default-tint` token (currently `var(--accent-4)`).
    * Unlike `Bars`, `Sparkline` does not auto-inherit an ambient `--tint`
    * from a parent widget — pass `tint='var(--tint)'` explicitly when
    * rendering inside host Widget chrome to pick up its accent colour.
    *
    * Recommended override values — use a design-system accent token:
-   * - `'var(--rail-tint-mint)'`  — green
-   * - `'var(--rail-tint-lilac)'` — violet
-   * - `'var(--rail-tint-sky)'`   — blue
-   * - `'var(--rail-tint-peach)'` — warm orange
+   * - `'var(--accent-1)'`  — green
+   * - `'var(--accent-2)'` — violet
+   * - `'var(--accent-3)'`   — blue
+   * - `'var(--accent-4)'` — warm orange
    */
   tint?: string
   /** Pixel height of the rendered chart. Default: 56. */
@@ -43,7 +43,7 @@ export interface SparklineProps {
 
 export function Sparkline({
   data,
-  tint = 'var(--editor-chart-default-tint)',
+  tint = 'var(--chart-default-tint)',
   height = 56,
   ariaLabel,
 }: SparklineProps) {

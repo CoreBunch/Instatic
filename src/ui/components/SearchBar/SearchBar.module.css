@@ -6,18 +6,18 @@
     box-sizing: border-box;
     min-height: 28px;
     padding: 5px 8px;
-    background: var(--input-bg);
-    border: 1px solid var(--input-border);
+    background: transparent;
+    border: 1px solid var(--overlay-20);
     border-radius: var(--input-radius);
 }
 
 .searchBar:hover {
-    border-color: var(--input-border-hover);
+    border-color: var(--overlay-30);
 }
 
 .searchBar:focus-within {
-    background: var(--input-bg-focus);
-    border-color: var(--input-border-focus);
+    background: transparent;
+    border-color: var(--overlay-50);
 }
 
 /* The inner Input primitive carries its own chrome by default. Inside the
@@ -54,10 +54,10 @@
     display: none;
 }
 
-/* The global Input placeholder is `--editor-text-subtle` (very dim) — too
+/* The global Input placeholder is `--text-disabled` (very dim) — too
    faint for a search field, especially on the lighter dropdown surfaces where
    SearchBar appears. Lift it to the muted/placeholder token so it stays
    legible. */
 .searchBar .input::placeholder {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }

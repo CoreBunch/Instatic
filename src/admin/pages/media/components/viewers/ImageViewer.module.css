@@ -6,7 +6,7 @@
   justify-content: stretch;
   min-height: 0;
   padding: 12px;
-  background: var(--editor-surface-2);
+  background: var(--bg-surface-2);
 }
 
 .image {

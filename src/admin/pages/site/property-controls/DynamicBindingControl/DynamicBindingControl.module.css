@@ -22,7 +22,7 @@
     min-height: 18px;
     width: 18px;
     height: 18px;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
 }
 
 .affordanceWrapper:hover .affordanceBtn,
@@ -70,18 +70,18 @@
     min-height: 30px;
     overflow: hidden;
     border: 1px solid
-        color-mix(in srgb, var(--editor-accent) 48%, var(--editor-border));
-    border-radius: var(--editor-radius);
+        color-mix(in srgb, var(--overlay) 48%, var(--border));
+    border-radius: var(--radius);
     background:
         repeating-linear-gradient(
             135deg,
-            color-mix(in srgb, var(--editor-accent) 8%, transparent) 0,
-            color-mix(in srgb, var(--editor-accent) 8%, transparent) 9px,
+            color-mix(in srgb, var(--overlay) 8%, transparent) 0,
+            color-mix(in srgb, var(--overlay) 8%, transparent) 9px,
             transparent 9px,
             transparent 18px
         ),
-        color-mix(in srgb, var(--editor-accent) 22%, var(--editor-surface));
-    color: var(--editor-text);
+        color-mix(in srgb, var(--overlay) 22%, var(--bg-surface));
+    color: var(--text);
     cursor: default;
     font: inherit;
     font-size: 12px;
@@ -137,11 +137,11 @@
     align-items: center;
     gap: 8px;
     padding: 10px 16px;
-    border-bottom: 1px solid var(--editor-border);
+    border-bottom: 1px solid var(--border);
     font-size: 12px;
     font-weight: 600;
-    color: var(--editor-text);
-    background: var(--editor-surface-2);
+    color: var(--text);
+    background: var(--bg-surface-2);
     flex-shrink: 0;
     letter-spacing: 0.01em;
 }
@@ -151,8 +151,8 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--editor-accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--editor-accent) 22%, transparent);
+    background: var(--overlay);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--overlay) 22%, transparent);
     flex-shrink: 0;
 }
 
@@ -165,10 +165,10 @@
 .subtleHint {
     padding: 10px 16px;
     margin: 0;
-    border-top: 1px solid var(--editor-border);
+    border-top: 1px solid var(--border);
     font-size: 11px;
     line-height: 1.45;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     flex-shrink: 0;
     user-select: none;
 }
@@ -207,7 +207,7 @@
     content: '';
     flex: 1;
     height: 1px;
-    background: var(--editor-border);
+    background: var(--border);
 }
 
 .fieldGroupHeaderText {
@@ -215,24 +215,24 @@
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .fieldGroupHeaderCount {
     font-size: 10px;
     font-weight: 600;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     padding: 2px 6px;
     border-radius: 999px;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
 }
 
 .incompatibleHint {
     padding: 6px 10px;
     font-size: 11px;
-    color: var(--editor-text-muted);
-    background: var(--editor-surface-2);
-    border-radius: var(--editor-radius-sm);
+    color: var(--text-subtle);
+    background: var(--bg-surface-2);
+    border-radius: var(--radius-sm);
 }
 
 /* ── Field row internals ─────────────────────────────────────────────────── */
@@ -253,9 +253,9 @@
     justify-content: center;
     width: 22px;
     height: 22px;
-    border-radius: var(--editor-radius-sm);
-    color: var(--editor-text-secondary);
-    background: var(--editor-surface-2);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    background: var(--bg-surface-2);
     flex-shrink: 0;
     transition: background 80ms ease, color 80ms ease;
 }
@@ -267,8 +267,8 @@
  */
 :where([aria-pressed='true']) .fieldTypeIcon,
 .fieldRowInner:hover .fieldTypeIcon {
-    color: var(--editor-accent);
-    background: color-mix(in srgb, var(--editor-accent) 16%, var(--editor-surface-2));
+    color: var(--overlay);
+    background: color-mix(in srgb, var(--overlay) 16%, var(--bg-surface-2));
 }
 
 .fieldRowText {
@@ -281,7 +281,7 @@
 .fieldLabel {
     font-size: 12px;
     font-weight: 600;
-    color: var(--editor-text);
+    color: var(--text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -300,15 +300,15 @@
 .fieldValue {
     font-size: 11px;
     font-weight: 500;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     line-height: 1.2;
     padding: 2px 8px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--editor-surface-2) 70%, transparent);
-    border: 1px solid var(--editor-border);
+    background: color-mix(in srgb, var(--bg-surface-2) 70%, transparent);
+    border: 1px solid var(--border);
     flex-shrink: 0;
     max-width: 180px;
     text-align: right;
@@ -316,9 +316,9 @@
 
 /* When the row is selected, sharpen the value pill to match the row tint. */
 :where([aria-pressed='true']) .fieldValue {
-    color: var(--editor-text);
-    border-color: color-mix(in srgb, var(--editor-accent) 35%, var(--editor-border));
-    background: color-mix(in srgb, var(--editor-accent) 10%, var(--editor-surface-2));
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--overlay) 35%, var(--border));
+    background: color-mix(in srgb, var(--overlay) 10%, var(--bg-surface-2));
 }
 
 /* ── Empty / error wrapper ───────────────────────────────────────────────── */

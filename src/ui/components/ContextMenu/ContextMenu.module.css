@@ -9,8 +9,8 @@
     padding: 4px;
     border: 0;
     border-radius: 16px;
-    background: var(--editor-surface-3);
-    box-shadow: 0 12px 28px var(--editor-overlay-black-50);
+    background: var(--bg-surface-3);
+    box-shadow: 0 12px 28px var(--scrim-50);
     /* Anchor the subtle scale to the menu's top edge — the menu drops down
        from the click point / trigger, so growing from the top reads natural. */
     transform-origin: top center;
@@ -106,7 +106,7 @@
     border-radius: 12px;
     font-size: 12px;
     font-weight: 560;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .item > span[aria-hidden="true"] {
@@ -120,7 +120,7 @@
 .separator {
     width: auto;
     margin: 4px 6px;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
 }
 
 /* ── ContextMenuSubmenu ──────────────────────────────────────────────────── */

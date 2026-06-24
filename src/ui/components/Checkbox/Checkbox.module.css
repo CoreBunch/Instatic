@@ -55,9 +55,9 @@
     justify-content: center;
     width: 100%;
     height: 100%;
-    border: 1px solid var(--input-border);
-    border-radius: var(--editor-radius-sm);
-    background: var(--input-bg);
+    border: 1px solid var(--overlay-20);
+    border-radius: var(--radius-sm);
+    background: transparent;
     color: transparent;
     transition:
         background-color 120ms ease,
@@ -66,18 +66,18 @@
 }
 
 .checkbox:hover .box {
-    border-color: var(--input-border-hover);
+    border-color: var(--overlay-30);
 }
 
 .checkbox .input:focus-visible + .box {
-    border-color: var(--input-border-focus);
-    box-shadow: var(--input-shadow-focus);
+    border-color: var(--overlay-50);
+    box-shadow: var(--shadow-input-focus);
 }
 
 .checkbox .input:checked + .box {
-    background: var(--editor-text);
-    border-color: var(--editor-text);
-    color: var(--editor-bg);
+    background: var(--text);
+    border-color: var(--text);
+    color: var(--bg-body);
 }
 
 .checkbox .input:disabled + .box {

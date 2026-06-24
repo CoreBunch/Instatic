@@ -19,15 +19,15 @@
 /* ── Status indicators (locked, hidden) ──────────────────────────────────── */
 .indicator {
     font-size: 10px;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     line-height: 1;
 }
 
 .hiddenBadge {
     flex-shrink: 0;
-    border-radius: var(--editor-radius-sm);
-    background: var(--editor-surface-3);
-    color: var(--editor-text-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-3);
+    color: var(--text-disabled);
     padding: 1px 5px;
     font-size: 10px;
     line-height: 1.3;
@@ -38,13 +38,13 @@
 /* they are managed (not freely editable) without hiding them entirely.       */
 .slotInstanceRow {
     opacity: 0.85;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
 }
 
 /* ── Open container group highlight ─────────────────────────────────────── */
 .openContainerGroup {
     border-radius: 8px;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
 }
 
 .openContainerGroup > [role="treeitem"] {

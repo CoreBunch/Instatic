@@ -26,7 +26,7 @@ function userClass(id: string): StyleRule {
     kind: 'class',
     selector: classKindSelector(id),
     order: 0,
-    styles: { color: 'var(--editor-text)' },
+    styles: { color: 'var(--text)' },
     contextStyles: {},
     createdAt: 1,
     updatedAt: 1,

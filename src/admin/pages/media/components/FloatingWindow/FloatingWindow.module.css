@@ -10,10 +10,10 @@
   top: var(--panel-y);
   width: var(--floating-window-w);
   max-height: var(--floating-window-max-h);
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
+  background: var(--bg-surface);
+  border: 1px solid var(--overlay-10);
   border-radius: var(--panel-radius);
-  box-shadow: var(--panel-shadow);
+  box-shadow: var(--shadow-panel);
   backdrop-filter: blur(var(--panel-blur));
   display: flex;
   flex-direction: column;

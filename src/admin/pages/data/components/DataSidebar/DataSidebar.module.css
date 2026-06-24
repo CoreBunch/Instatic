@@ -44,12 +44,12 @@
  * row here — same pattern as the `.pill` chips in DataGrid.module.css.
  */
 .tableButton[aria-pressed="true"] {
-    background: var(--editor-surface);
-    color: var(--editor-text-bright);
+    background: var(--bg-surface);
+    color: var(--text-bright);
 }
 
 .tableButton[aria-pressed="true"]:hover {
-    background: var(--editor-surface);
+    background: var(--bg-surface);
 }
 
 .tableLabel {
@@ -63,10 +63,10 @@
 .kindBadge {
     font-size: 9px;
     font-weight: 600;
-    color: var(--editor-text-muted);
-    background: var(--editor-surface-3);
+    color: var(--text-subtle);
+    background: var(--bg-surface-3);
     padding: 1px 4px;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
     flex-shrink: 0;
     letter-spacing: 0.02em;
     text-transform: lowercase;
@@ -76,14 +76,14 @@
     margin: 0;
     padding: 8px 4px;
     font-size: 12px;
-    color: var(--editor-danger);
+    color: var(--danger);
 }
 
 .emptyText {
     margin: 0;
     padding: 8px 4px;
     font-size: 12px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .sectionHeader {
@@ -102,7 +102,7 @@
     min-width: 0;
     margin: 0;
     overflow: hidden;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 700;
     line-height: 1.2;
@@ -111,7 +111,7 @@
 }
 
 .sectionCount {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     line-height: 1;
 }

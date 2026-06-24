@@ -1,7 +1,7 @@
 .backdrop {
     position: fixed;
     inset: 0;
-    background: var(--editor-overlay-black-55);
+    background: var(--scrim-60);
     z-index: 200;
     display: grid;
     place-items: center;
@@ -10,11 +10,11 @@
 .dialog {
     width: min(420px, calc(100vw - 32px));
     max-width: 100%;
-    background: var(--editor-surface);
-    border: 1px solid var(--editor-border);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
     border-radius: var(--panel-radius);
-    box-shadow: 0 12px 48px var(--editor-overlay-black-50);
-    color: var(--editor-text);
+    box-shadow: 0 12px 48px var(--scrim-50);
+    color: var(--text);
     padding: 20px;
     display: grid;
     gap: 14px;
@@ -22,7 +22,7 @@
 
 .title {
     margin: 0;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 16px;
     font-weight: 800;
     line-height: 1.2;
@@ -30,7 +30,7 @@
 
 .body {
     margin: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     line-height: 1.5;
 }
@@ -46,7 +46,7 @@
 }
 
 .label {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.02em;
@@ -55,7 +55,7 @@
 
 .error {
     margin: 0;
-    color: var(--editor-danger);
+    color: var(--danger);
     font-size: 12px;
     font-weight: 700;
     line-height: 1.45;

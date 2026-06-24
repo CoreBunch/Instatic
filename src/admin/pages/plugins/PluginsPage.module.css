@@ -25,7 +25,7 @@
 }
 
 .error {
-    color: var(--editor-danger);
+    color: var(--danger);
     white-space: pre-wrap;
 }
 
@@ -33,11 +33,11 @@
     margin-top: 6px;
     font-size: 12px;
     line-height: 1.5;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .errorHint a {
-    color: var(--editor-text);
+    color: var(--text);
     text-decoration: underline;
 }
 
@@ -57,9 +57,9 @@
 
 .emptyState {
     padding: 28px;
-    border: 1px dashed var(--panel-border);
+    border: 1px dashed var(--overlay-10);
     border-radius: 8px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     text-align: center;
 }
 
@@ -80,19 +80,19 @@
     position: relative;
     min-height: min(560px, calc(100vh - 230px));
     overflow: hidden;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--overlay-10);
     border-radius: 8px;
     background:
         linear-gradient(135deg, var(--plugins-hero-tint-a), var(--plugins-hero-tint-b)),
-        var(--editor-surface-2);
+        var(--bg-surface-2);
 }
 
 .mapGrid {
     position: absolute;
     inset: 0;
     background-image:
-        linear-gradient(var(--panel-border) 1px, transparent 1px),
-        linear-gradient(90deg, var(--panel-border) 1px, transparent 1px);
+        linear-gradient(var(--overlay-10) 1px, transparent 1px),
+        linear-gradient(90deg, var(--overlay-10) 1px, transparent 1px);
     background-size: 56px 56px;
     opacity: 0.42;
 }
@@ -103,10 +103,10 @@
     left: 50%;
     transform: translate(-50%, -50%);
     padding: 8px 12px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--overlay-10);
     border-radius: 8px;
-    background: var(--editor-surface);
-    color: var(--editor-text);
+    background: var(--bg-surface);
+    color: var(--text);
     font-size: 12px;
     font-weight: 800;
 }
@@ -121,10 +121,10 @@
     max-width: 180px;
     padding: 8px 9px 8px 24px;
     transform: translate(-14px, -14px);
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--overlay-10);
     border-radius: 8px;
-    background: var(--editor-surface);
-    box-shadow: 0 18px 50px var(--editor-overlay-black-28);
+    background: var(--bg-surface);
+    box-shadow: 0 18px 50px var(--scrim-30);
 }
 
 .mapPin > span {
@@ -134,7 +134,7 @@
     width: 9px;
     height: 9px;
     border-radius: 999px;
-    background: var(--editor-accent);
+    background: var(--overlay);
 }
 
 .mapPin strong {
@@ -143,7 +143,7 @@
 }
 
 .mapPin small {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
 }
 
@@ -151,14 +151,14 @@
     display: grid;
     gap: 12px;
     padding: 18px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--overlay-10);
     border-radius: 8px;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
 }
 
 .markdownPanel p {
     margin: 0;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 14px;
     line-height: 1.65;
 }
@@ -175,9 +175,9 @@
     display: grid;
     gap: 12px;
     padding: 14px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--overlay-10);
     border-radius: 8px;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
 }
 
 .resourceForm h2 {
@@ -194,7 +194,7 @@
 
 .resourceField span,
 .resourceRecord dt {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 750;
 }
@@ -204,10 +204,10 @@
     width: 100%;
     min-width: 0;
     padding: 8px 10px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--overlay-10);
     border-radius: 7px;
-    background: var(--editor-surface-2);
-    color: var(--editor-text);
+    background: var(--bg-surface-2);
+    color: var(--text);
     font: inherit;
     font-size: 13px;
 }
@@ -243,7 +243,7 @@
 .resourceRecord dd {
     margin: 0;
     overflow-wrap: anywhere;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 13px;
     line-height: 1.45;
 }

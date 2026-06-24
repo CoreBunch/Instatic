@@ -62,11 +62,11 @@ describe('CodeMirrorEditor theme', () => {
     const view = EditorView.findFromDOM(editor!)
     expect(view).toBeTruthy()
 
-    expect(highlightedColorFor(view!, tags.labelName)).toBe('var(--editor-syntax-entity)')
-    expect(highlightedColorFor(view!, tags.className)).toBe('var(--editor-syntax-entity)')
-    expect(highlightedColorFor(view!, tags.propertyName)).toBe('var(--editor-syntax-property)')
-    expect(highlightedColorFor(view!, tags.variableName)).toBe('var(--editor-syntax-variable)')
-    expect(highlightedColorFor(view!, tags.atom)).toBe('var(--editor-syntax-constant)')
+    expect(highlightedColorFor(view!, tags.labelName)).toBe('var(--syntax-entity)')
+    expect(highlightedColorFor(view!, tags.className)).toBe('var(--syntax-entity)')
+    expect(highlightedColorFor(view!, tags.propertyName)).toBe('var(--syntax-property)')
+    expect(highlightedColorFor(view!, tags.variableName)).toBe('var(--syntax-variable)')
+    expect(highlightedColorFor(view!, tags.atom)).toBe('var(--syntax-constant)')
   })
 
   it('defines the GitHub Dark syntax palette as editor design tokens', () => {
@@ -75,12 +75,12 @@ describe('CodeMirrorEditor theme', () => {
       'utf8',
     )
 
-    expect(globals).toContain('--editor-syntax-keyword: #ff7b72;')
-    expect(globals).toContain('--editor-syntax-entity: #d2a8ff;')
-    expect(globals).toContain('--editor-syntax-property: #7ee787;')
-    expect(globals).toContain('--editor-syntax-variable: #ffa657;')
-    expect(globals).toContain('--editor-syntax-string: #a5d6ff;')
-    expect(globals).toContain('--editor-syntax-constant: #79c0ff;')
-    expect(globals).toContain('--editor-syntax-comment: #8b949e;')
+    expect(globals).toContain('--syntax-keyword: #ff7b72;')
+    expect(globals).toContain('--syntax-entity: #d2a8ff;')
+    expect(globals).toContain('--syntax-property: #7ee787;')
+    expect(globals).toContain('--syntax-variable: #ffa657;')
+    expect(globals).toContain('--syntax-string: #a5d6ff;')
+    expect(globals).toContain('--syntax-constant: #79c0ff;')
+    expect(globals).toContain('--syntax-comment: #8b949e;')
   })
 })

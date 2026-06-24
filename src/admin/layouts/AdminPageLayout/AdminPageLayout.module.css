@@ -11,8 +11,8 @@
     flex-direction: column;
     height: 100vh;
     overflow: hidden;
-    background: var(--editor-bg);
-    color: var(--editor-text);
+    background: var(--bg-body);
+    color: var(--text);
 }
 
 .body {
@@ -21,7 +21,7 @@
     overflow: auto;
     padding: 56px 28px 48px;
     user-select: text;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
     border-top-left-radius: 16px;
     border-top-right-radius: 16px;
 }
@@ -39,7 +39,7 @@
     align-items: end;
     gap: 18px;
     padding-bottom: 24px;
-    border-bottom: 1px solid var(--panel-border);
+    border-bottom: 1px solid var(--overlay-10);
 }
 
 .titleGroup {
@@ -50,7 +50,7 @@
 
 .titleGroup h1 {
     margin: 0;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 50px;
     line-height: 1.05;
     letter-spacing: 0;
@@ -58,7 +58,7 @@
 
 .titleGroup p {
     margin: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 16px;
     line-height: 1.45;
 }

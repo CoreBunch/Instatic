@@ -25,16 +25,16 @@
   gap: 4px;
   padding: 14px 10px;
   overflow-y: auto;
-  background: var(--editor-surface-2);
-  border-right: 1px solid var(--editor-border);
+  background: var(--bg-surface-2);
+  border-right: 1px solid var(--border);
 }
 .navLead {
   margin: 0 6px 10px;
   font-size: 12px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
 }
 .navLead strong {
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
   font-weight: 600;
 }
 .navList {
@@ -50,25 +50,25 @@
   width: 100%;
   padding: 9px 10px;
   border: 0;
-  border-radius: var(--editor-radius);
+  border-radius: var(--radius);
   background: transparent;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   text-align: left;
   cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
 }
 .navItem:hover {
-  background: var(--editor-surface-3);
-  color: var(--editor-text);
+  background: var(--bg-surface-3);
+  color: var(--text);
 }
 .navItem[data-active='true'] {
-  background: var(--editor-surface-3);
-  color: var(--editor-text-bright);
+  background: var(--bg-surface-3);
+  color: var(--text-bright);
 }
 .navDot {
   width: 7px;
   height: 7px;
-  border-radius: var(--editor-radius-sm);
+  border-radius: var(--radius-sm);
   background: var(--tint);
 }
 .navLabel {
@@ -77,34 +77,34 @@
 }
 .navCount {
   font-size: 12px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   font-variant-numeric: tabular-nums;
 }
 .navItem[data-active='true'] .navCount {
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
 }
 .navState {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--editor-surface-4);
+  background: var(--bg-surface-4);
 }
 .navState[data-on='true'] {
-  background: var(--editor-success-green);
+  background: var(--success);
 }
 
 .navItemWarn {
-  color: var(--editor-warning);
+  color: var(--warning);
 }
 .navItemWarn .navCount {
-  color: var(--editor-warning);
+  color: var(--warning);
 }
 .navItemWarn:hover {
-  background: var(--editor-warning-bg);
-  color: var(--editor-warning-text);
+  background: var(--warning-10);
+  color: var(--warning-text);
 }
 .navWarnIcon {
-  color: var(--editor-warning);
+  color: var(--warning);
 }
 
 /* Bottom group: add-files affordance + can't-import */
@@ -123,17 +123,17 @@
   width: 100%;
   padding: 10px 11px;
   background: transparent;
-  color: var(--editor-text-secondary);
-  border: 1px dashed var(--input-border);
-  border-radius: var(--editor-radius);
+  color: var(--text-muted);
+  border: 1px dashed var(--overlay-20);
+  border-radius: var(--radius);
   text-align: left;
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .addFiles:hover:not(:disabled) {
-  border-color: var(--input-border-focus);
-  background: var(--editor-surface-3);
-  color: var(--editor-text);
+  border-color: var(--overlay-50);
+  background: var(--bg-surface-3);
+  color: var(--text);
 }
 .addFiles:disabled {
   opacity: 0.5;
@@ -145,13 +145,13 @@
   width: 30px;
   height: 30px;
   flex: none;
-  border-radius: var(--editor-radius);
-  background: var(--editor-surface-3);
-  color: var(--editor-text-secondary);
+  border-radius: var(--radius);
+  background: var(--bg-surface-3);
+  color: var(--text-muted);
 }
 .addFiles:hover:not(:disabled) .addFilesIcon {
-  background: var(--editor-surface-4);
-  color: var(--editor-text-bright);
+  background: var(--bg-surface-4);
+  color: var(--text-bright);
 }
 .addFilesText {
   display: flex;
@@ -162,12 +162,12 @@
 .addFilesTitle {
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--editor-text);
+  color: var(--text);
 }
 .addFilesSub {
   font-size: 10.5px;
   line-height: 1.3;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 
 /* ── Right detail pane ───────────────────────────────────────────────────── */
@@ -191,14 +191,14 @@
   margin: 0 0 3px;
   font-size: 16px;
   font-weight: 700;
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
 }
 .detHead[data-warn='true'] .detHeadTitle {
-  color: var(--editor-warning-text);
+  color: var(--warning-text);
 }
 .sectionSub {
   font-size: 12px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
 }
 .detHeadBulk {
   display: flex;
@@ -210,7 +210,7 @@
 .detHeadCount {
   margin-right: 2px;
   font-size: 11.5px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   font-variant-numeric: tabular-nums;
 }
 .link {
@@ -219,14 +219,14 @@
   padding: 0;
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   cursor: pointer;
 }
 .link:hover {
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
 }
 .bulkSep {
-  color: var(--editor-text-subtle);
+  color: var(--text-disabled);
 }
 
 .toolbar {
@@ -237,7 +237,7 @@
   margin: 0;
   padding: 8px 2px;
   font-size: 12.5px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 
 /* ── Shared row scaffolding ──────────────────────────────────────────────── */
@@ -263,7 +263,7 @@
 }
 .title {
   font-size: 13px;
-  color: var(--editor-text);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -271,7 +271,7 @@
 .meta {
   font-size: 10.5px;
   font-family: var(--font-mono);
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -285,12 +285,12 @@
   align-items: center;
   gap: 12px;
   padding: 11px 12px;
-  border-radius: var(--editor-radius);
-  background: var(--editor-surface-2);
+  border-radius: var(--radius);
+  background: var(--bg-surface-2);
   transition: background-color 120ms ease, opacity 120ms ease;
 }
 .pageRow:hover {
-  background: var(--editor-surface-3);
+  background: var(--bg-surface-3);
 }
 .pageRow[data-off='true'] {
   opacity: 0.5;
@@ -303,8 +303,8 @@
 /* ── Style-rule groups ───────────────────────────────────────────────────── */
 
 .group {
-  background: var(--editor-surface-2);
-  border-radius: var(--editor-radius);
+  background: var(--bg-surface-2);
+  border-radius: var(--radius);
   overflow: hidden;
 }
 .groupHead {
@@ -315,7 +315,7 @@
   padding: 9px 10px;
 }
 .groupHead:hover {
-  background: var(--editor-surface-3);
+  background: var(--bg-surface-3);
 }
 .chevron {
   display: grid;
@@ -325,7 +325,7 @@
   border: 0;
   padding: 0;
   background: transparent;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   cursor: pointer;
   transition: transform 120ms ease;
 }
@@ -335,7 +335,7 @@
 .groupFile {
   font-size: 12px;
   font-family: var(--font-mono);
-  color: var(--editor-text);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -353,7 +353,7 @@
 .ruleName {
   font-size: 12px;
   font-family: var(--font-mono);
-  color: var(--editor-text);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -365,13 +365,13 @@
 .ruleMore {
   padding: 4px 0 2px;
   font-size: 11px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 .chip {
   padding: 1px 7px;
-  border-radius: var(--editor-radius-sm);
-  background: var(--editor-surface-4);
-  color: var(--editor-text-secondary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-4);
+  color: var(--text-muted);
   font-size: 10px;
   font-weight: 600;
   white-space: nowrap;
@@ -383,7 +383,7 @@
   place-items: center;
   width: 16px;
   height: 16px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 
 /* ── Media + colour grids ────────────────────────────────────────────────── */
@@ -400,14 +400,14 @@
   align-items: center;
   gap: 11px;
   padding: 10px 12px;
-  border-radius: var(--editor-radius);
-  background: var(--editor-surface-2);
+  border-radius: var(--radius);
+  background: var(--bg-surface-2);
 }
 .thumb {
   width: 36px;
   height: 36px;
-  border-radius: var(--editor-radius);
-  background-color: var(--editor-bg);
+  border-radius: var(--radius);
+  background-color: var(--bg-body);
   background-image: var(--canvas-placeholder-bg);
 }
 .colorChip {
@@ -416,14 +416,14 @@
   align-items: center;
   gap: 11px;
   padding: 8px 12px;
-  border-radius: var(--editor-radius);
-  background: var(--editor-surface-2);
+  border-radius: var(--radius);
+  background: var(--bg-surface-2);
 }
 .swatch {
   width: 28px;
   height: 28px;
-  border-radius: var(--editor-radius);
-  border: 1px solid var(--editor-border);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
   background: var(--swatch);
 }
 
@@ -435,13 +435,13 @@
   align-items: center;
   gap: 12px;
   padding: 11px 12px;
-  border-radius: var(--editor-radius);
-  background: var(--editor-surface-2);
+  border-radius: var(--radius);
+  background: var(--bg-surface-2);
 }
 .listIcon {
   display: grid;
   place-items: center;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
 }
 
 /* ── Skipped ─────────────────────────────────────────────────────────────── */
@@ -452,13 +452,13 @@
   align-items: center;
   gap: 12px;
   padding: 11px 12px;
-  border-radius: var(--editor-radius);
-  background: var(--editor-warning-bg);
+  border-radius: var(--radius);
+  background: var(--warning-10);
 }
 .skipLabel {
   font-size: 12px;
   font-family: var(--font-mono);
-  color: var(--editor-warning-text);
+  color: var(--warning-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -479,7 +479,7 @@
   display: grid;
   place-items: center;
   padding: 14px;
-  background: var(--editor-overlay-black-82);
+  background: var(--scrim-80);
 }
 .dropCard {
   display: flex;
@@ -491,9 +491,9 @@
   height: 100%;
   padding: 40px;
   text-align: center;
-  border: 2px dashed var(--rail-tint-sky);
+  border: 2px dashed var(--accent-3);
   border-radius: var(--panel-radius);
-  background: var(--editor-sky-tint-06);
+  background: color-mix(in srgb, var(--accent-3) 6%, transparent);
 }
 .dropIcon {
   display: grid;
@@ -501,12 +501,12 @@
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--editor-sky-tint-16);
-  color: var(--rail-tint-sky);
+  background: color-mix(in srgb, var(--accent-3) 16%, transparent);
+  color: var(--accent-3);
 }
 .dropTitle {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
 }

@@ -24,7 +24,7 @@
  *
  * Constraints:
  *   - CSS Modules only — no Tailwind, no inline styles
- *   - Strictly achromatic tokens — colours via --editor-* vars
+ *   - Strictly achromatic tokens — colours via direct global design tokens vars
  *   - role="status" by default for assistive tech (overridable)
  */
 import type { ReactNode } from 'react'

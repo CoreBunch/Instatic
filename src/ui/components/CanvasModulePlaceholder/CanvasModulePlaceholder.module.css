@@ -2,7 +2,7 @@
  * CanvasModulePlaceholder — module canvas-preview empty state.
  *
  * Strictly achromatic (Constraint #376): the diagonal-stripe pattern and
- * the surface tint are both derived from --editor-text-muted via
+ * the surface tint are both derived from --text-subtle via
  * color-mix() so they render the same neutral gray on any canvas
  * background (light or dark). No hex / rgb / hsl literals.
  *
@@ -17,9 +17,9 @@
     display: block;
     box-sizing: border-box;
     min-width: 0;
-    border-radius: var(--editor-radius);
+    border-radius: var(--radius);
     background: var(--canvas-placeholder-bg);
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     line-height: 1.4;
     user-select: none;
@@ -89,7 +89,7 @@
     flex: 0 0 auto;
     margin: 0;
     padding: 0;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     line-height: 1;
 }
 
@@ -104,7 +104,7 @@
     display: block;
     margin: 0;
     padding: 0;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-weight: 600;
 }
 
@@ -116,7 +116,7 @@
     max-width: 36ch;
     margin: 0;
     padding: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 500;
 }
@@ -153,10 +153,10 @@
 .actions button {
     height: 28px;
     padding: 0 14px;
-    border: 1px solid color-mix(in srgb, var(--editor-text) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
     border-radius: 999px;
-    background: var(--editor-surface);
-    color: var(--editor-text-bright);
+    background: var(--bg-surface);
+    color: var(--text-bright);
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.01em;
@@ -167,10 +167,10 @@
 }
 
 .actions button:hover {
-    background: var(--editor-surface-2);
-    border-color: color-mix(in srgb, var(--editor-text) 22%, transparent);
+    background: var(--bg-surface-2);
+    border-color: color-mix(in srgb, var(--text) 22%, transparent);
 }
 
 .actions button:active {
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }

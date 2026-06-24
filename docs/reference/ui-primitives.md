@@ -107,7 +107,7 @@ A small chart kit used by dashboard widgets and the framework scale UI. Strictly
 
 ## `Skeleton` — loading states
 
-All six exports live at `@ui/components/Skeleton`. The shimmer uses `--editor-surface-3` / `--editor-surface-4` tokens directly, so it respects the editor palette automatically.
+All six exports live at `@ui/components/Skeleton`. The shimmer uses `--bg-surface-3` / `--bg-surface-4` tokens directly, so it respects the editor palette automatically.
 
 ```tsx
 import { SkeletonBlock, SkeletonCards, SkeletonRows, SkeletonTree, Skeleton } from '@ui/components/Skeleton'
@@ -198,7 +198,7 @@ import { Button } from '@ui/components/Button'
 
 ## `Input` and `Textarea`
 
-Bordered transparent inputs with a pill radius (`--input-radius`). Focus adds an inset achromatic glow (`--input-shadow-focus`).
+Bordered transparent inputs with a pill radius (`--input-radius`). Focus adds an inset achromatic glow (`--shadow-input-focus`).
 
 ```tsx
 import { Input, Textarea } from '@ui/components/Input'
@@ -345,7 +345,7 @@ pushToast({
 })
 ```
 
-Toasts auto-dismiss after a few seconds. Errors stay longer. Each kind picks the matching semantic token (`--editor-success-*`, `--editor-danger-*`, etc.).
+Toasts auto-dismiss after a few seconds. Errors stay longer. Each kind picks the matching semantic token (`--success-*`, `--danger-*`, etc.).
 
 For inline page-level errors, prefer `role="alert"` content over a toast — toasts are for **transient** feedback.
 

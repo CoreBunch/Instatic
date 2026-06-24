@@ -2,8 +2,8 @@
  * Architecture Gate — no fallback values inside `var(--name, ...)`.
  *
  * Every CSS custom property the editor / admin / UI code reads must already
- * exist somewhere it is reachable from. Writing `var(--editor-text-subtle,
- * var(--editor-text-muted))` or `var(--font-mono, monospace)` is a
+ * exist somewhere it is reachable from. Writing `var(--text-disabled,
+ * var(--text-subtle))` or `var(--font-mono, monospace)` is a
  * hallucination: either the named token exists (so the fallback is dead code
  * the next reader has to puzzle over) or it does not (in which case the
  * fallback is silently masking a missing token).

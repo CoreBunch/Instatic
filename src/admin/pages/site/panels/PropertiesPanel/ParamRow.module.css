@@ -10,7 +10,7 @@
 .rowWrapper {
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid var(--editor-border);
+  border-bottom: 1px solid var(--border);
 }
 
 .rowWrapperDefault {
@@ -18,7 +18,7 @@
   padding: 12px;
   border-bottom: none;
   border-radius: var(--panel-radius);
-  background: var(--editor-surface-2);
+  background: var(--bg-surface-2);
 }
 
 .rowWrapper:last-child {
@@ -44,10 +44,10 @@
 
 .paramBadge {
   flex-shrink: 0;
-  border: 1px solid var(--editor-border);
+  border: 1px solid var(--border);
   border-radius: var(--input-radius);
-  background: var(--editor-surface);
-  color: var(--editor-text);
+  background: var(--bg-surface);
+  color: var(--text);
   font-size: 10px;
   font-weight: 720;
   line-height: 1.6;
@@ -96,7 +96,7 @@
 .paramNameChip {
   font-size: 11px;
   font-weight: 500;
-  color: var(--editor-text);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -107,7 +107,7 @@
 /* plain: secondary label */
 .paramLabel {
   font-size: 11px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -125,7 +125,7 @@
 /* slot type caption — no interactive value control */
 .slotCaption {
   font-size: 11px;
-  color: var(--editor-text-subtle);
+  color: var(--text-disabled);
   font-style: italic;
   display: block;
 }
@@ -142,8 +142,8 @@
 .typeChip {
   flex-shrink: 0;
   border-radius: var(--input-radius);
-  background: var(--editor-surface-4);
-  color: var(--editor-text-secondary);
+  background: var(--bg-surface-4);
+  color: var(--text-muted);
   font-size: 10px;
   line-height: 1.6;
   padding: 1px 5px;
@@ -154,9 +154,9 @@
 .overridePill {
   font-size: 10px;
   padding: 1px 5px;
-  border-radius: var(--editor-radius-sm);
-  background: var(--editor-surface-4);
-  color: var(--editor-text-secondary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-4);
+  color: var(--text-muted);
   white-space: nowrap;
   line-height: 1.6;
 }
@@ -165,7 +165,7 @@
 
 .nameError {
   font-size: 10px;
-  color: var(--editor-danger-text);
+  color: var(--danger-text);
   padding: 2px 8px 4px;
   line-height: 1.4;
 }
@@ -181,15 +181,15 @@
   flex-direction: column;
   gap: 6px;
   padding: 6px 8px 8px;
-  background: var(--editor-surface-2);
-  border-top: 1px solid var(--editor-border);
+  background: var(--bg-surface-2);
+  border-top: 1px solid var(--border);
 }
 
 .rowWrapperDefault .advanced {
   padding: 10px;
   border-top: none;
   border-radius: var(--panel-radius);
-  background: var(--editor-surface);
+  background: var(--bg-surface);
 }
 
 .advancedRow {
@@ -200,7 +200,7 @@
 
 .advancedLabel {
   font-size: 10px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   flex: 0 0 64px;
   padding-top: 4px;
   line-height: 1.4;
@@ -227,13 +227,13 @@
   align-items: center;
   gap: 2px;
   padding: 1px 2px 1px 6px;
-  background: var(--editor-bg-subtle);
-  border-radius: var(--editor-radius-sm);
+  background: var(--bg-surface-3);
+  border-radius: var(--radius-sm);
 }
 
 .chipText {
   font-size: 10px;
   font-family: monospace;
-  color: var(--editor-text);
+  color: var(--text);
   line-height: 1.6;
 }

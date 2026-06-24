@@ -6,8 +6,8 @@
  *
  * Tokens:
  *   - achromatic surface (panel-bg / panel-border)
- *   - --editor-danger* for the leading icon and title accent
- *   - --editor-radius for outer corners (matches button + section radii)
+ *   - --danger* for the leading icon and title accent
+ *   - --radius for outer corners (matches button + section radii)
  */
 
 .fallback {
@@ -16,11 +16,11 @@
     flex-direction: column;
     gap: 12px;
     padding: 16px 18px;
-    background: var(--panel-bg);
-    border: 1px solid var(--panel-border);
-    border-left: 3px solid var(--editor-danger);
-    border-radius: var(--editor-radius);
-    color: var(--editor-text);
+    background: var(--bg-surface);
+    border: 1px solid var(--overlay-10);
+    border-left: 3px solid var(--danger);
+    border-radius: var(--radius);
+    color: var(--text);
     font-size: 12px;
     line-height: 1.4;
     max-width: 720px;
@@ -41,7 +41,7 @@
     justify-content: center;
     width: 20px;
     height: 20px;
-    color: var(--editor-danger-light);
+    color: var(--danger-light);
 }
 
 .headText {
@@ -54,7 +54,7 @@
 
 .title {
     margin: 0;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 14px;
     font-weight: 600;
     line-height: 1.3;
@@ -62,7 +62,7 @@
 
 .message {
     margin: 0;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 12px;
     line-height: 1.45;
     overflow-wrap: anywhere;
@@ -78,10 +78,10 @@
         "Liberation Mono",
         monospace;
     font-size: 11px;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     padding: 1px 4px;
-    background: var(--editor-surface);
-    border-radius: var(--editor-radius-sm);
+    background: var(--bg-surface);
+    border-radius: var(--radius-sm);
 }
 
 /* ── Cause chain ─────────────────────────────────────────────────────────── */
@@ -89,7 +89,7 @@
 .causeChain {
     margin: 0;
     padding-left: 18px;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 11px;
     line-height: 1.45;
 }
@@ -108,37 +108,37 @@
         Consolas,
         "Liberation Mono",
         monospace;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 /* ── Component stack ─────────────────────────────────────────────────────── */
 
 .details {
-    background: var(--editor-surface);
-    border: 1px solid var(--editor-border);
-    border-radius: var(--editor-radius-sm);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
     padding: 8px 10px;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 11px;
 }
 
 .details summary {
     cursor: pointer;
-    color: var(--editor-text);
+    color: var(--text);
     font-weight: 500;
 }
 
 .details summary:focus-visible {
-    outline: 2px solid var(--editor-accent);
+    outline: 2px solid var(--overlay);
     outline-offset: 2px;
 }
 
 .stack {
     margin: 8px 0 0;
     padding: 8px;
-    background: var(--editor-bg);
-    border-radius: var(--editor-radius-sm);
-    color: var(--editor-text-muted);
+    background: var(--bg-body);
+    border-radius: var(--radius-sm);
+    color: var(--text-subtle);
     font-family:
         ui-monospace,
         SFMono-Regular,

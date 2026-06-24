@@ -16,7 +16,7 @@
 
 .booleanLabel {
   font-size: 13px;
-  color: var(--editor-text);
+  color: var(--text);
   line-height: 1;
   user-select: none;
 }
@@ -36,11 +36,11 @@
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  border-radius: var(--editor-radius-sm);
-  background: var(--editor-surface);
-  border: 1px solid var(--editor-border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   font-size: 11.5px;
-  color: var(--editor-text);
+  color: var(--text);
   white-space: nowrap;
   max-width: 160px;
   overflow: hidden;
@@ -59,12 +59,12 @@
   border: none;
   background: transparent;
   cursor: pointer;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   line-height: 1;
 }
 
 .chipRemove:hover {
-  color: var(--editor-text);
+  color: var(--text);
 }
 
 .multiSelectTrigger {
@@ -114,7 +114,7 @@
   flex: 1;
   min-width: 0;
   font-size: 12px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -122,7 +122,7 @@
 
 /* Empty-state placeholder text */
 .mediaEmpty {
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   font-style: italic;
 }
 
@@ -156,11 +156,11 @@
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: var(--editor-radius-sm);
-  background: var(--editor-surface-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-3);
   overflow: hidden;
   flex-shrink: 0;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 
 /* Loading placeholder — slightly dimmer */
@@ -170,8 +170,8 @@
 
 /* Missing asset — danger tint */
 .mediaThumb[data-state='missing'] {
-  color: var(--editor-danger);
-  background: var(--editor-danger-bg);
+  color: var(--danger);
+  background: var(--danger-10);
 }
 
 .mediaThumbImg {
@@ -185,7 +185,7 @@
 .mediaOverflow {
   font-size: 10px;
   font-weight: 600;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   padding: 0 3px;
   flex-shrink: 0;
 }
@@ -198,7 +198,7 @@
 }
 
 .relationEmpty {
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   font-style: italic;
 }
 
@@ -206,7 +206,7 @@
 
 .readOnlyText {
   font-size: 13px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -220,7 +220,7 @@
 
 /* Em-dash placeholder shown for any empty / null value. */
 .empty {
-  color: var(--editor-text-subtle);
+  color: var(--text-disabled);
   font-size: 13px;
   user-select: none;
 }
@@ -228,7 +228,7 @@
 /* Plain text / longText / richText / date / dateTime displays. */
 .text {
   font-size: 13px;
-  color: var(--editor-text);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -238,7 +238,7 @@
 /* Number — tabular numerics, right-aligned within the cell. */
 .numberValue {
   font-size: 13px;
-  color: var(--editor-text);
+  color: var(--text);
   font-variant-numeric: tabular-nums;
   margin-left: auto;
 }
@@ -250,16 +250,16 @@
   justify-content: center;
   width: 18px;
   height: 18px;
-  border-radius: var(--editor-radius-sm);
-  background: var(--editor-success-bg);
-  color: var(--editor-success-green);
+  border-radius: var(--radius-sm);
+  background: var(--success-10);
+  color: var(--success);
 }
 
 /* URL / email — muted body text, single-line ellipsis. Same look as .text
  * but tinted to hint at the link semantics. */
 .linkText {
   font-size: 13px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -271,21 +271,21 @@
  * Re-uses the .chip class above; data-tone variants tune the surface.
  */
 .chip[data-tone="tag"] {
-  background: var(--editor-surface);
-  border-color: var(--editor-border-med);
-  color: var(--editor-text-secondary);
+  background: var(--bg-surface);
+  border-color: var(--border-muted);
+  color: var(--text-muted);
 }
 
 .chip[data-tone="relation"] {
-  background: var(--editor-surface-2);
-  border-color: var(--editor-surface-3);
-  color: var(--editor-text);
+  background: var(--bg-surface-2);
+  border-color: var(--bg-surface-3);
+  color: var(--text);
 }
 
 .chip[data-tone="overflow"] {
   background: transparent;
   border-color: transparent;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   padding: 2px 4px;
   font-weight: 600;
 }
@@ -326,11 +326,11 @@
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: var(--editor-radius-sm);
-  background: var(--editor-surface-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-3);
   overflow: hidden;
   flex-shrink: 0;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
 }
 
 .mediaDisplayThumb[data-state='loading'] {
@@ -338,8 +338,8 @@
 }
 
 .mediaDisplayThumb[data-state='missing'] {
-  color: var(--editor-danger);
-  background: var(--editor-danger-bg);
+  color: var(--danger);
+  background: var(--danger-10);
 }
 
 .mediaDisplayThumbImg {
@@ -351,7 +351,7 @@
 
 .mediaDisplayName {
   font-size: 12.5px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -361,7 +361,7 @@
 .mediaDisplayOverflow {
   font-size: 11px;
   font-weight: 600;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   padding: 0 3px;
   flex-shrink: 0;
 }

@@ -9,13 +9,13 @@
 }
 
 .categoryRailButton.categoryRailButton {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .categoryRailButton.categoryRailButton:hover,
 .categoryRailButton.categoryRailButton[aria-pressed="true"] {
-    background: var(--editor-overlay-white-10);
-    color: var(--editor-text);
+    background: var(--overlay-10);
+    color: var(--text);
 }
 
 .categoryRailIconWrap {
@@ -34,6 +34,6 @@
     width: 6px;
     height: 6px;
     border-radius: 999px;
-    background: var(--editor-success-green);
-    box-shadow: 0 0 0 2px var(--editor-bg);
+    background: var(--success);
+    box-shadow: 0 0 0 2px var(--bg-body);
 }

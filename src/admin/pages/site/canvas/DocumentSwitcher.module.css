@@ -21,7 +21,7 @@
     border: 0;
     border-radius: 0;
     background: transparent;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 12px;
     cursor: pointer;
 }
@@ -36,7 +36,7 @@
 /* The current document name lives in the placeholder — render it strong
  * (bold/white), not as a muted placeholder, so it reads like a value. */
 .switcher .select input::placeholder {
-    color: var(--editor-text);
+    color: var(--text);
     font-weight: 700;
     opacity: 1;
 }

@@ -8,8 +8,8 @@
     min-height: 100vh;
     place-items: center;
     padding: 32px 16px;
-    background: var(--editor-bg);
-    color: var(--editor-text);
+    background: var(--bg-body);
+    color: var(--text);
     font-family: system-ui, sans-serif;
 }
 
@@ -17,12 +17,12 @@
     width: min(100%, 360px);
     padding: 24px;
     border-radius: 16px;
-    background: var(--editor-surface);
+    background: var(--bg-surface);
 }
 
 .title {
     margin: 0 0 18px;
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 20px;
     font-weight: 650;
     letter-spacing: 0;
@@ -30,7 +30,7 @@
 
 .error {
     margin: 0;
-    color: var(--editor-danger-lighter);
+    color: var(--danger-lighter);
     font-size: 12px;
     line-height: 1.45;
 }

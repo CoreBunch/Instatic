@@ -2,7 +2,7 @@
  * Tabs — underline-indicator style. Intentionally distinct from RangeTabs
  * (pill segmented control). This is page-level chrome.
  *
- * Tokens: --editor-border, --editor-text, --editor-text-muted (from globals.css).
+ * Tokens: --border, --text, --text-subtle (from globals.css).
  * No hardcoded hex values — all colours come from var(--*) tokens per policy.
  */
 
@@ -11,7 +11,7 @@
 .tabList {
     display: flex;
     gap: 2px;
-    border-bottom: 1px solid var(--editor-border);
+    border-bottom: 1px solid var(--border);
 }
 
 /* ── Tab trigger ──────────────────────────────────────────────────────────── */
@@ -20,7 +20,7 @@
     padding: 8px 16px;
     font-size: 0.875rem; /* 14px */
     font-weight: 500;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     background: none;
     border: none;
     /* 2px underline sits flush against the tablist's 1px border-bottom.
@@ -37,20 +37,20 @@
 }
 
 .tab:hover {
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .tab:focus-visible {
     outline: none;
-    box-shadow: var(--editor-focus-ring);
-    border-radius: var(--editor-radius-sm);
+    box-shadow: var(--focus-ring);
+    border-radius: var(--radius-sm);
 }
 
 /* ── Active tab ───────────────────────────────────────────────────────────── */
 
 .tabActive {
-    color: var(--editor-text);
-    border-bottom-color: var(--editor-text);
+    color: var(--text);
+    border-bottom-color: var(--text);
     font-weight: 600;
 }
 

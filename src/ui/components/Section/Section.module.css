@@ -12,7 +12,7 @@
 }
 
 .sectionOpen {
-    background: var(--editor-overlay-white-012);
+    background: var(--overlay-5);
 }
 
 .sectionToggle {
@@ -25,16 +25,16 @@
     background: transparent;
     border: 0;
     cursor: pointer;
-    color: var(--editor-text-secondary);
-    background: var(--editor-overlay-white-10);
+    color: var(--text-muted);
+    background: var(--overlay-10);
     border-radius: 12px;
     font-family: inherit;
     text-align: left;
 }
 
 .sectionToggle:hover {
-    background: var(--editor-overlay-white-12);
-    color: var(--editor-text);
+    background: var(--overlay-10);
+    color: var(--text);
 }
 
 .sectionIcon {
@@ -42,7 +42,7 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .sectionIcon {
@@ -65,7 +65,7 @@
     white-space: nowrap;
     font-size: 12px;
     font-weight: 700;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .sectionMeta {
@@ -73,7 +73,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 500;
     letter-spacing: 0;
@@ -84,7 +84,7 @@
     width: 5px;
     height: 5px;
     border-radius: 50%;
-    background: var(--editor-success-green);
+    background: var(--success);
     flex-shrink: 0;
 }
 

@@ -3,7 +3,7 @@
 .backdrop {
     position: fixed;
     inset: 0;
-    background: var(--editor-overlay-black-85);
+    background: var(--scrim-90);
     z-index: 400;
     backdrop-filter: blur(3px);
 }
@@ -22,12 +22,12 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    background: var(--editor-surface-2);
-    border: 1px solid var(--editor-border);
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border);
     border-radius: 12px;
     overflow: hidden;
     pointer-events: auto;
-    box-shadow: 0 32px 80px var(--editor-overlay-black-70);
+    box-shadow: 0 32px 80px var(--scrim-70);
 }
 
 .header {
@@ -35,8 +35,8 @@
     align-items: center;
     padding: 0 8px 0 16px;
     height: 44px;
-    background: var(--editor-bg);
-    border-bottom: 1px solid var(--editor-border);
+    background: var(--bg-body);
+    border-bottom: 1px solid var(--border);
     flex-shrink: 0;
     gap: 10px;
 }
@@ -49,7 +49,7 @@
     flex: 1;
     font-size: 13px;
     font-weight: 500;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -58,6 +58,6 @@
 .iframe {
     flex: 1;
     border: 0;
-    background: var(--editor-accent);
+    background: var(--overlay);
     display: block;
 }

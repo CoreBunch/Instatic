@@ -22,7 +22,7 @@
   min-height: var(--module-sandbox-min-height);
   place-items: center;
   padding: 16px;
-  border: 1px dashed var(--editor-border);
-  color: var(--editor-text-secondary);
-  background: var(--editor-surface);
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  background: var(--bg-surface);
 }

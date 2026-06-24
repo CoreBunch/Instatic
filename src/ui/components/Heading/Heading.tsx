@@ -7,7 +7,7 @@
  *
  * Constraints:
  *   - CSS Modules only — no Tailwind, no inline styles
- *   - Colour comes from `--editor-text`; family from `--font-sans`
+ *   - Colour comes from `--text`; family from `--font-sans`
  */
 import type { ReactNode } from 'react'
 import { cn } from '@ui/cn'

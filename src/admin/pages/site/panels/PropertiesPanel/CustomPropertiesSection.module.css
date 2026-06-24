@@ -26,8 +26,8 @@
     flex-direction: column;
     gap: 6px;
     padding: 8px;
-    border-radius: var(--editor-radius);
-    background: var(--editor-surface-2);
+    border-radius: var(--radius);
+    background: var(--bg-surface-2);
 }
 
 .addInputs {
@@ -44,12 +44,12 @@
 
 .error {
     margin: 0;
-    color: var(--editor-danger-light);
+    color: var(--danger-light);
     font-size: 10px;
 }
 
 .addTrigger {
     align-self: flex-start;
     gap: 6px;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }

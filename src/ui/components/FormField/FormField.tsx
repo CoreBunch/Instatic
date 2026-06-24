@@ -27,7 +27,7 @@
  *
  * Constraints:
  *   - CSS Modules only — no Tailwind, no inline styles
- *   - All colours come from `--editor-*` design tokens
+ *   - All colours come from `direct global design tokens` design tokens
  */
 import type { ReactNode } from 'react'
 import { cn } from '@ui/cn'

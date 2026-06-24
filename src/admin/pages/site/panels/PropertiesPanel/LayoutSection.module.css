@@ -32,7 +32,7 @@
     gap: 2px;
     padding: 2px;
     border-radius: 10px;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
 }
 
 /* Doubled `.displayChipGroup .displayChip.displayChip` selector lifts
@@ -43,25 +43,25 @@
     min-width: 0;
     padding: 0 8px;
     border-radius: 8px;
-    background: var(--editor-surface);
-    color: var(--editor-text);
+    background: var(--bg-surface);
+    color: var(--text);
     text-align: left;
     overflow: hidden;
 }
 
 .displayChipGroup .displayChip.displayChip:hover {
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 .displayChipKicker {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 11px;
     font-weight: 500;
     text-transform: capitalize;
 }
 
 .displayChipValue {
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 11px;
     font-weight: 600;
     overflow: hidden;
@@ -77,12 +77,12 @@
     width: 26px;
     border-radius: 6px;
     background: transparent;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .displayChipGroup .displayChipClear.displayChipClear:hover {
-    background: var(--editor-surface-3);
-    color: var(--editor-text);
+    background: var(--bg-surface-3);
+    color: var(--text);
 }
 
 /* Sub-field block for flex-only / grid-only controls. Just a vertical
@@ -113,17 +113,17 @@
  * switchers and generic property rows share a single language for
  * "this property is/isn't set". */
 .labeledLabel {
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 11px;
     font-weight: 620;
 }
 
 .labeledRow[data-state="set"] .labeledLabel {
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .labeledRow[data-state="unset"] .labeledLabel {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .labeledControl {
@@ -150,15 +150,15 @@
     grid-template-columns: 18px 1fr;
     align-items: center;
     gap: 4px;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .directionCell[data-state="unset"] .directionIcon {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .directionCell[data-state="set"] .directionIcon {
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .directionIcon {
@@ -167,7 +167,7 @@
     justify-content: center;
     width: 18px;
     height: 18px;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
 }
 
 .directionInput {
@@ -184,9 +184,9 @@
     width: 18px;
     height: 18px;
     border-radius: 6px;
-    background: var(--editor-surface-2);
-    border: 1px solid var(--editor-border-med);
-    color: var(--editor-text-secondary);
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border-muted);
+    color: var(--text-muted);
     opacity: 0;
     pointer-events: none;
     transform: translateY(-50%);
@@ -203,7 +203,7 @@
 }
 
 .directionClearBtn.directionClearBtn:hover {
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 /* Grid-specific edit row — wraps a full-width text input that replaces

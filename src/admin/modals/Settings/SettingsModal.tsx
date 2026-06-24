@@ -2,8 +2,8 @@
  * SettingsModal — global settings modal with left-rail navigation.
  *
  * Shares the visual language of the Spotlight palette and the Module
- * Inserter: a `--panel-*`-token shell, an `--editor-surface-2` rail with
- * categorical rail-tint icon chips, an accent-bar section header, and a
+ * Inserter: a direct-token panel shell, an `--bg-surface-2` rail with
+ * categorical accent icon chips, an accent-bar section header, and a
  * shared `Esc` keycap affordance (backdrop click / Esc both close — there
  * is no dedicated close button, matching the other two modals).
  *
@@ -33,7 +33,7 @@ import { PreferencesSection } from './sections/PreferencesSection'
 import s from './SettingsModal.module.css'
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
-// `accent` keys map to the categorical `--rail-tint-*` tokens via the CSS
+// `accent` keys map to the categorical `--accent-*` tokens via the CSS
 // module's `[data-accent]` rules — the same identity system the Module
 // Inserter rail uses for its section icons.
 

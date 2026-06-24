@@ -12,8 +12,8 @@
     pointer-events: auto;
     border: 0;
     border-radius: var(--tpl-control-radius);
-    background: var(--editor-bg);
-    color: var(--editor-text);
+    background: var(--bg-body);
+    color: var(--text);
     box-shadow: var(--canvas-chrome-shadow);
     font-size: 12px;
 }
@@ -22,7 +22,7 @@
 .modeLabel,
 .previewLabel {
     flex-shrink: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     font-weight: 500;
     user-select: none;
@@ -32,7 +32,7 @@
     width: 1px;
     align-self: stretch;
     margin: 3px 0;
-    background: var(--editor-border);
+    background: var(--border);
 }
 
 .previewGroup {
@@ -56,7 +56,7 @@
     border: 0;
     border-radius: 0;
     background: transparent;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 12px;
     cursor: pointer;
 }

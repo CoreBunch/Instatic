@@ -3,22 +3,22 @@
 .input {
     width: 100%;
     box-sizing: border-box;
-    background: var(--input-bg);
-    border: 1px solid var(--input-border);
+    background: transparent;
+    border: 1px solid var(--overlay-20);
     border-radius: var(--input-radius);
-    color: var(--editor-text);
+    color: var(--text);
     font-family: var(--font-sans);
     outline: none;
 }
 
 .input:hover {
-    border-color: var(--input-border-hover);
+    border-color: var(--overlay-30);
 }
 
 .input:focus,
 .input:focus-within {
-    background: var(--input-bg-focus);
-    border-color: var(--input-border-focus);
+    background: transparent;
+    border-color: var(--overlay-50);
 }
 
 .input:disabled {
@@ -27,7 +27,7 @@
 }
 
 .input::placeholder {
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
 }
 
 .input[data-emphasis="strong"] {
@@ -71,7 +71,7 @@
 }
 
 .invalid {
-    border-color: var(--editor-danger);
+    border-color: var(--danger);
 }
 
 /* ─── Affix wrapper (used when `unit` and/or `numberSpinner` are present) ──
@@ -86,10 +86,10 @@
     align-items: stretch;
     width: 100%;
     box-sizing: border-box;
-    background: var(--input-bg);
-    border: 1px solid var(--input-border);
+    background: transparent;
+    border: 1px solid var(--overlay-20);
     border-radius: var(--input-radius);
-    color: var(--editor-text);
+    color: var(--text);
     font-family: var(--font-sans);
     overflow: hidden;
     /* Override the size-class padding (the wrapper inherits .size-* for its
@@ -101,12 +101,12 @@
 }
 
 .inputWrapper:hover {
-    border-color: var(--input-border-hover);
+    border-color: var(--overlay-30);
 }
 
 .inputWrapper:focus-within {
-    background: var(--input-bg-focus);
-    border-color: var(--input-border-focus);
+    background: transparent;
+    border-color: var(--overlay-50);
 }
 
 .inputWrapper[data-disabled="true"] {
@@ -146,7 +146,7 @@
     align-items: center;
     flex: 0 0 auto;
     padding: 0 0 0 6px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: inherit;
     font-variant-numeric: tabular-nums;
     pointer-events: none;
@@ -163,7 +163,7 @@
     align-items: center;
     flex: 0 0 auto;
     padding: 0 6px 0 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: inherit;
     font-variant-numeric: tabular-nums;
     pointer-events: none;
@@ -182,7 +182,7 @@
     justify-content: center;
     flex: 0 0 auto;
     padding: 0 4px 0 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 /* Custom number-input spinner — replaces the browser-default ugly arrows
@@ -192,12 +192,12 @@
     display: flex;
     flex: 0 0 auto;
     flex-direction: column;
-    border-left: 1px solid var(--input-border);
-    background: var(--editor-overlay-white-02);
+    border-left: 1px solid var(--overlay-20);
+    background: var(--overlay-5);
 }
 
 .inputWrapper:focus-within .spinner {
-    border-left-color: var(--input-border-focus);
+    border-left-color: var(--overlay-50);
 }
 
 .spinnerButton {
@@ -211,26 +211,26 @@
     padding: 0;
     border: 0;
     background: transparent;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     cursor: pointer;
     transition: background 120ms ease, color 120ms ease;
 }
 
 .spinnerButton + .spinnerButton {
-    border-top: 1px solid var(--input-border);
+    border-top: 1px solid var(--overlay-20);
 }
 
 .inputWrapper:focus-within .spinnerButton + .spinnerButton {
-    border-top-color: var(--input-border-focus);
+    border-top-color: var(--overlay-50);
 }
 
 .spinnerButton:hover {
-    background: var(--editor-overlay-white-06);
-    color: var(--editor-text);
+    background: var(--overlay-5);
+    color: var(--text);
 }
 
 .spinnerButton:active {
-    background: var(--editor-overlay-white-10);
+    background: var(--overlay-10);
 }
 
 .spinnerButton:disabled {

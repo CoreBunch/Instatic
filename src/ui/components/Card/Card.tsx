@@ -8,7 +8,7 @@
  *
  * Constraints:
  *   - CSS Modules only — no Tailwind, no per-prop module classes
- *   - All colours / borders / radii come from `--panel-*` tokens
+ *   - All colors, borders, and radii come from global design tokens
  *   - Padding is dynamic (numeric prop) so it is passed through inline
  *     `style` — never an actual colour, just a length
  */

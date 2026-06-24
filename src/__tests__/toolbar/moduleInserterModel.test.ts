@@ -80,7 +80,7 @@ describe('module inserter model', () => {
     expect(getVisibleModuleItems([outlet], TEMPLATE_CTX)[0].disabledReason).toBeUndefined()
   })
 
-  it('maps module categories to the rail-tint accent set', () => {
+  it('maps module categories to the categorical accent set', () => {
     expect(moduleAccentForCategory('Layout')).toBe('lilac')
     expect(moduleAccentForCategory('Forms')).toBe('mint')
     expect(moduleAccentForCategory('Media')).toBe('sky')

@@ -10,8 +10,8 @@
  *
  * Constraints:
  *   - CSS Modules only — no Tailwind, no inline styles
- *   - Border colours come from semantic `--editor-*` tokens; background
- *     comes from `--panel-bg`
+ *   - Border colours come from semantic `direct global design tokens` tokens; background
+ *     comes from `--bg-surface`
  */
 import type { ReactNode } from 'react'
 import { cn } from '@ui/cn'

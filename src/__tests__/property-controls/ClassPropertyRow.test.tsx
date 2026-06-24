@@ -57,8 +57,8 @@ describe('ClassPropertyRow remove button layout', () => {
     // "no danger tokens, no destructive styling".
     expect(rowSource).not.toContain('dangerHover')
     expect(rowSource).toContain('<CloseIcon size={16}')
-    expect(css).toMatch(/\.removeBtn\.removeBtn\s*\{[^}]*color:\s*var\(--editor-text-secondary\)/s)
-    expect(css).toMatch(/\.removeBtn\.removeBtn:hover[\s\S]*color:\s*var\(--editor-text\)/s)
+    expect(css).toMatch(/\.removeBtn\.removeBtn\s*\{[^}]*color:\s*var\(--text-muted\)/s)
+    expect(css).toMatch(/\.removeBtn\.removeBtn:hover[\s\S]*color:\s*var\(--text\)/s)
     expect(css).not.toContain('editor-danger')
   })
 })

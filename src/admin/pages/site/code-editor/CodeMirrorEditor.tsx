@@ -8,7 +8,7 @@
  *
  * Features:
  * - Per-type extension stacks (JSX/TS, CSS, JSON, Markdown, plain text).
- * - GitHub Dark-inspired CM6 theme using --editor-* CSS custom properties.
+ * - GitHub Dark-inspired CM6 theme using direct global design tokens CSS custom properties.
  * - Debounced 250ms content sync → updateFileContent() (Contribution #595 §3.3).
  * - Flush-on-switch: the useEffect cleanup flushes any pending edit before
  *   the view is destroyed, so unsaved edits survive file switches.
@@ -47,8 +47,8 @@ import type { Extension } from '@codemirror/state'
 // No hex, rgb(), or hsl() literals in this lazy-loaded editor module.
 const achromatic = EditorView.theme({
   '&': {
-    backgroundColor: 'var(--editor-surface)',
-    color: 'var(--editor-text)',
+    backgroundColor: 'var(--bg-surface)',
+    color: 'var(--text)',
     height: '100%',
     fontSize: '12px',
     fontFamily: 'var(--font-mono)',
@@ -57,28 +57,28 @@ const achromatic = EditorView.theme({
     outline: 'none',
   },
   '.cm-content': {
-    caretColor: 'var(--editor-accent)',
+    caretColor: 'var(--overlay)',
     padding: '8px 0',
   },
   '.cm-cursor': {
-    borderLeftColor: 'var(--editor-accent)',
+    borderLeftColor: 'var(--overlay)',
   },
   '.cm-selectionBackground': {
-    backgroundColor: 'var(--editor-selection)',
+    backgroundColor: 'var(--overlay-10)',
   },
   '&.cm-focused .cm-selectionBackground': {
-    backgroundColor: 'var(--editor-selection)',
+    backgroundColor: 'var(--overlay-10)',
   },
   '.cm-gutters': {
-    backgroundColor: 'var(--editor-surface-3)',
-    borderRight: '1px solid var(--panel-border)',
-    color: 'var(--editor-text-subtle)',
+    backgroundColor: 'var(--bg-surface-3)',
+    borderRight: '1px solid var(--overlay-10)',
+    color: 'var(--text-disabled)',
   },
   '.cm-gutter': {
     minWidth: '3ch',
   },
   '.cm-lineNumbers .cm-gutterElement': {
-    color: 'var(--editor-text-subtle)',
+    color: 'var(--text-disabled)',
     fontSize: '11px',
   },
   '.cm-activeLine': {
@@ -86,15 +86,15 @@ const achromatic = EditorView.theme({
   },
   '.cm-activeLineGutter': {
     backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    color: 'var(--editor-text-muted)',
+    color: 'var(--text-subtle)',
   },
   '.cm-line': {
     padding: '0 12px 0 4px',
   },
   '.cm-tooltip': {
-    backgroundColor: 'var(--editor-surface-2)',
-    border: '1px solid var(--panel-border)',
-    color: 'var(--editor-text)',
+    backgroundColor: 'var(--bg-surface-2)',
+    border: '1px solid var(--overlay-10)',
+    color: 'var(--text)',
   },
 }, { dark: true })
 
@@ -107,7 +107,7 @@ const readableHighlightStyle = HighlightStyle.define([
       t.docComment,
       t.meta,
     ],
-    color: 'var(--editor-syntax-comment)',
+    color: 'var(--syntax-comment)',
     fontStyle: 'italic',
   },
   {
@@ -118,7 +118,7 @@ const readableHighlightStyle = HighlightStyle.define([
       t.modifier,
       t.controlKeyword,
     ],
-    color: 'var(--editor-syntax-keyword)',
+    color: 'var(--syntax-keyword)',
     fontWeight: '600',
   },
   {
@@ -132,7 +132,7 @@ const readableHighlightStyle = HighlightStyle.define([
       t.function(t.variableName),
       t.function(t.propertyName),
     ],
-    color: 'var(--editor-syntax-entity)',
+    color: 'var(--syntax-entity)',
   },
   {
     tag: [
@@ -140,7 +140,7 @@ const readableHighlightStyle = HighlightStyle.define([
       t.definition(t.propertyName),
       t.attributeName,
     ],
-    color: 'var(--editor-syntax-property)',
+    color: 'var(--syntax-property)',
   },
   {
     tag: [
@@ -149,7 +149,7 @@ const readableHighlightStyle = HighlightStyle.define([
       t.local(t.variableName),
       t.special(t.variableName),
     ],
-    color: 'var(--editor-syntax-variable)',
+    color: 'var(--syntax-variable)',
   },
   {
     tag: [
@@ -164,7 +164,7 @@ const readableHighlightStyle = HighlightStyle.define([
       t.literal,
       t.contentSeparator,
     ],
-    color: 'var(--editor-syntax-constant)',
+    color: 'var(--syntax-constant)',
   },
   {
     tag: [
@@ -175,7 +175,7 @@ const readableHighlightStyle = HighlightStyle.define([
       t.inserted,
       t.deleted,
     ],
-    color: 'var(--editor-syntax-string)',
+    color: 'var(--syntax-string)',
   },
   {
     tag: [
@@ -192,26 +192,26 @@ const readableHighlightStyle = HighlightStyle.define([
       t.squareBracket,
       t.brace,
     ],
-    color: 'var(--editor-syntax-operator)',
+    color: 'var(--syntax-operator)',
   },
   {
     tag: [t.heading, t.strong],
-    color: 'var(--editor-syntax-entity)',
+    color: 'var(--syntax-entity)',
     fontWeight: '700',
   },
   {
     tag: [t.emphasis],
-    color: 'var(--editor-syntax-string)',
+    color: 'var(--syntax-string)',
     fontStyle: 'italic',
   },
   {
     tag: [t.link],
-    color: 'var(--editor-syntax-constant)',
+    color: 'var(--syntax-constant)',
     textDecoration: 'underline',
   },
   {
     tag: t.invalid,
-    color: 'var(--editor-syntax-invalid)',
+    color: 'var(--syntax-invalid)',
   },
 ], { themeType: 'dark' })
 

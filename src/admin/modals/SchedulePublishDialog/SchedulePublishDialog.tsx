@@ -154,7 +154,7 @@ export function SchedulePublishDialog({
           role="alert"
           style={{
             marginTop: 8,
-            color: 'var(--editor-danger)',
+            color: 'var(--danger)',
             fontSize: 12,
           }}
         >

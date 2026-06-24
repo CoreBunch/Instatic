@@ -3,7 +3,7 @@
     grid-template-columns: 86px minmax(0, 1fr);
     align-items: center;
     gap: 8px;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 11px;
     font-weight: 650;
 }
@@ -24,10 +24,10 @@
     max-height: 220px;
     overflow-y: auto;
     padding: 4px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--overlay-10);
     border-radius: var(--panel-radius);
-    background: var(--panel-bg);
-    box-shadow: var(--panel-shadow);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-panel);
     backdrop-filter: blur(var(--panel-blur));
 }
 
@@ -36,9 +36,9 @@
     width: 100%;
     padding: 6px 8px;
     border: 0;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--editor-text);
+    color: var(--text);
     cursor: pointer;
     font: inherit;
     font-size: 11px;
@@ -47,5 +47,5 @@
 
 .categoryOption[aria-selected="true"],
 .categoryOption:hover {
-    background: var(--editor-surface);
+    background: var(--bg-surface);
 }

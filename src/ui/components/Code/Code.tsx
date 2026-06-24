@@ -7,7 +7,7 @@
  *
  * Constraints:
  *   - CSS Modules only — no Tailwind, no inline styles
- *   - Surface background comes from `--code-bg`; font from `--font-mono`
+ *   - Surface background comes from `--scrim-30`; font from `--font-mono`
  */
 import type { ReactNode } from 'react'
 import { cn } from '@ui/cn'

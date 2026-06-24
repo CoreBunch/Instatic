@@ -8,8 +8,8 @@
     gap: 2px;
     padding: 4px;
     border-radius: var(--panel-radius);
-    background: var(--editor-bg);
-    box-shadow: 0 12px 32px -16px var(--editor-overlay-black-50);
+    background: var(--bg-body);
+    box-shadow: 0 12px 32px -16px var(--scrim-50);
     white-space: nowrap;
 }
 
@@ -17,7 +17,7 @@
     width: 1px;
     height: 16px;
     margin: 0 4px;
-    background: var(--editor-border);
+    background: var(--border);
 }
 
 .button {

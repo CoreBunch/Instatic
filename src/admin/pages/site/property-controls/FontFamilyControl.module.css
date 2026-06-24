@@ -6,7 +6,7 @@
 
 .menuHeader {
     padding: 6px 10px 4px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.04em;
@@ -25,7 +25,7 @@
 
 .menuTitle {
     min-width: 0;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 18px;
     line-height: 1.1;
     overflow: hidden;
@@ -35,7 +35,7 @@
 
 .menuMeta {
     min-width: 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     line-height: 1.2;
     overflow: hidden;

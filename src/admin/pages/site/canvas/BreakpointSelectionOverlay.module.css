@@ -91,9 +91,9 @@
     gap: 1px;
     padding: 3px;
     border-radius: 12px;
-    background: var(--editor-bg);
-    box-shadow: var(--panel-shadow);
-    color: var(--editor-text);
+    background: var(--bg-body);
+    box-shadow: var(--shadow-panel);
+    color: var(--text);
     pointer-events: auto;
     transform: translate(var(--canvas-toolbar-x), var(--canvas-toolbar-y));
     /* Sits inside the canvas root's coordinate space (clipped by its
@@ -140,9 +140,9 @@
     max-width: min(292px, calc(100vw - 24px));
     padding: 4px;
     border-radius: var(--panel-radius);
-    background: var(--editor-bg);
-    box-shadow: var(--panel-shadow);
-    color: var(--editor-text);
+    background: var(--bg-body);
+    box-shadow: var(--shadow-panel);
+    color: var(--text);
     overflow: visible;
     pointer-events: auto;
     transform: translate(var(--canvas-ladder-x), var(--canvas-ladder-y));
@@ -165,7 +165,7 @@
     left: var(--canvas-ladder-pointer-x);
     width: 12px;
     height: 8px;
-    background: var(--editor-bg);
+    background: var(--bg-body);
     z-index: 0;
     pointer-events: none;
 }
@@ -209,8 +209,8 @@
 
 .treeLadderContextMenu {
     border-radius: var(--panel-radius);
-    background: var(--editor-bg);
-    box-shadow: var(--panel-shadow);
+    background: var(--bg-body);
+    box-shadow: var(--shadow-panel);
 }
 
 .treeLadderRow.treeLadderRow {
@@ -225,13 +225,13 @@
 }
 
 .treeLadderRow[data-relation="firstChild"] {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .treeLadderRow[data-active="true"],
 .treeLadderRow[aria-current="true"] {
-    background: var(--editor-surface-2);
-    color: var(--editor-text);
+    background: var(--bg-surface-2);
+    color: var(--text);
 }
 
 .treeLadderMain {
@@ -245,22 +245,22 @@
 }
 
 .treeLadderTag {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
 }
 
 .treeLadderFallbackName {
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .treeLadderClass,
 .treeLadderClassMore {
-    color: var(--editor-success-text-soft);
+    color: var(--success-text-muted);
 }
 
 .treeLadderRelation {
     font-family: inherit;
     font-size: 10px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .treeLadderRelation {
@@ -289,7 +289,7 @@
 .dropIndicator[data-position="before"],
 .dropIndicator[data-position="after"] {
     border-radius: 999px;
-    background: var(--editor-text);
+    background: var(--text);
     box-shadow: var(--canvas-selection-ring);
 }
 
@@ -300,6 +300,6 @@
 
 .invalidDropIndicator {
     border-radius: 2px;
-    box-shadow: inset 0 0 0 1px var(--editor-danger);
-    background: var(--editor-danger-bg);
+    box-shadow: inset 0 0 0 1px var(--danger);
+    background: var(--danger-10);
 }

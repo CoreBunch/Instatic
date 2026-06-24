@@ -578,7 +578,7 @@ function AgentEmptyState({ mode }: { mode: ComposerLockReason | 'prompt' }) {
     <EmptyState
       variant="centered"
       size="large"
-      icon={<AiBoxSolidIcon size={28} color="var(--editor-text-subtle)" />}
+      icon={<AiBoxSolidIcon size={28} color="var(--text-disabled)" />}
       title="Describe what you want to build and I'll do it for you."
       description={'Try: "Add a hero section with a heading and button"'}
     />

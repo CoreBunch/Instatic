@@ -24,7 +24,7 @@
     font-weight: 700;
     letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
 }
 
 .sectionDescription {
@@ -32,7 +32,7 @@
     padding: 0 8px;
     font-size: 11px;
     line-height: 1.5;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .rows {
@@ -45,7 +45,7 @@
     flex-direction: column;
     gap: 6px;
     padding: 12px 8px;
-    border-bottom: 1px solid var(--editor-border);
+    border-bottom: 1px solid var(--border);
 }
 
 .row:last-child {
@@ -65,13 +65,13 @@
 .rowLabel {
     font-size: 12px;
     font-weight: 500;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .rowMeta {
     font-family: var(--font-mono);
     font-size: 10px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     white-space: nowrap;
 }
 
@@ -79,7 +79,7 @@
     margin: 0;
     font-size: 11px;
     line-height: 1.5;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .rowSelect {
@@ -97,25 +97,25 @@
     gap: 4px;
     margin-top: 2px;
     padding: 8px 10px;
-    border-radius: var(--editor-radius-sm);
-    background: var(--editor-bg-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-3);
 }
 
 .migrationProgress {
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .statusBad {
     margin: 0;
-    color: var(--editor-danger);
+    color: var(--danger);
     font-size: 11px;
     line-height: 1.5;
 }
 
 .statusGood {
-    color: var(--editor-success-green);
+    color: var(--success);
     font-size: 11px;
     line-height: 1.5;
 }
@@ -123,9 +123,9 @@
 .errorBanner {
     margin: 0 8px;
     padding: 8px 10px;
-    border-radius: var(--editor-radius-sm);
-    background: color-mix(in oklab, var(--editor-danger) 12%, transparent);
-    color: var(--editor-danger);
+    border-radius: var(--radius-sm);
+    background: color-mix(in oklab, var(--danger) 12%, transparent);
+    color: var(--danger);
     font-size: 11px;
     line-height: 1.4;
 }
@@ -133,7 +133,7 @@
 .empty {
     margin: 0;
     padding: 12px 8px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     line-height: 1.5;
 }
@@ -141,9 +141,9 @@
 .delegateTemplate {
     margin: 0;
     padding: 6px 8px;
-    border-radius: var(--editor-radius-sm);
-    background: var(--editor-bg-subtle);
-    color: var(--editor-text-muted);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-3);
+    color: var(--text-subtle);
     font-family: var(--font-mono);
     font-size: 10px;
     line-height: 1.4;
@@ -154,9 +154,9 @@
     display: inline-flex;
     align-items: center;
     padding: 1px 5px;
-    border-radius: var(--editor-radius-sm);
-    background: var(--editor-bg-subtle);
-    color: var(--editor-text-muted);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-3);
+    color: var(--text-subtle);
     font-size: 9px;
     font-weight: 600;
     line-height: 1.4;
@@ -173,7 +173,7 @@
 .adapterMeta {
     font-family: var(--font-mono);
     font-size: 10px;
-    color: var(--editor-text-subtle);
+    color: var(--text-disabled);
     word-break: break-all;
 }
 
@@ -183,7 +183,7 @@
     font-family: var(--font-mono);
     font-size: 10px;
     line-height: 1.5;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .cspList li {

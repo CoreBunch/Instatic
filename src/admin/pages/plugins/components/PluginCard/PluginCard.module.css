@@ -3,12 +3,12 @@
     gap: 12px;
     padding: 14px;
     border-radius: 16px;
-    background: var(--editor-surface-2);
+    background: var(--bg-surface-2);
     transition: background 0.3s;
 }
 
 .pluginCard:hover {
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 /* Card header — base info on the left, action buttons on the right.
@@ -56,8 +56,8 @@
     height: 36px;
     object-fit: contain;
     border-radius: 8px;
-    background: var(--panel-bg);
-    border: 1px solid var(--panel-border);
+    background: var(--bg-surface);
+    border: 1px solid var(--overlay-10);
 }
 
 .pluginHeaderTitle h2 {
@@ -80,7 +80,7 @@
     justify-content: space-between;
     gap: 10px;
     font-size: 12px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .pluginLinksLeft {
@@ -92,55 +92,55 @@
 }
 
 .pluginAttributionItem {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     text-decoration: none;
 }
 
 .pluginAttributionItem a,
 a.pluginAttributionItem {
-    color: var(--editor-text);
+    color: var(--text);
     text-decoration: none;
 }
 
 .pluginAttributionItem a:hover,
 a.pluginAttributionItem:hover {
-    color: var(--editor-accent);
+    color: var(--overlay);
 }
 
 .pluginPageLink {
-    color: var(--editor-accent);
+    color: var(--overlay);
     font-weight: 750;
     text-decoration: none;
 }
 
 .pluginPageLink:hover {
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .pluginAuthor {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
 }
 
 .pluginAuthor a {
-    color: var(--editor-text);
+    color: var(--text);
     text-decoration: none;
 }
 
 .pluginAuthor a:hover {
-    color: var(--editor-accent);
+    color: var(--overlay);
 }
 
 .pluginLicenseBadge {
     display: inline-flex;
     align-items: center;
     padding: 2px 7px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--overlay-10);
     border-radius: 6px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11px;
-    color: var(--editor-text);
-    background: var(--panel-bg);
+    color: var(--text);
+    background: var(--bg-surface);
 }
 
 /* Pill chrome shared by every pill element next to the plugin name
@@ -151,23 +151,23 @@ a.pluginAttributionItem:hover {
  * explicit pill classes leaves the loading-state skeletons untouched. */
 .pluginHeaderTitle :is(.pluginStatusPill, .pluginVersionPill) {
     padding: 3px 7px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--overlay-10);
     border-radius: 999px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 750;
 }
 
 .pluginHeaderTitle .pluginStatusPill[data-status="active"] {
-    color: var(--editor-success-green);
+    color: var(--success);
 }
 
 .pluginHeaderTitle .pluginStatusPill[data-status="error"] {
-    color: var(--editor-danger);
+    color: var(--danger);
 }
 
 .pluginHeaderTitle .pluginStatusPill[data-status="installed"] {
-    color: var(--editor-accent);
+    color: var(--overlay);
 }
 
 /* Version pill — sits between the heading and the status badge so the
@@ -180,23 +180,23 @@ a.pluginAttributionItem:hover {
 }
 
 .pluginBody p {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .pluginBody .pluginError {
-    color: var(--editor-danger);
+    color: var(--danger);
     font-weight: 700;
 }
 
 .pluginCrashLog {
     margin-top: 4px;
     font-size: 11px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
 }
 
 .pluginCrashLog summary {
     cursor: pointer;
-    color: var(--editor-danger);
+    color: var(--danger);
     font-weight: 700;
 }
 
@@ -215,7 +215,7 @@ a.pluginAttributionItem:hover {
 
 .pluginCrashLog time {
     font-family: var(--font-mono);
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 .pluginActions {

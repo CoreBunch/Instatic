@@ -28,7 +28,7 @@
     min-width: 0;
     font-size: 12px;
     font-weight: 700;
-    color: var(--editor-text);
+    color: var(--text);
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;

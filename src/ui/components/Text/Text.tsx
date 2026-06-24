@@ -8,7 +8,7 @@
  *
  * Constraints:
  *   - CSS Modules only — no Tailwind, no inline styles
- *   - All colours come from `--editor-text*` tokens
+ *   - All colours come from `--text*` tokens
  *   - Variants compose via a module-class array, never via `style`
  */
 import type { ReactNode } from 'react'

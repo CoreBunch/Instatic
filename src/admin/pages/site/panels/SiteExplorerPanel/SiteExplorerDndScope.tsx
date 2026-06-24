@@ -53,7 +53,7 @@ function SiteExplorerDragOverlay({ active }: { active: SiteExplorerDragData | nu
             <TreeIconSlot
               icon={ActiveIcon}
               iconSize={12}
-              iconColor="var(--editor-text-subtle)"
+              iconColor="var(--text-disabled)"
             />
           )}
           <TreeLabel>{activeCount > 1 ? `${activeCount} items` : active.label}</TreeLabel>

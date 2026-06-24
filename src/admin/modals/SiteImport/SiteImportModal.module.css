@@ -24,6 +24,6 @@
   margin-right: auto;
   align-self: center;
   font-size: 11.5px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   font-variant-numeric: tabular-nums;
 }

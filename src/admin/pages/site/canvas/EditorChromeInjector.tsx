@@ -10,12 +10,12 @@
  * rules (hashed class names like `.CanvasModulePlaceholder_root__abc123`) exist
  * only in the parent editor document's stylesheets — they are never present
  * inside the iframe document. Similarly, design tokens defined in globals.css
- * (--editor-text-muted, --canvas-placeholder-bg, etc.) only exist on the
+ * (--text-subtle, --canvas-placeholder-bg, etc.) only exist on the
  * parent document's :root.
  *
  * Two-part fix implemented here:
  *   1. Copy the tokens the chrome needs from the parent document's :root onto
- *      the iframe's :root at mount time — so `var(--editor-text-muted)` etc.
+ *      the iframe's :root at mount time — so `var(--text-subtle)` etc.
  *      resolve correctly inside the chrome CSS.
  *   2. Style editor chrome via STABLE data-attribute selectors
  *      (data-canvas-module-placeholder, data-instatic-slot-instance, etc.) instead
@@ -50,21 +50,21 @@ const STYLE_TAG_ID = 'instatic-editor-chrome'
  * duplicated literal values anywhere.
  */
 const CHROME_TOKENS = [
-  '--editor-radius',
-  '--editor-radius-sm',
-  '--editor-text-muted',
-  '--editor-text-subtle',
-  '--editor-text-secondary',
-  '--editor-text',
-  '--editor-text-bright',
+  '--radius',
+  '--radius-sm',
+  '--text-subtle',
+  '--text-disabled',
+  '--text-muted',
+  '--text',
+  '--text-bright',
   '--canvas-placeholder-bg',
-  '--editor-surface',
-  '--editor-surface-2',
-  '--editor-surface-3',
-  '--editor-bg',
-  '--editor-border-med',
-  '--editor-border',
-  '--editor-danger',
+  '--bg-surface',
+  '--bg-surface-2',
+  '--bg-surface-3',
+  '--bg-body',
+  '--border-muted',
+  '--border',
+  '--danger',
 ] as const
 
 /**
@@ -75,10 +75,10 @@ const CHROME_TOKENS = [
  * to) clobbers the SITE's `--font-sans` — the chrome injector is unlayered,
  * and unlayered always beats the site's font tokens in `@layer user-authored`,
  * so every canvas element silently rendered in the editor's font instead of
- * the site's configured one. CHROME_RULES reference `var(--editor-chrome-font-sans)`.
+ * the site's configured one. CHROME_RULES reference `var(--chrome-font-sans)`.
  */
 const CHROME_FONT_SOURCE = '--font-sans'
-const CHROME_FONT_TARGET = '--editor-chrome-font-sans'
+const CHROME_FONT_TARGET = '--chrome-font-sans'
 
 interface EditorChromeInjectorProps {
   /** The iframe document to inject the chrome stylesheet into. */
@@ -134,11 +134,11 @@ const CHROME_RULES = `
   display: block;
   box-sizing: border-box;
   min-width: 0;
-  border-radius: var(--editor-radius);
+  border-radius: var(--radius);
   background: var(--canvas-placeholder-bg);
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   font-size: 12px;
-  font-family: var(--editor-chrome-font-sans);
+  font-family: var(--chrome-font-sans);
   font-weight: 400;
   font-style: normal;
   line-height: 1.4;
@@ -202,7 +202,7 @@ const CHROME_RULES = `
   flex: 0 0 auto;
   margin: 0;
   padding: 0;
-  color: var(--editor-text-subtle);
+  color: var(--text-disabled);
   font-size: inherit;
   font-weight: inherit;
   line-height: 1;
@@ -222,9 +222,9 @@ const CHROME_RULES = `
   display: block;
   margin: 0;
   padding: 0;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   font-size: 12px;
-  font-family: var(--editor-chrome-font-sans);
+  font-family: var(--chrome-font-sans);
   font-weight: 600;
   font-style: normal;
   line-height: 1.4;
@@ -242,9 +242,9 @@ const CHROME_RULES = `
   max-width: 36ch;
   margin: 0;
   padding: 0;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   font-size: 11px;
-  font-family: var(--editor-chrome-font-sans);
+  font-family: var(--chrome-font-sans);
   font-weight: 500;
   font-style: normal;
   line-height: 1.4;
@@ -266,12 +266,12 @@ const CHROME_RULES = `
 [data-canvas-module-placeholder] [data-instatic-placeholder-actions] button {
   height: 28px;
   padding: 0 14px;
-  border: 1px solid color-mix(in srgb, var(--editor-text) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
   border-radius: 999px;
-  background: var(--editor-surface);
-  color: var(--editor-text-bright);
+  background: var(--bg-surface);
+  color: var(--text-bright);
   font-size: 11px;
-  font-family: var(--editor-chrome-font-sans);
+  font-family: var(--chrome-font-sans);
   font-weight: 600;
   font-style: normal;
   letter-spacing: 0.01em;
@@ -280,12 +280,12 @@ const CHROME_RULES = `
 }
 
 [data-canvas-module-placeholder] [data-instatic-placeholder-actions] button:hover {
-  background: var(--editor-surface-2);
-  border-color: color-mix(in srgb, var(--editor-text) 22%, transparent);
+  background: var(--bg-surface-2);
+  border-color: color-mix(in srgb, var(--text) 22%, transparent);
 }
 
 [data-canvas-module-placeholder] [data-instatic-placeholder-actions] button:active {
-  background: var(--editor-surface-3);
+  background: var(--bg-surface-3);
 }
 
 /* ── base.slot-instance ─────────────────────────────────────────────────────
@@ -294,20 +294,19 @@ const CHROME_RULES = `
  * data-instatic-slot-instance-content) added to SlotInstanceEditor.tsx alongside
  * the existing CSS-Module class names.
  *
- * Note: --editor-border-low is not defined in globals.css (it is only
- * referenced in SlotInstance.module.css). The chrome CSS falls back to
- * --editor-border which resolves to the nearest defined border token.
+ * Uses the forwarded global border tokens so slot chrome matches the parent
+ * editor document without duplicating literal values in this iframe stylesheet.
  */
 
 [data-instatic-slot-instance] {
-  border: 1px solid var(--editor-border-med);
-  border-radius: var(--editor-radius);
-  background: var(--editor-surface);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
   overflow: hidden;
   box-sizing: border-box;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   font-size: 11px;
-  font-family: var(--editor-chrome-font-sans);
+  font-family: var(--chrome-font-sans);
   font-weight: 400;
   font-style: normal;
   letter-spacing: normal;
@@ -319,11 +318,11 @@ const CHROME_RULES = `
   align-items: center;
   gap: 5px;
   padding: 3px 8px;
-  background: var(--editor-bg);
-  border-bottom: 1px dashed var(--editor-border);
-  color: var(--editor-text-muted);
+  background: var(--bg-body);
+  border-bottom: 1px dashed var(--border);
+  color: var(--text-subtle);
   font-size: 11px;
-  font-family: var(--editor-chrome-font-sans);
+  font-family: var(--chrome-font-sans);
   font-weight: 400;
   font-style: normal;
   line-height: 1.5;
@@ -336,10 +335,10 @@ const CHROME_RULES = `
 }
 
 [data-instatic-slot-instance-header] [data-instatic-slot-label] {
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   font-size: 11px;
   font-style: italic;
-  font-family: var(--editor-chrome-font-sans);
+  font-family: var(--chrome-font-sans);
   font-weight: 400;
   line-height: inherit;
   letter-spacing: normal;
@@ -358,9 +357,9 @@ const CHROME_RULES = `
  */
 
 [data-instatic-list-placeholder] {
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   margin-bottom: 6px;
-  font-family: var(--editor-chrome-font-sans);
+  font-family: var(--chrome-font-sans);
   font-weight: initial;
   font-style: initial;
   font-size: initial;
@@ -374,10 +373,10 @@ const CHROME_RULES = `
  */
 
 [data-instatic-unknown-module] {
-  outline: 1px dashed var(--editor-danger);
+  outline: 1px dashed var(--danger);
   padding: 4px;
-  color: var(--editor-text-muted);
-  font-family: var(--editor-chrome-font-sans);
+  color: var(--text-subtle);
+  font-family: var(--chrome-font-sans);
   font-size: 12px;
   font-weight: 400;
   font-style: normal;

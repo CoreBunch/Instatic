@@ -30,7 +30,7 @@
 
 .noMatch {
     padding: 9px 10px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
 }
 
@@ -46,8 +46,8 @@
     flex: 0 0 auto;
     padding: 2px 5px;
     border-radius: 999px;
-    background: var(--editor-surface-5);
-    color: var(--editor-text);
+    background: var(--bg-surface-5);
+    color: var(--text);
     font-size: 9px;
     font-weight: 700;
     line-height: 1;
@@ -56,7 +56,7 @@
 
 .suggestionMeta {
     flex: 0 0 auto;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 10px;
     font-weight: 650;
 }
@@ -67,9 +67,9 @@
     align-items: center;
     gap: 8px;
     padding: 7px 10px;
-    border-radius: var(--editor-radius);
-    background: var(--editor-warning-bg);
-    color: var(--editor-warning-text);
+    border-radius: var(--radius);
+    background: var(--warning-10);
+    color: var(--warning-text);
     font-size: 11px;
     font-weight: 650;
     line-height: 1.25;
@@ -78,7 +78,7 @@
 .invalidSelectorIcon {
     display: inline-flex;
     flex: 0 0 auto;
-    color: var(--editor-warning);
+    color: var(--warning);
 }
 
 .invalidSelectorMessage {
@@ -90,7 +90,7 @@
 
 .errorText {
     margin: -4px 0 0;
-    color: var(--editor-danger);
+    color: var(--danger);
     font-size: 11px;
     line-height: 1.35;
 }
@@ -100,13 +100,13 @@
     align-items: center;
     gap: 6px;
     margin: -4px 0 0;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     line-height: 1.35;
 }
 
 .noticeSelector {
-    color: var(--editor-text);
+    color: var(--text);
 }
 
 /* Suggestions dropdown section headers (Recent / Frequent / All classes).
@@ -115,7 +115,7 @@
    treatment so it reads as a section divider, not a clickable row. */
 .sectionHeader {
     padding: 8px 10px 4px;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 9px;
     font-weight: 700;
     line-height: 1;
@@ -129,6 +129,6 @@
    already has hover and focus states; this overlays a slightly stronger
    surface so the user can tell which row Enter would commit. */
 .suggestionHighlighted {
-    background: var(--editor-surface-2);
-    color: var(--editor-text);
+    background: var(--bg-surface-2);
+    color: var(--text);
 }

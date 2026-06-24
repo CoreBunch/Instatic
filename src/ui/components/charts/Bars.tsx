@@ -15,15 +15,15 @@ export interface BarsProps {
   data: readonly number[]
   /**
    * Fill colour for every bar. When omitted, falls back to the global
-   * `--editor-chart-default-tint` token (currently `var(--rail-tint-peach)`),
+   * `--chart-default-tint` token (currently `var(--accent-4)`),
    * unless an ambient `--tint` is set by a parent (e.g. the dashboard
    * `Widget` chrome) — in which case the ambient value wins.
    *
    * Recommended override values — use a design-system accent token:
-   * - `'var(--rail-tint-mint)'`  — green
-   * - `'var(--rail-tint-lilac)'` — violet
-   * - `'var(--rail-tint-sky)'`   — blue
-   * - `'var(--rail-tint-peach)'` — warm orange
+   * - `'var(--accent-1)'`  — green
+   * - `'var(--accent-2)'` — violet
+   * - `'var(--accent-3)'`   — blue
+   * - `'var(--accent-4)'` — warm orange
    */
   tint?: string
   /**

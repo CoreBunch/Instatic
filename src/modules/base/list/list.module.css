@@ -9,6 +9,6 @@
  * `CanvasModulePlaceholder` would visually disconnect from the parent
  * `<ul>` / `<ol>` and confuse the editor preview. */
 .placeholder {
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   margin-bottom: 6px;
 }

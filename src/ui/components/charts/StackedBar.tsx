@@ -22,10 +22,10 @@ export interface StackedBarSegment {
    * Bar/swatch colour for this segment. Required — `StackedBar` has no
    * single global tint because each segment carries a distinct colour.
    * Use design-system accent tokens for visual consistency:
-   * - `'var(--rail-tint-mint)'`  — green
-   * - `'var(--rail-tint-lilac)'` — violet
-   * - `'var(--rail-tint-sky)'`   — blue
-   * - `'var(--rail-tint-peach)'` — warm orange
+   * - `'var(--accent-1)'`  — green
+   * - `'var(--accent-2)'` — violet
+   * - `'var(--accent-3)'`   — blue
+   * - `'var(--accent-4)'` — warm orange
    */
   color: string
 }
@@ -71,7 +71,7 @@ export function StackedBar({
           <div
             className={styles.stackSeg}
             style={{
-              background: 'var(--editor-surface)',
+              background: 'var(--bg-surface)',
               width: `${(remaining / total) * 100}%`,
             }}
           />

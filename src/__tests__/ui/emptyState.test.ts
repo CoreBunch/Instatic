@@ -8,7 +8,7 @@ describe('EmptyState styles', () => {
       'utf-8',
     )
 
-    expect(css).toMatch(/\.description\s*\{[^}]*color:\s*var\(--editor-text-muted\)/s)
-    expect(css).not.toMatch(/\.description\s*\{[^}]*color:\s*var\(--editor-border/s)
+    expect(css).toMatch(/\.description\s*\{[^}]*color:\s*var\(--text-subtle\)/s)
+    expect(css).not.toMatch(/\.description\s*\{[^}]*color:\s*var\(--border/s)
   })
 })

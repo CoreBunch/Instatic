@@ -4,7 +4,7 @@
     align-items: center;
     gap: 8px;
     min-height: 28px;
-    color: var(--editor-text-secondary);
+    color: var(--text-muted);
     font-size: 11px;
     font-weight: 650;
 }
@@ -14,9 +14,9 @@
     grid-template-columns: 26px 32px 26px;
     align-items: stretch;
     overflow: hidden;
-    border: 1px solid var(--input-border);
+    border: 1px solid var(--overlay-20);
     border-radius: var(--input-radius);
-    background: var(--input-bg);
+    background: transparent;
 }
 
 .stepperControl button {
@@ -29,9 +29,9 @@
     display: grid;
     min-height: 26px;
     place-items: center;
-    border-right: 1px solid var(--input-border);
-    border-left: 1px solid var(--input-border);
-    color: var(--editor-text);
+    border-right: 1px solid var(--overlay-20);
+    border-left: 1px solid var(--overlay-20);
+    color: var(--text);
     font-size: 11px;
     font-variant-numeric: tabular-nums;
     font-weight: 760;

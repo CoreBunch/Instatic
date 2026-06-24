@@ -30,8 +30,8 @@
  * here, or the selected layer's active class). The ghost button carries no
  * active affordance of its own, so mirror its hover surface to mark the row. */
 .rowMain[data-active="true"] {
-    background: var(--editor-surface-4);
-    color: var(--editor-text);
+    background: var(--bg-surface-4);
+    color: var(--text);
 }
 
 /* Leading control: paint-bucket icon at rest, Checkbox primitive on hover /
@@ -103,7 +103,7 @@
 .rowLabel {
     min-width: 0;
     overflow: hidden;
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 12px;
     font-weight: 650;
     line-height: 1.2;
@@ -113,7 +113,7 @@
 
 .rowMeta,
 .rowUsage {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     line-height: 1.2;
     white-space: nowrap;
@@ -135,10 +135,10 @@
     display: inline-flex;
     flex: 0 0 auto;
     align-items: center;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--overlay-10);
     border-radius: 999px;
-    background: var(--editor-overlay-white-05);
-    color: var(--editor-text-muted);
+    background: var(--overlay-5);
+    color: var(--text-subtle);
     font-size: 9px;
     font-weight: 750;
     letter-spacing: 0;
@@ -162,7 +162,7 @@
     justify-content: space-between;
     gap: 8px;
     padding: 28px 12px 12px;
-    background: linear-gradient(0, var(--editor-bg) 55%, transparent);
+    background: linear-gradient(0, var(--bg-body) 55%, transparent);
     pointer-events: none;
 }
 
@@ -174,7 +174,7 @@
 }
 
 .selectionCount {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 650;
     white-space: nowrap;

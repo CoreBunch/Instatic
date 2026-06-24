@@ -4,6 +4,6 @@
     margin: 0;
     font-family: var(--font-sans);
     font-weight: 600;
-    color: var(--editor-text);
+    color: var(--text);
     line-height: 1.25;
 }

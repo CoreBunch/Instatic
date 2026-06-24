@@ -4,7 +4,7 @@
   gap: 12px;
   flex-wrap: wrap;
   padding: 8px 0;
-  border-bottom: 1px solid var(--editor-border);
+  border-bottom: 1px solid var(--border);
 }
 
 .row:last-child {
@@ -22,7 +22,7 @@
 .source {
   font-size: 11px;
   font-family: var(--font-mono);
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -30,7 +30,7 @@
 
 .desired {
   font-size: 12px;
-  color: var(--editor-text);
+  color: var(--text);
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;

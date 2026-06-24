@@ -1,20 +1,20 @@
 /* TagPill — shared compact tinted badge / removable chip primitive. */
 
 .pill {
-    --tag-pill-tint: var(--tag-pill-tint-a);
-    --tag-pill-color: var(--editor-text-secondary);
-    --tag-pill-bg: var(--editor-surface-2);
-    --tag-pill-bg-hover: var(--editor-surface-3);
-    --tag-pill-bg-active: var(--editor-surface-4);
+    --pill-accent: var(--accent-1);
+    --pill-color: var(--text-muted);
+    --pill-bg: var(--bg-surface-2);
+    --pill-bg-hover: var(--bg-surface-3);
+    --pill-bg-active: var(--bg-surface-4);
     display: inline-flex;
     max-width: 100%;
     width: fit-content;
     align-items: center;
     gap: 4px;
     overflow: hidden;
-    border-radius: var(--editor-radius);
-    background: linear-gradient(0deg, var(--tag-pill-bg), transparent);
-    color: var(--tag-pill-color);
+    border-radius: var(--radius);
+    background: linear-gradient(0deg, var(--pill-bg), transparent);
+    color: var(--pill-color);
     font-weight: 620;
     line-height: 1.4;
     user-select: none;
@@ -53,27 +53,27 @@
 }
 
 .pill[data-active="true"] {
-    background: var(--tag-pill-bg-active);
-    color: var(--tag-pill-color);
-    box-shadow: inset 0 1px 0 color-mix(in oklab, var(--editor-accent) 6%, transparent);
+    background: var(--pill-bg-active);
+    color: var(--pill-color);
+    box-shadow: inset 0 1px 0 color-mix(in oklab, var(--overlay) 6%, transparent);
 }
 
 .pill[data-clickable="true"]:not([data-active="true"]):hover {
-    background: var(--tag-pill-bg-hover);
+    background: var(--pill-bg-hover);
 }
 
 .pill:not([data-muted="true"]) {
-    --tag-pill-color: var(--tag-pill-tint);
-    --tag-pill-bg: color-mix(in oklab, var(--tag-pill-tint) 14%, transparent);
-    --tag-pill-bg-hover: color-mix(in oklab, var(--tag-pill-tint) 18%, transparent);
-    --tag-pill-bg-active: color-mix(in oklab, var(--tag-pill-tint) 30%, transparent);
+    --pill-color: var(--pill-accent);
+    --pill-bg: color-mix(in oklab, var(--pill-accent) 14%, transparent);
+    --pill-bg-hover: color-mix(in oklab, var(--pill-accent) 18%, transparent);
+    --pill-bg-active: color-mix(in oklab, var(--pill-accent) 30%, transparent);
 }
 
 .pill[data-muted="true"] {
-    --tag-pill-color: var(--editor-text);
-    --tag-pill-bg: var(--editor-bg-subtle);
-    --tag-pill-bg-hover: var(--editor-surface-3);
-    --tag-pill-bg-active: var(--editor-surface-4);
+    --pill-color: var(--text);
+    --pill-bg: var(--bg-surface-3);
+    --pill-bg-hover: var(--bg-surface-3);
+    --pill-bg-active: var(--bg-surface-4);
 }
 
 .staticContent,
@@ -138,7 +138,7 @@
     flex: 0 0 14px;
     width: 14px;
     height: 14px;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
     color: inherit;
 }
 

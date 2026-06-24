@@ -1,15 +1,15 @@
 /* Settings Modal + all Settings sections — shared + section-specific styles */
 
 /* ── Modal shell ─────────────────────────────────────────────────────────────
-   Shares the Spotlight / Module Inserter visual language: a `--panel-*`-token
-   shell, an `--editor-surface-2` rail with categorical rail-tint icon chips,
+   Shares the Spotlight / Module Inserter visual language: a direct-token
+   panel shell, an `--bg-surface-2` rail with categorical accent icon chips,
    and an accent-bar section header. */
 .backdrop {
   position: fixed;
   inset: 0;
   z-index: var(--spotlight-z-index);
-  background: var(--spotlight-backdrop);
-  backdrop-filter: blur(var(--spotlight-backdrop-blur));
+  background: var(--scrim-50);
+  backdrop-filter: blur(var(--backdrop-blur));
 }
 
 .dialogWrapper {
@@ -23,7 +23,7 @@
 }
 
 .panel {
-  --settingsAccent: var(--rail-tint-lilac);
+  --settingsAccent: var(--accent-2);
 
   width: min(820px, 94vw);
   height: min(620px, 90vh);
@@ -31,10 +31,10 @@
   grid-template-columns: 220px minmax(0, 1fr);
   overflow: hidden;
   pointer-events: auto;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--overlay-10);
   border-radius: var(--panel-radius);
-  background: var(--editor-surface);
-  box-shadow: var(--panel-shadow);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-panel);
 }
 
 /* Categorical identity tints — mirror the Module Inserter rail. The attribute
@@ -43,25 +43,25 @@
 .panel[data-accent="lilac"],
 .navItem[data-accent="lilac"],
 .sectionHeader[data-accent="lilac"] {
-  --settingsAccent: var(--rail-tint-lilac);
+  --settingsAccent: var(--accent-2);
 }
 
 .panel[data-accent="sky"],
 .navItem[data-accent="sky"],
 .sectionHeader[data-accent="sky"] {
-  --settingsAccent: var(--rail-tint-sky);
+  --settingsAccent: var(--accent-3);
 }
 
 .panel[data-accent="mint"],
 .navItem[data-accent="mint"],
 .sectionHeader[data-accent="mint"] {
-  --settingsAccent: var(--rail-tint-mint);
+  --settingsAccent: var(--accent-1);
 }
 
 .panel[data-accent="peach"],
 .navItem[data-accent="peach"],
 .sectionHeader[data-accent="peach"] {
-  --settingsAccent: var(--rail-tint-peach);
+  --settingsAccent: var(--accent-4);
 }
 
 .srOnly {
@@ -82,7 +82,7 @@
   flex-direction: column;
   min-width: 0;
   padding: 20px 16px;
-  background: var(--editor-surface-2);
+  background: var(--bg-surface-2);
 }
 
 .brand {
@@ -91,7 +91,7 @@
   gap: 10px;
   min-height: 34px;
   padding: 0 6px 18px;
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
   font-size: 14px;
   font-weight: 700;
 }
@@ -108,22 +108,22 @@
   padding: 4px;
   padding-right: 12px;
   border-radius: var(--panel-radius);
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   background: transparent;
 }
 
 .navItem:hover {
-  color: var(--editor-text);
-  background: var(--editor-surface-2);
+  color: var(--text);
+  background: var(--bg-surface-2);
 }
 
 .navItem.navItemActive {
-  color: var(--editor-text);
-  background: var(--editor-surface-3);
+  color: var(--text);
+  background: var(--bg-surface-3);
 }
 
 .navItem.navItemActive:hover {
-  background: var(--editor-surface-4);
+  background: var(--bg-surface-4);
 }
 
 .navIcon {
@@ -160,7 +160,7 @@
   display: grid;
   gap: 8px;
   padding-top: 16px;
-  border-top: 1px solid var(--panel-border);
+  border-top: 1px solid var(--overlay-10);
 }
 
 .shortcutHint {
@@ -168,7 +168,7 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   font-size: 12px;
 }
 
@@ -191,13 +191,13 @@
 .sectionBar {
   width: 4px;
   height: 18px;
-  border-radius: var(--editor-radius-sm);
+  border-radius: var(--radius-sm);
   background: var(--settingsAccent);
 }
 
 .sectionTitle {
   margin: 0;
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
   font-size: 16px;
   font-weight: 700;
 }
@@ -211,7 +211,7 @@
 /* ── Shared typography ───────────────────────────────────────────────────── */
 .sectionDescription {
   font-size: 13px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   margin-top: 0;
   margin-bottom: 22px;
   line-height: 1.6;
@@ -220,7 +220,7 @@
 .subHeading {
   font-size: 11px;
   font-weight: 700;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin-top: 0;
@@ -232,7 +232,7 @@
   align-items: center;
   font-size: 12px;
   font-weight: 500;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
   margin-bottom: 6px;
 }
 
@@ -251,7 +251,7 @@
 /* ── PreferencesSection ──────────────────────────────────────────────────── */
 .preferenceCategoryDesc {
   font-size: 12px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   margin: 0 0 10px;
   line-height: 1.5;
 }
@@ -270,12 +270,12 @@
   gap: 16px;
   padding: 14px 16px;
   border-radius: var(--panel-radius);
-  background: var(--editor-surface-2);
+  background: var(--bg-surface-2);
   transition: background-color 140ms ease;
 }
 
 .toggleRow:hover {
-  background: var(--editor-surface-3);
+  background: var(--bg-surface-3);
 }
 
 .toggleRowContent {
@@ -288,14 +288,14 @@
   align-items: center;
   font-size: 13px;
   font-weight: 600;
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
   margin-bottom: 3px;
   cursor: pointer;
 }
 
 .toggleRowDesc {
   font-size: 12px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   margin: 0;
   line-height: 1.5;
 }
@@ -314,18 +314,18 @@
   gap: 12px;
   padding: 12px 16px;
   border-radius: var(--panel-radius);
-  background: var(--editor-surface-2);
+  background: var(--bg-surface-2);
 }
 
 .pubRuntimeList dt {
   font-size: 13px;
-  color: var(--editor-text-secondary);
+  color: var(--text-muted);
 }
 
 .pubRuntimeList dd {
   margin: 0;
   font-size: 13px;
-  color: var(--editor-text-bright);
+  color: var(--text-bright);
   font-family: var(--font-mono);
 }
 
@@ -340,9 +340,9 @@
   align-items: center;
   gap: 10px;
   padding: 8px;
-  background: var(--editor-surface);
-  border: 1px solid var(--editor-border);
-  border-radius: var(--editor-radius);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   min-width: 0;
   margin-bottom: 8px;
 }
@@ -352,10 +352,10 @@
   align-items: center;
   gap: 8px;
   padding: 12px;
-  background: var(--editor-surface);
-  border: 1px dashed var(--editor-border);
-  border-radius: var(--editor-radius);
-  color: var(--editor-text-muted);
+  background: var(--bg-surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-subtle);
   font-size: 11px;
   margin-bottom: 8px;
 }
@@ -366,9 +366,9 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: var(--editor-radius-sm);
-  background: var(--editor-surface-2);
-  color: var(--editor-text-muted);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  color: var(--text-subtle);
   flex: 0 0 32px;
 }
 
@@ -380,9 +380,9 @@
   height: 48px;
   flex: 0 0 48px;
   overflow: hidden;
-  border-radius: var(--editor-radius-sm);
-  background: var(--editor-surface-2);
-  color: var(--editor-text-muted);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  color: var(--text-subtle);
 }
 
 .faviconThumb img {
@@ -400,7 +400,7 @@
 
 .faviconName {
   font-size: 12px;
-  color: var(--editor-text);
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -408,7 +408,7 @@
 
 .faviconSub {
   font-size: 10px;
-  color: var(--editor-text-muted);
+  color: var(--text-subtle);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -423,5 +423,5 @@
 .faviconStatus {
   margin: 8px 0 0;
   font-size: 11px;
-  color: var(--editor-danger);
+  color: var(--danger);
 }

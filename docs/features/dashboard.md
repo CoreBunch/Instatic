@@ -11,7 +11,7 @@ The Dashboard is the **canonical implementation** of the borderless-tile-card pa
 - Page entrypoint: `src/admin/pages/dashboard/DashboardPage.tsx`.
 - Grid: `DashboardGrid` — 12 columns × 70px row track. `auto-flow: dense` lets widgets backfill earlier gaps.
 - Widget registry: `dashboardWidgetRegistry` singleton in `src/core/dashboard/registry.ts`. First-party widgets register on mount; plugins with `dashboard.widgets.register` contribute more.
-- Widgets are draggable (move) and resizable (column / row span). Drop targets and resize previews use `--rail-tint-sky` for the dashed indicator.
+- Widgets are draggable (move) and resizable (column / row span). Drop targets and resize previews use `--accent-3` for the dashed indicator.
 - Customize mode: dashed outline + bottom-docked `<BlockLibrary>` of unused widgets. Toggled by a top-toolbar button.
 - Layout persists per-user via `useDashboardLayout` (server-side `user_preferences`).
 - Stats stream from `/admin/api/cms/dashboard/<domain>` (`handleDashboardRoutes` → `server/repositories/audit.ts`, `media.ts`, `data/...`, plus a `fs.stat` walk for plugins and a dialect-aware DB size query for storage).
@@ -86,13 +86,13 @@ src/core/dashboard/
 
 ### Customize mode
 
-Customize mode widens the gap from 1px → 16px, animated via `transition: gap 220ms cubic-bezier(0.4, 0, 0.2, 1)`. The grid also gets a dashed sky-tinted outline (`--rail-tint-sky` at low alpha) as the affordance.
+Customize mode widens the gap from 1px → 16px, animated via `transition: gap 220ms cubic-bezier(0.4, 0, 0.2, 1)`. The grid also gets a dashed sky-tinted outline (`--accent-3` at low alpha) as the affordance.
 
 The transition works because CSS Grid's `gap` is natively animatable in shipping browsers; the columns are `1fr` so they auto-resize as the gap interpolates, and the cards reflow smoothly.
 
 ### 1px gap pattern
 
-Each widget body is `--editor-surface-2` (lighter); the parent is `--editor-surface` (darker). The 1px grid gap reveals the parent and reads as a borderless divider. Hover lifts the widget to `--editor-surface-3` — never recolor a border.
+Each widget body is `--bg-surface-2` (lighter); the parent is `--bg-surface` (darker). The 1px grid gap reveals the parent and reads as a borderless divider. Hover lifts the widget to `--bg-surface-3` — never recolor a border.
 
 This is **the canonical implementation** of the tile-card pattern. Build any equivalent surface by reusing `Widget` (`src/ui/components/Widget/`), not by recreating the pattern.
 
@@ -124,7 +124,7 @@ interface DashboardWidgetDefinition {
 | 8     | two-thirds |
 | 12    | full    |
 
-`tint` maps to one of `--rail-tint-mint/lilac/sky/peach` — used for the widget's title dot and (optionally) the chart series color.
+`tint` maps to one of `--accent-1/lilac/sky/peach` — used for the widget's title dot and (optionally) the chart series color.
 
 ### First-party widgets
 
@@ -174,7 +174,7 @@ The ghost is only shown when the destination is valid — if the proposed cell o
 
 ### Resize handles
 
-Each cell has 4 edge handles + 1 corner handle. Hover the cell to fade them in; hover a handle to make it brighter. The center accent rail (`--rail-tint-sky`) is the visible affordance; the actual grab box extends 8–14px around the edge.
+Each cell has 4 edge handles + 1 corner handle. Hover the cell to fade them in; hover a handle to make it brighter. The center accent rail (`--accent-3`) is the visible affordance; the actual grab box extends 8–14px around the edge.
 
 Edge handles resize column span (left / right) or row span (top / bottom). The corner handle resizes both axes simultaneously and wins over the overlapping edge handles.
 
@@ -340,7 +340,7 @@ Settings → Reset Dashboard Layout calls `useDashboardLayout(...).reset()`, whi
 | Pattern                                                            | Use instead                                              |
 |--------------------------------------------------------------------|----------------------------------------------------------|
 | Recreating the borderless-tile-card look manually                  | `<Widget tint="...">`                                    |
-| Using `--editor-bg` (pure black) as a widget body fill             | `--editor-surface-2` — the gap reveals the parent       |
+| Using `--bg-body` (pure black) as a widget body fill             | `--bg-surface-2` — the gap reveals the parent       |
 | Hovering changes a border instead of a tone                        | Background tone lift (`-surface-2` → `-3`)               |
 | Inventing a new size (e.g. 5 columns)                              | Stay with the factor-of-12 grid sizes                    |
 | Dispatching dashboard data through the editor store                | Use `useDashboardStats` — the dashboard is self-contained|
@@ -356,7 +356,7 @@ Settings → Reset Dashboard Layout calls `useDashboardLayout(...).reset()`, whi
 - [docs/editor.md](../editor.md) — broader admin shell
 - [docs/design.md](../design.md) — the borderless-tile-card pattern
 - [docs/reference/ui-primitives.md](../reference/ui-primitives.md) — `Widget`, `WidgetList`, `LiquidProgressRing`, charts
-- [docs/reference/design-tokens.md](../reference/design-tokens.md) — `--rail-tint-*`, `--editor-surface-*`
+- [docs/reference/design-tokens.md](../reference/design-tokens.md) — `--accent-*`, `--bg-surface-*`
 - Source-of-truth files:
   - `src/admin/pages/dashboard/DashboardPage.tsx` — page entrypoint
   - `src/admin/pages/dashboard/components/DashboardGrid.tsx` / `.module.css` — canonical grid implementation

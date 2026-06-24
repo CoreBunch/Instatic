@@ -49,7 +49,7 @@ export function CanvasInsertModuleButton({
         className={buttonClassName}
         onClick={() => setOpen(true)}
       >
-        <AppGridPlusGlyphIcon size={13} color="var(--editor-text)" />
+        <AppGridPlusGlyphIcon size={13} color="var(--text)" />
       </Button>
 
       {open && (

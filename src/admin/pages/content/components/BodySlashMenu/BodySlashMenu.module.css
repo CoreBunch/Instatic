@@ -6,15 +6,15 @@
     min-width: 240px;
     max-width: 320px;
     padding: 6px;
-    border: 1px solid var(--editor-border);
+    border: 1px solid var(--border);
     border-radius: var(--panel-radius);
-    background: var(--editor-surface);
-    box-shadow: 0 12px 40px -12px var(--editor-overlay-black-45);
+    background: var(--bg-surface);
+    box-shadow: 0 12px 40px -12px var(--scrim-50);
 }
 
 .empty {
     padding: 8px 10px;
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 12px;
     line-height: 1.3;
 }
@@ -34,18 +34,18 @@
 }
 
 .row[data-active='true'] {
-    background: var(--editor-surface-3);
+    background: var(--bg-surface-3);
 }
 
 .label {
-    color: var(--editor-text);
+    color: var(--text);
     font-size: 12px;
     font-weight: 650;
     line-height: 1.2;
 }
 
 .description {
-    color: var(--editor-text-muted);
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 500;
     line-height: 1.2;

@@ -5,8 +5,8 @@
  * never flash a skeleton. Animation respects prefers-reduced-motion.
  *
  * Tokens from src/styles/globals.css:
- *   --spotlight-skeleton-base    base fill colour
- *   --spotlight-skeleton-shimmer highlight colour for the sweep
+ *   --overlay-5    base fill colour
+ *   --overlay-10 highlight colour for the sweep
  */
 
 /* ─── Group header (reuses the exact same style as Spotlight.module.css) ───── */
@@ -23,13 +23,13 @@
 .groupBar {
     width: 4px;
     height: 18px;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
     background: var(--spotlightAccent);
     flex-shrink: 0;
 }
 
 .groupTitle {
-    color: var(--editor-text-bright);
+    color: var(--text-bright);
     font-size: 16px;
     font-weight: 700;
 }
@@ -50,12 +50,12 @@
     flex-shrink: 0;
     width: 16px;
     height: 16px;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
     background: linear-gradient(
         90deg,
-        var(--spotlight-skeleton-base) 25%,
-        var(--spotlight-skeleton-shimmer) 50%,
-        var(--spotlight-skeleton-base) 75%
+        var(--overlay-5) 25%,
+        var(--overlay-10) 50%,
+        var(--overlay-5) 75%
     );
     background-size: 200% 100%;
     animation: shimmer 1.5s linear infinite;
@@ -72,12 +72,12 @@
 
 .titlePlaceholder {
     height: 11px;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
     background: linear-gradient(
         90deg,
-        var(--spotlight-skeleton-base) 25%,
-        var(--spotlight-skeleton-shimmer) 50%,
-        var(--spotlight-skeleton-base) 75%
+        var(--overlay-5) 25%,
+        var(--overlay-10) 50%,
+        var(--overlay-5) 75%
     );
     background-size: 200% 100%;
     animation: shimmer 1.5s linear infinite;
@@ -85,12 +85,12 @@
 
 .subtitlePlaceholder {
     height: 9px;
-    border-radius: var(--editor-radius-sm);
+    border-radius: var(--radius-sm);
     background: linear-gradient(
         90deg,
-        var(--spotlight-skeleton-base) 25%,
-        var(--spotlight-skeleton-shimmer) 50%,
-        var(--spotlight-skeleton-base) 75%
+        var(--overlay-5) 25%,
+        var(--overlay-10) 50%,
+        var(--overlay-5) 75%
     );
     background-size: 200% 100%;
     animation: shimmer 1.5s linear infinite;
@@ -125,7 +125,7 @@
     .titlePlaceholder,
     .subtitlePlaceholder {
         animation: none;
-        background: var(--spotlight-skeleton-base);
+        background: var(--overlay-5);
         opacity: 0.7;
     }
 }
