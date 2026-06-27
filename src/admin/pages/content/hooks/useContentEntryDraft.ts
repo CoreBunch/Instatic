@@ -8,15 +8,37 @@ import type { DataRow, DataRowStatus } from '@core/data/schemas'
 import {
   readBodyCell,
   readFeaturedMediaCell,
-  readSeoDescriptionCell,
-  readSeoTitleCell,
+  readSeoCell,
   readSlugCell,
   readTitleCell,
 } from '@core/data/cells'
 import { slugFromTitle } from '@core/utils/slug'
+import type { SeoMetadata } from '@core/seo'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
 export type SaveMessage = 'idle' | 'saving' | 'saved' | 'publishing' | 'published' | 'error'
+
+/**
+ * Merge the content panel's SEO title/description draft strings into the
+ * row's existing structured `seo` cell. The SEO workspace owns the other
+ * fields (OG/X/canonical/noindex) — they must survive a content-panel save
+ * untouched. Empty draft strings remove the corresponding key.
+ */
+export function draftSeoCell(
+  cells: DataRow['cells'],
+  seoTitle: string,
+  seoDescription: string,
+): SeoMetadata {
+  const existing = readSeoCell(cells) ?? {}
+  const next: SeoMetadata = { ...existing }
+  const title = seoTitle.trim()
+  const description = seoDescription.trim()
+  if (title === '') delete next.title
+  else next.title = title
+  if (description === '') delete next.description
+  else next.description = description
+  return next
+}
 
 interface UseContentEntryDraftOptions {
   selectedEntry: DataRow | null
@@ -51,8 +73,8 @@ export function useContentEntryDraft({
   const applySelectedEntry = useCallback((entry: DataRow | null) => {
     setTitle(entry ? readTitleCell(entry.cells) : '')
     setSlug(entry ? readSlugCell(entry.cells) : '')
-    setSeoTitle(entry ? readSeoTitleCell(entry.cells) : '')
-    setSeoDescription(entry ? readSeoDescriptionCell(entry.cells) : '')
+    setSeoTitle(entry ? (readSeoCell(entry.cells)?.title ?? '') : '')
+    setSeoDescription(entry ? (readSeoCell(entry.cells)?.description ?? '') : '')
     setFeaturedMediaId(entry ? readFeaturedMediaCell(entry.cells) : null)
     setBody(entry ? readBodyCell(entry.cells) : '')
     setSaveMessage('idle')
@@ -67,8 +89,8 @@ export function useContentEntryDraft({
   const applyEntryFields = (entry: DataRow) => {
     setTitle(readTitleCell(entry.cells))
     setSlug(readSlugCell(entry.cells))
-    setSeoTitle(readSeoTitleCell(entry.cells))
-    setSeoDescription(readSeoDescriptionCell(entry.cells))
+    setSeoTitle(readSeoCell(entry.cells)?.title ?? '')
+    setSeoDescription(readSeoCell(entry.cells)?.description ?? '')
     setFeaturedMediaId(readFeaturedMediaCell(entry.cells))
   }
 
@@ -76,8 +98,8 @@ export function useContentEntryDraft({
     if (!selectedEntry) return false
     return title !== readTitleCell(selectedEntry.cells) ||
       slug !== readSlugCell(selectedEntry.cells) ||
-      seoTitle !== readSeoTitleCell(selectedEntry.cells) ||
-      seoDescription !== readSeoDescriptionCell(selectedEntry.cells) ||
+      seoTitle !== (readSeoCell(selectedEntry.cells)?.title ?? '') ||
+      seoDescription !== (readSeoCell(selectedEntry.cells)?.description ?? '') ||
       featuredMediaId !== readFeaturedMediaCell(selectedEntry.cells) ||
       body !== readBodyCell(selectedEntry.cells)
   })()
@@ -93,8 +115,7 @@ export function useContentEntryDraft({
         slug: nextSlug,
         body,
         featuredMedia: featuredMediaId,
-        seoTitle: seoTitle.trim(),
-        seoDescription: seoDescription.trim(),
+        seo: draftSeoCell(selectedEntry.cells, seoTitle, seoDescription),
       },
     })
     updateSelectedEntry(row)

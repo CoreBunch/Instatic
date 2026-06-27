@@ -1,0 +1,28 @@
+/* Row layout comes from the shared SeoFormRow; this module only styles the
+ * URL-mode body and inline status lines. */
+.status {
+    margin: 0;
+    font-size: var(--text-s);
+    color: var(--danger-text);
+}
+
+.urlBody {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    min-width: 0;
+}
+
+.urlPreview {
+    display: block;
+    overflow: hidden;
+    border-radius: var(--radius);
+    background: var(--bg-surface-3);
+}
+
+.urlPreview img {
+    display: block;
+    width: 100%;
+    max-height: 140px;
+    object-fit: cover;
+}

@@ -11,6 +11,7 @@
  *   cells.templateEnabled    → page.template.enabled
  *   cells.templateTarget     → page.template.target (stored as JSON object)
  *   cells.templatePriority   → page.template.priority
+ *   cells.seo                → page.seo (structured SeoMetadata)
  *
  * Ownership is mapped between DataRow user-id columns and Page optional fields:
  *   row.authorUserId        → page.ownerUserId
@@ -20,7 +21,8 @@
 
 import type { Page, PageNode, PageTemplateConfig } from '@core/page-tree'
 import { parsePageTemplate } from '@core/page-tree'
-import type { DataRow, DataRowCells } from '@core/data/schemas'
+import { parseSeoMetadata } from '@core/seo'
+import type { DataRow, DataRowCells } from './schemas'
 
 // ---------------------------------------------------------------------------
 // DataRow → Page
@@ -55,6 +57,7 @@ export function pageFromRow(row: DataRow): Page {
 
   // Template reconstruction
   const template = readTemplateFromCells(cells)
+  const seo = parseSeoMetadata(cells.seo)
 
   return {
     id: row.id,
@@ -63,6 +66,7 @@ export function pageFromRow(row: DataRow): Page {
     nodes,
     rootNodeId,
     ...(template !== null ? { template } : {}),
+    ...(seo !== undefined ? { seo } : {}),
     ownerUserId: row.authorUserId ?? null,
     createdByUserId: row.createdByUserId ?? null,
     updatedByUserId: row.updatedByUserId ?? null,
@@ -103,6 +107,10 @@ export function pageToCells(page: Page): DataRowCells {
     cells.templateEnabled = true
     cells.templateTarget = page.template.target
     cells.templatePriority = page.template.priority
+  }
+
+  if (page.seo) {
+    cells.seo = page.seo
   }
 
   return cells

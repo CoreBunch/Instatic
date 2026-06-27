@@ -1,0 +1,28 @@
+.loadingText {
+  font-size: var(--text-s);
+  color: var(--text-muted);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--text-s);
+  color: var(--danger-text);
+}
+
+.bubbles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-s);
+}
+
+.bubble {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+  border-radius: var(--input-radius);
+}
+
+.bubbleAction {
+  border-radius: var(--input-radius);
+  color: var(--text-muted);
+}

@@ -30,10 +30,9 @@ src/admin/pages/dashboard/
 │   ├── DashboardGrid.module.css — the 1px-gap pattern + customize-mode transitions
 │   ├── BlockLibrary.tsx         — bottom-docked dock of unused widgets in customize mode
 │   ├── BlockLibrary.module.css
-│   ├── OnboardingPanel.tsx      — first-run setup checklist
-│   ├── OnboardingPanel.module.css
-│   ├── LiquidProgressRing.tsx   — animated liquid-filled ring (onboarding completion)
-│   └── LiquidProgressRing.module.css
+│   ├── OnboardingPanel.tsx      — first-run setup checklist (completion ring:
+│   │                              the shared @ui LiquidProgressRing primitive)
+│   └── OnboardingPanel.module.css
 ├── hooks/
 │   ├── useDashboardLayout.ts    — layout state (positions / sizes) + DnD + resize math
 │   ├── useDashboardStats.ts     — fetches /admin/api/cms/dashboard

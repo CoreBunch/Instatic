@@ -11,10 +11,12 @@ import { handleLoopRequest, isLoopRuntimeAssetPath, serveLoopRuntimeAsset } from
 import { handleHoleRequest, isHoleRuntimeAssetPath, serveHoleRuntimeAsset } from './handlers/cms/hole'
 import { handleModuleJsAssetRequest, isModuleJsAssetPath } from './handlers/cms/moduleJs'
 import { handlePublicFormRequest } from './forms/handler'
+import { serveRobotsTxt, serveSitemapXml } from './publish/seoEndpoints'
 import { isRuntimePackagePath, tryServeRuntimePackage } from './publish/runtime/packageServer'
 import { jsonResponse } from './http'
 import { binaryResponse, toArrayBuffer } from './binary'
 import { hardenUploadResponse, serveAdminApp, serveStaticFile } from './static'
+import { requestHostIsCanonical } from './auth/security'
 import { registry } from '@core/module-engine'
 import type { CssBundleFile, SiteCssBundleId } from '@core/publisher'
 import { buildPublishedSiteCssBundle } from './publish/siteCssBundle'
@@ -76,6 +78,10 @@ const routes: readonly RouteHandler[] = [
   tryServeRuntimePackageNamespace,
   tryServeSiteCssNamespace,
   tryServeMediaRedirect,
+  // robots.txt + sitemap.xml are first-party generated files. They dispatch
+  // BEFORE static assets and public page rendering so neither path can be
+  // shadowed by an uploaded file or fall through to an HTML response.
+  tryServeSeoFiles,
   tryServeStaticAsset,
   tryServeUpload,
   tryServeAdminApp,
@@ -356,7 +362,8 @@ async function tryServeStaticAsset(
 ): Promise<Response | null> {
   if (!runtime.staticDir) return null
   if (pathname === '/' || pathname === '/index.html') return null
-  return await serveStaticFile(runtime.staticDir, pathname, _req)
+  const asset = await serveStaticFile(runtime.staticDir, pathname, _req)
+  return asset && withPreviewNoindex(_req, asset)
 }
 
 async function tryServeUpload(
@@ -385,13 +392,13 @@ async function tryServeUpload(
     const headers = new Headers(hardened.headers)
     headers.set('access-control-allow-origin', '*')
     headers.set('cross-origin-resource-policy', 'cross-origin')
-    return new Response(hardened.body, {
+    return withPreviewNoindex(req, new Response(hardened.body, {
       status: hardened.status,
       statusText: hardened.statusText,
       headers,
-    })
+    }))
   }
-  return hardened
+  return withPreviewNoindex(req, hardened)
 }
 
 async function tryServeAdminApp(
@@ -422,9 +429,26 @@ async function tryServeAdminApp(
  * fast-path (pre-rendered static artefacts via `readArtefact`), then
  * `resolvePublicRoute`, then the live renderer + `applyPublishedHtmlPipeline`.
  */
+/**
+ * First-party robots.txt / sitemap.xml — generated from the published
+ * snapshot with publishVersion-keyed caching (`server/publish/seoEndpoints.ts`).
+ */
+function tryServeSeoFiles(
+  req: Request,
+  runtime: ServerRuntime,
+  url: URL,
+  pathname: string,
+): Promise<Response> | null {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return null
+  if (pathname === '/robots.txt') return serveRobotsTxt(runtime.db, url, req)
+  if (pathname === '/sitemap.xml') return serveSitemapXml(runtime.db, url)
+  return null
+}
+
 async function tryServePublicRoute(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response | null> {
   if (req.method !== 'GET') return null
-  return await renderPublicResolution(runtime.db, url, runtime.uploadsDir)
+  const rendered = await renderPublicResolution(runtime.db, url, runtime.uploadsDir)
+  return rendered && withPreviewNoindex(req, rendered)
 }
 
 /**
@@ -457,6 +481,24 @@ async function tryServeNotFoundPage(req: Request, runtime: ServerRuntime, url: U
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * On a non-canonical host (a preview/staging deploy whose `Host` isn't the
+ * configured production origin), stamp `X-Robots-Tag: noindex, nofollow` on
+ * served content so the preview can't be indexed even via a direct asset URL
+ * — the hard guarantee robots.txt's Disallow can't give. No-op when the host
+ * is canonical or when no public origin is configured (local dev).
+ */
+function withPreviewNoindex(req: Request, response: Response): Response {
+  if (requestHostIsCanonical(req) !== false) return response
+  const headers = new Headers(response.headers)
+  headers.set('x-robots-tag', 'noindex, nofollow')
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
+}
 
 function adminUiNotBuiltResponse(pathname: string): Response {
   const targetUrl = `${VITE_DEV_URL}${pathname}`

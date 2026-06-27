@@ -7,8 +7,7 @@ import { buildPostTypeDefaultFields } from '@core/data/fields'
 import {
   POST_TYPE_FIELD_BODY,
   POST_TYPE_FIELD_FEATURED_MEDIA,
-  POST_TYPE_FIELD_SEO_TITLE,
-  POST_TYPE_FIELD_SEO_DESCRIPTION,
+  POST_TYPE_FIELD_SEO,
   type CreateDataTableInput,
 } from '@core/data/schemas'
 import dialogStyles from '../../../../shared/dialogs/SiteCreateDialog/SiteCreateDialog.module.css'
@@ -94,7 +93,7 @@ export function ContentCollectionCreateDialog({
         fields: buildPostTypeDefaultFields().filter((field) => {
           if (field.id === POST_TYPE_FIELD_BODY) return bodyField
           if (field.id === POST_TYPE_FIELD_FEATURED_MEDIA) return featuredMediaField
-          if (field.id === POST_TYPE_FIELD_SEO_TITLE || field.id === POST_TYPE_FIELD_SEO_DESCRIPTION) return seoField
+          if (field.id === POST_TYPE_FIELD_SEO) return seoField
           return true
         }),
       })

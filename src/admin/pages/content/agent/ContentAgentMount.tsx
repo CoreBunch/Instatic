@@ -295,11 +295,15 @@ function applyFieldsToDraft(
       case 'body':
         if (typeof raw === 'string') draft.setBody(raw)
         break
-      case 'seoTitle':
-        if (typeof raw === 'string') draft.setSeoTitle(raw)
-        break
-      case 'seoDescription':
-        if (typeof raw === 'string') draft.setSeoDescription(raw)
+      case 'seo':
+        // Structured SEO object — the draft hook merges title/description
+        // into `cells.seo` on save; other SEO fields are owned by the SEO
+        // workspace and not editable through the content agent.
+        if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+          const seo = raw as { title?: unknown; description?: unknown }
+          if (typeof seo.title === 'string') draft.setSeoTitle(seo.title)
+          if (typeof seo.description === 'string') draft.setSeoDescription(seo.description)
+        }
         break
       case 'featuredMedia':
         if (raw === null) draft.setFeaturedMediaId(null)
@@ -315,8 +319,8 @@ function applyFieldsToDraft(
         // different field id rather than silently dropping the value.
         throw new Error(
           `Field "${key}" is not editable via the agent yet. ` +
-          'Only built-in fields (title, slug, body, featuredMedia, ' +
-          'seoTitle, seoDescription) are supported in this version.',
+          'Only built-in fields (title, slug, body, featuredMedia, seo) ' +
+          'are supported in this version.',
         )
     }
   }

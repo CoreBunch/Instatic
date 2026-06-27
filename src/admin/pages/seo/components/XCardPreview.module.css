@@ -1,0 +1,119 @@
+/* 1:1 X (Twitter) dark-theme cards. */
+
+.wrap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, arial, sans-serif;
+}
+
+/* ── summary_large_image ─────────────────────────────────────────────────── */
+.largeCard {
+    position: relative;
+    border-radius: var(--panel-radius);
+    border: 1px solid var(--seo-x-border);
+    overflow: hidden;
+    background: var(--seo-x-bg);
+}
+
+.largeImage {
+    width: 100%;
+    aspect-ratio: 1.91 / 1;
+    object-fit: cover;
+    display: block;
+}
+
+.largePlaceholder {
+    width: 100%;
+    aspect-ratio: 1.91 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--seo-x-text);
+    font-size: var(--text-l);
+}
+
+.overlayTitle {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    max-width: calc(100% - 24px);
+    padding: var(--space-4xs) var(--space-m);
+    border-radius: 4px;
+    background: var(--seo-x-overlay);
+    color: var(--seo-x-title);
+    font-size: var(--text-l);
+    line-height: 20px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.fromLine {
+    color: var(--seo-x-text);
+    font-size: var(--text-l);
+    line-height: 16px;
+    padding-left: var(--space-2xs);
+}
+
+/* ── summary ─────────────────────────────────────────────────────────────── */
+.summaryCard {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    border-radius: var(--panel-radius);
+    border: 1px solid var(--seo-x-border);
+    overflow: hidden;
+    background: var(--seo-x-bg);
+}
+
+.summaryImage {
+    width: 96px;
+    height: 100%;
+    min-height: 96px;
+    object-fit: cover;
+    display: block;
+    border-right: 1px solid var(--seo-x-border);
+}
+
+.summaryPlaceholder {
+    width: 96px;
+    min-height: 96px;
+    background: var(--seo-og-placeholder);
+    border-right: 1px solid var(--seo-x-border);
+}
+
+.summaryMeta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4xs);
+    justify-content: center;
+    padding: var(--space-xl);
+}
+
+.summaryDomain {
+    color: var(--seo-x-text);
+    font-size: var(--text-l);
+    line-height: 16px;
+}
+
+.summaryTitle {
+    color: var(--seo-x-title);
+    font-size: var(--text-xl);
+    line-height: 20px;
+    font-weight: 400;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+}
+
+.summaryDescription {
+    color: var(--seo-x-text);
+    font-size: var(--text-xl);
+    line-height: 20px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}

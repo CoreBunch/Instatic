@@ -1,8 +1,12 @@
 import '../../src/modules/base'
 import '@core/loops/sources'
 import { registry } from '@core/module-engine'
-import { publishPage } from '@core/publisher'
-import { buildRouteFrame } from '@core/templates/contextFrames'
+import { publishPage, type PublishedSeo } from '@core/publisher'
+import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
+import { interpolateTokens } from '@core/templates/tokenInterpolation'
+import { readSeoCell, readTitleCell } from '@core/data/cells'
+import { resolveSeoMetadata, buildJsonLdEntities } from '@core/seo'
+import { canonicalPublicOrigin } from '../auth/security'
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
 import { resolveTemplateChain, resolveNotFoundTemplate, composeTemplateChain } from '@core/templates'
@@ -10,7 +14,7 @@ import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { prefetchLoopData, publishedDataRowToLoopItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { getPublishVersion } from './publishState'
-import type { Page } from '@core/page-tree'
+import type { Page, SiteDocument } from '@core/page-tree'
 import type { SiteCssBundle } from '@core/publisher'
 import type { PublishedDataRow } from '@core/data/schemas'
 import type { DbClient } from '../db/client'
@@ -78,6 +82,86 @@ interface RenderPublishedSnapshotContext {
 }
 
 /**
+ * Resolve the SEO payload for a published PAGE route. The configured public
+ * origin (when present) yields absolute canonical/og:url values that are
+ * safe to bake into static artefacts; with no origin configured those tags
+ * are omitted rather than guessed.
+ */
+function buildPageRenderSeo(page: Page, site: SiteDocument): PublishedSeo {
+  const origin = canonicalPublicOrigin() ?? undefined
+  const pageFrame = buildPageFrame(page)
+  const context: TemplateRenderDataContext = {
+    entryStack: [],
+    page: pageFrame,
+    site: buildSiteFrame(site),
+    route: buildRouteFrame(pageFrame.permalink),
+  }
+  const resolved = resolveSeoMetadata({
+    target: page.seo,
+    siteSeo: site.settings.seo,
+    siteName: site.name,
+    baseTitle: page.title,
+    routeKind: 'page',
+    routePath: pageFrame.permalink,
+    origin,
+    language: site.settings.language,
+    interpolate: (pattern) => interpolateTokens(pattern, context),
+  })
+  const jsonLd = buildJsonLdEntities(resolved, {
+    kind: 'page',
+    routePath: pageFrame.permalink,
+    origin,
+    siteName: site.name,
+    organization: site.settings.seo?.organization,
+  })
+  return { resolved, jsonLd }
+}
+
+/**
+ * Resolve the SEO payload for a published ROW route. The row's own
+ * `cells.seo` wins; the entry template's `seo` (innermost chain element —
+ * broadest → narrowest ordering) provides token-bearing title/description
+ * patterns; site defaults close the chain. `article:*_time` comes from the
+ * active version's publish timestamp.
+ */
+function buildRowRenderSeo(
+  row: PublishedDataRow,
+  site: SiteDocument,
+  entryTemplate: Page | undefined,
+  templateContext: TemplateRenderDataContext,
+): PublishedSeo {
+  const origin = canonicalPublicOrigin() ?? undefined
+  const routePath = `${row.tableRouteBase}/${row.slug}`
+  const context: TemplateRenderDataContext = {
+    ...templateContext,
+    site: templateContext.site ?? buildSiteFrame(site),
+    route: templateContext.route ?? buildRouteFrame(routePath),
+  }
+  const resolved = resolveSeoMetadata({
+    target: readSeoCell(row.cells),
+    templateSeo: entryTemplate?.seo,
+    siteSeo: site.settings.seo,
+    siteName: site.name,
+    baseTitle: readTitleCell(row.cells),
+    routeKind: 'row',
+    routePath,
+    origin,
+    language: site.settings.language,
+    publishedAt: row.publishedAt,
+    updatedAt: row.publishedAt,
+    interpolate: (pattern) => interpolateTokens(pattern, context),
+  })
+  const jsonLd = buildJsonLdEntities(resolved, {
+    kind: 'row',
+    routePath,
+    origin,
+    siteName: site.name,
+    organization: site.settings.seo?.organization,
+  })
+  return { resolved, jsonLd }
+}
+
+/**
  * Shared render tail for both public paths. Given an already-resolved,
  * composed `merged` tree and its seed `templateContext`, this owns the
  * identical CSS-bundle build + loop/media prefetch + `publishPage` call +
@@ -90,6 +174,7 @@ async function renderMergedTemplate(
   snapshot: PublishedPageSnapshot,
   templateContext: TemplateRenderDataContext | undefined,
   ctx: RenderPublishedSnapshotContext,
+  seo: PublishedSeo,
 ): Promise<{ html: string; jsModuleIds: string[]; publishVersion: number; cssBundle: SiteCssBundle }> {
   const publishVersion = ctx.publishVersion ?? getPublishVersion()
   const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged, publishVersion)
@@ -100,6 +185,7 @@ async function renderMergedTemplate(
   ])
   const published = publishPage(merged, snapshot.site, registry, {
     templateContext,
+    seo,
     runtimeAssets: snapshot.runtimeAssets,
     runtimePackageImportmap: snapshot.runtimePackageImportmap,
     cssEmission: 'external',
@@ -137,7 +223,8 @@ export async function renderPublishedSnapshot(
     ? { entryStack: [], route: buildRouteFrame(ctx.url.toString()) }
     : undefined
 
-  const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
+  const seo = buildPageRenderSeo(page, snapshot.site)
+  const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx, seo)
   return { ...rendered, pageId: snapshot.pageRowId, slug: page.slug, siteId: snapshot.site.id }
 }
 
@@ -162,7 +249,8 @@ export async function renderPublishedNotFound(
     ? { entryStack: [], route: buildRouteFrame(ctx.url.toString()) }
     : undefined
 
-  const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
+  const seo = buildPageRenderSeo(page, snapshot.site)
+  const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx, seo)
   return { ...rendered, pageId: page.id, slug: page.slug, siteId: snapshot.site.id }
 }
 
@@ -186,6 +274,9 @@ export async function renderPublishedDataRowTemplate(
     ...(ctx.url ? { route: buildRouteFrame(ctx.url.toString()) } : {}),
   }
 
-  const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
+  // The entry template is the narrowest chain element (broadest → narrowest).
+  const entryTemplate = chain.at(-1)
+  const seo = buildRowRenderSeo(row, snapshot.site, entryTemplate, templateContext)
+  const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx, seo)
   return { ...rendered, pageId: merged.id, slug: merged.slug, siteId: snapshot.site.id }
 }

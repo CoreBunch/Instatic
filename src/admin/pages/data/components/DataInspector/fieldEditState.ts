@@ -199,6 +199,8 @@ export function applyEditState(
       return { type: 'pageTree', ...common }
     case 'fieldSchema':
       return { type: 'fieldSchema', ...common }
+    case 'seoMetadata':
+      return { type: 'seoMetadata', ...common }
     default: {
       const _exhaustive: never = field
       void _exhaustive

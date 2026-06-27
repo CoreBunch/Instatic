@@ -25,8 +25,6 @@ import type {
 import {
   readBodyCell,
   readFeaturedMediaCell,
-  readSeoDescriptionCell,
-  readSeoTitleCell,
 } from '@core/data/cells'
 import { buildDuplicateRowCells } from '@core/data/duplicateRow'
 import { updateRowList } from '@content/utils/contentEntryUtils'
@@ -330,8 +328,6 @@ export function useContentWorkspace({
         slug: input.slug,
         body: readBodyCell(row.cells),
         featuredMedia: readFeaturedMediaCell(row.cells),
-        seoTitle: readSeoTitleCell(row.cells),
-        seoDescription: readSeoDescriptionCell(row.cells),
       },
     })
     setEntries((current) => updateRowList(current, updatedRow))

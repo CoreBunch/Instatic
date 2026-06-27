@@ -94,6 +94,11 @@ export function CellEditorRenderer({
     case 'fieldSchema':
       return <FieldSchemaCell field={field} {...rest} onOpenFieldEditor={onOpenFieldEditor} />
 
+    case 'seoMetadata':
+      // Structured SEO objects are edited in the SEO workspace
+      // (/admin/tools/seo), not inline in the grid.
+      return <span>Edited in the SEO workspace</span>
+
     default: {
       // Exhaustive check: TypeScript will error here if a new field type
       // is added to the discriminated union without a case above.

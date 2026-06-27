@@ -46,7 +46,7 @@ function snapshot(text: string): PublishedPageSnapshot {
         { id: 'desktop', label: 'Desktop', width: 1440, icon: 'monitor' },
       ],
       settings: {
-        metaTitle: 'Public Site',
+        seo: { description: 'Public site description' },
         shortcuts: {},
       },
       styleRules: {},
@@ -119,7 +119,8 @@ describe('public rendering', () => {
 
     expect(html).toContain('<!DOCTYPE html>')
     expect(html).toContain('Visible to public')
-    expect(html).toContain('<title>Public Site</title>')
+    expect(html).toContain('<title>Home</title>')
+    expect(html).toContain('<meta name="description" content="Public site description">')
   })
 
   // Guards the page-wrapper's identity reporting after the shared

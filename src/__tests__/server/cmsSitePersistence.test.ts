@@ -54,7 +54,7 @@ function validShell(overrides: Partial<SiteShell> = {}): SiteShell {
       { id: 'desktop', label: 'Desktop', width: 1440, icon: 'monitor' },
     ],
     settings: {
-      metaTitle: 'Example',
+      seo: { titlePattern: '{page.title} — Example' },
       shortcuts: {},
     },
     styleRules: {
@@ -86,7 +86,7 @@ describe('CMS draft site persistence', () => {
       cmsSiteSchemaVersion: 1,
       site: {
         id: 'project_1',
-        settings: { metaTitle: 'Example' },
+        settings: { seo: { titlePattern: '{page.title} — Example' } },
         styleRules: { class_1: { name: 'Hero' } },
       },
     })
@@ -101,7 +101,7 @@ describe('CMS draft site persistence', () => {
     expect(loaded).toMatchObject({
       id: 'project_1',
       name: 'Example Site',
-      settings: { metaTitle: 'Example' },
+      settings: { seo: { titlePattern: '{page.title} — Example' } },
       styleRules: { class_1: { name: 'Hero' } },
     })
     // Shell does not include pages — pages live in data_rows

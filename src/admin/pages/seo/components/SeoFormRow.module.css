@@ -1,0 +1,64 @@
+/* Two-column field row: muted label (+ inline action) left, control stack
+ * right. Labels center against the control block; extra children (meters,
+ * hints, suggestion bubbles) stack under the control in the right column. */
+.row {
+    --seo-label-col: 150px;
+    display: grid;
+    grid-template-columns: var(--seo-label-col) minmax(0, 1fr);
+    column-gap: var(--space-3xl);
+    row-gap: var(--space-s);
+    align-items: center;
+    outline: none;
+}
+
+.row > * {
+    grid-column: 2;
+    min-width: 0;
+}
+
+.row > .labelCell {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.labelCell {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-m);
+}
+
+.label {
+    font-size: var(--text-l);
+    font-weight: 600;
+    color: var(--text);
+}
+
+/* Boolean rows: hint left, switch pinned right. */
+.switchRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2xl);
+}
+
+.hint {
+    font-size: var(--text-m);
+    font-weight: 500;
+    line-height: 1.5;
+    color: var(--text-subtle);
+}
+
+@media (max-width: 700px) {
+    .row {
+        grid-template-columns: 1fr;
+    }
+
+    .row > * {
+        grid-column: 1;
+    }
+
+    .row > .labelCell {
+        grid-row: auto;
+    }
+}

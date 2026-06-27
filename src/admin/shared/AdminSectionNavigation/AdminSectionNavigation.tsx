@@ -1,6 +1,11 @@
 /**
  * AdminSectionNavigation — the row of section links shown inside the
- * editor toolbar (Site · Content · Plugins · Users · …plugin pages).
+ * editor toolbar (Site · Content · Plugins · Users · Tools).
+ *
+ * Tools is a dropdown grouping first-party utility screens (SEO; future
+ * Redirects) together with plugin-provided admin pages — plugin pages keep
+ * their `/admin/plugins/:pluginId/:pageId` routes, only the navigation
+ * grouping changed.
  *
  * Lives next to the toolbar styles it consumes so both the heavy
  * AdminCanvasLayout (Site), AdminWorkspaceCanvasLayout (Content / Data /
@@ -8,7 +13,8 @@
  * plugin pages) can share it without one layout pulling another layout's
  * module graph in.
  */
-import { useEffect, useState, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { ArticleSolidIcon } from 'pixel-art-icons/icons/article-solid'
 import { DashboardSolidIcon } from 'pixel-art-icons/icons/dashboard-solid'
 import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
@@ -16,6 +22,12 @@ import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { PackageSolidIcon } from 'pixel-art-icons/icons/package-solid'
 import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
+import { ToolCaseSolidIcon } from 'pixel-art-icons/icons/tool-case-solid'
+import { SearchSolidIcon } from 'pixel-art-icons/icons/search-solid'
+import { ChevronDown2Icon } from 'pixel-art-icons/icons/chevron-down-2'
+import { Button } from '@ui/components/Button'
+import { cn } from '@ui/cn'
+import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@ui/components/ContextMenu'
 import { listCmsPlugins } from '@core/persistence/cmsPlugins'
 import type { CmsCurrentUser } from '@core/persistence'
 import type { PluginAdminPageRoute } from '@core/plugin-sdk'
@@ -185,16 +197,140 @@ export function AdminSectionNavigation({
           onNavigateStart={onWorkspaceNavigateStart}
         />
       )}
-      {canAccessPlugins && pluginPages.map((page) => (
-        <AdminRouteLink
-          key={`${page.pluginId}:${page.id}`}
-          to={page.route}
+      {(canAccess('seo') || (canAccessPlugins && pluginPages.length > 0)) && (
+        <ToolsNavDropdown
+          active={section === 'seo' || section === 'pluginPage'}
+          showSeo={canAccess('seo')}
+          pluginPages={canAccessPlugins ? pluginPages : []}
           onNavigateStart={onWorkspaceNavigateStart}
+        />
+      )}
+    </>
+  )
+}
+
+/**
+ * Tools dropdown — first-party utility screens (SEO) plus plugin admin
+ * pages, grouped by plugin when a plugin contributes more than one page.
+ * Uses the shared ContextMenu primitive anchored to the trigger button —
+ * same pattern as AccountMenuButton.
+ *
+ * Opens on hover as well as click; a short close-intent timer keeps the
+ * menu up while the pointer crosses the gap between trigger and menu.
+ * When the current section lives inside the menu (SEO, plugin pages), the
+ * trigger carries the same bold "current section" text the sibling nav
+ * items use.
+ */
+function ToolsNavDropdown({
+  active,
+  showSeo,
+  pluginPages,
+  onNavigateStart,
+}: {
+  active: boolean
+  showSeo: boolean
+  pluginPages: PluginAdminPageRoute[]
+  onNavigateStart?: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const closeTimer = useRef<number | null>(null)
+  const navigate = useAdminNavigate()
+
+  function cancelClose(): void {
+    if (closeTimer.current !== null) {
+      window.clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
+  }
+
+  function scheduleClose(): void {
+    cancelClose()
+    closeTimer.current = window.setTimeout(() => setOpen(false), 160)
+  }
+
+  useEffect(
+    () => () => {
+      if (closeTimer.current !== null) window.clearTimeout(closeTimer.current)
+    },
+    [],
+  )
+
+  function go(to: string): void {
+    cancelClose()
+    setOpen(false)
+    onNavigateStart?.()
+    navigate(to)
+  }
+
+  // Group plugin pages by pluginId so multi-page plugins read as one block.
+  const pluginGroups = new Map<string, PluginAdminPageRoute[]>()
+  for (const page of pluginPages) {
+    const group = pluginGroups.get(page.pluginId)
+    if (group) group.push(page)
+    else pluginGroups.set(page.pluginId, [page])
+  }
+
+  return (
+    <>
+      <Button
+        ref={triggerRef}
+        variant="ghost"
+        size="xs"
+        type="button"
+        active={active || open}
+        aria-label="Tools menu"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={cn(toolbarStyles.adminLink, active && toolbarStyles.adminLinkCurrent)}
+        data-testid="tools-nav-trigger"
+        onClick={() => setOpen((current) => !current)}
+        onMouseEnter={() => {
+          cancelClose()
+          setOpen(true)
+        }}
+        onMouseLeave={scheduleClose}
+      >
+        <ToolCaseSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />
+        <span>Tools</span>
+        <ChevronDown2Icon size={10} aria-hidden="true" className={toolbarStyles.adminLinkChevron} />
+      </Button>
+      {open && typeof document !== 'undefined' && createPortal(
+        <ContextMenu
+          ariaLabel="Tools menu"
+          onClose={() => setOpen(false)}
+          anchorRef={triggerRef}
+          side="bottom"
+          align="start"
+          width={220}
+          zIndex={10000}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
         >
-          <PackageSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />
-          <span>{page.navLabel ?? page.title}</span>
-        </AdminRouteLink>
-      ))}
+          {showSeo && (
+            <ContextMenuItem
+              onClick={() => go('/admin/tools/seo')}
+              data-testid="tools-nav-seo"
+            >
+              <SearchSolidIcon size={12} aria-hidden="true" />
+              <span>SEO</span>
+            </ContextMenuItem>
+          )}
+          {showSeo && pluginGroups.size > 0 && <ContextMenuSeparator />}
+          {[...pluginGroups.values()].map((pages) => (
+            pages.map((page) => (
+              <ContextMenuItem
+                key={`${page.pluginId}:${page.id}`}
+                onClick={() => go(page.route)}
+              >
+                <PackageSolidIcon size={12} aria-hidden="true" />
+                <span>{pages.length > 1 ? `${page.pluginName ?? page.pluginId}: ${page.navLabel ?? page.title}` : (page.navLabel ?? page.title)}</span>
+              </ContextMenuItem>
+            ))
+          ))}
+        </ContextMenu>,
+        document.body,
+      )}
     </>
   )
 }

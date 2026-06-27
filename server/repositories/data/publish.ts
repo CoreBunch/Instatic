@@ -16,6 +16,7 @@
  *                                   when the URL belongs to a
  *                                   previously-published slug
  *   listPublishedRowRoutes        — every published row route (for the bake)
+ *   listPublishedRowsForSitemap   — row routes + cells/publish time (sitemap)
  *   getRowTableRouteInfo          — route base + table slug for one row
  *   getRowTableRouteBase          — route base only, ignoring soft deletes
  *
@@ -328,6 +329,55 @@ export async function listPublishedRowRoutes(db: DbClient): Promise<PublishedRow
     rowSlug: row.row_slug,
     tableSlug: row.table_slug,
     tableRouteBase: normalizeRouteBase(row.table_route_base),
+  }))
+}
+
+export interface PublishedRowSitemapEntry {
+  rowId: string
+  rowSlug: string
+  tableRouteBase: string
+  /** Active published version's cells — read `cells.seo` for noindex. */
+  cells: Record<string, unknown>
+  /** ISO datetime the active version was published — sitemap <lastmod>. */
+  publishedAt: string
+}
+
+/**
+ * Every published, routable data row with the cells and publish timestamp
+ * the sitemap generator needs. Same row set as `listPublishedRowRoutes`,
+ * plus `cells_json` (for the structured `seo.noindex` flag) and the active
+ * version's publish time (for `<lastmod>`).
+ */
+export async function listPublishedRowsForSitemap(
+  db: DbClient,
+): Promise<PublishedRowSitemapEntry[]> {
+  const { rows } = await db<{
+    row_id: string
+    row_slug: string
+    table_route_base: string
+    cells_json: Record<string, unknown>
+    published_at: string
+  }>`
+    select data_rows.id as row_id,
+           data_row_versions.slug as row_slug,
+           data_tables.route_base as table_route_base,
+           data_row_versions.cells_json,
+           data_row_versions.published_at
+    from data_rows
+    join data_tables on data_tables.id = data_rows.table_id
+    join data_row_versions on data_row_versions.id = data_rows.active_version_id
+    where data_rows.table_id <> 'pages'
+      and data_rows.status = 'published'
+      and data_rows.deleted_at is null
+      and data_tables.deleted_at is null
+    order by data_rows.created_at asc
+  `
+  return rows.map((row) => ({
+    rowId: row.row_id,
+    rowSlug: row.row_slug,
+    tableRouteBase: normalizeRouteBase(row.table_route_base),
+    cells: row.cells_json,
+    publishedAt: row.published_at,
   }))
 }
 

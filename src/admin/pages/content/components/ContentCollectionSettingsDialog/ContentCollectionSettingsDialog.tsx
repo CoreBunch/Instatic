@@ -3,8 +3,7 @@ import { buildPostTypeDefaultFields, dataTableHasField } from '@core/data/fields
 import {
   POST_TYPE_FIELD_BODY,
   POST_TYPE_FIELD_FEATURED_MEDIA,
-  POST_TYPE_FIELD_SEO_TITLE,
-  POST_TYPE_FIELD_SEO_DESCRIPTION,
+  POST_TYPE_FIELD_SEO,
   type DataTable,
   type UpdateDataTableInput,
 } from '@core/data/schemas'
@@ -47,7 +46,7 @@ export function ContentCollectionSettingsDialog({
   const [pluralLabel, setPluralLabel] = useState(collection.pluralLabel)
   const [bodyField, setBodyField] = useState(dataTableHasField(collection, POST_TYPE_FIELD_BODY))
   const [featuredMediaField, setFeaturedMediaField] = useState(dataTableHasField(collection, POST_TYPE_FIELD_FEATURED_MEDIA))
-  const [seoField, setSeoField] = useState(dataTableHasField(collection, POST_TYPE_FIELD_SEO_TITLE))
+  const [seoField, setSeoField] = useState(dataTableHasField(collection, POST_TYPE_FIELD_SEO))
   const [submitError, setSubmitError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const nameId = useId()
@@ -81,7 +80,7 @@ export function ContentCollectionSettingsDialog({
       const nextFields = buildPostTypeDefaultFields().filter((field) => {
         if (field.id === POST_TYPE_FIELD_BODY) return bodyField
         if (field.id === POST_TYPE_FIELD_FEATURED_MEDIA) return featuredMediaField
-        if (field.id === POST_TYPE_FIELD_SEO_TITLE || field.id === POST_TYPE_FIELD_SEO_DESCRIPTION) return seoField
+        if (field.id === POST_TYPE_FIELD_SEO) return seoField
         return true
       })
       await onSave({

@@ -542,7 +542,7 @@ const pagesTable = await api.cms.content.tables.get('pages')
 const pages = api.cms.content.table('pages')
 const result = await pages.list({ status: 'published', limit: 50 })
 const entry = await pages.get(entryId)
-await pages.update(entryId, { cells: { seoTitle: 'New title' } })
+await pages.update(entryId, { cells: { seo: { title: 'New title' } } })
 await pages.publish(entryId)
 await pages.delete(entryId)
 
@@ -585,8 +585,9 @@ Filter that runs before persistence — validate, normalize, auto-fill:
 ```js
 api.cms.hooks.filter('content.entry.cells', (cells, { tableSlug, entryId, actor }) => {
   if (tableSlug !== 'pages') return cells
-  if (!cells.metaDescription && typeof cells.body === 'string') {
-    return { ...cells, metaDescription: cells.body.slice(0, 160) }
+  const seo = (cells.seo ?? {}) as { description?: string }
+  if (!seo.description && typeof cells.body === 'string') {
+    return { ...cells, seo: { ...seo, description: cells.body.slice(0, 160) } }
   }
   return cells
 })

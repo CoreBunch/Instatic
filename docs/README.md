@@ -138,6 +138,7 @@ Three categories, three voices:
 |------------------------------------------------------------------|----------------------------------------------------------------------|
 | [features/plugin-system.md](features/plugin-system.md)           | The plugin system end-to-end: package shape, lifecycle, sandbox, SDK, permissions, CLI |
 | [features/publisher.md](features/publisher.md)                   | The page-tree-to-HTML/CSS renderer + server-side publishing wrappers |
+| [features/seo.md](features/seo.md)                                | SEO & AEO: metadata model, JSON-LD, robots/sitemap, the SEO workspace |
 | [features/visual-components.md](features/visual-components.md)   | VCs, slots, params, instantiation, recursion guard                   |
 | [features/content-storage.md](features/content-storage.md)       | `data_tables` + `data_rows` — the universal content store           |
 | [features/content-workspace.md](features/content-workspace.md)   | Content workspace UI: collections, entries, body editor, settings panel |

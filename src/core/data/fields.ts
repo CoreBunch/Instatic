@@ -17,8 +17,7 @@ import {
   DataFieldSchema,
   POST_TYPE_FIELD_BODY,
   POST_TYPE_FIELD_FEATURED_MEDIA,
-  POST_TYPE_FIELD_SEO_DESCRIPTION,
-  POST_TYPE_FIELD_SEO_TITLE,
+  POST_TYPE_FIELD_SEO,
   POST_TYPE_FIELD_SLUG,
   POST_TYPE_FIELD_TITLE,
   POST_TYPE_MANDATORY_FIELD_IDS,
@@ -83,10 +82,11 @@ function buildMetaFields(
       }
       if (field.allowMultiple !== undefined) entry.allowMultiple = field.allowMultiple
       result.push(entry)
-    } else if (field.type === 'pageTree' || field.type === 'fieldSchema') {
+    } else if (field.type === 'pageTree' || field.type === 'fieldSchema' || field.type === 'seoMetadata') {
       // Structural types — not part of the instatic binding catalog.
-      // pageTree and fieldSchema cells hold whole documents (tree/field array),
-      // not scalar values that can be bound to a property control.
+      // pageTree / fieldSchema / seoMetadata cells hold whole documents
+      // (tree / field array / SEO object), not scalar values that can be
+      // bound to a property control.
       continue
     } else {
       result.push({ id: field.id, label: field.label, type: field.type })
@@ -152,15 +152,9 @@ export function buildPostTypeDefaultFields(): DataField[] {
       builtIn: true,
     },
     {
-      type: 'text',
-      id: POST_TYPE_FIELD_SEO_TITLE,
-      label: 'SEO title',
-      builtIn: true,
-    },
-    {
-      type: 'longText',
-      id: POST_TYPE_FIELD_SEO_DESCRIPTION,
-      label: 'SEO description',
+      type: 'seoMetadata',
+      id: POST_TYPE_FIELD_SEO,
+      label: 'SEO',
       builtIn: true,
     },
   ]

@@ -46,6 +46,9 @@ export function emptyCellValue(field: DataField): unknown {
     case 'fieldSchema':
       return []
 
+    case 'seoMetadata':
+      return {}
+
     default: {
       const _exhaustive: never = field
       void _exhaustive

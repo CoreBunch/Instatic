@@ -1,0 +1,145 @@
+/* The editor's grid cells (form + rail) live in MetaTab's three-column
+ * grid — there is no wrapper element. */
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3xl);
+    background: var(--bg-surface-2);
+    border-radius: 16px;
+    padding: var(--space-4xl);
+    min-width: 0;
+}
+
+.header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-xl);
+}
+
+.headerText {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4xs);
+    min-width: 0;
+}
+
+.headerTitle {
+    margin: 0;
+    font-size: var(--text-3xl);
+    font-weight: 700;
+    color: var(--text-bright);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.headerRoute {
+    font-size: var(--text-s);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+
+/* ── Improvements list — clickable advice rows under the header ─────────── */
+.improvements {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-px);
+    background: var(--bg-surface);
+    border-radius: var(--panel-radius);
+    overflow: hidden;
+}
+
+/* §8.11 bare-button row: dot + two-line advice text, full width. */
+.improvement {
+    appearance: none;
+    border: 0;
+    margin: 0;
+    font: inherit;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-m);
+    padding: var(--space-m) var(--space-xl);
+    background: var(--bg-surface-3);
+    color: var(--text);
+    transition: background 120ms ease;
+}
+
+.improvement:hover {
+    background: var(--bg-surface-4);
+}
+
+.improvement:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--overlay-20);
+}
+
+.improvementDot {
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--warning);
+}
+
+.improvementDotFail {
+    background: var(--danger);
+}
+
+.improvementText {
+    font-size: var(--text-s);
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.improvementText strong {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.error {
+    margin: 0;
+    font-size: var(--text-m);
+    color: var(--danger-text);
+}
+
+.readOnlyNote,
+.templateNote {
+    margin: 0;
+    font-size: var(--text-m);
+    color: var(--info-text);
+}
+
+.sectionHeading {
+    margin: var(--space-2xs) 0 var(--space-4xs);
+    font-size: var(--text-2xl);
+    font-weight: 700;
+    color: var(--text-bright);
+}
+
+/* Field rows render through the shared SeoFormRow component — see
+ * SeoFormRow.module.css for the two-column grid. */
+
+.fieldHint {
+    margin: 0;
+    font-size: var(--text-m);
+    font-weight: 500;
+    color: var(--text-subtle);
+    line-height: 1.5;
+}
+
+.customizeRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-xl);
+}
+
+.customizeHint {
+    margin: 0;
+    font-size: var(--text-m);
+    color: var(--text-muted);
+}

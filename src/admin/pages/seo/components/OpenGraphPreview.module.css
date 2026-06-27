@@ -1,0 +1,68 @@
+/* 1:1 Facebook dark-theme link card. */
+
+.card {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    border-radius: var(--panel-radius);
+    overflow: hidden;
+    background: var(--seo-og-bg);
+    font-family: Helvetica, arial, sans-serif;
+}
+
+.image {
+    width: 100%;
+    aspect-ratio: 1.91 / 1;
+    object-fit: cover;
+    display: block;
+}
+
+.imagePlaceholder {
+    width: 100%;
+    aspect-ratio: 1.91 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--seo-og-placeholder);
+    color: var(--seo-og-domain);
+    font-size: var(--text-l);
+}
+
+.strip {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4xs);
+    padding: var(--space-l) var(--space-xl);
+    background: var(--seo-og-strip);
+}
+
+.domain {
+    color: var(--seo-og-domain);
+    font-size: var(--text-m);
+    line-height: 16px;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.title {
+    color: var(--seo-og-title);
+    font-size: var(--text-2xl);
+    line-height: 20px;
+    font-weight: 600;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.description {
+    color: var(--seo-og-text);
+    font-size: var(--text-xl);
+    line-height: 18px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+}

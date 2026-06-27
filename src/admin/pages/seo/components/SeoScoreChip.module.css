@@ -1,0 +1,39 @@
+.chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-s);
+    flex-shrink: 0;
+    padding: var(--space-2xs) var(--space-l);
+    border-radius: var(--radius);
+}
+
+.value {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xl);
+    font-weight: 700;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+}
+
+.caption {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    opacity: 0.75;
+}
+
+.chip_good {
+    background: var(--success-10);
+    color: var(--success-text);
+}
+
+.chip_fair {
+    background: var(--warning-10);
+    color: var(--warning-text);
+}
+
+.chip_poor {
+    background: var(--danger-10);
+    color: var(--danger-text);
+}

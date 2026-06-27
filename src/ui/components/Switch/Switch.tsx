@@ -6,7 +6,6 @@ interface SwitchProps
   extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'role' | 'onChange'> {
   checked: boolean
   onCheckedChange?: (checked: boolean) => void
-  hitArea?: boolean
   switchSize?: 'sm' | 'md'
   /** React 19: ref is a regular prop on function components. */
   ref?: Ref<HTMLButtonElement>
@@ -15,7 +14,6 @@ interface SwitchProps
 export function Switch({
   checked,
   onCheckedChange,
-  hitArea = false,
   switchSize = 'md',
   className,
   disabled,
@@ -32,7 +30,6 @@ export function Switch({
       role="switch"
       aria-checked={checked}
       disabled={disabled}
-      data-hit-area={hitArea ? 'true' : undefined}
       data-size={switchSize}
       className={cn(styles.switch, className)}
       onClick={(event) => {

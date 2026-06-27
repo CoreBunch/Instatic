@@ -871,8 +871,6 @@ export const DataRowsSource: LoopEntitySource = {
     { id: 'body', label: 'Body (post-type, markdown)', format: 'html' },
     { id: 'featuredMedia', label: 'Featured media (post-type)', format: 'media' },
     { id: 'firstImage', label: 'First inline image', format: 'media' },
-    { id: 'seoTitle', label: 'SEO title (post-type)' },
-    { id: 'seoDescription', label: 'SEO description (post-type)' },
     { id: 'permalink', label: 'Permalink', format: 'url' },
     { id: 'publishedAt', label: 'Published date' },
     { id: 'publishedByName', label: 'Published by' },

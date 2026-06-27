@@ -18,8 +18,6 @@ import type { DataTable, DataField, DataRowCells } from '@core/data/schemas'
 import {
   POST_TYPE_FIELD_BODY,
   POST_TYPE_FIELD_FEATURED_MEDIA,
-  POST_TYPE_FIELD_SEO_DESCRIPTION,
-  POST_TYPE_FIELD_SEO_TITLE,
   POST_TYPE_FIELD_SLUG,
   POST_TYPE_FIELD_TITLE,
 } from '@core/data/schemas'
@@ -43,9 +41,6 @@ import { normalizeRouteBase } from './templateMatching'
 const POST_TYPE_PREVIEW_VALUE_BY_FIELD_ID: Record<string, string> = {
   [POST_TYPE_FIELD_TITLE]: 'Example Post Title',
   [POST_TYPE_FIELD_SLUG]: 'example-post-title',
-  [POST_TYPE_FIELD_SEO_TITLE]: 'Example Post — Site Name',
-  [POST_TYPE_FIELD_SEO_DESCRIPTION]:
-    'A short description of this example post for search engines.',
   [POST_TYPE_FIELD_BODY]:
     '## Example heading\n\nLorem ipsum dolor sit amet, consectetur adipiscing elit. Pellentesque at porta est.',
 }
@@ -86,6 +81,10 @@ function previewValueForField(field: DataField): unknown {
     // Preview data generation has no meaningful value to produce for them.
     case 'pageTree': return null
     case 'fieldSchema': return []
+    case 'seoMetadata': return {
+      title: 'Example Post — Site Name',
+      description: 'A short description of this example post for search engines.',
+    }
     default: {
       // Exhaustive check: TypeScript will error here if a new field type
       // is added to the discriminated union without a case above.

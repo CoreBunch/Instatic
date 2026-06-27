@@ -9,7 +9,7 @@
  *
  *   - `kind: 'postType'` — authored through the Content admin page. Has
  *     reserved built-in fields (`title`, `slug`, `body`, `featuredMedia`,
- *     `seoTitle`, `seoDescription`) and a draft / published / unpublished
+ *     `seo`) and a draft / published / unpublished
  *     workflow with versions.
  *   - `kind: 'data'` — authored through the Data admin page (grid). No
  *     built-ins, no version workflow.
@@ -222,6 +222,17 @@ const FieldSchemaFieldSchema = Type.Object({
   ...FieldCommonProps,
 })
 
+/**
+ * SeoMetadata field — stores the structured SEO object (`SeoMetadata` from
+ * `@core/seo`) in the cell. Built-in only: shipped as the `seo` field on
+ * `page` and `postType` tables, never offered as a user-created custom field
+ * type. Its editing surface is the SEO workspace (`/admin/tools/seo`).
+ */
+const SeoMetadataFieldSchema = Type.Object({
+  type: Type.Literal('seoMetadata'),
+  ...FieldCommonProps,
+})
+
 export const DataFieldSchema = Type.Union([
   TextFieldSchema,
   LongTextFieldSchema,
@@ -238,6 +249,7 @@ export const DataFieldSchema = Type.Union([
   RelationFieldSchema,
   PageTreeFieldSchema,
   FieldSchemaFieldSchema,
+  SeoMetadataFieldSchema,
 ])
 
 export type DataField = Static<typeof DataFieldSchema>
@@ -266,6 +278,7 @@ export const DATA_FIELD_TYPES = [
   'relation',
   'pageTree',
   'fieldSchema',
+  'seoMetadata',
 ] as const
 
 export type DataFieldType = (typeof DATA_FIELD_TYPES)[number]
@@ -470,7 +483,7 @@ export type DataRowRedirect = Static<typeof DataRowRedirectSchema>
 // Tables with `kind: 'postType'` always start with these field ids. The
 // Content authoring UI reads/writes these specific keys in `cells_json`.
 // Users CAN remove most of them per-table (e.g. a Quotes post type can
-// drop `body`, `featuredMedia`, `seoTitle`, `seoDescription`) — but
+// drop `body`, `featuredMedia`, `seo`) — but
 // `title` and `slug` are mandatory for any post-type table.
 // ---------------------------------------------------------------------------
 
@@ -478,8 +491,7 @@ export const POST_TYPE_FIELD_TITLE = 'title'
 export const POST_TYPE_FIELD_SLUG = 'slug'
 export const POST_TYPE_FIELD_BODY = 'body'
 export const POST_TYPE_FIELD_FEATURED_MEDIA = 'featuredMedia'
-export const POST_TYPE_FIELD_SEO_TITLE = 'seoTitle'
-export const POST_TYPE_FIELD_SEO_DESCRIPTION = 'seoDescription'
+export const POST_TYPE_FIELD_SEO = 'seo'
 
 export const POST_TYPE_MANDATORY_FIELD_IDS = [
   POST_TYPE_FIELD_TITLE,
@@ -489,8 +501,7 @@ export const POST_TYPE_MANDATORY_FIELD_IDS = [
 export const POST_TYPE_OPTIONAL_BUILTIN_FIELD_IDS = [
   POST_TYPE_FIELD_BODY,
   POST_TYPE_FIELD_FEATURED_MEDIA,
-  POST_TYPE_FIELD_SEO_TITLE,
-  POST_TYPE_FIELD_SEO_DESCRIPTION,
+  POST_TYPE_FIELD_SEO,
 ] as const
 
 // ---------------------------------------------------------------------------

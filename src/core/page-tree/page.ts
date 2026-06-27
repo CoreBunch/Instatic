@@ -18,6 +18,7 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { SeoMetadataSchema, parseSeoMetadata } from '@core/seo'
 import { NodeTreeSchema } from './treeSchema'
 import { PageNodeSchema, type PageNode, parsePageNode } from './pageNode'
 import { PageTemplateConfigSchema, parsePageTemplate } from './pageTemplate'
@@ -48,6 +49,12 @@ export const PageSchema = Type.Object({
    * Silently dropped if invalid — handled in parsePage.
    */
   template: Type.Optional(PageTemplateConfigSchema),
+  /**
+   * Structured SEO metadata (from `cells_json.seo`). Missing means no
+   * per-page overrides — the publisher falls back to site defaults.
+   * Silently dropped if invalid — handled in parsePage.
+   */
+  seo: Type.Optional(SeoMetadataSchema),
 })
 
 export type Page = Static<typeof PageSchema>
@@ -92,6 +99,7 @@ export function parsePage(raw: unknown, pageIndex: number): Page {
   reindexNodeParents(nodes)
 
   const template = parsePageTemplate(r.template)
+  const seo = parseSeoMetadata(r.seo)
 
   return {
     id: r.id,
@@ -107,5 +115,6 @@ export function parsePage(raw: unknown, pageIndex: number): Page {
     nodes,
     rootNodeId: r.rootNodeId,
     ...(template !== null ? { template } : {}),
+    ...(seo !== undefined ? { seo } : {}),
   }
 }

@@ -139,7 +139,7 @@ The mode switch is client-only. The markdown body is the source of truth in both
 | Hook | Source | Owns |
 |------|--------|------|
 | `useContentWorkspace` | `hooks/useContentWorkspace.ts` | Collection list, entry list, selection, CRUD operations, error state |
-| `useContentEntryDraft` | `hooks/useContentEntryDraft.ts` | In-memory field state (`title`, `body`, `slug`, `featuredMediaId`, `seoTitle`, `seoDescription`), save / publish / status-change handlers |
+| `useContentEntryDraft` | `hooks/useContentEntryDraft.ts` | In-memory field state (`title`, `body`, `slug`, `featuredMediaId`, `seoTitle`/`seoDescription` — merged into the structured `seo` cell on save), save / publish / status-change handlers |
 | `useContentMediaPicker` | `hooks/useContentMediaPicker.ts` | Media picker modal open/close, featured media asset hydration, body media insert |
 
 ---

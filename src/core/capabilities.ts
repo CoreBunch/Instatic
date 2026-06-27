@@ -72,6 +72,9 @@ export const CORE_CAPABILITIES = [
   'ai.tools.write',
   'ai.providers.manage',
   'ai.audit.read',
+  // SEO workspace — read the target index / edit metadata, robots, sitemap.
+  'seo.read',
+  'seo.manage',
 ] as const
 
 export type CoreCapability = typeof CORE_CAPABILITIES[number]

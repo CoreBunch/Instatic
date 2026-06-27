@@ -14,7 +14,7 @@
 import { Suspense, lazy, useState } from 'react'
 import { useSiteSettingsController } from '../useSiteSettingsController'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
-import { Input, Textarea } from '@ui/components/Input'
+import { Input } from '@ui/components/Input'
 import { Button } from '@ui/components/Button'
 import { SkeletonBlock } from '@ui/components/Skeleton'
 import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
@@ -69,39 +69,6 @@ export function GeneralSection() {
             if (v) updateSiteName(v)
           }}
           onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-        />
-      </div>
-
-      {/* ── Meta Title ────────────────────────────────────────────────────── */}
-      <div className={s.genFieldRow}>
-        <label htmlFor="gen-meta-title" className={s.label}>
-          Meta Title
-        </label>
-        <Input
-          id="gen-meta-title"
-          type="text"
-          defaultValue={settings.metaTitle ?? ''}
-          placeholder="My Website"
-          onBlur={(e) =>
-            updateSiteSettings({ metaTitle: e.target.value.trim() || undefined })
-          }
-          onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-        />
-      </div>
-
-      {/* ── Meta Description ──────────────────────────────────────────────── */}
-      <div className={s.genFieldRow}>
-        <label htmlFor="gen-meta-desc" className={s.label}>
-          Meta Description
-        </label>
-        <Textarea
-          id="gen-meta-desc"
-          defaultValue={settings.metaDescription ?? ''}
-          placeholder="A short description of your website."
-          rows={3}
-          onBlur={(e) =>
-            updateSiteSettings({ metaDescription: e.target.value.trim() || undefined })
-          }
         />
       </div>
 

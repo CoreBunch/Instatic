@@ -121,12 +121,11 @@ CRUD actions on `classSlice`: `addCondition`, `updateCondition`, `removeConditio
 
 ```ts
 type SiteSettings = {
-  metaTitle?:       string
-  metaDescription?: string
   faviconUrl?:      string
   language?:        string
   framework?:       FrameworkSettings       // colors, typography, spacing, preferences — absent when disabled
   fonts?:           SiteFontsSettings       // installed font library + editable font tokens
+  seo?:             SiteSeoSettings         // site-wide SEO defaults — see docs/features/seo.md
   shortcuts:        Record<string, string>  // keyboard shortcut overrides
 }
 ```

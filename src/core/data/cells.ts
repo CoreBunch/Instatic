@@ -9,6 +9,7 @@
 
 import { NodeTreeSchema, type NodeTree } from '@core/page-tree'
 import type { BaseNode } from '@core/page-tree'
+import { parseSeoMetadata, type SeoMetadata } from '@core/seo'
 import { DataFieldSchema, type DataField, type DataRowCells, type DataTable } from './schemas'
 import { dataTableHasField } from './fields'
 import { slugFromTitle } from '@core/utils/slug'
@@ -72,12 +73,13 @@ export function readFeaturedMediaCell(cells: DataRowCells): string | null {
   return readNullableStringCell(cells, 'featuredMedia')
 }
 
-export function readSeoTitleCell(cells: DataRowCells): string {
-  return readStringCell(cells, 'seoTitle')
-}
-
-export function readSeoDescriptionCell(cells: DataRowCells): string {
-  return readStringCell(cells, 'seoDescription')
+/**
+ * Read the structured `seo` cell (built-in `seoMetadata` field). Returns
+ * `undefined` when the cell is missing or malformed — a corrupt SEO object
+ * must never block loading the row.
+ */
+export function readSeoCell(cells: DataRowCells): SeoMetadata | undefined {
+  return parseSeoMetadata(cells.seo)
 }
 
 /**

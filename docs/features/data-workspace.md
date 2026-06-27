@@ -91,7 +91,7 @@ Tiers enforced by the guard functions:
 | Tier | Field IDs | Edit affordance | Delete affordance |
 |------|-----------|-----------------|-------------------|
 | Mandatory built-in (postType) | `title`, `slug` | None — locked row, no edit/delete buttons | Blocked |
-| Optional built-in (postType) | `body`, `featuredMedia`, `seoTitle`, `seoDescription` | Description + required only; label locked | Allowed |
+| Optional built-in (postType) | `body`, `featuredMedia`, `seo` | Description + required only; label locked | Allowed |
 | Built-in on a **system table** | every `builtIn` field | None — fully locked row | Blocked |
 | Custom | all others | Fully editable | Allowed if not the primary field |
 

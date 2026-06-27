@@ -242,7 +242,7 @@ src/admin/
 ### Cross-page primitives
 
 - **`SpotlightRoot`** — Cmd+K command palette. Owns its own command registry (`spotlight/commands/`), provider runner (`providers/`), scopes, keybindings, recents, telemetry. Available from every workspace.
-- **`AdminSectionNavigation`** — top-of-screen workspace switcher.
+- **`AdminSectionNavigation`** — top-of-screen workspace switcher. Ends with the **Tools** dropdown: first-party utility screens (SEO at `/admin/tools/seo`) plus plugin admin pages (their `/admin/plugins/:pluginId/:pageId` routes are unchanged — only the nav grouping moved).
 - **`AccountMenuButton`** — top-right avatar / account menu.
 - **`Panel`, `PanelHeader`, `SidebarResizeHandle`** — generic floating-panel chrome reused across the editor, content, and data workspaces.
 - **`StepUp`** — re-auth dialog gating sensitive actions.
@@ -586,7 +586,7 @@ The sidebar shell expands/collapses by animating `--*-panel-width`. The panel sl
 
 | Section       | What it contains                                                             |
 |---------------|------------------------------------------------------------------------------|
-| General       | Site name, meta title, meta description, language, favicon                   |
+| General       | Site name, language, favicon (site-wide SEO copy moved to `/admin/tools/seo`) |
 | Shortcuts     | Auto-rendered keyboard shortcut reference from the keybindings registry       |
 | Publishing    | Self-hosted runtime info + framework CSS tree-shaking toggle                 |
 | Preferences   | Catalog-driven editor preferences (auto-rendered from `PREFERENCE_CATALOG`)  |

@@ -8,7 +8,7 @@ For the broader auth flow (sessions, MFA, step-up), see [docs/features/auth-and-
 
 ## TL;DR
 
-- Defined as a `const` array in `src/core/capabilities.ts` (`@core/capabilities`); `CoreCapability` is derived via `typeof CORE_CAPABILITIES[number]`. **36 capabilities.**
+- Defined as a `const` array in `src/core/capabilities.ts` (`@core/capabilities`); `CoreCapability` is derived via `typeof CORE_CAPABILITIES[number]`. **40 capabilities.**
 - Handlers gate on capability, not on role: `requireCapability(req, db, 'site.read')`.
 - The **Owner AND Admin** roles get their capability lists force-resynced from `SYSTEM_ROLES` on every server boot. Hand-edits to either built-in role through the admin UI are restored at next boot — they are code-level decisions, not runtime ones.
 - Adding a capability: append the literal to `CORE_CAPABILITIES` in `src/core/capabilities.ts` (one place — server imports it), add it to the relevant `SYSTEM_ROLES` entries, wire `requireCapability(...)` at the gate point, and add picker meta + groups for the role-edit dialog. The two architecture tests (`capability-picker-coverage.test.ts`, `cms-handlers-capability-gated.test.ts`) catch missing pieces.
@@ -16,7 +16,7 @@ For the broader auth flow (sessions, MFA, step-up), see [docs/features/auth-and-
 
 ---
 
-## The 36 core capabilities
+## The 40 core capabilities
 
 ### Read
 
@@ -125,6 +125,13 @@ Was a single `ai.use`. Split so a Client persona can have chat assistance withou
 | `ai.providers.manage`  | Create / update / delete AI provider credentials + per-scope defaults | Owner, Admin |
 | `ai.audit.read`        | Read site-wide AI usage, cost, and error events across all users    | Owner, Admin |
 
+### SEO
+
+| Capability    | Grants                                                                | Roles        |
+|---------------|------------------------------------------------------------------------|--------------|
+| `seo.read`    | Open the SEO workspace (`/admin/tools/seo`); read metadata, robots, sitemap settings | Owner, Admin |
+| `seo.manage`  | Edit target metadata, site SEO defaults, robots.txt, sitemap settings. Target writes additionally require the owning persona (`pages.edit` / content edit). `POST /seo/generate` additionally requires `ai.chat`. | Owner, Admin |
+
 ---
 
 ## Roles
@@ -133,8 +140,8 @@ Four built-in `SYSTEM_ROLES`:
 
 | Role     | id        | Capabilities                                                                 | Boot behaviour |
 |----------|-----------|------------------------------------------------------------------------------|----------------|
-| Owner    | `owner`   | All 36 (`CORE_CAPABILITIES`)                                                 | Force-resynced on every boot. Owner-only `roles.manage`. |
-| Admin    | `admin`   | All 36 except `roles.manage`                                                 | **Force-resynced on every boot** (changed from previous "seeded once"). Hand-edits restored at boot. |
+| Owner    | `owner`   | All 40 (`CORE_CAPABILITIES`)                                                 | Force-resynced on every boot. Owner-only `roles.manage`. |
+| Admin    | `admin`   | All 40 except `roles.manage`                                                 | **Force-resynced on every boot** (changed from previous "seeded once"). Hand-edits restored at boot. |
 | Client   | `client`  | `dashboard.read`, `site.read`, `site.content.edit`, `media.read`, `data.custom.tables.read` | Seeded once; freely editable. Sees custom tables only — never the system tables. |
 | Member   | `member`  | (none)                                                                       | Seeded once; freely editable. |
 

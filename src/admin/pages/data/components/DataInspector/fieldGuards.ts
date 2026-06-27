@@ -4,7 +4,7 @@
  *
  * PostType field guards:
  *   - Mandatory built-ins (title, slug): locked — no edit/delete.
- *   - Optional built-ins (body, featuredMedia, seoTitle, seoDescription):
+ *   - Optional built-ins (body, featuredMedia, seo):
  *     deletable; editable for description/required only.
  *   - Custom non-built-in fields: fully editable and deletable.
  */
@@ -32,6 +32,7 @@ export const FIELD_TYPE_LABELS: Record<DataFieldType, string> = {
   relation: 'Relation',
   pageTree: 'Page tree',
   fieldSchema: 'Field schema',
+  seoMetadata: 'SEO metadata',
 }
 
 export function isMandatoryField(fieldId: string): boolean {

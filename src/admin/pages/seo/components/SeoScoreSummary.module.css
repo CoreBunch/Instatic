@@ -1,0 +1,40 @@
+.summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xl);
+    min-width: 0;
+}
+
+.value {
+    font-family: var(--font-mono);
+    font-size: var(--text-6xl);
+    font-weight: 600;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    color: var(--text-bright);
+    text-shadow:
+        0 1px 2px var(--scrim-50),
+        0 0 8px var(--scrim-30);
+}
+
+.text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    min-width: 0;
+}
+
+.title {
+    margin: 0;
+    font-size: var(--text-xl);
+    font-weight: 700;
+    color: var(--text-bright);
+}
+
+.sub {
+    margin: 0;
+    font-size: var(--text-m);
+    font-weight: 500;
+    line-height: 1.5;
+    color: var(--text-subtle);
+}

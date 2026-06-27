@@ -78,6 +78,8 @@ const adminCapabilities: CoreCapability[] = [
   'ai.tools.write',
   'ai.providers.manage',
   'ai.audit.read',
+  'seo.read',
+  'seo.manage',
 ]
 
 const clientCapabilities: CoreCapability[] = [

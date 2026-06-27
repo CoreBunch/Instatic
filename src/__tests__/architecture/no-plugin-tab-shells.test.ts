@@ -74,7 +74,7 @@ function collectAllFiles(): string[] {
 /** §T.0 — every file under the Tabs primitive directory is allowed. */
 const TABS_PRIMITIVE_DIR = join(PROJECT_ROOT, 'src/ui/components/Tabs')
 
-/** §T.1–§T.5 — pre-existing custom tablist implementations. */
+/** §T.1–§T.6 — Button-row / compact tablist implementations. */
 const EXACT_ALLOWLIST = new Set<string>([
   // §T.1 — capability-gated Button row in UsersPage predates the Tabs primitive.
   join(PROJECT_ROOT, 'src/admin/pages/users/UsersPage.tsx'),
@@ -89,6 +89,10 @@ const EXACT_ALLOWLIST = new Set<string>([
   // pattern: icon-only, compact fixed layout that the full-width Tabs
   // style cannot represent.
   join(PROJECT_ROOT, 'src/admin/pages/content/components/ContentModeToggle/ContentModeToggle.tsx'),
+  // §T.6 — SeoPage matches the §T.1/§T.4 Button-row pattern so the SEO
+  // workspace's header tabs look identical to the sibling AI/Users/Account
+  // pages it sits next to in the admin nav.
+  join(PROJECT_ROOT, 'src/admin/pages/seo/SeoPage.tsx'),
 ])
 
 function isAllowlisted(file: string): boolean {

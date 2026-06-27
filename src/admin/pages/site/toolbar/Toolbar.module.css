@@ -69,6 +69,19 @@
     color: var(--text);
 }
 
+/* Dropdown nav triggers (Tools) when the current section lives inside the
+   menu — same bold text the activeSection span uses, while the trigger
+   stays clickable/hoverable. */
+.adminLinkCurrent {
+    color: var(--text);
+    font-weight: 700;
+}
+
+.adminLinkChevron {
+    margin-left: calc(var(--space-4xs) * -1);
+    color: var(--text-muted);
+}
+
 .activeSection {
     display: inline-flex;
     align-items: center;

@@ -273,13 +273,22 @@ interface CodeMirrorEditorProps {
   value: string
   /** Which language extensions to load for highlighting. */
   language: CodeLanguage
-  /** Debounced (250 ms) on every edit, and flushed immediately on docKey switch. */
-  onChange: (content: string) => void
+  /**
+   * Debounced (250 ms) on every edit, and flushed immediately on docKey
+   * switch. Optional for `readOnly` mounts — a viewer has nothing to report.
+   */
+  onChange?: (content: string) => void
   /**
    * Change propagation delay. File editors keep the 250 ms default; modal
    * command surfaces can pass 0 so their primary action never reads stale text.
    */
   changeDelayMs?: number
+  /**
+   * Read-only viewer mode — syntax-highlighted display with selection/copy
+   * but no edits (SEO schema/robots previews, future log viewers). Skips the
+   * update-listener plumbing entirely.
+   */
+  readOnly?: boolean
 }
 
 export default function CodeMirrorEditor({
@@ -288,6 +297,7 @@ export default function CodeMirrorEditor({
   language,
   onChange,
   changeDelayMs = 250,
+  readOnly = false,
 }: CodeMirrorEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
 
@@ -299,9 +309,9 @@ export default function CodeMirrorEditor({
 
   // Always-current reference to onChange — avoids stale closure inside the CM6
   // updateListener while keeping the main useEffect dep-free.
-  const onChangeRef = useRef(onChange)
+  const onChangeRef = useRef(onChange ?? (() => {}))
   useEffect(() => {
-    onChangeRef.current = onChange
+    onChangeRef.current = onChange ?? (() => {})
   }, [onChange])
 
   // useCallback kept: stable identity for the [flush] useEffect dep array (exhaustive-deps).
@@ -333,6 +343,7 @@ export default function CodeMirrorEditor({
           ...getLanguageExtensions(language),
           readableSyntaxHighlighting,
           achromatic,
+          ...(readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) return
             const content = update.state.doc.toString()

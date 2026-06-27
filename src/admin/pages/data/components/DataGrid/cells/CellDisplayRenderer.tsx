@@ -17,6 +17,7 @@ import {
   readBooleanCell,
   readFieldSchemaCell,
   readNodeTreeCell,
+  readSeoCell,
   readNumberCell,
   readStringArrayCell,
   readStringCell,
@@ -435,6 +436,11 @@ export function CellDisplayRenderer({
       if (params.length === 0) return <Empty />
       const label = params.length === 1 ? '1 param' : `${params.length} params`
       return <span className={styles.text}>{label}</span>
+    }
+    case 'seoMetadata': {
+      const seo = readSeoCell(cells)
+      if (!seo || Object.keys(seo).length === 0) return <Empty />
+      return <span className={styles.text}>{seo.title ?? 'SEO set'}</span>
     }
     default: {
       const _exhaustive: never = field

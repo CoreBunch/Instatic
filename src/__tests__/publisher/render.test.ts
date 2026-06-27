@@ -1009,25 +1009,50 @@ describe('publishPage', () => {
     expect(html).not.toContain('zustand')
   })
 
-  it('uses site metaTitle for <title> when set', () => {
-    const proj = makeSite({
-      settings: { ...makeSite().settings, metaTitle: 'My Site — Home' },
-    })
+  it('uses the page seo title for <title> when set', () => {
     const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
-    const { html } = publishPage(page, proj, registry)
+    page.seo = { title: 'My Site — Home', description: 'A fine page.' }
+    const { html } = publishPage(page, makeSite(), registry)
     expect(html).toContain('<title>My Site — Home</title>')
+    expect(html).toContain('<meta name="description" content="A fine page.">')
   })
 
-  it('XSS: escapes metaTitle with special chars', () => {
+  it('interpolates the site title pattern around the page title', () => {
     const proj = makeSite({
       settings: {
         ...makeSite().settings,
-        metaTitle: '<script>alert(1)</script>',
+        seo: { titlePattern: '{page.title} — {site.name}' },
       },
     })
     const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
     const { html } = publishPage(page, proj, registry)
-    expect(html).not.toContain('<script>')
+    expect(html).toContain(`<title>${page.title} — ${proj.name}</title>`)
+  })
+
+  it('emits OG/X tags and noindex from the seo object', () => {
+    const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
+    page.seo = {
+      title: 'T',
+      ogImage: '/img.png',
+      ogImageAlt: 'An image',
+      noindex: true,
+    }
+    const { html } = publishPage(page, makeSite(), registry)
+    expect(html).toContain('<meta name="robots" content="noindex">')
+    expect(html).toContain('<meta property="og:title" content="T">')
+    expect(html).toContain('<meta property="og:image" content="/img.png">')
+    expect(html).toContain('<meta property="og:image:alt" content="An image">')
+    expect(html).toContain('<meta name="twitter:card" content="summary_large_image">')
+    // No origin available in the core fallback — absolute URLs must be omitted.
+    expect(html).not.toContain('rel="canonical"')
+    expect(html).not.toContain('og:url')
+  })
+
+  it('XSS: escapes seo title with special chars', () => {
+    const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
+    page.seo = { title: '<script>alert(1)</script>' }
+    const { html } = publishPage(page, makeSite(), registry)
+    expect(html).not.toContain('<script>alert')
     expect(html).toContain('&lt;script&gt;')
   })
 })

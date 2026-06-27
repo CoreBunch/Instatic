@@ -28,20 +28,21 @@ import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { compiledCheck } from '@core/utils/typeboxCompiler'
 import { FrameworkSettingsSchema } from '@core/framework-schema'
 import { SiteFontsSettingsSchema, parseSiteFontsSettings } from '@core/fonts'
+import { SiteSeoSettingsSchema, parseSiteSeoSettings } from '@core/seo'
 
 // ---------------------------------------------------------------------------
 // SiteSettingsSchema
 // ---------------------------------------------------------------------------
 
 export const SiteSettingsSchema = Type.Object({
-  metaTitle: Type.Optional(Type.String()),
-  metaDescription: Type.Optional(Type.String()),
   faviconUrl: Type.Optional(Type.String()),
   language: Type.Optional(Type.String()),
   /** Structured framework token settings — absent means framework disabled. */
   framework: Type.Optional(FrameworkSettingsSchema),
   /** Library of installed fonts — absent when no fonts added. */
   fonts: Type.Optional(SiteFontsSettingsSchema),
+  /** Site-wide SEO defaults — absent means none configured. */
+  seo: Type.Optional(SiteSeoSettingsSchema),
   /** Keyboard shortcut overrides — defaults to {} — handled in parseSiteSettings. */
   shortcuts: Type.Record(Type.String(), Type.String()),
 })
@@ -86,13 +87,14 @@ export function parseSiteSettings(raw: unknown): SiteSettings {
 
   const fonts = r.fonts != null ? parseSiteFontsSettings(r.fonts) : undefined
 
+  const seo = parseSiteSeoSettings(r.seo)
+
   return {
-    ...(typeof r.metaTitle === 'string' ? { metaTitle: r.metaTitle } : {}),
-    ...(typeof r.metaDescription === 'string' ? { metaDescription: r.metaDescription } : {}),
     ...(typeof r.faviconUrl === 'string' ? { faviconUrl: r.faviconUrl } : {}),
     ...(typeof r.language === 'string' ? { language: r.language } : {}),
     framework,
     fonts,
+    seo,
     shortcuts,
   }
 }

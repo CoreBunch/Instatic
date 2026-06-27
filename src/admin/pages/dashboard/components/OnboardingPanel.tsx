@@ -38,7 +38,7 @@ import { useAdminUi } from '@admin/state/adminUi'
 import { Button } from '@ui/components/Button'
 import type { PixelArtIconComponent } from '@core/dashboard'
 import type { OnboardingFacts, OnboardingStepState } from '../hooks/useOnboardingState'
-import { LiquidProgressRing } from './LiquidProgressRing'
+import { LiquidProgressRing } from '@ui/components/LiquidProgressRing'
 import styles from './OnboardingPanel.module.css'
 
 interface StepDef {

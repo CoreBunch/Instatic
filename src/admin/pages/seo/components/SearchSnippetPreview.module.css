@@ -1,0 +1,103 @@
+/* 1:1 Google dark-theme desktop result. Fonts/sizes/colours mirror the
+ * real SERP (arial, 20px blue title, 14px grey snippet). */
+
+.serp {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    margin: 0;
+    padding: var(--space-3xl) var(--space-4xl);
+    border-radius: var(--panel-radius);
+    background: var(--seo-serp-bg);
+    font-family: arial, sans-serif;
+}
+
+.head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xl);
+    margin-bottom: var(--space-2xs);
+}
+
+.favicon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--seo-serp-chip);
+    color: var(--seo-serp-site);
+    font-size: var(--text-l);
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.faviconImage {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+}
+
+.headText {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.site {
+    color: var(--seo-serp-site);
+    font-size: var(--text-xl);
+    line-height: 20px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.url {
+    color: var(--seo-serp-url);
+    font-size: var(--text-m);
+    line-height: 18px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.title {
+    color: var(--seo-serp-title);
+    font-size: var(--text-4xl);
+    line-height: 26px;
+    font-weight: 400;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    cursor: pointer;
+}
+
+.title:hover {
+    text-decoration: underline;
+}
+
+.description {
+    color: var(--seo-serp-text);
+    font-size: var(--text-xl);
+    line-height: 22px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.noindexBadge {
+    align-self: flex-start;
+    margin-top: var(--space-m);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: var(--space-4xs) var(--space-s);
+    border-radius: var(--radius-sm);
+    background: var(--danger-10);
+    color: var(--danger-text);
+}

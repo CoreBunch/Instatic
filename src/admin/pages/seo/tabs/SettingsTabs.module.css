@@ -1,0 +1,289 @@
+/* Shared layout for the Robots.txt and Sitemap tabs: an assistant rail
+ * (left, sticky) beside the main content column — see `.editorWorkbench`
+ * below. Mirrors the Meta tab's column language. */
+
+.tab {
+    min-width: 0;
+}
+
+/* Same card shell as the Meta editor's form, with roomier spacing. */
+.card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5xl);
+    background: var(--bg-surface-2);
+    border-radius: 16px;
+    padding: var(--space-6xl);
+    min-width: 0;
+}
+
+.cardHeader {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+}
+
+.heading {
+    margin: 0;
+    font-size: var(--text-3xl);
+    font-weight: 700;
+    color: var(--text-bright);
+}
+
+.subheading {
+    margin: 0;
+    font-size: var(--text-l);
+    font-weight: 500;
+    color: var(--text-subtle);
+}
+
+.error {
+    margin: 0;
+    font-size: var(--text-m);
+    color: var(--danger-text);
+}
+
+/* Compact rail toggle: label + switch on one line, hint full-width below
+ * (the wide SeoFormRow grid is too cramped in the narrow assistant rail). */
+.toggleRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-xl);
+}
+
+.toggleLabel {
+    font-size: var(--text-l);
+    font-weight: 600;
+    color: var(--text);
+}
+
+.toggleHint {
+    margin: 0;
+    font-size: var(--text-m);
+    font-weight: 500;
+    line-height: 1.5;
+    color: var(--text-subtle);
+}
+
+.counts {
+    margin: 0;
+    font-size: var(--text-m);
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+/* ── Sitemap inclusion list (the main column) — grouped rows on a surface
+ *    parent, each: title + route (left), include switch (right). ─────────── */
+.targetList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-px);
+    background: var(--bg-surface);
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.targetRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xl);
+    padding: var(--space-l) var(--space-2xl);
+    background: var(--bg-surface-2);
+}
+
+.targetText {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-m);
+}
+
+.targetTitle {
+    font-size: var(--text-l);
+    font-weight: 600;
+    color: var(--text-bright);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.targetRoute {
+    font-size: var(--text-s);
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    min-width: 0;
+    flex-shrink: 4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.targetNote {
+    flex-shrink: 0;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.disabledState {
+    margin: 0;
+    padding: var(--space-6xl);
+    border-radius: 16px;
+    background: var(--bg-surface-2);
+    font-size: var(--text-l);
+    color: var(--text-muted);
+}
+
+/* ── Robots editor workbench: assistant rail (left) + editor (main) ──────── */
+.editorWorkbench {
+    display: grid;
+    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+    gap: var(--space-6xl);
+    align-items: start;
+}
+
+@media (max-width: 1000px) {
+    .editorWorkbench {
+        grid-template-columns: 1fr;
+    }
+}
+
+.assistColumn {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    min-width: 0;
+}
+
+.editorMain {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-m);
+    min-width: 0;
+}
+
+.assistGroup {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-m);
+}
+
+.assistLabel {
+    margin: 0;
+    font-size: var(--text-xs);
+    font-weight: 620;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+}
+
+.shortcutRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-s);
+}
+
+.servedNote {
+    margin: 0;
+    font-size: var(--text-s);
+    color: var(--text-muted);
+}
+
+/* ── Advice rows (recommendations + lint) — the app's grouped-row pattern:
+ *    quiet surface-3 rows divided by a 1px gap on the surface parent; the
+ *    only color is the leading state dot. ──────────────────────────────── */
+.adviceList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-px);
+    border-radius: var(--panel-radius);
+    overflow: hidden;
+}
+
+.adviceRow {
+    appearance: none;
+    border: 0;
+    margin: 0;
+    font: inherit;
+    width: 100%;
+    text-align: left;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-m);
+    padding: var(--space-m) var(--space-xl);
+    background: var(--bg-surface-3);
+    color: var(--text);
+}
+
+button.adviceRow {
+    cursor: pointer;
+    transition: background 120ms ease;
+}
+
+button.adviceRow:hover:not(:disabled) {
+    background: var(--bg-surface-4);
+}
+
+button.adviceRow:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.adviceDot {
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    margin-top: var(--space-xs);
+    border-radius: 50%;
+    background: var(--text-muted);
+}
+
+.adviceDotOk {
+    background: var(--success);
+}
+
+.adviceDotWarn {
+    background: var(--warning);
+}
+
+.adviceDotDanger {
+    background: var(--danger);
+}
+
+.adviceText {
+    font-size: var(--text-m);
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.adviceText strong {
+    font-weight: 600;
+    color: var(--text);
+}
+
+/* ── URL tester ──────────────────────────────────────────────────────────── */
+.tester {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-m);
+}
+
+.testerRow {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: var(--space-m);
+}
+
+.testerResult {
+    margin: 0;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-m);
+    padding: var(--space-m) var(--space-xl);
+    border-radius: var(--radius);
+    background: var(--bg-surface-3);
+}

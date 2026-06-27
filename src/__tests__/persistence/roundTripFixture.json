@@ -204,8 +204,10 @@
     }
   },
   "settings": {
-    "metaTitle": "My Round-Trip Site",
-    "metaDescription": "Testing round-trips",
+    "seo": {
+      "titlePattern": "{page.title} — My Round-Trip Site",
+      "description": "Testing round-trips"
+    },
     "language": "en",
     "shortcuts": { "save": "ctrl+s" },
     "framework": {

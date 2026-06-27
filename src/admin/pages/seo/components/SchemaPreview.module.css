@@ -1,0 +1,14 @@
+.schema {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-l);
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-2xl) var(--space-2xl);
+  border-radius: var(--panel-radius);
+  background: var(--bg-surface);
+  font-size: var(--text-m);
+  color: var(--text-muted);
+}

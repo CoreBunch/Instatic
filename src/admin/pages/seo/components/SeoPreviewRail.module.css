@@ -1,0 +1,41 @@
+.rail {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4xl);
+    min-width: 0;
+}
+
+/* Single-column layouts (the workbench collapses at 1100px): a sticky rail
+ * would pin the previews over the form while scrolling — unstick it. */
+@media (max-width: 1100px) {
+    .rail {
+        position: static;
+    }
+}
+
+.block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-m);
+}
+
+.blockLabel {
+    margin: 0;
+    font-size: var(--text-xs);
+    font-weight: 620;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+}
+
+.schemaToggle {
+    align-self: flex-start;
+    font-size: var(--text-xs);
+    font-weight: 620;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+}

@@ -21,10 +21,18 @@
 .ring {
     position: relative;
     flex-shrink: 0;
-    /* A subtle drop-shadow gives the toxic liquid a faint glow halo
-       around the bottle. Achromatic light isn't quite right here —
-       the green tint is the whole point of the component. */
+    /* A subtle drop-shadow gives the liquid a faint glow halo around
+       the bottle. Achromatic light isn't quite right here — the tint
+       matching the liquid is the whole point of the component. */
     filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent-1) 15%, transparent));
+}
+
+.toneAmber {
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--warning) 22%, transparent));
+}
+
+.toneDanger {
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--danger) 30%, transparent));
 }
 
 .svg {

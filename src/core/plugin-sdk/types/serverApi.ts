@@ -132,7 +132,7 @@ export interface ServerPluginApi {
      *
      *   const pages = api.cms.content.table('pages')
      *   await pages.list({ status: 'published' })
-     *   await pages.update(id, { cells: { seoTitle: '…' } })
+     *   await pages.update(id, { cells: { seo: { title: '…' } } })
      *
      * Schema introspection lives in `content.tables`; tree mutations on
      * `pageTree`-typed fields go through `content.tree(entryId, fieldId)`

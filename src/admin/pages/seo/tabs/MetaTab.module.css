@@ -1,0 +1,29 @@
+/* One flat three-column grid: index sidebar | editor form | preview rail.
+ * The editors render form + rail as fragment siblings, so auto-placement
+ * fills the middle and right tracks. */
+.columns {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr) minmax(300px, 400px);
+    gap: var(--space-6xl);
+    align-items: start;
+}
+
+.indexColumn {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3xl);
+    min-width: 0;
+}
+
+@media (max-width: 1100px) {
+    .columns {
+        grid-template-columns: 1fr;
+    }
+
+    .indexColumn {
+        position: static;
+    }
+}

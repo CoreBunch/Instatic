@@ -80,7 +80,7 @@ Used to render the **currently-published** page (vs. the in-progress draft on th
 
 | `kind`       | Authored in                       | Built-in fields | Workflow | Notes                                          |
 |--------------|-----------------------------------|-----------------|----------|------------------------------------------------|
-| `postType`   | Content workspace (`/admin/content`) | `title`, `slug`, `body` (text), `featuredMedia`, `seoTitle`, `seoDescription` | `draft / published / unpublished / scheduled` + versions | Built-in fields cannot be renamed or deleted, only enabled / disabled. |
+| `postType`   | Content workspace (`/admin/content`) | `title`, `slug`, `body` (text), `featuredMedia`, `seo` (structured `SeoMetadata`) | `draft / published / unpublished / scheduled` + versions | Built-in fields cannot be renamed or deleted, only enabled / disabled. |
 | `data`       | Data workspace grid (`/admin/data`) | none           | none     | Pure user-defined fields. Like a database table.|
 | `page`       | Site workspace (`/admin/site`)    | `title`, `slug`, `body` (pageTree) | same as `postType` | Each row is a CMS page. `body` cell holds the `NodeTree<PageNode>`. |
 | `component`  | Site workspace, VC mode           | `name`, `tree` (pageTree), `params` (fieldSchema), `description` | none | Each row is a Visual Component. See [docs/features/visual-components.md](visual-components.md). |
@@ -249,7 +249,7 @@ The field appears in the postType's edit form and is queryable from loops.
 
 1. Open the Data workspace.
 2. Create a new `data_table` with `kind: 'postType'`.
-3. The system seeds the built-in fields (`title`, `slug`, `body`, `featuredMedia`, `seoTitle`, `seoDescription`).
+3. The system seeds the built-in fields (`title`, `slug`, `body`, `featuredMedia`, `seo`).
 4. Add custom fields as needed.
 5. Add posts via the Content workspace.
 6. Create a post-type template in the Site workspace if the collection needs public detail pages.
@@ -320,8 +320,9 @@ There's also one filter — `content.entry.cells` — that runs over the cell ba
 api.cms.hooks.filter('content.entry.cells', (cells, { tableSlug, entryId, actor }) => {
   if (tableSlug !== 'pages') return cells
   if (actor.kind === 'plugin' && actor.pluginId === api.plugin.id) return cells
-  if (!cells.metaDescription && typeof cells.body === 'string') {
-    return { ...cells, metaDescription: cells.body.slice(0, 160) }
+  const seo = (cells.seo ?? {}) as { description?: string }
+  if (!seo.description && typeof cells.body === 'string') {
+    return { ...cells, seo: { ...seo, description: cells.body.slice(0, 160) } }
   }
   return cells
 })

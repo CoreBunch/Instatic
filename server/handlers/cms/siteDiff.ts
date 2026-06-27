@@ -10,7 +10,7 @@
  *   structure — adding / removing / reordering breakpoints, managing files,
  *               toggling fileTypes, modifying packageJson/runtime,
  *               changing site id / name.
- *   content   — settings.metaTitle / settings.metaDescription (authored text
+ *   content   — settings.seo (authored site-wide SEO copy
  *               the "client / copy editor" persona owns).
  *   style     — classes registry contents, settings.framework, settings.fonts,
  *               file contents.
@@ -114,7 +114,7 @@ export function validateSiteWriteDiff(
   }
 
   // Settings — split into chromatic-style fields (framework/fonts) and
-  // structural fields (metaTitle/metaDescription/favicon/language/shortcuts).
+  // content (seo) and structural fields (favicon/language/shortcuts).
   diffSettings(ctx, previous.settings, next.settings)
 
   // breakpoints — adding / removing / reordering is style infra.
@@ -162,8 +162,7 @@ function diffSettings(
 
   // Content fields — site-wide SEO copy that the copy-editor persona owns.
   const contentKeys: Array<keyof SiteShell['settings']> = [
-    'metaTitle',
-    'metaDescription',
+    'seo',
   ]
   for (const key of contentKeys) {
     if (!deepEqual(prev[key], next[key])) {

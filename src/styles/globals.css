@@ -280,6 +280,30 @@
     --plugins-hero-tint-a: rgba(35, 92, 72, 0.32);
     --plugins-hero-tint-b: rgba(49, 64, 94, 0.24);
     --canvas-live-scrim: rgba(24, 24, 27, 0.82);
+
+    /* ─── SEO platform-preview palettes ──────────────────────────────────────
+     * 1:1 mock colours for the SEO workspace's live previews. These mirror
+     * the REAL platform dark themes (Google SERP, Facebook link card, X
+     * card), so they are intentionally outside the editor's achromatic
+     * two-layer model — the previews must look like the platforms, not
+     * like the editor. Used only by src/admin/pages/seo/components/. */
+    --seo-serp-bg: #202124;             /* Google dark result background   */
+    --seo-serp-chip: #303134;           /* favicon circle                  */
+    --seo-serp-site: #dadce0;           /* site name line                  */
+    --seo-serp-url: #bdc1c6;            /* breadcrumb URL line             */
+    --seo-serp-title: #8ab4f8;          /* result title (Google blue)      */
+    --seo-serp-text: #bdc1c6;           /* snippet description             */
+    --seo-og-bg: #242526;               /* Facebook card body              */
+    --seo-og-strip: #3a3b3c;            /* Facebook meta strip             */
+    --seo-og-domain: #b0b3b8;           /* uppercase domain line           */
+    --seo-og-title: #e4e6eb;            /* card title                      */
+    --seo-og-text: #b0b3b8;             /* card description                */
+    --seo-og-placeholder: #18191a;      /* missing-image area              */
+    --seo-x-bg: #000000;                /* X card background               */
+    --seo-x-border: #2f3336;            /* X card hairline border          */
+    --seo-x-title: #e7e9ea;             /* X card title                    */
+    --seo-x-text: #71767b;              /* X domain / description          */
+    --seo-x-overlay: rgba(0, 0, 0, 0.77); /* large-image title chip        */
 }
 
 /* Reduced motion support — Constraint from UX Guideline #189 */

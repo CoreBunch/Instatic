@@ -112,7 +112,6 @@ function buildFakeDb(
           id: 'proj-1',
           name: 'Test Site',
           settings_json: {
-            metaTitle: 'Test Site',
             shortcuts: {},
           },
           files_json: [],

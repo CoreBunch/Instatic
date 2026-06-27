@@ -73,6 +73,7 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 | `Image`                    | Image with built-in blurhash fallback                        | `src`, `blurhash`, `alt`, `width`, `height`              |
 | `CanvasModulePlaceholder`  | Diagonal-stripe placeholder for empty modules on the canvas  | `label`                                                  |
 | `Kbd`                      | Single keyboard keycap. Use anywhere a key name appears as a hint. | `children`, `className`                             |
+| `LiquidProgressRing`       | Animated liquid-filled progress ring — onboarding completion, the SEO site score. Tier the liquid with `tone`; override the centered fraction with `label`. | `value`, `total`, `size?`, `tone?: 'mint' \| 'amber' \| 'danger'`, `label?`, `ariaLabel?` |
 | `ShortcutKeys`             | Full shortcut sequence ("⌘K", "Ctrl+Shift+P") — splits the label into individual `Kbd` spans. | `label`, `aria-hidden`, `className` |
 
 ### Loading / skeleton

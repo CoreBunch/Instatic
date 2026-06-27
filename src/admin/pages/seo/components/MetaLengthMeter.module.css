@@ -1,0 +1,104 @@
+.meter {
+    display: flex;
+    align-items: center;
+    gap: var(--space-l);
+}
+
+.meterInherited {
+    opacity: 0.5;
+}
+
+.track {
+    position: relative;
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--bg-surface-4);
+    overflow: hidden;
+    --seo-meter-fill: 0%;
+    --seo-meter-ideal-start: 45%;
+}
+
+/* The ideal band — a faint green segment from the too-short threshold to
+ * the budget tick, visible through and around the fill so "where the text
+ * should land" reads before a single character is typed. */
+.idealBand {
+    position: absolute;
+    inset: 0 0 0 var(--seo-meter-ideal-start);
+    background: var(--success-10);
+}
+
+/* Zone-colored fill: neutral while too short — green is RESERVED for the
+ * ideal band — then amber near the budget and red over it. */
+.fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: var(--seo-meter-fill);
+    border-radius: 2px;
+    transition: width 120ms ease, background-color 120ms ease;
+}
+
+.fill_empty {
+    background: transparent;
+}
+
+.fill_short {
+    background: var(--border-strong);
+}
+
+.fill_ok {
+    background: var(--success);
+}
+
+.fill_amber {
+    background: var(--warning);
+}
+
+.fill_over {
+    background: var(--danger);
+}
+
+/* Hairline marker at the budget edge so "how much room is left" reads at
+ * a glance even when the bar is short. */
+.budgetTick {
+    position: absolute;
+    top: -1px;
+    bottom: -1px;
+    right: 0;
+    width: 2px;
+    background: var(--border-muted);
+}
+
+.count {
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    min-width: 44px;
+    text-align: right;
+}
+
+.count_short {
+    color: var(--text-muted);
+}
+
+.count_ok {
+    color: var(--success-text);
+}
+
+.count_amber {
+    color: var(--warning-text);
+}
+
+.count_over {
+    color: var(--danger-text);
+}
+
+.inheritedTag {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    min-width: 44px;
+    text-align: right;
+}

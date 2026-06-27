@@ -94,10 +94,52 @@ export function expectedOrigin(req: Request): string {
   return `${proto}://${host}`
 }
 
+/**
+ * The canonical configured public origin (`publicOrigins[0]`), or null when
+ * none is configured. SEO consumers (canonical URLs, og:url, sitemap <loc>,
+ * JSON-LD) use this: published static HTML must NEVER bake a guessed host,
+ * so callers that bake artefacts omit absolute URLs when this is null, while
+ * the dynamic robots/sitemap endpoints fall back to the request origin.
+ */
+export function canonicalPublicOrigin(): string | null {
+  return publicOrigins[0] ?? null
+}
+
 /** True when the canonical configured public origin uses https. */
 export function publicOriginIsHttps(): boolean {
   const configured = publicOrigins[0]
   return configured?.startsWith('https://') ?? false
+}
+
+/**
+ * Whether this request is arriving on the configured production host.
+ *
+ *   - `null`  — no public origin configured; the caller can't tell, so it
+ *     should leave behavior unchanged (local dev / unconfigured installs).
+ *   - `true`  — the request `Host` matches a configured public origin.
+ *   - `false` — a public origin IS configured but this host isn't one of
+ *     them (a preview/staging deploy, a platform domain not in the set).
+ *
+ * Compares by host, not full origin: a TLS-terminating edge hands the app
+ * plain HTTP with the real `Host` header, so the scheme would differ even on
+ * the canonical domain. Reads only the trusted `Host` header — never
+ * `X-Forwarded-*` — matching `expectedOrigin`'s threat model.
+ *
+ * Used by the robots.txt endpoint and the static/upload/page handlers to
+ * keep non-production deploys out of search (Disallow + `X-Robots-Tag`).
+ */
+export function requestHostIsCanonical(req: Request): boolean | null {
+  if (publicOrigins.length === 0) return null
+  const host = (req.headers.get('host') ?? new URL(req.url).host).toLowerCase()
+  if (host === '') return false
+  for (const origin of publicOrigins) {
+    try {
+      if (new URL(origin).host.toLowerCase() === host) return true
+    } catch {
+      // Skip malformed configured origins.
+    }
+  }
+  return false
 }
 
 /**

@@ -112,10 +112,10 @@ describe('validateSite — happy path', () => {
   it('accepts settings with all optional fields', () => {
     const p = validSite()
     p.settings.language = 'fr'
-    p.settings.metaTitle = 'My Site'
+    p.settings.seo = { titlePattern: '{page.title} — My Site' }
     const result = validateSite(p)
     expect(result.settings.language).toBe('fr')
-    expect(result.settings.metaTitle).toBe('My Site')
+    expect(result.settings.seo?.titlePattern).toBe('{page.title} — My Site')
   })
 
   it('fills defaults for missing settings sub-fields', () => {

@@ -1,6 +1,8 @@
 /**
  * LiquidProgressRing — circular progress badge filled with animated
- * toxic-green liquid, complete with rising bubbles and a wavy surface.
+ * liquid, complete with rising bubbles and a wavy surface. Tones: the
+ * default toxic-green "mint", plus "amber" and "danger" palettes so score
+ * displays can tier the liquid color.
  *
  * Composition (all inside one SVG, layered front-to-back):
  *
@@ -26,14 +28,55 @@
  * scrolling, bubbles disappear, and the liquid renders as a static
  * shape at the right level. The progress data is still legible.
  */
-import { useId, type CSSProperties } from 'react'
+import { useId, type CSSProperties, type ReactNode } from 'react'
+import { cn } from '@ui/cn'
 import styles from './LiquidProgressRing.module.css'
 
-interface LiquidProgressRingProps {
+export type LiquidProgressRingTone = 'mint' | 'amber' | 'danger'
+
+export interface LiquidProgressRingProps {
   value: number
   total: number
   /** Pixel size of the ring. Defaults to 112. */
   size?: number
+  /** Liquid palette. Defaults to 'mint'. */
+  tone?: LiquidProgressRingTone
+  /** Replaces the default "value/total" fraction in the center. */
+  label?: ReactNode
+  /** Defaults to "value of total steps complete". */
+  ariaLabel?: string
+}
+
+/**
+ * Per-tone gradient stops for the three liquid layers + the bottle ring.
+ * SVG gradient stops can't read CSS custom properties reliably, so the
+ * palettes live here as literals — same approach the original mint-only
+ * palette used.
+ */
+const PALETTES: Record<LiquidProgressRingTone, {
+  front: [string, string, string]
+  back: [string, string]
+  deep: [string, string, string]
+  ring: string
+}> = {
+  mint: {
+    front: ['rgba(167, 243, 208, 0.95)', 'rgba(142, 230, 200, 0.9)', 'rgba(52, 211, 153, 0.85)'],
+    back: ['rgba(74, 222, 128, 0.45)', 'rgba(34, 197, 94, 0.4)'],
+    deep: ['rgba(6, 95, 70, 0.9)', 'rgba(6, 78, 59, 0.85)', 'rgba(2, 44, 34, 0.85)'],
+    ring: 'rgba(142, 230, 200, 0.55)',
+  },
+  amber: {
+    front: ['rgba(253, 230, 138, 0.95)', 'rgba(252, 211, 77, 0.9)', 'rgba(245, 158, 11, 0.85)'],
+    back: ['rgba(251, 191, 36, 0.45)', 'rgba(217, 119, 6, 0.4)'],
+    deep: ['rgba(146, 64, 14, 0.9)', 'rgba(120, 53, 15, 0.85)', 'rgba(69, 26, 3, 0.85)'],
+    ring: 'rgba(252, 211, 77, 0.55)',
+  },
+  danger: {
+    front: ['rgba(254, 202, 202, 0.95)', 'rgba(252, 165, 165, 0.9)', 'rgba(239, 68, 68, 0.85)'],
+    back: ['rgba(248, 113, 113, 0.45)', 'rgba(220, 38, 38, 0.4)'],
+    deep: ['rgba(153, 27, 27, 0.9)', 'rgba(127, 29, 29, 0.85)', 'rgba(69, 10, 10, 0.85)'],
+    ring: 'rgba(252, 165, 165, 0.55)',
+  },
 }
 
 // SVG user-coordinate space — independent of the rendered pixel size.
@@ -109,7 +152,15 @@ const BUBBLES: readonly BubbleSpec[] = [
   { cx: 48, r: 1.6, delay: 1.4, duration: 3.5 },
 ]
 
-export function LiquidProgressRing({ value, total, size = 112 }: LiquidProgressRingProps) {
+export function LiquidProgressRing({
+  value,
+  total,
+  size = 112,
+  tone = 'mint',
+  label,
+  ariaLabel,
+}: LiquidProgressRingProps) {
+  const palette = PALETTES[tone]
   const pct = total === 0 ? 0 : Math.max(0, Math.min(1, value / total))
   // Wave surface Y in user units. At pct=0 the surface is at the bottom
   // (y=100), at pct=1 it's at the top (y=0). Bubbles rise from y≈96
@@ -144,7 +195,12 @@ export function LiquidProgressRing({ value, total, size = 112 }: LiquidProgressR
   }
 
   return (
-    <div className={styles.ring} style={containerStyle} role="img" aria-label={`${value} of ${total} steps complete`}>
+    <div
+      className={cn(styles.ring, tone === 'amber' && styles.toneAmber, tone === 'danger' && styles.toneDanger)}
+      style={containerStyle}
+      role="img"
+      aria-label={ariaLabel ?? `${value} of ${total} steps complete`}
+    >
       <svg
         width={size}
         height={size}
@@ -158,29 +214,28 @@ export function LiquidProgressRing({ value, total, size = 112 }: LiquidProgressR
             <circle cx={CX} cy={CY} r={R} />
           </clipPath>
 
-          {/* Primary liquid: a vertical gradient from a bright mint
-              crest down to a slightly darker mint base for depth. */}
+          {/* Primary liquid: a vertical gradient from a bright crest
+              down to a slightly darker base for depth. */}
           <linearGradient id={liquidGrad} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(167, 243, 208, 0.95)" />
-            <stop offset="55%" stopColor="rgba(142, 230, 200, 0.9)" />
-            <stop offset="100%" stopColor="rgba(52, 211, 153, 0.85)" />
+            <stop offset="0%" stopColor={palette.front[0]} />
+            <stop offset="55%" stopColor={palette.front[1]} />
+            <stop offset="100%" stopColor={palette.front[2]} />
           </linearGradient>
 
           {/* Secondary back-wave — lower opacity for the parallax look. */}
           <linearGradient id={liquidGradBack} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(74, 222, 128, 0.45)" />
-            <stop offset="100%" stopColor="rgba(34, 197, 94, 0.4)" />
+            <stop offset="0%" stopColor={palette.back[0]} />
+            <stop offset="100%" stopColor={palette.back[1]} />
           </linearGradient>
 
-          {/* Deep wave — saturated forest-green tones for the "shadow
-              of a deeper swell" effect. Higher opacity at the crest
-              (where it peeks above the brighter front wave) so the
-              parallax silhouette reads as a real shape, not just a
-              tint. */}
+          {/* Deep wave — saturated dark tones for the "shadow of a
+              deeper swell" effect. Higher opacity at the crest (where
+              it peeks above the brighter front wave) so the parallax
+              silhouette reads as a real shape, not just a tint. */}
           <linearGradient id={liquidGradDeep} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(6, 95, 70, 0.9)" />
-            <stop offset="55%" stopColor="rgba(6, 78, 59, 0.85)" />
-            <stop offset="100%" stopColor="rgba(2, 44, 34, 0.85)" />
+            <stop offset="0%" stopColor={palette.deep[0]} />
+            <stop offset="55%" stopColor={palette.deep[1]} />
+            <stop offset="100%" stopColor={palette.deep[2]} />
           </linearGradient>
 
           {/* Soft inner glow on the empty bottle. Pure white at low
@@ -268,16 +323,18 @@ export function LiquidProgressRing({ value, total, size = 112 }: LiquidProgressR
           cy={CY}
           r={R}
           fill="none"
-          stroke="rgba(142, 230, 200, 0.55)"
+          stroke={palette.ring}
           strokeWidth={1.2}
         />
       </svg>
 
       <div className={styles.label}>
-        <span className={styles.fraction}>
-          {value}
-          <small>/{total}</small>
-        </span>
+        {label ?? (
+          <span className={styles.fraction}>
+            {value}
+            <small>/{total}</small>
+          </span>
+        )}
       </div>
     </div>
   )

@@ -159,11 +159,12 @@ const mod: ServerPluginModule = {
       const entry = await api.cms.content.table('pages').get(entryId)
       if (!entry) return
 
-      // …react to the user's change here. Example: auto-fill a meta
+      // …react to the user's change here. Example: auto-fill the SEO
       // description from the page body if the user hasn't set one.
-      if (!entry.cells.metaDescription && typeof entry.cells.body === 'string') {
+      const seo = (entry.cells.seo ?? {}) as { description?: string }
+      if (!seo.description && typeof entry.cells.body === 'string') {
         await api.cms.content.table('pages').update(entryId, {
-          cells: { metaDescription: entry.cells.body.slice(0, 160) },
+          cells: { seo: { ...seo, description: entry.cells.body.slice(0, 160) } },
         })
       }
     })

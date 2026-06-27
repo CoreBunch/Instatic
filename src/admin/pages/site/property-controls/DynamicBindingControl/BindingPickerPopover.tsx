@@ -82,8 +82,6 @@ const POST_TYPE_ONLY_LOOP_FIELDS = new Set([
   'body',
   'featuredMedia',
   'firstImage',
-  'seoTitle',
-  'seoDescription',
 ])
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@
 
 export { publishPage } from './render'
 export type { PublishedRuntimePackageImportmap } from './render'
+export type { PublishedSeo } from './seoHead'
 
 export { renderNode, resolveSpecialRenderer, getSpecialRendererModuleIds } from './renderNode'
 

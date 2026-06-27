@@ -24,6 +24,7 @@ import type { Page, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { buildPageFrame, buildSiteFrame, buildRouteFrame } from '@core/templates/contextFrames'
+import { buildDocumentMetaTags, resolvePageSeoFallback, type PublishedSeo } from './seoHead'
 import { classNamesForClassIds } from '@core/page-tree'
 import {
   isRenderableHtmlAttributeName,
@@ -35,7 +36,7 @@ import { collectUserStylesheetCss } from './userStylesheets'
 import { PUBLISHER_RESET_CSS } from './reset'
 import { buildSiteFrameworkCss } from './frameworkCss'
 import type { SiteCssBundle } from './siteCssBundle'
-import { escapeHtml, isSafeUrl } from './utils'
+import { escapeHtml } from './utils'
 import { createBaseCspPlan, cspMetaTag } from './cspPlan'
 import type { PublishedPageRuntimeAssets } from '@core/site-runtime/schemas'
 import { hasPublishedRuntimeScripts, scriptTagsForRuntimeAssets } from '@core/site-runtime'
@@ -140,6 +141,15 @@ interface PublishPageOptions {
    * on first fetch, which is safe — the next page load sees the real version).
    */
   publishVersion?: number
+  /**
+   * Pre-resolved SEO metadata + JSON-LD entities for this route. The server
+   * passes this for both page and row renders (it knows the public origin,
+   * the row's SEO cells, and the entry template). When omitted, publishPage
+   * resolves page-level SEO itself from `page.seo` + `site.settings.seo` —
+   * previews and exports share the exact same resolver, minus the
+   * origin-dependent absolute URLs.
+   */
+  seo?: PublishedSeo
   /**
    * Editor-only: annotate each node's outermost emitted element with
    * `uid="<id>"`. Default off — real publishes emit clean, id-less
@@ -289,40 +299,6 @@ function bodyHtmlAttributes(value: unknown): string {
 }
 
 /**
- * `<head>` metadata tags derived from site settings + page.
- *
- * - `title` falls back through metaTitle → page.title → site.name.
- * - URL-typed settings (faviconUrl) are validated by
- *   isSafeUrl() (blocks `javascript:` / `vbscript:` schemes) and then
- *   escapeHtml()'d for safe attribute interpolation.
- * - `lang` honours WCAG 2.1 AA SC 3.1.1 and escapes the BCP-47 tag
- *   because settings.language is user-controlled.
- */
-interface DocumentMetaTags {
-  pageTitle: string
-  metaDesc: string
-  favicon: string
-  langAttr: string
-}
-
-function buildDocumentMetaTags(site: SiteDocument, page: Page): DocumentMetaTags {
-  const { settings } = site
-  const metaDesc = settings.metaDescription
-    ? `\n  <meta name="description" content="${escapeHtml(settings.metaDescription)}">`
-    : ''
-  const favicon =
-    settings.faviconUrl && isSafeUrl(settings.faviconUrl)
-      ? `\n  <link rel="icon" href="${escapeHtml(settings.faviconUrl)}">`
-      : ''
-  return {
-    pageTitle: escapeHtml(settings.metaTitle ?? page.title ?? site.name),
-    metaDesc,
-    favicon,
-    langAttr: escapeHtml(settings.language ?? 'en'),
-  }
-}
-
-/**
  * Runtime / importmap / loop-runtime `<script>` tags + the flags the CSP
  * builder needs. Centralising every "do we need a script tag?" branch in
  * one place keeps publishPage straight-line and makes adding a new
@@ -420,8 +396,7 @@ function lineOrEmpty(content: string): string {
 interface AssembledDocumentParts {
   langAttr: string
   csp: string
-  pageTitle: string
-  metaDesc: string
+  seoHeadHtml: string
   favicon: string
   styleHeadHtml: string
   importmapTag: string
@@ -441,7 +416,7 @@ function assembleHtmlDocument(parts: AssembledDocumentParts): string {
     `<head>\n` +
     `  <meta charset="UTF-8">\n` +
     `  <meta name="viewport" content="width=device-width, initial-scale=1.0">${parts.csp}\n` +
-    `  <title>${parts.pageTitle}</title>${parts.metaDesc}${parts.favicon}\n` +
+    `${parts.seoHeadHtml}${parts.favicon}\n` +
     parts.styleHeadHtml +
     lineOrEmpty(parts.importmapTag) +
     lineOrEmpty(parts.headRuntimeScripts) +
@@ -485,12 +460,13 @@ export function publishPage(
   // Read-only inputs of this render pass. A renderer that needs a different
   // page (VC ref) or template frame (loop iteration) derives a child config —
   // it never mutates this one.
+  const templateContext = composeTemplateContext(page, site, options.templateContext)
   const config: RenderConfig = {
     page,
     site,
     registry,
     breakpointId: options.breakpointId,
-    templateContext: composeTemplateContext(page, site, options.templateContext),
+    templateContext,
     loopData: options.loopData,
     mediaAssets: options.mediaAssets,
     dynamicNodeIds: dynamicNodeIds.size > 0 ? dynamicNodeIds : undefined,
@@ -537,15 +513,15 @@ export function publishPage(
     acc.cssMap,
   )
 
-  const meta = buildDocumentMetaTags(site, page)
+  const seo = options.seo ?? resolvePageSeoFallback(page, site, templateContext)
+  const meta = buildDocumentMetaTags(site, seo)
   const runtime = buildRuntimeAssetsBlock(options, acc)
   const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap)
 
   const html = assembleHtmlDocument({
     langAttr: meta.langAttr,
     csp,
-    pageTitle: meta.pageTitle,
-    metaDesc: meta.metaDesc,
+    seoHeadHtml: meta.seoHeadHtml,
     favicon: meta.favicon,
     styleHeadHtml,
     importmapTag: runtime.importmapTag,

@@ -58,7 +58,7 @@ function buildFakeDb(layout: Page, about: Page) {
       return {
         rows: [{
           id: 'proj-1', name: 'Test Site',
-          settings_json: { metaTitle: 'Test Site', shortcuts: {} },
+          settings_json: { shortcuts: {} },
           files_json: [], classes_json: {},
           breakpoints_json: [{ id: 'desktop', label: 'Desktop', width: 1440, icon: 'monitor' }],
           runtime_json: { dependencyLock: { version: 1, packages: {}, updatedAt: 0 }, scripts: {} },

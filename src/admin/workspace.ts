@@ -18,6 +18,10 @@
  * `'ai'` is the AI provider settings + defaults workspace. Gated by
  * `ai.providers.manage` (or `ai.audit.read` for the read-only audit tab).
  */
+/**
+ * `'seo'` is the SEO & AEO workspace under the Tools nav dropdown
+ * (`/admin/tools/seo`). Gated by `seo.read`.
+ */
 export type AdminWorkspace =
   | 'dashboard'
   | 'site'
@@ -27,5 +31,6 @@ export type AdminWorkspace =
   | 'plugins'
   | 'users'
   | 'ai'
+  | 'seo'
   | 'pluginPage'
   | 'account'

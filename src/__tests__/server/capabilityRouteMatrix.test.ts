@@ -73,7 +73,7 @@ describe('capability route matrix', () => {
       const baseShell = await loadSiteShell(harness, ownerCookie)
       const contentEdit: SiteShell = {
         ...baseShell,
-        settings: { ...baseShell.settings, metaTitle: 'Client-owned title' },
+        settings: { ...baseShell.settings, seo: { titlePattern: 'Client-owned title' } },
       }
       const contentAllowed = await harness.cms('/admin/api/cms/site', {
         method: 'PUT',
@@ -120,7 +120,7 @@ describe('capability route matrix', () => {
         json: {
           site: {
             ...afterStyle,
-            settings: { ...afterStyle.settings, metaTitle: 'Style cannot edit copy' },
+            settings: { ...afterStyle.settings, seo: { titlePattern: 'Style cannot edit copy' } },
           },
         },
       })
@@ -141,7 +141,7 @@ describe('capability route matrix', () => {
         json: {
           site: {
             ...afterStructure,
-            settings: { ...afterStructure.settings, metaDescription: 'Structure cannot edit copy' },
+            settings: { ...afterStructure.settings, seo: { description: 'Structure cannot edit copy' } },
           },
         },
       })

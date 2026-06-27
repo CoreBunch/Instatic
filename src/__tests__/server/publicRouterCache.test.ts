@@ -49,7 +49,7 @@ function makeSnapshot(): PublishedPageSnapshot {
       files: [],
       visualComponents: [],
       breakpoints: [{ id: 'desktop', label: 'Desktop', width: 1440, icon: 'monitor' }],
-      settings: { metaTitle: 'Test Site', shortcuts: {} },
+      settings: { shortcuts: {} },
       styleRules: {},
       createdAt: 1000,
       updatedAt: 2000,

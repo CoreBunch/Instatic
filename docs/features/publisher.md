@@ -299,14 +299,18 @@ The publisher emits `<head>` in this order:
 
 1. `<meta charset="utf-8">`
 2. `<meta name="viewport" content="width=device-width, initial-scale=1">`
-3. `<title>` from `page.title`
-4. `<meta name="description">` if present in page settings
-5. `<link rel="icon">` if a favicon is configured
-6. `<script type="importmap">` mapping bare specifiers (e.g. `three`) to `/_instatic/runtime/cache/<hash>/...` URLs
-7. Runtime asset `<script>` tags (`scriptTagsForRuntimeAssets`)
-8. `<link rel="stylesheet" href="/_instatic/css/<bundle>-<hash>.css">` per bundle
-9. **`head` placement** plugin-injected tags (after the publisher's own head, before custom user head content)
-10. `<meta http-equiv="Content-Security-Policy" content="...">` — assembled based on what's actually in the page
+3. The resolved SEO block (`src/core/publisher/seoHead.ts`): `<title>`,
+   description, canonical, robots, Open Graph + X card tags, and one
+   `<script type="application/ld+json">` per JSON-LD entity. Values come from
+   the shared `@core/seo` resolver — the server pre-resolves page/row SEO
+   (incl. the configured public origin); previews/exports use `publishPage`'s
+   internal fallback. See [docs/features/seo.md](seo.md).
+4. `<link rel="icon">` if a favicon is configured
+5. `<script type="importmap">` mapping bare specifiers (e.g. `three`) to `/_instatic/runtime/cache/<hash>/...` URLs
+6. Runtime asset `<script>` tags (`scriptTagsForRuntimeAssets`)
+7. `<link rel="stylesheet" href="/_instatic/css/<bundle>-<hash>.css">` per bundle
+8. **`head` placement** plugin-injected tags (after the publisher's own head, before custom user head content)
+9. `<meta http-equiv="Content-Security-Policy" content="...">` — assembled based on what's actually in the page
 
 Installed fonts are emitted through the CSS bundle, not external `<link>` tags. The font CSS includes self-hosted `@font-face` rules for `site.settings.fonts.items` plus `:root` declarations for editable tokens such as `--font-primary`. A page rule can therefore keep `font-family: var(--font-primary)` while the token assignment changes site-wide.
 

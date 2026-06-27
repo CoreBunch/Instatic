@@ -14,6 +14,7 @@ import { ImageSolidIcon } from 'pixel-art-icons/icons/image-solid'
 import { LinkIcon } from 'pixel-art-icons/icons/link'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { BracesIcon } from 'pixel-art-icons/icons/braces'
+import { SearchSolidIcon } from 'pixel-art-icons/icons/search-solid'
 
 const FIELD_ICONS: Record<DataFieldType, IconComponent> = {
   text: TextStartTIcon,
@@ -32,6 +33,7 @@ const FIELD_ICONS: Record<DataFieldType, IconComponent> = {
   // Structural field types: visual page-node tree and component parameter schema.
   pageTree: LayoutSolidIcon,
   fieldSchema: BracesIcon,
+  seoMetadata: SearchSolidIcon,
 }
 
 export function getFieldIcon(type: DataFieldType): IconComponent {
