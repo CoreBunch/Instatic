@@ -236,7 +236,12 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
 
   // ─── Selection context value ───────────────────────────────────────────────
 
-  const onNodeClick = (nodeId: string, e: React.MouseEvent, breakpointId?: string) => {
+  const onNodeClick = (
+    nodeId: string,
+    e: React.MouseEvent,
+    breakpointId?: string,
+    clickTarget?: EventTarget | null,
+  ) => {
     e.stopPropagation()
     if (breakpointId && breakpointId !== activeBreakpointId) {
       setActiveBreakpoint(breakpointId)
@@ -253,7 +258,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
       : e.metaKey || e.ctrlKey
         ? 'toggle'
         : 'replace'
-    selectNode(nodeId, mode)
+    selectNode(nodeId, mode, { clickTarget: clickTarget ?? e.nativeEvent.target })
     setFocusedPanel('canvas')
   }
 
@@ -287,15 +292,11 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   }
 
   /**
-   * Double-click on a canvas node → start an inline text-edit session when
-   * the node's module declares `inlineTextEdit` (base.text, base.button,
-   * childless base.link — `startInlineEdit` resolves the contract and
-   * no-ops for everything else, so other modules keep the old no-op).
+   * Double-click on a canvas node → inline text editing on the element itself.
+   * Single-click selection (same handler chain) opens the Properties panel instead.
    *
-   * Design-canvas only: the editing element lives inside a breakpoint iframe,
-   * so a live-mode double-click must not open a session. Entering VC canvas
-   * mode on double-click stays removed — VC entry works from the Site panel
-   * and Spotlight (see `docs/features/canvas-iframe-per-frame.md`).
+   * Works for modules with `inlineTextEdit` (base.text, base.button, childless
+   * base.link). `startInlineEdit` no-ops for everything else.
    */
   const onNodeDoubleClick = (nodeId: string, e: React.MouseEvent, breakpointId?: string) => {
     e.stopPropagation()
@@ -317,6 +318,9 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   const handleKeyDown = useCanvasKeyboardShortcuts({
     canvasKeyDown,
     selectedNodeId,
+    activeBreakpointId,
+    startInlineEdit,
+    canEditContent: permissions.canEditContent,
     editable,
     activeDocument,
     setActiveDocument,

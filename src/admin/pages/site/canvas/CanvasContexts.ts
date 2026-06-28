@@ -2,7 +2,12 @@ import { createContext, type MouseEvent, type RefObject } from 'react'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 
 interface CanvasSelectionContextValue {
-  onNodeClick: (nodeId: string, e: MouseEvent, breakpointId?: string) => void
+  onNodeClick: (
+    nodeId: string,
+    e: MouseEvent,
+    breakpointId?: string,
+    clickTarget?: EventTarget | null,
+  ) => void
   onNodeHover: (nodeId: string | null, breakpointId?: string) => void
   onNodeContextMenu: (nodeId: string, e: MouseEvent, breakpointId?: string) => void
   onNodeDoubleClick: (nodeId: string, e: MouseEvent, breakpointId?: string) => void

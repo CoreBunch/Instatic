@@ -15,6 +15,7 @@
 import { useEditorStore } from '@site/store/store'
 import type { ActiveDocument } from '@site/store/slices/uiSlice'
 import { getKeybindingForCommand } from '@admin/spotlight/keybindings'
+import { canNodeInlineTextEdit } from '@site/canvas/canvasInlineTextEdit'
 
 type CanvasKeyEvent = React.KeyboardEvent<HTMLDivElement>
 
@@ -23,6 +24,12 @@ interface CanvasKeyboardShortcutsDeps {
   canvasKeyDown: (event: CanvasKeyEvent) => void
   /** Anchor node id — the canvas only reacts when something is selected. */
   selectedNodeId: string | null
+  /** Active breakpoint frame — inline edit sessions are scoped to one frame. */
+  activeBreakpointId: string
+  /** Start an inline text-edit session on the selected node. */
+  startInlineEdit: (nodeId: string, breakpointId: string) => void
+  /** True when the user may edit page copy (inline + panel). */
+  canEditContent: boolean
   /** True when the canvas is editable (false for read-only / preview). */
   editable: boolean
   /** Drives the VC-mode-exit branch on Escape. */
@@ -127,6 +134,9 @@ export function useCanvasKeyboardShortcuts(
   const {
     canvasKeyDown,
     selectedNodeId,
+    activeBreakpointId,
+    startInlineEdit,
+    canEditContent,
     editable,
     activeDocument,
     setActiveDocument,
@@ -167,6 +177,26 @@ export function useCanvasKeyboardShortcuts(
 
     if (!editable) return
     if (!selectedNodeId) return
+
+    // Enter on a text-editable node → start canvas inline editing (panel edit
+    // remains available via single-click selection). Skip when a modifier is
+    // held or the keystroke belongs to a form field.
+    if (
+      event.key === 'Enter' &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.shiftKey &&
+      canEditContent &&
+      !isTextInputTarget(event.target)
+    ) {
+      const state = useEditorStore.getState()
+      if (canNodeInlineTextEdit(state, selectedNodeId)) {
+        event.preventDefault()
+        startInlineEdit(selectedNodeId, activeBreakpointId)
+        return
+      }
+    }
 
     // Read the live selection set inside the handler so multi-actions see
     // the latest state without subscribing the component to selectedNodeIds.
