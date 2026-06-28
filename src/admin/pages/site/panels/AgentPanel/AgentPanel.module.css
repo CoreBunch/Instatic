@@ -76,6 +76,46 @@
   50% { opacity: 0.4; }
 }
 
+/* ── Reasoning ("Thinking…") ─────────────────────────────────────────────── */
+.thinkingIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  margin-bottom: var(--space-2xs);
+  font-size: var(--text-s);
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.thinkingDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: pulse 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinkingDot { animation: none; }
+}
+
+.reasoningDisclosure {
+  margin-bottom: var(--space-2xs);
+}
+
+.reasoningContent {
+  margin-top: var(--space-2xs);
+  padding: var(--space-2xs) var(--space-xs);
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border-radius: var(--radius);
+}
+
 /* ── Message thread ──────────────────────────────────────────────────────── */
 .thread {
   flex: 1;

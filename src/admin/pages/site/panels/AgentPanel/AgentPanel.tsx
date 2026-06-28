@@ -42,6 +42,7 @@ import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
 import { Textarea } from '@ui/components/Input'
 import { useDraggablePanel } from '@site/hooks/useDraggablePanel'
+import { MessageReasoning } from './MessageReasoning'
 import { cn } from '@ui/cn'
 import { ModelPicker } from './ModelPicker'
 import { ConversationHistory } from './ConversationHistory'
@@ -69,6 +70,19 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
   const isStreaming = useAgentStore((s) => s.isAgentStreaming)
   const messages = useAgentStore((s) => s.agentMessages)
   const agentError = useAgentStore((s) => s.agentError)
+
+  // A turn is "thinking" while the active assistant message has streamed
+  // reasoning but no visible answer (text/tool block) yet. The compiler
+  // memoizes this derivation; once the answer's first block lands, the id no
+  // longer matches and the indicator gives way to the reasoning expander.
+  const lastMessage = messages[messages.length - 1]
+  const thinkingMessageId =
+    isStreaming &&
+    lastMessage?.role === 'assistant' &&
+    (lastMessage.reasoning?.length ?? 0) > 0 &&
+    lastMessage.blocks.length === 0
+      ? lastMessage.id
+      : null
   const closeAgent = useAgentStore((s) => s.closeAgent)
   const sendAgentMessage = useAgentStore((s) => s.sendAgentMessage)
   const abortAgent = useAgentStore((s) => s.abortAgent)
@@ -278,7 +292,9 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
         ) : (
           <>
             {lockReason && <AgentCredentialAlert mode={lockReason} />}
-            {messages.map((msg) => <MessageBubble key={msg.id} msg={msg} />)}
+            {messages.map((msg) => (
+              <MessageBubble key={msg.id} msg={msg} isThinking={msg.id === thinkingMessageId} />
+            ))}
           </>
         )}
 
@@ -371,11 +387,13 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
 
 interface MessageBubbleProps {
   msg: AgentMessage
+  /** True while this assistant turn has streamed reasoning but no answer yet. */
+  isThinking: boolean
 }
 
 // Exception #2: React.memo re-render bailout on a hot, list-rendered component
 // (one per message in messages.map).
-const MessageBubble = memo(function MessageBubble({ msg }: MessageBubbleProps) {
+const MessageBubble = memo(function MessageBubble({ msg, isThinking }: MessageBubbleProps) {
   const isUser = msg.role === 'user'
 
   return (
@@ -384,6 +402,9 @@ const MessageBubble = memo(function MessageBubble({ msg }: MessageBubbleProps) {
       <div className={styles.roleLabel}>
         {isUser ? 'You' : 'Assistant'}
       </div>
+
+      {/* Reasoning affordance: live "Thinking…" indicator → on-demand expander. */}
+      {!isUser && <MessageReasoning isThinking={isThinking} reasoning={msg.reasoning} />}
 
       {/* Chronological blocks — text and tool calls render in the order
           Claude actually emitted them, so a "text → tool → text" sequence

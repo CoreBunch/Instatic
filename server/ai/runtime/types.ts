@@ -153,6 +153,13 @@ export type AiStreamEvent =
   | { type: 'bridgeReady'; bridgeId: string }
   /** Streaming text delta from the assistant. */
   | { type: 'text'; text: string }
+  /**
+   * Streaming reasoning/thinking delta (e.g. `delta.reasoning_content` from
+   * chat/completions reasoning models). Ephemeral: forwarded to the browser to
+   * drive a live "Thinking…" indicator, but never persisted to conversation
+   * history and never replayed back to the provider.
+   */
+  | { type: 'reasoning'; text: string }
   /** A tool call has been issued by the model. `status: 'pending'` until completion. */
   | { type: 'toolCall'; toolCallId: string; toolName: string; input: unknown; status: 'pending' }
   /** A tool call has completed (server-resolved or browser-bridged). */

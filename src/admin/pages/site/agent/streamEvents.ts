@@ -29,7 +29,7 @@ import { postToolResult } from './agentApi'
 import type { EditorStoreSet } from './agentSliceTypes'
 import type {
   AgentBridgeRuntime,
-  AgentTextStreamSink,
+  AgentStreamSink,
   AgentToolCall,
   ServerStreamEvent,
 } from './types'
@@ -47,6 +47,7 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 
 export const ServerStreamEventSchema = Type.Union([
   Type.Object({ type: Type.Literal('text'), text: Type.String() }),
+  Type.Object({ type: Type.Literal('reasoning'), text: Type.String() }),
   Type.Object({
     type: Type.Literal('bridgeReady'),
     bridgeId: Type.String(),
@@ -94,7 +95,7 @@ export const ServerStreamEventSchema = Type.Union([
 export async function processStreamEvent(
   event: ServerStreamEvent,
   assistantId: string,
-  textSink: AgentTextStreamSink,
+  textSink: AgentStreamSink,
   set: EditorStoreSet,
   bridge: AgentBridgeRuntime,
   signal: AbortSignal | null,
@@ -109,6 +110,14 @@ export async function processStreamEvent(
   switch (event.type) {
     case 'text': {
       textSink.append(assistantId, event.text)
+      break
+    }
+
+    case 'reasoning': {
+      // Ephemeral thinking delta — accumulated into the message's `reasoning`
+      // buffer (NOT through the text path, so it never becomes message text).
+      // Drives the live "Thinking…" indicator + on-demand expander.
+      textSink.appendReasoning(assistantId, event.text)
       break
     }
 

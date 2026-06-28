@@ -192,6 +192,11 @@ const ChatChunkSchema = Type.Object(
               Type.Object(
                 {
                   content: nullable(Type.String()),
+                  // Reasoning models stream chain-of-thought separately from the
+                  // answer: `reasoning_content` (GLM/DeepSeek/Qwen/MiniMax) or
+                  // `reasoning` (OpenRouter-style gateways).
+                  reasoning_content: nullable(Type.String()),
+                  reasoning: nullable(Type.String()),
                   tool_calls: nullable(Type.Array(ChatToolCallDeltaSchema)),
                 },
                 { additionalProperties: true },
@@ -257,6 +262,13 @@ export class ChatCompletionsTurnTranslator implements TurnTranslator<ChatTurn> {
       if (typeof delta.content === 'string' && delta.content.length > 0) {
         this.text += delta.content
         events.push({ type: 'text', text: delta.content })
+      }
+      // Ephemeral reasoning delta — forwarded for the live "Thinking…" indicator
+      // but deliberately NOT added to `this.text`, so it never lands in the
+      // assistant message (not persisted, not replayed to the provider).
+      const reasoning = delta.reasoning_content ?? delta.reasoning
+      if (typeof reasoning === 'string' && reasoning.length > 0) {
+        events.push({ type: 'reasoning', text: reasoning })
       }
       if (delta.tool_calls) {
         for (const tc of delta.tool_calls) {

@@ -78,6 +78,27 @@ describe('chatCompletions shared adapter', () => {
     expect(result.assistantMessage?.[0]).toMatchObject({ role: 'assistant', content: 'Hello there!' })
   })
 
+  // Reasoning models stream their chain-of-thought in a separate delta field
+  // (`reasoning_content`, or `reasoning` on OpenRouter-style gateways). We surface
+  // it as ephemeral `reasoning` events for a live "Thinking…" indicator — but it
+  // must NEVER enter the assistant message (not persisted, not replayed).
+  it('emits reasoning events for delta.reasoning_content without polluting the answer', () => {
+    const t = new ChatCompletionsTurnTranslator()
+    const r = t.translate(frame({ choices: [{ delta: { content: '', reasoning_content: 'Let me think…' } }] }))
+    expect(r).toEqual([{ type: 'reasoning', text: 'Let me think…' }])
+    const a = t.translate(frame({ choices: [{ delta: { content: 'Hello!' }, finish_reason: 'stop' }] }))
+    expect(a).toEqual([{ type: 'text', text: 'Hello!' }])
+    const result = t.finish()
+    // Only the answer is in the assistant message — reasoning is gone.
+    expect(result.assistantMessage?.[0]).toMatchObject({ role: 'assistant', content: 'Hello!' })
+  })
+
+  it('also emits reasoning events for the alternate delta.reasoning field', () => {
+    const t = new ChatCompletionsTurnTranslator()
+    const r = t.translate(frame({ choices: [{ delta: { content: '', reasoning: 'thinking' } }] }))
+    expect(r).toEqual([{ type: 'reasoning', text: 'thinking' }])
+  })
+
   it('translator emits one toolCall event per accumulated call at finish_reason', () => {
     const t = new ChatCompletionsTurnTranslator()
     t.translate(frame({ choices: [{ delta: { tool_calls: [
