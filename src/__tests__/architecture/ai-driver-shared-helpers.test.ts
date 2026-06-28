@@ -30,7 +30,7 @@ const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), 'utf8')
 const DRIVER_FILES = [
   'server/ai/drivers/anthropic.ts',
   'server/ai/drivers/responses-shared.ts',
-  'server/ai/drivers/ollama.ts',
+  'server/ai/drivers/http/chatCompletions.ts',
 ]
 
 describe('ai-driver-shared-helpers gate', () => {
@@ -42,7 +42,7 @@ describe('ai-driver-shared-helpers gate', () => {
   it('every driver imports parseToolArguments from the shared module', () => {
     for (const file of DRIVER_FILES) {
       const src = read(file)
-      expect(src).toContain("from './http/toolArgs'")
+      expect(src).toMatch(/from\s+'(\.\/|\.\.\/)+(http\/)?toolArgs'/)
       // No private copy of the parser may shadow the shared one.
       expect(src).not.toMatch(/function\s+parseJsonOrEmpty\b/)
       expect(src).not.toMatch(/function\s+parseToolArguments\b/)
@@ -58,6 +58,7 @@ describe('ai-driver-shared-helpers gate', () => {
   it('SYSTEM_PROMPT_DYNAMIC_BOUNDARY is declared exactly once', () => {
     const SCAN = [
       ...DRIVER_FILES,
+      'server/ai/drivers/ollama.ts',
       'server/ai/drivers/types.ts',
       'server/ai/runtime/types.ts',
       'server/ai/tools/site/systemPrompt.ts',
