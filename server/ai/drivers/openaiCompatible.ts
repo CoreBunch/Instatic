@@ -11,7 +11,7 @@
  */
 
 import { Type, parseValue } from '@core/utils/typeboxHelpers'
-import type { AiAuthMode, AiProviderId, AiStreamEvent } from '../runtime/types'
+import type { AiAuthMode, AiStreamEvent } from '../runtime/types'
 import type {
   AiProvider,
   AiProviderModel,
@@ -19,7 +19,7 @@ import type {
   AiStreamRequest,
 } from './types'
 import { runToolLoop } from './http/toolLoop'
-import { makeChatCompletionsAdapter, trimSlash } from './http/chatCompletions'
+import { makeChatCompletionsAdapter, normalizeOpenAiBaseUrl } from './http/chatCompletions'
 
 const SUPPORTED_AUTH_MODES: AiAuthMode[] = ['baseUrl']
 
@@ -31,7 +31,7 @@ const GENERIC_CAPABILITIES = {
 } as const
 
 export const openaiCompatibleDriver: AiProvider = {
-  id: 'openai-compatible' as AiProviderId,
+  id: 'openai-compatible',
   label: 'OpenAI-Compatible',
   supportedAuthModes: SUPPORTED_AUTH_MODES,
 
@@ -90,7 +90,7 @@ async function fetchOpenAiCompatibleModels(
   try {
     const headers: Record<string, string> = {}
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`
-    const res = await fetch(`${trimSlash(baseUrl)}/v1/models`, { headers })
+    const res = await fetch(`${normalizeOpenAiBaseUrl(baseUrl)}/v1/models`, { headers })
     if (!res.ok) return []
     const parsed = parseValue(ModelsResponseSchema, await res.json())
     return parsed.data.map((m) => ({

@@ -3,6 +3,7 @@ import {
   mapChatHistory,
   ChatCompletionsTurnTranslator,
   trimSlash,
+  normalizeOpenAiBaseUrl,
 } from './chatCompletions'
 import type { SseFrame } from './sse'
 
@@ -14,6 +15,17 @@ describe('chatCompletions shared adapter', () => {
   it('trimSlash strips trailing slashes', () => {
     expect(trimSlash('http://x/v1/')).toBe('http://x/v1')
     expect(trimSlash('http://x/v1')).toBe('http://x/v1')
+  })
+
+  it('normalizeOpenAiBaseUrl strips trailing /v1 so it is not doubled when building the endpoint', () => {
+    // With /v1 suffix — should strip it so appending /v1/... is correct.
+    expect(normalizeOpenAiBaseUrl('https://api.groq.com/openai/v1')).toBe('https://api.groq.com/openai')
+    expect(normalizeOpenAiBaseUrl('https://api.groq.com/openai/v1/')).toBe('https://api.groq.com/openai')
+    // Without /v1 suffix — no-op.
+    expect(normalizeOpenAiBaseUrl('https://api.groq.com/openai')).toBe('https://api.groq.com/openai')
+    // Ollama-style URL with no path — no-op.
+    expect(normalizeOpenAiBaseUrl('http://localhost:11434')).toBe('http://localhost:11434')
+    expect(normalizeOpenAiBaseUrl('http://localhost:11434/')).toBe('http://localhost:11434')
   })
 
   it('mapChatHistory prepends the system prompt as a system message', () => {

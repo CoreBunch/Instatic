@@ -288,7 +288,7 @@ function AddCredentialDialog({
   const providerSpec = PROVIDERS.find((p) => p.id === providerId)!
   const effectiveAuthMode = providerSpec.authMode
   const baseUrlPlaceholder =
-    providerId === 'ollama' ? 'http://localhost:11434' : 'https://api.your-provider.com/v1'
+    providerId === 'ollama' ? 'http://localhost:11434' : 'https://api.groq.com/openai/v1'
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

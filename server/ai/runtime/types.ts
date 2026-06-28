@@ -29,7 +29,8 @@ export type AiProviderId = 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'o
  * Credential auth modes.
  *
  *   - `apiKey`   — encrypted user-supplied key (Anthropic, OpenAI, OpenRouter).
- *   - `baseUrl`  — OpenAI-compatible local endpoint (Ollama). Optional
+ *   - `baseUrl`  — OpenAI-compatible endpoint (Ollama, or any openai-compatible
+ *                  provider such as Groq, DeepSeek, Mistral, vLLM…). Optional
  *                  bearer token may be stored alongside the URL.
  */
 export type AiAuthMode = 'apiKey' | 'baseUrl'

@@ -24,6 +24,16 @@ describe('openai-compatible driver', () => {
     expect(models[0]).toMatchObject({ label: 'llama-3.3-70b', catalogueSource: 'live' })
   })
 
+  it('listModels normalizes a /v1-suffixed base URL (no double /v1)', async () => {
+    // A user pastes the provider-documented URL including /v1 — must not produce /v1/v1/models.
+    globalThis.fetch = (async (url: string) => {
+      expect(String(url)).toBe('https://api.groq.com/openai/v1/models')
+      return new Response(JSON.stringify({ data: [{ id: 'llama-3.3-70b' }] }), { status: 200 })
+    }) as unknown as typeof fetch
+    const models = await openaiCompatibleDriver.listModels(creds('https://api.groq.com/openai/v1'))
+    expect(models.map((m) => m.id)).toEqual(['llama-3.3-70b'])
+  })
+
   it('listModels returns [] when the endpoint is unreachable or non-OK', async () => {
     globalThis.fetch = (async () => new Response('nope', { status: 500 })) as unknown as typeof fetch
     expect(await openaiCompatibleDriver.listModels(creds('https://x/v1'))).toEqual([])

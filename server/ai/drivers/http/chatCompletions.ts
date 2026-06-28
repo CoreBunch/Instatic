@@ -143,6 +143,18 @@ export function trimSlash(url: string): string {
   return url.replace(/\/+$/, '')
 }
 
+/**
+ * Normalize an OpenAI-style base URL: strip trailing slashes and an optional
+ * trailing `/v1` segment, so both `https://x/openai` and `https://x/openai/v1`
+ * resolve to the same endpoint when `/v1/...` is appended.
+ *
+ * This is a no-op for Ollama-style base URLs (e.g. `http://localhost:11434`)
+ * that don't carry a trailing `/v1`.
+ */
+export function normalizeOpenAiBaseUrl(url: string): string {
+  return trimSlash(url).replace(/\/v1$/, '')
+}
+
 // ---------------------------------------------------------------------------
 // SSE event schema (boundary validation — no `as` on parsed JSON)
 // ---------------------------------------------------------------------------
@@ -312,7 +324,7 @@ export function makeChatCompletionsAdapter(opts: {
   const { baseUrl, apiKey, label } = opts
   return {
     label,
-    endpoint: `${trimSlash(baseUrl)}/v1/chat/completions`,
+    endpoint: `${normalizeOpenAiBaseUrl(baseUrl)}/v1/chat/completions`,
     buildHeaders() {
       const headers: Record<string, string> = { 'content-type': 'application/json' }
       if (apiKey) headers.Authorization = `Bearer ${apiKey}`
