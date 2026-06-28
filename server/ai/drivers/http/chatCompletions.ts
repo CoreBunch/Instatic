@@ -7,7 +7,7 @@
  * adapter shape consumed by `runToolLoop`.
  */
 
-import { Type, parseValue, type Static } from '@core/utils/typeboxHelpers'
+import { Type, parseValue, type Static, type TSchema } from '@core/utils/typeboxHelpers'
 import {
   SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
   type AiContentBlock,
@@ -159,13 +159,22 @@ export function normalizeOpenAiBaseUrl(url: string): string {
 // SSE event schema (boundary validation — no `as` on parsed JSON)
 // ---------------------------------------------------------------------------
 
+// Real OpenAI-compatible gateways (OpenCode Zen, OpenRouter, vLLM, …) routinely
+// send explicit `null` for optional per-chunk fields (e.g. `usage: null`,
+// `tool_calls: null`, `delta.content: null`) on every chunk rather than omitting
+// them. `Type.Optional(T)` accepts absent-or-T but NOT null, so a stray null
+// fails validation, the frame is dropped in `translate()`'s catch, and the
+// model's entire reply silently vanishes ("no reply"). `nullable()` tolerates
+// both an absent field and an explicit null.
+const nullable = <T extends TSchema>(schema: T) => Type.Optional(Type.Union([schema, Type.Null()]))
+
 const ChatToolCallDeltaSchema = Type.Object(
   {
-    index: Type.Optional(Type.Number()),
-    id: Type.Optional(Type.String()),
-    function: Type.Optional(
+    index: nullable(Type.Number()),
+    id: nullable(Type.String()),
+    function: nullable(
       Type.Object(
-        { name: Type.Optional(Type.String()), arguments: Type.Optional(Type.String()) },
+        { name: nullable(Type.String()), arguments: nullable(Type.String()) },
         { additionalProperties: true },
       ),
     ),
@@ -175,28 +184,28 @@ const ChatToolCallDeltaSchema = Type.Object(
 
 const ChatChunkSchema = Type.Object(
   {
-    choices: Type.Optional(
+    choices: nullable(
       Type.Array(
         Type.Object(
           {
-            delta: Type.Optional(
+            delta: nullable(
               Type.Object(
                 {
-                  content: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-                  tool_calls: Type.Optional(Type.Array(ChatToolCallDeltaSchema)),
+                  content: nullable(Type.String()),
+                  tool_calls: nullable(Type.Array(ChatToolCallDeltaSchema)),
                 },
                 { additionalProperties: true },
               ),
             ),
-            finish_reason: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+            finish_reason: nullable(Type.String()),
           },
           { additionalProperties: true },
         ),
       ),
     ),
-    usage: Type.Optional(
+    usage: nullable(
       Type.Object(
-        { prompt_tokens: Type.Optional(Type.Number()), completion_tokens: Type.Optional(Type.Number()) },
+        { prompt_tokens: nullable(Type.Number()), completion_tokens: nullable(Type.Number()) },
         { additionalProperties: true },
       ),
     ),

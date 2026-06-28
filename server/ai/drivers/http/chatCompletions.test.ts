@@ -45,6 +45,39 @@ describe('chatCompletions shared adapter', () => {
     expect(result.toolCalls).toEqual([])
   })
 
+  // Real OpenAI-compatible gateways (OpenCode Zen, OpenRouter, …) send explicit
+  // `null` for optional per-chunk fields rather than omitting them. The chunk
+  // schema must tolerate these, or `parseValue` throws, the frame is dropped,
+  // and the model's entire reply silently vanishes ("no reply").
+  it('still emits text when the chunk carries usage:null', () => {
+    const t = new ChatCompletionsTurnTranslator()
+    const events = t.translate(frame({ choices: [{ delta: { content: 'Hi' } }], usage: null }))
+    expect(events).toEqual([{ type: 'text', text: 'Hi' }])
+  })
+
+  it('still emits text when delta.tool_calls is null', () => {
+    const t = new ChatCompletionsTurnTranslator()
+    const events = t.translate(
+      frame({ choices: [{ delta: { content: 'Hi', reasoning_content: null, tool_calls: null }, finish_reason: 'stop' }], usage: null }),
+    )
+    expect(events).toEqual([{ type: 'text', text: 'Hi' }])
+  })
+
+  it('captures the final content of a reasoning model (content empty during reasoning, filled at the end)', () => {
+    const t = new ChatCompletionsTurnTranslator()
+    // Reasoning phase: content is "" (or null), answer lives in reasoning_content; tool_calls/usage are null.
+    t.translate(frame({ choices: [{ delta: { content: '', reasoning_content: 'thinking…', tool_calls: null } }], usage: null }))
+    t.translate(frame({ choices: [{ delta: { content: null, reasoning_content: ' more' } }], usage: null }))
+    // Final answer arrives in content.
+    const last = t.translate(
+      frame({ choices: [{ delta: { content: 'Hello there!', tool_calls: null }, finish_reason: 'stop' }], usage: null }),
+    )
+    expect(last).toEqual([{ type: 'text', text: 'Hello there!' }])
+    const result = t.finish()
+    expect(result.stop).toBe(true)
+    expect(result.assistantMessage?.[0]).toMatchObject({ role: 'assistant', content: 'Hello there!' })
+  })
+
   it('translator emits one toolCall event per accumulated call at finish_reason', () => {
     const t = new ChatCompletionsTurnTranslator()
     t.translate(frame({ choices: [{ delta: { tool_calls: [
