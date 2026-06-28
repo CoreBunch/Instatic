@@ -32,6 +32,8 @@ interface CanvasKeyboardShortcutsDeps {
   canEditContent: boolean
   /** True when the canvas is editable (false for read-only / preview). */
   editable: boolean
+  /** Live view skips pan/zoom keys but keeps selection shortcuts. */
+  isLive: boolean
   /** Drives the VC-mode-exit branch on Escape. */
   activeDocument: ActiveDocument | null
   setActiveDocument: (next: ActiveDocument | null) => void
@@ -138,6 +140,7 @@ export function useCanvasKeyboardShortcuts(
     startInlineEdit,
     canEditContent,
     editable,
+    isLive,
     activeDocument,
     setActiveDocument,
     clearSelection,
@@ -161,8 +164,10 @@ export function useCanvasKeyboardShortcuts(
     // own onKeyDown handles Escape (cancel) and Enter (commit).
     if (useEditorStore.getState().activeInlineEdit) return
 
-    // Zoom / pan keys always run, regardless of selection state.
-    canvasKeyDown(event)
+    // Pan/zoom keys are design-canvas only — live mode scrolls natively.
+    if (!isLive) {
+      canvasKeyDown(event)
+    }
 
     // Escape exits VC mode regardless of selection (SF-1 / CR #666). This
     // must run before the selectedNodeId guard so pressing Escape while in

@@ -25,10 +25,11 @@ const BREAKPOINT_FRAME = new URL('../../admin/pages/site/canvas/BreakpointFrame.
 const CONTEXTS = new URL('../../admin/pages/site/canvas/CanvasContexts.ts', import.meta.url)
 
 describe('inline text editing wiring (in-place contentEditable)', () => {
-  it('CanvasRoot starts a session on node double-click, gated to design mode', () => {
+  it('CanvasRoot starts a session on node double-click in design and live modes', () => {
     const src = readFileSync(CANVAS_ROOT, 'utf-8')
     expect(src).toContain('startInlineEdit')
     expect(src).toContain('permissions.canEditContent')
+    expect(src).not.toMatch(/onNodeDoubleClick[\s\S]*?if \(isLive/)
   })
 
   it('the double-click context channel carries the originating breakpoint', () => {

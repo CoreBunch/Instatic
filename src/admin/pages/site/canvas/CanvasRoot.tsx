@@ -300,8 +300,17 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
    */
   const onNodeDoubleClick = (nodeId: string, e: React.MouseEvent, breakpointId?: string) => {
     e.stopPropagation()
-    if (isLive || !editable || !permissions.canEditContent) return
-    startInlineEdit(nodeId, breakpointId ?? activeBreakpointId)
+    if (!editable || !permissions.canEditContent) return
+    const resolvedBreakpointId = breakpointId ?? activeBreakpointId
+    if (resolvedBreakpointId && resolvedBreakpointId !== activeBreakpointId) {
+      setActiveBreakpoint(resolvedBreakpointId)
+    }
+    // Always select the node being edited. When the properties panel is open,
+    // a preceding single-click on an inactive frame only switches the viewport
+    // context (preserveSelection) — double-click must still target the text node
+    // the author clicked, in both design and live modes.
+    selectNode(nodeId, 'replace', { clickTarget: e.nativeEvent.target })
+    startInlineEdit(nodeId, resolvedBreakpointId)
   }
 
   // Context carries only stable callbacks — selectedNodeId/hoveredNodeId are
@@ -322,6 +331,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
     startInlineEdit,
     canEditContent: permissions.canEditContent,
     editable,
+    isLive,
     activeDocument,
     setActiveDocument,
     clearSelection,
@@ -359,11 +369,10 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   })
   const runtimeScripts = scriptBuild.scripts
 
-  // Live mode skips canvas-level pan/zoom gestures and shortcuts: the single
-  // real-size frame scrolls natively. Spreading {} keeps the outer div's prop
-  // shape stable when toggling.
+  // Live mode skips pan/zoom gestures but keeps selection + inline-edit
+  // shortcuts — the single frame is still a fully editable iframe surface.
   const gestureBindings = isLive ? {} : bind()
-  const onCanvasKeyDown = isLive ? undefined : handleKeyDown
+  const onCanvasKeyDown = handleKeyDown
   const onCanvasClick = isLive ? undefined : handleCanvasClick
 
   return (
