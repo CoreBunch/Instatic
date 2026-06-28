@@ -37,7 +37,7 @@ const PROVIDERS: Array<{ id: ProviderId; label: string; authMode: AuthMode }> = 
   { id: 'openai', label: 'OpenAI', authMode: 'apiKey' },
   { id: 'openrouter', label: 'OpenRouter', authMode: 'apiKey' },
   { id: 'ollama', label: 'Ollama (local)', authMode: 'baseUrl' },
-  { id: 'openai-compatible', label: 'OpenAI-Compatible', authMode: 'baseUrl' },
+  { id: 'openai-compatible', label: 'Custom Provider', authMode: 'baseUrl' },
 ]
 
 const AUTH_MODE_LABEL: Record<AuthMode, string> = {
@@ -50,7 +50,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   openai: 'OpenAI',
   openrouter: 'OpenRouter',
   ollama: 'Ollama',
-  'openai-compatible': 'OpenAI-Compatible',
+  'openai-compatible': 'Custom Provider',
 }
 
 // Hint text for the API-key field, per provider key prefix.

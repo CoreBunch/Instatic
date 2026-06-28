@@ -1,5 +1,5 @@
 /**
- * OpenAI-Compatible driver — direct HTTP against any endpoint that speaks the
+ * Custom Provider driver — direct HTTP against any endpoint that speaks the
  * OpenAI `/v1/chat/completions` wire protocol (Groq, Together, DeepSeek,
  * Mistral, Fireworks, self-hosted vLLM / LM Studio, …).
  *
@@ -32,7 +32,7 @@ const GENERIC_CAPABILITIES = {
 
 export const openaiCompatibleDriver: AiProvider = {
   id: 'openai-compatible',
-  label: 'OpenAI-Compatible',
+  label: 'Custom Provider',
   supportedAuthModes: SUPPORTED_AUTH_MODES,
 
   capabilities(_modelId: string) {
@@ -60,7 +60,7 @@ export const openaiCompatibleDriver: AiProvider = {
       makeChatCompletionsAdapter({
         baseUrl: req.credentials.baseUrl,
         apiKey: req.credentials.apiKey,
-        label: 'OpenAI-Compatible',
+        label: 'Custom Provider',
       }),
       req,
     )

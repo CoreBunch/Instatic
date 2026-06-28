@@ -5,7 +5,7 @@
  *
  *   - Anthropic reports `input_tokens` EXCLUDING the cache buckets, so the true
  *     total is prompt + cacheRead + cacheCreation.
- *   - OpenAI / OpenRouter / Ollama / OpenAI-Compatible report `input_tokens` as
+ *   - OpenAI / OpenRouter / Ollama / Custom Provider report `input_tokens` as
  *     the full input (any cached tokens are already a subset), so prompt alone
  *     is the total.
  *
