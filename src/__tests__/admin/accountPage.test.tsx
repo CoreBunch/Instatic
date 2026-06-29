@@ -108,7 +108,7 @@ function setupEditorState() {
     focusedPanel: 'canvas',
     siteExplorerPanelOpen: false,
     selectorsPanelOpen: false,
-    colorsPanelOpen: false,
+    frameworkPanelOpen: false,
     mediaExplorerPanelOpen: false,
     codeEditorPanelOpen: false,
     activeEditorFileId: null,

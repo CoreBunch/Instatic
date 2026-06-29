@@ -204,6 +204,13 @@ const ALLOWLIST = new Set([
   // that Button's inline-flex size tokens cannot represent. Same pattern class
   // as §8.7's role="option" card grids (custom ARIA role + multi-line card).
   'admin/shared/dialogs/FrameworkManagerDialog/FrameworkManagerDialog.tsx',
+
+  // ── §8.15 Framework Home activation cards ────────────────────────────────
+  // FrameworkHome's Colors/Typography/Space cards are stacked multi-line tiles
+  // (icon + title + status + count + swatch grid) that switch the panel tab on
+  // click — the same multi-line custom-layout card class as §8.7 / §8.14 that
+  // Button's inline-flex size tokens cannot represent.
+  'admin/pages/site/panels/FrameworkPanel/FrameworkHome.tsx',
 ])
 
 // ---------------------------------------------------------------------------

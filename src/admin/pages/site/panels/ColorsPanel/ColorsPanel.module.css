@@ -1,5 +1,16 @@
 /* Panel shell + scrollable content area now owned by `@admin/shared/Panel`. */
 
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+}
+
+.toolbarFilter {
+    flex: 1;
+    min-width: 0;
+}
+
 .rows {
     display: grid;
     align-content: start;

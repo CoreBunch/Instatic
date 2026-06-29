@@ -116,9 +116,7 @@ function TypographyScalePreview({ points }: { points: TypographyScalePoint[] }) 
   )
 }
 
-export function TypographyPanel() {
-  const isOpen = useEditorStore((s) => s.typographyPanelOpen)
-  const setOpen = useEditorStore((s) => s.setTypographyPanelOpen)
+export function TypographyTab() {
   const onToggleDisabled = useEditorStore((s) => s.toggleFrameworkTypographyDisabled)
   const onCreateGroup = useEditorStore((s) => s.createFrameworkTypographyGroup)
   const onUpdateGroup = useEditorStore((s) => s.updateFrameworkTypographyGroup)
@@ -216,11 +214,5 @@ export function TypographyPanel() {
     ],
   }
 
-  return (
-    <FrameworkScalePanel
-      isOpen={isOpen}
-      onClose={() => setOpen(false)}
-      adapter={adapter}
-    />
-  )
+  return <FrameworkScalePanel adapter={adapter} />
 }

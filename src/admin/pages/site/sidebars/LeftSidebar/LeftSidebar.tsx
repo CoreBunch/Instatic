@@ -3,7 +3,7 @@ import { useEditorStore } from '@site/store/store'
 import type { LeftSidebarPanelId } from '@site/store/slices/uiSlice'
 import { AgentPanel } from '@site/panels/AgentPanel'
 import { AgentStoreProvider } from '@admin/ai/AgentStoreContext'
-import { ColorsPanel } from '@site/panels/ColorsPanel'
+import { FrameworkPanel } from '@site/panels/FrameworkPanel'
 import { DependenciesPanel } from '@site/panels/DependenciesPanel'
 import { DomPanel } from '@site/panels/DomPanel'
 import { MediaExplorerPanel } from '@site/panels/MediaExplorerPanel'
@@ -11,8 +11,6 @@ import { PanelRail } from '@site/sidebars/PanelRail'
 import { PluginEditorPanel } from '@site/panels/PluginEditorPanel'
 import { SelectorsPanel } from '@site/panels/SelectorsPanel'
 import { SiteExplorerPanel } from '@site/panels/SiteExplorerPanel'
-import { TypographyPanel } from '@site/panels/TypographyPanel'
-import { SpacingPanel } from '@site/panels/SpacingPanel'
 import { FrameworkChangeConfirmProvider } from '@admin/shared/dialogs/FrameworkChangeConfirmDialog'
 import { VCDeletionConfirmProvider } from '@admin/shared/dialogs/VCDeletionConfirmDialog'
 import { SidebarResizeHandle } from '@admin/shared/SidebarResizeHandle'
@@ -25,9 +23,7 @@ function selectActiveLeftSidebarPanel(state: ReturnType<typeof useEditorStore.ge
   if (state.activePluginPanelId !== null) return null
   if (state.siteExplorerPanelOpen) return 'site'
   if (state.selectorsPanelOpen) return 'selectors'
-  if (state.colorsPanelOpen) return 'colors'
-  if (state.typographyPanelOpen) return 'typography'
-  if (state.spacingPanelOpen) return 'spacing'
+  if (state.frameworkPanelOpen) return 'framework'
   if (state.mediaExplorerPanelOpen) return 'media'
   if (state.dependenciesPanelOpen) return 'dependencies'
   if (!state.domTreePanel.collapsed) return 'layers'
@@ -45,7 +41,7 @@ interface LeftSidebarProps {
    *
    * Falsy callers (Viewer / Client) still see Layers, Site Explorer and
    * Media — they're navigation surfaces, not editing tools. The structural
-   * Selectors / Colors / Typography / Spacing / Dependencies panels stay
+   * Selectors / Framework / Dependencies panels stay
    * hidden. The Agent panel is controlled separately by `canUseAiChat`.
    *
    * Each panel is responsible for respecting its own read-only state for
@@ -142,14 +138,8 @@ export function LeftSidebar({
               <div className={styles.panelMount} hidden={effectiveActivePanel !== 'selectors'}>
                 <SelectorsPanel variant="docked" />
               </div>
-              <div className={styles.panelMount} hidden={effectiveActivePanel !== 'colors'}>
-                <ColorsPanel />
-              </div>
-              <div className={styles.panelMount} hidden={effectiveActivePanel !== 'typography'}>
-                <TypographyPanel />
-              </div>
-              <div className={styles.panelMount} hidden={effectiveActivePanel !== 'spacing'}>
-                <SpacingPanel />
+              <div className={styles.panelMount} hidden={effectiveActivePanel !== 'framework'}>
+                <FrameworkPanel />
               </div>
               <div className={styles.panelMount} hidden={effectiveActivePanel !== 'dependencies'}>
                 <DependenciesPanel variant="docked" />

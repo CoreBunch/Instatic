@@ -106,7 +106,7 @@ function resetStore() {
     focusedPanel: 'canvas',
     siteExplorerPanelOpen: false,
     selectorsPanelOpen: false,
-    colorsPanelOpen: false,
+    frameworkPanelOpen: false,
     mediaExplorerPanelOpen: false,
     codeEditorPanelOpen: false,
     activeEditorFileId: null,
@@ -446,15 +446,15 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
       'panel-rail-layers',
       'panel-rail-site',
       'panel-rail-selectors',
-      'panel-rail-colors',
-      'panel-rail-typography',
+      'panel-rail-framework',
+      'panel-rail-media',
     ])
     expect(primaryButtons.map((button) => button.getAttribute('data-icon'))).toEqual([
       'database-solid',
       'files-stack-2',
       'paint-bucket',
       'colors-swatch',
-      'text-start-t',
+      'images',
     ])
     const primaryAccents = primaryButtons.map((button) => button.getAttribute('data-accent'))
     expect(primaryAccents.every(Boolean)).toBe(true)
@@ -503,22 +503,22 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
     expect(sidebar.style.getPropertyValue('--left-sidebar-panel-layout-width')).toBe('0px')
     expect(useEditorStore.getState().siteExplorerPanelOpen).toBe(false)
 
-    fireEvent.click(within(rail).getByRole('button', { name: /open colors panel/i }))
+    fireEvent.click(within(rail).getByRole('button', { name: /framework/i }))
 
     expect(sidebar.getAttribute('data-expanded')).toBe('true')
-    expect(sidebar.getAttribute('data-active-panel')).toBe('colors')
-    expect(useEditorStore.getState().colorsPanelOpen).toBe(true)
+    expect(sidebar.getAttribute('data-active-panel')).toBe('framework')
+    expect(useEditorStore.getState().frameworkPanelOpen).toBe(true)
     expect(useEditorStore.getState().siteExplorerPanelOpen).toBe(false)
     expect(useEditorStore.getState().mediaExplorerPanelOpen).toBe(false)
     expect(useEditorStore.getState().domTreePanel.collapsed).toBe(true)
-    expect(within(sidebar).getByTestId('colors-panel')).toBeDefined()
+    expect(within(sidebar).getByTestId('framework-panel')).toBeDefined()
 
     fireEvent.click(within(rail).getByRole('button', { name: /open media panel/i }))
 
     expect(sidebar.getAttribute('data-expanded')).toBe('true')
     expect(sidebar.getAttribute('data-active-panel')).toBe('media')
     expect(useEditorStore.getState().mediaExplorerPanelOpen).toBe(true)
-    expect(useEditorStore.getState().colorsPanelOpen).toBe(false)
+    expect(useEditorStore.getState().frameworkPanelOpen).toBe(false)
     expect(useEditorStore.getState().siteExplorerPanelOpen).toBe(false)
     expect(useEditorStore.getState().dependenciesPanelOpen).toBe(false)
     expect(useEditorStore.getState().domTreePanel.collapsed).toBe(true)

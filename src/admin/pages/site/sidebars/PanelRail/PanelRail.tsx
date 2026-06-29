@@ -9,8 +9,6 @@ import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
 import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
 import { ColorsSwatchSolidIcon } from 'pixel-art-icons/icons/colors-swatch-solid'
-import { TextStartTIcon } from 'pixel-art-icons/icons/text-start-t'
-import { RulerDimensionSolidIcon } from 'pixel-art-icons/icons/ruler-dimension-solid'
 import { Button } from '@ui/components/Button'
 import { assignRailAccents, railTintVar, type RailAccent } from '@ui/railAccent'
 import { pluginRuntime } from '@core/plugins/runtime'
@@ -58,22 +56,10 @@ const PRIMARY_RAIL_ITEMS: PrimaryRailItem[] = [
     iconName: 'paint-bucket',
   },
   {
-    id: 'colors',
-    label: 'Colors',
+    id: 'framework',
+    label: 'Framework',
     icon: ColorsSwatchSolidIcon,
     iconName: 'colors-swatch',
-  },
-  {
-    id: 'typography',
-    label: 'Typography',
-    icon: TextStartTIcon,
-    iconName: 'text-start-t',
-  },
-  {
-    id: 'spacing',
-    label: 'Spacing',
-    icon: RulerDimensionSolidIcon,
-    iconName: 'ruler-dimension',
   },
   {
     id: 'media',
@@ -120,9 +106,7 @@ export function PanelRail({
   const domOpen = useEditorStore((s) => !s.domTreePanel.collapsed)
   const siteOpen = useEditorStore((s) => s.siteExplorerPanelOpen)
   const selectorsOpen = useEditorStore((s) => s.selectorsPanelOpen)
-  const colorsOpen = useEditorStore((s) => s.colorsPanelOpen)
-  const typographyOpen = useEditorStore((s) => s.typographyPanelOpen)
-  const spacingOpen = useEditorStore((s) => s.spacingPanelOpen)
+  const frameworkOpen = useEditorStore((s) => s.frameworkPanelOpen)
   const mediaOpen = useEditorStore((s) => s.mediaExplorerPanelOpen)
   const dependenciesOpen = useEditorStore((s) => s.dependenciesPanelOpen)
   const agentOpen = useEditorStore((s) => s.isAgentOpen)
@@ -148,9 +132,7 @@ export function PanelRail({
     agent: agentOpen,
     site: siteOpen,
     selectors: selectorsOpen,
-    colors: colorsOpen,
-    typography: typographyOpen,
-    spacing: spacingOpen,
+    framework: frameworkOpen,
     media: mediaOpen,
     dependencies: dependenciesOpen,
   } satisfies Record<LeftSidebarPanelId, boolean>

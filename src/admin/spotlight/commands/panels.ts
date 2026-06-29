@@ -77,65 +77,23 @@ export function getPanelsCommands(): Command[] {
       },
     },
 
-    // ── Colors panel ─────────────────────────────────────────────────────────
+    // ── Framework panel ──────────────────────────────────────────────────────
     {
-      id: 'panels.toggleColors',
-      title: 'Toggle Colors panel',
-      subtitle: 'Show or hide the design token colors panel',
+      id: 'panels.toggleFramework',
+      title: 'Toggle Framework panel',
+      subtitle: 'Show or hide the design-token framework panel (colors, type, space)',
       group: 'editor',
       iconName: 'colors-swatch-solid',
-      keywords: ['panel', 'colors', 'tokens', 'palette', 'toggle'],
+      keywords: ['panel', 'framework', 'colors', 'typography', 'spacing', 'tokens', 'toggle'],
       workspaces: ['site'],
       capability: PANEL_CAPABILITY,
       run: async (ctx) => {
         ctx.closeSpotlight()
         try {
           const { useEditorStore } = await import('@site/store/store')
-          useEditorStore.getState().toggleLeftSidebarPanel('colors')
+          useEditorStore.getState().toggleLeftSidebarPanel('framework')
         } catch (err) {
-          console.error('[spotlight] toggleLeftSidebarPanel colors failed:', err)
-        }
-      },
-    },
-
-    // ── Typography panel ─────────────────────────────────────────────────────
-    {
-      id: 'panels.toggleTypography',
-      title: 'Toggle Typography panel',
-      subtitle: 'Show or hide the typography design tokens panel',
-      group: 'editor',
-      iconName: 'braces',
-      keywords: ['panel', 'typography', 'fonts', 'type', 'tokens', 'toggle'],
-      workspaces: ['site'],
-      capability: PANEL_CAPABILITY,
-      run: async (ctx) => {
-        ctx.closeSpotlight()
-        try {
-          const { useEditorStore } = await import('@site/store/store')
-          useEditorStore.getState().toggleLeftSidebarPanel('typography')
-        } catch (err) {
-          console.error('[spotlight] toggleLeftSidebarPanel typography failed:', err)
-        }
-      },
-    },
-
-    // ── Spacing panel ────────────────────────────────────────────────────────
-    {
-      id: 'panels.toggleSpacing',
-      title: 'Toggle Spacing panel',
-      subtitle: 'Show or hide the spacing design tokens panel',
-      group: 'editor',
-      iconName: 'proportions-solid',
-      keywords: ['panel', 'spacing', 'gaps', 'padding', 'margin', 'tokens', 'toggle'],
-      workspaces: ['site'],
-      capability: PANEL_CAPABILITY,
-      run: async (ctx) => {
-        ctx.closeSpotlight()
-        try {
-          const { useEditorStore } = await import('@site/store/store')
-          useEditorStore.getState().toggleLeftSidebarPanel('spacing')
-        } catch (err) {
-          console.error('[spotlight] toggleLeftSidebarPanel spacing failed:', err)
+          console.error('[spotlight] toggleLeftSidebarPanel framework failed:', err)
         }
       },
     },

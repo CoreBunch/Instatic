@@ -10,13 +10,13 @@ type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'
 export type LeftSidebarPanelId =
   | 'site'
   | 'selectors'
-  | 'colors'
-  | 'typography'
-  | 'spacing'
+  | 'framework'
   | 'media'
   | 'dependencies'
   | 'layers'
   | 'agent'
+/** Tabs inside the consolidated Framework panel. */
+export type FrameworkPanelTab = 'home' | 'colors' | 'typography' | 'spacing'
 export type PropertiesPanelMode = 'docked' | 'floating'
 
 const PROPERTIES_PANEL_DEFAULT_WIDTH = 360
@@ -105,9 +105,11 @@ interface UiSlice {
   // Site explorer — user-facing site concepts, not generated source files
   siteExplorerPanelOpen: boolean
   selectorsPanelOpen: boolean
-  colorsPanelOpen: boolean
-  typographyPanelOpen: boolean
-  spacingPanelOpen: boolean
+  frameworkPanelOpen: boolean
+  /** Active tab inside the consolidated Framework panel. */
+  frameworkPanelTab: FrameworkPanelTab
+  /** Whether the Manage Core Framework dialog is open. */
+  frameworkManagerOpen: boolean
   mediaExplorerPanelOpen: boolean
   dependenciesPanelOpen: boolean
 
@@ -156,9 +158,9 @@ interface UiSlice {
 
   setSiteExplorerPanelOpen: (open: boolean) => void
   setSelectorsPanelOpen: (open: boolean) => void
-  setColorsPanelOpen: (open: boolean) => void
-  setTypographyPanelOpen: (open: boolean) => void
-  setSpacingPanelOpen: (open: boolean) => void
+  setFrameworkPanelOpen: (open: boolean) => void
+  setFrameworkPanelTab: (tab: FrameworkPanelTab) => void
+  setFrameworkManagerOpen: (open: boolean) => void
   setMediaExplorerPanelOpen: (open: boolean) => void
   setDependenciesPanelOpen: (open: boolean) => void
   setLeftSidebarPanel: (panel: LeftSidebarPanelId | null) => void
@@ -285,9 +287,7 @@ function getActiveLeftSidebarPanel(state: EditorStore): LeftSidebarPanelId | nul
   if (state.activePluginPanelId !== null) return null
   if (state.siteExplorerPanelOpen) return 'site'
   if (state.selectorsPanelOpen) return 'selectors'
-  if (state.colorsPanelOpen) return 'colors'
-  if (state.typographyPanelOpen) return 'typography'
-  if (state.spacingPanelOpen) return 'spacing'
+  if (state.frameworkPanelOpen) return 'framework'
   if (state.mediaExplorerPanelOpen) return 'media'
   if (state.dependenciesPanelOpen) return 'dependencies'
   if (!state.domTreePanel.collapsed) return 'layers'
@@ -316,9 +316,9 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
   layoutNameDialogRequest: null,
   siteExplorerPanelOpen: false,
   selectorsPanelOpen: false,
-  colorsPanelOpen: false,
-  typographyPanelOpen: false,
-  spacingPanelOpen: false,
+  frameworkPanelOpen: false,
+  frameworkPanelTab: 'home',
+  frameworkManagerOpen: false,
   mediaExplorerPanelOpen: false,
   dependenciesPanelOpen: false,
   activePluginPanelId: null,
@@ -453,11 +453,11 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
 
   setSelectorsPanelOpen: (open) => set({ selectorsPanelOpen: open }),
 
-  setColorsPanelOpen: (open) => set({ colorsPanelOpen: open }),
+  setFrameworkPanelOpen: (open) => set({ frameworkPanelOpen: open }),
 
-  setTypographyPanelOpen: (open) => set({ typographyPanelOpen: open }),
+  setFrameworkPanelTab: (tab) => set({ frameworkPanelTab: tab }),
 
-  setSpacingPanelOpen: (open) => set({ spacingPanelOpen: open }),
+  setFrameworkManagerOpen: (open) => set({ frameworkManagerOpen: open }),
 
   setMediaExplorerPanelOpen: (open) => set({ mediaExplorerPanelOpen: open }),
 
@@ -467,9 +467,7 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
     set((state) => {
       state.siteExplorerPanelOpen = panel === 'site'
       state.selectorsPanelOpen = panel === 'selectors'
-      state.colorsPanelOpen = panel === 'colors'
-      state.typographyPanelOpen = panel === 'typography'
-      state.spacingPanelOpen = panel === 'spacing'
+      state.frameworkPanelOpen = panel === 'framework'
       state.mediaExplorerPanelOpen = panel === 'media'
       state.dependenciesPanelOpen = panel === 'dependencies'
       state.domTreePanel.collapsed = panel !== 'layers'
@@ -494,9 +492,7 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
     set((state) => {
       state.siteExplorerPanelOpen = false
       state.selectorsPanelOpen = false
-      state.colorsPanelOpen = false
-      state.typographyPanelOpen = false
-      state.spacingPanelOpen = false
+      state.frameworkPanelOpen = false
       state.mediaExplorerPanelOpen = false
       state.dependenciesPanelOpen = false
       state.domTreePanel.collapsed = true

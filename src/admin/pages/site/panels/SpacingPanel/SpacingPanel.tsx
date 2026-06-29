@@ -257,9 +257,7 @@ function SpacingBarChart({ points }: { points: ChartPoint[] }) {
   )
 }
 
-export function SpacingPanel() {
-  const isOpen = useEditorStore((s) => s.spacingPanelOpen);
-  const setOpen = useEditorStore((s) => s.setSpacingPanelOpen);
+export function SpacingTab() {
   const onToggleDisabled = useEditorStore(
     (s) => s.toggleFrameworkSpacingDisabled,
   );
@@ -363,11 +361,5 @@ export function SpacingPanel() {
     onSetClassGenerators: wrappedSetClassGenerators,
   };
 
-  return (
-    <FrameworkScalePanel
-      isOpen={isOpen}
-      onClose={() => setOpen(false)}
-      adapter={adapter}
-    />
-  );
+  return <FrameworkScalePanel adapter={adapter} />;
 }

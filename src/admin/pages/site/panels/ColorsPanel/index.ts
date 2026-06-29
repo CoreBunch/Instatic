@@ -1,1 +1,1 @@
-export { ColorsPanel } from './ColorsPanel'
+export { ColorsPanelBody } from './ColorsPanelBody'

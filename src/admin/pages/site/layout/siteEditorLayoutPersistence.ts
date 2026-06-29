@@ -19,9 +19,7 @@ export type SiteLayoutSelection = readonly [
   propertiesOpen: boolean,
   siteOpen: boolean,
   selectorsOpen: boolean,
-  colorsOpen: boolean,
-  typographyOpen: boolean,
-  spacingOpen: boolean,
+  frameworkOpen: boolean,
   mediaOpen: boolean,
   dependenciesOpen: boolean,
   codeEditorOpen: boolean,
@@ -61,9 +59,7 @@ export function selectSiteLayoutState(s: EditorStore): SiteLayoutSelection {
     !s.propertiesPanel.collapsed,
     s.siteExplorerPanelOpen,
     s.selectorsPanelOpen,
-    s.colorsPanelOpen,
-    s.typographyPanelOpen,
-    s.spacingPanelOpen,
+    s.frameworkPanelOpen,
     s.mediaExplorerPanelOpen,
     s.dependenciesPanelOpen,
     s.codeEditorPanelOpen,
@@ -85,9 +81,7 @@ function deriveSiteActiveLeftPanel(selection: SiteLayoutSelection): string | nul
     ,
     siteOpen,
     selectorsOpen,
-    colorsOpen,
-    typographyOpen,
-    spacingOpen,
+    frameworkOpen,
     mediaOpen,
     dependenciesOpen,
     ,
@@ -96,9 +90,7 @@ function deriveSiteActiveLeftPanel(selection: SiteLayoutSelection): string | nul
 
   if (siteOpen) return 'site'
   if (selectorsOpen) return 'selectors'
-  if (colorsOpen) return 'colors'
-  if (typographyOpen) return 'typography'
-  if (spacingOpen) return 'spacing'
+  if (frameworkOpen) return 'framework'
   if (mediaOpen) return 'media'
   if (dependenciesOpen) return 'dependencies'
   if (domOpen) return 'layers'
@@ -112,8 +104,6 @@ export function siteLayoutFromSelection(
   const [
     ,
     propertiesOpen,
-    ,
-    ,
     ,
     ,
     ,
@@ -156,9 +146,7 @@ export function restoreStoredSiteEditorLayout(
           },
           siteExplorerPanelOpen: storedActivePanel === 'site',
           selectorsPanelOpen: storedActivePanel === 'selectors',
-          colorsPanelOpen: storedActivePanel === 'colors',
-          typographyPanelOpen: storedActivePanel === 'typography',
-          spacingPanelOpen: storedActivePanel === 'spacing',
+          frameworkPanelOpen: storedActivePanel === 'framework',
           mediaExplorerPanelOpen: storedActivePanel === 'media',
           dependenciesPanelOpen: storedActivePanel === 'dependencies',
           isAgentOpen: storedActivePanel === 'agent',
