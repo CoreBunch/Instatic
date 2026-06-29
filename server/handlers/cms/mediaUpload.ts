@@ -153,7 +153,7 @@ function detectSvgMime(bytes: Uint8Array): AcceptedMediaMime | null {
   return null
 }
 
-function detectAcceptedMime(bytes: Uint8Array): AcceptedMediaMime | null {
+export function detectAcceptedMime(bytes: Uint8Array): AcceptedMediaMime | null {
   for (const sig of MEDIA_MAGIC_SIGNATURES) {
     let matches = true
     for (const [offset, expected] of sig.bytes) {
