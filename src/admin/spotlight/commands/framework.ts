@@ -10,9 +10,13 @@
  */
 
 import type { Command } from '../types'
-import type { FrameworkPanelTab } from '@site/store/slices/uiSlice'
 
 const FRAMEWORK_CAPABILITY = 'site.style.edit'
+
+// Local mirror of the Framework panel's tab union — spotlight commands must not
+// import editor-store internals (slices/types). Gated by
+// spotlight-no-direct-store-mutation.test.ts.
+type FrameworkPanelTab = 'home' | 'colors' | 'typography' | 'spacing'
 
 /** Open the Framework panel and switch it to the given tab. */
 async function openFrameworkTab(tab: FrameworkPanelTab): Promise<void> {
