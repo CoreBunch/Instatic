@@ -7,37 +7,23 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
     steps:
-      - name: Setup Tailscale
-        uses: tailscale/github-action@v3
-        with:
-          oauth-client: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci-deploy
-
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: 100.112.45.36
-          username: root
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: 22
-          command_timeout: 5m
-          script: |
-            cd /root/workspace/instatic
-            git fetch origin
-            git reset --hard origin/main
-            docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.override.yml -f compose.build.yml up -d --build
-            # Wait for healthcheck
-            for i in $(seq 1 12); do
-              if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
-                echo "✅ Instatic healthy"
-                exit 0
-              fi
-              echo "Waiting for health... ($i/12)"
-              sleep 5
-            done
-            echo "❌ Health check failed"
-            exit 1
+      - name: Deploy Instatic
+        run: |
+          cd /root/workspace/instatic
+          git fetch origin
+          git reset --hard origin/main
+          docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.override.yml -f compose.build.yml up -d --build
+          # Wait for healthcheck
+          for i in $(seq 1 12); do
+            if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
+              echo "✅ Instatic healthy"
+              exit 0
+            fi
+            echo "Waiting for health... ($i/12)"
+            sleep 5
+          done
+          echo "❌ Health check failed"
+          exit 1
