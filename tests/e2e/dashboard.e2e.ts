@@ -91,7 +91,9 @@ test.describe('dashboard', () => {
       await expectLoaded(plugins)
 
       const domain = await expectWidget(page, 'domain', 'Domain')
-      await expect(domain).toContainText('instatic.com')
+      // Domain widget should display the current hostname, not a hardcoded value
+      const hostname = new URL(page.url()).hostname
+      await expect(domain).toContainText(hostname)
       await expect(domain).toContainText('HTTPS')
     })
 
@@ -216,7 +218,7 @@ test.describe('dashboard', () => {
     await expectOnboardingStep(panel, 'Install a plugin', 'Not started', 'Browse plugins')
     await expectOnboardingStep(panel, 'Invite your team', 'Not started', 'Add members')
 
-    await test.step('step actions route to the expected workspaces', async () => {
+    await test.step('step actions route to the expected workspaces', () => {
       await panel.getByRole('button', { name: 'Open settings' }).click()
       await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible()
       await page.keyboard.press('Escape')
