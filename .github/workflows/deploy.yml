@@ -12,10 +12,10 @@ jobs:
     steps:
       - name: Deploy Instatic
         run: |
+          sudo git -C /root/workspace/instatic fetch origin
+          sudo git -C /root/workspace/instatic reset --hard origin/main
           cd /root/workspace/instatic
-          git fetch origin
-          git reset --hard origin/main
-          docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.override.yml -f compose.build.yml up -d --build
+          sudo docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.override.yml -f compose.build.yml up -d --build
           # Wait for healthcheck
           for i in $(seq 1 12); do
             if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
