@@ -1,0 +1,45 @@
+name: Backup to R2
+
+on:
+  schedule:
+    # Daily at 03:00 UTC (= 06:00 Madagascar time / EAT)
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Setup Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci-backup
+
+      - name: Run backup on VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 100.112.45.36
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          command_timeout: 10m
+          envs: CF_API_TOKEN,CF_ACCOUNT_ID,R2_BUCKET
+          script: |
+            export CF_API_TOKEN="$CF_API_TOKEN"
+            export CF_ACCOUNT_ID="$CF_ACCOUNT_ID"
+            export R2_BUCKET="$R2_BUCKET"
+            bash /root/workspace/instatic/scripts/backup-instatic-to-r2.sh
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('❌ Instatic R2 backup failed — check workflow logs')

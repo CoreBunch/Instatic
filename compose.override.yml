@@ -1,0 +1,5 @@
+services:
+  app:
+    environment:
+      PUBLIC_ORIGIN: "https://builder.nexio.work"
+      TRUSTED_PROXY_CIDRS: "127.0.0.1/32,::1/128,172.16.0.0/12"
