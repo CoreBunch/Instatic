@@ -2,7 +2,7 @@
 
 The AI Agent is a model-powered assistant integrated into the visual editor. The user types a request in the Agent Panel; the agent reads the current page snapshot, plans a sequence of edits, and executes them by calling tools. Structure is written as semantic HTML (`insertHtml` / `replaceNodeHtml`); styling is written as CSS — a `<style>` block and/or `class=` attributes inside the insert, or the dedicated `applyCss` tool for authoring/editing any CSS on its own. There is one CSS path and it accepts every selector; `assignClass` / `removeClass` attach existing classes to nodes.
 
-The agent runs on a provider-agnostic AI runtime (`server/ai/`) that can drive any supported model (Anthropic Claude, OpenAI, OpenRouter, Ollama). Every driver talks directly to its provider's REST API over HTTP/SSE — no provider SDKs. All four share one multi-turn tool loop (`drivers/http/toolLoop.ts`); each supplies only a small `ProviderAdapter` of pure mapping functions. The plain `@anthropic-ai/sdk` (and any provider SDK) is banned repo-wide. Gated by `ai-driver-isolation.test.ts`.
+The agent runs on a provider-agnostic AI runtime (`server/ai/`) that can drive any supported model (Anthropic Claude, OpenAI, OpenRouter, Ollama, or any OpenAI-compatible endpoint). Every driver talks directly to its provider's REST API over HTTP/SSE — no provider SDKs. All drivers share one multi-turn tool loop (`drivers/http/toolLoop.ts`); each supplies only a small `ProviderAdapter` of pure mapping functions. The plain `@anthropic-ai/sdk` (and any provider SDK) is banned repo-wide. Gated by `ai-driver-isolation.test.ts`.
 
 ---
 
@@ -12,7 +12,7 @@ The agent runs on a provider-agnostic AI runtime (`server/ai/`) that can drive a
 - **Styling via CSS.** The agent emits CSS the same way a human pastes it: a `<style>` block and/or `class=` attributes inside the `insertHtml`/`replaceNodeHtml` payload, or the standalone `applyCss` tool. The importer (`cssToStyleRules`) classifies every selector — a bare `.foo {}` rule becomes a reusable Selectors-panel class bound to `class="foo"`; any other selector (`.hero a`, `a:hover`, `nav > li`) becomes an ambient rule; `style=` attributes land on the node's inline styles. There is no structured `classes` parameter — the agent never hand-builds classes node-by-node at insert time. `applyCss` is the single tool for authoring/editing CSS on its own; it **upserts**, so re-applying a selector edits the existing rule (the way descendant/pseudo rules get restyled).
 - **35 tools total.** 6 server-side catalog read tools (resolved server-side from the posted snapshot / DB) + 29 browser-bridged tools.
 - **Two-endpoint bridge.** `POST /admin/api/ai/chat/site` opens an NDJSON stream. When the model calls a browser-bridged tool, the server emits `toolRequest`; the browser executor reads or mutates the editor store and POSTs the `AiToolOutput` result to `POST /admin/api/ai/tool-result`.
-- **Provider-agnostic.** The runtime selects a driver (Anthropic, OpenAI, OpenRouter, Ollama) from the conversation's configured credential.
+- **Provider-agnostic.** The runtime selects a driver (Anthropic, OpenAI, OpenRouter, Ollama, Custom Provider) from the conversation's configured credential.
 - **Tool input schemas are a single source of truth** in `@core/ai` (`src/core/ai/toolSchemas.ts`). The server tool registry (`server/ai/tools/site/writeTools.ts`) and the browser executor (`executor.ts` + `tokenRunners.ts`) import the exact same schema objects — a constraint added once is enforced on both sides at build time. Gated by `ai-tool-schema-ssot.test.ts` and `ai-tools-typebox-only.test.ts`.
 - **Capabilities.** `ai.chat` required to stream; `ai.tools.write` required for write tools. Gated by `ai-handlers-capability-gated.test.ts`.
 
@@ -56,16 +56,18 @@ server/ai/
 │   └── content/            — content-workspace tools (separate scope)
 ├── drivers/
 │   ├── http/
-│   │   ├── sse.ts          — parseSseStream(res): reassemble SSE frames across chunks
-│   │   ├── execTool.ts     — executeAiTool(): server-handler vs browser-bridge dispatch; normaliseToolOutput(): wraps raw handler results in the canonical AiToolOutput envelope, validated via TypeBox (not duck-typed)
-│   │   ├── toolLoop.ts     — runToolLoop(): provider-agnostic multi-turn loop
-│   │   ├── toolArgs.ts     — parseToolArguments(json): shared tool-argument JSON parsing (one copy for all drivers)
-│   │   └── errors.ts       — isAbortError / classifyHttpError
-│   ├── responses-shared.ts — OpenAI-Responses mapping + SSE translator + adapter factory (openai + openrouter)
-│   ├── anthropic.ts        — Anthropic driver: direct POST /v1/messages (no SDK)
-│   ├── openai.ts           — OpenAI driver: direct POST /v1/responses (no SDK)
-│   ├── openrouter.ts       — OpenRouter driver: direct POST /v1/responses (shared Responses path; live /models; native cost)
-│   └── ollama.ts           — Ollama driver: direct POST /v1/chat/completions (no SDK)
+│   │   ├── sse.ts             — parseSseStream(res): reassemble SSE frames across chunks
+│   │   ├── execTool.ts        — executeAiTool(): server-handler vs browser-bridge dispatch; normaliseToolOutput(): wraps raw handler results in the canonical AiToolOutput envelope, validated via TypeBox (not duck-typed)
+│   │   ├── toolLoop.ts        — runToolLoop(): provider-agnostic multi-turn loop
+│   │   ├── toolArgs.ts        — parseToolArguments(json): shared tool-argument JSON parsing (one copy for all drivers)
+│   │   ├── chatCompletions.ts — shared /v1/chat/completions SSE adapter (makeChatCompletionsAdapter); used by ollama + openai-compatible
+│   │   └── errors.ts          — isAbortError / classifyHttpError
+│   ├── responses-shared.ts    — OpenAI-Responses mapping + SSE translator + adapter factory (openai + openrouter)
+│   ├── anthropic.ts           — Anthropic driver: direct POST /v1/messages (no SDK)
+│   ├── openai.ts              — OpenAI driver: direct POST /v1/responses (no SDK)
+│   ├── openrouter.ts          — OpenRouter driver: direct POST /v1/responses (shared Responses path; live /models; native cost)
+│   ├── ollama.ts              — Ollama driver: POST /v1/chat/completions via shared chatCompletions adapter; live /api/tags catalogue
+│   └── openaiCompatible.ts    — Custom Provider driver: any /v1/chat/completions endpoint; live GET /v1/models catalogue
 └── runtime/
     ├── runner.ts           — runChat(): drives a driver, emits stream events
     ├── persister.ts        — ConversationsPersister: messages + usage to DB; writes contextTokens snapshot
@@ -126,6 +128,22 @@ While credentials are still loading, `lockReason` stays `null` so the panel does
 When the panel opens, `AgentPanel` calls `loadScopeDefault()` so the model picker immediately shows the configured scope default — no "Default" placeholder, no send-time no-provider surprise. `composerLocked` is gated by `hasActiveProvider` (`Boolean(activeCredentialId && activeModelId)`), meaning a stale "No AI provider configured" error string never locks out the UI once a credential + model is staged; picking a model via `setAgentProvider` clears `agentError` immediately, re-enabling the composer.
 
 The composer area includes a `<ContextMeter>` that shows "context used / window" as a progress bar. `AgentPanel` resolves the active model's `contextWindow` from `GET /admin/api/ai/providers/:id/models?credentialId=…` (the same catalogue-enriched response the picker uses), so the meter appears as soon as a model is selected — before the first turn. The "used" half comes from `agentContextTokens` in the store (see slice state below). The meter is hidden when no context window is known (Ollama, uncatalogued models).
+
+---
+
+## Providers
+
+Each entry in **Settings → AI → Providers** stores one credential. The provider id is fixed; the auth mode and input fields are derived from it — the UI never asks you to choose.
+
+| Provider | Label in UI | Auth mode | Required field | Optional field | Model discovery |
+|---|---|---|---|---|---|
+| `anthropic` | Anthropic (Claude) | `apiKey` | API key (`sk-ant-…`) | — | Static `claude-*` catalogue enriched with OpenRouter prices + context windows |
+| `openai` | OpenAI | `apiKey` | API key (`sk-…`) | — | Static `gpt-*` / `o*` catalogue enriched with OpenRouter prices + context windows |
+| `openrouter` | OpenRouter | `apiKey` | API key (`sk-or-…`) | — | Live `GET /api/v1/models` (cross-provider; native cost reporting) |
+| `ollama` | Ollama (local) | `baseUrl` | Base URL (e.g. `http://localhost:11434`) | API key (bearer, for proxied deployments) | Live `GET {baseUrl}/api/tags`; static fallback list when unreachable |
+| `openai-compatible` | Custom Provider | `baseUrl` | Base URL — any host serving the OpenAI `/v1/chat/completions` wire protocol | API key (bearer; cloud services need one, local servers often don't) | Live `GET {baseUrl}/v1/models` (standard OpenAI list shape); model `id` used as label |
+
+**Custom Provider** (id `openai-compatible`) is the generic adapter for any endpoint that speaks the OpenAI chat/completions wire protocol — Groq (`https://api.groq.com/openai`), Together, DeepSeek, Mistral, Fireworks, self-hosted vLLM, LM Studio, and others. Capabilities default to `{ toolCalling: true, visionInput: false, promptCache: false, streaming: true }`; the operator is responsible for selecting a model that actually supports tool calling. Because arbitrary endpoints are not in the OpenRouter catalogue, no context-window enrichment is available and the context meter stays hidden for these models.
 
 ---
 
@@ -561,7 +579,7 @@ The `<ContextMeter>` shows how much of the active model's context window the cur
 - **Window** (`windowTokens` prop from `AgentPanel`): the model's max total tokens, resolved once from `GET /admin/api/ai/providers/:id/models?credentialId=…`. The models endpoint enriches Anthropic and OpenAI models with `contextWindow` from the live OpenRouter catalogue (`server/ai/pricing/`); OpenRouter populates it from its own native fetch. Ollama models and uncatalogued models have no window — the meter hides.
 - **Used** (`agentContextTokens` in the store): the provider-normalised "context used" — the CURRENT context size, computed by `normalizeContextTokens(providerId, buckets)` in `server/ai/contextTokens.ts`:
   - Anthropic reports `input_tokens` excluding cache buckets, so the true total is `promptTokens + cacheReadTokens + cacheCreationTokens`.
-  - OpenAI / OpenRouter / Ollama report `input_tokens` as the full input; `promptTokens` alone is the total.
+  - OpenAI / OpenRouter / Ollama / Custom Provider report `input_tokens` as the full input; `promptTokens` alone is the total.
 
 **Live, per-round, not summed.** A turn makes one provider round-trip per tool batch. The toolLoop emits a `context` event **each round** carrying THAT round's input buckets; the chat handler injects the normalised `contextTokens` and the browser updates the meter on every round — so it climbs *during* a long tool loop instead of only at the end. The meter is the LATEST round's input (the current window fill), never the sum across rounds (which would over-count, since each round re-sends the growing context). The terminal `usage` event is **billing only** — its `promptTokens` stays summed across rounds (you pay input per round). The persister keeps the latest `context` value in memory (`recordContext`) and writes it once to `ai_conversations.context_tokens` with the final `usage` (overwritten per turn), so `loadAgentConversation` restores the true context on reload.
 

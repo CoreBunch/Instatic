@@ -5,8 +5,9 @@
  *
  *   - Anthropic reports `input_tokens` EXCLUDING the cache buckets, so the true
  *     total is prompt + cacheRead + cacheCreation.
- *   - OpenAI / OpenRouter / Ollama report `input_tokens` as the full input (any
- *     cached tokens are already a subset), so prompt alone is the total.
+ *   - OpenAI / OpenRouter / Ollama / Custom Provider report `input_tokens` as
+ *     the full input (any cached tokens are already a subset), so prompt alone
+ *     is the total.
  *
  * Two callers share this: the chat handler injects the value onto the wire
  * `usage` event for the live meter, and the persister writes it to the

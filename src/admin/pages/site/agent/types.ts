@@ -53,6 +53,16 @@ interface TextEvent {
 }
 
 /**
+ * A chunk of reasoning/thinking from a reasoning model (chat/completions
+ * `delta.reasoning_content`). Ephemeral: drives the live "Thinking…" indicator
+ * and an on-demand expander, but is never persisted or replayed.
+ */
+interface ReasoningEvent {
+  type: 'reasoning'
+  text: string
+}
+
+/**
  * Bridge handshake: the server has accepted the request and assigned a bridge
  * id. The browser uses this id when POSTing tool-result responses to
  * `/admin/api/ai/tool-result` so the server can correlate the response with the
@@ -130,6 +140,7 @@ interface ContextEvent {
 
 export type ServerStreamEvent =
   | TextEvent
+  | ReasoningEvent
   | BridgeReadyEvent
   | ToolRequestEvent
   | ToolCallEvent
@@ -170,6 +181,13 @@ export interface AgentMessage {
   role: 'user' | 'assistant'
   blocks: AgentMessageBlock[]
   timestamp: number
+  /**
+   * Accumulated reasoning/thinking text for this turn (chat/completions
+   * reasoning models). Ephemeral and session-only: it powers the live
+   * "Thinking…" indicator and an on-demand expander, but is never persisted to
+   * conversation history, so rehydrated past messages never carry it.
+   */
+  reasoning?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -274,13 +292,16 @@ export interface AgentBridgeRuntime {
 }
 
 /**
- * Sink for assistant text deltas. `append` accumulates a delta; `flush`
- * drains accumulated text into the message's blocks immediately. The slice's
- * implementation rAF-batches `append` calls; the toolCall/toolResult handlers
- * call `flush` so any pending text lands BEFORE a tool-call block is appended,
+ * Sink for assistant streaming deltas. `append` accumulates a text delta;
+ * `appendReasoning` accumulates an (ephemeral) reasoning delta into the
+ * message's `reasoning` buffer; `flush` drains accumulated text into the
+ * message's blocks immediately. The slice's implementation rAF-batches the
+ * `append`/`appendReasoning` calls; the toolCall/toolResult handlers call
+ * `flush` so any pending text lands BEFORE a tool-call block is appended,
  * preserving chronological order in the UI.
  */
-export interface AgentTextStreamSink {
+export interface AgentStreamSink {
   append(assistantId: string, text: string): void
+  appendReasoning(assistantId: string, text: string): void
   flush(): void
 }

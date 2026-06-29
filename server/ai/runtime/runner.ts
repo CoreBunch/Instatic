@@ -128,6 +128,12 @@ export async function runChat(args: RunChatArgs): Promise<void> {
           await flushPendingAssistantText()
           return
         }
+        case 'reasoning': {
+          // Ephemeral thinking delta — already forwarded to the browser above
+          // (drives the live "Thinking…" indicator). Never persisted, so the
+          // reasoning is not replayed to the provider on the next turn.
+          break
+        }
         // `bridgeReady`, `toolRequest`, `done`: nothing to persist.
         default:
           break

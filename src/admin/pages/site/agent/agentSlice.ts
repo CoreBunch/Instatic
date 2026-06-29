@@ -42,7 +42,7 @@ import type {
   AgentBridgeRuntime,
   AgentMessage,
   AgentRequestBody,
-  AgentTextStreamSink,
+  AgentStreamSink,
 } from './types'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
@@ -179,6 +179,7 @@ export function createAgentSlice(
   // flushed once per animation frame, OR explicitly before any tool-call
   // block is added so chronological ordering is preserved.
   let _pendingText = ''
+  let _pendingReasoning = ''
   let _pendingAssistantId = ''
   let _rafHandle = 0
 
@@ -197,21 +198,28 @@ export function createAgentSlice(
     }
   }
 
-  function flushPendingText() {
+  function flushPending() {
     _rafHandle = 0
-    if (!_pendingText || !_pendingAssistantId) return
+    if (!_pendingAssistantId) return
+    if (!_pendingText && !_pendingReasoning) return
     const text = _pendingText
+    const reasoning = _pendingReasoning
     const id = _pendingAssistantId
     _pendingText = ''
+    _pendingReasoning = ''
     set((state) => {
       const msg = state.agentMessages.find((m) => m.id === id)
-      if (msg) appendTextToBlocks(msg, text)
+      if (!msg) return
+      if (text) appendTextToBlocks(msg, text)
+      // Reasoning is ephemeral and lives on its own buffer (not a block), so it
+      // never interleaves with text/tool blocks and never reaches the answer.
+      if (reasoning) msg.reasoning = (msg.reasoning ?? '') + reasoning
     })
   }
 
   function scheduleFlush() {
     if (_rafHandle === 0) {
-      _rafHandle = requestAnimationFrame(flushPendingText)
+      _rafHandle = requestAnimationFrame(flushPending)
     }
   }
 
@@ -221,13 +229,20 @@ export function createAgentSlice(
     scheduleFlush()
   }
 
-  // Single text-stream sink passed into processStreamEvent. The sink's
-  // `flush()` is called from the toolCall/toolResult handlers to drain any
-  // pending text deltas BEFORE a tool-call block is added — that's what keeps
-  // the visual order in the panel chronologically correct.
-  const textSink: AgentTextStreamSink = {
+  function appendReasoningDelta(assistantId: string, text: string) {
+    _pendingAssistantId = assistantId
+    _pendingReasoning += text
+    scheduleFlush()
+  }
+
+  // Single streaming sink passed into processStreamEvent. The sink's `flush()`
+  // is called from the toolCall/toolResult handlers to drain any pending text
+  // deltas BEFORE a tool-call block is added — that's what keeps the visual
+  // order in the panel chronologically correct.
+  const textSink: AgentStreamSink = {
     append: appendTextDelta,
-    flush: flushPendingText,
+    appendReasoning: appendReasoningDelta,
+    flush: flushPending,
   }
 
   return {
@@ -445,7 +460,7 @@ export function createAgentSlice(
           )
         }
 
-        flushPendingText()
+        flushPending()
       } catch (err) {
         // Abort the fetch so any in-flight MCP tool handler on the server
         // rejects cleanly (via destroyBridge in the stream's finally block)
@@ -453,7 +468,7 @@ export function createAgentSlice(
         _abortController?.abort()
 
         if (err instanceof Error && err.name === 'AbortError') {
-          flushPendingText()
+          flushPending()
         } else {
           // Admin-only surface (capability gated) — show the actual
           // failure cause so the operator can act. Network / unexpected

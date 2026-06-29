@@ -27,7 +27,7 @@ import { ApiError } from '@core/http'
 import styles from '../AiPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
-type ProviderId = 'anthropic' | 'openai' | 'ollama' | 'openrouter'
+type ProviderId = 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'openai-compatible'
 type AuthMode = 'apiKey' | 'baseUrl'
 
 // Each provider has exactly one credential shape; the UI derives it instead
@@ -37,6 +37,7 @@ const PROVIDERS: Array<{ id: ProviderId; label: string; authMode: AuthMode }> = 
   { id: 'openai', label: 'OpenAI', authMode: 'apiKey' },
   { id: 'openrouter', label: 'OpenRouter', authMode: 'apiKey' },
   { id: 'ollama', label: 'Ollama (local)', authMode: 'baseUrl' },
+  { id: 'openai-compatible', label: 'Custom Provider', authMode: 'baseUrl' },
 ]
 
 const AUTH_MODE_LABEL: Record<AuthMode, string> = {
@@ -49,12 +50,14 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   openai: 'OpenAI',
   openrouter: 'OpenRouter',
   ollama: 'Ollama',
+  'openai-compatible': 'Custom Provider',
 }
 
 // Hint text for the API-key field, per provider key prefix.
 const API_KEY_PLACEHOLDER: Partial<Record<ProviderId, string>> = {
   anthropic: 'sk-ant-...',
   openrouter: 'sk-or-...',
+  'openai-compatible': 'sk-... (optional)',
 }
 
 async function deleteCredentialAction(
@@ -278,12 +281,14 @@ function AddCredentialDialog({
   const [providerId, setProviderId] = useState<ProviderId>('anthropic')
   const [displayLabel, setDisplayLabel] = useState('')
   const [apiKey, setApiKey] = useState('')
-  const [baseUrl, setBaseUrl] = useState('http://localhost:11434')
+  const [baseUrl, setBaseUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const providerSpec = PROVIDERS.find((p) => p.id === providerId)!
   const effectiveAuthMode = providerSpec.authMode
+  const baseUrlPlaceholder =
+    providerId === 'ollama' ? 'http://localhost:11434' : 'https://api.groq.com/openai/v1'
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -360,12 +365,14 @@ function AddCredentialDialog({
                 id={baseUrlInputId}
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.currentTarget.value)}
-                placeholder="http://localhost:11434"
+                placeholder={baseUrlPlaceholder}
                 required
               />
             </div>
             <div className={styles.dialogField}>
-              <label htmlFor={apiKeyInputId} className={styles.dialogFieldLabel}>Bearer token (optional)</label>
+              <label htmlFor={apiKeyInputId} className={styles.dialogFieldLabel}>
+                {providerId === 'ollama' ? 'Bearer token (optional)' : 'API key (optional)'}
+              </label>
               <Input
                 id={apiKeyInputId}
                 type="password"
