@@ -393,3 +393,5 @@ export const FrameworkSettingsSchema = Type.Object({
   preferences: Type.Optional(FrameworkPreferencesSettingsSchema),
 })
 
+export type FrameworkSettings = Static<typeof FrameworkSettingsSchema>
+

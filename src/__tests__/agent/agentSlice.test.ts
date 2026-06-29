@@ -172,7 +172,7 @@ describe('processStreamEvent — toolRequest dispatches to executor', () => {
         {
           type: 'toolRequest',
           requestId: 'req-1',
-          toolName: 'insertHtml',
+          toolName: 'site_insert_html',
           input: { parentId: rootId, html: '<p>Hi</p>' },
         },
         assistantId,
@@ -212,7 +212,7 @@ describe('processStreamEvent — toolRequest dispatches to executor', () => {
         {
           type: 'toolRequest',
           requestId: 'req-2',
-          toolName: 'insertHtml',
+          toolName: 'site_insert_html',
           input: { parentId: 'nonexistent-parent', html: '<p>Test</p>' },
         },
         assistantId,
@@ -246,7 +246,7 @@ describe('processStreamEvent — toolCall / toolResult badges', () => {
       {
         type: 'toolCall',
         toolCallId: 'toolu_1',
-        toolName: 'read_document',
+        toolName: 'site_read_document',
         input: {},
         status: 'pending',
       },
@@ -260,14 +260,14 @@ describe('processStreamEvent — toolCall / toolResult badges', () => {
 
     const pending = getToolCallBlocks(useEditorStore.getState().agentMessages[0])
     expect(pending).toHaveLength(1)
-    expect(pending[0].actionType).toBe('read_document')
+    expect(pending[0].actionType).toBe('site_read_document')
     expect(pending[0].status).toBe('pending')
 
     await processStreamEvent(
       {
         type: 'toolResult',
         toolCallId: 'toolu_1',
-        toolName: 'read_document',
+        toolName: 'site_read_document',
         ok: true,
       },
       assistantId,
@@ -321,7 +321,7 @@ describe('processStreamEvent — chronological text/tool ordering', () => {
       {
         type: 'toolCall',
         toolCallId: 'toolu_1',
-        toolName: 'read_document',
+        toolName: 'site_read_document',
         input: {},
         status: 'pending',
       },
@@ -337,7 +337,7 @@ describe('processStreamEvent — chronological text/tool ordering', () => {
       {
         type: 'toolResult',
         toolCallId: 'toolu_1',
-        toolName: 'read_document',
+        toolName: 'site_read_document',
         ok: true,
       },
       assistantId,
@@ -451,7 +451,7 @@ describe('sendAgentMessage — request lifecycle', () => {
         {
           type: 'toolRequest',
           requestId: 'req-7',
-          toolName: 'applyCss',
+          toolName: 'site_apply_css',
           input: { css: '.pricing-card { padding: 24px; }' },
         },
         { type: 'done' },

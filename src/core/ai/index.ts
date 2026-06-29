@@ -1,3 +1,4 @@
+export * from './mcpConnectorSchemas'
 export {
   AiToolOutputSchema,
   aiToolError,

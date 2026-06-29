@@ -130,7 +130,7 @@ export function DashboardPage() {
   const currentUser = useAuthenticatedAdminUser()
   const navigate = useAdminNavigate()
   const widgets = useDashboardWidgets()
-  const facts = useOnboardingState()
+  const { facts, refresh: refreshOnboarding } = useOnboardingState()
   const layoutApi = useDashboardLayout()
   const {
     layout,
@@ -518,7 +518,7 @@ export function DashboardPage() {
       </div>
 
       {mounted && showOnboarding && (
-        <OnboardingPanel facts={facts} onDismiss={dismissOnboarding} />
+        <OnboardingPanel facts={facts} onDismiss={dismissOnboarding} onFrameworkImported={refreshOnboarding} />
       )}
 
       <div className={styles.gridHeader}>

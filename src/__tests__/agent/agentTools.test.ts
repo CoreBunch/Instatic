@@ -80,24 +80,24 @@ function callTool(name: string, input: Record<string, unknown> = {}): Promise<un
 describe('site read tools', () => {
   it('exposes exactly the document-aware catalog tools', () => {
     expect(siteReadTools.map((t) => t.name).sort()).toEqual([
-      'list_breakpoints',
-      'list_documents',
-      'list_loop_sources',
-      'list_modules',
-      'list_post_types',
-      'list_tokens',
+      'site_list_breakpoints',
+      'site_list_documents',
+      'site_list_loop_sources',
+      'site_list_modules',
+      'site_list_post_types',
+      'site_list_tokens',
     ])
   })
 
   it('list_post_types is a server-resolved read tool', () => {
-    const tool = siteReadTools.find((t) => t.name === 'list_post_types')!
+    const tool = siteReadTools.find((t) => t.name === 'site_list_post_types')!
     expect(tool.execution).toBe('server')
     expect(tool.mutates).toBeFalsy()
     expect(typeof tool.handler).toBe('function')
   })
 
   it('list_loop_sources exposes source ids, data table ids, and valid currentEntry tokens', async () => {
-    const tool = siteReadTools.find((t) => t.name === 'list_loop_sources')!
+    const tool = siteReadTools.find((t) => t.name === 'site_list_loop_sources')!
     const ctx = {
       snapshot: snapshot(),
       db: async () => ({
@@ -149,7 +149,7 @@ describe('site read tools', () => {
   })
 
   it('list_modules returns base.text and excludes base.body', async () => {
-    const { modules } = (await callTool('list_modules')) as {
+    const { modules } = (await callTool('site_list_modules')) as {
       modules: Array<{ id: string; category: string }>
     }
     const ids = modules.map((m) => m.id)
@@ -158,11 +158,11 @@ describe('site read tools', () => {
   })
 
   it('list_modules filters by category (case-insensitive)', async () => {
-    const { modules } = (await callTool('list_modules')) as {
+    const { modules } = (await callTool('site_list_modules')) as {
       modules: Array<{ id: string; category: string }>
     }
     const sampleCategory = modules[0].category
-    const { modules: filtered } = (await callTool('list_modules', {
+    const { modules: filtered } = (await callTool('site_list_modules', {
       category: sampleCategory.toUpperCase(),
     })) as { modules: Array<{ category: string }> }
     expect(filtered.length).toBeGreaterThan(0)
@@ -172,7 +172,7 @@ describe('site read tools', () => {
   })
 
   it('list_tokens returns the four families and narrows on request', async () => {
-    const { tokens } = (await callTool('list_tokens')) as {
+    const { tokens } = (await callTool('site_list_tokens')) as {
       tokens: Record<string, unknown[]>
     }
     expect(tokens).toHaveProperty('colors')
@@ -180,7 +180,7 @@ describe('site read tools', () => {
     expect(tokens).toHaveProperty('spacing')
     expect(tokens).toHaveProperty('fonts')
 
-    const { tokens: onlyColors } = (await callTool('list_tokens', { family: 'colors' })) as {
+    const { tokens: onlyColors } = (await callTool('site_list_tokens', { family: 'colors' })) as {
       tokens: { colors: unknown[]; typography: unknown[]; fonts: unknown[] }
     }
     expect(onlyColors.typography).toEqual([])
@@ -188,7 +188,7 @@ describe('site read tools', () => {
   })
 
   it('list_documents maps pages, templates, and visual components with document refs', async () => {
-    const { documents } = (await callTool('list_documents')) as {
+    const { documents } = (await callTool('site_list_documents')) as {
       documents: Array<{
         document: { type: 'page' | 'template' | 'visualComponent'; id: string }
         title: string
@@ -231,7 +231,7 @@ describe('site read tools', () => {
   })
 
   it('list_breakpoints returns the site breakpoints + the active id', async () => {
-    const result = (await callTool('list_breakpoints')) as {
+    const result = (await callTool('site_list_breakpoints')) as {
       activeBreakpointId: string
       breakpoints: Array<{ id: string }>
     }

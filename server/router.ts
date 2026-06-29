@@ -1,4 +1,5 @@
 import { tryHandleAi } from './ai/handlers'
+import { handleMcpHttp, MCP_ENDPOINT_PATH } from './ai/mcp'
 import { handleCmsRequest } from './handlers/cms'
 import type { DbClient } from './db/client'
 import { renderNotFoundResponse, renderPublicResolution } from './publish/publicRouter'
@@ -61,6 +62,11 @@ type RouteHandler = (
  */
 const routes: readonly RouteHandler[] = [
   tryServeHealth,
+  // MCP server endpoint — external AI clients (Claude Code, Codex, remote
+  // agents) speak the Model Context Protocol here over its own bearer-token
+  // auth. Matched before the admin-cookie-gated AI routes since it lives under
+  // `/_instatic/` and authenticates per-connector, not via the admin session.
+  tryServeMcp,
   // AI runtime — `/admin/api/ai/*`. The legacy `/admin/api/agent` and
   // `/admin/api/agent/tool-result` were deleted in Phase 3 of the AI
   // runtime rewrite. The site editor now POSTs `/admin/api/ai/chat/site`.
@@ -127,6 +133,17 @@ function tryServeHealth(_req: Request, _runtime: ServerRuntime, _url: URL, pathn
  */
 function tryServeAi(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response> | null {
   return tryHandleAi(req, runtime.db, url)
+}
+
+/**
+ * MCP server endpoint (`/_instatic/mcp`). Authenticates per-connector via a
+ * bearer token (NOT the admin session cookie) and exposes the capability-gated
+ * CMS tool surface over the Model Context Protocol. Returns `null` for any
+ * other path so the dispatcher keeps walking.
+ */
+function tryServeMcp(req: Request, runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response | null> | null {
+  if (pathname !== MCP_ENDPOINT_PATH) return null
+  return handleMcpHttp(req, runtime.db)
 }
 
 function tryServeCmsApi(req: Request, runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response> | null {

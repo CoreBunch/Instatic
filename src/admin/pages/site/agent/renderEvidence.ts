@@ -75,10 +75,18 @@ export async function captureAgentRenderSnapshot({
 
   const resolvedBreakpointId = frame.dataset.breakpointId ?? breakpointId ?? ''
 
-  // The capture root is the frame, or — when scoped — the target node element.
-  let root: HTMLElement = frame
+  // Each breakpoint renders the page inside its own <iframe>; `data-breakpoint-id`
+  // is on the host wrapper, but the actual nodes (`data-node-id`) live in the
+  // iframe's document. So search + capture against `contentDocument`, NOT the
+  // host frame (which is why scoped node lookups previously never matched).
+  const iframe = frame.querySelector<HTMLIFrameElement>('iframe')
+  const doc = iframe?.contentDocument ?? null
+  if (!doc?.body) return null // frame collapsed or iframe not mounted yet
+
+  // The capture root is the iframe body, or — when scoped — the target node.
+  let root: HTMLElement = doc.body
   if (nodeId) {
-    const target = frame.querySelector<HTMLElement>(`[data-node-id="${cssAttrEscape(nodeId)}"]`)
+    const target = doc.querySelector<HTMLElement>(`[data-node-id="${cssAttrEscape(nodeId)}"]`)
     if (!target) throw new SnapshotNodeNotFoundError(nodeId, resolvedBreakpointId)
     root = target
   }

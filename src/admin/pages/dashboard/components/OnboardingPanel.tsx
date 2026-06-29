@@ -26,6 +26,7 @@
  * (the previous "Hide steps" toggle was removed — there's no in-between
  * collapsed state). Dismissal persists in localStorage per user.
  */
+import { useState } from 'react'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { ChevronRightIcon } from 'pixel-art-icons/icons/chevron-right'
 import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
@@ -39,6 +40,7 @@ import { Button } from '@ui/components/Button'
 import type { PixelArtIconComponent } from '@core/dashboard'
 import type { OnboardingFacts, OnboardingStepState } from '../hooks/useOnboardingState'
 import { LiquidProgressRing } from './LiquidProgressRing'
+import { FrameworkImportModal } from './FrameworkImportModal'
 import styles from './OnboardingPanel.module.css'
 
 interface StepDef {
@@ -47,7 +49,10 @@ interface StepDef {
   desc: string
   cta: string
   icon: PixelArtIconComponent
-  action: { kind: 'navigate'; to: string } | { kind: 'settings-modal' }
+  action:
+    | { kind: 'navigate'; to: string }
+    | { kind: 'settings-modal' }
+    | { kind: 'framework-import' }
 }
 
 const STEPS: readonly StepDef[] = [
@@ -65,9 +70,9 @@ const STEPS: readonly StepDef[] = [
     title: 'Choose Core Framework import',
     desc:
       'Variables only, the full utility framework, or skip it and bring your own CSS.',
-    cta: 'Configure',
+    cta: 'Import',
     icon: CodeIcon,
-    action: { kind: 'settings-modal' },
+    action: { kind: 'framework-import' },
   },
   {
     id: 'firstPage',
@@ -101,6 +106,8 @@ const STEPS: readonly StepDef[] = [
 interface OnboardingPanelProps {
   facts: OnboardingFacts
   onDismiss: () => void
+  /** Called after the Core Framework import saved — refresh the onboarding facts. */
+  onFrameworkImported: () => void
 }
 
 function stateLabel(state: OnboardingStepState): string {
@@ -109,9 +116,10 @@ function stateLabel(state: OnboardingStepState): string {
   return 'Not started'
 }
 
-export function OnboardingPanel({ facts, onDismiss }: OnboardingPanelProps) {
+export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: OnboardingPanelProps) {
   const navigate = useAdminNavigate()
   const openSettings = useAdminUi((s) => s.openSettings)
+  const [frameworkImportOpen, setFrameworkImportOpen] = useState(false)
 
   const states = STEPS.map((step) => ({ step, state: facts[step.id] }))
   const done = states.filter((s) => s.state === 'done').length
@@ -120,6 +128,8 @@ export function OnboardingPanel({ facts, onDismiss }: OnboardingPanelProps) {
   function runStep(step: StepDef) {
     if (step.action.kind === 'navigate') {
       navigate(step.action.to)
+    } else if (step.action.kind === 'framework-import') {
+      setFrameworkImportOpen(true)
     } else {
       openSettings('general')
     }
@@ -183,6 +193,13 @@ export function OnboardingPanel({ facts, onDismiss }: OnboardingPanelProps) {
           )
         })}
       </ol>
+
+      <FrameworkImportModal
+        open={frameworkImportOpen}
+        onClose={() => setFrameworkImportOpen(false)}
+        onImported={onFrameworkImported}
+        alreadyConfigured={facts.framework === 'done'}
+      />
     </section>
   )
 }

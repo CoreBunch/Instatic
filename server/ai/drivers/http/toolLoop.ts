@@ -239,12 +239,12 @@ export async function* runToolLoop<TMessage>(
 
 /**
  * Hook for server-controlled tool inputs the model shouldn't drive. Currently
- * just `render_snapshot`: the server injects `captureScreenshot` from the
+ * just `site_render_snapshot`: the server injects `captureScreenshot` from the
  * active model's vision capability so a non-vision model never pays the
  * html-to-image cost for a screenshot it can't consume.
  */
 function prepareToolInput(call: TurnToolCall, req: AiStreamRequest): unknown {
-  if (call.name === 'render_snapshot') {
+  if (call.name === 'site_render_snapshot') {
     const base = call.input && typeof call.input === 'object' ? call.input : {}
     return { ...base, captureScreenshot: req.modelCapabilities.visionInput }
   }
@@ -261,7 +261,7 @@ function prepareToolInput(call: TurnToolCall, req: AiStreamRequest): unknown {
  * model has since mutated — useless to re-send. Any result with an image
  * attachment is heavy regardless of tool name.
  */
-const HEAVY_TOOL_NAMES = new Set(['render_snapshot', 'read_document', 'getNodeHtml'])
+const HEAVY_TOOL_NAMES = new Set(['site_render_snapshot', 'site_read_document', 'site_get_node_html'])
 
 function isHeavyResult(r: TurnToolResult): boolean {
   return (r.output.images?.length ?? 0) > 0 || HEAVY_TOOL_NAMES.has(r.name)
@@ -285,7 +285,7 @@ function stubHeavyResult(r: TurnToolResult): TurnToolResult {
  * Rewrite every tracked heavy tool-result message so that, per heavy tool name,
  * only the most recent message keeps full fidelity; all earlier heavy results
  * are stubbed. Non-heavy results in the same message are left untouched (a turn
- * can mix a heavy `read_document` with a cheap `updateNodeProps`). Messages are
+ * can mix a heavy `site_read_document` with a cheap `site_update_node_props`). Messages are
  * rebuilt through the adapter so this stays provider-agnostic.
  */
 function applyHeavyElision<TMessage>(

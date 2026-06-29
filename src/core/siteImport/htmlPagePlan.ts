@@ -242,7 +242,9 @@ function extractDocumentMetaFromRegex(htmlSource: string, htmlPath: string): Doc
   }
 
   const scriptRefs: ScriptRef[] = []
-  const scriptRe = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi
+  // Close tag matches `</script>`, `</script >`, and `</script foo>` — the HTML
+  // parser ends the tag at the first `>` (CodeQL js/bad-tag-filter).
+  const scriptRe = /<script\b([^>]*)>([\s\S]*?)<\/script(?:[\s/][^>]*)?>/gi
   let scriptMatch: RegExpExecArray | null
   let inlineIndex = 0
   while ((scriptMatch = scriptRe.exec(htmlSource)) !== null) {

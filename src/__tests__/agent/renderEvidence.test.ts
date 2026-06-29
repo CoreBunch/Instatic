@@ -32,25 +32,40 @@ function setRect(el: Element, rect: Partial<DOMRectReadOnly>) {
   })
 }
 
+/**
+ * Mount a breakpoint the way the canvas actually does: a `[data-breakpoint-id]`
+ * wrapper containing an <iframe> whose `contentDocument` holds the rendered
+ * page nodes. Returns the iframe's document so the test can populate it.
+ */
+function mountFrame(breakpointId: string): Document {
+  const viewport = document.createElement('div')
+  viewport.dataset.breakpointId = breakpointId
+  const iframe = document.createElement('iframe')
+  viewport.appendChild(iframe)
+  document.body.appendChild(viewport)
+  const doc = iframe.contentDocument
+  if (!doc) throw new Error('iframe.contentDocument unavailable in test env')
+  return doc
+}
+
 describe('captureAgentRenderSnapshot — on-demand browser bridge', () => {
   it('captures breakpoint layout, node boxes, and overflow warnings from the canvas DOM', async () => {
-    const viewport = document.createElement('div')
-    viewport.dataset.breakpointId = 'mobile'
-    Object.defineProperties(viewport, {
+    const doc = mountFrame('mobile')
+    const body = doc.body
+    Object.defineProperties(body, {
       clientWidth: { configurable: true, value: 375 },
       clientHeight: { configurable: true, value: 600 },
       scrollWidth: { configurable: true, value: 420 },
       scrollHeight: { configurable: true, value: 600 },
     })
-    setRect(viewport, { x: 0, y: 0, width: 375, height: 600 })
+    setRect(body, { x: 0, y: 0, width: 375, height: 600 })
 
-    const wrapper = document.createElement('div')
+    const wrapper = doc.createElement('div')
     wrapper.dataset.nodeId = 'title'
     wrapper.dataset.moduleId = 'base.text'
     wrapper.textContent = 'Overflowing headline'
     setRect(wrapper, { x: 8, y: 16, width: 420, height: 64 })
-    viewport.appendChild(wrapper)
-    document.body.appendChild(viewport)
+    body.appendChild(wrapper)
 
     const snapshot = await captureAgentRenderSnapshot({
       breakpointId: 'mobile',
@@ -67,17 +82,9 @@ describe('captureAgentRenderSnapshot — on-demand browser bridge', () => {
   })
 
   it('scopes the capture to a node subtree when nodeId is given', async () => {
-    const viewport = document.createElement('div')
-    viewport.dataset.breakpointId = 'desktop'
-    Object.defineProperties(viewport, {
-      clientWidth: { configurable: true, value: 1440 },
-      clientHeight: { configurable: true, value: 4000 },
-      scrollWidth: { configurable: true, value: 1440 },
-      scrollHeight: { configurable: true, value: 4000 },
-    })
-    setRect(viewport, { x: 0, y: 0, width: 1440, height: 4000 })
+    const doc = mountFrame('desktop')
 
-    const hero = document.createElement('section')
+    const hero = doc.createElement('section')
     hero.dataset.nodeId = 'hero'
     hero.dataset.moduleId = 'base.container'
     Object.defineProperties(hero, {
@@ -88,19 +95,18 @@ describe('captureAgentRenderSnapshot — on-demand browser bridge', () => {
     })
     setRect(hero, { x: 0, y: 100, width: 1440, height: 500 })
 
-    const heading = document.createElement('h1')
+    const heading = doc.createElement('h1')
     heading.dataset.nodeId = 'hero-title'
     heading.dataset.moduleId = 'base.text'
     heading.textContent = 'Welcome'
     setRect(heading, { x: 40, y: 140, width: 600, height: 80 })
     hero.appendChild(heading)
 
-    const footer = document.createElement('div')
+    const footer = doc.createElement('div')
     footer.dataset.nodeId = 'footer'
     setRect(footer, { x: 0, y: 3800, width: 1440, height: 200 })
 
-    viewport.append(hero, footer)
-    document.body.appendChild(viewport)
+    doc.body.append(hero, footer)
 
     const snapshot = await captureAgentRenderSnapshot({
       breakpointId: 'desktop',
@@ -123,10 +129,8 @@ describe('captureAgentRenderSnapshot — on-demand browser bridge', () => {
   })
 
   it('throws SnapshotNodeNotFoundError when nodeId is absent from the frame', async () => {
-    const viewport = document.createElement('div')
-    viewport.dataset.breakpointId = 'desktop'
-    setRect(viewport, { x: 0, y: 0, width: 1440, height: 900 })
-    document.body.appendChild(viewport)
+    const doc = mountFrame('desktop')
+    setRect(doc.body, { x: 0, y: 0, width: 1440, height: 900 })
 
     await expect(
       captureAgentRenderSnapshot({ breakpointId: 'desktop', nodeId: 'ghost', captureScreenshot: false }),
@@ -142,16 +146,14 @@ describe('captureAgentRenderSnapshot — on-demand browser bridge', () => {
   })
 
   it('falls back to the first canvas frame when no breakpointId is provided', async () => {
-    const viewport = document.createElement('div')
-    viewport.dataset.breakpointId = 'desktop'
-    Object.defineProperties(viewport, {
+    const doc = mountFrame('desktop')
+    Object.defineProperties(doc.body, {
       clientWidth: { configurable: true, value: 1440 },
       clientHeight: { configurable: true, value: 900 },
       scrollWidth: { configurable: true, value: 1440 },
       scrollHeight: { configurable: true, value: 900 },
     })
-    setRect(viewport, { x: 0, y: 0, width: 1440, height: 900 })
-    document.body.appendChild(viewport)
+    setRect(doc.body, { x: 0, y: 0, width: 1440, height: 900 })
 
     const snapshot = await captureAgentRenderSnapshot({
       captureScreenshot: false,

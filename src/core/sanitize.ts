@@ -78,11 +78,38 @@ function getDOMPurify(): DOMPurifyRuntime | null {
   return null
 }
 
+/**
+ * Regex HTML strip used ONLY when no DOMPurify runtime is available (one-off
+ * scripts; browser + Bun server both configure DOMPurify).
+ *
+ * Three stages, each looped to a fixpoint with a single literal regex — the
+ * exact do-while-until-stable form CodeQL recognises as a complete sanitizer
+ * (js/incomplete-multi-character-sanitization). Looping matters because removing
+ * one match can reveal another: split-tag obfuscation `<scr<script>ipt>` only
+ * collapses after the inner match goes. Close tags use `(?:[\s/][^>]*)?` since
+ * the HTML parser ends a tag at the first `>` (js/bad-tag-filter). Each pass
+ * strictly shrinks the string, so every loop terminates.
+ *
+ * 1. drop `<script>…</script>` blocks (removes the JS source, not just the tag)
+ * 2. drop `<style>…</style>` blocks (CSS can carry `@import url(javascript:…)`)
+ * 3. drop every remaining tag, incl. bare/unbalanced `<script`/`<style` openers
+ */
 function stripHtmlFallback(value: string): string {
-  return value
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, '')
-    .replace(/<[^>]*>/g, '')
+  let current = value
+  let previous: string
+  do {
+    previous = current
+    current = current.replace(/<script\b[^>]*>[\s\S]*?<\/script(?:[\s/][^>]*)?>/gi, '')
+  } while (current !== previous)
+  do {
+    previous = current
+    current = current.replace(/<style\b[^>]*>[\s\S]*?<\/style(?:[\s/][^>]*)?>/gi, '')
+  } while (current !== previous)
+  do {
+    previous = current
+    current = current.replace(/<[^>]*>/g, '')
+  } while (current !== previous)
+  return current
 }
 
 // ---------------------------------------------------------------------------
@@ -163,12 +190,12 @@ export function sanitizeRichtext(
 
   const sanitized = String(purifier.sanitize(str, config))
 
-  // When plain-text mode is requested, apply a post-strip regex pass.
+  // When plain-text mode is requested, apply a post-strip pass.
   // DOMPurify's ALLOWED_TAGS:[] covers most cases but certain browsers / DOM
-  // implementations may preserve some inline elements. The regex pass is the
-  // guaranteed fallback.
+  // implementations may preserve some inline elements. The fixpoint stripper is
+  // the guaranteed fallback (and resists split-tag obfuscation).
   if (config._plainText) {
-    return sanitized.replace(/<[^>]*>/g, '').trim()
+    return stripHtmlFallback(sanitized).trim()
   }
 
   return sanitized

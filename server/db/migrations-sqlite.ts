@@ -1078,4 +1078,29 @@ export const sqliteMigrations: Migration[] = [
             deleted_at = null;
     `,
   },
+  {
+    id: '018_ai_mcp_connectors',
+    sql: `
+      create table if not exists ai_mcp_connectors (
+        id text primary key,
+        user_id text not null references users(id) on delete cascade,
+        label text not null,
+        type text not null,
+        auth_mode text not null default 'bearer',
+        token_hash text,
+        capabilities_json text not null default '[]',
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        last_used_at text,
+        revoked_at text,
+        constraint ai_mcp_connectors_type_check check (type in ('local', 'remote')),
+        constraint ai_mcp_connectors_auth_mode_check check (auth_mode in ('bearer', 'oauth'))
+      );
+
+      create index if not exists ai_mcp_connectors_user_idx
+        on ai_mcp_connectors (user_id);
+      create unique index if not exists ai_mcp_connectors_token_hash_idx
+        on ai_mcp_connectors (token_hash)
+        where token_hash is not null;
+    `,
+  },
 ]

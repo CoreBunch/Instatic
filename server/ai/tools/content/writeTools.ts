@@ -28,7 +28,7 @@ const DocumentStatus = Type.Union([
 ])
 
 // ---------------------------------------------------------------------------
-// create_document
+// content_create_document
 // ---------------------------------------------------------------------------
 
 const CreateDocumentInput = Type.Object({
@@ -63,7 +63,7 @@ const DOCUMENT_REASSIGN_CAPS: readonly CoreCapability[] = [
 ]
 
 const createDocumentTool: AiTool = {
-  name: 'create_document',
+  name: 'content_create_document',
   scope: 'content',
   execution: 'browser',
   requiredCapabilities: ['content.create'],
@@ -73,7 +73,7 @@ const createDocumentTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
-// delete_document
+// content_delete_document
 // ---------------------------------------------------------------------------
 
 const DeleteDocumentInput = Type.Object({
@@ -81,7 +81,7 @@ const DeleteDocumentInput = Type.Object({
 })
 
 const deleteDocumentTool: AiTool = {
-  name: 'delete_document',
+  name: 'content_delete_document',
   scope: 'content',
   execution: 'browser',
   requiredCapabilities: DOCUMENT_EDIT_CAPS,
@@ -91,7 +91,7 @@ const deleteDocumentTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
-// set_document_status
+// content_set_document_status
 // ---------------------------------------------------------------------------
 
 const SetDocumentStatusInput = Type.Object({
@@ -101,7 +101,7 @@ const SetDocumentStatusInput = Type.Object({
 })
 
 const setDocumentStatusTool: AiTool = {
-  name: 'set_document_status',
+  name: 'content_set_document_status',
   scope: 'content',
   execution: 'browser',
   requiredCapabilities: DOCUMENT_PUBLISH_CAPS,
@@ -111,7 +111,7 @@ const setDocumentStatusTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
-// set_document_field
+// content_set_document_field
 // ---------------------------------------------------------------------------
 
 const SetDocumentFieldInput = Type.Object({
@@ -121,17 +121,17 @@ const SetDocumentFieldInput = Type.Object({
 })
 
 const setDocumentFieldTool: AiTool = {
-  name: 'set_document_field',
+  name: 'content_set_document_field',
   scope: 'content',
   execution: 'browser',
   requiredCapabilities: DOCUMENT_EDIT_CAPS,
   description:
-    "Write one field on a document. `value` shape depends on the field type (read get_collection_schema first if unsure): text/longText/richText/url/email → string; number → number; boolean → boolean; date/dateTime → ISO string; select → option id; multiSelect → option id[]; media → { id } or { id }[]; relation → { rowId } or { rowId }[]; body → markdown string. Bridge converts markdown ↔ Tiptap automatically for body.",
+    "Write one field on a document. `value` shape depends on the field type (read content_get_collection_schema first if unsure): text/longText/richText/url/email → string; number → number; boolean → boolean; date/dateTime → ISO string; select → option id; multiSelect → option id[]; media → { id } or { id }[]; relation → { rowId } or { rowId }[]; body → markdown string. Bridge converts markdown ↔ Tiptap automatically for body.",
   inputSchema: SetDocumentFieldInput,
 }
 
 // ---------------------------------------------------------------------------
-// set_document_fields
+// content_set_document_fields
 // ---------------------------------------------------------------------------
 
 const SetDocumentFieldsInput = Type.Object({
@@ -140,17 +140,17 @@ const SetDocumentFieldsInput = Type.Object({
 })
 
 const setDocumentFieldsTool: AiTool = {
-  name: 'set_document_fields',
+  name: 'content_set_document_fields',
   scope: 'content',
   execution: 'browser',
   requiredCapabilities: DOCUMENT_EDIT_CAPS,
   description:
-    'Batch-write multiple fields on one document. `fields` is Record<fieldId, value>; same per-type shapes as set_document_field. Prefer this when generating a whole post (title + slug + body + seo* in one call).',
+    'Batch-write multiple fields on one document. `fields` is Record<fieldId, value>; same per-type shapes as content_set_document_field. Prefer this when generating a whole post (title + slug + body + seo* in one call).',
   inputSchema: SetDocumentFieldsInput,
 }
 
 // ---------------------------------------------------------------------------
-// set_document_author
+// content_set_document_author
 // ---------------------------------------------------------------------------
 
 const SetDocumentAuthorInput = Type.Object({
@@ -159,17 +159,17 @@ const SetDocumentAuthorInput = Type.Object({
 })
 
 const setDocumentAuthorTool: AiTool = {
-  name: 'set_document_author',
+  name: 'content_set_document_author',
   scope: 'content',
   execution: 'browser',
   requiredCapabilities: DOCUMENT_REASSIGN_CAPS,
   description:
-    'Reassign the document author to another user. Requires the caller to hold content.edit.any. Use list_users to find the right user id.',
+    'Reassign the document author to another user. Requires the caller to hold content.edit.any. Use content_list_users to find the right user id.',
   inputSchema: SetDocumentAuthorInput,
 }
 
 // ---------------------------------------------------------------------------
-// set_active_document
+// content_set_active_document
 // ---------------------------------------------------------------------------
 
 const SetActiveDocumentInput = Type.Object({
@@ -177,16 +177,16 @@ const SetActiveDocumentInput = Type.Object({
 })
 
 const setActiveDocumentTool: AiTool = {
-  name: 'set_active_document',
+  name: 'content_set_active_document',
   scope: 'content',
   execution: 'browser',
   description:
-    "Switch the user's editor to this document so they can watch you work. Call BEFORE editing a doc that isn't already open — the user only sees the active doc, so set_document_field on a non-active doc happens invisibly.",
+    "Switch the user's editor to this document so they can watch you work. Call BEFORE editing a doc that isn't already open — the user only sees the active doc, so content_set_document_field on a non-active doc happens invisibly.",
   inputSchema: SetActiveDocumentInput,
 }
 
 // ---------------------------------------------------------------------------
-// set_active_collection
+// content_set_active_collection
 // ---------------------------------------------------------------------------
 
 const SetActiveCollectionInput = Type.Object({
@@ -194,7 +194,7 @@ const SetActiveCollectionInput = Type.Object({
 })
 
 const setActiveCollectionTool: AiTool = {
-  name: 'set_active_collection',
+  name: 'content_set_active_collection',
   scope: 'content',
   execution: 'browser',
   description:

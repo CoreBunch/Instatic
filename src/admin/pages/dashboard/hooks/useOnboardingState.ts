@@ -43,10 +43,16 @@ const INITIAL: OnboardingFacts = {
   team: 'todo',
 }
 
-export function useOnboardingState(): OnboardingFacts {
+export interface OnboardingStateResult {
+  facts: OnboardingFacts
+  /** Re-run the live CMS lookups (e.g. after importing the framework). */
+  refresh: () => void
+}
+
+export function useOnboardingState(): OnboardingStateResult {
   // `Promise.allSettled` never rejects — each individual failure soft-fails to
   // an empty/undefined value so a broken endpoint doesn't brick the dashboard.
-  const { data } = useAsyncResource<OnboardingFacts>(async () => {
+  const { data, refresh } = useAsyncResource<OnboardingFacts>(async () => {
     const [siteResult, pluginsResult, usersResult] = await Promise.allSettled([
       cmsAdapter.loadSite('default'),
       listCmsPlugins(),
@@ -72,5 +78,5 @@ export function useOnboardingState(): OnboardingFacts {
     }
   }, [])
 
-  return data ?? INITIAL
+  return { facts: data ?? INITIAL, refresh }
 }

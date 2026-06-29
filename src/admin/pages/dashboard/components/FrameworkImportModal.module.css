@@ -1,0 +1,147 @@
+/**
+ * FrameworkImportModal — two selectable mode cards inside the shared Dialog.
+ *
+ * Cards follow the borderless tile pattern using overlay tints: idle
+ * `--overlay-5`, hover `--overlay-10`, active `--overlay-20`, plus a mint tick
+ * on the selected card — no ring, no recolored border. Font sizes use the
+ * global fluid text scale; spacing uses the global space scale (admin token
+ * policy).
+ */
+
+.lede {
+    margin: 0 0 var(--space-4xl);
+    font-size: var(--text-m);
+    font-weight: 500;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-xl);
+}
+
+.option {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-m);
+    padding: var(--space-3xl);
+    text-align: left;
+    background: var(--overlay-5);
+    border: 0;
+    border-radius: var(--panel-radius);
+    cursor: pointer;
+    transition:
+        background 120ms ease,
+        box-shadow 120ms ease;
+}
+
+.option:hover {
+    background: var(--overlay-10);
+}
+
+.option:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+.optionSelected {
+    background: var(--overlay-20);
+}
+
+.optionSelected:hover {
+    background: var(--overlay-20);
+}
+
+.optionHead {
+    display: flex;
+    align-items: center;
+    gap: var(--space-m);
+}
+
+.optionIcon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius);
+    background: var(--bg-surface);
+    color: var(--text);
+}
+
+.optionTitle {
+    font-size: var(--text-xl);
+    font-weight: 700;
+    color: var(--text-bright);
+}
+
+.optionTick {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent-1);
+    color: var(--bg-body);
+}
+
+.optionDesc {
+    font-size: var(--text-m);
+    font-weight: 500;
+    line-height: 1.5;
+    color: var(--text);
+}
+
+.optionBullets {
+    margin: var(--space-2xs) 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.optionBullets li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    font-size: var(--text-s);
+    font-weight: 500;
+    line-height: 1.4;
+    color: var(--text);
+}
+
+.bulletIcon {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-1);
+}
+
+.note {
+    margin: var(--space-3xl) 0 0;
+    padding: var(--space-m) var(--space-l);
+    font-size: var(--text-s);
+    line-height: 1.45;
+    color: var(--info-text);
+    background: var(--bg-surface-2);
+    border-radius: var(--radius);
+}
+
+.error {
+    margin: var(--space-xl) 0 0;
+    font-size: var(--text-s);
+    line-height: 1.45;
+    color: var(--danger-text);
+}
+
+@media (max-width: 560px) {
+    .options {
+        grid-template-columns: 1fr;
+    }
+}

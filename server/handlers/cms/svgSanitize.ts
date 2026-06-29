@@ -31,12 +31,23 @@
 // Each pattern targets one vector. The `gi` flags + `[\s\S]` (rather than `.`)
 // make every pattern span newlines and match case-insensitively.
 
+// Close-tag matcher: the HTML parser ends an element at the first `>` after the
+// tag name, so `</script bar>`, `</script\t\n>`, and `</script/>` all close a
+// `<script>`. `(?:[\s/][^>]*)?` after the name accepts any whitespace/junk run
+// up to that `>` while `\b`-anchoring rejects `</scriptfoo>`. A bare `<\/x\s*>`
+// (the previous form) missed these and is what CodeQL's bad-tag-filter flagged.
+const scriptClose = String.raw`<\/script(?:[\s/][^>]*)?>`
+const foreignObjectClose = String.raw`<\/foreignObject(?:[\s/][^>]*)?>`
+const styleClose = String.raw`<\/style(?:[\s/][^>]*)?>`
+
 /** `<script …>…</script>` including any attributes / whitespace / newlines. */
-const SCRIPT_BLOCK_RE = /<script\b[\s\S]*?<\/script\s*>/gi
+const SCRIPT_BLOCK_RE = new RegExp(String.raw`<script\b[\s\S]*?${scriptClose}`, 'gi')
 /** A self-closing or unclosed `<script …/>` / `<script …>` with no close tag. */
 const SCRIPT_OPEN_RE = /<script\b[^>]*\/?>/gi
+/** A dangling `</script …>` close tag left after its opener was stripped. */
+const SCRIPT_CLOSE_RE = new RegExp(scriptClose, 'gi')
 /** `<foreignObject …>…</foreignObject>` — can carry arbitrary HTML. */
-const FOREIGN_OBJECT_RE = /<foreignObject\b[\s\S]*?<\/foreignObject\s*>/gi
+const FOREIGN_OBJECT_RE = new RegExp(String.raw`<foreignObject\b[\s\S]*?${foreignObjectClose}`, 'gi')
 const FOREIGN_OBJECT_OPEN_RE = /<foreignObject\b[^>]*\/?>/gi
 /** `<a …>` / `</a>` is allowed, but href values are scrubbed below. */
 /** `on*="…"` / `on*='…'` / `on*=value` event-handler attributes. */
@@ -49,12 +60,13 @@ const EVENT_HANDLER_RE = /\son[a-z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi
 const JS_URL_ATTR_RE =
   /\s(?:xlink:href|href|src)\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*'|javascript:[^\s>]*)/gi
 /** `<style>…</style>` blocks — CSS can carry `@import url(javascript:…)`. */
-const STYLE_BLOCK_RE = /<style\b[\s\S]*?<\/style\s*>/gi
+const STYLE_BLOCK_RE = new RegExp(String.raw`<style\b[\s\S]*?${styleClose}`, 'gi')
 
-function stripVectors(svg: string): string {
+function stripVectorsOnce(svg: string): string {
   return svg
     .replace(SCRIPT_BLOCK_RE, '')
     .replace(SCRIPT_OPEN_RE, '')
+    .replace(SCRIPT_CLOSE_RE, '')
     .replace(FOREIGN_OBJECT_RE, '')
     .replace(FOREIGN_OBJECT_OPEN_RE, '')
     .replace(STYLE_BLOCK_RE, '')
@@ -63,15 +75,34 @@ function stripVectors(svg: string): string {
 }
 
 /**
+ * Strip every vector, then keep stripping until the string stops changing.
+ * Removing one wrapper can reveal a nested vector (`<scr<script>ipt>` collapses
+ * to `<script>`; `<scr<script>ipt>alert()</scr</script>ipt>` needs several
+ * passes), so a fixed pass count can leave a payload behind — which is exactly
+ * what CodeQL's incomplete-multi-character-sanitization flagged. Iterating to a
+ * fixpoint removes that class of bypass entirely. The input is bounded and each
+ * pass only ever shrinks it, so this always terminates.
+ */
+function stripVectors(svg: string): string {
+  let current = svg
+  // Bound iterations defensively; a shrinking string converges well before this.
+  for (let i = 0; i < 100; i++) {
+    const next = stripVectorsOnce(current)
+    if (next === current) return current
+    current = next
+  }
+  return current
+}
+
+/**
  * Sanitize an SVG byte buffer and return the re-encoded clean bytes.
  *
  * Decoding policy: UTF-8, BOM-tolerant, never throws on malformed input.
  * Re-encoding policy: UTF-8 without BOM.
  *
- * Idempotent: running twice removes nothing the first pass missed. A second
- * pass IS run, because removing one wrapper can reveal a nested vector (e.g.
- * `<scr<script>ipt>` collapses on the first pass into `<script>` which the
- * second pass then removes).
+ * Idempotent: `stripVectors` iterates to a fixpoint, so re-running removes
+ * nothing — split-tag obfuscation (`<scr<script>ipt>`) is already collapsed
+ * away inside that loop.
  *
  * Returns empty bytes only when the input decodes to an empty / whitespace
  * string — the caller treats that as "invalid SVG" and rejects the upload.
@@ -81,9 +112,7 @@ export function sanitizeSvgBytes(bytes: Uint8Array): Uint8Array {
   const original = decoder.decode(bytes)
   if (original.trim().length === 0) return new Uint8Array(0)
 
-  let cleaned = stripVectors(original)
-  // Second pass catches split-tag obfuscation (`<scr<script>ipt>`).
-  cleaned = stripVectors(cleaned)
+  const cleaned = stripVectors(original)
 
   if (cleaned.trim().length === 0) return new Uint8Array(0)
   return new TextEncoder().encode(cleaned)

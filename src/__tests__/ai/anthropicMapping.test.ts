@@ -36,21 +36,21 @@ describe('Anthropic SSE translate', () => {
   test('accumulates a tool_use block from split input_json_delta and emits one toolCall', () => {
     const t = new AnthropicTurnTranslator()
     t.translate(frame({ type: 'message_start', message: { usage: { input_tokens: 5 } } }))
-    t.translate(frame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: 'insertHtml', input: {} } }))
+    t.translate(frame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: 'site_insert_html', input: {} } }))
     t.translate(frame({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"parentId":' } }))
     t.translate(frame({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '"root"}' } }))
     const events = t.translate(frame({ type: 'content_block_stop', index: 0 }))
     expect(events).toEqual([
-      { type: 'toolCall', toolCallId: 'toolu_1', toolName: 'insertHtml', input: { parentId: 'root' }, status: 'pending' },
+      { type: 'toolCall', toolCallId: 'toolu_1', toolName: 'site_insert_html', input: { parentId: 'root' }, status: 'pending' },
     ])
     t.translate(frame({ type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 12 } }))
 
     const result = t.finish()
     expect(result.stop).toBe(false)
-    expect(result.toolCalls).toEqual([{ id: 'toolu_1', name: 'insertHtml', input: { parentId: 'root' } }])
+    expect(result.toolCalls).toEqual([{ id: 'toolu_1', name: 'site_insert_html', input: { parentId: 'root' } }])
     expect(result.assistantMessage).toEqual({
       role: 'assistant',
-      content: [{ type: 'tool_use', id: 'toolu_1', name: 'insertHtml', input: { parentId: 'root' } }],
+      content: [{ type: 'tool_use', id: 'toolu_1', name: 'site_insert_html', input: { parentId: 'root' } }],
     })
   })
 
@@ -66,7 +66,7 @@ describe('Anthropic mapHistory', () => {
     const history: AiMessage[] = [
       { role: 'user', content: [{ kind: 'text', text: 'hi' }] },
       { role: 'assistant', content: [{ kind: 'text', text: 'ok' }] },
-      { role: 'assistant', content: [{ kind: 'toolCall', toolCallId: 't1', toolName: 'insertHtml', input: { a: 1 } }] },
+      { role: 'assistant', content: [{ kind: 'toolCall', toolCallId: 't1', toolName: 'site_insert_html', input: { a: 1 } }] },
       { role: 'tool', toolCallId: 't1', output: { ok: true, data: { nodeIds: ['n1'] } } },
       { role: 'assistant', content: [{ kind: 'text', text: 'done' }] },
     ]
@@ -77,7 +77,7 @@ describe('Anthropic mapHistory', () => {
         role: 'assistant',
         content: [
           { type: 'text', text: 'ok' },
-          { type: 'tool_use', id: 't1', name: 'insertHtml', input: { a: 1 } },
+          { type: 'tool_use', id: 't1', name: 'site_insert_html', input: { a: 1 } },
         ],
       },
       { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: '{"nodeIds":["n1"]}', is_error: undefined }] },
@@ -103,14 +103,14 @@ describe('Anthropic mapHistory', () => {
     // user/assistant alternation with the tool_use answered.
     const history: AiMessage[] = [
       { role: 'user', content: [{ kind: 'text', text: 'continue' }] },
-      { role: 'assistant', content: [{ kind: 'toolCall', toolCallId: 't1', toolName: 'applyCss', input: {} }] },
+      { role: 'assistant', content: [{ kind: 'toolCall', toolCallId: 't1', toolName: 'site_apply_css', input: {} }] },
       { role: 'tool', toolCallId: 't1', output: { ok: false, error: 'interrupted' } },
       { role: 'user', content: [{ kind: 'text', text: 'next prompt' }] },
     ]
     const mapped = mapHistory(history)
     expect(mapped).toEqual([
       { role: 'user', content: [{ type: 'text', text: 'continue' }] },
-      { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'applyCss', input: {} }] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'site_apply_css', input: {} }] },
       {
         role: 'user',
         content: [

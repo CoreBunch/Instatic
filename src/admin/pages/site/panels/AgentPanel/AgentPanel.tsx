@@ -524,17 +524,17 @@ function summarizeCss(css: string): string {
 function formatActionLabel(actionType: string, params: unknown): string {
   const p = params as Record<string, unknown>
   switch (actionType) {
-    case 'insertHtml': return `→ ${String(p.parentId ?? '').slice(0, 8)}`
-    case 'getNodeHtml': return `node ${String(p.nodeId ?? '').slice(0, 6)}…`
-    case 'replaceNodeHtml': return `node ${String(p.nodeId ?? '').slice(0, 6)}…`
-    case 'deleteNode': return `node ${String(p.nodeId ?? '').slice(0, 6)}…`
-    case 'updateNodeProps': return `node ${String(p.nodeId ?? '').slice(0, 6)}…`
-    case 'moveNode': return `→ ${String(p.newParentId ?? '').slice(0, 6)}…`
-    case 'renameNode': return `"${String(p.label ?? '')}"`
-    case 'applyCss': return summarizeCss(String(p.css ?? ''))
-    case 'assignClass': return `${String(p.classId ?? '').slice(0, 6)}… → node`
-    case 'removeClass': return `${String(p.classId ?? '').slice(0, 6)}… from node`
-    case 'addPage': return `"${String(p.title ?? '')}"`
+    case 'site_insert_html': return `→ ${String(p.parentId ?? '').slice(0, 8)}`
+    case 'site_get_node_html': return `node ${String(p.nodeId ?? '').slice(0, 6)}…`
+    case 'site_replace_node_html': return `node ${String(p.nodeId ?? '').slice(0, 6)}…`
+    case 'site_delete_node': return `node ${String(p.nodeId ?? '').slice(0, 6)}…`
+    case 'site_update_node_props': return `node ${String(p.nodeId ?? '').slice(0, 6)}…`
+    case 'site_move_node': return `→ ${String(p.newParentId ?? '').slice(0, 6)}…`
+    case 'site_rename_node': return `"${String(p.label ?? '')}"`
+    case 'site_apply_css': return summarizeCss(String(p.css ?? ''))
+    case 'site_assign_class': return `${String(p.classId ?? '').slice(0, 6)}… → node`
+    case 'site_remove_class': return `${String(p.classId ?? '').slice(0, 6)}… from node`
+    case 'site_add_page': return `"${String(p.title ?? '')}"`
     default: return ''
   }
 }

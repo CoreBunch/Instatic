@@ -49,6 +49,8 @@ const AuditActionSchema = Type.Union([
   Type.Literal('ai.chat.started'),
   Type.Literal('ai.chat.completed'),
   Type.Literal('ai.chat.failed'),
+  Type.Literal('ai.mcp_connector.created'),
+  Type.Literal('ai.mcp_connector.revoked'),
 ])
 
 const AuditMetadataSchema = Type.Record(
