@@ -5,6 +5,7 @@ import type { AnyModuleDefinition } from '@core/module-engine'
 
 interface InsertModuleOptions {
   preservePropertiesPanelCollapse?: boolean
+  defaults?: Record<string, unknown>
 }
 
 /**
@@ -50,7 +51,7 @@ export function useInsertModule() {
           )
     if (!location) return null
 
-    const nodeId = insertNode(mod.id, mod.defaults, location.parentId, location.index)
+    const nodeId = insertNode(mod.id, options.defaults ?? mod.defaults, location.parentId, location.index)
     // The store refuses invariant-breaking inserts (e.g. a second base.outlet)
     // and surfaces its own toast — an empty id means nothing was inserted.
     if (!nodeId) return null

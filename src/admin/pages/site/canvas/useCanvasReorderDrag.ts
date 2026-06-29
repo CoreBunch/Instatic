@@ -7,6 +7,7 @@ import {
   getViewportLocalPoint,
   measureCanvasDropCandidates,
 } from './canvasDomGeometry'
+import { clearCanvasPointerRelay, markCanvasPointerRelay } from './canvasPointerRelay'
 
 interface UseCanvasReorderDragOptions {
   viewportRef: React.RefObject<HTMLElement | null>
@@ -166,7 +167,7 @@ export function useCanvasReorderDrag({
     removeWindowListenersRef.current = null
     // Clear the cross-frame drag signal so iframes stop forwarding pointer
     // events. Mirrors the matching set in `handlePointerDown` below.
-    clearCanvasDragSignal()
+    clearCanvasPointerRelay()
     setDragState(EMPTY_DRAG_STATE)
   }, [stopAutoPan])
 
@@ -261,7 +262,7 @@ export function useCanvasReorderDrag({
     // the parent when set. We also stash the originating pointerId so the
     // relay can mint events with the matching id — keeps the eventual
     // window listeners' assumptions consistent.
-    markCanvasDragSignal(event.pointerId)
+    markCanvasPointerRelay(event.pointerId)
 
     window.addEventListener('pointermove', handleWindowPointerMove)
     window.addEventListener('pointerup', handleWindowPointerUp)
@@ -303,27 +304,4 @@ function canHaveChildren(moduleId: string): boolean {
 function autoPanSpeed(distanceFromEdge: number): number {
   const ratio = 1 - Math.max(0, Math.min(AUTO_PAN_EDGE_PX, distanceFromEdge)) / AUTO_PAN_EDGE_PX
   return Math.max(1, Math.ceil(ratio * AUTO_PAN_MAX_SPEED))
-}
-
-/**
- * Set the cross-iframe drag signal on the parent document so each
- * `IframeFrameSurface` knows to forward pointer events to the parent. The
- * pointer id is stashed alongside so the relay can mint forwarded events
- * with the same id the canvas drag started with — making the parent
- * window listeners' `pointerId` checks line up.
- *
- * This lives at module scope (rather than inside the hook) because it
- * mutates the parent document — React Compiler is happier when those
- * writes don't appear inside a render-tied callback.
- */
-function markCanvasDragSignal(pointerId: number): void {
-  if (typeof document === 'undefined') return
-  document.documentElement.dataset.instaticCanvasDragging = '1'
-  document.documentElement.dataset.instaticCanvasDraggingPointerId = String(pointerId)
-}
-
-function clearCanvasDragSignal(): void {
-  if (typeof document === 'undefined') return
-  delete document.documentElement.dataset.instaticCanvasDragging
-  delete document.documentElement.dataset.instaticCanvasDraggingPointerId
 }

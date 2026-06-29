@@ -13,7 +13,7 @@ import {
   type RegistryModuleForInserter,
 } from '@site/module-picker/moduleInserterModel'
 import type { SavedLayout } from '@core/layouts'
-import { findCanvasViewportAtPoint } from '@site/module-picker/moduleInserterDropTarget'
+import { findCanvasViewportAtPoint } from '@site/canvas/canvasInsertionDrop'
 import { scrollSelectedItemIntoView } from '@site/module-picker/moduleInserterSelectionScroll'
 import {
   MODULE_INSERTER_STORAGE_KEY,

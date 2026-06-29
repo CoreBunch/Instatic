@@ -12,6 +12,7 @@ Built on `@dnd-kit/core`. The canvas owns its own DnD context (separate from the
 - The canvas's `<DndContext>` lives at `CanvasRoot.tsx`. Every `BreakpointFrame` is inside it.
 - Drop targets are **drop-zones** — rectangles between nodes ("before X", "after X", "into X"). Computed per-frame from node geometry.
 - Drop resolution: `resolveCanvasDropTarget(...)` in `src/admin/pages/site/canvas/canvasDnd.ts` maps `(activePoint, frameGeometry) → { parentId, index, axis }`.
+- New insert sources that are not moving an existing node use `resolveCanvasPointerInsertionDrop(...)` in `src/admin/pages/site/canvas/canvasInsertionDrop.ts` so module-picker and media-library drops share viewport lookup, target resolution, and preview geometry.
 - Mutation: `mutateActiveTree((tree) => moveNode(tree, nodeId, parentId, index))` — page-mode and VC-mode both work.
 
 ---
@@ -32,17 +33,21 @@ Built on `@dnd-kit/core`. The canvas owns its own DnD context (separate from the
 
   <DragOverlay>                             ← shared overlay
 </DndContext>
+
+<ModuleInserterDialog>                      ← pointer drag to insertion target
+<MediaExplorerPanel>                        ← image/video pointer drag to insertion target
 ```
 
-Three kinds of drag sources:
+Drag sources:
 
-| Source id pattern        | Origin                          | Drop result                                     |
-|--------------------------|---------------------------------|-------------------------------------------------|
-| `node:<nodeId>`          | A node on the canvas / DOM panel| Move the node to the drop target                |
-| `picker:<moduleId>`      | The module picker / inserter    | Insert a new node of `moduleId` at the drop target |
-| `tree:<nodeId>`          | The DOM panel tree              | Same as `node:` (DOM panel ⇄ canvas parity)     |
+| Source                    | Origin                          | Drop result                                     |
+|---------------------------|---------------------------------|-------------------------------------------------|
+| `node:<nodeId>`           | A node on the canvas / DOM panel| Move the node to the drop target                |
+| Module inserter item      | Module picker / inserter dialog | Insert a new node of the picked module at the drop target |
+| Media Explorer asset      | Site editor Media panel         | Image asset inserts `base.image`; video asset inserts `base.video` |
+| `tree:<nodeId>`           | The DOM panel tree              | Same as `node:` (DOM panel ⇄ canvas parity)     |
 
-The page-level `onDragEnd` handler reads the source prefix and dispatches.
+Existing-node moves are DnD-context drags. Insert sources that start outside the frame tree use pointer listeners and `resolveCanvasPointerInsertionDrop(...)` because they need the same drop zones but do not carry an existing node id.
 
 ---
 
@@ -101,7 +106,7 @@ The resolver:
 
 ## Drop overlay
 
-The overlay highlights the resolved drop position. Geometry comes from the resolver:
+The overlay highlights the resolved drop position. Geometry comes from the resolver or, for insert sources, from `canvasInsertionDrop.ts`'s fixed preview helpers:
 
 - **Before / After** — a thin sky-tinted line (`--accent-3` at 0.6 alpha) at the zone position.
 - **Into** — a sky-tinted dashed outline inset 4px from the target's bounding box.
@@ -180,20 +185,20 @@ Gated by `task414-wrap-to-container.test.ts` and `multiWrapDefaults.test.ts` —
 ### Drop a new module from the picker
 
 ```ts
-// In ModulePicker:
-<button
-  ref={setNodeRef}
-  {...listeners}
-  {...attributes}
-  data-source-id={`picker:${moduleId}`}
->
-  ...
-</button>
-
-// useDraggable({ id: `picker:${moduleId}` })
+const drop = resolveCanvasPointerInsertionDrop({
+  canvasPage,
+  clientX,
+  clientY,
+  label: 'Drop',
+})
+if (drop) insertModule(module, drop.location)
 ```
 
-The `id` prefix tells `onDragEnd` it's a new-module insert.
+The module inserter keeps its own pointer drag state, but target resolution and preview geometry are shared through `canvasInsertionDrop.ts`.
+
+### Drop media from the Site editor Media panel
+
+`mediaCanvasInsertionForAsset(asset)` maps image assets to `base.image` defaults (`{ src: asset.publicPath }`) and video assets to `base.video` defaults (`{ videoUrl: asset.publicPath }`). Other asset types are not canvas insert sources. The drag hook then calls `useInsertModule(mod, drop.location, { defaults })`, so the created node is selected and routed through the same page/Visual Component insertion path as module-picker drops.
 
 ### Drop an existing node
 
@@ -249,8 +254,10 @@ Don't add raw `dragstart` / `dragend` listeners — `@dnd-kit` owns those. If yo
 - [docs/features/dashboard.md](../features/dashboard.md) — separate DnD topology for the dashboard
 - Source-of-truth files:
   - `src/admin/pages/site/canvas/canvasDnd.ts` — `getCanvasDropZone`, `resolveCanvasDropTarget`
+  - `src/admin/pages/site/canvas/canvasInsertionDrop.ts` — pointer-to-canvas insertion target + fixed preview geometry shared by module and media insert sources
   - `src/admin/pages/site/canvas/CanvasRoot.tsx` — `<DndContext>` mount
   - `src/admin/pages/site/canvas/useCanvasReorderDrag.ts` — drag-state hook
+  - `src/admin/pages/site/panels/MediaExplorerPanel/mediaCanvasInsertion.ts` — media asset → base module/defaults mapping
   - `src/admin/pages/site/store/insertLocation.ts` — `InsertLocation` shape
   - `src/core/page-tree/mutations.ts` — `insertNode`, `moveNode`, `moveNodes`, `wrapNode`
 - Gate tests:

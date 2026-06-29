@@ -15,12 +15,11 @@ import type { VisualComponent } from '@core/visualComponents'
 import type { InsertLocation } from '@site/store/insertLocation'
 import { selectActiveCanvasPage, useEditorStore } from '@site/store/store'
 import {
-  getViewportLocalPoint,
-  measureCanvasDropCandidates,
-} from '@site/canvas/canvasDomGeometry'
-import {
-  resolveCanvasInsertionTarget,
-} from '@site/canvas/canvasDnd'
+  dropPreviewStyle,
+  resolveCanvasPointerInsertionDrop,
+  type CanvasDropPreview,
+} from '@site/canvas/canvasInsertionDrop'
+import { clearCanvasPointerRelay, markCanvasPointerRelay } from '@site/canvas/canvasPointerRelay'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
 import { Kbd } from '@ui/components/Kbd'
@@ -50,14 +49,9 @@ import {
   writeModuleInserterView,
   type ModuleInserterRecentRef,
 } from './moduleInserterPrefs'
-import { findCanvasViewportAtPoint } from './moduleInserterDropTarget'
 import { SavedLayoutManageMenu, type SavedLayoutMenuState } from './SavedLayoutManageMenu'
 import {
-  dropPreviewStyle,
-  fixedPreviewForTarget,
-  fixedPreviewForViewport,
   ghostStyle,
-  type CanvasDropPreview,
   type DragVisualState,
 } from './moduleInserterDragPreview'
 import {
@@ -349,6 +343,14 @@ export function ModuleInserterDialog({
     const startY = event.clientY
     let started = false
 
+    const cleanup = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cancel)
+      clearCanvasPointerRelay()
+      backdropRef.current?.removeAttribute('data-dragging')
+    }
+
     const move = (moveEvent: PointerEvent) => {
       if (!started) {
         if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 6) return
@@ -366,9 +368,7 @@ export function ModuleInserterDialog({
     }
 
     const up = (upEvent: PointerEvent) => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-      backdropRef.current?.removeAttribute('data-dragging')
+      cleanup()
 
       const resolved = started
         ? resolvePointerDrop(upEvent.clientX, upEvent.clientY)
@@ -386,8 +386,15 @@ export function ModuleInserterDialog({
       }
     }
 
+    const cancel = () => {
+      cleanup()
+      setDrag(null)
+    }
+
+    markCanvasPointerRelay(event.pointerId)
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cancel)
   }
 
   function resolvePointerDrop(
@@ -395,44 +402,12 @@ export function ModuleInserterDialog({
     clientY: number,
   ): PointerDropResolution | null {
     if (!canvasPage) return null
-    const viewport = findCanvasViewportAtPoint(clientX, clientY)
-    if (!viewport) return null
-    const breakpointId = viewport.dataset.breakpointId
-    if (!breakpointId) return null
-
-    const viewportRect = viewport.getBoundingClientRect()
-    if (
-      clientX < viewportRect.left ||
-      clientX > viewportRect.right ||
-      clientY < viewportRect.top ||
-      clientY > viewportRect.bottom
-    ) {
-      return null
-    }
-
-    const iframe = viewport.querySelector<HTMLIFrameElement>('iframe')
-    const point = getViewportLocalPoint(viewport, clientX, clientY)
-    const candidates = measureCanvasDropCandidates(viewport, canvasPage, iframe)
-    const target = resolveCanvasInsertionTarget({
-      tree: canvasPage,
-      candidates,
-      point,
-      canHaveChildren: (moduleId) => registry.get(moduleId)?.canHaveChildren === true,
+    return resolveCanvasPointerInsertionDrop({
+      canvasPage,
+      clientX,
+      clientY,
+      label: 'Drop',
     })
-
-    if (!target) {
-      return {
-        location: { parentId: canvasPage.rootNodeId, index: undefined },
-        preview: fixedPreviewForViewport(viewport, 'inside', 'Drop at page root'),
-        breakpointId,
-      }
-    }
-
-    return {
-      location: { parentId: target.parentId, index: target.index },
-      preview: fixedPreviewForTarget(viewport, target, `Drop ${target.position}`),
-      breakpointId,
-    }
   }
 
   function handleBackdropClick(event: React.MouseEvent<HTMLDivElement>) {

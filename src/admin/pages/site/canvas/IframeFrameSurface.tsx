@@ -46,14 +46,13 @@
  *    measures elements (selection overlay handles its own iframe-rect
  *    translation; other callers may need updates).
  *
- * Cross-iframe drag relay (canvas reorder)
+ * Cross-iframe drag relay
  * ────────────────────────────────────────
- * The canvas reorder drag (`useCanvasReorderDrag`) starts on the selection
- * toolbar's drag handle in the parent doc, but the cursor inevitably
- * crosses into an iframe partway through. Left-click pointer events
- * inside the iframe never bubble to the parent's `window`, so the parent's
- * pointermove / up / cancel listeners go silent the moment the cursor
- * enters a frame. To fix that, `useCanvasReorderDrag` sets
+ * Canvas drags that start in the parent doc (selection-toolbar reorders,
+ * media-panel inserts) inevitably cross into an iframe partway through.
+ * Left-click pointer events inside the iframe never bubble to the parent's
+ * `window`, so the parent's pointermove / up / cancel listeners go silent
+ * the moment the cursor enters a frame. To fix that, drag hooks set
  * `data-instatic-canvas-dragging` and `data-instatic-canvas-dragging-pointer-id` on
  * the parent's `<html>` while a drag is in flight. Every iframe reads
  * those flags inside its pointer handler and, when set, forwards the
@@ -370,9 +369,9 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
       }
     }, [iframeDoc, isLive])
 
-    // ── Forward pointer events for canvas pan gestures + reorder drag ────
+    // ── Forward pointer events for canvas pan gestures + parent-doc canvas drags ────
     // The canvas pan gesture (useCanvas via @use-gesture) and the canvas
-    // reorder drag (useCanvasReorderDrag) both live in the parent document
+    // parent-doc canvas drag handlers both live in the parent document
     // and rely on `window` pointer events. Three scenarios need to cross
     // the iframe boundary from inside the iframe back to the parent:
     //
@@ -380,11 +379,11 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
     //      of where the cursor is.
     //   2. Space + left-click drag (Figma convention) — pan when the user
     //      is holding space, even with the cursor over a frame.
-    //   3. An active reorder drag started outside the iframe (the
-    //      selection toolbar's drag handle lives in the parent doc). The
+    //   3. An active canvas drag started outside the iframe (selection
+    //      toolbar handle, media panel asset, etc.). The
     //      pointer down fires in the parent, then as the cursor enters an
     //      iframe its pointermove/up events go to the iframe instead of
-    //      bubbling up to `window`. `useCanvasReorderDrag` sets
+    //      bubbling up to `window`. Canvas drag hooks set
     //      `data-instatic-canvas-dragging` on `<html>` so each iframe knows to
     //      forward pointermove / up / cancel events while the drag is in
     //      flight. The drag id is also stashed so we can mint forwarded
@@ -398,8 +397,8 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
     // pointer event into module selection logic (otherwise a module would
     // get selected while the user was trying to pan).
     useEffect(() => {
-      // Pan-gesture / reorder-drag relay is canvas-only. Live frames neither
-      // pan nor host the cross-frame reorder drag.
+      // Pan-gesture / parent-doc canvas-drag relay is canvas-only. Live frames
+      // neither pan nor host the cross-frame canvas drag.
       if (isLive) return
       if (!iframeDoc) return
       const iframe = iframeRef.current
@@ -529,7 +528,7 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
         return false
       }
       const maybeForward = (e: PointerEvent) => {
-        // (3) An external reorder drag is in progress — forward move/up/
+        // (3) An external canvas drag is in progress — forward move/up/
         // cancel so the parent's `window` listeners keep ticking.
         // pointerdown is excluded: the iframe never originates the drag,
         // and forwarding the first iframe-internal pointerdown would
@@ -540,7 +539,7 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
           // logic listens for raw pointermove inside the iframe), so we
           // don't swallow it — but we do forward it to the parent doc with
           // the original drag's pointerId so the session-id check in
-          // useCanvasReorderDrag is consistent.
+          // the parent drag session is consistent.
           forwardPointer(e, dragSignal.pointerId)
           return
         }
