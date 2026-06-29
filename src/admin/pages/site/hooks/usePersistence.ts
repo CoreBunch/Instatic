@@ -43,6 +43,7 @@ import {
   subscribeToEditorPrefsChanged,
 } from '@site/preferences/editorPreferences'
 import { getKeybindingForCommand } from '@admin/spotlight/keybindings'
+import { registerEditorSave } from './editorSaveRef'
 
 /**
  * Re-exported for back-compat. The canonical declaration lives in
@@ -158,6 +159,10 @@ export function usePersistence(
       throw err
     }
   }, [])
+
+  // Expose the save to the MCP editor-bridge so a write tool relayed from an
+  // external agent can flush to the DB before a follow-up headless read.
+  useEffect(() => registerEditorSave(saveCurrentSite), [saveCurrentSite])
 
   // ─── 1. Load site document on mount ────────────────────────────────────────
   useEffect(() => {

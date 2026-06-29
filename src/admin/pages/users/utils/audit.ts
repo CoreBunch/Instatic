@@ -185,6 +185,10 @@ export function auditTitle(
       return `AI chat in ${aiScope} completed`
     case 'ai.chat.failed':
       return `AI chat in ${aiScope} failed`
+    case 'ai.mcp_connector.created':
+      return `MCP connector was created`
+    case 'ai.mcp_connector.revoked':
+      return `MCP connector was revoked`
     default:
       return humanizeActionId(event.action)
   }

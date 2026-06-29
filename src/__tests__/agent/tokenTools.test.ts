@@ -57,7 +57,7 @@ describe('executeAgentTool — set_color_tokens', () => {
     freshStore()
     expect(site().settings.framework).toBeUndefined()
 
-    const result = await executeAgentTool('set_color_tokens', {
+    const result = await executeAgentTool('site_set_color_tokens', {
       tokens: [
         { slug: 'primary', lightValue: '#3b82f6' },
         { slug: 'ink', lightValue: '#0a0a0a', category: 'Neutrals' },
@@ -75,9 +75,9 @@ describe('executeAgentTool — set_color_tokens', () => {
 
   it('updates an existing token by slug instead of duplicating it', async () => {
     freshStore()
-    await executeAgentTool('set_color_tokens', { tokens: [{ slug: 'primary', lightValue: '#3b82f6' }] })
+    await executeAgentTool('site_set_color_tokens', { tokens: [{ slug: 'primary', lightValue: '#3b82f6' }] })
 
-    const result = await executeAgentTool('set_color_tokens', {
+    const result = await executeAgentTool('site_set_color_tokens', {
       tokens: [{ slug: 'primary', lightValue: '#ef4444' }],
     })
     const { tokens } = expectData<{ tokens: Array<{ action: string }> }>(result)
@@ -90,7 +90,7 @@ describe('executeAgentTool — set_color_tokens', () => {
 
   it('fails schema validation with an empty tokens array', async () => {
     freshStore()
-    const result = await executeAgentTool('set_color_tokens', { tokens: [] })
+    const result = await executeAgentTool('site_set_color_tokens', { tokens: [] })
     expect(result.ok).toBe(false)
   })
 })
@@ -102,7 +102,7 @@ describe('executeAgentTool — set_color_tokens', () => {
 describe('executeAgentTool — set_type_scale', () => {
   it('creates a typography group on an empty site and reports generated vars', async () => {
     freshStore()
-    const result = await executeAgentTool('set_type_scale', {
+    const result = await executeAgentTool('site_set_type_scale', {
       namingConvention: 'text',
       steps: 's,m,l,xl',
       min: { fontSize: 16, scaleRatio: 1.2 },
@@ -123,8 +123,8 @@ describe('executeAgentTool — set_type_scale', () => {
 
   it('updates the existing group on a second call (no new group)', async () => {
     freshStore()
-    await executeAgentTool('set_type_scale', { steps: 's,m,l' })
-    const result = await executeAgentTool('set_type_scale', { min: { fontSize: 20 } })
+    await executeAgentTool('site_set_type_scale', { steps: 's,m,l' })
+    const result = await executeAgentTool('site_set_type_scale', { min: { fontSize: 20 } })
 
     const data = expectData<{ action: string }>(result)
     expect(data.action).toBe('updated')
@@ -137,7 +137,7 @@ describe('executeAgentTool — set_type_scale', () => {
 
   it('errors when groupId targets a non-existent group', async () => {
     freshStore()
-    const result = await executeAgentTool('set_type_scale', { groupId: 'nope', steps: 's,m' })
+    const result = await executeAgentTool('site_set_type_scale', { groupId: 'nope', steps: 's,m' })
     expect(result.ok).toBe(false)
     expect(result.error).toContain('not found')
   })
@@ -150,7 +150,7 @@ describe('executeAgentTool — set_type_scale', () => {
 describe('executeAgentTool — set_spacing_scale', () => {
   it('creates a spacing group and reports --space-* vars', async () => {
     freshStore()
-    const result = await executeAgentTool('set_spacing_scale', {
+    const result = await executeAgentTool('site_set_spacing_scale', {
       namingConvention: 'space',
       steps: 'xs,s,m,l',
       min: { size: 4, scaleRatio: 1.25 },
@@ -198,7 +198,7 @@ function mockFailingFetch(message: string): void {
 describe('executeAgentTool — set_font_tokens', () => {
   it('creates a fallback-only token with no install', async () => {
     freshStore()
-    const result = await executeAgentTool('set_font_tokens', {
+    const result = await executeAgentTool('site_set_font_tokens', {
       tokens: [{ name: 'Body', variable: 'font-body', fallback: 'sans-serif' }],
     })
 
@@ -228,7 +228,7 @@ describe('executeAgentTool — set_font_tokens', () => {
     }
     mockInstallFetch(entry)
 
-    const result = await executeAgentTool('set_font_tokens', {
+    const result = await executeAgentTool('site_set_font_tokens', {
       tokens: [{ name: 'Heading', variable: 'font-heading', googleFamily: 'Inter' }],
     })
 
@@ -243,7 +243,7 @@ describe('executeAgentTool — set_font_tokens', () => {
 
   it('rejects a token that sets both googleFamily and familyId', async () => {
     freshStore()
-    const result = await executeAgentTool('set_font_tokens', {
+    const result = await executeAgentTool('site_set_font_tokens', {
       tokens: [{ name: 'X', googleFamily: 'Inter', familyId: 'font_x' }],
     })
     expect(result.ok).toBe(false)
@@ -253,7 +253,7 @@ describe('executeAgentTool — set_font_tokens', () => {
   it('surfaces an install failure as a recoverable tool error', async () => {
     freshStore()
     mockFailingFetch('Unknown font family')
-    const result = await executeAgentTool('set_font_tokens', {
+    const result = await executeAgentTool('site_set_font_tokens', {
       tokens: [{ name: 'Heading', googleFamily: 'NotARealFont' }],
     })
     expect(result.ok).toBe(false)

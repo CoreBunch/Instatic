@@ -43,7 +43,7 @@ Every event has a typed `action` string. The closed union is the source of truth
 | Data            | `data.table.create`, `data.table.update`, `data.table.delete`, `data.row.create`, `data.row.update`, `data.row.delete`, `data.row.publish`, `data.row.schedule`, `data.row.schedule.cancel`, `data.row.status`, `data.row.move`, `data.author.assign` |
 | Publishing      | `publish`                                                                                 |
 | Plugins         | `plugin.install`, `plugin.update`, `plugin.enable`, `plugin.disable`, `plugin.delete`, `plugin.pack.install`, `plugin.settings.update` |
-| AI              | `ai.credential.created`, `ai.credential.updated`, `ai.credential.deleted`, `ai.credential.tested`, `ai.default.updated`, `ai.default.cleared`, `ai.chat.started`, `ai.chat.completed`, `ai.chat.failed` |
+| AI              | `ai.credential.created`, `ai.credential.updated`, `ai.credential.deleted`, `ai.credential.tested`, `ai.default.updated`, `ai.default.cleared`, `ai.chat.started`, `ai.chat.completed`, `ai.chat.failed`, `ai.mcp_connector.created`, `ai.mcp_connector.revoked` |
 
 If you add a new action that fits an existing group, append to the union. New groups (e.g. media-related audit) extend the same union.
 

@@ -9,7 +9,10 @@ export function slugifySiteItemName(value: string, fallback = 'page') {
 }
 
 function stripSitePrefix(value: string, prefix: string) {
-  return value.trim().replace(new RegExp(`^${prefix.replace(/\//g, '\\/')}`), '')
+  const trimmed = value.trim()
+  // Plain string match — no RegExp, so the prefix's `/` (and any other regex
+  // metacharacters) are treated literally (CodeQL js/incomplete-sanitization).
+  return trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : trimmed
 }
 
 function ensureExtension(value: string, extension: string) {

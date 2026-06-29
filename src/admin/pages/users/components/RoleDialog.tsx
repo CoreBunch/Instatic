@@ -5,29 +5,22 @@
  * button is omitted, and the cancel button reads "Close". `'create'` and
  * `'edit'` share the same form layout and submit through `onSubmit`.
  *
- * The capability picker shows every CMS capability grouped by feature area
- * (`CAPABILITY_GROUPS`). Each capability renders with a human-readable label
- * + description (`CAPABILITY_META`) instead of the raw permission string. A
- * sticky summary header at the top of the picker shows total selected count
- * and provides a master "Select all / Clear all" toggle; each group also has
- * its own per-group toggle in its header. The whole picker scrolls with the
- * Dialog body — no inner scroll, no double scrollbar.
+ * The capability picker is the shared `CapabilityPicker` (also used by the MCP
+ * connector dialog). It renders every CMS capability grouped by feature area
+ * (`CAPABILITY_GROUPS`) with human-readable labels + descriptions, a master
+ * "Select all / Clear all" header, and a per-group toggle.
  */
 import { useId, type FormEvent } from 'react'
 import { Button } from '@ui/components/Button'
-import { Checkbox } from '@ui/components/Checkbox'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { SaveSolidIcon } from 'pixel-art-icons/icons/save-solid'
+import { CapabilityPicker } from '@admin/shared/CapabilityPicker'
+import type { CoreCapability } from '@core/capabilities'
 import dialogStyles from '../../../shared/dialogs/SiteCreateDialog/SiteCreateDialog.module.css'
 import styles from '../UsersPage.module.css'
-import type { CapabilityGroup, RoleDialogMode, RoleFormState } from '../types'
-import {
-  ALL_PICKER_CAPABILITIES,
-  CAPABILITY_GROUPS,
-  CAPABILITY_META,
-  capabilityLabel,
-} from '../utils/capabilities'
+import type { RoleDialogMode, RoleFormState } from '../types'
+import { CAPABILITY_GROUPS } from '../utils/capabilities'
 
 interface RoleDialogProps {
   mode: RoleDialogMode
@@ -37,8 +30,6 @@ interface RoleDialogProps {
   onChange: (form: RoleFormState) => void
   onClose: () => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
-  onToggleCapability: (capability: string, checked: boolean) => void
-  onSetCapabilityGroup: (group: CapabilityGroup, checked: boolean) => void
 }
 
 const ROLE_FORM_ID = 'users-page-role-form'
@@ -51,29 +42,13 @@ export function RoleDialog({
   onChange,
   onClose,
   onSubmit,
-  onToggleCapability,
-  onSetCapabilityGroup,
 }: RoleDialogProps) {
   const title = mode === 'create' ? 'Create Role' : mode === 'edit' ? 'Edit Role' : 'View Role'
   const readonly = mode === 'view'
-  const selectedCapabilities = new Set(form.capabilities)
-  const totalCount = ALL_PICKER_CAPABILITIES.length
-  const selectedCount = ALL_PICKER_CAPABILITIES.reduce(
-    (n, cap) => (selectedCapabilities.has(cap) ? n + 1 : n),
-    0,
-  )
-  const allSelected = selectedCount === totalCount
 
   const nameId = useId()
   const slugId = useId()
   const descriptionId = useId()
-
-  function setAllCapabilities(checked: boolean) {
-    onChange({
-      ...form,
-      capabilities: checked ? [...ALL_PICKER_CAPABILITIES] : [],
-    })
-  }
 
   return (
     <Dialog
@@ -130,90 +105,12 @@ export function RoleDialog({
           />
         </div>
 
-        <section className={styles.capabilityPicker} aria-label="Capabilities">
-          <header className={styles.capabilityPickerHeader}>
-            <div className={styles.capabilityPickerSummary}>
-              <h3 className={styles.capabilityPickerTitle}>Capabilities</h3>
-              <p className={styles.capabilityPickerCount}>
-                <strong>{selectedCount}</strong> of {totalCount} selected
-              </p>
-            </div>
-            {!readonly && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                aria-label={allSelected ? 'Clear all capabilities' : 'Select all capabilities'}
-                onClick={() => setAllCapabilities(!allSelected)}
-              >
-                <span>{allSelected ? 'Clear all' : 'Select all'}</span>
-              </Button>
-            )}
-          </header>
-
-          <div className={styles.capabilityGroups}>
-            {CAPABILITY_GROUPS.map((group) => {
-              const groupSelected = group.capabilities.filter((cap) => selectedCapabilities.has(cap)).length
-              const groupTotal = group.capabilities.length
-              const groupAllSelected = groupSelected === groupTotal
-              return (
-                <section key={group.title} className={styles.capabilityGroup}>
-                  <header className={styles.capabilityGroupHeader}>
-                    <div className={styles.capabilityGroupHeading}>
-                      <h4>{group.title}</h4>
-                      <span
-                        className={styles.capabilityGroupCount}
-                        data-state={groupAllSelected ? 'full' : groupSelected > 0 ? 'partial' : 'empty'}
-                      >
-                        {groupSelected}/{groupTotal}
-                      </span>
-                    </div>
-                    {!readonly && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="xs"
-                        aria-label={
-                          groupAllSelected
-                            ? `Clear ${group.title} capabilities`
-                            : `Select all ${group.title} capabilities`
-                        }
-                        onClick={() => onSetCapabilityGroup(group, !groupAllSelected)}
-                      >
-                        <span>{groupAllSelected ? 'Clear' : 'Select all'}</span>
-                      </Button>
-                    )}
-                  </header>
-                  <ul className={styles.capabilityList}>
-                    {group.capabilities.map((capability) => {
-                      const meta = CAPABILITY_META[capability]
-                      const checked = selectedCapabilities.has(capability)
-                      return (
-                        <li key={capability} className={styles.capabilityItem} data-checked={checked}>
-                          <label className={styles.capabilityRow}>
-                            <Checkbox
-                              checked={checked}
-                              disabled={readonly}
-                              onCheckedChange={(next) => onToggleCapability(capability, next)}
-                            />
-                            <span className={styles.capabilityRowText}>
-                              <span className={styles.capabilityRowLabel}>
-                                {meta?.label ?? capabilityLabel(capability)}
-                              </span>
-                              {meta && (
-                                <span className={styles.capabilityRowDescription}>{meta.description}</span>
-                              )}
-                            </span>
-                          </label>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </section>
-              )
-            })}
-          </div>
-        </section>
+        <CapabilityPicker
+          groups={CAPABILITY_GROUPS}
+          selected={new Set(form.capabilities as CoreCapability[])}
+          readonly={readonly}
+          onChange={(next) => onChange({ ...form, capabilities: [...next] })}
+        />
 
         {error && <p role="alert" className={dialogStyles.errorText}>{error}</p>}
       </form>

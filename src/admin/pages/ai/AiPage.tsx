@@ -21,13 +21,15 @@ import { useCurrentAdminUser } from '@admin/sessionContext'
 import { ProvidersTab } from './tabs/ProvidersTab'
 import { DefaultsTab } from './tabs/DefaultsTab'
 import { AuditTab } from './tabs/AuditTab'
+import { McpTab } from './tabs/McpTab'
 import styles from './AiPage.module.css'
 
-type Tab = 'providers' | 'defaults' | 'audit'
+type Tab = 'providers' | 'defaults' | 'mcp' | 'audit'
 
 const TAB_LABELS: Record<Tab, string> = {
   providers: 'Providers',
   defaults: 'Defaults',
+  mcp: 'MCP',
   audit: 'Audit',
 }
 
@@ -38,7 +40,7 @@ export function AiPage() {
   const canReadAudit = unrestricted || hasCapability(currentUser, 'ai.audit.read')
 
   const availableTabs: Tab[] = []
-  if (canManage) availableTabs.push('providers', 'defaults')
+  if (canManage) availableTabs.push('providers', 'defaults', 'mcp')
   if (canReadAudit) availableTabs.push('audit')
 
   const [tab, setTab] = useState<Tab>('providers')
@@ -74,6 +76,7 @@ export function AiPage() {
       <div className={styles.body}>
         {activeTab === 'providers' && <ProvidersTab />}
         {activeTab === 'defaults' && <DefaultsTab />}
+        {activeTab === 'mcp' && <McpTab />}
         {activeTab === 'audit' && <AuditTab />}
       </div>
     </AdminPageLayout>

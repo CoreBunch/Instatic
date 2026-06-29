@@ -4,7 +4,7 @@
  * These tools are compact catalogs that describe things not present in the
  * current document's HTML: editable documents, insertable modules, design
  * tokens, loop sources, post types, and breakpoints. Full document HTML is
- * read through the browser-backed `read_document` tool so non-active documents
+ * read through the browser-backed `site_read_document` tool so non-active documents
  * do not have to ride in every prompt snapshot.
  */
 
@@ -30,18 +30,18 @@ function asSnap(snapshot: unknown): SiteAgentSnapshot {
 }
 
 // ---------------------------------------------------------------------------
-// list_documents
+// site_list_documents
 // ---------------------------------------------------------------------------
 
 const ListDocumentsInput = Type.Object({})
 
 const listDocumentsTool: AiTool = {
-  name: 'list_documents',
+  name: 'site_list_documents',
   scope: 'site',
   execution: 'server',
   requiredCapabilities: ['site.read'],
   description:
-    'List editable documents: pages, templates, and visual components. Use the returned document refs with read_document/open_document. Each item includes rootNodeId, active/current flags, template metadata, and a short summary.',
+    'List editable documents: pages, templates, and visual components. Use the returned document refs with site_read_document/site_open_document. Each item includes rootNodeId, active/current flags, template metadata, and a short summary.',
   inputSchema: ListDocumentsInput,
   handler: async (_input, ctx) => {
     const snap = asSnap(ctx.snapshot)
@@ -53,7 +53,7 @@ const listDocumentsTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
-// list_modules
+// site_list_modules
 // ---------------------------------------------------------------------------
 
 const ListModulesInput = Type.Object({
@@ -61,7 +61,7 @@ const ListModulesInput = Type.Object({
 })
 
 const listModulesTool: AiTool = {
-  name: 'list_modules',
+  name: 'site_list_modules',
   scope: 'site',
   execution: 'server',
   requiredCapabilities: ['site.read'],
@@ -80,7 +80,7 @@ const listModulesTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
-// list_tokens
+// site_list_tokens
 // ---------------------------------------------------------------------------
 
 const ListTokensInput = Type.Object({
@@ -95,7 +95,7 @@ const ListTokensInput = Type.Object({
 })
 
 const listTokensTool: AiTool = {
-  name: 'list_tokens',
+  name: 'site_list_tokens',
   scope: 'site',
   execution: 'server',
   requiredCapabilities: ['site.read'],
@@ -110,18 +110,18 @@ const listTokensTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
-// list_post_types
+// site_list_post_types
 // ---------------------------------------------------------------------------
 
 const ListPostTypesInput = Type.Object({})
 
 const listPostTypesTool: AiTool = {
-  name: 'list_post_types',
+  name: 'site_list_post_types',
   scope: 'site',
   execution: 'server',
   requiredCapabilities: ['site.read'],
   description:
-    'List the post types (routable collections) a `postTypes` template can target. Each entry has { slug, label, routeBase, kind }; pass the `slug` values to setPageTemplate\'s `target.tableSlugs`. Only collections with a public route appear — non-routable data tables are excluded.',
+    'List the post types (routable collections) a `postTypes` template can target. Each entry has { slug, label, routeBase, kind }; pass the `slug` values to site_set_page_template\'s `target.tableSlugs`. Only collections with a public route appear — non-routable data tables are excluded.',
   inputSchema: ListPostTypesInput,
   handler: async (_input, ctx) => {
     const tables = await listDataTablesWithCounts(ctx.db)
@@ -138,7 +138,7 @@ const listPostTypesTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
-// list_loop_sources
+// site_list_loop_sources
 // ---------------------------------------------------------------------------
 
 const ListLoopSourcesInput = Type.Object({})
@@ -197,7 +197,7 @@ function mergeBindingFields(fields: AgentBindingField[]): AgentBindingField[] {
 }
 
 const listLoopSourcesTool: AiTool = {
-  name: 'list_loop_sources',
+  name: 'site_list_loop_sources',
   scope: 'site',
   execution: 'server',
   requiredCapabilities: ['site.read'],
@@ -247,13 +247,13 @@ const listLoopSourcesTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
-// list_breakpoints
+// site_list_breakpoints
 // ---------------------------------------------------------------------------
 
 const ListBreakpointsInput = Type.Object({})
 
 const listBreakpointsTool: AiTool = {
-  name: 'list_breakpoints',
+  name: 'site_list_breakpoints',
   scope: 'site',
   execution: 'server',
   requiredCapabilities: ['site.read'],

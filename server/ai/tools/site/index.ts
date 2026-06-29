@@ -15,13 +15,13 @@ import { siteReadTools } from './readTools'
 import { siteWriteTools } from './writeTools'
 
 const READ_ONLY_NAMES_IN_WRITE_FILE = new Set([
-  'getNodeHtml',
-  'read_document',
-  'open_document',
-  'list_code_assets',
-  'read_code_asset',
-  'inspect_code_runtime',
-  'render_snapshot',
+  'site_get_node_html',
+  'site_read_document',
+  'site_open_document',
+  'site_list_code_assets',
+  'site_read_code_asset',
+  'site_inspect_code_runtime',
+  'site_render_snapshot',
 ])
 
 function stampMutationFlag(tools: AiTool[], isMutating: boolean): AiTool[] {

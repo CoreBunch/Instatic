@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { AdminCanvasLayout } from '@admin/layouts/AdminCanvasLayout'
 import { consumePendingAction } from '@admin/spotlight/pendingAction'
 import { useEditorStore } from '@site/store/store'
+import { useEditorMcpBridge } from './agent/useEditorMcpBridge'
 
 /**
  * SitePage — visual editor route.
@@ -11,6 +12,9 @@ import { useEditorStore } from '@site/store/store'
  * lazy-loaded one level down by AdminCanvasLayout after the shell has painted.
  */
 export function SitePage() {
+  // Relay MCP browser-tool calls to this open editor while it's mounted.
+  useEditorMcpBridge()
+
   // Consume cross-workspace pending actions queued by the spotlight. Each
   // action waits for the editor store to hydrate (site !== null) — we
   // subscribe once and tear down as soon as the action has fired so the

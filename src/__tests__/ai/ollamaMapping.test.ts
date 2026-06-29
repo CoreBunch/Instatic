@@ -31,21 +31,21 @@ describe('Ollama chat/completions SSE translate', () => {
 
   test('accumulates a tool call from split argument fragments and emits one toolCall on finish', () => {
     const t = new ChatCompletionsTurnTranslator()
-    t.translate(frame({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_a', function: { name: 'insertHtml', arguments: '{"parent' } }] } }] }))
+    t.translate(frame({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_a', function: { name: 'site_insert_html', arguments: '{"parent' } }] } }] }))
     expect(t.translate(frame({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: 'Id":"root"}' } }] } }] }))).toEqual([])
     const events = t.translate(frame({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }))
     expect(events).toEqual([
-      { type: 'toolCall', toolCallId: 'call_a', toolName: 'insertHtml', input: { parentId: 'root' }, status: 'pending' },
+      { type: 'toolCall', toolCallId: 'call_a', toolName: 'site_insert_html', input: { parentId: 'root' }, status: 'pending' },
     ])
 
     const result = t.finish()
     expect(result.stop).toBe(false)
-    expect(result.toolCalls).toEqual([{ id: 'call_a', name: 'insertHtml', input: { parentId: 'root' } }])
+    expect(result.toolCalls).toEqual([{ id: 'call_a', name: 'site_insert_html', input: { parentId: 'root' } }])
     expect(result.assistantMessage).toEqual([
       {
         role: 'assistant',
         content: '',
-        tool_calls: [{ id: 'call_a', type: 'function', function: { name: 'insertHtml', arguments: '{"parentId":"root"}' } }],
+        tool_calls: [{ id: 'call_a', type: 'function', function: { name: 'site_insert_html', arguments: '{"parentId":"root"}' } }],
       },
     ])
   })

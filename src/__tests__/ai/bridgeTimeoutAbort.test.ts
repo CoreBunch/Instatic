@@ -64,7 +64,7 @@ describe('bridge snapshot refresh', () => {
       1000,
       (snapshot) => { seen.push(snapshot) },
     )
-    const pending = bridge.callBrowser('addPage', { title: 'X' })
+    const pending = bridge.callBrowser('site_add_page', { title: 'X' })
     const fresh = { pages: ['home', 'x'] }
     expect(
       resolveBridgeToolResult(bridgeId, requestId, { ok: true, data: { pageId: 'x' } }, fresh),
@@ -86,7 +86,7 @@ describe('bridge snapshot refresh', () => {
       1000,
       () => { calls += 1 },
     )
-    const pending = bridge.callBrowser('render_snapshot', {})
+    const pending = bridge.callBrowser('site_render_snapshot', {})
     expect(resolveBridgeToolResult(bridgeId, requestId, { ok: true })).toBe(true)
     await expect(pending).resolves.toMatchObject({ ok: true })
     expect(calls).toBe(0)

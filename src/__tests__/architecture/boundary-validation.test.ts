@@ -133,6 +133,13 @@ const ALLOWLIST_FETCH = new Set<string>([
   //   tool-result POSTs, must use apiRequest.
   join(PROJECT_ROOT, 'src/admin/pages/site/agent/agentSlice.ts'),
 
+  // §3.6  useEditorMcpBridge.ts — holds a long-lived NDJSON stream open
+  //   (`/admin/api/ai/editor-bridge`) so MCP browser-tool calls can be relayed
+  //   to the open editor. Same constraint as §3.1: apiRequest returns a parsed
+  //   value and cannot stream a response body, so raw fetch + ReadableStream is
+  //   required. The tool-result POST still goes through apiRequest (postToolResult).
+  join(PROJECT_ROOT, 'src/admin/pages/site/agent/useEditorMcpBridge.ts'),
+
   // §3.2  SvgControl.tsx — fetches the raw bytes of a user-picked .svg asset
   //   from its public path (asset.publicPath) to inline its markup. This is a
   //   plain file-content GET, not a JSON-envelope CMS endpoint, so apiRequest

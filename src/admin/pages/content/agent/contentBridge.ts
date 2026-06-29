@@ -92,21 +92,21 @@ export async function executeContentTool(
   try {
     const handle = getContentBridgeHandle()
     switch (toolName) {
-      case 'create_document':
+      case 'content_create_document':
         return await handleCreateDocument(handle, rawInput)
-      case 'delete_document':
+      case 'content_delete_document':
         return await handleDeleteDocument(handle, rawInput)
-      case 'set_document_status':
+      case 'content_set_document_status':
         return await handleSetDocumentStatus(handle, rawInput)
-      case 'set_document_field':
+      case 'content_set_document_field':
         return await handleSetDocumentField(handle, rawInput)
-      case 'set_document_fields':
+      case 'content_set_document_fields':
         return await handleSetDocumentFields(handle, rawInput)
-      case 'set_document_author':
+      case 'content_set_document_author':
         return await handleSetDocumentAuthor(handle, rawInput)
-      case 'set_active_document':
+      case 'content_set_active_document':
         return await handleSetActiveDocument(handle, rawInput)
-      case 'set_active_collection':
+      case 'content_set_active_collection':
         return await handleSetActiveCollection(handle, rawInput)
       default:
         return aiToolError(`Unknown content tool: ${toolName}`)

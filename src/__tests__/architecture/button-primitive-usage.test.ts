@@ -196,6 +196,14 @@ const ALLOWLIST = new Set([
   // • the "Select all" / "Select none" bulk text links — 11.5px inline text
   //   actions, not the token-driven Button sizes (same as §8.12).
   'admin/pages/data/components/ExportDialog/ExportDialog.tsx',
+
+  // ── §8.14 Framework import mode cards ────────────────────────────────────
+  // FrameworkImportModal's two import modes ("Full framework" / "Variables
+  // only") render as role="radio" cards inside a role="radiogroup" — each is a
+  // stacked custom layout (icon + title + tick + description + bullet list)
+  // that Button's inline-flex size tokens cannot represent. Same pattern class
+  // as §8.7's role="option" card grids (custom ARIA role + multi-line card).
+  'admin/pages/dashboard/components/FrameworkImportModal.tsx',
 ])
 
 // ---------------------------------------------------------------------------

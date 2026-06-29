@@ -69,6 +69,16 @@ describe('anchor recursion preserves nested icons', () => {
     expect(node.props.text).toBe('Visit us')
   })
 
+  it('a <a> wrapping element children recurses and drops the flattened text prop (no double-represent)', () => {
+    // The loop-link case: an anchor wrapping inline spans/tokens must carry its
+    // content as child nodes only — never ALSO a flattened `text` prop.
+    const result = importHtml('<a href="/p"><span>PAGE</span> <span>title</span></a>')
+    const link = result.nodes[result.rootIds[0]!]!
+    expect(link.moduleId).toBe('base.link')
+    expect(link.children.length).toBeGreaterThan(0)
+    expect('text' in link.props).toBe(false)
+  })
+
   it('a btn-classed anchor stays base.button (icon not preserved — buttons are leaves)', () => {
     const node = single('<a class="btn" href="/x"><svg viewBox="0 0 24 24"></svg> Go</a>')
     expect(node.moduleId).toBe('base.button')

@@ -116,6 +116,8 @@ function listHandlerFiles(dir: string): string[] {
     const full = join(dir, entry)
     const s = statSync(full)
     if (s.isDirectory()) {
+      // Test files are never Bun.serve routes — skip the `__tests__` tree.
+      if (entry === '__tests__') continue
       out.push(...listHandlerFiles(full))
     } else if (s.isFile() && extname(entry) === '.ts') {
       out.push(full)

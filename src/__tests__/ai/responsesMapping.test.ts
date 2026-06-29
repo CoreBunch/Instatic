@@ -49,21 +49,21 @@ describe('Responses SSE translate', () => {
     const events = t.translate(
       frame({
         type: 'response.output_item.done',
-        item: { type: 'function_call', call_id: 'call_1', name: 'insertHtml', arguments: '{"parentId":"root"}' },
+        item: { type: 'function_call', call_id: 'call_1', name: 'site_insert_html', arguments: '{"parentId":"root"}' },
       }),
     )
     expect(events).toEqual([
-      { type: 'toolCall', toolCallId: 'call_1', toolName: 'insertHtml', input: { parentId: 'root' }, status: 'pending' },
+      { type: 'toolCall', toolCallId: 'call_1', toolName: 'site_insert_html', input: { parentId: 'root' }, status: 'pending' },
     ])
     t.translate(frame({ type: 'response.completed', response: { usage: { input_tokens: 5, output_tokens: 3 } } }))
 
     const result = t.finish()
     expect(result.stop).toBe(false)
-    expect(result.toolCalls).toEqual([{ id: 'call_1', name: 'insertHtml', input: { parentId: 'root' } }])
+    expect(result.toolCalls).toEqual([{ id: 'call_1', name: 'site_insert_html', input: { parentId: 'root' } }])
     // The assistant turn carries the function_call item so the next request can
     // pair the function_call_output by call_id.
     expect(result.assistantMessage).toEqual([
-      { type: 'function_call', call_id: 'call_1', name: 'insertHtml', arguments: '{"parentId":"root"}' },
+      { type: 'function_call', call_id: 'call_1', name: 'site_insert_html', arguments: '{"parentId":"root"}' },
     ])
   })
 
@@ -97,7 +97,7 @@ describe('Responses mapHistory', () => {
     const history: AiMessage[] = [
       { role: 'user', content: [{ kind: 'text', text: 'hi' }] },
       { role: 'assistant', content: [{ kind: 'text', text: 'ok' }] },
-      { role: 'assistant', content: [{ kind: 'toolCall', toolCallId: 'c1', toolName: 'insertHtml', input: { a: 1 } }] },
+      { role: 'assistant', content: [{ kind: 'toolCall', toolCallId: 'c1', toolName: 'site_insert_html', input: { a: 1 } }] },
       { role: 'tool', toolCallId: 'c1', output: { ok: true, data: { nodeIds: ['n1'] } } },
       { role: 'assistant', content: [{ kind: 'text', text: 'done' }] },
     ]
@@ -105,7 +105,7 @@ describe('Responses mapHistory', () => {
     expect(mapped).toEqual([
       { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hi' }] },
       { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ok' }] },
-      { type: 'function_call', call_id: 'c1', name: 'insertHtml', arguments: '{"a":1}' },
+      { type: 'function_call', call_id: 'c1', name: 'site_insert_html', arguments: '{"a":1}' },
       { type: 'function_call_output', call_id: 'c1', output: '{"nodeIds":["n1"]}' },
       { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'done' }] },
     ] satisfies ResponsesTurn)

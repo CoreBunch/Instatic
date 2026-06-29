@@ -50,15 +50,15 @@ describe('buildMessageHistory', () => {
     const history = buildMessageHistory([
       userText('hi'),
       rec('assistant', [{ kind: 'text', text: 'ok' }]),
-      assistantToolCall('t1', 'insertHtml', { a: 1 }),
-      toolResult('t1', 'insertHtml'),
+      assistantToolCall('t1', 'site_insert_html', { a: 1 }),
+      toolResult('t1', 'site_insert_html'),
       rec('assistant', [{ kind: 'text', text: 'done' }]),
     ])
 
     expect(history).toEqual([
       { role: 'user', content: [{ kind: 'text', text: 'hi' }] },
       { role: 'assistant', content: [{ kind: 'text', text: 'ok' }] },
-      { role: 'assistant', content: [{ kind: 'toolCall', toolCallId: 't1', toolName: 'insertHtml', input: { a: 1 } }] },
+      { role: 'assistant', content: [{ kind: 'toolCall', toolCallId: 't1', toolName: 'site_insert_html', input: { a: 1 } }] },
       { role: 'tool', toolCallId: 't1', output: { ok: true, error: undefined } },
       { role: 'assistant', content: [{ kind: 'text', text: 'done' }] },
     ])
@@ -69,7 +69,7 @@ describe('buildMessageHistory', () => {
     // any result landed.
     const records = [userText('continue')]
     for (const id of ['a', 'b', 'c', 'd', 'e']) {
-      records.push(assistantToolCall(id, 'applyCss', { sel: id }))
+      records.push(assistantToolCall(id, 'site_apply_css', { sel: id }))
     }
 
     const history = buildMessageHistory(records)

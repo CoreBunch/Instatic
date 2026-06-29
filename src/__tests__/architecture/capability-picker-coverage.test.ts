@@ -12,11 +12,8 @@
 
 import { describe, expect, it } from 'bun:test'
 import { CORE_CAPABILITIES } from '@core/capabilities'
-import {
-  ALL_PICKER_CAPABILITIES,
-  CAPABILITY_GROUPS,
-  CAPABILITY_META,
-} from '@admin/pages/users/utils/capabilities'
+import { ALL_PICKER_CAPABILITIES } from '@admin/pages/users/utils/capabilities'
+import { CAPABILITY_META } from '@admin/shared/CapabilityPicker'
 
 describe('capability picker coverage', () => {
   it('every CoreCapability has a CAPABILITY_META entry', () => {
@@ -26,7 +23,7 @@ describe('capability picker coverage', () => {
         `[capability-picker-coverage] capabilities missing from CAPABILITY_META:\n` +
         missing.map((c) => `  - ${c}`).join('\n') +
         `\n\nAdd a { label, description } entry in ` +
-        `src/admin/pages/users/utils/capabilities.ts so the role-edit dialog ` +
+        `src/admin/shared/CapabilityPicker/capabilityMeta.ts so the picker ` +
         `can render a human-readable row for each grant.`,
       )
     }

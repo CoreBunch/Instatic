@@ -21,7 +21,8 @@
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
 import type { ContentTableSummary, PublishedSnapshot } from '@core/plugin-sdk/contentSchemas'
 import type { DataRow, DataTable } from '@core/data/schemas'
-import { applyTreeOperation, parsePageNodeTree } from '@core/page-tree'
+import { parsePageNodeTree } from '@core/page-tree'
+import { readPageTree, mutatePageTree } from '../../../ai/content/treeService'
 import { hookBus } from '@core/plugins/hookBus'
 import {
   listDataTablesWithCounts,
@@ -500,9 +501,9 @@ export async function handleContentTreeRead(
   db: DbClient,
 ): Promise<void> {
   const [entryId, fieldId] = msg.args
-  const { row, table } = await resolvePageTreeField(db, entryId, fieldId)
-  assertContentTableAccess(entry, table.slug, 'read')
-  const tree = row.cells[fieldId] ?? null
+  const tree = await readPageTree(db, entryId, fieldId, {
+    assertAccess: (table) => assertContentTableAccess(entry, table.slug, 'read'),
+  })
   replyApiOk(msg.pluginId, msg.correlationId, tree)
 }
 
@@ -512,43 +513,17 @@ export async function handleContentTreeMutate(
   db: DbClient,
 ): Promise<void> {
   const [entryId, fieldId, operations] = msg.args
-  const { row, table } = await resolvePageTreeField(db, entryId, fieldId)
-  assertContentTableAccess(entry, table.slug, 'write')
-
-  // Deep-clone so the dispatcher's in-place mutations don't surface on the
-  // shared row reference held by `getDataRow`'s cache (the row's cells
-  // object would otherwise be shared with the original DB read).
-  const initial = row.cells[fieldId]
-  if (!initial || typeof initial !== 'object') {
-    throw new Error(`Field "${fieldId}" on entry "${entryId}" is empty — cannot mutate a missing tree`)
-  }
-  let tree = parsePageNodeTree(
-    structuredClone(initial),
-    `entry "${entryId}" field "${fieldId}"`,
-  )
-
-  const affectedNodeIds: string[] = []
-  for (const op of operations) {
-    const result = applyTreeOperation(tree, op)
-    tree = result.tree
-    affectedNodeIds.push(...result.affectedNodeIds)
-  }
-  parsePageNodeTree(tree, `entry "${entryId}" field "${fieldId}" after mutation`)
-
-  const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
-  const nextCells = await applyContentEntryCellsFilter(
-    { ...row.cells, [fieldId]: tree },
-    { tableSlug: table.slug, entryId, actor },
-  )
-  const updated = await saveDataRowDraft(
+  // Delegate to the shared, actor-agnostic page-tree service. The per-table
+  // manifest allowlist is plugin-specific, so it stays here and is injected
+  // via `assertAccess`.
+  const { tree, affectedNodeIds } = await mutatePageTree(
     db,
     entryId,
-    { cells: nextCells, slug: row.slug },
-    null,
-    msg.pluginId,
+    fieldId,
+    operations,
+    { kind: 'plugin', pluginId: msg.pluginId },
+    { assertAccess: (table) => assertContentTableAccess(entry, table.slug, 'write') },
   )
-  if (!updated) throw new Error(`Entry "${entryId}" could not be updated after tree mutation`)
-  await emitEntryUpdated(table.slug, entryId, [fieldId], actor)
   replyApiOk(msg.pluginId, msg.correlationId, { tree, affectedNodeIds })
 }
 
