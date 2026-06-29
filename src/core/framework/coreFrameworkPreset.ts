@@ -61,8 +61,12 @@ export interface CoreFrameworkImportOptions {
 // Color seed — Core Framework COLOR_SYSTEM_INITIAL_STATE, flattened.
 // ---------------------------------------------------------------------------
 
-/** Core Framework's `gen` tokens map onto Instatic utility kinds. */
-type CoreGenToken = 'text' | 'bg' | 'border' | 'fill'
+/**
+ * Core Framework's `gen` tokens map onto Instatic utility kinds. Core Framework
+ * never generates `fill` utilities in its default preset, so it is not part of
+ * this union — `genToUtilities` always emits `fill: false`.
+ */
+type CoreGenToken = 'text' | 'bg' | 'border'
 
 interface CoreColorSeed {
   category: string
@@ -119,7 +123,8 @@ function genToUtilities(
     text: gen.includes('text'),
     background: gen.includes('bg'),
     border: gen.includes('border'),
-    fill: gen.includes('fill'),
+    // Core Framework's default preset never generates fill utilities.
+    fill: false,
   }
 }
 
