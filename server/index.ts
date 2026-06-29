@@ -3,6 +3,7 @@ import { runMigrations } from './db/runMigrations'
 import { syncSystemRoles } from './repositories/roles'
 import { readServerConfig } from './config'
 import { DEV_ORIGIN_ALLOWLIST, configurePublicOrigins, configureTrustedProxyCidrs, stampSocketIp } from './auth/security'
+import { applySecurityHeaders } from './securityHeaders'
 import { startConversationPurgeTick } from './ai/boot'
 
 await import('./richtextSanitizer')
@@ -72,6 +73,7 @@ Bun.serve({
   async fetch(req: Request, server: Bun.Server<unknown>) {
     const origin = req.headers.get('origin')
     const cors = corsHeaders(origin)
+    const pathname = new URL(req.url).pathname
 
     // Stamp the socket peer address onto the request so downstream
     // `clientIp(req)` returns a real value when no `X-Forwarded-For` is
@@ -80,7 +82,10 @@ Bun.serve({
 
     // Handle CORS preflight
     if (req.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: cors })
+      return applySecurityHeaders(
+        new Response(null, { status: 204, headers: cors }),
+        pathname,
+      )
     }
 
     try {
@@ -93,7 +98,7 @@ Bun.serve({
       for (const [k, v] of Object.entries(cors)) {
         res.headers.set(k, v)
       }
-      return res
+      return applySecurityHeaders(res, pathname)
     } catch (err) {
       // Never echo `err.message` to the client — inner handlers already return
       // structured error bodies for the failure modes they expect; anything
@@ -101,10 +106,13 @@ Bun.serve({
       // SQL fragments, absolute paths, spawn() arguments, etc. Log fully,
       // respond generically.
       console.error('[server] Unhandled request error:', err)
-      return new Response(JSON.stringify({ error: 'Internal server error' }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', ...cors },
-      })
+      return applySecurityHeaders(
+        new Response(JSON.stringify({ error: 'Internal server error' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', ...cors },
+        }),
+        pathname,
+      )
     }
   },
 

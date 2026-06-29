@@ -571,6 +571,13 @@ const INERT_UPLOAD_MIMES = new Set([
 export function hardenUploadResponse(response: Response): Response {
   const headers = new Headers(response.headers)
   headers.set('x-content-type-options', 'nosniff')
+  // Belt-and-suspenders: upload files are inert data. A zero-permission CSP
+  // ensures the browser treats them as such even if a stale cached response
+  // reaches a navigation context where a Referer header or MIME check was
+  // bypassed. The global security-header layer in server/index.ts does not
+  // set a CSP for non-admin paths, so this is the only CSP these responses
+  // ever carry.
+  headers.set('content-security-policy', "default-src 'none'")
   const contentType = headers.get('content-type') ?? ''
   const baseMime = contentType.split(';', 1)[0].trim().toLowerCase()
   if (!INERT_UPLOAD_MIMES.has(baseMime)) {
