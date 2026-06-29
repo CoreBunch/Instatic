@@ -650,7 +650,14 @@ describe('full-site round-trip — folders, membership, redirects', () => {
     })
     folderId = folder.id
 
-    await writeFile(join(sourceDir, 'logo.png'), Buffer.from('fake-png-bytes'))
+    // PNG magic signature (8 bytes) padded to 14 bytes so sizeBytes matches
+    // the createMediaAsset call below. The security gate added on this branch
+    // calls detectAcceptedMime() on every staged entry before disk write, so
+    // the fixture must start with real PNG magic bytes.
+    await writeFile(
+      join(sourceDir, 'logo.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+    )
     const asset = await createMediaAsset(sourceDb, {
       id: 'asset-logo',
       filename: 'logo.png',
@@ -939,7 +946,9 @@ describe('archive import validation', () => {
             id: 'asset-imported',
             filename: 'imported.png',
             mimeType: 'image/png',
-            sizeBytes: 4,
+            // 8 bytes — exactly the PNG magic signature so detectAcceptedMime
+            // identifies the file as image/png through the new MIME-gate.
+            sizeBytes: 8,
             altText: '',
             caption: '',
             title: '',
@@ -955,10 +964,17 @@ describe('archive import validation', () => {
           },
         ],
       }
+      // PNG magic signature: 89 50 4E 47 0D 0A 1A 0A (8 bytes).
+      // The security gate added on this branch calls detectAcceptedMime() on
+      // every staged entry's bytes before writing to disk, so fixtures must
+      // carry real magic bytes for the MIME they declare.
+      const pngMagic = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
       const archiveBytes = zipSync({
         [BUNDLE_ARCHIVE_MANIFEST_PATH]: strToU8(JSON.stringify(manifest)),
+        // Unselected entry — bytes are drained without MIME validation; any
+        // content works but sizeBytes must match the manifest declaration.
         'media/skipped.png': strToU8('skip'),
-        'media/imported.png': strToU8('keep'),
+        'media/imported.png': pngMagic,
       }, { level: 0 })
       const selection: BundleImportSelection = {
         includeSite: false,
