@@ -148,7 +148,7 @@ Managed platforms usually inject `PORT`. Do not hard-code a different listen por
 
 Managed HTTPS platforms often terminate TLS before forwarding HTTP to the container, so the container sees plain HTTP. Set `PUBLIC_ORIGIN` to the site's public origin for those deployments so the CSRF origin check compares against the real public origin instead of the container-local request URL. Render and Railway are auto-detected (`RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN`), so a one-click deploy needs no manual value; set `PUBLIC_ORIGIN` explicitly when you add a custom domain (append it as a second comma-separated entry).
 
-`INSTATIC_SECRET_KEY` is the stable AES master key for reversible server secrets, including Anthropic, OpenAI, and OpenRouter credentials and TOTP MFA seeds. If it is missing in production, adding a credential or enabling TOTP MFA fails. If it is rotated or lost, existing stored credentials must be re-entered and TOTP MFA must be re-enrolled.
+`INSTATIC_SECRET_KEY` is the stable AES master key for reversible server secrets, including Anthropic, OpenAI, OpenRouter, and OpenCode credentials and TOTP MFA seeds. If it is missing in production, adding a credential or enabling TOTP MFA fails. If it is rotated or lost, existing stored credentials must be re-entered and TOTP MFA must be re-enrolled.
 
 ## Health Check
 
