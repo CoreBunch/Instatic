@@ -81,4 +81,82 @@ describe('connector store', () => {
     const [reread] = await listConnectorsForUser(db, 'u1')
     expect(reread.lastUsedAt).not.toBeNull()
   })
+
+  // ── Expiry tests ────────────────────────────────────────────────────────
+
+  it('a freshly created token is accepted by findConnectorByTokenHash (not yet expired)', async () => {
+    const hash = await hashConnectorToken('imcp_fresh')
+    await createConnector(db, {
+      userId: 'u1', label: 'Fresh', type: 'local', capabilities: ['ai.chat'], tokenHash: hash,
+    })
+    // Default now = new Date() — the token expires 90 days from creation, so it is valid.
+    const found = await findConnectorByTokenHash(db, hash)
+    expect(found).not.toBeNull()
+    expect(found?.label).toBe('Fresh')
+  })
+
+  it('an expired token is rejected by findConnectorByTokenHash', async () => {
+    const hash = await hashConnectorToken('imcp_expired')
+    await createConnector(db, {
+      userId: 'u1', label: 'Expired', type: 'local', capabilities: ['ai.chat'], tokenHash: hash,
+      ttlDays: 30,
+    })
+    // Inject a `now` 31 days in the future — past the 30-day TTL.
+    const future = new Date(Date.now() + 31 * 24 * 60 * 60 * 1000)
+    const found = await findConnectorByTokenHash(db, hash, future)
+    expect(found).toBeNull()
+  })
+
+  it('a non-expired token is still accepted when now is before expires_at', async () => {
+    const hash = await hashConnectorToken('imcp_valid')
+    await createConnector(db, {
+      userId: 'u1', label: 'Valid', type: 'local', capabilities: ['ai.chat'], tokenHash: hash,
+      ttlDays: 30,
+    })
+    // Inject a `now` 29 days in the future — still within the 30-day TTL.
+    const soon = new Date(Date.now() + 29 * 24 * 60 * 60 * 1000)
+    const found = await findConnectorByTokenHash(db, hash, soon)
+    expect(found).not.toBeNull()
+  })
+
+  it('createConnector always sets a non-null expiresAt on the returned record', async () => {
+    const rec = await createConnector(db, {
+      userId: 'u1', label: 'E', type: 'local', capabilities: ['ai.chat'],
+      tokenHash: await hashConnectorToken('imcp_ttl'),
+    })
+    expect(rec.expiresAt).toBeTypeOf('string')
+    expect(rec.expiresAt.length).toBeGreaterThan(0)
+    // expiresAt should be approximately 90 days from now (within ±2 minutes).
+    const delta = new Date(rec.expiresAt).getTime() - Date.now()
+    const ninetyDays = 90 * 24 * 60 * 60 * 1000
+    expect(delta).toBeGreaterThan(ninetyDays - 2 * 60 * 1000)
+    expect(delta).toBeLessThan(ninetyDays + 2 * 60 * 1000)
+  })
+
+  it('toConnectorView includes expiresAt and still never includes tokenHash', async () => {
+    const rec = await createConnector(db, {
+      userId: 'u1', label: 'V', type: 'local', capabilities: ['ai.chat'],
+      tokenHash: await hashConnectorToken('imcp_view'),
+    })
+    const view = toConnectorView(rec)
+    // expiresAt must be present.
+    expect(view.expiresAt).toBeTypeOf('string')
+    expect(view.expiresAt.length).toBeGreaterThan(0)
+    // tokenHash must never appear.
+    const serialized = JSON.stringify(view)
+    expect(serialized).not.toContain('tokenHash')
+    expect(serialized).not.toContain('token_hash')
+  })
+
+  it('custom ttlDays is honoured', async () => {
+    const rec = await createConnector(db, {
+      userId: 'u1', label: 'Custom TTL', type: 'local', capabilities: ['ai.chat'],
+      tokenHash: await hashConnectorToken('imcp_custom'),
+      ttlDays: 7,
+    })
+    const delta = new Date(rec.expiresAt).getTime() - Date.now()
+    const sevenDays = 7 * 24 * 60 * 60 * 1000
+    expect(delta).toBeGreaterThan(sevenDays - 2 * 60 * 1000)
+    expect(delta).toBeLessThan(sevenDays + 2 * 60 * 1000)
+  })
 })

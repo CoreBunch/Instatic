@@ -1103,4 +1103,13 @@ export const sqliteMigrations: Migration[] = [
         where token_hash is not null;
     `,
   },
+  {
+    id: '019_mcp_connector_token_expiry',
+    sql: `
+      alter table ai_mcp_connectors add column expires_at text;
+      update ai_mcp_connectors
+        set expires_at = strftime('%Y-%m-%dT%H:%M:%fZ','now','+90 days')
+        where expires_at is null;
+    `,
+  },
 ]

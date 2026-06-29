@@ -36,6 +36,7 @@ export const McpConnectorViewSchema = Type.Object({
   createdAt: Type.String(),
   lastUsedAt: Type.Union([Type.String(), Type.Null()]),
   revoked: Type.Boolean(),
+  expiresAt: Type.String(),
 })
 export type McpConnectorView = Static<typeof McpConnectorViewSchema>
 
@@ -43,6 +44,7 @@ export const CreateMcpConnectorBodySchema = Type.Object({
   label: Type.String({ minLength: 1, maxLength: 120 }),
   type: McpConnectorTypeSchema,
   capabilities: Type.Array(CapabilitySchema, { minItems: 1 }),
+  ttlDays: Type.Optional(Type.Integer({ minimum: 1, maximum: 3650 })),
 })
 export type CreateMcpConnectorBody = Static<typeof CreateMcpConnectorBodySchema>
 

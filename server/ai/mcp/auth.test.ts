@@ -56,6 +56,20 @@ describe('mcp auth', () => {
     expect((await resolveMcpAuth(req, db)).ok).toBe(false)
   })
 
+  it('rejects an expired connector token', async () => {
+    const token = generateConnectorToken()
+    // Create a connector that expired 1 second ago.
+    const pastExpiry = new Date(Date.now() - 1000).toISOString()
+    const rec = await createConnector(db, {
+      userId: 'u1', label: 'L', type: 'remote', capabilities: ['ai.chat'], tokenHash: await hashConnectorToken(token),
+      ttlDays: 90,
+    })
+    // Backdate expires_at to a past timestamp to simulate expiry.
+    await db`update ai_mcp_connectors set expires_at = ${pastExpiry} where id = ${rec.id}`
+    const req = new Request('http://x/_instatic/mcp', { headers: { Authorization: `Bearer ${token}` } })
+    expect((await resolveMcpAuth(req, db)).ok).toBe(false)
+  })
+
   it('builds a spec-correct 401 with a resource_metadata pointer', () => {
     const r = unauthorizedResponse(new URL('http://x/_instatic/mcp'))
     expect(r.status).toBe(401)

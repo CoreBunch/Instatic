@@ -80,6 +80,7 @@ async function handleCreate(req: Request, db: DbClient): Promise<Response> {
       type: body.type,
       capabilities: body.capabilities,
       tokenHash: await hashConnectorToken(token),
+      ttlDays: body.ttlDays,
     })
     await createAuditEvent(db, {
       actorUserId: userOrResponse.id,

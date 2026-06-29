@@ -13,6 +13,8 @@ import type { CoreCapability } from '@core/capabilities'
 import type { McpConnectorView, McpConnectorType, McpAuthMode } from '@core/ai'
 import type { McpConnectorRecord } from './types'
 
+const DEFAULT_TTL_DAYS = 90
+
 interface ConnectorRow {
   id: string
   user_id: string
@@ -25,6 +27,7 @@ interface ConnectorRow {
   created_at: string
   last_used_at: string | null
   revoked_at: string | null
+  expires_at: string | null
 }
 
 function rowToRecord(row: ConnectorRow): McpConnectorRecord {
@@ -39,6 +42,11 @@ function rowToRecord(row: ConnectorRow): McpConnectorRecord {
     createdAt: row.created_at,
     lastUsedAt: row.last_used_at,
     revokedAt: row.revoked_at,
+    // expires_at is set by createConnector for every new bearer token and
+    // backfilled by migration 019 for all pre-existing rows. Treat a null as an
+    // expired sentinel so a bug that bypasses createConnector never grants
+    // infinite access.
+    expiresAt: row.expires_at ?? new Date(0).toISOString(),
   }
 }
 
@@ -53,6 +61,7 @@ export function toConnectorView(rec: McpConnectorRecord): McpConnectorView {
     createdAt: rec.createdAt,
     lastUsedAt: rec.lastUsedAt,
     revoked: rec.revokedAt !== null,
+    expiresAt: rec.expiresAt,
   }
 }
 
@@ -64,20 +73,28 @@ export async function createConnector(
     type: McpConnectorType
     capabilities: readonly CoreCapability[]
     tokenHash: string
+    /** Token lifetime in days. Defaults to 90. Must be between 1 and 3650. */
+    ttlDays?: number
   },
 ): Promise<McpConnectorRecord> {
   const id = nanoid()
   const capabilitiesJson = JSON.stringify(input.capabilities)
+  const ttl = input.ttlDays ?? DEFAULT_TTL_DAYS
+  const createdAt = new Date()
+  const expiresAt = new Date(createdAt.getTime() + ttl * 24 * 60 * 60 * 1000)
+
   const { rows } = await db<ConnectorRow>`
     insert into ai_mcp_connectors (
-      id, user_id, label, type, auth_mode, token_hash, capabilities_json
+      id, user_id, label, type, auth_mode, token_hash, capabilities_json,
+      created_at, expires_at
     )
     values (
       ${id}, ${input.userId}, ${input.label}, ${input.type}, 'bearer',
-      ${input.tokenHash}, ${capabilitiesJson}
+      ${input.tokenHash}, ${capabilitiesJson},
+      ${createdAt}, ${expiresAt}
     )
     returning id, user_id, label, type, auth_mode, token_hash,
-              capabilities_json, created_at, last_used_at, revoked_at
+              capabilities_json, created_at, last_used_at, revoked_at, expires_at
   `
   if (!rows[0]) throw new Error('Connector insert did not persist')
   return rowToRecord(rows[0])
@@ -86,7 +103,7 @@ export async function createConnector(
 export async function listConnectorsForUser(db: DbClient, userId: string): Promise<McpConnectorRecord[]> {
   const { rows } = await db<ConnectorRow>`
     select id, user_id, label, type, auth_mode, token_hash,
-           capabilities_json, created_at, last_used_at, revoked_at
+           capabilities_json, created_at, last_used_at, revoked_at, expires_at
     from ai_mcp_connectors
     where user_id = ${userId}
     order by created_at desc
@@ -94,13 +111,24 @@ export async function listConnectorsForUser(db: DbClient, userId: string): Promi
   return rows.map(rowToRecord)
 }
 
-/** Resolve an ACTIVE (non-revoked) connector by its token hash. */
-export async function findConnectorByTokenHash(db: DbClient, tokenHash: string): Promise<McpConnectorRecord | null> {
+/**
+ * Resolve an ACTIVE (non-revoked, non-expired) connector by its token hash.
+ *
+ * @param now - Injection point for the current time; defaults to `new Date()`.
+ *   Pass a fixed Date in tests to simulate future/past times without waiting.
+ */
+export async function findConnectorByTokenHash(
+  db: DbClient,
+  tokenHash: string,
+  now: Date = new Date(),
+): Promise<McpConnectorRecord | null> {
   const { rows } = await db<ConnectorRow>`
     select id, user_id, label, type, auth_mode, token_hash,
-           capabilities_json, created_at, last_used_at, revoked_at
+           capabilities_json, created_at, last_used_at, revoked_at, expires_at
     from ai_mcp_connectors
-    where token_hash = ${tokenHash} and revoked_at is null
+    where token_hash = ${tokenHash}
+      and revoked_at is null
+      and (expires_at is null or expires_at > ${now})
     limit 1
   `
   return rows[0] ? rowToRecord(rows[0]) : null
