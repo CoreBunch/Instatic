@@ -40,7 +40,12 @@ import { Button } from '@ui/components/Button'
 import type { PixelArtIconComponent } from '@core/dashboard'
 import type { OnboardingFacts, OnboardingStepState } from '../hooks/useOnboardingState'
 import { LiquidProgressRing } from './LiquidProgressRing'
-import { FrameworkImportModal } from './FrameworkImportModal'
+import {
+  FrameworkManagerDialog,
+  type FrameworkManagerApplier,
+} from '@admin/shared/dialogs/FrameworkManagerDialog'
+import { cmsAdapter } from '@core/persistence/cms'
+import { buildCoreFrameworkSettings } from '@core/framework'
 import styles from './OnboardingPanel.module.css'
 
 interface StepDef {
@@ -121,6 +126,21 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
   const openSettings = useAdminUi((s) => s.openSettings)
   const [frameworkImportOpen, setFrameworkImportOpen] = useState(false)
 
+  // Onboarding has no live editor / reconcile, so it imports only — load the
+  // site shell via cmsAdapter, drop the built framework on it, and shell-save.
+  const onboardingApplier: FrameworkManagerApplier = {
+    capabilities: { canRemove: false },
+    import: async (mode) => {
+      const site = await cmsAdapter.loadSite('default')
+      if (!site) throw new Error('Site is not ready yet — finish setup first.')
+      site.settings.framework = buildCoreFrameworkSettings({ includeUtilities: mode === 'full' })
+      await cmsAdapter.saveSite(site, {
+        baselinePageIds: site.pages.map((page) => page.id),
+        dirty: { all: false, pageIds: new Set(), componentIds: new Set(), layoutIds: new Set() },
+      })
+    },
+  }
+
   const states = STEPS.map((step) => ({ step, state: facts[step.id] }))
   const done = states.filter((s) => s.state === 'done').length
   const total = STEPS.length
@@ -194,11 +214,13 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
         })}
       </ol>
 
-      <FrameworkImportModal
+      <FrameworkManagerDialog
         open={frameworkImportOpen}
         onClose={() => setFrameworkImportOpen(false)}
-        onImported={onFrameworkImported}
-        alreadyConfigured={facts.framework === 'done'}
+        applier={onboardingApplier}
+        hasFramework={facts.framework === 'done'}
+        usedFrameworkClassCount={0}
+        onApplied={onFrameworkImported}
       />
     </section>
   )

@@ -1,11 +1,11 @@
 /**
- * FrameworkImportModal — two selectable mode cards inside the shared Dialog.
+ * FrameworkManagerDialog — two selectable mode cards + an optional Remove
+ * region, inside the shared Dialog.
  *
  * Cards follow the borderless tile pattern using overlay tints: idle
  * `--overlay-5`, hover `--overlay-10`, active `--overlay-20`, plus a mint tick
  * on the selected card — no ring, no recolored border. Font sizes use the
- * global fluid text scale; spacing uses the global space scale (admin token
- * policy).
+ * global fluid text scale; spacing uses the global space scale.
  */
 
 .lede {
@@ -123,14 +123,41 @@
     color: var(--accent-1);
 }
 
-.note {
-    margin: var(--space-3xl) 0 0;
-    padding: var(--space-m) var(--space-l);
+.actionRow {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: var(--space-xl);
+}
+
+.removeRegion {
+    margin-top: var(--space-3xl);
+    padding-top: var(--space-3xl);
+    border-top: 1px solid var(--overlay-10);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-m);
+}
+
+.removeTitle {
+    margin: 0;
+    font-size: var(--text-s);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.removeActions {
+    display: flex;
+    gap: var(--space-m);
+    flex-wrap: wrap;
+}
+
+.removeWarning {
+    margin: 0;
     font-size: var(--text-s);
     line-height: 1.45;
-    color: var(--info-text);
-    background: var(--bg-surface-2);
-    border-radius: var(--radius);
+    color: var(--danger-text);
 }
 
 .error {
