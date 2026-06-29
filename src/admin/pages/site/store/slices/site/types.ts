@@ -297,6 +297,14 @@ export interface SiteSlice {
   ) => void
   setFrameworkSpacingClassGenerators: (classes: FrameworkSpacingClassGenerator[]) => void
 
+  // ─── Core Framework lifecycle (Manage Framework dialog) ──────────────────
+  /** Merge the Core Framework preset into the current framework (add-missing-only). */
+  importCoreFramework: (mode: 'full' | 'variables') => void
+  /** Clear settings.framework entirely; reconcile strips every framework classId from nodes. */
+  removeFrameworkCompletely: () => void
+  /** Remove framework tokens / class generators whose generated classes are all unused. */
+  pruneUnusedFrameworkClasses: () => void
+
   // ─── Site fonts library ─────────────────────────────────────────────────
   /**
    * Add a font to the library. The caller (UI) is responsible for first calling
