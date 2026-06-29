@@ -27,6 +27,7 @@ const ProviderId = Type.Union([
   Type.Literal('openai'),
   Type.Literal('ollama'),
   Type.Literal('openrouter'),
+  Type.Literal('opencode'),
 ])
 
 const AuthMode = Type.Union([
@@ -170,13 +171,13 @@ export async function listCredentials(signal?: AbortSignal): Promise<CredentialV
 
 export type CreateCredentialBody =
   | {
-      providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter'
+      providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'opencode'
       authMode: 'apiKey'
       displayLabel: string
       apiKey: string
     }
   | {
-      providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter'
+      providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'opencode'
       authMode: 'baseUrl'
       displayLabel: string
       baseUrl: string
@@ -224,7 +225,7 @@ export async function testCredential(id: string): Promise<TestResult> {
 // ---------------------------------------------------------------------------
 
 export async function listModels(
-  providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter',
+  providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'opencode',
   credentialId?: string,
 ): Promise<AiModel[]> {
   const body = await apiRequest(`/admin/api/ai/providers/${providerId}/models`, {
