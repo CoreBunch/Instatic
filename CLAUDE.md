@@ -74,13 +74,15 @@ Source of truth for layout details: [`docs/architecture.md`](docs/architecture.m
 
 ## Development status — READ THIS FIRST
 
-**This project is in PRE-RELEASE. There are no external users. There is no production traffic. There is no installed base. Nothing is shipped.**
+**This project has live, self-hosted installations with real user data.** That has direct consequences for how Claude must approach changes in this repo.
 
-That has direct consequences for how Claude must approach changes in this repo.
+**For code** (TypeScript APIs, function signatures, types, modules, plugin SDK): there are no backward-compatibility obligations. Refactor freely, rename boldly, delete dead code, fix bad abstractions — the aggressive stance throughout this section applies in full.
+
+**Database schema is the exception.** Live installations run the migration runner on every pull. A destructive schema change breaks those installations permanently. Every schema change ships as an additive, non-destructive migration. See "Database, schema, and stored data" below.
 
 ### No backward compatibility. Ever.
 
-There is nothing to be backward compatible with.
+There is nothing to be backward compatible with — **for code.** TypeScript APIs, function signatures, types, and module shapes can change freely. **Database schema is the explicit exception: see "Database, schema, and stored data" below.**
 
 - **Do not preserve old function signatures, schemas, types, or APIs out of compatibility concern.** If a cleaner shape exists, change it everywhere and delete the old one.
 - **Do not add deprecation shims.** Don't keep a `legacyFoo()` that forwards to `foo()`. Just rename it and update callers.
@@ -110,22 +112,23 @@ What you must not do:
 
 ### Database, schema, and stored data
 
-There is no production data to protect. Treat the schema like code:
+**The database is NOT disposable.** Live, self-hosted installations exist with real user data. The migration runner executes every unrun migration on startup — a destructive schema change breaks those installations on the next pull.
 
-- If a column, table, or migration is wrong, change the migration. Do not write a "compatibility migration" on top of a bad migration.
-- If stored shapes (page trees, plugin manifests, settings) need to change, change them and update everything that reads/writes them.
-- Local dev databases are disposable. It is acceptable for a change to require dropping the local DB and re-running migrations from scratch.
+- **Every schema change ships as a new additive migration.** Add it to BOTH `migrations-pg.ts` AND `migrations-sqlite.ts` with the next sequential ID and the same semantic effect. See "Database dialect rules" for the mechanics.
+- **Never edit or rewrite a migration that has already been committed.** If a past migration has the wrong shape, ship a new forward migration that corrects it.
+- **Never make a change that requires dropping or recreating the database.** No `DROP TABLE`, no `DROP COLUMN` (unless the column was added in the same unreleased branch and no installation has run that migration yet), no table rebuilds. Use additive `ADD COLUMN` (nullable or with a constant `DEFAULT`), backfill with `UPDATE`, and defer destructive cleanup to a future migration only when the transition is complete.
+- **If stored JSON shapes (page trees, plugin manifests, settings) need to change,** change the reader/writer code to handle the new shape and update everything that reads/writes them. A data-migration `UPDATE` in a new migration is the right tool for bulk shape changes on existing rows.
 
 ### Plugin SDK and public-looking surfaces
 
-The plugin SDK, runtime, and manifest format *look* like a public contract but they are also pre-release. Nothing external depends on them yet.
+The plugin SDK, runtime, and manifest format *look* like a public contract but carry no backward-compatibility guarantee yet — no third-party plugins have been published against them.
 
 - If the SDK shape is wrong, change it. Update `examples/plugins/template/` and [`docs/features/plugin-system.md`](docs/features/plugin-system.md) in the same change.
 - The `apiVersion` field is not yet a stability promise. Don't invent legacy adapters for older `apiVersion` values.
 
 ### Default disposition on every change
 
-Choose (A) the cleaner architecture, requiring edits across several files, over (B) a smaller diff that leaves the architecture slightly worse. **Always choose (A).** The whole point of being pre-release is that this is the cheapest moment in the project's life to do (A).
+Choose (A) the cleaner architecture, requiring edits across several files, over (B) a smaller diff that leaves the architecture slightly worse. **Always choose (A).** The cheapest moment in a project's life to fix bad abstractions is before they calcify — don't defer it.
 
 If you are unsure whether a refactor is in scope, default to *yes, do it*, and explain in the summary what you cleaned up and why. Do not ask permission to delete dead code, rename a poorly-named symbol, or fix a bad abstraction — just do it.
 
@@ -227,7 +230,7 @@ Detailed: [`docs/reference/database-dialects.md`](docs/reference/database-dialec
 2. **JSON columns end in `_json`.** The SQLite adapter auto-parses `*_json` strings on read and auto-stringifies plain objects on write. Gated by `db-json-column-naming.test.ts`.
 3. **Migrations are split per dialect with identical IDs.** `server/db/migrations-pg.ts` (PG dialect) and `server/db/migrations-sqlite.ts` (SQLite dialect). Parity gated by `migration-parity.test.ts`.
 
-**Adding a new migration:** add it to BOTH `migrations-pg.ts` and `migrations-sqlite.ts` with the same ID and the same semantic effect.
+**Adding a new migration:** add it to BOTH `migrations-pg.ts` and `migrations-sqlite.ts` with the next sequential ID and the same semantic effect. Migrations must be **additive and non-destructive** — live installations run the migration runner on every pull. Never rewrite or delete a committed migration; if a past migration is wrong, ship a new forward migration that corrects it. Never write a migration that requires dropping or recreating the database.
 
 **Adding a JSON column:** name it `*_json`.
 
@@ -326,8 +329,8 @@ The bar is: **your work is clean.**
 
 ## TL;DR
 
-1. Pre-release. No users to protect.
-2. Never preserve backward compatibility, never leave band-aids, never duplicate "old vs new" code paths.
+1. Live installations exist with real user data. Refactor **code** freely — no compat shims needed. **DB schema is the exception: every change ships as an additive, non-destructive migration; never rewrite a committed migration or require a DB drop.**
+2. Never preserve backward compatibility in code, never leave band-aids, never duplicate "old vs new" code paths.
 3. If the architecture would be cleaner with a multi-file refactor — do the refactor, in this change.
 4. Every untyped boundary goes through TypeBox. `as Foo` at a JSON boundary is a bug. `zod` is banned repo-wide — AI drivers pass TypeBox schemas straight to providers as JSON Schema.
 5. UI uses shared primitives from `src/ui/`, design tokens from `src/styles/globals.css`, CSS Modules only. The React Compiler is on — no manual `useMemo`/`useCallback`/`memo` (see "React Compiler and memoization" for the three exceptions).
