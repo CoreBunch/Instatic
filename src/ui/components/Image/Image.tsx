@@ -69,6 +69,8 @@ interface CommonProps {
    * default) so off-screen thumbs don't block the initial paint.
    */
   loading?: ImgHTMLAttributes<HTMLImageElement>['loading']
+  /** Forwarded to `<img>` for surfaces that own pointer-drag gestures. */
+  draggable?: ImgHTMLAttributes<HTMLImageElement>['draggable']
   /** Forwarded to `<img>` for explicit aspect-ratio reservation. */
   width?: number
   /** Forwarded to `<img>` for explicit aspect-ratio reservation. */
@@ -140,6 +142,7 @@ export function Image(props: ImageProps) {
       alt={props.alt}
       className={props.className}
       loading={props.loading ?? 'lazy'}
+      draggable={props.draggable}
       width={width}
       height={height}
       decoding="async"

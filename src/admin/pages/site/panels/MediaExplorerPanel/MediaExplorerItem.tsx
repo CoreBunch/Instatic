@@ -63,12 +63,14 @@ function MediaExplorerRow({
             alt=""
             sizes="28px"
             className={styles.mediaRowImage}
+            draggable={false}
           />
         ) : previewKind === 'videos' && previewAsset ? (
           <video
             className={styles.mediaRowVideo}
             src={previewAsset.publicPath}
             aria-label={`${label} preview`}
+            draggable={false}
             muted
             preload="metadata"
           />
@@ -116,12 +118,14 @@ function MediaExplorerTile({
             alt=""
             sizes="160px"
             className={styles.mediaTileImage}
+            draggable={false}
           />
         ) : previewKind === 'videos' && previewAsset ? (
           <video
             className={styles.mediaTileVideo}
             src={previewAsset.publicPath}
             aria-label={`${label} preview`}
+            draggable={false}
             muted
             preload="metadata"
           />

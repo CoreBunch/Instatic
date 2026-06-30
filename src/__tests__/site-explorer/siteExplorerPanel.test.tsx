@@ -575,6 +575,48 @@ describe('SiteExplorerPanel', () => {
     }
   })
 
+  it('prevents native browser dragging from media grid previews so the card owns canvas drag', async () => {
+    loadSite()
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({
+        assets: [
+          {
+            id: 'media-image',
+            filename: 'hero.png',
+            mimeType: 'image/png',
+            sizeBytes: 12,
+            publicPath: '/uploads/hero.png',
+            uploadedByUserId: null,
+            createdAt: '2026-01-03T00:00:00.000Z',
+          },
+          {
+            id: 'media-video',
+            filename: 'intro.mp4',
+            mimeType: 'video/mp4',
+            sizeBytes: 24,
+            publicPath: '/uploads/intro.mp4',
+            uploadedByUserId: null,
+            createdAt: '2026-01-03T00:00:00.000Z',
+          },
+        ],
+      }), { status: 200 })) as typeof fetch
+
+    try {
+      render(<MediaExplorerPanel variant="tab" />)
+
+      const imageCard = await screen.findByRole('button', { name: /open media hero\.png/i })
+      const videoCard = await screen.findByRole('button', { name: /open media intro\.mp4/i })
+      const imagePreview = imageCard.querySelector('img')
+      const videoPreview = videoCard.querySelector('video')
+
+      expect(imagePreview?.getAttribute('draggable')).toBe('false')
+      expect(videoPreview?.getAttribute('draggable')).toBe('false')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   it('copies asset URLs from the media context menu', async () => {
     loadSite()
     const originalFetch = globalThis.fetch
