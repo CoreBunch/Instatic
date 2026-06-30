@@ -102,6 +102,7 @@ export function FluidEditor<G extends GroupShape, C extends GeneratorShape>({
         baseScaleIndex={baseScaleIndex}
         stepLabels={stepLabels}
         fieldId={fieldId}
+        preferences={preferences}
       />
 
       <ChartHost

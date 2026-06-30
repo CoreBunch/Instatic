@@ -9,7 +9,7 @@ import {
   type Ref,
   type SelectHTMLAttributes,
 } from 'react'
-import { ChevronDownIcon } from 'pixel-art-icons/icons/chevron-down'
+import { ChevronDown2Icon } from 'pixel-art-icons/icons/chevron-down-2'
 import { cn } from '@ui/cn'
 import styles from './Select.module.css'
 import {
@@ -381,7 +381,7 @@ export function Select({
       />
 
       <span aria-hidden="true" className={styles.chevron}>
-        <ChevronDownIcon size={12} />
+        <ChevronDown2Icon size={12} />
       </span>
 
       {open && menuSizing && (

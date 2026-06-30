@@ -60,7 +60,6 @@ export function FrameworkScalePanel<G extends GroupShape, C extends GeneratorSha
     y: number
     groupId: string
   } | null>(null)
-  const isFirstTab = activeGroup ? sortedGroups[0]?.id === activeGroup.id : true
 
   function handleTabContextMenu(groupId: string, event: MouseEvent<HTMLElement>) {
     event.preventDefault()
@@ -85,9 +84,13 @@ export function FrameworkScalePanel<G extends GroupShape, C extends GeneratorSha
   }
 
   function handleDelete(groupId: string) {
-    adapter.onDeleteGroup(groupId)
-    if (activeGroup?.id === groupId) setActiveTabId(null)
     setContextMenu(null)
+    // The adapter's onDeleteGroup already routes through the framework-change
+    // confirm dialog (same as colors) — it lists the generated classes still
+    // assigned to elements and strips them on confirm. Don't double-confirm.
+    // Active tab auto-recovers: once the group is gone, `activeGroup` falls
+    // back to the first remaining scale (or null → the empty state).
+    adapter.onDeleteGroup(groupId)
   }
 
   return (
@@ -102,6 +105,7 @@ export function FrameworkScalePanel<G extends GroupShape, C extends GeneratorSha
         onContextMenu={(e) => activeGroup && handleTabContextMenu(activeGroup.id, e)}
         onActivateGroup={(value) => setActiveTabId(value)}
         onAddGroup={handleAddGroup}
+        onDeleteGroup={() => activeGroup && handleDelete(activeGroup.id)}
         classGenerators={classGenerators}
       />
 
@@ -127,7 +131,6 @@ export function FrameworkScalePanel<G extends GroupShape, C extends GeneratorSha
           <ContextMenuSeparator />
           <ContextMenuItem
             danger
-            disabled={isFirstTab && sortedGroups.length === 1}
             onClick={() => handleDelete(contextMenu.groupId)}
           >
             <span aria-hidden="true">

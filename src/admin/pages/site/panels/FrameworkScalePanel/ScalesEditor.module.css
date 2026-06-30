@@ -1,7 +1,27 @@
-/* Tab heading — name + variable prefix, two narrow columns. */
+/* Tab heading — two rows: the scale name + remove button, then the
+   `--`-prefixed variable + mode select. */
 .tabHeading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+/* Row 1: name input grows, remove-scale button pinned to the right. */
+.tabHeadingName {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.tabHeadingName > :first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Row 2: variable + mode, equal halves. */
+.tabHeadingMeta {
     display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     align-items: center;
     gap: var(--space-xs);
 }

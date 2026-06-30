@@ -5,7 +5,31 @@
     gap: var(--space-s);
 }
 
-/* Wide fields span the entire row inside .baseSettings (e.g. Steps). */
-.fieldRowWide {
+/* Size rows span the full width — the size + screen-width pair needs the room. */
+.fullRow {
     grid-column: 1 / -1;
+}
+
+/* Size-at-width pair: the base size and the screen width it applies at, as the
+   two clamp endpoints. A grid (not flex) forces both inputs to equal fractions
+   so they shrink to the panel width instead of overflowing it. */
+.sizeAtWidth {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-2xs);
+}
+
+.sizeAtSep {
+    font-size: var(--text-xs);
+    color: var(--text-subtle);
+}
+
+/* Base step + step list share one row — base step compact, steps wide. */
+.baseAndSteps {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+    align-items: start;
+    gap: var(--space-s);
 }

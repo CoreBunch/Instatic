@@ -216,6 +216,11 @@
     transition: background 120ms ease, color 120ms ease;
 }
 
+/* The increase button reuses the (down) chevron-2 glyph, flipped. */
+.spinnerIconUp {
+    transform: rotate(180deg);
+}
+
 .spinnerButton + .spinnerButton {
     border-top: 1px solid var(--overlay-20);
 }
