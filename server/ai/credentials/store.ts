@@ -38,6 +38,12 @@ import type {
 } from './types'
 import type { AiAuthMode, AiProviderId } from '../runtime/types'
 import type { AiResolvedCredential } from '../drivers/types'
+import {
+  openAiOAuthNeedsRefresh,
+  parseOpenAiOAuthSecret,
+  refreshOpenAiOAuthSecret,
+  serializeOpenAiOAuthSecret,
+} from '../oauth/openai'
 
 // ---------------------------------------------------------------------------
 // Row shape ↔ record shape
@@ -138,7 +144,7 @@ export async function listCredentialsForUser(
            created_at, updated_at, last_used_at
     from ai_provider_credentials
     where user_id = ${userId}
-      and auth_mode in ('apiKey', 'baseUrl')
+      and auth_mode in ('apiKey', 'baseUrl', 'oauth')
     order by created_at desc
   `
   return rows.map(rowToRecord)
@@ -177,6 +183,7 @@ export async function readCredentialForUser(
  *   - The auth_mode + shape are inconsistent (data corruption).
  */
 export async function resolveCredentialForDriver(
+  db: DbClient,
   record: CredentialRecord,
 ): Promise<AiResolvedCredential> {
   const currentFingerprint = await getMasterKeyFingerprint()
@@ -195,6 +202,43 @@ export async function resolveCredentialForDriver(
       ciphertext: record.ciphertext,
       iv: record.iv,
     })
+  }
+
+  if (record.authMode === 'oauth') {
+    if (record.providerId !== 'openai') {
+      throw new CredentialError(
+        `Credential ${record.id} is marked auth_mode='oauth' for unsupported provider "${record.providerId}".`,
+        500,
+      )
+    }
+    if (!apiKey) {
+      throw new CredentialError(
+        `Credential ${record.id} is marked auth_mode='oauth' but has no ` +
+        `stored token envelope — data corruption. Reconnect the provider in /admin/ai/providers.`,
+        500,
+      )
+    }
+    let secret: ReturnType<typeof parseOpenAiOAuthSecret>
+    try {
+      secret = parseOpenAiOAuthSecret(apiKey)
+    } catch {
+      throw new CredentialError(
+        `Credential ${record.id} has an invalid OpenAI OAuth token envelope. ` +
+        `Reconnect the provider in /admin/ai/providers.`,
+        500,
+      )
+    }
+    if (openAiOAuthNeedsRefresh(secret)) {
+      secret = await refreshAndPersistOpenAiOAuthSecret(db, record, secret)
+    }
+    return {
+      id: record.id,
+      providerId: record.providerId,
+      authMode: record.authMode,
+      apiKey: secret.access,
+      baseUrl: null,
+      ...(secret.accountId ? { oauth: { accountId: secret.accountId } } : {}),
+    }
   }
 
   if (record.authMode === 'apiKey' && !apiKey) {
@@ -222,6 +266,25 @@ export async function resolveCredentialForDriver(
   }
 }
 
+async function refreshAndPersistOpenAiOAuthSecret(
+  db: DbClient,
+  record: CredentialRecord,
+  secret: ReturnType<typeof parseOpenAiOAuthSecret>,
+): Promise<ReturnType<typeof parseOpenAiOAuthSecret>> {
+  const refreshed = await refreshOpenAiOAuthSecret(secret)
+  const encrypted = await encryptKey(serializeOpenAiOAuthSecret(refreshed))
+  const fingerprint = await getMasterKeyFingerprint()
+  await db`
+    update ai_provider_credentials
+    set ciphertext = ${encrypted.ciphertext},
+        iv = ${encrypted.iv},
+        key_fingerprint = ${fingerprint},
+        updated_at = current_timestamp
+    where id = ${record.id} and user_id = ${record.userId}
+  `
+  return refreshed
+}
+
 // ---------------------------------------------------------------------------
 // Write
 // ---------------------------------------------------------------------------
@@ -235,6 +298,7 @@ export async function resolveCredentialForDriver(
  *   - duplicate (user_id, provider_id, display_label) — surfaced as 409
  *   - missing key for 'apiKey' mode — surfaced as 400
  *   - missing url for 'baseUrl' mode — surfaced as 400
+ *   - invalid provider/missing token envelope for 'oauth' mode — surfaced as 400
  */
 export async function createCredentialForUser(
   db: DbClient,
@@ -290,6 +354,12 @@ async function maybeEncryptForInput(
 ): Promise<EncryptedSecret | null> {
   if (input.authMode === 'apiKey') {
     return encryptKey(input.apiKey)
+  }
+  if (input.authMode === 'oauth') {
+    if (input.providerId !== 'openai') {
+      throw new CredentialError('OAuth credentials are currently supported only for OpenAI.', 400)
+    }
+    return encryptKey(serializeOpenAiOAuthSecret(input.oauth))
   }
   // baseUrl mode: API key is optional (bearer-protected proxies)
   if (input.apiKey && input.apiKey.length > 0) return encryptKey(input.apiKey)

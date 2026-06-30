@@ -215,4 +215,130 @@ describe('AI credential handler', () => {
     expect(body.error).not.toContain(apiKey)
     expect(body.error).toContain('[redacted]')
   })
+
+  it('creates an OpenAI OAuth credential through the device flow without leaking tokens', async () => {
+    const cookie = await harness.setupOwner()
+    const accessToken = fakeJwt({ chatgpt_account_id: 'acct_test' })
+    const refreshToken = 'refresh-secret-test-token'
+
+    globalThis.fetch = async (input, init) => {
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
+
+      if (url === 'https://auth.openai.com/api/accounts/deviceauth/usercode') {
+        expect(init?.method).toBe('POST')
+        return new Response(JSON.stringify({
+          device_auth_id: 'device-auth-1',
+          user_code: 'ABCD-EFGH',
+          interval: '1',
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+
+      if (url === 'https://auth.openai.com/api/accounts/deviceauth/token') {
+        expect(init?.method).toBe('POST')
+        expect(String(init?.body)).toContain('device-auth-1')
+        return new Response(JSON.stringify({
+          authorization_code: 'authorization-code-1',
+          code_verifier: 'verifier-1',
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+
+      if (url === 'https://auth.openai.com/oauth/token') {
+        expect(init?.method).toBe('POST')
+        expect(String(init?.body)).toContain('authorization-code-1')
+        return new Response(JSON.stringify({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          expires_in: 3600,
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+
+      return originalFetch(input, init)
+    }
+
+    const startRes = await harness.ai('/admin/api/ai/oauth/openai/device/start', {
+      method: 'POST',
+      cookie,
+      json: { displayLabel: 'ChatGPT OAuth' },
+    })
+    expect(startRes.status).toBe(200)
+    const startBody = await readJson<{
+      flowId: string
+      userCode: string
+      verificationUrl: string
+      intervalMs: number
+    }>(startRes)
+    expect(startBody.userCode).toBe('ABCD-EFGH')
+    expect(startBody.verificationUrl).toBe('https://auth.openai.com/codex/device')
+    expect(JSON.stringify(startBody)).not.toContain(accessToken)
+    expect(JSON.stringify(startBody)).not.toContain(refreshToken)
+
+    const completeRes = await harness.ai('/admin/api/ai/oauth/openai/device/complete', {
+      method: 'POST',
+      cookie,
+      json: { flowId: startBody.flowId },
+    })
+    expect(completeRes.status).toBe(200)
+    const completeBody = await readJson<{
+      status: 'success'
+      credential: { id: string; providerId: string; authMode: string; displayLabel: string }
+    }>(completeRes)
+    expect(completeBody.status).toBe('success')
+    expect(completeBody.credential).toMatchObject({
+      providerId: 'openai',
+      authMode: 'oauth',
+      displayLabel: 'ChatGPT OAuth',
+    })
+    expect(JSON.stringify(completeBody)).not.toContain(accessToken)
+    expect(JSON.stringify(completeBody)).not.toContain(refreshToken)
+
+    const { rows } = await harness.db<{
+      provider_id: string
+      auth_mode: string
+      ciphertext: Uint8Array | null
+      iv: Uint8Array | null
+      base_url: string | null
+    }>`
+      select provider_id, auth_mode, ciphertext, iv, base_url
+      from ai_provider_credentials
+      where id = ${completeBody.credential.id}
+    `
+    expect(rows[0]).toMatchObject({
+      provider_id: 'openai',
+      auth_mode: 'oauth',
+      base_url: null,
+    })
+    expect(rows[0]?.ciphertext).toBeInstanceOf(Uint8Array)
+    expect(rows[0]?.iv).toBeInstanceOf(Uint8Array)
+
+    const defaults = await harness.db<{ count: number; model_id: string }>`
+      select count(*) as count, min(model_id) as model_id
+      from ai_defaults
+    `
+    expect(defaults.rows[0]?.count).toBe(4)
+    expect(defaults.rows[0]?.model_id).toBe('gpt-5.5')
+  })
 })
+
+function fakeJwt(payload: Record<string, unknown>): string {
+  return `${base64UrlJson({ alg: 'none', typ: 'JWT' })}.${base64UrlJson(payload)}.signature`
+}
+
+function base64UrlJson(value: unknown): string {
+  return btoa(JSON.stringify(value))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+}

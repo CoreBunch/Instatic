@@ -15,9 +15,12 @@
  *   apiKey   → ciphertext set, iv set, baseUrl null
  *   baseUrl  → baseUrl set; ciphertext + iv optional (bearer-protected
  *              endpoints store an apiKey too)
+ *   oauth    → ciphertext set, iv set, baseUrl null; ciphertext is a
+ *              provider-specific token JSON envelope
  */
 
 import type { AiAuthMode, AiProviderId } from '../runtime/types'
+import type { OpenAiOAuthSecret } from '../oauth/openai'
 
 export interface CredentialRecord {
   readonly id: string
@@ -69,6 +72,12 @@ export type CreateCredentialInput =
       displayLabel: string
       baseUrl: string
       apiKey?: string
+    }
+  | {
+      providerId: 'openai'
+      authMode: 'oauth'
+      displayLabel: string
+      oauth: OpenAiOAuthSecret
     }
 
 /**

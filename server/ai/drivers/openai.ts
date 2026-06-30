@@ -36,14 +36,18 @@ import type {
 } from './types'
 import { runToolLoop } from './http/toolLoop'
 import { createResponsesAdapter } from './responses-shared'
+import {
+  OPENAI_OAUTH_CODEX_RESPONSES_ENDPOINT,
+  OPENAI_OAUTH_MODELS,
+} from '../oauth/openai'
 
-const SUPPORTED_AUTH_MODES: AiAuthMode[] = ['apiKey']
+const SUPPORTED_AUTH_MODES: AiAuthMode[] = ['apiKey', 'oauth']
 
 const OPENAI_BASE_URL = 'https://api.openai.com/v1'
 const OPENAI_ENDPOINT = `${OPENAI_BASE_URL}/responses`
 const OPENAI_MODELS_ENDPOINT = `${OPENAI_BASE_URL}/models`
 
-const openaiAdapter = createResponsesAdapter({
+const openaiApiKeyAdapter = createResponsesAdapter({
   label: 'OpenAI',
   endpoint: OPENAI_ENDPOINT,
   buildHeaders(req) {
@@ -55,6 +59,34 @@ const openaiAdapter = createResponsesAdapter({
   promptCacheKey(req) {
     const toolNames = req.tools.map((t) => t.name).sort().join(',')
     return `instatic:${req.toolContextBase.scope}:${stableHash(toolNames)}`
+  },
+  buildExtraBody() {
+    return { store: false }
+  },
+})
+
+const openaiOAuthAdapter = createResponsesAdapter({
+  label: 'OpenAI OAuth',
+  endpoint: OPENAI_OAUTH_CODEX_RESPONSES_ENDPOINT,
+  buildHeaders(req) {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${req.credentials.apiKey!}`,
+      'content-type': 'application/json',
+      originator: 'instatic',
+      'User-Agent': 'instatic/0.0.7',
+      'session-id': req.toolContextBase.conversationId,
+    }
+    if (req.credentials.oauth?.accountId) {
+      headers['ChatGPT-Account-Id'] = req.credentials.oauth.accountId
+    }
+    return headers
+  },
+  promptCacheKey(req) {
+    const toolNames = req.tools.map((t) => t.name).sort().join(',')
+    return `instatic:${req.toolContextBase.scope}:${stableHash(toolNames)}`
+  },
+  buildExtraBody() {
+    return { store: false }
   },
 })
 
@@ -82,6 +114,12 @@ export const openaiDriver: AiProvider = {
   },
 
   async *stream(req: AiStreamRequest): AsyncIterable<AiStreamEvent> {
+    if (req.credentials.authMode === 'oauth' && req.credentials.apiKey) {
+      for await (const event of runToolLoop(openaiOAuthAdapter, req)) {
+        yield event.type === 'usage' ? { ...event, costUsd: 0 } : event
+      }
+      return
+    }
     if (req.credentials.authMode !== 'apiKey' || !req.credentials.apiKey) {
       // Defensive: a non-apiKey credential reaching the driver implies a
       // mismatched DB row or a bypassed UI. Fail cleanly instead of POSTing
@@ -93,7 +131,7 @@ export const openaiDriver: AiProvider = {
       }
       return
     }
-    yield* runToolLoop(openaiAdapter, req)
+    yield* runToolLoop(openaiApiKeyAdapter, req)
   },
 }
 
@@ -137,6 +175,7 @@ function stableHash(value: string): string {
  * and derive the label + tier from the id — heuristic, not authoritative.
  */
 async function fetchOpenAiModels(creds: AiResolvedCredential): Promise<AiProviderModel[]> {
+  if (creds.authMode === 'oauth') return OPENAI_OAUTH_MODELS
   if (creds.authMode !== 'apiKey' || !creds.apiKey) return []
 
   const res = await fetch(OPENAI_MODELS_ENDPOINT, {

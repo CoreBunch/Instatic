@@ -132,7 +132,7 @@ async function handleAiChat(
   }
   let resolvedCredential
   try {
-    resolvedCredential = await resolveCredentialForDriver(credential)
+    resolvedCredential = await resolveCredentialForDriver(db, credential)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Credential resolution failed.'
     return jsonResponse({ error: message }, { status: 409 })

@@ -27,6 +27,8 @@ import type {
  * Shape varies by auth mode:
  *   - 'apiKey'   → apiKey set, baseUrl === null
  *   - 'baseUrl'  → baseUrl set, apiKey may be set (optional bearer)
+ *   - 'oauth'    → apiKey set to the current access token; oauth carries
+ *                  provider-specific metadata that is safe for request headers.
  *
  * The shape constraints mirror the `ai_creds_apikey_shape_check` DB-level
  * check, so by the time a CredentialRecord reaches this stage, the runtime
@@ -38,6 +40,9 @@ export interface AiResolvedCredential {
   readonly authMode: AiAuthMode
   readonly apiKey: string | null
   readonly baseUrl: string | null
+  readonly oauth?: {
+    readonly accountId?: string
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +171,7 @@ export interface AiProvider {
    * of showing a separate auth-mode picker.
    *
    *   anthropic → ['apiKey']
-   *   openai    → ['apiKey']
+   *   openai    → ['apiKey', 'oauth']
    *   openrouter → ['apiKey']
    *   ollama    → ['baseUrl']
    */

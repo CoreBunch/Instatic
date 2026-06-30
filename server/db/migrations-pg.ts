@@ -1039,4 +1039,29 @@ export const pgMigrations: Migration[] = [
         where token_hash is not null;
     `,
   },
+  {
+    id: '019_ai_openai_oauth_credentials',
+    sql: `
+      -- ─── OpenAI ChatGPT/Codex OAuth credentials ─────────────────────────
+      --
+      -- OAuth stores an encrypted token envelope in the same ciphertext/iv
+      -- columns as API keys. It is intentionally restricted to OpenAI because
+      -- the runtime adapter maps these credentials to ChatGPT's Codex
+      -- Responses endpoint, not the public platform API-key endpoint.
+      alter table ai_provider_credentials
+        drop constraint if exists ai_creds_authmode_check;
+      alter table ai_provider_credentials
+        drop constraint if exists ai_creds_apikey_shape_check;
+
+      alter table ai_provider_credentials
+        add constraint ai_creds_authmode_check
+          check (auth_mode in ('apiKey', 'baseUrl', 'oauth')),
+        add constraint ai_creds_apikey_shape_check
+          check (
+            (auth_mode = 'apiKey' and ciphertext is not null and iv is not null and base_url is null) or
+            (auth_mode = 'baseUrl' and base_url is not null) or
+            (auth_mode = 'oauth' and provider_id = 'openai' and ciphertext is not null and iv is not null and base_url is null)
+          );
+    `,
+  },
 ]

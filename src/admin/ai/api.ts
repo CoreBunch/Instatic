@@ -39,6 +39,7 @@ const ProviderId = Type.Union([
 const AuthMode = Type.Union([
   Type.Literal('apiKey'),
   Type.Literal('baseUrl'),
+  Type.Literal('oauth'),
 ])
 
 const ToolScope = Type.Union([
@@ -68,6 +69,31 @@ const CredentialListResponseSchema = Type.Object({
 const CredentialItemResponseSchema = Type.Object({
   credential: CredentialViewSchema,
 })
+
+const OpenAiOAuthStartResponseSchema = Type.Object({
+  flowId: Type.String(),
+  userCode: Type.String(),
+  verificationUrl: Type.String(),
+  intervalMs: Type.Number(),
+})
+
+const OpenAiOAuthCompleteResponseSchema = Type.Union([
+  Type.Object({
+    status: Type.Literal('pending'),
+    retryAfterMs: Type.Optional(Type.Number()),
+  }),
+  Type.Object({
+    status: Type.Literal('success'),
+    credential: CredentialViewSchema,
+  }),
+  Type.Object({
+    status: Type.Literal('failed'),
+    error: Type.String(),
+  }),
+])
+
+export type OpenAiOAuthStart = Static<typeof OpenAiOAuthStartResponseSchema>
+export type OpenAiOAuthComplete = Static<typeof OpenAiOAuthCompleteResponseSchema>
 
 const TestResponseSchema = Type.Object({
   ok: Type.Boolean(),
@@ -197,6 +223,22 @@ export async function createCredential(body: CreateCredentialBody): Promise<Cred
     schema: CredentialItemResponseSchema,
   })
   return parsed.credential
+}
+
+export async function startOpenAiOAuthDevice(displayLabel: string): Promise<OpenAiOAuthStart> {
+  return apiRequest('/admin/api/ai/oauth/openai/device/start', {
+    method: 'POST',
+    body: { displayLabel },
+    schema: OpenAiOAuthStartResponseSchema,
+  })
+}
+
+export async function completeOpenAiOAuthDevice(flowId: string): Promise<OpenAiOAuthComplete> {
+  return apiRequest('/admin/api/ai/oauth/openai/device/complete', {
+    method: 'POST',
+    body: { flowId },
+    schema: OpenAiOAuthCompleteResponseSchema,
+  })
 }
 
 export async function deleteCredential(id: string): Promise<void> {

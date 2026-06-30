@@ -17,6 +17,7 @@ import { tryHandleAiCredentials } from './credentials'
 import { tryHandleAiConversations } from './conversations'
 import { tryHandleAiDefaults } from './defaults'
 import { tryHandleAiModels } from './models'
+import { tryHandleOpenAiOAuth } from './openaiOAuth'
 import { tryHandleAiMcpConnectors } from '../mcp/handlers/connectors'
 import { tryHandleAiEditorBridge } from '../mcp/handlers/editorBridge'
 
@@ -44,6 +45,7 @@ export function tryHandleAi(
     tryHandleAiAudit(req, db, url, pathname) ??
     tryHandleAiChat(req, db, pathname) ??
     tryHandleAiToolResult(req, db, pathname) ??
+    tryHandleOpenAiOAuth(req, db, pathname) ??
     tryHandleAiCredentials(req, db, pathname) ??
     tryHandleAiConversations(req, db, url, pathname) ??
     tryHandleAiDefaults(req, db, pathname) ??

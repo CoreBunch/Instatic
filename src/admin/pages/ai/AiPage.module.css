@@ -218,6 +218,28 @@
     line-height: 1.3;
 }
 
+.oauthPanel {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: var(--space-m);
+    padding: var(--space-l);
+    background: var(--bg-surface-2);
+    border-radius: var(--radius);
+}
+
+.oauthCode {
+    width: fit-content;
+    margin-top: var(--space-3xs);
+    padding: var(--space-xs) var(--space-m);
+    color: var(--text-bright);
+    background: var(--bg-surface);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xl);
+    line-height: 1.1;
+    letter-spacing: 0;
+}
+
 /* ── Audit tab ───────────────────────────────────────────────────────── */
 
 .auditHeaderActions {

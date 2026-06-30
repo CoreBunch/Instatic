@@ -31,8 +31,10 @@ export type AiProviderId = 'anthropic' | 'openai' | 'ollama' | 'openrouter'
  *   - `apiKey`   — encrypted user-supplied key (Anthropic, OpenAI, OpenRouter).
  *   - `baseUrl`  — OpenAI-compatible local endpoint (Ollama). Optional
  *                  bearer token may be stored alongside the URL.
+ *   - `oauth`    — encrypted provider token set. Currently OpenAI
+ *                  ChatGPT/Codex OAuth only.
  */
-export type AiAuthMode = 'apiKey' | 'baseUrl'
+export type AiAuthMode = 'apiKey' | 'baseUrl' | 'oauth'
 
 // One AI surface in the admin. Each scope has its own toolset + system prompt.
 export type ToolScope = 'site' | 'content' | 'data' | 'plugin'
@@ -206,4 +208,3 @@ export interface AiBrowserBridge {
 // Aggregated usage — drivers report token counts so the handler can persist
 // per-message + per-conversation totals and compute cost from pricing.ts.
 // ---------------------------------------------------------------------------
-

@@ -1103,4 +1103,56 @@ export const sqliteMigrations: Migration[] = [
         where token_hash is not null;
     `,
   },
+  {
+    id: '019_ai_openai_oauth_credentials',
+    sql: `
+      -- ─── OpenAI ChatGPT/Codex OAuth credentials — SQLite mirror of PG 019 ─
+      --
+      -- SQLite cannot ALTER CHECK constraints, so rebuild the credentials
+      -- table with the widened auth_mode + shape checks. Existing rows are
+      -- copied unchanged; OAuth rows are restricted to OpenAI.
+
+      pragma defer_foreign_keys = on;
+
+      create table ai_provider_credentials__migr019 (
+        id text primary key,
+        user_id text not null references users(id) on delete cascade,
+        provider_id text not null,
+        auth_mode text not null,
+        display_label text not null,
+        ciphertext blob,
+        iv blob,
+        base_url text,
+        key_fingerprint text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        last_used_at text,
+        constraint ai_creds_authmode_check
+          check (auth_mode in ('apiKey', 'baseUrl', 'oauth')),
+        constraint ai_creds_apikey_shape_check
+          check (
+            (auth_mode = 'apiKey' and ciphertext is not null and iv is not null and base_url is null) or
+            (auth_mode = 'baseUrl' and base_url is not null) or
+            (auth_mode = 'oauth' and provider_id = 'openai' and ciphertext is not null and iv is not null and base_url is null)
+          )
+      );
+
+      insert into ai_provider_credentials__migr019 (
+        id, user_id, provider_id, auth_mode, display_label,
+        ciphertext, iv, base_url, key_fingerprint,
+        created_at, updated_at, last_used_at
+      )
+      select
+        id, user_id, provider_id, auth_mode, display_label,
+        ciphertext, iv, base_url, key_fingerprint,
+        created_at, updated_at, last_used_at
+      from ai_provider_credentials;
+
+      drop table ai_provider_credentials;
+      alter table ai_provider_credentials__migr019 rename to ai_provider_credentials;
+
+      create unique index if not exists ai_creds_user_label_idx
+        on ai_provider_credentials (user_id, provider_id, display_label);
+    `,
+  },
 ]

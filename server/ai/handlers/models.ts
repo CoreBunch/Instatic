@@ -16,7 +16,7 @@ import {
   resolveCredentialForDriver,
 } from '../credentials/store'
 import { getModelCatalogue, pricingKey } from '../pricing'
-import type { AiProviderModel } from '../drivers/types'
+import type { AiProviderModel, AiResolvedCredential } from '../drivers/types'
 import type { AiProviderId } from '../runtime/types'
 
 const VALID_PROVIDERS: AiProviderId[] = ['anthropic', 'openai', 'ollama', 'openrouter']
@@ -59,14 +59,14 @@ async function handleModels(
   // OpenAI) then return an empty list — there is no static fallback, so the
   // picker stays empty until a credential is chosen.
   const credentialId = url.searchParams.get('credentialId')
-  let resolved
+  let resolved: AiResolvedCredential
   if (credentialId) {
     const record = await readCredentialForUser(db, userOrResponse.id, credentialId)
     if (!record) {
       return jsonResponse({ error: 'Credential not found' }, { status: 404 })
     }
     try {
-      resolved = await resolveCredentialForDriver(record)
+      resolved = await resolveCredentialForDriver(db, record)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Credential resolution failed.'
       return jsonResponse({ error: message }, { status: 409 })
@@ -87,7 +87,7 @@ async function handleModels(
   // source the cost path uses. OpenRouter self-populates from its own fetch
   // and Ollama is free/self-hosted, so neither is enriched here.
   const enriched =
-    providerId === 'anthropic' || providerId === 'openai'
+    (providerId === 'anthropic' || providerId === 'openai') && resolved.authMode !== 'oauth'
       ? await enrichFromCatalogue(db, models)
       : models
   return jsonResponse({ models: enriched })

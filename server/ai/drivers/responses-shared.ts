@@ -327,6 +327,7 @@ interface ResponsesAdapterOptions {
   readonly endpoint: string
   buildHeaders(req: AiStreamRequest): Record<string, string>
   promptCacheKey?: (req: AiStreamRequest) => string | null
+  buildExtraBody?: (req: AiStreamRequest) => Record<string, unknown>
 }
 
 /**
@@ -356,6 +357,7 @@ export function createResponsesAdapter(
       const promptCacheKey = opts.promptCacheKey?.(req)
       if (promptCacheKey) body.prompt_cache_key = promptCacheKey
       if (req.tools.length > 0) body.tools = buildResponsesTools(req.tools)
+      Object.assign(body, opts.buildExtraBody?.(req))
       return body
     },
 

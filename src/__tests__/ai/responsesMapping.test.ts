@@ -238,6 +238,58 @@ describe('runToolLoop via openaiDriver (Responses)', () => {
     expect(usage!.promptTokens).toBe(45)
     expect(usage!.completionTokens).toBe(15)
   })
+
+  test('sends store=false for OpenAI OAuth Codex requests', async () => {
+    const requestBodies: Array<Record<string, unknown>> = []
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      expect(url).toBe('https://chatgpt.com/backend-api/codex/responses')
+      expect((init.headers as Record<string, string>).Authorization).toBe('Bearer oauth-access-test')
+      expect((init.headers as Record<string, string>)['ChatGPT-Account-Id']).toBe('acct_test')
+      requestBodies.push(JSON.parse(init.body as string))
+      return sseResponse(
+        responsesSse(
+          { type: 'response.output_text.delta', delta: 'oauth reply' },
+          { type: 'response.completed', response: { usage: { input_tokens: 4, output_tokens: 2 } } },
+        ),
+      )
+    }) as typeof fetch
+
+    const bridge: AiBrowserBridge = { async callBrowser(): Promise<AiToolOutput> { return { ok: true } } }
+    const req: AiStreamRequest = {
+      systemPrompt: ['You are a test.'],
+      messages: [{ role: 'user', content: [{ kind: 'text', text: 'go' }] }],
+      tools: [],
+      modelId: 'gpt-5.5',
+      modelCapabilities: { toolCalling: true, visionInput: true, promptCache: false, streaming: true },
+      credentials: {
+        id: 'cr',
+        providerId: 'openai',
+        authMode: 'oauth',
+        apiKey: 'oauth-access-test',
+        baseUrl: null,
+        oauth: { accountId: 'acct_test' },
+      },
+      signal: new AbortController().signal,
+      bridge,
+      toolContextBase: {
+        db: {} as never,
+        userId: 'u1',
+        capabilities: [],
+        scope: 'site',
+        conversationId: 'c1',
+        snapshot: {},
+      },
+    }
+
+    const events: AiStreamEvent[] = []
+    for await (const ev of openaiDriver.stream(req)) events.push(ev)
+
+    expect(requestBodies).toHaveLength(1)
+    expect(requestBodies[0]!.store).toBe(false)
+    expect(requestBodies[0]!.model).toBe('gpt-5.5')
+    const usage = events.find((e) => e.type === 'usage') as { costUsd?: number } | undefined
+    expect(usage?.costUsd).toBe(0)
+  })
 })
 
 describe('openrouterDriver', () => {

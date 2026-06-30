@@ -5,7 +5,7 @@
  * is the wire-safe `CredentialView` (no plaintext, no ciphertext).
  */
 
-import { useId, useState } from 'react'
+import { useEffect, useId, useState, type FormEvent } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
@@ -14,13 +14,17 @@ import { Select } from '@ui/components/Select'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
+import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
 import {
   type CredentialView,
   type CreateCredentialBody,
+  type OpenAiOAuthStart,
   type TestResult,
+  completeOpenAiOAuthDevice,
   createCredential,
   deleteCredential,
   listCredentials,
+  startOpenAiOAuthDevice,
   testCredential,
 } from '../../../ai/api'
 import { ApiError } from '@core/http'
@@ -28,20 +32,28 @@ import styles from '../AiPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
 type ProviderId = 'anthropic' | 'openai' | 'ollama' | 'openrouter'
-type AuthMode = 'apiKey' | 'baseUrl'
+type AuthMode = 'apiKey' | 'baseUrl' | 'oauth'
+type ProviderOptionId = 'anthropic' | 'openai-api-key' | 'openai-oauth' | 'openrouter' | 'ollama'
 
-// Each provider has exactly one credential shape; the UI derives it instead
-// of asking the user to choose an auth mode that cannot vary.
-const PROVIDERS: Array<{ id: ProviderId; label: string; authMode: AuthMode }> = [
-  { id: 'anthropic', label: 'Anthropic (Claude)', authMode: 'apiKey' },
-  { id: 'openai', label: 'OpenAI', authMode: 'apiKey' },
-  { id: 'openrouter', label: 'OpenRouter', authMode: 'apiKey' },
-  { id: 'ollama', label: 'Ollama (local)', authMode: 'baseUrl' },
+// Provider options include auth shape so OpenAI can expose both API-key and
+// ChatGPT/Codex OAuth without adding a second form control.
+const PROVIDERS: Array<{
+  id: ProviderOptionId
+  providerId: ProviderId
+  label: string
+  authMode: AuthMode
+}> = [
+  { id: 'anthropic', providerId: 'anthropic', label: 'Anthropic (Claude)', authMode: 'apiKey' },
+  { id: 'openai-api-key', providerId: 'openai', label: 'OpenAI API key', authMode: 'apiKey' },
+  { id: 'openai-oauth', providerId: 'openai', label: 'OpenAI ChatGPT OAuth', authMode: 'oauth' },
+  { id: 'openrouter', providerId: 'openrouter', label: 'OpenRouter', authMode: 'apiKey' },
+  { id: 'ollama', providerId: 'ollama', label: 'Ollama (local)', authMode: 'baseUrl' },
 ]
 
 const AUTH_MODE_LABEL: Record<AuthMode, string> = {
   apiKey: 'API key',
   baseUrl: 'Endpoint URL',
+  oauth: 'OAuth',
 }
 
 const PROVIDER_LABEL: Record<ProviderId, string> = {
@@ -230,7 +242,7 @@ export function ProvidersTab() {
 // ---------------------------------------------------------------------------
 
 async function submitCredential(
-  effectiveAuthMode: AuthMode,
+  effectiveAuthMode: Exclude<AuthMode, 'oauth'>,
   providerId: ProviderId,
   displayLabel: string,
   apiKey: string,
@@ -275,19 +287,86 @@ function AddCredentialDialog({
   const baseUrlInputId = useId()
   const formId = useId()
 
-  const [providerId, setProviderId] = useState<ProviderId>('anthropic')
+  const [providerOptionId, setProviderOptionId] = useState<ProviderOptionId>('anthropic')
   const [displayLabel, setDisplayLabel] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState('http://localhost:11434')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [oauthFlow, setOauthFlow] = useState<OpenAiOAuthStart | null>(null)
+  const [oauthFailed, setOauthFailed] = useState(false)
 
-  const providerSpec = PROVIDERS.find((p) => p.id === providerId)!
+  const providerSpec = PROVIDERS.find((p) => p.id === providerOptionId)!
+  const providerId = providerSpec.providerId
   const effectiveAuthMode = providerSpec.authMode
 
-  async function handleSubmit(e: React.FormEvent) {
+  useEffect(() => {
+    if (!oauthFlow || oauthFailed) return
+    const flow = oauthFlow
+    let cancelled = false
+    let timer: number | undefined
+
+    async function poll() {
+      try {
+        const result = await completeOpenAiOAuthDevice(flow.flowId)
+        if (cancelled) return
+        if (result.status === 'pending') {
+          timer = window.setTimeout(poll, result.retryAfterMs ?? flow.intervalMs)
+          return
+        }
+        if (result.status === 'success') {
+          onCreated()
+          return
+        }
+        setOauthFailed(true)
+        setError(result.error)
+      } catch (err) {
+        if (cancelled) return
+        setOauthFailed(true)
+        setError(getErrorMessage(err, 'OpenAI OAuth failed.'))
+      }
+    }
+
+    timer = window.setTimeout(poll, flow.intervalMs)
+    return () => {
+      cancelled = true
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [oauthFlow, oauthFailed, onCreated])
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (effectiveAuthMode === 'oauth') {
+      await startOAuthFlow()
+      return
+    }
     await submitCredential(effectiveAuthMode, providerId, displayLabel, apiKey, baseUrl, onCreated, setError, setBusy)
+  }
+
+  async function startOAuthFlow() {
+    setError(null)
+    setOauthFailed(false)
+    setBusy(true)
+    try {
+      const flow = await startOpenAiOAuthDevice(displayLabel)
+      setOauthFlow(flow)
+      window.open(flow.verificationUrl, '_blank', 'noopener,noreferrer')
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError(getErrorMessage(err, 'Failed to start OpenAI OAuth.'))
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function handleProviderChange(nextId: ProviderOptionId) {
+    setProviderOptionId(nextId)
+    setError(null)
+    setOauthFlow(null)
+    setOauthFailed(false)
   }
 
   return (
@@ -301,10 +380,25 @@ function AddCredentialDialog({
           <Button type="button" variant="secondary" size="sm" onClick={onClose} disabled={busy}>
             <span>Cancel</span>
           </Button>
-          <Button type="submit" form={formId} variant="primary" size="sm" disabled={busy}>
-            <PlusIcon size={14} aria-hidden="true" />
-            <span>Add credential</span>
-          </Button>
+          {oauthFlow ? (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() => window.open(oauthFlow.verificationUrl, '_blank', 'noopener,noreferrer')}
+              disabled={busy}
+            >
+              <ExternalLinkSolidIcon size={14} aria-hidden="true" />
+              <span>Open OpenAI</span>
+            </Button>
+          ) : (
+            <Button type="submit" form={formId} variant="primary" size="sm" disabled={busy}>
+              {effectiveAuthMode === 'oauth'
+                ? <ExternalLinkSolidIcon size={14} aria-hidden="true" />
+                : <PlusIcon size={14} aria-hidden="true" />}
+              <span>{effectiveAuthMode === 'oauth' ? 'Start OAuth' : 'Add credential'}</span>
+            </Button>
+          )}
         </>
       }
     >
@@ -313,8 +407,9 @@ function AddCredentialDialog({
           <label htmlFor={providerInputId} className={styles.dialogFieldLabel}>Provider</label>
           <Select
             id={providerInputId}
-            value={providerId}
-            onChange={(e) => setProviderId(e.currentTarget.value as ProviderId)}
+            value={providerOptionId}
+            onChange={(e) => handleProviderChange(e.currentTarget.value as ProviderOptionId)}
+            disabled={oauthFlow !== null}
             options={PROVIDERS.map((p) => ({ value: p.id, label: p.label }))}
           />
         </div>
@@ -326,11 +421,29 @@ function AddCredentialDialog({
             value={displayLabel}
             onChange={(e) => setDisplayLabel(e.currentTarget.value)}
             placeholder="e.g. Production"
+            disabled={oauthFlow !== null}
             required
           />
         </div>
 
-        {effectiveAuthMode === 'apiKey' && (
+        {oauthFlow && (
+          <div className={styles.oauthPanel}>
+            <div>
+              <div className={styles.dialogFieldLabel}>OpenAI code</div>
+              <div className={styles.oauthCode}>{oauthFlow.userCode}</div>
+            </div>
+            <p className={styles.secondaryText}>
+              Enter this code on the OpenAI page. This dialog will finish automatically after approval.
+            </p>
+            {!error && (
+              <p role="status" className={styles.testResult}>
+                Waiting for OpenAI approval…
+              </p>
+            )}
+          </div>
+        )}
+
+        {!oauthFlow && effectiveAuthMode === 'apiKey' && (
           <div className={styles.dialogField}>
             <label htmlFor={apiKeyInputId} className={styles.dialogFieldLabel}>API key</label>
             <Input
@@ -352,7 +465,7 @@ function AddCredentialDialog({
           </div>
         )}
 
-        {effectiveAuthMode === 'baseUrl' && (
+        {!oauthFlow && effectiveAuthMode === 'baseUrl' && (
           <>
             <div className={styles.dialogField}>
               <label htmlFor={baseUrlInputId} className={styles.dialogFieldLabel}>Base URL</label>
