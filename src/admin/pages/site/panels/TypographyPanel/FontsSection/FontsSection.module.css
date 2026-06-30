@@ -73,12 +73,6 @@
     align-items: center;
 }
 
-.addRow {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-xs);
-}
-
 .tokenToolbar {
     display: flex;
     align-items: center;

@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Button } from '@ui/components/Button'
+import { SplitButton, type SplitButtonMenuItem } from '@ui/components/SplitButton'
 import { EmptyState } from '@ui/components/EmptyState'
 import { useEditorStore } from '@site/store/store'
 import type { FontEntry, FontToken } from '@core/fonts'
@@ -27,6 +28,8 @@ import {
 import { deleteCmsFontFamily } from '@core/persistence/cmsFonts'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
+import { PlusIcon } from 'pixel-art-icons/icons/plus'
+import { UploadIcon } from 'pixel-art-icons/icons/upload'
 import { AddGoogleFontDialog } from './AddGoogleFontDialog'
 import { AddCustomFontDialog } from './AddCustomFontDialog'
 import { FontTokenDialog } from './FontTokenDialog'
@@ -145,37 +148,51 @@ export function FontsSection() {
 
   const sortedTokens = sortFontTokens(fontTokens)
 
+  // Single add-font affordance: a primary "Add Google font" button fused to a
+  // chevron that drops down both install paths. Reused by the empty state and
+  // the "Installed font files" header so the action reads the same everywhere.
+  const addFontMenuItems: SplitButtonMenuItem[] = [
+    {
+      id: 'google',
+      label: 'Add Google font',
+      icon: PlusIcon,
+      onSelect: () => setDialogOpen(true),
+      testId: 'fonts-add-google-font-item',
+    },
+    {
+      id: 'custom',
+      label: 'Upload custom font',
+      icon: UploadIcon,
+      onSelect: () => setCustomDialogOpen(true),
+      testId: 'fonts-upload-custom-font-item',
+    },
+  ]
+
+  const addFontButton = (
+    <SplitButton
+      label="Add Google font"
+      onClick={() => setDialogOpen(true)}
+      menuItems={addFontMenuItems}
+      menuTriggerLabel="More font options"
+      menuLabel="Add a font"
+      primaryTestId="fonts-add-google-font-btn"
+      menuTriggerTestId="fonts-add-font-trigger"
+      menuTestId="fonts-add-font-menu"
+    />
+  )
+
   return (
     <div className={styles.section}>
       {fonts.length === 0 && sortedTokens.length === 0 ? (
         // Mirror the "No <kind> scales yet." empty state used in the Scales
         // section so the two empty states inside the Typography panel read
-        // consistently. The CTA opens the same Add Google Font dialog the
-        // bottom-right "Add Google font" button does.
+        // consistently. The CTA is the same split add-font control used in the
+        // "Installed font files" header.
         <EmptyState
           plain
           compact
           title="No fonts installed yet."
-          action={
-            <div className={styles.addRow}>
-              <Button
-                variant="secondary"
-                size="sm"
-                type="button"
-                onClick={() => setDialogOpen(true)}
-              >
-                Add Google font
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                type="button"
-                onClick={() => setCustomDialogOpen(true)}
-              >
-                Upload custom font
-              </Button>
-            </div>
-          }
+          action={addFontButton}
         />
       ) : (
         <>
@@ -223,42 +240,25 @@ export function FontsSection() {
             </ul>
           )}
 
-          {fonts.length > 0 && (
-            <>
-              <div className={styles.tokenToolbar}>
-                <span className={styles.tokenToolbarTitle}>Installed font files</span>
-              </div>
-              <ul className={styles.assetList} aria-label="Installed font files">
-                {fonts.map((entry) => (
-                  <FontRow
-                    key={entry.id}
-                    entry={entry}
-                    onEdit={() => setEditEntry(entry)}
-                    onRemove={() => { void handleRemove(entry) }}
-                  />
-                ))}
-              </ul>
-            </>
-          )}
-
-          <div className={styles.addRow}>
-            <Button
-              variant="secondary"
-              size="sm"
-              type="button"
-              onClick={() => setDialogOpen(true)}
-            >
-              Add Google font
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              type="button"
-              onClick={() => setCustomDialogOpen(true)}
-            >
-              Upload custom font
-            </Button>
+          <div className={styles.tokenToolbar}>
+            <span className={styles.tokenToolbarTitle}>Installed fonts</span>
+            {addFontButton}
           </div>
+
+          {fonts.length === 0 ? (
+            <EmptyState plain compact title="No fonts installed yet." />
+          ) : (
+            <ul className={styles.assetList} aria-label="Installed fonts">
+              {fonts.map((entry) => (
+                <FontRow
+                  key={entry.id}
+                  entry={entry}
+                  onEdit={() => setEditEntry(entry)}
+                  onRemove={() => { void handleRemove(entry) }}
+                />
+              ))}
+            </ul>
+          )}
         </>
       )}
 

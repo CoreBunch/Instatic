@@ -240,27 +240,21 @@
     height: 28px;
 }
 
-.publishSplitButton {
-    display: inline-flex;
-    align-items: center;
-    height: 28px;
-}
-
+/* Publish-specific overrides on the shared SplitButton halves: a stable min
+ * width so the label can swap (Publish → Publishing → Published) without the
+ * control reflowing, a slightly slimmer chevron trigger, and a softened
+ * disabled state once a publish has succeeded. The seam-joined radii, divider,
+ * and busy spinner live in SplitButton.module.css. */
 .publishPrimaryButton {
     min-width: 86px;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
 }
 
-.publishPrimaryButton[data-publish-state="success"]:disabled {
+.publishPrimaryButton[data-state="success"]:disabled {
     opacity: 0.82;
 }
 
 .publishMenuTrigger {
     width: 26px;
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-    box-shadow: inset 1px 0 var(--overlay-5);
 }
 
 .publishToast {
@@ -281,17 +275,6 @@
 .publishToastStatus {
     border-color: color-mix(in srgb, var(--success) 35%, transparent);
     color: var(--success);
-}
-
-/* ── Spinner animation ────────────────────────────────────────────────────── */
-@keyframes instaticSpin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-.spinIcon {
-    animation: instaticSpin 0.8s linear infinite;
 }
 
 @media (max-width: 760px) {
@@ -360,10 +343,6 @@
     .workspaceToolbarItems {
         animation: none;
         transition: none;
-    }
-
-    .spinIcon {
-        animation: none;
     }
 }
 
