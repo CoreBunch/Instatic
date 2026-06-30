@@ -19,6 +19,10 @@ export interface McpConnectorRecord {
   readonly createdAt: string
   readonly lastUsedAt: string | null
   readonly revokedAt: string | null
-  /** ISO 8601 UTC timestamp when this token expires. Always set for bearer tokens. */
-  readonly expiresAt: string
+  /**
+   * ISO 8601 UTC timestamp when this token expires.
+   * Always non-null for tokens created via createConnector.
+   * Null for grandfathered rows (pre-migration 019): treated as non-expiring.
+   */
+  readonly expiresAt: string | null
 }

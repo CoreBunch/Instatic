@@ -124,24 +124,24 @@ describe('connector store', () => {
       userId: 'u1', label: 'E', type: 'local', capabilities: ['ai.chat'],
       tokenHash: await hashConnectorToken('imcp_ttl'),
     })
-    expect(rec.expiresAt).toBeTypeOf('string')
-    expect(rec.expiresAt.length).toBeGreaterThan(0)
+    expect(rec.expiresAt).not.toBeNull()
     // expiresAt should be approximately 90 days from now (within ±2 minutes).
-    const delta = new Date(rec.expiresAt).getTime() - Date.now()
+    const expiresAt = rec.expiresAt!
+    const delta = new Date(expiresAt).getTime() - Date.now()
     const ninetyDays = 90 * 24 * 60 * 60 * 1000
     expect(delta).toBeGreaterThan(ninetyDays - 2 * 60 * 1000)
     expect(delta).toBeLessThan(ninetyDays + 2 * 60 * 1000)
   })
 
-  it('toConnectorView includes expiresAt and still never includes tokenHash', async () => {
+  it('toConnectorView includes expiresAt (non-null for new tokens) and never tokenHash', async () => {
     const rec = await createConnector(db, {
       userId: 'u1', label: 'V', type: 'local', capabilities: ['ai.chat'],
       tokenHash: await hashConnectorToken('imcp_view'),
     })
     const view = toConnectorView(rec)
-    // expiresAt must be present.
-    expect(view.expiresAt).toBeTypeOf('string')
-    expect(view.expiresAt.length).toBeGreaterThan(0)
+    // expiresAt must be a non-null string for a freshly created token.
+    expect(view.expiresAt).not.toBeNull()
+    expect(typeof view.expiresAt).toBe('string')
     // tokenHash must never appear.
     const serialized = JSON.stringify(view)
     expect(serialized).not.toContain('tokenHash')
@@ -154,9 +154,23 @@ describe('connector store', () => {
       tokenHash: await hashConnectorToken('imcp_custom'),
       ttlDays: 7,
     })
-    const delta = new Date(rec.expiresAt).getTime() - Date.now()
+    const delta = new Date(rec.expiresAt!).getTime() - Date.now()
     const sevenDays = 7 * 24 * 60 * 60 * 1000
     expect(delta).toBeGreaterThan(sevenDays - 2 * 60 * 1000)
     expect(delta).toBeLessThan(sevenDays + 2 * 60 * 1000)
+  })
+
+  it('a connector row with NULL expires_at (grandfathered) is accepted as non-expiring', async () => {
+    const hash = await hashConnectorToken('imcp_null_expiry')
+    const rec = await createConnector(db, {
+      userId: 'u1', label: 'Legacy', type: 'local', capabilities: ['ai.chat'], tokenHash: hash,
+    })
+    // Simulate a pre-migration 019 row by clearing expires_at.
+    await db`update ai_mcp_connectors set expires_at = null where id = ${rec.id}`
+    // NULL expires_at → non-expiring; the connector must still be accepted.
+    const found = await findConnectorByTokenHash(db, hash)
+    expect(found).not.toBeNull()
+    expect(found?.label).toBe('Legacy')
+    expect(found?.expiresAt).toBeNull()
   })
 })

@@ -36,7 +36,7 @@ export const McpConnectorViewSchema = Type.Object({
   createdAt: Type.String(),
   lastUsedAt: Type.Union([Type.String(), Type.Null()]),
   revoked: Type.Boolean(),
-  expiresAt: Type.String(),
+  expiresAt: Type.Union([Type.String(), Type.Null()]),
 })
 export type McpConnectorView = Static<typeof McpConnectorViewSchema>
 

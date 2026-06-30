@@ -42,11 +42,11 @@ function rowToRecord(row: ConnectorRow): McpConnectorRecord {
     createdAt: row.created_at,
     lastUsedAt: row.last_used_at,
     revokedAt: row.revoked_at,
-    // expires_at is set by createConnector for every new bearer token and
-    // backfilled by migration 019 for all pre-existing rows. Treat a null as an
-    // expired sentinel so a bug that bypasses createConnector never grants
-    // infinite access.
-    expiresAt: row.expires_at ?? new Date(0).toISOString(),
+    // expires_at is set by createConnector for every new bearer token.
+    // A null value (pre-migration 019 rows / grandfathered connectors) means
+    // non-expiring — findConnectorByTokenHash already accepts NULL via
+    // `(expires_at is null or expires_at > ${now})`.
+    expiresAt: row.expires_at,
   }
 }
 

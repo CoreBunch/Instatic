@@ -70,6 +70,18 @@ describe('mcp auth', () => {
     expect((await resolveMcpAuth(req, db)).ok).toBe(false)
   })
 
+  it('accepts a grandfathered connector with NULL expires_at (non-expiring)', async () => {
+    const token = generateConnectorToken()
+    const rec = await createConnector(db, {
+      userId: 'u1', label: 'Legacy', type: 'remote', capabilities: ['ai.chat'], tokenHash: await hashConnectorToken(token),
+    })
+    // Simulate a pre-migration 019 row with no expiry set.
+    await db`update ai_mcp_connectors set expires_at = null where id = ${rec.id}`
+    const req = new Request('http://x/_instatic/mcp', { headers: { Authorization: `Bearer ${token}` } })
+    const res = await resolveMcpAuth(req, db)
+    expect(res.ok).toBe(true)
+  })
+
   it('builds a spec-correct 401 with a resource_metadata pointer', () => {
     const r = unauthorizedResponse(new URL('http://x/_instatic/mcp'))
     expect(r.status).toBe(401)
