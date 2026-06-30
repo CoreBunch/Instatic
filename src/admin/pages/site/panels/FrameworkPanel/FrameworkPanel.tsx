@@ -21,7 +21,7 @@ import { FrameworkManagerHost } from './FrameworkManagerHost'
 import styles from './FrameworkPanel.module.css'
 
 const TABS: ReadonlyArray<{ value: FrameworkPanelTab; label: string }> = [
-  { value: 'home', label: 'Home' },
+  { value: 'home', label: 'Overview' },
   { value: 'colors', label: 'Colors' },
   { value: 'typography', label: 'Type' },
   { value: 'spacing', label: 'Space' },
