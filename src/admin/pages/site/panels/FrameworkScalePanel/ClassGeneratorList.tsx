@@ -49,8 +49,8 @@ export function ClassGeneratorList<C extends GeneratorShape>({
   return (
     <div className={styles.classGenerator} aria-label="Class generator">
       <header className={styles.classGeneratorHeader}>
-        <Button variant="ghost" size="xs" onClick={handleAdd}>
-          Add class
+        <Button variant="secondary" size="sm" onClick={handleAdd}>
+          Generate utility
         </Button>
       </header>
       <div className={styles.classGeneratorRows}>
