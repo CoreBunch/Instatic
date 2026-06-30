@@ -36,6 +36,7 @@ import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { useAdminNavigate } from '@admin/lib/useAdminNavigate'
 import { useAdminUi } from '@admin/state/adminUi'
+import { requestCmsSiteReload } from '@admin/state/adminEvents'
 import { Button } from '@ui/components/Button'
 import type { PixelArtIconComponent } from '@core/dashboard'
 import type { OnboardingFacts, OnboardingStepState } from '../hooks/useOnboardingState'
@@ -138,6 +139,15 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
         baselinePageIds: site.pages.map((page) => page.id),
         dirty: { all: false, pageIds: new Set(), componentIds: new Set(), layoutIds: new Set() },
       })
+      // The framework settings were written to storage outside the editor. If
+      // the Site editor's store was hydrated earlier this session, its in-memory
+      // `site` is now stale and `usePersistence`'s mount-load early-returns
+      // without refetching — so the editor would keep showing the pre-import
+      // framework ("stuck on variables only"). Signal a reload, matching every
+      // other out-of-editor site mutation (bundle import, plugin install, data
+      // edits). The in-editor applier doesn't need this — it mutates the store
+      // directly.
+      requestCmsSiteReload()
     },
   }
 
