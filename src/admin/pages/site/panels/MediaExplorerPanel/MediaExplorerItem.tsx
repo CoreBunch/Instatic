@@ -4,11 +4,10 @@ import { Button } from '@ui/components/Button'
 import { Image } from '@ui/components/Image'
 import { cn } from '@ui/cn'
 import type { IconComponent } from 'pixel-art-icons/types'
-import { FolderGlyphIcon } from 'pixel-art-icons/icons/folder-glyph'
 import { Image2SolidIcon } from 'pixel-art-icons/icons/image-2-solid'
 import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import type { MediaBucket, MediaViewMode } from './mediaExplorerModel'
-import { mediaBucket } from './mediaExplorerUtils'
+import { mediaMetaLabel } from './mediaExplorerUtils'
 import styles from '../SiteExplorerPanel/SiteExplorerPanel.module.css'
 
 // Shared shape for MediaExplorerRow (list view) and MediaExplorerTile (grid
@@ -143,15 +142,9 @@ export function MediaExplorerItemList({
   return assets.map((asset) => (
     <Renderer
       key={asset.id}
-      icon={
-        asset.mimeType.startsWith('video/')
-          ? VideoSolidIcon
-          : mediaBucket(asset.mimeType, asset.filename) === 'images'
-            ? Image2SolidIcon
-            : FolderGlyphIcon
-      }
+      icon={bucket === 'videos' ? VideoSolidIcon : Image2SolidIcon}
       label={asset.filename}
-      meta={asset.publicPath}
+      meta={mediaMetaLabel(asset)}
       ariaLabel={`Open media ${asset.filename}`}
       previewKind={bucket}
       previewAsset={asset}

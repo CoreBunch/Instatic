@@ -1,6 +1,7 @@
 import { rawReturn } from 'mutative'
 import type { StoreApi, UseBoundStore } from 'zustand'
 import type { EditorStore } from '@site/store/types'
+import type { ExplorerPanelTab } from '@site/store/slices/uiSlice'
 import {
   readWorkspaceLayout,
   writeWorkspaceLayout,
@@ -15,15 +16,14 @@ import {
 type EditorStoreApi = UseBoundStore<StoreApi<EditorStore>>
 
 export type SiteLayoutSelection = readonly [
-  domOpen: boolean,
+  explorerOpen: boolean,
   propertiesOpen: boolean,
-  siteOpen: boolean,
   selectorsOpen: boolean,
   frameworkOpen: boolean,
-  mediaOpen: boolean,
   dependenciesOpen: boolean,
   codeEditorOpen: boolean,
   agentOpen: boolean,
+  explorerTab: ExplorerPanelTab,
   propertiesMode: PropertiesPanelMode,
   leftSidebarWidth: number,
   propertiesWidth: number,
@@ -36,6 +36,15 @@ function boolOrCurrent(value: unknown, current: boolean): boolean {
 
 function finiteNumberOrCurrent(value: unknown, current: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : current
+}
+
+function explorerTab(
+  value: unknown,
+  current: ExplorerPanelTab,
+): ExplorerPanelTab {
+  return value === 'layers' || value === 'site' || value === 'code' || value === 'media'
+    ? value
+    : current
 }
 
 function propertiesMode(
@@ -55,15 +64,14 @@ function leftSidebarWidth(layout: StoredWorkspaceLayout, currentWidth: number): 
 
 export function selectSiteLayoutState(s: EditorStore): SiteLayoutSelection {
   return [
-    !s.domTreePanel.collapsed,
+    s.explorerPanelOpen,
     !s.propertiesPanel.collapsed,
-    s.siteExplorerPanelOpen,
     s.selectorsPanelOpen,
     s.frameworkPanelOpen,
-    s.mediaExplorerPanelOpen,
     s.dependenciesPanelOpen,
     s.codeEditorPanelOpen,
     s.isAgentOpen,
+    s.explorerPanelTab,
     s.propertiesPanelMode,
     s.leftSidebarWidth,
     s.propertiesPanel.width,
@@ -77,23 +85,19 @@ export function sameLayoutSelection<T extends readonly unknown[]>(a: T, b: T): b
 
 function deriveSiteActiveLeftPanel(selection: SiteLayoutSelection): string | null {
   const [
-    domOpen,
+    explorerOpen,
     ,
-    siteOpen,
     selectorsOpen,
     frameworkOpen,
-    mediaOpen,
     dependenciesOpen,
     ,
     agentOpen,
   ] = selection
 
-  if (siteOpen) return 'site'
+  if (explorerOpen) return 'explorer'
   if (selectorsOpen) return 'selectors'
   if (frameworkOpen) return 'framework'
-  if (mediaOpen) return 'media'
   if (dependenciesOpen) return 'dependencies'
-  if (domOpen) return 'layers'
   if (agentOpen) return 'agent'
   return null
 }
@@ -107,10 +111,9 @@ export function siteLayoutFromSelection(
     ,
     ,
     ,
-    ,
-    ,
     codeEditorOpen,
     ,
+    explorerTab,
     propertiesMode,
     leftSidebarWidth,
     propertiesWidth,
@@ -123,6 +126,7 @@ export function siteLayoutFromSelection(
     leftOpen: deriveSiteActiveLeftPanel(selection) !== null,
     rightOpen: propertiesOpen,
     activeLeftPanel: deriveSiteActiveLeftPanel(selection),
+    explorerPanelTab: explorerTab,
     activeEditorFileId,
     codeEditorPanelOpen: codeEditorOpen,
     propertiesPanelMode: propertiesMode,
@@ -140,14 +144,9 @@ export function restoreStoredSiteEditorLayout(
 
     const leftPanelPatch = applyLeftPanel
       ? {
-          domTreePanel: {
-            ...state.domTreePanel,
-            collapsed: storedActivePanel !== 'layers',
-          },
-          siteExplorerPanelOpen: storedActivePanel === 'site',
+          explorerPanelOpen: storedActivePanel === 'explorer',
           selectorsPanelOpen: storedActivePanel === 'selectors',
           frameworkPanelOpen: storedActivePanel === 'framework',
-          mediaExplorerPanelOpen: storedActivePanel === 'media',
           dependenciesPanelOpen: storedActivePanel === 'dependencies',
           isAgentOpen: storedActivePanel === 'agent',
         }
@@ -161,6 +160,7 @@ export function restoreStoredSiteEditorLayout(
       },
       propertiesPanelMode: propertiesMode(layout, state.propertiesPanelMode),
       leftSidebarWidth: leftSidebarWidth(layout, state.leftSidebarWidth),
+      explorerPanelTab: explorerTab(layout.explorerPanelTab, state.explorerPanelTab),
       codeEditorPanelOpen: boolOrCurrent(layout.codeEditorPanelOpen, state.codeEditorPanelOpen),
       activeEditorFileId: layout.activeEditorFileId !== undefined
         ? layout.activeEditorFileId

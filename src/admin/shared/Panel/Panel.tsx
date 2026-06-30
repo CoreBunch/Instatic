@@ -45,6 +45,10 @@ interface PanelProps {
   testId?: string
   /** Called when the close (✕) button is clicked. */
   onClose: () => void
+  /** When true, the header (title + close + actions) is omitted entirely —
+   *  used when an outer shell already owns the chrome, e.g. a panel rendered
+   *  as a tab body inside the consolidated ExplorerPanel. */
+  headerless?: boolean
   /** Optional extra action buttons rendered in the header between the
    *  title and the close button. */
   headerActions?: ReactNode
@@ -82,6 +86,7 @@ export function Panel({
   ariaLabel,
   testId,
   onClose,
+  headerless = false,
   headerActions,
   body = 'padded',
   bodyClassName,
@@ -102,14 +107,16 @@ export function Panel({
       onClick={(e) => e.stopPropagation()}
       className={cn(styles.panel, className)}
     >
-      <PanelHeader
-        panelId={panelId}
-        title={title}
-        titleContent={titleContent}
-        onClose={onClose}
-      >
-        {headerActions}
-      </PanelHeader>
+      {!headerless && (
+        <PanelHeader
+          panelId={panelId}
+          title={title}
+          titleContent={titleContent}
+          onClose={onClose}
+        >
+          {headerActions}
+        </PanelHeader>
+      )}
 
       <div
         ref={bodyRef}

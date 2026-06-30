@@ -1,47 +1,17 @@
-/* DomPanel — DOM tree panel (floating overlay, Guideline #356/#357/#318/#321) */
+/* DomPanel — the Layers tab body of the consolidated ExplorerPanel
+ * (Guideline #357/#318/#321). The Explorer shell owns chrome + positioning;
+ * this body simply fills the sidebar slot it is mounted in. */
 
 /* ── Panel shell ─────────────────────────────────────────────────────────── */
 .panel {
-    position: absolute;
-    /* Position driven by --panel-x / --panel-y CSS vars (useDraggablePanel) */
-    --panel-x: 16px;
-    --panel-y: 16px;
-    left: var(--panel-x);
-    top: var(--panel-y);
-    z-index: 50;
-    max-height: 80vh;
-    overflow: hidden;
+    position: relative;
     display: flex;
     flex-direction: column;
-    background: var(--bg-surface);
-    backdrop-filter: blur(var(--panel-blur));
-    border: 1px solid var(--overlay-10);
-    border-radius: 12px;
-    box-shadow: var(--shadow-panel);
-    transition: width 150ms ease-in-out;
-    outline: none;
-    will-change: transform;
-    transform: translateZ(0);
-    /* width is set via --panel-w CSS custom property (dynamic resizable state) */
-    width: var(--panel-w);
-}
-
-.panelDocked {
-    position: relative;
-    left: auto;
-    top: auto;
-    z-index: auto;
     width: 100%;
     height: 100%;
-    max-height: none;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-    backdrop-filter: none;
-    background: transparent;
-    transition: none;
-    will-change: auto;
-    transform: none;
+    min-height: 0;
+    overflow: hidden;
+    outline: none;
 }
 
 /* ── Search bar — match the 8px content inset used by every other docked
@@ -49,8 +19,22 @@
  *    DomPanel can't use the shared shell directly because it owns a custom
  *    scroll surface (the tree), but the spacing between header → search bar
  *    must stay aligned with Site / Selectors / Colors / Media etc. */
-.searchBar {
+/* Search + insert affordance share one row so the add button sits flush to
+ * the right of the search field — mirrors the Colors panel's `FilterBar`
+ * `searchTrailing` slot (same `--space-xs` gap, same centred alignment). The
+ * row owns the outer spacing; the SearchBar fills, the button keeps its
+ * intrinsic size. */
+.searchRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
     margin: var(--space-s) var(--space-s) 0;
+}
+
+.searchFill {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
 }
 
 /* ── Tree / scrollable content area ─────────────────────────────────────── */
@@ -67,7 +51,7 @@
 }
 
 .dragOverlayRow {
-    width: min(240px, var(--panel-w));
+    width: min(240px, 70vw);
     background: var(--bg-surface);
     border-radius: 12px;
     box-shadow: 0 8px 24px var(--scrim-30);

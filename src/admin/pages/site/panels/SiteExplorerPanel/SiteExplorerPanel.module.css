@@ -4,6 +4,21 @@
  * and section chrome that's reused by SiteExplorerPanel,
  * MediaExplorerPanel, and ContentExplorerPanel. */
 
+/* Bare panel body. SiteExplorerPanel no longer owns a Panel shell — the
+ * consolidated ExplorerPanel (or ContentPage) provides the chrome — so this
+ * wrapper supplies the scrollable, padded content column the shared
+ * `Panel body="bare"` used to give it. */
+.panelBody {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+    gap: var(--space-m);
+    padding: var(--space-s);
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
 .mediaViewGroup {
     display: flex;
     align-items: center;
@@ -193,17 +208,26 @@
     overflow: hidden;
 }
 
+/* One step up the surface scale on hover — matches the `.row:hover` lift
+ * used by every other row in this panel (transparent → --bg-surface). The
+ * shared Button ghost variant's default hover (--bg-surface-4) is several
+ * steps brighter than the tile's own resting tone, which read as a harsh
+ * jump against the white label text in `.mediaTileLabel`. */
+.mediaTile:hover {
+    background: var(--bg-surface-2);
+}
+
 .mediaTilePreview {
     display: grid;
     min-width: 0;
     min-height: 0;
-    /* Lock the preview slot to a 1:1 aspect ratio so:
-     *   - Loaded images render in a uniform square (cropped via object-fit)
+    /* Lock the preview slot to a 16:9 aspect ratio so:
+     *   - Loaded images/videos render uniformly (cropped via object-fit)
      *     instead of the variable heights they had previously.
      *   - The skeleton preview reserves the exact final size during loading,
      *     so the populated tile swap doesn't shift the surrounding tiles.
-     * Matches the MediaCanvas tile preview pattern. */
-    aspect-ratio: 1 / 1;
+     */
+    aspect-ratio: 16 / 9;
     width: 100%;
     place-items: center;
     overflow: hidden;

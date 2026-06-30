@@ -52,7 +52,7 @@ import styles from '../SiteExplorerPanel/SiteExplorerPanel.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
 interface MediaExplorerPanelProps {
-  variant?: 'docked'
+  variant?: 'docked' | 'tab'
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }
@@ -68,10 +68,8 @@ export function MediaExplorerPanel({
   open,
   onOpenChange,
 }: MediaExplorerPanelProps) {
-  const storeOpen = useEditorStore((s) => s.mediaExplorerPanelOpen)
-  const isOpen = open ?? storeOpen
+  const isOpen = open ?? variant === 'tab'
   const site = useEditorStore((s) => s.site)
-  const setMediaExplorerPanelOpen = useEditorStore((s) => s.setMediaExplorerPanelOpen)
   const updateNodeProps = useEditorStore((s) => s.updateNodeProps)
   const activePageId = useEditorStore((s) => s.activePageId)
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId)
@@ -123,11 +121,7 @@ export function MediaExplorerPanel({
   })()
 
   function closePanel() {
-    if (onOpenChange) {
-      onOpenChange(false)
-      return
-    }
-    setMediaExplorerPanelOpen(false)
+    onOpenChange?.(false)
   }
 
   useAutoFocusPanel(panelRef, isOpen)
@@ -160,7 +154,7 @@ export function MediaExplorerPanel({
     }
   }, [isOpen])
 
-  if (!isOpen || variant !== 'docked') return null
+  if (!isOpen) return null
 
   async function handleAssetUpload(e: ChangeEvent<HTMLInputElement>) {
     const pickedFiles = Array.from(e.target.files ?? [])
@@ -305,10 +299,11 @@ export function MediaExplorerPanel({
         title="Media"
         ariaLabel="Media Explorer"
         testId="media-explorer-panel"
+        headerless={variant === 'tab'}
         onClose={closePanel}
       >
         <FilterBar<MediaFilter>
-          items={(['all', 'images', 'videos', 'other'] as MediaFilter[]).map<FilterBarItem<MediaFilter>>((filter) => ({
+          items={(['all', 'images', 'videos'] as MediaFilter[]).map<FilterBarItem<MediaFilter>>((filter) => ({
             value: filter,
             label: filter === 'all' ? 'All' : BUCKET_LABELS[filter],
           }))}
@@ -384,27 +379,6 @@ export function MediaExplorerPanel({
             <MediaExplorerItemList
               assets={visibleCmsBuckets.videos}
               bucket="videos"
-              viewMode={viewMode}
-              onOpen={openMediaAssetPreview}
-              onContextMenu={openContextMenu}
-              onKeyDown={openKeyboardContextMenu}
-            />
-          </MediaExplorerSection>
-        )}
-
-        {shouldShowBucket('other') && (
-          <MediaExplorerSection
-            title="Other"
-            bucket="other"
-            viewMode={viewMode}
-            count={counts.other.length}
-            loading={mediaLoading}
-            emptyLabel={emptyLabel}
-            uploadAction={renderUploadAction()}
-          >
-            <MediaExplorerItemList
-              assets={visibleCmsBuckets.other}
-              bucket="other"
               viewMode={viewMode}
               onOpen={openMediaAssetPreview}
               onContextMenu={openContextMenu}

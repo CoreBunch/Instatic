@@ -99,15 +99,14 @@ function resetStore() {
     selectedNodeIds: [],
     hoveredNodeId: null,
     activeBreakpointId: 'desktop',
-    domTreePanel: { collapsed: false, x: 0, y: 0, width: 280 },
     propertiesPanel: { collapsed: false, x: 0, y: 0, width: 360 },
     propertiesPanelMode: 'docked',
     leftSidebarWidth: 320,
     focusedPanel: 'canvas',
-    siteExplorerPanelOpen: false,
+    explorerPanelOpen: true,
+    explorerPanelTab: 'layers',
     selectorsPanelOpen: false,
     frameworkPanelOpen: false,
-    mediaExplorerPanelOpen: false,
     codeEditorPanelOpen: false,
     activeEditorFileId: null,
     dependenciesPanelOpen: false,
@@ -339,7 +338,8 @@ describe('AdminCanvasLayout — persisted panel layout', () => {
             rightWidth: 390,
             rightOpen: true,
             propertiesPanelMode: 'floating',
-            activeLeftPanel: 'site',
+            activeLeftPanel: 'explorer',
+            explorerPanelTab: 'code',
             codeEditorPanelOpen: true,
             activeEditorFileId: 'file-1',
           },
@@ -352,15 +352,16 @@ describe('AdminCanvasLayout — persisted panel layout', () => {
 
     await waitFor(() => {
       const state = useEditorStore.getState()
-      expect(state.domTreePanel.collapsed).toBe(true)
+      expect(state.explorerPanelOpen).toBe(true)
+      expect(state.explorerPanelTab).toBe('code')
       expect(state.propertiesPanel.collapsed).toBe(false)
       expect(state.propertiesPanelMode).toBe('floating')
       expect(state.propertiesPanel.width).toBe(390)
       expect(state.leftSidebarWidth).toBe(410)
-      expect(state.siteExplorerPanelOpen).toBe(true)
-      expect(state.mediaExplorerPanelOpen).toBe(false)
       expect(state.codeEditorPanelOpen).toBe(true)
       expect(state.activeEditorFileId).toBe('file-1')
+      expect(state.selectorsPanelOpen).toBe(false)
+      expect(state.frameworkPanelOpen).toBe(false)
       expect(state.dependenciesPanelOpen).toBe(false)
       expect(state.isAgentOpen).toBe(false)
     }, { timeout: 150 })
@@ -378,16 +379,16 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
 
     const sidebar = await screen.findByTestId('left-sidebar')
     const rail = within(sidebar).getByRole('navigation', { name: /panel dock/i })
-    // Read-only callers see the navigation-style panels — Layers, Site
-    // Explorer and Media — but none of the structural / style / agent
-    // editing panels in the rail.
-    expect(within(rail).getByRole('button', { name: /close layers panel/i })).toBeDefined()
-    expect(within(rail).getByRole('button', { name: /open site panel/i })).toBeDefined()
-    expect(within(rail).getByRole('button', { name: /open media panel/i })).toBeDefined()
+    // Read-only callers see the consolidated Explorer panel (Layers / Pages /
+    // Media tabs) — but none of the structural / style / agent editing panels
+    // in the rail. Explorer is open by default, so its rail button reads
+    // "Close".
+    expect(within(rail).getByRole('button', { name: /close explorer panel/i })).toBeDefined()
     expect(within(rail).queryByRole('button', { name: /open selectors panel/i })).toBeNull()
     expect(within(rail).queryByRole('button', { name: /open colors panel/i })).toBeNull()
     expect(within(rail).queryByRole('button', { name: /open typography panel/i })).toBeNull()
     expect(within(rail).queryByRole('button', { name: /open spacing panel/i })).toBeNull()
+    expect(within(rail).queryByRole('button', { name: /open dependencies panel/i })).toBeNull()
     expect(within(rail).queryByRole('button', { name: /open ai assistant panel/i })).toBeNull()
 
     const tree = within(sidebar).getByRole('tree', { name: /page element tree/i })
@@ -405,10 +406,13 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
     fireEvent.keyDown(canvas, { key: 'Backspace' })
     expect(Object.keys(useEditorStore.getState().site?.pages[0]?.nodes ?? {})).toEqual(beforeNodeIds)
 
-    // Site Explorer is a navigation panel available to read-only callers — they
-    // can open it from the rail to browse the page roster, but not edit it.
-    fireEvent.click(within(rail).getByRole('button', { name: /open site panel/i }))
-    expect(useEditorStore.getState().siteExplorerPanelOpen).toBe(true)
+    // The Explorer panel is a navigation surface available to read-only
+    // callers — they can browse pages/media but not edit them. It is open by
+    // default; the rail button toggles it closed and back open.
+    fireEvent.click(within(rail).getByRole('button', { name: /close explorer panel/i }))
+    expect(useEditorStore.getState().explorerPanelOpen).toBe(false)
+    fireEvent.click(within(rail).getByRole('button', { name: /open explorer panel/i }))
+    expect(useEditorStore.getState().explorerPanelOpen).toBe(true)
   })
 
   it('does not render the deferred timeline shell or rail button', async () => {
@@ -419,46 +423,49 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
     expect(screen.queryByTestId('panel-rail-timeline')).toBeNull()
   })
 
-  it('renders a left panel rail that can toggle the Site panel', async () => {
+  it('renders a left panel rail that can toggle the Explorer panel', async () => {
     renderEditorLayout()
 
     const rail = await screen.findByRole('navigation', { name: /panel dock/i })
 
-    const siteButton = within(rail).getByRole('button', { name: /open site panel/i })
-    expect(siteButton.getAttribute('aria-pressed')).toBe('false')
+    // Explorer is open by default, so the rail button starts pressed.
+    const explorerButton = within(rail).getByRole('button', { name: /explorer panel/i })
+    expect(explorerButton.getAttribute('aria-pressed')).toBe('true')
     expect(within(rail).queryByRole('button', { name: /properties panel/i })).toBeNull()
     expect(within(rail).queryByRole('button', { name: /code editor/i })).toBeNull()
 
-    fireEvent.click(siteButton)
+    fireEvent.click(explorerButton)
 
-    expect(useEditorStore.getState().siteExplorerPanelOpen).toBe(true)
-    expect(siteButton.getAttribute('aria-pressed')).toBe('true')
+    expect(useEditorStore.getState().explorerPanelOpen).toBe(false)
+    expect(explorerButton.getAttribute('aria-pressed')).toBe('false')
   })
 
   it('keeps global AI access separated from the primary rail panels', async () => {
     renderEditorLayout()
 
     const rail = await screen.findByRole('navigation', { name: /panel dock/i })
-    const primaryButtons = within(screen.getByTestId('panel-rail-primary')).getAllByRole('button').slice(0, 5)
+    const primaryButtons = within(screen.getByTestId('panel-rail-primary')).getAllByRole('button')
     const globalButtons = within(screen.getByTestId('panel-rail-global')).getAllByRole('button')
 
     expect(primaryButtons.map((button) => button.getAttribute('data-testid'))).toEqual([
-      'panel-rail-layers',
-      'panel-rail-site',
+      'panel-rail-explorer',
       'panel-rail-framework',
       'panel-rail-selectors',
-      'panel-rail-media',
+      'panel-rail-dependencies',
     ])
     expect(primaryButtons.map((button) => button.getAttribute('data-icon'))).toEqual([
       'database-solid',
-      'files-stack-2',
       'colors-swatch',
       'paint-bucket',
-      'images',
+      'box-stack',
     ])
     const primaryAccents = primaryButtons.map((button) => button.getAttribute('data-accent'))
     expect(primaryAccents.every(Boolean)).toBe(true)
     expect(new Set(primaryAccents).size).toBe(primaryAccents.length)
+    // Explorer keeps the 'gold' accent the standalone Layers rail button
+    // used to resolve to — consolidating into one rail button shouldn't
+    // change its established color.
+    expect(primaryAccents[0]).toBe('gold')
     expect(globalButtons.map((button) => button.getAttribute('data-testid'))).toEqual(['panel-rail-agent'])
     expect(globalButtons[0]?.getAttribute('data-icon')).toBe('ai-settings-solid')
     expect(globalButtons[0]?.getAttribute('data-accent')).toBeTruthy()
@@ -479,51 +486,36 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
     const rail = within(sidebar).getByRole('navigation', { name: /panel dock/i })
 
     expect(sidebar.getAttribute('data-expanded')).toBe('true')
-    expect(sidebar.getAttribute('data-active-panel')).toBe('layers')
+    expect(sidebar.getAttribute('data-active-panel')).toBe('explorer')
     expect(sidebar.getAttribute('style')).toContain('--left-sidebar-panel-width: 320px')
     expect(within(sidebar).getByRole('separator', { name: /resize left sidebar/i })).toBeDefined()
+    // Explorer opens on the Layers tab by default, which mounts the DOM tree.
     expect(within(sidebar).getByLabelText('DOM tree panel')).toBeDefined()
 
-    fireEvent.click(within(rail).getByRole('button', { name: /open site panel/i }))
-
-    expect(sidebar.getAttribute('data-expanded')).toBe('true')
-    expect(sidebar.getAttribute('data-active-panel')).toBe('site')
-    expect(useEditorStore.getState().siteExplorerPanelOpen).toBe(true)
-    expect(useEditorStore.getState().dependenciesPanelOpen).toBe(false)
-    expect(useEditorStore.getState().domTreePanel.collapsed).toBe(true)
-    expect(useEditorStore.getState().isAgentOpen).toBe(false)
-    expect(within(sidebar).getByTestId('site-explorer-panel')).toBeDefined()
-    expect(within(sidebar).queryByTestId('deps-section')).toBeNull()
-
-    fireEvent.click(within(rail).getByRole('button', { name: /close site panel/i }))
+    fireEvent.click(within(rail).getByRole('button', { name: /close explorer panel/i }))
 
     expect(sidebar.getAttribute('data-expanded')).toBe('false')
     expect(sidebar.getAttribute('data-active-panel')).toBe('none')
     expect(sidebar.style.getPropertyValue('--left-sidebar-panel-width')).toBe('0px')
     expect(sidebar.style.getPropertyValue('--left-sidebar-panel-layout-width')).toBe('0px')
-    expect(useEditorStore.getState().siteExplorerPanelOpen).toBe(false)
+    expect(useEditorStore.getState().explorerPanelOpen).toBe(false)
 
     fireEvent.click(within(rail).getByRole('button', { name: /framework/i }))
 
     expect(sidebar.getAttribute('data-expanded')).toBe('true')
     expect(sidebar.getAttribute('data-active-panel')).toBe('framework')
     expect(useEditorStore.getState().frameworkPanelOpen).toBe(true)
-    expect(useEditorStore.getState().siteExplorerPanelOpen).toBe(false)
-    expect(useEditorStore.getState().mediaExplorerPanelOpen).toBe(false)
-    expect(useEditorStore.getState().domTreePanel.collapsed).toBe(true)
+    expect(useEditorStore.getState().explorerPanelOpen).toBe(false)
     expect(within(sidebar).getByTestId('framework-panel')).toBeDefined()
 
-    fireEvent.click(within(rail).getByRole('button', { name: /open media panel/i }))
+    fireEvent.click(within(rail).getByRole('button', { name: /open explorer panel/i }))
 
     expect(sidebar.getAttribute('data-expanded')).toBe('true')
-    expect(sidebar.getAttribute('data-active-panel')).toBe('media')
-    expect(useEditorStore.getState().mediaExplorerPanelOpen).toBe(true)
+    expect(sidebar.getAttribute('data-active-panel')).toBe('explorer')
+    expect(useEditorStore.getState().explorerPanelOpen).toBe(true)
     expect(useEditorStore.getState().frameworkPanelOpen).toBe(false)
-    expect(useEditorStore.getState().siteExplorerPanelOpen).toBe(false)
-    expect(useEditorStore.getState().dependenciesPanelOpen).toBe(false)
-    expect(useEditorStore.getState().domTreePanel.collapsed).toBe(true)
     expect(useEditorStore.getState().isAgentOpen).toBe(false)
-    expect(within(sidebar).getByTestId('media-explorer-panel')).toBeDefined()
+    expect(within(sidebar).getByTestId('explorer-panel')).toBeDefined()
 
     fireEvent.click(within(rail).getByRole('button', { name: /open dependencies panel/i }))
 
@@ -531,9 +523,7 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
     expect(sidebar.getAttribute('data-active-panel')).toBe('dependencies')
     expect(sidebar.getAttribute('style')).toContain('--left-sidebar-panel-width: 320px')
     expect(useEditorStore.getState().dependenciesPanelOpen).toBe(true)
-    expect(useEditorStore.getState().siteExplorerPanelOpen).toBe(false)
-    expect(useEditorStore.getState().mediaExplorerPanelOpen).toBe(false)
-    expect(useEditorStore.getState().domTreePanel.collapsed).toBe(true)
+    expect(useEditorStore.getState().explorerPanelOpen).toBe(false)
     expect(useEditorStore.getState().isAgentOpen).toBe(false)
     expect(within(sidebar).getByTestId('dependencies-panel')).toBeDefined()
     expect(within(sidebar).getByTestId('deps-section')).toBeDefined()
@@ -545,9 +535,7 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
     expect(sidebar.getAttribute('style')).toContain('--left-sidebar-panel-width: 320px')
     expect(useEditorStore.getState().isAgentOpen).toBe(true)
     expect(useEditorStore.getState().dependenciesPanelOpen).toBe(false)
-    expect(useEditorStore.getState().siteExplorerPanelOpen).toBe(false)
-    expect(useEditorStore.getState().mediaExplorerPanelOpen).toBe(false)
-    expect(useEditorStore.getState().domTreePanel.collapsed).toBe(true)
+    expect(useEditorStore.getState().explorerPanelOpen).toBe(false)
     expect(within(sidebar).getByTestId('agent-panel')).toBeDefined()
   })
 
@@ -616,7 +604,7 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
             leftWidth: 410,
             rightWidth: 420,
             rightOpen: true,
-            activeLeftPanel: 'site',
+            activeLeftPanel: 'explorer',
             propertiesPanelMode: 'docked',
           },
         },
@@ -658,6 +646,6 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
 
     // Properties lives in the right sidebar, never as a left-rail panel button.
     expect(within(rail).queryByRole('button', { name: /properties panel/i })).toBeNull()
-    expect(sidebar.getAttribute('data-active-panel')).toBe('layers')
+    expect(sidebar.getAttribute('data-active-panel')).toBe('explorer')
   })
 })

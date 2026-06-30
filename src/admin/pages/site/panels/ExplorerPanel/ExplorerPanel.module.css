@@ -1,0 +1,23 @@
+.tabsRow {
+    padding: var(--space-s) var(--space-s) 0;
+    flex: 0 0 auto;
+}
+
+/* The tab area fills the panel; each mounted tab owns its own scroll surface. */
+.tabBody {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.tabMount {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.tabMount[hidden] {
+    display: none;
+}

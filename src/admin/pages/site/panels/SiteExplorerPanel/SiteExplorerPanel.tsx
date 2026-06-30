@@ -1,10 +1,9 @@
-import { useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { useEditorStore } from '@site/store/store'
 import type { SiteFile } from '@core/files/schemas'
 import type { ExplorerPathChangePlan, Page, SiteExplorerSectionId, StructuralSiteExplorerSectionId } from '@core/page-tree'
 import { createUniquePageSlug, pagePublicPath, isHomePage } from '@core/page-tree'
 import { templateTargetLabel } from '@core/templates'
-import { Panel, useAutoFocusPanel } from '@admin/shared/Panel'
 import { SkeletonBlock } from '@ui/components/Skeleton'
 import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
 import { FolderGlyphIcon } from 'pixel-art-icons/icons/folder-glyph'
@@ -31,10 +30,14 @@ import { useSiteExplorerSelection, type SiteExplorerMenuSelection } from './site
 import { SiteExplorerContextMenu, type SiteExplorerContextMenuState } from './SiteExplorerContextMenu'
 import { SiteExplorerPathConfirmDialog } from './SiteExplorerPathConfirmDialog'
 import { SiteExplorerPanelSections } from './SiteExplorerPanelSections'
-import type { SiteExplorerAnySectionModel, SiteExplorerContextTarget } from './siteExplorerPanelTypes'
+import type { SiteExplorerAnySectionModel, SiteExplorerContextTarget, SiteExplorerSectionGroup } from './siteExplorerPanelTypes'
+import styles from './SiteExplorerPanel.module.css'
 
 interface SiteExplorerPanelProps {
-  variant?: 'docked'
+  /** Which group of sections to show — `site` (pages/templates/components)
+   *  or `code` (styles/scripts). A single instance serves both Explorer tabs,
+   *  switching this prop, so DnD + selection state stay shared. */
+  sectionGroup: SiteExplorerSectionGroup
   organizationDndEnabled?: boolean
 }
 
@@ -74,15 +77,13 @@ function renamedFolderPath(
 }
 
 export function SiteExplorerPanel({
-  variant = 'docked',
+  sectionGroup,
   organizationDndEnabled = false,
 }: SiteExplorerPanelProps) {
-  const isOpen = useEditorStore((s) => s.siteExplorerPanelOpen)
   const site = useEditorStore((s) => s.site)
   const activePageId = useEditorStore((s) => s.activePageId)
   const activeDocument = useEditorStore((s) => s.activeDocument)
   const activeEditorFileId = useEditorStore((s) => s.activeEditorFileId)
-  const setSiteExplorerPanelOpen = useEditorStore((s) => s.setSiteExplorerPanelOpen)
   const openPageInCanvas = useEditorStore((s) => s.openPageInCanvas)
   const setActiveDocument = useEditorStore((s) => s.setActiveDocument)
   const addPage = useEditorStore((s) => s.addPage)
@@ -113,14 +114,9 @@ export function SiteExplorerPanel({
   const [templateSettingsTarget, setTemplateSettingsTarget] = useState<Page | null>(null)
   const [pathConfirmPlan, setPathConfirmPlan] = useState<ExplorerPathChangePlan | null>(null)
   const explorerSelection = useSiteExplorerSelection<SiteExplorerContextTarget>()
-  const panelRef = useRef<HTMLElement>(null)
 
   const files = site?.files ?? EMPTY_FILES
   const fileBuckets = groupSiteFiles(files)
-
-  useAutoFocusPanel(panelRef, isOpen)
-
-  if (!isOpen || variant !== 'docked') return null
 
   function handleCreate({ name, slug }: SiteCreatePayload) {
     if (!createKind) return
@@ -576,85 +572,76 @@ export function SiteExplorerPanel({
 
   function renderPanel(explorerDnd: SiteExplorerDndState) {
     return (
-      <>
-      <Panel
-        ref={panelRef}
-        panelId="site-explorer"
-        title="Site"
-        ariaLabel="Site Explorer"
-        testId="site-explorer-panel"
-        onClose={() => setSiteExplorerPanelOpen(false)}
-      >
+      <div className={styles.panelBody} data-testid="site-explorer-panel">
         {!site ? (
-            <SkeletonBlock minHeight={160} ariaLabel="Loading site" />
-          ) : (
-            <SiteExplorerPanelSections
-              explorerDnd={explorerDnd}
-              pageTreeModel={pageTreeModel}
-              templateTreeModel={templateTreeModel}
-              componentTreeModel={componentTreeModel}
-              styleTreeModel={styleTreeModel}
-              scriptTreeModel={scriptTreeModel}
-              normalPageCount={normalPages.length}
-              templatePageCount={templatePages.length}
-              componentCount={components.length}
-              styleCount={fileBuckets.styles.length}
-              scriptCount={fileBuckets.scripts.length}
-              inlineRenameTargetForSection={inlineRenameSectionTarget}
-              selectedItemIdsForSection={(sectionId) => explorerSelection.selectedItemIdsForSection(sectionId)}
-              onCreatePage={() => setCreateKind('page')}
-              onCreateTemplate={handleCreateTemplate}
-              onCreateComponent={() => setCreateKind('component')}
-              onCreateStyle={() => setCreateKind('style')}
-              onCreateScript={() => setCreateKind('script')}
-              onCreateFolder={handleCreateFolder}
-              onRenameItem={renameExplorerItem}
-              onRenameFolder={renameExplorerFolderTarget}
-              onCommitInlineRename={handleInlineRename}
-              onCancelInlineRename={() => setInlineRenameTarget(null)}
-              onOpenItem={openExplorerItem}
-              onContextMenuItem={contextMenuForItem}
-              onKeyDownItem={keyboardContextMenuForItem}
-              onContextMenuFolder={(sectionId, folder, event) => openContextMenu(folderTarget(sectionId, folder), event)}
-              onKeyDownFolder={(sectionId, folder, event) => openKeyboardContextMenu(folderTarget(sectionId, folder), event)}
-            />
-          )}
-      </Panel>
-      {createKind && (
-        <SiteCreateDialog
-          kind={createKind}
-          pages={pages}
-          onCancel={() => setCreateKind(null)}
-          onCreate={handleCreate}
-        />
-      )}
-      {contextMenu && (
-        <SiteExplorerContextMenu
-          menu={contextMenu}
-          pageCount={pages.length}
-          extraItems={contextMenuItems(contextMenu)}
-          onClose={() => setContextMenu(null)}
-          onRename={() => startInlineRename(contextMenu.target)}
-          onDelete={() => handleDeleteContext(contextMenu)}
-        />
-      )}
-      {templateSettingsTarget && (
-        <TemplateSettingsDialog
-          page={templateSettingsTarget}
-          pages={pages}
-          onCancel={() => setTemplateSettingsTarget(null)}
-          onSave={handleSaveTemplateSettings}
-        />
-      )}
-      {pathConfirmPlan && (
-        <SiteExplorerPathConfirmDialog
-          plan={pathConfirmPlan}
-          onCancel={() => setPathConfirmPlan(null)}
-          onConfirm={handleConfirmPathChange}
-        />
-      )}
-
-      </>
+          <SkeletonBlock minHeight={160} ariaLabel="Loading site" />
+        ) : (
+          <SiteExplorerPanelSections
+            sectionGroup={sectionGroup}
+            explorerDnd={explorerDnd}
+            pageTreeModel={pageTreeModel}
+            templateTreeModel={templateTreeModel}
+            componentTreeModel={componentTreeModel}
+            styleTreeModel={styleTreeModel}
+            scriptTreeModel={scriptTreeModel}
+            normalPageCount={normalPages.length}
+            templatePageCount={templatePages.length}
+            componentCount={components.length}
+            styleCount={fileBuckets.styles.length}
+            scriptCount={fileBuckets.scripts.length}
+            inlineRenameTargetForSection={inlineRenameSectionTarget}
+            selectedItemIdsForSection={(sectionId) => explorerSelection.selectedItemIdsForSection(sectionId)}
+            onCreatePage={() => setCreateKind('page')}
+            onCreateTemplate={handleCreateTemplate}
+            onCreateComponent={() => setCreateKind('component')}
+            onCreateStyle={() => setCreateKind('style')}
+            onCreateScript={() => setCreateKind('script')}
+            onCreateFolder={handleCreateFolder}
+            onRenameItem={renameExplorerItem}
+            onRenameFolder={renameExplorerFolderTarget}
+            onCommitInlineRename={handleInlineRename}
+            onCancelInlineRename={() => setInlineRenameTarget(null)}
+            onOpenItem={openExplorerItem}
+            onContextMenuItem={contextMenuForItem}
+            onKeyDownItem={keyboardContextMenuForItem}
+            onContextMenuFolder={(sectionId, folder, event) => openContextMenu(folderTarget(sectionId, folder), event)}
+            onKeyDownFolder={(sectionId, folder, event) => openKeyboardContextMenu(folderTarget(sectionId, folder), event)}
+          />
+        )}
+        {createKind && (
+          <SiteCreateDialog
+            kind={createKind}
+            pages={pages}
+            onCancel={() => setCreateKind(null)}
+            onCreate={handleCreate}
+          />
+        )}
+        {contextMenu && (
+          <SiteExplorerContextMenu
+            menu={contextMenu}
+            pageCount={pages.length}
+            extraItems={contextMenuItems(contextMenu)}
+            onClose={() => setContextMenu(null)}
+            onRename={() => startInlineRename(contextMenu.target)}
+            onDelete={() => handleDeleteContext(contextMenu)}
+          />
+        )}
+        {templateSettingsTarget && (
+          <TemplateSettingsDialog
+            page={templateSettingsTarget}
+            pages={pages}
+            onCancel={() => setTemplateSettingsTarget(null)}
+            onSave={handleSaveTemplateSettings}
+          />
+        )}
+        {pathConfirmPlan && (
+          <SiteExplorerPathConfirmDialog
+            plan={pathConfirmPlan}
+            onCancel={() => setPathConfirmPlan(null)}
+            onConfirm={handleConfirmPathChange}
+          />
+        )}
+      </div>
     )
   }
 

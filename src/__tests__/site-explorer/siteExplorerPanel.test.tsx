@@ -20,8 +20,6 @@ function resetStore() {
     selectedNodeIds: [],
     hoveredNodeId: null,
     activeDocument: null,
-    siteExplorerPanelOpen: false,
-    mediaExplorerPanelOpen: false,
     codeEditorPanelOpen: false,
     activeEditorFileId: null,
     _historyPast: [],
@@ -125,7 +123,6 @@ function loadSite() {
       ],
     }),
     activePageId: 'page-home',
-    siteExplorerPanelOpen: true,
   } as Parameters<typeof useEditorStore.setState>[0])
 }
 
@@ -148,30 +145,44 @@ describe('SiteExplorerPanel', () => {
     expect(source).toContain('SiteCreateDialog')
   })
 
-  it('shows site concepts without media assets', () => {
+  it('Site group shows pages and components, not code files or media', () => {
     loadSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     const panel = screen.getByTestId('site-explorer-panel')
     expect(within(panel).getByRole('heading', { name: 'Pages' })).toBeDefined()
     expect(within(panel).getByRole('heading', { name: 'Components' })).toBeDefined()
-    expect(within(panel).getByRole('heading', { name: 'Styles' })).toBeDefined()
-    expect(within(panel).getByRole('heading', { name: 'Scripts' })).toBeDefined()
+    // Styles / Scripts live in the Code group; media assets never appear here.
+    expect(within(panel).queryByRole('heading', { name: 'Styles' })).toBeNull()
+    expect(within(panel).queryByRole('heading', { name: 'Scripts' })).toBeNull()
     expect(within(panel).queryByRole('heading', { name: 'Assets' })).toBeNull()
 
     expect(within(panel).getByRole('button', { name: /open page home/i })).toBeDefined()
     expect(within(panel).getByRole('button', { name: /open component herocard/i })).toBeDefined()
+    expect(within(panel).queryByText('theme.css')).toBeNull()
+    expect(within(panel).queryByText('analytics.ts')).toBeNull()
+    expect(within(panel).queryByText('logo.svg')).toBeNull()
+  })
+
+  it('Code group shows stylesheets and scripts, not pages or components', () => {
+    loadSite()
+    render(<SiteExplorerPanel sectionGroup="code" />)
+
+    const panel = screen.getByTestId('site-explorer-panel')
+    expect(within(panel).getByRole('heading', { name: 'Styles' })).toBeDefined()
+    expect(within(panel).getByRole('heading', { name: 'Scripts' })).toBeDefined()
+    expect(within(panel).queryByRole('heading', { name: 'Pages' })).toBeNull()
+    expect(within(panel).queryByRole('heading', { name: 'Components' })).toBeNull()
+
     expect(within(panel).getByText('theme.css')).toBeDefined()
     expect(within(panel).getByText('analytics.ts')).toBeDefined()
+    // Media assets (logo.svg) never surface in the source-file groups.
     expect(within(panel).queryByText('logo.svg')).toBeNull()
-
-    expect(within(panel).queryByText('src/pages/Index.tsx')).toBeNull()
-    expect(within(panel).queryByText('src/components/HeroCard.tsx')).toBeNull()
   })
 
   it('renders Pages as a tree with the homepage pinned first', () => {
     loadSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     const panel = screen.getByTestId('site-explorer-panel')
     const pagesTree = within(panel).getByRole('tree', { name: 'Pages' })
@@ -210,14 +221,17 @@ describe('SiteExplorerPanel', () => {
       })
     })
 
-    render(<SiteExplorerPanel variant="docked" />)
+    const { unmount } = render(<SiteExplorerPanel sectionGroup="site" />)
 
-    const panel = screen.getByTestId('site-explorer-panel')
-    const pagesTree = within(panel).getByRole('tree', { name: 'Pages' })
+    const sitePanel = screen.getByTestId('site-explorer-panel')
+    const pagesTree = within(sitePanel).getByRole('tree', { name: 'Pages' })
     expect(within(pagesTree).getByRole('button', { name: 'documentation' })).toBeDefined()
     expect(within(pagesTree).getByRole('button', { name: /open page setup/i })).toBeDefined()
+    unmount()
 
-    const scriptsTree = within(panel).getByRole('tree', { name: 'Scripts' })
+    render(<SiteExplorerPanel sectionGroup="code" />)
+    const codePanel = screen.getByTestId('site-explorer-panel')
+    const scriptsTree = within(codePanel).getByRole('tree', { name: 'Scripts' })
     expect(within(scriptsTree).getByRole('button', { name: 'assets' })).toBeDefined()
     expect(within(scriptsTree).getByRole('button', { name: 'js' })).toBeDefined()
   })
@@ -242,7 +256,7 @@ describe('SiteExplorerPanel', () => {
       }))
     })
 
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     const pagesTree = within(screen.getByTestId('site-explorer-panel')).getByRole('tree', { name: 'Pages' })
     fireEvent.contextMenu(within(pagesTree).getByRole('button', { name: 'documentation' }), {
@@ -283,7 +297,7 @@ describe('SiteExplorerPanel', () => {
       }))
     })
 
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     const pagesTree = within(screen.getByTestId('site-explorer-panel')).getByRole('tree', { name: 'Pages' })
     fireEvent.contextMenu(within(pagesTree).getByRole('button', { name: 'documentation' }), {
@@ -387,7 +401,7 @@ describe('SiteExplorerPanel', () => {
     loadSite()
     useEditorStore.getState().renamePage('page-pricing', 'Pricing', 'marketing/pricing')
 
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     const pagesTree = within(screen.getByTestId('site-explorer-panel')).getByRole('tree', { name: 'Pages' })
     expect(within(pagesTree).getByRole('treeitem', { name: 'marketing' })).toBeDefined()
@@ -399,7 +413,7 @@ describe('SiteExplorerPanel', () => {
     loadSite()
     useEditorStore.getState().addPage('About', 'about')
 
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     fireEvent.click(screen.getByRole('button', { name: /open page pricing/i }), { metaKey: true })
     fireEvent.click(screen.getByRole('button', { name: /open page about/i }), { metaKey: true })
@@ -412,7 +426,7 @@ describe('SiteExplorerPanel', () => {
     loadSite()
     useEditorStore.getState().addPage('About', 'about')
 
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     fireEvent.click(screen.getByRole('button', { name: /open page pricing/i }))
     fireEvent.click(screen.getByRole('button', { name: /open page about/i }), { shiftKey: true })
@@ -425,7 +439,7 @@ describe('SiteExplorerPanel', () => {
     loadSite()
     const footerId = useEditorStore.getState().createVisualComponent('FooterCard')
 
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     fireEvent.click(screen.getByRole('button', { name: /open component herocard/i }), { metaKey: true })
     fireEvent.click(screen.getByRole('button', { name: /open component footercard/i }), { metaKey: true })
@@ -446,7 +460,7 @@ describe('SiteExplorerPanel', () => {
     loadSite()
     useEditorStore.getState().addPage('About', 'about')
 
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     fireEvent.click(screen.getByRole('button', { name: /open page pricing/i }), { metaKey: true })
     fireEvent.click(screen.getByRole('button', { name: /open page about/i }), { metaKey: true })
@@ -468,7 +482,7 @@ describe('SiteExplorerPanel', () => {
     const folderPath = useEditorStore.getState().createExplorerFolder('pages', 'Marketing')
     useEditorStore.getState().moveStructuralExplorerRow('pages', { kind: 'folder', id: folderPath }, 1)
 
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     const pagesTree = within(screen.getByTestId('site-explorer-panel')).getByRole('tree', { name: 'Pages' })
     const rows = within(pagesTree).getAllByRole('treeitem')
@@ -491,12 +505,8 @@ describe('SiteExplorerPanel', () => {
     expect(source).toContain('uploadCmsMediaAsset')
   })
 
-  it('groups CMS media assets by image video and other categories', async () => {
+  it('groups CMS media assets by image and video categories, dropping non-media files', async () => {
     loadSite()
-    useEditorStore.setState({
-      siteExplorerPanelOpen: false,
-      mediaExplorerPanelOpen: true,
-    } as Parameters<typeof useEditorStore.setState>[0])
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({
@@ -508,57 +518,58 @@ describe('SiteExplorerPanel', () => {
       }), { status: 200 })) as typeof fetch
 
     try {
-      render(<MediaExplorerPanel variant="docked" />)
+      render(<MediaExplorerPanel variant="tab" />)
 
       const panel = screen.getByTestId('media-explorer-panel')
       expect(within(panel).getByRole('heading', { name: 'Images' })).toBeDefined()
       expect(within(panel).getByRole('heading', { name: 'Videos' })).toBeDefined()
-      expect(within(panel).getByRole('heading', { name: 'Other' })).toBeDefined()
+      expect(within(panel).queryByRole('heading', { name: 'Other' })).toBeNull()
       expect(await within(panel).findByRole('button', { name: /open media logo\.svg/i })).toBeDefined()
       expect(await within(panel).findByRole('button', { name: /open media intro\.mp4/i })).toBeDefined()
-      expect(await within(panel).findByRole('button', { name: /open media catalog\.pdf/i })).toBeDefined()
+      // Non-media files are dropped entirely — no "Other" bucket to land in.
+      expect(within(panel).queryByRole('button', { name: /open media catalog\.pdf/i })).toBeNull()
     } finally {
       globalThis.fetch = originalFetch
     }
   })
 
-  it('filters media by search text and switches between list and grid previews', async () => {
+  it('filters media by search text and defaults to the grid view, togglable to list', async () => {
     loadSite()
-    useEditorStore.setState({
-      siteExplorerPanelOpen: false,
-      mediaExplorerPanelOpen: true,
-    } as Parameters<typeof useEditorStore.setState>[0])
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({
         assets: [
           { id: 'media-image', filename: 'logo.svg', mimeType: 'image/svg+xml', sizeBytes: 12, publicPath: '/uploads/logo.svg', uploadedByUserId: null, createdAt: '2026-01-03T00:00:00.000Z' },
           { id: 'media-video', filename: 'intro.mp4', mimeType: 'video/mp4', sizeBytes: 24, publicPath: '/uploads/intro.mp4', uploadedByUserId: null, createdAt: '2026-01-03T00:00:00.000Z' },
-          { id: 'media-other', filename: 'catalog.pdf', mimeType: 'application/pdf', sizeBytes: 36, publicPath: '/uploads/catalog.pdf', uploadedByUserId: null, createdAt: '2026-01-03T00:00:00.000Z' },
         ],
       }), { status: 200 })) as typeof fetch
 
     try {
-      render(<MediaExplorerPanel variant="docked" />)
+      render(<MediaExplorerPanel variant="tab" />)
 
       const panel = screen.getByTestId('media-explorer-panel')
       await within(panel).findByRole('button', { name: /open media intro\.mp4/i })
+
+      // Grid is the default view — no prior list-mode preference stored.
+      expect(within(panel).getByRole('button', { name: /grid view/i }).getAttribute('aria-pressed')).toBe('true')
+      expect(within(panel).getByRole('button', { name: /list view/i }).getAttribute('aria-pressed')).toBe('false')
+      expect(within(panel).getByTestId('media-grid-images')).toBeDefined()
+      expect(within(panel).getByTestId('media-grid-videos')).toBeDefined()
+
       fireEvent.change(within(panel).getByRole('searchbox', { name: /search media/i }), {
         target: { value: 'intro' },
       })
 
       expect(within(panel).queryByRole('button', { name: /open media logo\.svg/i })).toBeNull()
       expect(within(panel).getByRole('button', { name: /open media intro\.mp4/i })).toBeDefined()
-      expect(within(panel).queryByRole('button', { name: /open media catalog\.pdf/i })).toBeNull()
 
       fireEvent.change(within(panel).getByRole('searchbox', { name: /search media/i }), {
         target: { value: '' },
       })
-      fireEvent.click(within(panel).getByRole('button', { name: /grid view/i }))
+      fireEvent.click(within(panel).getByRole('button', { name: /list view/i }))
 
-      expect(within(panel).getByRole('button', { name: /grid view/i }).getAttribute('aria-pressed')).toBe('true')
-      expect(within(panel).getByTestId('media-grid-images')).toBeDefined()
-      expect(within(panel).getByTestId('media-grid-videos')).toBeDefined()
+      expect(within(panel).getByRole('button', { name: /list view/i }).getAttribute('aria-pressed')).toBe('true')
+      expect(within(panel).queryByTestId('media-grid-images')).toBeNull()
     } finally {
       globalThis.fetch = originalFetch
     }
@@ -566,10 +577,6 @@ describe('SiteExplorerPanel', () => {
 
   it('copies asset URLs from the media context menu', async () => {
     loadSite()
-    useEditorStore.setState({
-      siteExplorerPanelOpen: false,
-      mediaExplorerPanelOpen: true,
-    } as Parameters<typeof useEditorStore.setState>[0])
     const originalFetch = globalThis.fetch
     const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
     let copied = ''
@@ -595,7 +602,7 @@ describe('SiteExplorerPanel', () => {
       }), { status: 200 })) as typeof fetch
 
     try {
-      render(<MediaExplorerPanel variant="docked" />)
+      render(<MediaExplorerPanel variant="tab" />)
 
       const mediaRow = await screen.findByRole('button', { name: /open media hero\.png/i })
       fireEvent.contextMenu(mediaRow, { clientX: 120, clientY: 140 })
@@ -644,8 +651,6 @@ describe('SiteExplorerPanel', () => {
     useEditorStore.setState({
       site,
       selectedNodeId: 'image-node',
-      siteExplorerPanelOpen: false,
-      mediaExplorerPanelOpen: true,
     } as Parameters<typeof useEditorStore.setState>[0])
 
     const originalFetch = globalThis.fetch
@@ -674,7 +679,7 @@ describe('SiteExplorerPanel', () => {
       }), { status: 200 })) as typeof fetch
 
     try {
-      render(<MediaExplorerPanel variant="docked" />)
+      render(<MediaExplorerPanel variant="tab" />)
 
       const imageRow = await screen.findByRole('button', { name: /open media hero\.png/i })
       fireEvent.contextMenu(imageRow, { clientX: 120, clientY: 140 })
@@ -698,10 +703,6 @@ describe('SiteExplorerPanel', () => {
 
   it('opens CMS media assets in the dedicated viewer window instead of navigating away', async () => {
     loadSite()
-    useEditorStore.setState({
-      siteExplorerPanelOpen: false,
-      mediaExplorerPanelOpen: true,
-    } as Parameters<typeof useEditorStore.setState>[0])
     const originalFetch = globalThis.fetch
     const originalOpen = window.open
     const openCalls: unknown[] = []
@@ -723,7 +724,7 @@ describe('SiteExplorerPanel', () => {
     }) as typeof window.open
 
     try {
-      render(<MediaExplorerPanel variant="docked" />)
+      render(<MediaExplorerPanel variant="tab" />)
 
       const mediaRow = await screen.findByRole('button', { name: /open media hero\.png/i })
       fireEvent.click(mediaRow)
@@ -739,15 +740,7 @@ describe('SiteExplorerPanel', () => {
     }
   })
 
-  it('keeps docked sidebars above the floating code editor', () => {
-    const editorBodySource = readFileSync(
-      new URL('../../admin/layouts/AdminCanvasLayout/AdminCanvasEditorBody.tsx', import.meta.url),
-      'utf-8',
-    )
-    const codeEditorMountIndex = editorBodySource.indexOf('<CodeEditorPanel />')
-    const rightSidebarMountIndex = editorBodySource.indexOf('<RightSidebar')
-    expect(codeEditorMountIndex).toBeGreaterThan(rightSidebarMountIndex)
-
+  it('floats the code editor above the docked sidebars', () => {
     const editorPanelCss = readFileSync(
       new URL('../../admin/pages/site/code-editor/CodeEditorPanel.module.css', import.meta.url),
       'utf-8',
@@ -767,12 +760,14 @@ describe('SiteExplorerPanel', () => {
       .flatMap((css) => [...css.matchAll(/z-index:\s*(\d+)/g)].map((match) => Number(match[1])))
 
     expect(panelRule).toContain('position: fixed;')
-    expect(Math.min(...sidebarZIndexes)).toBeGreaterThan(panelZIndex)
+    // The code editor is a focused, draggable surface — it must float OVER the
+    // docked Explorer panel / sidebars, not hide behind them.
+    expect(panelZIndex).toBeGreaterThan(Math.max(...sidebarZIndexes))
   })
 
   it('opens pages and components on the canvas from concept rows', () => {
     loadSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     fireEvent.click(screen.getByRole('button', { name: /open page pricing/i }))
     expect(useEditorStore.getState().activePageId).toBe('page-pricing')
@@ -795,7 +790,7 @@ describe('SiteExplorerPanel', () => {
     }) as typeof window.open
 
     try {
-      render(<SiteExplorerPanel variant="docked" />)
+      render(<SiteExplorerPanel sectionGroup="site" />)
 
       fireEvent.contextMenu(screen.getByRole('button', { name: /open page pricing/i }), {
         clientX: 120,
@@ -811,7 +806,7 @@ describe('SiteExplorerPanel', () => {
 
   it('creates pages with an editable slug through the site dialog', () => {
     loadSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     fireEvent.click(screen.getByRole('button', { name: 'New page' }))
 
@@ -839,7 +834,7 @@ describe('SiteExplorerPanel', () => {
 
   it('creates components through the simple site dialog', () => {
     loadSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     fireEvent.click(screen.getByRole('button', { name: 'New component' }))
 
@@ -863,7 +858,7 @@ describe('SiteExplorerPanel', () => {
 
   it('creates styles and scripts through the simple site dialog', () => {
     loadSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="code" />)
 
     fireEvent.click(screen.getByRole('button', { name: 'New stylesheet' }))
     let dialog = screen.getByRole('dialog', { name: 'New stylesheet' })
@@ -892,7 +887,7 @@ describe('SiteExplorerPanel', () => {
 
   it('renames and deletes pages from the site row context menu', () => {
     loadSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     fireEvent.contextMenu(screen.getByRole('button', { name: /open page pricing/i }), {
       clientX: 120,
@@ -922,7 +917,7 @@ describe('SiteExplorerPanel', () => {
 
   it('opens inline page rename from a double-clicked site row', () => {
     loadSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     fireEvent.doubleClick(screen.getByRole('button', { name: /open page pricing/i }))
 
@@ -931,7 +926,7 @@ describe('SiteExplorerPanel', () => {
 
   it('renames and deletes components from the site row context menu', () => {
     loadSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     fireEvent.contextMenu(screen.getByRole('button', { name: /open component herocard/i }), {
       clientX: 120,
@@ -961,7 +956,7 @@ describe('SiteExplorerPanel', () => {
 
   it('renames and deletes code files from the site row context menu', () => {
     loadSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="code" />)
 
     fireEvent.contextMenu(screen.getByRole('button', { name: /open theme\.css/i }), {
       clientX: 120,
@@ -990,7 +985,7 @@ describe('SiteExplorerPanel', () => {
 
   it('does not expose a drag-to-canvas handle on Component rows', () => {
     loadSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     const panel = screen.getByTestId('site-explorer-panel')
     expect(within(panel).queryByTestId('site-explorer-component-drag-handle')).toBeNull()
@@ -998,7 +993,7 @@ describe('SiteExplorerPanel', () => {
 
   it('clicking a Component row still navigates to VC edit', () => {
     loadSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     fireEvent.click(screen.getByRole('button', { name: /open component herocard/i }))
     expect(useEditorStore.getState().activeDocument).toEqual({
@@ -1009,10 +1004,6 @@ describe('SiteExplorerPanel', () => {
 
   it('renames and deletes CMS media assets from the media row context menu', async () => {
     loadSite()
-    useEditorStore.setState({
-      siteExplorerPanelOpen: false,
-      mediaExplorerPanelOpen: true,
-    } as Parameters<typeof useEditorStore.setState>[0])
     const originalFetch = globalThis.fetch
     const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
     globalThis.fetch = (async (input, init) => {
@@ -1047,7 +1038,7 @@ describe('SiteExplorerPanel', () => {
     }) as typeof fetch
 
     try {
-      render(<MediaExplorerPanel variant="docked" />)
+      render(<MediaExplorerPanel variant="tab" />)
 
       const mediaRow = await screen.findByRole('button', { name: /open media hero\.png/i })
       fireEvent.contextMenu(mediaRow, { clientX: 120, clientY: 140 })

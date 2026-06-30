@@ -7,9 +7,9 @@
  *   3. Empty state text shown when page has only root node
  *   4. Layers skeleton state when site is null
  *   5. data-panel attribute present (event propagation guard, Guideline #192)
- *   6. Toggle button aria-expanded reflects collapsed state
- *   7. Collapse toggle: panel collapses and focus moves to toggle button
- *   8. Tree container has role="tree" when page is loaded
+ *   6. Chrome ownership: DomPanel renders no header/close/collapse of its own
+ *      (the ExplorerPanel shell owns them)
+ *   7. Tree container has role="tree" when page is loaded
  *   9. Tree node rows have tabIndex=0 and role="treeitem" (Guideline #234)
  *  10. Tree node rows use shared 28px compact TreeRow height
  *  11. Tree node focus ring: boxShadow changes on focus/blur
@@ -51,7 +51,6 @@ function resetStore() {
     selectedNodeIds: [],
     hoveredNodeId: null,
     activeDocument: null,
-    domTreePanel: { collapsed: false, x: 0, y: 0, width: 280 },
     propertiesPanel: { collapsed: false, x: 0, y: 0, width: 280 },
     focusedPanel: 'canvas',
     _historyPast: [],
@@ -332,38 +331,20 @@ describe('DomPanel — data-panel attribute (Guideline #192)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 5 — Close button (replaced old collapse toggle)
-//     Panel now fully hides when collapsed=true — no icon strip.
-//     Header shows a close (✕) button that triggers toggleDomTreePanel.
+// 5 — Chrome ownership
+//     DomPanel is always mounted as the Layers tab body of ExplorerPanel,
+//     which owns the header (title + tabs + close button). DomPanel renders
+//     no chrome of its own — no close button, no collapse, no "Layers"
+//     heading. Visibility + the "Layers" tab label are covered by the
+//     full-layout integration test (editorLayoutPersistence.test.tsx).
 // ---------------------------------------------------------------------------
 
-describe('DomPanel — collapse toggle', () => {
-  it('close button is visible when panel is open', () => {
+describe('DomPanel — chrome ownership', () => {
+  it('renders no header chrome of its own (no close button, no Layers heading)', () => {
+    loadSite(true)
     render(<DomPanel />)
-    const btn = screen.getByRole('button', { name: /close layers panel/i })
-    expect(btn).toBeDefined()
-  })
-
-  it('clicking close button hides the panel (collapsed becomes true, renders null)', () => {
-    render(<DomPanel />)
-    const btn = screen.getByRole('button', { name: /close layers panel/i })
-    fireEvent.click(btn)
-    // After closing, the panel root is fully unmounted (collapsed=true → null)
-    expect(screen.queryByRole('complementary')).toBeNull()
-  })
-
-  it('panel renders nothing when collapsed=true (fully closed, no icon strip)', () => {
-    useEditorStore.setState({
-      domTreePanel: { collapsed: true, x: 0, y: 0, width: 280 },
-    } as Parameters<typeof useEditorStore.setState>[0])
-    render(<DomPanel />)
-    // Panel is fully unmounted — no complementary landmark or strip
-    expect(screen.queryByRole('complementary')).toBeNull()
-  })
-
-  it('"Layers" heading is visible when panel is expanded', () => {
-    render(<DomPanel />)
-    expect(screen.getByText('Layers')).toBeDefined()
+    expect(screen.queryByRole('button', { name: /close layers panel/i })).toBeNull()
+    expect(screen.queryByText('Layers')).toBeNull()
   })
 })
 

@@ -23,7 +23,6 @@ Catalog of every `localStorage` / `sessionStorage` key the admin app writes, and
 | `instatic-editor-layout-v2`                     | Per-workspace sidebar widths + open states (site / content / data / media) and floating panel positions | `src/admin/state/workspaceLayoutStorage.ts` → `EDITOR_LAYOUT_STORAGE_KEY` |
 | `instatic-clipboard-v1`                         | The editor clipboard (copy / cut / paste of layer subtrees)            | `src/admin/pages/site/store/clipboard/clipboardStorage.ts` → `CLIPBOARD_STORAGE_KEY` |
 | `instatic-class-usage`                          | Recently-used classes in the ClassPicker autocomplete                 | `src/admin/pages/site/preferences/classUsage.ts` → `CLASS_USAGE_STORAGE_KEY` |
-| `instatic-dom-panel`                            | DOM panel collapse / expand state per node                            | `src/admin/pages/site/panels/DomPanel/DomPanel.tsx`             |
 | `instatic-data-grid-primary-widths-v1`          | Per-table primary-column widths in the Data workspace grid            | `src/admin/pages/data/components/DataGrid/usePrimaryColumnWidth.ts` |
 | `instatic-media-page-view-mode`                 | Media workspace view mode (grid / list / large thumbs)                | `src/admin/pages/media/components/MediaCanvas/MediaCanvas.tsx`   |
 | `instatic-media-explorer-view-mode`             | Media Explorer panel view mode (site workspace)                       | `src/admin/pages/site/panels/MediaExplorerPanel/mediaExplorerUtils.ts` → `VIEW_MODE_STORAGE_KEY` |

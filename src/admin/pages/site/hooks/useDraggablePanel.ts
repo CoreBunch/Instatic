@@ -13,7 +13,7 @@
  *
  * Usage:
  *   const { panelRef, headerDragProps, panelPositionStyle } = useDraggablePanel(
- *     'dom',                    // ← panelId, NOT a raw localStorage key
+ *     'properties',             // ← panelId, NOT a raw localStorage key
  *     () => ({ x: 16, y: 16 }),
  *   )
  *   <div ref={panelRef} style={{ ...panelPositionStyle, '--panel-w': `${width}px` }}>

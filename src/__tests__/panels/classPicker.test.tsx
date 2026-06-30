@@ -39,7 +39,6 @@ function resetStore() {
     activeBreakpointId: 'desktop',
     activeClassId: null,
     previewClassAssignment: null,
-    domTreePanel: { collapsed: false, x: 0, y: 0, width: 280 },
     propertiesPanel: { collapsed: false, x: 0, y: 0, width: 280 },
     focusedPanel: 'canvas',
     _historyPast: [],
