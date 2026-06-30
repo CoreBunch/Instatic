@@ -88,11 +88,6 @@ interface FrameworkManagerDialogProps {
   onApplied?: () => void
 }
 
-/** Default selection when opening: the current state, or 'full' when there's nothing yet. */
-function defaultTarget(currentState: FrameworkPreset): FrameworkPreset {
-  return currentState === 'none' ? 'full' : currentState
-}
-
 export function FrameworkManagerDialog({
   open,
   onClose,
@@ -101,7 +96,8 @@ export function FrameworkManagerDialog({
   usedFrameworkClassCount,
   onApplied,
 }: FrameworkManagerDialogProps) {
-  const [target, setTarget] = useState<FrameworkPreset>(() => defaultTarget(currentState))
+  // Preselect the framework's actual current state, not a fixed default.
+  const [target, setTarget] = useState<FrameworkPreset>(currentState)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmingRemove, setConfirmingRemove] = useState(false)
@@ -115,7 +111,7 @@ export function FrameworkManagerDialog({
   if (open !== wasOpen) {
     setWasOpen(open)
     if (open) {
-      setTarget(defaultTarget(currentState))
+      setTarget(currentState)
       setConfirmingRemove(false)
       setError(null)
     }
