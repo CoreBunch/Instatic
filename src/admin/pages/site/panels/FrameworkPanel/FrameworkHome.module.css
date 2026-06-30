@@ -147,7 +147,7 @@
 
 .specimenTitle {
     font-family: var(--specimen-title);
-    font-size: 2.25rem;
+    font-size: calc(var(--text-6xl) * 0.85);
     font-weight: 700;
     line-height: 1;
     letter-spacing: -0.025em;
