@@ -122,39 +122,37 @@ export function ColorsPanelBody() {
 
   return (
     <>
-      <div className={styles.toolbar}>
-        <div className={styles.toolbarFilter}>
-          <FilterBar<string | null>
-            items={[
-              { value: null, label: 'All' },
-              ...categories.map<FilterBarItem<string | null>>((category) => ({
-                value: category,
-                label: category,
-              })),
-            ]}
-            value={effectiveActiveCategory}
-            onValueChange={setActiveCategory}
-            search={{
-              value: query,
-              onValueChange: setQuery,
-              onClear: () => setQuery(''),
-              placeholder: 'Search colors',
-              ariaLabel: 'Search colors',
-            }}
-            groupLabel="Color categories"
-          />
-        </div>
-        <Button
-          variant="ghost"
-          size="xs"
-          iconOnly
-          aria-label="Create color"
-          tooltip="Create color"
-          onClick={() => setCreateDialogOpen(true)}
-        >
-          <FilePlusSolidIcon size={13} aria-hidden="true" />
-        </Button>
-      </div>
+      <FilterBar<string | null>
+        items={[
+          { value: null, label: 'All' },
+          ...categories.map<FilterBarItem<string | null>>((category) => ({
+            value: category,
+            label: category,
+          })),
+        ]}
+        value={effectiveActiveCategory}
+        onValueChange={setActiveCategory}
+        search={{
+          value: query,
+          onValueChange: setQuery,
+          onClear: () => setQuery(''),
+          placeholder: 'Search colors',
+          ariaLabel: 'Search colors',
+        }}
+        searchTrailing={
+          <Button
+            variant="secondary"
+            size="sm"
+            iconOnly
+            aria-label="Create color"
+            tooltip="Create color"
+            onClick={() => setCreateDialogOpen(true)}
+          >
+            <FilePlusSolidIcon size={13} aria-hidden="true" />
+          </Button>
+        }
+        groupLabel="Color categories"
+      />
 
       {colors.tokens.length === 0 ? (
         <EmptyState
