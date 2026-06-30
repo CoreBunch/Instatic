@@ -522,9 +522,9 @@ Opens the rail-selected panel:
 - `DomPanel` — layer tree of the current page
 - `SiteExplorerPanel` — pages and components roster
 - `MediaExplorerPanel` — quick media insert
-- `ColorsPanel`, `TypographyPanel`, `SpacingPanel` — site-level design tokens
-- `DependenciesPanel` — site package.json / `bun install`
+- `FrameworkPanel` — site-level design tokens (the Core Framework) in one panel with **Overview / Colors / Type / Space** tabs. Its "Manage framework" button opens `FrameworkManagerDialog`, a declarative state picker (Full framework / Variables only / None) that reconciles the framework to the chosen target. Sits **above** Selectors in the rail.
 - `SelectorsPanel` — CSS class library
+- `DependenciesPanel` — site package.json / `bun install`
 - `PluginEditorPanel` — plugin-provided editor panels
 - `AgentPanel` — AI assistant
 
@@ -541,7 +541,7 @@ Property controls are driven by the selected node's module schema (`src/core/mod
 
 At the top of the Properties Panel, the selector picker is the single entry point for CSS rules that affect the selected element. Assigned class rules render as removable `TagPill` chips and are stored on `node.classIds`; matching ambient rules render as non-removable `TagPill` chips because they apply by selector matching, not assignment. Ambient rules that match only through a universal subject (`*`, `body.x *`, `*::before`) never render as pills — they style every element in their scope and stay reachable through the dropdown and the Selectors panel instead. The dropdown searches both class rules and ambient selectors, is capped to the picker width budget, and ellipsizes long selector labels instead of expanding across the editor. Ambient rows that do not match the selected canvas element stay visible but disabled with the mismatch reason, and selector-shaped input such as `.hero .title`, `h1`, or `a:hover` creates an ambient rule instead of a class.
 
-The Typography panel stores Google/custom font assets and editable font tokens together under `site.settings.fonts`. Installed font assets own the self-hosted `@font-face` files; font tokens own the builder-facing variables such as `--font-primary`, the assigned font asset, and the fallback stack. The property-panel `font-family` control is a rich picker: token rows write `var(--font-primary)` so the selected node or class keeps following future token swaps, direct font rows write a concrete family stack as an escape hatch, and the text input still accepts manual values.
+The Framework panel's **Type** tab stores Google/custom font assets and editable font tokens together under `site.settings.fonts`. Installed font assets own the self-hosted `@font-face` files; font tokens own the builder-facing variables such as `--font-primary`, the assigned font asset, and the fallback stack. The property-panel `font-family` control is a rich picker: token rows write `var(--font-primary)` so the selected node or class keeps following future token swaps, direct font rows write a concrete family stack as an escape hatch, and the text input still accepts manual values.
 
 When the user clicks a rule in the Selectors Panel, the Properties Panel switches to **selector-editing mode** — the body shows style controls for that rule directly, and the header renders `SelectorHeader` with the rule's CSS selector, an inline rename input, and a delete button. The delete and rename actions are only shown for non-generated rules and require `site.style.edit`.
 
