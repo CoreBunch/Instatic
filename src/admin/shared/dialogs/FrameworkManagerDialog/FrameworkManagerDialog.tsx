@@ -153,8 +153,12 @@ export function FrameworkManagerDialog({
   }
 
   const removing = target === 'none'
-  const noChange = target === currentState
+  const sameState = target === currentState
   const hasFramework = currentState !== 'none'
+  // Only "None when there's no framework" is a true no-op. Re-picking the
+  // current full / variables state still merges any missing preset tokens
+  // (e.g. colors you never added), so it stays actionable.
+  const nothingToDo = removing && currentState === 'none'
 
   const visibleStates = STATES.filter(
     (option) => option.id !== 'none' || applier.capabilities.canRemove,
@@ -168,9 +172,10 @@ export function FrameworkManagerDialog({
 
   function applyLabel(): string {
     if (busy) return removing ? 'Removing…' : 'Applying…'
-    if (noChange) return 'Up to date'
+    if (nothingToDo) return 'Up to date'
     if (removing) return 'Remove framework'
     if (currentState === 'none') return 'Import framework'
+    if (sameState) return 'Add missing tokens'
     return 'Update framework'
   }
 
@@ -253,7 +258,7 @@ export function FrameworkManagerDialog({
           variant={removing ? 'destructive' : 'primary'}
           className={styles.applyButton}
           onClick={handleApply}
-          disabled={busy || noChange}
+          disabled={busy || nothingToDo}
         >
           {applyLabel()}
         </Button>
