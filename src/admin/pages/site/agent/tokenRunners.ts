@@ -185,7 +185,7 @@ export function runSetTypeScale(rawInput: unknown): AiToolOutput {
   store.updateFrameworkTypographyGroup(groupId, {
     ...(input.namingConvention !== undefined
       ? { namingConvention: input.namingConvention }
-      : groupAlias
+      : action === 'created' && groupAlias
         ? { namingConvention: groupAlias }
         : {}),
     ...(input.steps !== undefined ? { steps: input.steps } : {}),
@@ -231,7 +231,7 @@ export function runSetSpacingScale(rawInput: unknown): AiToolOutput {
   store.updateFrameworkSpacingGroup(groupId, {
     ...(input.namingConvention !== undefined
       ? { namingConvention: input.namingConvention }
-      : groupAlias
+      : action === 'created' && groupAlias
         ? { namingConvention: groupAlias }
         : {}),
     ...(input.steps !== undefined ? { steps: input.steps } : {}),

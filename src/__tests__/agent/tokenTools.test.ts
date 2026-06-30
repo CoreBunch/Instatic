@@ -144,6 +144,23 @@ describe('executeAgentTool — set_type_scale', () => {
     expect(data.generatedVars).toEqual(['--text-s', '--text-m', '--text-l'])
   })
 
+  it('does not rename an existing group prefix when targeted by an alias', async () => {
+    freshStore()
+    // Seed a group whose prefix is itself an alias word.
+    await executeAgentTool('site_set_type_scale', { namingConvention: 'typography', steps: 's,m' })
+
+    // The model targets it by that prefix and updates only the steps.
+    const result = await executeAgentTool('site_set_type_scale', { groupId: 'typography', steps: 's,m,l' })
+
+    const data = expectData<{ action: string; namingConvention: string; generatedVars: string[] }>(result)
+    expect(data.action).toBe('updated')
+    // The prefix must stay 'typography' — the alias must not rewrite it to 'text'.
+    expect(data.namingConvention).toBe('typography')
+    expect(data.generatedVars).toEqual(['--typography-s', '--typography-m', '--typography-l'])
+    // And no duplicate group is minted.
+    expect(site().settings.framework!.typography!.groups).toHaveLength(1)
+  })
+
   it('errors when groupId targets a non-existent group', async () => {
     freshStore()
     const result = await executeAgentTool('site_set_type_scale', { groupId: 'nope', steps: 's,m' })
