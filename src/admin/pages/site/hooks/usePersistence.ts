@@ -57,6 +57,7 @@ import {
   CMS_SITE_RELOAD_EVENT,
   EDITOR_SAVE_REQUEST_EVENT,
   consumePendingCmsSiteReload,
+  hasPendingCmsSiteReload,
 } from '@admin/state/adminEvents'
 
 export interface PersistenceSaveStatus {
@@ -183,8 +184,9 @@ export function usePersistence(
         setHasUnsavedChanges,
       } = useEditorStore.getState()
 
+      const pendingCmsSiteReload = hasPendingCmsSiteReload()
       const shouldReloadExistingSite = existingSite
-        ? consumePendingCmsSiteReload() || siteMissesEditorDataDeepLink(existingSite)
+        ? pendingCmsSiteReload || siteMissesEditorDataDeepLink(existingSite)
         : false
 
       if (existingSite && !shouldReloadExistingSite) {
@@ -205,6 +207,7 @@ export function usePersistence(
           // Constraint #230 is satisfied at the adapter boundary.
           const site = await adapterRef.current.loadSite(idToTry)
           if (site && !cancelled) {
+            if (pendingCmsSiteReload) consumePendingCmsSiteReload()
             syncedPageIdsRef.current = site.pages.map((p) => p.id)
             loadSite(site)
             applyDefaultBreakpointPreference(site.breakpoints)
@@ -226,6 +229,7 @@ export function usePersistence(
       }
 
       if (cancelled) return
+      if (pendingCmsSiteReload) consumePendingCmsSiteReload()
 
       if (existingSite) {
         loadedRef.current = true
@@ -272,10 +276,14 @@ export function usePersistence(
 
     async function reload() {
       const idToTry = requestedSiteId || 'default'
+      const pendingCmsSiteReload = hasPendingCmsSiteReload()
       try {
         // Adapter validates internally (Constraint #230).
         const site = await adapterRef.current.loadSite(idToTry)
-        if (!site) return
+        if (!site) {
+          if (pendingCmsSiteReload) consumePendingCmsSiteReload()
+          return
+        }
         const { loadSite, setHasUnsavedChanges } = useEditorStore.getState()
         syncedPageIdsRef.current = site.pages.map((p) => p.id)
         loadSite(site)
@@ -283,6 +291,7 @@ export function usePersistence(
         // The site doc on disk is now authoritative; clear the unsaved flag so
         // the auto-save loop doesn't immediately overwrite it back.
         setHasUnsavedChanges(false)
+        if (pendingCmsSiteReload) consumePendingCmsSiteReload()
         setSaveStatus({ state: 'saved', lastSavedAt: Date.now() })
       } catch (err) {
         console.error('[persistence] Reload after pack install failed:', err)
@@ -290,7 +299,6 @@ export function usePersistence(
     }
 
     function handleReload() {
-      consumePendingCmsSiteReload()
       void reload()
     }
 

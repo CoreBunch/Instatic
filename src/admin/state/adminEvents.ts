@@ -35,6 +35,10 @@ export function requestCmsSiteReload(): void {
   }
 }
 
+export function hasPendingCmsSiteReload(): boolean {
+  return cmsSiteReloadPending
+}
+
 export function consumePendingCmsSiteReload(): boolean {
   if (!cmsSiteReloadPending) return false
   cmsSiteReloadPending = false

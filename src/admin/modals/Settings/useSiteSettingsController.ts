@@ -44,7 +44,7 @@ import type { SiteDocument, SiteSettings } from '@core/page-tree'
 import type { FrameworkPreferencesSettings } from '@core/framework-schema'
 import { useEditorStore } from '@site/store/store'
 import { useAdminUi } from '@admin/state/adminUi'
-import { CMS_SITE_RELOAD_EVENT } from '@admin/state/adminEvents'
+import { requestCmsSiteReload } from '@admin/state/adminEvents'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
 const SITE_ID = 'default'
@@ -97,7 +97,7 @@ const useSettingsDraftStore = create<SettingsDraftState>((set, get) => {
           name: next.name,
           faviconUrl: next.settings.faviconUrl ?? null,
         })
-        window.dispatchEvent(new Event(CMS_SITE_RELOAD_EVENT))
+        requestCmsSiteReload()
       })
       .catch((err: unknown) => {
         console.error('[useSiteSettingsController] failed to save site settings:', err)

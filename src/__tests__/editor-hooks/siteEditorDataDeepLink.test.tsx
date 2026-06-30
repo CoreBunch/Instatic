@@ -8,6 +8,7 @@ import { makeNode, makePage, makeSite } from '../fixtures'
 import type { SiteDocument } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import type { IPersistenceAdapter } from '@core/persistence/types'
+import { buildCoreFrameworkSettings } from '@core/framework'
 
 afterEach(cleanup)
 
@@ -66,6 +67,25 @@ function makeAdapter(site: SiteDocument): IPersistenceAdapter & { loadCount: () 
     },
     async saveSite() {},
     loadCount: () => loads,
+  }
+}
+
+function makeControlledAdapter(
+  site: SiteDocument,
+): IPersistenceAdapter & { loadCount: () => number; resolveNextLoad: () => void } {
+  let loads = 0
+  const resolvers: Array<() => void> = []
+  return {
+    async loadSite() {
+      loads += 1
+      await new Promise<void>((resolve) => resolvers.push(resolve))
+      return site
+    },
+    async saveSite() {},
+    loadCount: () => loads,
+    resolveNextLoad: () => {
+      resolvers.shift()?.()
+    },
   }
 }
 
@@ -134,6 +154,43 @@ describe('Site editor Data workspace deep links', () => {
           (component) => component.id === 'component-pending-reload',
         ),
       ).toBe(true)
+    })
+  })
+
+  it('retains a pending CMS site reload when a mount is cancelled before the fresh site hydrates', async () => {
+    const staleSite = makeEditorSite([])
+    const freshSite = makeEditorSite([])
+    freshSite.settings.framework = buildCoreFrameworkSettings({ includeUtilities: true })
+    const adapter = makeControlledAdapter(freshSite)
+
+    useEditorStore.setState({
+      site: staleSite,
+      activePageId: 'page-home',
+      hasUnsavedChanges: false,
+    } as Parameters<typeof useEditorStore.setState>[0])
+    requestCmsSiteReload()
+
+    const firstMount = renderHook(() => usePersistence('default', adapter, { enabled: true }))
+    await waitFor(() => {
+      expect(adapter.loadCount()).toBe(1)
+    })
+    firstMount.unmount()
+    adapter.resolveNextLoad()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    await waitFor(() => {
+      expect(useEditorStore.getState().site?.settings.framework).toBeUndefined()
+    })
+
+    renderHook(() => usePersistence('default', adapter, { enabled: true }))
+
+    await waitFor(() => {
+      expect(adapter.loadCount()).toBe(2)
+    })
+    adapter.resolveNextLoad()
+
+    await waitFor(() => {
+      expect(useEditorStore.getState().site?.settings.framework).toBeDefined()
     })
   })
 })
