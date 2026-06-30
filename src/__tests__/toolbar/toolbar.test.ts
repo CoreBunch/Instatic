@@ -327,22 +327,24 @@ describe('PublishButton — publish state machine', () => {
     expect(src).toContain("role={toast.tone === 'alert' ? 'alert' : 'status'}")
   })
 
-  it('source uses aria-busy during publish', () => {
+  it('source drives aria-busy during publish (via SplitButton busy prop)', () => {
     const { readFileSync } = require('fs')
     const src = readFileSync(
       new URL('../../admin/pages/site/toolbar/PublishActionGroup.tsx', import.meta.url),
       'utf-8',
     )
-    expect(src).toContain('aria-busy={publishBusy}')
+    // SplitButton applies aria-busy to the primary button from its `busy` prop.
+    expect(src).toContain('busy={publishBusy}')
   })
 
-  it('publish button has data-testid for Playwright targeting', () => {
+  it('publish button has data-testid for Playwright targeting (via SplitButton)', () => {
     const { readFileSync } = require('fs')
     const src = readFileSync(
       new URL('../../admin/pages/site/toolbar/PublishActionGroup.tsx', import.meta.url),
       'utf-8',
     )
-    expect(src).toContain('data-testid="toolbar-publish-btn"')
+    // SplitButton renders data-testid="toolbar-publish-btn" on the primary button.
+    expect(src).toContain('primaryTestId="toolbar-publish-btn"')
   })
 
   it('saves the current draft before calling the CMS publish endpoint', () => {
@@ -509,12 +511,13 @@ describe('Toolbar — structural requirements', () => {
     )
     expect(zoomSrc).toContain('data-testid="toolbar-zoom-controls"')
 
-    // Publishing split-button testids
+    // Publishing split-button testids — passed to SplitButton, which renders
+    // them as data-testid on the chevron trigger and the menu.
     const publishingSrc = readFileSync(
       new URL('../../admin/pages/site/toolbar/PublishActionGroup.tsx', import.meta.url), 'utf-8',
     )
-    expect(publishingSrc).toContain('data-testid="toolbar-publish-actions-trigger"')
-    expect(publishingSrc).toContain('data-testid="toolbar-publish-actions-menu"')
+    expect(publishingSrc).toContain('menuTriggerTestId="toolbar-publish-actions-trigger"')
+    expect(publishingSrc).toContain('menuTestId="toolbar-publish-actions-menu"')
   })
 
   it('ModulePicker uses ContextMenu primitives (role="menu" + role="menuitem")', () => {
