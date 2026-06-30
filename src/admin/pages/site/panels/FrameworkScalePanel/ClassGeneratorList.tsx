@@ -49,6 +49,9 @@ export function ClassGeneratorList<C extends GeneratorShape>({
   return (
     <div className={styles.classGenerator} aria-label="Class generator">
       <header className={styles.classGeneratorHeader}>
+        <p className={styles.classGeneratorHint}>
+          Turn the sizes above into reusable utility classes you can apply across your site.
+        </p>
         <Button variant="secondary" size="sm" onClick={handleAdd}>
           Generate utility
         </Button>

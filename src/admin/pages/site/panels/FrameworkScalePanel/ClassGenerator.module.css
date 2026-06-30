@@ -10,8 +10,18 @@
 
 .classGeneratorHeader {
     display: flex;
-    justify-content: flex-end;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-xs);
+}
+
+.classGeneratorHint {
+    margin: 0;
+    max-width: 42ch;
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    text-wrap: pretty;
 }
 
 .classGeneratorRows {
