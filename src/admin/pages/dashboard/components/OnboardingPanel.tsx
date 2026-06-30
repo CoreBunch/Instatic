@@ -47,6 +47,7 @@ import {
 } from '@admin/shared/dialogs/FrameworkManagerDialog'
 import { cmsAdapter } from '@core/persistence/cms'
 import { mergeCoreFrameworkSettings, setFrameworkUtilities } from '@core/framework'
+import { reconcileFrameworkClasses } from '@site/store/slices/site/framework/reconcile'
 import styles from './OnboardingPanel.module.css'
 
 interface StepDef {
@@ -143,6 +144,12 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
         const merged = mergeCoreFrameworkSettings(site.settings.framework, { includeUtilities })
         site.settings.framework = setFrameworkUtilities(merged, includeUtilities)
       }
+      // Regenerate / prune the generated `framework:` utility classes (and strip
+      // stale classIds off nodes) to match the new settings — the same reconcile
+      // the in-editor store runs. Without it, removing the framework here would
+      // leave its `.text-primary` / `.bg-primary` classes lingering in the saved
+      // styleRules, so the Site editor keeps showing them until a hard refresh.
+      reconcileFrameworkClasses(site)
       await cmsAdapter.saveSite(site, {
         baselinePageIds: site.pages.map((page) => page.id),
         dirty: { all: false, pageIds: new Set(), componentIds: new Set(), layoutIds: new Set() },
