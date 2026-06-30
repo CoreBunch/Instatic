@@ -1014,4 +1014,29 @@ export const pgMigrations: Migration[] = [
             deleted_at = null;
     `,
   },
+  {
+    id: '018_ai_mcp_connectors',
+    sql: `
+      create table if not exists ai_mcp_connectors (
+        id text primary key,
+        user_id text not null references users(id) on delete cascade,
+        label text not null,
+        type text not null,
+        auth_mode text not null default 'bearer',
+        token_hash text,
+        capabilities_json jsonb not null default '[]'::jsonb,
+        created_at timestamptz not null default current_timestamp,
+        last_used_at timestamptz,
+        revoked_at timestamptz,
+        constraint ai_mcp_connectors_type_check check (type in ('local', 'remote')),
+        constraint ai_mcp_connectors_auth_mode_check check (auth_mode in ('bearer', 'oauth'))
+      );
+
+      create index if not exists ai_mcp_connectors_user_idx
+        on ai_mcp_connectors (user_id);
+      create unique index if not exists ai_mcp_connectors_token_hash_idx
+        on ai_mcp_connectors (token_hash)
+        where token_hash is not null;
+    `,
+  },
 ]

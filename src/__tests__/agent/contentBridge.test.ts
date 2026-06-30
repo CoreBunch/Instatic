@@ -73,7 +73,7 @@ describe('executeContentTool', () => {
   it('returns the new document id in canonical tool data', async () => {
     const { calls } = registerHandle()
 
-    const result = await executeContentTool('create_document', {
+    const result = await executeContentTool('content_create_document', {
       tableId: 'posts',
       fields: { title: 'Hello' },
     })
@@ -86,7 +86,7 @@ describe('executeContentTool', () => {
   it('returns a canonical tool error when scheduledAt is missing', async () => {
     const { calls } = registerHandle()
 
-    const result = await executeContentTool('set_document_status', {
+    const result = await executeContentTool('content_set_document_status', {
       documentId: 'doc-1',
       status: 'scheduled',
     })

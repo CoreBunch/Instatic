@@ -42,15 +42,15 @@ describe('token digest in the dynamic suffix', () => {
     freshStore()
     const suffix = currentSuffix()
     expect(suffix).toContain('Tokens: (none')
-    expect(suffix).toContain('set_color_tokens')
+    expect(suffix).toContain('site_set_color_tokens')
   })
 
   it('summarizes colors, type, spacing and fonts once established', async () => {
     freshStore()
-    await executeAgentTool('set_color_tokens', { tokens: [{ slug: 'primary', lightValue: '#3b82f6' }] })
-    await executeAgentTool('set_type_scale', { namingConvention: 'text', steps: 's,m,l' })
-    await executeAgentTool('set_spacing_scale', { namingConvention: 'space', steps: 'xs,s,m' })
-    await executeAgentTool('set_font_tokens', {
+    await executeAgentTool('site_set_color_tokens', { tokens: [{ slug: 'primary', lightValue: '#3b82f6' }] })
+    await executeAgentTool('site_set_type_scale', { namingConvention: 'text', steps: 's,m,l' })
+    await executeAgentTool('site_set_spacing_scale', { namingConvention: 'space', steps: 'xs,s,m' })
+    await executeAgentTool('site_set_font_tokens', {
       tokens: [{ name: 'Body', variable: 'font-body', fallback: 'sans-serif' }],
     })
 

@@ -118,13 +118,13 @@ function projectRow(row: DataRow) {
 }
 
 // ---------------------------------------------------------------------------
-// list_collections
+// content_list_collections
 // ---------------------------------------------------------------------------
 
 const ListCollectionsInput = Type.Object({})
 
 const listCollectionsTool: AiTool = {
-  name: 'list_collections',
+  name: 'content_list_collections',
   scope: 'content',
   execution: 'server',
   requiredCapabilities: SCHEMA_READ_CAPS,
@@ -142,7 +142,7 @@ const listCollectionsTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
-// get_collection_schema
+// content_get_collection_schema
 // ---------------------------------------------------------------------------
 
 const GetCollectionSchemaInput = Type.Object({
@@ -150,12 +150,12 @@ const GetCollectionSchemaInput = Type.Object({
 })
 
 const getCollectionSchemaTool: AiTool = {
-  name: 'get_collection_schema',
+  name: 'content_get_collection_schema',
   scope: 'content',
   execution: 'server',
   requiredCapabilities: SCHEMA_READ_CAPS,
   description:
-    "Return one collection's field schema: each field's id, label, type, required flag, builtIn flag, and per-type extras (select options, media kind, relation target). Call BEFORE set_document_field on an unfamiliar collection so you know the field's value shape.",
+    "Return one collection's field schema: each field's id, label, type, required flag, builtIn flag, and per-type extras (select options, media kind, relation target). Call BEFORE content_set_document_field on an unfamiliar collection so you know the field's value shape.",
   inputSchema: GetCollectionSchemaInput,
   handler: async (input, ctx) => {
     const { tableId } = input as Static<typeof GetCollectionSchemaInput>
@@ -175,7 +175,7 @@ const getCollectionSchemaTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
-// list_documents
+// content_list_documents
 // ---------------------------------------------------------------------------
 
 const ListDocumentsInput = Type.Object({
@@ -192,7 +192,7 @@ const ListDocumentsInput = Type.Object({
 })
 
 const listDocumentsTool: AiTool = {
-  name: 'list_documents',
+  name: 'content_list_documents',
   scope: 'content',
   execution: 'server',
   requiredCapabilities: DOCUMENT_READ_CAPS,
@@ -218,7 +218,7 @@ const listDocumentsTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
-// get_document
+// content_get_document
 // ---------------------------------------------------------------------------
 
 const GetDocumentInput = Type.Object({
@@ -226,7 +226,7 @@ const GetDocumentInput = Type.Object({
 })
 
 const getDocumentTool: AiTool = {
-  name: 'get_document',
+  name: 'content_get_document',
   scope: 'content',
   execution: 'server',
   requiredCapabilities: DOCUMENT_READ_CAPS,
@@ -258,7 +258,7 @@ const getDocumentTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
-// search_documents
+// content_search_documents
 // ---------------------------------------------------------------------------
 
 const SearchDocumentsInput = Type.Object({
@@ -267,7 +267,7 @@ const SearchDocumentsInput = Type.Object({
 })
 
 const searchDocumentsTool: AiTool = {
-  name: 'search_documents',
+  name: 'content_search_documents',
   scope: 'content',
   execution: 'server',
   requiredCapabilities: DOCUMENT_READ_CAPS,
@@ -300,18 +300,18 @@ const searchDocumentsTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
-// list_users
+// content_list_users
 // ---------------------------------------------------------------------------
 
 const ListUsersInput = Type.Object({})
 
 const listUsersTool: AiTool = {
-  name: 'list_users',
+  name: 'content_list_users',
   scope: 'content',
   execution: 'server',
   requiredCapabilities: ['users.manage'],
   description:
-    'List active users available as document authors (id, email, displayName, roleSlug, roleName). Use to look up an author id before set_document_author.',
+    'List active users available as document authors (id, email, displayName, roleSlug, roleName). Use to look up an author id before content_set_document_author.',
   inputSchema: ListUsersInput,
   handler: async (_input, ctx) => {
     const users = await listDataAuthorOptions(ctx.db)
@@ -320,7 +320,7 @@ const listUsersTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
-// list_media
+// content_list_media
 // ---------------------------------------------------------------------------
 
 const ListMediaInput = Type.Object({
@@ -330,7 +330,7 @@ const ListMediaInput = Type.Object({
 })
 
 const listMediaTool: AiTool = {
-  name: 'list_media',
+  name: 'content_list_media',
   scope: 'content',
   execution: 'server',
   requiredCapabilities: ['media.read'],

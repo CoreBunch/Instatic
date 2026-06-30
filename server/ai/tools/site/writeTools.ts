@@ -8,8 +8,8 @@
  * runner routes browser-execution tools through the bridge instead.
  *
  * Node/class/page/template mutation tools + design-system token tools +
- * browser-backed read/orientation tools (read_document, open_document,
- * render_snapshot, getNodeHtml).
+ * browser-backed read/orientation tools (site_read_document, site_open_document,
+ * site_render_snapshot, site_get_node_html).
  *
  * The input schemas are the single source of truth in `@core/ai`
  * (`src/core/ai/toolSchemas.ts`). This module imports each `*InputSchema`
@@ -58,7 +58,7 @@ import type { AiTool } from '../types'
 // (structure / content / style — see server/handlers/cms/siteDiff.ts and the
 // `site.structure.edit` gate on PUT /admin/api/cms/pages). Selection-time
 // gating only: persistence is independently re-validated server-side.
-// `getNodeHtml`, `read_document`, `open_document`, and `render_snapshot` are
+// `site_get_node_html`, `site_read_document`, `site_open_document`, and `site_render_snapshot` are
 // reads/orientation tools backed by the browser snapshot and stay ungated
 // beyond the toolset's own write/read split.
 // ---------------------------------------------------------------------------
@@ -79,51 +79,51 @@ const SITE_STYLE_CAPS: readonly CoreCapability[] = ['site.style.edit']
 // ---------------------------------------------------------------------------
 
 const insertHtmlTool: AiTool = {
-  name: 'insertHtml',
+  name: 'site_insert_html',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
   description:
-    'Insert semantic HTML as a subtree of editable nodes under an existing parent. Write structure as HTML (<section>, <h1>, <a>, <button>, <img>, <ul>, ...) and style it with CSS in the same call: put a <style> block in the HTML and/or class= attributes. Custom importer markers: <instatic-loop data-source-id="…" ...> creates a real Loop node (call list_loop_sources first for source/table ids and {currentEntry.*} tokens); <instatic-outlet> creates a template content outlet. The importer parses every rule — a bare `.foo {}` selector becomes a reusable Selectors-panel class bound to class="foo"; any other selector (`.hero a`, `a:hover`, `nav > li`) becomes an ambient rule. Inline style= attributes land on the node\'s inline styles. To author or edit CSS on its own — pseudo/hover/descendant selectors, or restyling existing rules — use the dedicated applyCss tool instead (insertHtml is for inserting structure).',
+    'Insert semantic HTML as a subtree of editable nodes under an existing parent. Write structure as HTML (<section>, <h1>, <a>, <button>, <img>, <ul>, ...) and style it with CSS in the same call: put a <style> block in the HTML and/or class= attributes. Custom importer markers: <instatic-loop data-source-id="…" ...> creates a real Loop node (call site_list_loop_sources first for source/table ids and {currentEntry.*} tokens); <instatic-outlet> creates a template content outlet. The importer parses every rule — a bare `.foo {}` selector becomes a reusable Selectors-panel class bound to class="foo"; any other selector (`.hero a`, `a:hover`, `nav > li`) becomes an ambient rule. Inline style= attributes land on the node\'s inline styles. To author or edit CSS on its own — pseudo/hover/descendant selectors, or restyling existing rules — use the dedicated site_apply_css tool instead (site_insert_html is for inserting structure). Returns `nodeIds` (the inserted roots) and `created` — every inserted node as { id, moduleId, classes } — so you can target a nested node (e.g. the wrapper you just added) without re-reading the whole tree.',
   inputSchema: InsertHtmlInputSchema,
 }
 
 const getNodeHtmlTool: AiTool = {
-  name: 'getNodeHtml',
+  name: 'site_get_node_html',
   scope: 'site',
   execution: 'browser',
   description:
-    'Return the current HTML the published page would emit for a node subtree. Use before replaceNodeHtml to read existing structure.',
+    'Return the current HTML the published page would emit for a node subtree. Use before site_replace_node_html to read existing structure.',
   inputSchema: GetNodeHtmlInputSchema,
 }
 
 const readDocumentTool: AiTool = {
-  name: 'read_document',
+  name: 'site_read_document',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: ['site.read'],
   description:
-    'Read any editable document as annotated HTML + relevant CSS without switching the visible canvas. Pass a document ref from list_documents; omit document to read the current document. If pageInfo.nextPart is not null, call read_document again with the same document and part.',
+    'Read any editable document as annotated HTML + relevant CSS without switching the visible canvas. Pass a document ref from site_list_documents; omit document to read the current document. If pageInfo.nextPart is not null, call site_read_document again with the same document and part.',
   inputSchema: ReadDocumentInputSchema,
 }
 
 const openDocumentTool: AiTool = {
-  name: 'open_document',
+  name: 'site_open_document',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: ['site.read'],
   description:
-    'Visibly open a page/template/visual component document in the editor. Use before render_snapshot or when the user asks to navigate. For background inspection, prefer read_document because it does not move the canvas.',
+    'Visibly open a page/template/visual component document in the editor. Use before site_render_snapshot or when the user asks to navigate. For background inspection, prefer site_read_document because it does not move the canvas.',
   inputSchema: OpenDocumentInputSchema,
 }
 
 const replaceNodeHtmlTool: AiTool = {
-  name: 'replaceNodeHtml',
+  name: 'site_replace_node_html',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
   description:
-    "Replace a node subtree's children with new HTML. The target node is preserved as the parent; its existing children are rebuilt from the HTML. Style with CSS exactly as in insertHtml: a <style> block and/or class= attributes; bare `.foo` selectors become reusable classes, other selectors become ambient rules. Custom importer markers work here too: <instatic-loop data-source-id=\"…\" ...> creates a real Loop node and <instatic-outlet> creates a template content outlet. To author or edit CSS on its own (without rebuilding children), use the dedicated applyCss tool instead.",
+    "Replace a node subtree's children with new HTML. The target node is preserved as the parent; its existing children are rebuilt from the HTML. Style with CSS exactly as in site_insert_html: a <style> block and/or class= attributes; bare `.foo` selectors become reusable classes, other selectors become ambient rules. Custom importer markers work here too: <instatic-loop data-source-id=\"…\" ...> creates a real Loop node and <instatic-outlet> creates a template content outlet. To author or edit CSS on its own (without rebuilding children), use the dedicated site_apply_css tool instead.",
   inputSchema: ReplaceNodeHtmlInputSchema,
 }
 
@@ -132,7 +132,7 @@ const replaceNodeHtmlTool: AiTool = {
 // ---------------------------------------------------------------------------
 
 const deleteNodeTool: AiTool = {
-  name: 'deleteNode',
+  name: 'site_delete_node',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
@@ -142,17 +142,17 @@ const deleteNodeTool: AiTool = {
 }
 
 const updateNodePropsTool: AiTool = {
-  name: 'updateNodeProps',
+  name: 'site_update_node_props',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_CONTENT_CAPS,
   description:
-    'Shallow-merge a patch onto an existing node\'s props. `breakpointId` is only valid for props marked `breakpointOverridable` in the schema (rejected for content props like text/tag/src). For per-breakpoint visual variation use applyCss with an `@media` query, not this. Richtext props are auto-sanitised.',
+    'Shallow-merge a patch onto an existing node\'s props. `breakpointId` is only valid for props marked `breakpointOverridable` in the schema (rejected for content props like text/tag/src). For per-breakpoint visual variation use site_apply_css with an `@media` query, not this. Richtext props are auto-sanitised.',
   inputSchema: UpdateNodePropsInputSchema,
 }
 
 const moveNodeTool: AiTool = {
-  name: 'moveNode',
+  name: 'site_move_node',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
@@ -162,7 +162,7 @@ const moveNodeTool: AiTool = {
 }
 
 const renameNodeTool: AiTool = {
-  name: 'renameNode',
+  name: 'site_rename_node',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_CONTENT_CAPS,
@@ -172,7 +172,7 @@ const renameNodeTool: AiTool = {
 }
 
 const duplicateNodeTool: AiTool = {
-  name: 'duplicateNode',
+  name: 'site_duplicate_node',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
@@ -186,7 +186,7 @@ const duplicateNodeTool: AiTool = {
 // ---------------------------------------------------------------------------
 
 const applyCssTool: AiTool = {
-  name: 'applyCss',
+  name: 'site_apply_css',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STYLE_CAPS,
@@ -196,7 +196,7 @@ const applyCssTool: AiTool = {
 }
 
 const assignClassTool: AiTool = {
-  name: 'assignClass',
+  name: 'site_assign_class',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STYLE_CAPS,
@@ -206,7 +206,7 @@ const assignClassTool: AiTool = {
 }
 
 const removeClassTool: AiTool = {
-  name: 'removeClass',
+  name: 'site_remove_class',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STYLE_CAPS,
@@ -220,27 +220,27 @@ const removeClassTool: AiTool = {
 // ---------------------------------------------------------------------------
 
 const listCodeAssetsTool: AiTool = {
-  name: 'list_code_assets',
+  name: 'site_list_code_assets',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: ['site.read'],
   description:
-    'List user-authored runtime code assets stored in the site file layer. Optional `type` filters to scripts or styles. Returns file ids, paths, content hashes, size metadata, and current runtime config. Use before read_code_asset / patch_code_asset when modifying existing scripts or stylesheets.',
+    'List user-authored runtime code assets stored in the site file layer. Optional `type` filters to scripts or styles. Returns file ids, paths, content hashes, size metadata, and current runtime config. Use before site_read_code_asset / site_patch_code_asset when modifying existing scripts or stylesheets.',
   inputSchema: ListCodeAssetsInputSchema,
 }
 
 const readCodeAssetTool: AiTool = {
-  name: 'read_code_asset',
+  name: 'site_read_code_asset',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: ['site.read'],
   description:
-    'Read one script or stylesheet by fileId or path. Returns the exact content slice, full-file SHA-256 hash, runtime config, and pageInfo for pagination. If pageInfo.nextPart is not null, call read_code_asset again with the same asset and part.',
+    'Read one script or stylesheet by fileId or path. Returns the exact content slice, full-file SHA-256 hash, runtime config, and pageInfo for pagination. If pageInfo.nextPart is not null, call site_read_code_asset again with the same asset and part.',
   inputSchema: ReadCodeAssetInputSchema,
 }
 
 const writeCodeAssetTool: AiTool = {
-  name: 'write_code_asset',
+  name: 'site_write_code_asset',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
@@ -250,22 +250,22 @@ const writeCodeAssetTool: AiTool = {
 }
 
 const patchCodeAssetTool: AiTool = {
-  name: 'patch_code_asset',
+  name: 'site_patch_code_asset',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
   description:
-    'Patch an existing script or stylesheet by exact text replacement. Requires the latest `expectedHash` from read_code_asset/list_code_assets to prevent stale edits. Each replacement must match exactly; if oldText occurs multiple times, either make oldText more specific or set replaceAll:true.',
+    'Patch an existing script or stylesheet by exact text replacement. Requires the latest `expectedHash` from site_read_code_asset/site_list_code_assets to prevent stale edits. Each replacement must match exactly; if oldText occurs multiple times, either make oldText more specific or set replaceAll:true.',
   inputSchema: PatchCodeAssetInputSchema,
 }
 
 const inspectCodeRuntimeTool: AiTool = {
-  name: 'inspect_code_runtime',
+  name: 'site_inspect_code_runtime',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: ['site.read'],
   description:
-    'Inspect which runtime scripts and user stylesheets apply to the current page/template, or to a supplied page/template document ref. Returns each asset path, enabled state, scope applicability, priority, and script placement/timing. Use after write_code_asset to confirm a script/style is targeted correctly.',
+    'Inspect which runtime scripts and user stylesheets apply to the current page/template, or to a supplied page/template document ref. Returns each asset path, enabled state, scope applicability, priority, and script placement/timing. Use after site_write_code_asset to confirm a script/style is targeted correctly.',
   inputSchema: InspectCodeRuntimeInputSchema,
 }
 
@@ -274,17 +274,17 @@ const inspectCodeRuntimeTool: AiTool = {
 // ---------------------------------------------------------------------------
 
 const addPageTool: AiTool = {
-  name: 'addPage',
+  name: 'site_add_page',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
   description:
-    'Add an EMPTY page and make it the active page. `slug` defaults to a slugified title and is auto-uniqued (a repeat add becomes `-2`, `-3`) — so never call addPage twice for the same page. Success data: `pageId` and `rootNodeId`. To build into the new page, pass `rootNodeId` as insertHtml\'s `parentId` — a pageId is NOT a node id. The page is already active, so just start inserting; no need to read_document/list_documents first. For copying an existing page use duplicatePage.',
+    'Add an EMPTY page and make it the active page. `slug` defaults to a slugified title and is auto-uniqued (a repeat add becomes `-2`, `-3`) — so never call site_add_page twice for the same page. Success data: `pageId` and `rootNodeId`. To build into the new page, pass `rootNodeId` as site_insert_html\'s `parentId` — a pageId is NOT a node id. The page is already active, so just start inserting; no need to site_read_document/site_list_documents first. For copying an existing page use site_duplicate_page.',
   inputSchema: AddPageInputSchema,
 }
 
 const deletePageTool: AiTool = {
-  name: 'deletePage',
+  name: 'site_delete_page',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
@@ -294,7 +294,7 @@ const deletePageTool: AiTool = {
 }
 
 const renamePageTool: AiTool = {
-  name: 'renamePage',
+  name: 'site_rename_page',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
@@ -304,7 +304,7 @@ const renamePageTool: AiTool = {
 }
 
 const duplicatePageTool: AiTool = {
-  name: 'duplicatePage',
+  name: 'site_duplicate_page',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
@@ -324,17 +324,17 @@ const duplicatePageTool: AiTool = {
 // ---------------------------------------------------------------------------
 
 const setPageTemplateTool: AiTool = {
-  name: 'setPageTemplate',
+  name: 'site_set_page_template',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
   description:
-    'Turn a page INTO a template (or update an existing template\'s target/priority). `target` is `{kind:"everywhere"}` for a site-wide layout that wraps every page+entry, `{kind:"postTypes", tableSlugs:[…]}` to wrap entries of those post types (slugs from list_post_types), or `{kind:"notFound"}` for the page served on public 404s (status 404, wrapped by the everywhere layout; needs no outlet). `priority` (default 100) breaks ties when several templates match at the same breadth level — higher wins. An everywhere/postTypes template needs exactly one `<instatic-outlet>` (insert it via insertHtml) marking where matched content flows; a wrapper template with no outlet simply doesn\'t apply. Pass a real page id from the suffix / list_documents.',
+    'Turn a page INTO a template (or update an existing template\'s target/priority). `target` is `{kind:"everywhere"}` for a site-wide layout that wraps every page+entry, `{kind:"postTypes", tableSlugs:[…]}` to wrap entries of those post types (slugs from site_list_post_types), or `{kind:"notFound"}` for the page served on public 404s (status 404, wrapped by the everywhere layout; needs no outlet). `priority` (default 100) breaks ties when several templates match at the same breadth level — higher wins. An everywhere/postTypes template needs exactly one `<instatic-outlet>` (insert it via site_insert_html) marking where matched content flows; a wrapper template with no outlet simply doesn\'t apply. Pass a real page id from the suffix / site_list_documents.',
   inputSchema: SetPageTemplateInputSchema,
 }
 
 const clearPageTemplateTool: AiTool = {
-  name: 'clearPageTemplate',
+  name: 'site_clear_page_template',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
@@ -352,7 +352,7 @@ const clearPageTemplateTool: AiTool = {
 // ---------------------------------------------------------------------------
 
 const setColorTokensTool: AiTool = {
-  name: 'set_color_tokens',
+  name: 'site_set_color_tokens',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STYLE_CAPS,
@@ -362,7 +362,7 @@ const setColorTokensTool: AiTool = {
 }
 
 const setFontTokensTool: AiTool = {
-  name: 'set_font_tokens',
+  name: 'site_set_font_tokens',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STYLE_CAPS,
@@ -372,7 +372,7 @@ const setFontTokensTool: AiTool = {
 }
 
 const setTypeScaleTool: AiTool = {
-  name: 'set_type_scale',
+  name: 'site_set_type_scale',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STYLE_CAPS,
@@ -382,21 +382,21 @@ const setTypeScaleTool: AiTool = {
 }
 
 const setSpacingScaleTool: AiTool = {
-  name: 'set_spacing_scale',
+  name: 'site_set_spacing_scale',
   scope: 'site',
   execution: 'browser',
   requiredCapabilities: SITE_STYLE_CAPS,
   description:
-    'Configure the SPACING scale — the fluid spacing ramp generating `--space-*` variables (default prefix "space"). Same shape as set_type_scale but `min`/`max` carry `size` (px) instead of `fontSize`; `steps` defaults to an 11-step scale and `baseScaleIndex` to 5 ("m"). Creates the group if none exists, else updates it. Reference gaps/padding as `var(--space-l)` rather than raw px.',
+    'Configure the SPACING scale — the fluid spacing ramp generating `--space-*` variables (default prefix "space"). Same shape as site_set_type_scale but `min`/`max` carry `size` (px) instead of `fontSize`; `steps` defaults to an 11-step scale and `baseScaleIndex` to 5 ("m"). Creates the group if none exists, else updates it. Reference gaps/padding as `var(--space-l)` rather than raw px.',
   inputSchema: SetSpacingScaleInputSchema,
 }
 
 // ---------------------------------------------------------------------------
-// render_snapshot — browser-bridged, returns a special payload
+// site_render_snapshot — browser-bridged, returns a special payload
 // ---------------------------------------------------------------------------
 
 const renderSnapshotTool: AiTool = {
-  name: 'render_snapshot',
+  name: 'site_render_snapshot',
   scope: 'site',
   execution: 'browser',
   description:

@@ -39,7 +39,6 @@ import { RoleDialog } from '../components/RoleDialog'
 import { formatCapabilitySummary } from '../utils/format'
 import {
   emptyRoleForm,
-  type CapabilityGroup,
   type RoleDialogMode,
   type RoleFormState,
   type RowActionMenuItem,
@@ -192,25 +191,6 @@ export function RolesTab({ data, canManageRoles }: RolesTabProps) {
     await deleteRole(role.id, runStepUp, setRoles, refresh, setBusy, setError)
   }
 
-  function toggleCapability(capability: string, checked: boolean) {
-    setRoleForm((current) => ({
-      ...current,
-      capabilities: checked
-        ? [...new Set([...current.capabilities, capability])]
-        : current.capabilities.filter((item) => item !== capability),
-    }))
-  }
-
-  function setCapabilityGroup(group: CapabilityGroup, checked: boolean) {
-    setRoleForm((current) => {
-      const next = new Set(current.capabilities)
-      for (const capability of group.capabilities) {
-        if (checked) next.add(capability)
-        else next.delete(capability)
-      }
-      return { ...current, capabilities: [...next] }
-    })
-  }
 
   return (
     <section className={styles.section} aria-labelledby="roles-list-title">
@@ -338,8 +318,6 @@ export function RolesTab({ data, canManageRoles }: RolesTabProps) {
           onChange={setRoleForm}
           onClose={closeDialog}
           onSubmit={handleSave}
-          onToggleCapability={toggleCapability}
-          onSetCapabilityGroup={setCapabilityGroup}
         />
       )}
     </section>

@@ -317,6 +317,15 @@ function processElement(el: Element, ctx: WalkContext): string {
         ? { ...ctx, preserveWs: true }
         : ctx
     node.children = mapChildNodes(el, childCtx)
+    // A node that recursed into real child nodes must NOT also keep a flattened
+    // `text` prop: the children (including synthesized base.text for direct
+    // text) are the source of truth. Without this, an element that both sets
+    // `text` in its rule and recurses on element children (e.g. a `<a>` wrapping
+    // tokens/spans) double-represents its content — ambiguous and can
+    // double-render. Mirrors the conditional heading/label rules.
+    if (node.children.length > 0 && 'text' in node.props) {
+      delete (node.props as Record<string, unknown>).text
+    }
   }
 
   ctx.nodes[node.id] = node

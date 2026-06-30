@@ -15,9 +15,9 @@ import type {
  * Covers the heavy-evidence handling added to the shared tool loop:
  *   1. A tool result with an image attachment becomes a NATIVE Anthropic image
  *      block in the tool_result (not base64-as-JSON-text).
- *   2. `render_snapshot` gets `captureScreenshot` injected from the model's
+ *   2. `site_render_snapshot` gets `captureScreenshot` injected from the model's
  *      vision capability — never set by the model.
- *   3. Superseded heavy results (an earlier `render_snapshot`) are stubbed in
+ *   3. Superseded heavy results (an earlier `site_render_snapshot`) are stubbed in
  *      the replayed history so context can't balloon.
  *   4. Text-only providers (Ollama/OpenAI-compatible) drop the image with a
  *      one-line note instead of carrying it.
@@ -46,7 +46,7 @@ function sseResponse(body: string): Response {
 function anthropicSnapTurn(id: string): string {
   return sse(
     { type: 'message_start', message: { usage: { input_tokens: 10 } } },
-    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id, name: 'render_snapshot', input: {} } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id, name: 'site_render_snapshot', input: {} } },
     { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{}' } },
     { type: 'content_block_stop', index: 0 },
     { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 5 } },
@@ -67,7 +67,7 @@ const VISION_CAPS: AiProviderCapabilities = { toolCalling: true, visionInput: tr
 const NO_VISION_CAPS: AiProviderCapabilities = { toolCalling: true, visionInput: false, promptCache: false, streaming: true }
 
 const renderSnapshotTool: AiTool = {
-  name: 'render_snapshot',
+  name: 'site_render_snapshot',
   description: 'snapshot',
   scope: 'site',
   execution: 'browser',
@@ -182,7 +182,7 @@ describe('multimodal tool output + heavy elision (Anthropic)', () => {
     const latest = allBlocks.find((b) => b.tool_use_id === 't_s2')!
 
     expect(typeof first.content).toBe('string')
-    expect(first.content as string).toContain('render_snapshot')
+    expect(first.content as string).toContain('site_render_snapshot')
     expect(first.content as string).toContain('again')
 
     expect(Array.isArray(latest.content)).toBe(true)
@@ -194,7 +194,7 @@ describe('text-only providers drop the image with a note (Ollama)', () => {
   const ollamaSnapTurn = JSON.stringify({
     choices: [
       {
-        delta: { tool_calls: [{ index: 0, id: 't_s1', function: { name: 'render_snapshot', arguments: '{}' } }] },
+        delta: { tool_calls: [{ index: 0, id: 't_s1', function: { name: 'site_render_snapshot', arguments: '{}' } }] },
         finish_reason: 'tool_calls',
       },
     ],

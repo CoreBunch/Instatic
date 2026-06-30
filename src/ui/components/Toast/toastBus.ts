@@ -103,7 +103,14 @@ export function dismissToast(id: string): void {
  */
 export function subscribeToasts(listener: Listener): () => void {
   listeners.add(listener)
+  listener(toasts.slice())
   return () => {
     listeners.delete(listener)
   }
+}
+
+export function __resetToastBusForTests(): void {
+  counter = 0
+  toasts.splice(0)
+  listeners.clear()
 }

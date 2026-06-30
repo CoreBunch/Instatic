@@ -15,7 +15,11 @@ A self-hosted CMS where the visual editor, content engine, and publisher all liv
 
 <br>
 
-<img src="docs/assets/readme/hero-editor.webp" alt="The Instatic visual editor — canvas-first, multiple breakpoints side by side" width="100%">
+<a href="https://www.youtube.com/watch?v=zyjCF_TaLlg">
+  <img src="https://img.youtube.com/vi/zyjCF_TaLlg/maxresdefault.jpg" alt="Watch the Instatic interface demo on YouTube" width="100%">
+</a>
+
+*Watch the introductory video about Instatic on YouTube.*
 
 </div>
 
@@ -52,6 +56,10 @@ Railway is the fastest way to get Instatic live. Pick a template, hit the button
 | **DigitalOcean** | — | — | *Coming soon* |
 
 SQLite is the right default for most sites. Reach for Postgres when you've got a team of authors or want managed database backups.
+
+### Updating is just a redeploy
+
+When a new Instatic version is available, update by redeploying the latest image. Your database and uploads stay on the attached storage, so the app container can be replaced without rebuilding the site from scratch.
 
 Prefer your own hardware? Instatic is a single Docker image:
 

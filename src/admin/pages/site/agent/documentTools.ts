@@ -98,11 +98,11 @@ export function describeDocumentId(store: EditorStore, id: string): string | nul
   const page = site.pages.find((p) => p.id === id)
   if (page) {
     const document = documentRefForPage(page)
-    return `ID ${id} is a ${document.type} document id, not a node id. Call read_document({ document: { type: "${document.type}", id: "${id}" } }) and use a returned uid.`
+    return `ID ${id} is a ${document.type} document id, not a node id. Call site_read_document({ document: { type: "${document.type}", id: "${id}" } }) and use a returned uid.`
   }
   const vc = site.visualComponents?.find((component) => component.id === id)
   if (vc) {
-    return `ID ${id} is a visualComponent document id, not a node id. Call read_document({ document: { type: "visualComponent", id: "${id}" } }) and use a returned uid.`
+    return `ID ${id} is a visualComponent document id, not a node id. Call site_read_document({ document: { type: "visualComponent", id: "${id}" } }) and use a returned uid.`
   }
   return null
 }

@@ -66,26 +66,26 @@ describe('toolAllowedForCapabilities', () => {
 describe('selectToolsForScope capability filtering', () => {
   it('drops list_users for a caller without users.manage', () => {
     const names = selectToolsForScope('content', ['ai.chat']).map((t) => t.name)
-    expect(names).not.toContain('list_users')
+    expect(names).not.toContain('content_list_users')
   })
 
   it('keeps list_users for a caller with users.manage', () => {
     const names = selectToolsForScope('content', ['ai.chat', 'users.manage']).map((t) => t.name)
-    expect(names).toContain('list_users')
+    expect(names).toContain('content_list_users')
   })
 
   it('drops document read tools for a caller with only data.custom.tables.read', () => {
     const names = selectToolsForScope('content', ['ai.chat', 'data.custom.tables.read']).map((t) => t.name)
-    expect(names).not.toContain('get_document')
+    expect(names).not.toContain('content_get_document')
     expect(names).not.toContain('list_documents')
-    expect(names).not.toContain('search_documents')
+    expect(names).not.toContain('content_search_documents')
     // schema tools stay — they only need a data-table read cap
-    expect(names).toContain('list_collections')
+    expect(names).toContain('content_list_collections')
   })
 
   it('drops list_media for a caller without media.read', () => {
     const names = selectToolsForScope('content', ['ai.chat']).map((t) => t.name)
-    expect(names).not.toContain('list_media')
+    expect(names).not.toContain('content_list_media')
   })
 
   it('still filters write tools by ai.tools.write (existing behaviour preserved)', () => {
@@ -104,7 +104,7 @@ describe('executeAiTool re-check', () => {
   it('refuses a server tool the caller lacks capabilities for, without running the handler', async () => {
     let handlerRan = false
     const gated = tool({
-      name: 'list_users',
+      name: 'content_list_users',
       requiredCapabilities: ['users.manage'],
       handler: async () => {
         handlerRan = true
@@ -127,7 +127,7 @@ describe('executeAiTool re-check', () => {
   it('runs the handler when the caller holds a required capability', async () => {
     let handlerRan = false
     const gated = tool({
-      name: 'list_users',
+      name: 'content_list_users',
       requiredCapabilities: ['users.manage'],
       handler: async () => {
         handlerRan = true

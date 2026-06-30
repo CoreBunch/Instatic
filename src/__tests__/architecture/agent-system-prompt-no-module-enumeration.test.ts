@@ -3,12 +3,12 @@
  *
  * The canonical Anthropic agent pattern is progressive disclosure via
  * tools, not bulk context dumping. Module ids (base.container, base.text,
- * etc.) must be discovered through `list_modules` / `read_document`, not
+ * etc.) must be discovered through `site_list_modules` / `site_read_document`, not
  * baked into the static prompt prefix where they would bust the cache on
  * every registry change.
  *
  * This gate also checks that the prompt was updated to the HTML-native
- * style: `insertHtml` must appear, and the phrase "Structure as HTML,
+ * style: `site_insert_html` must appear, and the phrase "Structure as HTML,
  * styling as CSS" must be present.
  */
 
@@ -37,7 +37,7 @@ describe('agent-system-prompt-no-module-enumeration gate', () => {
 
   it('references insertHtml in the static prefix', () => {
     // The HTML-native tool must be described so the agent knows to use it.
-    expect(src).toContain('insertHtml')
+    expect(src).toContain('site_insert_html')
   })
 
   it('contains the "Structure as HTML, styling as CSS" guideline', () => {

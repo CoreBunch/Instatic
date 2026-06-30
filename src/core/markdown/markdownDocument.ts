@@ -718,14 +718,14 @@ function stringAttr(node: JSONNode, key: string, fallback: string): string {
 }
 
 function decodeEntities(text: string): string {
-  // Marked HTML-encodes `&`, `<`, `>`, `"` and `'` in inline text tokens.
-  // Decode the small fixed set so the editor sees the author's real input.
+  // Marked HTML-encodes `&`, `<`, `>`, `"`, `'`; decode the fixed set back.
+  // `&amp;` MUST be last, else `&amp;lt;`→`<` double-unescapes (js/double-escaping).
   return text
-    .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
 }
 
 /**

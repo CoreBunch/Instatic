@@ -133,7 +133,7 @@ function parseImportedStyleCss(styleCss: string): {
 // executor imports them and re-validates each `toolRequest` payload here with
 // `parseValue` — defence-in-depth at the store boundary (Constraint #272).
 //
-// `render_snapshot` is the one divergence: the model-facing schema carries only
+// `site_render_snapshot` is the one divergence: the model-facing schema carries only
 // `breakpointId`/`nodeId`, so we compose the server-set `captureScreenshot`
 // flag (chosen from the model's vision capability — non-vision models skip the
 // expensive html-to-image capture) on top of the shared shape here.
@@ -154,8 +154,8 @@ const renderSnapshotSchema = Type.Composite([
  * no matching class is found.
  *
  * Lets Claude reference a class by name in tools that only accept a single
- * class identifier (assignClass/removeClass), without needing to remember the
- * generated nanoid from a previous applyCss call.
+ * class identifier (site_assign_class/site_remove_class), without needing to remember the
+ * generated nanoid from a previous site_apply_css call.
  */
 function resolveClassId(
   store: EditorStore,
@@ -212,20 +212,20 @@ function nodeNotInActiveDocError(store: EditorStore, nodeId: string): AiToolOutp
 /**
  * Tools that target an existing node (by `nodeId`/`parentId`) and should pull
  * the canvas to that node's document before running. Excludes catalog/page/
- * token tools (no node target) and `render_snapshot` (captures the live DOM, so
+ * token tools (no node target) and `site_render_snapshot` (captures the live DOM, so
  * a node outside the mounted canvas is genuinely uncapturable, not navigable).
  */
 const AUTO_NAVIGATE_TOOLS = new Set<string>([
-  'insertHtml',
-  'getNodeHtml',
-  'replaceNodeHtml',
-  'deleteNode',
-  'updateNodeProps',
-  'moveNode',
-  'renameNode',
-  'duplicateNode',
-  'assignClass',
-  'removeClass',
+  'site_insert_html',
+  'site_get_node_html',
+  'site_replace_node_html',
+  'site_delete_node',
+  'site_update_node_props',
+  'site_move_node',
+  'site_rename_node',
+  'site_duplicate_node',
+  'site_assign_class',
+  'site_remove_class',
 ])
 
 /** Pull the node/parent id a write tool targets out of its raw input bag. */
@@ -261,20 +261,21 @@ function runInsertHtml(input: InsertHtmlInput): AiToolOutput {
     // A <style>-only payload carries no elements but still carries authorable
     // CSS — reusable classes and ambient rules (`a:hover`, `.hero a`,
     // `::before`, …). Upsert them rather than discarding them. (The dedicated
-    // `applyCss` tool is the canonical path for this; insertHtml stays forgiving
+    // `site_apply_css` tool is the canonical path for this; insertHtml stays forgiving
     // when a CSS-only payload arrives here.)
     if (rules.length > 0 || conditions.length > 0) {
       const { created, updated } = getStoreState().upsertCssRules(rules, conditions)
       return aiToolOk({ cssRulesCreated: created, cssRulesUpdated: updated })
     }
     const scriptHint = stripped.scripts > 0 || stripped.inlineHandlers > 0
-      ? ' Scripts and inline event handlers are stripped from HTML imports; create runtime behavior with write_code_asset({ type:"script", ... }) instead.'
+      ? ' Scripts and inline event handlers are stripped from HTML imports; create runtime behavior with site_write_code_asset({ type:"script", ... }) instead.'
       : ''
     return aiToolError(`HTML contained no importable elements or style rules.${scriptHint}`)
   }
 
   // (2) Insert via the store action — same path as the paste import modal
-  const insertedRootIds = getStoreState().insertImportedNodes(
+  const store = getStoreState()
+  const insertedRootIds = store.insertImportedNodes(
     input.parentId,
     { nodes, rootIds },
     { index: input.index, styleRules: rules, conditions },
@@ -283,7 +284,29 @@ function runInsertHtml(input: InsertHtmlInput): AiToolOutput {
     return aiToolError(`Parent node not found or does not accept children: ${input.parentId}`)
   }
 
-  return aiToolOk({ nodeIds: insertedRootIds })
+  // Return the full created subtree (id + module + class names) so the caller
+  // can target nested nodes (e.g. the `.ist-shell` wrapper) without a separate
+  // tree dump. `nodeIds` stays as the top-level roots for back-compat.
+  // Read FRESH state after the insert — `store` above is the pre-insert
+  // immutable snapshot, so its node map doesn't contain the new nodes (and its
+  // styleRules lacks any classes insertImportedNodes auto-created).
+  const postState = getStoreState()
+  const nodeMap = activeDocumentNodes(postState) ?? {}
+  const styleRules = postState.site?.styleRules ?? {}
+  const created: Array<{ id: string; moduleId: string; classes: string[] }> = []
+  const visit = (id: string): void => {
+    const node = nodeMap[id]
+    if (!node) return
+    created.push({
+      id,
+      moduleId: node.moduleId,
+      classes: (node.classIds ?? []).map((cid) => styleRules[cid]?.name ?? cid),
+    })
+    for (const childId of node.children) visit(childId)
+  }
+  for (const rootId of insertedRootIds) visit(rootId)
+
+  return aiToolOk({ nodeIds: insertedRootIds, created })
 }
 
 /**
@@ -296,7 +319,7 @@ function runGetNodeHtml(input: GetNodeHtmlInput): AiToolOutput {
   if (!site) return aiToolError('No active site.')
 
   // Scope to the active document only. Visual components are materialized as
-  // virtual pages so getNodeHtml and read_document share publisher semantics.
+  // virtual pages so site_get_node_html and site_read_document share publisher semantics.
   const activePage = activeRenderPage(store)
   if (!activePage?.nodes[input.nodeId]) {
     return nodeNotInActiveDocError(store, input.nodeId)
@@ -360,7 +383,7 @@ function runReplaceNodeHtml(input: ReplaceNodeHtmlInput): AiToolOutput {
       return aiToolOk({ cssRulesCreated: created, cssRulesUpdated: updated })
     }
     const scriptHint = stripped.scripts > 0 || stripped.inlineHandlers > 0
-      ? ' Scripts and inline event handlers are stripped from HTML imports; create runtime behavior with write_code_asset({ type:"script", ... }) instead.'
+      ? ' Scripts and inline event handlers are stripped from HTML imports; create runtime behavior with site_write_code_asset({ type:"script", ... }) instead.'
       : ''
     return aiToolError(`HTML contained no importable elements or style rules.${scriptHint}`)
   }
@@ -421,7 +444,7 @@ function runUpdateNodeProps(input: UpdateNodePropsInput): AiToolOutput {
         `Cannot store breakpoint overrides for non-responsive prop(s) on ${node.moduleId}: ` +
           `${nonOverridable.join(', ')}. ` +
           `Module props are content (single value across breakpoints) unless the schema marks them ` +
-          `\`breakpointOverridable: true\`. For per-breakpoint *visual* variation use applyCss with an ` +
+          `\`breakpointOverridable: true\`. For per-breakpoint *visual* variation use site_apply_css with an ` +
           `\`@media\` query instead.`,
       )
     }
@@ -600,64 +623,69 @@ export async function executeAgentTool(
     }
 
     switch (toolName) {
-      case 'insertHtml':
+      case 'site_insert_html':
         return runInsertHtml(parseValue(InsertHtmlInputSchema, rawInput))
-      case 'getNodeHtml':
+      case 'site_get_node_html':
         return runGetNodeHtml(parseValue(GetNodeHtmlInputSchema, rawInput))
-      case 'read_document':
+      case 'site_read_document':
         return runReadDocumentTool(parseValue(ReadDocumentInputSchema, rawInput))
-      case 'open_document':
+      case 'site_open_document':
         return runOpenDocumentTool(parseValue(OpenDocumentInputSchema, rawInput))
-      case 'replaceNodeHtml':
+      case 'site_replace_node_html':
         return runReplaceNodeHtml(parseValue(ReplaceNodeHtmlInputSchema, rawInput))
-      case 'deleteNode':
+      case 'site_delete_node':
         return runDeleteNode(parseValue(DeleteNodeInputSchema, rawInput))
-      case 'updateNodeProps':
+      case 'site_update_node_props':
         return runUpdateNodeProps(parseValue(UpdateNodePropsInputSchema, rawInput))
-      case 'moveNode':
+      case 'site_move_node':
         return runMoveNode(parseValue(MoveNodeInputSchema, rawInput))
-      case 'renameNode':
+      case 'site_rename_node':
         return runRenameNode(parseValue(RenameNodeInputSchema, rawInput))
-      case 'applyCss':
+      case 'site_apply_css':
         return runApplyCss(parseValue(ApplyCssInputSchema, rawInput))
-      case 'list_code_assets':
+      case 'site_list_code_assets':
         return await runListCodeAssets(parseValue(ListCodeAssetsInputSchema, rawInput))
-      case 'read_code_asset':
+      case 'site_read_code_asset':
         return await runReadCodeAsset(parseValue(ReadCodeAssetInputSchema, rawInput))
-      case 'write_code_asset':
+      case 'site_write_code_asset':
         return await runWriteCodeAsset(parseValue(WriteCodeAssetInputSchema, rawInput))
-      case 'patch_code_asset':
+      case 'site_patch_code_asset':
         return await runPatchCodeAsset(parseValue(PatchCodeAssetInputSchema, rawInput))
-      case 'inspect_code_runtime':
+      case 'site_inspect_code_runtime':
         return runInspectCodeRuntime(parseValue(InspectCodeRuntimeInputSchema, rawInput))
-      case 'assignClass':
+      case 'site_assign_class':
         return runAssignClass(parseValue(AssignClassInputSchema, rawInput))
-      case 'removeClass':
+      case 'site_remove_class':
         return runRemoveClass(parseValue(RemoveClassInputSchema, rawInput))
-      case 'addPage':
+      case 'site_add_page':
         return runAddPage(parseValue(AddPageInputSchema, rawInput))
-      case 'deletePage':
+      case 'site_delete_page':
         return runDeletePage(parseValue(DeletePageInputSchema, rawInput))
-      case 'renamePage':
+      case 'site_rename_page':
         return runRenamePage(parseValue(RenamePageInputSchema, rawInput))
-      case 'duplicatePage':
+      case 'site_duplicate_page':
         return runDuplicatePage(parseValue(DuplicatePageInputSchema, rawInput))
-      case 'setPageTemplate':
+      case 'site_set_page_template':
         return runSetPageTemplate(parseValue(SetPageTemplateInputSchema, rawInput))
-      case 'clearPageTemplate':
+      case 'site_clear_page_template':
         return runClearPageTemplate(parseValue(ClearPageTemplateInputSchema, rawInput))
-      case 'duplicateNode':
+      case 'site_duplicate_node':
         return runDuplicateNode(parseValue(DuplicateNodeInputSchema, rawInput))
-      case 'set_color_tokens':
+      case 'site_set_color_tokens':
         return runSetColorTokens(rawInput)
-      case 'set_font_tokens':
+      case 'site_set_font_tokens':
         return await runSetFontTokens(rawInput)
-      case 'set_type_scale':
+      case 'site_set_type_scale':
         return runSetTypeScale(rawInput)
-      case 'set_spacing_scale':
+      case 'site_set_spacing_scale':
         return runSetSpacingScale(rawInput)
-      case 'render_snapshot':
-        return await runRenderSnapshot(parseValue(renderSnapshotSchema, rawInput))
+      case 'site_render_snapshot': {
+        const parsed = parseValue(renderSnapshotSchema, rawInput)
+        // Default to the breakpoint the user is actually viewing, not the first
+        // frame in the DOM (which is mobile in a mobile-first canvas layout).
+        const breakpointId = parsed.breakpointId ?? getStoreState().activeBreakpointId
+        return await runRenderSnapshot({ ...parsed, breakpointId })
+      }
       default:
         return aiToolError(`Unknown instatic tool: ${toolName}`)
     }

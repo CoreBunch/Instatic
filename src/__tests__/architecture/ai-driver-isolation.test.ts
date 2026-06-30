@@ -16,11 +16,17 @@
  *   - `@anthropic-ai/claude-agent-sdk` — replaced by direct POST /v1/messages
  *   - `@openai/agents`                  — replaced by direct POST /v1/responses
  *   - `@openrouter/agent`               — replaced by direct POST /v1/responses
- *   - `@modelcontextprotocol/sdk`       — only ever used to wrap tools for the
- *                                         Agent SDK; gone with it
  *   - `zod`                             — drivers pass TypeBox schemas through
  *                                         as JSON Schema; no Zod bridge
  *   - `@anthropic-ai/sdk`               — the plain SDK, always banned
+ *
+ * Scoped (allowed under one prefix only):
+ *   - `@modelcontextprotocol/sdk`       — allowed ONLY under `server/ai/mcp/`,
+ *                                         where Instatic implements an MCP
+ *                                         *server* (a real wire protocol — a
+ *                                         legitimate SDK use). Still banned in
+ *                                         the drivers and the browser, which
+ *                                         must never speak MCP.
  */
 
 import { describe, it, expect } from 'bun:test'
@@ -40,6 +46,12 @@ interface PackageRule {
    * package. Anything outside this list violates the gate.
    */
   allowed: string[]
+  /**
+   * Repo-relative path prefixes (forward slashes) under which this package
+   * may be imported by any file. Used for module-scoped allowances (e.g. the
+   * MCP server lives under `server/ai/mcp/` and owns the MCP SDK).
+   */
+  allowedPrefixes?: string[]
 }
 
 const RULES: PackageRule[] = [
@@ -64,8 +76,9 @@ const RULES: PackageRule[] = [
   {
     label: '@modelcontextprotocol/sdk',
     importRe: /from\s+['"]@modelcontextprotocol\/sdk['"]|require\s*\(\s*['"]@modelcontextprotocol\/sdk['"]\s*\)|from\s+['"]@modelcontextprotocol\/sdk\/|require\s*\(\s*['"]@modelcontextprotocol\/sdk\//,
-    // No allowed callers — only ever wrapped tools for the Agent SDK.
+    // Allowed only inside the MCP server module — banned everywhere else.
     allowed: [],
+    allowedPrefixes: ['server/ai/mcp/'],
   },
   {
     label: 'zod',
@@ -114,6 +127,7 @@ describe('ai-driver-isolation gate', () => {
       for (const file of allFiles) {
         const rel = repoRelative(file)
         if (rule.allowed.includes(rel)) continue
+        if (rule.allowedPrefixes?.some((p) => rel.startsWith(p))) continue
         let content: string
         try { content = readFileSync(file, 'utf8') } catch { continue }
         if (rule.importRe.test(content)) {

@@ -1,8 +1,8 @@
 /**
  * Architecture Gate — AI tool input schemas are a single source of truth.
  *
- * The site write-tool input schemas (`insertHtml`, `updateNodeProps`,
- * `set_color_tokens`, …) live ONCE in the dependency-free leaf
+ * The site write-tool input schemas (`site_insert_html`, `site_update_node_props`,
+ * `site_set_color_tokens`, …) live ONCE in the dependency-free leaf
  * `src/core/ai/toolSchemas.ts` (re-exported from `@core/ai`). They are
  * consumed by BOTH sides of the browser bridge:
  *
@@ -65,35 +65,35 @@ const PROJECT_ROOT = join(import.meta.dir, '../../../')
 
 /** Tool name → the canonical leaf schema the registry MUST reference. */
 const EXPECTED_SCHEMA_BY_TOOL = {
-  insertHtml: InsertHtmlInputSchema,
-  getNodeHtml: GetNodeHtmlInputSchema,
-  read_document: ReadDocumentInputSchema,
-  open_document: OpenDocumentInputSchema,
-  replaceNodeHtml: ReplaceNodeHtmlInputSchema,
-  deleteNode: DeleteNodeInputSchema,
-  updateNodeProps: UpdateNodePropsInputSchema,
-  moveNode: MoveNodeInputSchema,
-  renameNode: RenameNodeInputSchema,
-  duplicateNode: DuplicateNodeInputSchema,
-  applyCss: ApplyCssInputSchema,
-  assignClass: AssignClassInputSchema,
-  removeClass: RemoveClassInputSchema,
-  list_code_assets: ListCodeAssetsInputSchema,
-  read_code_asset: ReadCodeAssetInputSchema,
-  write_code_asset: WriteCodeAssetInputSchema,
-  patch_code_asset: PatchCodeAssetInputSchema,
-  inspect_code_runtime: InspectCodeRuntimeInputSchema,
-  addPage: AddPageInputSchema,
-  deletePage: DeletePageInputSchema,
-  renamePage: RenamePageInputSchema,
-  duplicatePage: DuplicatePageInputSchema,
-  setPageTemplate: SetPageTemplateInputSchema,
-  clearPageTemplate: ClearPageTemplateInputSchema,
-  set_color_tokens: SetColorTokensInputSchema,
-  set_font_tokens: SetFontTokensInputSchema,
-  set_type_scale: SetTypeScaleInputSchema,
-  set_spacing_scale: SetSpacingScaleInputSchema,
-  render_snapshot: RenderSnapshotInputSchema,
+  site_insert_html: InsertHtmlInputSchema,
+  site_get_node_html: GetNodeHtmlInputSchema,
+  site_read_document: ReadDocumentInputSchema,
+  site_open_document: OpenDocumentInputSchema,
+  site_replace_node_html: ReplaceNodeHtmlInputSchema,
+  site_delete_node: DeleteNodeInputSchema,
+  site_update_node_props: UpdateNodePropsInputSchema,
+  site_move_node: MoveNodeInputSchema,
+  site_rename_node: RenameNodeInputSchema,
+  site_duplicate_node: DuplicateNodeInputSchema,
+  site_apply_css: ApplyCssInputSchema,
+  site_assign_class: AssignClassInputSchema,
+  site_remove_class: RemoveClassInputSchema,
+  site_list_code_assets: ListCodeAssetsInputSchema,
+  site_read_code_asset: ReadCodeAssetInputSchema,
+  site_write_code_asset: WriteCodeAssetInputSchema,
+  site_patch_code_asset: PatchCodeAssetInputSchema,
+  site_inspect_code_runtime: InspectCodeRuntimeInputSchema,
+  site_add_page: AddPageInputSchema,
+  site_delete_page: DeletePageInputSchema,
+  site_rename_page: RenamePageInputSchema,
+  site_duplicate_page: DuplicatePageInputSchema,
+  site_set_page_template: SetPageTemplateInputSchema,
+  site_clear_page_template: ClearPageTemplateInputSchema,
+  site_set_color_tokens: SetColorTokensInputSchema,
+  site_set_font_tokens: SetFontTokensInputSchema,
+  site_set_type_scale: SetTypeScaleInputSchema,
+  site_set_spacing_scale: SetSpacingScaleInputSchema,
+  site_render_snapshot: RenderSnapshotInputSchema,
 } as const
 
 describe('ai-tool-schema SSOT gate', () => {
@@ -132,7 +132,7 @@ describe('ai-tool-schema SSOT gate', () => {
       const src = readFileSync(path, 'utf8')
       expect(src).toContain("from '@core/ai'")
       // The retired per-tool local declarations must not reappear. (The executor
-      // legitimately COMPOSES render_snapshot via `Type.Composite`, which is not
+      // legitimately COMPOSES site_render_snapshot via `Type.Composite`, which is not
       // one of these `Type.Object` re-declarations.)
       expect(src).not.toMatch(/const\s+insertHtmlSchema\s*=\s*Type\.Object/)
       expect(src).not.toMatch(/const\s+setColorTokensSchema\s*=\s*Type\.Object/)

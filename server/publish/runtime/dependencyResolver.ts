@@ -34,8 +34,10 @@ interface ResolveSiteDependencyLockOptions {
 }
 
 function registryPackageUrl(registryUrl: string, packageName: string): string {
+  // Scoped names keep their leading `@` literal (npm wants `@scope%2fname`),
+  // but every `/` is encoded — not just the first (CodeQL js/incomplete-sanitization).
   const encoded = packageName.startsWith('@')
-    ? packageName.replace('/', '%2f')
+    ? packageName.replaceAll('/', '%2f')
     : encodeURIComponent(packageName)
   return `${registryUrl.replace(/\/$/, '')}/${encoded}`
 }

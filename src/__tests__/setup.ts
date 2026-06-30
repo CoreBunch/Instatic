@@ -302,7 +302,10 @@ if (typeof (globalThis as { EventSource?: unknown }).EventSource === 'undefined'
 {
   const { afterEach } = await import('bun:test')
   const { cleanup } = await import('@testing-library/react')
+  const { __resetToastBusForTests } = await import('@ui/components/Toast/toastBus')
   afterEach(() => {
     cleanup()
+    __resetToastBusForTests()
+    document.getElementById('toast-root')?.remove()
   })
 }

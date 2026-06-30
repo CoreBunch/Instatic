@@ -377,8 +377,8 @@ function stepLabelsForGroup(group: { steps: string }): string[] {
 function expandClassPattern(pattern: string, step: string): string {
   const trimmed = pattern.trim().replace(/^\./, '')
   if (!trimmed) return ''
-  if (trimmed.includes('*')) return trimmed.replace('*', step)
-  if (trimmed.includes('{step}')) return trimmed.replace('{step}', step)
+  if (trimmed.includes('*')) return trimmed.replaceAll('*', step)
+  if (trimmed.includes('{step}')) return trimmed.replaceAll('{step}', step)
   return `${trimmed}-${step}`
 }
 

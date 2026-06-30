@@ -6,6 +6,55 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 
 ## Unreleased
 
+## 0.0.7 - 2026-06-29
+
+### AI & integrations
+
+- Added MCP connectors so external AI clients can use the CMS tool surface through scoped connector tokens.
+
+### Design and onboarding
+
+- Imported Core Framework defaults from onboarding so new sites start with the selected design system values in place.
+
+### Security
+
+- Hardened sanitizers and regular expressions flagged by CodeQL.
+
+### Documentation and deployment
+
+- Replaced the README hero screenshot with a YouTube-linked introductory video thumbnail.
+- Added README guidance explaining that image-based installs update by redeploying the latest image.
+
+## 0.0.6 - 2026-06-26
+
+### AI & agent tooling
+
+- Added runtime code asset tools for agents so generated or edited runtime assets can be managed through the same agent workflow.
+
+### Site import, export, and transfer
+
+- Fixed site export downloads in environments where blob-backed responses were unreliable.
+- Streamed site transfer bundles and unified the import review flow around the transfer archive path.
+- Reused the CMS media client across site import code paths.
+
+### Templates, content, and publishing
+
+- Fixed dynamic data resolution inside outlet previews.
+- Stopped auto-creating post type templates; entry templates are now explicit pages users create and assign.
+- Hid the empty content settings panel until an entry is selected.
+
+### Editor and admin
+
+- Split non-site workspace layout state from the site editor layout.
+- Fixed Spotlight layer commands to operate on the active canvas tree.
+- Removed circular admin dependencies and restored lazy HMR loading.
+- Simplified admin color token vocabulary and added fluid typography and spacing token scales.
+
+### Quality
+
+- Reused page-tree traversal selectors in form analysis.
+- Expanded feature validation coverage across the admin, server, and architecture gates.
+
 ## 0.0.5 - 2026-06-17
 
 ### AI & agent tooling
