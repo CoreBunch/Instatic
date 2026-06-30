@@ -56,13 +56,24 @@ export function ColorsPanelBody() {
   const effectiveActiveCategory =
     activeCategory !== null && categories.includes(activeCategory) ? activeCategory : null
 
+  // Group the list by category (same order as the filter chips), then by the
+  // intra-category `order`. This matches how reordering works — move up / down
+  // swaps a token only with its category siblings — so categories always render
+  // as contiguous blocks and a re-imported token slots in with its group
+  // instead of trailing at the end of a flat order-sorted list.
+  const categoryRank = new Map(categories.map((label, index) => [label, index]))
   const normalizedQuery = query.trim().toLowerCase()
   const filteredTokens = colors.tokens
     .filter(
       (token) => effectiveActiveCategory === null || token.category === effectiveActiveCategory,
     )
     .filter((token) => !normalizedQuery || token.slug.toLowerCase().includes(normalizedQuery))
-    .sort((a, b) => a.order - b.order || a.slug.localeCompare(b.slug))
+    .sort((a, b) => {
+      const rankA = categoryRank.get(a.category) ?? categories.length
+      const rankB = categoryRank.get(b.category) ?? categories.length
+      if (rankA !== rankB) return rankA - rankB
+      return a.order - b.order || a.slug.localeCompare(b.slug)
+    })
 
   const contextToken = contextMenu
     ? (colors.tokens.find((token) => token.id === contextMenu.tokenId) ?? null)
