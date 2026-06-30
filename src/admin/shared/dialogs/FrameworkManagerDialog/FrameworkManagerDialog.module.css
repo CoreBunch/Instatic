@@ -141,23 +141,9 @@
     margin-top: var(--space-xl);
 }
 
-/* Always pin the primary apply to the right; the optional prune link sits left. */
+/* Pin the primary apply button to the right of the action row. */
 .applyButton {
     margin-left: auto;
-}
-
-.removeWarning {
-    margin: 0;
-    font-size: var(--text-s);
-    line-height: 1.45;
-    color: var(--danger-text);
-}
-
-.error {
-    margin: var(--space-xl) 0 0;
-    font-size: var(--text-s);
-    line-height: 1.45;
-    color: var(--danger-text);
 }
 
 @media (max-width: 560px) {

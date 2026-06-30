@@ -13,7 +13,10 @@
  *                       the applier can't remove, e.g. onboarding's importer).
  *
  * The card matching the current state is pre-selected; applying is only enabled
- * once a different state is chosen.
+ * once a different state is chosen. Applying routes through the shared
+ * `useFrameworkChangeConfirm` flow, so a destructive switch (dropping utility
+ * classes still in use) raises the same FrameworkChangeConfirmDialog the rest
+ * of the editor uses; non-destructive switches commit immediately.
  */
 import { useRef, useState, type CSSProperties } from 'react'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
@@ -22,10 +25,12 @@ import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
+import { pushToast } from '@ui/components/Toast'
 import { cn } from '@ui/cn'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import type { FrameworkPreset } from '@core/framework'
+import { applyFrameworkPreset, type FrameworkPreset } from '@core/framework'
 import type { PixelArtIconComponent } from '@core/dashboard'
+import { useFrameworkChangeConfirm } from '@admin/shared/dialogs/FrameworkChangeConfirmDialog'
 import type { FrameworkManagerApplier } from './applier'
 import styles from './FrameworkManagerDialog.module.css'
 
@@ -82,8 +87,6 @@ interface FrameworkManagerDialogProps {
   applier: FrameworkManagerApplier
   /** The framework's current state — pre-selects a card and gates the button. */
   currentState: FrameworkPreset
-  /** How many elements reference framework classes (drives the remove warning). */
-  usedFrameworkClassCount: number
   /** Called after any successful apply. */
   onApplied?: () => void
 }
@@ -93,16 +96,14 @@ export function FrameworkManagerDialog({
   onClose,
   applier,
   currentState,
-  usedFrameworkClassCount,
   onApplied,
 }: FrameworkManagerDialogProps) {
   // Preselect the framework's actual current state, not a fixed default.
   const [target, setTarget] = useState<FrameworkPreset>(currentState)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [wasOpen, setWasOpen] = useState(open)
   const applyButtonRef = useRef<HTMLButtonElement | null>(null)
+  const confirmFrameworkChange = useFrameworkChangeConfirm()
 
   // Re-sync the picker to the live state each time the dialog opens, so it
   // always reflects reality rather than the last session's choice. Adjusting
@@ -110,45 +111,45 @@ export function FrameworkManagerDialog({
   // resetting state when a prop changes.
   if (open !== wasOpen) {
     setWasOpen(open)
-    if (open) {
-      setTarget(currentState)
-      setConfirmingRemove(false)
-      setError(null)
-    }
+    if (open) setTarget(currentState)
   }
 
   function requestClose() {
     if (busy) return
-    setError(null)
-    setConfirmingRemove(false)
     onClose()
   }
 
-  function selectTarget(next: FrameworkPreset) {
-    setTarget(next)
-    setConfirmingRemove(false)
-  }
-
-  function handleApply() {
-    if (target === 'none' && !confirmingRemove) {
-      setConfirmingRemove(true)
-      return
-    }
+  function runApply() {
+    setBusy(true)
     void (async () => {
-      setBusy(true)
-      setError(null)
       try {
         await applier.apply(target)
         onApplied?.()
         onClose()
       } catch (err) {
         console.error('[FrameworkManagerDialog] apply failed:', err)
-        setError(getErrorMessage(err, 'Could not update the framework.'))
+        pushToast({
+          kind: 'error',
+          title: 'Could not update the framework',
+          body: getErrorMessage(err, 'Unknown framework error'),
+        })
       } finally {
         setBusy(false)
-        setConfirmingRemove(false)
       }
     })()
+  }
+
+  function handleApply() {
+    // Route through the shared confirm flow: it previews the settings change,
+    // and only raises the FrameworkChangeConfirmDialog when the switch would
+    // drop utility classes that are still in use — otherwise commits silently.
+    confirmFrameworkChange({
+      actionLabel: confirmActionLabel(),
+      applyChange: (draft) => {
+        draft.settings.framework = applyFrameworkPreset(draft.settings.framework, target)
+      },
+      commit: runApply,
+    })
   }
 
   const removing = target === 'none'
@@ -159,10 +160,16 @@ export function FrameworkManagerDialog({
     (option) => option.id !== 'none' || applier.capabilities.canRemove,
   )
 
+  function confirmActionLabel(): string {
+    if (target === 'none') return 'Remove framework'
+    if (target === 'variables') return 'Switch to variables'
+    return 'Update framework'
+  }
+
   function applyLabel(): string {
     if (busy) return removing ? 'Removing…' : 'Applying…'
     if (noChange) return 'Up to date'
-    if (removing) return confirmingRemove ? 'Confirm remove' : 'Remove framework'
+    if (removing) return 'Remove framework'
     if (currentState === 'none') return 'Import framework'
     return 'Update framework'
   }
@@ -210,7 +217,7 @@ export function FrameworkManagerDialog({
                 selected && styles.optionSelected,
                 option.destructive && selected && styles.optionDestructive,
               )}
-              onClick={() => selectTarget(option.id)}
+              onClick={() => setTarget(option.id)}
               disabled={busy}
             >
               <span className={styles.optionHead}>
@@ -251,19 +258,6 @@ export function FrameworkManagerDialog({
           {applyLabel()}
         </Button>
       </div>
-
-      {removing && confirmingRemove && usedFrameworkClassCount > 0 && (
-        <p className={styles.removeWarning} role="alert">
-          {usedFrameworkClassCount} element{usedFrameworkClassCount === 1 ? '' : 's'} use
-          framework classes — those references will be removed.
-        </p>
-      )}
-
-      {error && (
-        <p className={styles.error} role="alert">
-          {error}
-        </p>
-      )}
     </Dialog>
   )
 }

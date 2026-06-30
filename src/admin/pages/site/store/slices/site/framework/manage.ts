@@ -8,7 +8,7 @@
  * classIds off every node. Because it runs through `mutateSite`, it is recorded
  * in the editor's undo history.
  */
-import { mergeCoreFrameworkSettings, setFrameworkUtilities } from '@core/framework'
+import { applyFrameworkPreset } from '@core/framework'
 import type { SiteSlice, SiteSliceHelpers } from '../types'
 import { reconcileFrameworkClasses } from './reconcile'
 
@@ -20,25 +20,11 @@ export function createFrameworkManagerActions({
 }: SiteSliceHelpers): FrameworkManagerActions {
   return {
     setFrameworkPreset: (target) => {
-      if (target === 'none') {
-        mutateSite((draftSite) => {
-          if (!draftSite.settings.framework) return false
-          draftSite.settings.framework = undefined
-          reconcileFrameworkClasses(draftSite)
-          return true
-        })
-        return
-      }
-
       const { site } = get()
       if (!site) throw new Error('[siteSlice] Site document is not initialized')
+      if (target === 'none' && !site.settings.framework) return
       // Compute from the (frozen) live settings; assign inside the draft.
-      // Merge add-missing first (so 'full' restores the typography/spacing class
-      // generators a prior 'variables' round stripped), then flip utilities to
-      // match the target so existing tokens switch state, not just new ones.
-      const includeUtilities = target === 'full'
-      const merged = mergeCoreFrameworkSettings(site.settings.framework, { includeUtilities })
-      const next = setFrameworkUtilities(merged, includeUtilities)
+      const next = applyFrameworkPreset(site.settings.framework, target)
       mutateSite((draftSite) => {
         draftSite.settings.framework = next
         reconcileFrameworkClasses(draftSite)

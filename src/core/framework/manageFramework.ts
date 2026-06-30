@@ -89,6 +89,24 @@ export function setFrameworkUtilities(
 }
 
 /**
+ * Compute the framework settings for a declarative target state — the single
+ * source of truth shared by the store action, the onboarding importer, and the
+ * dialog's change-preview. 'none' clears the framework; 'full' / 'variables'
+ * merge the preset (add-missing) and flip utility generation to match.
+ */
+export function applyFrameworkPreset(
+  existing: FrameworkSettings | undefined,
+  target: FrameworkPreset,
+): FrameworkSettings | undefined {
+  if (target === 'none') return undefined
+  const includeUtilities = target === 'full'
+  return setFrameworkUtilities(
+    mergeCoreFrameworkSettings(existing, { includeUtilities }),
+    includeUtilities,
+  )
+}
+
+/**
  * Merge the Core Framework preset into an existing framework, adding only what
  * is missing. Color tokens match by `slug`; typography / spacing groups by
  * `namingConvention`; preferences fill absent keys only. Existing (incl.

@@ -46,7 +46,7 @@ import {
   type FrameworkManagerApplier,
 } from '@admin/shared/dialogs/FrameworkManagerDialog'
 import { cmsAdapter } from '@core/persistence/cms'
-import { mergeCoreFrameworkSettings, setFrameworkUtilities } from '@core/framework'
+import { applyFrameworkPreset } from '@core/framework'
 import { reconcileFrameworkClasses } from '@site/store/slices/site/framework/reconcile'
 import styles from './OnboardingPanel.module.css'
 
@@ -137,13 +137,7 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
     apply: async (target) => {
       const site = await cmsAdapter.loadSite('default')
       if (!site) throw new Error('Site is not ready yet — finish setup first.')
-      if (target === 'none') {
-        site.settings.framework = undefined
-      } else {
-        const includeUtilities = target === 'full'
-        const merged = mergeCoreFrameworkSettings(site.settings.framework, { includeUtilities })
-        site.settings.framework = setFrameworkUtilities(merged, includeUtilities)
-      }
+      site.settings.framework = applyFrameworkPreset(site.settings.framework, target)
       // Regenerate / prune the generated `framework:` utility classes (and strip
       // stale classIds off nodes) to match the new settings — the same reconcile
       // the in-editor store runs. Without it, removing the framework here would
@@ -244,7 +238,6 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
         onClose={() => setFrameworkImportOpen(false)}
         applier={onboardingApplier}
         currentState={facts.framework === 'done' ? 'full' : 'none'}
-        usedFrameworkClassCount={0}
         onApplied={onFrameworkImported}
       />
     </section>
