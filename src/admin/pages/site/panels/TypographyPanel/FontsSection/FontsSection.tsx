@@ -16,6 +16,7 @@ import type { CSSProperties } from 'react'
 import { Button } from '@ui/components/Button'
 import { SplitButton, type SplitButtonMenuItem } from '@ui/components/SplitButton'
 import { EmptyState } from '@ui/components/EmptyState'
+import { pushToast } from '@ui/components/Toast'
 import { useEditorStore } from '@site/store/store'
 import type { FontEntry, FontToken } from '@core/fonts'
 import { compareVariants } from '@core/fonts'
@@ -77,7 +78,6 @@ export function FontsSection() {
   const [editEntry, setEditEntry] = useState<FontEntry | null>(null)
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false)
   const [editToken, setEditToken] = useState<FontToken | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
 
   useInstalledFontFaces(fonts)
 
@@ -113,20 +113,28 @@ export function FontsSection() {
   }
 
   async function handleRemove(entry: FontEntry) {
-    setActionError(null)
     // Optimistically drop the entry from the library — the on-disk woff2 files
     // are best-effort to delete; a stale folder is harmless and gets pruned on
     // the next install of the same family.
     const removed = removeFont(entry.id)
     if (!removed) {
-      setActionError('Reassign or delete font tokens before removing this family.')
+      pushToast({
+        kind: 'error',
+        title: 'Font still in use',
+        body: 'Reassign or delete the font tokens that reference this family before removing it.',
+      })
       return
     }
     if (entry.source === 'google') {
       try {
         await deleteCmsFontFamily(entry.family)
       } catch (err) {
-        setActionError(getErrorMessage(err, 'Could not delete font files'))
+        console.error('[FontsSection] delete font files failed:', err)
+        pushToast({
+          kind: 'error',
+          title: 'Could not delete font files',
+          body: getErrorMessage(err, 'Unknown font deletion error'),
+        })
       }
     }
   }
@@ -260,10 +268,6 @@ export function FontsSection() {
             </ul>
           )}
         </>
-      )}
-
-      {actionError && (
-        <p role="alert" className={styles.errorAlert}>{actionError}</p>
       )}
 
       {dialogOpen && (
