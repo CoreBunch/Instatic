@@ -110,15 +110,17 @@ export function applyFrameworkPreset(
  * Merge the Core Framework preset into an existing framework, adding only what
  * is missing. Color tokens match by `slug`; typography / spacing groups by
  * `namingConvention`; preferences fill absent keys only. Existing (incl.
- * customized) tokens are preserved. Empty/undefined input ⇒
- * `buildCoreFrameworkSettings(options)`.
+ * customized) tokens — and any user-authored class generators — are preserved.
+ * Only an absent framework (`undefined`) seeds a fresh preset; a framework that
+ * merely has no colors yet still merges (so a type/spacing-only setup keeps its
+ * generated classes and just gains the missing color tokens).
  */
 export function mergeCoreFrameworkSettings(
   existing: FrameworkSettings | undefined,
   options: CoreFrameworkImportOptions,
 ): FrameworkSettings {
   const preset = buildCoreFrameworkSettings(options)
-  if (!existing || existing.colors.tokens.length === 0) return preset
+  if (!existing) return preset
 
   const next: FrameworkSettings = structuredClone(existing)
 

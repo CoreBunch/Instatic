@@ -83,4 +83,19 @@ describe('mergeCoreFrameworkSettings', () => {
     const merged = mergeCoreFrameworkSettings(existing, { includeUtilities: true })
     expect(merged.typography!.groups.length).toBeGreaterThan(0)
   })
+
+  it('preserves user class generators when the framework has no colors yet', () => {
+    // A type/spacing-only framework (no colors) must NOT be treated as empty and
+    // reset to a fresh preset — that would drop user-authored class generators.
+    const existing = buildCoreFrameworkSettings({ includeUtilities: true })
+    existing.colors.tokens = []
+    expect(existing.spacing!.classes!.length).toBeGreaterThan(0)
+    existing.spacing!.classes![0]!.id = 'user-custom-gen'
+
+    const merged = mergeCoreFrameworkSettings(existing, { includeUtilities: true })
+    // Colors get seeded in...
+    expect(merged.colors.tokens.length).toBe(13)
+    // ...without nuking the user's generator.
+    expect(merged.spacing!.classes!.map((c) => c.id)).toContain('user-custom-gen')
+  })
 })
