@@ -445,15 +445,15 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
     expect(primaryButtons.map((button) => button.getAttribute('data-testid'))).toEqual([
       'panel-rail-layers',
       'panel-rail-site',
-      'panel-rail-selectors',
       'panel-rail-framework',
+      'panel-rail-selectors',
       'panel-rail-media',
     ])
     expect(primaryButtons.map((button) => button.getAttribute('data-icon'))).toEqual([
       'database-solid',
       'files-stack-2',
-      'paint-bucket',
       'colors-swatch',
+      'paint-bucket',
       'images',
     ])
     const primaryAccents = primaryButtons.map((button) => button.getAttribute('data-accent'))

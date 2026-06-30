@@ -50,16 +50,16 @@ const PRIMARY_RAIL_ITEMS: PrimaryRailItem[] = [
     iconName: 'files-stack-2',
   },
   {
-    id: 'selectors',
-    label: 'Selectors',
-    icon: PaintBucketSolidIcon,
-    iconName: 'paint-bucket',
-  },
-  {
     id: 'framework',
     label: 'Framework',
     icon: ColorsSwatchSolidIcon,
     iconName: 'colors-swatch',
+  },
+  {
+    id: 'selectors',
+    label: 'Selectors',
+    icon: PaintBucketSolidIcon,
+    iconName: 'paint-bucket',
   },
   {
     id: 'media',
