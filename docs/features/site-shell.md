@@ -453,7 +453,7 @@ The panel rail's per-viewport canvas iframe shows up automatically when `preview
 
 ### Add a color token
 
-The Site → Colors panel calls `createFrameworkColorToken(input)` on the editor store's `siteSlice`. The action writes to `settings.framework.colors.tokens`, then calls `reconcileFrameworkClasses` to sync generated utility classes. Saving updates `framework.css` via `buildSiteFrameworkCss(site)` and republishes affected pages.
+The Framework panel's Colors tab calls `createFrameworkColorToken(input)` on the editor store's `siteSlice`. The action writes to `settings.framework.colors.tokens`, then calls `reconcileFrameworkClasses` to sync generated utility classes. Saving updates `framework.css` via `buildSiteFrameworkCss(site)` and republishes affected pages.
 
 ### Add a site file
 

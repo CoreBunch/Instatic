@@ -1,11 +1,11 @@
 /**
- * DomPanel — floating overlay showing the full node tree.
+ * DomPanel — the Layers tab of the consolidated `ExplorerPanel`.
  *
- * Guideline #356 (Overlay Panel Style):
- * - Floating overlay: position absolute, draggable via header (useDraggablePanel)
- * - Glass backdrop: backdrop-filter blur + rgba tint + inset shadow
- * - fit-content height, max-height: 60vh — NOT full viewport height
- * - Header is the drag handle (36px) — PanelHeader shared component
+ * Renders the full node tree of the active page. It is always mounted as a tab
+ * body inside `ExplorerPanel`, which owns the panel shell (header + segmented
+ * tabs + close button) and controls visibility. DomPanel therefore has no
+ * chrome of its own — no draggable header, no collapse toggle, no width
+ * persistence; it fills the sidebar slot the Explorer panel gives it.
  *
  * Guideline #357 (Compact UI Density):
  * - Row height: 28px (WCAG touch target NOT required for editor chrome)
@@ -57,9 +57,10 @@ import { useEditorPreference } from '@site/preferences/editorPreferences'
 import { isNarrowEditorChromeViewport } from '@site/layout/responsiveChrome'
 import { SearchBar } from '@ui/components/SearchBar'
 import { SkeletonTree } from '@ui/components/Skeleton'
-import { PanelHeader } from '@admin/shared/PanelHeader'
-import { useDraggablePanel } from '@site/hooks/useDraggablePanel'
-import { cn } from '@ui/cn'
+import { Button } from '@ui/components/Button'
+import { ModuleInserterDialog } from '@site/module-picker/ModuleInserterDialog'
+import { useInsertInserterItem } from '@site/hooks/useInsertInserterItem'
+import { AppGridPlusGlyphIcon } from 'pixel-art-icons/icons/app-grid-plus-glyph'
 import type { IconComponent } from 'pixel-art-icons/types'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { TextStartTIcon } from 'pixel-art-icons/icons/text-start-t'
@@ -70,10 +71,6 @@ import { ListBoxSolidIcon } from 'pixel-art-icons/icons/list-box-solid'
 import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
 import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import styles from './DomPanel.module.css'
-
-const PANEL_STORAGE_KEY = 'instatic-dom-panel'
-const DEFAULT_WIDTH = 280
-type PanelVariant = 'floating' | 'docked'
 
 // ─── Search results (flat filtered list) ─────────────────────────────────────
 
@@ -145,12 +142,9 @@ function SearchResults({ rows, showTag, showClasses, onSelect }: SearchResultsPr
 
 // ─── Inner panel (needs context from DomTreeProvider) ─────────────────────────
 
-function DomPanelInner({ variant = 'floating', editable = true }: { variant?: PanelVariant; editable?: boolean }) {
+function DomPanelInner({ editable = true }: { editable?: boolean }) {
   const page = useEditorStore(selectActiveCanvasPage)
   const activeDocument = useEditorStore((s) => s.activeDocument)
-  const panelState = useEditorStore((s) => s.domTreePanel)
-  const setDomTreePanel = useEditorStore((s) => s.setDomTreePanel)
-  const toggleDomTreePanel = useEditorStore((s) => s.toggleDomTreePanel)
   const setFocusedPanel = useEditorStore((s) => s.setFocusedPanel)
   const focusedPanel = useEditorStore((s) => s.focusedPanel)
   // Per-node selector — only this ref updates when selection changes (Guideline #318)
@@ -174,9 +168,18 @@ function DomPanelInner({ variant = 'floating', editable = true }: { variant?: Pa
 
   const treeRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const insertTriggerRef = useRef<HTMLButtonElement>(null)
   const store = useExpansionStore()
 
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Module-insert affordance next to the search field. Reuses the exact same
+  // command surface (ModuleInserterDialog) and target resolution
+  // (useInsertInserterItem → resolveInsertLocation from the current selection)
+  // as the canvas "+" and toolbar "+ Add" buttons, so all three entry points
+  // insert identically.
+  const [insertOpen, setInsertOpen] = useState(false)
+  const handleInsertItem = useInsertInserterItem()
 
   // Right-click on the empty background of the tree area opens a small
   // context menu with Paste + Insert module options targeting the page root.
@@ -192,11 +195,9 @@ function DomPanelInner({ variant = 'floating', editable = true }: { variant?: Pa
       : [page.rootNodeId]
     : []
 
-  // ── Draggable panel position ───────────────────────────────────────────────
-  const { panelRef, headerDragProps, panelPositionStyle } = useDraggablePanel(
-    'dom',
-    () => ({ x: 16, y: 16 }),
-  )
+  // Panel landmark ref — used by the F6 focus-cycle effect to move focus into
+  // the Layers tree. The Explorer shell owns positioning/visibility.
+  const panelRef = useRef<HTMLDivElement>(null)
 
   // ─── DnD sensors ──────────────────────────────────────────────────────────
   const sensors = useSensors(
@@ -207,34 +208,6 @@ function DomPanelInner({ variant = 'floating', editable = true }: { variant?: Pa
 
   const treeAreaRef = useRef<HTMLDivElement>(null)
   const dnd = useDomPanelDnd({ page, treeAreaRef, expandNode: store.expand, isExpanded: store.isExpanded })
-
-  // ─── Restore panel width/other state from localStorage on mount ────────────
-  // useState lazy initializer runs exactly once per component instance, which
-  // is the right semantics for "read stored width at mount". The follow-up
-  // effect dispatches the value into the store with both deps stable (the
-  // memoized width never changes; Zustand actions have stable identities).
-  const [initialStoredWidth] = useState<number | undefined>(() => {
-    try {
-      const stored = localStorage.getItem(PANEL_STORAGE_KEY)
-      if (!stored) return undefined
-      const parsed = JSON.parse(stored)
-      return typeof parsed.width === 'number' ? parsed.width : undefined
-    } catch {
-      return undefined
-    }
-  })
-  useEffect(() => {
-    if (initialStoredWidth !== undefined) {
-      setDomTreePanel({ width: initialStoredWidth })
-    }
-  }, [initialStoredWidth, setDomTreePanel])
-
-  // ─── Persist panel state to localStorage on change ────────────────────────
-  useEffect(() => {
-    try {
-      localStorage.setItem(PANEL_STORAGE_KEY, JSON.stringify({ width: panelState.width }))
-    } catch { /* ignore */ }
-  }, [panelState.width])
 
   // ─── Ancestor auto-expand + scroll-to-selected ────────────────────────────
   // When the canvas selection changes, ensure the selected node is visible in
@@ -393,17 +366,6 @@ function DomPanelInner({ variant = 'floating', editable = true }: { variant?: Pa
       })
   })()
 
-  // Read-only callers (Viewer / Client) never see a toggle to expand the
-  // layers panel — the toolbar LayersButton (and the toggleable rail) is
-  // editor-only. If we honour the persisted `collapsed` flag in their UI,
-  // they'd get an always-empty sidebar slot. Force the panel open for
-  // non-editors; structural editors keep the persisted toggle.
-  const collapsed = editable ? panelState.collapsed : false
-  const width = panelState.width || DEFAULT_WIDTH
-
-  // Fully hidden when collapsed — toolbar LayersButton is the toggle to reopen
-  if (collapsed) return null
-
   const dragOverlay = (
     <DragOverlay dropAnimation={null}>
       {dnd.activeId && dnd.activeLabel && dnd.activeModuleId ? (
@@ -425,7 +387,7 @@ function DomPanelInner({ variant = 'floating', editable = true }: { variant?: Pa
 
   return (
     <div
-      ref={panelRef as React.RefObject<HTMLDivElement>}
+      ref={panelRef}
       data-panel=""
       data-testid={page ? 'dom-panel-ready' : 'dom-panel'}
       role="complementary"
@@ -434,34 +396,38 @@ function DomPanelInner({ variant = 'floating', editable = true }: { variant?: Pa
       onKeyDown={handlePanelKeyDown}
       onFocus={() => setFocusedPanel('domTree')}
       onClick={(e) => e.stopPropagation()}
-      // Width is state-driven (resizable panel) — CSS var injection
-      // Panel position is drag-driven — CSS var injection from useDraggablePanel
-      style={
-        variant === 'floating'
-          ? { '--panel-w': `${width}px`, ...panelPositionStyle } as React.CSSProperties
-          : undefined
-      }
-      className={cn(styles.panel, variant === 'docked' && styles.panelDocked)}
+      className={styles.panel}
     >
-      {/* ─── Shared Panel Header — drag handle + close button ─────────────── */}
-      <PanelHeader
-        panelId="dom"
-        title="Layers"
-        onClose={toggleDomTreePanel}
-        dragHandleProps={variant === 'floating' ? headerDragProps : undefined}
-      />
-
-      {/* ─── Panel content ────────────────────────────────────────────────── */}
+      {/* ─── Panel content. The ExplorerPanel shell owns the header + tabs +
+          close button, so this body renders chrome-free. ────────────────── */}
       <>
-        <SearchBar
-          ref={searchInputRef}
-          data-testid="dom-tree-search"
-          value={searchQuery}
-          onValueChange={setSearchQuery}
-          placeholder="Search layers…"
-          aria-label="Search layers"
-          className={styles.searchBar}
-        />
+        <div className={styles.searchRow}>
+          <SearchBar
+            ref={searchInputRef}
+            data-testid="dom-tree-search"
+            value={searchQuery}
+            onValueChange={setSearchQuery}
+            placeholder="Search layers…"
+            aria-label="Search layers"
+            className={styles.searchFill}
+          />
+          {editable && (
+            <Button
+              ref={insertTriggerRef}
+              variant="secondary"
+              size="sm"
+              iconOnly
+              aria-label="Insert module"
+              aria-haspopup="dialog"
+              aria-expanded={insertOpen}
+              tooltip="Insert module"
+              data-testid="dom-tree-insert-module"
+              onClick={() => setInsertOpen(true)}
+            >
+              <AppGridPlusGlyphIcon size={13} aria-hidden="true" />
+            </Button>
+          )}
+        </div>
 
         {/* ── Tree / search results — scrollable area ─────────────────────
             onContextMenu fires only for right-clicks on EMPTY space inside
@@ -539,14 +505,26 @@ function DomPanelInner({ variant = 'floating', editable = true }: { variant?: Pa
         />,
         document.body,
       )}
+
+      {/* Module inserter — same command surface + target resolution as the
+          canvas "+" and toolbar "+ Add". */}
+      {editable && insertOpen && (
+        <ModuleInserterDialog
+          onClose={() => {
+            setInsertOpen(false)
+            insertTriggerRef.current?.focus()
+          }}
+          onInsertItem={handleInsertItem}
+        />
+      )}
     </div>
   )
 }
 
-export function DomPanel({ variant = 'floating', editable = true }: { variant?: PanelVariant; editable?: boolean }) {
+export function DomPanel({ editable = true }: { editable?: boolean }) {
   return (
     <DomTreeProvider>
-      <DomPanelInner variant={variant} editable={editable} />
+      <DomPanelInner editable={editable} />
     </DomTreeProvider>
   )
 }

@@ -26,7 +26,6 @@ beforeEach(() => {
     selectedNodeIds: [],
     hoveredNodeId: null,
     activeDocument: null,
-    siteExplorerPanelOpen: false,
     _historyPast: [],
     _historyFuture: [],
     canUndo: false,

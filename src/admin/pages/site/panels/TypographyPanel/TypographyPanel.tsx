@@ -72,7 +72,6 @@ function TypographyScalePreview({ points }: { points: TypographyScalePoint[] }) 
         const minLabel = formatTypeValue(point.minPx)
         const maxLabel = formatTypeValue(point.maxPx)
         const variableValue = `var(${point.variableName})`
-        const tooltip = `${point.variableName}: ${minLabel} / ${maxLabel} px`
         return (
           <li
             key={`${point.stepLabel}-${idx}`}
@@ -92,7 +91,6 @@ function TypographyScalePreview({ points }: { points: TypographyScalePoint[] }) 
                 size="micro"
                 shape="flush"
                 className={styles.typeTokenButton}
-                tooltip={tooltip}
                 aria-label={`Copy ${point.variableName}`}
                 onClick={() => copyToClipboard(variableValue)}
               >
@@ -116,9 +114,7 @@ function TypographyScalePreview({ points }: { points: TypographyScalePoint[] }) 
   )
 }
 
-export function TypographyPanel() {
-  const isOpen = useEditorStore((s) => s.typographyPanelOpen)
-  const setOpen = useEditorStore((s) => s.setTypographyPanelOpen)
+export function TypographyTab() {
   const onToggleDisabled = useEditorStore((s) => s.toggleFrameworkTypographyDisabled)
   const onCreateGroup = useEditorStore((s) => s.createFrameworkTypographyGroup)
   const onUpdateGroup = useEditorStore((s) => s.updateFrameworkTypographyGroup)
@@ -216,11 +212,5 @@ export function TypographyPanel() {
     ],
   }
 
-  return (
-    <FrameworkScalePanel
-      isOpen={isOpen}
-      onClose={() => setOpen(false)}
-      adapter={adapter}
-    />
-  )
+  return <FrameworkScalePanel adapter={adapter} />
 }

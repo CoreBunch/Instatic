@@ -29,20 +29,20 @@ import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { ReloadIcon } from 'pixel-art-icons/icons/reload'
 import { useEditorStore } from '@site/store/store'
 import { resolveFrameworkPreferences } from '@core/framework'
-import { Panel } from '@admin/shared/Panel'
 import { PanelBody } from './PanelBody'
 import type { GeneratorShape, GroupShape, ScaleAdapter } from './adapter'
 
-interface FrameworkScalePanelProps {
-  isOpen: boolean
-  onClose: () => void
-}
-
+/**
+ * Chrome-free scale editor body (typography / spacing), rendered inside the
+ * consolidated Framework panel's tab. The `<Panel>` shell + open-state are
+ * owned by FrameworkPanel; this component renders only the scale body + its
+ * group context menu.
+ */
 export function FrameworkScalePanel<G extends GroupShape, C extends GeneratorShape>({
   adapter,
-  isOpen,
-  onClose,
-}: FrameworkScalePanelProps & { adapter: ScaleAdapter<G, C> }) {
+}: {
+  adapter: ScaleAdapter<G, C>
+}) {
   const groups = useEditorStore(adapter.selectGroups)
   const classGenerators = useEditorStore(adapter.selectClasses)
   const isDisabled = useEditorStore(adapter.selectIsDisabled)
@@ -60,9 +60,6 @@ export function FrameworkScalePanel<G extends GroupShape, C extends GeneratorSha
     y: number
     groupId: string
   } | null>(null)
-  const isFirstTab = activeGroup ? sortedGroups[0]?.id === activeGroup.id : true
-
-  if (!isOpen) return null
 
   function handleTabContextMenu(groupId: string, event: MouseEvent<HTMLElement>) {
     event.preventDefault()
@@ -87,32 +84,30 @@ export function FrameworkScalePanel<G extends GroupShape, C extends GeneratorSha
   }
 
   function handleDelete(groupId: string) {
-    adapter.onDeleteGroup(groupId)
-    if (activeGroup?.id === groupId) setActiveTabId(null)
     setContextMenu(null)
+    // The adapter's onDeleteGroup already routes through the framework-change
+    // confirm dialog (same as colors) — it lists the generated classes still
+    // assigned to elements and strips them on confirm. Don't double-confirm.
+    // Active tab auto-recovers: once the group is gone, `activeGroup` falls
+    // back to the first remaining scale (or null → the empty state).
+    adapter.onDeleteGroup(groupId)
   }
 
   return (
     <>
-      <Panel
-        panelId={adapter.panelId}
-        title={adapter.title}
-        testId={`${adapter.panelId}-panel`}
-        onClose={onClose}
-      >
-        <PanelBody<G, C>
-          key={activeGroup?.id ?? 'empty'}
-          group={(activeGroup ?? null) as G | null}
-          groups={sortedGroups as G[]}
-          isDisabled={isDisabled}
-          adapter={adapter}
-          preferences={preferences}
-          onContextMenu={(e) => activeGroup && handleTabContextMenu(activeGroup.id, e)}
-          onActivateGroup={(value) => setActiveTabId(value)}
-          onAddGroup={handleAddGroup}
-          classGenerators={classGenerators}
-        />
-      </Panel>
+      <PanelBody<G, C>
+        key={activeGroup?.id ?? 'empty'}
+        group={(activeGroup ?? null) as G | null}
+        groups={sortedGroups as G[]}
+        isDisabled={isDisabled}
+        adapter={adapter}
+        preferences={preferences}
+        onContextMenu={(e) => activeGroup && handleTabContextMenu(activeGroup.id, e)}
+        onActivateGroup={(value) => setActiveTabId(value)}
+        onAddGroup={handleAddGroup}
+        onDeleteGroup={() => activeGroup && handleDelete(activeGroup.id)}
+        classGenerators={classGenerators}
+      />
 
       {contextMenu && (
         <ContextMenu
@@ -136,7 +131,6 @@ export function FrameworkScalePanel<G extends GroupShape, C extends GeneratorSha
           <ContextMenuSeparator />
           <ContextMenuItem
             danger
-            disabled={isFirstTab && sortedGroups.length === 1}
             onClick={() => handleDelete(contextMenu.groupId)}
           >
             <span aria-hidden="true">

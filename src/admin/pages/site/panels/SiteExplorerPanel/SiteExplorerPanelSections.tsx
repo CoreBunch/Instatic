@@ -1,6 +1,5 @@
 import type { KeyboardEvent, MouseEvent } from 'react'
 import { FilePlusSolidIcon } from 'pixel-art-icons/icons/file-plus-solid'
-import { BracesIcon } from 'pixel-art-icons/icons/braces'
 import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
 import type { SiteExplorerSectionId } from '@core/page-tree'
@@ -12,9 +11,12 @@ import type {
   SiteExplorerTreeItem,
   SiteExplorerTreeSectionModel,
 } from './siteExplorerModel'
-import type { SiteExplorerContextTarget, SiteExplorerAnySectionModel } from './siteExplorerPanelTypes'
+import type { SiteExplorerContextTarget, SiteExplorerAnySectionModel, SiteExplorerSectionGroup } from './siteExplorerPanelTypes'
 
 interface SiteExplorerPanelSectionsProps {
+  /** Which group of sections to render — `site` (pages/templates/components)
+   *  or `code` (styles/scripts). The other group's sections are omitted. */
+  sectionGroup: SiteExplorerSectionGroup
   explorerDnd: SiteExplorerDndState
   pageTreeModel: SiteExplorerStructuralSectionModel<SiteExplorerContextTarget> | null
   templateTreeModel: SiteExplorerTreeSectionModel<SiteExplorerContextTarget> | null
@@ -66,6 +68,7 @@ interface SiteExplorerPanelSectionsProps {
 }
 
 export function SiteExplorerPanelSections({
+  sectionGroup,
   explorerDnd,
   pageTreeModel,
   templateTreeModel,
@@ -97,7 +100,7 @@ export function SiteExplorerPanelSections({
 }: SiteExplorerPanelSectionsProps) {
   return (
     <>
-      {pageTreeModel && (
+      {sectionGroup === 'site' && pageTreeModel && (
         <SiteExplorerTreeSection
           title="Pages"
           count={normalPageCount}
@@ -121,7 +124,7 @@ export function SiteExplorerPanelSections({
         />
       )}
 
-      {templateTreeModel && (
+      {sectionGroup === 'site' && templateTreeModel && (
         <SiteExplorerTreeSection
           title="Templates"
           count={templatePageCount}
@@ -145,12 +148,12 @@ export function SiteExplorerPanelSections({
         />
       )}
 
-      {componentTreeModel && (
+      {sectionGroup === 'site' && componentTreeModel && (
         <SiteExplorerTreeSection
           title="Components"
           count={componentCount}
           actionLabel="New component"
-          actionIcon={BracesIcon}
+          actionIcon={FilePlusSolidIcon}
           onAction={onCreateComponent}
           model={componentTreeModel}
           dropTarget={explorerDnd.target}
@@ -169,7 +172,7 @@ export function SiteExplorerPanelSections({
         />
       )}
 
-      {styleTreeModel && (
+      {sectionGroup === 'code' && styleTreeModel && (
         <SiteExplorerTreeSection
           title="Styles"
           count={styleCount}
@@ -193,7 +196,7 @@ export function SiteExplorerPanelSections({
         />
       )}
 
-      {scriptTreeModel && (
+      {sectionGroup === 'code' && scriptTreeModel && (
         <SiteExplorerTreeSection
           title="Scripts"
           count={scriptCount}

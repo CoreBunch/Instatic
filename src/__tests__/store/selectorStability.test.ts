@@ -40,7 +40,6 @@ function relPath(filePath: string): string {
 
 function resetPanels() {
   useEditorStore.setState({
-    domTreePanel: { collapsed: false, x: 0, y: 0, width: 320 },
     propertiesPanel: { collapsed: false, x: 0, y: 0, width: 360 },
   } as Parameters<typeof useEditorStore.setState>[0])
 }
@@ -71,20 +70,12 @@ describe('Zustand selector stability', () => {
   })
 
   it('panel partial setters keep object identity on no-op updates', () => {
-    const beforeDom = useEditorStore.getState().domTreePanel
-    useEditorStore.getState().setDomTreePanel({ collapsed: beforeDom.collapsed })
-    expect(useEditorStore.getState().domTreePanel).toBe(beforeDom)
-
     const beforeProperties = useEditorStore.getState().propertiesPanel
     useEditorStore.getState().setPropertiesPanel({ collapsed: beforeProperties.collapsed })
     expect(useEditorStore.getState().propertiesPanel).toBe(beforeProperties)
   })
 
   it('panel partial setters replace object identity when values actually change', () => {
-    const beforeDom = useEditorStore.getState().domTreePanel
-    useEditorStore.getState().setDomTreePanel({ collapsed: !beforeDom.collapsed })
-    expect(useEditorStore.getState().domTreePanel).not.toBe(beforeDom)
-
     const beforeProperties = useEditorStore.getState().propertiesPanel
     useEditorStore.getState().setPropertiesPanel({ collapsed: !beforeProperties.collapsed })
     expect(useEditorStore.getState().propertiesPanel).not.toBe(beforeProperties)

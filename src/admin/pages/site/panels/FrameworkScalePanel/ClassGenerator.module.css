@@ -8,10 +8,18 @@
     gap: var(--space-xs);
 }
 
-.classGeneratorHeader {
+.classGeneratorHint {
+    margin: 0;
+    max-width: 42ch;
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    text-wrap: pretty;
+}
+
+.classGeneratorActions {
     display: flex;
-    justify-content: flex-end;
-    align-items: center;
+    justify-content: flex-start;
 }
 
 .classGeneratorRows {

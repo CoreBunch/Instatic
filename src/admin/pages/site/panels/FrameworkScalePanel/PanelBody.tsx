@@ -23,6 +23,8 @@ interface PanelBodyProps<G extends GroupShape, C extends GeneratorShape> {
   onActivateGroup: (groupId: string) => void
   /** Append a new scale and switch to it. */
   onAddGroup: () => void
+  /** Delete the active scale (confirms first). */
+  onDeleteGroup: () => void
   classGenerators: C[]
 }
 
@@ -42,6 +44,7 @@ export function PanelBody<G extends GroupShape, C extends GeneratorShape>({
   onContextMenu,
   onActivateGroup,
   onAddGroup,
+  onDeleteGroup,
   classGenerators,
 }: PanelBodyProps<G, C>) {
   // Split extra sections by position so we can render the 'top' ones before
@@ -104,6 +107,7 @@ export function PanelBody<G extends GroupShape, C extends GeneratorShape>({
               onContextMenu={onContextMenu}
               onActivateGroup={onActivateGroup}
               onAddGroup={onAddGroup}
+              onDeleteGroup={onDeleteGroup}
             />
           )}
         </div>

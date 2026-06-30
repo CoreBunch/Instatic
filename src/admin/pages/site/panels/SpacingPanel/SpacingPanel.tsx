@@ -64,7 +64,7 @@ const SPACING_CSS_PROPERTIES = [
 const EMPTY_GROUPS: FrameworkSpacingGroup[] = [];
 const EMPTY_CLASSES: FrameworkSpacingClassGenerator[] = [];
 
-interface ChartPoint {
+export interface ChartPoint {
   stepLabel: string;
   variableName: string;
   minPx: number;
@@ -114,7 +114,7 @@ function PillBarRow({
   )
 }
 
-function SpacingBarChart({ points }: { points: ChartPoint[] }) {
+export function SpacingBarChart({ points }: { points: ChartPoint[] }) {
   const desktopHeights = points.map((p) => Math.max(0, p.maxPx))
   const mobileHeights = points.map((p) => Math.max(0, p.minPx))
 
@@ -257,9 +257,7 @@ function SpacingBarChart({ points }: { points: ChartPoint[] }) {
   )
 }
 
-export function SpacingPanel() {
-  const isOpen = useEditorStore((s) => s.spacingPanelOpen);
-  const setOpen = useEditorStore((s) => s.setSpacingPanelOpen);
+export function SpacingTab() {
   const onToggleDisabled = useEditorStore(
     (s) => s.toggleFrameworkSpacingDisabled,
   );
@@ -363,11 +361,5 @@ export function SpacingPanel() {
     onSetClassGenerators: wrappedSetClassGenerators,
   };
 
-  return (
-    <FrameworkScalePanel
-      isOpen={isOpen}
-      onClose={() => setOpen(false)}
-      adapter={adapter}
-    />
-  );
+  return <FrameworkScalePanel adapter={adapter} />;
 }

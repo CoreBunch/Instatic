@@ -2,15 +2,11 @@ import { useSyncExternalStore, type CSSProperties } from 'react'
 import { useEditorStore } from '@site/store/store'
 import type { LeftSidebarPanelId } from '@site/store/slices/uiSlice'
 import type { IconComponent } from 'pixel-art-icons/types'
-import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
 import { AiSettingsSolidIcon } from 'pixel-art-icons/icons/ai-settings-solid'
-import { FilesStack2SolidIcon } from 'pixel-art-icons/icons/files-stack-2-solid'
-import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
+import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
 import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
 import { ColorsSwatchSolidIcon } from 'pixel-art-icons/icons/colors-swatch-solid'
-import { TextStartTIcon } from 'pixel-art-icons/icons/text-start-t'
-import { RulerDimensionSolidIcon } from 'pixel-art-icons/icons/ruler-dimension-solid'
 import { Button } from '@ui/components/Button'
 import { assignRailAccents, railTintVar, type RailAccent } from '@ui/railAccent'
 import { pluginRuntime } from '@core/plugins/runtime'
@@ -40,46 +36,22 @@ interface RailItem {
 
 const PRIMARY_RAIL_ITEMS: PrimaryRailItem[] = [
   {
-    id: 'layers',
-    label: 'Layers',
+    id: 'explorer',
+    label: 'Explorer',
     icon: DatabaseSolidIcon,
     iconName: 'database-solid',
   },
   {
-    id: 'site',
-    label: 'Site',
-    icon: FilesStack2SolidIcon,
-    iconName: 'files-stack-2',
+    id: 'framework',
+    label: 'Framework',
+    icon: ColorsSwatchSolidIcon,
+    iconName: 'colors-swatch',
   },
   {
     id: 'selectors',
     label: 'Selectors',
     icon: PaintBucketSolidIcon,
     iconName: 'paint-bucket',
-  },
-  {
-    id: 'colors',
-    label: 'Colors',
-    icon: ColorsSwatchSolidIcon,
-    iconName: 'colors-swatch',
-  },
-  {
-    id: 'typography',
-    label: 'Typography',
-    icon: TextStartTIcon,
-    iconName: 'text-start-t',
-  },
-  {
-    id: 'spacing',
-    label: 'Spacing',
-    icon: RulerDimensionSolidIcon,
-    iconName: 'ruler-dimension',
-  },
-  {
-    id: 'media',
-    label: 'Media',
-    icon: ImagesSolidIcon,
-    iconName: 'images',
   },
   {
     id: 'dependencies',
@@ -117,13 +89,9 @@ export function PanelRail({
   canUseAiChat = true,
   railOnly = false,
 }: PanelRailProps) {
-  const domOpen = useEditorStore((s) => !s.domTreePanel.collapsed)
-  const siteOpen = useEditorStore((s) => s.siteExplorerPanelOpen)
+  const explorerOpen = useEditorStore((s) => s.explorerPanelOpen)
   const selectorsOpen = useEditorStore((s) => s.selectorsPanelOpen)
-  const colorsOpen = useEditorStore((s) => s.colorsPanelOpen)
-  const typographyOpen = useEditorStore((s) => s.typographyPanelOpen)
-  const spacingOpen = useEditorStore((s) => s.spacingPanelOpen)
-  const mediaOpen = useEditorStore((s) => s.mediaExplorerPanelOpen)
+  const frameworkOpen = useEditorStore((s) => s.frameworkPanelOpen)
   const dependenciesOpen = useEditorStore((s) => s.dependenciesPanelOpen)
   const agentOpen = useEditorStore((s) => s.isAgentOpen)
   const activePluginPanelId = useEditorStore((s) => s.activePluginPanelId)
@@ -144,33 +112,25 @@ export function PanelRail({
   )
 
   const panelOpenById = {
-    layers: domOpen,
+    explorer: explorerOpen,
     agent: agentOpen,
-    site: siteOpen,
     selectors: selectorsOpen,
-    colors: colorsOpen,
-    typography: typographyOpen,
-    spacing: spacingOpen,
-    media: mediaOpen,
+    framework: frameworkOpen,
     dependencies: dependenciesOpen,
   } satisfies Record<LeftSidebarPanelId, boolean>
 
-  // Read-only callers (Viewer / Client) see only the navigation/inspection
-  // panels — Layers, Site Explorer, Media. Style/runtime editing panels only
-  // appear when the user can edit structure. The AI assistant follows
+  // Read-only callers (Viewer / Client) see only the Explorer panel (the
+  // Layers / Pages / Media navigation surfaces). Style/runtime editing panels
+  // only appear when the user can edit structure. The AI assistant follows
   // `ai.chat`, independent of editability.
-  const READ_ONLY_RAIL_IDS = new Set<LeftSidebarPanelId>(['layers', 'site', 'media'])
+  const READ_ONLY_RAIL_IDS = new Set<LeftSidebarPanelId>(['explorer'])
   const visiblePrimaryItems = editable
     ? PRIMARY_RAIL_ITEMS
     : PRIMARY_RAIL_ITEMS.filter((item) => READ_ONLY_RAIL_IDS.has(item.id))
   const visibleGlobalItems = canUseAiChat ? GLOBAL_RAIL_ITEMS : []
 
-  function railLabel(item: PrimaryRailItem) {
-    return workspace === 'content' && item.id === 'site' ? 'Content' : item.label
-  }
-
   function railIdentity(item: PrimaryRailItem) {
-    return `${workspace}:${item.id}:${railLabel(item)}`
+    return `${workspace}:${item.id}:${item.label}`
   }
 
   function revealBuiltInPanel(panelId: LeftSidebarPanelId) {
@@ -186,7 +146,6 @@ export function PanelRail({
   function toRailItem(item: PrimaryRailItem, accent: RailAccent): RailItem {
     return {
       ...item,
-      label: railLabel(item),
       open: panelOpenById[item.id] && !railOnly,
       onToggle: () => {
         if (railOnly) {
@@ -199,10 +158,18 @@ export function PanelRail({
     }
   }
 
-  const primaryAccents = assignRailAccents(visiblePrimaryItems, railIdentity)
+  // Explorer keeps the 'gold' accent the standalone Layers rail button used
+  // to resolve to (identity hash of 'site:layers:Layers', first item, no
+  // collision shift) — consolidating Layers/Site/Media into one rail button
+  // shouldn't change its established color.
+  const primaryAccents = assignRailAccents(
+    visiblePrimaryItems,
+    railIdentity,
+    (item) => (item.id === 'explorer' ? 'gold' : null),
+  )
   const globalAccents = assignRailAccents(
     visibleGlobalItems,
-    (item) => `global:${item.id}:${railLabel(item)}`,
+    (item) => `global:${item.id}:${item.label}`,
   )
   const primaryItems: RailItem[] = visiblePrimaryItems.map((item, index) => (
     toRailItem(item, primaryAccents[index] ?? 'mint')

@@ -23,6 +23,7 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 | Primitive          | When to use                                                          | Key props                                                  |
 |--------------------|----------------------------------------------------------------------|------------------------------------------------------------|
 | `Button`           | **Every** action button                                              | `variant: 'ghost' \| 'secondary' \| 'primary' \| 'destructive'`, `size: 'micro' \| 'xs' \| 'sm' \| 'md' \| 'lg'`, `iconOnly`, `pressed`, `tooltip` |
+| `SplitButton`      | A primary action fused to a chevron that opens a dropdown of related actions (Publish ▾, Add Google font ▾). Composes `Button` + `ContextMenu`. | `label`, `onClick`, `menuItems`, `icon?`, `variant?`, `size?`, `busy?`, `disabled?` |
 | `Switch`           | Boolean toggle (on / off)                                            | `checked`, `onChange`, `disabled`                          |
 | `Checkbox`         | Boolean inside a list / form                                         | `checked`, `onChange`, `indeterminate`                     |
 | `SegmentedControl` | A few mutually exclusive options shown inline; `value` can be `undefined` for an unset state where no segment appears pressed | `options`, `value`, `onChange`, `onClear?` (deselectable — clicking the active segment fires `onClear` and shows a hover close-icon overlay) |

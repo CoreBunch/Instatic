@@ -5,9 +5,8 @@
  *   • Site identity — done when `site.name` differs from the default
  *     ("Untitled Site") OR the favicon has been set.
  *   • Framework import — derived from `site.settings.framework` being
- *     populated. Defaults to `'choose'` (active) so the user is nudged
- *     to make a deliberate decision; once they pick a mode the step
- *     flips to done.
+ *     populated. Defaults to `'active'` so the user is nudged to make a
+ *     deliberate decision; once they pick a mode the step flips to done.
  *   • First page — done when ≥ 2 pages exist (the seed Home page
  *     doesn't count).
  *   • First plugin — done when any plugin is installed.

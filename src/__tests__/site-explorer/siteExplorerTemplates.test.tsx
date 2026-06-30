@@ -18,7 +18,6 @@ function resetStore() {
     site: null,
     activePageId: null,
     activeDocument: null,
-    siteExplorerPanelOpen: false,
     selectedNodeId: null,
     selectedNodeIds: [],
     _historyPast: [],
@@ -60,7 +59,6 @@ function loadTemplateSite() {
     site: makeSite({ pages: [home, template] }),
     activePageId: home.id,
     activeDocument: { kind: 'page', pageId: home.id },
-    siteExplorerPanelOpen: true,
   } as Parameters<typeof useEditorStore.setState>[0])
 }
 
@@ -69,7 +67,7 @@ beforeEach(resetStore)
 describe('SiteExplorerPanel templates', () => {
   it('shows pages and templates in separate sections', () => {
     loadTemplateSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     const panel = screen.getByTestId('site-explorer-panel')
     const pagesSection = within(panel).getByRole('heading', { name: 'Pages' }).closest('section')!
@@ -82,7 +80,7 @@ describe('SiteExplorerPanel templates', () => {
 
   it('converts a page to a template from the context menu', () => {
     loadTemplateSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     fireEvent.contextMenu(screen.getByRole('button', { name: /open page home/i }), {
       clientX: 100,
@@ -157,7 +155,7 @@ describe('SiteExplorerPanel templates', () => {
     }
 
     loadTemplateSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     fireEvent.contextMenu(screen.getByRole('button', { name: /open page home/i }), {
       clientX: 100,
@@ -186,7 +184,7 @@ describe('SiteExplorerPanel templates', () => {
 
   it('converts a template back to a page and drops bindings', () => {
     loadTemplateSite()
-    render(<SiteExplorerPanel variant="docked" />)
+    render(<SiteExplorerPanel sectionGroup="site" />)
 
     fireEvent.contextMenu(screen.getByRole('button', { name: /open template post template/i }), {
       clientX: 100,

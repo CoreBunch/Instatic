@@ -97,13 +97,11 @@ export async function runSetFontTokens(rawInput: unknown): Promise<AiToolOutput>
   }> = []
 
   for (const t of input.tokens) {
-    if (t.googleFamily && t.familyId) {
-      return aiToolError(
-        `Font token "${t.name}": googleFamily and familyId are mutually exclusive.`,
-      )
-    }
-
-    let familyId = t.familyId
+    // Be lenient with model-authored args: the tool description asks for
+    // googleFamily XOR familyId, but models sometimes send both after reading
+    // existing site state. Installing the named Google family is the clearer
+    // intent, so prefer it and ignore the stale/preexisting id.
+    let familyId = t.googleFamily ? undefined : t.familyId
     let installed: string | undefined
     if (t.googleFamily) {
       try {
@@ -169,8 +167,13 @@ export function runSetTypeScale(rawInput: unknown): AiToolOutput {
   if (!store.site) return aiToolError('No active site.')
 
   const groups = store.site.settings.framework?.typography?.groups ?? []
-  let groupId = input.groupId ?? groups[0]?.id
-  if (input.groupId && !groups.some((g) => g.id === input.groupId)) {
+  const groupAlias = input.groupId ? normalizeScaleGroupAlias(input.groupId, 'text') : null
+  const matchedGroup = input.groupId
+    ? groups.find((g) => g.id === input.groupId) ??
+      groups.find((g) => g.namingConvention === input.groupId)
+    : groups[0]
+  let groupId = matchedGroup?.id
+  if (input.groupId && !groupId && !groupAlias) {
     return aiToolError(`Typography group not found: ${input.groupId}`)
   }
   let action: 'created' | 'updated' = 'updated'
@@ -180,7 +183,11 @@ export function runSetTypeScale(rawInput: unknown): AiToolOutput {
   }
 
   store.updateFrameworkTypographyGroup(groupId, {
-    ...(input.namingConvention !== undefined ? { namingConvention: input.namingConvention } : {}),
+    ...(input.namingConvention !== undefined
+      ? { namingConvention: input.namingConvention }
+      : action === 'created' && groupAlias
+        ? { namingConvention: groupAlias }
+        : {}),
     ...(input.steps !== undefined ? { steps: input.steps } : {}),
     ...(input.baseScaleIndex !== undefined ? { baseScaleIndex: input.baseScaleIndex } : {}),
     ...(input.min ? { min: input.min } : {}),
@@ -206,8 +213,13 @@ export function runSetSpacingScale(rawInput: unknown): AiToolOutput {
   if (!store.site) return aiToolError('No active site.')
 
   const groups = store.site.settings.framework?.spacing?.groups ?? []
-  let groupId = input.groupId ?? groups[0]?.id
-  if (input.groupId && !groups.some((g) => g.id === input.groupId)) {
+  const groupAlias = input.groupId ? normalizeScaleGroupAlias(input.groupId, 'space') : null
+  const matchedGroup = input.groupId
+    ? groups.find((g) => g.id === input.groupId) ??
+      groups.find((g) => g.namingConvention === input.groupId)
+    : groups[0]
+  let groupId = matchedGroup?.id
+  if (input.groupId && !groupId && !groupAlias) {
     return aiToolError(`Spacing group not found: ${input.groupId}`)
   }
   let action: 'created' | 'updated' = 'updated'
@@ -217,7 +229,11 @@ export function runSetSpacingScale(rawInput: unknown): AiToolOutput {
   }
 
   store.updateFrameworkSpacingGroup(groupId, {
-    ...(input.namingConvention !== undefined ? { namingConvention: input.namingConvention } : {}),
+    ...(input.namingConvention !== undefined
+      ? { namingConvention: input.namingConvention }
+      : action === 'created' && groupAlias
+        ? { namingConvention: groupAlias }
+        : {}),
     ...(input.steps !== undefined ? { steps: input.steps } : {}),
     ...(input.baseScaleIndex !== undefined ? { baseScaleIndex: input.baseScaleIndex } : {}),
     ...(input.min ? { min: input.min } : {}),
@@ -235,4 +251,13 @@ export function runSetSpacingScale(rawInput: unknown): AiToolOutput {
     namingConvention,
     generatedVars: generatedScaleVars(namingConvention, steps),
   })
+}
+
+function normalizeScaleGroupAlias(value: string, fallback: 'text' | 'space'): string | null {
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'root') return fallback
+  if (normalized === fallback) return fallback
+  if (fallback === 'text' && normalized === 'typography') return 'text'
+  if (fallback === 'space' && normalized === 'spacing') return 'space'
+  return null
 }

@@ -16,7 +16,10 @@
   --panel-y: 80px;
   left: max(8px, min(var(--panel-x), calc(100vw - var(--code-editor-panel-width) - 8px)));
   top: max(48px, min(var(--panel-y), calc(100vh - var(--code-editor-panel-height) - 8px)));
-  z-index: 80;
+  /* Above the docked sidebars (z-index 85) — the code editor is a focused,
+     draggable surface that must float over the Explorer panel / rail, not
+     behind them. */
+  z-index: 95;
   width: var(--code-editor-panel-width);
   height: var(--code-editor-panel-height);
   display: flex;
@@ -72,10 +75,6 @@
 }
 
 @media (max-width: 760px) {
-  .panel {
-    z-index: 90;
-  }
-
   .editorWorkspace {
     flex-direction: column;
   }

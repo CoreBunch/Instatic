@@ -2,6 +2,8 @@ import { type MouseEvent } from 'react'
 import { Button } from '@ui/components/Button'
 import { FilterBar, type FilterBarItem } from '@ui/components/FilterBar'
 import { Input } from '@ui/components/Input'
+import { Select } from '@ui/components/Select'
+import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import type { resolveFrameworkPreferences } from '@core/framework'
 import type { FrameworkScaleMode } from '@core/framework-schema'
 import { FluidEditor } from './FluidEditor'
@@ -17,13 +19,14 @@ interface ScalesEditorProps<G extends GroupShape, C extends GeneratorShape> {
   onContextMenu: (event: MouseEvent<HTMLElement>) => void
   onActivateGroup: (groupId: string) => void
   onAddGroup: () => void
+  onDeleteGroup: () => void
 }
 
 /**
  * The "scale exists, module enabled" body of the Scales section: scale picker
- * filter bar, name/prefix inputs, mode toggle, and the fluid/manual editor.
- * The empty / disabled empty-states live one level up in `PanelBody` so that
- * the surrounding sections (extras, utilities) remain reachable.
+ * filter bar, a single heading row (name + `--`-prefixed variable + mode), and
+ * the fluid/manual editor. The empty / disabled empty-states live one level up
+ * in `PanelBody` so the surrounding sections (extras, utilities) stay reachable.
  */
 export function ScalesEditor<G extends GroupShape, C extends GeneratorShape>({
   group,
@@ -33,6 +36,7 @@ export function ScalesEditor<G extends GroupShape, C extends GeneratorShape>({
   onContextMenu,
   onActivateGroup,
   onAddGroup,
+  onDeleteGroup,
 }: ScalesEditorProps<G, C>) {
   return (
     <>
@@ -46,7 +50,7 @@ export function ScalesEditor<G extends GroupShape, C extends GeneratorShape>({
         groupLabel={`${adapter.title} scales`}
         inlineActions={
           <Button
-            variant="ghost"
+            variant="secondary"
             size="xs"
             aria-label={`Add ${adapter.title.toLowerCase()} scale`}
             onClick={onAddGroup}
@@ -57,27 +61,52 @@ export function ScalesEditor<G extends GroupShape, C extends GeneratorShape>({
       />
 
       <div className={styles.tabHeading} onContextMenu={onContextMenu}>
-        <Input
-          fieldSize="sm"
-          aria-label="Scale name"
-          value={group.name}
-          onChange={(event) => adapter.onUpdateGroup(group.id, { name: event.target.value })}
-        />
-        <Input
-          fieldSize="sm"
-          aria-label="Variable prefix"
-          value={group.namingConvention}
-          onChange={(event) =>
-            adapter.onUpdateGroup(group.id, { namingConvention: event.target.value })
-          }
-          monospace
-        />
+        <div className={styles.tabHeadingName}>
+          <Input
+            fieldSize="sm"
+            aria-label="Scale name"
+            value={group.name}
+            onChange={(event) => adapter.onUpdateGroup(group.id, { name: event.target.value })}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            tone="danger"
+            aria-label="Remove scale"
+            tooltip="Remove scale"
+            onClick={onDeleteGroup}
+          >
+            <TrashSolidIcon size={13} aria-hidden="true" />
+          </Button>
+        </div>
+        <div className={styles.tabHeadingMeta}>
+          <Input
+            fieldSize="sm"
+            aria-label="Variable prefix"
+            value={group.namingConvention}
+            prefix="--"
+            onChange={(event) =>
+              adapter.onUpdateGroup(group.id, { namingConvention: event.target.value })
+            }
+            monospace
+          />
+          <Select
+            fieldSize="sm"
+            aria-label="Scale mode"
+            value={group.mode}
+            options={[
+              { value: 'fluid', label: 'Automatic' },
+              { value: 'fluid_manual', label: 'Manual' },
+            ]}
+            onChange={(event) =>
+              adapter.onUpdateGroup(group.id, {
+                mode: event.currentTarget.value as FrameworkScaleMode,
+              })
+            }
+          />
+        </div>
       </div>
-
-      <ModeToggle
-        mode={group.mode}
-        onChange={(mode) => adapter.onUpdateGroup(group.id, { mode })}
-      />
 
       {group.mode === 'fluid_manual' ? (
         <ManualEditor group={group} adapter={adapter} />
@@ -85,25 +114,5 @@ export function ScalesEditor<G extends GroupShape, C extends GeneratorShape>({
         <FluidEditor group={group} adapter={adapter} preferences={preferences} />
       )}
     </>
-  )
-}
-
-function ModeToggle({
-  mode,
-  onChange,
-}: {
-  mode: FrameworkScaleMode
-  onChange: (mode: FrameworkScaleMode) => void
-}) {
-  return (
-    <FilterBar<FrameworkScaleMode>
-      items={[
-        { value: 'fluid', label: 'Automatic' },
-        { value: 'fluid_manual', label: 'Manual' },
-      ]}
-      value={mode}
-      onValueChange={onChange}
-      groupLabel="Mode"
-    />
   )
 }

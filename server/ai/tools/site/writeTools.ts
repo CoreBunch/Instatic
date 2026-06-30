@@ -367,7 +367,7 @@ const setFontTokensTool: AiTool = {
   execution: 'browser',
   requiredCapabilities: SITE_STYLE_CAPS,
   description:
-    'Create or update FONT tokens — named typefaces referenced as `var(--<variable>)`. Pass `googleFamily` (e.g. "Inter") to install a new Google web font (downloads the files, then binds the token to it); `variants` defaults to ["400","700"] and `subsets` to ["latin"]. Pass `familyId` to reference an already-installed family. Pass neither for a fallback-only/system token. Create-or-update is keyed by `variable` (defaults from `name`). `googleFamily` and `familyId` are mutually exclusive.',
+    'Create or update FONT tokens — named typefaces referenced as `var(--<variable>)`. Pass `googleFamily` (e.g. "Inter") to install a new Google web font (downloads the files, then binds the token to it); `variants` defaults to ["400","700"] and `subsets` to ["latin"]. Pass `familyId` to reference an already-installed family. Pass neither for a fallback-only/system token. Create-or-update is keyed by `variable` (defaults from `name`). Prefer exactly one of `googleFamily` or `familyId`; if both are sent, `googleFamily` wins and the stale `familyId` is ignored.',
   inputSchema: SetFontTokensInputSchema,
 }
 
@@ -377,7 +377,7 @@ const setTypeScaleTool: AiTool = {
   execution: 'browser',
   requiredCapabilities: SITE_STYLE_CAPS,
   description:
-    'Configure the TYPOGRAPHY scale — the fluid type ramp generating `--text-*` variables (default prefix "text"). A scale is a config: `min`/`max` give the base `fontSize` (px) and `scaleRatio` at the small/large screen anchors; `steps` is the comma-separated step list (e.g. "xs,s,m,l,xl,2xl,3xl,4xl") and `baseScaleIndex` picks which step equals the base size. Creates the group if none exists, else updates it (target a specific one with `groupId`). Reference sizes as `var(--text-l)` rather than raw px.',
+    'Configure the TYPOGRAPHY scale — the fluid type ramp generating `--text-*` variables (default prefix "text"). A scale is a config: `min`/`max` give the base `fontSize` (px) and `scaleRatio` at the small/large screen anchors; `steps` is the comma-separated step list (e.g. "xs,s,m,l,xl,2xl,3xl,4xl") and `baseScaleIndex` picks which step equals the base size. Creates the group if none exists, else updates it. Only pass `groupId` when you have a real existing group id; use `namingConvention:"text"` for the prefix. Reference sizes as `var(--text-l)` rather than raw px.',
   inputSchema: SetTypeScaleInputSchema,
 }
 
@@ -387,7 +387,7 @@ const setSpacingScaleTool: AiTool = {
   execution: 'browser',
   requiredCapabilities: SITE_STYLE_CAPS,
   description:
-    'Configure the SPACING scale — the fluid spacing ramp generating `--space-*` variables (default prefix "space"). Same shape as site_set_type_scale but `min`/`max` carry `size` (px) instead of `fontSize`; `steps` defaults to an 11-step scale and `baseScaleIndex` to 5 ("m"). Creates the group if none exists, else updates it. Reference gaps/padding as `var(--space-l)` rather than raw px.',
+    'Configure the SPACING scale — the fluid spacing ramp generating `--space-*` variables (default prefix "space"). Same shape as site_set_type_scale but `min`/`max` carry `size` (px) instead of `fontSize`; `steps` defaults to an 11-step scale and `baseScaleIndex` to 5 ("m"). Creates the group if none exists, else updates it. Only pass `groupId` when you have a real existing group id; use `namingConvention:"space"` for the prefix. Reference gaps/padding as `var(--space-l)` rather than raw px.',
   inputSchema: SetSpacingScaleInputSchema,
 }
 

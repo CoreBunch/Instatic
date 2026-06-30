@@ -135,6 +135,32 @@ describe('executeAgentTool — set_type_scale', () => {
     expect(groups[0].steps).toBe('s,m,l')
   })
 
+  it('accepts common model-authored group aliases for typography', async () => {
+    freshStore()
+    const result = await executeAgentTool('site_set_type_scale', { groupId: 'text', steps: 's,m,l' })
+    const data = expectData<{ action: string; namingConvention: string; generatedVars: string[] }>(result)
+    expect(data.action).toBe('created')
+    expect(data.namingConvention).toBe('text')
+    expect(data.generatedVars).toEqual(['--text-s', '--text-m', '--text-l'])
+  })
+
+  it('does not rename an existing group prefix when targeted by an alias', async () => {
+    freshStore()
+    // Seed a group whose prefix is itself an alias word.
+    await executeAgentTool('site_set_type_scale', { namingConvention: 'typography', steps: 's,m' })
+
+    // The model targets it by that prefix and updates only the steps.
+    const result = await executeAgentTool('site_set_type_scale', { groupId: 'typography', steps: 's,m,l' })
+
+    const data = expectData<{ action: string; namingConvention: string; generatedVars: string[] }>(result)
+    expect(data.action).toBe('updated')
+    // The prefix must stay 'typography' — the alias must not rewrite it to 'text'.
+    expect(data.namingConvention).toBe('typography')
+    expect(data.generatedVars).toEqual(['--typography-s', '--typography-m', '--typography-l'])
+    // And no duplicate group is minted.
+    expect(site().settings.framework!.typography!.groups).toHaveLength(1)
+  })
+
   it('errors when groupId targets a non-existent group', async () => {
     freshStore()
     const result = await executeAgentTool('site_set_type_scale', { groupId: 'nope', steps: 's,m' })
@@ -164,6 +190,15 @@ describe('executeAgentTool — set_spacing_scale', () => {
     const groups = site().settings.framework!.spacing!.groups
     expect(groups).toHaveLength(1)
     expect(groups[0].min.size).toBe(4)
+  })
+
+  it('accepts common model-authored group aliases for spacing', async () => {
+    freshStore()
+    const result = await executeAgentTool('site_set_spacing_scale', { groupId: 'root', steps: 'xs,s,m' })
+    const data = expectData<{ action: string; namingConvention: string; generatedVars: string[] }>(result)
+    expect(data.action).toBe('created')
+    expect(data.namingConvention).toBe('space')
+    expect(data.generatedVars).toEqual(['--space-xs', '--space-s', '--space-m'])
   })
 })
 
@@ -241,13 +276,30 @@ describe('executeAgentTool — set_font_tokens', () => {
     expect(token.familyId).toBe('font_inter')
   })
 
-  it('rejects a token that sets both googleFamily and familyId', async () => {
+  it('prefers googleFamily over familyId when both are sent by the model', async () => {
     freshStore()
+    const entry: FontEntry = {
+      id: 'font_playfair',
+      source: 'google',
+      family: 'Playfair Display',
+      variants: ['400', '700'],
+      subsets: ['latin'],
+      files: [
+        { variant: '400', subset: 'latin', path: 'https://fonts.example/playfair-400.woff2', format: 'woff2' },
+      ],
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    mockInstallFetch(entry)
+
     const result = await executeAgentTool('site_set_font_tokens', {
-      tokens: [{ name: 'X', googleFamily: 'Inter', familyId: 'font_x' }],
+      tokens: [{ name: 'Display', googleFamily: 'Playfair Display', familyId: 'font_x' }],
     })
-    expect(result.ok).toBe(false)
-    expect(result.error).toContain('mutually exclusive')
+
+    const { tokens } = expectData<{ tokens: Array<{ installed?: string }> }>(result)
+    expect(tokens[0].installed).toBe('Playfair Display')
+    const stored = site().settings.fonts!.tokens!.find((t) => t.name === 'Display')!
+    expect(stored.familyId).toBe('font_playfair')
   })
 
   it('surfaces an install failure as a recoverable tool error', async () => {

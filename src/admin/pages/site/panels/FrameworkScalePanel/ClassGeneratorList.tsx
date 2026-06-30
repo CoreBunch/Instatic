@@ -1,5 +1,4 @@
 import { Button } from '@ui/components/Button'
-import { EmptyState } from '@ui/components/EmptyState'
 import { ClassGeneratorRow } from './ClassGeneratorRow'
 import type { GeneratorShape, GroupShape, ScaleAdapter } from './adapter'
 import styles from './ClassGenerator.module.css'
@@ -48,20 +47,12 @@ export function ClassGeneratorList<C extends GeneratorShape>({
 
   return (
     <div className={styles.classGenerator} aria-label="Class generator">
-      <header className={styles.classGeneratorHeader}>
-        <Button variant="ghost" size="xs" onClick={handleAdd}>
-          Add class
-        </Button>
-      </header>
-      <div className={styles.classGeneratorRows}>
-        {localClasses.length === 0 ? (
-          <EmptyState
-            plain
-            compact
-            title="No utility classes generated for this scale."
-          />
-        ) : (
-          localClasses.map((generator) => (
+      <p className={styles.classGeneratorHint}>
+        Turn the sizes above into reusable utility classes you can apply across your site.
+      </p>
+      {localClasses.length > 0 && (
+        <div className={styles.classGeneratorRows}>
+          {localClasses.map((generator) => (
             <ClassGeneratorRow
               key={generator.id}
               generator={generator}
@@ -69,8 +60,13 @@ export function ClassGeneratorList<C extends GeneratorShape>({
               onPatch={handlePatch}
               onDelete={handleDelete}
             />
-          ))
-        )}
+          ))}
+        </div>
+      )}
+      <div className={styles.classGeneratorActions}>
+        <Button variant="secondary" size="sm" onClick={handleAdd}>
+          Generate utility
+        </Button>
       </div>
     </div>
   )

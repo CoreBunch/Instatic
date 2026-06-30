@@ -145,12 +145,21 @@
     display: inline-flex;
     align-items: center;
     flex: 0 0 auto;
-    padding: 0 0 0 var(--space-xs);
+    /* Left inset matches a normal input's text inset so the prefix sits where
+       the value would start; no right padding — the input's own small left
+       padding (.inputWithAffix[data-prefixed]) supplies one space to the
+       value, so prefix + value read as one continuous string. */
+    padding: 0 0 0 var(--space-s);
     color: var(--text-subtle);
     font-size: inherit;
     font-variant-numeric: tabular-nums;
     pointer-events: none;
     user-select: none;
+}
+
+/* A single space between the prefix and the value / placeholder. */
+.inputWithAffix[data-prefixed='true'] {
+    padding-left: var(--space-3xs);
 }
 
 /* Unit suffix label — `px`, `rem`, `%` etc. Inside the trailing edge of
@@ -214,6 +223,11 @@
     color: var(--text-subtle);
     cursor: pointer;
     transition: background 120ms ease, color 120ms ease;
+}
+
+/* The increase button reuses the (down) chevron-2 glyph, flipped. */
+.spinnerIconUp {
+    transform: rotate(180deg);
 }
 
 .spinnerButton + .spinnerButton {

@@ -204,7 +204,8 @@ Every untyped boundary uses TypeBox. Inside the boundary, code trusts the parsed
 ### UI error handling
 
 - Async UI handlers wrap in `try/catch`. Logged errors use the prefix `console.error('[<component>] <description>:', err)`.
-- User-visible errors go through component state + `role="alert"` (or `role="status"` for non-blocking). Never `alert()` / `confirm()` / `prompt()` — gated by `no-native-browser-dialogs.test.ts`.
+- **Operation failures surface through the global toast bus** — `pushToast({ kind: 'error', title, body })` from `@ui/components/Toast` — for anything a user triggered that then failed (save / import / delete / publish / apply / network call). This is the default for user-visible errors. The single mounted `<ToastProvider />` renders them with `role="alert"`, so you don't hand-roll the a11y. Use `getErrorMessage(err, …)` for the `body`.
+- The **only** exception is **field-local, non-blocking validation** that belongs next to a specific control inside a form (e.g. an invalid token name in a dialog) — that may stay inline with `role="alert"` / `role="status"`. Operation results (a request that failed) are NOT field-local; toast them. Never `alert()` / `confirm()` / `prompt()` — gated by `no-native-browser-dialogs.test.ts`.
 - Error message extraction: `getErrorMessage(err, 'Unknown <thing> error')` from `src/core/utils/errorMessage.ts` — handles the `instanceof Error` check and the empty-message fallback in one place.
 - Soft fallbacks (corrupted localStorage, missing optional config): `parseJsonWithFallback` + continue with defaults.
 - Hard fallbacks (corrupted required document, broken HTTP envelope): let the error bubble to the nearest error boundary. Do not silently mask.

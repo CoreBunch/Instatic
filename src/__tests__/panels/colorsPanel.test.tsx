@@ -1,21 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import React, { act } from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { ColorsPanel } from '@site/panels/ColorsPanel'
+import { ColorsPanelBody } from '@site/panels/ColorsPanel'
 import { useEditorStore } from '@site/store/store'
 import { frameworkColorClassId } from '@core/framework'
 import { makeSite } from '../fixtures'
+
+// The Colors tab body is chrome-free; wrap it in a testid container so the
+// existing `colors-panel` queries keep working.
+function ColorsPanel() {
+  return (
+    <div data-testid="colors-panel">
+      <ColorsPanelBody />
+    </div>
+  )
+}
 
 function resetStore() {
   useEditorStore.setState({
     site: makeSite(),
     activePageId: 'page-1',
-    colorsPanelOpen: true,
-    siteExplorerPanelOpen: false,
+    frameworkPanelOpen: true,
+    frameworkPanelTab: 'colors',
     selectorsPanelOpen: false,
-    mediaExplorerPanelOpen: false,
     dependenciesPanelOpen: false,
-    domTreePanel: { collapsed: true, x: 0, y: 0, width: 280 },
     _historyPast: [],
     _historyFuture: [],
     canUndo: false,

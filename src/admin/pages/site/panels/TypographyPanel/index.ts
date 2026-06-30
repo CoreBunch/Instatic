@@ -1,1 +1,1 @@
-export { TypographyPanel } from './TypographyPanel'
+export { TypographyTab } from './TypographyPanel'

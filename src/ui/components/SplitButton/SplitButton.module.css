@@ -1,0 +1,36 @@
+/* Two Button halves fused into one control. The wrapper sizes to its buttons. */
+.group {
+    display: inline-flex;
+    align-items: center;
+}
+
+/* Primary half forms the left side — square off the inner (right) corners so it
+ * butts flush against the chevron trigger. */
+.primary {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+/* Chevron trigger forms the right side — square off the inner (left) corners and
+ * draw a 1px inset divider against the primary half. */
+.trigger {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    box-shadow: inset 1px 0 var(--overlay-5);
+}
+
+@keyframes splitButtonSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.spinIcon {
+    animation: splitButtonSpin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .spinIcon {
+        animation: none;
+    }
+}

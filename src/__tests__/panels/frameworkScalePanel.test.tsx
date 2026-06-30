@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import React from 'react'
 import { cleanup, render, screen, within } from '@testing-library/react'
-import { SpacingPanel } from '@site/panels/SpacingPanel'
-import { TypographyPanel } from '@site/panels/TypographyPanel'
+import { SpacingTab } from '@site/panels/SpacingPanel'
+import { TypographyTab } from '@site/panels/TypographyPanel'
 import { useEditorStore } from '@site/store/store'
 import type { FontEntry } from '@core/fonts'
 import { makeSite } from '../fixtures'
@@ -21,12 +21,29 @@ const INTER_FONT: FontEntry = {
   updatedAt: 1,
 }
 
+// The scale tabs are chrome-free; wrap them in testid containers so the
+// existing scoping queries keep working.
+function TypographyPanel() {
+  return (
+    <div data-testid="typography-panel">
+      <TypographyTab />
+    </div>
+  )
+}
+function SpacingPanel() {
+  return (
+    <div data-testid="spacing-panel">
+      <SpacingTab />
+    </div>
+  )
+}
+
 function resetStore() {
   useEditorStore.setState({
     site: makeSite(),
     activePageId: 'page-1',
-    typographyPanelOpen: true,
-    spacingPanelOpen: true,
+    frameworkPanelOpen: true,
+    frameworkPanelTab: 'typography',
     _historyPast: [],
     _historyFuture: [],
     canUndo: false,
@@ -39,7 +56,7 @@ beforeEach(resetStore)
 afterEach(cleanup)
 
 describe('FrameworkScalePanel', () => {
-  it('keeps scale creation in the section controls instead of the panel header', () => {
+  it('keeps scale creation in the section controls', () => {
     useEditorStore.getState().createFrameworkTypographyGroup()
     useEditorStore.getState().createFrameworkSpacingGroup()
 
@@ -52,12 +69,6 @@ describe('FrameworkScalePanel', () => {
 
     const typographyPanel = screen.getByTestId('typography-panel')
     const spacingPanel = screen.getByTestId('spacing-panel')
-    const typographyHeader = within(typographyPanel).getByRole('toolbar', {
-      name: 'Typography panel header',
-    })
-    const spacingHeader = within(spacingPanel).getByRole('toolbar', {
-      name: 'Spacing panel header',
-    })
     const typographyScalePicker = within(typographyPanel).getByRole('group', {
       name: 'Typography scales',
     })
@@ -65,8 +76,6 @@ describe('FrameworkScalePanel', () => {
       name: 'Spacing scales',
     })
 
-    expect(within(typographyHeader).queryByRole('button', { name: 'Add typography scale' })).toBeNull()
-    expect(within(spacingHeader).queryByRole('button', { name: 'Add spacing scale' })).toBeNull()
     expect(within(typographyScalePicker).getByRole('button', { name: 'Add typography scale' })).toBeDefined()
     expect(within(spacingScalePicker).getByRole('button', { name: 'Add spacing scale' })).toBeDefined()
   })

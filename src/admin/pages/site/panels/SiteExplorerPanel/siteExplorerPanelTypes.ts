@@ -13,3 +13,13 @@ export type SiteExplorerContextTarget =
 export type SiteExplorerAnySectionModel =
   | SiteExplorerTreeSectionModel<SiteExplorerContextTarget>
   | SiteExplorerStructuralSectionModel<SiteExplorerContextTarget>
+
+/**
+ * Which group of sections the panel renders. The consolidated Explorer panel
+ * splits the site concepts across two tabs:
+ *   - `site` — Pages, Templates, Components (renderable site structure)
+ *   - `code` — Styles, Scripts (raw source files opened in the editor)
+ * Both groups are served by a single `SiteExplorerPanel` instance (shared DnD
+ * scope + selection), switched by the active Explorer tab.
+ */
+export type SiteExplorerSectionGroup = 'site' | 'code'

@@ -1,18 +1,14 @@
-import { useRef, type CSSProperties, type ReactNode } from 'react'
+import { useRef, type CSSProperties } from 'react'
 import { useEditorStore } from '@site/store/store'
 import type { LeftSidebarPanelId } from '@site/store/slices/uiSlice'
 import { AgentPanel } from '@site/panels/AgentPanel'
 import { AgentStoreProvider } from '@admin/ai/AgentStoreContext'
-import { ColorsPanel } from '@site/panels/ColorsPanel'
+import { FrameworkPanel } from '@site/panels/FrameworkPanel'
+import { ExplorerPanel } from '@site/panels/ExplorerPanel'
 import { DependenciesPanel } from '@site/panels/DependenciesPanel'
-import { DomPanel } from '@site/panels/DomPanel'
-import { MediaExplorerPanel } from '@site/panels/MediaExplorerPanel'
 import { PanelRail } from '@site/sidebars/PanelRail'
 import { PluginEditorPanel } from '@site/panels/PluginEditorPanel'
 import { SelectorsPanel } from '@site/panels/SelectorsPanel'
-import { SiteExplorerPanel } from '@site/panels/SiteExplorerPanel'
-import { TypographyPanel } from '@site/panels/TypographyPanel'
-import { SpacingPanel } from '@site/panels/SpacingPanel'
 import { FrameworkChangeConfirmProvider } from '@admin/shared/dialogs/FrameworkChangeConfirmDialog'
 import { VCDeletionConfirmProvider } from '@admin/shared/dialogs/VCDeletionConfirmDialog'
 import { SidebarResizeHandle } from '@admin/shared/SidebarResizeHandle'
@@ -23,30 +19,26 @@ function selectActiveLeftSidebarPanel(state: ReturnType<typeof useEditorStore.ge
   // the LeftSidebar reads `activePluginPanelId` separately and shows the
   // plugin mount when set.
   if (state.activePluginPanelId !== null) return null
-  if (state.siteExplorerPanelOpen) return 'site'
+  if (state.explorerPanelOpen) return 'explorer'
   if (state.selectorsPanelOpen) return 'selectors'
-  if (state.colorsPanelOpen) return 'colors'
-  if (state.typographyPanelOpen) return 'typography'
-  if (state.spacingPanelOpen) return 'spacing'
-  if (state.mediaExplorerPanelOpen) return 'media'
+  if (state.frameworkPanelOpen) return 'framework'
   if (state.dependenciesPanelOpen) return 'dependencies'
-  if (!state.domTreePanel.collapsed) return 'layers'
   if (state.isAgentOpen) return 'agent'
   return null
 }
 
 interface LeftSidebarProps {
+  /** Drives the rail-button accent identity hash (`${workspace}:${id}:…`). */
   workspace?: 'site' | 'content' | 'media'
-  contentPanel?: ReactNode
   railOnly?: boolean
   /**
    * Whether the caller can perform structural edits (DnD, add/remove nodes,
    * pages, styles). Controls which side-panels are exposed in the rail.
    *
-   * Falsy callers (Viewer / Client) still see Layers, Site Explorer and
-   * Media — they're navigation surfaces, not editing tools. The structural
-   * Selectors / Colors / Typography / Spacing / Dependencies panels stay
-   * hidden. The Agent panel is controlled separately by `canUseAiChat`.
+   * Falsy callers (Viewer / Client) still see the Explorer panel (Layers /
+   * Pages / Media navigation surfaces) — they're not editing tools. The
+   * structural Selectors / Framework / Dependencies panels stay hidden. The
+   * Agent panel is controlled separately by `canUseAiChat`.
    *
    * Each panel is responsible for respecting its own read-only state for
    * the interactions it exposes (TreeNode drag, context menus, etc.).
@@ -60,11 +52,10 @@ interface LeftSidebarProps {
  * navigational / view surfaces. Anything not in this set is editing-only
  * and is dropped from the rail (and its panel mount) when `editable=false`.
  */
-const READ_ONLY_RAIL_IDS: ReadonlySet<LeftSidebarPanelId> = new Set(['layers', 'site', 'media'])
+const READ_ONLY_RAIL_IDS: ReadonlySet<LeftSidebarPanelId> = new Set(['explorer'])
 
 export function LeftSidebar({
   workspace = 'site',
-  contentPanel,
   railOnly = false,
   editable = true,
   canUseAiChat = true,
@@ -82,7 +73,7 @@ export function LeftSidebar({
       ? activePanel
       : editable
         ? null
-        : 'layers'
+        : 'explorer'
   const effectivePluginPanelId = editable ? activePluginPanelId : null
   // Sidebar is "expanded" whenever a built-in OR plugin panel is showing.
   const sidebarOpen = Boolean(effectiveActivePanel) || effectivePluginPanelId !== null
@@ -124,14 +115,8 @@ export function LeftSidebar({
               `site.read`. These are navigation/inspection surfaces, not
               editing tools; each respects its own read-only state internally
               (e.g. TreeNode disables drag + context menu via `editable`). */}
-          <div className={styles.panelMount} hidden={effectiveActivePanel !== 'layers'}>
-            <DomPanel variant="docked" editable={editable} />
-          </div>
-          <div className={styles.panelMount} hidden={effectiveActivePanel !== 'site'}>
-            {workspace === 'content' ? contentPanel : <SiteExplorerPanel variant="docked" organizationDndEnabled={editable} />}
-          </div>
-          <div className={styles.panelMount} hidden={effectiveActivePanel !== 'media'}>
-            <MediaExplorerPanel variant="docked" />
+          <div className={styles.panelMount} hidden={effectiveActivePanel !== 'explorer'}>
+            <ExplorerPanel editable={editable} />
           </div>
           {/* Editor-only panels — only mounted when the caller can perform
               structural edits. Mounting them for non-editors would expose
@@ -142,14 +127,8 @@ export function LeftSidebar({
               <div className={styles.panelMount} hidden={effectiveActivePanel !== 'selectors'}>
                 <SelectorsPanel variant="docked" />
               </div>
-              <div className={styles.panelMount} hidden={effectiveActivePanel !== 'colors'}>
-                <ColorsPanel />
-              </div>
-              <div className={styles.panelMount} hidden={effectiveActivePanel !== 'typography'}>
-                <TypographyPanel />
-              </div>
-              <div className={styles.panelMount} hidden={effectiveActivePanel !== 'spacing'}>
-                <SpacingPanel />
+              <div className={styles.panelMount} hidden={effectiveActivePanel !== 'framework'}>
+                <FrameworkPanel />
               </div>
               <div className={styles.panelMount} hidden={effectiveActivePanel !== 'dependencies'}>
                 <DependenciesPanel variant="docked" />

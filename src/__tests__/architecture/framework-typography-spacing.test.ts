@@ -7,8 +7,8 @@
  *     and any future server-side code can import it.
  *   - The editor panels MUST live under src/admin/pages/site/components/<Family>Panel/
  *     and consume only the instatic design tokens (no raw hex, no Tailwind).
- *   - The new icons (`type`, `ruler-dimension`) MUST be on the panel rail and
- *     reachable through the catalog import path the icon gate already enforces.
+ *   - Colors / Typography / Spacing are consolidated into one Framework rail
+ *     entry; the per-family tabs live inside the FrameworkPanel.
  *
  * Each gate failure produces a precise, actionable error so a future refactor
  * never silently drops a constraint.
@@ -117,22 +117,24 @@ describe('architecture — typography / spacing panels', () => {
 describe('architecture — panel rail', () => {
   const railSource = readSource('admin/pages/site/sidebars/PanelRail/PanelRail.tsx')
 
-  it('rail wires both new panels via the catalog icon imports', () => {
-    expect(railSource).toContain("from 'pixel-art-icons/icons/text-start-t'")
-    expect(railSource).toContain("from 'pixel-art-icons/icons/ruler-dimension-solid'")
+  // Colors / Typography / Spacing were consolidated into one Framework rail
+  // entry (tabs live inside the FrameworkPanel). The rail now exposes a single
+  // `framework` item via the colors-swatch catalog icon.
+  it('rail wires the Framework entry via the catalog icon import', () => {
+    expect(railSource).toContain("from 'pixel-art-icons/icons/colors-swatch-solid'")
   })
 
-  it('rail exposes typography + spacing entries with stable ids', () => {
-    expect(railSource).toMatch(/id:\s*'typography'/)
-    expect(railSource).toMatch(/id:\s*'spacing'/)
+  it('rail exposes a single framework entry with a stable id', () => {
+    expect(railSource).toMatch(/id:\s*'framework'/)
+    expect(railSource).not.toMatch(/id:\s*'typography'/)
+    expect(railSource).not.toMatch(/id:\s*'spacing'/)
   })
 })
 
 describe('architecture — left sidebar', () => {
   const layoutSource = readSource('admin/pages/site/sidebars/LeftSidebar/LeftSidebar.tsx')
 
-  it('mounts TypographyPanel and SpacingPanel', () => {
-    expect(layoutSource).toContain('<TypographyPanel />')
-    expect(layoutSource).toContain('<SpacingPanel />')
+  it('mounts the consolidated FrameworkPanel', () => {
+    expect(layoutSource).toContain('<FrameworkPanel />')
   })
 })

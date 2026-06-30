@@ -3,6 +3,7 @@
 // search/filter over the loaded asset list. No JSX, no React, no store access.
 
 import type { CmsMediaAsset } from '@core/persistence/cmsMedia'
+import { formatBytes } from '@admin/pages/media/utils/formatBytes'
 import type { MediaBucket, MediaFilter } from './mediaExplorerModel'
 
 const VIEW_MODE_STORAGE_KEY = 'instatic-media-explorer-view-mode'
@@ -10,9 +11,9 @@ const VIEW_MODE_STORAGE_KEY = 'instatic-media-explorer-view-mode'
 export function readStoredViewMode(): 'list' | 'grid' {
   try {
     const raw = globalThis.localStorage?.getItem(VIEW_MODE_STORAGE_KEY)
-    return raw === 'grid' || raw === 'list' ? raw : 'list'
+    return raw === 'grid' || raw === 'list' ? raw : 'grid'
   } catch {
-    return 'list'
+    return 'grid'
   }
 }
 
@@ -63,25 +64,31 @@ function extension(path: string) {
   return index >= 0 ? name.slice(index + 1).toLowerCase() : ''
 }
 
-export function mediaBucket(mimeType: string | undefined, path: string): MediaBucket {
+/**
+ * Classifies an asset as `'images'` or `'videos'`, or `null` when it is
+ * neither — a non-media file (PDF, archive, etc.). The explorer only shows
+ * real media, so `null` results are dropped at the bucketing/filtering step
+ * rather than surfaced under a generic "Other" category.
+ */
+export function mediaBucket(mimeType: string | undefined, path: string): MediaBucket | null {
   if (mimeType?.startsWith('image/')) return 'images'
   if (mimeType?.startsWith('video/')) return 'videos'
 
   const ext = extension(path)
   if (IMAGE_EXTENSIONS.has(ext)) return 'images'
   if (VIDEO_EXTENSIONS.has(ext)) return 'videos'
-  return 'other'
+  return null
 }
 
 export function groupCmsMediaAssets(assets: CmsMediaAsset[]) {
   const buckets: Record<MediaBucket, CmsMediaAsset[]> = {
     images: [],
     videos: [],
-    other: [],
   }
 
   for (const asset of assets) {
-    buckets[mediaBucket(asset.mimeType, asset.filename)].push(asset)
+    const bucket = mediaBucket(asset.mimeType, asset.filename)
+    if (bucket) buckets[bucket].push(asset)
   }
 
   return buckets
@@ -105,7 +112,6 @@ export function filterCmsMediaBuckets(
   const next: Record<MediaBucket, CmsMediaAsset[]> = {
     images: [],
     videos: [],
-    other: [],
   }
 
   for (const bucket of Object.keys(next) as MediaBucket[]) {
@@ -118,4 +124,17 @@ export function filterCmsMediaBuckets(
 
 export function targetBucket(target: CmsMediaAsset) {
   return mediaBucket(target.mimeType, target.filename)
+}
+
+/**
+ * Compact "EXT · size" meta label shown under each media row/tile, e.g.
+ * "PNG · 245 KB". The public path isn't useful at a glance here — it's
+ * already one click away via the context menu's "Copy URL" — and crowding
+ * the narrow panel with `/uploads/...` noise pushes out the size/type info
+ * that's actually scannable.
+ */
+export function mediaMetaLabel(asset: CmsMediaAsset): string {
+  const ext = extension(asset.filename).toUpperCase()
+  const size = formatBytes(asset.sizeBytes)
+  return ext ? `${ext} · ${size}` : size
 }

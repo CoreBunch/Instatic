@@ -173,6 +173,19 @@
     color: var(--text);
 }
 
+/* tone="danger" on a ghost button: a constant slight red tint (foreground
+   only, no box) so inline destructive controls — e.g. the remove-scale trash —
+   read as dangerous at rest, then take a soft tinted background on hover. */
+.variant-ghost[data-tone="danger"] {
+    color: var(--danger);
+}
+
+.variant-ghost[data-tone="danger"]:hover,
+.variant-ghost[data-tone="danger"]:active {
+    background: var(--danger-10);
+    color: var(--danger-light);
+}
+
 /* ── Variant: primary ─────────────────────────────────────────────────────── */
 .variant-primary {
     background: var(--bg-surface-4);

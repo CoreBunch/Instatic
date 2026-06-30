@@ -1,0 +1,178 @@
+.home {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-l);
+}
+
+.cards {
+    display: grid;
+    gap: var(--space-px);
+    background: var(--bg-surface);
+    border-radius: var(--panel-radius);
+    overflow: hidden;
+}
+
+.card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    padding: var(--space-l);
+    text-align: left;
+    background: var(--bg-surface-2);
+    border: 0;
+    cursor: pointer;
+    transition: background 120ms ease;
+}
+
+.card:hover {
+    background: var(--overlay-10);
+}
+
+.cardHead {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+}
+
+.cardIcon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius);
+    background: var(--bg-surface);
+    color: var(--text);
+}
+
+.cardTitle {
+    font-size: var(--text-l);
+    font-weight: 700;
+    color: var(--text-bright);
+}
+
+/* Hover affordance — a chip with an arrow that signals the card opens its tab.
+   Purely visual (the whole card is the button); revealed on card hover. */
+.cardGo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--input-radius);
+    background: var(--bg-surface);
+    color: var(--text);
+    opacity: 0;
+    transform: translateX(calc(-1 * var(--space-2xs)));
+    transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.card:hover .cardGo {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.cardEmpty {
+    margin-top: var(--space-2xs);
+    font-size: var(--text-s);
+    color: var(--text-subtle);
+}
+
+/* ── Colors: palette swatch row ───────────────────────────────────────────
+   Equal bounded tiles fill the card width. Each swatch is composited over a
+   neutral base with a hairline ring, so dark, white, and translucent tokens
+   all read against the dark panel. Hover lifts a tile and floats its slug. */
+.palette {
+    display: flex;
+    gap: var(--space-px);
+    margin-top: var(--space-2xs);
+}
+
+.paletteCell {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    height: 44px;
+    border-radius: var(--input-radius);
+    /* Solid base + the (possibly translucent) swatch painted on top, so alpha
+       and near-black tokens stay visible instead of blending into the panel. */
+    background-color: var(--bg-surface);
+    background-image: linear-gradient(var(--swatch), var(--swatch));
+    box-shadow: inset 0 0 0 1px var(--overlay-10);
+    transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.paletteCell:hover {
+    transform: translateY(-3px);
+    box-shadow: inset 0 0 0 1px var(--overlay-20);
+    z-index: 1;
+}
+
+/* ── Typography: live type specimen ───────────────────────────────────────
+   Title + body rendered in the site's first two installed fonts (title #1,
+   body #2). With no fonts installed both fall back to the system stack — the
+   same default a freshly inserted text module renders in. */
+.specimen {
+    --specimen-title: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --specimen-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    /* Generous space BETWEEN the two role groups; the label hugs its sample
+       (tight gap on .specimenRow) so each role reads as a single unit. */
+    gap: var(--space-m);
+    margin-top: var(--space-2xs);
+    overflow: hidden;
+}
+
+/* One labelled row per font role (heading / body). */
+.specimenRow {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4xs);
+}
+
+/* Overline caption in the UI font (not the specimen font) so it reads as a
+   label, not part of the sample. Names the role and the font on that line. */
+.specimenLabel {
+    font-size: var(--text-3xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-subtle);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.specimenTitle {
+    font-family: var(--specimen-title);
+    font-size: calc(var(--text-6xl) * 0.85);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.025em;
+    color: var(--text-bright);
+}
+
+.specimenBody {
+    font-family: var(--specimen-body);
+    font-size: var(--text-m);
+    line-height: 1.55;
+    color: var(--text-muted);
+    /* Keep the specimen to two lines regardless of the body font's width. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+}
+
+/* ── Space: reuses the Space panel's SpacingBarChart verbatim ─────────────── */
+.scale {
+    margin-top: var(--space-2xs);
+}
+
+.manageRow {
+    display: flex;
+    justify-content: flex-start;
+}

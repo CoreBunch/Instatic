@@ -36,11 +36,18 @@ import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { useAdminNavigate } from '@admin/lib/useAdminNavigate'
 import { useAdminUi } from '@admin/state/adminUi'
+import { requestCmsSiteReload } from '@admin/state/adminEvents'
 import { Button } from '@ui/components/Button'
 import type { PixelArtIconComponent } from '@core/dashboard'
 import type { OnboardingFacts, OnboardingStepState } from '../hooks/useOnboardingState'
 import { LiquidProgressRing } from './LiquidProgressRing'
-import { FrameworkImportModal } from './FrameworkImportModal'
+import {
+  FrameworkManagerDialog,
+  type FrameworkManagerApplier,
+} from '@admin/shared/dialogs/FrameworkManagerDialog'
+import { cmsAdapter } from '@core/persistence/cms'
+import { applyFrameworkPreset } from '@core/framework'
+import { reconcileFrameworkClasses } from '@site/store/slices/site/framework/reconcile'
 import styles from './OnboardingPanel.module.css'
 
 interface StepDef {
@@ -121,6 +128,38 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
   const openSettings = useAdminUi((s) => s.openSettings)
   const [frameworkImportOpen, setFrameworkImportOpen] = useState(false)
 
+  // Same dialog, same behaviour as the in-editor Manage Framework host: the
+  // full Full / Variables only / None state picker, reconciled the same way
+  // (merge add-missing + flip utilities). Onboarding just persists through the
+  // cmsAdapter instead of the live editor store.
+  const onboardingApplier: FrameworkManagerApplier = {
+    capabilities: { canRemove: true },
+    apply: async (target) => {
+      const site = await cmsAdapter.loadSite('default')
+      if (!site) throw new Error('Site is not ready yet — finish setup first.')
+      site.settings.framework = applyFrameworkPreset(site.settings.framework, target)
+      // Regenerate / prune the generated `framework:` utility classes (and strip
+      // stale classIds off nodes) to match the new settings — the same reconcile
+      // the in-editor store runs. Without it, removing the framework here would
+      // leave its `.text-primary` / `.bg-primary` classes lingering in the saved
+      // styleRules, so the Site editor keeps showing them until a hard refresh.
+      reconcileFrameworkClasses(site)
+      await cmsAdapter.saveSite(site, {
+        baselinePageIds: site.pages.map((page) => page.id),
+        dirty: { all: false, pageIds: new Set(), componentIds: new Set(), layoutIds: new Set() },
+      })
+      // The framework settings were written to storage outside the editor. If
+      // the Site editor's store was hydrated earlier this session, its in-memory
+      // `site` is now stale and `usePersistence`'s mount-load early-returns
+      // without refetching — so the editor would keep showing the pre-import
+      // framework ("stuck on variables only"). Signal a reload, matching every
+      // other out-of-editor site mutation (bundle import, plugin install, data
+      // edits). The in-editor applier doesn't need this — it mutates the store
+      // directly.
+      requestCmsSiteReload()
+    },
+  }
+
   const states = STEPS.map((step) => ({ step, state: facts[step.id] }))
   const done = states.filter((s) => s.state === 'done').length
   const total = STEPS.length
@@ -194,11 +233,16 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
         })}
       </ol>
 
-      <FrameworkImportModal
+      <FrameworkManagerDialog
         open={frameworkImportOpen}
         onClose={() => setFrameworkImportOpen(false)}
-        onImported={onFrameworkImported}
-        alreadyConfigured={facts.framework === 'done'}
+        applier={onboardingApplier}
+        currentState={facts.framework === 'done' ? 'full' : 'none'}
+        // The onboarding step's intent is "import the framework" — open with
+        // Full pre-selected so the primary button reads "Import framework" and
+        // one click imports, rather than landing on the no-op current state.
+        initialTarget="full"
+        onApplied={onFrameworkImported}
       />
     </section>
   )

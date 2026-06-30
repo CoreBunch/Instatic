@@ -21,6 +21,7 @@ import type { SiteDocument } from '@core/page-tree'
 import type { StyleRule } from '@core/page-tree'
 import { buildFrameworkPlan } from '@core/framework'
 import { resolveFrameworkPreferences } from '@core/framework'
+import { collectUsedFrameworkClassIds } from '@core/framework'
 import { generateFontsCss } from '@core/fonts'
 import { generateClassCSS } from './classCss'
 
@@ -54,7 +55,7 @@ function generateFrameworkUtilityCss(
 
   const preferences = resolveFrameworkPreferences(framework.preferences)
   const classes = preferences.treeShakeGeneratedFrameworkUtilities
-    ? pickUsedGeneratedClasses(generatedClasses, collectUsedClassIds(site))
+    ? pickUsedGeneratedClasses(generatedClasses, collectUsedFrameworkClassIds(site))
     : generatedClasses
 
   return generateClassCSS(classes, site.breakpoints, site.conditions ?? [])
@@ -70,30 +71,4 @@ function pickUsedGeneratedClasses(
     if (cls) picked[classId] = cls
   }
   return picked
-}
-
-function collectUsedClassIds(site: SiteDocument): Set<string> {
-  const usedClassIds = new Set<string>()
-
-  for (const page of site.pages) {
-    for (const node of Object.values(page.nodes)) {
-      addClassIds(usedClassIds, node.classIds)
-    }
-  }
-
-  for (const vc of site.visualComponents) {
-    addClassIds(usedClassIds, vc.classIds)
-    for (const node of Object.values(vc.tree.nodes)) {
-      addClassIds(usedClassIds, node.classIds)
-    }
-  }
-
-  return usedClassIds
-}
-
-function addClassIds(target: Set<string>, classIds: string[] | undefined): void {
-  if (!classIds) return
-  for (const classId of classIds) {
-    target.add(classId)
-  }
 }

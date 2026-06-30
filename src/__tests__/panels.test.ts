@@ -65,13 +65,13 @@ describe('J6 DomPanel — store layer', () => {
     expect(updatedPage.nodes[page.rootNodeId].children).toContain(nodeId)
   })
 
-  it('toggleDomTreePanel collapses and expands', () => {
+  it('toggleLeftSidebarPanel("explorer") opens and closes the Explorer panel', () => {
     const state = useEditorStore.getState()
-    expect(state.domTreePanel.collapsed).toBe(false)
-    state.toggleDomTreePanel()
-    expect(useEditorStore.getState().domTreePanel.collapsed).toBe(true)
-    useEditorStore.getState().toggleDomTreePanel()
-    expect(useEditorStore.getState().domTreePanel.collapsed).toBe(false)
+    useEditorStore.setState({ explorerPanelOpen: false } as Parameters<typeof useEditorStore.setState>[0])
+    state.toggleLeftSidebarPanel('explorer')
+    expect(useEditorStore.getState().explorerPanelOpen).toBe(true)
+    useEditorStore.getState().toggleLeftSidebarPanel('explorer')
+    expect(useEditorStore.getState().explorerPanelOpen).toBe(false)
   })
 
   it('cycleFocusedPanel cycles canvas → domTree → properties → canvas', () => {

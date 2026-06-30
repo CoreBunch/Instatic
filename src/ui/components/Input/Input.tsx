@@ -6,8 +6,7 @@ import {
   type TextareaHTMLAttributes,
 } from 'react'
 import { cn } from '@ui/cn'
-import { ChevronUpIcon } from 'pixel-art-icons/icons/chevron-up'
-import { ChevronDownIcon } from 'pixel-art-icons/icons/chevron-down'
+import { ChevronDown2Icon } from 'pixel-art-icons/icons/chevron-down-2'
 import styles from './Input.module.css'
 
 type FieldSize = 'xs' | 'sm' | 'md'
@@ -111,6 +110,7 @@ export function Input({
       autoComplete={autoComplete}
       aria-invalid={invalid || props['aria-invalid'] ? true : undefined}
       data-emphasis={emphasis !== 'default' ? emphasis : undefined}
+      data-prefixed={prefix ? 'true' : undefined}
       className={cn(
         styles.input,
         styles[`size-${fieldSize}`],
@@ -152,7 +152,7 @@ export function Input({
             disabled={props.disabled}
             onClick={() => nudge(1)}
           >
-            <ChevronUpIcon size={9} />
+            <ChevronDown2Icon size={9} className={styles.spinnerIconUp} />
           </button>
           <button
             type="button"
@@ -162,7 +162,7 @@ export function Input({
             disabled={props.disabled}
             onClick={() => nudge(-1)}
           >
-            <ChevronDownIcon size={9} />
+            <ChevronDown2Icon size={9} />
           </button>
         </span>
       )}

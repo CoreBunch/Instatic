@@ -31,6 +31,7 @@ export function ClassGeneratorRow<C extends GeneratorShape>({
         fieldSize="sm"
         aria-label="Class pattern"
         value={generator.name}
+        prefix="."
         onChange={(event) => onPatch(generator.id, { name: event.target.value } as Partial<C>)}
         monospace
       />

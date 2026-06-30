@@ -6,6 +6,25 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 
 ## Unreleased
 
+## 0.0.7 - 2026-06-29
+
+### AI & integrations
+
+- Added MCP connectors so external AI clients can use the CMS tool surface through scoped connector tokens.
+
+### Design and onboarding
+
+- Imported Core Framework defaults from onboarding so new sites start with the selected design system values in place.
+
+### Security
+
+- Hardened sanitizers and regular expressions flagged by CodeQL.
+
+### Documentation and deployment
+
+- Replaced the README hero screenshot with a YouTube-linked introductory video thumbnail.
+- Added README guidance explaining that image-based installs update by redeploying the latest image.
+
 ## 0.0.6 - 2026-06-26
 
 ### AI & agent tooling

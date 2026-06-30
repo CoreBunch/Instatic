@@ -1,11 +1,12 @@
 /**
- * FrameworkImportModal — two selectable mode cards inside the shared Dialog.
+ * FrameworkManagerDialog — two or three selectable state cards (Full /
+ * Variables only / None) inside the shared Dialog.
  *
  * Cards follow the borderless tile pattern using overlay tints: idle
  * `--overlay-5`, hover `--overlay-10`, active `--overlay-20`, plus a mint tick
- * on the selected card — no ring, no recolored border. Font sizes use the
- * global fluid text scale; spacing uses the global space scale (admin token
- * policy).
+ * on the selected card — no ring, no recolored border. The selected "None"
+ * card tints danger to signal its destructive intent. Font sizes use the
+ * global fluid text scale; spacing uses the global space scale.
  */
 
 .lede {
@@ -18,7 +19,7 @@
 
 .options {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(var(--option-count), minmax(0, 1fr));
     gap: var(--space-xl);
 }
 
@@ -52,6 +53,16 @@
 
 .optionSelected:hover {
     background: var(--overlay-20);
+}
+
+/* Selected "None" card — soft danger tint to telegraph the destructive apply. */
+.optionDestructive,
+.optionDestructive:hover {
+    background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+.optionDestructive .optionTick {
+    background: var(--danger);
 }
 
 .optionHead {
@@ -93,7 +104,7 @@
     font-size: var(--text-m);
     font-weight: 500;
     line-height: 1.5;
-    color: var(--text);
+    color: var(--text-muted);
 }
 
 .optionBullets {
@@ -112,7 +123,7 @@
     font-size: var(--text-s);
     font-weight: 500;
     line-height: 1.4;
-    color: var(--text);
+    color: var(--text-muted);
 }
 
 .bulletIcon {
@@ -123,21 +134,16 @@
     color: var(--accent-1);
 }
 
-.note {
-    margin: var(--space-3xl) 0 0;
-    padding: var(--space-m) var(--space-l);
-    font-size: var(--text-s);
-    line-height: 1.45;
-    color: var(--info-text);
-    background: var(--bg-surface-2);
-    border-radius: var(--radius);
+.actionRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-m);
+    margin-top: var(--space-xl);
 }
 
-.error {
-    margin: var(--space-xl) 0 0;
-    font-size: var(--text-s);
-    line-height: 1.45;
-    color: var(--danger-text);
+/* Pin the primary apply button to the right of the action row. */
+.applyButton {
+    margin-left: auto;
 }
 
 @media (max-width: 560px) {

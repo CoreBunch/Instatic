@@ -8,15 +8,21 @@ import {
 export type FocusedPanel = 'canvas' | 'domTree' | 'properties' | null
 type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'
 export type LeftSidebarPanelId =
-  | 'site'
+  | 'explorer'
   | 'selectors'
-  | 'colors'
-  | 'typography'
-  | 'spacing'
-  | 'media'
+  | 'framework'
   | 'dependencies'
-  | 'layers'
   | 'agent'
+/** Tabs inside the consolidated Framework panel. */
+export type FrameworkPanelTab = 'home' | 'colors' | 'typography' | 'spacing'
+/**
+ * Tabs inside the consolidated Explorer panel.
+ *   - `layers` — the current page's DOM tree (DomPanel)
+ *   - `site`   — pages, templates, components (SiteExplorerPanel, `site` group)
+ *   - `code`   — stylesheets + scripts source files (SiteExplorerPanel, `code` group)
+ *   - `media`  — asset library (MediaExplorerPanel)
+ */
+export type ExplorerPanelTab = 'layers' | 'site' | 'code' | 'media'
 export type PropertiesPanelMode = 'docked' | 'floating'
 
 const PROPERTIES_PANEL_DEFAULT_WIDTH = 360
@@ -70,7 +76,6 @@ export type LayoutNameDialogRequest =
 
 interface UiSlice {
   // Panel visibility / layout
-  domTreePanel: PanelState
   propertiesPanel: PanelState
   propertiesPanelMode: PropertiesPanelMode
   propertiesPanelAutoOpenSuppressed: boolean
@@ -102,13 +107,17 @@ interface UiSlice {
    */
   layoutNameDialogRequest: LayoutNameDialogRequest | null
 
-  // Site explorer — user-facing site concepts, not generated source files
-  siteExplorerPanelOpen: boolean
+  // Consolidated Explorer panel — the Layers / Pages / Media navigation
+  // surfaces in one rail item with tabs.
+  explorerPanelOpen: boolean
+  /** Active tab inside the consolidated Explorer panel. */
+  explorerPanelTab: ExplorerPanelTab
   selectorsPanelOpen: boolean
-  colorsPanelOpen: boolean
-  typographyPanelOpen: boolean
-  spacingPanelOpen: boolean
-  mediaExplorerPanelOpen: boolean
+  frameworkPanelOpen: boolean
+  /** Active tab inside the consolidated Framework panel. */
+  frameworkPanelTab: FrameworkPanelTab
+  /** Whether the Manage Core Framework dialog is open. */
+  frameworkManagerOpen: boolean
   dependenciesPanelOpen: boolean
 
   /**
@@ -132,12 +141,10 @@ interface UiSlice {
   activeCodeBuffer: PropCodeBuffer | null
 
   // Actions
-  setDomTreePanel: (state: Partial<PanelState>) => void
   setPropertiesPanel: (state: Partial<PanelState>) => void
   consumePropertiesPanelAutoOpenSuppression: () => boolean
   setPropertiesPanelMode: (mode: PropertiesPanelMode) => void
   setLeftSidebarWidth: (width: number) => void
-  toggleDomTreePanel: () => void
   togglePropertiesPanel: () => void
   setFocusedPanel: (panel: FocusedPanel) => void
   cycleFocusedPanel: () => void
@@ -154,12 +161,12 @@ interface UiSlice {
   openLayoutNameDialog: (request: LayoutNameDialogRequest) => void
   closeLayoutNameDialog: () => void
 
-  setSiteExplorerPanelOpen: (open: boolean) => void
+  setExplorerPanelOpen: (open: boolean) => void
+  setExplorerPanelTab: (tab: ExplorerPanelTab) => void
   setSelectorsPanelOpen: (open: boolean) => void
-  setColorsPanelOpen: (open: boolean) => void
-  setTypographyPanelOpen: (open: boolean) => void
-  setSpacingPanelOpen: (open: boolean) => void
-  setMediaExplorerPanelOpen: (open: boolean) => void
+  setFrameworkPanelOpen: (open: boolean) => void
+  setFrameworkPanelTab: (tab: FrameworkPanelTab) => void
+  setFrameworkManagerOpen: (open: boolean) => void
   setDependenciesPanelOpen: (open: boolean) => void
   setLeftSidebarPanel: (panel: LeftSidebarPanelId | null) => void
   toggleLeftSidebarPanel: (panel: LeftSidebarPanelId) => void
@@ -263,13 +270,6 @@ interface UiSlice {
 
 const PANEL_FOCUS_ORDER: FocusedPanel[] = ['canvas', 'domTree', 'properties']
 
-const DEFAULT_DOM_TREE_PANEL: PanelState = {
-  collapsed: false,
-  x: 0,
-  y: 0,
-  width: 280,
-}
-
 const DEFAULT_PROPERTIES_PANEL: PanelState = {
   collapsed: false,
   x: 0, // will be set to window.innerWidth - width on mount
@@ -280,17 +280,12 @@ const DEFAULT_PROPERTIES_PANEL: PanelState = {
 function getActiveLeftSidebarPanel(state: EditorStore): LeftSidebarPanelId | null {
   // A plugin panel takes precedence over every built-in panel — the
   // built-in `*PanelOpen` flags are forced to false whenever a plugin
-  // panel is opened, but `domTreePanel.collapsed` defaults to false so
-  // we have to short-circuit here too.
+  // panel is opened, so short-circuit here too.
   if (state.activePluginPanelId !== null) return null
-  if (state.siteExplorerPanelOpen) return 'site'
+  if (state.explorerPanelOpen) return 'explorer'
   if (state.selectorsPanelOpen) return 'selectors'
-  if (state.colorsPanelOpen) return 'colors'
-  if (state.typographyPanelOpen) return 'typography'
-  if (state.spacingPanelOpen) return 'spacing'
-  if (state.mediaExplorerPanelOpen) return 'media'
+  if (state.frameworkPanelOpen) return 'framework'
   if (state.dependenciesPanelOpen) return 'dependencies'
-  if (!state.domTreePanel.collapsed) return 'layers'
   if (state.isAgentOpen) return 'agent'
   return null
 }
@@ -302,7 +297,6 @@ declare module '@site/store/types' {
 }
 
 export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
-  domTreePanel: DEFAULT_DOM_TREE_PANEL,
   propertiesPanel: DEFAULT_PROPERTIES_PANEL,
   propertiesPanelMode: 'docked',
   propertiesPanelAutoOpenSuppressed: false,
@@ -314,12 +308,12 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
   insertPickerParentId: null,
   componentizeEditorRequest: null,
   layoutNameDialogRequest: null,
-  siteExplorerPanelOpen: false,
+  explorerPanelOpen: true,
+  explorerPanelTab: 'layers',
   selectorsPanelOpen: false,
-  colorsPanelOpen: false,
-  typographyPanelOpen: false,
-  spacingPanelOpen: false,
-  mediaExplorerPanelOpen: false,
+  frameworkPanelOpen: false,
+  frameworkPanelTab: 'home',
+  frameworkManagerOpen: false,
   dependenciesPanelOpen: false,
   activePluginPanelId: null,
   codeEditorPanelOpen: false,
@@ -334,29 +328,14 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
   importHtmlModalParentId: null,
   importHtmlModalPrefill: '',
 
-  setDomTreePanel: (partial) => {
-    // Guard: skip the set() call entirely when every supplied field already
-    // matches the current value.  A no-op spread like
-    //   set((s) => ({ domTreePanel: { ...s.domTreePanel, ...partial } }))
-    // still produces a new object reference, which triggers
-    // useSyncExternalStore's tearing detection and schedules a synchronous
-    // forceStoreRerender.  On initial mount DomPanel calls this from its
-    // localStorage-restore effect — if the stored value equals the default,
-    // the guard prevents the spurious mutation that was causing the
-    // "Maximum update depth exceeded" crash.
-    const current = get().domTreePanel
-    const anyChanged = (Object.keys(partial) as (keyof PanelState)[]).some(
-      (k) => !Object.is(current[k], partial[k]),
-    )
-    if (!anyChanged) return
-    set((state) => {
-      state.domTreePanel = { ...state.domTreePanel, ...partial }
-    })
-  },
-
   setPropertiesPanel: (partial) => {
-    // Same guard as setDomTreePanel — prevents a no-op mutation from
-    // PropertiesPanel's localStorage-restore effect on initial mount.
+    // Guard: skip the set() call entirely when every supplied field already
+    // matches the current value. A no-op spread still produces a new object
+    // reference, which triggers useSyncExternalStore's tearing detection and
+    // schedules a synchronous forceStoreRerender. PropertiesPanel calls this
+    // from its localStorage-restore effect on initial mount — if the stored
+    // value equals the default, the guard prevents the spurious mutation that
+    // was causing the "Maximum update depth exceeded" crash.
     const current = get().propertiesPanel
     const anyChanged = (Object.keys(partial) as (keyof PanelState)[]).some(
       (k) => !Object.is(current[k], partial[k]),
@@ -383,11 +362,6 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
     if (Object.is(get().leftSidebarWidth, nextWidth)) return
     set({ leftSidebarWidth: nextWidth })
   },
-
-  toggleDomTreePanel: () =>
-    set((state) => {
-      state.domTreePanel.collapsed = !state.domTreePanel.collapsed
-    }),
 
   togglePropertiesPanel: () =>
     set((state) => {
@@ -449,30 +423,26 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
 
   closeLayoutNameDialog: () => set({ layoutNameDialogRequest: null }),
 
-  setSiteExplorerPanelOpen: (open) => set({ siteExplorerPanelOpen: open }),
+  setExplorerPanelOpen: (open) => set({ explorerPanelOpen: open }),
+
+  setExplorerPanelTab: (tab) => set({ explorerPanelTab: tab }),
 
   setSelectorsPanelOpen: (open) => set({ selectorsPanelOpen: open }),
 
-  setColorsPanelOpen: (open) => set({ colorsPanelOpen: open }),
+  setFrameworkPanelOpen: (open) => set({ frameworkPanelOpen: open }),
 
-  setTypographyPanelOpen: (open) => set({ typographyPanelOpen: open }),
+  setFrameworkPanelTab: (tab) => set({ frameworkPanelTab: tab }),
 
-  setSpacingPanelOpen: (open) => set({ spacingPanelOpen: open }),
-
-  setMediaExplorerPanelOpen: (open) => set({ mediaExplorerPanelOpen: open }),
+  setFrameworkManagerOpen: (open) => set({ frameworkManagerOpen: open }),
 
   setDependenciesPanelOpen: (open) => set({ dependenciesPanelOpen: open }),
 
   setLeftSidebarPanel: (panel) =>
     set((state) => {
-      state.siteExplorerPanelOpen = panel === 'site'
+      state.explorerPanelOpen = panel === 'explorer'
       state.selectorsPanelOpen = panel === 'selectors'
-      state.colorsPanelOpen = panel === 'colors'
-      state.typographyPanelOpen = panel === 'typography'
-      state.spacingPanelOpen = panel === 'spacing'
-      state.mediaExplorerPanelOpen = panel === 'media'
+      state.frameworkPanelOpen = panel === 'framework'
       state.dependenciesPanelOpen = panel === 'dependencies'
-      state.domTreePanel.collapsed = panel !== 'layers'
       state.isAgentOpen = panel === 'agent'
       // Built-in panels are mutually exclusive with plugin panels.
       state.activePluginPanelId = null
@@ -492,14 +462,10 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
 
   setActivePluginPanel: (panelId) =>
     set((state) => {
-      state.siteExplorerPanelOpen = false
+      state.explorerPanelOpen = false
       state.selectorsPanelOpen = false
-      state.colorsPanelOpen = false
-      state.typographyPanelOpen = false
-      state.spacingPanelOpen = false
-      state.mediaExplorerPanelOpen = false
+      state.frameworkPanelOpen = false
       state.dependenciesPanelOpen = false
-      state.domTreePanel.collapsed = true
       state.isAgentOpen = false
       state.activePluginPanelId = panelId
     }),

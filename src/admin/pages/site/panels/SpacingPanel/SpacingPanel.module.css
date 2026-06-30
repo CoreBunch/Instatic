@@ -12,9 +12,10 @@
 
 /* ─── Bar chart (DIV-based, 1px = 1px) ──────────────────────────────────── */
 
-/* Grid:
- *   col 1: device icon column (24px)
- *   col 2: bar area (1fr)
+/* Single-column grid (bars span the full width). The device icons are pulled
+ * out of the flow and pinned to the two left corners — top-left (desktop) and
+ * bottom-left (mobile) — which sit in dead space because the short left-hand
+ * bars are anchored to the centerline (desktop grows up, mobile grows down).
  *
  * Rows (top → bottom):
  *   1. desktop bar row — each bar column stacks [label, bar] anchored to the
@@ -24,32 +25,30 @@
  *      centerline (mirror of desktop).
  */
 .barChart {
+    position: relative;
     display: grid;
-    grid-template-columns: 14px minmax(0, 1fr);
-    column-gap: var(--space-3xs);
+    grid-template-columns: minmax(0, 1fr);
     row-gap: 0;
     padding: var(--space-3xs) 0 0;
 }
 
 .barChartIcon {
+    position: absolute;
+    left: var(--space-3xs);
+    z-index: 2;
     display: flex;
     align-items: center;
     justify-content: center;
+    pointer-events: none;
 }
 
 .barChartIcon[data-side="desktop"] {
-    grid-row: 1;
-    grid-column: 1;
-    align-self: end;
-    padding-bottom: var(--space-4xs);
+    top: 0;
     color: var(--chart-series-max);
 }
 
 .barChartIcon[data-side="mobile"] {
-    grid-row: 3;
-    grid-column: 1;
-    align-self: start;
-    padding-top: var(--space-4xs);
+    bottom: 0;
     color: var(--chart-series-min);
 }
 
@@ -58,7 +57,7 @@
  * overlay is absolutely positioned over the same area so the labels can
  * be translated to ride each bar's tip. */
 .barChartRow {
-    grid-column: 2;
+    grid-column: 1;
     position: relative;
     width: 100%;
     padding: 0 var(--space-3xs);
@@ -87,7 +86,7 @@
  *
  * Sits BEHIND everything else (rendered first in DOM, no z-index needed). */
 .barChartBaseHighlight {
-    grid-column: 2;
+    grid-column: 1;
     /* Span all three explicit chart rows (desktop, center, mobile). We use
      * `span 3` instead of `1 / -1` because `.barChart` has no
      * `grid-template-rows`, so its row tracks are implicit and `-1` would
@@ -107,7 +106,9 @@
 }
 
 .barChartBaseHighlightCell[data-base="true"] {
-    background: var(--bg-surface-3);
+    /* Overlay (additive) rather than a surface tone so the base marker stays
+       visible when the Home card lifts its background on hover. */
+    background: var(--overlay-10);
     border-radius: 12px;
 }
 
@@ -235,8 +236,7 @@
     grid-row: 2;
     position: relative;
     display: grid;
-    grid-template-columns: 14px minmax(0, 1fr);
-    column-gap: var(--space-3xs);
+    grid-template-columns: minmax(0, 1fr);
     align-items: center;
     margin: var(--space-4xs) 0;
 }
@@ -244,7 +244,7 @@
 /* Same grid template as the bar rows (1fr per column, 3px gap, 4px side
  * padding) — keeps the step labels aligned with the bars above/below. */
 .barChartStepLabels {
-    grid-column: 2;
+    grid-column: 1;
     position: relative;
     z-index: 1;
     display: grid;

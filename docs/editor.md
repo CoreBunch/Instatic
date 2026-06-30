@@ -449,9 +449,9 @@ Why this matters: selection rings and the floating selection toolbar are portale
 | Toolbar (main bar)                    | 30      | `toolbar/Toolbar.module.css` |
 | PropertiesPanel (floating)            | 50      | `panels/PropertiesPanel/PropertiesPanel.module.css` |
 | AgentPanel (floating)                 | 50      | `panels/AgentPanel/AgentPanel.module.css` |
-| DomPanel (floating)                   | 50      | `panels/DomPanel/DomPanel.module.css` |
-| LeftSidebar, RightSidebar, PanelRail  | 55      | `sidebars/*/` |
-| CodeEditorPanel                       | 80      | `code-editor/CodeEditorPanel.module.css` |
+| PanelRail                             | 55      | `sidebars/PanelRail/PanelRail.module.css` |
+| LeftSidebar, RightSidebar             | 85      | `sidebars/{Left,Right}Sidebar/` |
+| CodeEditorPanel (floats over sidebars)| 95      | `code-editor/CodeEditorPanel.module.css` |
 | Toolbar popovers / dropdowns          | 201     | `toolbar/Toolbar.module.css` |
 | PreviewOverlay                        | 400–401 | `preview/PreviewOverlay.module.css` |
 
@@ -515,16 +515,21 @@ Canvas-internal values are not CSS tokens — they are raw integers intentionall
 
 42px-wide vertical strip on the far left. Primary navigation panels sit in the top group; global workspace actions such as the AI assistant are pinned to the bottom group. Each button gets an automatic rail tint from its full panel identity, with repeats avoided inside the visible rail group, and opens a panel in the left sidebar. Implementation: `src/admin/pages/site/sidebars/PanelRail/PanelRail.module.css`.
 
+The primary rail group is, in order: **Explorer** (`database-solid` icon, `gold` accent — carried over from the standalone Layers rail button it replaced), **Framework**, **Selectors**, **Dependencies**. The AI assistant lives alone in the bottom global group. Read-only callers (Viewer / Client) see only the Explorer rail button — the structural Framework / Selectors / Dependencies panels and the agent are dropped from both the rail and their panel mounts.
+
 ### Left sidebar
 
 Opens the rail-selected panel:
 
-- `DomPanel` — layer tree of the current page
-- `SiteExplorerPanel` — pages and components roster
-- `MediaExplorerPanel` — quick media insert
-- `ColorsPanel`, `TypographyPanel`, `SpacingPanel` — site-level design tokens
-- `DependenciesPanel` — site package.json / `bun install`
+- `ExplorerPanel` — the consolidated navigation panel. One `<Panel>` shell hosting a top `SegmentedControl` with **Layers / Site / Code / Media** tabs (default **Layers**). Each tab renders the corresponding panel in its headerless `tab` variant — the ExplorerPanel shell owns the chrome (header + tabs + close):
+  - **Layers** → `DomPanel` (layer tree of the current page). The search row has an **Insert module** button beside it that opens the shared `ModuleInserterDialog` via `useInsertInserterItem` — same command surface and selection-relative target resolution as the canvas `+` and toolbar `+ Add`.
+  - **Site** → `SiteExplorerPanel` with `sectionGroup="site"` (Pages, Templates, Components — the renderable site structure).
+  - **Code** → the SAME `SiteExplorerPanel` instance with `sectionGroup="code"` (Styles, Scripts — raw source files opened in the editor). Site and Code share one mount so they share one DnD scope + selection; two instances would each register `useDndMonitor` and double-handle every explorer drag.
+  - **Media** → `MediaExplorerPanel` (quick media insert / asset library).
+  - Active tab is held in `explorerPanelTab` (`uiSlice`, `'layers' | 'site' | 'code' | 'media'`) and persisted per-workspace via `siteEditorLayoutPersistence` (stored field `explorerPanelTab`).
+- `FrameworkPanel` — site-level design tokens (the Core Framework) in one panel with **Overview / Colors / Type / Space** tabs. Its "Manage framework" button opens `FrameworkManagerDialog`, a declarative state picker (Full framework / Variables only / None) that reconciles the framework to the chosen target. Sits **above** Selectors in the rail.
 - `SelectorsPanel` — CSS class library
+- `DependenciesPanel` — site package.json / `bun install`
 - `PluginEditorPanel` — plugin-provided editor panels
 - `AgentPanel` — AI assistant
 
@@ -541,7 +546,7 @@ Property controls are driven by the selected node's module schema (`src/core/mod
 
 At the top of the Properties Panel, the selector picker is the single entry point for CSS rules that affect the selected element. Assigned class rules render as removable `TagPill` chips and are stored on `node.classIds`; matching ambient rules render as non-removable `TagPill` chips because they apply by selector matching, not assignment. Ambient rules that match only through a universal subject (`*`, `body.x *`, `*::before`) never render as pills — they style every element in their scope and stay reachable through the dropdown and the Selectors panel instead. The dropdown searches both class rules and ambient selectors, is capped to the picker width budget, and ellipsizes long selector labels instead of expanding across the editor. Ambient rows that do not match the selected canvas element stay visible but disabled with the mismatch reason, and selector-shaped input such as `.hero .title`, `h1`, or `a:hover` creates an ambient rule instead of a class.
 
-The Typography panel stores Google/custom font assets and editable font tokens together under `site.settings.fonts`. Installed font assets own the self-hosted `@font-face` files; font tokens own the builder-facing variables such as `--font-primary`, the assigned font asset, and the fallback stack. The property-panel `font-family` control is a rich picker: token rows write `var(--font-primary)` so the selected node or class keeps following future token swaps, direct font rows write a concrete family stack as an escape hatch, and the text input still accepts manual values.
+The Framework panel's **Type** tab stores Google/custom font assets and editable font tokens together under `site.settings.fonts`. Installed font assets own the self-hosted `@font-face` files; font tokens own the builder-facing variables such as `--font-primary`, the assigned font asset, and the fallback stack. The property-panel `font-family` control is a rich picker: token rows write `var(--font-primary)` so the selected node or class keeps following future token swaps, direct font rows write a concrete family stack as an escape hatch, and the text input still accepts manual values.
 
 When the user clicks a rule in the Selectors Panel, the Properties Panel switches to **selector-editing mode** — the body shows style controls for that rule directly, and the header renders `SelectorHeader` with the rule's CSS selector, an inline rename input, and a delete button. The delete and rename actions are only shown for non-generated rules and require `site.style.edit`.
 
@@ -742,7 +747,8 @@ See [docs/features/plugin-system.md](features/plugin-system.md) for the plugin S
   - `src/admin/pages/site/panels/PropertiesPanel/ClassRenameDialog.tsx` — rename dialog for class selectors
   - `src/admin/pages/site/panels/PropertiesPanel/selectorPickerModel.ts` — selector picker derivation model (`deriveSelectorPickerModel`)
   - `src/core/page-tree/styleRule.ts` — selector creation classifier (`classifySelectorCreateInput`) shared by the Properties picker and Selectors panel
-  - `src/admin/pages/site/panels/SiteExplorerPanel/SiteExplorerPanel.tsx` — site explorer panel mount
+  - `src/admin/pages/site/panels/ExplorerPanel/ExplorerPanel.tsx` — consolidated navigation panel (Layers / Site / Code / Media tabs); owns the shell + `SegmentedControl`, renders DomPanel / SiteExplorerPanel (one instance for both Site+Code tabs via `sectionGroup`) / MediaExplorerPanel in their headerless `tab` variant
+  - `src/admin/pages/site/panels/SiteExplorerPanel/SiteExplorerPanel.tsx` — site explorer panel mount (the Explorer panel's **Pages** tab body)
   - `src/admin/pages/site/panels/SiteExplorerPanel/SiteExplorerTreeSection.tsx` — generic tree section renderer used by all explorer categories
   - `src/admin/pages/site/panels/SiteExplorerPanel/siteExplorerModel.ts` — `buildSiteExplorerTreeSection` (placement arrays → typed tree model)
   - `src/admin/pages/site/panels/SiteExplorerPanel/useSiteExplorerDnd.ts` — DnD monitor for explorer organization drag-and-drop
