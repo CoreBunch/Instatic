@@ -1,11 +1,12 @@
 /**
  * FrameworkManagerHost — mounts the Manage Core Framework dialog inside the
- * site editor, wiring it to the live store actions (import + remove + prune,
- * each through reconcile + undo). Reads `hasFramework` and the used-class count
- * from the live site for the dialog's state-aware UI and remove warning.
+ * site editor, wiring it to the live store. The dialog picks one declarative
+ * target state; `setFrameworkPreset` reconciles to it (with undo). Reads the
+ * current state and used-class count from the live site for the dialog's
+ * pre-selection and remove warning.
  */
 import { useEditorStore } from '@site/store/store'
-import { collectUsedFrameworkClassIds } from '@core/framework'
+import { collectUsedFrameworkClassIds, frameworkUtilityState } from '@core/framework'
 import {
   FrameworkManagerDialog,
   type FrameworkManagerApplier,
@@ -15,18 +16,14 @@ export function FrameworkManagerHost() {
   const open = useEditorStore((s) => s.frameworkManagerOpen)
   const setOpen = useEditorStore((s) => s.setFrameworkManagerOpen)
   const site = useEditorStore((s) => s.site)
-  const importCoreFramework = useEditorStore((s) => s.importCoreFramework)
-  const removeFrameworkCompletely = useEditorStore((s) => s.removeFrameworkCompletely)
-  const pruneUnusedFrameworkClasses = useEditorStore((s) => s.pruneUnusedFrameworkClasses)
+  const setFrameworkPreset = useEditorStore((s) => s.setFrameworkPreset)
 
-  const hasFramework = Boolean(site?.settings.framework)
+  const currentState = frameworkUtilityState(site?.settings.framework)
   const usedFrameworkClassCount = site ? collectUsedFrameworkClassIds(site).size : 0
 
   const applier: FrameworkManagerApplier = {
     capabilities: { canRemove: true },
-    import: async (mode) => importCoreFramework(mode),
-    removeAll: async () => removeFrameworkCompletely(),
-    pruneUnused: async () => pruneUnusedFrameworkClasses(),
+    apply: async (target) => setFrameworkPreset(target),
   }
 
   return (
@@ -34,7 +31,7 @@ export function FrameworkManagerHost() {
       open={open}
       onClose={() => setOpen(false)}
       applier={applier}
-      hasFramework={hasFramework}
+      currentState={currentState}
       usedFrameworkClassCount={usedFrameworkClassCount}
     />
   )

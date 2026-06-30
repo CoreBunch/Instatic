@@ -17,8 +17,76 @@ import type {
   FrameworkSpacingGroup,
   FrameworkTypographyGroup,
 } from '@core/framework-schema'
-import { buildCoreFrameworkSettings, type CoreFrameworkImportOptions } from './coreFrameworkPreset'
+import {
+  buildCoreFrameworkSettings,
+  coreFrameworkColorUtilitiesForSlug,
+  type CoreFrameworkImportOptions,
+} from './coreFrameworkPreset'
 import { generateFrameworkUtilityClasses } from './generate'
+
+/**
+ * The three declarative states a site's framework can be in, used by the
+ * "Manage framework" dialog as a single target the user picks:
+ *   • 'full'      — `:root` variables + generated utility classes
+ *   • 'variables' — `:root` variables only, no generated utility classes
+ *   • 'none'      — no framework at all
+ */
+export type FrameworkPreset = 'full' | 'variables' | 'none'
+
+/**
+ * Classify the framework's current state for the dialog's pre-selection and
+ * button labelling. A framework that emits at least one utility class is
+ * 'full'; one that emits only `:root` variables is 'variables'; absent is
+ * 'none'.
+ */
+export function frameworkUtilityState(
+  settings: FrameworkSettings | undefined,
+): FrameworkPreset {
+  if (!settings) return 'none'
+  const hasClasses = Object.keys(generateFrameworkUtilityClasses(settings)).length > 0
+  return hasClasses ? 'full' : 'variables'
+}
+
+/**
+ * Flip utility-class generation on a framework without touching its `:root`
+ * variables — the engine behind switching between the 'full' and 'variables'
+ * states.
+ *
+ *   • `false` (→ variables): every color token's utilities go all-off and the
+ *     typography / spacing class generators are dropped, so NO utility classes
+ *     are emitted. Variables (base, shades, tints, transparent) are untouched.
+ *   • `true`  (→ full): Core preset color tokens get their canonical utilities
+ *     restored (by slug); user-authored tokens keep whatever they had. The
+ *     typography / spacing class generators are re-seeded by the caller's merge
+ *     step, so this only needs to handle colors + the tree-shake preference.
+ *
+ * Pure: returns a new `FrameworkSettings`; the store assigns it and reconciles.
+ */
+export function setFrameworkUtilities(
+  settings: FrameworkSettings,
+  includeUtilities: boolean,
+): FrameworkSettings {
+  const next: FrameworkSettings = structuredClone(settings)
+
+  if (includeUtilities) {
+    for (const token of next.colors.tokens) {
+      const canonical = coreFrameworkColorUtilitiesForSlug(token.slug)
+      if (canonical) token.generateUtilities = canonical
+    }
+  } else {
+    for (const token of next.colors.tokens) {
+      token.generateUtilities = { text: false, background: false, border: false, fill: false }
+    }
+    if (next.typography) next.typography.classes = []
+    if (next.spacing) next.spacing.classes = []
+  }
+
+  if (next.preferences) {
+    next.preferences.treeShakeGeneratedFrameworkUtilities = !includeUtilities
+  }
+
+  return next
+}
 
 /**
  * Merge the Core Framework preset into an existing framework, adding only what

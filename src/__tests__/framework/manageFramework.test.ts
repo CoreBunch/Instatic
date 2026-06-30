@@ -1,10 +1,52 @@
 import { describe, expect, it } from 'bun:test'
 import {
   buildCoreFrameworkSettings,
+  frameworkUtilityState,
   generateFrameworkUtilityClasses,
   mergeCoreFrameworkSettings,
   pruneUnusedFrameworkTokens,
+  setFrameworkUtilities,
 } from '@core/framework'
+
+describe('frameworkUtilityState', () => {
+  it('classifies absent / variables-only / full frameworks', () => {
+    expect(frameworkUtilityState(undefined)).toBe('none')
+    expect(frameworkUtilityState(buildCoreFrameworkSettings({ includeUtilities: false }))).toBe('variables')
+    expect(frameworkUtilityState(buildCoreFrameworkSettings({ includeUtilities: true }))).toBe('full')
+  })
+})
+
+describe('setFrameworkUtilities', () => {
+  it('strips every generated utility class while keeping the framework (→ variables)', () => {
+    const full = buildCoreFrameworkSettings({ includeUtilities: true })
+    expect(Object.keys(generateFrameworkUtilityClasses(full)).length).toBeGreaterThan(0)
+
+    const stripped = setFrameworkUtilities(full, false)
+    expect(Object.keys(generateFrameworkUtilityClasses(stripped)).length).toBe(0)
+    expect(frameworkUtilityState(stripped)).toBe('variables')
+    // Variables still present — same token count, just no utility flags.
+    expect(stripped.colors.tokens.length).toBe(full.colors.tokens.length)
+    expect(stripped.preferences?.treeShakeGeneratedFrameworkUtilities).toBe(true)
+  })
+
+  it('restores the preset utilities after a variables round-trip (→ full)', () => {
+    const variables = buildCoreFrameworkSettings({ includeUtilities: false })
+    expect(Object.keys(generateFrameworkUtilityClasses(variables)).length).toBe(0)
+
+    // Merge re-seeds the class generators; setFrameworkUtilities re-enables colors.
+    const merged = mergeCoreFrameworkSettings(variables, { includeUtilities: true })
+    const restored = setFrameworkUtilities(merged, true)
+    expect(Object.keys(generateFrameworkUtilityClasses(restored)).length).toBeGreaterThan(0)
+    expect(frameworkUtilityState(restored)).toBe('full')
+  })
+
+  it('is pure — it does not mutate the input settings', () => {
+    const full = buildCoreFrameworkSettings({ includeUtilities: true })
+    const before = Object.keys(generateFrameworkUtilityClasses(full)).length
+    setFrameworkUtilities(full, false)
+    expect(Object.keys(generateFrameworkUtilityClasses(full)).length).toBe(before)
+  })
+})
 
 describe('mergeCoreFrameworkSettings', () => {
   it('is a fresh seed when there is no existing framework', () => {

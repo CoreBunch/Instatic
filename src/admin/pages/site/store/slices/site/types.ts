@@ -28,7 +28,7 @@ import type {
 import type { FontEntry, FontToken } from '@core/fonts'
 import type { ImportFragment } from '@core/htmlImport'
 import type { NewStyleRule, SiteImportTransaction } from '@core/siteImport'
-import type { FrameworkChangeImpact } from '@core/framework'
+import type { FrameworkChangeImpact, FrameworkPreset } from '@core/framework'
 import type { EditorStore } from '@site/store/types'
 
 
@@ -298,12 +298,14 @@ export interface SiteSlice {
   setFrameworkSpacingClassGenerators: (classes: FrameworkSpacingClassGenerator[]) => void
 
   // ─── Core Framework lifecycle (Manage Framework dialog) ──────────────────
-  /** Merge the Core Framework preset into the current framework (add-missing-only). */
-  importCoreFramework: (mode: 'full' | 'variables') => void
-  /** Clear settings.framework entirely; reconcile strips every framework classId from nodes. */
-  removeFrameworkCompletely: () => void
-  /** Remove framework tokens / class generators whose generated classes are all unused. */
-  pruneUnusedFrameworkClasses: () => void
+  /**
+   * Reconcile the framework to a declarative target state:
+   *   • 'full'      — merge the preset (add-missing) and enable utility classes
+   *   • 'variables' — merge the preset (add-missing) and strip utility classes
+   *   • 'none'      — clear settings.framework entirely
+   * Reconcile then strips every stale framework classId from nodes.
+   */
+  setFrameworkPreset: (target: FrameworkPreset) => void
 
   // ─── Site fonts library ─────────────────────────────────────────────────
   /**

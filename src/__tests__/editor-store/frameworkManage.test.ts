@@ -21,28 +21,45 @@ function resetStore() {
 
 beforeEach(resetStore)
 
+function frameworkRuleCount(): number {
+  return Object.keys(useEditorStore.getState().site!.styleRules).filter((id) =>
+    id.startsWith('framework:'),
+  ).length
+}
+
 describe('framework manager store actions', () => {
-  it('importCoreFramework seeds the framework and generates locked classes', () => {
-    useEditorStore.getState().importCoreFramework('full')
+  it('setFrameworkPreset("full") seeds the framework and generates locked classes', () => {
+    useEditorStore.getState().setFrameworkPreset('full')
     const state = useEditorStore.getState()
     expect(state.site!.settings.framework!.colors.tokens.length).toBe(13)
     // Reconcile produced framework-prefixed locked classes in the registry.
-    const frameworkRuleIds = Object.keys(state.site!.styleRules).filter((id) =>
-      id.startsWith('framework:'),
-    )
-    expect(frameworkRuleIds.length).toBeGreaterThan(0)
+    expect(frameworkRuleCount()).toBeGreaterThan(0)
   })
 
-  it('importCoreFramework merges (adds missing) without dropping existing tokens', () => {
-    useEditorStore.getState().importCoreFramework('variables')
+  it('setFrameworkPreset merges (adds missing) without duplicating existing tokens', () => {
+    useEditorStore.getState().setFrameworkPreset('variables')
     const before = useEditorStore.getState().site!.settings.framework!.colors.tokens.length
-    // Re-import with the other mode — already-present slugs are not duplicated.
-    useEditorStore.getState().importCoreFramework('full')
+    // Switch to the other state — already-present slugs are not duplicated.
+    useEditorStore.getState().setFrameworkPreset('full')
     const after = useEditorStore.getState().site!.settings.framework!.colors.tokens.length
     expect(after).toBe(before)
   })
 
-  it('removeFrameworkCompletely clears the framework and is undoable', () => {
+  it('switching full → variables strips utility classes; variables → full restores them', () => {
+    useEditorStore.getState().setFrameworkPreset('full')
+    expect(frameworkRuleCount()).toBeGreaterThan(0)
+
+    // Variables-only: every :root variable stays but no utility class survives.
+    useEditorStore.getState().setFrameworkPreset('variables')
+    expect(frameworkRuleCount()).toBe(0)
+    expect(useEditorStore.getState().site!.settings.framework).toBeDefined()
+
+    // Back to full: the canonical preset utilities come back.
+    useEditorStore.getState().setFrameworkPreset('full')
+    expect(frameworkRuleCount()).toBeGreaterThan(0)
+  })
+
+  it('setFrameworkPreset("none") clears the framework and is undoable', () => {
     useEditorStore.setState({
       site: {
         ...makeSite(),
@@ -50,25 +67,12 @@ describe('framework manager store actions', () => {
       },
     } as Parameters<typeof useEditorStore.setState>[0])
 
-    useEditorStore.getState().removeFrameworkCompletely()
+    useEditorStore.getState().setFrameworkPreset('none')
     expect(useEditorStore.getState().site!.settings.framework).toBeUndefined()
     // No framework-prefixed classes survive in the registry.
-    const remaining = Object.keys(useEditorStore.getState().site!.styleRules).filter((id) =>
-      id.startsWith('framework:'),
-    )
-    expect(remaining.length).toBe(0)
+    expect(frameworkRuleCount()).toBe(0)
 
     useEditorStore.getState().undo()
     expect(useEditorStore.getState().site!.settings.framework).toBeDefined()
-  })
-
-  it('pruneUnusedFrameworkClasses removes tokens whose classes are unused', () => {
-    useEditorStore.getState().importCoreFramework('full')
-    const before = useEditorStore.getState().site!.settings.framework!.colors.tokens.length
-    // Nothing in the fixture assigns framework classes, so every utility-
-    // generating token is prunable (variable-only tokens stay).
-    useEditorStore.getState().pruneUnusedFrameworkClasses()
-    const after = useEditorStore.getState().site!.settings.framework!.colors.tokens.length
-    expect(after).toBeLessThan(before)
   })
 })

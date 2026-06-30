@@ -128,6 +128,21 @@ function genToUtilities(
   }
 }
 
+/**
+ * The canonical "full mode" utility flags for a Core preset color token,
+ * looked up by slug. Returns `undefined` for slugs that are not part of the
+ * Core seed (user-authored tokens) — callers leave those untouched when
+ * re-enabling utilities. Used by `setFrameworkUtilities` to restore a token's
+ * default `.text-*` / `.bg-*` / `.border-*` generation after a variables-only
+ * round-trip.
+ */
+export function coreFrameworkColorUtilitiesForSlug(
+  slug: string,
+): Record<FrameworkColorUtilityType, boolean> | undefined {
+  const seed = CORE_COLOR_SEED.find((s) => s.slug === slug)
+  return seed ? genToUtilities(seed.gen, true) : undefined
+}
+
 export function buildCoreFrameworkColorSettings(
   options: CoreFrameworkImportOptions,
 ): FrameworkColorSettings {

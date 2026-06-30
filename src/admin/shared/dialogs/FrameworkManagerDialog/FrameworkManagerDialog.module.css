@@ -1,10 +1,11 @@
 /**
- * FrameworkManagerDialog — two selectable mode cards + an optional Remove
- * region, inside the shared Dialog.
+ * FrameworkManagerDialog — two or three selectable state cards (Full /
+ * Variables only / None) inside the shared Dialog.
  *
  * Cards follow the borderless tile pattern using overlay tints: idle
  * `--overlay-5`, hover `--overlay-10`, active `--overlay-20`, plus a mint tick
- * on the selected card — no ring, no recolored border. Font sizes use the
+ * on the selected card — no ring, no recolored border. The selected "None"
+ * card tints danger to signal its destructive intent. Font sizes use the
  * global fluid text scale; spacing uses the global space scale.
  */
 
@@ -18,7 +19,7 @@
 
 .options {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(var(--option-count), minmax(0, 1fr));
     gap: var(--space-xl);
 }
 
@@ -52,6 +53,16 @@
 
 .optionSelected:hover {
     background: var(--overlay-20);
+}
+
+/* Selected "None" card — soft danger tint to telegraph the destructive apply. */
+.optionDestructive,
+.optionDestructive:hover {
+    background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+.optionDestructive .optionTick {
+    background: var(--danger);
 }
 
 .optionHead {
@@ -93,7 +104,7 @@
     font-size: var(--text-m);
     font-weight: 500;
     line-height: 1.5;
-    color: var(--text);
+    color: var(--text-muted);
 }
 
 .optionBullets {
@@ -112,7 +123,7 @@
     font-size: var(--text-s);
     font-weight: 500;
     line-height: 1.4;
-    color: var(--text);
+    color: var(--text-muted);
 }
 
 .bulletIcon {
@@ -125,32 +136,14 @@
 
 .actionRow {
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    gap: var(--space-m);
     margin-top: var(--space-xl);
 }
 
-.removeRegion {
-    margin-top: var(--space-3xl);
-    padding-top: var(--space-3xl);
-    border-top: 1px solid var(--overlay-10);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-m);
-}
-
-.removeTitle {
-    margin: 0;
-    font-size: var(--text-s);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-muted);
-}
-
-.removeActions {
-    display: flex;
-    gap: var(--space-m);
-    flex-wrap: wrap;
+/* Always pin the primary apply to the right; the optional prune link sits left. */
+.applyButton {
+    margin-left: auto;
 }
 
 .removeWarning {

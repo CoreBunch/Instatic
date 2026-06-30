@@ -197,12 +197,12 @@ const ALLOWLIST = new Set([
   //   actions, not the token-driven Button sizes (same as §8.12).
   'admin/pages/data/components/ExportDialog/ExportDialog.tsx',
 
-  // ── §8.14 Framework import mode cards ────────────────────────────────────
-  // FrameworkManagerDialog's two import modes ("Full framework" / "Variables
-  // only") render as role="radio" cards inside a role="radiogroup" — each is a
-  // stacked custom layout (icon + title + tick + description + bullet list)
-  // that Button's inline-flex size tokens cannot represent. Same pattern class
-  // as §8.7's role="option" card grids (custom ARIA role + multi-line card).
+  // ── §8.14 Framework state cards ──────────────────────────────────────────
+  // FrameworkManagerDialog's state options ("Full framework" / "Variables
+  // only" / "None") render as role="radio" cards inside a role="radiogroup" —
+  // each is a stacked custom layout (icon + title + tick + description + bullet
+  // list) that Button's inline-flex size tokens cannot represent. Same pattern
+  // class as §8.7's role="option" card grids (custom ARIA role + multi-line card).
   'admin/shared/dialogs/FrameworkManagerDialog/FrameworkManagerDialog.tsx',
 
   // ── §8.15 Framework Home activation cards ────────────────────────────────

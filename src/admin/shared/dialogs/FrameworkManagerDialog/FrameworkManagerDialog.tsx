@@ -1,38 +1,45 @@
 /**
- * FrameworkManagerDialog — import / remove the Core Framework preset.
+ * FrameworkManagerDialog — set the Core Framework to one declarative state.
  *
  * Presentation-only: an injected `FrameworkManagerApplier` performs the actual
- * mutation. The site editor passes an applier backed by store actions (import +
- * remove + prune, with reconcile + undo); onboarding passes an import-only
- * applier (cmsAdapter) with `capabilities.canRemove === false`, which hides the
- * Remove region so the dialog behaves exactly like a plain importer.
+ * mutation. The user picks ONE target state and applies it; the dialog never
+ * exposes separate add/remove verbs — switching to a different state reconciles
+ * everything (adds what's missing, strips what the new state drops).
  *
- * Two import modes (radio cards):
+ * Three states (radio cards):
  *   • Full framework  — utility classes + :root variables.
  *   • Variables only  — :root variables, no generated utility classes.
- * When a framework already exists, importing MERGES (adds only missing tokens).
+ *   • None            — remove the framework entirely (destructive; hidden when
+ *                       the applier can't remove, e.g. onboarding's importer).
+ *
+ * The card matching the current state is pre-selected; applying is only enabled
+ * once a different state is chosen.
  */
-import { useRef, useState } from 'react'
+import { useRef, useState, type CSSProperties } from 'react'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { SlidersHorizontalIcon } from 'pixel-art-icons/icons/sliders-horizontal'
+import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { cn } from '@ui/cn'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import type { FrameworkPreset } from '@core/framework'
 import type { PixelArtIconComponent } from '@core/dashboard'
-import type { FrameworkImportMode, FrameworkManagerApplier } from './applier'
+import type { FrameworkManagerApplier } from './applier'
 import styles from './FrameworkManagerDialog.module.css'
 
-interface ModeOption {
-  id: FrameworkImportMode
+interface StateOption {
+  id: FrameworkPreset
   title: string
   desc: string
   icon: PixelArtIconComponent
   bullets: readonly string[]
+  /** Removal is destructive — gated behind `capabilities.canRemove`. */
+  destructive?: boolean
 }
 
-const MODES: readonly ModeOption[] = [
+const STATES: readonly StateOption[] = [
   {
     id: 'full',
     title: 'Full framework',
@@ -55,61 +62,114 @@ const MODES: readonly ModeOption[] = [
       'No generated utility classes',
     ],
   },
+  {
+    id: 'none',
+    title: 'None',
+    desc: 'Remove the Core Framework entirely — every variable and generated class.',
+    icon: TrashSolidIcon,
+    destructive: true,
+    bullets: [
+      'No :root framework variables',
+      'No generated utility classes',
+      'Your own styles stay untouched',
+    ],
+  },
 ]
 
 interface FrameworkManagerDialogProps {
   open: boolean
   onClose: () => void
   applier: FrameworkManagerApplier
-  /** True when the site already carries framework settings. */
-  hasFramework: boolean
+  /** The framework's current state — pre-selects a card and gates the button. */
+  currentState: FrameworkPreset
   /** How many elements reference framework classes (drives the remove warning). */
   usedFrameworkClassCount: number
-  /** Called after any successful apply (import / remove / prune). */
+  /** Called after any successful apply. */
   onApplied?: () => void
 }
 
-type Busy = 'import' | 'removeAll' | 'pruneUnused' | null
+/** Default selection when opening: the current state, or 'full' when there's nothing yet. */
+function defaultTarget(currentState: FrameworkPreset): FrameworkPreset {
+  return currentState === 'none' ? 'full' : currentState
+}
 
 export function FrameworkManagerDialog({
   open,
   onClose,
   applier,
-  hasFramework,
+  currentState,
   usedFrameworkClassCount,
   onApplied,
 }: FrameworkManagerDialogProps) {
-  const [mode, setMode] = useState<FrameworkImportMode>('full')
-  const [busy, setBusy] = useState<Busy>(null)
+  const [target, setTarget] = useState<FrameworkPreset>(() => defaultTarget(currentState))
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmingRemove, setConfirmingRemove] = useState(false)
-  const importButtonRef = useRef<HTMLButtonElement | null>(null)
-  const saving = busy !== null
+  const [wasOpen, setWasOpen] = useState(open)
+  const applyButtonRef = useRef<HTMLButtonElement | null>(null)
+
+  // Re-sync the picker to the live state each time the dialog opens, so it
+  // always reflects reality rather than the last session's choice. Adjusting
+  // state during render (not in an effect) is the React-sanctioned pattern for
+  // resetting state when a prop changes.
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open) {
+      setTarget(defaultTarget(currentState))
+      setConfirmingRemove(false)
+      setError(null)
+    }
+  }
 
   function requestClose() {
-    if (saving) return
+    if (busy) return
     setError(null)
     setConfirmingRemove(false)
     onClose()
   }
 
-  async function run(kind: Exclude<Busy, null>, fn: () => Promise<void>) {
-    setBusy(kind)
-    setError(null)
-    try {
-      await fn()
-      onApplied?.()
-      onClose()
-    } catch (err) {
-      console.error('[FrameworkManagerDialog] apply failed:', err)
-      setError(getErrorMessage(err, 'Could not update the framework.'))
-    } finally {
-      setBusy(null)
-      setConfirmingRemove(false)
-    }
+  function selectTarget(next: FrameworkPreset) {
+    setTarget(next)
+    setConfirmingRemove(false)
   }
 
-  const showRemove = applier.capabilities.canRemove && hasFramework
+  function handleApply() {
+    if (target === 'none' && !confirmingRemove) {
+      setConfirmingRemove(true)
+      return
+    }
+    void (async () => {
+      setBusy(true)
+      setError(null)
+      try {
+        await applier.apply(target)
+        onApplied?.()
+        onClose()
+      } catch (err) {
+        console.error('[FrameworkManagerDialog] apply failed:', err)
+        setError(getErrorMessage(err, 'Could not update the framework.'))
+      } finally {
+        setBusy(false)
+        setConfirmingRemove(false)
+      }
+    })()
+  }
+
+  const removing = target === 'none'
+  const noChange = target === currentState
+  const hasFramework = currentState !== 'none'
+
+  const visibleStates = STATES.filter(
+    (option) => option.id !== 'none' || applier.capabilities.canRemove,
+  )
+
+  function applyLabel(): string {
+    if (busy) return removing ? 'Removing…' : 'Applying…'
+    if (noChange) return 'Up to date'
+    if (removing) return confirmingRemove ? 'Confirm remove' : 'Remove framework'
+    if (currentState === 'none') return 'Import framework'
+    return 'Update framework'
+  }
 
   return (
     <Dialog
@@ -117,37 +177,45 @@ export function FrameworkManagerDialog({
       onClose={requestClose}
       eyebrow="Core Framework"
       title={hasFramework ? 'Manage the framework' : 'Import the framework'}
-      size="lg"
-      initialFocusRef={importButtonRef}
-      closeOnBackdrop={!saving}
-      closeOnEscape={!saving}
+      size="2xl"
+      initialFocusRef={applyButtonRef}
+      closeOnBackdrop={!busy}
+      closeOnEscape={!busy}
       footer={
-        <Button variant="ghost" onClick={requestClose} disabled={saving}>
+        <Button variant="ghost" onClick={requestClose} disabled={busy}>
           Close
         </Button>
       }
     >
       <p className={styles.lede}>
         Seed your design tokens from the Core Framework defaults — colors, a
-        fluid type scale, a spacing scale, and their utility classes.
-        {hasFramework
-          ? ' Re-importing adds only the tokens you are missing.'
-          : ' Pick how much you want.'}
+        fluid type scale, a spacing scale, and their utility classes. Pick the
+        state you want; switching adds what's missing and strips what the new
+        state drops.
       </p>
 
-      <div className={styles.options} role="radiogroup" aria-label="Import mode">
-        {MODES.map((option) => {
+      <div
+        className={styles.options}
+        role="radiogroup"
+        aria-label="Framework state"
+        style={{ '--option-count': visibleStates.length } as CSSProperties}
+      >
+        {visibleStates.map((option) => {
           const OptionIcon = option.icon
-          const selected = mode === option.id
+          const selected = target === option.id
           return (
             <button
               type="button"
               key={option.id}
               role="radio"
               aria-checked={selected}
-              className={cn(styles.option, selected && styles.optionSelected)}
-              onClick={() => setMode(option.id)}
-              disabled={saving}
+              className={cn(
+                styles.option,
+                selected && styles.optionSelected,
+                option.destructive && selected && styles.optionDestructive,
+              )}
+              onClick={() => selectTarget(option.id)}
+              disabled={busy}
             >
               <span className={styles.optionHead}>
                 <span className={styles.optionIcon} aria-hidden="true">
@@ -178,59 +246,21 @@ export function FrameworkManagerDialog({
 
       <div className={styles.actionRow}>
         <Button
-          ref={importButtonRef}
-          variant="primary"
-          onClick={() => run('import', () => applier.import(mode))}
-          disabled={saving}
+          ref={applyButtonRef}
+          variant={removing ? 'destructive' : 'primary'}
+          className={styles.applyButton}
+          onClick={handleApply}
+          disabled={busy || noChange}
         >
-          {busy === 'import'
-            ? 'Importing…'
-            : hasFramework
-              ? 'Add missing tokens'
-              : 'Import framework'}
+          {applyLabel()}
         </Button>
       </div>
 
-      {showRemove && (
-        <div className={styles.removeRegion}>
-          <h3 className={styles.removeTitle}>Remove</h3>
-          <div className={styles.removeActions}>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => applier.pruneUnused && run('pruneUnused', applier.pruneUnused)}
-              disabled={saving}
-            >
-              {busy === 'pruneUnused' ? 'Removing…' : 'Remove unused classes'}
-            </Button>
-
-            {!confirmingRemove ? (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => setConfirmingRemove(true)}
-                disabled={saving}
-              >
-                Remove framework completely
-              </Button>
-            ) : (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => applier.removeAll && run('removeAll', applier.removeAll)}
-                disabled={saving}
-              >
-                {busy === 'removeAll' ? 'Removing…' : 'Confirm remove'}
-              </Button>
-            )}
-          </div>
-          {confirmingRemove && usedFrameworkClassCount > 0 && (
-            <p className={styles.removeWarning} role="alert">
-              {usedFrameworkClassCount} element{usedFrameworkClassCount === 1 ? '' : 's'} use
-              framework classes — those references will be removed.
-            </p>
-          )}
-        </div>
+      {removing && confirmingRemove && usedFrameworkClassCount > 0 && (
+        <p className={styles.removeWarning} role="alert">
+          {usedFrameworkClassCount} element{usedFrameworkClassCount === 1 ? '' : 's'} use
+          framework classes — those references will be removed.
+        </p>
       )}
 
       {error && (

@@ -46,7 +46,7 @@ import {
   type FrameworkManagerApplier,
 } from '@admin/shared/dialogs/FrameworkManagerDialog'
 import { cmsAdapter } from '@core/persistence/cms'
-import { buildCoreFrameworkSettings } from '@core/framework'
+import { mergeCoreFrameworkSettings, setFrameworkUtilities } from '@core/framework'
 import styles from './OnboardingPanel.module.css'
 
 interface StepDef {
@@ -127,14 +127,22 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
   const openSettings = useAdminUi((s) => s.openSettings)
   const [frameworkImportOpen, setFrameworkImportOpen] = useState(false)
 
-  // Onboarding has no live editor / reconcile, so it imports only — load the
-  // site shell via cmsAdapter, drop the built framework on it, and shell-save.
+  // Same dialog, same behaviour as the in-editor Manage Framework host: the
+  // full Full / Variables only / None state picker, reconciled the same way
+  // (merge add-missing + flip utilities). Onboarding just persists through the
+  // cmsAdapter instead of the live editor store.
   const onboardingApplier: FrameworkManagerApplier = {
-    capabilities: { canRemove: false },
-    import: async (mode) => {
+    capabilities: { canRemove: true },
+    apply: async (target) => {
       const site = await cmsAdapter.loadSite('default')
       if (!site) throw new Error('Site is not ready yet — finish setup first.')
-      site.settings.framework = buildCoreFrameworkSettings({ includeUtilities: mode === 'full' })
+      if (target === 'none') {
+        site.settings.framework = undefined
+      } else {
+        const includeUtilities = target === 'full'
+        const merged = mergeCoreFrameworkSettings(site.settings.framework, { includeUtilities })
+        site.settings.framework = setFrameworkUtilities(merged, includeUtilities)
+      }
       await cmsAdapter.saveSite(site, {
         baselinePageIds: site.pages.map((page) => page.id),
         dirty: { all: false, pageIds: new Set(), componentIds: new Set(), layoutIds: new Set() },
@@ -228,7 +236,7 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
         open={frameworkImportOpen}
         onClose={() => setFrameworkImportOpen(false)}
         applier={onboardingApplier}
-        hasFramework={facts.framework === 'done'}
+        currentState={facts.framework === 'done' ? 'full' : 'none'}
         usedFrameworkClassCount={0}
         onApplied={onFrameworkImported}
       />

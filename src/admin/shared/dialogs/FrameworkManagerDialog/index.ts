@@ -1,2 +1,2 @@
 export { FrameworkManagerDialog } from './FrameworkManagerDialog'
-export type { FrameworkManagerApplier, FrameworkImportMode } from './applier'
+export type { FrameworkManagerApplier } from './applier'
