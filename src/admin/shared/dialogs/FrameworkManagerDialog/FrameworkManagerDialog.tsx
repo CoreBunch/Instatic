@@ -85,8 +85,16 @@ interface FrameworkManagerDialogProps {
   open: boolean
   onClose: () => void
   applier: FrameworkManagerApplier
-  /** The framework's current state — pre-selects a card and gates the button. */
+  /** The framework's current state — gates the button (sameState / nothingToDo). */
   currentState: FrameworkPreset
+  /**
+   * Target to pre-select when the dialog opens. Defaults to `currentState`
+   * (the in-editor "Manage framework" host wants the picker to reflect reality).
+   * The onboarding "Import framework" step passes `'full'` instead so the step
+   * opens ready to import — otherwise a no-framework site (`currentState:
+   * 'none'`) would land on "None" selected with an "Up to date" no-op button.
+   */
+  initialTarget?: FrameworkPreset
   /** Called after any successful apply. */
   onApplied?: () => void
 }
@@ -96,22 +104,23 @@ export function FrameworkManagerDialog({
   onClose,
   applier,
   currentState,
+  initialTarget = currentState,
   onApplied,
 }: FrameworkManagerDialogProps) {
-  // Preselect the framework's actual current state, not a fixed default.
-  const [target, setTarget] = useState<FrameworkPreset>(currentState)
+  // Preselect `initialTarget` (defaults to the current state, not a fixed value).
+  const [target, setTarget] = useState<FrameworkPreset>(initialTarget)
   const [busy, setBusy] = useState(false)
   const [wasOpen, setWasOpen] = useState(open)
   const applyButtonRef = useRef<HTMLButtonElement | null>(null)
   const confirmFrameworkChange = useFrameworkChangeConfirm()
 
-  // Re-sync the picker to the live state each time the dialog opens, so it
-  // always reflects reality rather than the last session's choice. Adjusting
-  // state during render (not in an effect) is the React-sanctioned pattern for
+  // Re-sync the picker each time the dialog opens, so it reflects the intended
+  // starting target rather than the last session's choice. Adjusting state
+  // during render (not in an effect) is the React-sanctioned pattern for
   // resetting state when a prop changes.
   if (open !== wasOpen) {
     setWasOpen(open)
-    if (open) setTarget(currentState)
+    if (open) setTarget(initialTarget)
   }
 
   function requestClose() {

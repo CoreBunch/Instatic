@@ -238,6 +238,10 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
         onClose={() => setFrameworkImportOpen(false)}
         applier={onboardingApplier}
         currentState={facts.framework === 'done' ? 'full' : 'none'}
+        // The onboarding step's intent is "import the framework" — open with
+        // Full pre-selected so the primary button reads "Import framework" and
+        // one click imports, rather than landing on the no-op current state.
+        initialTarget="full"
         onApplied={onFrameworkImported}
       />
     </section>
