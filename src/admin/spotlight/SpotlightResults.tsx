@@ -271,6 +271,8 @@ export function SpotlightResults({
   const mergedFlatList = argMode
     ? []
     : getMergedCommandList(query, commandContext, activeScopeId, asyncResults)
+  const highlightedCommandId = mergedFlatList[highlightedIndex]?.id ?? null
+  const resultsRef = useRef<HTMLDivElement>(null)
 
   // `dispatch` from useReducer is guaranteed stable, but the context value
   // itself is rebuilt on every state change. Only the dispatch reference is
@@ -286,6 +288,14 @@ export function SpotlightResults({
     if (!dispatch || argMode) return
     dispatch({ type: 'RESULT_COUNT_CHANGED', count: mergedFlatList.length })
   }, [mergedFlatList.length, dispatch, argMode])
+
+  useEffect(() => {
+    if (!highlightedCommandId) return
+    const selectedRow = resultsRef.current?.querySelector<HTMLElement>(
+      '[role="option"][aria-selected="true"]',
+    )
+    selectedRow?.scrollIntoView?.({ block: 'nearest' })
+  }, [highlightedCommandId])
 
   // ─── Scope transition direction ───────────────────────────────────────────
   // Tracks PUSH_SCOPE / POP_SCOPE to drive the slide animation on the results
@@ -371,6 +381,7 @@ export function SpotlightResults({
 
   return (
     <div
+      ref={resultsRef}
       id={listboxId}
       role="listbox"
       aria-label="Command results"
