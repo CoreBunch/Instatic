@@ -79,6 +79,7 @@ const TTL_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '30', label: '30 days' },
   { value: '90', label: '90 days' },
   { value: '365', label: '1 year' },
+  { value: 'never', label: 'No expiry' },
 ]
 
 async function revokeConnectorAction(
@@ -254,7 +255,12 @@ function AddConnectorDialog({
       if ((!currentUser || hasCapability(currentUser, 'ai.chat')) && !capabilities.includes('ai.chat')) {
         capabilities.push('ai.chat')
       }
-      const result = await createMcpConnector({ label, type, capabilities, ttlDays: parseInt(ttlDays, 10) })
+      const result = await createMcpConnector({
+        label,
+        type,
+        capabilities,
+        ttlDays: ttlDays === 'never' ? null : parseInt(ttlDays, 10),
+      })
       setCreated(result)
       onCreated()
     } catch (err) {
