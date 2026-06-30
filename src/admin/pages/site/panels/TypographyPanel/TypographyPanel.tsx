@@ -72,7 +72,6 @@ function TypographyScalePreview({ points }: { points: TypographyScalePoint[] }) 
         const minLabel = formatTypeValue(point.minPx)
         const maxLabel = formatTypeValue(point.maxPx)
         const variableValue = `var(${point.variableName})`
-        const tooltip = `${point.variableName}: ${minLabel} / ${maxLabel} px`
         return (
           <li
             key={`${point.stepLabel}-${idx}`}
@@ -92,7 +91,6 @@ function TypographyScalePreview({ points }: { points: TypographyScalePoint[] }) 
                 size="micro"
                 shape="flush"
                 className={styles.typeTokenButton}
-                tooltip={tooltip}
                 aria-label={`Copy ${point.variableName}`}
                 onClick={() => copyToClipboard(variableValue)}
               >

@@ -142,17 +142,19 @@ export function computeFluidScale({
   for (let stepIdx = 0; stepIdx < steps; stepIdx += 1) {
     const i = stepIdx - baseScaleIndex
 
-    let min: Size = {
+    // `min` = the size at the min screen width, `max` = at the max screen
+    // width — NOT a value ordering. Core Framework's `getTypeScale` does NOT
+    // swap them when min > max (its swap is commented out): at small steps the
+    // larger-screen ratio compresses the size below the small-screen one, and
+    // the resulting clamp(min, …, max) with min > max correctly pins to the
+    // min-screen size. We mirror that exactly — do not reintroduce a swap.
+    const min: Size = {
       size: Number(minBaseSize) * Math.pow(Number(minScaleRatio), i),
       breakpoint: minScreenWidth,
     }
-    let max: Size = {
+    const max: Size = {
       size: Number(maxBaseSize) * Math.pow(Number(maxScaleRatio), i),
       breakpoint: maxScreenWidth,
-    }
-
-    if (min.size > max.size) {
-      ;[min, max] = [max, min]
     }
 
     const slope = (max.size - min.size) / (max.breakpoint - min.breakpoint)

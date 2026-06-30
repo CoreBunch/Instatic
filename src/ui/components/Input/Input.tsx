@@ -110,6 +110,7 @@ export function Input({
       autoComplete={autoComplete}
       aria-invalid={invalid || props['aria-invalid'] ? true : undefined}
       data-emphasis={emphasis !== 'default' ? emphasis : undefined}
+      data-prefixed={prefix ? 'true' : undefined}
       className={cn(
         styles.input,
         styles[`size-${fieldSize}`],

@@ -106,7 +106,9 @@
 }
 
 .barChartBaseHighlightCell[data-base="true"] {
-    background: var(--bg-surface-3);
+    /* Overlay (additive) rather than a surface tone so the base marker stays
+       visible when the Home card lifts its background on hover. */
+    background: var(--overlay-10);
     border-radius: 12px;
 }
 

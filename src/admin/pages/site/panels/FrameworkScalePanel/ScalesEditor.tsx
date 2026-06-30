@@ -50,7 +50,7 @@ export function ScalesEditor<G extends GroupShape, C extends GeneratorShape>({
         groupLabel={`${adapter.title} scales`}
         inlineActions={
           <Button
-            variant="ghost"
+            variant="secondary"
             size="xs"
             aria-label={`Add ${adapter.title.toLowerCase()} scale`}
             onClick={onAddGroup}
@@ -72,6 +72,7 @@ export function ScalesEditor<G extends GroupShape, C extends GeneratorShape>({
             variant="ghost"
             size="sm"
             iconOnly
+            tone="danger"
             aria-label="Remove scale"
             tooltip="Remove scale"
             onClick={onDeleteGroup}

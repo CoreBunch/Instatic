@@ -113,6 +113,8 @@ export function FontTokenDialog({
           type="text"
           fieldSize="md"
           value={variable}
+          prefix="--"
+          monospace
           onChange={(event) => setVariable(event.target.value)}
           spellCheck={false}
         />

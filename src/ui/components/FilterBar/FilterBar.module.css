@@ -42,8 +42,54 @@
     align-items: center;
     gap: var(--space-3xs);
     min-width: 0;
+    /* Horizontal scroll only. `overflow-x: auto` alone makes `overflow-y`
+       compute to `auto` too (CSS spec), so a sub-pixel vertical overflow lets
+       the row drift up/down during a horizontal swipe — pin Y to hidden.
+       `overscroll-behavior` stops the scroll from chaining to the panel. */
     overflow-x: auto;
-    padding-bottom: var(--space-px);
+    overflow-y: hidden;
+    overscroll-behavior: contain;
+    /* Hide the native horizontal scrollbar; soft edge fades signal that the
+       chip strip overflows, which reads cleaner than a 6px bar crowding a
+       single compact row. Each edge starts fully opaque (no fade) and only
+       turns transparent when JS marks that side as actually clipped — so there
+       is no phantom shadow at rest or once an edge is fully scrolled to. */
+    scrollbar-width: none;
+    --chips-fade-start: black;
+    --chips-fade-end: black;
+    -webkit-mask-image: linear-gradient(
+        to right,
+        var(--chips-fade-start) 0,
+        black var(--space-xs),
+        black calc(100% - var(--space-xs)),
+        var(--chips-fade-end) 100%
+    );
+    mask-image: linear-gradient(
+        to right,
+        var(--chips-fade-start) 0,
+        black var(--space-xs),
+        black calc(100% - var(--space-xs)),
+        var(--chips-fade-end) 100%
+    );
+}
+
+.chips::-webkit-scrollbar {
+    display: none;
+}
+
+.chips[data-fade-start] {
+    --chips-fade-start: transparent;
+}
+
+.chips[data-fade-end] {
+    --chips-fade-end: transparent;
+}
+
+/* Active chip reads in the same tone as a hovered chip (ghost hover), so the
+   selected segment feels continuous with the hover affordance. */
+.chip[aria-pressed="true"] {
+    background: var(--bg-surface-4);
+    color: var(--text);
 }
 
 .trailing {

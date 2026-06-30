@@ -16,7 +16,9 @@
 .scalePreview {
     display: grid;
     align-content: start;
-    gap: var(--space-xs);
+    /* No row gap — adjacent rows are separated by a hairline divider instead,
+       so it's clear where one size ends and the next begins. */
+    gap: 0;
     list-style: none;
     margin: 0;
     padding: var(--space-4xs) 0 0;
@@ -29,7 +31,26 @@
     display: grid;
     gap: var(--space-4xs);
     min-width: 0;
-    padding: var(--space-3xs) 0 var(--space-xs);
+    padding: var(--space-3xs) var(--space-2xs) var(--space-xs);
+}
+
+/* Hairline divider between sizes. */
+.typeSpecimen:not(:last-child) {
+    border-bottom: 1px solid var(--overlay-5);
+}
+
+/* Base step is a padded, rounded highlight chip (overlay, not a surface tone,
+   so it survives the Home card's hover lift). No divider touches the chip —
+   neither its own edges nor the row directly above it. */
+.typeSpecimen[data-base="true"] {
+    margin: var(--space-4xs) 0;
+    border-bottom-color: transparent;
+    border-radius: var(--radius);
+    background: var(--overlay-10);
+}
+
+.typeSpecimen:has(+ [data-base="true"]) {
+    border-bottom-color: transparent;
 }
 
 .typeSpecimenHeader {

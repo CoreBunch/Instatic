@@ -6,8 +6,9 @@
  *   • Colors — a row of pill swatches, each composited over a neutral base so
  *     dark, white, and translucent tokens all read; hover floats its slug.
  *   • Typography — a type specimen: a display title + a body paragraph rendered
- *     in the site's installed fonts (title in font #1, body in font #2),
- *     falling back to the system stack a fresh text module renders in.
+ *     in the site's font tokens (heading = token #1, body = token #2), each line
+ *     labelled with its CSS variable; falls back to installed families, then to
+ *     the system stack a fresh text module renders in.
  *   • Space — the Space panel's own SpacingBarChart, fed by the same fluid
  *     computation so the overview and the panel match exactly.
  *
@@ -23,8 +24,13 @@ import { SlidersHorizontalIcon } from 'pixel-art-icons/icons/sliders-horizontal'
 import { ArrowRightIcon } from 'pixel-art-icons/icons/arrow-right'
 import type { PixelArtIconComponent } from '@core/dashboard'
 import type { FrameworkColorToken, FrameworkSpacingGroup } from '@core/framework-schema'
-import type { FontEntry } from '@core/fonts'
-import { fontFamilyStackForEntry, generateSiteFontsCss } from '@core/fonts'
+import type { FontEntry, SiteFontsSettings } from '@core/fonts'
+import {
+  fontFamilyStackForEntry,
+  generateSiteFontsCss,
+  resolveFontTokenStack,
+  sortFontTokens,
+} from '@core/fonts'
 import { computeFluidScale, effectiveScaleRatio, resolveFrameworkPreferences } from '@core/framework'
 import { SpacingBarChart, type ChartPoint } from '@site/panels/SpacingPanel'
 import type { FrameworkPanelTab } from '@site/store/slices/uiSlice'
@@ -42,7 +48,7 @@ const SPECIMEN_BODY =
 // changes the snapshot identity every render and loops forever.
 const EMPTY_TOKENS: readonly FrameworkColorToken[] = []
 const EMPTY_SPACING: readonly FrameworkSpacingGroup[] = []
-const EMPTY_FONTS: readonly FontEntry[] = []
+const EMPTY_FONTS_SETTINGS: SiteFontsSettings = { items: [], tokens: [] }
 
 /**
  * Inject the site's installed `@font-face` rules into the admin document head
@@ -74,20 +80,48 @@ export function FrameworkHome() {
   const frameworkPreferences = useEditorStore(
     (s) => s.site?.settings.framework?.preferences ?? null,
   )
-  const fonts = useEditorStore((s) => s.site?.settings.fonts?.items ?? EMPTY_FONTS)
+  const fontsSettings = useEditorStore((s) => s.site?.settings.fonts ?? EMPTY_FONTS_SETTINGS)
   const setTab = useEditorStore((s) => s.setFrameworkPanelTab)
   const setManagerOpen = useEditorStore((s) => s.setFrameworkManagerOpen)
 
-  useInstalledFontFaces(fonts)
+  const fontItems = fontsSettings.items
+  useInstalledFontFaces(fontItems)
 
   const swatches = colorTokens.slice(0, MAX_SWATCHES)
 
-  // First two installed fonts drive the specimen: title in #1, body in #2 (or
-  // #1 when only one). With none installed, both lines fall back to the CSS
-  // system stack — the same default a fresh text module renders in.
-  const bodyEntry = fonts[1] ?? fonts[0]
-  const titleStack = fonts[0] ? fontFamilyStackForEntry(fonts[0]) : undefined
-  const bodyStack = bodyEntry ? fontFamilyStackForEntry(bodyEntry) : undefined
+  // The specimen renders in the user's own fonts. Font *tokens* win when present:
+  // they carry the role intent (heading = first token, body = second — or the
+  // first when there's only one), and each line is labelled with the token's CSS
+  // variable so the preview reads in the same terms the site author authors in.
+  // With no tokens we fall back to the first two installed families (labelled by
+  // family name); with neither, both lines use the CSS system stack — the same
+  // default a fresh text module renders in.
+  const fontTokens = sortFontTokens(fontsSettings.tokens ?? [])
+  const headingToken = fontTokens[0]
+  const bodyToken = fontTokens[1] ?? fontTokens[0]
+  const bodyEntry = fontItems[1] ?? fontItems[0]
+
+  const titleStack = headingToken
+    ? resolveFontTokenStack(headingToken, fontsSettings)
+    : fontItems[0]
+      ? fontFamilyStackForEntry(fontItems[0])
+      : undefined
+  const bodyStack = bodyToken
+    ? resolveFontTokenStack(bodyToken, fontsSettings)
+    : bodyEntry
+      ? fontFamilyStackForEntry(bodyEntry)
+      : undefined
+
+  const titleLabel = headingToken
+    ? `Heading · --${headingToken.variable}`
+    : fontItems[0]
+      ? `Heading · ${fontItems[0].family}`
+      : 'Heading'
+  const bodyLabel = bodyToken
+    ? `Body · --${bodyToken.variable}`
+    : bodyEntry
+      ? `Body · ${bodyEntry.family}`
+      : 'Body'
 
   const spacingPoints = buildSpacingChartPoints(spacingGroups[0], frameworkPreferences)
 
@@ -151,15 +185,11 @@ export function FrameworkHome() {
             }
           >
             <span className={styles.specimenRow}>
-              <span className={styles.specimenLabel}>
-                {fonts[0] ? `Heading · ${fonts[0].family}` : 'Heading'}
-              </span>
+              <span className={styles.specimenLabel}>{titleLabel}</span>
               <span className={styles.specimenTitle}>{SPECIMEN_TITLE}</span>
             </span>
             <span className={styles.specimenRow}>
-              <span className={styles.specimenLabel}>
-                {bodyEntry ? `Body · ${bodyEntry.family}` : 'Body'}
-              </span>
+              <span className={styles.specimenLabel}>{bodyLabel}</span>
               <span className={styles.specimenBody}>{SPECIMEN_BODY}</span>
             </span>
           </span>,
