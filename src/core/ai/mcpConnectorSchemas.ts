@@ -44,7 +44,13 @@ export const CreateMcpConnectorBodySchema = Type.Object({
   label: Type.String({ minLength: 1, maxLength: 120 }),
   type: McpConnectorTypeSchema,
   capabilities: Type.Array(CapabilitySchema, { minItems: 1 }),
-  ttlDays: Type.Optional(Type.Integer({ minimum: 1, maximum: 3650 })),
+  /**
+   * Token lifetime:
+   *   number  → token expires that many days after creation (1–3650)
+   *   null    → no expiry (token never expires, explicit opt-in)
+   *   omitted → server default (90 days)
+   */
+  ttlDays: Type.Optional(Type.Union([Type.Integer({ minimum: 1, maximum: 3650 }), Type.Null()])),
 })
 export type CreateMcpConnectorBody = Static<typeof CreateMcpConnectorBodySchema>
 

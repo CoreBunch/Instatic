@@ -73,15 +73,22 @@ export async function createConnector(
     type: McpConnectorType
     capabilities: readonly CoreCapability[]
     tokenHash: string
-    /** Token lifetime in days. Defaults to 90. Must be between 1 and 3650. */
-    ttlDays?: number
+    /**
+     * Token lifetime:
+     *   number    → expires that many days after creation (1–3650)
+     *   null      → no expiry (token never expires, explicit opt-in)
+     *   undefined → server default (90 days)
+     */
+    ttlDays?: number | null
   },
 ): Promise<McpConnectorRecord> {
   const id = nanoid()
   const capabilitiesJson = JSON.stringify(input.capabilities)
-  const ttl = input.ttlDays ?? DEFAULT_TTL_DAYS
   const createdAt = new Date()
-  const expiresAt = new Date(createdAt.getTime() + ttl * 24 * 60 * 60 * 1000)
+  const expiresAt =
+    input.ttlDays === null
+      ? null
+      : new Date(createdAt.getTime() + (input.ttlDays ?? DEFAULT_TTL_DAYS) * 24 * 60 * 60 * 1000)
 
   const { rows } = await db<ConnectorRow>`
     insert into ai_mcp_connectors (

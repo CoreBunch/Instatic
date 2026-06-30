@@ -160,6 +160,23 @@ describe('connector store', () => {
     expect(delta).toBeLessThan(sevenDays + 2 * 60 * 1000)
   })
 
+  it('createConnector with ttlDays: null creates a non-expiring token', async () => {
+    const hash = await hashConnectorToken('imcp_no_expiry')
+    const rec = await createConnector(db, {
+      userId: 'u1', label: 'No Expiry', type: 'local', capabilities: ['ai.chat'],
+      tokenHash: hash,
+      ttlDays: null,
+    })
+    // expiresAt must be null for an explicitly non-expiring token.
+    expect(rec.expiresAt).toBeNull()
+
+    // findConnectorByTokenHash must accept the token even with `now` far in the future.
+    const farFuture = new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000) // 10 years
+    const found = await findConnectorByTokenHash(db, hash, farFuture)
+    expect(found).not.toBeNull()
+    expect(found?.expiresAt).toBeNull()
+  })
+
   it('a connector row with NULL expires_at (grandfathered) is accepted as non-expiring', async () => {
     const hash = await hashConnectorToken('imcp_null_expiry')
     const rec = await createConnector(db, {
