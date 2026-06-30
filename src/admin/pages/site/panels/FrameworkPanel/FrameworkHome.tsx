@@ -17,6 +17,7 @@
 import { useEffect, type CSSProperties, type ReactNode } from 'react'
 import { useEditorStore } from '@site/store/store'
 import { Button } from '@ui/components/Button'
+import { Tooltip } from '@ui/components/Tooltip'
 import { ColorsSwatchSolidIcon } from 'pixel-art-icons/icons/colors-swatch-solid'
 import { TextStartTIcon } from 'pixel-art-icons/icons/text-start-t'
 import { RulerDimensionSolidIcon } from 'pixel-art-icons/icons/ruler-dimension-solid'
@@ -157,18 +158,16 @@ export function FrameworkHome() {
           colorTokens.length > 0 ? (
             <span className={styles.palette} aria-hidden="true">
               {swatches.map((token) => (
-                <span
-                  key={token.id}
-                  className={styles.paletteCell}
-                  style={{ '--swatch': token.lightValue } as CSSProperties}
-                  title={`${token.slug} · ${token.lightValue}`}
-                >
-                  <span className={styles.paletteTip}>{token.slug}</span>
-                </span>
+                <Tooltip key={token.id} content={`${token.slug} · ${token.lightValue}`}>
+                  <span
+                    className={styles.paletteCell}
+                    style={{ '--swatch': token.lightValue } as CSSProperties}
+                  />
+                </Tooltip>
               ))}
             </span>
           ) : (
-            <span className={styles.cardEmpty}>Not activated</span>
+            <span className={styles.cardEmpty}>Click here to create your first color</span>
           ),
         )}
         {card(
@@ -203,7 +202,7 @@ export function FrameworkHome() {
               <SpacingBarChart points={spacingPoints} />
             </span>
           ) : (
-            <span className={styles.cardEmpty}>Not activated</span>
+            <span className={styles.cardEmpty}>Click here to create your spacing scale</span>
           ),
         )}
       </div>
