@@ -1,1 +1,1 @@
-export { SpacingTab } from './SpacingPanel'
+export { SpacingTab, SpacingBarChart, type ChartPoint } from './SpacingPanel'

@@ -64,7 +64,7 @@ const SPACING_CSS_PROPERTIES = [
 const EMPTY_GROUPS: FrameworkSpacingGroup[] = [];
 const EMPTY_CLASSES: FrameworkSpacingClassGenerator[] = [];
 
-interface ChartPoint {
+export interface ChartPoint {
   stepLabel: string;
   variableName: string;
   minPx: number;
@@ -114,7 +114,7 @@ function PillBarRow({
   )
 }
 
-function SpacingBarChart({ points }: { points: ChartPoint[] }) {
+export function SpacingBarChart({ points }: { points: ChartPoint[] }) {
   const desktopHeights = points.map((p) => Math.max(0, p.maxPx))
   const mobileHeights = points.map((p) => Math.max(0, p.minPx))
 
