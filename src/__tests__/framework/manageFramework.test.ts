@@ -4,7 +4,6 @@ import {
   frameworkUtilityState,
   generateFrameworkUtilityClasses,
   mergeCoreFrameworkSettings,
-  pruneUnusedFrameworkTokens,
   setFrameworkUtilities,
 } from '@core/framework'
 
@@ -83,30 +82,5 @@ describe('mergeCoreFrameworkSettings', () => {
     existing.typography = { groups: [], classes: [] }
     const merged = mergeCoreFrameworkSettings(existing, { includeUtilities: true })
     expect(merged.typography!.groups.length).toBeGreaterThan(0)
-  })
-})
-
-describe('pruneUnusedFrameworkTokens', () => {
-  it('drops color tokens whose generated classes are all unused', () => {
-    const settings = buildCoreFrameworkSettings({ includeUtilities: true })
-    const classes = generateFrameworkUtilityClasses(settings)
-    const usedClassIds = new Set(
-      Object.entries(classes)
-        .filter(
-          ([, rule]) => rule.generated?.family === 'color' && rule.generated.tokenName === 'primary',
-        )
-        .map(([classId]) => classId),
-    )
-    const { next, removedSlugs } = pruneUnusedFrameworkTokens(settings, usedClassIds)
-    const keptSlugs = next.colors.tokens.map((t) => t.slug)
-    expect(keptSlugs).toContain('primary')
-    expect(removedSlugs).toContain('secondary')
-    expect(keptSlugs).not.toContain('secondary')
-  })
-
-  it('keeps variable-only tokens that generate no classes (e.g. shadow-primary)', () => {
-    const settings = buildCoreFrameworkSettings({ includeUtilities: true })
-    const { next } = pruneUnusedFrameworkTokens(settings, new Set())
-    expect(next.colors.tokens.map((t) => t.slug)).toContain('shadow-primary')
   })
 })

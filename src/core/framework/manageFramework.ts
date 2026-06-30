@@ -2,15 +2,15 @@
  * Manage the Core Framework preset against an existing framework — the engine
  * behind the editor's "Manage framework" dialog.
  *
+ *   • frameworkUtilityState — classify a framework as none / variables / full.
  *   • mergeCoreFrameworkSettings — re-import that ADDS ONLY what is missing
  *     (color tokens by slug, scale groups by namingConvention), preserving any
  *     existing / customized tokens. Empty input ⇒ a fresh full preset.
- *   • pruneUnusedFrameworkTokens — remove the color tokens / scale class
- *     generators whose generated utility classes are entirely unassigned.
- *     Variable-only tokens and scale GROUPS (they emit `:root` variables) stay.
+ *   • setFrameworkUtilities — flip utility-class generation on/off without
+ *     touching the `:root` variables (the 'full' ⇄ 'variables' switch).
  *
- * Both are pure: they compute a new `FrameworkSettings`; the store action
- * assigns it onto the draft and runs `reconcileFrameworkClasses`.
+ * All are pure: they compute a new `FrameworkSettings`; the store action assigns
+ * it onto the draft and runs `reconcileFrameworkClasses`.
  */
 import type {
   FrameworkSettings,
@@ -139,68 +139,4 @@ function mergeScaleFamily<
     }
   }
   return existing
-}
-
-export interface PruneResult {
-  next: FrameworkSettings
-  /** Color-token slugs that were removed (for the UI summary). */
-  removedSlugs: string[]
-}
-
-/**
- * Remove framework units whose generated utility classes are entirely unused:
- * color tokens that generate ≥1 class but none assigned, and typography /
- * spacing class generators with no used class. Variable-only color tokens
- * (0 classes) and the scale GROUPS are always kept.
- */
-export function pruneUnusedFrameworkTokens(
-  settings: FrameworkSettings,
-  usedClassIds: Set<string>,
-): PruneResult {
-  const classes = generateFrameworkUtilityClasses(settings)
-
-  const colorByTokenId = new Map<string, string[]>()
-  const typoByGenId = new Map<string, string[]>()
-  const spacingByGenId = new Map<string, string[]>()
-
-  for (const [classId, rule] of Object.entries(classes)) {
-    const g = rule.generated
-    if (!g) continue
-    if (g.family === 'color') push(colorByTokenId, g.sourceId, classId)
-    else if (g.family === 'typography') push(typoByGenId, g.generatorId, classId)
-    else if (g.family === 'spacing') push(spacingByGenId, g.generatorId, classId)
-  }
-
-  const noneUsed = (ids: string[] | undefined): boolean =>
-    !!ids && ids.length > 0 && ids.every((id) => !usedClassIds.has(id))
-
-  const next: FrameworkSettings = structuredClone(settings)
-  const removedSlugs: string[] = []
-
-  next.colors.tokens = next.colors.tokens.filter((token) => {
-    if (noneUsed(colorByTokenId.get(token.id))) {
-      removedSlugs.push(token.slug)
-      return false
-    }
-    return true
-  })
-
-  if (next.typography?.classes) {
-    next.typography.classes = next.typography.classes.filter(
-      (cls) => !noneUsed(typoByGenId.get(cls.id)),
-    )
-  }
-  if (next.spacing?.classes) {
-    next.spacing.classes = next.spacing.classes.filter(
-      (cls) => !noneUsed(spacingByGenId.get(cls.id)),
-    )
-  }
-
-  return { next, removedSlugs }
-}
-
-function push(map: Map<string, string[]>, key: string, value: string): void {
-  const list = map.get(key)
-  if (list) list.push(value)
-  else map.set(key, [value])
 }
