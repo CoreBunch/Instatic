@@ -5,7 +5,7 @@ import {
 } from '@core/site-runtime'
 import type { SiteRuntimeConfig } from '@core/site-runtime-schema'
 import type { SiteDocument } from './siteDocument'
-import type { StructuralSiteExplorerSectionId } from './siteExplorer'
+import type { StructuralExplorerSection, StructuralSiteExplorerSectionId } from './siteExplorer'
 import { isHomePage, pageSlugError } from './slugs'
 
 interface ExplorerPathChangeBlocker {
@@ -40,6 +40,14 @@ interface ExplorerPathDeletedItem {
   path: string
 }
 
+/** A structural folder that moves as a whole (rename or reparent). Drives the
+ *  bookkeeping rewrite so empty folders — which have no page/file rows — still
+ *  follow their new path across emptyFolders/expandedFolders/rowOrder. */
+interface ExplorerFolderPathChange {
+  from: string
+  to: string
+}
+
 interface ExplorerPathRewritePlan {
   kind: 'rewrite'
   sectionId: StructuralSiteExplorerSectionId
@@ -47,6 +55,8 @@ interface ExplorerPathRewritePlan {
   changes: ExplorerPathRewriteChange[]
   blockers: ExplorerPathChangeBlocker[]
   warnings: ExplorerPathChangeWarning[]
+  /** Set for folder rename/move; absent for single-item moves. */
+  folderPathChange?: ExplorerFolderPathChange
 }
 
 interface ExplorerPathDeletePlan {
@@ -56,6 +66,8 @@ interface ExplorerPathDeletePlan {
   deletedItems: ExplorerPathDeletedItem[]
   blockers: ExplorerPathChangeBlocker[]
   warnings: ExplorerPathChangeWarning[]
+  /** The folder subtree being removed, including empty folders with no rows. */
+  folderPath: string
 }
 
 export type ExplorerPathChangePlan = ExplorerPathRewritePlan | ExplorerPathDeletePlan
@@ -85,6 +97,7 @@ export function buildRenameExplorerFolderPlan(
     input.sectionId,
     `Rename ${input.folderPath} to ${input.nextFolderPath}`,
     changes,
+    { from: input.folderPath, to: input.nextFolderPath },
   )
 }
 
@@ -106,6 +119,7 @@ export function buildMoveExplorerFolderPlan(
     input.sectionId,
     `Move ${input.folderPath} to ${nextFolderPath}`,
     changes,
+    { from: input.folderPath, to: nextFolderPath },
   )
 
   if (input.nextParentPath && isDescendantPath(input.nextParentPath, input.folderPath)) {
@@ -151,6 +165,7 @@ export function buildDeleteExplorerPathPlan(
     deletedItems,
     blockers,
     warnings: [{ code: 'raw-url-not-rewritten', message: 'Raw URLs in authored content are not rewritten.' }],
+    folderPath: input.folderPath,
   }
 }
 
@@ -176,6 +191,7 @@ function rewritePlan(
   sectionId: StructuralSiteExplorerSectionId,
   operationLabel: string,
   changes: ExplorerPathRewriteChange[],
+  folderPathChange?: ExplorerFolderPathChange,
 ): ExplorerPathRewritePlan {
   return {
     kind: 'rewrite',
@@ -184,6 +200,9 @@ function rewritePlan(
     changes,
     blockers: blockersForRewrite(site, sectionId, changes),
     warnings: warningsForRewrite(site, sectionId, changes),
+    ...(folderPathChange && folderPathChange.from !== folderPathChange.to
+      ? { folderPathChange }
+      : {}),
   }
 }
 
@@ -342,7 +361,16 @@ function commitRewritePlan(site: SiteDocument, plan: ExplorerPathRewritePlan): v
       }
     }
   }
-  if (plan.changes.length > 0) site.updatedAt = now
+
+  // Empty folders have no page/file rows, so their new path is only reflected in
+  // the section bookkeeping. Non-empty folder renames route through here too,
+  // which keeps their expansion + ordering intact instead of losing it to the
+  // stale-entry pruning in reconcileSiteExplorerInPlace.
+  if (plan.folderPathChange) {
+    rewriteStructuralFolderPaths(site.explorer[plan.sectionId], plan.folderPathChange.from, plan.folderPathChange.to)
+  }
+
+  if (plan.changes.length > 0 || plan.folderPathChange) site.updatedAt = now
 }
 
 function commitDeletePlan(
@@ -351,23 +379,68 @@ function commitDeletePlan(
   plan: ExplorerPathDeletePlan,
 ): void {
   const deletedIds = new Set(plan.deletedItems.map((item) => item.id))
-  if (deletedIds.size === 0) return
 
-  if (plan.sectionId === 'pages') {
-    site.pages = site.pages.filter((page) => !deletedIds.has(page.id))
-  } else {
-    site.files = site.files.filter((file) => !deletedIds.has(file.id))
-    for (const id of deletedIds) {
-      if (plan.sectionId === 'scripts') {
-        if (site.runtime?.scripts) delete site.runtime.scripts[id]
-        if (liveRuntime?.scripts) delete liveRuntime.scripts[id]
-      } else {
-        if (site.runtime?.styles) delete site.runtime.styles[id]
-        if (liveRuntime?.styles) delete liveRuntime.styles[id]
+  if (deletedIds.size > 0) {
+    if (plan.sectionId === 'pages') {
+      site.pages = site.pages.filter((page) => !deletedIds.has(page.id))
+    } else {
+      site.files = site.files.filter((file) => !deletedIds.has(file.id))
+      for (const id of deletedIds) {
+        if (plan.sectionId === 'scripts') {
+          if (site.runtime?.scripts) delete site.runtime.scripts[id]
+          if (liveRuntime?.scripts) delete liveRuntime.scripts[id]
+        } else {
+          if (site.runtime?.styles) delete site.runtime.styles[id]
+          if (liveRuntime?.styles) delete liveRuntime.styles[id]
+        }
       }
     }
   }
-  site.updatedAt = Date.now()
+
+  // Remove the folder subtree from the section bookkeeping. Empty folders live
+  // only here, so without this an empty-folder delete would leave the folder
+  // standing after commit.
+  const removed = removeStructuralFolderPaths(site.explorer[plan.sectionId], plan.folderPath)
+
+  if (deletedIds.size > 0 || removed) site.updatedAt = Date.now()
+}
+
+/** Move every bookkeeping reference to `from` (and its descendants) onto `to`. */
+function rewriteStructuralFolderPaths(section: StructuralExplorerSection, from: string, to: string): void {
+  section.emptyFolders = dedupePaths(section.emptyFolders.map((path) => rewriteFolderPath(path, from, to)))
+  section.expandedFolders = dedupePaths(section.expandedFolders.map((path) => rewriteFolderPath(path, from, to)))
+  section.rowOrder = section.rowOrder.map((entry) => ({
+    ...entry,
+    ...(entry.kind === 'folder' ? { id: rewriteFolderPath(entry.id, from, to) } : {}),
+    ...(entry.parentPath !== undefined ? { parentPath: rewriteFolderPath(entry.parentPath, from, to) } : {}),
+  }))
+}
+
+/** Drop every bookkeeping reference at or under `folderPath`. Returns whether anything changed. */
+function removeStructuralFolderPaths(section: StructuralExplorerSection, folderPath: string): boolean {
+  const emptyFolders = section.emptyFolders.filter((path) => !isDescendantPath(path, folderPath))
+  const expandedFolders = section.expandedFolders.filter((path) => !isDescendantPath(path, folderPath))
+  const rowOrder = section.rowOrder.filter(
+    (entry) => !(entry.kind === 'folder' && isDescendantPath(entry.id, folderPath)),
+  )
+  const changed =
+    emptyFolders.length !== section.emptyFolders.length
+    || expandedFolders.length !== section.expandedFolders.length
+    || rowOrder.length !== section.rowOrder.length
+  section.emptyFolders = emptyFolders
+  section.expandedFolders = expandedFolders
+  section.rowOrder = rowOrder
+  return changed
+}
+
+function rewriteFolderPath(path: string, from: string, to: string): string {
+  if (path === from) return to
+  if (path.startsWith(`${from}/`)) return `${to}${path.slice(from.length)}`
+  return path
+}
+
+function dedupePaths(paths: readonly string[]): string[] {
+  return [...new Set(paths)]
 }
 
 function structuralItems(site: SiteDocument, sectionId: StructuralSiteExplorerSectionId): StructuralItem[] {

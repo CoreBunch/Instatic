@@ -76,6 +76,16 @@ function renamedFolderPath(
   return parentPath ? `${parentPath}/${segment}` : segment
 }
 
+/**
+ * A structural path plan warrants the confirm dialog only when it has a blocker
+ * to explain or actually rewrites/removes page/file paths. Empty-folder
+ * operations touch no content paths, so they skip the dialog and apply directly.
+ */
+function planNeedsConfirmation(plan: ExplorerPathChangePlan): boolean {
+  if (plan.blockers.length > 0) return true
+  return plan.kind === 'rewrite' ? plan.changes.length > 0 : plan.deletedItems.length > 0
+}
+
 export function SiteExplorerPanel({
   sectionGroup,
   organizationDndEnabled = false,
@@ -213,6 +223,26 @@ export function SiteExplorerPanel({
     setContextMenu(null)
   }
 
+  function commitStructuralPathPlan(plan: ExplorerPathChangePlan) {
+    try {
+      commitExplorerPathChange(plan)
+    } catch (err) {
+      console.error('[SiteExplorerPanel] commit explorer path change error:', err)
+    }
+  }
+
+  // A structural plan only needs the confirm dialog when there is something to
+  // review — real page/file path rewrites (raw URLs in content won't follow) or
+  // a blocker to explain. Empty-folder rename/move/delete rewrite nothing, so
+  // they apply straight away instead of surfacing a "0 paths" dialog.
+  function presentStructuralPathPlan(plan: ExplorerPathChangePlan) {
+    if (planNeedsConfirmation(plan)) {
+      setPathConfirmPlan(plan)
+    } else {
+      commitStructuralPathPlan(plan)
+    }
+  }
+
   function handleInlineRename(value: string) {
     if (!inlineRenameTarget) return
 
@@ -224,7 +254,7 @@ export function SiteExplorerPanel({
       } else if (inlineRenameTarget.kind === 'folder') {
         if (isStructuralSection(inlineRenameTarget.sectionId)) {
           const nextFolderPath = renamedFolderPath(inlineRenameTarget.sectionId, inlineRenameTarget.id, value)
-          setPathConfirmPlan(previewRenameExplorerFolder(inlineRenameTarget.sectionId, inlineRenameTarget.id, nextFolderPath))
+          presentStructuralPathPlan(previewRenameExplorerFolder(inlineRenameTarget.sectionId, inlineRenameTarget.id, nextFolderPath))
         } else {
           renameExplorerFolder(inlineRenameTarget.sectionId, inlineRenameTarget.id, value)
         }
@@ -258,7 +288,7 @@ export function SiteExplorerPanel({
       })
     } else if (target.kind === 'folder') {
       if (isStructuralSection(target.sectionId)) {
-        setPathConfirmPlan(previewDeleteExplorerFolder(target.sectionId, target.id))
+        presentStructuralPathPlan(previewDeleteExplorerFolder(target.sectionId, target.id))
       } else {
         deleteExplorerFolder(target.sectionId, target.id)
       }
@@ -270,12 +300,8 @@ export function SiteExplorerPanel({
 
   function handleConfirmPathChange() {
     if (!pathConfirmPlan) return
-    try {
-      commitExplorerPathChange(pathConfirmPlan)
-      setPathConfirmPlan(null)
-    } catch (err) {
-      console.error('[SiteExplorerPanel] commit explorer path change error:', err)
-    }
+    commitStructuralPathPlan(pathConfirmPlan)
+    setPathConfirmPlan(null)
   }
 
   function handleDeleteContext(menu: ContextMenuState) {
@@ -648,7 +674,7 @@ export function SiteExplorerPanel({
   return (
     <SiteExplorerDndScope
       enabled={organizationDndEnabled}
-      onStructuralPathPlan={setPathConfirmPlan}
+      onStructuralPathPlan={presentStructuralPathPlan}
     >
       {renderPanel}
     </SiteExplorerDndScope>

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'bun:test'
 import {
   buildDeleteExplorerPathPlan,
+  buildMoveExplorerFolderPlan,
   buildMoveExplorerItemPlan,
   buildRenameExplorerFolderPlan,
   commitExplorerPathPlan,
+  createDefaultSiteExplorerOrganization,
 } from '@core/page-tree'
 import { DEFAULT_SCRIPT_RUNTIME_CONFIG, DEFAULT_STYLE_RUNTIME_CONFIG } from '@core/site-runtime'
 import { makePage, makeSite } from '../fixtures'
@@ -145,5 +147,115 @@ describe('site explorer path plans', () => {
     expect(liveRuntime.styles.theme).toBeUndefined()
     expect(liveRuntime.scripts.main).toBeUndefined()
     expect(liveRuntime.scripts.keep).toEqual(DEFAULT_SCRIPT_RUNTIME_CONFIG)
+  })
+
+  it('carries a folder-path change and rewrites bookkeeping for an empty folder rename', () => {
+    const site = makeSite({
+      pages: [makePage({ id: 'home', slug: 'index' })],
+      explorer: {
+        ...createDefaultSiteExplorerOrganization(),
+        pages: {
+          expandedFolders: ['new-folder'],
+          emptyFolders: ['new-folder', 'new-folder/inner'],
+          rowOrder: [{ kind: 'folder', id: 'new-folder', order: 0 }],
+        },
+      },
+    })
+
+    const plan = buildRenameExplorerFolderPlan(site, {
+      sectionId: 'pages',
+      folderPath: 'new-folder',
+      nextFolderPath: 'link',
+    })
+
+    expect(plan.changes).toEqual([])
+    expect(plan.folderPathChange).toEqual({ from: 'new-folder', to: 'link' })
+
+    commitExplorerPathPlan(site, undefined, plan)
+
+    expect(site.explorer.pages.emptyFolders).toEqual(['link', 'link/inner'])
+    expect(site.explorer.pages.expandedFolders).toEqual(['link'])
+    expect(site.explorer.pages.rowOrder).toEqual([{ kind: 'folder', id: 'link', order: 0 }])
+  })
+
+  it('rewrites bookkeeping when moving an empty folder under a new parent', () => {
+    const site = makeSite({
+      pages: [makePage({ id: 'home', slug: 'index' })],
+      explorer: {
+        ...createDefaultSiteExplorerOrganization(),
+        pages: {
+          expandedFolders: ['scratch'],
+          emptyFolders: ['scratch'],
+          rowOrder: [{ kind: 'folder', id: 'scratch', order: 0 }],
+        },
+      },
+    })
+
+    const plan = buildMoveExplorerFolderPlan(site, {
+      sectionId: 'pages',
+      folderPath: 'scratch',
+      nextParentPath: 'docs',
+    })
+
+    expect(plan.blockers).toEqual([])
+    expect(plan.folderPathChange).toEqual({ from: 'scratch', to: 'docs/scratch' })
+
+    commitExplorerPathPlan(site, undefined, plan)
+
+    expect(site.explorer.pages.emptyFolders).toEqual(['docs/scratch'])
+    expect(site.explorer.pages.rowOrder).toEqual([{ kind: 'folder', id: 'docs/scratch', order: 0 }])
+  })
+
+  it('preserves folder expansion and order when renaming a non-empty folder', () => {
+    const site = makeSite({
+      pages: [
+        makePage({ id: 'home', slug: 'index' }),
+        makePage({ id: 'docs', slug: 'documentation' }),
+        makePage({ id: 'setup', slug: 'documentation/setup' }),
+      ],
+      explorer: {
+        ...createDefaultSiteExplorerOrganization(),
+        pages: {
+          expandedFolders: ['documentation'],
+          emptyFolders: [],
+          rowOrder: [{ kind: 'folder', id: 'documentation', order: 3 }],
+        },
+      },
+    })
+
+    const plan = buildRenameExplorerFolderPlan(site, {
+      sectionId: 'pages',
+      folderPath: 'documentation',
+      nextFolderPath: 'docs',
+    })
+
+    commitExplorerPathPlan(site, undefined, plan)
+
+    expect(site.pages.find((page) => page.id === 'docs')?.slug).toBe('docs')
+    expect(site.explorer.pages.expandedFolders).toEqual(['docs'])
+    expect(site.explorer.pages.rowOrder).toEqual([{ kind: 'folder', id: 'docs', order: 3 }])
+  })
+
+  it('removes empty-folder bookkeeping on delete even with no descendant items', () => {
+    const site = makeSite({
+      pages: [makePage({ id: 'home', slug: 'index' })],
+      explorer: {
+        ...createDefaultSiteExplorerOrganization(),
+        pages: {
+          expandedFolders: ['scratch'],
+          emptyFolders: ['scratch', 'scratch/inner'],
+          rowOrder: [{ kind: 'folder', id: 'scratch', order: 0 }],
+        },
+      },
+    })
+
+    const plan = buildDeleteExplorerPathPlan(site, { sectionId: 'pages', folderPath: 'scratch' })
+
+    expect(plan.deletedItems).toEqual([])
+    expect(plan.folderPath).toBe('scratch')
+
+    commitExplorerPathPlan(site, undefined, plan)
+
+    expect(site.explorer.pages).toEqual({ expandedFolders: [], emptyFolders: [], rowOrder: [] })
   })
 })

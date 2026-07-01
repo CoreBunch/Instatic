@@ -123,6 +123,52 @@ describe('Site Explorer organization store actions', () => {
     expect(site.explorer.pages).toEqual({ expandedFolders: [], emptyFolders: [], rowOrder: [] })
   })
 
+  it('renames a freshly created empty structural folder end-to-end without touching pages', () => {
+    // A freshly created folder is collapsed — tracked in emptyFolders only,
+    // which is exactly the "rewrite 0 paths" case that used to no-op on commit.
+    loadExplorerSite({
+      pages: [makePage({ id: 'home', slug: 'index', title: 'Home' })],
+      explorer: {
+        ...createDefaultSiteExplorerOrganization(),
+        pages: {
+          expandedFolders: [],
+          emptyFolders: ['new-folder'],
+          rowOrder: [{ kind: 'folder', id: 'new-folder', order: 0 }],
+        },
+      },
+    })
+
+    const plan = useEditorStore.getState().previewRenameExplorerFolder('pages', 'new-folder', 'link')
+    useEditorStore.getState().commitExplorerPathChange(plan)
+
+    const section = useEditorStore.getState().site!.explorer.pages
+    expect(section.emptyFolders).toEqual(['link'])
+    expect(section.rowOrder).toEqual([{ kind: 'folder', id: 'link', order: 0 }])
+  })
+
+  it('deletes a freshly created empty structural folder end-to-end', () => {
+    loadExplorerSite({
+      pages: [makePage({ id: 'home', slug: 'index', title: 'Home' })],
+      explorer: {
+        ...createDefaultSiteExplorerOrganization(),
+        pages: {
+          expandedFolders: [],
+          emptyFolders: ['scratch'],
+          rowOrder: [{ kind: 'folder', id: 'scratch', order: 0 }],
+        },
+      },
+    })
+
+    const plan = useEditorStore.getState().previewDeleteExplorerFolder('pages', 'scratch')
+    useEditorStore.getState().commitExplorerPathChange(plan)
+
+    expect(useEditorStore.getState().site!.explorer.pages).toEqual({
+      expandedFolders: [],
+      emptyFolders: [],
+      rowOrder: [],
+    })
+  })
+
   it('commits a structural scripts folder delete and removes runtime config', () => {
     loadExplorerSite({
       files: [
