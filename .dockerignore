@@ -14,4 +14,8 @@ backups
 !.env.example
 !.env.production.example
 docs/superpowers
-src/__tests__
+
+# Test sources are verified in CI but are not needed in production images.
+**/__tests__
+**/*.test.ts
+**/*.test.tsx
