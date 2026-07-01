@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'bun:test'
 import React from 'react'
-import { act, fireEvent, render, screen, cleanup } from '@testing-library/react'
+import { act, fireEvent, render, screen, cleanup, waitFor } from '@testing-library/react'
 import { readFileSync } from 'fs'
 import { useEditorStore } from '@site/store/store'
 import { BreakpointFrame } from '@site/canvas/BreakpointFrame'
@@ -130,7 +130,7 @@ describe('canvas breakpoint rendering', () => {
     expect(desktopNode.getAttribute('data-hovered')).toBe('true')
   })
 
-  it('dims inactive breakpoint frames only while editing a selected node in the open properties panel', () => {
+  it('dims inactive breakpoint frames only while editing a selected node in the open properties panel', async () => {
     const site = useEditorStore.getState().createSite('Breakpoint Editing Focus')
     const page = site.pages[0]
     const textId = useEditorStore.getState().insertNode('base.text', {
@@ -146,13 +146,14 @@ describe('canvas breakpoint rendering', () => {
 
     const { rerender } = render(<CanvasRoot />)
 
-    const tabletFrame = document.querySelector('[data-breakpoint-id="tablet"]')?.parentElement
-    const mobileFrame = document.querySelector('[data-breakpoint-id="mobile"]')?.parentElement
-    const desktopFrame = document.querySelector('[data-breakpoint-id="desktop"]')?.parentElement
+    const frameWrapper = (breakpointId: string) =>
+      document.querySelector(`[data-breakpoint-id="${breakpointId}"]`)?.parentElement
 
-    expect(tabletFrame?.getAttribute('data-breakpoint-dimmed')).toBeNull()
-    expect(mobileFrame?.getAttribute('data-breakpoint-dimmed')).toBe('true')
-    expect(desktopFrame?.getAttribute('data-breakpoint-dimmed')).toBe('true')
+    await waitFor(() => {
+      expect(frameWrapper('tablet')?.getAttribute('data-breakpoint-dimmed')).toBeNull()
+      expect(frameWrapper('mobile')?.getAttribute('data-breakpoint-dimmed')).toBe('true')
+      expect(frameWrapper('desktop')?.getAttribute('data-breakpoint-dimmed')).toBe('true')
+    })
 
     act(() => {
       useEditorStore.setState({
@@ -161,8 +162,10 @@ describe('canvas breakpoint rendering', () => {
     })
     rerender(<CanvasRoot />)
 
-    expect(mobileFrame?.getAttribute('data-breakpoint-dimmed')).toBeNull()
-    expect(desktopFrame?.getAttribute('data-breakpoint-dimmed')).toBeNull()
+    await waitFor(() => {
+      expect(frameWrapper('mobile')?.getAttribute('data-breakpoint-dimmed')).toBeNull()
+      expect(frameWrapper('desktop')?.getAttribute('data-breakpoint-dimmed')).toBeNull()
+    })
 
     const css = readFileSync(BREAKPOINT_FRAME_CSS, 'utf-8')
     expect(css).toContain('.frameWrapperDimmed')
