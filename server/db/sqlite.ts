@@ -47,9 +47,8 @@ function renderTemplate(
 
 /**
  * Walk every column in a returned row and JSON.parse any column whose name
- * ends in `_json` and whose value is a non-empty string. This mirrors the
- * automatic JSONB deserialization that Postgres does, so repository code does
- * not need to know which dialect it's talking to.
+ * ends in `_json` and whose value is a non-empty string. This keeps the
+ * DbClient `_json` read contract dialect-neutral for repository code.
  */
 function parseJsonColumns<Row>(row: Row): Row {
   if (row === null || typeof row !== 'object' || Array.isArray(row)) return row

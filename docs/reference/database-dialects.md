@@ -10,7 +10,7 @@ The CMS supports **Postgres** (production, multi-author teams, horizontal scale)
 
 - **One `DbClient` interface** (`server/db/client.ts`). Two adapters: `postgres.ts` (via `Bun.sql`) and `sqlite.ts` (via `bun:sqlite`).
 - **Repositories are dialect-naive.** They use ANSI-standard SQL only. The five Postgres-isms are banned. Gated by `db-postgres-isms.test.ts`.
-- **JSON columns end in `_json`.** The SQLite adapter auto-parses on read and auto-stringifies on write. Gated by `db-json-column-naming.test.ts`.
+- **JSON columns end in `_json`.** Adapters hydrate string-valued JSON on read; SQLite also stringifies objects on write. Gated by `db-json-column-naming.test.ts`.
 - **Migrations are split per dialect.** `migrations-pg.ts` and `migrations-sqlite.ts` carry identical migration IDs in the same order. Parity gated by `migration-parity.test.ts`.
 - **Adding a migration** means editing both files. **Adding a JSON column** means naming it `<something>_json`.
 
@@ -38,10 +38,10 @@ The two migration files (`migrations-pg.ts`, `migrations-sqlite.ts`) are explici
 
 Every column intended to store JSON has a name ending in `_json`. This is a hard convention, not a suggestion.
 
-The SQLite adapter (`server/db/sqlite.ts`) exploits it:
+The adapters exploit it:
 
-- **On read** — any column whose name ends in `_json` and whose value is a non-empty string is auto-`JSON.parse`d. Repositories receive a `Record<string, unknown>`, not a string.
-- **On write** — any plain object or array passed via tagged-template interpolation is auto-`JSON.stringify`d.
+- **On read** — any column whose name ends in `_json` and whose value is a non-empty string is auto-`JSON.parse`d. Repositories receive a `Record<string, unknown>`, not a string. Postgres `jsonb` values already arrive parsed; this read normalizer covers `_json` columns backed by text.
+- **On write** — the SQLite adapter auto-`JSON.stringify`s any plain object or array passed via tagged-template interpolation. Postgres relies on `Bun.sql` parameter binding and native `jsonb` handling where the backing column is `jsonb`.
 
 Result: repository code is identical across dialects:
 
@@ -135,7 +135,7 @@ For SQLite, the parent directory of the DB file is created automatically.
 
 ### Adapter behaviors at the boundary
 
-**`server/db/sqlite.ts` does four things the Postgres adapter doesn't need to:**
+**`server/db/sqlite.ts` owns the SQLite-specific boundary work:**
 
 1. `toBindable(value)` converts JS values for SQLite parameter binding:
    - Plain object / array → `JSON.stringify` (stored as `TEXT`)
@@ -150,7 +150,7 @@ For SQLite, the parent directory of the DB file is created automatically.
 
 The Postgres adapter relies on `Bun.sql`'s native handling of `jsonb` columns and parameter binding — JS objects sent to `jsonb` columns are stored as JSONB and read back as `Record<string, unknown>` automatically.
 
-**`server/db/postgres.ts`** additionally resolves `rowCount` from `result.count` (Bun's per-command row count from PostgreSQL's CommandComplete tag) rather than `result.length`. For non-RETURNING writes (UPDATE / DELETE / INSERT), Postgres streams the affected-row count in its CommandComplete tag rather than returning data rows, so `result.length` is always 0 for those statements. `result.count` captures the CommandComplete count, giving `rowCount` the same semantics as the SQLite adapter's `info.changes`. Falls back to `result.length` if the property is absent.
+**`server/db/postgres.ts`** normalizes returned rows by converting `Date` instances to ISO strings and parsing string-valued `_json` columns. It also resolves `rowCount` from `result.count` (Bun's per-command row count from PostgreSQL's CommandComplete tag) rather than `result.length`. For non-RETURNING writes (UPDATE / DELETE / INSERT), Postgres streams the affected-row count in its CommandComplete tag rather than returning data rows, so `result.length` is always 0 for those statements. `result.count` captures the CommandComplete count, giving `rowCount` the same semantics as the SQLite adapter's `info.changes`. Falls back to `result.length` if the property is absent.
 
 ---
 

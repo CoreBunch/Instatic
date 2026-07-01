@@ -54,8 +54,8 @@ interface MessageRow {
   conversation_id: string
   position: number
   role: string
-  // Both dialects auto-hydrate `_json` columns to JS values (SQLite via the
-  // adapter's parseJsonColumns; PG via jsonb). The row arrives already-parsed.
+  // Both dialect adapters auto-hydrate `_json` columns to JS values. The row
+  // arrives already parsed even when a backing column stores JSON as text.
   content_json: unknown
   tool_call_id: string | null
   tool_name: string | null
@@ -94,8 +94,8 @@ function conversationRowToRecord(row: ConversationRow): ConversationRecord {
 const ContentBlocksSchema = Type.Array(AiContentBlockSchema)
 
 function parseContentBlocks(raw: unknown): AiContentBlock[] {
-  // SQLite adapter + PG jsonb both deliver this column pre-parsed. This is the
-  // read boundary: every block is validated against the canonical
+  // The DB adapters deliver this column pre-parsed. This is the read boundary:
+  // every block is validated against the canonical
   // `AiContentBlockSchema`, so callers (e.g. `buildMessageHistory`) receive a
   // fully-typed `AiContentBlock[]` and never re-cast.
   const parsed = safeParseValue(ContentBlocksSchema, raw)
@@ -367,8 +367,8 @@ export async function appendMessage(
     const cacheReadTokens = input.cacheReadTokens ?? 0
     const cacheCreationTokens = input.cacheCreationTokens ?? 0
 
-    // Pass content as a plain array; both dialect adapters handle the JSON
-    // encoding (SQLite auto-stringify on bind for objects; PG jsonb native).
+    // Pass content as a plain array; the DB boundary handles JSON
+    // encoding/decoding for `_json` columns.
     const { rows: msgRows } = await tx<MessageRow>`
       insert into ai_messages (
         id, conversation_id, position, role, content_json,
