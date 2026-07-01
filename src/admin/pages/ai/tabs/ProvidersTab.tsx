@@ -27,7 +27,7 @@ import { ApiError } from '@core/http'
 import styles from '../AiPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
-type ProviderId = 'anthropic' | 'openai' | 'ollama' | 'openrouter'
+type ProviderId = 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'opencode'
 type AuthMode = 'apiKey' | 'baseUrl'
 
 // Each provider has exactly one credential shape; the UI derives it instead
@@ -36,6 +36,7 @@ const PROVIDERS: Array<{ id: ProviderId; label: string; authMode: AuthMode }> = 
   { id: 'anthropic', label: 'Anthropic (Claude)', authMode: 'apiKey' },
   { id: 'openai', label: 'OpenAI', authMode: 'apiKey' },
   { id: 'openrouter', label: 'OpenRouter', authMode: 'apiKey' },
+  { id: 'opencode', label: 'OpenCode', authMode: 'apiKey' },
   { id: 'ollama', label: 'Ollama (local)', authMode: 'baseUrl' },
 ]
 
@@ -49,12 +50,14 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   openai: 'OpenAI',
   openrouter: 'OpenRouter',
   ollama: 'Ollama',
+  opencode: 'OpenCode',
 }
 
 // Hint text for the API-key field, per provider key prefix.
 const API_KEY_PLACEHOLDER: Partial<Record<ProviderId, string>> = {
   anthropic: 'sk-ant-...',
   openrouter: 'sk-or-...',
+  opencode: 'sk-.....',
 }
 
 async function deleteCredentialAction(

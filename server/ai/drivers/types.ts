@@ -168,7 +168,8 @@ export interface AiProvider {
    *   anthropic → ['apiKey']
    *   openai    → ['apiKey']
    *   openrouter → ['apiKey']
-   *   ollama    → ['baseUrl']
+   *   opencode   → ['apiKey']
+   *   ollama     → ['baseUrl']
    */
   readonly supportedAuthModes: readonly AiAuthMode[]
 

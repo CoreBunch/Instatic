@@ -2,7 +2,7 @@
 
 The AI Agent is a model-powered assistant integrated into the visual editor. The user types a request in the Agent Panel; the agent reads the current page snapshot, plans a sequence of edits, and executes them by calling tools. Structure is written as semantic HTML (`insertHtml` / `replaceNodeHtml`); styling is written as CSS — a `<style>` block and/or `class=` attributes inside the insert, or the dedicated `applyCss` tool for authoring/editing any CSS on its own. There is one CSS path and it accepts every selector; `assignClass` / `removeClass` attach existing classes to nodes.
 
-The agent runs on a provider-agnostic AI runtime (`server/ai/`) that can drive any supported model (Anthropic Claude, OpenAI, OpenRouter, Ollama). Every driver talks directly to its provider's REST API over HTTP/SSE — no provider SDKs. All four share one multi-turn tool loop (`drivers/http/toolLoop.ts`); each supplies only a small `ProviderAdapter` of pure mapping functions. The plain `@anthropic-ai/sdk` (and any provider SDK) is banned repo-wide. Gated by `ai-driver-isolation.test.ts`.
+The agent runs on a provider-agnostic AI runtime (`server/ai/`) that can drive any supported model (Anthropic Claude, OpenAI, OpenRouter, OpenCode, Ollama). Every driver talks directly to its provider's REST API over HTTP/SSE — no provider SDKs. All five share one multi-turn tool loop (`drivers/http/toolLoop.ts`); each supplies only a small `ProviderAdapter` of pure mapping functions. The plain `@anthropic-ai/sdk` (and any provider SDK) is banned repo-wide. Gated by `ai-driver-isolation.test.ts`.
 
 ---
 
@@ -12,7 +12,7 @@ The agent runs on a provider-agnostic AI runtime (`server/ai/`) that can drive a
 - **Styling via CSS.** The agent emits CSS the same way a human pastes it: a `<style>` block and/or `class=` attributes inside the `insertHtml`/`replaceNodeHtml` payload, or the standalone `applyCss` tool. The importer (`cssToStyleRules`) classifies every selector — a bare `.foo {}` rule becomes a reusable Selectors-panel class bound to `class="foo"`; any other selector (`.hero a`, `a:hover`, `nav > li`) becomes an ambient rule; `style=` attributes land on the node's inline styles. There is no structured `classes` parameter — the agent never hand-builds classes node-by-node at insert time. `applyCss` is the single tool for authoring/editing CSS on its own; it **upserts**, so re-applying a selector edits the existing rule (the way descendant/pseudo rules get restyled).
 - **35 tools total.** 6 server-side catalog read tools (resolved server-side from the posted snapshot / DB) + 29 browser-bridged tools.
 - **Two-endpoint bridge.** `POST /admin/api/ai/chat/site` opens an NDJSON stream. When the model calls a browser-bridged tool, the server emits `toolRequest`; the browser executor reads or mutates the editor store and POSTs the `AiToolOutput` result to `POST /admin/api/ai/tool-result`.
-- **Provider-agnostic.** The runtime selects a driver (Anthropic, OpenAI, OpenRouter, Ollama) from the conversation's configured credential.
+- **Provider-agnostic.** The runtime selects a driver (Anthropic, OpenAI, OpenRouter, OpenCode, Ollama) from the conversation's configured credential.
 - **Tool input schemas are a single source of truth** in `@core/ai` (`src/core/ai/toolSchemas.ts`). The server tool registry (`server/ai/tools/site/writeTools.ts`) and the browser executor (`executor.ts` + `tokenRunners.ts`) import the exact same schema objects — a constraint added once is enforced on both sides at build time. Gated by `ai-tool-schema-ssot.test.ts` and `ai-tools-typebox-only.test.ts`.
 - **Capabilities.** `ai.chat` required to stream; `ai.tools.write` required for write tools. Gated by `ai-handlers-capability-gated.test.ts`.
 
@@ -65,6 +65,7 @@ server/ai/
 │   ├── anthropic.ts        — Anthropic driver: direct POST /v1/messages (no SDK)
 │   ├── openai.ts           — OpenAI driver: direct POST /v1/responses (no SDK)
 │   ├── openrouter.ts       — OpenRouter driver: direct POST /v1/responses (shared Responses path; live /models; native cost)
+│   ├── opencode.ts         — OpenCode Zen driver: direct POST /zen/v1/chat/completions (no SDK; live /models)
 │   └── ollama.ts           — Ollama driver: direct POST /v1/chat/completions (no SDK)
 └── runtime/
     ├── runner.ts           — runChat(): drives a driver, emits stream events
