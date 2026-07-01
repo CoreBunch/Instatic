@@ -282,7 +282,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
     // `position: fixed` — it needs editor-document coordinates, which
     // `clientPointToEditorDoc` produces by adding the iframe's outer rect
     // (scaled by the canvas zoom).
-    const point = clientPointToEditorDoc(e.nativeEvent)
+    const point = clientPointToEditorDoc(e.nativeEvent ?? e)
     contextMenu.open({ x: point.x, y: point.y, nodeId })
   }
 
