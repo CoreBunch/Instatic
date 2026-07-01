@@ -80,8 +80,8 @@ const ModelsResponseSchema = Type.Object(
  * Fetch the model catalogue from `GET ${baseUrl}/v1/models`. Unlike the OpenAI
  * driver we do NOT filter by family or derive tiers — the endpoint is arbitrary,
  * so the id is the label and capabilities are the generic defaults. Any failure
- * (offline, non-OK, unparseable) returns [] so the picker stays empty and the
- * credential Test button surfaces the underlying error.
+ * (offline, non-OK, unparseable) returns [] so the picker stays empty; the
+ * credential Test button treats an empty live catalogue as a failed test.
  */
 async function fetchOpenAiCompatibleModels(
   baseUrl: string,

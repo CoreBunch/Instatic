@@ -24,6 +24,7 @@ import {
   updateCredentialForUser,
 } from '../credentials/store'
 import { resolveDriver } from '../drivers'
+import type { AiProviderModel } from '../drivers/types'
 import type { CredentialRecord } from '../credentials/types'
 import { listDefaults, setDefaultForScope } from '../defaults/store'
 import type { ToolScope } from '../runtime/types'
@@ -300,6 +301,13 @@ async function dispatchTest(req: Request, db: DbClient, id: string): Promise<Res
     apiKeyForRedaction = resolved.apiKey
     const driver = resolveDriver(record.providerId)
     const models = await driver.listModels(resolved)
+    const modelCount = liveModelCount(models)
+    if (modelCount === 0) {
+      throw new CredentialError(
+        `No live models were returned for ${driver.label}. Check the credential and provider endpoint.`,
+        400,
+      )
+    }
     await createAuditEvent(db, {
       actorUserId: userOrResponse.id,
       action: 'ai.credential.tested',
@@ -309,10 +317,10 @@ async function dispatchTest(req: Request, db: DbClient, id: string): Promise<Res
         providerId: record.providerId,
         displayLabel: record.displayLabel,
         ok: true,
-        modelCount: models.length,
+        modelCount,
       },
     })
-    return jsonResponse({ ok: true, modelCount: models.length })
+    return jsonResponse({ ok: true, modelCount })
   } catch (err) {
     const message = safeCredentialErrorMessage(err, [apiKeyForRedaction], 'Test failed.')
     await createAuditEvent(db, {
@@ -331,6 +339,10 @@ async function dispatchTest(req: Request, db: DbClient, id: string): Promise<Res
     })
     return jsonResponse({ ok: false, error: message }, { status: 200 })
   }
+}
+
+function liveModelCount(models: readonly AiProviderModel[]): number {
+  return models.filter((model) => model.catalogueSource !== 'fallback').length
 }
 
 function bodySecrets(body: { apiKey?: string }): string[] {

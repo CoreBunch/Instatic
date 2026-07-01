@@ -215,4 +215,45 @@ describe('AI credential handler', () => {
     expect(body.error).not.toContain(apiKey)
     expect(body.error).toContain('[redacted]')
   })
+
+  it('reports a failed credential test when the provider returns no live models', async () => {
+    const cookie = await harness.setupOwner()
+    console.warn = () => {}
+    globalThis.fetch = async (input) => {
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
+      if (url === 'https://bad.example/v1/models') {
+        return new Response(JSON.stringify({ error: 'bad key' }), { status: 401 })
+      }
+      return originalFetch(input)
+    }
+
+    const createRes = await harness.ai('/admin/api/ai/credentials', {
+      method: 'POST',
+      cookie,
+      json: {
+        providerId: 'openai-compatible',
+        authMode: 'baseUrl',
+        displayLabel: 'Custom',
+        baseUrl: 'https://bad.example/v1',
+        apiKey: 'sk-custom-test',
+      },
+    })
+    expect(createRes.status).toBe(201)
+    const createBody = await readJson<{ credential: { id: string } }>(createRes)
+
+    const testRes = await harness.ai(`/admin/api/ai/credentials/${createBody.credential.id}/test`, {
+      method: 'POST',
+      cookie,
+    })
+
+    expect(testRes.status).toBe(200)
+    const body = await readJson<{ ok: boolean; error: string; modelCount?: number }>(testRes)
+    expect(body.ok).toBe(false)
+    expect(body.modelCount).toBeUndefined()
+    expect(body.error).toContain('No live models were returned')
+  })
 })

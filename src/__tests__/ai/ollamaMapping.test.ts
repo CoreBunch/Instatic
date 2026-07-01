@@ -1,11 +1,11 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { Type } from '@core/utils/typeboxHelpers'
+import { ollamaDriver } from '../../../server/ai/drivers/ollama'
 import {
   ChatCompletionsTurnTranslator,
   mapChatHistory,
-  ollamaDriver,
   type ChatMessage,
-} from '../../../server/ai/drivers/ollama'
+} from '../../../server/ai/drivers/http/chatCompletions'
 import type { AiStreamRequest } from '../../../server/ai/drivers/types'
 import type { AiMessage, AiBrowserBridge, AiStreamEvent, AiTool, AiToolOutput } from '../../../server/ai/runtime/types'
 import type { SseFrame } from '../../../server/ai/drivers/http/sse'
