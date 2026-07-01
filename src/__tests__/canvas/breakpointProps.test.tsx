@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'bun:test'
 import React from 'react'
-import { act, fireEvent, render, screen, cleanup, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, cleanup, waitFor } from '@testing-library/react'
 import { readFileSync } from 'fs'
 import { useEditorStore } from '@site/store/store'
 import { BreakpointFrame } from '@site/canvas/BreakpointFrame'
@@ -144,31 +144,39 @@ describe('canvas breakpoint rendering', () => {
       propertiesPanelMode: 'docked',
     } as Parameters<typeof useEditorStore.setState>[0])
 
-    const { rerender } = render(<CanvasRoot />)
+    const strayBreakpointMarker = document.createElement('div')
+    strayBreakpointMarker.dataset.breakpointId = 'mobile'
+    document.body.prepend(strayBreakpointMarker)
 
-    const frameWrapper = (breakpointId: string) =>
-      document.querySelector(`[data-breakpoint-id="${breakpointId}"]`)?.parentElement
+    try {
+      const { container, rerender } = render(<CanvasRoot />)
 
-    await waitFor(() => {
-      expect(frameWrapper('tablet')?.getAttribute('data-breakpoint-dimmed')).toBeNull()
-      expect(frameWrapper('mobile')?.getAttribute('data-breakpoint-dimmed')).toBe('true')
-      expect(frameWrapper('desktop')?.getAttribute('data-breakpoint-dimmed')).toBe('true')
-    })
+      const frameWrapper = (breakpointId: string) =>
+        container.querySelector(`[data-breakpoint-id="${breakpointId}"]`)?.parentElement
 
-    act(() => {
-      useEditorStore.setState({
-        propertiesPanel: { collapsed: true, x: 0, y: 0, width: 360 },
-      } as Parameters<typeof useEditorStore.setState>[0])
-    })
-    rerender(<CanvasRoot />)
+      await waitFor(() => {
+        expect(frameWrapper('tablet')?.getAttribute('data-breakpoint-dimmed')).toBeNull()
+        expect(frameWrapper('mobile')?.getAttribute('data-breakpoint-dimmed')).toBe('true')
+        expect(frameWrapper('desktop')?.getAttribute('data-breakpoint-dimmed')).toBe('true')
+      })
 
-    await waitFor(() => {
-      expect(frameWrapper('mobile')?.getAttribute('data-breakpoint-dimmed')).toBeNull()
-      expect(frameWrapper('desktop')?.getAttribute('data-breakpoint-dimmed')).toBeNull()
-    })
+      act(() => {
+        useEditorStore.setState({
+          propertiesPanel: { collapsed: true, x: 0, y: 0, width: 360 },
+        } as Parameters<typeof useEditorStore.setState>[0])
+      })
+      rerender(<CanvasRoot />)
 
-    const css = readFileSync(BREAKPOINT_FRAME_CSS, 'utf-8')
-    expect(css).toContain('.frameWrapperDimmed')
-    expect(css).toContain('opacity: 0.42')
+      await waitFor(() => {
+        expect(frameWrapper('mobile')?.getAttribute('data-breakpoint-dimmed')).toBeNull()
+        expect(frameWrapper('desktop')?.getAttribute('data-breakpoint-dimmed')).toBeNull()
+      })
+
+      const css = readFileSync(BREAKPOINT_FRAME_CSS, 'utf-8')
+      expect(css).toContain('.frameWrapperDimmed')
+      expect(css).toContain('opacity: 0.42')
+    } finally {
+      strayBreakpointMarker.remove()
+    }
   })
 })
