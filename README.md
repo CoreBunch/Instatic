@@ -57,6 +57,7 @@ Railway is the fastest way to get Instatic live. Pick a template, hit the button
 |---|---|---|---|
 | **Railway** · *Recommended* | SQLite | A single site — blog, portfolio, small business | [Deploy →](https://railway.com/deploy/instatic-cms-sqlite?referralCode=Zm9bVJ&utm_medium=integration&utm_source=template&utm_campaign=generic) |
 | **Railway** | Postgres | Multiple authors, managed backups, room to grow | [Deploy →](https://railway.com/deploy/instatic-cms-postgres?referralCode=Zm9bVJ&utm_medium=integration&utm_source=template&utm_campaign=generic) |
+| **InstaPods** | SQLite | Self-hosted on your own server - $7/mo, unlimited sites, daily backups | [Deploy →](https://app.instapods.com/dashboard/pods/create?app=instatic) |
 | **Render** | — | — | *Coming soon* |
 | **Fly.io** | — | — | *Coming soon* |
 | **DigitalOcean** | — | — | *Coming soon* |
