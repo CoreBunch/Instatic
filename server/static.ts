@@ -2,6 +2,19 @@ import { extname, resolve, sep } from 'node:path'
 import { brotliCompressSync, constants as zlibConstants } from 'node:zlib'
 import { readdirSync } from 'node:fs'
 import { SESSION_COOKIE_NAME } from './auth/tokens'
+import { generateCspNonce, buildAdminReportOnlyCsp } from './securityHeaders'
+
+/**
+ * Stamp the per-response CSP nonce onto every server-rendered inline `<script>`
+ * in the admin shell (the importmap, the boot-API kickoff, the authed flag) as
+ * well as the module entry script. Adds `nonce="…"` to any `<script>` open tag
+ * that doesn't already carry one, so the `Content-Security-Policy-Report-Only`
+ * `script-src 'nonce-…'` matches them and they don't report as violations —
+ * leaving the report to surface only the genuinely-unhandled script surfaces.
+ */
+function stampScriptNonces(html: string, nonce: string): string {
+  return html.replace(/<script\b(?![^>]*\bnonce=)/gi, `<script nonce="${nonce}"`)
+}
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -492,7 +505,16 @@ export async function serveAdminApp(staticDir: string, req?: Request): Promise<R
   const transformed = requestHasSessionCookie(req)
     ? injectAuthenticatedHints(html, staticDir)
     : injectLoginSkeleton(html)
-  const bytes = new TextEncoder().encode(transformed) as ResponseBytes
+
+  // Per-response CSP nonce: stamp it onto the shell's inline scripts and echo
+  // it in the report-only policy so those known-good scripts don't report,
+  // isolating the reports to the surfaces a future enforced script-src must
+  // still handle (the module-sandbox `data:` import, canvas runtime scripts).
+  const nonce = generateCspNonce()
+  const nonced = stampScriptNonces(transformed, nonce)
+  const reportOnlyCsp = buildAdminReportOnlyCsp(nonce)
+
+  const bytes = new TextEncoder().encode(nonced) as ResponseBytes
   const acceptEncoding = req?.headers.get('accept-encoding') ?? null
   const encoding = selectEncoding(acceptEncoding)
 
@@ -511,6 +533,7 @@ export async function serveAdminApp(staticDir: string, req?: Request): Promise<R
         'cache-control': 'no-cache',
         'content-encoding': 'br',
         'vary': 'accept-encoding',
+        'content-security-policy-report-only': reportOnlyCsp,
       },
     })
   }
@@ -522,6 +545,7 @@ export async function serveAdminApp(staticDir: string, req?: Request): Promise<R
         'cache-control': 'no-cache',
         'content-encoding': 'gzip',
         'vary': 'accept-encoding',
+        'content-security-policy-report-only': reportOnlyCsp,
       },
     })
   }
@@ -530,6 +554,7 @@ export async function serveAdminApp(staticDir: string, req?: Request): Promise<R
     headers: {
       'content-type': 'text/html; charset=utf-8',
       'cache-control': 'no-cache',
+      'content-security-policy-report-only': reportOnlyCsp,
     },
   })
 }

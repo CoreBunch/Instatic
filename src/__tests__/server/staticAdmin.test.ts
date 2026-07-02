@@ -50,6 +50,97 @@ function createAdminShellFixture(): string {
   return dir
 }
 
+/** Admin shell fixture that includes an inline importmap + module entry script. */
+function createAdminShellWithScripts(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'instatic-static-'))
+  mkdirSync(join(dir, 'assets'))
+  writeFileSync(
+    join(dir, 'index.html'),
+    `<!doctype html>
+<html>
+  <head>
+    <style data-initial-loader></style>
+    <script type="importmap">{"imports":{}}</script>
+  </head>
+  <body>
+    <div id="root">
+      <div class="loading" data-initial-loader-spinner="true"><div></div></div>
+    </div>
+    <script type="module" src="/src/admin/main.tsx"></script>
+  </body>
+</html>`,
+  )
+  return dir
+}
+
+describe('admin CSP report-only + shell script nonce', () => {
+  it('emits a Content-Security-Policy-Report-Only header and stamps the matching nonce on every shell inline script', async () => {
+    const staticDir = createAdminShellWithScripts()
+    try {
+      const req = new Request('http://localhost/admin/site')
+      req.headers.set('cookie', `${SESSION_COOKIE_NAME}=test-session`)
+      const res = await serveAdminApp(staticDir, req)
+      expect(res?.status).toBe(200)
+
+      const header = res?.headers.get('content-security-policy-report-only') ?? ''
+      // Strict script-src (the security target) + realistic rest.
+      expect(header).toContain("default-src 'self'")
+      expect(header).toContain("object-src 'none'")
+      expect(header).toContain("frame-ancestors 'none'")
+      expect(header).toContain("style-src 'self' 'unsafe-inline'")
+      const match = header.match(/script-src 'self' 'nonce-([^']+)'/)
+      expect(match).not.toBeNull()
+      const nonce = match![1]!
+      expect(nonce.length).toBeGreaterThan(16)
+
+      const html = (await res?.text()) ?? ''
+      // The importmap, the boot-API kickoff, the authed flag, and the module
+      // entry all carry the same nonce.
+      expect(html).toContain(`<script nonce="${nonce}" type="importmap">`)
+      expect(html).toContain(`<script nonce="${nonce}" type="module" src="/src/admin/main.tsx">`)
+      expect(html).toContain(`window.__instaticAuthed = 1`)
+      // Every <script> open tag must carry a nonce (none left unstamped).
+      const scriptOpens = html.match(/<script\b[^>]*>/g) ?? []
+      expect(scriptOpens.length).toBeGreaterThan(0)
+      for (const tag of scriptOpens) expect(tag).toContain(`nonce="${nonce}"`)
+    } finally {
+      rmSync(staticDir, { recursive: true, force: true })
+    }
+  })
+
+  it('generates a fresh nonce per response (not reused across requests)', async () => {
+    const staticDir = createAdminShellWithScripts()
+    try {
+      const nonceOf = async () => {
+        const res = await serveAdminApp(staticDir, new Request('http://localhost/admin'))
+        const header = res?.headers.get('content-security-policy-report-only') ?? ''
+        return header.match(/'nonce-([^']+)'/)?.[1] ?? ''
+      }
+      const a = await nonceOf()
+      const b = await nonceOf()
+      expect(a).not.toBe('')
+      expect(a).not.toBe(b)
+    } finally {
+      rmSync(staticDir, { recursive: true, force: true })
+    }
+  })
+
+  it('carries the report-only header through handleServerRequest', async () => {
+    const staticDir = createAdminShellWithScripts()
+    try {
+      const res = await handleServerRequest(new Request('http://localhost/admin'), {
+        db: fakeDb,
+        staticDir,
+      })
+      // serveAdminApp sets the report-only header; the enforced clickjacking CSP
+      // is layered on separately by applySecurityHeaders in the outer wrapper.
+      expect(res.headers.get('content-security-policy-report-only')).toContain('script-src')
+    } finally {
+      rmSync(staticDir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('self-hosted admin static serving', () => {
   it('serves the built admin SPA at /admin', async () => {
     const staticDir = createStaticDir()

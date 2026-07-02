@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { publicOriginIsHttps } from './auth/security'
 
 /**
@@ -65,4 +66,52 @@ export function applySecurityHeaders(res: Response, pathname: string): Response 
     statusText: res.statusText,
     headers,
   })
+}
+
+/**
+ * Generate a fresh, unguessable CSP nonce for one admin HTML response.
+ * 128 bits of entropy, base64 — the value goes into both the
+ * `script-src 'nonce-…'` source expression and the `nonce="…"` attribute of
+ * every server-rendered inline `<script>` in the shell.
+ */
+export function generateCspNonce(): string {
+  return randomBytes(16).toString('base64')
+}
+
+/**
+ * The `Content-Security-Policy-Report-Only` policy for the admin HTML document.
+ *
+ * REPORT-ONLY, not enforced: browsers evaluate it and log every violation to
+ * the console (and to `report-to` if configured) but block nothing — so it
+ * cannot break the editor. It exists to confirm the exact allowances a future
+ * *enforced* `script-src` will need before we flip it on.
+ *
+ * The policy is deliberately strict on `script-src` (the security target) and
+ * realistic elsewhere, so the violation reports concentrate on genuine
+ * script-execution surfaces rather than benign styles/images:
+ *   - `script-src 'self' 'nonce-N'` — same-origin bundles + dynamically
+ *     imported chunks/plugin bundles (`'self'`), plus the shell's inline
+ *     scripts (`'nonce-N'`). It intentionally does NOT allow `'unsafe-inline'`,
+ *     `data:`, or `blob:`, so the module-sandbox iframe (which imports plugin
+ *     code from a `data:` URL and bakes inline scripts) and the editable-canvas
+ *     runtime-script injector WILL report — that is the signal we want.
+ *   - `style-src 'unsafe-inline'` — the editor relies on inline style
+ *     attributes for dynamic CSS custom properties; these cannot be nonced.
+ *   - img/font/connect/frame/worker are set to their realistic same-origin (+
+ *     data:/blob:) targets to avoid drowning the report in benign noise.
+ */
+export function buildAdminReportOnlyCsp(nonce: string): string {
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    `script-src 'self' 'nonce-${nonce}'`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "frame-src 'self' blob: data:",
+    "worker-src 'self' blob:",
+  ].join('; ')
 }

@@ -14,7 +14,11 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { applySecurityHeaders } from '../../../server/securityHeaders'
+import {
+  applySecurityHeaders,
+  buildAdminReportOnlyCsp,
+  generateCspNonce,
+} from '../../../server/securityHeaders'
 import { hardenUploadResponse } from '../../../server/static'
 import { configurePublicOrigins, resetPublicOrigins } from '../../../server/auth/security'
 import { handleServerRequest } from '../../../server/router'
@@ -135,6 +139,46 @@ describe('applySecurityHeaders — admin framing protection', () => {
     const res = applySecurityHeaders(makeResponse('<html>home</html>'), '/')
     expect(res.headers.get('x-frame-options')).toBeNull()
     expect(res.headers.get('content-security-policy')).toBeNull()
+  })
+
+  it('preserves a pre-existing report-only CSP (set by serveAdminApp) while adding the enforced CSP', () => {
+    const reportOnly = buildAdminReportOnlyCsp('test-nonce')
+    const res = applySecurityHeaders(
+      makeResponse('<html>admin</html>', { 'content-security-policy-report-only': reportOnly }),
+      '/admin',
+    )
+    // The strict report-only target survives untouched…
+    expect(res.headers.get('content-security-policy-report-only')).toBe(reportOnly)
+    // …alongside the enforced clickjacking policy.
+    expect(res.headers.get('content-security-policy')).toContain("frame-ancestors 'none'")
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// generateCspNonce / buildAdminReportOnlyCsp
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('admin report-only CSP builder', () => {
+  it('generates unique, high-entropy nonces', () => {
+    const a = generateCspNonce()
+    const b = generateCspNonce()
+    expect(a).not.toBe(b)
+    // 16 random bytes → 24-char base64.
+    expect(a.length).toBeGreaterThanOrEqual(20)
+  })
+
+  it('builds a strict script-src with the nonce and realistic style/img/connect targets', () => {
+    const csp = buildAdminReportOnlyCsp('N0nc3')
+    expect(csp).toContain("script-src 'self' 'nonce-N0nc3'")
+    // Must NOT weaken script execution: no unsafe-inline / data: / blob: in script-src.
+    expect(csp).not.toContain("script-src 'self' 'nonce-N0nc3' 'unsafe-inline'")
+    expect(csp).not.toMatch(/script-src[^;]*\bdata:/)
+    expect(csp).not.toMatch(/script-src[^;]*\bblob:/)
+    // Realistic elsewhere so reports concentrate on scripts.
+    expect(csp).toContain("style-src 'self' 'unsafe-inline'")
+    expect(csp).toContain("connect-src 'self'")
+    expect(csp).toContain("object-src 'none'")
+    expect(csp).toContain("base-uri 'self'")
   })
 })
 
