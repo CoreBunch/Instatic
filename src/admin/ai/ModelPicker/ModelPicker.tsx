@@ -37,6 +37,7 @@ const FAVORITES_KEY = 'instatic:model-favorites'
 const RECENTS_KEY = 'instatic:model-recents'
 const SORT_KEY = 'instatic:model-sort'
 const COLLAPSED_KEY = 'instatic:model-collapsed'
+const MENU_SIZE_KEY = 'instatic:model-picker-size'
 
 interface StoredModelRef {
   credentialId: string
@@ -95,6 +96,23 @@ function loadCollapsed(): Set<string> {
 
 function saveCollapsed(set: Set<string>) {
   localStorage.setItem(COLLAPSED_KEY, JSON.stringify(Array.from(set)))
+}
+
+interface MenuSize {
+  width: number
+  height: number
+}
+
+function loadMenuSize(): MenuSize {
+  try {
+    const raw = localStorage.getItem(MENU_SIZE_KEY)
+    if (raw) return JSON.parse(raw) as MenuSize
+  } catch { /* ignore */ }
+  return { width: 0, height: 320 }
+}
+
+function saveMenuSize(size: MenuSize) {
+  localStorage.setItem(MENU_SIZE_KEY, JSON.stringify(size))
 }
 
 export interface ModelChoice {
@@ -183,6 +201,7 @@ export function ModelPicker({
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [sortPanelOpen, setSortPanelOpen] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => loadCollapsed())
+  const [menuSize, setMenuSize] = useState<MenuSize>(() => loadMenuSize())
 
   // Clean up pending hover-leave timer on unmount.
   useEffect(() => {
@@ -198,6 +217,50 @@ export function ModelPicker({
   useEffect(() => {
     saveCollapsed(collapsedSections)
   }, [collapsedSections])
+
+  // ── Menu resize ───────────────────────────────────────────────────────
+  const isResizingRef = useRef(false)
+  const dragStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 })
+
+  function startResize(e: React.MouseEvent) {
+    e.preventDefault()
+    const menuEl = menuElRef.current
+    if (!menuEl) return
+    isResizingRef.current = true
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      width: menuEl.offsetWidth,
+      height: menuEl.offsetHeight,
+    }
+    document.addEventListener('mousemove', handleResizeMove)
+    document.addEventListener('mouseup', handleResizeUp)
+  }
+
+  function handleResizeMove(e: MouseEvent) {
+    if (!isResizingRef.current) return
+    const menuEl = menuElRef.current
+    if (!menuEl) return
+    const dx = e.clientX - dragStartRef.current.x
+    const dy = e.clientY - dragStartRef.current.y
+    const newWidth = Math.max(280, dragStartRef.current.width + dx)
+    const newHeight = Math.max(180, dragStartRef.current.height + dy)
+    menuEl.style.setProperty('--context-menu-width', `${newWidth}px`)
+    menuEl.style.setProperty('--context-menu-max-height', `${newHeight}px`)
+  }
+
+  function handleResizeUp() {
+    if (!isResizingRef.current) return
+    isResizingRef.current = false
+    document.removeEventListener('mousemove', handleResizeMove)
+    document.removeEventListener('mouseup', handleResizeUp)
+    const menuEl = menuElRef.current
+    if (menuEl) {
+      const next = { width: menuEl.offsetWidth, height: menuEl.offsetHeight }
+      setMenuSize(next)
+      saveMenuSize(next)
+    }
+  }
 
   // Lazy-load models. Two-phase: closed → only the selected credential's
   // models (to label the trigger); open → every credential (to fill the list).
@@ -553,8 +616,9 @@ export function ModelPicker({
           side="auto"
           offset={6}
           minWidth={variant === 'field' ? 300 : 340}
-          matchAnchorWidth={variant === 'field'}
-          maxHeight={320}
+          width={menuSize.width > 0 ? menuSize.width : undefined}
+          matchAnchorWidth={menuSize.width === 0 && variant === 'field'}
+          maxHeight={menuSize.height}
           ariaLabel={ariaLabel}
           onClose={closeMenu}
           header={(
@@ -954,6 +1018,20 @@ export function ModelPicker({
                   }
                 }
               })
+
+              // ── Resize handle ──────────────────────────────────────
+              out.push(
+                <div
+                  key="resize-handle"
+                  className={styles.resizeHandle}
+                  onMouseDown={startResize}
+                  title="Resize menu"
+                  aria-hidden="true"
+                >
+                  <div className={styles.resizeGrip} />
+                </div>,
+              )
+
               return out
             })()
           )}
