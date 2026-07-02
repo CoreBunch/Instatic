@@ -265,7 +265,9 @@ function stopChildren(signal: NodeJS.Signals = 'SIGTERM'): void {
 }
 
 for (const cfg of processes) {
-  const child = Bun.spawn(cfg.command.split(' '), {
+  const args = cfg.command.split(' ')
+  if (args[0] === 'bun') args[0] = process.execPath
+  const child = Bun.spawn(args, {
     env: { ...process.env, ...cfg.env },
     stdin: 'inherit',
     stdout: 'inherit',
