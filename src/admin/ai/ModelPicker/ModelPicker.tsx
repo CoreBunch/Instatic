@@ -35,6 +35,8 @@ import styles from './ModelPicker.module.css'
 
 const FAVORITES_KEY = 'instatic:model-favorites'
 const RECENTS_KEY = 'instatic:model-recents'
+const SORT_KEY = 'instatic:model-sort'
+const COLLAPSED_KEY = 'instatic:model-collapsed'
 
 interface StoredModelRef {
   credentialId: string
@@ -64,7 +66,35 @@ function loadRecents(): StoredModelRef[] {
 }
 
 function saveRecents(list: StoredModelRef[]) {
-  localStorage.setItem(RECENTS_KEY, JSON.stringify(list.slice(0, 6)))
+  localStorage.setItem(RECENTS_KEY, JSON.stringify(list.slice(0, 3)))
+}
+
+function loadSort(): { key: 'default' | 'price' | 'provider' | 'name'; dir: 'asc' | 'desc' } {
+  try {
+    const raw = localStorage.getItem(SORT_KEY)
+    if (!raw) return { key: 'default', dir: 'asc' }
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed.key === 'string' && typeof parsed.dir === 'string') {
+      return parsed as { key: 'default' | 'price' | 'provider' | 'name'; dir: 'asc' | 'desc' }
+    }
+  } catch { /* ignore */ }
+  return { key: 'default', dir: 'asc' }
+}
+
+function saveSort(sort: { key: 'default' | 'price' | 'provider' | 'name'; dir: 'asc' | 'desc' }) {
+  localStorage.setItem(SORT_KEY, JSON.stringify(sort))
+}
+
+function loadCollapsed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_KEY)
+    if (!raw) return new Set()
+    return new Set(JSON.parse(raw) as string[])
+  } catch { return new Set() }
+}
+
+function saveCollapsed(set: Set<string>) {
+  localStorage.setItem(COLLAPSED_KEY, JSON.stringify(Array.from(set)))
 }
 
 export interface ModelChoice {
@@ -146,13 +176,13 @@ export function ModelPicker({
   const [query, setQuery] = useState('')
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [modelsByCred, setModelsByCred] = useState<Record<string, AiModel[]>>({})
-  const [sort, setSort] = useState<{ key: 'default' | 'price' | 'provider' | 'name'; dir: 'asc' | 'desc' }>({ key: 'default', dir: 'asc' })
+  const [sort, setSort] = useState<{ key: 'default' | 'price' | 'provider' | 'name'; dir: 'asc' | 'desc' }>(() => loadSort())
   const [favorites, setFavorites] = useState<Set<string>>(() => loadFavorites())
   const [recents, setRecents] = useState<StoredModelRef[]>(() => loadRecents())
   const [hoveredKey, setHoveredKey] = useState<string | null>(null)
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [sortPanelOpen, setSortPanelOpen] = useState(false)
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => loadCollapsed())
 
   // Clean up pending hover-leave timer on unmount.
   useEffect(() => {
@@ -160,6 +190,14 @@ export function ModelPicker({
       if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
     }
   }, [])
+
+  // Persist sort and collapsed section state to localStorage.
+  useEffect(() => {
+    saveSort(sort)
+  }, [sort])
+  useEffect(() => {
+    saveCollapsed(collapsedSections)
+  }, [collapsedSections])
 
   // Lazy-load models. Two-phase: closed → only the selected credential's
   // models (to label the trigger); open → every credential (to fill the list).
@@ -394,7 +432,7 @@ export function ModelPicker({
     if (cred && model) {
       const ref: StoredModelRef = { credentialId, modelId, label: model.label, providerId: cred.providerId }
       setRecents((prev) => {
-        const next = [ref, ...prev.filter((r) => !(r.credentialId === credentialId && r.modelId === modelId))].slice(0, 6)
+        const next = [ref, ...prev.filter((r) => !(r.credentialId === credentialId && r.modelId === modelId))].slice(0, 3)
         saveRecents(next)
         return next
       })
@@ -424,6 +462,7 @@ export function ModelPicker({
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
       else next.add(key)
+      saveCollapsed(next)
       return next
     })
   }
