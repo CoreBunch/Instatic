@@ -64,6 +64,59 @@ describe('buildMessageHistory', () => {
     ])
   })
 
+  test('drops a tool result row with no preceding assistant tool call', () => {
+    const history = buildMessageHistory([
+      userText('hi'),
+      toolResult('orphan', 'site_apply_css'),
+      rec('assistant', [{ kind: 'text', text: 'still ok' }]),
+    ])
+
+    expect(history).toEqual([
+      { role: 'user', content: [{ kind: 'text', text: 'hi' }] },
+      { role: 'assistant', content: [{ kind: 'text', text: 'still ok' }] },
+    ])
+  })
+
+  test('drops orphan tool results while preserving valid pairs in mixed corrupted history', () => {
+    const history = buildMessageHistory([
+      userText('duplicate prompt'),
+      userText('duplicate prompt'),
+      toolResult('orphan-before-a', 'site_apply_css', 'late write failed'),
+      assistantToolCall('valid-a', 'site_apply_css', { sel: 'main' }),
+      toolResult('valid-a', 'site_apply_css'),
+      toolResult('orphan-before-b', 'site_apply_css'),
+      toolResult('orphan-before-c', 'site_apply_css', 'late browser disconnect'),
+      userText('later prompt'),
+      rec('assistant', [{ kind: 'text', text: 'recovered' }]),
+    ])
+
+    const toolMsgs = history.filter((m) => m.role === 'tool')
+    expect(toolMsgs).toHaveLength(1)
+    expect(toolMsgs[0]).toEqual({
+      role: 'tool',
+      toolCallId: 'valid-a',
+      output: { ok: true, error: undefined },
+    })
+    expect(history).toEqual([
+      { role: 'user', content: [{ kind: 'text', text: 'duplicate prompt' }] },
+      { role: 'user', content: [{ kind: 'text', text: 'duplicate prompt' }] },
+      {
+        role: 'assistant',
+        content: [
+          {
+            kind: 'toolCall',
+            toolCallId: 'valid-a',
+            toolName: 'site_apply_css',
+            input: { sel: 'main' },
+          },
+        ],
+      },
+      { role: 'tool', toolCallId: 'valid-a', output: { ok: true, error: undefined } },
+      { role: 'user', content: [{ kind: 'text', text: 'later prompt' }] },
+      { role: 'assistant', content: [{ kind: 'text', text: 'recovered' }] },
+    ])
+  })
+
   test('synthesizes an error result for trailing orphaned tool calls (aborted turn)', () => {
     // The reported bug: 5 parallel tool_use rows persisted, stream died before
     // any result landed.
@@ -116,6 +169,25 @@ describe('buildMessageHistory', () => {
       { role: 'user', content: [{ kind: 'text', text: 'continue' }] },
       { role: 'assistant', content: [{ kind: 'toolCall', toolCallId: 'a', toolName: 'tool', input: {} }] },
       { role: 'tool', toolCallId: 'a', output: { ok: false, error: INTERRUPTED_TOOL_RESULT_ERROR } },
+      { role: 'user', content: [{ kind: 'text', text: 'next prompt' }] },
+    ])
+  })
+
+  test('drops a late tool result after a user turn flushed its unanswered call', () => {
+    const history = buildMessageHistory([
+      userText('continue'),
+      assistantToolCall('late', 'tool', {}),
+      userText('next prompt'),
+      toolResult('late', 'tool'),
+    ])
+
+    expect(history).toEqual([
+      { role: 'user', content: [{ kind: 'text', text: 'continue' }] },
+      {
+        role: 'assistant',
+        content: [{ kind: 'toolCall', toolCallId: 'late', toolName: 'tool', input: {} }],
+      },
+      { role: 'tool', toolCallId: 'late', output: { ok: false, error: INTERRUPTED_TOOL_RESULT_ERROR } },
       { role: 'user', content: [{ kind: 'text', text: 'next prompt' }] },
     ])
   })
