@@ -1,4 +1,5 @@
 import type { MouseEventHandler, ReactNode } from 'react'
+import { EyeOffSolidIcon } from 'pixel-art-icons/icons/eye-off-solid'
 import { TreeChevron, TreeIconSlot, TreeLabel, TreeLabelGroup } from '@site/ui/Tree'
 import { ModuleIcon } from '@site/ui/ModuleIcon'
 import { TagPill } from '@ui/components/TagPill'
@@ -87,8 +88,8 @@ export function LayerTreeNodeContent({
         </span>
       )}
       {hidden && (
-        <span aria-hidden="true" className={styles.hiddenBadge}>
-          hidden
+        <span title="Hidden" aria-hidden="true" className={styles.hiddenIndicator}>
+          <EyeOffSolidIcon size={13} color="currentColor" />
         </span>
       )}
     </>

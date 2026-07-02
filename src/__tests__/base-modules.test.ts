@@ -891,15 +891,17 @@ describe('base.svg — render() specifics', () => {
 // ---------------------------------------------------------------------------
 
 describe('base.video — render() specifics', () => {
-  it('exposes the v4 schema (single videoUrl, playback, poster, perf hints)', () => {
+  it('exposes the v4 schema (single videoUrl, playback, poster, perf hints, title, noRelatedVideos)', () => {
     expect(Object.keys(VideoModule.schema).sort()).toEqual([
       'autoplay',
       'controls',
       'loop',
       'muted',
+      'noRelatedVideos',
       'playsinline',
       'poster',
       'preload',
+      'title',
       'videoUrl',
     ])
   })
@@ -1041,6 +1043,51 @@ describe('base.video — render() specifics', () => {
   it('does not declare cspSources when videoUrl is empty (no embed)', () => {
     const out = renderModule(VideoModule, { videoUrl: '' })
     expect(out.cspSources).toBeUndefined()
+  })
+
+  // --- title prop ---
+
+  it('title prop is used as the iframe title attribute for YouTube embeds', () => {
+    const { html } = renderModule(VideoModule, {
+      videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      title: 'Rick Astley Never Gonna Give You Up',
+    })
+    expect(html).toContain('title="Rick Astley Never Gonna Give You Up"')
+    expect(html).not.toContain('title="YouTube video"')
+  })
+
+  it('title prop defaults to "YouTube video" when not set', () => {
+    const { html } = renderModule(VideoModule, {
+      videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    })
+    expect(html).toContain('title="YouTube video"')
+  })
+
+  // --- noRelatedVideos prop ---
+
+  it('noRelatedVideos: true appends rel=0 to the YouTube embed URL', () => {
+    const { html } = renderModule(VideoModule, {
+      videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      noRelatedVideos: true,
+    })
+    expect(html).toMatch(/youtube\.com\/embed\/dQw4w9WgXcQ[^"]*rel=0/)
+  })
+
+  it('noRelatedVideos: false (default) does NOT add rel=0', () => {
+    const { html } = renderModule(VideoModule, {
+      videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    })
+    expect(html).not.toContain('rel=0')
+  })
+
+  it('noRelatedVideos still declares cspSources for frame-src YouTube', () => {
+    const out = renderModule(VideoModule, {
+      videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      noRelatedVideos: true,
+    })
+    const frameSrc = out.cspSources?.find((r) => r.directive === 'frame-src')
+    expect(frameSrc?.sources).toContain('https://www.youtube.com')
+    expect(frameSrc?.sources).toContain('https://www.youtube-nocookie.com')
   })
 })
 

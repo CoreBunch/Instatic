@@ -15,14 +15,14 @@
  * element so the canvas selection logic keeps treating the slot as a
  * pickable affordance.
  *
- * The empty-state affordance is suppressed once the container carries a
- * class (`mcClassName`). A class means the author has given the element
- * its own styling — decorative divs for background images, shapes, spacers
- * — where the "Empty container" icon + label would be visual noise that
- * fights the author's intended look. A class-bearing empty container is
- * already its own affordance via the styling it inherits, so it renders as
- * a bare element with no placeholder and no `data-canvas-empty-container`
- * marker.
+ * The empty-state affordance is suppressed once the container carries
+ * authored styling: either a class (`mcClassName`) or inline styles from the
+ * canvas node wrapper props. That means the author has given the element its
+ * own look — decorative divs for background images, shapes, spacers — where
+ * the "Empty container" icon + label would be visual noise that fights the
+ * author's intended result. A styled empty container is already its own
+ * affordance, so it renders as a bare element with no placeholder and no
+ * `data-canvas-empty-container` marker.
  *
  * Void elements (`<br>`, `<hr>`, `<input>`, etc.) must never receive
  * children — not even the empty-container placeholder — because React
@@ -60,9 +60,11 @@ export const ContainerEditor: React.FC<ModuleComponentProps<ContainerStoredProps
   }
 
   // Only show the empty-state affordance for a truly bare container — no
-  // children AND no author-applied class. A class supplies its own styling
-  // (background image, shape, spacer), so the placeholder would be noise.
-  const showPlaceholder = React.Children.count(children) === 0 && !mcClassName
+  // children AND no author-applied styling. Styling supplies its own visual
+  // affordance (background image, shape, spacer), so the placeholder would be
+  // noise.
+  const hasAuthoredStyling = !!mcClassName || Object.keys(nodeWrapperProps?.style ?? {}).length > 0
+  const showPlaceholder = React.Children.count(children) === 0 && !hasAuthoredStyling
 
   return React.createElement(
     Tag,

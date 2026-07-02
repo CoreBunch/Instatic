@@ -13,6 +13,7 @@ A self-hosted CMS where the visual editor, content engine, and publisher all liv
 </p>
 
 [![Release](https://img.shields.io/github/v/release/corebunch/instatic?color=black&labelColor=black)](https://github.com/corebunch/instatic/releases)
+[![GitHub stars](https://img.shields.io/github/stars/corebunch/instatic?style=flat&label=stars&labelColor=555&color=ffd43b)](https://github.com/corebunch/instatic/stargazers)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black?labelColor=black&color=blue)](LICENSE)
 [![Runtime: Bun](https://img.shields.io/badge/runtime-Bun-black?labelColor=black&color=f9f1e1)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-everywhere-black?labelColor=black&color=3178c6)](https://www.typescriptlang.org/)

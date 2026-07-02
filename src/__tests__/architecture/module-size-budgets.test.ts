@@ -96,7 +96,10 @@ const GRANDFATHERED: Record<string, number> = {
   // extracted into server/repositories/mediaAssetMapping.ts, dropping media.ts
   // to 583 lines — under CEILING, so it's now held by the normal ceiling rule.
   'server/handlers/cms/auth.ts': 854,
-  'src/core/loops/sources/dataRows.ts': 903,
+  // src/core/loops/sources/dataRows.ts graduated: the 12 per-order-branch SQL
+  // copies collapsed into one query + a whitelisted ORDER BY column map,
+  // dropping the file to 540 lines — under CEILING, so it's now held by the
+  // normal ceiling rule.
   // The O(1) parentId pointer is a denormalised cache that every
   // parentage-changing primitive (insert/move/duplicate/wrap/paste) maintains
   // inline. The node deep-clone primitive lives in its own module

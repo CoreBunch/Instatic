@@ -12,6 +12,10 @@ export const VideoPropsSchema = Type.Object({
     [Type.Literal('none'), Type.Literal('metadata'), Type.Literal('auto')],
     { default: 'metadata' },
   ),
+  /** Iframe title attribute for YouTube embeds. Improves accessibility. */
+  title: Type.String({ default: 'YouTube video' }),
+  /** When true, appends rel=0 to the YouTube embed URL to suppress related videos. */
+  noRelatedVideos: Type.Boolean({ default: false }),
 })
 
 export type VideoStoredProps = Static<typeof VideoPropsSchema>

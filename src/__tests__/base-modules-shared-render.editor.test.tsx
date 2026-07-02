@@ -15,6 +15,7 @@ import { render as renderReact } from '@testing-library/react'
 import { LinkModule } from '@modules/base/link'
 import { ButtonModule } from '@modules/base/button'
 import { ListModule } from '@modules/base/list'
+import { ContainerModule } from '@modules/base/container'
 import { anchorRel } from '@modules/base/shared/anchorTarget'
 import { parseItems } from '@modules/base/list/items'
 
@@ -86,5 +87,20 @@ describe('ListEditor canvas DOM matches parseItems', () => {
   it('renders <ol> for ordered, <ul> for unordered (== publisher tag)', () => {
     expect(renderEditor(ListModule, { listType: 'ordered', items: 'A' }).container.querySelector('ol')).not.toBeNull()
     expect(renderEditor(ListModule, { listType: 'unordered', items: 'A' }).container.querySelector('ul')).not.toBeNull()
+  })
+})
+
+describe('ContainerEditor empty-state placeholder', () => {
+  it('suppresses the empty-container affordance when inline styles make the element authored', () => {
+    const { container, queryByText } = renderEditor(
+      ContainerModule,
+      {},
+      { nodeWrapperProps: { style: { minHeight: 120 } } },
+    )
+
+    const root = container.querySelector('div')
+    expect(root?.getAttribute('style')).toContain('min-height: 120px')
+    expect(root?.getAttribute('data-canvas-empty-container')).toBeNull()
+    expect(queryByText('Empty container')).toBeNull()
   })
 })

@@ -69,6 +69,18 @@ const ALLOWED_ORDER_BY: ReadonlySet<OrderColumn> = new Set([
 ])
 
 // ---------------------------------------------------------------------------
+// SQL helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Dialect-appropriate positional placeholder for `db.unsafe`:
+ * `$<index>` on Postgres, `?` on SQLite. `index` is 1-based.
+ */
+function positionalParam(db: LoopSourceDb, index: number): string {
+  return db.dialect === 'postgres' ? `$${index}` : '?'
+}
+
+// ---------------------------------------------------------------------------
 // Media path resolution
 //
 // Featured media lives inside cells_json, not as a SQL column. We extract
@@ -90,9 +102,7 @@ export async function resolveMediaIdsToPaths(
   const idList = [...new Set(ids)]
   const pathMap = new Map<string, string>()
   if (idList.length === 0) return pathMap
-  const placeholders = idList.map((_, i) =>
-    db.dialect === 'postgres' ? `$${i + 1}` : '?'
-  ).join(', ')
+  const placeholders = idList.map((_, i) => positionalParam(db, i + 1)).join(', ')
   const { rows } = await db.unsafe<MediaAssetRow>(
     `select id, public_path from media_assets where id in (${placeholders})`,
     idList,
@@ -182,12 +192,24 @@ function rowToLoopItem(
 }
 
 // ---------------------------------------------------------------------------
-// Page-slice queries
+// Page-slice query — post-type tables (published-version join)
 //
-// Each branch hard-codes its ORDER BY column so the tagged template never
-// concatenates column names from variables — keeps the SQL parameterised
-// and satisfies db-postgres-isms.test.ts.
+// One SELECT; the ORDER BY clause is composed from the closed, compile-time
+// column map below, so no runtime input ever reaches the SQL text:
+// `orderBy` is whitelisted against ALLOWED_ORDER_BY and `direction` is
+// narrowed to 'asc' | 'desc' in `fetchPublishedDataRowItems` before either
+// value gets here. All runtime VALUES (tableId, limit, offset) ride as
+// positional parameters via `db.unsafe` — the same dialect-aware pattern as
+// `resolveMediaIdsToPaths`.
 // ---------------------------------------------------------------------------
+
+/** Order column expressions for the post-type published-version query. */
+const POST_TYPE_ORDER_COLUMN: Record<OrderColumn, string> = {
+  publishedAt: 'data_row_versions.published_at',
+  createdAt: 'data_row_versions.created_at',
+  updatedAt: 'data_rows.updated_at',
+  slug: 'data_row_versions.slug',
+}
 
 async function fetchPage(
   db: LoopSourceDb,
@@ -197,314 +219,48 @@ async function fetchPage(
   limit: number,
   offset: number,
 ): Promise<PublishedDataRowSqlRow[]> {
-  if (orderBy === 'publishedAt' && direction === 'asc') {
-    const { rows } = await db<PublishedDataRowSqlRow>`
-      select data_row_versions.id as version_id,
-             data_rows.id as row_id,
-             data_rows.table_id,
-             data_tables.slug as table_slug,
-             data_tables.kind as table_kind,
-             data_tables.route_base as table_route_base,
-             data_row_versions.version_number,
-             data_row_versions.cells_json,
-             data_row_versions.slug,
-             data_rows.author_user_id,
-             author_users.display_name as author_display_name,
-             author_roles.slug as author_role_slug,
-             author_roles.name as author_role_name,
-             data_row_versions.published_by_user_id,
-             publisher_users.display_name as published_by_display_name,
-             publisher_roles.slug as published_by_role_slug,
-             publisher_roles.name as published_by_role_name,
-             data_row_versions.published_at,
-             data_row_versions.created_at,
-             data_rows.updated_at
-      from data_rows
-      join data_tables on data_tables.id = data_rows.table_id
-      join data_row_versions on data_row_versions.id = data_rows.active_version_id
-      left join users author_users on author_users.id = data_rows.author_user_id
-      left join roles author_roles on author_roles.id = author_users.role_id
-      left join users publisher_users on publisher_users.id = data_row_versions.published_by_user_id
-      left join roles publisher_roles on publisher_roles.id = publisher_users.role_id
-      where data_rows.table_id = ${tableId}
-        and data_rows.status = 'published'
-        and data_rows.deleted_at is null
-        and data_tables.deleted_at is null
-      order by data_row_versions.published_at asc, data_row_versions.id asc
-      limit ${limit} offset ${offset}
-    `
-    return rows
-  }
-  if (orderBy === 'publishedAt' && direction === 'desc') {
-    const { rows } = await db<PublishedDataRowSqlRow>`
-      select data_row_versions.id as version_id,
-             data_rows.id as row_id,
-             data_rows.table_id,
-             data_tables.slug as table_slug,
-             data_tables.kind as table_kind,
-             data_tables.route_base as table_route_base,
-             data_row_versions.version_number,
-             data_row_versions.cells_json,
-             data_row_versions.slug,
-             data_rows.author_user_id,
-             author_users.display_name as author_display_name,
-             author_roles.slug as author_role_slug,
-             author_roles.name as author_role_name,
-             data_row_versions.published_by_user_id,
-             publisher_users.display_name as published_by_display_name,
-             publisher_roles.slug as published_by_role_slug,
-             publisher_roles.name as published_by_role_name,
-             data_row_versions.published_at,
-             data_row_versions.created_at,
-             data_rows.updated_at
-      from data_rows
-      join data_tables on data_tables.id = data_rows.table_id
-      join data_row_versions on data_row_versions.id = data_rows.active_version_id
-      left join users author_users on author_users.id = data_rows.author_user_id
-      left join roles author_roles on author_roles.id = author_users.role_id
-      left join users publisher_users on publisher_users.id = data_row_versions.published_by_user_id
-      left join roles publisher_roles on publisher_roles.id = publisher_users.role_id
-      where data_rows.table_id = ${tableId}
-        and data_rows.status = 'published'
-        and data_rows.deleted_at is null
-        and data_tables.deleted_at is null
-      order by data_row_versions.published_at desc, data_row_versions.id desc
-      limit ${limit} offset ${offset}
-    `
-    return rows
-  }
-  if (orderBy === 'createdAt' && direction === 'asc') {
-    const { rows } = await db<PublishedDataRowSqlRow>`
-      select data_row_versions.id as version_id,
-             data_rows.id as row_id,
-             data_rows.table_id,
-             data_tables.slug as table_slug,
-             data_tables.kind as table_kind,
-             data_tables.route_base as table_route_base,
-             data_row_versions.version_number,
-             data_row_versions.cells_json,
-             data_row_versions.slug,
-             data_rows.author_user_id,
-             author_users.display_name as author_display_name,
-             author_roles.slug as author_role_slug,
-             author_roles.name as author_role_name,
-             data_row_versions.published_by_user_id,
-             publisher_users.display_name as published_by_display_name,
-             publisher_roles.slug as published_by_role_slug,
-             publisher_roles.name as published_by_role_name,
-             data_row_versions.published_at,
-             data_row_versions.created_at,
-             data_rows.updated_at
-      from data_rows
-      join data_tables on data_tables.id = data_rows.table_id
-      join data_row_versions on data_row_versions.id = data_rows.active_version_id
-      left join users author_users on author_users.id = data_rows.author_user_id
-      left join roles author_roles on author_roles.id = author_users.role_id
-      left join users publisher_users on publisher_users.id = data_row_versions.published_by_user_id
-      left join roles publisher_roles on publisher_roles.id = publisher_users.role_id
-      where data_rows.table_id = ${tableId}
-        and data_rows.status = 'published'
-        and data_rows.deleted_at is null
-        and data_tables.deleted_at is null
-      order by data_row_versions.created_at asc, data_row_versions.id asc
-      limit ${limit} offset ${offset}
-    `
-    return rows
-  }
-  if (orderBy === 'createdAt' && direction === 'desc') {
-    const { rows } = await db<PublishedDataRowSqlRow>`
-      select data_row_versions.id as version_id,
-             data_rows.id as row_id,
-             data_rows.table_id,
-             data_tables.slug as table_slug,
-             data_tables.kind as table_kind,
-             data_tables.route_base as table_route_base,
-             data_row_versions.version_number,
-             data_row_versions.cells_json,
-             data_row_versions.slug,
-             data_rows.author_user_id,
-             author_users.display_name as author_display_name,
-             author_roles.slug as author_role_slug,
-             author_roles.name as author_role_name,
-             data_row_versions.published_by_user_id,
-             publisher_users.display_name as published_by_display_name,
-             publisher_roles.slug as published_by_role_slug,
-             publisher_roles.name as published_by_role_name,
-             data_row_versions.published_at,
-             data_row_versions.created_at,
-             data_rows.updated_at
-      from data_rows
-      join data_tables on data_tables.id = data_rows.table_id
-      join data_row_versions on data_row_versions.id = data_rows.active_version_id
-      left join users author_users on author_users.id = data_rows.author_user_id
-      left join roles author_roles on author_roles.id = author_users.role_id
-      left join users publisher_users on publisher_users.id = data_row_versions.published_by_user_id
-      left join roles publisher_roles on publisher_roles.id = publisher_users.role_id
-      where data_rows.table_id = ${tableId}
-        and data_rows.status = 'published'
-        and data_rows.deleted_at is null
-        and data_tables.deleted_at is null
-      order by data_row_versions.created_at desc, data_row_versions.id desc
-      limit ${limit} offset ${offset}
-    `
-    return rows
-  }
-  if (orderBy === 'updatedAt' && direction === 'asc') {
-    const { rows } = await db<PublishedDataRowSqlRow>`
-      select data_row_versions.id as version_id,
-             data_rows.id as row_id,
-             data_rows.table_id,
-             data_tables.slug as table_slug,
-             data_tables.kind as table_kind,
-             data_tables.route_base as table_route_base,
-             data_row_versions.version_number,
-             data_row_versions.cells_json,
-             data_row_versions.slug,
-             data_rows.author_user_id,
-             author_users.display_name as author_display_name,
-             author_roles.slug as author_role_slug,
-             author_roles.name as author_role_name,
-             data_row_versions.published_by_user_id,
-             publisher_users.display_name as published_by_display_name,
-             publisher_roles.slug as published_by_role_slug,
-             publisher_roles.name as published_by_role_name,
-             data_row_versions.published_at,
-             data_row_versions.created_at,
-             data_rows.updated_at
-      from data_rows
-      join data_tables on data_tables.id = data_rows.table_id
-      join data_row_versions on data_row_versions.id = data_rows.active_version_id
-      left join users author_users on author_users.id = data_rows.author_user_id
-      left join roles author_roles on author_roles.id = author_users.role_id
-      left join users publisher_users on publisher_users.id = data_row_versions.published_by_user_id
-      left join roles publisher_roles on publisher_roles.id = publisher_users.role_id
-      where data_rows.table_id = ${tableId}
-        and data_rows.status = 'published'
-        and data_rows.deleted_at is null
-        and data_tables.deleted_at is null
-      order by data_rows.updated_at asc, data_row_versions.id asc
-      limit ${limit} offset ${offset}
-    `
-    return rows
-  }
-  if (orderBy === 'updatedAt' && direction === 'desc') {
-    const { rows } = await db<PublishedDataRowSqlRow>`
-      select data_row_versions.id as version_id,
-             data_rows.id as row_id,
-             data_rows.table_id,
-             data_tables.slug as table_slug,
-             data_tables.kind as table_kind,
-             data_tables.route_base as table_route_base,
-             data_row_versions.version_number,
-             data_row_versions.cells_json,
-             data_row_versions.slug,
-             data_rows.author_user_id,
-             author_users.display_name as author_display_name,
-             author_roles.slug as author_role_slug,
-             author_roles.name as author_role_name,
-             data_row_versions.published_by_user_id,
-             publisher_users.display_name as published_by_display_name,
-             publisher_roles.slug as published_by_role_slug,
-             publisher_roles.name as published_by_role_name,
-             data_row_versions.published_at,
-             data_row_versions.created_at,
-             data_rows.updated_at
-      from data_rows
-      join data_tables on data_tables.id = data_rows.table_id
-      join data_row_versions on data_row_versions.id = data_rows.active_version_id
-      left join users author_users on author_users.id = data_rows.author_user_id
-      left join roles author_roles on author_roles.id = author_users.role_id
-      left join users publisher_users on publisher_users.id = data_row_versions.published_by_user_id
-      left join roles publisher_roles on publisher_roles.id = publisher_users.role_id
-      where data_rows.table_id = ${tableId}
-        and data_rows.status = 'published'
-        and data_rows.deleted_at is null
-        and data_tables.deleted_at is null
-      order by data_rows.updated_at desc, data_row_versions.id desc
-      limit ${limit} offset ${offset}
-    `
-    return rows
-  }
-  // slug asc
-  if (direction === 'asc') {
-    const { rows } = await db<PublishedDataRowSqlRow>`
-      select data_row_versions.id as version_id,
-             data_rows.id as row_id,
-             data_rows.table_id,
-             data_tables.slug as table_slug,
-             data_tables.kind as table_kind,
-             data_tables.route_base as table_route_base,
-             data_row_versions.version_number,
-             data_row_versions.cells_json,
-             data_row_versions.slug,
-             data_rows.author_user_id,
-             author_users.display_name as author_display_name,
-             author_roles.slug as author_role_slug,
-             author_roles.name as author_role_name,
-             data_row_versions.published_by_user_id,
-             publisher_users.display_name as published_by_display_name,
-             publisher_roles.slug as published_by_role_slug,
-             publisher_roles.name as published_by_role_name,
-             data_row_versions.published_at,
-             data_row_versions.created_at,
-             data_rows.updated_at
-      from data_rows
-      join data_tables on data_tables.id = data_rows.table_id
-      join data_row_versions on data_row_versions.id = data_rows.active_version_id
-      left join users author_users on author_users.id = data_rows.author_user_id
-      left join roles author_roles on author_roles.id = author_users.role_id
-      left join users publisher_users on publisher_users.id = data_row_versions.published_by_user_id
-      left join roles publisher_roles on publisher_roles.id = publisher_users.role_id
-      where data_rows.table_id = ${tableId}
-        and data_rows.status = 'published'
-        and data_rows.deleted_at is null
-        and data_tables.deleted_at is null
-      order by data_row_versions.slug asc, data_row_versions.id asc
-      limit ${limit} offset ${offset}
-    `
-    return rows
-  }
-  // slug desc
-  const { rows } = await db<PublishedDataRowSqlRow>`
-    select data_row_versions.id as version_id,
-           data_rows.id as row_id,
-           data_rows.table_id,
-           data_tables.slug as table_slug,
-           data_tables.kind as table_kind,
-           data_tables.route_base as table_route_base,
-           data_row_versions.version_number,
-           data_row_versions.cells_json,
-           data_row_versions.slug,
-           data_rows.author_user_id,
-           author_users.display_name as author_display_name,
-           author_roles.slug as author_role_slug,
-           author_roles.name as author_role_name,
-           data_row_versions.published_by_user_id,
-           publisher_users.display_name as published_by_display_name,
-           publisher_roles.slug as published_by_role_slug,
-           publisher_roles.name as published_by_role_name,
-           data_row_versions.published_at,
-           data_row_versions.created_at,
-           data_rows.updated_at
-    from data_rows
-    join data_tables on data_tables.id = data_rows.table_id
-    join data_row_versions on data_row_versions.id = data_rows.active_version_id
-    left join users author_users on author_users.id = data_rows.author_user_id
-    left join roles author_roles on author_roles.id = author_users.role_id
-    left join users publisher_users on publisher_users.id = data_row_versions.published_by_user_id
-    left join roles publisher_roles on publisher_roles.id = publisher_users.role_id
-    where data_rows.table_id = ${tableId}
-      and data_rows.status = 'published'
-      and data_rows.deleted_at is null
-      and data_tables.deleted_at is null
-    order by data_row_versions.slug desc, data_row_versions.id desc
-    limit ${limit} offset ${offset}
-  `
+  const orderColumn = POST_TYPE_ORDER_COLUMN[orderBy]
+  const { rows } = await db.unsafe<PublishedDataRowSqlRow>(
+    `select data_row_versions.id as version_id,
+            data_rows.id as row_id,
+            data_rows.table_id,
+            data_tables.slug as table_slug,
+            data_tables.kind as table_kind,
+            data_tables.route_base as table_route_base,
+            data_row_versions.version_number,
+            data_row_versions.cells_json,
+            data_row_versions.slug,
+            data_rows.author_user_id,
+            author_users.display_name as author_display_name,
+            author_roles.slug as author_role_slug,
+            author_roles.name as author_role_name,
+            data_row_versions.published_by_user_id,
+            publisher_users.display_name as published_by_display_name,
+            publisher_roles.slug as published_by_role_slug,
+            publisher_roles.name as published_by_role_name,
+            data_row_versions.published_at,
+            data_row_versions.created_at,
+            data_rows.updated_at
+     from data_rows
+     join data_tables on data_tables.id = data_rows.table_id
+     join data_row_versions on data_row_versions.id = data_rows.active_version_id
+     left join users author_users on author_users.id = data_rows.author_user_id
+     left join roles author_roles on author_roles.id = author_users.role_id
+     left join users publisher_users on publisher_users.id = data_row_versions.published_by_user_id
+     left join roles publisher_roles on publisher_roles.id = publisher_users.role_id
+     where data_rows.table_id = ${positionalParam(db, 1)}
+       and data_rows.status = 'published'
+       and data_rows.deleted_at is null
+       and data_tables.deleted_at is null
+     order by ${orderColumn} ${direction}, data_row_versions.id ${direction}
+     limit ${positionalParam(db, 2)} offset ${positionalParam(db, 3)}`,
+    [tableId, limit, offset],
+  )
   return rows
 }
 
 // ---------------------------------------------------------------------------
-// Data-kind page-slice query
+// Page-slice query — data-kind tables (direct data_rows read)
 //
 // Data-kind tables (`kind: 'data'`) have no publish lifecycle and no
 // `data_row_versions` rows. They are authored directly via the Data
@@ -582,6 +338,18 @@ function dataKindRowToLoopItem(
   }
 }
 
+/**
+ * Order column expressions for the data-kind query. There is no
+ * `published_at` on this path — `fetchDataKindPage` maps a `publishedAt`
+ * request to `createdAt` so "order by published date" still produces a
+ * sensible newest-first ordering.
+ */
+const DATA_KIND_ORDER_COLUMN: Record<'createdAt' | 'updatedAt' | 'slug', string> = {
+  createdAt: 'data_rows.created_at',
+  updatedAt: 'data_rows.updated_at',
+  slug: 'data_rows.slug',
+}
+
 async function fetchDataKindPage(
   db: LoopSourceDb,
   tableId: string,
@@ -590,167 +358,36 @@ async function fetchDataKindPage(
   limit: number,
   offset: number,
 ): Promise<DataKindRowSqlRow[]> {
-  // Data-kind tables have no `published_at`. Map publishedAt → createdAt
-  // so the loop's "order by published date" still produces a sensible
-  // newest-first ordering. `slug` is selected from data_rows directly.
   const sortKey: 'createdAt' | 'updatedAt' | 'slug' =
     orderBy === 'updatedAt' ? 'updatedAt' : orderBy === 'slug' ? 'slug' : 'createdAt'
+  const orderColumn = DATA_KIND_ORDER_COLUMN[sortKey]
 
-  // Hard-coded ORDER BY branches keep the tagged template free of
-  // variable-substituted column names (db-postgres-isms.test.ts).
-  if (sortKey === 'createdAt' && direction === 'asc') {
-    const { rows } = await db<DataKindRowSqlRow>`
-      select data_rows.id as row_id,
-             data_rows.table_id,
-             data_tables.slug as table_slug,
-             data_tables.route_base as table_route_base,
-             data_rows.cells_json,
-             data_rows.slug,
-             data_rows.author_user_id,
-             author_users.display_name as author_display_name,
-             author_roles.slug as author_role_slug,
-             author_roles.name as author_role_name,
-             data_rows.created_at,
-             data_rows.updated_at
-      from data_rows
-      join data_tables on data_tables.id = data_rows.table_id
-      left join users author_users on author_users.id = data_rows.author_user_id
-      left join roles author_roles on author_roles.id = author_users.role_id
-      where data_rows.table_id = ${tableId}
-        and data_rows.deleted_at is null
-        and data_tables.deleted_at is null
-      order by data_rows.created_at asc, data_rows.id asc
-      limit ${limit} offset ${offset}
-    `
-    return rows
-  }
-  if (sortKey === 'createdAt' && direction === 'desc') {
-    const { rows } = await db<DataKindRowSqlRow>`
-      select data_rows.id as row_id,
-             data_rows.table_id,
-             data_tables.slug as table_slug,
-             data_tables.route_base as table_route_base,
-             data_rows.cells_json,
-             data_rows.slug,
-             data_rows.author_user_id,
-             author_users.display_name as author_display_name,
-             author_roles.slug as author_role_slug,
-             author_roles.name as author_role_name,
-             data_rows.created_at,
-             data_rows.updated_at
-      from data_rows
-      join data_tables on data_tables.id = data_rows.table_id
-      left join users author_users on author_users.id = data_rows.author_user_id
-      left join roles author_roles on author_roles.id = author_users.role_id
-      where data_rows.table_id = ${tableId}
-        and data_rows.deleted_at is null
-        and data_tables.deleted_at is null
-      order by data_rows.created_at desc, data_rows.id desc
-      limit ${limit} offset ${offset}
-    `
-    return rows
-  }
-  if (sortKey === 'updatedAt' && direction === 'asc') {
-    const { rows } = await db<DataKindRowSqlRow>`
-      select data_rows.id as row_id,
-             data_rows.table_id,
-             data_tables.slug as table_slug,
-             data_tables.route_base as table_route_base,
-             data_rows.cells_json,
-             data_rows.slug,
-             data_rows.author_user_id,
-             author_users.display_name as author_display_name,
-             author_roles.slug as author_role_slug,
-             author_roles.name as author_role_name,
-             data_rows.created_at,
-             data_rows.updated_at
-      from data_rows
-      join data_tables on data_tables.id = data_rows.table_id
-      left join users author_users on author_users.id = data_rows.author_user_id
-      left join roles author_roles on author_roles.id = author_users.role_id
-      where data_rows.table_id = ${tableId}
-        and data_rows.deleted_at is null
-        and data_tables.deleted_at is null
-      order by data_rows.updated_at asc, data_rows.id asc
-      limit ${limit} offset ${offset}
-    `
-    return rows
-  }
-  if (sortKey === 'updatedAt' && direction === 'desc') {
-    const { rows } = await db<DataKindRowSqlRow>`
-      select data_rows.id as row_id,
-             data_rows.table_id,
-             data_tables.slug as table_slug,
-             data_tables.route_base as table_route_base,
-             data_rows.cells_json,
-             data_rows.slug,
-             data_rows.author_user_id,
-             author_users.display_name as author_display_name,
-             author_roles.slug as author_role_slug,
-             author_roles.name as author_role_name,
-             data_rows.created_at,
-             data_rows.updated_at
-      from data_rows
-      join data_tables on data_tables.id = data_rows.table_id
-      left join users author_users on author_users.id = data_rows.author_user_id
-      left join roles author_roles on author_roles.id = author_users.role_id
-      where data_rows.table_id = ${tableId}
-        and data_rows.deleted_at is null
-        and data_tables.deleted_at is null
-      order by data_rows.updated_at desc, data_rows.id desc
-      limit ${limit} offset ${offset}
-    `
-    return rows
-  }
-  if (direction === 'asc') {
-    const { rows } = await db<DataKindRowSqlRow>`
-      select data_rows.id as row_id,
-             data_rows.table_id,
-             data_tables.slug as table_slug,
-             data_tables.route_base as table_route_base,
-             data_rows.cells_json,
-             data_rows.slug,
-             data_rows.author_user_id,
-             author_users.display_name as author_display_name,
-             author_roles.slug as author_role_slug,
-             author_roles.name as author_role_name,
-             data_rows.created_at,
-             data_rows.updated_at
-      from data_rows
-      join data_tables on data_tables.id = data_rows.table_id
-      left join users author_users on author_users.id = data_rows.author_user_id
-      left join roles author_roles on author_roles.id = author_users.role_id
-      where data_rows.table_id = ${tableId}
-        and data_rows.deleted_at is null
-        and data_tables.deleted_at is null
-      order by data_rows.slug asc, data_rows.id asc
-      limit ${limit} offset ${offset}
-    `
-    return rows
-  }
-  const { rows } = await db<DataKindRowSqlRow>`
-    select data_rows.id as row_id,
-           data_rows.table_id,
-           data_tables.slug as table_slug,
-           data_tables.route_base as table_route_base,
-           data_rows.cells_json,
-           data_rows.slug,
-           data_rows.author_user_id,
-           author_users.display_name as author_display_name,
-           author_roles.slug as author_role_slug,
-           author_roles.name as author_role_name,
-           data_rows.created_at,
-           data_rows.updated_at
-    from data_rows
-    join data_tables on data_tables.id = data_rows.table_id
-    left join users author_users on author_users.id = data_rows.author_user_id
-    left join roles author_roles on author_roles.id = author_users.role_id
-    where data_rows.table_id = ${tableId}
-      and data_rows.deleted_at is null
-      and data_tables.deleted_at is null
-    order by data_rows.slug desc, data_rows.id desc
-    limit ${limit} offset ${offset}
-  `
+  // Same safety contract as `fetchPage`: the ORDER BY text comes only from
+  // the closed map above; every runtime value is a positional parameter.
+  const { rows } = await db.unsafe<DataKindRowSqlRow>(
+    `select data_rows.id as row_id,
+            data_rows.table_id,
+            data_tables.slug as table_slug,
+            data_tables.route_base as table_route_base,
+            data_rows.cells_json,
+            data_rows.slug,
+            data_rows.author_user_id,
+            author_users.display_name as author_display_name,
+            author_roles.slug as author_role_slug,
+            author_roles.name as author_role_name,
+            data_rows.created_at,
+            data_rows.updated_at
+     from data_rows
+     join data_tables on data_tables.id = data_rows.table_id
+     left join users author_users on author_users.id = data_rows.author_user_id
+     left join roles author_roles on author_roles.id = author_users.role_id
+     where data_rows.table_id = ${positionalParam(db, 1)}
+       and data_rows.deleted_at is null
+       and data_tables.deleted_at is null
+     order by ${orderColumn} ${direction}, data_rows.id ${direction}
+     limit ${positionalParam(db, 2)} offset ${positionalParam(db, 3)}`,
+    [tableId, limit, offset],
+  )
   return rows
 }
 

@@ -25,6 +25,7 @@ import { join } from 'path'
 import React from 'react'
 import { render, screen, cleanup, fireEvent, act, waitFor } from '@testing-library/react'
 import { DomPanel } from '@site/panels/DomPanel/DomPanel'
+import { LayerTreeNodeContent } from '@site/panels/DomPanel/LayerTreeNodeContent'
 import { useEditorStore } from '@site/store/store'
 import { makeSite, makePage, makeNode, makeVC, makeVCNode, makeVCTree } from '../fixtures'
 
@@ -424,6 +425,32 @@ describe('DomPanel — tree accessibility', () => {
     expect(source).toContain('treeDropStyles.dropInvalid')
   })
 
+  it('hidden layer rows render a muted eye-off icon instead of a text badge', () => {
+    const { container } = render(
+      <LayerTreeNodeContent
+        moduleId="base.container"
+        displayName="Container"
+        htmlTag="div"
+        classSelectorChip={null}
+        hasChildren={false}
+        expanded={false}
+        showIcon={false}
+        showTag={false}
+        showClasses={false}
+        hidden
+      />,
+    )
+
+    const hiddenIndicator = container.querySelector('[title="Hidden"]')
+    expect(hiddenIndicator?.querySelector('svg')).not.toBeNull()
+    expect(hiddenIndicator?.textContent).toBe('')
+
+    const css = readFileSync(TREE_NODE_CSS_PATH, 'utf8')
+    const hiddenIndicatorBlock = css.match(/\.hiddenIndicator\s*\{[^}]*\}/s)?.[0] ?? ''
+    expect(hiddenIndicatorBlock).toContain('color: var(--text-muted)')
+    expect(css).not.toContain('.hiddenBadge')
+  })
+
   it('drag overlay is portaled outside the transformed panel to keep pointer alignment', () => {
     const source = readFileSync(DOM_PANEL_SOURCE_PATH, 'utf8')
 
@@ -661,7 +688,7 @@ describe('DomPanel — tree keyboard navigation', () => {
     })).toBeDefined()
   })
 
-  it('keeps hidden nodes in the tree and marks them with a hidden badge', () => {
+  it('keeps hidden nodes in the tree and marks them with a hidden icon', () => {
     loadContainerSite()
     act(() => {
       useEditorStore.getState().toggleNodeHidden('container-1')
@@ -670,6 +697,7 @@ describe('DomPanel — tree keyboard navigation', () => {
     render(<DomPanel />)
 
     expect(screen.getByRole('treeitem', { name: /container, hidden/i })).toBeDefined()
-    expect(screen.getByText('hidden')).toBeDefined()
+    const hiddenIndicator = document.querySelector('[title="Hidden"]')
+    expect(hiddenIndicator?.querySelector('svg')).not.toBeNull()
   })
 })

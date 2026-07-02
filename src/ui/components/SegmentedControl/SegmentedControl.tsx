@@ -54,6 +54,8 @@ interface SegmentedControlProps<T extends string> {
    */
   onClear?: () => void
   size?: ButtonProps['size']
+  /** Darker active fill for tab strips embedded in black editor panel chrome. */
+  activeSurface?: 'recessed'
   /** Render-prop for an extra trailing segment (e.g. dropdown chevron). */
   trailing?: (args: { segmentClassName: string; trailingClassName: string }) => ReactNode
   className?: string
@@ -70,6 +72,7 @@ export function SegmentedControl<T extends string>({
   onChange,
   onClear,
   size = 'sm',
+  activeSurface,
   trailing,
   className,
   fullWidth = false,
@@ -84,6 +87,7 @@ export function SegmentedControl<T extends string>({
       role="group"
       aria-label={ariaLabel}
       data-testid={dataTestId}
+      data-active-surface={activeSurface}
       data-clearable={clearable ? 'true' : undefined}
       className={cn(styles.group, fullWidth && styles.fullWidth, className)}
     >

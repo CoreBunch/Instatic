@@ -91,6 +91,8 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
         { label: 'Auto', value: 'auto' },
       ],
     },
+    title: { type: 'text', label: 'Video title', description: 'Accessibility label for the embedded YouTube player iframe.' },
+    noRelatedVideos: { type: 'toggle', label: 'Hide related videos', description: 'Adds rel=0 to suppress YouTube recommended videos after playback.' },
   },
 
   // Single source of truth: defaults are derived from the schema's `default`
@@ -118,6 +120,8 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
       return renderYoutube({
         youtubeId,
         autoplay: Boolean(props.autoplay),
+        noRelatedVideos: Boolean(props.noRelatedVideos),
+        title: String(props.title || 'YouTube video'),
         posterUrl: String(props.poster ?? ''),
         posterMedia: props._resolvedMediaByKey?.poster ?? null,
       })
@@ -167,6 +171,9 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
 interface YoutubeRenderInput {
   youtubeId: string
   autoplay: boolean
+  noRelatedVideos: boolean
+  /** Accessibility title for the iframe element. */
+  title: string
   /** Raw author-set poster URL (already escapeProps-passed). */
   posterUrl: string
   /** Resolved poster asset (variants, intrinsic dims) if the publisher pre-pass ran. */
@@ -201,12 +208,12 @@ const YOUTUBE_CSP_SOURCES: CspSourceRequirement[] = [
  * Without a poster: emit just the iframe, also `loading="lazy"`.
  */
 function renderYoutube(input: YoutubeRenderInput): RenderOutput {
-  const embedSrc = youtubeEmbedUrl(input.youtubeId, input.autoplay)
+  const embedSrc = youtubeEmbedUrl(input.youtubeId, input.autoplay, input.noRelatedVideos)
   if (!embedSrc) return { html: '' }
 
   const iframeAttrs = [
     `src="${embedSrc}"`,
-    `title="YouTube video"`,
+    `title="${input.title}"`,
     `loading="lazy"`,
     `frameborder="0"`,
     `allow="autoplay; encrypted-media; fullscreen"`,

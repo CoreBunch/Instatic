@@ -90,7 +90,8 @@ export const VideoEditor: React.FC<ModuleComponentProps<VideoStoredProps>> = ({ 
 
   // ─── YouTube ────────────────────────────────────────────────────────────
   if (youtubeId) {
-    const src = youtubeEmbedUrl(youtubeId, props.autoplay)
+    const src = youtubeEmbedUrl(youtubeId, props.autoplay, props.noRelatedVideos)
+    const iframeTitle = props.title || 'YouTube video'
     if (posterUrl) {
       return (
         <div {...nodeWrapperProps} className={mcClassName} style={FACADE_WRAP_STYLE}>
@@ -105,7 +106,7 @@ export const VideoEditor: React.FC<ModuleComponentProps<VideoStoredProps>> = ({ 
           />
           <iframe
             src={src}
-            title="YouTube video"
+            title={iframeTitle}
             loading="lazy"
             frameBorder="0"
             allow="autoplay; encrypted-media; fullscreen"
@@ -121,7 +122,7 @@ export const VideoEditor: React.FC<ModuleComponentProps<VideoStoredProps>> = ({ 
       <div {...nodeWrapperProps} className={mcClassName} style={FACADE_WRAP_STYLE}>
         <iframe
           src={src}
-          title="YouTube video"
+          title={iframeTitle}
           loading="lazy"
           frameBorder="0"
           allow="autoplay; encrypted-media; fullscreen"

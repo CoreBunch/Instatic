@@ -25,10 +25,22 @@
  * row owns the outer spacing; the SearchBar fills, the button keeps its
  * intrinsic size. */
 .searchRow {
+    position: relative;
+    z-index: 1;
     display: flex;
     align-items: center;
     gap: var(--space-xs);
     margin: var(--space-s) var(--space-s) 0;
+}
+
+.searchRow::after {
+    content: "";
+    position: absolute;
+    inset-inline: calc(-1 * var(--space-s));
+    top: 100%;
+    height: var(--space-2xl);
+    pointer-events: none;
+    background: linear-gradient(180deg, var(--bg-body) 0%, transparent);
 }
 
 .searchFill {

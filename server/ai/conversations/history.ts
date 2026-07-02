@@ -16,6 +16,11 @@
  * unanswered by the persisted rows gets a synthetic error `tool_result`. The
  * model sees that the prior turn's tool call was interrupted and can retry,
  * instead of the whole conversation becoming permanently un-sendable.
+ *
+ * The opposite corruption can also happen: a `role:'tool'` result row may be
+ * persisted without the assistant `toolCall` row that declared it. Those rows
+ * are dropped here, because providers reject tool results that do not answer a
+ * preceding tool call in the replayed history.
  */
 
 import type { AiMessage, AiToolOutput } from '../runtime/types'
@@ -73,6 +78,7 @@ export function buildMessageHistory(records: MessageRecord[]): AiMessage[] {
         if (block.kind === 'toolCall') unanswered.set(block.toolCallId, block.toolName)
       }
     } else if (rec.role === 'tool' && rec.toolCallId) {
+      if (!unanswered.has(rec.toolCallId)) continue
       unanswered.delete(rec.toolCallId)
       // The outcome lives in a first-class `toolResult` block (validated at the
       // store boundary), so `ok`/`error` are read directly — never inferred from

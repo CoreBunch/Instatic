@@ -52,6 +52,7 @@ export function ExplorerPanel({ editable = true }: ExplorerPanelProps) {
           options={TABS}
           onChange={setTab}
           size="sm"
+          activeSurface="recessed"
           fullWidth
         />
       </div>

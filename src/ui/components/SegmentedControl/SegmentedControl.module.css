@@ -45,6 +45,10 @@
     color: var(--text);
 }
 
+.group[data-active-surface="recessed"] .segment.segment[aria-pressed="true"] {
+    background: var(--bg-surface);
+}
+
 /* Trailing modifier — used by the render-prop's `trailingClassName`. Switches
  * the segment from "stretch to fill" to "fixed-square icon button" so a
  * chevron-down dropdown trigger never absorbs flex slack and reads as a

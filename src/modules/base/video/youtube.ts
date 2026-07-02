@@ -76,8 +76,16 @@ export function parseYoutubeId(input: string): string | null {
  * chars are URL-safe) but it costs nothing and keeps the contract honest
  * against any future caller that relaxes `parseYoutubeId`'s strictness.
  */
-export function youtubeEmbedUrl(id: string, autoplay: boolean): string {
+export function youtubeEmbedUrl(
+  id: string,
+  autoplay: boolean,
+  noRelatedVideos: boolean = false,
+): string {
   const safeId = encodeURIComponent(id.trim())
   if (!safeId) return ''
-  return `https://www.youtube.com/embed/${safeId}${autoplay ? '?autoplay=1' : ''}`
+  const params: string[] = []
+  if (autoplay) params.push('autoplay=1')
+  if (noRelatedVideos) params.push('rel=0')
+  const qs = params.length > 0 ? `?${params.join('&')}` : ''
+  return `https://www.youtube.com/embed/${safeId}${qs}`
 }

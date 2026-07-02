@@ -1311,7 +1311,132 @@ describe('base.loop — <instatic-loop>', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 13. Empty input and edge cases
+// 13. iframe and video → base.video mapping
+// ---------------------------------------------------------------------------
+
+describe('base.video — <iframe> import mapping', () => {
+  it('YouTube embed URL → base.video with videoUrl set', () => {
+    const node = single('<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"></iframe>')
+    expect(node.moduleId).toBe('base.video')
+    expect(node.props.videoUrl).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ')
+  })
+
+  it('YouTube watch URL in iframe src → base.video', () => {
+    const node = single('<iframe src="https://www.youtube.com/watch?v=dQw4w9WgXcQ"></iframe>')
+    expect(node.moduleId).toBe('base.video')
+    expect(node.props.videoUrl).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+  })
+
+  it('youtube-nocookie.com embed → base.video', () => {
+    const node = single('<iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"></iframe>')
+    expect(node.moduleId).toBe('base.video')
+    expect(node.props.videoUrl).toBe('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ')
+  })
+
+  it('iframe with title attr → title prop propagated to base.video', () => {
+    const node = single('<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" title="My Demo Video"></iframe>')
+    expect(node.moduleId).toBe('base.video')
+    expect(node.props.title).toBe('My Demo Video')
+  })
+
+  it('rel=0 in embed URL → noRelatedVideos true', () => {
+    const node = single('<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ?rel=0"></iframe>')
+    expect(node.moduleId).toBe('base.video')
+    expect(node.props.noRelatedVideos).toBe(true)
+  })
+
+  it('playsinline=1 in embed URL → playsinline true', () => {
+    const node = single('<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ?playsinline=1"></iframe>')
+    expect(node.moduleId).toBe('base.video')
+    expect(node.props.playsinline).toBe(true)
+  })
+
+  it('full-featured embed iframe → all mapped props', () => {
+    const node = single(
+      '<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ?rel=0&playsinline=1" title="Full Demo"></iframe>',
+    )
+    expect(node.moduleId).toBe('base.video')
+    expect(node.props.videoUrl).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ?rel=0&playsinline=1')
+    expect(node.props.title).toBe('Full Demo')
+    expect(node.props.noRelatedVideos).toBe(true)
+    expect(node.props.playsinline).toBe(true)
+  })
+
+  it('Vimeo iframe → falls back to base.container (not base.video)', () => {
+    const node = single('<iframe src="https://player.vimeo.com/video/123456789"></iframe>')
+    expect(node.moduleId).toBe('base.container')
+    expect(node.props.tag).toBe('custom')
+    expect(node.props.customTag).toBe('iframe')
+  })
+
+  it('Google Maps iframe → falls back to base.container', () => {
+    const node = single('<iframe src="https://maps.google.com/maps?q=London"></iframe>')
+    expect(node.moduleId).toBe('base.container')
+    expect(node.props.customTag).toBe('iframe')
+  })
+
+  it('arbitrary iframe → falls back to base.container (no moduleId base.video)', () => {
+    const node = single('<iframe src="https://example.com/form"></iframe>')
+    expect(node.moduleId).toBe('base.container')
+    expect(node.props.customTag).toBe('iframe')
+  })
+
+  it('YouTube iframe produces no children (recurse: false)', () => {
+    // iframes have no meaningful DOM children to recurse into
+    const node = single('<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"></iframe>')
+    expect(node.children).toHaveLength(0)
+  })
+})
+
+describe('base.video — <video> import mapping', () => {
+  it('<video src="..."> → base.video with videoUrl from src attr', () => {
+    const node = single('<video src="clip.mp4"></video>')
+    expect(node.moduleId).toBe('base.video')
+    expect(node.props.videoUrl).toBe('clip.mp4')
+  })
+
+  it('<video controls loop> → base.video with controls and loop true', () => {
+    const node = single('<video src="clip.mp4" controls loop></video>')
+    expect(node.moduleId).toBe('base.video')
+    expect(node.props.controls).toBe(true)
+    expect(node.props.loop).toBe(true)
+  })
+
+  it('<video autoplay muted playsinline> → all boolean attrs mapped', () => {
+    const node = single('<video src="clip.mp4" autoplay muted playsinline></video>')
+    expect(node.moduleId).toBe('base.video')
+    expect(node.props.autoplay).toBe(true)
+    expect(node.props.muted).toBe(true)
+    expect(node.props.playsinline).toBe(true)
+  })
+
+  it('<video> without controls attr → controls false', () => {
+    const node = single('<video src="clip.mp4"></video>')
+    expect(node.moduleId).toBe('base.video')
+    expect(node.props.controls).toBe(false)
+  })
+
+  it('<video><source src="..."></video> → videoUrl from first source child', () => {
+    const node = single('<video><source src="clip.mp4" type="video/mp4"></video>')
+    expect(node.moduleId).toBe('base.video')
+    expect(node.props.videoUrl).toBe('clip.mp4')
+  })
+
+  it('<video> with both src and source → prefers src attr', () => {
+    const node = single('<video src="direct.mp4"><source src="fallback.webm"></video>')
+    expect(node.moduleId).toBe('base.video')
+    expect(node.props.videoUrl).toBe('direct.mp4')
+  })
+
+  it('<video> produces no children (recurse: false)', () => {
+    // <source> children are consumed by the rule, not emitted as nodes
+    const node = single('<video><source src="clip.mp4"></video>')
+    expect(node.children).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 14. Empty input and edge cases
 // ---------------------------------------------------------------------------
 
 describe('edge cases', () => {

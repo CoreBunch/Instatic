@@ -455,6 +455,95 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
     // recurse intentionally omitted — void elements must remain childless.
   },
 
+  // YouTube iframes and native <video> elements → base.video (LEAF).
+  //
+  // NOTE on layering: src/core/ MUST NOT import from src/modules/. The
+  // canonical YouTube URL parser lives in src/modules/base/video/youtube.ts
+  // (parseYoutubeId). We inline a minimal equivalent here — a hostname check
+  // against the known YouTube domains. It does NOT extract the video ID;
+  // base.video's render() re-parses the stored videoUrl at publish time.
+  //
+  // `<iframe src="https://www.youtube.com/embed/ID">` → base.video
+  // `<iframe src="https://player.vimeo.com/...">` → base.container fallback
+  // `<video src="clip.mp4" controls>` → base.video
+  // `<video><source src="clip.mp4"></video>` → base.video (videoUrl from <source>)
+
+  // Inline YouTube host check — the canonical parser (parseYoutubeId) lives in
+  // src/modules/base/video/youtube.ts; layering rules forbid importing it here.
+  // This minimal variant only needs to distinguish "YouTube" from "not YouTube"
+  // so non-YouTube iframes still fall back to base.container.
+  {
+    match: 'iframe',
+    map: (el) => {
+      const src = attr(el, 'src')
+      let isYoutube = false
+      if (src) {
+        try {
+          const host = new URL(src).hostname.toLowerCase().replace(/^www\./, '')
+          isYoutube = host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com' || host === 'youtu.be'
+        } catch {
+          // malformed URL — not YouTube
+        }
+      }
+
+      if (!isYoutube) {
+        // Non-YouTube iframes (Vimeo, maps, forms, arbitrary embeds) fall back
+        // to base.container so their src/attributes are preserved via htmlAttributes.
+        return { moduleId: 'base.container', props: { tag: 'custom', customTag: 'iframe' } }
+      }
+
+      // Map YouTube-specific query params from the src URL
+      let noRelatedVideos = false
+      let playsinline = false
+      try {
+        const params = new URL(src).searchParams
+        noRelatedVideos = params.get('rel') === '0'
+        playsinline = params.get('playsinline') === '1'
+      } catch {
+        // ignore malformed src
+      }
+
+      return {
+        moduleId: 'base.video',
+        props: {
+          videoUrl: src,
+          ...(attr(el, 'title') ? { title: attr(el, 'title') } : {}),
+          ...(noRelatedVideos ? { noRelatedVideos: true } : {}),
+          ...(playsinline ? { playsinline: true } : {}),
+        },
+      }
+    },
+    // Iframes are leaf nodes — no meaningful DOM children to recurse into.
+    recurse: false,
+  },
+
+  {
+    match: 'video',
+    map: (el) => {
+      // Prefer the <video src> attribute; fall back to the first <source src>
+      // child. Recurse is false so <source> children are consumed here, not
+      // emitted as separate nodes.
+      const videoUrl =
+        attr(el, 'src')
+        || el.querySelector('source')?.getAttribute('src')
+        || ''
+
+      return {
+        moduleId: 'base.video',
+        props: {
+          videoUrl,
+          autoplay: el.hasAttribute('autoplay'),
+          loop: el.hasAttribute('loop'),
+          muted: el.hasAttribute('muted'),
+          controls: el.hasAttribute('controls'),
+          playsinline: el.hasAttribute('playsinline'),
+        },
+      }
+    },
+    // Do not recurse — <source> children are consumed by the rule above.
+    recurse: false,
+  },
+
   // Catch-all for every other tag (li, figure, blockquote, form, table,
   // dialog, …). MUST use tag:'custom' + customTag so resolveHtmlTag
   // emits the real element name — tag:'div' + customTag would render <div>.
