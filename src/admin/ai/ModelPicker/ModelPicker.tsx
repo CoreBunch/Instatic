@@ -17,7 +17,7 @@
  * scrollable, viewport-clamped menu via the shared ContextMenu primitive.
  */
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Fragment, memo, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Button } from '@ui/components/Button'
 import {
   ContextMenu,
@@ -28,7 +28,6 @@ import {
 import { ChevronDownIcon } from 'pixel-art-icons/icons/chevron-down'
 import { ChevronUpIcon } from 'pixel-art-icons/icons/chevron-up'
 import { SlidersHorizontalIcon } from 'pixel-art-icons/icons/sliders-horizontal'
-import { Tooltip } from '@ui/components/Tooltip'
 import { cn } from '@ui/cn'
 import { type AiModel, type CredentialView, listModels } from '@admin/ai/api'
 import styles from './ModelPicker.module.css'
@@ -103,10 +102,19 @@ interface MenuSize {
   height: number
 }
 
+const MAX_MENU_WIDTH = 500
+const MAX_MENU_HEIGHT = 500
+
 function loadMenuSize(): MenuSize {
   try {
     const raw = localStorage.getItem(MENU_SIZE_KEY)
-    if (raw) return JSON.parse(raw) as MenuSize
+    if (raw) {
+      const parsed = JSON.parse(raw) as MenuSize
+      return {
+        width: Math.min(Math.max(parsed.width, 0), MAX_MENU_WIDTH),
+        height: Math.min(Math.max(parsed.height, 180), MAX_MENU_HEIGHT),
+      }
+    }
   } catch { /* ignore */ }
   return { width: 0, height: 320 }
 }
@@ -162,6 +170,12 @@ function formatModelPrice(model: AiModel): string | null {
   return `${formatPerMTok(model.pricing.inputPerMTok)} / ${formatPerMTok(model.pricing.outputPerMTok)}`
 }
 
+/** Price tooltip text for native title attribute. */
+function formatPriceTitle(model: AiModel): string | undefined {
+  if (!model.pricing) return undefined
+  return `Price per 1M tokens — Input: ${formatPerMTok(model.pricing.inputPerMTok)}, Output: ${formatPerMTok(model.pricing.outputPerMTok)}, Total: ${formatPerMTok(model.pricing.inputPerMTok + model.pricing.outputPerMTok)}`
+}
+
 /** Context window token count → compact label. `200K`, `1M`. */
 function formatContextWindow(tokens: number | undefined): string | null {
   if (!tokens || tokens <= 0) return null
@@ -171,6 +185,74 @@ function formatContextWindow(tokens: number | undefined): string | null {
   }
   return `${Math.round(tokens / 1000)}K`
 }
+
+interface ModelRowProps {
+  credentialId: string
+  model: AiModel
+  optionId?: string
+  isSelected: boolean
+  isActive: boolean
+  isFavorite: boolean
+  onPick: (credentialId: string, modelId: string) => void
+  onToggleFavorite: (credentialId: string, modelId: string) => void
+  onHover: (key: string) => void
+}
+
+/** Memoized single row so React can skip unchanged models during hover / keyboard nav. */
+const ModelRow = memo(function ModelRow({
+  credentialId,
+  model,
+  optionId,
+  isSelected,
+  isActive,
+  isFavorite,
+  onPick,
+  onToggleFavorite,
+  onHover,
+}: ModelRowProps) {
+  const key = choiceKey(credentialId, model.id)
+  const priceLabel = formatModelPrice(model)
+  const contextLabel = formatContextWindow(model.contextWindow)
+  return (
+    <ContextMenuItem
+      id={optionId}
+      className={styles.rowGrid}
+      role="menuitemradio"
+      aria-checked={isSelected}
+      active={isActive}
+      onMouseEnter={() => onHover(key)}
+      onClick={() => onPick(credentialId, model.id)}
+    >
+      <span className={styles.modelLabel} title={model.label}>{model.label}</span>
+      <span className={styles.favWrap}>
+        {isFavorite && (
+          <span className={cn(styles.favStar, styles.favStarStatic)} aria-hidden="true">★</span>
+        )}
+        <span
+          role="button"
+          tabIndex={0}
+          className={cn(styles.favButton, isFavorite && styles.favButtonActive, styles.favButtonHover)}
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggleFavorite(credentialId, model.id)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              e.stopPropagation()
+              onToggleFavorite(credentialId, model.id)
+            }
+          }}
+          title={isFavorite ? 'Remove favorite' : 'Add favorite'}
+        >
+          {isFavorite ? '★' : '☆'}
+        </span>
+      </span>
+      <span className={styles.modelPrice} title={formatPriceTitle(model) ?? priceLabel ?? undefined}>{priceLabel ?? '\u00A0'}</span>
+      <span className={styles.modelContext} title={contextLabel ? 'Context window' : undefined}>{contextLabel ?? '\u00A0'}</span>
+    </ContextMenuItem>
+  )
+})
 
 export function ModelPicker({
   credentials,
@@ -197,18 +279,10 @@ export function ModelPicker({
   const [sort, setSort] = useState<{ key: 'default' | 'price' | 'provider' | 'name'; dir: 'asc' | 'desc' }>(() => loadSort())
   const [favorites, setFavorites] = useState<Set<string>>(() => loadFavorites())
   const [recents, setRecents] = useState<StoredModelRef[]>(() => loadRecents())
-  const [hoveredKey, setHoveredKey] = useState<string | null>(null)
-  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [sortPanelOpen, setSortPanelOpen] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => loadCollapsed())
   const [menuSize, setMenuSize] = useState<MenuSize>(() => loadMenuSize())
-
-  // Clean up pending hover-leave timer on unmount.
-  useEffect(() => {
-    return () => {
-      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
-    }
-  }, [])
+  const openTimeRef = useRef<number>(0)
 
   // Persist sort and collapsed section state to localStorage.
   useEffect(() => {
@@ -221,60 +295,122 @@ export function ModelPicker({
   // ── Menu resize ───────────────────────────────────────────────────────
   const isResizingRef = useRef(false)
   const dragStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 })
+  const resizeEdgeRef = useRef<'n' | 'e' | 'ne' | null>(null)
+  const resizeAnchorRef = useRef({ triggerTop: 0, offset: 6 })
+  const resizeOverlayElRef = useRef<HTMLDivElement | null>(null)
 
-  function startResize(e: React.MouseEvent) {
-    e.preventDefault()
-    const menuEl = menuElRef.current
-    if (!menuEl) return
-    isResizingRef.current = true
-    dragStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      width: menuEl.offsetWidth,
-      height: menuEl.offsetHeight,
-    }
-    document.addEventListener('mousemove', handleResizeMove)
-    document.addEventListener('mouseup', handleResizeUp)
+  function createResizeOverlay(cursor: string) {
+    const el = document.createElement('div')
+    el.style.cssText = 'position:fixed;inset:0;z-index:99999;cursor:' + cursor + ';'
+    document.body.appendChild(el)
+    resizeOverlayElRef.current = el
   }
+
+  function removeResizeOverlay() {
+    if (resizeOverlayElRef.current) {
+      resizeOverlayElRef.current.remove()
+      resizeOverlayElRef.current = null
+    }
+  }
+
+  const startResize = useCallback((edge: 'n' | 'e' | 'ne') => {
+    return (e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const menuEl = menuElRef.current
+      const triggerEl = triggerRef.current
+      if (!menuEl) return
+      const rect = menuEl.getBoundingClientRect()
+      isResizingRef.current = true
+      resizeEdgeRef.current = edge
+      dragStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        width: rect.width,
+        height: rect.height,
+      }
+      if (triggerEl) {
+        resizeAnchorRef.current = {
+          triggerTop: triggerEl.getBoundingClientRect().top,
+          offset: 6,
+        }
+      }
+      const cursors: Record<string, string> = {
+        n: 'ns-resize', e: 'ew-resize', ne: 'nesw-resize',
+      }
+      createResizeOverlay(cursors[edge])
+      document.addEventListener('mousemove', handleResizeMove)
+      document.addEventListener('mouseup', handleResizeUp)
+    }
+  }, [])
 
   function handleResizeMove(e: MouseEvent) {
     if (!isResizingRef.current) return
+    e.preventDefault()
     const menuEl = menuElRef.current
     if (!menuEl) return
+    const edge = resizeEdgeRef.current
+    if (!edge) return
+
     const dx = e.clientX - dragStartRef.current.x
     const dy = e.clientY - dragStartRef.current.y
-    const newWidth = Math.max(280, dragStartRef.current.width + dx)
-    const newHeight = Math.max(180, dragStartRef.current.height + dy)
+
+    let newWidth = dragStartRef.current.width
+    let newHeight = dragStartRef.current.height
+
+    if (edge.includes('e')) newWidth = Math.max(280, Math.min(MAX_MENU_WIDTH, dragStartRef.current.width + dx))
+    if (edge.includes('n')) newHeight = Math.max(180, Math.min(MAX_MENU_HEIGHT, dragStartRef.current.height - dy))
+
     menuEl.style.setProperty('--context-menu-width', `${newWidth}px`)
     menuEl.style.setProperty('--context-menu-max-height', `${newHeight}px`)
+
+    // With side="top", the bottom edge must stay pinned to the trigger.
+    // The ContextMenu ResizeObserver will confirm this on the next frame,
+    // but we set it directly to avoid a one-frame flicker.
+    if (edge.includes('n')) {
+      const { triggerTop, offset } = resizeAnchorRef.current
+      const newTop = triggerTop - offset - newHeight
+      menuEl.style.setProperty('--context-menu-y', `${newTop}px`)
+    }
   }
 
   function handleResizeUp() {
     if (!isResizingRef.current) return
     isResizingRef.current = false
-    document.removeEventListener('mousemove', handleResizeMove)
-    document.removeEventListener('mouseup', handleResizeUp)
+    removeResizeOverlay()
     const menuEl = menuElRef.current
     if (menuEl) {
-      const next = { width: menuEl.offsetWidth, height: menuEl.offsetHeight }
+      const next = {
+        width: Math.min(Math.max(menuEl.offsetWidth, 280), MAX_MENU_WIDTH),
+        height: Math.min(Math.max(menuEl.offsetHeight, 180), MAX_MENU_HEIGHT),
+      }
       setMenuSize(next)
       saveMenuSize(next)
     }
+    resizeEdgeRef.current = null
+    document.removeEventListener('mousemove', handleResizeMove)
+    document.removeEventListener('mouseup', handleResizeUp)
   }
 
   // Lazy-load models. Two-phase: closed → only the selected credential's
   // models (to label the trigger); open → every credential (to fill the list).
+  const modelsByCredRef = useRef(modelsByCred)
+  modelsByCredRef.current = modelsByCred
   useEffect(() => {
     if (credentials.length === 0) return
     let cancelled = false
     const targets = open
       ? credentials
       : credentials.filter((c) => c.id === value?.credentialId)
-    for (const cred of targets) {
-      if (modelsByCred[cred.id]) continue
+    const toFetch = targets.filter((c) => !modelsByCredRef.current[c.id])
+    if (open) {
+      console.log(`[ModelPicker] model load effect: ${toFetch.length} creds to fetch, ${targets.length - toFetch.length} cached`)
+    }
+    for (const cred of toFetch) {
       void listModels(cred.providerId, cred.id)
         .then((models) => {
           if (cancelled) return
+          console.log(`[ModelPicker] models arrived for ${cred.providerId}/${cred.id}: ${models.length} models`)
           setModelsByCred((prev) => ({ ...prev, [cred.id]: models }))
         })
         .catch(() => {
@@ -284,7 +420,14 @@ export function ModelPicker({
     return () => {
       cancelled = true
     }
-  }, [open, credentials, modelsByCred, value?.credentialId])
+  }, [open, credentials, value?.credentialId])
+
+  // Log total time from open click to render commit
+  useEffect(() => {
+    if (!open || !openTimeRef.current) return
+    const t = performance.now()
+    console.log(`[ModelPicker] render committed: ${t.toFixed(1)}ms (+${(t - openTimeRef.current).toFixed(1)}ms from open click)`)
+  }, [open])
 
   // Focus the search box on open so the user can type immediately. rAF defers
   // past the menu's measuring frame (rendered `visibility: hidden`).
@@ -296,162 +439,84 @@ export function ModelPicker({
     return () => cancelAnimationFrame(id)
   }, [open, searchEnabled])
 
-  // Domino reveal — items fade/slide in as they enter the scroll viewport.
-  // Uses MutationObserver to auto-discover new rows as models load, plus
-  // IntersectionObserver to trigger the reveal only when they scroll into view.
-  const revealObserverRef = useRef<IntersectionObserver | null>(null)
-  const mutationObserverRef = useRef<MutationObserver | null>(null)
-  const lastIntersectTime = useRef<number>(0)
-
-  useEffect(() => {
-    if (!open) return
-
-    let active = true
-    const timer = setTimeout(() => {
-      if (!active) return
-      const menuEl = menuElRef.current
-      if (!menuEl) return
-      const scrollBox = menuEl.querySelector('[data-scrollable]') as HTMLElement | null
-      if (!scrollBox) return
-
-      // Reveal an element: instantly if already visible, otherwise via animation.
-      function revealItem(el: Element, instant: boolean) {
-        if (el.classList.contains(styles.dominoRevealed)) return
-        if (instant) el.classList.add(styles.dominoFast)
-        el.classList.add(styles.dominoRevealed)
+  // ── Grouping + filtering (memoized) ────────────────────────────────────
+  const groups = useMemo(() => {
+    const t0 = performance.now()
+    const q = query.trim().toLowerCase()
+    const matches = (cred: CredentialView, model: AiModel) => {
+      if (q === '') return true
+      if (model.label.toLowerCase().includes(q)) return true
+      if (cred.displayLabel.toLowerCase().includes(q)) return true
+      if (cred.providerId.toLowerCase().includes(q)) return true
+      const ctxLabel = formatContextWindow(model.contextWindow)
+      if (ctxLabel && ctxLabel.toLowerCase().includes(q)) return true
+      if (model.contextWindow && String(model.contextWindow).includes(q)) return true
+      const priceLabel = formatModelPrice(model)
+      if (priceLabel && priceLabel.toLowerCase().includes(q)) return true
+      if (model.pricing) {
+        if (String(model.pricing.inputPerMTok).includes(q)) return true
+        if (String(model.pricing.outputPerMTok).includes(q)) return true
       }
-
-      // Set up IntersectionObserver on the scroll box.
-      const io = new IntersectionObserver(
-        (entries) => {
-          const now = performance.now()
-          const delta = now - lastIntersectTime.current
-          lastIntersectTime.current = now
-          const fastScroll = delta < 50
-          entries.forEach((entry) => {
-            if (!entry.isIntersecting) return
-            revealItem(entry.target, fastScroll)
-            io.unobserve(entry.target)
-          })
-        },
-        { root: scrollBox, threshold: 0, rootMargin: '40px 0px' },
-      )
-      revealObserverRef.current = io
-
-      // Observe any existing rows and reveal ones already in viewport.
-      const observeRow = (el: Element) => {
-        if (el.classList.contains(styles.dominoRevealed)) return
-        const sRect = scrollBox.getBoundingClientRect()
-        const r = el.getBoundingClientRect()
-        const alreadyVisible = r.top >= sRect.top && r.bottom <= sRect.bottom + 40
-        if (alreadyVisible) {
-          revealItem(el, true)
-        } else {
-          io.observe(el)
-        }
-      }
-
-      scrollBox.querySelectorAll(`.${styles.rowGrid}`).forEach(observeRow)
-
-      // Watch for new rows being added (models loading async into the portal).
-      const mo = new MutationObserver((mutations) => {
-        for (const m of mutations) {
-          Array.from(m.addedNodes).forEach((node) => {
-            if (!(node instanceof HTMLElement)) return
-            if (node.classList.contains(styles.rowGrid)) {
-              observeRow(node)
-            }
-            node.querySelectorAll(`.${styles.rowGrid}`).forEach(observeRow)
-          })
-        }
-      })
-      mo.observe(scrollBox, { childList: true, subtree: true })
-      mutationObserverRef.current = mo
-    }, 80)
-
-    return () => {
-      active = false
-      clearTimeout(timer)
-      revealObserverRef.current?.disconnect()
-      revealObserverRef.current = null
-      mutationObserverRef.current?.disconnect()
-      mutationObserverRef.current = null
+      return false
     }
-  }, [open])
 
-  if (!credentialsLoaded || credentials.length === 0) {
-    return (
-      <output className={cn(className, styles.staticState)}>
-        {!credentialsLoaded ? 'Loading credentials…' : 'No credentials yet'}
-      </output>
-    )
-  }
+    let result = credentials
+      .map((cred) => ({
+        cred,
+        models: (modelsByCred[cred.id] ?? []).filter((m) => matches(cred, m)),
+        loaded: Boolean(modelsByCred[cred.id]),
+      }))
+      .filter((g) => (q === '' ? true : g.models.length > 0))
 
-  // ── Grouping + filtering ──────────────────────────────────────────────
-  const q = query.trim().toLowerCase()
-  const matches = (cred: CredentialView, model: AiModel) => {
-    if (q === '') return true
-    if (model.label.toLowerCase().includes(q)) return true
-    if (cred.displayLabel.toLowerCase().includes(q)) return true
-    if (cred.providerId.toLowerCase().includes(q)) return true
-    const ctxLabel = formatContextWindow(model.contextWindow)
-    if (ctxLabel && ctxLabel.toLowerCase().includes(q)) return true
-    if (model.contextWindow && String(model.contextWindow).includes(q)) return true
-    const priceLabel = formatModelPrice(model)
-    if (priceLabel && priceLabel.toLowerCase().includes(q)) return true
-    if (model.pricing) {
-      if (String(model.pricing.inputPerMTok).includes(q)) return true
-      if (String(model.pricing.outputPerMTok).includes(q)) return true
+    const dirFactor = sort.dir === 'asc' ? 1 : -1
+    if (sort.key === 'provider') {
+      result = result.sort((a, b) => dirFactor * a.cred.providerId.localeCompare(b.cred.providerId))
     }
-    return false
-  }
-
-  let groups = credentials
-    .map((cred) => ({
-      cred,
-      models: (modelsByCred[cred.id] ?? []).filter((m) => matches(cred, m)),
-      loaded: Boolean(modelsByCred[cred.id]),
-    }))
-    // While searching, hide groups with no matching models. With no query,
-    // keep every group (including still-loading ones).
-    .filter((g) => (q === '' ? true : g.models.length > 0))
-
-  // Apply user-chosen sort + direction.
-  const dirFactor = sort.dir === 'asc' ? 1 : -1
-  if (sort.key === 'provider') {
-    groups = groups.sort((a, b) => dirFactor * a.cred.providerId.localeCompare(b.cred.providerId))
-  }
-  if (sort.key === 'name') {
-    groups = groups.map((g) => ({
-      ...g,
-      models: g.models.slice().sort((a, b) => dirFactor * a.label.localeCompare(b.label)),
-    }))
-  }
-  if (sort.key === 'price') {
-    groups = groups.map((g) => ({
-      ...g,
-      models: g.models.slice().sort((a, b) => dirFactor * (sortPrice(a) - sortPrice(b))),
-    }))
-  }
+    if (sort.key === 'name') {
+      result = result.map((g) => ({
+        ...g,
+        models: g.models.slice().sort((a, b) => dirFactor * a.label.localeCompare(b.label)),
+      }))
+    }
+    if (sort.key === 'price') {
+      result = result.map((g) => ({
+        ...g,
+        models: g.models.slice().sort((a, b) => dirFactor * (sortPrice(a) - sortPrice(b))),
+      }))
+    }
+    const t1 = performance.now()
+    console.log(`[ModelPicker] groups useMemo: ${(t1 - t0).toFixed(1)}ms, ${result.reduce((n, g) => n + g.models.length, 0)} models`)
+    return result
+  }, [credentials, modelsByCred, query, sort])
 
   // Flatten the visible models for keyboard navigation + option ids.
-  const flat: Array<{ credentialId: string; modelId: string; optionId: string }> = []
-  for (const group of groups) {
-    for (const model of group.models) {
-      flat.push({
-        credentialId: group.cred.id,
-        modelId: model.id,
-        optionId: `${baseId}-opt-${flat.length}`,
-      })
+  const { flat, optionByKey } = useMemo(() => {
+    const t0 = performance.now()
+    const flat: Array<{ credentialId: string; modelId: string; optionId: string }> = []
+    for (const group of groups) {
+      for (const model of group.models) {
+        flat.push({
+          credentialId: group.cred.id,
+          modelId: model.id,
+          optionId: `${baseId}-opt-${flat.length}`,
+        })
+      }
     }
-  }
-  const optionByKey = new Map(flat.map((f) => [choiceKey(f.credentialId, f.modelId), f]))
+    const optionByKey = new Map(flat.map((f) => [choiceKey(f.credentialId, f.modelId), f]))
+    const t1 = performance.now()
+    console.log(`[ModelPicker] flat useMemo: ${(t1 - t0).toFixed(1)}ms, ${flat.length} items`)
+    return { flat, optionByKey }
+  }, [groups, baseId])
+
   const activeEntry =
     (activeKey != null ? optionByKey.get(activeKey) : undefined) ?? flat[0] ?? null
   const activeOptionId = activeEntry?.optionId
 
+  const q = query.trim().toLowerCase()
   const hasMatches = flat.length > 0
   const showEmpty = q !== '' && !hasMatches
+
+  const isEmptyState = !credentialsLoaded || credentials.length === 0
 
   // ── Trigger label ─────────────────────────────────────────────────────
   const activeLabel = (() => {
@@ -464,16 +529,18 @@ export function ModelPicker({
   })()
 
   function openMenu() {
+    openTimeRef.current = performance.now()
+    console.log('[ModelPicker] openMenu clicked at', openTimeRef.current.toFixed(1))
     setQuery('')
     setActiveKey(value ? choiceKey(value.credentialId, value.modelId) : null)
     setOpen(true)
     onOpen?.()
   }
 
-  function closeMenu() {
+  const closeMenu = useCallback(() => {
     setOpen(false)
     setQuery('')
-  }
+  }, [])
 
   /** Average price for sorting — models without pricing sort to the bottom. */
   function sortPrice(model: AiModel): number {
@@ -486,12 +553,15 @@ export function ModelPicker({
     else openMenu()
   }
 
-  function pick(credentialId: string, modelId: string) {
+  const credentialsRef = useRef(credentials)
+  credentialsRef.current = credentials
+
+  const pick = useCallback((credentialId: string, modelId: string) => {
     closeMenu()
     onChange({ credentialId, modelId })
     // Persist to recents
-    const cred = credentials.find((c) => c.id === credentialId)
-    const model = (modelsByCred[credentialId] ?? []).find((m) => m.id === modelId)
+    const cred = credentialsRef.current.find((c) => c.id === credentialId)
+    const model = (modelsByCredRef.current[credentialId] ?? []).find((m) => m.id === modelId)
     if (cred && model) {
       const ref: StoredModelRef = { credentialId, modelId, label: model.label, providerId: cred.providerId }
       setRecents((prev) => {
@@ -501,9 +571,9 @@ export function ModelPicker({
       })
     }
     requestAnimationFrame(() => triggerRef.current?.focus())
-  }
+  }, [onChange, closeMenu])
 
-  function toggleFavorite(credentialId: string, modelId: string) {
+  const toggleFavorite = useCallback((credentialId: string, modelId: string) => {
     const key = choiceKey(credentialId, modelId)
     setFavorites((prev) => {
       const next = new Set(prev)
@@ -512,13 +582,7 @@ export function ModelPicker({
       saveFavorites(next)
       return next
     })
-  }
-
-  function handleMouseEnter(key: string) {
-    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
-    hoverTimerRef.current = null
-    setHoveredKey(key)
-  }
+  }, [])
 
   function toggleSection(key: string) {
     setCollapsedSections((prev) => {
@@ -528,14 +592,6 @@ export function ModelPicker({
       saveCollapsed(next)
       return next
     })
-  }
-
-  function handleMouseLeave() {
-    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
-    hoverTimerRef.current = setTimeout(() => {
-      setHoveredKey(null)
-      hoverTimerRef.current = null
-    }, 150)
   }
 
   function moveActive(direction: 1 | -1) {
@@ -581,462 +637,282 @@ export function ModelPicker({
   }
 
   return (
-    <div className={cn(className, styles.root)}>
-      <Button
-        ref={triggerRef}
-        type="button"
-        variant="ghost"
-        size={variant === 'field' ? 'md' : 'xs'}
-        align={variant === 'field' ? 'between' : 'center'}
-        fullWidth={variant === 'field'}
-        onClick={toggle}
-        // Inline trigger takes its accessible name from the 'Model' tooltip;
-        // the field trigger has no tooltip, so it carries the aria-label.
-        tooltip={variant === 'inline' ? 'Model' : undefined}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={variant === 'field' ? ariaLabel : undefined}
-        className={variant === 'field' ? styles.fieldTrigger : styles.inlineTrigger}
-      >
-        <span
-          className={cn(styles.triggerLabel, !value && styles.triggerPlaceholder)}
-        >
-          {activeLabel}
-        </span>
-        <ChevronDownIcon size={variant === 'field' ? 12 : 10} aria-hidden="true" />
-      </Button>
+    <>
+      {isEmptyState ? (
+        <output className={cn(className, styles.staticState)}>
+          {!credentialsLoaded ? 'Loading credentials…' : 'No credentials yet'}
+        </output>
+      ) : (
+        <div className={cn(className, styles.root)}>
+          <Button
+            ref={triggerRef}
+            type="button"
+            variant="ghost"
+            size={variant === 'field' ? 'md' : 'xs'}
+            align={variant === 'field' ? 'between' : 'center'}
+            fullWidth={variant === 'field'}
+            onClick={toggle}
+            // Inline trigger takes its accessible name from the 'Model' tooltip;
+            // the field trigger has no tooltip, so it carries the aria-label.
+            tooltip={variant === 'inline' ? 'Model' : undefined}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            aria-label={variant === 'field' ? ariaLabel : undefined}
+            className={variant === 'field' ? styles.fieldTrigger : styles.inlineTrigger}
+          >
+            <span
+              className={cn(styles.triggerLabel, !value && styles.triggerPlaceholder)}
+            >
+              {activeLabel}
+            </span>
+            <ChevronDownIcon size={variant === 'field' ? 12 : 10} aria-hidden="true" />
+          </Button>
 
-      {open && (
-        <ContextMenu
-          ref={menuElRef}
-          id={menuId}
-          anchorRef={triggerRef}
-          triggerRef={triggerRef}
-          align="start"
-          side="auto"
-          offset={6}
-          minWidth={variant === 'field' ? 300 : 340}
-          width={menuSize.width > 0 ? menuSize.width : undefined}
-          matchAnchorWidth={menuSize.width === 0 && variant === 'field'}
-          maxHeight={menuSize.height}
-          ariaLabel={ariaLabel}
-          onClose={closeMenu}
-          header={(
-            <div className={styles.menuHeaderWrap}>
-              {searchEnabled && (
+          {open && (
+            <ContextMenu
+              ref={menuElRef}
+              id={menuId}
+              anchorRef={triggerRef}
+              triggerRef={triggerRef}
+              align="start"
+              side="top"
+              offset={6}
+              minWidth={variant === 'field' ? 300 : 340}
+              width={menuSize.width > 0 ? menuSize.width : undefined}
+              maxWidth={MAX_MENU_WIDTH}
+              matchAnchorWidth={menuSize.width === 0 && variant === 'field'}
+              maxHeight={menuSize.height}
+              ariaLabel={ariaLabel}
+              onClose={closeMenu}
+              header={(
+                <div className={styles.menuHeaderWrap}>
+                  {searchEnabled && (
+                    <>
+                      <div className={styles.searchRow}>
+                        <MenuSearchHeader
+                          inputRef={searchInputRef}
+                          value={query}
+                          onValueChange={(next) => {
+                            setQuery(next)
+                            setActiveKey(null)
+                          }}
+                          onKeyDown={handleSearchKeyDown}
+                          placeholder="Search models…"
+                          controls={menuId}
+                          activeOptionId={activeOptionId}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="micro"
+                          iconOnly
+                          pressed={sortPanelOpen}
+                          onClick={() => setSortPanelOpen((v) => !v)}
+                          className={styles.sortTrigger}
+                          title="Sort models"
+                          aria-label="Sort models"
+                          aria-expanded={sortPanelOpen}
+                        >
+                          <SlidersHorizontalIcon size={14} />
+                        </Button>
+                      </div>
+                      <div
+                        className={cn(styles.sortPanel, sortPanelOpen && styles.sortPanelOpen)}
+                        aria-hidden={!sortPanelOpen}
+                      >
+                        <div className={styles.sortPanelInner}>
+                          {[
+                            { key: 'default' as const, label: 'Default' },
+                            { key: 'price' as const, label: 'Price' },
+                            { key: 'provider' as const, label: 'Provider' },
+                            { key: 'name' as const, label: 'Name' },
+                          ].map((opt) => {
+                            const active = sort.key === opt.key
+                            const isAsc = active && sort.dir === 'asc'
+                            return (
+                              <Button
+                                key={opt.key}
+                                type="button"
+                                variant="ghost"
+                                size="micro"
+                                pressed={active}
+                                onClick={() => {
+                                  setSort((prev) => ({
+                                    key: opt.key,
+                                    dir: prev.key === opt.key && prev.dir === 'asc' ? 'desc' : 'asc',
+                                  }))
+                                  setActiveKey(null)
+                                }}
+                                className={styles.sortButton}
+                              >
+                                {opt.label}
+                                {active && (
+                                  <span className={styles.sortChevron}>
+                                    {isAsc ? <ChevronUpIcon size={10} /> : <ChevronDownIcon size={10} />}
+                                  </span>
+                                )}
+                              </Button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              footer={(
+                <div className={styles.resizeOverlay} aria-hidden="true">
+                  <div className={cn(styles.resizeEdge, styles.resizeEdgeN)} onMouseDown={startResize('n')} />
+                  <div className={cn(styles.resizeEdge, styles.resizeEdgeE)} onMouseDown={startResize('e')} />
+                  <div className={cn(styles.resizeCorner, styles.resizeCornerNE)} onMouseDown={startResize('ne')} />
+                </div>
+              )}
+            >
+              {showEmpty ? (
+                <div className={styles.emptyOption} role="presentation">
+                  No matches
+                </div>
+              ) : (
                 <>
-                  <div className={styles.searchRow}>
-                    <MenuSearchHeader
-                      inputRef={searchInputRef}
-                      value={query}
-                      onValueChange={(next) => {
-                        setQuery(next)
-                        setActiveKey(null)
-                      }}
-                      onKeyDown={handleSearchKeyDown}
-                      placeholder="Search models…"
-                      controls={menuId}
-                      activeOptionId={activeOptionId}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="micro"
-                      iconOnly
-                      pressed={sortPanelOpen}
-                      onClick={() => setSortPanelOpen((v) => !v)}
-                      className={styles.sortTrigger}
-                      title="Sort models"
-                      aria-label="Sort models"
-                      aria-expanded={sortPanelOpen}
-                    >
-                      <SlidersHorizontalIcon size={14} />
-                    </Button>
-                  </div>
-                  <div
-                    className={cn(styles.sortPanel, sortPanelOpen && styles.sortPanelOpen)}
-                    aria-hidden={!sortPanelOpen}
-                  >
-                    <div className={styles.sortPanelInner}>
-                      {[
-                        { key: 'default' as const, label: 'Default' },
-                        { key: 'price' as const, label: 'Price' },
-                        { key: 'provider' as const, label: 'Provider' },
-                        { key: 'name' as const, label: 'Name' },
-                      ].map((opt) => {
-                        const active = sort.key === opt.key
-                        const isAsc = active && sort.dir === 'asc'
-                        return (
-                          <Button
-                            key={opt.key}
-                            type="button"
-                            variant="ghost"
-                            size="micro"
-                            pressed={active}
-                            onClick={() => {
-                              setSort((prev) => ({
-                                key: opt.key,
-                                dir: prev.key === opt.key && prev.dir === 'asc' ? 'desc' : 'asc',
-                              }))
-                              setActiveKey(null)
-                            }}
-                            className={styles.sortButton}
-                          >
-                            {opt.label}
-                            {active && (
-                              <span className={styles.sortChevron}>
-                                {isAsc ? <ChevronUpIcon size={10} /> : <ChevronDownIcon size={10} />}
-                              </span>
-                            )}
-                          </Button>
-                        )
-                      })}
-                    </div>
-                  </div>
+                  {q === '' && favorites.size > 0 && (() => {
+                    const favModels: Array<{ cred: CredentialView; model: AiModel; key: string }> = []
+                    for (const cred of credentials) {
+                      for (const model of (modelsByCred[cred.id] ?? [])) {
+                        const key = choiceKey(cred.id, model.id)
+                        if (favorites.has(key)) {
+                          favModels.push({ cred, model, key })
+                        }
+                      }
+                    }
+                    if (favModels.length === 0) return null
+                    const favCollapsed = collapsedSections.has('favourites')
+                    return (
+                      <>
+                        <button
+                          key="favs:header"
+                          type="button"
+                          className={styles.sectionToggle}
+                          onClick={() => toggleSection('favourites')}
+                          aria-expanded={!favCollapsed}
+                        >
+                          <span className={cn(styles.sectionIcon, favCollapsed && styles.sectionIconCollapsed)}>
+                            <ChevronDownIcon size={10} />
+                          </span>
+                          <span className={styles.groupHeader}>Favourites</span>
+                        </button>
+                        {!favCollapsed && favModels.map(({ cred, model, key }) => (
+                          <ModelRow
+                            key={`fav:${key}`}
+                            credentialId={cred.id}
+                            model={model}
+                            isSelected={value?.credentialId === cred.id && value?.modelId === model.id}
+                            isActive={value?.credentialId === cred.id && value?.modelId === model.id}
+                            isFavorite={true}
+                            onPick={pick}
+                            onToggleFavorite={toggleFavorite}
+                            onHover={setActiveKey}
+                          />
+                        ))}
+                        {!favCollapsed && <ContextMenuSeparator key="favs:sep" />}
+                      </>
+                    )
+                  })()}
+
+                  {q === '' && recents.length > 0 && (() => {
+                    const recentCollapsed = collapsedSections.has('recents')
+                    return (
+                      <>
+                        <button
+                          key="recents:header"
+                          type="button"
+                          className={styles.sectionToggle}
+                          onClick={() => toggleSection('recents')}
+                          aria-expanded={!recentCollapsed}
+                        >
+                          <span className={cn(styles.sectionIcon, recentCollapsed && styles.sectionIconCollapsed)}>
+                            <ChevronDownIcon size={10} />
+                          </span>
+                          <span className={styles.groupHeader}>Recents</span>
+                        </button>
+                        {!recentCollapsed && recents.map((ref) => {
+                          const model = (modelsByCred[ref.credentialId] ?? []).find((m) => m.id === ref.modelId)
+                          if (!model) return null
+                          const key = choiceKey(ref.credentialId, ref.modelId)
+                          return (
+                            <ModelRow
+                              key={`recent:${key}`}
+                              credentialId={ref.credentialId}
+                              model={model}
+                              isSelected={value?.credentialId === ref.credentialId && value?.modelId === ref.modelId}
+                              isActive={value?.credentialId === ref.credentialId && value?.modelId === ref.modelId}
+                              isFavorite={favorites.has(key)}
+                              onPick={pick}
+                              onToggleFavorite={toggleFavorite}
+                              onHover={setActiveKey}
+                            />
+                          )
+                        })}
+                        {!recentCollapsed && <ContextMenuSeparator key="recents:sep" />}
+                      </>
+                    )
+                  })()}
+
+                  {groups.map((group, groupIndex) => {
+                    const credentialId = group.cred.id
+                    const groupCollapsed = collapsedSections.has(`group-${credentialId}`)
+                    return (
+                      <Fragment key={credentialId}>
+                        {groupIndex > 0 && <ContextMenuSeparator key={`sep-${credentialId}`} />}
+                        <button
+                          type="button"
+                          className={styles.sectionToggle}
+                          onClick={() => toggleSection(`group-${credentialId}`)}
+                          aria-expanded={!groupCollapsed}
+                        >
+                          <span className={cn(styles.sectionIcon, groupCollapsed && styles.sectionIconCollapsed)}>
+                            <ChevronDownIcon size={10} />
+                          </span>
+                          <span className={styles.groupHeader}>
+                            {group.cred.displayLabel}
+                            <span className={styles.groupProvider}> · {group.cred.providerId}</span>
+                          </span>
+                        </button>
+                        {!groupCollapsed && (
+                          group.models.length === 0 ? (
+                            <ContextMenuItem key={`${credentialId}:loading`} disabled>
+                              <span>{group.loaded ? 'No models available' : 'Loading models…'}</span>
+                            </ContextMenuItem>
+                          ) : (
+                            group.models.map((model) => {
+                              const key = choiceKey(credentialId, model.id)
+                              const entry = optionByKey.get(key)
+                              return (
+                                <ModelRow
+                                  key={key}
+                                  credentialId={credentialId}
+                                  model={model}
+                                  optionId={entry?.optionId}
+                                  isSelected={value?.credentialId === credentialId && value?.modelId === model.id}
+                                  isActive={entry?.optionId === activeOptionId}
+                                  isFavorite={favorites.has(key)}
+                                  onPick={pick}
+                                  onToggleFavorite={toggleFavorite}
+                                  onHover={setActiveKey}
+                                />
+                              )
+                            })
+                          )
+                        )}
+                      </Fragment>
+                    )
+                  })}
+
                 </>
               )}
-            </div>
+            </ContextMenu>
           )}
-        >
-          {showEmpty ? (
-            <div className={styles.emptyOption} role="presentation">
-              No matches
-            </div>
-          ) : (
-            (() => {
-              const out: ReactNode[] = []
-
-              // ── Favourites ─────────────────────────────────────────────
-              if (q === '' && favorites.size > 0) {
-                const favModels: Array<{ cred: CredentialView; model: AiModel; key: string }> = []
-                for (const cred of credentials) {
-                  for (const model of (modelsByCred[cred.id] ?? [])) {
-                    const key = choiceKey(cred.id, model.id)
-                    if (favorites.has(key)) {
-                      favModels.push({ cred, model, key })
-                    }
-                  }
-                }
-                if (favModels.length > 0) {
-                  const favCollapsed = collapsedSections.has('favourites')
-                  out.push(
-                    <button
-                      key="favs:header"
-                      type="button"
-                      className={styles.sectionToggle}
-                      onClick={() => toggleSection('favourites')}
-                      aria-expanded={!favCollapsed}
-                    >
-                      <span className={cn(styles.sectionIcon, favCollapsed && styles.sectionIconCollapsed)}>
-                        <ChevronDownIcon size={10} />
-                      </span>
-                      <span className={styles.groupHeader}>Favourites</span>
-                    </button>,
-                  )
-                  if (!favCollapsed) {
-                    for (const { cred, model, key } of favModels) {
-                      const isSelected = value?.credentialId === cred.id && value?.modelId === model.id
-                      const showFav = hoveredKey === `fav:${key}`
-                      const priceLabel = formatModelPrice(model)
-                      const contextLabel = formatContextWindow(model.contextWindow)
-                      out.push(
-                        <ContextMenuItem
-                          key={`fav:${key}`}
-                          className={styles.rowGrid}
-                          role="menuitemradio"
-                          aria-checked={isSelected}
-                          active={isSelected}
-                          onMouseEnter={() => {
-                            setActiveKey(key)
-                            handleMouseEnter(`fav:${key}`)
-                          }}
-                          onMouseLeave={handleMouseLeave}
-                          onClick={() => pick(cred.id, model.id)}
-                        >
-                          <Tooltip
-                            content={<span className={styles.modelNameTooltip}>{model.label}</span>}
-                            side="top"
-                            openDelay={300}
-                          >
-                            <span className={styles.modelLabel}>{model.label}</span>
-                          </Tooltip>
-                          <span className={styles.favWrap}>
-                            {!showFav && <span className={styles.favStar} aria-hidden="true">★</span>}
-                            {showFav && (
-                              <button
-                                type="button"
-                                className={cn(styles.favButton, styles.favButtonActive)}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  toggleFavorite(cred.id, model.id)
-                                }}
-                                title="Remove favorite"
-                              >
-                                ★
-                              </button>
-                            )}
-                          </span>
-                          <Tooltip
-                            content={model.pricing ? (
-                              <div>
-                                <span className={styles.priceTooltipNote}>Price per 1M tokens</span>
-                                <span className={styles.priceTooltipRow}>
-                                  <span>Input</span>
-                                  <span>{formatPerMTok(model.pricing.inputPerMTok)}</span>
-                                </span>
-                                <span className={styles.priceTooltipRow}>
-                                  <span>Output</span>
-                                  <span>{formatPerMTok(model.pricing.outputPerMTok)}</span>
-                                </span>
-                                <span className={cn(styles.priceTooltipRow, styles.priceTooltipTotal)}>
-                                  <span>Total</span>
-                                  <span>{formatPerMTok(model.pricing.inputPerMTok + model.pricing.outputPerMTok)}</span>
-                                </span>
-                              </div>
-                            ) : priceLabel ?? '\u00A0'}
-                            side="top"
-                            openDelay={300}
-                          >
-                            <span className={styles.modelPrice}>{priceLabel ?? '\u00A0'}</span>
-                          </Tooltip>
-                          <Tooltip content="Context window" side="top" openDelay={300}>
-                            <span className={styles.modelContext}>{contextLabel ?? '\u00A0'}</span>
-                          </Tooltip>
-                        </ContextMenuItem>,
-                      )
-                    }
-                    out.push(<ContextMenuSeparator key="favs:sep" />)
-                  }
-                }
-              }
-
-              // ── Recents ──────────────────────────────────────────────
-              if (q === '' && recents.length > 0) {
-                const recentCollapsed = collapsedSections.has('recents')
-                out.push(
-                  <button
-                    key="recents:header"
-                    type="button"
-                    className={styles.sectionToggle}
-                    onClick={() => toggleSection('recents')}
-                    aria-expanded={!recentCollapsed}
-                  >
-                    <span className={cn(styles.sectionIcon, recentCollapsed && styles.sectionIconCollapsed)}>
-                      <ChevronDownIcon size={10} />
-                    </span>
-                    <span className={styles.groupHeader}>Recents</span>
-                  </button>,
-                )
-                if (!recentCollapsed) {
-                  for (const ref of recents) {
-                    const model = (modelsByCred[ref.credentialId] ?? []).find((m) => m.id === ref.modelId)
-                    if (!model) continue
-                    const key = choiceKey(ref.credentialId, ref.modelId)
-                    const isSelected = value?.credentialId === ref.credentialId && value?.modelId === ref.modelId
-                    const isFavorite = favorites.has(key)
-                    const showFav = hoveredKey === `recent:${key}`
-                    const priceLabel = formatModelPrice(model)
-                    const contextLabel = formatContextWindow(model.contextWindow)
-                    out.push(
-                      <ContextMenuItem
-                        key={`recent:${key}`}
-                        className={styles.rowGrid}
-                        role="menuitemradio"
-                        aria-checked={isSelected}
-                        active={isSelected}
-                        onMouseEnter={() => {
-                          setActiveKey(key)
-                          handleMouseEnter(`recent:${key}`)
-                        }}
-                        onMouseLeave={handleMouseLeave}
-                        onClick={() => pick(ref.credentialId, ref.modelId)}
-                      >
-                        <Tooltip
-                          content={<span className={styles.modelNameTooltip}>{model.label}</span>}
-                          side="top"
-                          openDelay={300}
-                        >
-                          <span className={styles.modelLabel}>{model.label}</span>
-                        </Tooltip>
-                        <span className={styles.favWrap}>
-                          {isFavorite && !showFav && <span className={styles.favStar} aria-hidden="true">★</span>}
-                          {showFav && (
-                            <button
-                              type="button"
-                              className={cn(styles.favButton, isFavorite && styles.favButtonActive)}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                toggleFavorite(ref.credentialId, ref.modelId)
-                              }}
-                              title={isFavorite ? 'Remove favorite' : 'Add favorite'}
-                            >
-                              {isFavorite ? '★' : '☆'}
-                            </button>
-                          )}
-                        </span>
-                        <Tooltip
-                          content={model.pricing ? (
-                            <div>
-                              <span className={styles.priceTooltipNote}>Price per 1M tokens</span>
-                              <span className={styles.priceTooltipRow}>
-                                <span>Input</span>
-                                <span>{formatPerMTok(model.pricing.inputPerMTok)}</span>
-                              </span>
-                              <span className={styles.priceTooltipRow}>
-                                <span>Output</span>
-                                <span>{formatPerMTok(model.pricing.outputPerMTok)}</span>
-                              </span>
-                              <span className={cn(styles.priceTooltipRow, styles.priceTooltipTotal)}>
-                                <span>Total</span>
-                                <span>{formatPerMTok(model.pricing.inputPerMTok + model.pricing.outputPerMTok)}</span>
-                              </span>
-                            </div>
-                          ) : priceLabel ?? '\u00A0'}
-                          side="top"
-                          openDelay={300}
-                        >
-                          <span className={styles.modelPrice}>{priceLabel ?? '\u00A0'}</span>
-                        </Tooltip>
-                        <Tooltip content="Context window" side="top" openDelay={300}>
-                          <span className={styles.modelContext}>{contextLabel ?? '\u00A0'}</span>
-                        </Tooltip>
-                      </ContextMenuItem>,
-                    )
-                  }
-                  out.push(<ContextMenuSeparator key="recents:sep" />)
-                }
-              }
-
-              // ── Groups ───────────────────────────────────────────────
-              groups.forEach((group, groupIndex) => {
-                const credentialId = group.cred.id
-                if (groupIndex > 0) {
-                  out.push(<ContextMenuSeparator key={`sep-${credentialId}`} />)
-                }
-                const groupCollapsed = collapsedSections.has(`group-${credentialId}`)
-                out.push(
-                  <button
-                    key={`${credentialId}:header`}
-                    type="button"
-                    className={styles.sectionToggle}
-                    onClick={() => toggleSection(`group-${credentialId}`)}
-                    aria-expanded={!groupCollapsed}
-                  >
-                    <span className={cn(styles.sectionIcon, groupCollapsed && styles.sectionIconCollapsed)}>
-                      <ChevronDownIcon size={10} />
-                    </span>
-                    <span className={styles.groupHeader}>
-                      {group.cred.displayLabel}
-                      <span className={styles.groupProvider}> · {group.cred.providerId}</span>
-                    </span>
-                  </button>,
-                )
-                if (!groupCollapsed) {
-                  if (group.models.length === 0) {
-                    out.push(
-                      <ContextMenuItem key={`${credentialId}:loading`} disabled>
-                        <span>{group.loaded ? 'No models available' : 'Loading models…'}</span>
-                      </ContextMenuItem>,
-                    )
-                  } else {
-                    for (const model of group.models) {
-                      const key = choiceKey(credentialId, model.id)
-                      const entry = optionByKey.get(key)
-                      const isSelected =
-                        value?.credentialId === credentialId && value?.modelId === model.id
-                      const isFavorite = favorites.has(key)
-                      const showFav = hoveredKey === `group:${key}`
-                      const priceLabel = formatModelPrice(model)
-                      const contextLabel = formatContextWindow(model.contextWindow)
-                      out.push(
-                        <ContextMenuItem
-                          key={key}
-                          id={entry?.optionId}
-                          className={styles.rowGrid}
-                          role="menuitemradio"
-                          aria-checked={isSelected}
-                          active={entry?.optionId === activeOptionId}
-                          onMouseEnter={() => {
-                            setActiveKey(key)
-                            handleMouseEnter(`group:${key}`)
-                          }}
-                          onMouseLeave={handleMouseLeave}
-                          onClick={() => pick(credentialId, model.id)}
-                        >
-                          <Tooltip
-                            content={<span className={styles.modelNameTooltip}>{model.label}</span>}
-                            side="top"
-                            openDelay={300}
-                          >
-                            <span className={styles.modelLabel}>{model.label}</span>
-                          </Tooltip>
-                          <span className={styles.favWrap}>
-                            {isFavorite && !showFav && <span className={styles.favStar} aria-hidden="true">★</span>}
-                            {showFav && (
-                              <button
-                                type="button"
-                                className={cn(styles.favButton, isFavorite && styles.favButtonActive)}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  toggleFavorite(credentialId, model.id)
-                                }}
-                                title={isFavorite ? 'Remove favorite' : 'Add favorite'}
-                              >
-                                {isFavorite ? '★' : '☆'}
-                              </button>
-                            )}
-                          </span>
-                          <Tooltip
-                            content={model.pricing ? (
-                              <div>
-                                <span className={styles.priceTooltipNote}>Price per 1M tokens</span>
-                                <span className={styles.priceTooltipRow}>
-                                  <span>Input</span>
-                                  <span>{formatPerMTok(model.pricing.inputPerMTok)}</span>
-                                </span>
-                                <span className={styles.priceTooltipRow}>
-                                  <span>Output</span>
-                                  <span>{formatPerMTok(model.pricing.outputPerMTok)}</span>
-                                </span>
-                                <span className={cn(styles.priceTooltipRow, styles.priceTooltipTotal)}>
-                                  <span>Total</span>
-                                  <span>{formatPerMTok(model.pricing.inputPerMTok + model.pricing.outputPerMTok)}</span>
-                                </span>
-                              </div>
-                            ) : priceLabel ?? '\u00A0'}
-                            side="top"
-                            openDelay={300}
-                          >
-                            <span className={styles.modelPrice}>{priceLabel ?? '\u00A0'}</span>
-                          </Tooltip>
-                          <Tooltip content="Context window" side="top" openDelay={300}>
-                            <span className={styles.modelContext}>{contextLabel ?? '\u00A0'}</span>
-                          </Tooltip>
-                        </ContextMenuItem>,
-                      )
-                    }
-                  }
-                }
-              })
-
-              // ── Resize handle ──────────────────────────────────────
-              out.push(
-                <div
-                  key="resize-handle"
-                  className={styles.resizeHandle}
-                  onMouseDown={startResize}
-                  title="Resize menu"
-                  aria-hidden="true"
-                >
-                  <div className={styles.resizeGrip} />
-                </div>,
-              )
-
-              return out
-            })()
-          )}
-        </ContextMenu>
+        </div>
       )}
-    </div>
+    </>
   )
 }
