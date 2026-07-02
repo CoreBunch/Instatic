@@ -377,10 +377,12 @@ The whole document saves through ONE endpoint, in ONE server transaction:
 
 ```
 PUT /admin/api/cms/site-document
-{ mode, site,                                    // shell — always written
+{ mode, site,                                    // shell — written only when its content changed
   changedPages,      deletedPageIds,
   changedComponents, deletedComponentIds,
-  changedLayouts,    deletedLayoutIds }
+  changedLayouts,    deletedLayoutIds,
+  baseSeqs,                                      // rowId → last-synchronized seq (conflict check)
+  shellBaseSeq }                                 // the shell's counterpart
 ```
 
 Two modes:
@@ -442,10 +444,57 @@ reject with a 400 instead of dying on the index.
 
 Every save allocates a **site-global sync sequence number**
 (`server/repositories/syncSequence.ts`) inside the transaction and stamps it
-on the shell and every written or deleted row (`data_rows.seq`); the
-response returns it (`{ ok: true, seq }`). The seq is the substrate for
-multi-admin conflict detection and delta reconciliation (live-sync plan) —
-informational to the client until that lands.
+on every written or deleted row (`data_rows.seq`) — and on the shell, but
+**only when the shell content actually changed** (`shellsEqual` in
+`siteDiff.ts` gates the shell write; the shell ships with every save, so an
+unconditional stamp would make the shell seq useless as a conflict signal).
+The response returns the seq (`{ ok: true, seq }`).
+
+### Conflict detection (multi-admin level A)
+
+Incremental saves carry **base seqs**: for every changed *and* deleted row,
+the stored seq the client last synchronized with (`baseSeqs`), plus the
+shell's (`shellBaseSeq`). Inside the transaction — *after* `allocateSiteSeq`,
+whose counter-row lock serializes concurrent saves on both dialects, making
+the check exact — the handler compares each shipped row's STORED seq against
+its base:
+
+- stored seq **newer** than the base → another admin changed (or deleted —
+  soft-deleted rows are visible to the check via `listDataRowSeqs`) the row
+  since this client synchronized;
+- **no base entry** for a row that exists in storage → the client doesn't
+  know the row at all, so its write would be a blind overwrite;
+- the shell is checked only when the incoming shell differs from the stored
+  one (one coarse seq for the whole shell — accepted v1 granularity).
+
+Any hit throws `SaveConflictError` (`@core/persistence/saveConflict` — the
+same class the client adapter re-throws), rolling the transaction back into
+a **409** with `{ error, conflicts: [{ table, rowId, seq }] }`. Nothing is
+written. Client-created rows have no stored counterpart and pass by
+construction; **replace-mode saves skip the check** (imports replace
+deliberately).
+
+Known v1 blind spot: writers OUTSIDE the transactional save (plugin pack
+installs via `saveDraftSite`/`saveDataRowDraft`, data-workspace row edits)
+do not stamp seqs, so conflict detection cannot see them — those flows
+coordinate through `requestCmsSiteReload()` instead. Widening seq stamping
+to every writer is live-sync phase B territory.
+
+Client side: `loadSite` seeds `baseSeqs`/`shellBaseSeq` in the editor store
+(per-row seqs ride the collection GET responses — `DataRow.seq`; the shell
+seq rides `GET /site`). Every successful save bumps the shipped rows' bases
+to the response seq — deleted rows **keep** their entries so an undo that
+resurrects a saved-deleted row carries the right base. On a 409,
+`usePersistence` restores the dirty snapshot, fills `saveConflicts`, and the
+**conflict banner** (`SaveConflictBanner`, mounted in `AdminCanvasLayout`)
+offers per-target resolution: **Load theirs** fetches the remote state
+(single-row `?id=` filter on the collection GETs, or `GET /site` for the
+shell) and adopts it via `resolveSaveConflictTheirs` (swaps the row without
+undo history, clears its dirty marks, clears the undo history, and for VCs
+propagates slot re-sync / ref-cascade removal into consumer pages *with*
+dirty marks); **Keep mine** bumps the base seq so the next save overwrites
+as a stated decision. Autosave is suppressed while conflicts pend; resolving
+the last one flushes the surviving edits through the save queue.
 
 ### Atomic diff validation
 

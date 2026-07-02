@@ -3,6 +3,7 @@ import type { Page, SiteDocument } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import type { SavedLayout } from '@core/layouts'
 import { CmsAdapter } from '@core/persistence/cms'
+import { SaveConflictError } from '@core/persistence/saveConflict'
 
 function makePage(id: string, slug: string): Page {
   return {
@@ -96,7 +97,7 @@ describe('CmsAdapter', () => {
 
     const loaded = await adapter.loadSite('ignored-in-single-site-mode')
 
-    expect(loaded?.id).toBe('project_1')
+    expect(loaded?.site.id).toBe('project_1')
     expect(calls[0]).toMatchObject({
       input: '/admin/api/cms/site',
       init: { method: 'GET', credentials: 'include' },
@@ -295,5 +296,103 @@ describe('CmsAdapter save wire shapes', () => {
     expect(ids(body.changedComponents)).toEqual(['vc-1', 'vc-2'])
     expect(ids(body.changedLayouts)).toEqual(['layout-1', 'layout-2'])
     expect(body.deletedPageIds).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Conflict-detection wire shapes — baseSeqs / shellBaseSeq + the 409 path
+// ---------------------------------------------------------------------------
+
+describe('CmsAdapter conflict protocol', () => {
+  function emptyDirty() {
+    return {
+      all: false,
+      pageIds: new Set<string>(),
+      componentIds: new Set<string>(),
+      layoutIds: new Set<string>(),
+      deletedPageIds: new Set<string>(),
+      deletedComponentIds: new Set<string>(),
+      deletedLayoutIds: new Set<string>(),
+    }
+  }
+
+  it('ships the base-seq subset covering exactly the changed + deleted rows, plus shellBaseSeq', async () => {
+    const calls: Array<{ init?: RequestInit }> = []
+    const adapter = new CmsAdapter(async (_input, init) => {
+      calls.push({ init })
+      return new Response(JSON.stringify({ ok: true, seq: 9 }), { status: 200 })
+    })
+
+    const doc = site()
+    const result = await adapter.saveSite(doc, {
+      dirty: {
+        ...emptyDirty(),
+        pageIds: new Set(['page_home']),
+        deletedComponentIds: new Set(['vc-gone']),
+      },
+      baseSeqs: {
+        page_home: 4,
+        'vc-gone': 5,
+        'unrelated-row': 99, // not shipped — must not leak onto the wire
+      },
+      shellBaseSeq: 7,
+    })
+
+    expect(result.seq).toBe(9)
+    const body = JSON.parse(String(calls[0].init?.body)) as Record<string, unknown>
+    expect(body.baseSeqs).toEqual({ page_home: 4, 'vc-gone': 5 })
+    expect(body.shellBaseSeq).toBe(7)
+  })
+
+  it('throws SaveConflictError with the parsed conflicts on a 409', async () => {
+    const conflicts = [{ table: 'pages', rowId: 'page_home', seq: 12 }]
+    const adapter = new CmsAdapter(async () =>
+      new Response(JSON.stringify({ error: 'save conflict', conflicts }), { status: 409 }))
+
+    const err = await adapter
+      .saveSite(site(), { dirty: emptyDirty(), baseSeqs: {}, shellBaseSeq: 0 })
+      .then(() => null, (e: unknown) => e)
+    expect(err).toBeInstanceOf(SaveConflictError)
+    expect((err as SaveConflictError).conflicts).toEqual([
+      { table: 'pages', rowId: 'page_home', seq: 12 },
+    ])
+  })
+
+  it('loadSite returns per-row seqs and the shell seq alongside the document', async () => {
+    const adapter = new CmsAdapter(async (input) => {
+      const url = String(input)
+      if (url.endsWith('/site')) {
+        return new Response(JSON.stringify({ site: site(), seq: 3 }), { status: 200 })
+      }
+      if (url.endsWith('/pages')) {
+        return new Response(JSON.stringify({
+          rows: [{
+            id: 'page_home', tableId: 'pages', slug: 'index', status: 'draft', seq: 2,
+            cells: { title: 'index', slug: 'index', body: { rootNodeId: 'root', nodes: { root: { id: 'root', moduleId: 'base.body', props: {}, breakpointOverrides: {}, children: [] } } } },
+            authorUserId: null, createdByUserId: null, updatedByUserId: null, publishedByUserId: null,
+            author: null, createdBy: null, updatedBy: null, publishedBy: null,
+            createdAt: '2026-01-01', updatedAt: '2026-01-01', publishedAt: null,
+            scheduledPublishAt: null, deletedAt: null,
+          }],
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ rows: [] }), { status: 200 })
+    })
+
+    const loaded = await adapter.loadSite('default')
+    expect(loaded?.shellSeq).toBe(3)
+    expect(loaded?.rowSeqs).toEqual({ page_home: 2 })
+  })
+
+  it('loadSiteRow fetches the single-row filter and returns null for a deleted row', async () => {
+    const requested: string[] = []
+    const adapter = new CmsAdapter(async (input) => {
+      requested.push(String(input))
+      return new Response(JSON.stringify({ rows: [] }), { status: 200 })
+    })
+
+    const row = await adapter.loadSiteRow('pages', 'page-gone')
+    expect(row).toBeNull()
+    expect(requested[0]).toBe('/admin/api/cms/pages?id=page-gone')
   })
 })

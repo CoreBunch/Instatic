@@ -63,9 +63,11 @@ function makeAdapter(site: SiteDocument): IPersistenceAdapter & { loadCount: () 
   return {
     async loadSite() {
       loads += 1
-      return site
+      return { site, rowSeqs: {}, shellSeq: 0 }
     },
-    async saveSite() {},
+    async saveSite() {
+      return { seq: 1 }
+    },
     loadCount: () => loads,
   }
 }
@@ -79,9 +81,11 @@ function makeControlledAdapter(
     async loadSite() {
       loads += 1
       await new Promise<void>((resolve) => resolvers.push(resolve))
-      return site
+      return { site, rowSeqs: {}, shellSeq: 0 }
     },
-    async saveSite() {},
+    async saveSite() {
+      return { seq: 1 }
+    },
     loadCount: () => loads,
     resolveNextLoad: () => {
       resolvers.shift()?.()

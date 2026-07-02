@@ -66,6 +66,10 @@ export function createLifecycleActions({
         state.hasUnsavedChanges = false
         // A brand-new site has no stored rows at all — first save is full.
         state._dirtySave = { ...emptyDirtyMarks(), all: true }
+        // No stored rows → no sync bases and nothing to conflict with.
+        state.baseSeqs = {}
+        state.shellBaseSeq = 0
+        state.saveConflicts = []
       })
       return site
     },
@@ -96,6 +100,12 @@ export function createLifecycleActions({
         state.canRedo = false
         state.hasUnsavedChanges = false
         state._dirtySave = emptyDirtyMarks()
+        // Sync bases for the fresh document are seeded by the load path
+        // (usePersistence → seedBaseSeqs) — reset here so a hand-assembled
+        // load never inherits a previous document's bases or conflicts.
+        state.baseSeqs = {}
+        state.shellBaseSeq = 0
+        state.saveConflicts = []
       })
     },
 
@@ -114,6 +124,9 @@ export function createLifecycleActions({
         state.canUndo = false
         state.canRedo = false
         state._dirtySave = emptyDirtyMarks()
+        state.baseSeqs = {}
+        state.shellBaseSeq = 0
+        state.saveConflicts = []
       })
     },
 

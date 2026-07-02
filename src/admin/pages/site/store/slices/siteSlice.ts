@@ -12,6 +12,7 @@
  *   - `./site/helpers`          — buildSiteHelpers (mutate* + patch-based history) + depthInTree
  *   - `./site/undoRedoActions`  — undo / redo
  *   - `./site/lifecycleActions` — createSite / loadSite / clearSite / updateSiteName
+ *   - `./site/conflictActions`  — save-conflict resolution (Keep mine / Load theirs)
  *   - `./site/pageActions`      — page CRUD + template conversions
  *   - `./site/explorerActions`  — Site Explorer folder/order organization
  *   - `./site/nodeActions`      — the 11 named tree mutations + multi-select variants + dynamic bindings
@@ -25,6 +26,7 @@ import type { EditorStoreSliceCreator } from '@site/store/types'
 import { buildSiteHelpers } from './site/helpers'
 import { createUndoRedoActions } from './site/undoRedoActions'
 import { createLifecycleActions } from './site/lifecycleActions'
+import { createConflictActions } from './site/conflictActions'
 import { createPageActions } from './site/pageActions'
 import { createExplorerActions } from './site/explorerActions'
 import { createNodeActions } from './site/nodeActions'
@@ -72,6 +74,7 @@ export const createSiteSlice: EditorStoreSliceCreator<SiteSlice> = (set, get) =>
     // ─── Action surface ──────────────────────────────────────────────────────
     ...createUndoRedoActions(helpers),
     ...createLifecycleActions(helpers),
+    ...createConflictActions(helpers),
     ...createPageActions(helpers),
     ...createExplorerActions(helpers),
     ...createNodeActions(helpers),

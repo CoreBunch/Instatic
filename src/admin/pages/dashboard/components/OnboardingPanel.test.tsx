@@ -49,8 +49,9 @@ const FACTS: OnboardingFacts = {
 
 describe('OnboardingPanel framework import', () => {
   it('dispatches a CMS site reload after a successful import so the editor refetches', async () => {
-    const loadSpy = spyOn(cmsAdapter, 'loadSite').mockResolvedValue(fakeSite())
-    const saveSpy = spyOn(cmsAdapter, 'saveSite').mockResolvedValue(undefined)
+    const loadSpy = spyOn(cmsAdapter, 'loadSite')
+      .mockResolvedValue({ site: fakeSite(), rowSeqs: {}, shellSeq: 0 })
+    const saveSpy = spyOn(cmsAdapter, 'saveSite').mockResolvedValue({ seq: 1 })
 
     let reloadFired = false
     const onReload = () => { reloadFired = true }

@@ -19,6 +19,7 @@
 export {
   listDataRows,
   listDataRowIdSlugs,
+  listDataRowSeqs,
   getDataRow,
   getDataRowMany,
   getDataRowBySlug,

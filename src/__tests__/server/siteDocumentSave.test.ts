@@ -21,7 +21,12 @@
  *   - replace mode (imports): server-derived deletions, deleted*Ids must be
  *     empty,
  *   - the site-global sync seq: response seq strictly increases and is
- *     stamped on written AND deleted rows.
+ *     stamped on written AND deleted rows,
+ *   - conflict detection: incremental saves carry base seqs; a shipped row
+ *     stored NEWER than its base (or with no base entry at all) 409s the
+ *     whole save with a `conflicts` payload and writes nothing. The shell
+ *     participates only when its content actually changed (row-only saves
+ *     don't stamp the shell seq). Replace mode skips the check.
  *
  * Runs against a real isolated SQLite DB through the established capability
  * harness (`createCapabilityTestHarness` → `createTestDb`): migrations
@@ -180,23 +185,73 @@ interface DocOverrides {
   deletedComponentIds?: string[]
   changedLayouts?: unknown[]
   deletedLayoutIds?: string[]
+  baseSeqs?: Record<string, number>
+  shellBaseSeq?: number
 }
 
-function putDoc(ctx: Ctx, overrides: DocOverrides = {}): Promise<Response> {
+/** Every row id an incremental body touches — changed + deleted, all collections. */
+function touchedIds(body: {
+  changedPages: unknown[]
+  deletedPageIds: string[]
+  changedComponents: unknown[]
+  deletedComponentIds: string[]
+  changedLayouts: unknown[]
+  deletedLayoutIds: string[]
+}): string[] {
+  const changed = [...body.changedPages, ...body.changedComponents, ...body.changedLayouts]
+    .map((row) => (row && typeof row === 'object' ? (row as { id?: unknown }).id : undefined))
+    .filter((id): id is string => typeof id === 'string')
+  return [...changed, ...body.deletedPageIds, ...body.deletedComponentIds, ...body.deletedLayoutIds]
+}
+
+/** Stored seqs for `ids` (soft-deleted rows included) — the up-to-date client's base map. */
+async function liveBaseSeqs(harness: CapabilityTestHarness, ids: string[]): Promise<Record<string, number>> {
+  if (ids.length === 0) return {}
+  const { rows } = await harness.db<{ id: string; seq: number }>`
+    select id, seq from data_rows
+  `
+  const wanted = new Set(ids)
+  const bases: Record<string, number> = {}
+  for (const row of rows) {
+    if (wanted.has(row.id)) bases[row.id] = Number(row.seq)
+  }
+  return bases
+}
+
+async function liveShellSeq(harness: CapabilityTestHarness): Promise<number> {
+  const { rows } = await harness.db<{ seq: number }>`
+    select seq from site where id = 'default'
+  `
+  return rows[0] ? Number(rows[0].seq) : 0
+}
+
+/**
+ * PUT the document. Unless the test overrides them, `baseSeqs` and
+ * `shellBaseSeq` are derived from live storage — modeling a fully
+ * synchronized client, so pre-conflict scenarios stay focused on their own
+ * concern. Conflict tests pass stale values explicitly.
+ */
+async function putDoc(ctx: Ctx, overrides: DocOverrides = {}): Promise<Response> {
+  const json = {
+    mode: 'incremental' as const,
+    site: ctx.shell,
+    changedPages: [] as unknown[],
+    deletedPageIds: [] as string[],
+    changedComponents: [] as unknown[],
+    deletedComponentIds: [] as string[],
+    changedLayouts: [] as unknown[],
+    deletedLayoutIds: [] as string[],
+    ...overrides,
+  }
+  const body = {
+    ...json,
+    baseSeqs: json.baseSeqs ?? (await liveBaseSeqs(ctx.harness, touchedIds(json))),
+    shellBaseSeq: json.shellBaseSeq ?? (await liveShellSeq(ctx.harness)),
+  }
   return ctx.harness.cms('/admin/api/cms/site-document', {
     method: 'PUT',
     cookie: ctx.cookie,
-    json: {
-      mode: 'incremental',
-      site: ctx.shell,
-      changedPages: [],
-      deletedPageIds: [],
-      changedComponents: [],
-      deletedComponentIds: [],
-      changedLayouts: [],
-      deletedLayoutIds: [],
-      ...overrides,
-    },
+    json: body,
   })
 }
 
@@ -743,6 +798,212 @@ describe('site-document save — sync seq', () => {
       // The home page was never written after seeding — seq untouched (0 or
       // whatever the seed left), definitely below save #1's seq.
       expect(rows.get(ctx.homeId)!.seq).toBeLessThan(first)
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Conflict detection — baseSeqs / shellBaseSeq (multi-admin level A)
+// ---------------------------------------------------------------------------
+
+describe('site-document save — conflict detection', () => {
+  it('409s a save whose shipped row is stored NEWER than its base seq; nothing is written', async () => {
+    const ctx = await setupHarness()
+    try {
+      const first = await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about', 'Original')],
+      }))
+      // "Admin A" edits the row again — storage moves past `first`.
+      const second = await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about', 'Admin A v2')],
+      }))
+
+      // "Admin B" saves from the stale base — rejected, atomically.
+      const res = await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about', 'Admin B stale')],
+        baseSeqs: { 'page-a': first },
+      })
+      expect(res.status).toBe(409)
+      const body = await readJson<{ error: string; conflicts: unknown[] }>(res)
+      expect(body.conflicts).toEqual([{ table: 'pages', rowId: 'page-a', seq: second }])
+
+      const rows = await storedRows(ctx.harness, 'pages')
+      expect(rows.get('page-a')!.cells_json.title).toBe('Admin A v2')
+      expect(rows.get('page-a')!.seq).toBe(second)
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('Keep-mine: the identical save succeeds once the base seq is bumped to the conflict seq', async () => {
+    const ctx = await setupHarness()
+    try {
+      const first = await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about', 'Original')],
+      }))
+      const second = await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about', 'Admin A v2')],
+      }))
+
+      const stale = await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about', 'Admin B wins')],
+        baseSeqs: { 'page-a': first },
+      })
+      expect(stale.status).toBe(409)
+
+      // Keep-mine bumps the base to the remote seq — the stated overwrite lands.
+      await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about', 'Admin B wins')],
+        baseSeqs: { 'page-a': second },
+      }))
+      const rows = await storedRows(ctx.harness, 'pages')
+      expect(rows.get('page-a')!.cells_json.title).toBe('Admin B wins')
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('client-created rows (no stored counterpart) pass with no base entry', async () => {
+    const ctx = await setupHarness()
+    try {
+      await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-new', 'fresh')],
+        baseSeqs: {},
+      }))
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('a stored row shipped with NO base entry conflicts — a blind overwrite is never silent', async () => {
+    const ctx = await setupHarness()
+    try {
+      const seq = await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about')],
+      }))
+      const res = await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about', 'blind write')],
+        baseSeqs: {},
+      })
+      expect(res.status).toBe(409)
+      const body = await readJson<{ conflicts: unknown[] }>(res)
+      expect(body.conflicts).toEqual([{ table: 'pages', rowId: 'page-a', seq }])
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('deleting a remotely-newer row conflicts; the row survives', async () => {
+    const ctx = await setupHarness()
+    try {
+      const first = await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about', 'Original')],
+      }))
+      await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about', 'Admin A v2')],
+      }))
+
+      const res = await putDoc(ctx, {
+        deletedPageIds: ['page-a'],
+        baseSeqs: { 'page-a': first },
+      })
+      expect(res.status).toBe(409)
+      const rows = await storedRows(ctx.harness, 'pages')
+      expect(rows.get('page-a')!.deleted_at).toBeNull()
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('editing a remotely-DELETED row conflicts — soft-deleted rows are visible to the check', async () => {
+    const ctx = await setupHarness()
+    try {
+      const first = await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about', 'Original')],
+      }))
+      // "Admin A" deletes the row — the deletion stamps a newer seq.
+      const second = await expectOk(await putDoc(ctx, { deletedPageIds: ['page-a'] }))
+
+      const res = await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about', 'stale edit')],
+        baseSeqs: { 'page-a': first },
+      })
+      expect(res.status).toBe(409)
+      const body = await readJson<{ conflicts: unknown[] }>(res)
+      expect(body.conflicts).toEqual([{ table: 'pages', rowId: 'page-a', seq: second }])
+      const rows = await storedRows(ctx.harness, 'pages')
+      expect(rows.get('page-a')!.deleted_at).not.toBeNull()
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('row-only saves do NOT stamp the shell seq (the shell write is skipped when unchanged)', async () => {
+    const ctx = await setupHarness()
+    try {
+      const before = await liveShellSeq(ctx.harness)
+      await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about')],
+      }))
+      expect(await liveShellSeq(ctx.harness)).toBe(before)
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('shell conflicts fire only on REAL shell changes with a stale base', async () => {
+    const ctx = await setupHarness()
+    try {
+      // "Admin A" renames the site — a real shell change stamps the shell seq.
+      await expectOk(await putDoc(ctx, { site: { ...ctx.shell, name: 'Renamed by A' } }))
+      const shellSeq = await liveShellSeq(ctx.harness)
+      expect(shellSeq).toBeGreaterThan(0)
+
+      // "Admin B" ships ANOTHER shell change from a stale base — 409.
+      const res = await putDoc(ctx, {
+        site: { ...ctx.shell, name: 'Renamed by B (stale)' },
+        shellBaseSeq: shellSeq - 1,
+      })
+      expect(res.status).toBe(409)
+      const body = await readJson<{ conflicts: unknown[] }>(res)
+      expect(body.conflicts).toEqual([{ table: 'site', rowId: 'default', seq: shellSeq }])
+
+      // But a row-only save re-shipping the CURRENT stored shell verbatim
+      // passes even with a stale shell base — unchanged content is no
+      // overwrite, so the coarse shell check must not fire.
+      const shellRes = await ctx.harness.cms('/admin/api/cms/site', { method: 'GET', cookie: ctx.cookie })
+      const { site: storedShell } = await readJson<{ site: unknown }>(shellRes)
+      await expectOk(await putDoc(ctx, {
+        site: storedShell,
+        changedPages: [pagePayload('page-b', 'contact')],
+        shellBaseSeq: 0,
+      }))
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('replace mode skips the conflict check entirely (imports replace deliberately)', async () => {
+    const ctx = await setupHarness()
+    try {
+      await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about', 'Original')],
+      }))
+      await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about', 'Admin A v2')],
+      }))
+
+      // Stale bases + replace mode — bulldozes by design.
+      await expectOk(await putDoc(ctx, {
+        mode: 'replace',
+        changedPages: [pagePayload('page-a', 'about', 'Imported')],
+        baseSeqs: { 'page-a': 0 },
+        shellBaseSeq: 0,
+      }))
+      const rows = await storedRows(ctx.harness, 'pages')
+      expect(rows.get('page-a')!.cells_json.title).toBe('Imported')
     } finally {
       await ctx.harness.cleanup()
     }

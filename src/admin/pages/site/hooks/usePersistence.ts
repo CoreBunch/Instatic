@@ -35,6 +35,7 @@ import { useEditorStore } from '@site/store/store'
 import type { SiteDocument } from '@core/page-tree'
 import type { IPersistenceAdapter } from '@core/persistence/types'
 import { cmsAdapter } from '@core/persistence/cms'
+import { SaveConflictError } from '@core/persistence/saveConflict'
 import { SiteValidationError } from '@core/persistence/validate'
 import {
   readAutoSaveDelayMs,
@@ -134,8 +135,14 @@ export function usePersistence(
   // Exception #1: referenced in the useCallback dep array of saveCurrentSite,
   // so exhaustive-deps requires a stable identity here.
   const runSave = useCallback(async () => {
-    const { site, setHasUnsavedChanges, takeDirtySaveSnapshot, restoreDirtySaveSnapshot } =
-      useEditorStore.getState()
+    const {
+      site,
+      setHasUnsavedChanges,
+      takeDirtySaveSnapshot,
+      restoreDirtySaveSnapshot,
+      baseSeqs,
+      shellBaseSeq,
+    } = useEditorStore.getState()
     if (!site) return
 
     setSaveStatus({ state: 'saving', message: 'Saving draft' })
@@ -144,7 +151,10 @@ export function usePersistence(
     // failed save merges this snapshot back so nothing is lost.
     const dirty = takeDirtySaveSnapshot()
     try {
-      await adapterRef.current.saveSite(site, { dirty })
+      const { seq } = await adapterRef.current.saveSite(site, { dirty, baseSeqs, shellBaseSeq })
+      // Storage now holds this save — bump the conflict-detection bases of
+      // everything it shipped to the save's seq.
+      useEditorStore.getState().commitSavedBaseSeqs(site, dirty, seq)
       // Clear the unsaved flag ONLY when no mutation landed while the save
       // was on the wire — every store mutation produces a new `site`
       // reference, so reference equality is the exact signal. Without this
@@ -155,6 +165,13 @@ export function usePersistence(
       setSaveStatus({ state: 'saved', lastSavedAt: Date.now() })
     } catch (err) {
       restoreDirtySaveSnapshot(dirty)
+      if (err instanceof SaveConflictError) {
+        // Another admin stored newer versions of rows this save shipped.
+        // Surface the resolution UI (conflict banner) instead of a plain
+        // error; the restored dirty marks keep the local edits safe while
+        // the user decides per row.
+        useEditorStore.getState().setSaveConflicts(err.conflicts)
+      }
       setSaveStatus({ state: 'error', message: errorMessage(err, 'Save failed') })
       throw err
     }
@@ -243,11 +260,14 @@ export function usePersistence(
         try {
           // The adapter validates internally (validateSite + validatePages).
           // Constraint #230 is satisfied at the adapter boundary.
-          const site = await adapterRef.current.loadSite(idToTry)
-          if (site && !cancelled) {
+          const result = await adapterRef.current.loadSite(idToTry)
+          if (result && !cancelled) {
             if (pendingCmsSiteReload) consumePendingCmsSiteReload()
-            loadSite(site)
-            applyDefaultBreakpointPreference(site.breakpoints)
+            loadSite(result.site)
+            // Seed the conflict-detection bases from the same read that
+            // produced the document — every future save compares against these.
+            useEditorStore.getState().seedBaseSeqs(result.rowSeqs, result.shellSeq)
+            applyDefaultBreakpointPreference(result.site.breakpoints)
             loadedRef.current = true
             setSaveStatus({ state: 'saved', lastSavedAt: Date.now() })
             return
@@ -287,9 +307,11 @@ export function usePersistence(
         try {
           // Replace-mode full save (no dirty hints): the site doesn't exist
           // in storage yet.
-          await adapterRef.current.saveSite(created)
-          // Storage now matches the store — drop the createSite all-dirty mark.
+          const { seq } = await adapterRef.current.saveSite(created)
+          // Storage now matches the store — drop the createSite all-dirty
+          // mark and seed the conflict-detection bases at the save's seq.
           useEditorStore.getState().takeDirtySaveSnapshot()
+          useEditorStore.getState().commitSavedBaseSeqs(created, undefined, seq)
           setSaveStatus({ state: 'saved', lastSavedAt: Date.now() })
         } catch (err) {
           setHasUnsavedChanges(true)
@@ -316,14 +338,15 @@ export function usePersistence(
       const pendingCmsSiteReload = hasPendingCmsSiteReload()
       try {
         // Adapter validates internally (Constraint #230).
-        const site = await adapterRef.current.loadSite(idToTry)
-        if (!site) {
+        const result = await adapterRef.current.loadSite(idToTry)
+        if (!result) {
           if (pendingCmsSiteReload) consumePendingCmsSiteReload()
           return
         }
-        const { loadSite, setHasUnsavedChanges } = useEditorStore.getState()
-        loadSite(site)
-        applyDefaultBreakpointPreference(site.breakpoints)
+        const { loadSite, setHasUnsavedChanges, seedBaseSeqs } = useEditorStore.getState()
+        loadSite(result.site)
+        seedBaseSeqs(result.rowSeqs, result.shellSeq)
+        applyDefaultBreakpointPreference(result.site.breakpoints)
         // The site doc on disk is now authoritative; clear the unsaved flag so
         // the auto-save loop doesn't immediately overwrite it back.
         setHasUnsavedChanges(false)
@@ -356,6 +379,9 @@ export function usePersistence(
       clearTimeout(timer)
       if (!loadedRef.current) return
       if (!useEditorStore.getState().hasUnsavedChanges) return
+      // Pending conflicts need a per-row decision — an autosave retry would
+      // just 409 again. The conflict banner resumes saving on resolution.
+      if (useEditorStore.getState().saveConflicts.length > 0) return
       if (!readAutoSavePreference()) return
 
       // Read the delay each time auto-save is scheduled — toggling the
@@ -390,11 +416,12 @@ export function usePersistence(
     // is retried by the next save). One request now, so either the whole
     // save lands or none of it does — no partial-prefix commits at unload.
     function flushBeforeUnload() {
-      const { site, hasUnsavedChanges, peekDirtySaveSnapshot } = useEditorStore.getState()
+      const { site, hasUnsavedChanges, peekDirtySaveSnapshot, baseSeqs, shellBaseSeq } =
+        useEditorStore.getState()
       if (!site || !loadedRef.current || !hasUnsavedChanges) return
       clearTimeout(timer)
       void adapterRef.current
-        .saveSite(site, { dirty: peekDirtySaveSnapshot() })
+        .saveSite(site, { dirty: peekDirtySaveSnapshot(), baseSeqs, shellBaseSeq })
         .catch((err) => {
           console.error('[persistence] flush save failed:', err)
         })

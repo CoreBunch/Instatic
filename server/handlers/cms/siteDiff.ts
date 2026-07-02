@@ -237,6 +237,17 @@ function diffFiles(
   }
 }
 
+/**
+ * True when two shells are content-identical. The transactional save uses
+ * this to SKIP the shell write + seq stamp on row-only saves — the pillar of
+ * the shell conflict check: the shell seq advances only when shell content
+ * genuinely changed, so a stale-but-untouched shell shipped alongside a page
+ * edit never trips a spurious conflict.
+ */
+export function shellsEqual(a: SiteShell, b: SiteShell): boolean {
+  return deepEqual(a, b)
+}
+
 // ---------------------------------------------------------------------------
 // Small deep-equal helpers
 // ---------------------------------------------------------------------------

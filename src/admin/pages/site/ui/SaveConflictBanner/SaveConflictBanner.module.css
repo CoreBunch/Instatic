@@ -1,0 +1,64 @@
+/**
+ * Save-conflict banner — a persistent resolution surface floating below the
+ * toolbar. Warning identity comes from the 2px left rule (Toast convention);
+ * everything else stays achromatic per the two-layer color model.
+ */
+
+.banner {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-dropdown);
+  width: min(560px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-s);
+  padding: var(--space-m) var(--space-l);
+  background: var(--bg-surface);
+  border: 1px solid var(--overlay-10);
+  border-left: 2px solid var(--warning);
+  border-radius: var(--panel-radius);
+  box-shadow: var(--shadow-panel);
+}
+
+.title {
+  font-size: var(--text-m);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.subtitle {
+  font-size: var(--text-s);
+  color: var(--text-subtle);
+}
+
+.conflictList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.conflictRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-s);
+  padding: var(--space-xs) 0;
+}
+
+.conflictLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-s);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conflictKind {
+  color: var(--text-subtle);
+}

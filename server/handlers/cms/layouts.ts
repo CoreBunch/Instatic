@@ -1,10 +1,14 @@
 /**
  * Saved-layout read endpoint backed by `data_rows` (table_id = 'layouts').
  *
- *   GET /admin/api/cms/layouts — list all non-deleted layout rows as
- *                                DataRow[] (gated by `site.read`). The client
- *                                adapter converts these to SavedLayout[]
- *                                via savedLayoutFromRow + validateSavedLayouts.
+ *   GET /admin/api/cms/layouts      — list all non-deleted layout rows as
+ *                                     DataRow[] (gated by `site.read`). The
+ *                                     client adapter converts these to
+ *                                     SavedLayout[] via savedLayoutFromRow +
+ *                                     validateSavedLayouts.
+ *   GET /admin/api/cms/layouts?id=X — the single row X (empty `rows` when
+ *                                     deleted or not a layout) — the conflict
+ *                                     banner's "Load theirs" fetch.
  *
  * The response returns raw DataRow objects (not SavedLayout objects) so the
  * client adapter can reconstruct layouts via savedLayoutFromRow without a
@@ -16,9 +20,8 @@
  */
 import type { DbClient } from '../../db/client'
 import { requireCapability } from '../../auth/authz'
-import { listDataRows } from '../../repositories/data'
-import { jsonResponse, methodNotAllowed } from '../../http'
-import { CMS_API_PREFIX } from './shared'
+import { methodNotAllowed } from '../../http'
+import { CMS_API_PREFIX, siteCollectionRowsResponse } from './shared'
 
 export async function handleLayoutsRoutes(req: Request, db: DbClient): Promise<Response | null> {
   const url = new URL(req.url)
@@ -28,6 +31,5 @@ export async function handleLayoutsRoutes(req: Request, db: DbClient): Promise<R
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
 
-  const rows = await listDataRows(db, 'layouts')
-  return jsonResponse({ rows })
+  return siteCollectionRowsResponse(db, url, 'layouts')
 }

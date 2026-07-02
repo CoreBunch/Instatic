@@ -20,6 +20,7 @@ import React, { useEffect } from 'react'
 import { cleanup, render, waitFor } from '@testing-library/react'
 import { usePersistence } from '@site/hooks/usePersistence'
 import type { IPersistenceAdapter, SaveSiteOptions } from '@core/persistence/types'
+import { SaveConflictError } from '@core/persistence/saveConflict'
 import type { SiteDocument } from '@core/page-tree'
 import { useEditorStore } from '@site/store/store'
 import { emptyDirtyMarks } from '@site/store/slices/site/dirtyTracking'
@@ -54,7 +55,8 @@ function makeGatedAdapter(): { adapter: IPersistenceAdapter; saves: RecordedSave
     saveSite: (_site: SiteDocument, opts: SaveSiteOptions = {}) => {
       const gate = deferred()
       saves.push({ dirty: opts.dirty, gate })
-      return gate.promise
+      // Each released save reports a strictly-increasing seq, like the server.
+      return gate.promise.then(() => ({ seq: saves.length }))
     },
   }
   return { adapter, saves }
@@ -204,5 +206,52 @@ describe('usePersistence single-flight save queue', () => {
     expect(saves[1].dirty!.pageIds.has('page-b')).toBe(true)
     saves[1].gate.resolve()
     await second
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Conflict flow — a 409'd save surfaces the resolution UI, loses nothing
+// ---------------------------------------------------------------------------
+
+describe('usePersistence conflict flow', () => {
+  it('a SaveConflictError sets store.saveConflicts, restores the dirty marks, and bumps nothing', async () => {
+    seedStore()
+    useEditorStore.getState().seedBaseSeqs({ 'page-a': 3 }, 3)
+    const conflicts = [{ table: 'pages' as const, rowId: 'page-a', seq: 7 }]
+    const adapter: IPersistenceAdapter = {
+      loadSite: async () => undefined,
+      saveSite: async () => {
+        throw new SaveConflictError(conflicts)
+      },
+    }
+    const save = await mountHook(adapter)
+
+    editPage('page-a')
+    await expect(save()).rejects.toBeInstanceOf(SaveConflictError)
+
+    const state = useEditorStore.getState()
+    expect(state.saveConflicts).toEqual(conflicts)
+    // The failed snapshot merged back — nothing lost, next save re-ships it.
+    expect(state._dirtySave.pageIds.has('page-a')).toBe(true)
+    // Base seqs untouched by the failure — only a resolution changes them.
+    expect(state.baseSeqs['page-a']).toBe(3)
+  })
+
+  it('a successful save commits the shipped bases to the response seq and clears conflicts', async () => {
+    seedStore()
+    useEditorStore.getState().seedBaseSeqs({ 'page-a': 3, 'page-b': 3 }, 3)
+    const adapter: IPersistenceAdapter = {
+      loadSite: async () => undefined,
+      saveSite: async () => ({ seq: 15 }),
+    }
+    const save = await mountHook(adapter)
+
+    editPage('page-a')
+    await save()
+
+    const state = useEditorStore.getState()
+    expect(state.baseSeqs['page-a']).toBe(15)
+    expect(state.baseSeqs['page-b']).toBe(3)
+    expect(state.shellBaseSeq).toBe(15)
   })
 })

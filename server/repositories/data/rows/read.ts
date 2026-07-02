@@ -54,10 +54,10 @@ interface DataRowIdSlug {
 }
 
 /**
- * Lightweight (id, slug) projection of a table's non-deleted rows. The roster
- * reconcilers (PUT /pages, PUT /components) need exactly this — the reap diff
- * and the cross-row slug-uniqueness check — so they must not pay the hydrated
- * SELECT's full `cells_json` parse per row per save.
+ * Lightweight (id, slug) projection of a table's non-deleted rows. The
+ * transactional site-document save needs exactly this — the replace-mode reap
+ * diff and the cross-row slug-uniqueness check — so it must not pay the
+ * hydrated SELECT's full `cells_json` parse per row per save.
  */
 export async function listDataRowIdSlugs(
   db: DbClient,
@@ -87,6 +87,34 @@ export async function listSoftDeletedDataRowIds(
       and deleted_at is not null
   `
   return rows.map((r) => r.id)
+}
+
+export interface DataRowSeq {
+  id: string
+  seq: number
+}
+
+/**
+ * Lean (id, seq) projection for a set of row ids in one table — the
+ * transactional save's conflict check. Deliberately NO `deleted_at` filter:
+ * a remote soft-delete stamps the row's seq, and a stale client editing that
+ * row must see it as a conflict, not as absence. Runs INSIDE the save
+ * transaction (after `allocateSiteSeq` — the counter-row lock serializes
+ * concurrent saves, so the read is exact).
+ */
+export async function listDataRowSeqs(
+  db: DbClient,
+  tableId: string,
+  rowIds: ReadonlyArray<string>,
+): Promise<DataRowSeq[]> {
+  if (rowIds.length === 0) return []
+  const placeholders = rowIds.map((_, i) => placeholder(db.dialect, i + 2)).join(', ')
+  const { rows } = await db.unsafe<DataRowSeq>(
+    `select id, seq from data_rows
+     where table_id = ${placeholder(db.dialect, 1)} and id in (${placeholders})`,
+    [tableId, ...rowIds],
+  )
+  return rows.map((r) => ({ id: r.id, seq: Number(r.seq) }))
 }
 
 export async function getDataRow(

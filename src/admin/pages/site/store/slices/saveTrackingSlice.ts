@@ -1,6 +1,10 @@
 /**
- * Save-tracking slice — the unsaved-changes flag and the patch-derived
- * save-dirty accumulator (see slices/site/dirtyTracking.ts).
+ * Save-tracking slice — the unsaved-changes flag, the patch-derived
+ * save-dirty accumulator (see slices/site/dirtyTracking.ts), and the
+ * multi-admin sync bookkeeping: per-row + shell base seqs (the
+ * conflict-detection bases every incremental save ships) and the
+ * pending-conflicts list behind the SaveConflictBanner. Conflict RESOLUTION
+ * actions live in slices/site/conflictActions.ts — they mutate the document.
  *
  * Autosave takes a snapshot (which resets the accumulator), ships only the
  * named page/component/layout writes plus explicit deleted-row ids, and
@@ -21,6 +25,7 @@
  */
 
 import type { SiteDocument } from '@core/page-tree'
+import type { SaveConflict } from '@core/persistence/saveConflict'
 import type { EditorStoreSliceCreator } from '@site/store/types'
 import { emptyDirtyMarks, mergeDirtyMarks, type DirtyMarks } from './site/dirtyTracking'
 
@@ -42,6 +47,32 @@ interface SaveTrackingSlice {
   peekDirtySaveSnapshot: () => DirtyMarks
   /** Merge a failed save's snapshot back so the next save retries it. */
   restoreDirtySaveSnapshot: (marks: DirtyMarks) => void
+
+  /**
+   * Conflict-detection bases: rowId → the sync seq this editor last
+   * synchronized with (seeded at load, bumped to the response seq on every
+   * successful save — for DELETED rows too, so an undo that resurrects a
+   * saved-deleted row carries the right base instead of reading as a blind
+   * overwrite). Every incremental save ships the subset covering its
+   * changed + deleted rows; the server 409s when storage is newer.
+   */
+  baseSeqs: Record<string, number>
+  /** The shell's counterpart to `baseSeqs` — one coarse seq for the whole shell. */
+  shellBaseSeq: number
+  /**
+   * Conflicts reported by the last 409'd save, pending user resolution via
+   * the conflict banner (Keep mine / Load theirs — see site/conflictActions).
+   * Autosave is suppressed while non-empty; a successful save clears it.
+   */
+  saveConflicts: SaveConflict[]
+  /** Replace the base-seq maps wholesale — the load/reload path. */
+  seedBaseSeqs: (rowSeqs: Record<string, number>, shellSeq: number) => void
+  /**
+   * After a successful save: bump the bases of everything the save shipped to
+   * the response seq. Incremental saves cover the dirty-snapshot ids + the
+   * shell; replace-mode saves rebuild the whole map from the shipped site.
+   */
+  commitSavedBaseSeqs: (savedSite: SiteDocument, dirty: DirtyMarks | undefined, seq: number) => void
 }
 
 declare module '@site/store/types' {
@@ -116,5 +147,41 @@ export const createSaveTrackingSlice: EditorStoreSliceCreator<SaveTrackingSlice>
   restoreDirtySaveSnapshot: (marks) =>
     set((state) => {
       mergeDirtyMarks(state._dirtySave, marks)
+    }),
+
+  baseSeqs: {},
+  shellBaseSeq: 0,
+  saveConflicts: [],
+
+  seedBaseSeqs: (rowSeqs, shellSeq) =>
+    set((state) => {
+      state.baseSeqs = { ...rowSeqs }
+      state.shellBaseSeq = shellSeq
+    }),
+
+  commitSavedBaseSeqs: (savedSite, dirty, seq) =>
+    set((state) => {
+      if (!dirty || dirty.all) {
+        // Replace-mode save — storage now holds exactly the shipped site.
+        const next: Record<string, number> = {}
+        for (const page of savedSite.pages) next[page.id] = seq
+        for (const vc of savedSite.visualComponents) next[vc.id] = seq
+        for (const layout of savedSite.layouts) next[layout.id] = seq
+        state.baseSeqs = next
+      } else {
+        const shippedIds = [
+          ...dirty.pageIds, ...dirty.deletedPageIds,
+          ...dirty.componentIds, ...dirty.deletedComponentIds,
+          ...dirty.layoutIds, ...dirty.deletedLayoutIds,
+        ]
+        for (const id of shippedIds) state.baseSeqs[id] = seq
+      }
+      // Correct even when the server skipped the shell write (content
+      // unchanged): the stored shell seq then stays BELOW this save's seq,
+      // and the conflict check only fires on stored > base.
+      state.shellBaseSeq = seq
+      // A successful save proves no shipped row conflicted — stale banner
+      // entries (all conflicts come from shipped rows) are moot.
+      state.saveConflicts = []
     }),
 })

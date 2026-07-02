@@ -362,7 +362,7 @@ All SQL lives in `server/repositories/`. Each file owns one resource:
 | `sessions.ts`              | User sessions                                     |
 | `setup.ts`                 | Setup wizard state (`isSetup`, first-run owner)   |
 | `site.ts`                  | The single site shell row                         |
-| `syncSequence.ts`          | Site-global sync sequence counter (multi-admin sync substrate — stamped on every row the site-document save writes or deletes) |
+| `syncSequence.ts`          | Site-global sync sequence counter (multi-admin sync substrate — stamped on every row the site-document save writes or deletes, and on the shell only when its content changed; the save's conflict check compares client base seqs against these inside the transaction) |
 | `userPreferences.ts`       | Per-user editor preferences                       |
 | `users.ts`                 | Users + auth fields                               |
 

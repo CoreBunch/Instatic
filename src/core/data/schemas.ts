@@ -356,6 +356,14 @@ export const DataRowSchema = Type.Object({
   /** Denormalized from `cells.slug` for fast unique / route lookup. */
   slug: Type.String(),
   status: DataRowStatusSchema,
+  /**
+   * Site-global sync seq stamped by the last transactional save that wrote or
+   * soft-deleted this row (0 = never stamped). Conflict-detection and
+   * delta-reconciliation substrate for multi-admin sync. OPTIONAL because
+   * `DataRowSchema` also validates bundle archives exported before seqs
+   * existed — server reads always populate it.
+   */
+  seq: Type.Optional(Type.Number()),
   authorUserId: NullableUserIdSchema,
   createdByUserId: NullableUserIdSchema,
   updatedByUserId: NullableUserIdSchema,

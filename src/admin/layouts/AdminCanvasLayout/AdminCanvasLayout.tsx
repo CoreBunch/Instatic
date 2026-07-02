@@ -93,6 +93,15 @@ const SettingsModal = lazy(() =>
   import('@admin/modals/Settings/SettingsModal').then((m) => ({ default: m.SettingsModal })),
 )
 
+// Save-conflict resolution banner — mounts only while a 409'd save has
+// unresolved conflicts (multi-admin conflict safety, level A), so its chunk
+// stays out of the route shell on first paint.
+const SaveConflictBanner = lazy(() =>
+  import('@admin/pages/site/ui/SaveConflictBanner/SaveConflictBanner').then((m) => ({
+    default: m.SaveConflictBanner,
+  })),
+)
+
 // Editor-only toolbar surface: preview iframe. It self-gates on store state,
 // but we ALSO conditionally render it at the call site (below) so its chunk
 // isn't fetched on first paint — the preview overlay drags in the entire
@@ -117,6 +126,7 @@ export function AdminCanvasLayout() {
   const faviconUrl = useEditorStore((s) => s.site?.settings.faviconUrl ?? null)
   // Editor-only toolbar surface — gate its lazy chunk on store state.
   const previewOpen = useEditorStore((s) => s.previewOpen)
+  const hasSaveConflicts = useEditorStore((s) => s.saveConflicts.length > 0)
   // Settings modal mount gate. adminUi is the canonical source — the
   // editor's `settingsSlice.openSettings` mirrors into it, and the admin
   // shell reads from it too.
@@ -239,6 +249,12 @@ export function AdminCanvasLayout() {
             </>
           )}
         />
+
+        {hasSaveConflicts && (
+          <Suspense fallback={null}>
+            <SaveConflictBanner />
+          </Suspense>
+        )}
 
         {loadEditorBody ? (
           <LazyChunkBoundary

@@ -31,6 +31,7 @@ export {
 export {
   listDataRows,
   listDataRowIdSlugs,
+  listDataRowSeqs,
   listDataRowsWithFilter,
   searchDataRows,
   getDataRow,

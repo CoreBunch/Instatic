@@ -4,7 +4,10 @@
  *
  * All commands are gated to workspace: ['site'] only.
  * Undo/redo use useEditorStore.getState() (Zustand getState is safe outside React).
- * Save uses cmsAdapter.saveSite() directly (mirrors usePersistence logic).
+ * Save flushes through `usePersistence`'s registered save (editorSaveRef) so
+ * it rides the single-flight queue, the dirty-mark snapshot, and the
+ * conflict-detection base seqs — a raw adapter call here would bulldoze all
+ * three and ship a replace-mode full save.
  * Publish calls publishCmsDraft() from the persistence layer, wrapped in
  * `ctx.runStepUp` so the StepUpProvider's password re-entry dialog opens
  * when the server replies with `step_up_required` (publish is gated on a
@@ -12,7 +15,7 @@
  */
 
 import { StepUpCancelledMessage } from '@admin/shared/StepUp'
-import { cmsAdapter, publishCmsDraft } from '@core/persistence'
+import { publishCmsDraft } from '@core/persistence'
 import type { Command } from '../types'
 
 /** Mirrors `SITE_WRITE_CAPABILITIES` — any holder can save a draft. */
@@ -36,12 +39,10 @@ export function getEditorCommands(): Command[] {
       run: async (ctx) => {
         ctx.closeSpotlight()
         try {
-          // Import lazily to avoid loading the editor store in non-site contexts.
-          const { useEditorStore } = await import('@site/store/store')
-          const { site, setHasUnsavedChanges } = useEditorStore.getState()
-          if (!site) return
-          await cmsAdapter.saveSite(site)
-          setHasUnsavedChanges(false)
+          // Import lazily to avoid loading editor code in non-site contexts.
+          // No-op when the editor isn't mounted (the command is site-only).
+          const { flushEditorSave } = await import('@site/hooks/editorSaveRef')
+          await flushEditorSave()
         } catch (err) {
           console.error('[spotlight] save failed:', err)
         }

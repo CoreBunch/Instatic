@@ -20,16 +20,31 @@ import type {
   SiteDocument,
   SiteExplorerSectionId,
   SiteSettings,
+  SiteShell,
   PageTemplateConfig,
   ConditionDef,
   StructuralExplorerRowOrder,
   StructuralSiteExplorerSectionId,
 } from '@core/page-tree'
+import type { SaveConflict } from '@core/persistence/saveConflict'
+import type { VisualComponent } from '@core/visualComponents'
+import type { SavedLayout } from '@core/layouts'
 import type { FontEntry, FontToken } from '@core/fonts'
 import type { ImportFragment } from '@core/htmlImport'
 import type { NewStyleRule, SiteImportTransaction } from '@core/siteImport'
 import type { FrameworkChangeImpact, FrameworkPreset } from '@core/framework'
 import type { EditorStore } from '@site/store/types'
+
+/**
+ * The remote ("theirs") state of one conflicted target, fetched by the
+ * conflict banner for `resolveSaveConflictTheirs`. `row: null` means the
+ * target was deleted remotely — resolution removes it locally.
+ */
+export type RemoteConflictSnapshot =
+  | { table: 'site'; shell: SiteShell; seq: number }
+  | { table: 'pages'; rowId: string; row: Page | null; seq: number }
+  | { table: 'components'; rowId: string; row: VisualComponent | null; seq: number }
+  | { table: 'layouts'; rowId: string; row: SavedLayout | null; seq: number }
 
 
 // ---------------------------------------------------------------------------
@@ -127,6 +142,23 @@ export interface SiteSlice {
   loadSite: (site: SiteDocument) => void
   clearSite: () => void
   updateSiteName: (name: string) => void
+
+  // Save-conflict resolution (multi-admin conflict safety — level A)
+  /** Replace the pending-conflicts list (set from the save pipeline's 409 handler). */
+  setSaveConflicts: (conflicts: readonly SaveConflict[]) => void
+  /**
+   * Keep the local version: bump the target's base seq to the remote seq so
+   * the next save passes the conflict check — the overwrite becomes a stated
+   * decision instead of a silent one. Local dirty marks stay untouched.
+   */
+  resolveSaveConflictKeepMine: (conflict: SaveConflict) => void
+  /**
+   * Adopt the remote version: swap it into the document (or remove the
+   * target when deleted remotely) without pushing undo history, clear the
+   * target's dirty marks, and sync the base seq. Clears the undo history —
+   * site-relative patches are undefined across a remotely swapped tree.
+   */
+  resolveSaveConflictTheirs: (snapshot: RemoteConflictSnapshot) => void
 
   // Page mutations
   addPage: (title: string, slug?: string) => Page

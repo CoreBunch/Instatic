@@ -174,10 +174,11 @@ export async function ensureCurrentSiteForStaticImport(): Promise<SiteDocument> 
   const existingSite = useEditorStore.getState().site
   if (existingSite) return existingSite
 
-  const loadedSite = await cmsAdapter.loadSite('default')
-  if (loadedSite) {
-    useEditorStore.getState().loadSite(loadedSite)
-    return loadedSite
+  const loaded = await cmsAdapter.loadSite('default')
+  if (loaded) {
+    useEditorStore.getState().loadSite(loaded.site)
+    useEditorStore.getState().seedBaseSeqs(loaded.rowSeqs, loaded.shellSeq)
+    return loaded.site
   }
 
   return useEditorStore.getState().createSite('My Site')
@@ -187,7 +188,10 @@ export async function ensureCurrentSiteForStaticImport(): Promise<SiteDocument> 
 export async function saveImportedDraftSite(): Promise<void> {
   const site = useEditorStore.getState().site
   if (!site) throw new Error('Import completed, but no draft site is loaded.')
-  await cmsAdapter.saveSite(site)
+  // Replace-mode full save (no dirty hints) — an import deliberately
+  // replaces whatever is stored, so there is no conflict check to feed.
+  const { seq } = await cmsAdapter.saveSite(site)
+  useEditorStore.getState().commitSavedBaseSeqs(site, undefined, seq)
   useEditorStore.getState().setHasUnsavedChanges(false)
   requestCmsSiteReload()
 }

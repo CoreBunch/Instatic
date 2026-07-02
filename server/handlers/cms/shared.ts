@@ -6,14 +6,18 @@
  * - `mutationErrorResponse` — translates the typed mutation errors thrown
  *   by repositories (`UserMutationError`, `RoleMutationError`) into the
  *   `{ error }` JSON envelope clients expect.
+ * - `siteCollectionRowsResponse` — the one `{ rows }` list/single-row read
+ *   shared by the pages / components / layouts GET endpoints.
  *
  * These helpers are intentionally small and dependency-free so any new
  * handler module can pull them in without dragging the rest of the CMS
  * surface along with it.
  */
 import { Type } from '@core/utils/typeboxHelpers'
+import type { DbClient } from '../../db/client'
 import { jsonResponse } from '../../http'
 import { clientIp } from '../../auth/security'
+import { getDataRow, listDataRows } from '../../repositories/data'
 import { UserMutationError } from '../../repositories/users'
 import { RoleMutationError } from '../../repositories/roles'
 
@@ -38,6 +42,27 @@ export function requestAuditContext(req: Request): { ipAddress: string | null; u
     ipAddress: clientIp(req),
     userAgent: req.headers.get('user-agent'),
   }
+}
+
+/**
+ * `{ rows }` response for one of the three site collection GETs
+ * (pages / components / layouts), honoring the optional `?id=<rowId>`
+ * single-row filter — the conflict banner's "Load theirs" fetch. A
+ * soft-deleted or foreign-table id yields `{ rows: [] }`: absence is the
+ * "deleted remotely" signal, and the table check keeps the endpoint from
+ * leaking rows of other data tables.
+ */
+export async function siteCollectionRowsResponse(
+  db: DbClient,
+  url: URL,
+  tableId: 'pages' | 'components' | 'layouts',
+): Promise<Response> {
+  const id = url.searchParams.get('id')
+  if (id !== null) {
+    const row = await getDataRow(db, id)
+    return jsonResponse({ rows: row && row.tableId === tableId ? [row] : [] })
+  }
+  return jsonResponse({ rows: await listDataRows(db, tableId) })
 }
 
 export function mutationErrorResponse(err: unknown): Response {
