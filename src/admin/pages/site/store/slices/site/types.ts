@@ -36,15 +36,24 @@ import type { FrameworkChangeImpact, FrameworkPreset } from '@core/framework'
 import type { EditorStore } from '@site/store/types'
 
 /**
- * The remote ("theirs") state of one conflicted target, fetched by the
- * conflict banner for `resolveSaveConflictTheirs`. `row: null` means the
- * target was deleted remotely — resolution removes it locally.
+ * The fetched remote state of one sync target — consumed by
+ * `applyRemoteSnapshot`, which serves both the conflict banner's
+ * "Load theirs" and the live-sync socket's clean-row pull. `row: null`
+ * means the target was deleted remotely — applying removes it locally.
  */
-export type RemoteConflictSnapshot =
+export type RemoteSnapshot =
   | { table: 'site'; shell: SiteShell; seq: number }
   | { table: 'pages'; rowId: string; row: Page | null; seq: number }
   | { table: 'components'; rowId: string; row: VisualComponent | null; seq: number }
   | { table: 'layouts'; rowId: string; row: SavedLayout | null; seq: number }
+
+/** What `applyRemoteSnapshot` actually did — the socket hook toasts on it. */
+export interface RemoteApplyResult {
+  /** False when the snapshot deep-equaled local state (echo) — bookkeeping only. */
+  applied: boolean
+  /** True when undo entries existed and were discarded by the apply. */
+  clearedHistory: boolean
+}
 
 
 // ---------------------------------------------------------------------------
@@ -153,12 +162,16 @@ export interface SiteSlice {
    */
   resolveSaveConflictKeepMine: (conflict: SaveConflict) => void
   /**
-   * Adopt the remote version: swap it into the document (or remove the
-   * target when deleted remotely) without pushing undo history, clear the
-   * target's dirty marks, and sync the base seq. Clears the undo history —
-   * site-relative patches are undefined across a remotely swapped tree.
+   * Adopt a remote version: swap it into the document (or remove the target
+   * when deleted remotely) without pushing undo history, clear the target's
+   * dirty marks and any pending conflict for it, and sync the base seq.
+   * Clears the undo history — site-relative patches are undefined across a
+   * remotely swapped tree — EXCEPT when the remote content deep-equals the
+   * local copy (the echo of one's own save), which is bookkeeping-only.
+   * Serves the conflict banner's "Load theirs" AND the live-sync socket's
+   * clean-target pull.
    */
-  resolveSaveConflictTheirs: (snapshot: RemoteConflictSnapshot) => void
+  applyRemoteSnapshot: (snapshot: RemoteSnapshot) => RemoteApplyResult
 
   // Page mutations
   addPage: (title: string, slug?: string) => Page

@@ -65,6 +65,21 @@ interface SaveTrackingSlice {
    * Autosave is suppressed while non-empty; a successful save clears it.
    */
   saveConflicts: SaveConflict[]
+  /**
+   * The highest site-global seq this editor has synchronized — the cursor
+   * the live-sync socket sends on (re)connect so the server can reply with
+   * exactly the delta it missed. Advanced by loads, save responses, and
+   * every processed sync event.
+   */
+  syncCursor: number
+  /** Advance the sync cursor (monotonic — lower values are ignored). */
+  advanceSyncCursor: (seq: number) => void
+  /**
+   * Merge incoming conflicts (from live-sync events) into the pending list —
+   * deduped by table+rowId, keeping the newest seq. `setSaveConflicts`
+   * REPLACES the list and stays the 409 handler's entry point.
+   */
+  addSaveConflicts: (conflicts: readonly SaveConflict[]) => void
   /** Replace the base-seq maps wholesale — the load/reload path. */
   seedBaseSeqs: (rowSeqs: Record<string, number>, shellSeq: number) => void
   /**
@@ -93,6 +108,7 @@ function nettedDirtySnapshot(current: DirtyMarks, site: SiteDocument | null): Di
     // No document to net against — return the marks as accumulated.
     return {
       all: current.all,
+      shell: current.shell,
       pageIds: new Set(current.pageIds),
       componentIds: new Set(current.componentIds),
       layoutIds: new Set(current.layoutIds),
@@ -106,6 +122,7 @@ function nettedDirtySnapshot(current: DirtyMarks, site: SiteDocument | null): Di
   const layoutIds = new Set(site.layouts.map((l) => l.id))
   return {
     all: current.all,
+    shell: current.shell,
     pageIds: filteredSet(current.pageIds, (id) => pageIds.has(id)),
     componentIds: filteredSet(current.componentIds, (id) => componentIds.has(id)),
     layoutIds: filteredSet(current.layoutIds, (id) => layoutIds.has(id)),
@@ -152,11 +169,32 @@ export const createSaveTrackingSlice: EditorStoreSliceCreator<SaveTrackingSlice>
   baseSeqs: {},
   shellBaseSeq: 0,
   saveConflicts: [],
+  syncCursor: 0,
+
+  advanceSyncCursor: (seq) =>
+    set((state) => {
+      if (seq > state.syncCursor) state.syncCursor = seq
+    }),
+
+  addSaveConflicts: (conflicts) =>
+    set((state) => {
+      for (const incoming of conflicts) {
+        const existing = state.saveConflicts.find(
+          (c) => c.table === incoming.table && c.rowId === incoming.rowId,
+        )
+        if (existing) {
+          existing.seq = Math.max(existing.seq, incoming.seq)
+        } else {
+          state.saveConflicts.push({ ...incoming })
+        }
+      }
+    }),
 
   seedBaseSeqs: (rowSeqs, shellSeq) =>
     set((state) => {
       state.baseSeqs = { ...rowSeqs }
       state.shellBaseSeq = shellSeq
+      state.syncCursor = Math.max(shellSeq, ...Object.values(rowSeqs), 0)
     }),
 
   commitSavedBaseSeqs: (savedSite, dirty, seq) =>
@@ -180,6 +218,7 @@ export const createSaveTrackingSlice: EditorStoreSliceCreator<SaveTrackingSlice>
       // unchanged): the stored shell seq then stays BELOW this save's seq,
       // and the conflict check only fires on stored > base.
       state.shellBaseSeq = seq
+      if (seq > state.syncCursor) state.syncCursor = seq
       // A successful save proves no shipped row conflicted — stale banner
       // entries (all conflicts come from shipped rows) are moot.
       state.saveConflicts = []

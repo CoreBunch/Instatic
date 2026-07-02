@@ -10,6 +10,9 @@ await import('./richtextSanitizer')
 const { handleServerRequest } = await import('./router')
 const { activateInstalledServerPlugins } = await import('./plugins/runtime')
 const { mediaStorageRegistry } = await import('@core/plugins/mediaStorageRegistry')
+const { setSiteEventPublisher } = await import('./events/siteEvents')
+const { SITE_SOCKET_PATH, createSiteSocketHandlers, handleSiteSocketUpgrade } =
+  await import('./events/siteSocket')
 
 const config = readServerConfig()
 configureTrustedProxyCidrs(config.trustedProxyCidrs)
@@ -58,7 +61,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
   }
 }
 
-Bun.serve({
+const server = Bun.serve({
   port: config.port,
 
   // Disable Bun's default 10-second idle timeout. The agent endpoint streams
@@ -86,6 +89,17 @@ Bun.serve({
         new Response(null, { status: 204, headers: cors }),
         pathname,
       )
+    }
+
+    // Multi-admin live-sync socket — a WebSocket upgrade is a different
+    // protocol lifecycle from the request/response router, so it dispatches
+    // here at the `Bun.serve` boundary (the only place `server.upgrade` is
+    // available). Returning `undefined` hands the connection to the
+    // `websocket` handlers below.
+    if (pathname === SITE_SOCKET_PATH) {
+      const rejection = await handleSiteSocketUpgrade(req, db, server)
+      if (rejection === null) return undefined
+      return applySecurityHeaders(rejection, pathname)
     }
 
     try {
@@ -116,10 +130,17 @@ Bun.serve({
     }
   },
 
+  websocket: createSiteSocketHandlers(db),
+
   error(err: Error) {
     console.error('[server] Unhandled error:', err)
     return new Response('Internal Server Error', { status: 500 })
   },
 })
+
+// The bus needs the live server handle for Bun pub/sub fan-out — register it
+// now that `Bun.serve` returned. Save events emitted before this line (none
+// in practice) would drop harmlessly: they are hints, the delta is truth.
+setSiteEventPublisher(server)
 
 console.log(`[server] Listening on http://localhost:${config.port}`)

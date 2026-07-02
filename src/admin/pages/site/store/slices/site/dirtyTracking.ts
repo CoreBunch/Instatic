@@ -42,6 +42,15 @@ import type { SiteDocument } from '@core/page-tree'
 
 export interface DirtyMarks {
   all: boolean
+  /**
+   * A shell field (settings, style rules, files, breakpoints, explorer, …)
+   * changed since the last successful save. The shell still SHIPS with every
+   * save regardless (the server skips writing an unchanged shell) — this
+   * mark exists for the live-sync merge rule: a remote `shell-changed` event
+   * applies silently when the local shell is untouched, and surfaces as a
+   * conflict when it isn't.
+   */
+  shell: boolean
   pageIds: Set<string>
   componentIds: Set<string>
   layoutIds: Set<string>
@@ -53,6 +62,7 @@ export interface DirtyMarks {
 export function emptyDirtyMarks(): DirtyMarks {
   return {
     all: false,
+    shell: false,
     pageIds: new Set(),
     componentIds: new Set(),
     layoutIds: new Set(),
@@ -122,7 +132,18 @@ export function collectDirtyFromSitePatches(
 
   for (const patch of patches) {
     const head = patch.path[0]
-    if (!TRACKED_COLLECTIONS.includes(head as TrackedCollection)) continue // shell field — always saved
+    if (!TRACKED_COLLECTIONS.includes(head as TrackedCollection)) {
+      // `updatedAt` is bumped by EVERY historic mutation (page edits
+      // included) — it is bookkeeping, not shell content, and must not make
+      // every edit look like a shell edit (the server's `shellsEqual`
+      // ignores it for the same reason).
+      if (head !== 'updatedAt') {
+        // Shell field — always shipped with the save; the mark feeds the
+        // live-sync merge rule (see the DirtyMarks doc).
+        marks.shell = true
+      }
+      continue
+    }
     const collection = head as TrackedCollection
 
     // Membership-shaped ops → pre/post id-set diff, once per collection.
@@ -162,6 +183,7 @@ export function collectDirtyFromSitePatches(
 /** Merge `incoming` into a draft's accumulated dirty state, in place. */
 export function mergeDirtyMarks(target: DirtyMarks, incoming: DirtyMarks): void {
   if (incoming.all) target.all = true
+  if (incoming.shell) target.shell = true
   for (const id of incoming.pageIds) target.pageIds.add(id)
   for (const id of incoming.componentIds) target.componentIds.add(id)
   for (const id of incoming.layoutIds) target.layoutIds.add(id)

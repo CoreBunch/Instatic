@@ -1,23 +1,24 @@
 /**
- * Save-conflict resolution actions — multi-admin conflict safety (level A).
+ * Remote-apply + save-conflict resolution actions (multi-admin levels A+B).
  *
- * When an incremental save 409s, the failed save restores its dirty marks and
- * `setSaveConflicts` fills the pending list; the conflict banner then offers
- * two resolutions per conflicted target:
+ * `applyRemoteSnapshot` is the ONE way remote state enters the live editor
+ * document. Two callers share it:
+ *   - the conflict banner's **Load theirs** (level A) — the user explicitly
+ *     discards their local edits to one conflicted target;
+ *   - the live-sync socket's **clean-target pull** (level B) — a sibling
+ *     admin saved a row this editor holds clean, so it merges in place.
  *
- *   Keep mine   — bump the target's base seq to the remote seq. The local
- *                 edits stay dirty and the NEXT save overwrites the remote
- *                 version — a stated decision instead of a silent one.
- *   Load theirs — the banner fetches the remote state and hands it here as a
- *                 `RemoteConflictSnapshot`; the target is swapped in place
- *                 (or removed, when deleted remotely) WITHOUT undo history,
- *                 its dirty marks are cleared, and the base seq syncs to the
- *                 remote seq.
- *
- * Both resolutions clear the undo history: history entries are site-relative
- * Mutative patches with array indices — replaying them across a remotely
- * swapped tree is undefined behavior. (Keep-mine keeps the local document
- * intact, so its history survives.)
+ * Apply semantics:
+ *   - the target is swapped in (or removed, when deleted remotely) WITHOUT
+ *     pushing undo history; its dirty marks, base seq, and any pending
+ *     conflict entry are synchronized;
+ *   - the undo history is cleared — history entries are site-relative
+ *     Mutative patches with array indices, and replaying them across a
+ *     remotely swapped tree is undefined behavior;
+ *   - EXCEPT when the fetched remote content deep-equals the local copy.
+ *     That is exactly what the echo of this editor's own save looks like
+ *     (the socket event can arrive before the save response), so the apply
+ *     collapses to bookkeeping — and the user's undo history survives.
  *
  * VC consumer propagation: adopting a remote Visual Component re-syncs the
  * slot instances of every ref to it, and adopting a remote VC DELETION
@@ -25,12 +26,19 @@
  * pages earn REAL dirty marks (they now differ from storage and must ship
  * with the next save). The history entries those mutations push are cleared
  * along with everything else.
+ *
+ * `resolveSaveConflictKeepMine` (level A) is the other resolution: bump the
+ * target's base seq so the NEXT save overwrites the remote version — a
+ * stated decision instead of a silent one. Local state stays untouched, so
+ * its history survives.
  */
 
 import type { BaseNode } from '@core/page-tree'
 import { findHomePage, reconcileSiteExplorerInPlace, reindexNodeParents } from '@core/page-tree'
+import { shellsEqual } from '@core/persistence/shellsEqual'
 import { clonePackageJson } from '@core/site-dependencies/manifest'
 import { cloneSiteRuntimeConfig } from '@core/site-runtime'
+import { deepEqual } from '@core/utils/deepEqual'
 import type { EditorStore } from '@site/store/types'
 import type { Draft } from 'mutative'
 import { renderCache } from '@site/canvas/renderCache'
@@ -38,11 +46,11 @@ import { clearCanvasSelectionDraft } from '../selectionSlice'
 import { allTreeNodeMaps, syncAllVCRefSlotInstances } from '../vcSlotReconcile'
 import { cascadeRemoveVCRefs } from '../vcTreeOps'
 import { reconcileFrameworkClasses } from './framework/reconcile'
-import type { SiteSlice, SiteSliceHelpers } from './types'
+import type { RemoteSnapshot, SiteSlice, SiteSliceHelpers } from './types'
 
 type ConflictActions = Pick<
   SiteSlice,
-  'setSaveConflicts' | 'resolveSaveConflictKeepMine' | 'resolveSaveConflictTheirs'
+  'setSaveConflicts' | 'resolveSaveConflictKeepMine' | 'applyRemoteSnapshot'
 >
 
 function dropConflict(state: Draft<EditorStore>, table: string, rowId: string): void {
@@ -59,7 +67,38 @@ function clearUndoHistory(state: Draft<EditorStore>): void {
   state.canRedo = false
 }
 
-export function createConflictActions({ set, mutateSite }: SiteSliceHelpers): ConflictActions {
+/** The snapshot's target rowId — the shell lives on the fixed 'default' row. */
+function snapshotRowId(snapshot: RemoteSnapshot): string {
+  return snapshot.table === 'site' ? 'default' : snapshot.rowId
+}
+
+/**
+ * True when the remote snapshot is content-identical to the local document —
+ * the apply can collapse to bookkeeping (see module doc). For a remote
+ * deletion, "identical" means the target is already absent locally.
+ */
+function snapshotMatchesLocal(
+  site: EditorStore['site'],
+  snapshot: RemoteSnapshot,
+): boolean {
+  if (!site) return false
+  if (snapshot.table === 'site') {
+    const { pages: _p, visualComponents: _v, layouts: _l, ...localShell } = site
+    // shellsEqual ignores `updatedAt` — bumped by every local mutation, so a
+    // plain deep-equal would misread every own-save echo as a remote change.
+    return shellsEqual(localShell, snapshot.shell)
+  }
+  const local =
+    snapshot.table === 'pages'
+      ? site.pages.find((p) => p.id === snapshot.rowId)
+      : snapshot.table === 'components'
+        ? site.visualComponents.find((vc) => vc.id === snapshot.rowId)
+        : site.layouts.find((layout) => layout.id === snapshot.rowId)
+  if (snapshot.row === null) return local === undefined
+  return local !== undefined && deepEqual(local, snapshot.row)
+}
+
+export function createConflictActions({ set, get, mutateSite }: SiteSliceHelpers): ConflictActions {
   return {
     setSaveConflicts: (conflicts) =>
       set((state) => {
@@ -81,7 +120,41 @@ export function createConflictActions({ set, mutateSite }: SiteSliceHelpers): Co
         // next save ships the same rows and now passes the seq check.
       }),
 
-    resolveSaveConflictTheirs: (snapshot) => {
+    applyRemoteSnapshot: (snapshot) => {
+      // Echo / no-op detection BEFORE any mutation: identical content means
+      // this editor is already synchronized (typically its own save echoing
+      // back through the socket) — sync the bookkeeping, keep the history.
+      if (snapshotMatchesLocal(get().site, snapshot)) {
+        set((state) => {
+          dropConflict(state, snapshot.table, snapshotRowId(snapshot))
+          if (snapshot.table === 'site') {
+            state.shellBaseSeq = Math.max(state.shellBaseSeq, snapshot.seq)
+          } else if (snapshot.row === null) {
+            delete state.baseSeqs[snapshot.rowId]
+            // Aligned deletion (both sides deleted) — nothing left to ship.
+            const deletedMarks =
+              snapshot.table === 'pages'
+                ? state._dirtySave.deletedPageIds
+                : snapshot.table === 'components'
+                  ? state._dirtySave.deletedComponentIds
+                  : state._dirtySave.deletedLayoutIds
+            deletedMarks.delete(snapshot.rowId)
+          } else {
+            state.baseSeqs[snapshot.rowId] = Math.max(
+              state.baseSeqs[snapshot.rowId] ?? 0,
+              snapshot.seq,
+            )
+          }
+        })
+        return { applied: false, clearedHistory: false }
+      }
+
+      // Read BEFORE the VC propagation below — `clearedHistory` reports
+      // whether the USER's undo entries were discarded, not the propagation's
+      // own transient entry.
+      const hadHistory =
+        get()._historyPast.length > 0 || get()._historyFuture.length > 0
+
       // Consumer propagation FIRST (see module doc): mutateSite gives the
       // affected pages real patch-derived dirty marks. Neither helper needs
       // the VC swapped in yet — the sync takes the remote VC as an argument,
@@ -112,7 +185,7 @@ export function createConflictActions({ set, mutateSite }: SiteSliceHelpers): Co
       set((state) => {
         const site = state.site
         if (!site) return
-        dropConflict(state, snapshot.table, snapshot.table === 'site' ? 'default' : snapshot.rowId)
+        dropConflict(state, snapshot.table, snapshotRowId(snapshot))
 
         switch (snapshot.table) {
           case 'site': {
@@ -205,6 +278,8 @@ export function createConflictActions({ set, mutateSite }: SiteSliceHelpers): Co
 
         clearUndoHistory(state)
       })
+
+      return { applied: true, clearedHistory: hadHistory }
     },
   }
 }

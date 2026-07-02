@@ -124,15 +124,20 @@ describe('collectDirtyFromSitePatches', () => {
     expect(marks.all).toBe(true)
   })
 
-  it('marks nothing for shell-field paths — the shell is always saved', () => {
+  it('marks the SHELL (no row marks) for shell-field paths — feeds the live-sync merge rule', () => {
     const site = twoPageTwoVcSite()
     const patches: Patches = [
       { op: 'replace', path: ['styleRules', 'x'], value: {} },
       { op: 'replace', path: ['name'], value: 'Renamed' },
-      { op: 'replace', path: ['updatedAt'], value: 123 },
     ]
     const marks = collectDirtyFromSitePatches(patches, site, site)
-    expect(marks).toEqual(emptyDirtyMarks())
+    expect(marks).toEqual({ ...emptyDirtyMarks(), shell: true })
+  })
+
+  it('does NOT mark the shell for updatedAt — bumped by every mutation, bookkeeping not content', () => {
+    const site = twoPageTwoVcSite()
+    const patches: Patches = [{ op: 'replace', path: ['updatedAt'], value: 123 }]
+    expect(collectDirtyFromSitePatches(patches, site, site)).toEqual(emptyDirtyMarks())
   })
 
   it('attributes an element add at [pages, i] to the added page', () => {
@@ -460,12 +465,12 @@ describe('editor store dirty-save tracking', () => {
     expect([...snapshot.deletedPageIds]).toEqual(['page-b'])
   })
 
-  it('shell-only mutations (site rename) accumulate no marks', () => {
+  it('shell-only mutations (site rename) accumulate the shell mark and NO row marks', () => {
     loadTwoPageSite()
     useEditorStore.getState().updateSiteName('Renamed Site')
 
     expect(useEditorStore.getState().site!.name).toBe('Renamed Site')
     expect(useEditorStore.getState().hasUnsavedChanges).toBe(true)
-    expect(dirty()).toEqual(emptyDirtyMarks())
+    expect(dirty()).toEqual({ ...emptyDirtyMarks(), shell: true })
   })
 })

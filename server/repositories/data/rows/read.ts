@@ -117,6 +117,40 @@ export async function listDataRowSeqs(
   return rows.map((r) => ({ id: r.id, seq: Number(r.seq) }))
 }
 
+export interface ChangedDataRowRef {
+  id: string
+  tableId: string
+  seq: number
+  deleted: boolean
+}
+
+/**
+ * Lean refs of every row in the given tables whose seq is PAST the client's
+ * cursor — the reconnect delta of the live-sync channel. Soft-deleted rows
+ * included (a deletion the client missed must surface as a `rows-deleted`
+ * hint, not as silence). O(delta) via `data_rows_table_seq_idx`.
+ */
+export async function listChangedDataRowRefsSince(
+  db: DbClient,
+  tableIds: ReadonlyArray<string>,
+  cursor: number,
+): Promise<ChangedDataRowRef[]> {
+  if (tableIds.length === 0) return []
+  const placeholders = tableIds.map((_, i) => placeholder(db.dialect, i + 2)).join(', ')
+  const { rows } = await db.unsafe<{ id: string; table_id: string; seq: number; deleted_at: string | null }>(
+    `select id, table_id, seq, deleted_at from data_rows
+     where seq > ${placeholder(db.dialect, 1)} and table_id in (${placeholders})
+     order by seq asc`,
+    [cursor, ...tableIds],
+  )
+  return rows.map((row) => ({
+    id: row.id,
+    tableId: row.table_id,
+    seq: Number(row.seq),
+    deleted: row.deleted_at !== null,
+  }))
+}
+
 export async function getDataRow(
   db: DbClient,
   rowId: string,

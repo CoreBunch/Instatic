@@ -7,7 +7,7 @@
  *     rows KEEP their entries so a resurrect-by-undo carries the right base),
  *   - resolveSaveConflictKeepMine — bumps the target's base seq so the next
  *     save overwrites as a stated decision; dirty marks stay untouched,
- *   - resolveSaveConflictTheirs — swaps the remote version in (or removes a
+ *   - applyRemoteSnapshot — swaps the remote version in (or removes a
  *     remotely-deleted target), clears the target's dirty marks, syncs the
  *     base seq, clears the undo history, and — for Visual Components —
  *     propagates to consumer pages with REAL dirty marks (slot re-sync /
@@ -118,7 +118,7 @@ describe('resolveSaveConflictKeepMine', () => {
 // Load theirs
 // ---------------------------------------------------------------------------
 
-describe('resolveSaveConflictTheirs', () => {
+describe('applyRemoteSnapshot', () => {
   it('swaps a remote page in, clears its dirty marks, syncs the base seq, clears history', () => {
     loadFixtureSite({ pages: [makePage({ id: 'page-a', title: 'Mine' })] })
     useEditorStore.getState().seedBaseSeqs({ 'page-a': 1 }, 1)
@@ -128,7 +128,7 @@ describe('resolveSaveConflictTheirs', () => {
     expect(useEditorStore.getState()._dirtySave.pageIds.has('page-a')).toBe(true)
     useEditorStore.getState().setSaveConflicts([{ table: 'pages', rowId: 'page-a', seq: 6 }])
 
-    useEditorStore.getState().resolveSaveConflictTheirs({
+    useEditorStore.getState().applyRemoteSnapshot({
       table: 'pages',
       rowId: 'page-a',
       row: makePage({ id: 'page-a', title: 'Theirs' }),
@@ -155,7 +155,7 @@ describe('resolveSaveConflictTheirs', () => {
     useEditorStore.getState().seedBaseSeqs({ 'page-home': 1, 'page-b': 1 }, 1)
     useEditorStore.getState().setActivePage('page-b')
 
-    useEditorStore.getState().resolveSaveConflictTheirs({
+    useEditorStore.getState().applyRemoteSnapshot({
       table: 'pages',
       rowId: 'page-b',
       row: null,
@@ -176,7 +176,7 @@ describe('resolveSaveConflictTheirs', () => {
       return shell
     })()
 
-    useEditorStore.getState().resolveSaveConflictTheirs({
+    useEditorStore.getState().applyRemoteSnapshot({
       table: 'site',
       shell: remoteShell,
       seq: 12,
@@ -205,7 +205,7 @@ describe('resolveSaveConflictTheirs', () => {
     useEditorStore.getState().seedBaseSeqs({ 'page-a': 1, 'vc-1': 1 }, 1)
     useEditorStore.getState().setSaveConflicts([{ table: 'components', rowId: 'vc-1', seq: 4 }])
 
-    useEditorStore.getState().resolveSaveConflictTheirs({
+    useEditorStore.getState().applyRemoteSnapshot({
       table: 'components',
       rowId: 'vc-1',
       row: null,

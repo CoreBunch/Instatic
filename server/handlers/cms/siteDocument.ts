@@ -77,11 +77,14 @@ import { VisualComponentSchema, vcSlugFromName, type VisualComponent } from '@co
 import { SavedLayoutSchema, layoutSlugFromName, type SavedLayout } from '@core/layouts'
 import type { Page } from '@core/page-tree'
 import { SaveConflictError, type SaveConflict } from '@core/persistence/saveConflict'
+import { shellsEqual } from '@core/persistence/shellsEqual'
+import type { SiteSyncActor, SiteSyncTable } from '@core/persistence/syncEvents'
+import { publishSiteEvent } from '../../events/siteEvents'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
 import { bumpPublishVersionSerialized } from '../../publish/publishState'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { CMS_API_PREFIX } from './shared'
-import { ForbiddenSiteChangeError, shellsEqual, validateSiteWriteDiff } from './siteDiff'
+import { ForbiddenSiteChangeError, validateSiteWriteDiff } from './siteDiff'
 import { validatePageWriteDiff } from './pageDiff'
 
 const SITE_WRITE_CAPABILITIES = [
@@ -414,9 +417,34 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
     // Deleting a published page retracts its public route — invalidate the
     // render cache AFTER the transaction commits (never inside it: the bump
     // serializes against the publish lock, which itself waits on the
-    // transaction chain). The multi-admin live-sync plan emits its site
-    // events from this point too.
+    // transaction chain).
     if (deletedPublishedPage) await bumpPublishVersionSerialized()
+
+    // Live-sync fan-out — idempotent hints to every open editor socket
+    // (ids + seqs only, never payloads; see @core/persistence/syncEvents).
+    // A replace-mode save collapses to ONE site-reloaded event instead of
+    // thousands of row events.
+    const actor: SiteSyncActor = { userId: user.id, name: user.displayName || user.email }
+    if (body.mode === 'replace') {
+      publishSiteEvent({ kind: 'site-reloaded', seq, actor })
+    } else {
+      if (shellChanged) publishSiteEvent({ kind: 'shell-changed', seq, actor })
+      const rowGroups: Array<{ table: SiteSyncTable; changedIds: Iterable<string>; deleteIds: Iterable<string> }> = [
+        { table: 'pages', changedIds: changedPageIdsRaw, deleteIds: pageDeleteIds },
+        { table: 'components', changedIds: changedComponentIds, deleteIds: componentDeleteIds },
+        { table: 'layouts', changedIds: changedLayoutIds, deleteIds: layoutDeleteIds },
+      ]
+      for (const { table, changedIds, deleteIds } of rowGroups) {
+        const changedSeqs = Object.fromEntries([...changedIds].map((id) => [id, seq]))
+        if (Object.keys(changedSeqs).length > 0) {
+          publishSiteEvent({ kind: 'rows-changed', table, seqs: changedSeqs, actor })
+        }
+        const deletedSeqs = Object.fromEntries([...deleteIds].map((id) => [id, seq]))
+        if (Object.keys(deletedSeqs).length > 0) {
+          publishSiteEvent({ kind: 'rows-deleted', table, seqs: deletedSeqs, actor })
+        }
+      }
+    }
 
     return jsonResponse({ ok: true, seq })
   } catch (err) {

@@ -948,6 +948,14 @@ describe('site-document save — conflict detection', () => {
         changedPages: [pagePayload('page-a', 'about')],
       }))
       expect(await liveShellSeq(ctx.harness)).toBe(before)
+
+      // The REAL editor bumps `updatedAt` on every mutation — a shell that
+      // differs only by that bookkeeping timestamp is still "unchanged".
+      await expectOk(await putDoc(ctx, {
+        site: { ...ctx.shell, updatedAt: Date.now() + 60_000 },
+        changedPages: [pagePayload('page-a', 'about', 'About v2')],
+      }))
+      expect(await liveShellSeq(ctx.harness)).toBe(before)
     } finally {
       await ctx.harness.cleanup()
     }

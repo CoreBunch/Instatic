@@ -20,6 +20,7 @@ export {
   listDataRows,
   listDataRowIdSlugs,
   listDataRowSeqs,
+  listChangedDataRowRefsSince,
   getDataRow,
   getDataRowMany,
   getDataRowBySlug,

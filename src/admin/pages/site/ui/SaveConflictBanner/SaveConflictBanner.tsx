@@ -8,7 +8,7 @@
  * the two resolutions:
  *
  *   Load theirs — fetch the remote state (single-row `?id=` fetch, or the
- *                 shell GET) and adopt it via `resolveSaveConflictTheirs`,
+ *                 shell GET) and adopt it via `applyRemoteSnapshot`,
  *                 discarding the local unsaved edits to that target only.
  *   Keep mine   — `resolveSaveConflictKeepMine` bumps the base seq; the next
  *                 save overwrites the remote version as a stated decision.
@@ -25,15 +25,11 @@
 import { useState } from 'react'
 import type { SiteDocument } from '@core/page-tree'
 import type { SaveConflict } from '@core/persistence/saveConflict'
-import { cmsAdapter } from '@core/persistence/cms'
-import { pageFromRow } from '@core/data/pageFromRow'
-import { visualComponentFromRow } from '@core/data/componentFromRow'
-import { savedLayoutFromRow } from '@core/data/layoutFromRow'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { Button } from '@ui/components/Button'
 import { pushToast } from '@ui/components/Toast'
 import { useEditorStore } from '@site/store/store'
-import type { RemoteConflictSnapshot } from '@site/store/slices/site/types'
+import { fetchRemoteSnapshot } from '@site/hooks/remoteSnapshot'
 import { flushEditorSave } from '@site/hooks/editorSaveRef'
 import styles from './SaveConflictBanner.module.css'
 
@@ -57,29 +53,6 @@ function conflictLabel(site: SiteDocument | null, conflict: SaveConflict): strin
   return site.layouts.find((layout) => layout.id === conflict.rowId)?.name ?? conflict.rowId
 }
 
-/** Fetch the remote ("theirs") state of one conflicted target. */
-async function fetchRemoteSnapshot(conflict: SaveConflict): Promise<RemoteConflictSnapshot> {
-  if (conflict.table === 'site') {
-    const remote = await cmsAdapter.loadSiteShell()
-    if (!remote) throw new Error('The site shell no longer exists on the server.')
-    return { table: 'site', shell: remote.shell, seq: remote.seq }
-  }
-  const row = await cmsAdapter.loadSiteRow(conflict.table, conflict.rowId)
-  const seq = row?.seq ?? conflict.seq
-  if (conflict.table === 'pages') {
-    return { table: 'pages', rowId: conflict.rowId, row: row ? pageFromRow(row) : null, seq }
-  }
-  if (conflict.table === 'components') {
-    return {
-      table: 'components',
-      rowId: conflict.rowId,
-      row: row ? visualComponentFromRow(row) : null,
-      seq,
-    }
-  }
-  return { table: 'layouts', rowId: conflict.rowId, row: row ? savedLayoutFromRow(row) : null, seq }
-}
-
 /** Ship the surviving local edits once the last conflict is decided. */
 async function flushIfResolved(): Promise<void> {
   const { saveConflicts, hasUnsavedChanges } = useEditorStore.getState()
@@ -99,7 +72,7 @@ export function SaveConflictBanner() {
     setBusyKey(`${conflict.table}:${conflict.rowId}`)
     try {
       const snapshot = await fetchRemoteSnapshot(conflict)
-      useEditorStore.getState().resolveSaveConflictTheirs(snapshot)
+      useEditorStore.getState().applyRemoteSnapshot(snapshot)
       await flushIfResolved()
     } catch (err) {
       console.error('[SaveConflictBanner] failed to load the remote version:', err)

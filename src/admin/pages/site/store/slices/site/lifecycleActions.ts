@@ -70,6 +70,7 @@ export function createLifecycleActions({
         state.baseSeqs = {}
         state.shellBaseSeq = 0
         state.saveConflicts = []
+        state.syncCursor = 0
       })
       return site
     },
@@ -106,6 +107,7 @@ export function createLifecycleActions({
         state.baseSeqs = {}
         state.shellBaseSeq = 0
         state.saveConflicts = []
+        state.syncCursor = 0
       })
     },
 
@@ -127,6 +129,7 @@ export function createLifecycleActions({
         state.baseSeqs = {}
         state.shellBaseSeq = 0
         state.saveConflicts = []
+        state.syncCursor = 0
       })
     },
 

@@ -477,8 +477,54 @@ deliberately).
 Known v1 blind spot: writers OUTSIDE the transactional save (plugin pack
 installs via `saveDraftSite`/`saveDataRowDraft`, data-workspace row edits)
 do not stamp seqs, so conflict detection cannot see them — those flows
-coordinate through `requestCmsSiteReload()` instead. Widening seq stamping
-to every writer is live-sync phase B territory.
+coordinate through `requestCmsSiteReload()` instead.
+
+One subtlety: the editor bumps `site.updatedAt` on EVERY historic mutation,
+so `shellsEqual` (`@core/persistence/shellsEqual`, shared by the server's
+shell-skip and the client's echo detection) deliberately ignores it, and the
+dirty tracker never marks the shell for `updatedAt`-only patches — otherwise
+every page edit would read as a shell change and destroy the shell seq as a
+conflict signal.
+
+### Live pull (multi-admin level B)
+
+Open editors learn about sibling admins' saves the moment they land — no
+polling, no manual refresh:
+
+- **Channel**: `GET /admin/api/cms/site-socket` upgrades to a WebSocket
+  (`server/events/siteSocket.ts`; wired at the `Bun.serve` boundary in
+  `server/index.ts` — an upgrade is a different protocol lifecycle from the
+  request/response router). Gated at upgrade time by `site.read` AND an
+  `originAllowed` check (browsers always send Origin on WS handshakes, so
+  this closes cross-site WebSocket hijacking). The dev Vite proxy forwards
+  the upgrade (`ws: true`).
+- **Events** (`@core/persistence/syncEvents`): `rows-changed` /
+  `rows-deleted` / `shell-changed` / `site-reloaded` (replace-mode saves
+  collapse to ONE event) / `published`. Events carry **ids + seqs, never
+  payloads** — they are idempotent hints. The transactional save publishes
+  them post-commit through the in-process bus (`server/events/siteEvents.ts`,
+  Bun's native pub/sub — correct for the single-process-by-definition
+  deployment model; multi-process would need a shared bus and is out of
+  scope).
+- **Self-healing reconnect**: on every (re)connect the client sends its seq
+  cursor (`{ kind: 'subscribe', cursor }`) and the server replies with the
+  missed delta synthesized from `rows where seq > cursor` (soft-deleted rows
+  included — a missed deletion surfaces as `rows-deleted`, not silence).
+  Live events are hints; the delta is truth, so a dropped frame can never
+  cause drift.
+- **Client** (`useSiteSocket` = transport with backoff reconnect,
+  `siteSyncMerge.ts` = policy): per event target — ① base seq ≥ event seq →
+  skip (own-save echo); ② target dirty locally → pending conflict (the SAME
+  banner as a 409'd save — one resolution UX for levels A and B; dirtiness
+  is re-checked after the fetch, so an edit landing mid-wire degrades to a
+  conflict, never a silent overwrite); ③ clean → fetch current state
+  (`fetchRemoteSnapshot`) and `applyRemoteSnapshot` it. The apply
+  deep-equal-skips identical content, so undo history resets only when
+  remote content genuinely replaced local state — a toast explains exactly
+  then. A remote deletion of the open page navigates home with a toast;
+  `site-reloaded` reloads the document through the ordinary persistence
+  reload path. Events process strictly in arrival order through one promise
+  chain.
 
 Client side: `loadSite` seeds `baseSeqs`/`shellBaseSeq` in the editor store
 (per-row seqs ride the collection GET responses — `DataRow.seq`; the shell

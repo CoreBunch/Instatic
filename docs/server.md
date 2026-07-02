@@ -38,7 +38,13 @@ server/index.ts
     ├─→ mediaStorageRegistry.configureLocalDisk({ uploadsDir })   ← register local-disk media adapter
     ├─→ activateInstalledServerPlugins(db, uploadsDir)            ← run plugin lifecycle: activate
     │
-    └─→ Bun.serve({ fetch: req => handleServerRequest(req, runtime) })
+    ├─→ Bun.serve({ fetch: req => handleServerRequest(req, runtime),
+    │               websocket: createSiteSocketHandlers(db) })
+    │     (the live-sync socket `/admin/api/cms/site-socket` upgrades at this
+    │      boundary — see server/events/siteSocket.ts; everything else goes
+    │      through the router)
+    │
+    └─→ setSiteEventPublisher(server)        ← wire the live-sync bus to Bun pub/sub
 ```
 
 Boot is sequential and fail-fast. If migrations fail, the process exits. If a plugin's `activate` throws, the host logs `[plugin:<id>]` and continues — one bad plugin doesn't bring the server down.
