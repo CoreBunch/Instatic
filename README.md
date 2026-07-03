@@ -228,7 +228,7 @@ One Bun server. A React admin built with Vite. A publisher that emits pages you'
 | **Server** | `Bun.serve` with a hand-written router |
 | **Database** | SQLite or Postgres — one `DbClient` interface, picked by `DATABASE_URL` |
 | **Validation** | TypeBox at every untyped boundary; schemas are the source of truth |
-| **Plugins** | QuickJS-WASM sandbox, owner-granted permissions |
+| **Plugins** | QuickJS-WASM backend sandbox, owner-granted permissions, explicit `editor.code` for admin-window code |
 | **AI** | Provider-agnostic drivers over raw HTTP/SSE, no vendor SDKs |
 | **Output** | Semantic HTML, compact CSS, baked static files plus auto-detected dynamic holes |
 

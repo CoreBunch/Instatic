@@ -2,7 +2,7 @@
 
 Deep dive on the server-side of Instatic — the Bun process, the router, the handlers, the auth model, the DB adapter, and how a request becomes a response.
 
-The server is a single `Bun.serve` process that boots the DB, runs migrations, activates installed plugins, then accepts HTTP requests and dispatches them through an ordered route table. There are no other processes, no message queues, no workers. The runtime entrypoint is `server/index.ts`.
+The server is a single `Bun.serve` process that boots the DB, runs migrations, activates installed plugins, then accepts HTTP requests and dispatches them through an ordered route table. There are no separate service processes or message queues. The runtime entrypoint is `server/index.ts`; CPU-heavy image variants and plugin server code run in `Bun.Worker`s owned by this process.
 
 ---
 
@@ -14,7 +14,7 @@ The server is a single `Bun.serve` process that boots the DB, runs migrations, a
 - **Auth:** session cookie (`SESSION_COOKIE_NAME`) → `findUserBySessionHash` → `requireCapability(req, db, 'site.read')`. Every state-changing handler starts with one of these guards.
 - **DB:** one `DbClient` interface (`server/db/client.ts`) — tagged-template callable returning `{ rows, rowCount }`. Two adapters: `postgres.ts` (via `Bun.sql`) and `sqlite.ts` (via `bun:sqlite`). Selected by `DATABASE_URL`.
 - **Repositories** (`server/repositories/`) hold all SQL. Handlers never write SQL directly.
-- **Plugins:** `server/plugins/runtime.ts` activates installed plugins at boot; per-plugin code runs in QuickJS-WASM sandboxes (`server/plugins/quickjs/vm.ts`, `modulePackVm.ts`).
+- **Plugins:** `server/plugins/runtime.ts` activates installed plugins at boot. Server entrypoints run in per-plugin Bun workers that host QuickJS-WASM (`server/plugins/pluginWorker.ts`, `server/plugins/host/workerPool.ts`, `server/plugins/quickjs/vm.ts`); module packs use `server/plugins/modulePackVm.ts` for server-side evaluation.
 - **Published pages and content rows** are served by `tryServePublicRoute`, which delegates resolution + render to `server/publish/publicRouter.ts`. A warm Layer B cache entry is served before any DB work; on a miss the live render reads the published `SiteDocument` from `site_snapshots` (stored once per publish, referenced by `data_row_versions.site_snapshot_id`, memoised per publish version). Uploads + admin SPA assets are served from disk by `tryServeUpload` and `tryServeStaticAsset`.
 
 ---
@@ -535,13 +535,13 @@ Plugins ship as zip packages with a `plugin.json` manifest. The host:
 
 1. **Installs** the package (unzips into `uploads/plugins/<id>/<version>/`) — `server/plugins/package.ts`.
 2. **Validates** the manifest and scans the bundled JS for forbidden sandbox-incompatible patterns — `assertSandboxSafe` in `package.ts` + `parsePluginManifest` in `src/core/plugins/manifest.ts`.
-3. **Activates** the plugin at boot or on user action — `server/plugins/runtime.ts`. Activation loads the server entrypoint into a per-plugin QuickJS-WASM VM (`server/plugins/quickjs/vm.ts`) and runs its `activate(api)` lifecycle hook.
+3. **Activates** the plugin at boot or on user action — `server/plugins/runtime.ts`. Activation asks the per-plugin worker pool (`server/plugins/host/workerPool.ts`) to load the server entrypoint into a QuickJS-WASM VM (`server/plugins/pluginWorker.ts`, `server/plugins/quickjs/vm.ts`) and runs its `activate(api)` lifecycle hook.
 4. **Routes** plugin-registered HTTP routes through `/admin/api/cms/plugins/<id>/runtime/…` (handled by `handleRuntimeRoutes`).
 5. **Brokers** the SDK boundary — `api.cms.routes.*`, `api.cms.storage.*`, `api.cms.hooks.*`, `api.cms.loops.*`, `api.cms.settings.*`, `api.cms.schedule.*`. The SDK shape is defined in `src/core/plugin-sdk/`.
 
 The sandbox has **no host access** — no Node, no Bun, no file system, no env vars, no network unless `network.outbound` permission + `networkAllowedHosts` allowlist is granted.
 
-Sandbox invariants are gated by `src/__tests__/architecture/plugin-sandbox-invariants.test.ts`. Module-pack VMs (canvas-side plugin modules) run in `modulePackVm.ts`.
+Sandbox invariants are gated by `src/__tests__/architecture/plugin-sandbox-invariants.test.ts`. Module-pack VMs (server-side evaluation of plugin canvas modules) run in `modulePackVm.ts`; the browser editor loads the same module bundle as ESM.
 
 See [docs/features/plugin-system.md](features/plugin-system.md) for the full feature doc.
 

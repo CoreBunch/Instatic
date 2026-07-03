@@ -146,7 +146,7 @@ Each widget is a small React component that fetches its own data via `useDashboa
 
 ### Plugin-contributed widgets
 
-A plugin with the `dashboard.widgets.register` permission can register widgets via the SDK at activation time. The widget's React component runs in the **admin app context** (not the QuickJS sandbox) — plugin canvas modules run sandboxed, but admin / dashboard widgets render in-process.
+A plugin with the `dashboard.widgets.register` permission can register widgets from its admin-window entrypoint via `api.dashboard.widgets.register(...)`. The widget's React `component` runs in the **admin app context** (not the QuickJS sandbox) — plugin server code runs sandboxed, but admin / dashboard widgets render in-process.
 
 ---
 
@@ -304,7 +304,7 @@ That's it. Users see it in the BlockLibrary; dragging it onto the grid persists 
 
 ### Register a plugin widget
 
-Plugins with `dashboard.widgets.register` permission register widgets via the SDK at activation time. The widget's `render` function runs in the **admin React app** (not the QuickJS sandbox). Plugin canvas modules run sandboxed; plugin dashboard widgets do not.
+Plugins with `dashboard.widgets.register` permission register widgets from their admin-window entrypoint via `api.dashboard.widgets.register(...)`. The widget's `component` runs in the **admin React app** (not the QuickJS sandbox). Plugin server code runs sandboxed; plugin dashboard widgets do not.
 
 ### Gate a widget on capability
 
