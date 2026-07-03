@@ -1,5 +1,8 @@
 /**
- * Page write diff validator for PUT /admin/api/cms/pages.
+ * Page write diff validator — the per-category capability POLICY for page
+ * changes, shared by BOTH write transports: the transactional HTTP save
+ * (server/handlers/cms/siteDocument.ts) and the collab relay's update guard
+ * (server/collab/updateGuard.ts).
  *
  * The pages endpoint owns both dangerous roster reconciliation and ordinary
  * node edits. A coarse `site.structure.edit` gate protects deletion, but it
@@ -12,7 +15,7 @@
  *   - content:   props whose module schema marks them content-editable.
  *   - style:     class assignments, inline styles, breakpoint overrides.
  */
-import type { CoreCapability } from '../../auth/capabilities'
+import type { CoreCapability } from '../auth/capabilities'
 import { ForbiddenSiteChangeError } from './siteDiff'
 import { registry, resolvePropertyControlCategory } from '@core/module-engine'
 import type { Page, PageNode } from '@core/page-tree'

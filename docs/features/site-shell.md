@@ -536,9 +536,14 @@ defense). A read-only connection's update frames are dropped server-side
 and PARTIAL writers' update frames run through the per-category guard
 (`server/collab/updateGuard.ts`): fork the doc, apply, project both sides,
 and reuse the HTTP path's `validateSiteWriteDiff`/`validatePageWriteDiff` —
-one enforcement vocabulary on both transports. Rejected updates never touch
+one enforcement vocabulary on both transports (the validators live in
+`server/writePolicy/` for exactly that reason). Rejected updates never touch
 the authoritative doc; the sender gets a targeted reset that reverts its
-local fork.
+local fork. Two more socket-level defenses: per-frame payload caps (64 KB
+awareness / 4 MB sync, plus the transport `maxPayloadLength`) drop oversized
+frames before any decode work, and every awareness frame is decoded and
+checked against the session — a state claiming another user's identity
+(`state.user.id !== session user`) is dropped, so presence can't be spoofed.
 
 **Client transport** (`src/admin/pages/site/collab/collabProvider.ts`): one
 socket, every bound doc multiplexed; local transactions send updates the
@@ -548,7 +553,8 @@ vectors pull exactly the missed delta. `usePersistence` HTTP-loads the
 document once for first paint, then connects the provider — edits gate on
 each doc's first sync so an unseeded doc can never receive local ops.
 
-**Presence** (`src/admin/pages/site/collab/awarenessState.ts` +
+**Presence** (`src/admin/pages/site/collab/awarenessState.ts`; per-frame
+publishers in `collab/framePresencePublishers.ts`, rendering in
 `PeerPresenceOverlay`): every editor publishes identity (deterministic HSL
 color from the user id + the same upload→Gravatar avatar fields every admin
 surface uses), active doc, selection, inline-edit state, a pointer, and —
@@ -569,7 +575,7 @@ client-side flush is gone.
 
 ### Atomic diff validation
 
-The save handler validates the shell diff before applying — e.g. a user with only `site.content.edit` can't change a class definition (style-edit) or rename a breakpoint (structure-edit). The shell diff validator is `validateSiteWriteDiff` (`server/handlers/cms/siteDiff.ts`); per-page category diffs run through `validatePageWriteDiff` (`server/handlers/cms/pageDiff.ts`).
+The save handler validates the shell diff before applying — e.g. a user with only `site.content.edit` can't change a class definition (style-edit) or rename a breakpoint (structure-edit). The shell diff validator is `validateSiteWriteDiff` (`server/writePolicy/siteDiff.ts`); per-page category diffs run through `validatePageWriteDiff` (`server/writePolicy/pageDiff.ts`). The same two validators back the collab relay's update guard (`server/collab/updateGuard.ts`) — `server/writePolicy/` is the one write-policy module shared by both transports.
 
 ---
 

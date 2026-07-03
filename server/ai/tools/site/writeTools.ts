@@ -56,7 +56,7 @@ import type { AiTool } from '../types'
 
 // ---------------------------------------------------------------------------
 // Capability requirements (ANY-OF) — mirror the editor's change-class model
-// (structure / content / style — see server/handlers/cms/siteDiff.ts and the
+// (structure / content / style — see server/writePolicy/siteDiff.ts and the
 // `site.structure.edit` gate on PUT /admin/api/cms/pages). Selection-time
 // gating only: persistence is independently re-validated server-side.
 // `site_get_node_html`, `site_read_document`, `site_open_document`, and `site_render_snapshot` are

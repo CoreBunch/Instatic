@@ -3,7 +3,7 @@
  * primitives) — key order insensitive, no prototype/cycle handling (persisted
  * CMS documents are acyclic plain data by construction).
  *
- * Used by the server's shell diff (`server/handlers/cms/siteDiff.ts`).
+ * Used by the server's write policy (`server/writePolicy/siteDiff.ts`).
  */
 export function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true

@@ -87,8 +87,8 @@ import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '.
 import { bumpPublishVersionSerialized } from '../../publish/publishState'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { CMS_API_PREFIX } from './shared'
-import { ForbiddenSiteChangeError, validateSiteWriteDiff } from './siteDiff'
-import { validatePageWriteDiff } from './pageDiff'
+import { ForbiddenSiteChangeError, validateSiteWriteDiff } from '../../writePolicy/siteDiff'
+import { validatePageWriteDiff } from '../../writePolicy/pageDiff'
 
 const SITE_WRITE_CAPABILITIES = [
   'site.structure.edit',

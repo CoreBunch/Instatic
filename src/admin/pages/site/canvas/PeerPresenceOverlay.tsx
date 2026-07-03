@@ -14,9 +14,10 @@
  *     inline text-edit session),
  *   - a pointer dot inside the frame the peer's cursor is over.
  *
- * This component also PUBLISHES the local pointer for its frame (throttled
- * mousemove on the iframe document) — presence is symmetric, so the reader
- * and the writer live in the same mount.
+ * This is the RENDER side only. The write side — publishing the local
+ * pointer and text caret for this frame — lives in
+ * `@site/collab/framePresencePublishers`, mounted here so reader and writer
+ * share the same per-frame lifecycle.
  *
  * All colors flow through the `--peer-color` inline custom property
  * (deterministic identity HSL from the user id — see awarenessState.ts).
@@ -29,24 +30,20 @@ import { PeerAvatar } from '@site/collab/PeerAvatar'
 import { useEditorStore } from '@site/store/store'
 import {
   activeEditorDocId,
-  publishLocalPointer,
-  publishLocalTextCaret,
   usePeerPresences,
   type PeerPresence,
 } from '@site/collab/awarenessState'
-import { encodeCaretRange, resolveCaretRange } from '@site/collab/caretPositions'
+import {
+  useCaretPresencePublisher,
+  usePointerPresencePublisher,
+} from '@site/collab/framePresencePublishers'
+import { resolveCaretRange } from '@site/collab/caretPositions'
 import { collabDocFor } from '@site/store/slices/site/collabBinding'
 import { CanvasViewportActionsContext } from './CanvasContexts'
 import { CanvasNodeElementCache } from './canvasNodeLookup'
 import { createCanvasOverlayMeasureSession } from './canvasOverlayGeometry'
 import { hideOverlayElement, positionOverlayElement } from './canvasSelectionOverlayPositioning'
 import styles from './PeerPresenceOverlay.module.css'
-
-// Publish at 10 Hz with a movement deadband — interpolation on the receiving
-// side (below) turns the sparse samples back into smooth motion, so a lower
-// wire rate COSTS nothing visually and saves frames for everyone.
-const POINTER_PUBLISH_INTERVAL_MS = 100
-const POINTER_DEADBAND_PX = 2
 
 // Receive-side smoothing: each frame the rendered cursor eases toward the
 // last received target with an exponential time constant. ~TAU ms closes 63%
@@ -109,19 +106,6 @@ function domPositionAtTextOffset(
   return last ? { node: last, offset: last.data.length } : { node: root, offset: 0 }
 }
 
-/** Character offset of a DOM selection point within `root` (walk order). */
-function textOffsetAtDomPosition(
-  iframeDoc: Document,
-  root: HTMLElement,
-  node: Node,
-  offset: number,
-): number {
-  const range = iframeDoc.createRange()
-  range.setStart(root, 0)
-  range.setEnd(node, offset)
-  return range.toString().length
-}
-
 /** Sync `container`'s children to one absolutely-positioned div per rect. */
 function syncHighlightRects(container: HTMLElement | null, rects: OverlayRect[]): void {
   if (!container) return
@@ -182,129 +166,10 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
     return () => cancelAnimationFrame(frame)
   }, [viewportActions])
 
-  // ── Local pointer publisher (this frame) ─────────────────────────────────
-  // The frame boots via `srcDoc`, which REPLACES the iframe's initial
-  // about:blank document on load — listeners attached to the pre-load
-  // document die silently. Attach to the CURRENT document and re-attach on
-  // every `load` so the publisher survives the swap (and any reload).
-  useEffect(() => {
-    const iframe = iframeElement
-    if (!iframe) return undefined
-
-    let attachedDoc: Document | null = null
-    let lastSent = 0
-    let lastX = Number.NaN
-    let lastY = Number.NaN
-    let trailing: ReturnType<typeof setTimeout> | null = null
-
-    const publish = (x: number, y: number): void => {
-      lastSent = performance.now()
-      lastX = x
-      lastY = y
-      publishLocalPointer({ x, y, breakpointId })
-    }
-    const handleMove = (event: MouseEvent): void => {
-      const { clientX, clientY } = event
-      // Sub-deadband tremor isn't worth a frame on the wire.
-      if (Math.hypot(clientX - lastX, clientY - lastY) < POINTER_DEADBAND_PX) return
-      const elapsed = performance.now() - lastSent
-      if (elapsed >= POINTER_PUBLISH_INTERVAL_MS) {
-        if (trailing) {
-          clearTimeout(trailing)
-          trailing = null
-        }
-        publish(clientX, clientY)
-        return
-      }
-      // Inside the throttle window: schedule ONE trailing publish so the
-      // cursor's final resting position always ships (a plain leading-edge
-      // throttle would drop the last sample and leave peers slightly off).
-      if (trailing) clearTimeout(trailing)
-      trailing = setTimeout(() => {
-        trailing = null
-        publish(clientX, clientY)
-      }, POINTER_PUBLISH_INTERVAL_MS - elapsed)
-    }
-    const handleLeave = (): void => {
-      if (trailing) {
-        clearTimeout(trailing)
-        trailing = null
-      }
-      lastX = Number.NaN
-      lastY = Number.NaN
-      publishLocalPointer(null)
-    }
-    const detach = (): void => {
-      attachedDoc?.removeEventListener('mousemove', handleMove)
-      attachedDoc?.removeEventListener('mouseleave', handleLeave)
-      attachedDoc = null
-    }
-    const attach = (): void => {
-      const doc = iframe.contentDocument
-      if (!doc || doc === attachedDoc) return
-      detach()
-      attachedDoc = doc
-      doc.addEventListener('mousemove', handleMove)
-      doc.addEventListener('mouseleave', handleLeave)
-    }
-
-    attach()
-    iframe.addEventListener('load', attach)
-    return () => {
-      iframe.removeEventListener('load', attach)
-      if (trailing) clearTimeout(trailing)
-      detach()
-      publishLocalPointer(null)
-    }
-  }, [iframeElement, breakpointId])
-
-  // ── Local text-caret publisher (this frame) ──────────────────────────────
-  // During an inline-edit session owned by THIS frame, every selection
-  // change publishes the caret as Y.Text RELATIVE positions — pinned to the
-  // CRDT items around the caret, so peers resolve the right spot even while
-  // concurrent edits shift the text (see collab/caretPositions.ts).
-  useEffect(() => {
-    const iframe = iframeElement
-    if (!iframe) return undefined
-
-    let attachedDoc: Document | null = null
-    const handleSelectionChange = (): void => {
-      const store = useEditorStore.getState()
-      const session = store.activeInlineEdit
-      if (!session || session.breakpointId !== breakpointId) return
-      const doc = attachedDoc
-      if (!doc) return
-      const element = doc.querySelector<HTMLElement>(`[data-node-id="${session.nodeId}"]`)
-      const selection = doc.getSelection()
-      if (!element || !selection || selection.rangeCount === 0) return
-      if (!element.contains(selection.anchorNode) || !element.contains(selection.focusNode)) return
-      const collabDoc = collabDocFor(
-        activeEditorDocId({ activeDocument: store.activeDocument, activePageId: store.activePageId }) ?? '',
-      )
-      if (!collabDoc || !selection.anchorNode || !selection.focusNode) return
-      const anchor = textOffsetAtDomPosition(doc, element, selection.anchorNode, selection.anchorOffset)
-      const head = textOffsetAtDomPosition(doc, element, selection.focusNode, selection.focusOffset)
-      publishLocalTextCaret(encodeCaretRange(collabDoc, session.nodeId, session.prop, anchor, head))
-    }
-    const detach = (): void => {
-      attachedDoc?.removeEventListener('selectionchange', handleSelectionChange)
-      attachedDoc = null
-    }
-    const attach = (): void => {
-      const doc = iframe.contentDocument
-      if (!doc || doc === attachedDoc) return
-      detach()
-      attachedDoc = doc
-      doc.addEventListener('selectionchange', handleSelectionChange)
-    }
-
-    attach()
-    iframe.addEventListener('load', attach)
-    return () => {
-      iframe.removeEventListener('load', attach)
-      detach()
-    }
-  }, [iframeElement, breakpointId])
+  // Presence publishing (pointer + caret) lives in @site/collab —
+  // the overlay owns only the render side.
+  usePointerPresencePublisher(iframeElement, breakpointId)
+  useCaretPresencePublisher(iframeElement, breakpointId)
 
   // ── Peer chrome positioning (RAF, read-then-write like the selection overlay) ──
   const tickOnce = useEffectEvent((iframe: HTMLIFrameElement | null) => {

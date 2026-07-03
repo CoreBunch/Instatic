@@ -56,6 +56,39 @@ const SITE_WRITE_CAPABILITIES = ['site.structure.edit', 'site.content.edit', 'si
 /** y-protocols/sync message types (the payload's first varUint). */
 const SYNC_STEP_1 = 0
 
+// Frame-size ceilings (belt and braces on top of Bun's maxPayloadLength):
+// presence states are a few hundred bytes; doc updates can legitimately be
+// large (a big paste, a whole-doc repopulate) but never tens of megabytes.
+const MAX_AWARENESS_PAYLOAD_BYTES = 64 * 1024
+const MAX_SYNC_PAYLOAD_BYTES = 4 * 1024 * 1024
+
+/**
+ * Presence identity must be the SESSION's identity — decode the awareness
+ * update (varUint count, then per client: varUint id, varUint clock,
+ * varString stateJSON) and reject any non-null state claiming a different
+ * user id. Without this, any authenticated connection could impersonate
+ * another admin's name/avatar in every peer's UI.
+ */
+function awarenessUpdateMatchesUser(payload: Uint8Array, userId: string): boolean {
+  try {
+    const decoder = decoding.createDecoder(payload)
+    const count = decoding.readVarUint(decoder)
+    for (let i = 0; i < count; i++) {
+      decoding.readVarUint(decoder) // clientID
+      decoding.readVarUint(decoder) // clock
+      const raw = decoding.readVarString(decoder)
+      if (raw === 'null') continue // disconnect / clear — always allowed
+      const state: unknown = JSON.parse(raw)
+      const claimed = (state as { user?: { id?: unknown } } | null)?.user?.id
+      if (claimed !== undefined && claimed !== userId) return false
+    }
+    return true
+  } catch {
+    // Malformed update — reject rather than relay garbage.
+    return false
+  }
+}
+
 export interface CollabSocketData {
   userId: string
   canWrite: boolean
@@ -142,6 +175,10 @@ export function createCollabSocketLayer(relay: CollabRelay) {
   })
 
   const handlers: WebSocketHandler<CollabSocketData> = {
+    // Transport-level ceiling — the per-frame-type caps in `message` are the
+    // fine-grained guards; this stops oversized frames before they buffer.
+    maxPayloadLength: MAX_SYNC_PAYLOAD_BYTES + 1024,
+
     open(ws: ServerWebSocket<CollabSocketData>) {
       ws.subscribe(docTopic(PRESENCE_DOC_ID))
       // Late joiners need the current presence roster.
@@ -158,6 +195,11 @@ export function createCollabSocketLayer(relay: CollabRelay) {
 
       if (frame.frameType === FRAME_AWARENESS) {
         // Presence is NOT a doc write — read-only viewers are visible peers.
+        if (frame.payload.byteLength > MAX_AWARENESS_PAYLOAD_BYTES) return
+        if (!awarenessUpdateMatchesUser(frame.payload, ws.data.userId)) {
+          console.warn(`[collab] dropped awareness frame with spoofed identity from ${ws.data.userId}`)
+          return
+        }
         // Track which clientIDs this connection contributes so its peers
         // vanish immediately on close.
         const before = new Set(awareness.getStates().keys())
@@ -177,6 +219,7 @@ export function createCollabSocketLayer(relay: CollabRelay) {
 
       if (frame.frameType !== FRAME_SYNC) return
       if (!parseCollabDocId(frame.docId)) return
+      if (frame.payload.byteLength > MAX_SYNC_PAYLOAD_BYTES) return
 
       // Read-only connections may REQUEST state (step1) but never write.
       const messageType = decoding.readVarUint(decoding.createDecoder(frame.payload))

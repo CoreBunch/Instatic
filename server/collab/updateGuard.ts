@@ -27,8 +27,8 @@ import {
   projectSiteDoc,
 } from '@core/collab'
 import type { CoreCapability } from '@core/capabilities'
-import { ForbiddenSiteChangeError, validateSiteWriteDiff } from '../handlers/cms/siteDiff'
-import { validatePageWriteDiff } from '../handlers/cms/pageDiff'
+import { ForbiddenSiteChangeError, validateSiteWriteDiff } from '../writePolicy/siteDiff'
+import { validatePageWriteDiff } from '../writePolicy/pageDiff'
 
 export type UpdateGuardVerdict = { ok: true } | { ok: false; reason: string }
 

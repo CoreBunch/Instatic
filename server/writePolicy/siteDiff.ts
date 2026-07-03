@@ -1,5 +1,8 @@
 /**
- * Site-shell write diff validator — enforces granular capabilities on PUT /admin/api/cms/site.
+ * Site-shell write diff validator — the per-category capability POLICY for
+ * shell changes, shared by BOTH write transports: the transactional HTTP
+ * save (server/handlers/cms/siteDocument.ts) and the collab relay's update
+ * guard (server/collab/updateGuard.ts).
  *
  * The save endpoint accepts the site shell and replaces the draft.
  * To support a "Client" role with `site.content.edit` only, we walk the diff
@@ -28,7 +31,7 @@
  * the incoming document is treated as a structural change in its entirety —
  * a content-only caller cannot bootstrap a site from nothing.
  */
-import type { CoreCapability } from '../../auth/capabilities'
+import type { CoreCapability } from '../auth/capabilities'
 import type {
   StyleRule,
   SiteShell,

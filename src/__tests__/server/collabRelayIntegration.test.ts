@@ -280,15 +280,26 @@ describe('collab relay integration (real server, real sockets)', () => {
     expect((treeMap(boundOwner.doc).get('nodes') as Y.Map<unknown>).has('forbidden-node')).toBe(false)
 
     // Read-only presence: a viewer's awareness state reaches other peers
-    // (presence is not a doc write).
-    viewerClient.awareness.setLocalState({ user: { id: 'viewer-1', name: 'Viewer' } })
+    // (presence is not a doc write). Identity is server-verified — the state
+    // must claim the SESSION's real user id or the frame is dropped.
+    const { rows: viewerRows } = await stack.harness.db<{ id: string }>`
+      select id from users where email = ${viewer.email}
+    `
+    const viewerUserId = viewerRows[0].id
+    viewerClient.awareness.setLocalState({ user: { id: 'someone-else', name: 'Spoof' } })
+    viewerClient.awareness.setLocalState({ user: { id: viewerUserId, name: 'Viewer' } })
     await waitFor(() => {
       for (const [, state] of owner.awareness.getStates()) {
-        const s = state as { user?: { id?: string } }
-        if (s.user?.id === 'viewer-1') return true
+        const s = state as { user?: { id?: string; name?: string } }
+        if (s.user?.id === viewerUserId) return true
       }
       return false
     })
+    // The spoofed frame never relayed.
+    for (const [, state] of owner.awareness.getStates()) {
+      const s = state as { user?: { id?: string } }
+      expect(s.user?.id).not.toBe('someone-else')
+    }
   })
 
   it('resets a doc when the row is written outside the relay', async () => {

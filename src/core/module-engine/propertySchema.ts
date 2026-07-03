@@ -200,7 +200,7 @@ export type PropertySchema = Static<typeof PropertySchemaSchema>
 // Used by:
 //   - the editor PropertyControlRenderer to compute the disabled overlay
 //     when a content-only role hits a non-content control
-//   - the server `siteDiff` validator to classify prop edits when the caller
+//   - the server `writePolicy/siteDiff` validator to classify prop edits when the caller
 //     is a content-only role
 // ---------------------------------------------------------------------------
 
