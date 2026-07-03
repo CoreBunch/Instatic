@@ -342,7 +342,7 @@ render(
 | `history.pushState` directly                                     | Use the router — it fires `instatic:locationchange` for you|
 | Nested routes (`<Route path="/admin/site"><Route ...>...`)       | Flat route table only. Compose with workspace internal state. |
 | Optional URL segments / wildcards                                 | Restructure the route tree.                          |
-| Catch-all 404 route                                              | The admin has 9 known paths — invalid paths route to dashboard via the index redirect. |
+| Catch-all 404 route                                              | Keep the scoped `/admin/*` redirect last — invalid admin paths route to the dashboard/login flow. |
 
 ---
 
