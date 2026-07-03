@@ -35,16 +35,17 @@ For the broader auth flow (sessions, MFA, step-up), see [docs/features/auth-and-
 
 `SITE_WRITE_CAPABILITIES` is the convenience set `['site.structure.edit', 'site.content.edit', 'site.style.edit']` — defined locally in `server/handlers/cms/siteDocument.ts` and `src/admin/access.ts` at each point of use, not in a shared capabilities module. The transactional site-document save (`PUT /admin/api/cms/site-document`) accepts any site writer, then diff-validates the batch by category: page deletions, page metadata, topology, module identity, non-content props, and dynamic bindings require `site.structure.edit`; content-category props (and site-wide SEO copy on the shell) require `site.content.edit`; inline styles/classes/breakpoint overrides and style rules require `site.style.edit`. Empty change sets are no-op saves any site writer may perform, but changed/deleted components and layouts remain structural work (`site.structure.edit`).
 
-**Known v1 granularity regression (co-editing):** the collab socket
-(`server/collab/socket.ts`) resolves one coarse `canWrite` flag at upgrade
-time — any holder of a `SITE_WRITE_CAPABILITIES` member can write every doc
-over the relay, and the per-category structure/content/style diff
-validation above does NOT run on relay writes. Read-only connections'
-update frames are dropped server-side, and the editor UI still enforces the
-three-way permissions, but a hostile holder of e.g. only
-`site.content.edit` could hand-craft structural updates over the socket.
-Restoring per-category enforcement on the relay path is tracked as a
-follow-up.
+**Co-editing enforcement:** relay writes are held to the SAME per-category
+rules as the HTTP save. Full site-writers (all three capabilities) skip
+validation; every update frame from a PARTIAL writer runs through
+`server/collab/updateGuard.ts`, which forks the authoritative doc, applies
+the update to the fork, projects both sides back to JSON, and reuses
+`validateSiteWriteDiff` / `validatePageWriteDiff` — component/layout
+changes and roster changes are structural wholesale. A rejected update is
+never applied; the server sends the offender a targeted reset so their
+diverged local doc reseeds from the authoritative state. Read-only
+connections may not write docs at all, but their AWARENESS frames relay —
+presence is not a doc write, so viewers are visible peers.
 
 ### Page publishing
 

@@ -42,6 +42,8 @@ import {
   SITE_SOCKET_PATH,
 } from '@core/collab'
 import { requireCapability, userHasCapability } from '../auth/authz'
+import type { CoreCapability } from '@core/capabilities'
+import { validateGuardedUpdate } from './updateGuard'
 import { originAllowed } from '../auth/security'
 import type { DbClient } from '../db/client'
 import { jsonResponse } from '../http'
@@ -57,6 +59,15 @@ const SYNC_STEP_1 = 0
 export interface CollabSocketData {
   userId: string
   canWrite: boolean
+  /**
+   * True when the user holds ALL of SITE_WRITE_CAPABILITIES — the common
+   * case, which skips the per-update capability guard entirely. Partial
+   * writers (e.g. content-only editors) pay a fork+diff validation per
+   * update frame instead (see ./updateGuard.ts).
+   */
+  fullSiteWriter: boolean
+  /** The user's granted capabilities — the guard's validation input. */
+  capabilities: readonly CoreCapability[]
   /** Doc ids this connection retained in the relay (released on close). */
   boundDocs: Set<string>
   /** Awareness clientIDs contributed by this connection. */
@@ -85,8 +96,16 @@ export async function handleCollabSocketUpgrade(
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
   const canWrite = SITE_WRITE_CAPABILITIES.some((cap) => userHasCapability(user, cap))
+  const fullSiteWriter = SITE_WRITE_CAPABILITIES.every((cap) => userHasCapability(user, cap))
   const upgraded = server.upgrade(req, {
-    data: { userId: user.id, canWrite, boundDocs: new Set(), awarenessClients: new Set() },
+    data: {
+      userId: user.id,
+      canWrite,
+      fullSiteWriter,
+      capabilities: user.capabilities,
+      boundDocs: new Set(),
+      awarenessClients: new Set(),
+    },
   })
   if (!upgraded) {
     return jsonResponse({ error: 'WebSocket upgrade required' }, { status: 426 })
@@ -138,7 +157,7 @@ export function createCollabSocketLayer(relay: CollabRelay) {
       const frame = decodeCollabFrame(new Uint8Array(raw))
 
       if (frame.frameType === FRAME_AWARENESS) {
-        if (!ws.data.canWrite) return
+        // Presence is NOT a doc write — read-only viewers are visible peers.
         // Track which clientIDs this connection contributes so its peers
         // vanish immediately on close.
         const before = new Set(awareness.getStates().keys())
@@ -170,6 +189,29 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         doc = await relay.retain(frame.docId)
         ws.data.boundDocs.add(frame.docId)
         ws.subscribe(docTopic(frame.docId))
+      }
+
+      // Partial writers (canWrite but not every site capability) pass each
+      // update through the category guard BEFORE it touches the
+      // authoritative doc — the same structure/content/style rules the HTTP
+      // save enforces. Both non-step1 message types (step2 replies and
+      // updates) carry `varUint8Array update` after the type varUint, so one
+      // extraction covers whatever a hand-crafted client might send.
+      if (messageType !== SYNC_STEP_1 && !ws.data.fullSiteWriter) {
+        const guardDecoder = decoding.createDecoder(frame.payload)
+        decoding.readVarUint(guardDecoder)
+        const update = decoding.readVarUint8Array(guardDecoder)
+        const verdict = validateGuardedUpdate(frame.docId, doc, update, ws.data.capabilities)
+        if (!verdict.ok) {
+          console.warn(`[collab] rejected ${frame.docId} update from ${ws.data.userId}: ${verdict.reason}`)
+          // The sender's local doc holds the forbidden change — a TARGETED
+          // reset makes their client rebind and reseed from the server,
+          // reverting it everywhere (including their own screen).
+          ws.send(encodeCollabFrame(frame.docId, FRAME_RESET, new Uint8Array()))
+          return
+        }
+        Y.applyUpdate(doc, update, ws)
+        return
       }
 
       const decoder = decoding.createDecoder(frame.payload)

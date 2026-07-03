@@ -36,6 +36,8 @@ import {
   createCapabilityTestHarness,
   type CapabilityTestHarness,
 } from '../helpers/capabilityHarness'
+// The update guard classifies prop changes via the module registry.
+import '@modules/base/index'
 
 const PERSIST_DEBOUNCE_MS = 25
 
@@ -224,6 +226,69 @@ describe('collab relay integration (real server, real sockets)', () => {
 
     // The sneaky edit never reached the WRITER — the server dropped it.
     expect(nodeLabel(boundWriter.doc, rootId)).not.toBe('Sneaky viewer edit')
+  })
+
+  it('enforces per-category capabilities on partial writers and relays read-only presence', async () => {
+    const stack = await startStack()
+    const docId = `page:${stack.homeId}`
+
+    const contentUser = await stack.harness.createRoleUser({
+      name: 'Copy Editor',
+      slug: 'collab-content-only',
+      capabilities: ['site.read', 'site.content.edit'],
+    })
+    const viewer = await stack.harness.createRoleUser({
+      name: 'Viewer',
+      slug: 'collab-presence-viewer',
+      capabilities: ['site.read'],
+    })
+
+    const owner = connectClient(stack)
+    const contentClient = connectClient(stack, contentUser.cookie)
+    const viewerClient = connectClient(stack, viewer.cookie)
+    const boundOwner = owner.bind(docId)
+    const boundContent = contentClient.bind(docId)
+    viewerClient.bind(docId)
+    await boundOwner.whenSynced
+    await boundContent.whenSynced
+
+    // Owner (full writer) adds a text node the content editor may write to.
+    insertChildNode(boundOwner.doc, 'text-node', 'base.text')
+    await waitFor(() =>
+      (treeMap(boundContent.doc).get('nodes') as Y.Map<unknown>).has('text-node'),
+    )
+
+    // ALLOWED: a content-category prop change from the content-only editor.
+    boundContent.doc.transact(() => {
+      const nodes = treeMap(boundContent.doc).get('nodes') as Y.Map<unknown>
+      const props = (nodes.get('text-node') as Y.Map<unknown>).get('props') as Y.Map<unknown>
+      props.set('text', 'copy edited')
+    }, LOCAL_ORIGIN)
+    await waitFor(() => {
+      const nodes = treeMap(boundOwner.doc).get('nodes') as Y.Map<unknown>
+      const props = (nodes.get('text-node') as Y.Map<unknown>).get('props') as Y.Map<unknown>
+      return props.get('text') === 'copy edited'
+    })
+
+    // REJECTED: a structural change (node insertion) from the same editor —
+    // the server refuses the update and resets the sender's doc.
+    const resets: string[] = []
+    contentClient.onReset((id) => resets.push(id))
+    insertChildNode(boundContent.doc, 'forbidden-node', 'base.container')
+    await waitFor(() => resets.includes(docId))
+    // Reset was sent INSTEAD of applying — the authoritative doc never saw it.
+    expect((treeMap(boundOwner.doc).get('nodes') as Y.Map<unknown>).has('forbidden-node')).toBe(false)
+
+    // Read-only presence: a viewer's awareness state reaches other peers
+    // (presence is not a doc write).
+    viewerClient.awareness.setLocalState({ user: { id: 'viewer-1', name: 'Viewer' } })
+    await waitFor(() => {
+      for (const [, state] of owner.awareness.getStates()) {
+        const s = state as { user?: { id?: string } }
+        if (s.user?.id === 'viewer-1') return true
+      }
+      return false
+    })
   })
 
   it('resets a doc when the row is written outside the relay', async () => {

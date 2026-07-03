@@ -531,11 +531,14 @@ inside the debounce window.
 frames `docId | frameType | payload` multiplex every doc over ONE WebSocket
 at `/admin/api/cms/site-socket` (y-protocols sync + awareness + reset).
 Upgrade is gated by a session with `site.read` and `originAllowed` (CSWSH
-defense); `canWrite` resolves once from `SITE_WRITE_CAPABILITIES`, and a
-read-only connection's update frames are dropped server-side. Known v1
-granularity regression: the socket gate is coarse (any site-write cap =
-write) — the per-category structure/content/style diff validation of the
-HTTP path does not apply to relay writes yet.
+defense). A read-only connection's update frames are dropped server-side
+(its awareness/presence frames still relay — viewers are visible peers),
+and PARTIAL writers' update frames run through the per-category guard
+(`server/collab/updateGuard.ts`): fork the doc, apply, project both sides,
+and reuse the HTTP path's `validateSiteWriteDiff`/`validatePageWriteDiff` —
+one enforcement vocabulary on both transports. Rejected updates never touch
+the authoritative doc; the sender gets a targeted reset that reverts its
+local fork.
 
 **Client transport** (`src/admin/pages/site/collab/collabProvider.ts`): one
 socket, every bound doc multiplexed; local transactions send updates the
