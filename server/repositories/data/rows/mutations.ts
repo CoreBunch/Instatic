@@ -23,6 +23,7 @@ import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import { type InsertDataRowInput, type UpdateDataRowDraftInput } from './mapper'
 import { isoDateOrNull } from '@core/utils/isoDate'
 import { getDataRow } from './read'
+import { notifyRowWrite } from '../../rowWriteEvents'
 
 type UpdateDataRowTableResult =
   | { ok: true; row: DataRow }
@@ -33,6 +34,7 @@ export async function createDataRow(
   input: InsertDataRowInput,
   actorUserId: string | null = null,
   pluginActorId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
 ): Promise<DataRow> {
   const { rows } = await db<{ id: string }>`
     insert into data_rows (
@@ -61,6 +63,11 @@ export async function createDataRow(
   `
   const created = await getDataRow(db, rows[0].id)
   if (!created) throw new Error('data row was created but could not be re-read')
+  // Out-of-relay creations invalidate collab state (roster + row doc) — see
+  // rowWriteEvents. The relay's own persistence opts out.
+  if (!opts.collabInternal) {
+    notifyRowWrite({ tableId: created.tableId, rowIds: [created.id], kind: 'create' })
+  }
   return created
 }
 
@@ -70,9 +77,14 @@ export async function saveDataRowDraft(
   input: UpdateDataRowDraftInput,
   actorUserId: string | null = null,
   pluginActorId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
 ): Promise<DataRow | null> {
   const updated = await updateDataRowDraftCells(db, rowId, input, actorUserId, pluginActorId)
-  return updated ? getDataRow(db, rowId) : null
+  const row = updated ? await getDataRow(db, rowId) : null
+  if (row && !opts.collabInternal) {
+    notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'update' })
+  }
+  return row
 }
 
 /**
@@ -158,6 +170,7 @@ export async function softDeleteDataRow(
   db: DbClient,
   rowId: string,
   actorUserId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
 ): Promise<DeletedRowSummary | null> {
   const { rows } = await db<{
     id: string
@@ -176,6 +189,9 @@ export async function softDeleteDataRow(
   `
   const row = rows[0]
   if (!row) return null
+  if (!opts.collabInternal) {
+    notifyRowWrite({ tableId: row.table_id, rowIds: [row.id], kind: 'delete' })
+  }
   return {
     id: row.id,
     tableId: row.table_id,

@@ -1,0 +1,394 @@
+/**
+ * Collab relay — the server half of real-time co-editing.
+ *
+ * Owns a registry of live Y documents (one per collab doc id):
+ *   - `openDoc` hydrates the CRDT blob from `collab_documents`, or — first
+ *     ever open — SEEDS the doc deterministically from the current persisted
+ *     JSON (fixed SEED_CLIENT_ID; the server is the ONLY seeder, so two
+ *     clients can never build divergent initial histories). A doc with
+ *     neither blob nor row starts empty: that is the client-created-row
+ *     flow, whose content arrives as ordinary updates.
+ *   - `applyUpdate` merges a client update and schedules a debounced persist.
+ *   - every local doc update fans out to `subscribeUpdates` listeners (the
+ *     socket layer broadcasts to the other connections).
+ *   - persistence writes BOTH the CRDT blob (source of truth for editing)
+ *     and the derived JSON into `data_rows` / `site` — the publisher and all
+ *     non-editor reads stay untouched. Derived-JSON writes are tagged
+ *     `collabInternal` so the row-write reset seam ignores them.
+ *   - rows deleted from the site doc's roster are soft-deleted on persist
+ *     (publish version bumped when a published page goes).
+ *   - `resetDocs` (and the row-write listener wired in `attachResetSources`)
+ *     drop CRDT state whose backing JSON was rewritten OUT-of-relay (plugin
+ *     pack installs, HTTP site saves, data-workspace edits): blob deleted,
+ *     doc evicted, reset broadcast — clients rebind and the doc reseeds from
+ *     the fresh JSON.
+ *
+ * Single Bun process by product definition — an in-memory registry is
+ * correct, not a shortcut (multi-process would need a shared bus; out of
+ * scope, documented in docs/features/site-shell.md).
+ */
+import * as Y from 'yjs'
+import {
+  encodeCollabDocId,
+  parseCollabDocId,
+  projectComponentDoc,
+  projectLayoutDoc,
+  projectPageDoc,
+  projectSiteDoc,
+  seedComponentDoc,
+  seedLayoutDoc,
+  seedPageDoc,
+  seedSiteDocFromParts,
+  SITE_DOC_ID,
+  type CollabDocKind,
+} from '@core/collab'
+import '@modules/base' // registry population — inline-text props seed as Y.Text
+import type { SiteShell } from '@core/page-tree'
+import { pageFromRow, pageToCells } from '@core/data/pageFromRow'
+import { visualComponentFromRow, visualComponentToCells } from '@core/data/componentFromRow'
+import { savedLayoutFromRow, savedLayoutToCells } from '@core/data/layoutFromRow'
+import { vcSlugFromName } from '@core/visualComponents'
+import { layoutSlugFromName } from '@core/layouts'
+import { validateSite } from '@core/persistence/validate'
+import type { DbClient } from '../db/client'
+import {
+  createDataRow,
+  getDataRow,
+  listDataRowIdSlugs,
+  saveDataRowDraft,
+  softDeleteDataRow,
+} from '../repositories/data'
+import { getDraftSite, saveDraftSite } from '../repositories/site'
+import {
+  deleteCollabDocuments,
+  getCollabDocumentState,
+  putCollabDocumentState,
+} from '../repositories/collabDocuments'
+import {
+  registerRowWriteListener,
+  registerShellWriteListener,
+} from '../repositories/rowWriteEvents'
+import { bumpPublishVersionSerialized } from '../publish/publishState'
+
+const KIND_TABLE: Record<Exclude<CollabDocKind, 'site'>, string> = {
+  page: 'pages',
+  component: 'components',
+  layout: 'layouts',
+}
+const TABLE_KIND: Record<string, Exclude<CollabDocKind, 'site'>> = {
+  pages: 'page',
+  components: 'component',
+  layouts: 'layout',
+}
+
+interface RelayEntry {
+  doc: Y.Doc
+  refs: number
+  dirty: boolean
+  persistTimer: ReturnType<typeof setTimeout> | null
+  /** Serializes persists per doc so row writes never overlap. */
+  persistChain: Promise<void>
+  detachUpdateHandler: () => void
+}
+
+export type RelayUpdateListener = (docId: string, update: Uint8Array, origin: unknown) => void
+export type RelayResetListener = (docId: string) => void
+
+export interface CollabRelay {
+  openDoc(docId: string): Promise<Y.Doc>
+  retain(docId: string): Promise<Y.Doc>
+  release(docId: string): void
+  applyUpdate(docId: string, update: Uint8Array, origin: unknown): Promise<void>
+  subscribeUpdates(listener: RelayUpdateListener): () => void
+  onReset(listener: RelayResetListener): () => void
+  resetDocs(docIds: readonly string[]): Promise<void>
+  /** Flush every dirty doc now (tests + shutdown). */
+  flushAll(): Promise<void>
+  /** Detach the row-write reset sources and drop all docs (tests). */
+  destroy(): Promise<void>
+}
+
+export function createCollabRelay(
+  db: DbClient,
+  opts: { persistDebounceMs?: number } = {},
+): CollabRelay {
+  const persistDebounceMs = opts.persistDebounceMs ?? 800
+  const entries = new Map<string, RelayEntry>()
+  const opening = new Map<string, Promise<Y.Doc>>()
+  const updateListeners = new Set<RelayUpdateListener>()
+  const resetListeners = new Set<RelayResetListener>()
+
+  // ── Seeding ───────────────────────────────────────────────────────────────
+
+  async function seedFromJson(docId: string, doc: Y.Doc): Promise<void> {
+    const parsed = parseCollabDocId(docId)
+    if (!parsed) return
+    if (parsed.kind === 'site') {
+      const shell = await getDraftSite(db)
+      if (!shell) return // pre-setup — nothing to seed
+      const [pages, components, layouts] = await Promise.all([
+        listDataRowIdSlugs(db, 'pages'),
+        listDataRowIdSlugs(db, 'components'),
+        listDataRowIdSlugs(db, 'layouts'),
+      ])
+      seedSiteDocFromParts(doc, shell as unknown as Record<string, unknown>, {
+        pages: pages.map((r) => r.id),
+        components: components.map((r) => r.id),
+        layouts: layouts.map((r) => r.id),
+      })
+      return
+    }
+    const row = await getDataRow(db, parsed.rowId)
+    if (!row || row.tableId !== KIND_TABLE[parsed.kind]) return // client-created flow
+    if (parsed.kind === 'page') {
+      seedPageDoc(doc, pageFromRow(row))
+    } else if (parsed.kind === 'component') {
+      const vc = visualComponentFromRow(row)
+      if (vc) seedComponentDoc(doc, vc)
+    } else {
+      const layout = savedLayoutFromRow(row)
+      if (layout) seedLayoutDoc(doc, layout)
+    }
+  }
+
+  // ── Persistence ───────────────────────────────────────────────────────────
+
+  async function persistDerivedJson(docId: string, doc: Y.Doc): Promise<void> {
+    const parsed = parseCollabDocId(docId)
+    if (!parsed) return
+    if (parsed.kind === 'site') {
+      const projected = projectSiteDoc(doc)
+      if (Object.keys(projected.shell).length === 0) return // never seeded
+      let shell: SiteShell
+      try {
+        // `id` and `updatedAt` are deliberately NOT collaborative (fixed row /
+        // per-mutation noise) — inject them at the persistence boundary.
+        shell = validateSite({
+          ...projected.shell,
+          id: 'default',
+          updatedAt:
+            typeof projected.shell.updatedAt === 'number' ? projected.shell.updatedAt : Date.now(),
+        })
+      } catch (err) {
+        // The blob stays authoritative; JSON write is skipped until the doc
+        // heals — never persist an invalid shell for the publisher to read.
+        console.error('[collab] projected shell failed validation — JSON write skipped:', err)
+        return
+      }
+      await saveDraftSite(db, shell, null, { collabInternal: true })
+
+      // Roster-driven deletions: live rows missing from the roster are gone.
+      let deletedPublished = false
+      for (const [table, ids] of [
+        ['pages', projected.rosters.pages],
+        ['components', projected.rosters.components],
+        ['layouts', projected.rosters.layouts],
+      ] as const) {
+        const live = await listDataRowIdSlugs(db, table)
+        const keep = new Set(ids)
+        for (const row of live) {
+          if (keep.has(row.id)) continue
+          const deleted = await softDeleteDataRow(db, row.id, null, { collabInternal: true })
+          if (deleted?.status === 'published') deletedPublished = true
+        }
+      }
+      if (deletedPublished) await bumpPublishVersionSerialized()
+      return
+    }
+
+    const table = KIND_TABLE[parsed.kind]
+    let cells: Record<string, unknown>
+    let slug: string
+    if (parsed.kind === 'page') {
+      const page = projectPageDoc(doc, parsed.rowId)
+      if (!page.rootNodeId) return // never seeded / still assembling
+      cells = pageToCells(page)
+      slug = page.slug
+    } else if (parsed.kind === 'component') {
+      const vc = projectComponentDoc(doc, parsed.rowId)
+      if (!vc.tree.rootNodeId || typeof vc.name !== 'string' || vc.name === '') return
+      cells = visualComponentToCells(vc)
+      slug = vcSlugFromName(vc.name)
+    } else {
+      const layout = projectLayoutDoc(doc, parsed.rowId)
+      if (!layout.rootNodeId || layout.name === '') return
+      cells = savedLayoutToCells(layout)
+      slug = layoutSlugFromName(layout.name)
+    }
+
+    const existing = await getDataRow(db, parsed.rowId)
+    if (existing) {
+      await saveDataRowDraft(db, parsed.rowId, { cells, slug }, null, null, { collabInternal: true })
+    } else {
+      await createDataRow(
+        db,
+        { id: parsed.rowId, tableId: table, cells, slug },
+        null,
+        null,
+        { collabInternal: true },
+      )
+    }
+  }
+
+  async function persistNow(docId: string): Promise<void> {
+    const entry = entries.get(docId)
+    if (!entry || !entry.dirty) return
+    entry.dirty = false
+    try {
+      await putCollabDocumentState(db, docId, Y.encodeStateAsUpdate(entry.doc))
+      await persistDerivedJson(docId, entry.doc)
+    } catch (err) {
+      entry.dirty = true // retry on the next schedule
+      console.error(`[collab] persist failed for ${docId}:`, err)
+    }
+  }
+
+  function schedulePersist(docId: string): void {
+    const entry = entries.get(docId)
+    if (!entry) return
+    entry.dirty = true
+    if (entry.persistTimer) return
+    entry.persistTimer = setTimeout(() => {
+      entry.persistTimer = null
+      entry.persistChain = entry.persistChain.then(() => persistNow(docId))
+    }, persistDebounceMs)
+  }
+
+  // ── Registry ──────────────────────────────────────────────────────────────
+
+  async function openDoc(docId: string): Promise<Y.Doc> {
+    const existing = entries.get(docId)
+    if (existing) return existing.doc
+    const inFlight = opening.get(docId)
+    if (inFlight) return inFlight
+
+    const open = (async () => {
+      const doc = new Y.Doc()
+      const blob = await getCollabDocumentState(db, docId)
+      if (blob) {
+        Y.applyUpdate(doc, blob, 'hydrate')
+      } else {
+        await seedFromJson(docId, doc)
+      }
+      const updateHandler = (update: Uint8Array, origin: unknown) => {
+        for (const listener of updateListeners) listener(docId, update, origin)
+        schedulePersist(docId)
+      }
+      doc.on('update', updateHandler)
+      entries.set(docId, {
+        doc,
+        refs: 0,
+        dirty: !blob, // freshly seeded state should persist its blob
+        persistTimer: null,
+        persistChain: Promise.resolve(),
+        detachUpdateHandler: () => doc.off('update', updateHandler),
+      })
+      if (!blob) schedulePersist(docId)
+      return doc
+    })()
+
+    opening.set(docId, open)
+    try {
+      return await open
+    } finally {
+      opening.delete(docId)
+    }
+  }
+
+  async function evict(docId: string, opts2: { persist: boolean }): Promise<void> {
+    const entry = entries.get(docId)
+    if (!entry) return
+    if (entry.persistTimer) {
+      clearTimeout(entry.persistTimer)
+      entry.persistTimer = null
+    }
+    if (opts2.persist) {
+      entry.persistChain = entry.persistChain.then(() => persistNow(docId))
+      await entry.persistChain
+    }
+    entry.detachUpdateHandler()
+    entry.doc.destroy()
+    entries.delete(docId)
+  }
+
+  async function resetDocs(docIds: readonly string[]): Promise<void> {
+    const affected = docIds.filter((id) => parseCollabDocId(id) !== null)
+    if (affected.length === 0) return
+    for (const docId of affected) {
+      await evict(docId, { persist: false })
+    }
+    await deleteCollabDocuments(db, affected)
+    for (const docId of affected) {
+      for (const listener of resetListeners) listener(docId)
+    }
+  }
+
+  // ── Out-of-relay write sources → resets ───────────────────────────────────
+
+  const detachRowListener = registerRowWriteListener((event) => {
+    const kind = TABLE_KIND[event.tableId]
+    if (!kind) return
+    const docIds = event.rowIds.map((rowId) => encodeCollabDocId({ kind, rowId }))
+    // Creations/deletions also change the roster — the site doc must reseed.
+    if (event.kind !== 'update') docIds.push(SITE_DOC_ID)
+    void resetDocs(docIds).catch((err) => {
+      console.error('[collab] reset after out-of-relay row write failed:', err)
+    })
+  })
+  const detachShellListener = registerShellWriteListener(() => {
+    void resetDocs([SITE_DOC_ID]).catch((err) => {
+      console.error('[collab] reset after out-of-relay shell write failed:', err)
+    })
+  })
+
+  return {
+    openDoc,
+    retain: async (docId) => {
+      const doc = await openDoc(docId)
+      entries.get(docId)!.refs += 1
+      return doc
+    },
+    release: (docId) => {
+      const entry = entries.get(docId)
+      if (!entry) return
+      entry.refs -= 1
+      if (entry.refs <= 0) {
+        void evict(docId, { persist: true }).catch((err) => {
+          console.error(`[collab] final persist for ${docId} failed:`, err)
+        })
+      }
+    },
+    applyUpdate: async (docId, update, origin) => {
+      const doc = await openDoc(docId)
+      Y.applyUpdate(doc, update, origin)
+    },
+    subscribeUpdates: (listener) => {
+      updateListeners.add(listener)
+      return () => updateListeners.delete(listener)
+    },
+    onReset: (listener) => {
+      resetListeners.add(listener)
+      return () => resetListeners.delete(listener)
+    },
+    resetDocs,
+    flushAll: async () => {
+      for (const docId of [...entries.keys()]) {
+        const entry = entries.get(docId)
+        if (!entry) continue
+        if (entry.persistTimer) {
+          clearTimeout(entry.persistTimer)
+          entry.persistTimer = null
+        }
+        entry.persistChain = entry.persistChain.then(() => persistNow(docId))
+        await entry.persistChain
+      }
+    },
+    destroy: async () => {
+      detachRowListener()
+      detachShellListener()
+      for (const docId of [...entries.keys()]) {
+        await evict(docId, { persist: true })
+      }
+    },
+  }
+}

@@ -92,10 +92,26 @@ export function seedLayoutDoc(doc: Y.Doc, layout: SavedLayout): void {
 const SHELL_PER_ENTRY_KEYS = new Set(['settings', 'styleRules', 'explorer'])
 const SHELL_SKIPPED_KEYS = new Set(['pages', 'visualComponents', 'layouts', 'id', 'updatedAt'])
 
-export function seedSiteDoc(doc: Y.Doc, site: SiteDocument): void {
+export interface SiteDocRosterIds {
+  pages: readonly string[]
+  components: readonly string[]
+  layouts: readonly string[]
+}
+
+/**
+ * Seed the site doc from a shell + roster ids — the server relay's entry
+ * (it has the shell row and lean id projections, never a hydrated
+ * SiteDocument). `seedSiteDoc` below is the full-document convenience used
+ * by clients/tests that already hold one.
+ */
+export function seedSiteDocFromParts(
+  doc: Y.Doc,
+  shellFields: Record<string, unknown>,
+  rosterIds: SiteDocRosterIds,
+): void {
   seeding(doc, () => {
     const shell = shellMap(doc)
-    for (const [key, value] of Object.entries(site)) {
+    for (const [key, value] of Object.entries(shellFields)) {
       if (SHELL_SKIPPED_KEYS.has(key) || value === undefined) continue
       if (SHELL_PER_ENTRY_KEYS.has(key)) {
         const entryMap = new Y.Map<unknown>()
@@ -110,16 +126,25 @@ export function seedSiteDoc(doc: Y.Doc, site: SiteDocument): void {
 
     const rosters = rostersMap(doc)
     const pages = new Y.Map<unknown>()
-    for (const page of site.pages) pages.set(page.id, true)
+    for (const id of rosterIds.pages) pages.set(id, true)
     rosters.set('pages', pages)
     const order = new Y.Array<string>()
-    order.push(site.pages.map((p) => p.id))
+    order.push([...rosterIds.pages])
     rosters.set('pageOrder', order)
     const components = new Y.Map<unknown>()
-    for (const vc of site.visualComponents) components.set(vc.id, true)
+    for (const id of rosterIds.components) components.set(id, true)
     rosters.set('components', components)
     const layouts = new Y.Map<unknown>()
-    for (const layout of site.layouts) layouts.set(layout.id, true)
+    for (const id of rosterIds.layouts) layouts.set(id, true)
     rosters.set('layouts', layouts)
+  })
+}
+
+export function seedSiteDoc(doc: Y.Doc, site: SiteDocument): void {
+  const { pages, visualComponents, layouts, ...shellFields } = site
+  seedSiteDocFromParts(doc, shellFields, {
+    pages: pages.map((p) => p.id),
+    components: visualComponents.map((vc) => vc.id),
+    layouts: layouts.map((l) => l.id),
   })
 }

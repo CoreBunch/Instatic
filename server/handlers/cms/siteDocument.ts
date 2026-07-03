@@ -80,6 +80,11 @@ import { SaveConflictError, type SaveConflict } from '@core/persistence/saveConf
 import { shellsEqual } from '@core/persistence/shellsEqual'
 import type { SiteSyncActor, SiteSyncTable } from '@core/persistence/syncEvents'
 import { publishSiteEvent } from '../../events/siteEvents'
+import {
+  notifyRowWrite,
+  notifyShellWrite,
+  type RowWriteKind,
+} from '../../repositories/rowWriteEvents'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
 import { bumpPublishVersionSerialized } from '../../publish/publishState'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
@@ -387,7 +392,8 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
       // Shell write + seq stamp only when the shell content actually changed
       // — see the shellChanged comment in phase 1.
       if (shellChanged) {
-        await saveDraftSite(tx, shell, user.id)
+        // In-transaction — collab listeners are notified post-commit below.
+        await saveDraftSite(tx, shell, user.id, { collabInternal: true })
         await stampDraftSiteSeq(tx, seq)
       }
       // Empty change sets skip their table entirely — a shell-only save
@@ -419,6 +425,22 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
     // serializes against the publish lock, which itself waits on the
     // transaction chain).
     if (deletedPublishedPage) await bumpPublishVersionSerialized()
+
+    // Collab invalidation — this save wrote rows/shell OUTSIDE the relay, so
+    // affected CRDT documents must reset (post-commit; see rowWriteEvents).
+    if (shellChanged) notifyShellWrite()
+    const writtenGroups: Array<[string, Iterable<string>, RowWriteKind]> = [
+      ['pages', changedPageIdsRaw, 'update'],
+      ['pages', pageDeleteIds, 'delete'],
+      ['components', changedComponentIds, 'update'],
+      ['components', componentDeleteIds, 'delete'],
+      ['layouts', changedLayoutIds, 'update'],
+      ['layouts', layoutDeleteIds, 'delete'],
+    ]
+    for (const [tableId, ids, kind] of writtenGroups) {
+      const rowIds = [...ids]
+      if (rowIds.length > 0) notifyRowWrite({ tableId, rowIds, kind })
+    }
 
     // Live-sync fan-out — idempotent hints to every open editor socket
     // (ids + seqs only, never payloads; see @core/persistence/syncEvents).

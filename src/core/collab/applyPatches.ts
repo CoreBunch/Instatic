@@ -52,10 +52,16 @@ function rowsById(site: SiteDocument, col: Collection): Map<string, Row> {
   return new Map(rowsOf(site, col).map((row) => [row.id, row]))
 }
 
+/** Mutative types `path` as `(string | number)[] | string`; the store always
+ * produces arrays (default `pathAsArray`) — normalize once for type safety. */
+function patchPath(patch: Patches[number]): readonly (string | number)[] {
+  return typeof patch.path === 'string' ? patch.path.split('/').filter(Boolean) : patch.path
+}
+
 /** Same predicate as dirty tracking: only ops at collection depth ≤ 2, a
  * `length` bookkeeping op, or any remove can change membership/order. */
 function isMembershipShapedOp(patch: Patches[number]): boolean {
-  return patch.path.length <= 2
+  return patchPath(patch).length <= 2
 }
 
 function clearMap(map: Y.Map<unknown>): void {
@@ -339,7 +345,8 @@ export function applySitePatchesToDocs(
   const collectionPatches = new Map<Collection, Patches[number][]>()
 
   for (const patch of patches) {
-    const head = String(patch.path[0])
+    const path = patchPath(patch)
+    const head = String(path[0])
     if (COLLECTIONS.includes(head as Collection)) {
       const col = head as Collection
       collectionPatches.set(col, collectionPatches.get(col) ?? [])
@@ -349,7 +356,7 @@ export function applySitePatchesToDocs(
     if (SHELL_SKIPPED_KEYS.has(head)) continue
     if (SHELL_PER_ENTRY_KEYS.has(head)) {
       shellEntryTargets.set(head, shellEntryTargets.get(head) ?? new Set())
-      shellEntryTargets.get(head)!.add(patch.path.length === 1 ? '*' : String(patch.path[1]))
+      shellEntryTargets.get(head)!.add(path.length === 1 ? '*' : String(path[1]))
     } else {
       shellHeads.add(head)
     }
@@ -442,7 +449,7 @@ export function applySitePatchesToDocs(
     const nextById = rowsById(nextSite, col)
 
     // Wholesale collection replacement (imports) → repopulate every row doc.
-    if (colPatches.some((p) => p.path.length === 1)) {
+    if (colPatches.some((p) => patchPath(p).length === 1)) {
       for (const [id, row] of nextById) {
         const rowDoc = docs.ensure(`${kind}:${id}`)
         rowDoc.transact(() => repopulateRowDoc(rowDoc, kind, row), origin)
@@ -452,11 +459,12 @@ export function applySitePatchesToDocs(
 
     // Whole-row replaces at depth 2: repopulate rows whose object identity
     // changed (a reorder moves the SAME objects — skipped by the ref check).
-    const rowSubPaths = new Map<string, (string | number)[][]>()
+    const rowSubPaths = new Map<string, (readonly (string | number)[])[]>()
     for (const patch of colPatches) {
-      const index = patch.path[1]
+      const path = patchPath(patch)
+      const index = path[1]
       if (typeof index !== 'number') continue
-      const rest = patch.path.slice(2)
+      const rest = path.slice(2)
       const row = patch.op === 'remove' && rest.length === 0
         ? undefined // row removal — handled by the roster diff above
         : nextSite[col][index]
