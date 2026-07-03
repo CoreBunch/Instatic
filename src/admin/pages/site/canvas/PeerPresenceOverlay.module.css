@@ -14,14 +14,12 @@
 
 .ring {
   position: absolute;
-  display: none;
   box-shadow: inset 0 0 0 1.5px var(--peer-color);
   border-radius: 2px;
 }
 
 .nameTag {
   position: absolute;
-  display: none;
   transform: translateY(-100%);
   padding: var(--space-3xs) var(--space-xs);
   border-radius: var(--radius-sm);
@@ -39,7 +37,6 @@
 
 .pointer {
   position: absolute;
-  display: none;
   pointer-events: none;
 }
 

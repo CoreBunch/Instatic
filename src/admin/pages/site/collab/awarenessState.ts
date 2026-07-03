@@ -33,6 +33,9 @@ const EditorPresenceSchema = Type.Object({
     id: Type.String(),
     name: Type.String(),
     color: Type.String(),
+    /** Same avatar precedence as everywhere else: upload → Gravatar → initials. */
+    avatarUrl: Type.Union([Type.String(), Type.Null()]),
+    gravatarHash: Type.Union([Type.String(), Type.Null()]),
   }),
   docId: Type.Union([Type.String(), Type.Null()]),
   selectedNodeIds: Type.Array(Type.String()),
@@ -75,14 +78,18 @@ export function activeEditorDocId(state: {
  * edit) into awareness. Mount ONCE per editor (CanvasRoot). The pointer field
  * is owned by `publishLocalPointer` (per-frame mousemove) and preserved here.
  */
-export function usePublishEditorPresence(user: { id: string; name: string } | null): void {
+export function usePublishEditorPresence(
+  user: { id: string; name: string; avatarUrl: string | null; gravatarHash: string | null } | null,
+): void {
   const userId = user?.id ?? null
   const userName = user?.name ?? null
+  const avatarUrl = user?.avatarUrl ?? null
+  const gravatarHash = user?.gravatarHash ?? null
 
   useEffect(() => {
     if (!userId || !userName) return undefined
 
-    const identity = { id: userId, name: userName, color: peerColor(userId) }
+    const identity = { id: userId, name: userName, color: peerColor(userId), avatarUrl, gravatarHash }
     const publish = (): void => {
       const awareness = collabAwareness()
       if (!awareness) return
@@ -109,7 +116,7 @@ export function usePublishEditorPresence(user: { id: string; name: string } | nu
       unsubscribe()
       collabAwareness()?.setLocalState(null)
     }
-  }, [userId, userName])
+  }, [userId, userName, avatarUrl, gravatarHash])
 }
 
 /** Update only the pointer field of the local presence (throttled by callers). */

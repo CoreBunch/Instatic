@@ -105,14 +105,14 @@ describe('usePeerPresences', () => {
 
     await act(async () => {
       injectPeerState(provider.awareness, {
-        user: { id: 'u2', name: 'Ada', color: peerColor('u2') },
+        user: { id: 'u2', name: 'Ada', color: peerColor('u2'), avatarUrl: null, gravatarHash: null },
         docId: 'page:p1',
         selectedNodeIds: ['n1'],
         editingNodeId: null,
         pointer: null,
       })
       injectPeerState(provider.awareness, {
-        user: { id: 'u3', name: 'Grace', color: peerColor('u3') },
+        user: { id: 'u3', name: 'Grace', color: peerColor('u3'), avatarUrl: null, gravatarHash: null },
         docId: 'page:OTHER',
         selectedNodeIds: [],
         editingNodeId: null,
@@ -128,6 +128,21 @@ describe('usePeerPresences', () => {
 })
 
 describe('PeerPresenceOverlay', () => {
+  it('module CSS never hides presence chrome by default (regression: invisible cursors)', () => {
+    // The overlay positioning helpers hide with INLINE `display: none` and
+    // show by CLEARING the inline value — a stylesheet `display: none`
+    // default would make every cleared element fall back to hidden forever
+    // (the bug that shipped rings/tags/cursors invisible). Presence chrome
+    // must start visible and let the first RAF tick place or hide it.
+    const { readFileSync } = require('fs') as typeof import('fs')
+    const css = readFileSync(
+      new URL('../../admin/pages/site/canvas/PeerPresenceOverlay.module.css', import.meta.url),
+      'utf-8',
+    )
+    expect(css).not.toContain('display: none')
+  })
+
+
   it('renders a name tag for a peer selection on the active page doc', async () => {
     const provider = fakeProvider()
     connectCollabProvider(provider)
@@ -141,7 +156,7 @@ describe('PeerPresenceOverlay', () => {
 
     await act(async () => {
       injectPeerState(provider.awareness, {
-        user: { id: 'u9', name: 'Marge', color: peerColor('u9') },
+        user: { id: 'u9', name: 'Marge', color: peerColor('u9'), avatarUrl: null, gravatarHash: null },
         docId: `page:${pageId}`,
         selectedNodeIds: [site.pages[0].rootNodeId],
         editingNodeId: site.pages[0].rootNodeId,

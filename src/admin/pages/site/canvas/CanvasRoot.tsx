@@ -89,7 +89,14 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   // selection into awareness. Peers render it via PeerPresenceOverlay.
   const currentUser = useCurrentAdminUser()
   usePublishEditorPresence(
-    currentUser ? { id: currentUser.id, name: currentUser.displayName } : null,
+    currentUser
+      ? {
+          id: currentUser.id,
+          name: currentUser.displayName,
+          avatarUrl: currentUser.avatarUrl,
+          gravatarHash: currentUser.gravatarHash,
+        }
+      : null,
   )
 
   // Store subscriptions
