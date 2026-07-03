@@ -499,7 +499,7 @@ export function DashboardPage() {
     <AdminPageLayout
       workspace="dashboard"
       title={greetingFor(currentUser.displayName)}
-      description="Your site at a glance — visitors, content and plugins. Configure the grid to surface exactly what you watch."
+      description="Your site at a glance — content, activity, storage and plugins. Configure the grid to surface exactly what you watch."
       actions={(
         <>
           <Button variant="ghost" size="sm">

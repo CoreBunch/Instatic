@@ -66,10 +66,10 @@ export {
  * drag-handle / kebab-menu, customize-mode outline. The widget body owns
  * the content; the chrome handles consistency.
  *
- * `RangeTabs` is the small inline segmented control used inside widget
- * headers (the "24h · 7d · 30d" toggle on Visitors, etc.). Strongly
- * typed on its option value union — pass a string literal type and the
- * tab callbacks are narrowed for you.
+ * `RangeTabs` is the small inline segmented control used in dashboard
+ * headers and widget action slots. Strongly typed on its option value
+ * union — pass a string literal type and the tab callbacks are narrowed
+ * for you.
  */
 export { Widget } from '@ui/components/Widget'
 export { RangeTabs } from '@ui/components/RangeTabs'

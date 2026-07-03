@@ -472,8 +472,20 @@ Editor surfaces are permission-split:
 Dashboard widgets are registered from the same unsandboxed browser entrypoint through `api.dashboard.widgets.register(...)` and require `dashboard.widgets.register`:
 
 ```jsx
+import { StatValue, Widget } from '@instatic/host-ui'
+
 function ApprovalWidget({ span, editing }) {
-  return <div>{editing ? 'Customizing' : `Span ${span}`}</div>
+  return (
+    <Widget
+      widgetId="acme.workflow.approvals"
+      title="Approvals"
+      tint="mint"
+      span={span}
+      editing={editing}
+    >
+      <StatValue value="12" sub="Open approvals" />
+    </Widget>
+  )
 }
 
 export function activate(api) {
@@ -481,7 +493,7 @@ export function activate(api) {
     id: 'acme.workflow.approvals',
     name: 'Approval Queue',
     description: 'Open approvals waiting for review.',
-    iconName: 'checklist',
+    iconName: 'chart',
     defaultSize: 4,
     tint: 'mint',
     component: ApprovalWidget,
@@ -489,7 +501,7 @@ export function activate(api) {
 }
 ```
 
-Widget ids must be namespaced under the plugin id (`<pluginId>.<rest>`). The host owns the dashboard card chrome; the plugin component only renders the widget body.
+Widget ids must be namespaced under the plugin id (`<pluginId>.<rest>`). The component should compose the host `Widget` primitive so plugin tiles use the same card chrome, drag handle, menu, loading state, and tint behavior as first-party widgets.
 
 ### CMS routes — requires `cms.routes` (public routes also require `cms.routes.public`)
 
