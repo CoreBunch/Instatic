@@ -4,6 +4,7 @@ import { act, cleanup as cleanupRender, fireEvent, render, screen } from '@testi
 import { useEditorStore } from '@site/store/store'
 import { RESET_ZOOM } from '@site/canvas/math'
 import {
+  isCanvasPointerPanActive,
   isCanvasSpacePanActive,
   panDeltaFromWheel,
   setCanvasSpacePanActive,
@@ -37,6 +38,21 @@ function dispatchWheel(target: Element, props: Record<string, unknown>) {
   }
   target.dispatchEvent(event)
   return event
+}
+
+function dispatchPointer(target: Element, type: string, props: Record<string, unknown>) {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  for (const [key, value] of Object.entries(props)) {
+    Object.defineProperty(event, key, { configurable: true, value })
+  }
+  target.dispatchEvent(event)
+  return event
+}
+
+function parseTranslate(transform: string): { x: number; y: number } {
+  const match = /^translate\((-?\d+)px, (-?\d+)px\) scale\(1\)$/.exec(transform)
+  if (!match) throw new Error(`Unexpected transform: ${transform}`)
+  return { x: Number(match[1]), y: Number(match[2]) }
 }
 
 beforeEach(() => {
@@ -124,6 +140,55 @@ describe('useCanvas wheel pan sync', () => {
     expect(layer.style.transform).toContain('scale(1.')
     expect(layer.style.transform).not.toBe('translate(0px, 0px) scale(1)')
   })
+
+  it('pans the canvas with middle-mouse dragging', async () => {
+    render(<TestCanvas />)
+
+    const root = screen.getByTestId('test-canvas-root')
+    const layer = screen.getByTestId('test-transform-layer')
+
+    fireEvent.pointerDown(root, {
+      pointerId: 1,
+      pointerType: 'mouse',
+      button: 1,
+      buttons: 4,
+      clientX: 100,
+      clientY: 100,
+    })
+    fireEvent.pointerMove(root, {
+      pointerId: 1,
+      pointerType: 'mouse',
+      button: -1,
+      buttons: 4,
+      clientX: 130,
+      clientY: 140,
+    })
+
+    await act(async () => {
+      await nextAnimationFrame()
+    })
+
+    const translate = parseTranslate(layer.style.transform)
+    expect(translate.x).toBeGreaterThan(0)
+    expect(translate.y).toBeGreaterThan(0)
+  })
+
+  it('prevents browser defaults when middle-mouse pan starts', () => {
+    render(<TestCanvas />)
+
+    const root = screen.getByTestId('test-canvas-root')
+
+    const pointerDown = dispatchPointer(root, 'pointerdown', {
+      pointerId: 1,
+      pointerType: 'mouse',
+      button: 1,
+      buttons: 4,
+      clientX: 100,
+      clientY: 100,
+    })
+
+    expect(pointerDown.defaultPrevented).toBe(true)
+  })
 })
 
 describe('canvas mouse pan input policy', () => {
@@ -144,9 +209,13 @@ describe('canvas mouse pan input policy', () => {
     expect(panDeltaFromWheel({ shiftKey: false, deltaX: 0, deltaY: 120 })).toEqual({ dx: 0, dy: -120 })
   })
 
-  it('does not use middle-button dragging as a canvas pan gesture', () => {
-    expect(shouldStartCanvasPointerPan({ button: 1 }, { spaceHeld: false })).toBe(false)
-    expect(shouldStartCanvasPointerPan({ button: 1 }, { spaceHeld: true })).toBe(false)
+  it('uses middle-button dragging as a canvas pan gesture', () => {
+    expect(shouldStartCanvasPointerPan({ button: 1 }, { spaceHeld: false })).toBe(true)
+    expect(shouldStartCanvasPointerPan({ button: 1 }, { spaceHeld: true })).toBe(true)
+    expect(shouldStartCanvasPointerPan({ button: 0 }, { spaceHeld: false })).toBe(false)
     expect(shouldStartCanvasPointerPan({ button: 0 }, { spaceHeld: true })).toBe(true)
+    expect(isCanvasPointerPanActive({ buttons: 4 }, { spaceHeld: false })).toBe(true)
+    expect(isCanvasPointerPanActive({ buttons: 1 }, { spaceHeld: false })).toBe(false)
+    expect(isCanvasPointerPanActive({ buttons: 1 }, { spaceHeld: true })).toBe(true)
   })
 })
