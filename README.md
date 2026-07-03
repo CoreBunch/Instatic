@@ -160,13 +160,13 @@ Start with the [plugin system docs](docs/features/plugin-system.md) and the [tem
 <img src="docs/assets/readme/clean-output.webp" alt="A published Instatic page and its source — semantic HTML, compact CSS" width="100%">
 -->
 
-A published Instatic page is mostly just a file sitting on disk. No framework to boot, no hydration step, no database round-trip on the common path. The browser pulls down semantic HTML and a compact stylesheet, and it's done. There's barely anything between the visitor and the content, so the pages feel instant.
+A published Instatic page is mostly just a file sitting on disk. No framework to boot, no hydration step, no database round-trip on the common path. The browser pulls down semantic HTML and compact CSS bundles, and it's done. There's barely anything between the visitor and the content, so the pages feel instant.
 
 That speed isn't a setting you tune. It falls out of how publishing works, in three layers you never have to think about:
 
 - **Static pages are baked straight to disk when you publish** and swapped in atomically. Visitors are served a file, not a render.
-- **Routes that genuinely change** hit an in-memory cache that's wiped wholesale on every publish, so nobody ever sees a stale page.
-- **The few truly per-visitor parts** are detected automatically and lazy-loaded by a runtime that weighs about 0.7 kB. Smaller than this paragraph.
+- **Routes that genuinely change** hit a versioned in-memory cache. Publishing bumps the version, so old entries miss lazily and nobody sees a stale page.
+- **The few truly per-visitor parts** are detected automatically and lazy-loaded by a runtime that weighs about 1.1 kB. Smaller than this paragraph.
 
 What comes out the other end is plain HTML and compact CSS, all the way down. Nothing from the editor rides along: no React on your public pages, no editor runtime, no framework in the markup. And because it's just HTML and CSS, nothing holds your site hostage — you can read it, host it anywhere, or take it and leave. Full design: [the publisher](docs/features/publisher.md).
 
