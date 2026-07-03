@@ -50,7 +50,6 @@ import {
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
-import { publishSiteEvent } from '../events/siteEvents'
 
 interface PublishResult {
   publishedPages: number
@@ -302,11 +301,6 @@ async function publishDraftSiteLocked(
   // window where the freshly-swapped shells (stamped nextPublishVersion) are
   // live while the version counter still reads the old value.
   bumpPublishVersion()
-
-  // Live-sync hint: open editors learn the site was published without
-  // polling. No actor — the publish lock context only carries the user id,
-  // and the event is informational.
-  publishSiteEvent({ kind: 'published', publishVersion: getPublishVersion() })
 
   return { publishedPages }
 }

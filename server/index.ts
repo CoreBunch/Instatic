@@ -10,9 +10,9 @@ await import('./richtextSanitizer')
 const { handleServerRequest } = await import('./router')
 const { activateInstalledServerPlugins } = await import('./plugins/runtime')
 const { mediaStorageRegistry } = await import('@core/plugins/mediaStorageRegistry')
-const { setSiteEventPublisher } = await import('./events/siteEvents')
-const { SITE_SOCKET_PATH, createSiteSocketHandlers, handleSiteSocketUpgrade } =
-  await import('./events/siteSocket')
+const { createCollabRelay } = await import('./collab/relay')
+const { SITE_SOCKET_PATH, createCollabSocketLayer, handleCollabSocketUpgrade } =
+  await import('./collab/socket')
 
 const config = readServerConfig()
 configureTrustedProxyCidrs(config.trustedProxyCidrs)
@@ -32,6 +32,11 @@ await activateInstalledServerPlugins(db, config.uploadsDir)
 // AI runtime: start the nightly conversation-purge tick. Operators add
 // their own provider credentials via /admin/ai/providers on first install.
 startConversationPurgeTick(db)
+// Real-time co-editing: the relay owns live Y documents, their persistence,
+// and the reset protocol for out-of-relay writes. The socket layer speaks
+// the multiplexed y-protocols wire (see server/collab/socket.ts).
+const collabRelay = createCollabRelay(db)
+const collabSocket = createCollabSocketLayer(collabRelay)
 
 /**
  * Build the CORS response headers for an incoming request.
@@ -91,13 +96,13 @@ const server = Bun.serve({
       )
     }
 
-    // Multi-admin live-sync socket — a WebSocket upgrade is a different
+    // Real-time co-editing socket — a WebSocket upgrade is a different
     // protocol lifecycle from the request/response router, so it dispatches
     // here at the `Bun.serve` boundary (the only place `server.upgrade` is
     // available). Returning `undefined` hands the connection to the
     // `websocket` handlers below.
     if (pathname === SITE_SOCKET_PATH) {
-      const rejection = await handleSiteSocketUpgrade(req, db, server)
+      const rejection = await handleCollabSocketUpgrade(req, db, server)
       if (rejection === null) return undefined
       return applySecurityHeaders(rejection, pathname)
     }
@@ -130,7 +135,7 @@ const server = Bun.serve({
     }
   },
 
-  websocket: createSiteSocketHandlers(db),
+  websocket: collabSocket.handlers,
 
   error(err: Error) {
     console.error('[server] Unhandled error:', err)
@@ -138,9 +143,8 @@ const server = Bun.serve({
   },
 })
 
-// The bus needs the live server handle for Bun pub/sub fan-out — register it
-// now that `Bun.serve` returned. Save events emitted before this line (none
-// in practice) would drop harmlessly: they are hints, the delta is truth.
-setSiteEventPublisher(server)
+// The collab fan-out publishes through Bun pub/sub — register the live
+// server handle now that `Bun.serve` returned.
+collabSocket.setPublisher(server)
 
 console.log(`[server] Listening on http://localhost:${config.port}`)

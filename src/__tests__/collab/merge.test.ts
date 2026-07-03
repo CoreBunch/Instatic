@@ -141,3 +141,24 @@ describe('applyTextDiff', () => {
     expect(b.getText('t').toString()).toBe(merged)
   })
 })
+
+describe('wire frame codec', () => {
+  it('round-trips docId + frameType + payload', async () => {
+    const { encodeCollabFrame, decodeCollabFrame, FRAME_SYNC } = await import('@core/collab')
+    const frame = encodeCollabFrame('page:p1', FRAME_SYNC, new Uint8Array([1, 2, 3]))
+    const decoded = decodeCollabFrame(frame)
+    expect([decoded.docId, decoded.frameType, [...decoded.payload]]).toEqual([
+      'page:p1',
+      FRAME_SYNC,
+      [1, 2, 3],
+    ])
+  })
+
+  it('round-trips an empty payload (reset frames)', async () => {
+    const { encodeCollabFrame, decodeCollabFrame, FRAME_RESET } = await import('@core/collab')
+    const decoded = decodeCollabFrame(encodeCollabFrame('site:default', FRAME_RESET, new Uint8Array()))
+    expect(decoded.docId).toBe('site:default')
+    expect(decoded.frameType).toBe(FRAME_RESET)
+    expect(decoded.payload.length).toBe(0)
+  })
+})

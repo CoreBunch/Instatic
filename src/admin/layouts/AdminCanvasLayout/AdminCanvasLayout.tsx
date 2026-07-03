@@ -44,7 +44,6 @@ import { useEditorAppearancePreferences } from '@admin/pages/site/preferences/ed
 import { usePersistence } from '@admin/pages/site/hooks/usePersistence'
 import { useSiteEditorUrlSync } from '@admin/pages/site/hooks/useSiteEditorUrlSync'
 import { useEditorLayoutPersistence } from '@admin/pages/site/hooks/useEditorLayoutPersistence'
-import { useSiteSocket } from '@admin/pages/site/hooks/useSiteSocket'
 import { useEditorStore } from '@admin/pages/site/store/store'
 import { cmsAdapter } from '@core/persistence/cms'
 import { useAdminUi } from '@admin/state/adminUi'
@@ -182,11 +181,6 @@ export function AdminCanvasLayout() {
     enabled: true,
     loaded: persistence.saveStatus.state !== 'loading',
   })
-  // Multi-admin live pull — sibling admins' saves merge into this editor as
-  // they land (or surface in the conflict banner when they collide with
-  // local unsaved edits). Gated on the document being loaded: before that
-  // there is no sync cursor to subscribe with.
-  useSiteSocket(site !== null)
   useEditorLayoutPersistence()
   useInstalledEditorPlugins(pluginBackgroundWorkEnabled)
   // Mount the SSE bridge ONCE per admin tab — gives toasts on plugin

@@ -30,6 +30,16 @@ export {
 export { buildNodeMap, buildPropsMap, projectNodeMap } from './nodeY'
 export { reconcileTreeIntegrity } from './integrity'
 export { applyTextDiff } from './textDiff'
+export {
+  decodeCollabFrame,
+  encodeCollabFrame,
+  FRAME_AWARENESS,
+  FRAME_RESET,
+  FRAME_SYNC,
+  PRESENCE_DOC_ID,
+  SITE_SOCKET_PATH,
+  type CollabFrame,
+} from './protocol'
 export { createCollabDocSet, type CollabDocSet } from './docSet'
 export { applySitePatchesToDocs } from './applyPatches'
 export {
