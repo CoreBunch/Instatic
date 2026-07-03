@@ -25,6 +25,7 @@ import {
   getEditorBridgeForUser,
   type EditorBridgeScope,
 } from './editorBridge'
+import { runPublishFlush } from '../../publish/publishFlush'
 
 export interface McpServerContext {
   db: DbClient
@@ -112,6 +113,12 @@ export function buildMcpServer(ctx: McpServerContext): Server {
             },
           }
         : live
+    } else {
+      // Headless reads hit the DB directly, but live co-editing persists on an
+      // ~800 ms debounce — flush the relay first so a headless read reflects
+      // edits still in flight in an open editor. Cheap: a clean doc's flush is
+      // a no-op (persistNow early-returns when not dirty).
+      await runPublishFlush()
     }
 
     const controller = new AbortController()

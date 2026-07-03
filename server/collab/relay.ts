@@ -68,6 +68,7 @@ import {
   registerShellWriteListener,
 } from '../repositories/rowWriteEvents'
 import { bumpPublishVersionSerialized } from '../publish/publishState'
+import { registerPublishFlush } from '../publish/publishFlush'
 
 const KIND_TABLE: Record<Exclude<CollabDocKind, 'site'>, string> = {
   page: 'pages',
@@ -338,6 +339,23 @@ export function createCollabRelay(
     })
   })
 
+  async function flushAll(): Promise<void> {
+    for (const docId of [...entries.keys()]) {
+      const entry = entries.get(docId)
+      if (!entry) continue
+      if (entry.persistTimer) {
+        clearTimeout(entry.persistTimer)
+        entry.persistTimer = null
+      }
+      entry.persistChain = entry.persistChain.then(() => persistNow(docId))
+      await entry.persistChain
+    }
+  }
+
+  // Every publish path flushes the relay first (see publishFlush.ts) so the
+  // baked output includes edits still inside the persist debounce window.
+  const detachPublishFlush = registerPublishFlush(flushAll)
+
   return {
     openDoc,
     retain: async (docId) => {
@@ -368,21 +386,11 @@ export function createCollabRelay(
       return () => resetListeners.delete(listener)
     },
     resetDocs,
-    flushAll: async () => {
-      for (const docId of [...entries.keys()]) {
-        const entry = entries.get(docId)
-        if (!entry) continue
-        if (entry.persistTimer) {
-          clearTimeout(entry.persistTimer)
-          entry.persistTimer = null
-        }
-        entry.persistChain = entry.persistChain.then(() => persistNow(docId))
-        await entry.persistChain
-      }
-    },
+    flushAll,
     destroy: async () => {
       detachRowListener()
       detachShellListener()
+      detachPublishFlush()
       for (const docId of [...entries.keys()]) {
         await evict(docId, { persist: true })
       }

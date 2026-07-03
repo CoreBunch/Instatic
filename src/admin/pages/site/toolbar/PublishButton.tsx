@@ -141,7 +141,13 @@ export function PublishButton({ enabled = true, saveStatus }: PublishButtonProps
   }
 
   const isPublishing = state === 'publishing'
-  const disabled = !site || !enabled || isPublishing
+  // Block publish until the client is synced: local edits live only in this
+  // client's Y docs until they reach the server, and the server-side publish
+  // flush can only bake what it has received. Offline/connecting/error → the
+  // status chip states the reason inline (never available-then-blocked). An
+  // absent saveStatus (collab info unavailable) doesn't gate.
+  const notSynced = saveStatus ? saveStatus.state !== 'synced' : false
+  const disabled = !site || !enabled || isPublishing || notSynced
   const label =
     isPublishing ? 'Publishing' :
     state === 'published' ? 'Published' :

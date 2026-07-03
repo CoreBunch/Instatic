@@ -50,6 +50,7 @@ import {
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
+import { runPublishFlush } from './publishFlush'
 
 interface PublishResult {
   publishedPages: number
@@ -81,6 +82,10 @@ export async function publishDraftSite(
   adminUserId: string,
   uploadsDir?: string,
 ): Promise<PublishResult> {
+  // Flush the collab relay so the published snapshot includes edits still
+  // inside the debounce window (publish bakes exactly what the admins see).
+  // Intrinsic to publishing now, not bolted onto the HTTP route.
+  await runPublishFlush()
   // Serialize against every other publish so the version read→bake→bump window
   // can't interleave and mis-stamp baked hole shells (ISS-038).
   return withPublishLock(() => publishDraftSiteLocked(db, adminUserId, uploadsDir))

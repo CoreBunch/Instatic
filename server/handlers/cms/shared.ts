@@ -35,8 +35,6 @@ export interface CmsHandlerOptions {
    * branch on `db.dialect` instead of inspecting the URL themselves.
    */
   databaseUrl?: string
-  /** Flush the collab relay's debounced persists before draft-reading actions (publish). */
-  flushCollabDocs?: () => Promise<void>
 }
 
 export function requestAuditContext(req: Request): { ipAddress: string | null; userAgent: string | null } {
