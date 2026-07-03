@@ -53,6 +53,14 @@ const POINTER_SMOOTHING_TAU_MS = 90
 // (peer re-entered the frame somewhere else entirely).
 const POINTER_SNAP_DISTANCE_PX = 400
 
+// Exit debounce: when a peer's cursor leaves this frame, hold it in place
+// for the grace period (skimming a frame edge must not flicker), THEN let
+// the CSS opacity transition fade it out. Re-entering within the window
+// cancels the fade and glides from the held position.
+const POINTER_LINGER_MS = 250
+// Keep the frozen position around long enough for the fade to finish.
+const POINTER_FADE_STATE_MS = 700
+
 /**
  * Point chrome (name tag, pointer dot) sizes itself from content — position
  * with transform only, never width/height. `lift` raises the element above
@@ -97,8 +105,9 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
   if (pointerRefs.current === null) pointerRefs.current = new Map()
   const nodeElementCacheRef = useRef<CanvasNodeElementCache | null>(null)
   if (nodeElementCacheRef.current === null) nodeElementCacheRef.current = new CanvasNodeElementCache()
-  /** clientId → the RENDERED cursor position, easing toward the last target. */
-  const animatedPointersRef = useRef<Map<number, { x: number; y: number }> | null>(null)
+  /** clientId → rendered cursor position (easing toward the last target)
+   *  plus when this frame last owned the pointer — drives the exit linger. */
+  const animatedPointersRef = useRef<Map<number, { x: number; y: number; lastSeenAt: number }> | null>(null)
   if (animatedPointersRef.current === null) animatedPointersRef.current = new Map()
   const lastTickAtRef = useRef(0)
 
@@ -213,7 +222,6 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
     lastTickAtRef.current = now
     const ease = 1 - Math.exp(-dt / POINTER_SMOOTHING_TAU_MS)
     const animated = animatedPointersRef.current!
-    const livePointers = new Set<number>()
 
     const trackedIds = new Set<string>()
     const ringPlacements: Array<{ element: HTMLDivElement | null; rect: ReturnType<typeof session.measure> }> = []
@@ -233,48 +241,52 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
         lift: true,
       })
       const pointer = peer.pointer && peer.pointer.breakpointId === breakpointId ? peer.pointer : null
-      let pointerPoint: { x: number; y: number } | null = null
+      const pointerElement = pointerRefs.current?.get(peer.clientId) ?? null
+      const previous = animated.get(peer.clientId)
       if (pointer) {
-        livePointers.add(peer.clientId)
         const target = {
           x: iframeRect.left + pointer.x * iframeScale - originLeft,
           y: iframeRect.top + pointer.y * iframeScale - originTop,
         }
-        const previous = animated.get(peer.clientId)
         // Ease toward the sparse network samples every frame — the cursor
         // GLIDES between 10 Hz targets instead of teleporting. Snap on first
         // appearance and on jumps too large to glide believably.
-        pointerPoint =
+        const next =
           !previous || Math.hypot(target.x - previous.x, target.y - previous.y) > POINTER_SNAP_DISTANCE_PX
             ? target
             : {
                 x: previous.x + (target.x - previous.x) * ease,
                 y: previous.y + (target.y - previous.y) * ease,
               }
-        animated.set(peer.clientId, pointerPoint)
+        animated.set(peer.clientId, { ...next, lastSeenAt: now })
+        if (pointerElement) pointerElement.dataset.visible = 'true'
+        pointPlacements.push({ element: pointerElement, point: next, lift: false })
+      } else if (previous) {
+        // The cursor just left this frame: hold its last position through
+        // the linger window (no flicker while skimming an edge), then flip
+        // the attribute so the CSS opacity transition fades it out in place.
+        const sinceSeen = now - previous.lastSeenAt
+        if (pointerElement && sinceSeen > POINTER_LINGER_MS) pointerElement.dataset.visible = 'false'
+        if (sinceSeen > POINTER_FADE_STATE_MS) {
+          animated.delete(peer.clientId)
+        } else {
+          pointPlacements.push({ element: pointerElement, point: previous, lift: false })
+        }
+      } else if (pointerElement) {
+        pointerElement.dataset.visible = 'false'
       }
-      pointPlacements.push({
-        element: pointerRefs.current?.get(peer.clientId) ?? null,
-        point: pointerPoint,
-        lift: false,
-      })
     }
     elementCache.retainOnly(trackedIds)
-    // Drop animation state for cursors that left this frame — a re-entry
-    // snaps to its new position instead of gliding from the stale one.
-    for (const clientId of [...animated.keys()]) {
-      if (!livePointers.has(clientId)) animated.delete(clientId)
-    }
 
     for (const { element, rect } of ringPlacements) positionOverlayElement(element, rect)
     for (const { element, point, lift } of pointPlacements) positionPointElement(element, point, lift)
   })
 
-  const hasPresenceWork = peers.some(
-    (peer) =>
-      peer.selectedNodeIds.length > 0 ||
-      (peer.pointer !== null && peer.pointer.breakpointId === breakpointId),
-  )
+  // Any peer on this doc keeps the loop alive — exit lingers and opacity
+  // fades must complete even after the pointer/selection state goes empty
+  // (an idle tick is a handful of map lookups; the loop still stops
+  // entirely when you're alone).
+  const hasPresenceWork = peers.length > 0
 
   useEffect(() => {
     if (!hasPresenceWork) return undefined
@@ -327,27 +339,27 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
                 {peer.editingNodeId !== null && <span aria-hidden="true">✎</span>}
               </div>
             )}
-            {peer.pointer !== null && peer.pointer.breakpointId === breakpointId && (
-              <div
-                ref={(el) => {
-                  if (el) pointerRefs.current?.set(peer.clientId, el)
-                  else pointerRefs.current?.delete(peer.clientId)
-                }}
-                className={styles.pointer}
-                data-peer-pointer="true"
-              >
-                {/* Same pixel cursor glyph the editor uses elsewhere, tinted
-                    with the peer's identity color. */}
-                <span className={styles.pointerIcon} aria-hidden="true">
-                  <CursorMinimalSolidIcon size={16} color="var(--peer-color)" />
-                </span>
-                {/* The identity avatar rides just under the cursor tip —
-                    hover it (pointer-events re-enabled) for the name. */}
-                <Tooltip content={peer.user.name}>
-                  <PeerAvatar user={peer.user} size={18} className={styles.pointerAvatar} />
-                </Tooltip>
-              </div>
-            )}
+            {/* Always mounted (per frame): visibility is opacity-driven by
+                the RAF tick so entry/exit fade instead of popping. */}
+            <div
+              ref={(el) => {
+                if (el) pointerRefs.current?.set(peer.clientId, el)
+                else pointerRefs.current?.delete(peer.clientId)
+              }}
+              className={styles.pointer}
+              data-peer-pointer="true"
+            >
+              {/* Same pixel cursor glyph the editor uses elsewhere, tinted
+                  with the peer's identity color. */}
+              <span className={styles.pointerIcon} aria-hidden="true">
+                <CursorMinimalSolidIcon size={16} color="var(--peer-color)" />
+              </span>
+              {/* The identity avatar rides just under the cursor tip —
+                  hover it (pointer-events re-enabled while visible) for the name. */}
+              <Tooltip content={peer.user.name}>
+                <PeerAvatar user={peer.user} size={18} className={styles.pointerAvatar} />
+              </Tooltip>
+            </div>
           </div>
         )
       })}

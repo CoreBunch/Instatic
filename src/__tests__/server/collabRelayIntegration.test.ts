@@ -209,12 +209,21 @@ describe('collab relay integration (real server, real sockets)', () => {
     // update frame — no other peer ever sees it.
     setNodeLabel(boundReadOnly.doc, rootId, 'Sneaky viewer edit')
 
-    // A writer edit AFTER the viewer's attempt gives us a happened-after
-    // marker: once it lands on the viewer, the server has processed both.
-    setNodeLabel(boundWriter.doc, rootId, 'Writer edit')
-    await waitFor(() => nodeLabel(boundReadOnly.doc, rootId) === 'Writer edit')
+    // Happened-after marker on a DIFFERENT key — writing the same key would
+    // make the assertion depend on Yjs' concurrent-set clientID tiebreak
+    // (random per run), not on the server's drop. Once the marker lands on
+    // the viewer, the server has processed both frames.
+    boundWriter.doc.transact(() => {
+      const nodes = treeMap(boundWriter.doc).get('nodes') as Y.Map<unknown>
+      ;(nodes.get(rootId) as Y.Map<unknown>).set('marker', 'writer-was-here')
+    }, LOCAL_ORIGIN)
+    await waitFor(() => {
+      const nodes = treeMap(boundReadOnly.doc).get('nodes') as Y.Map<unknown>
+      return (nodes.get(rootId) as Y.Map<unknown>).get('marker') === 'writer-was-here'
+    })
 
-    expect(nodeLabel(boundWriter.doc, rootId)).toBe('Writer edit')
+    // The sneaky edit never reached the WRITER — the server dropped it.
+    expect(nodeLabel(boundWriter.doc, rootId)).not.toBe('Sneaky viewer edit')
   })
 
   it('resets a doc when the row is written outside the relay', async () => {
