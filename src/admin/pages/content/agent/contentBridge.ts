@@ -7,10 +7,9 @@
  * when scope === 'content'; the result is POSTed to /admin/api/ai/tool-result.
  *
  * Per-tool inputs are re-validated against TypeBox at this boundary —
- * defence in depth. The server already validated against the same schema
- * (via Anthropic Zod or OpenAI JSON Schema) but the canonical TypeBox
- * shape is the single source of truth and may carry stricter constraints
- * the SDK translation drops.
+ * defence in depth. The server advertises matching TypeBox schemas to the
+ * provider as JSON Schema, and this browser bridge validates the payload
+ * again before touching live draft state.
  *
  * Mirrors `src/admin/pages/site/agent/executor.ts` — same canonical
  * `AiToolOutput` return type, plugged into the same stream-event processor in
