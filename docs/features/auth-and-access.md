@@ -131,7 +131,9 @@ export const CORE_CAPABILITIES = [
   'runtime.dependencies', 'storage.elect', 'storage.migrate',
   'plugins.read', 'plugins.configure', 'plugins.install', 'plugins.lifecycle',
   'users.manage', 'roles.manage', 'audit.read',
-  'data.tables.read', 'data.tables.manage', 'data.rows.move', 'data.export', 'data.import',
+  'data.custom.tables.read', 'data.custom.tables.manage',
+  'data.system.tables.read', 'data.system.tables.manage',
+  'data.rows.move', 'data.export', 'data.import',
   'ai.chat', 'ai.tools.write', 'ai.providers.manage', 'ai.audit.read',
 ] as const
 
@@ -175,7 +177,7 @@ Four system roles, defined in `SYSTEM_ROLES`:
 |---------|-----------|------------------------------------------------------------------------------|-------------|
 | Owner   | `owner`   | All `CORE_CAPABILITIES`                                                      | Owner-only `roles.manage`. Resyncs on every boot via `syncSystemRoles(db)`. |
 | Admin   | `admin`   | All except `roles.manage`                                                    | Force-resynced on every boot. Hand-edits restored at next boot. |
-| Client  | `client`  | `dashboard.read`, `site.read`, `site.content.edit`, `media.read`, `data.tables.read` | Editable    |
+| Client  | `client`  | `dashboard.read`, `site.read`, `site.content.edit`, `media.read`, `data.custom.tables.read` | Editable    |
 | Member  | `member`  | (none)                                                                       | Editable    |
 
 `listRoles(db)` returns the built-ins in rank order (`owner`, `admin`, `client`, `member`), followed by custom roles alphabetized by name. Custom roles can be created via `roles.manage` (Owner-only). Roles are persisted in the `roles` table with `capabilities_json: CoreCapability[]`.
@@ -444,7 +446,7 @@ user.capabilities    // CoreCapability[] — flattened from role + grants
 ### Check capability without responding
 
 ```ts
-if (userHasCapability(user, 'media.manage')) { /* … */ }
+if (userHasCapability(user, 'media.read')) { /* … */ }
 if (userHasAnyCapability(user, SITE_WRITE_CAPABILITIES)) { /* … */ }
 ```
 

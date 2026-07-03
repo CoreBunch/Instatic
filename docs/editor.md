@@ -160,7 +160,7 @@ useUrlQuerySync(
 
 ## Auth and access
 
-After login, every route renders `<AuthenticatedAdmin section={...}>`. Before rendering the workspace, it calls `canAccessWorkspace(currentUser, section)`. If the user's capabilities don't include the workspace, it `<Navigate>`s to `firstAccessibleWorkspace(currentUser)` (e.g. a contributor with only `media.manage` lands on `/admin/media`).
+After login, every route renders `<AuthenticatedAdmin section={...}>`. Before rendering the workspace, it calls `canAccessWorkspace(currentUser, section)`. If the user's capabilities don't include the workspace, it `<Navigate>`s to `firstAccessibleWorkspace(currentUser)` (e.g. a contributor with only `media.read` lands on `/admin/media`).
 
 `src/admin/access.ts` owns the capability-to-workspace mapping. `src/admin/workspace.ts` owns the `AdminWorkspace` union and the workspace paths.
 
