@@ -12,7 +12,7 @@ Spotlight is mounted by `<SpotlightRoot>` inside `AuthenticatedAdmin` (post-logi
 - Trigger: ⌘K / Ctrl+K (global keydown). Esc closes (or clears query if non-empty).
 - Built-in commands: `src/admin/spotlight/builtinCommands.ts`. Returns the static `Command[]`.
 - Async providers: `src/admin/spotlight/providers/*.ts` (pages, media, content, data, plugin pages, site files). Run in parallel as the query changes.
-- Plugin commands: register via the SDK at activation. Same shape as built-ins.
+- Plugin commands: register via the SDK at activation. `PluginCommand` uses the SDK shape (`label`, optional `subtitle`, `args`, `workspaces`, etc.) and is synthesized into internal `Command` rows under the `plugins` group.
 - State: `useReducer` in `SpotlightRoot`. Recent commands persisted in `localStorage` via `recentStore`.
 - Scopes: a scope narrows the palette to a single domain (e.g. "Find page", "Run command on selected node").
 - Lazy: the heavy `<Spotlight>` chunk is `React.lazy` — only downloads on first open.
@@ -51,6 +51,7 @@ src/admin/spotlight/
 ├── keybindings.ts                 — declarative keybinding registry
 ├── state.ts                       — reducer state types
 ├── stateHandlers.ts               — reducer action handlers
+├── stateTypes.ts                  — reducer state/action type aliases
 ├── spotlightContext.ts            — React context (separated for fast-refresh)
 ├── spotlightControls.ts           — programmatic controls (open / close / set query)
 ├── spotlightSearch.ts             — search query parsing (scope:, action: prefixes)
@@ -123,6 +124,7 @@ interface CommandContext {
     canUndo:               boolean
     canRedo:               boolean
     activeBreakpointId:    string
+    activeInlineEdit:      boolean
   }
 }
 
@@ -155,6 +157,8 @@ The subscription is **dropped on close** to avoid spurious re-renders.
 | `content`          | New post, Edit post                                                  |
 | `navigation`       | Go to dashboard, Go to site, Go to media, Go to plugins, …           |
 | `settings`         | Open framework scale, Open site settings                             |
+| `ai`               | Open / focus AI assistant                                            |
+| `account` / `users`| Account security, session revocation, user management                |
 
 Each command's `when(ctx)` / `workspaces` / `capability` fields filter by user capability + workspace context. `filterCommands(commands, ctx)` runs once per palette open.
 
@@ -183,7 +187,7 @@ interface SpotlightProvider {
 
 - Fires all providers in parallel on query change
 - Debounces per provider
-- Caches results per `(provider, query)` until close
+- Caches results per `(provider, query)` for 30 seconds, and clears the cache on close / scope reset
 - `AbortController` cancels in-flight requests on close or query change
 
 ### Provider types
@@ -226,7 +230,7 @@ Both helpers validate the response body against a TypeBox schema via `apiRequest
 
 ### Plugin providers
 
-Plugins with `editor.commands` permission can register Spotlight providers via the SDK. Plugin providers go through `getPluginPaletteSpotlightProviders()` and run in the same `ProviderRunner` as built-ins.
+Plugins with `editor.commands` permission can register Spotlight providers via the SDK. Plugin providers go through `getPluginPaletteSpotlightProviders()`, are wrapped as provider ids like `plugin:<pluginId>:<providerId>`, run in the same `ProviderRunner` as built-ins, and are included on every active scope so plugin search stays available while the user drills into scopes. Provider errors are logged and converted to empty result groups.
 
 ---
 
@@ -236,7 +240,7 @@ A scope narrows the palette to a single domain. Scopes are stacked (`ScopeFrame[
 
 ```ts
 interface Scope {
-  id:           string          // 'root' | 'pages' | 'modules' | …
+  id:           string          // 'root' | 'pages' | 'content' | …
   title?:       string          // header text in argument mode
   placeholder?: string
   /** Synchronous static commands offered by this scope. */
@@ -293,7 +297,7 @@ Used by destructive commands: delete user, sign out all devices, revoke session,
 | Esc                  | Clear query (or close if empty)                       |
 | Arrow up / down      | Move selection                                        |
 | Enter                | Run selected (twice for `destructive` commands)       |
-| Tab                  | Cycle scope                                           |
+| Tab / Arrow right    | Enter arg mode or run the selected scope-pushing command |
 | Backspace (empty)    | Pop scope                                             |
 | ?                    | Show all keybindings                                  |
 | Custom command shortcuts | Per-command entry in `keybindings.ts`             |
@@ -316,18 +320,20 @@ The store is per-device, not per-user, because it sits in localStorage.
 
 ### Add a built-in command
 
-Append to `src/admin/spotlight/builtinCommands.ts`:
+Add the command to the relevant domain factory in `src/admin/spotlight/commands/`. If it is a new command family, import that factory in `src/admin/spotlight/builtinCommands.ts` so `getAllCommands()` includes it:
 
 ```ts
+// src/admin/spotlight/commands/navigation.ts
 {
-  id: 'site.toggle-grid-overlay',
-  title: 'Toggle grid overlay',
-  group: 'editor',
-  iconName: 'grid-solid',
-  workspaces: ['site'],
-  run: async (ctx) => {
-    useEditorStore.getState().toggleGridOverlay()
+  id: 'navigation.openDashboard',
+  title: 'Open Dashboard',
+  group: 'navigation',
+  iconName: 'dashboard-solid',
+  keywords: ['home', 'admin'],
+  workspaces: ['any'],
+  run: (ctx) => {
     ctx.closeSpotlight()
+    ctx.navigate('/admin/dashboard')
   },
 }
 ```
@@ -409,6 +415,8 @@ export function activate(api) {
   })
 }
 ```
+
+`api.editor.commands.register(...)` and `api.editor.palette.registerCommand(...)` both register the same SDK `PluginCommand` shape. The host maps `label` to the internal row `title`, namespaces the id as `plugin:<pluginId>.<commandId>`, preserves `subtitle`, `iconName`, `keywords`, `destructive`, `args`, and `workspaces`, then runs the command through `pluginRuntime.runCommand(...)`.
 
 See [docs/features/plugin-system.md](plugin-system.md).
 
