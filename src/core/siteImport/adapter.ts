@@ -11,8 +11,8 @@
  *
  * This file is intentionally interface-only — no implementation here.
  *
- * @see src/core/siteImport/applyImport.ts — `commitImportPlan` caller
- * @see src/admin/...   — Phase 3 adapter implementation (TBD)
+ * @see src/core/siteImport/commitPlan.ts — `commitImportPlan`
+ * @see src/admin/modals/SiteImport/shared/createSiteImportAdapter.ts — admin-side adapter implementation
  */
 
 import type {
