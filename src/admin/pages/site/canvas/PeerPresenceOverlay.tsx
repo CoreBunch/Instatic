@@ -23,6 +23,7 @@
  */
 import { use, useEffect, useEffectEvent, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
+import { CursorMinimalSolidIcon } from 'pixel-art-icons/icons/cursor-minimal-solid'
 import { useEditorStore } from '@site/store/store'
 import {
   activeEditorDocId,
@@ -331,7 +332,11 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
                 className={styles.pointer}
                 data-peer-pointer="true"
               >
-                <span className={styles.pointerDot} />
+                {/* Same pixel cursor glyph the editor uses elsewhere, tinted
+                    with the peer's identity color. */}
+                <span className={styles.pointerIcon} aria-hidden="true">
+                  <CursorMinimalSolidIcon size={16} color="var(--peer-color)" />
+                </span>
                 <span className={styles.pointerLabel}>{peer.user.name}</span>
               </div>
             )}

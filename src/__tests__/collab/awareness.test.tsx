@@ -139,7 +139,9 @@ describe('PeerPresenceOverlay', () => {
       new URL('../../admin/pages/site/canvas/PeerPresenceOverlay.module.css', import.meta.url),
       'utf-8',
     )
-    expect(css).not.toContain('display: none')
+    // Scan RULES only — comments may (and do) mention the forbidden pattern.
+    const rulesOnly = css.replace(/\/\*[\s\S]*?\*\//g, '')
+    expect(rulesOnly).not.toContain('display: none')
   })
 
 
