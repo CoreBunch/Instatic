@@ -486,7 +486,8 @@ interface ImportMediaAssetInput {
  * Insert a media asset record preserving its original id and metadata.
  * Used exclusively by the bundle import handler.
  *
- * Variants are intentionally omitted — they regenerate on first request.
+ * Variants are intentionally omitted — imported assets publish from the
+ * original until a later upload/replace path regenerates variants.
  * Folder memberships are not imported (no folder rows to link to yet in
  * the target instance).
  *
