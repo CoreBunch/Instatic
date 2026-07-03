@@ -1,6 +1,6 @@
 # Audit Log
 
-The audit log — every meaningful admin action records a row in `audit_events`. Authentication, content writes, plugin lifecycle, role changes. Surfaced in the dashboard's Activity widget and the Audit admin page.
+The audit log — every meaningful admin action records a row in `audit_events`. Authentication, content writes, plugin lifecycle, role changes. Surfaced in the Dashboard Activity widget and the Users → Audit tab.
 
 The audit log is **append-only** — events are never updated or deleted. They're the trail for "who did what when".
 
@@ -12,7 +12,7 @@ The audit log is **append-only** — events are never updated or deleted. They'r
 - Repo: `server/repositories/audit.ts` — `createAuditEvent(...)`, `listAuditEvents(...)`.
 - Schema: `AuditAction` is a closed TypeBox literal union — every event kind is enumerated. Adding a new kind = adding a new literal.
 - Handler: `server/handlers/cms/audit.ts` — `GET /admin/api/cms/audit` (gated by `audit.read`).
-- Consumer side: the Dashboard's Activity widget + the Users → Audit tab.
+- Consumer side: the Dashboard Activity widget + the Users → Audit tab.
 - Users audit formatter: `src/admin/pages/users/utils/audit.ts` renders known
   actions as readable titles and humanizes future dotted action ids instead of
   exposing raw action strings.
@@ -57,9 +57,12 @@ interface AuditEvent {
   action:       AuditAction        // closed enum
   actorUserId:  string | null      // who did it; null for system events
   targetId:     string | null      // what was affected (user id, row id, plugin id, …)
-  targetKind:   string | null      // 'user' | 'row' | 'plugin' | …
+  targetType:   string | null      // 'user' | 'row' | 'plugin' | …
   metadata:     AuditMetadata      // flat record of supplementary fields
-  ip:           string | null      // client IP at the time of the event
+  actorLabel:   string | null      // current or snapshot actor label for UI
+  targetLabel:  string | null      // current or snapshot target label for UI
+  metadataLabels: Record<string, string> // resolved labels for metadata ids
+  ipAddress:    string | null      // client IP at the time of the event
   userAgent:    string | null
   createdAt:    string             // ISO datetime
 }
@@ -101,7 +104,7 @@ await createAuditEvent(db, {
   action:      'data.row.publish',
   actorUserId: user.id,
   targetId:    row.id,
-  targetKind:  'row',
+  targetType:  'row',
   metadata:    {
     tableId:   row.tableId,
     tableSlug: 'posts',
@@ -109,12 +112,12 @@ await createAuditEvent(db, {
     fromStatus: 'draft',
     toStatus:   'published',
   },
-  ip:        clientIp(req),
+  ipAddress: clientIp(req),
   userAgent: req.headers.get('user-agent'),
 })
 ```
 
-Audit writes are **fire-and-forget**: the handler doesn't `await` them in a way that would block the response. Errors log with `[audit]` prefix; they don't propagate to the user (a failed audit doesn't break the user's action).
+Mutation handlers usually `await createAuditEvent(...)` after the persisted state change they are auditing. Keep audit calls close to the write they describe and let unexpected failures surface through the handler's normal error path unless the caller has an explicit reason to make the audit best-effort (the AI chat terminal event is one example because usage persistence must not break stream completion).
 
 ### When to record
 
@@ -133,27 +136,21 @@ A typed action (`data.row.publish`) is preferable to a generic `data.row.update`
 
 ## Reading events
 
-`listAuditEvents(db, limit)` returns the most-recent N events. The handler is `GET /admin/api/cms/audit`:
+`listAuditEvents(db, limit)` returns the most-recent N events; the default is 100. The handler is `GET /admin/api/cms/audit` and currently ignores query parameters:
 
 ```ts
-GET /admin/api/cms/audit?limit=100&action=publish
+GET /admin/api/cms/audit
 
 → {
     events: [{
-      id, action, actorUserId, targetId, targetKind, metadata, ip, userAgent, createdAt,
-      actor: { id, email, displayName },   // joined user info
+      id, action, actorUserId, targetId, targetType, metadata,
+      actorLabel, targetLabel, metadataLabels,
+      ipAddress, userAgent, createdAt,
     }, ...]
   }
 ```
 
-The handler gates on `audit.read`. The Dashboard's Activity widget uses the same data with `limit=10`.
-
-Filters (planned, not all implemented yet):
-
-- `?action=<action>` — only events of one kind
-- `?actorUserId=<id>` — only events by one user
-- `?since=<ISO>` — only events after a timestamp
-- `?targetId=<id>` — only events about one target
+The handler gates on `audit.read`. The Users → Audit tab calls this endpoint directly. The Dashboard Activity widget uses a separate domain endpoint (`/admin/api/cms/dashboard/activity`) that reads up to 50 raw audit rows, filters out login/logout noise, projects target labels/paths server-side, and returns the latest 10 operational entries.
 
 ---
 
@@ -161,10 +158,10 @@ Filters (planned, not all implemented yet):
 
 | Surface                             | What it shows                                                  |
 |-------------------------------------|----------------------------------------------------------------|
-| Dashboard → Activity widget         | Latest 10 events with actor monogram + action + when           |
-| `/admin/audit` (admin page)         | Full table with filters (planned)                              |
+| Dashboard → Activity widget         | Latest 10 operational events, excluding login/logout noise      |
+| Users → Audit tab (`/admin/users`)  | Latest 100 audit events with title, actor, details, and time    |
 
-The Dashboard widget collapses repeated actions ("3 posts published" instead of three rows) when the same actor performs the same action on adjacent targets within a short window. This is purely display logic — the underlying events are stored individually.
+The Dashboard widget is display-only and curated for operational changes; the Users → Audit tab is the broader read-only event feed. The underlying events are stored individually and append-only.
 
 ---
 
@@ -178,15 +175,13 @@ create table audit_events (
   action          text not null,
   actor_user_id   text references users(id) on delete set null,
   target_id       text,
-  target_kind     text,
+  target_type     text,
   metadata_json   jsonb not null default '{}',          -- text in SQLite
-  ip              text,
+  ip_address      text,
   user_agent      text,
   created_at      timestamptz not null default current_timestamp,
-  -- indexes:
+  -- index:
   -- (created_at desc) for the recency feed
-  -- (action, created_at desc) for action-filtered queries
-  -- (actor_user_id, created_at desc) for actor-filtered queries
 );
 ```
 
@@ -203,9 +198,9 @@ await createAuditEvent(db, {
   action:      'publish',
   actorUserId: user.id,
   targetId:    page.id,
-  targetKind:  'page',
+  targetType:  'page',
   metadata:    { slug: page.slug, routeBase: table.routeBase ?? '' },
-  ip:          clientIp(req),
+  ipAddress:   clientIp(req),
   userAgent:   req.headers.get('user-agent'),
 })
 ```
@@ -223,7 +218,7 @@ The closed union catches typos at compile time — a misspelled `'datas.row.publ
 
 ### Filter the activity feed by action
 
-The Dashboard widget already filters internally — see the widget for the pattern. The full audit page (planned) will surface filters via the URL.
+There is no URL-level audit filtering yet. Add it deliberately at both layers if needed: extend `listAuditEvents(...)` with typed filter input, validate query parameters in `server/handlers/cms/audit.ts`, and update the Users → Audit tab to send those parameters. Do not rely on ignored query strings.
 
 ### Audit a plugin lifecycle event
 
@@ -243,7 +238,7 @@ If a plugin needs its own per-plugin event log, use `api.cms.storage.collection(
 | Logging events that should be `console.error`                          | `[<module>] error: ...` for errors. Audit is for user actions.|
 | Recording read events that aren't compliance-required                  | Reads are noisy. Don't record unless the policy says you must.|
 | `console.log` to "leave a trail"                                       | Use `createAuditEvent` if it's a real audit event             |
-| Blocking the user's response on the audit write                        | Fire-and-forget — audit failure shouldn't kill the action     |
+| Hiding audit failures by default                                       | Await the audit write unless the caller has an explicit best-effort reason |
 
 ---
 
