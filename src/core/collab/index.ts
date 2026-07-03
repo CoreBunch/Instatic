@@ -30,7 +30,17 @@ export {
 export { buildNodeMap, buildPropsMap, projectNodeMap } from './nodeY'
 export { reconcileTreeIntegrity } from './integrity'
 export { applyTextDiff } from './textDiff'
-export { seedComponentDoc, seedLayoutDoc, seedPageDoc, seedSiteDoc } from './seed'
+export { createCollabDocSet, type CollabDocSet } from './docSet'
+export { applySitePatchesToDocs } from './applyPatches'
+export {
+  populateComponentDoc,
+  populateLayoutDoc,
+  populatePageDoc,
+  seedComponentDoc,
+  seedLayoutDoc,
+  seedPageDoc,
+  seedSiteDoc,
+} from './seed'
 export {
   projectComponentDoc,
   projectLayoutDoc,

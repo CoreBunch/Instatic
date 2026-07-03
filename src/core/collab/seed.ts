@@ -41,39 +41,51 @@ function seedTree(
 /** Page-owned meta fields — everything on `Page` that is not the tree or server-owned. */
 const PAGE_SERVER_OWNED = new Set(['ownerUserId', 'createdByUserId', 'updatedByUserId'])
 
+/**
+ * populate* — write a row's full content into its doc WITHOUT owning the
+ * transaction. Two callers: the server seeder below (SEED origin, fixed
+ * clientID) and the patch translator (client-created rows, LOCAL origin —
+ * brand-new content has exactly one author, so no double-seed risk).
+ */
+export function populatePageDoc(doc: Y.Doc, page: Page): void {
+  const meta = metaMap(doc)
+  for (const [key, value] of Object.entries(page)) {
+    if (key === 'nodes' || key === 'rootNodeId' || key === 'id') continue
+    if (PAGE_SERVER_OWNED.has(key) || value === undefined) continue
+    meta.set(key, value)
+  }
+  seedTree(doc, page)
+}
+
+export function populateComponentDoc(doc: Y.Doc, vc: VisualComponent): void {
+  const meta = metaMap(doc)
+  for (const [key, value] of Object.entries(vc)) {
+    if (key === 'tree' || key === 'id' || value === undefined) continue
+    meta.set(key, value)
+  }
+  seedTree(doc, vc.tree)
+}
+
+export function populateLayoutDoc(doc: Y.Doc, layout: SavedLayout): void {
+  const { id: _id, name, createdAt, ...snapshot } = layout
+  const meta = metaMap(doc)
+  meta.set('name', name)
+  meta.set('createdAt', createdAt)
+  // Whole-snapshot LWW — layouts have save/rename/delete semantics, not
+  // node-level co-editing.
+  dataMap(doc).set('snapshot', snapshot)
+}
+
 export function seedPageDoc(doc: Y.Doc, page: Page): void {
-  seeding(doc, () => {
-    const meta = metaMap(doc)
-    for (const [key, value] of Object.entries(page)) {
-      if (key === 'nodes' || key === 'rootNodeId' || key === 'id') continue
-      if (PAGE_SERVER_OWNED.has(key) || value === undefined) continue
-      meta.set(key, value)
-    }
-    seedTree(doc, page)
-  })
+  seeding(doc, () => populatePageDoc(doc, page))
 }
 
 export function seedComponentDoc(doc: Y.Doc, vc: VisualComponent): void {
-  seeding(doc, () => {
-    const meta = metaMap(doc)
-    for (const [key, value] of Object.entries(vc)) {
-      if (key === 'tree' || key === 'id' || value === undefined) continue
-      meta.set(key, value)
-    }
-    seedTree(doc, vc.tree)
-  })
+  seeding(doc, () => populateComponentDoc(doc, vc))
 }
 
 export function seedLayoutDoc(doc: Y.Doc, layout: SavedLayout): void {
-  seeding(doc, () => {
-    const { id: _id, name, createdAt, ...snapshot } = layout
-    const meta = metaMap(doc)
-    meta.set('name', name)
-    meta.set('createdAt', createdAt)
-    // Whole-snapshot LWW — layouts have save/rename/delete semantics, not
-    // node-level co-editing.
-    dataMap(doc).set('snapshot', snapshot)
-  })
+  seeding(doc, () => populateLayoutDoc(doc, layout))
 }
 
 /** Shell keys stored as per-entry Y.Maps (granular co-editing); the rest are plain LWW values. */
