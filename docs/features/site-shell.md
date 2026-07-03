@@ -551,9 +551,12 @@ each doc's first sync so an unseeded doc can never receive local ops.
 **Presence** (`src/admin/pages/site/collab/awarenessState.ts` +
 `PeerPresenceOverlay`): every editor publishes identity (deterministic HSL
 color from the user id + the same upload→Gravatar avatar fields every admin
-surface uses), active doc, selection, inline-edit state, and a pointer
-through y-protocols awareness; peers render selection rings, name tags,
-named cursors per breakpoint frame, and a toolbar avatar stack
+surface uses), active doc, selection, inline-edit state, a pointer, and —
+during an inline text session — the caret/selection as **Y.Text relative
+positions** (`collab/caretPositions.ts`; pinned to CRDT items, so they stay
+correct while concurrent edits shift the text). Peers render selection
+rings, name tags, avatar cursors, a blinking character-precise caret with
+selection highlight inside the edited text, and a toolbar avatar stack
 (`PeerAvatarStack`). The pointer ships at 10 Hz with a movement deadband
 and a trailing flush; the receiving side eases the rendered cursor toward
 each sparse sample every animation frame (exponential smoothing, snap on

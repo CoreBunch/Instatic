@@ -30,9 +30,12 @@ import { useEditorStore } from '@site/store/store'
 import {
   activeEditorDocId,
   publishLocalPointer,
+  publishLocalTextCaret,
   usePeerPresences,
   type PeerPresence,
 } from '@site/collab/awarenessState'
+import { encodeCaretRange, resolveCaretRange } from '@site/collab/caretPositions'
+import { collabDocFor } from '@site/store/slices/site/collabBinding'
 import { CanvasViewportActionsContext } from './CanvasContexts'
 import { CanvasNodeElementCache } from './canvasNodeLookup'
 import { createCanvasOverlayMeasureSession } from './canvasOverlayGeometry'
@@ -80,6 +83,62 @@ function positionPointElement(
   element.style.transform = `translate(${point.x}px, ${point.y}px)${lift ? ' translateY(-100%)' : ''}`
 }
 
+interface OverlayRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** Resolve the DOM position `offset` characters into `root`'s text. */
+function domPositionAtTextOffset(
+  iframeDoc: Document,
+  root: HTMLElement,
+  offset: number,
+): { node: Node; offset: number } {
+  const walker = iframeDoc.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  let remaining = offset
+  let last: Text | null = null
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node as Text
+    const length = text.data.length
+    if (remaining <= length) return { node: text, offset: remaining }
+    remaining -= length
+    last = text
+  }
+  return last ? { node: last, offset: last.data.length } : { node: root, offset: 0 }
+}
+
+/** Character offset of a DOM selection point within `root` (walk order). */
+function textOffsetAtDomPosition(
+  iframeDoc: Document,
+  root: HTMLElement,
+  node: Node,
+  offset: number,
+): number {
+  const range = iframeDoc.createRange()
+  range.setStart(root, 0)
+  range.setEnd(node, offset)
+  return range.toString().length
+}
+
+/** Sync `container`'s children to one absolutely-positioned div per rect. */
+function syncHighlightRects(container: HTMLElement | null, rects: OverlayRect[]): void {
+  if (!container) return
+  while (container.children.length > rects.length) container.lastElementChild?.remove()
+  while (container.children.length < rects.length) {
+    container.appendChild(container.ownerDocument.createElement('div'))
+  }
+  for (let i = 0; i < rects.length; i++) {
+    const el = container.children[i] as HTMLElement
+    const rect = rects[i]
+    el.style.position = 'absolute'
+    el.style.transform = `translate(${rect.x}px, ${rect.y}px)`
+    el.style.width = `${rect.width}px`
+    el.style.height = `${rect.height}px`
+  }
+}
+
 interface PeerPresenceOverlayProps {
   breakpointId: string
   iframeElement: HTMLIFrameElement | null
@@ -103,6 +162,10 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
   if (tagRefs.current === null) tagRefs.current = new Map()
   const pointerRefs = useRef<Map<number, HTMLDivElement | null> | null>(null)
   if (pointerRefs.current === null) pointerRefs.current = new Map()
+  const caretRefs = useRef<Map<number, HTMLDivElement | null> | null>(null)
+  if (caretRefs.current === null) caretRefs.current = new Map()
+  const highlightRefs = useRef<Map<number, HTMLDivElement | null> | null>(null)
+  if (highlightRefs.current === null) highlightRefs.current = new Map()
   const nodeElementCacheRef = useRef<CanvasNodeElementCache | null>(null)
   if (nodeElementCacheRef.current === null) nodeElementCacheRef.current = new CanvasNodeElementCache()
   /** clientId → rendered cursor position (easing toward the last target)
@@ -195,6 +258,54 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
     }
   }, [iframeElement, breakpointId])
 
+  // ── Local text-caret publisher (this frame) ──────────────────────────────
+  // During an inline-edit session owned by THIS frame, every selection
+  // change publishes the caret as Y.Text RELATIVE positions — pinned to the
+  // CRDT items around the caret, so peers resolve the right spot even while
+  // concurrent edits shift the text (see collab/caretPositions.ts).
+  useEffect(() => {
+    const iframe = iframeElement
+    if (!iframe) return undefined
+
+    let attachedDoc: Document | null = null
+    const handleSelectionChange = (): void => {
+      const store = useEditorStore.getState()
+      const session = store.activeInlineEdit
+      if (!session || session.breakpointId !== breakpointId) return
+      const doc = attachedDoc
+      if (!doc) return
+      const element = doc.querySelector<HTMLElement>(`[data-node-id="${session.nodeId}"]`)
+      const selection = doc.getSelection()
+      if (!element || !selection || selection.rangeCount === 0) return
+      if (!element.contains(selection.anchorNode) || !element.contains(selection.focusNode)) return
+      const collabDoc = collabDocFor(
+        activeEditorDocId({ activeDocument: store.activeDocument, activePageId: store.activePageId }) ?? '',
+      )
+      if (!collabDoc || !selection.anchorNode || !selection.focusNode) return
+      const anchor = textOffsetAtDomPosition(doc, element, selection.anchorNode, selection.anchorOffset)
+      const head = textOffsetAtDomPosition(doc, element, selection.focusNode, selection.focusOffset)
+      publishLocalTextCaret(encodeCaretRange(collabDoc, session.nodeId, session.prop, anchor, head))
+    }
+    const detach = (): void => {
+      attachedDoc?.removeEventListener('selectionchange', handleSelectionChange)
+      attachedDoc = null
+    }
+    const attach = (): void => {
+      const doc = iframe.contentDocument
+      if (!doc || doc === attachedDoc) return
+      detach()
+      attachedDoc = doc
+      doc.addEventListener('selectionchange', handleSelectionChange)
+    }
+
+    attach()
+    iframe.addEventListener('load', attach)
+    return () => {
+      iframe.removeEventListener('load', attach)
+      detach()
+    }
+  }, [iframeElement, breakpointId])
+
   // ── Peer chrome positioning (RAF, read-then-write like the selection overlay) ──
   const tickOnce = useEffectEvent((iframe: HTMLIFrameElement | null) => {
     const iframeDoc = iframe?.contentDocument ?? null
@@ -275,6 +386,44 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
       } else if (pointerElement) {
         pointerElement.dataset.visible = 'false'
       }
+
+      // ── Peer text caret + selection highlight ────────────────────────────
+      const caretElement = caretRefs.current?.get(peer.clientId) ?? null
+      const highlightContainer = highlightRefs.current?.get(peer.clientId) ?? null
+      let caretRect: OverlayRect | null = null
+      let highlightRects: OverlayRect[] = []
+      if (peer.textCaret) {
+        const collabDoc = collabDocFor(docId ?? '')
+        const range = collabDoc ? resolveCaretRange(collabDoc, peer.textCaret) : null
+        const element = range ? elementCache.resolve(iframeDoc, peer.textCaret.nodeId) : null
+        if (range && element) {
+          trackedIds.add(peer.textCaret.nodeId)
+          const toOverlayRect = (r: DOMRect): OverlayRect => ({
+            x: iframeRect.left + r.left * iframeScale - originLeft,
+            y: iframeRect.top + r.top * iframeScale - originTop,
+            width: r.width * iframeScale,
+            height: r.height * iframeScale,
+          })
+          const head = domPositionAtTextOffset(iframeDoc, element, range.head)
+          const headRange = iframeDoc.createRange()
+          headRange.setStart(head.node, head.offset)
+          headRange.collapse(true)
+          const headRect = headRange.getClientRects()[0] ?? headRange.getBoundingClientRect()
+          if (headRect.height > 0 || headRect.width > 0) {
+            caretRect = { ...toOverlayRect(headRect), width: Math.max(1.5, 2 * iframeScale) }
+          }
+          if (range.anchor !== range.head) {
+            const start = domPositionAtTextOffset(iframeDoc, element, Math.min(range.anchor, range.head))
+            const end = domPositionAtTextOffset(iframeDoc, element, Math.max(range.anchor, range.head))
+            const selectionRange = iframeDoc.createRange()
+            selectionRange.setStart(start.node, start.offset)
+            selectionRange.setEnd(end.node, end.offset)
+            highlightRects = [...selectionRange.getClientRects()].slice(0, 24).map(toOverlayRect)
+          }
+        }
+      }
+      positionOverlayElement(caretElement, caretRect)
+      syncHighlightRects(highlightContainer, highlightRects)
     }
     elementCache.retainOnly(trackedIds)
 
@@ -339,6 +488,24 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
                 {peer.editingNodeId !== null && <span aria-hidden="true">✎</span>}
               </div>
             )}
+            {/* Peer caret + selection highlight inside the text they are
+                editing — positioned imperatively by the RAF tick. */}
+            <div
+              ref={(el) => {
+                if (el) caretRefs.current?.set(peer.clientId, el)
+                else caretRefs.current?.delete(peer.clientId)
+              }}
+              className={styles.caret}
+              data-peer-caret="true"
+            />
+            <div
+              ref={(el) => {
+                if (el) highlightRefs.current?.set(peer.clientId, el)
+                else highlightRefs.current?.delete(peer.clientId)
+              }}
+              className={styles.caretHighlights}
+              data-peer-caret-highlights="true"
+            />
             {/* Always mounted (per frame): visibility is opacity-driven by
                 the RAF tick so entry/exit fade instead of popping. */}
             <div

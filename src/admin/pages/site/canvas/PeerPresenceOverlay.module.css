@@ -61,6 +61,33 @@
   );
 }
 
+/* Blinking caret line inside the text a peer is editing. Positioned and
+ * sized imperatively (positionOverlayElement) — hidden via inline display
+ * until the first placement, like the rings. */
+.caret {
+  position: absolute;
+  background: var(--peer-color);
+  animation: peerCaretBlink 1.1s steps(2, start) infinite;
+}
+
+@keyframes peerCaretBlink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Container for the peer's text-selection highlight rects (children are
+ * created and positioned imperatively by the RAF tick). */
+.caretHighlights {
+  position: absolute;
+  inset: 0;
+}
+
+.caretHighlights > * {
+  background: var(--peer-color);
+  opacity: 0.25;
+}
+
 /* Cursors are opacity-driven, not mount-driven: the element is always
  * rendered and the RAF tick flips data-visible, so entering a frame fades
  * in and leaving fades out (after the linger debounce) instead of popping.

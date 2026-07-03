@@ -110,6 +110,7 @@ describe('usePeerPresences', () => {
         selectedNodeIds: ['n1'],
         editingNodeId: null,
         pointer: null,
+        textCaret: null,
       })
       injectPeerState(provider.awareness, {
         user: { id: 'u3', name: 'Grace', color: peerColor('u3'), avatarUrl: null, gravatarHash: null },
@@ -117,6 +118,7 @@ describe('usePeerPresences', () => {
         selectedNodeIds: [],
         editingNodeId: null,
         pointer: null,
+        textCaret: null,
       })
       // Malformed wire state — must be dropped by validation, not crash.
       injectPeerState(provider.awareness, { user: { id: 42 }, docId: 'page:p1' })
@@ -163,6 +165,7 @@ describe('PeerPresenceOverlay', () => {
         selectedNodeIds: [site.pages[0].rootNodeId],
         editingNodeId: site.pages[0].rootNodeId,
         pointer: { x: 10, y: 20, breakpointId: 'bp-desktop' },
+        textCaret: null,
       })
     })
 

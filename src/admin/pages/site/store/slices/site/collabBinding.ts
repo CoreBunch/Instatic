@@ -117,6 +117,11 @@ export function collabAwareness(): Awareness | null {
   return provider?.awareness ?? null
 }
 
+/** The live Y doc for a docId — caret presence encodes/resolves against it. */
+export function collabDocFor(docId: string): Y.Doc | null {
+  return docs.get(docId) ?? null
+}
+
 /** Notifies when the provider connects/disconnects — re-grab the awareness. */
 export function onCollabProviderChange(listener: () => void): () => void {
   providerChangeListeners.add(listener)

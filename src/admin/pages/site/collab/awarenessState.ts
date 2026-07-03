@@ -42,6 +42,17 @@ const EditorPresenceSchema = Type.Object({
   /** Node id of an active inline text-edit session, or null. */
   editingNodeId: Type.Union([Type.String(), Type.Null()]),
   pointer: Type.Union([PointerSchema, Type.Null()]),
+  /** Caret/selection inside the edited node's Y.Text (base64 relative
+   * positions — see collab/caretPositions.ts), or null outside a session. */
+  textCaret: Type.Union([
+    Type.Object({
+      nodeId: Type.String(),
+      prop: Type.String(),
+      anchor: Type.String(),
+      head: Type.String(),
+    }),
+    Type.Null(),
+  ]),
 })
 
 export type EditorPresence = Static<typeof EditorPresenceSchema>
@@ -94,14 +105,18 @@ export function usePublishEditorPresence(
       const awareness = collabAwareness()
       if (!awareness) return
       const s = useEditorStore.getState()
-      const previous = awareness.getLocalState()
+      const previous = awareness.getLocalState() as EditorPresence | null
       awareness.setLocalState({
         ...previous,
         user: identity,
         docId: activeEditorDocId(s),
         selectedNodeIds: s.selectedNodeIds,
         editingNodeId: s.activeInlineEdit?.nodeId ?? null,
-        pointer: (previous as EditorPresence | null)?.pointer ?? null,
+        pointer: previous?.pointer ?? null,
+        // The caret field is OWNED by the per-frame capture
+        // (publishLocalTextCaret); preserve it during a session, force-clear
+        // it the moment the session ends so no stale caret lingers.
+        textCaret: s.activeInlineEdit ? (previous?.textCaret ?? null) : null,
       })
     }
 
@@ -117,6 +132,15 @@ export function usePublishEditorPresence(
       collabAwareness()?.setLocalState(null)
     }
   }, [userId, userName, avatarUrl, gravatarHash])
+}
+
+/** Update only the caret field of the local presence (per-frame capture). */
+export function publishLocalTextCaret(
+  caret: EditorPresence['textCaret'],
+): void {
+  const awareness = collabAwareness()
+  if (!awareness || awareness.getLocalState() === null) return
+  awareness.setLocalStateField('textCaret', caret)
 }
 
 /** Update only the pointer field of the local presence (throttled by callers). */
