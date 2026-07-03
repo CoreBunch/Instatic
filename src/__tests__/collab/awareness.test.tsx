@@ -167,7 +167,7 @@ describe('PeerPresenceOverlay', () => {
     })
 
     const tag = document.querySelector('[data-peer-name-tag]')
-    expect(tag?.textContent).toBe('Marge')
+    expect(tag?.textContent).toContain('Marge')
     expect(tag?.getAttribute('data-editing')).toBe('true')
     expect(document.querySelector('[data-peer-selection-ring]')).toBeTruthy()
     expect(document.querySelector('[data-peer-pointer]')).toBeTruthy()

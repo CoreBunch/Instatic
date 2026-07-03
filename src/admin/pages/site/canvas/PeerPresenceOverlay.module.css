@@ -32,7 +32,6 @@
   align-items: center;
   gap: var(--space-3xs);
   padding: var(--space-2xs) var(--space-xs);
-  border-radius: var(--radius-sm);
   background: var(--peer-color);
   color: var(--text);
   font-size: var(--text-xs);
@@ -42,13 +41,29 @@
   width: max-content;
 }
 
+/* The tag is a NOTCH into the ring it sits on (the same concave-corner
+ * language as the canvas chrome): bigger rounding on the two top corners,
+ * a square bottom-left flush with the ring's corner, and an inverse
+ * bottom-right corner flaring seamlessly into the ring's top edge. */
 .nameTag {
+  --peer-tag-corner: var(--radius);
+  --peer-tag-corner-cut: calc(var(--peer-tag-corner) - 0.5px);
   position: absolute;
+  border-radius: var(--peer-tag-corner) var(--peer-tag-corner) 0 0;
 }
 
-.nameTag[data-editing='true']::after {
-  content: '✎';
-  line-height: 1;
+.nameTag::after {
+  content: '';
+  position: absolute;
+  left: 100%;
+  bottom: 0;
+  width: var(--peer-tag-corner);
+  height: var(--peer-tag-corner);
+  background: radial-gradient(
+    circle at 100% 0,
+    transparent var(--peer-tag-corner-cut),
+    var(--peer-color) var(--peer-tag-corner)
+  );
 }
 
 .pointer {
@@ -68,6 +83,7 @@
 }
 
 .pointerLabel {
+  border-radius: var(--radius);
   margin-top: var(--space-3xs);
   margin-left: var(--space-s);
 }

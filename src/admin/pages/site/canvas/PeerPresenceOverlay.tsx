@@ -321,6 +321,7 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
                 data-editing={peer.editingNodeId !== null ? 'true' : undefined}
               >
                 {peer.user.name}
+                {peer.editingNodeId !== null && <span aria-hidden="true">✎</span>}
               </div>
             )}
             {peer.pointer !== null && peer.pointer.breakpointId === breakpointId && (
