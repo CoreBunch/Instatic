@@ -271,14 +271,15 @@ Key properties:
 
 ## Plugin system
 
-Plugins are zip packages containing a `plugin.json` manifest and bundled entrypoints. The host runs plugin code in a **QuickJS-WASM sandbox**:
+Plugins are zip packages containing a `plugin.json` manifest and bundled entrypoints. The CLI usually authors that zip from `instatic-plugin.config.ts`. Sandboxed plugin code runs through a per-plugin Bun worker that hosts **QuickJS-WASM**:
 
-- `entrypoints.server` runs in `server/plugins/quickjs/vm.ts`
-- `entrypoints.modules` (canvas module packs) run in `server/plugins/modulePackVm.ts`
+- Server entrypoints load through `server/plugins/pluginWorker.ts`, `server/plugins/host/workerPool.ts`, and `server/plugins/quickjs/vm.ts`
+- Canvas module packs load as ESM in the browser editor and through `server/plugins/modulePackVm.ts` on the server
+- Editor entrypoints and app-kind admin pages run unsandboxed in the admin window and require `editor.code`
 - Author-facing API lives in `src/core/plugin-sdk/`
 - Host-side runtime (install, activate, deactivate, uninstall) lives in `src/core/plugins/`
 
-The sandbox has no Node, no Bun, no file system, no environment variables, and no network unless the plugin declares `network.outbound` permission and a `networkAllowedHosts` allowlist. The `instatic-plugin build` CLI emits IIFE bundles and scans for forbidden literals (`'node:'`, `'bun:'`, `require(`, `process.binding`); the install handler scans again as defense-in-depth.
+The QuickJS sandbox has no Node, no Bun, no file system, no environment variables, and no network unless the plugin declares `network.outbound` permission and a `networkAllowedHosts` allowlist. The `instatic-plugin build` CLI emits the surface-specific bundle format, scans sandboxed bundles for forbidden literals (`'node:'`, `'bun:'`, `require(`, `process.binding`), and the install handler scans again as defense-in-depth.
 
 Sandbox invariants are gated by `src/__tests__/architecture/plugin-sandbox-invariants.test.ts`.
 

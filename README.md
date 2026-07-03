@@ -137,11 +137,11 @@ This is the youngest pillar, and the one we're pushing hardest right now. First-
 <img src="docs/assets/readme/extend-plugins.webp" alt="The plugin system — sandboxed, permissioned, first-class" width="100%">
 -->
 
-Every CMS has plugins. The difference here is where they run.
+Every CMS has plugins. The difference here is where backend plugin code runs.
 
-An Instatic plugin is a zip package with a manifest, and it runs inside a **QuickJS-WASM sandbox**. No filesystem. No environment variables. No network at all, unless the site owner grants it, one host at a time. A plugin can't read your secrets or phone home, because the sandbox never hands it the door. The classic "a plugin took down my site and emailed the database to a stranger" story doesn't run here.
+An Instatic plugin is a zip package with a manifest. Its server entrypoint runs in a per-plugin worker that hosts a **QuickJS-WASM sandbox**: no filesystem, no environment variables, no network at all unless the site owner grants it, one host at a time. Editor extensions and app-kind admin pages are different: they run in the admin window and require the explicit `editor.code` permission before install.
 
-Inside that sandbox the SDK is genuinely capable. A plugin can add:
+Through the SDK, a plugin can add:
 
 - HTTP routes and its own admin pages
 - Storage and scheduled background jobs

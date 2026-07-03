@@ -395,15 +395,16 @@ Register in `src/admin/spotlight/scopes/`. Then a command can enter the scope:
 
 ### Register a plugin command
 
-Plugins with `editor.commands` permission register commands at activation:
+Plugins with `editor.commands` permission register commands from their editor entrypoint at activation:
 
 ```ts
-// plugin server/index.js
+// plugin editor/index.ts
 export function activate(api) {
   api.editor.palette.registerCommand({
     id: 'acme.do-thing',
-    title: 'Do the thing',
-    group: 'plugin',
+    label: 'Do the thing',
+    subtitle: 'Runs a plugin command',
+    workspaces: ['any'],
     run: async () => { /* … */ },
   })
 }

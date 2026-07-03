@@ -149,7 +149,7 @@ The trade-off for Admin force-sync: an operator who hand-removes a capability fr
 Don't confuse them:
 
 - **Core capabilities** (this doc) govern **what a logged-in human user can do in the admin**. Stored on `users.role`.
-- **Plugin permissions** govern **what a plugin's code can do via the SDK**. Declared in `plugin.json`, approved at install. See [docs/features/plugin-system.md](../features/plugin-system.md).
+- **Plugin permissions** govern **what a plugin's code can do via the SDK**. Authored in `instatic-plugin.config.ts` and emitted into `plugin.json`, then approved at install. See [docs/features/plugin-system.md](../features/plugin-system.md).
 
 A plugin route handler can additionally gate on a core capability:
 

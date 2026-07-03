@@ -265,7 +265,7 @@ import './text'        // TextModule self-registers on load
 
 ### Plugin module registration
 
-Plugin modules register from inside the plugin's QuickJS sandbox. The plugin's `modules` entrypoint exports `defineModule(...)` definitions that the host loads into a separate VM (`server/plugins/modulePackVm.ts`) and reflects into the editor via the plugin host bridge.
+Plugin modules are authored with `defineModule(...)` and bundled into `modules/index.js`. The browser editor loads that bundle as ESM through the plugin host bridge. The server publisher loads the same bundle through `server/plugins/modulePackVm.ts`, which rewrites the ESM default export into a QuickJS global before evaluating it in a separate VM.
 
 A plugin canvas module is rendered inside the editor's sandboxed iframe just like a first-party module.
 
