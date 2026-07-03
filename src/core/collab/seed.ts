@@ -1,0 +1,113 @@
+/**
+ * Doc seeding — deterministic construction of a collab doc from persisted
+ * domain JSON. The SERVER is the only seeder (fixed `SEED_CLIENT_ID`), so
+ * two clients can never build divergent initial histories for the same
+ * content — the classic double-seed duplication pitfall.
+ *
+ * Page/VC meta stores authored fields only; server-owned row metadata
+ * (owner/created-by/updated-by) never enters the doc — the persist layer
+ * preserves it on the row.
+ */
+import * as Y from 'yjs'
+import type { Page, SiteDocument } from '@core/page-tree'
+import type { VisualComponent } from '@core/visualComponents'
+import type { SavedLayout } from '@core/layouts'
+import { dataMap, metaMap, rostersMap, SEED_CLIENT_ID, SEED_ORIGIN, shellMap, treeMap } from './schema'
+import { buildNodeMap } from './nodeY'
+
+function seeding(doc: Y.Doc, fn: () => void): void {
+  const previousClientId = doc.clientID
+  doc.clientID = SEED_CLIENT_ID
+  try {
+    doc.transact(fn, SEED_ORIGIN)
+  } finally {
+    doc.clientID = previousClientId
+  }
+}
+
+function seedTree(
+  doc: Y.Doc,
+  tree: { rootNodeId: string; nodes: Record<string, Page['nodes'][string]> },
+): void {
+  const t = treeMap(doc)
+  t.set('rootNodeId', tree.rootNodeId)
+  const nodes = new Y.Map<unknown>()
+  t.set('nodes', nodes)
+  for (const [id, node] of Object.entries(tree.nodes)) {
+    nodes.set(id, buildNodeMap(node))
+  }
+}
+
+/** Page-owned meta fields — everything on `Page` that is not the tree or server-owned. */
+const PAGE_SERVER_OWNED = new Set(['ownerUserId', 'createdByUserId', 'updatedByUserId'])
+
+export function seedPageDoc(doc: Y.Doc, page: Page): void {
+  seeding(doc, () => {
+    const meta = metaMap(doc)
+    for (const [key, value] of Object.entries(page)) {
+      if (key === 'nodes' || key === 'rootNodeId' || key === 'id') continue
+      if (PAGE_SERVER_OWNED.has(key) || value === undefined) continue
+      meta.set(key, value)
+    }
+    seedTree(doc, page)
+  })
+}
+
+export function seedComponentDoc(doc: Y.Doc, vc: VisualComponent): void {
+  seeding(doc, () => {
+    const meta = metaMap(doc)
+    for (const [key, value] of Object.entries(vc)) {
+      if (key === 'tree' || key === 'id' || value === undefined) continue
+      meta.set(key, value)
+    }
+    seedTree(doc, vc.tree)
+  })
+}
+
+export function seedLayoutDoc(doc: Y.Doc, layout: SavedLayout): void {
+  seeding(doc, () => {
+    const { id: _id, name, createdAt, ...snapshot } = layout
+    const meta = metaMap(doc)
+    meta.set('name', name)
+    meta.set('createdAt', createdAt)
+    // Whole-snapshot LWW — layouts have save/rename/delete semantics, not
+    // node-level co-editing.
+    dataMap(doc).set('snapshot', snapshot)
+  })
+}
+
+/** Shell keys stored as per-entry Y.Maps (granular co-editing); the rest are plain LWW values. */
+const SHELL_PER_ENTRY_KEYS = new Set(['settings', 'styleRules', 'explorer'])
+const SHELL_SKIPPED_KEYS = new Set(['pages', 'visualComponents', 'layouts', 'id', 'updatedAt'])
+
+export function seedSiteDoc(doc: Y.Doc, site: SiteDocument): void {
+  seeding(doc, () => {
+    const shell = shellMap(doc)
+    for (const [key, value] of Object.entries(site)) {
+      if (SHELL_SKIPPED_KEYS.has(key) || value === undefined) continue
+      if (SHELL_PER_ENTRY_KEYS.has(key)) {
+        const entryMap = new Y.Map<unknown>()
+        for (const [entryKey, entryValue] of Object.entries(value as Record<string, unknown>)) {
+          if (entryValue !== undefined) entryMap.set(entryKey, entryValue)
+        }
+        shell.set(key, entryMap)
+      } else {
+        shell.set(key, value)
+      }
+    }
+
+    const rosters = rostersMap(doc)
+    const pages = new Y.Map<unknown>()
+    for (const page of site.pages) pages.set(page.id, true)
+    rosters.set('pages', pages)
+    const order = new Y.Array<string>()
+    order.push(site.pages.map((p) => p.id))
+    rosters.set('pageOrder', order)
+    const components = new Y.Map<unknown>()
+    for (const vc of site.visualComponents) components.set(vc.id, true)
+    rosters.set('components', components)
+    const layouts = new Y.Map<unknown>()
+    for (const layout of site.layouts) layouts.set(layout.id, true)
+    rosters.set('layouts', layouts)
+  })
+}

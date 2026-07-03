@@ -1,0 +1,39 @@
+/**
+ * @core/collab — the CRDT collaboration engine (Yjs).
+ *
+ * One Y document per logical row/shell; JSON⇄Y seeding + projection;
+ * Mutative-patch → Y translation; deterministic integrity reconciles.
+ * Consumed by the editor store (write path + mirror), the server relay
+ * (seed/persist), and the wire protocol. Barrel-gated: import ONLY from
+ * `@core/collab` outside this folder.
+ */
+export {
+  encodeCollabDocId,
+  parseCollabDocId,
+  SITE_DOC_ID,
+  type CollabDocId,
+  type CollabDocKind,
+} from './docIds'
+export {
+  dataMap,
+  inlineTextPropOf,
+  LOCAL_ORIGIN,
+  metaMap,
+  RECONCILE_ORIGIN,
+  REMOTE_ORIGIN,
+  rostersMap,
+  SEED_CLIENT_ID,
+  SEED_ORIGIN,
+  shellMap,
+  treeMap,
+} from './schema'
+export { buildNodeMap, buildPropsMap, projectNodeMap } from './nodeY'
+export { reconcileTreeIntegrity } from './integrity'
+export { seedComponentDoc, seedLayoutDoc, seedPageDoc, seedSiteDoc } from './seed'
+export {
+  projectComponentDoc,
+  projectLayoutDoc,
+  projectPageDoc,
+  projectSiteDoc,
+  type ProjectedSiteDoc,
+} from './project'

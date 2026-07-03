@@ -36,6 +36,7 @@ const BARRELLED_MODULES = [
   'framework',
   'framework-schema',
   'fonts',
+  'collab',
 ]
 
 // Scan production + test sources in both the app and the server.
