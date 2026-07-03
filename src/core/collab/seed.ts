@@ -12,7 +12,7 @@ import * as Y from 'yjs'
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import type { SavedLayout } from '@core/layouts'
-import { dataMap, metaMap, rostersMap, SEED_CLIENT_ID, SEED_ORIGIN, shellMap, treeMap } from './schema'
+import { dataMap, metaMap, rostersMap, SEED_CLIENT_ID, SEED_ORIGIN, SHELL_PER_ENTRY_KEYS, shellMap, treeMap } from './schema'
 import { buildNodeMap } from './nodeY'
 
 function seeding(doc: Y.Doc, fn: () => void): void {
@@ -89,7 +89,6 @@ export function seedLayoutDoc(doc: Y.Doc, layout: SavedLayout): void {
 }
 
 /** Shell keys stored as per-entry Y.Maps (granular co-editing); the rest are plain LWW values. */
-const SHELL_PER_ENTRY_KEYS = new Set(['settings', 'styleRules', 'explorer'])
 const SHELL_SKIPPED_KEYS = new Set(['pages', 'visualComponents', 'layouts', 'id', 'updatedAt'])
 
 export interface SiteDocRosterIds {

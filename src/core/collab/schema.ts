@@ -15,16 +15,16 @@
  * who caused a change:
  *   LOCAL_ORIGIN     — this user's edits (undoable)
  *   REMOTE_ORIGIN    — updates applied from the wire (never undoable)
- *   RECONCILE_ORIGIN — derived corrections (slot sync, integrity) that run
- *                      identically on every peer (never undoable)
  *   SEED_ORIGIN      — initial construction from persisted JSON
+ *
+ * (Integrity reconciles run as PURE JSON in the projection, never as tagged Y
+ * transactions — so there is no reconcile origin.)
  */
 import * as Y from 'yjs'
 import { registry } from '@core/module-engine'
 
 export const LOCAL_ORIGIN = Symbol('collab-local')
 export const REMOTE_ORIGIN = 'collab-remote'
-export const RECONCILE_ORIGIN = 'collab-reconcile'
 export const SEED_ORIGIN = 'collab-seed'
 
 /** Deterministic clientID for seeding — the server is the only seeder. */
@@ -35,6 +35,14 @@ export const metaMap = (doc: Y.Doc): Y.Map<unknown> => doc.getMap<unknown>('meta
 export const dataMap = (doc: Y.Doc): Y.Map<unknown> => doc.getMap<unknown>('data')
 export const shellMap = (doc: Y.Doc): Y.Map<unknown> => doc.getMap<unknown>('shell')
 export const rostersMap = (doc: Y.Doc): Y.Map<unknown> => doc.getMap<unknown>('rosters')
+
+/**
+ * Shell fields stored as a per-ENTRY Y.Map (granular per-key merge) rather
+ * than one whole-value LWW slot. Owns the shell doc's layout, so seed +
+ * patch-translation must agree — kept here, the module that defines the
+ * Y-doc shape, and imported by both.
+ */
+export const SHELL_PER_ENTRY_KEYS = new Set(['settings', 'styleRules', 'explorer'])
 
 /**
  * The one prop of a module stored as Y.Text (character-level merge).

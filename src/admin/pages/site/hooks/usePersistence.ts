@@ -28,6 +28,7 @@ import type { SiteDocument } from '@core/page-tree'
 import type { IPersistenceAdapter } from '@core/persistence/types'
 import { cmsAdapter } from '@core/persistence/cms'
 import { SiteValidationError } from '@core/persistence/validate'
+import { getErrorMessage } from '@core/utils/errorMessage'
 import { readEditorSelectPreference } from '@site/preferences/editorPreferences'
 import type { CollabProvider } from '@site/collab/collabProvider'
 import {
@@ -46,10 +47,6 @@ export interface PersistenceSaveStatus {
 
 interface PersistenceController {
   saveStatus: PersistenceSaveStatus
-}
-
-function errorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message.trim() ? err.message : fallback
 }
 
 function currentEditorDataDeepLink(): { table: 'pages' | 'components'; rowId: string } | null {
@@ -146,7 +143,7 @@ export function usePersistence(
           console.warn('[persistence] Failed to load CMS site:', err)
         }
         if (!cancelled) {
-          setLoadState({ phase: 'error', message: errorMessage(err, 'Failed to load CMS site') })
+          setLoadState({ phase: 'error', message: getErrorMessage(err, 'Failed to load CMS site') })
         }
         return
       }
@@ -165,7 +162,7 @@ export function usePersistence(
         if (!cancelled) setLoadState({ phase: 'ready' })
       } catch (err) {
         if (!cancelled) {
-          setLoadState({ phase: 'error', message: errorMessage(err, 'Draft not saved yet') })
+          setLoadState({ phase: 'error', message: getErrorMessage(err, 'Draft not saved yet') })
         }
       }
     }

@@ -7,7 +7,6 @@ const LAYER_TREE_SELECTOR = '[data-instatic-layer-tree="true"]'
 
 const COMPONENT_OWNED_SHORTCUTS = new Set([
   'spotlight.open',
-  'editor.save',
   'editor.undo',
   'editor.redo',
   'layers.delete',

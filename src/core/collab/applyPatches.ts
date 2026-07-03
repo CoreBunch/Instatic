@@ -26,7 +26,8 @@ import type { Patches } from 'mutative'
 import type { BaseNode, Page, SiteDocument } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import type { SavedLayout } from '@core/layouts'
-import { dataMap, inlineTextPropOf, metaMap, rostersMap, shellMap, treeMap } from './schema'
+import { encodeCollabDocId, SITE_DOC_ID } from './docIds'
+import { dataMap, inlineTextPropOf, metaMap, rostersMap, SHELL_PER_ENTRY_KEYS, shellMap, treeMap } from './schema'
 import { buildBreakpointOverridesMap, buildNodeMap, buildPropsMap } from './nodeY'
 import { populateComponentDoc, populateLayoutDoc, populatePageDoc } from './seed'
 import { applyTextDiff } from './textDiff'
@@ -39,7 +40,6 @@ const COLLECTION_KIND: Record<Collection, 'page' | 'component' | 'layout'> = {
   visualComponents: 'component',
   layouts: 'layout',
 }
-const SHELL_PER_ENTRY_KEYS = new Set(['settings', 'styleRules', 'explorer'])
 const SHELL_SKIPPED_KEYS = new Set(['updatedAt', 'id'])
 
 type Row = Page | VisualComponent | SavedLayout
@@ -196,7 +196,6 @@ function applyRowTargets(
     } else if (field === 'props') {
       const key = path[3]
       if (key === undefined) {
-        scalarFields.get(nodeId) // no-op read for lint symmetry
         propKeys.set(nodeId, propKeys.get(nodeId) ?? new Set())
         propKeys.get(nodeId)!.add('*')
       } else {
@@ -248,14 +247,10 @@ function applyRowTargets(
       yNodes.delete(nodeId)
       continue
     }
-    const preNode = preTree?.nodes[nodeId]
-    if (preNode && yNodes.has(nodeId)) {
-      // Whole-node replace of an EXISTING node (paste-over, template ops):
-      // repopulate that node only.
-      yNodes.set(nodeId, buildNodeMap(nextNode))
-    } else {
-      yNodes.set(nodeId, buildNodeMap(nextNode))
-    }
+    // Whole-node write (insert, paste-over, template op): (re)build the node
+    // map from scratch — this is correct whether the node existed before or
+    // not, so there's no need to branch on its prior presence.
+    yNodes.set(nodeId, buildNodeMap(nextNode))
   }
 
   const nodeYMap = (nodeId: string): Y.Map<unknown> | undefined => {
@@ -388,8 +383,8 @@ export function applySitePatchesToDocs(
   }
 
   if (shellHeads.size > 0 || shellEntryTargets.size > 0 || collectionsWithMembershipOps.length > 0) {
-    const siteDoc = docs.ensure('site:default')
-    touch('site:default')
+    const siteDoc = docs.ensure(SITE_DOC_ID)
+    touch(SITE_DOC_ID)
     siteDoc.transact(() => {
       const shell = shellMap(siteDoc)
       for (const head of shellHeads) {
@@ -436,8 +431,8 @@ export function applySitePatchesToDocs(
             // Client-created row: populate a fresh doc (single author — safe).
             const kind = COLLECTION_KIND[col]
             rosterWork.push(() => {
-              const rowDoc = docs.ensure(`${kind}:${id}`)
-              touch(`${kind}:${id}`)
+              const rowDoc = docs.ensure(encodeCollabDocId({ kind, rowId: id }))
+              touch(encodeCollabDocId({ kind, rowId: id }))
               rowDoc.transact(() => repopulateRowDoc(rowDoc, kind, nextById.get(id)!), origin)
             })
           }
@@ -471,8 +466,8 @@ export function applySitePatchesToDocs(
     // Wholesale collection replacement (imports) → repopulate every row doc.
     if (colPatches.some((p) => patchPath(p).length === 1)) {
       for (const [id, row] of nextById) {
-        const rowDoc = docs.ensure(`${kind}:${id}`)
-        touch(`${kind}:${id}`)
+        const rowDoc = docs.ensure(encodeCollabDocId({ kind, rowId: id }))
+        touch(encodeCollabDocId({ kind, rowId: id }))
         rowDoc.transact(() => repopulateRowDoc(rowDoc, kind, row), origin)
       }
       continue
@@ -493,8 +488,8 @@ export function applySitePatchesToDocs(
       const id = (row as Row).id
       if (rest.length === 0) {
         if (preById.get(id) !== nextById.get(id)) {
-          const rowDoc = docs.ensure(`${kind}:${id}`)
-          touch(`${kind}:${id}`)
+          const rowDoc = docs.ensure(encodeCollabDocId({ kind, rowId: id }))
+          touch(encodeCollabDocId({ kind, rowId: id }))
           rowDoc.transact(() => repopulateRowDoc(rowDoc, kind, row as Row), origin)
         }
         continue
@@ -507,8 +502,8 @@ export function applySitePatchesToDocs(
     for (const [id, subPaths] of rowSubPaths) {
       const nextRow = nextById.get(id)
       if (!nextRow) continue
-      const rowDoc = docs.ensure(`${kind}:${id}`)
-      touch(`${kind}:${id}`)
+      const rowDoc = docs.ensure(encodeCollabDocId({ kind, rowId: id }))
+      touch(encodeCollabDocId({ kind, rowId: id }))
       if (kind === 'layout') {
         // Whole-snapshot LWW — any layout content change rewrites the snapshot.
         rowDoc.transact(() => repopulateRowDoc(rowDoc, 'layout', nextRow), origin)

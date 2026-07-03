@@ -1,12 +1,11 @@
 /**
- * Editor commands — Save, Publish, Undo, Redo.
+ * Editor commands — Publish, Undo, Redo.
  * §4.2 of the Command Spotlight master plan.
  *
- * All commands are gated to workspace: ['site'] only.
+ * All commands are gated to workspace: ['site'] only. There is no Save
+ * command: the collab relay persists continuously, so there is nothing to
+ * flush from a keystroke.
  * Undo/redo use useEditorStore.getState() (Zustand getState is safe outside React).
- * it rides the single-flight queue, the dirty-mark snapshot, and the
- * conflict-detection base seqs — a raw adapter call here would bulldoze all
- * three and ship a replace-mode full save.
  * Publish calls publishCmsDraft() from the persistence layer, wrapped in
  * `ctx.runStepUp` so the StepUpProvider's password re-entry dialog opens
  * when the server replies with `step_up_required` (publish is gated on a

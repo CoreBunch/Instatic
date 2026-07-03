@@ -503,9 +503,9 @@ const providerBindings = new Map<string, { synced: boolean }>()
 function allDocIdsForSite(site: SiteDocument): string[] {
   return [
     SITE_DOC_ID,
-    ...site.pages.map((p) => `page:${p.id}`),
-    ...site.visualComponents.map((vc) => `component:${vc.id}`),
-    ...site.layouts.map((l) => `layout:${l.id}`),
+    ...site.pages.map((p) => encodeCollabDocId({ kind: 'page', rowId: p.id })),
+    ...site.visualComponents.map((vc) => encodeCollabDocId({ kind: 'component', rowId: vc.id })),
+    ...site.layouts.map((l) => encodeCollabDocId({ kind: 'layout', rowId: l.id })),
   ]
 }
 
@@ -546,19 +546,22 @@ function seedDetachedDocs(site: SiteDocument): void {
   seedSiteDoc(siteDoc, site)
   ensureManaged(SITE_DOC_ID, siteDoc)
   for (const page of site.pages) {
-    const doc = docs.ensure(`page:${page.id}`)
+    const docId = encodeCollabDocId({ kind: 'page', rowId: page.id })
+    const doc = docs.ensure(docId)
     seedPageDoc(doc, page)
-    ensureManaged(`page:${page.id}`, doc)
+    ensureManaged(docId, doc)
   }
   for (const vc of site.visualComponents) {
-    const doc = docs.ensure(`component:${vc.id}`)
+    const docId = encodeCollabDocId({ kind: 'component', rowId: vc.id })
+    const doc = docs.ensure(docId)
     seedComponentDoc(doc, vc)
-    ensureManaged(`component:${vc.id}`, doc)
+    ensureManaged(docId, doc)
   }
   for (const layout of site.layouts) {
-    const doc = docs.ensure(`layout:${layout.id}`)
+    const docId = encodeCollabDocId({ kind: 'layout', rowId: layout.id })
+    const doc = docs.ensure(docId)
     seedLayoutDoc(doc, layout)
-    ensureManaged(`layout:${layout.id}`, doc)
+    ensureManaged(docId, doc)
   }
 }
 

@@ -16,10 +16,8 @@ export {
 } from './docIds'
 export {
   dataMap,
-  inlineTextPropOf,
   LOCAL_ORIGIN,
   metaMap,
-  RECONCILE_ORIGIN,
   REMOTE_ORIGIN,
   rostersMap,
   SEED_CLIENT_ID,
@@ -27,7 +25,6 @@ export {
   shellMap,
   treeMap,
 } from './schema'
-export { buildNodeMap, buildPropsMap, projectNodeMap } from './nodeY'
 export { reconcileTreeIntegrity } from './integrity'
 export { applyTextDiff } from './textDiff'
 export {

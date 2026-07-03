@@ -180,6 +180,10 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
       for (const [, ring] of ringRefs.current ?? []) hideOverlayElement(ring)
       for (const [, tag] of tagRefs.current ?? []) positionPointElement(tag, null)
       for (const [, dot] of pointerRefs.current ?? []) positionPointElement(dot, null)
+      // Carets + selection highlights must hide too, or a peer's text caret
+      // freezes on screen after the frame detaches (breakpoint swap / reload).
+      for (const [, caret] of caretRefs.current ?? []) hideOverlayElement(caret)
+      for (const [, highlights] of highlightRefs.current ?? []) syncHighlightRects(highlights, [])
       return
     }
 
