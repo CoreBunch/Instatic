@@ -1071,4 +1071,20 @@ export const pgMigrations: Migration[] = [
       insert into site_sync_state (id, seq) values (1, 0);
     `,
   },
+  {
+    // Real-time co-editing (Yjs): one CRDT state blob per collab document
+    // (site shell, page, component, layout — doc_id is '<kind>:<rowId>').
+    // The blob is the live-editing source of truth; derived JSON keeps
+    // flowing into data_rows/site for the publisher and non-editor reads.
+    // `seq` counts persists (future delta APIs / diagnostics).
+    id: '021_collab_documents',
+    sql: `
+      create table if not exists collab_documents (
+        doc_id text primary key,
+        state_blob bytea not null,
+        seq bigint not null default 0,
+        updated_at timestamptz not null default now()
+      );
+    `,
+  },
 ]
