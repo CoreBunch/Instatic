@@ -179,6 +179,13 @@ export function usePersistence(
       const providerModule = import('@site/collab/collabProvider')
       await load()
       if (cancelled) return
+      // Only connect when the store actually holds a site to bind. A hard load
+      // failure with NO in-memory site would otherwise open a socket with zero
+      // docs and an infinite reconnect loop; skip it and let saveStatus show
+      // the error. When a stale in-memory site survived a transient reload
+      // failure, we DO connect — live sync recovers against those docs and the
+      // connected state then supersedes the stale load error in saveStatus.
+      if (useEditorStore.getState().site === null) return
       const { createCollabProvider } = await providerModule
       if (cancelled) return
       provider = createCollabProvider()
@@ -213,10 +220,13 @@ export function usePersistence(
   const saveStatus: PersistenceSaveStatus =
     loadState.phase === 'loading'
       ? { state: 'loading' }
-      : loadState.phase === 'error'
-        ? { state: 'error', message: loadState.message }
-        : collabState === 'connected'
-          ? { state: 'synced' }
+      : // A live connection supersedes a stale load error: if a transient
+        // reload failed but the provider synced the in-memory docs anyway,
+        // editing works — don't show a permanent "Sync failed".
+        collabState === 'connected'
+        ? { state: 'synced' }
+        : loadState.phase === 'error'
+          ? { state: 'error', message: loadState.message }
           : collabState === 'connecting'
             ? { state: 'connecting' }
             : { state: 'offline', message: 'Reconnecting' }

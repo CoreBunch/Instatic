@@ -177,9 +177,12 @@ const managedDocSet: CollabDocSet = {
   get: (docId) => docs.get(docId),
   ensure: (docId) => {
     if (provider) {
-      const binding = provider.bind(docId)
-      if (docs.get(docId) !== binding.doc) adoptProviderDoc(docId, binding.doc)
-      return binding.doc
+      // Route through bindDocThroughProvider so the sync gate is wired to
+      // `whenSynced` — adopting the doc directly here left the gate stuck at
+      // synced:false forever, and applyLocalSitePatches then rejected every
+      // subsequent local mutation. Idempotent: both calls no-op when bound.
+      bindDocThroughProvider(docId)
+      return provider.bind(docId).doc
     }
     const doc = docs.ensure(docId)
     ensureManaged(docId, doc)

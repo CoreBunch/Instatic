@@ -43,6 +43,7 @@ export {
   createDataRow,
   createDataRowMany,
   saveDataRowDraft,
+  upsertDataRowDraft,
   updateDataRowDraftCells,
   saveDataRowDraftMany,
   softDeleteDataRow,

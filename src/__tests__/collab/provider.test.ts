@@ -115,4 +115,23 @@ describe('collab provider', () => {
     expect(rebound.synced).toBe(false)
     provider.destroy()
   })
+
+  it('settles whenSynced when a never-synced doc is unbound (no hanging awaiters)', async () => {
+    const socket = new FakeSocket()
+    const provider = createCollabProvider({ createSocket: () => socket })
+    socket.open()
+    const binding = provider.bind('page:p1') // bound but never sent step2
+
+    let settled = false
+    void binding.whenSynced.then(() => {
+      settled = true
+    })
+    // Reset (or any unbind) before the first sync must resolve the promise,
+    // not leave every chained continuation pending forever.
+    socket.emit(encodeCollabFrame('page:p1', FRAME_RESET, new Uint8Array()))
+    await binding.whenSynced // resolves instead of hanging the test
+    await Promise.resolve()
+    expect(settled).toBe(true)
+    provider.destroy()
+  })
 })

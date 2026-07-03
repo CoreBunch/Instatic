@@ -139,6 +139,40 @@ export async function resurrectDataRow(
 }
 
 /**
+ * Idempotent draft write by id — update a live row, RESURRECT a soft-deleted
+ * one, or create it fresh. The three-way decision the collab relay needs: a
+ * row the roster sweep soft-deleted and a peer then restored (undo of a page
+ * delete) still occupies its primary key, so a plain insert would conflict —
+ * exactly the flow `apply.ts` handles for HTTP batches, here for one row.
+ */
+export async function upsertDataRowDraft(
+  db: DbClient,
+  input: InsertDataRowInput & { id: string },
+  actorUserId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
+): Promise<void> {
+  const draft = { cells: input.cells, slug: input.slug }
+  const updated = await updateDataRowDraftCells(db, input.id, draft, actorUserId)
+  if (updated) {
+    if (!opts.collabInternal) {
+      notifyRowWrite({ tableId: input.tableId, rowIds: [input.id], kind: 'update' })
+    }
+    return
+  }
+  const { rows } = await db<{ id: string }>`
+    select id from data_rows where id = ${input.id} and deleted_at is not null
+  `
+  if (rows.length > 0) {
+    await resurrectDataRow(db, input.id, draft, actorUserId)
+  } else {
+    await createDataRow(db, input, actorUserId, null, { collabInternal: true })
+  }
+  if (!opts.collabInternal) {
+    notifyRowWrite({ tableId: input.tableId, rowIds: [input.id], kind: 'create' })
+  }
+}
+
+/**
  * Slug-only write — the second phase of the roster reconcile's two-phase
  * slug update (see rows/reconcile.ts). The row's cells and audit columns were
  * already written by `updateDataRowDraftCells` in the same transaction; this

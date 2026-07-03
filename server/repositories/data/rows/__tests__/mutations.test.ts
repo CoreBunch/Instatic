@@ -3,7 +3,7 @@ import { createSqliteClient } from '../../../../db/sqlite'
 import { sqliteMigrations } from '../../../../db/migrations-sqlite'
 import { runMigrations } from '../../../../db/runMigrations'
 import type { DbClient } from '../../../../db/client'
-import { softDeleteDataRow } from '../mutations'
+import { softDeleteDataRow, upsertDataRowDraft } from '../mutations'
 import { getDataRow } from '../read'
 
 const USER_ID = 'user-author'
@@ -69,5 +69,53 @@ describe('softDeleteDataRow', () => {
     await softDeleteDataRow(db, 'post-1', USER_ID)
     expect(await softDeleteDataRow(db, 'post-1', USER_ID)).toBeNull()
     expect(await softDeleteDataRow(db, 'missing', USER_ID)).toBeNull()
+  })
+})
+
+describe('upsertDataRowDraft', () => {
+  let db: DbClient
+  beforeEach(async () => {
+    db = await freshDb()
+  })
+
+  it('updates a live row in place', async () => {
+    await seedRow(db, 'post-1')
+    await upsertDataRowDraft(
+      db,
+      { id: 'post-1', tableId: 'posts', cells: { title: 'Updated' }, slug: 'updated' },
+      USER_ID,
+    )
+    const row = await getDataRow(db, 'post-1')
+    expect(row?.cells.title).toBe('Updated')
+    expect(row?.slug).toBe('updated')
+  })
+
+  it('creates a fresh row when the id is unknown', async () => {
+    await upsertDataRowDraft(
+      db,
+      { id: 'post-new', tableId: 'posts', cells: { title: 'Fresh' }, slug: 'fresh' },
+      USER_ID,
+    )
+    expect((await getDataRow(db, 'post-new'))?.cells.title).toBe('Fresh')
+  })
+
+  it('RESURRECTS a soft-deleted row instead of hitting its primary key', async () => {
+    // The undo-of-delete flow: a row the roster sweep soft-deleted, then a
+    // peer restored. getDataRow filters soft-deleted rows, so a plain insert
+    // would conflict on the still-present primary key forever.
+    await seedRow(db, 'post-1')
+    await softDeleteDataRow(db, 'post-1', USER_ID)
+    expect(await getDataRow(db, 'post-1')).toBeNull() // soft-deleted, hidden
+
+    await upsertDataRowDraft(
+      db,
+      { id: 'post-1', tableId: 'posts', cells: { title: 'Revived' }, slug: 'revived' },
+      USER_ID,
+    )
+
+    const revived = await getDataRow(db, 'post-1')
+    expect(revived).not.toBeNull()
+    expect(revived?.cells.title).toBe('Revived')
+    expect(revived?.deletedAt).toBeNull()
   })
 })

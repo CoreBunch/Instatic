@@ -148,4 +148,24 @@ const server = Bun.serve({
 // server handle now that `Bun.serve` returned.
 collabSocket.setPublisher(server)
 
+// Graceful shutdown: the relay persists on an 800 ms debounce, so a redeploy
+// (SIGTERM) or Ctrl-C (SIGINT) mid-window would drop the un-persisted edits
+// the old transactional save made durable on ack. Flush every dirty doc
+// before exiting. Idempotent + guarded so a double signal can't double-run.
+let shuttingDown = false
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`[server] ${signal} received — flushing collab docs before exit`)
+  try {
+    await collabRelay.destroy() // final-persists every live doc, detaches sources
+  } catch (err) {
+    console.error('[server] collab flush on shutdown failed:', err)
+  }
+  server.stop()
+  process.exit(0)
+}
+process.on('SIGTERM', () => void shutdown('SIGTERM'))
+process.on('SIGINT', () => void shutdown('SIGINT'))
+
 console.log(`[server] Listening on http://localhost:${config.port}`)

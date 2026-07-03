@@ -32,6 +32,8 @@ import {
 } from '../../../server/collab/socket'
 import { getCollabDocumentState } from '../../../server/repositories/collabDocuments'
 import { getDataRow, saveDataRowDraft } from '../../../server/repositories/data'
+import { findUserByEmail } from '../../../server/repositories/users'
+import { peerColor } from '@site/collab/awarenessState'
 import {
   createCapabilityTestHarness,
   type CapabilityTestHarness,
@@ -281,13 +283,21 @@ describe('collab relay integration (real server, real sockets)', () => {
 
     // Read-only presence: a viewer's awareness state reaches other peers
     // (presence is not a doc write). Identity is server-verified — the state
-    // must claim the SESSION's real user id or the frame is dropped.
-    const { rows: viewerRows } = await stack.harness.db<{ id: string }>`
-      select id from users where email = ${viewer.email}
-    `
-    const viewerUserId = viewerRows[0].id
+    // must claim the SESSION's FULL identity (id + name + avatar + gravatar)
+    // or the frame is dropped, so a peer can't paint another admin's name.
+    const viewerUser = await findUserByEmail(stack.harness.db, viewer.email)
+    const viewerUserId = viewerUser!.id
+    const realIdentity = {
+      id: viewerUserId,
+      name: viewerUser!.displayName,
+      color: peerColor(viewerUserId),
+      avatarUrl: viewerUser!.avatarUrl,
+      gravatarHash: viewerUser!.gravatarHash,
+    }
+    // A frame keeping the real id but faking the name is still a spoof.
+    viewerClient.awareness.setLocalState({ user: { ...realIdentity, name: 'Owner Impersonator' } })
     viewerClient.awareness.setLocalState({ user: { id: 'someone-else', name: 'Spoof' } })
-    viewerClient.awareness.setLocalState({ user: { id: viewerUserId, name: 'Viewer' } })
+    viewerClient.awareness.setLocalState({ user: realIdentity })
     await waitFor(() => {
       for (const [, state] of owner.awareness.getStates()) {
         const s = state as { user?: { id?: string; name?: string } }
@@ -295,10 +305,11 @@ describe('collab relay integration (real server, real sockets)', () => {
       }
       return false
     })
-    // The spoofed frame never relayed.
+    // Neither spoofed frame relayed: no foreign id, no impersonated name.
     for (const [, state] of owner.awareness.getStates()) {
-      const s = state as { user?: { id?: string } }
+      const s = state as { user?: { id?: string; name?: string } }
       expect(s.user?.id).not.toBe('someone-else')
+      if (s.user?.id === viewerUserId) expect(s.user?.name).toBe(viewerUser!.displayName)
     }
   })
 

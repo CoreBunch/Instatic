@@ -40,8 +40,10 @@ import {
   parseCollabDocId,
   PRESENCE_DOC_ID,
   SITE_SOCKET_PATH,
+  type CollabFrame,
 } from '@core/collab'
 import { requireCapability, userHasCapability } from '../auth/authz'
+import { safeParseValue, Type } from '@core/utils/typeboxHelpers'
 import type { CoreCapability } from '@core/capabilities'
 import { validateGuardedUpdate } from './updateGuard'
 import { originAllowed } from '../auth/security'
@@ -62,25 +64,64 @@ const SYNC_STEP_1 = 0
 const MAX_AWARENESS_PAYLOAD_BYTES = 64 * 1024
 const MAX_SYNC_PAYLOAD_BYTES = 4 * 1024 * 1024
 
+/** The canonical presence identity a connection is allowed to publish. */
+export interface CollabPresenceIdentity {
+  id: string
+  name: string
+  avatarUrl: string | null
+  gravatarHash: string
+}
+
+// Validate (not `as`-cast) the identity block of a decoded awareness state —
+// TypeBox at the JSON.parse boundary, per the boundary-validation rule.
+const PresenceUserSchema = Type.Object(
+  {
+    user: Type.Object({
+      id: Type.String(),
+      name: Type.String(),
+      avatarUrl: Type.Union([Type.String(), Type.Null()]),
+      gravatarHash: Type.Union([Type.String(), Type.Null()]),
+    }),
+  },
+  { additionalProperties: true },
+)
+
 /**
- * Presence identity must be the SESSION's identity — decode the awareness
- * update (varUint count, then per client: varUint id, varUint clock,
- * varString stateJSON) and reject any non-null state claiming a different
- * user id. Without this, any authenticated connection could impersonate
- * another admin's name/avatar in every peer's UI.
+ * A client may only publish presence that matches ITS OWN session, and may
+ * only clear clientIDs it contributed. Decode the awareness update (varUint
+ * count, then per client: varUint id, varUint clock, varString stateJSON) and:
+ *   - reject any non-null state whose full identity (id + name + avatar +
+ *     gravatar) differs from the session — pinning id alone let a peer keep
+ *     its own id but paint another admin's name/avatar in every UI;
+ *   - reject a `null` (clear) for a clientID this connection never announced —
+ *     otherwise any peer could erase another's presence for everyone.
  */
-function awarenessUpdateMatchesUser(payload: Uint8Array, userId: string): boolean {
+function awarenessUpdateFromSession(
+  payload: Uint8Array,
+  data: Pick<CollabSocketData, 'identity' | 'awarenessClients'>,
+): boolean {
   try {
     const decoder = decoding.createDecoder(payload)
     const count = decoding.readVarUint(decoder)
     for (let i = 0; i < count; i++) {
-      decoding.readVarUint(decoder) // clientID
+      const clientId = decoding.readVarUint(decoder)
       decoding.readVarUint(decoder) // clock
       const raw = decoding.readVarString(decoder)
-      if (raw === 'null') continue // disconnect / clear — always allowed
-      const state: unknown = JSON.parse(raw)
-      const claimed = (state as { user?: { id?: unknown } } | null)?.user?.id
-      if (claimed !== undefined && claimed !== userId) return false
+      if (raw === 'null') {
+        if (!data.awarenessClients.has(clientId)) return false
+        continue
+      }
+      const parsed = safeParseValue(PresenceUserSchema, JSON.parse(raw))
+      if (!parsed.ok) return false
+      const u = parsed.value.user
+      if (
+        u.id !== data.identity.id ||
+        u.name !== data.identity.name ||
+        u.avatarUrl !== data.identity.avatarUrl ||
+        u.gravatarHash !== data.identity.gravatarHash
+      ) {
+        return false
+      }
     }
     return true
   } catch {
@@ -91,6 +132,8 @@ function awarenessUpdateMatchesUser(payload: Uint8Array, userId: string): boolea
 
 export interface CollabSocketData {
   userId: string
+  /** The session identity this connection may publish over presence. */
+  identity: CollabPresenceIdentity
   canWrite: boolean
   /**
    * True when the user holds ALL of SITE_WRITE_CAPABILITIES — the common
@@ -133,6 +176,12 @@ export async function handleCollabSocketUpgrade(
   const upgraded = server.upgrade(req, {
     data: {
       userId: user.id,
+      identity: {
+        id: user.id,
+        name: user.displayName,
+        avatarUrl: user.avatarUrl,
+        gravatarHash: user.gravatarHash,
+      },
       canWrite,
       fullSiteWriter,
       capabilities: user.capabilities,
@@ -174,29 +223,19 @@ export function createCollabSocketLayer(relay: CollabRelay) {
     publisher?.publish(docTopic(docId), encodeCollabFrame(docId, FRAME_RESET, new Uint8Array()))
   })
 
-  const handlers: WebSocketHandler<CollabSocketData> = {
-    // Transport-level ceiling — the per-frame-type caps in `message` are the
-    // fine-grained guards; this stops oversized frames before they buffer.
-    maxPayloadLength: MAX_SYNC_PAYLOAD_BYTES + 1024,
-
-    open(ws: ServerWebSocket<CollabSocketData>) {
-      ws.subscribe(docTopic(PRESENCE_DOC_ID))
-      // Late joiners need the current presence roster.
-      const known = [...awareness.getStates().keys()]
-      if (known.length > 0) {
-        const update = awarenessProtocol.encodeAwarenessUpdate(awareness, known)
-        ws.send(encodeCollabFrame(PRESENCE_DOC_ID, FRAME_AWARENESS, update))
-      }
-    },
-
-    async message(ws: ServerWebSocket<CollabSocketData>, raw: string | Buffer) {
-      if (typeof raw === 'string') return // binary protocol only
-      const frame = decodeCollabFrame(new Uint8Array(raw))
-
+  /**
+   * Dispatch one decoded frame. Extracted so `message` can wrap it in a
+   * single try/catch — a malformed frame or a projection crash inside the
+   * guard must NOT escape as an unhandled rejection.
+   */
+  async function dispatchFrame(
+    ws: ServerWebSocket<CollabSocketData>,
+    frame: CollabFrame,
+  ): Promise<void> {
       if (frame.frameType === FRAME_AWARENESS) {
         // Presence is NOT a doc write — read-only viewers are visible peers.
         if (frame.payload.byteLength > MAX_AWARENESS_PAYLOAD_BYTES) return
-        if (!awarenessUpdateMatchesUser(frame.payload, ws.data.userId)) {
+        if (!awarenessUpdateFromSession(frame.payload, ws.data)) {
           console.warn(`[collab] dropped awareness frame with spoofed identity from ${ws.data.userId}`)
           return
         }
@@ -229,9 +268,19 @@ export function createCollabSocketLayer(relay: CollabRelay) {
       if (ws.data.boundDocs.has(frame.docId)) {
         doc = await relay.openDoc(frame.docId)
       } else {
-        doc = await relay.retain(frame.docId)
+        // Claim the doc SYNCHRONOUSLY before awaiting retain — otherwise two
+        // concurrent frames for the same not-yet-bound doc both take this
+        // branch and double-increment refs (close releases only once, leaking
+        // the entry). A racing frame now sees boundDocs and takes openDoc.
         ws.data.boundDocs.add(frame.docId)
         ws.subscribe(docTopic(frame.docId))
+        try {
+          doc = await relay.retain(frame.docId)
+        } catch (err) {
+          ws.data.boundDocs.delete(frame.docId)
+          ws.unsubscribe(docTopic(frame.docId))
+          throw err
+        }
       }
 
       // Partial writers (canWrite but not every site capability) pass each
@@ -262,6 +311,42 @@ export function createCollabSocketLayer(relay: CollabRelay) {
       syncProtocol.readSyncMessage(decoder, encoder, doc, ws)
       if (encoding.length(encoder) > 0) {
         ws.send(encodeCollabFrame(frame.docId, FRAME_SYNC, encoding.toUint8Array(encoder)))
+      }
+  }
+
+  const handlers: WebSocketHandler<CollabSocketData> = {
+    // Transport-level ceiling — the per-frame-type caps in `message` are the
+    // fine-grained guards; this stops oversized frames before they buffer.
+    maxPayloadLength: MAX_SYNC_PAYLOAD_BYTES + 1024,
+
+    open(ws: ServerWebSocket<CollabSocketData>) {
+      ws.subscribe(docTopic(PRESENCE_DOC_ID))
+      // Late joiners need the current presence roster.
+      const known = [...awareness.getStates().keys()]
+      if (known.length > 0) {
+        const update = awarenessProtocol.encodeAwarenessUpdate(awareness, known)
+        ws.send(encodeCollabFrame(PRESENCE_DOC_ID, FRAME_AWARENESS, update))
+      }
+    },
+
+    async message(ws: ServerWebSocket<CollabSocketData>, raw: string | Buffer) {
+      if (typeof raw === 'string') return // binary protocol only
+      let frame: CollabFrame | null = null
+      try {
+        frame = decodeCollabFrame(new Uint8Array(raw))
+        await dispatchFrame(ws, frame)
+      } catch (err) {
+        console.error('[collab] socket message handler failed:', err)
+        // A sync-write frame whose guard/apply threw left the sender's local
+        // doc diverged from the authoritative one — reset it so their client
+        // rebinds and reseeds. Awareness/malformed frames just get dropped.
+        if (frame && frame.frameType === FRAME_SYNC && parseCollabDocId(frame.docId)) {
+          try {
+            ws.send(encodeCollabFrame(frame.docId, FRAME_RESET, new Uint8Array()))
+          } catch (_sendErr) {
+            // Socket already closing — nothing to recover.
+          }
+        }
       }
     },
 

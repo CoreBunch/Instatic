@@ -234,6 +234,13 @@ export function createCollabProvider(
   function unbind(docId: string): void {
     const entry = bound.get(docId)
     if (!entry) return
+    // Settle whenSynced before tearing the doc down — a doc unbound before it
+    // ever synced (FRAME_RESET, explicit unbind) would otherwise leave every
+    // chained `.then(...)` continuation pending forever.
+    if (!entry.synced) {
+      entry.synced = true
+      entry.resolveSynced()
+    }
     entry.doc.off('update', entry.updateHandler)
     entry.doc.destroy()
     bound.delete(docId)

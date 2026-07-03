@@ -37,6 +37,7 @@ export { listDataRowsWithFilter } from './filter'
 export {
   createDataRow,
   saveDataRowDraft,
+  upsertDataRowDraft,
   updateDataRowDraftCells,
   softDeleteDataRow,
   updateDataRowTable,

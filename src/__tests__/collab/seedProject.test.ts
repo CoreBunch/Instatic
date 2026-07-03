@@ -18,12 +18,14 @@ import {
   projectLayoutDoc,
   projectPageDoc,
   projectSiteDoc,
+  reconcileTreeIntegrity,
   seedComponentDoc,
   seedLayoutDoc,
   seedPageDoc,
   seedSiteDoc,
   treeMap,
 } from '@core/collab'
+import type { BaseNode } from '@core/page-tree'
 import { makeNode, makePage, makeSite, makeVC } from '../fixtures'
 
 function fixturePage() {
@@ -191,5 +193,47 @@ describe('tree-integrity reconcile', () => {
     expect(projected.nodes.root.children).not.toContain('missing-node')
     expect(projected.nodes.root.children).toContain('ghost')
     expect(projected.nodes.ghost.parentId).toBe('root')
+  })
+
+  it('re-attaches only orphan SUBTREE ROOTS, keeping the subtree single-parented', () => {
+    // Regression: a move-vs-delete race can orphan a MULTI-node subtree (O
+    // containing C). Appending every unclaimed node flat under root left C
+    // referenced by both root.children AND O.children — a node with two
+    // parents that renders twice. Only O (the subtree root) may re-attach.
+    const nodes: Record<string, BaseNode> = {
+      root: { id: 'root', moduleId: 'base.body', props: {}, breakpointOverrides: {}, children: [], parentId: null },
+      orphanParent: {
+        id: 'orphanParent', moduleId: 'base.container', props: {}, breakpointOverrides: {},
+        children: ['orphanChild'], parentId: null,
+      },
+      orphanChild: {
+        id: 'orphanChild', moduleId: 'base.text', props: {}, breakpointOverrides: {},
+        children: [], parentId: null,
+      },
+    }
+    reconcileTreeIntegrity(nodes, 'root')
+
+    // The subtree root is under root exactly once; the child is NOT.
+    expect(nodes.root.children).toEqual(['orphanParent'])
+    // The child stays under its orphan parent — single-parent preserved.
+    expect(nodes.orphanParent.children).toEqual(['orphanChild'])
+    // No node appears in two children arrays.
+    const allChildRefs = Object.values(nodes).flatMap((n) => n.children)
+    expect(new Set(allChildRefs).size).toBe(allChildRefs.length)
+  })
+
+  it('breaks orphan-only cycles deterministically instead of hanging', () => {
+    // A and B reference each other but neither is reachable from root.
+    const nodes: Record<string, BaseNode> = {
+      root: { id: 'root', moduleId: 'base.body', props: {}, breakpointOverrides: {}, children: [], parentId: null },
+      a: { id: 'a', moduleId: 'base.text', props: {}, breakpointOverrides: {}, children: ['b'], parentId: null },
+      b: { id: 'b', moduleId: 'base.text', props: {}, breakpointOverrides: {}, children: ['a'], parentId: null },
+    }
+    reconcileTreeIntegrity(nodes, 'root')
+    // Lowest id ('a') breaks the cycle and re-attaches under root; 'b' stays
+    // its child; every node is claimed exactly once.
+    expect(nodes.root.children).toEqual(['a'])
+    expect(nodes.a.children).toEqual(['b'])
+    expect(nodes.b.children).toEqual([]) // the back-edge to 'a' is dropped
   })
 })

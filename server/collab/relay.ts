@@ -52,11 +52,10 @@ import { layoutSlugFromName } from '@core/layouts'
 import { validateSite } from '@core/persistence/validate'
 import type { DbClient } from '../db/client'
 import {
-  createDataRow,
   getDataRow,
   listDataRowIdSlugs,
-  saveDataRowDraft,
   softDeleteDataRow,
+  upsertDataRowDraft,
 } from '../repositories/data'
 import { getDraftSite, saveDraftSite } from '../repositories/site'
 import {
@@ -216,18 +215,16 @@ export function createCollabRelay(
       slug = layoutSlugFromName(layout.name)
     }
 
-    const existing = await getDataRow(db, parsed.rowId)
-    if (existing) {
-      await saveDataRowDraft(db, parsed.rowId, { cells, slug }, null, null, { collabInternal: true })
-    } else {
-      await createDataRow(
-        db,
-        { id: parsed.rowId, tableId: table, cells, slug },
-        null,
-        null,
-        { collabInternal: true },
-      )
-    }
+    // upsert = update live / resurrect soft-deleted / create fresh. A row the
+    // roster sweep soft-deleted and a peer then restored (Cmd+Z of a page
+    // delete) still holds its primary key, so a plain insert would conflict
+    // forever — the upsert revives it in place instead.
+    await upsertDataRowDraft(
+      db,
+      { id: parsed.rowId, tableId: table, cells, slug },
+      null,
+      { collabInternal: true },
+    )
   }
 
   async function persistNow(docId: string): Promise<void> {
