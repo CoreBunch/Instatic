@@ -18,7 +18,8 @@
  *      (currently: `route.query.*`).
  *   2b. A string prop value contains a `{source.field}` token whose source is
  *      request-dependent.
- *   3. `moduleId === 'base.loop'` AND the loop source has `requestDependent: true`.
+ *   3. `moduleId === 'base.loop'` AND the loop source has `requestDependent: true`
+ *      or `perVisitor: true`.
  *   4. `moduleId === 'base.visual-component-ref'` whose VC definition tree
  *      contains any dynamic node (recursive check with cycle guard).
  *

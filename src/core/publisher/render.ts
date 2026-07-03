@@ -97,7 +97,7 @@ interface PublishPageOptions {
    *   framework CSS (variables + generated utilities) + module CSS + user
    *   class CSS. Best for self-contained exports, the iframe runtime preview,
    *   and tests.
-   * - `'external'`: emits three `<link rel="stylesheet">` tags pointing at the
+   * - `'external'`: emits up to four `<link rel="stylesheet">` tags pointing at the
    *   pre-built site CSS bundle (`/_instatic/css/<filename>`). The HTML stays small,
    *   the bundles are content-hashed for `Cache-Control: immutable` reuse
    *   across page navigations. Pass `cssBundle` + `cssAssetBaseUrl` to use this
@@ -106,7 +106,7 @@ interface PublishPageOptions {
    * In external mode any per-page module CSS that would have been inlined is
    * skipped here — it's assumed to live in `cssBundle.framework.content`,
    * which is what `buildSiteCssBundle()` produces. This keeps every visitor's
-   * three CSS files cacheable.
+   * four CSS files cacheable.
    */
   cssEmission?: 'inline' | 'external'
   /**
@@ -510,7 +510,7 @@ export function publishPage(
   }
 
   // Mutable outputs, owned here and threaded by reference through the whole
-  // walk. All four are initialised up-front (no lazy undefined): the walk
+  // walk. All five are initialised up-front (no lazy undefined): the walk
   // appends module CSS to `cssMap`, module JS to `jsMap`, infinite-loop ids
   // to `infiniteLoopIds`, and the ids of nodes that actually emitted a
   // `<instatic-hole>` to `holeNodeIds`. After the walk, the head builders
