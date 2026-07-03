@@ -3,10 +3,9 @@
  * presented token, yielding its user id + granted capabilities — which flow
  * straight into the existing tool capability gate.
  *
- * Phase 1 is static bearer tokens. The 401 already advertises a Protected
- * Resource Metadata pointer (`WWW-Authenticate`), so a future OAuth 2.1
- * resource-server mode (for ChatGPT/Gemini managed connectors) drops in
- * without changing how clients discover it.
+ * Current auth is static bearer tokens. The 401 advertises a Protected
+ * Resource Metadata pointer (`WWW-Authenticate`) so MCP-aware clients receive
+ * a spec-shaped challenge even when the bearer token is missing or invalid.
  */
 import type { DbClient } from '../../db/client'
 import type { CoreCapability } from '@core/capabilities'

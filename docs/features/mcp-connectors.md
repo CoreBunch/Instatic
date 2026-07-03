@@ -99,11 +99,11 @@ This is why an open editor (yours, or one the agent opens) unlocks the full edit
 
 ## Authentication
 
-**Phase 1 — bearer token (current).** Each connector has a secret (`imcp_…`). The client sends `Authorization: Bearer <token>`. The server hashes the presented token and looks up a non-revoked, non-expired connector, yielding its capability set. Missing/invalid/expired tokens get a `401` with `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource"`.
+Each connector has a bearer secret (`imcp_…`). The client sends `Authorization: Bearer <token>`. The server hashes the presented token and looks up a non-revoked, non-expired connector, yielding its capability set. Missing/invalid/expired tokens get a `401` with `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource"`.
 
 Works today with Claude Code, Cursor, Claude.ai custom connectors, and custom remote agents.
 
-**Phase 2 — OAuth 2.1 (designed, not built).** ChatGPT and Gemini's *managed* connector UIs refuse static API keys and require an OAuth 2.1 flow conforming to the MCP authorization spec (RFC 9728 Protected Resource Metadata). The `auth_mode` column and the 401's `resource_metadata` pointer are already in place so this layers in without a migration rewrite.
+Managed connector UIs that require an OAuth flow are not compatible with the current bearer-token implementation.
 
 ---
 
@@ -130,7 +130,7 @@ claude mcp add instatic --transport http http://localhost:3000/_instatic/mcp \
 |---|---|
 | `id`, `user_id`, `label` | owner + display name |
 | `type` | `local` \| `remote` |
-| `auth_mode` | `bearer` now; `oauth` reserved for phase 2 |
+| `auth_mode` | `bearer` for every connector created by the current UI/API. The schema also accepts `oauth` as a reserved storage value, but no OAuth flow creates or authenticates those rows today. |
 | `token_hash` | SHA-256 of the secret; never the plaintext. Unique. |
 | `capabilities_json` | granted capability subset |
 | `created_at`, `last_used_at`, `revoked_at` | lifecycle; revoked tokens fail auth |
