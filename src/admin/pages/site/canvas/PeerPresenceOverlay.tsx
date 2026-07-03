@@ -24,6 +24,8 @@
 import { use, useEffect, useEffectEvent, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { CursorMinimalSolidIcon } from 'pixel-art-icons/icons/cursor-minimal-solid'
+import { Tooltip } from '@ui/components/Tooltip'
+import { PeerAvatar } from '@site/collab/PeerAvatar'
 import { useEditorStore } from '@site/store/store'
 import {
   activeEditorDocId,
@@ -320,6 +322,7 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
                 data-peer-name-tag="true"
                 data-editing={peer.editingNodeId !== null ? 'true' : undefined}
               >
+                <PeerAvatar user={peer.user} size={14} ring={false} />
                 {peer.user.name}
                 {peer.editingNodeId !== null && <span aria-hidden="true">✎</span>}
               </div>
@@ -338,7 +341,11 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
                 <span className={styles.pointerIcon} aria-hidden="true">
                   <CursorMinimalSolidIcon size={16} color="var(--peer-color)" />
                 </span>
-                <span className={styles.pointerLabel}>{peer.user.name}</span>
+                {/* The identity avatar rides just under the cursor tip —
+                    hover it (pointer-events re-enabled) for the name. */}
+                <Tooltip content={peer.user.name}>
+                  <PeerAvatar user={peer.user} size={18} className={styles.pointerAvatar} />
+                </Tooltip>
               </div>
             )}
           </div>

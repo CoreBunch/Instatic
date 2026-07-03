@@ -1,7 +1,6 @@
 /*
- * Toolbar presence avatars. All identity color flows through the inline
- * `--peer-color` custom property (deterministic HSL from the user id —
- * see collab/awarenessState.ts), matching the canvas presence chrome.
+ * Toolbar presence stack — layout only; the avatar itself (identity ring,
+ * Gravatar precedence) is the shared PeerAvatar from @site/collab.
  */
 
 .stack {
@@ -13,20 +12,6 @@
   margin-left: calc(-1 * var(--space-3xs));
 }
 
-/*
- * The shared UserAvatar renders inside; this wrapper adds the identity ring
- * in the peer's deterministic color so the toolbar avatar matches the same
- * person's canvas ring and cursor label.
- */
-.avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: 2px solid var(--peer-color);
-  user-select: none;
-}
-
-.avatar[data-elsewhere='true'] {
+.stackItem[data-elsewhere='true'] {
   opacity: 0.45;
 }

@@ -2,21 +2,20 @@
  * PeerAvatarStack — always-visible "who else is here" indicator for the
  * editor toolbar.
  *
- * One avatar per connected ADMIN (a user with two tabs is one person),
- * rendered with the shared `UserAvatar` (upload → Gravatar → initials —
- * identical precedence to every other admin surface) and ringed with the
- * same deterministic identity color the canvas presence chrome uses, so the
- * avatar, the selection ring, and the cursor label of one person always
- * match. Peers on a different page/component render dimmed with a
- * "(viewing another page)" hint — presence answers "who's here" site-wide,
- * while the canvas chrome shows "what are they touching" on the current doc.
+ * One `PeerAvatar` per connected ADMIN (a user with two tabs is one
+ * person) — the same identity-ringed avatar the live cursor and the
+ * selection tag use, so a person is recognizably the same everywhere.
+ * Hover shows the name through the shared Tooltip primitive; peers on a
+ * different page/component render dimmed with a "(viewing another page)"
+ * hint — presence answers "who's here" site-wide, while the canvas chrome
+ * shows "what are they touching" on the current doc.
  *
  * Renders nothing when you're alone.
  */
-import type { CSSProperties } from 'react'
-import { UserAvatar } from '@admin/shared/UserAvatar'
+import { Tooltip } from '@ui/components/Tooltip'
 import { useEditorStore } from '@site/store/store'
 import { activeEditorDocId, useSitePeers } from '@site/collab/awarenessState'
+import { PeerAvatar } from '@site/collab/PeerAvatar'
 import styles from './PeerAvatarStack.module.css'
 
 export function PeerAvatarStack() {
@@ -29,26 +28,17 @@ export function PeerAvatarStack() {
   return (
     <div className={styles.stack} role="group" aria-label="Admins editing this site">
       {peers.map((peer) => (
-        <span
+        <Tooltip
           key={peer.user.id}
-          className={styles.avatar}
-          style={{ '--peer-color': peer.user.color } as CSSProperties}
-          data-peer-avatar="true"
-          data-elsewhere={peer.onSameDoc ? undefined : 'true'}
-          title={peer.onSameDoc ? peer.user.name : `${peer.user.name} (viewing another page)`}
+          content={peer.onSameDoc ? peer.user.name : `${peer.user.name} (viewing another page)`}
         >
-          <UserAvatar
-            user={{
-              avatarUrl: peer.user.avatarUrl,
-              // Empty string = "no hash" to resolveAvatarUrl → initials fallback.
-              gravatarHash: peer.user.gravatarHash ?? '',
-              displayName: peer.user.name,
-              email: peer.user.name,
-            }}
+          <PeerAvatar
+            user={peer.user}
             size={22}
-            alt={null}
+            className={styles.stackItem}
+            data-elsewhere={peer.onSameDoc ? undefined : 'true'}
           />
-        </span>
+        </Tooltip>
       ))}
     </div>
   )
