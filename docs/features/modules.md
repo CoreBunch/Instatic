@@ -42,6 +42,7 @@ src/modules/base/
 ├── button/              — base.button (anchor.ts — element-decision leaf)
 ├── link/                — base.link (content.ts — children/text fallback leaf)
 ├── image/               — base.image
+├── svg/                 — base.svg (inline sanitized SVG)
 ├── video/               — base.video (youtube.ts — ID parse + embed URL leaf)
 ├── list/                — base.list (items.ts — textarea item-splitting leaf)
 ├── loop/                — base.loop
