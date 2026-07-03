@@ -163,8 +163,8 @@ See [docs/features/plugin-system.md](../features/plugin-system.md).
 | Test                                          | What it enforces                                                                 |
 |-----------------------------------------------|----------------------------------------------------------------------------------|
 | `agent-no-raw-html-in-reply-rule.test.ts`     | The agent system prompt contains the narrate-only rule (1–2 sentence replies, no raw HTML/CSS/JSON in the reply body). Prevents accidental removal during prompt refactors. |
-| `agent-system-prompt-no-module-enumeration.test.ts` | The system prompt does not enumerate module ids — they're discovered via `list_modules`/`read_document` at runtime. Also asserts the HTML-native style markers (`insertHtml`, "Structure as HTML, styling as CSS"). |
-| `agent-tool-surface.test.ts`                  | Legacy node-construction tools (`insertNode`, `insertTree`) and retired class-patch tools (`createClass`, `updateClassStyles`) are absent from the site write-tool list; HTML-native replacements (`insertHtml`, `getNodeHtml`, `replaceNodeHtml`) and the unified CSS-authoring tool (`applyCss`) are present; design-system token tools and template tools are present; total count is exactly 22. |
+| `agent-system-prompt-no-module-enumeration.test.ts` | The system prompt does not enumerate module ids — they're discovered via `site_list_modules` / `site_read_document` at runtime. Also asserts the HTML-native style markers (`site_insert_html`, "Structure as HTML, styling as CSS"). |
+| `agent-tool-surface.test.ts`                  | Legacy node-construction tools (`insertNode`, `insertTree`) and retired class-patch tools (`createClass`, `updateClassStyles`) are absent from the site write-tool list; HTML-native replacements (`site_insert_html`, `site_get_node_html`, `site_replace_node_html`) and the unified CSS-authoring tool (`site_apply_css`) are present; document reads, code assets, design-system token tools, template tools, and snapshot capture are present; total count is exactly 29. |
 
 ### AI infrastructure
 
