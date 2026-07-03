@@ -14,8 +14,9 @@
  *
  * A footer button opens the Manage Core Framework dialog (import / remove / prune).
  */
-import { useEffect, type CSSProperties, type ReactNode } from 'react'
+import { type CSSProperties, type ReactNode } from 'react'
 import { useEditorStore } from '@site/store/store'
+import { useInstalledFontFaces } from '@site/hooks/useInstalledFontFaces'
 import { Button } from '@ui/components/Button'
 import { Tooltip } from '@ui/components/Tooltip'
 import { ColorsSwatchSolidIcon } from 'pixel-art-icons/icons/colors-swatch-solid'
@@ -25,10 +26,9 @@ import { SlidersHorizontalIcon } from 'pixel-art-icons/icons/sliders-horizontal'
 import { ArrowRightIcon } from 'pixel-art-icons/icons/arrow-right'
 import type { PixelArtIconComponent } from '@core/dashboard'
 import type { FrameworkColorToken, FrameworkSpacingGroup } from '@core/framework-schema'
-import type { FontEntry, SiteFontsSettings } from '@core/fonts'
+import type { FontEntry, FontToken } from '@core/fonts'
 import {
   fontFamilyStackForEntry,
-  generateSiteFontsCss,
   resolveFontTokenStack,
   sortFontTokens,
 } from '@core/fonts'
@@ -49,27 +49,8 @@ const SPECIMEN_BODY =
 // changes the snapshot identity every render and loops forever.
 const EMPTY_TOKENS: readonly FrameworkColorToken[] = []
 const EMPTY_SPACING: readonly FrameworkSpacingGroup[] = []
-const EMPTY_FONTS_SETTINGS: SiteFontsSettings = { items: [], tokens: [] }
-
-/**
- * Inject the site's installed `@font-face` rules into the admin document head
- * so the specimen renders in the real font. The admin shell carries no
- * `@font-face` of its own. Mirrors `useInstalledFontFaces` in the Typography
- * panel.
- */
-function useInstalledFontFaces(fonts: readonly FontEntry[]): void {
-  const css = generateSiteFontsCss({ items: [...fonts] })
-  useEffect(() => {
-    if (!css) return
-    const styleEl = document.createElement('style')
-    styleEl.setAttribute('data-source', 'instatic-framework-home-fonts')
-    styleEl.textContent = css
-    document.head.appendChild(styleEl)
-    return () => {
-      styleEl.remove()
-    }
-  }, [css])
-}
+const EMPTY_FONT_ITEMS: readonly FontEntry[] = []
+const EMPTY_FONT_TOKENS: readonly FontToken[] = []
 
 export function FrameworkHome() {
   const colorTokens = useEditorStore(
@@ -81,12 +62,17 @@ export function FrameworkHome() {
   const frameworkPreferences = useEditorStore(
     (s) => s.site?.settings.framework?.preferences ?? null,
   )
-  const fontsSettings = useEditorStore((s) => s.site?.settings.fonts ?? EMPTY_FONTS_SETTINGS)
+  // Fonts are read with the same tolerant `?.items ?? EMPTY` selector pattern
+  // as FontsSection: the store shape is guaranteed by validation on every load
+  // path, but a malformed `settings.fonts` written by an unvalidated writer
+  // must degrade to the empty library here — not crash the whole editor body.
+  const fontsSettings = useEditorStore((s) => s.site?.settings.fonts ?? null)
+  const fontItems = useEditorStore((s) => s.site?.settings.fonts?.items ?? EMPTY_FONT_ITEMS)
+  const rawFontTokens = useEditorStore((s) => s.site?.settings.fonts?.tokens ?? EMPTY_FONT_TOKENS)
   const setTab = useEditorStore((s) => s.setFrameworkPanelTab)
   const setManagerOpen = useEditorStore((s) => s.setFrameworkManagerOpen)
 
-  const fontItems = fontsSettings.items
-  useInstalledFontFaces(fontItems)
+  useInstalledFontFaces(fontItems, 'instatic-framework-home-fonts')
 
   const swatches = colorTokens.slice(0, MAX_SWATCHES)
 
@@ -97,7 +83,7 @@ export function FrameworkHome() {
   // With no tokens we fall back to the first two installed families (labelled by
   // family name); with neither, both lines use the CSS system stack — the same
   // default a fresh text module renders in.
-  const fontTokens = sortFontTokens(fontsSettings.tokens ?? [])
+  const fontTokens = sortFontTokens(rawFontTokens)
   const headingToken = fontTokens[0]
   const bodyToken = fontTokens[1] ?? fontTokens[0]
   const bodyEntry = fontItems[1] ?? fontItems[0]
