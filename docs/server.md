@@ -572,7 +572,7 @@ Three static handlers, in order:
 ## Adding a new endpoint
 
 1. **Pick the right layer.**
-   - CMS resource (e.g. `/admin/api/cms/feature`) → new handler file in `server/handlers/cms/feature.ts`, register in `server/handlers/cms/index.ts`.
+   - CMS resource (e.g. `/admin/api/cms/feature`) → new handler file such as `server/handlers/cms/<feature>.ts`, register in `server/handlers/cms/index.ts`.
    - Top-level (e.g. `/_instatic/something`) → new `tryServeX` in `server/router.ts`, add to the `routes` array in the right order.
 
 2. **Write the handler.** Require capability → validate body → call repository → return `jsonResponse`. One function per route. Add a `Route` entry to the group's `ROUTES` table; path matching and 404/405 discrimination are handled by `runRouteTable` — do not hand-roll `if (url.pathname !== ...)` or `return methodNotAllowed()` in the handler itself. Parameterised paths use a `RegExp` with named capture groups; the dispatcher decodes each captured value once.

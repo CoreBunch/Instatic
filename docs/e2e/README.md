@@ -284,7 +284,7 @@ durable assertion brittle:
   `src/__tests__/server/formChallengeSecret.test.ts`,
   `src/__tests__/forms/formModules.test.ts`,
   `src/__tests__/forms/formSettingsAnalysis.test.ts`,
-  `src/__tests__/forms/formSnapshots.test.ts`,
+  `src/__tests__/forms/formSnapshot.test.ts`,
   `src/__tests__/forms/formValidation.test.ts`, and
   `src/__tests__/panels/formSettingsPanel.test.tsx`; browser success/error
   copy, min-submit timing with real clocks, full authoring-to-publish form

@@ -104,7 +104,7 @@ function addRefNodeToPage(
 }
 
 /**
- * Set propBindings on a VC tree node (adds directly to state via Immer).
+ * Set propBindings on a VC tree node (adds directly to state via Mutative).
  */
 function setVCNodeBindings(
   vcId: string,

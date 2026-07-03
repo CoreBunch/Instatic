@@ -577,7 +577,7 @@ The HTML `title` attribute is banned for hover hints — gated by `no-native-tit
 ## Adding a new UI primitive
 
 1. Create `src/ui/components/<Name>/<Name>.tsx`, `<Name>.module.css`, and `index.ts`.
-2. Re-export from `src/ui/components/index.ts` so consumers import from `@ui/components`.
+2. Export from the primitive folder's `index.ts` so consumers import from `@ui/components/<Name>`.
 3. The primitive must work with the existing tokens — do not introduce new colors, radii, font sizes, or spacing values to support it. If you need new tokens, see "Adding a new design token" first.
 4. If it replaces a bare HTML control (`button`, `input`, etc.), update the matching architecture test's allowlist or gate.
 5. Document it in the components table above and (if it has non-obvious usage) write a short [docs/reference/ui-primitives.md](reference/ui-primitives.md) entry.

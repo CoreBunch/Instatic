@@ -78,7 +78,7 @@ export interface SiteImportAdapter {
  *
  * Each method corresponds to one mutation operation. The admin-side
  * implementation (`Phase 3`) maps these directly to Zustand store mutations
- * inside a single `mutateActiveTreeAndSite` Immer producer.
+ * inside a single `mutateActiveTreeAndSite` Mutative recipe.
  */
 export interface SiteImportTransaction {
   /**

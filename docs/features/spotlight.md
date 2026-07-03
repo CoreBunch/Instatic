@@ -365,7 +365,7 @@ export const myThingsProvider = makeServerProvider({
 })
 ```
 
-Add the response schema to `providers/schemas.ts`. Register the provider in `src/admin/spotlight/providers/index.ts`.
+Add the response schema to `providers/schemas.ts`, expose the provider through the relevant command factory in `src/admin/spotlight/commands/`, and include that factory in `src/admin/spotlight/builtinCommands.ts` when it is a new top-level command family. `src/admin/spotlight/commandRegistry.ts` remains the scope/filtering boundary.
 
 For a provider that needs custom filtering or no `?query=` param, use `fetchOnAbortEmpty` directly (see `pluginPagesProvider.ts` as a reference).
 

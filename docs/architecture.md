@@ -198,7 +198,7 @@ type NodeTree<TNode> = {
 
 Defined in `src/core/page-tree/treeSchema.ts` (single source of truth). Mutations operate on any `NodeTree` generically via `src/core/page-tree/mutations.ts`.
 
-Routing to the active tree (page vs. VC mode) is the **sole** job of `mutateActiveTree(fn)` in `src/admin/pages/site/store/siteSlice.ts`. The 11 named tree-mutation store actions (`insertNode`, `deleteNode`, `updateNodeProps`, `setBreakpointOverride`, `clearBreakpointOverride`, `renameNode`, `toggleNodeLocked`, `toggleNodeHidden`, `moveNode`, `duplicateNode`, `wrapNode`) are one-liners that call `mutateActiveTree`. They must not contain their own `kind === 'visualComponent'` routing branch — gated by `no-vc-mode-branches-in-mutations.test.ts`.
+Routing to the active tree (page vs. VC mode) is the **sole** job of `mutateActiveTree(fn)` in `src/admin/pages/site/store/slices/site/helpers.ts`. The 11 named tree-mutation store actions in `src/admin/pages/site/store/slices/site/nodeActions.ts` (`insertNode`, `deleteNode`, `updateNodeProps`, `setBreakpointOverride`, `clearBreakpointOverride`, `renameNode`, `toggleNodeLocked`, `toggleNodeHidden`, `moveNode`, `duplicateNode`, `wrapNode`) are one-liners that call `mutateActiveTree`. They must not contain their own `kind === 'visualComponent'` routing branch — gated by `no-vc-mode-branches-in-mutations.test.ts`.
 
 See [docs/reference/page-tree.md](reference/page-tree.md) for the type shape and mutation cookbook.
 
@@ -309,8 +309,8 @@ In-house router at `src/admin/lib/routing/`. Replaces `react-router-dom` for the
 
 ### Styling
 
-- CSS Modules only in `src/admin/` and `src/admin/pages/site/`. No Tailwind utility classes — gated by `noTailwindUtilities.test.ts`.
-- All colors and radii come from CSS custom properties in `src/styles/globals.css`. No hardcoded hex / rgb / hsl. See [docs/design.md](design.md).
+- CSS Modules only in `src/admin/`, `src/modules/`, and `src/ui/`. No Tailwind utility classes — gated by `noTailwindUtilities.test.ts`.
+- Admin/editor/UI chrome colors and radii come from CSS custom properties in `src/styles/globals.css`. No hardcoded hex / rgb / hsl in those CSS modules — gated by `css-token-policy.test.ts`. Published module CSS in `src/modules/` is exempt from the admin color-token gate because it ships to public pages. See [docs/design.md](design.md).
 - Class composition uses the in-house `cn` helper at `src/ui/cn.ts`. No `clsx`, `tailwind-merge`, `class-variance-authority`, or `@radix-ui/*`. Gated by `no-tailwind-deps.test.ts`.
 
 See [docs/editor.md](editor.md) for the visual editor deep-dive.
@@ -351,7 +351,7 @@ When making a change, this table answers "where does it go?"
 | A new database table                                   | Both `server/db/migrations-pg.ts` and `migrations-sqlite.ts` (same ID) |
 | A new repository function                              | `server/repositories/<resource>.ts`                        |
 | A new editor mutation                                  | `src/core/page-tree/mutations.ts` (tree-agnostic, takes `NodeTree`) |
-| A new editor store action                              | `src/admin/pages/site/store/siteSlice.ts` (one-liner calling `mutateActiveTree`) |
+| A new tree-mutation store action                       | `src/admin/pages/site/store/slices/site/nodeActions.ts` (one-liner calling `mutateActiveTree`) |
 | A new first-party module (block)                       | `src/modules/<module-name>/`                               |
 | A new UI primitive                                     | `src/ui/components/<Component>/`                           |
 | A new plugin SDK surface                               | `src/core/plugin-sdk/` + update `examples/plugins/template`|
@@ -431,7 +431,7 @@ bun run test:e2e          # run specs in tests/e2e/*.e2e.ts
   - `server/handlers/cms/imageVariantWorkerHost.ts` — `Bun.Worker` pool for sharp + blurhash (keeps image processing off the main thread)
   - `server/db/client.ts` — database abstraction
   - `src/core/page-tree/treeSchema.ts` — `NodeTree` primitive
-  - `src/admin/pages/site/store/siteSlice.ts` — `mutateActiveTree`
+  - `src/admin/pages/site/store/slices/site/helpers.ts` — `mutateActiveTree`
   - `src/core/publisher/` — publishing pipeline
   - `src/styles/globals.css` — design tokens
 - Gate tests: `src/__tests__/architecture/*.test.ts`

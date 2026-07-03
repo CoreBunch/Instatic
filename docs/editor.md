@@ -323,7 +323,7 @@ Organization is persisted in `site.explorer` on the site shell. Folders are deco
 
 ### Editor store
 
-`src/admin/pages/site/store/` is the central state for the editor. Zustand with the `mutative` middleware from `zustand-mutative` (mutations are written as direct draft-mutation; Mutative produces structural sharing) and `subscribeWithSelector` (granular subscriptions without React context re-renders). `enableAutoFreeze: true` mirrors Immer's dev guard against accidental external mutation.
+`src/admin/pages/site/store/` is the central state for the editor. Zustand with the `mutative` middleware from `zustand-mutative` (mutations are written as direct draft-mutation; Mutative produces structural sharing) and `subscribeWithSelector` (granular subscriptions without React context re-renders). `enableAutoFreeze: true` keeps a dev guard against accidental external mutation.
 
 **Undo/redo** uses patch-based history: every undoable mutation captures Mutative `[next, forward, inverse]` patch pairs scoped to the `SiteDocument`. Undo applies `entry.inverse`, redo applies `entry.forward` — O(change) in both time and memory, not O(site). A 50-deep history holds kilobytes of patches instead of hundreds of megabytes of full-site clones. See [`docs/reference/editor-history.md`](reference/editor-history.md).
 

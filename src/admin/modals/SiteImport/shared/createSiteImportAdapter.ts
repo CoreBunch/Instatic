@@ -4,7 +4,7 @@
  *
  * Upload: POST /admin/api/cms/media (same endpoint as the media workspace).
  * Commit: calls useEditorStore.getState().mutateAllPagesAndSite in one
- *         atomic Immer producer → single Cmd+Z undo step.
+ *         atomic Mutative recipe → single Cmd+Z undo step.
  */
 
 import type { SiteImportAdapter, SiteImportTransaction } from '@core/siteImport'

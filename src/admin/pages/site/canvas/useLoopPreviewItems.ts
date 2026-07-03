@@ -229,7 +229,7 @@ export function useLoopPreviewItems(node: PageNode): LoopItem[] {
   // `readLoopProps()` reuses the shared `EMPTY_FILTERS` sentinel when the
   // node has no filters set, so `filters` identity is stable across renders
   // for the no-filter case. When filters ARE set, the value comes straight
-  // from `node.props.filters`, which the editor store (zustand + immer)
+  // from `node.props.filters`, which the editor store (Zustand + Mutative)
   // keeps referentially stable until the user actually edits it. Either way
   // the downstream memo can depend on `filters` directly without thrashing.
   const { sourceId, filters, orderBy, direction, offset, limit } = readLoopProps(node)

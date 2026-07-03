@@ -591,7 +591,7 @@ Use this when the value is genuinely runtime (resize handle drag, computed bbox,
 ## Adding a new primitive
 
 1. Create `src/ui/components/<Name>/<Name>.tsx`, `<Name>.module.css`, `index.ts`.
-2. Re-export from `src/ui/components/index.ts` so consumers import from `@ui/components`.
+2. Export from the primitive folder's `index.ts` so consumers import from `@ui/components/<Name>`.
 3. CSS uses tokens from `src/styles/globals.css` — never hardcoded colors, font sizes, or spacing values.
 4. Composition uses `cn` from `@ui/cn`.
 5. Icons come from `pixel-art-icons/icons/<name>` (deep-imported).

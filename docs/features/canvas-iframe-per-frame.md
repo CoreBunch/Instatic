@@ -172,10 +172,6 @@ Keyboard interplay: the editable element lives inside the breakpoint iframe, and
 
 The element's own React `onKeyDown` owns Escape (cancel) and Enter (commit / break).
 
-Design doc: `docs/superpowers/specs/2026-06-10-inline-text-editing-design.md`.
-
----
-
 ## Plugin module sandboxing (`ModuleSandboxFrame`)
 
 Plugin canvas modules render inside `ModuleSandboxFrame.tsx`, a separate component that is NOT `IframeFrameSurface`. Plugin modules run in a `sandbox="allow-scripts"` iframe with no `allow-same-origin` — they communicate with the host via `postMessage`. This is distinct from the page tree iframes described above.

@@ -259,9 +259,9 @@ export function createFrameworkColorActions({
     createFrameworkColorToken: (input) => {
       const { site } = get()
       if (!site) throw new Error('[siteSlice] Site document is not initialized')
-      // Read-only view of the (Immer-frozen) live site — `ensureFrameworkColors`
+      // Read-only view of the (Mutative-frozen) live site — `ensureFrameworkColors`
       // mutates and would throw on the frozen object. The actual write happens
-      // inside `mutateSite` below where Immer's draft is mutable.
+      // inside `mutateSite` below where Mutative's draft is mutable.
       const colors = site.settings.framework?.colors ?? { tokens: [] }
       const token = createFrameworkColorTokenFromInput(input, colors)
 
@@ -289,7 +289,7 @@ export function createFrameworkColorActions({
     duplicateFrameworkColorToken: (tokenId) => {
       const { site } = get()
       if (!site) return null
-      // Read-only view of the (Immer-frozen) live site — see note in
+      // Read-only view of the (Mutative-frozen) live site — see note in
       // `createFrameworkColorToken` for why we don't call `ensureFrameworkColors`
       // here. The actual write happens inside `mutateSite` below.
       const colors = site.settings.framework?.colors ?? { tokens: [] }

@@ -69,7 +69,7 @@ describe('setBreakpointOverride', () => {
     ).toThrow()
   })
 
-  it('is Immer-safe', () => {
+  it('is Mutative-safe', () => {
     const { page, nodeId } = makeTestPage()
 
     const nextPage = create(page, (draft) => {
@@ -133,7 +133,7 @@ describe('clearBreakpointOverride', () => {
     expect(resolveProps(page.nodes[nodeId], 'mobile').color).toBe('#000')
   })
 
-  it('is Immer-safe', () => {
+  it('is Mutative-safe', () => {
     const { page, nodeId } = makeTestPageWithOverride()
 
     const nextPage = create(page, (draft) => {

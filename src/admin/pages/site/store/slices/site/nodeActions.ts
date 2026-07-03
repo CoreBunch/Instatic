@@ -95,7 +95,7 @@ function buildSubtreeIdMap(
  * `visualComponentsSlice.clonePageSubtreeToFlatNodes` so the publisher can
  * never end up with two nodes pointing at the same scoped class — see F-0005.
  *
- * Must run inside an Immer producer (mutates `tree` and `site` directly).
+ * Must run inside a Mutative recipe (mutates `tree` and `site` directly).
  */
 function duplicateNodeWithScopedClasses(
   tree: NodeTree<PageNode>,

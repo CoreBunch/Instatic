@@ -145,7 +145,7 @@ set(state => {
 
 ## Auto-freeze
 
-The Zustand store is created with `mutative({ enableAutoFreeze: true })`. This mirrors Immer's default dev guard against accidental external mutation — existing code already tolerates frozen state. `apply()` and `create()` handle frozen bases correctly.
+The Zustand store is created with `mutative({ enableAutoFreeze: true })`. That keeps a dev guard against accidental external mutation, and existing code already tolerates frozen state. `apply()` and `create()` handle frozen bases correctly.
 
 ---
 
