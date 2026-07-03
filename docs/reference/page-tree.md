@@ -81,7 +81,7 @@ The rules:
 | Tree kind                | Type                  | Stored where                            |
 |--------------------------|-----------------------|-----------------------------------------|
 | `Page` (a page's tree)   | `NodeTree<PageNode>`  | `data_rows` row, table `pages`, cell `body` |
-| `VisualComponent.tree`   | `NodeTree<BaseNode>`  | `data_rows` row, table `components`, cell `tree` |
+| `VisualComponent.tree`   | `NodeTree<BaseNode>`  | `data_rows` row, table `components`, cell `body` |
 | Slot fill                | Children of `base.slot-instance` | Same page tree as its consumer  |
 
 There is no separate `pages` table, no `page_versions` table. Everything content-shaped is in `data_tables` + `data_rows`.

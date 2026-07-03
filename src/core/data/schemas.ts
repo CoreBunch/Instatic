@@ -5,7 +5,7 @@
  * looks like "a row in a table": blog posts, custom post types, product
  * catalogs, form submissions, arbitrary user-defined collections.
  *
- * Two kinds of tables share this store:
+ * Five kinds of tables share this store:
  *
  *   - `kind: 'postType'` — authored through the Content admin page. Has
  *     reserved built-in fields (`title`, `slug`, `body`, `featuredMedia`,
@@ -13,6 +13,9 @@
  *     workflow with versions.
  *   - `kind: 'data'` — authored through the Data admin page (grid). No
  *     built-ins, no version workflow.
+ *   - `kind: 'page'` — editor-managed pages, stored as page-tree cells.
+ *   - `kind: 'component'` — editor-managed Visual Components.
+ *   - `kind: 'layout'` — editor-managed saved layout snapshots.
  *
  * All cell values live in `cells_json` keyed by field id. `slug` and
  * `status` are denormalized columns on the row for index / route lookup.
@@ -287,7 +290,7 @@ export const DataTableSchema = Type.Object({
   primaryFieldId: Type.String(),
   fields: Type.Array(DataFieldSchema),
   /**
-   * True for tables seeded at boot (`posts`, `pages`, `components`).
+   * True for tables seeded at boot (`posts`, `pages`, `components`, `layouts`).
    * System tables are protected from rename and delete; users can still add
    * custom fields to them. Column added to `data_tables` in the Step 2
    * migration; repositories default to `false` until then.

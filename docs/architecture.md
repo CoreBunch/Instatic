@@ -164,14 +164,16 @@ A user-defined collection — a "post type" in WordPress terms. Has a `kind`:
 | `kind`       | Used for                                      |
 |--------------|-----------------------------------------------|
 | `postType`   | Blog posts, products, anything list-like      |
+| `data`       | Plain user-defined data tables                |
 | `page`       | Stand-alone pages with URLs                   |
 | `component`  | Visual components (reusable subtrees)         |
+| `layout`     | Saved layout snapshots                        |
 
-The four system tables (`posts`, `pages`, `components`, `layouts`) are seeded by the baseline migration and are locked from rename/delete.
+The four system tables (`posts`, `pages`, `components`, `layouts`) are seeded by migrations and are locked from rename/delete.
 
 ### `data_rows`
 
-Rows in a `data_tables` collection. Stored cells are typed — a row in the `pages` table has a `body` cell of type `pageTree`; a row in `components` has a `tree` cell of type `pageTree` plus a `params` cell of type `fieldSchema`.
+Rows in a `data_tables` collection. Stored cells are typed — a row in the `pages` table has a `body` cell of type `pageTree`; a row in `components` has a `body` cell of type `pageTree` plus a `params` cell of type `fieldSchema`; a row in `layouts` has a `body` page-tree snapshot plus `classes`.
 
 The shape and cell types are defined by the `data_tables` schema. There is no separate `pages` table, no `page_versions` table, no per-feature row layout. Adding a new "post type" means inserting a `data_tables` row with the right `cells` schema.
 

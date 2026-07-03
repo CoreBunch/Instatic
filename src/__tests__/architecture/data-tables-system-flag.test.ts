@@ -2,7 +2,7 @@
  * Architecture Gate — System table seeds after fresh boot
  *
  * After applying the SQLite migrations to a fresh in-memory database, the
- * three system tables (`posts`, `pages`, `components`) must exist with:
+ * four system tables (`posts`, `pages`, `components`, `layouts`) must exist with:
  *
  *   - `system = 1` (the integer flag used by SQLite)
  *   - `fields_json` that parses to a valid array of `DataField` objects,
@@ -11,8 +11,8 @@
  * This test catches regressions where a migration edit accidentally drops a
  * seed row, removes the `system` column, or corrupts the built-in field list.
  *
- * @see server/db/migrations-sqlite.ts  — SQLite baseline migration
- * @see server/db/migrations-pg.ts      — Postgres baseline (same seed content)
+ * @see server/db/migrations-sqlite.ts  — SQLite migrations (same seed content)
+ * @see server/db/migrations-pg.ts      — Postgres migrations (same seed content)
  * @see src/core/data/schemas.ts        — DataFieldSchema
  */
 
