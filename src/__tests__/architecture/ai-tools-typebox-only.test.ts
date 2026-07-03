@@ -3,10 +3,9 @@
  * schemas with TypeBox (not Zod).
  *
  * The tool registry is the canonical source of truth for tool input
- * shapes. Drivers translate from TypeBox to their SDK's native format
- * (Anthropic via the typebox→zod helper in drivers/; others by emitting
- * JSON Schema directly). Allowing Zod into the tool files would create
- * two competing sources of truth.
+ * shapes. Drivers pass those TypeBox schemas through as JSON Schema
+ * parameters in direct REST requests. Allowing Zod into the tool files would
+ * create two competing sources of truth.
  */
 
 import { describe, it, expect } from 'bun:test'
