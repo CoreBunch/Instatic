@@ -247,7 +247,7 @@ src/admin/
 - **`Panel`, `PanelHeader`, `SidebarResizeHandle`** — generic floating-panel chrome reused across the editor, content, and data workspaces.
 - **`StepUp`** — re-auth dialog gating sensitive actions.
 - **`AdminContextMenuGuard`** (`src/admin/shared/AdminContextMenuGuard/`) — mounted at root level in `main.tsx` alongside the router. Intercepts every native `contextmenu` event on the document. If the event was already `preventDefault`-ed by an app context menu (or fired inside a `[role="menu"]` element), the guard is silent. Otherwise it prevents the native browser menu and shows a small animated danger flash at the cursor to signal "no context menu here." App context menus (e.g. `DataRowContextMenu`, `DataTableContextMenu`) call `preventDefault()` at their source, so the guard only fires for truly unhandled right-clicks.
-- **`useAsyncResource`** (`src/admin/lib/useAsyncResource.ts`) — canonical hook for single-resource async loads. Runs `loader` on mount and whenever `deps` change, tracks `{ data, loading, error }`, discards superseded responses, and exposes a stable `refresh()`. The loader receives an `AbortSignal` for in-flight cancellation. Reach for this first when a screen loads one resource. For the full decision guide — when to use it and what patterns intentionally don't use it (optimistic collections, multi-fetch orchestrators, module-level cached loads, non-fetch effects) — see [`docs/reference/use-async-resource.md`](../reference/use-async-resource.md).
+- **`useAsyncResource`** (`src/admin/lib/useAsyncResource.ts`) — canonical hook for single-resource async loads. Runs `loader` on mount and whenever `deps` change, tracks `{ data, loading, error }`, discards superseded responses, and exposes a stable `refresh()`. The loader receives an `AbortSignal` for in-flight cancellation. Reach for this first when a screen loads one resource. For the full decision guide — when to use it and what patterns intentionally don't use it (optimistic collections, multi-fetch orchestrators, module-level cached loads, non-fetch effects) — see [`docs/reference/use-async-resource.md`](reference/use-async-resource.md).
 
 ---
 
@@ -325,7 +325,7 @@ Organization is persisted in `site.explorer` on the site shell. Folders are deco
 
 `src/admin/pages/site/store/` is the central state for the editor. Zustand with the `mutative` middleware from `zustand-mutative` (mutations are written as direct draft-mutation; Mutative produces structural sharing) and `subscribeWithSelector` (granular subscriptions without React context re-renders). `enableAutoFreeze: true` mirrors Immer's dev guard against accidental external mutation.
 
-**Undo/redo** uses patch-based history: every undoable mutation captures Mutative `[next, forward, inverse]` patch pairs scoped to the `SiteDocument`. Undo applies `entry.inverse`, redo applies `entry.forward` — O(change) in both time and memory, not O(site). A 50-deep history holds kilobytes of patches instead of hundreds of megabytes of full-site clones. See [`docs/reference/editor-history.md`](../reference/editor-history.md).
+**Undo/redo** uses patch-based history: every undoable mutation captures Mutative `[next, forward, inverse]` patch pairs scoped to the `SiteDocument`. Undo applies `entry.inverse`, redo applies `entry.forward` — O(change) in both time and memory, not O(site). A 50-deep history holds kilobytes of patches instead of hundreds of megabytes of full-site clones. See [`docs/reference/editor-history.md`](reference/editor-history.md).
 
 The store is composed of **12 slices**, each created by a factory in `store/slices/`:
 
@@ -433,7 +433,7 @@ The **unlayered-vs-layered** split is the cascade isolation mechanism: CSS rules
 
 `EditorChromeInjector` targets chrome elements via **stable data-attribute selectors** (`data-canvas-module-placeholder`, `data-instatic-slot-instance`, `data-instatic-unknown-module`, etc.) rather than hashed CSS-Module class names, which only exist in the parent document. At mount, it copies the required safe design tokens (`--text-subtle`, `--canvas-placeholder-bg`, `--radius`, etc.) from the parent document's `:root` onto the iframe's `:root` so `var(...)` references resolve correctly inside the iframe. Admin font, text-size, and spacing tokens are remapped to `--chrome-font-sans`, `--chrome-text-*`, and `--chrome-space-*` before use; they are never copied as `--font-sans`, `--text-*`, or `--space-*`, because those short names belong to the rendered site's Framework tokens inside the canvas.
 
-Full details: [`docs/features/canvas-iframe-per-frame.md`](../features/canvas-iframe-per-frame.md).
+Full details: [`docs/features/canvas-iframe-per-frame.md`](features/canvas-iframe-per-frame.md).
 
 ### 3. Canvas stacking context isolation
 
