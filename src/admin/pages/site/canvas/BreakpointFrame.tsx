@@ -22,6 +22,7 @@ import type { Page, Breakpoint } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { CanvasComposedTree } from './CanvasComposedTree'
 import { BreakpointSelectionOverlay } from './BreakpointSelectionOverlay'
+import { PeerPresenceOverlay } from './PeerPresenceOverlay'
 import { CanvasBreakpointContext, CanvasTemplateContext } from './CanvasContexts'
 import { IframeFrameSurface, type IframeFrameSurfaceHandle } from './IframeFrameSurface'
 import type { InjectableRuntimeScript } from './useRuntimeScriptBuild'
@@ -243,6 +244,9 @@ export function BreakpointFrame({
           viewportRef={viewportRef}
           iframeElement={iframeEl}
         />
+        {/* Live co-editing presence — peers' selection rings, name tags and
+            pointer dots, positioned over the same iframe. */}
+        <PeerPresenceOverlay breakpointId={breakpoint.id} iframeElement={iframeEl} />
         <CursorTooltip
           content={`Click to activate ${breakpoint.label} breakpoint`}
           point={inactiveFrameActivates ? activationHintPoint : null}

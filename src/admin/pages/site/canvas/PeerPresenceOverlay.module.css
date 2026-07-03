@@ -1,0 +1,48 @@
+/*
+ * Peer presence chrome — selection rings, name tags, and pointer dots for
+ * other admins co-editing this document. All colors flow through the
+ * `--peer-color` custom property set inline per peer (deterministic identity
+ * HSL derived from the user id — identity color, per the two-layer model).
+ */
+
+.presenceLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 39; /* under the local selection chrome (rings sit at 40) */
+}
+
+.ring {
+  position: absolute;
+  display: none;
+  box-shadow: inset 0 0 0 1.5px var(--peer-color);
+  border-radius: 2px;
+}
+
+.nameTag {
+  position: absolute;
+  display: none;
+  transform: translateY(-100%);
+  padding: 1px 6px 2px;
+  border-radius: var(--editor-radius-sm);
+  background: var(--peer-color);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.nameTag[data-editing='true']::after {
+  content: ' ✎';
+}
+
+.pointer {
+  position: absolute;
+  display: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50% 50% 50% 0;
+  background: var(--peer-color);
+  transform: rotate(-90deg);
+}

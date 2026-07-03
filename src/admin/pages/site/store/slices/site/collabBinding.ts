@@ -61,6 +61,7 @@ import {
 import { clonePackageJson } from '@core/site-dependencies/manifest'
 import { cloneSiteRuntimeConfig } from '@core/site-runtime'
 import type { EditorStore } from '@site/store/types'
+import type { Awareness } from 'y-protocols/awareness'
 import type { CollabProvider } from '@site/collab/collabProvider'
 
 interface ManagedDoc {
@@ -99,6 +100,29 @@ let alignedSiteRef: SiteDocument | null = null
 /** Called once by store creation — the binding's only handle into Zustand. */
 export function initCollabBinding(api: StoreApi<EditorStore>): void {
   storeApi = api
+}
+
+// ---------------------------------------------------------------------------
+// Awareness access (peer presence UI)
+// ---------------------------------------------------------------------------
+
+const providerChangeListeners = new Set<() => void>()
+
+function notifyProviderChange(): void {
+  for (const listener of providerChangeListeners) listener()
+}
+
+/** The connected provider's awareness instance, or null in detached mode. */
+export function collabAwareness(): Awareness | null {
+  return provider?.awareness ?? null
+}
+
+/** Notifies when the provider connects/disconnects — re-grab the awareness. */
+export function onCollabProviderChange(listener: () => void): () => void {
+  providerChangeListeners.add(listener)
+  return () => {
+    providerChangeListeners.delete(listener)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -565,6 +589,7 @@ export function connectCollabProvider(next: CollabProvider): void {
   })
   const site = storeApi?.getState().site ?? null
   resetCollabDocsFromSite(site)
+  notifyProviderChange()
 }
 
 export function disconnectCollabProvider(): void {
@@ -575,4 +600,5 @@ export function disconnectCollabProvider(): void {
   providerBindings.clear()
   const site = storeApi?.getState().site ?? null
   resetCollabDocsFromSite(site)
+  notifyProviderChange()
 }
