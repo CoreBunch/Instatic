@@ -36,7 +36,19 @@ import { createCanvasOverlayMeasureSession } from './canvasOverlayGeometry'
 import { hideOverlayElement, positionOverlayElement } from './canvasSelectionOverlayPositioning'
 import styles from './PeerPresenceOverlay.module.css'
 
-const POINTER_PUBLISH_INTERVAL_MS = 66 // ~15 Hz
+// Publish at 10 Hz with a movement deadband — interpolation on the receiving
+// side (below) turns the sparse samples back into smooth motion, so a lower
+// wire rate COSTS nothing visually and saves frames for everyone.
+const POINTER_PUBLISH_INTERVAL_MS = 100
+const POINTER_DEADBAND_PX = 2
+
+// Receive-side smoothing: each frame the rendered cursor eases toward the
+// last received target with an exponential time constant. ~TAU ms closes 63%
+// of the remaining gap; visually settled in ~3×TAU.
+const POINTER_SMOOTHING_TAU_MS = 90
+// A jump larger than this teleports instead of gliding across the canvas
+// (peer re-entered the frame somewhere else entirely).
+const POINTER_SNAP_DISTANCE_PX = 400
 
 /**
  * Point chrome (name tag, pointer dot) sizes itself from content — position
@@ -82,6 +94,10 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
   if (pointerRefs.current === null) pointerRefs.current = new Map()
   const nodeElementCacheRef = useRef<CanvasNodeElementCache | null>(null)
   if (nodeElementCacheRef.current === null) nodeElementCacheRef.current = new CanvasNodeElementCache()
+  /** clientId → the RENDERED cursor position, easing toward the last target. */
+  const animatedPointersRef = useRef<Map<number, { x: number; y: number }> | null>(null)
+  if (animatedPointersRef.current === null) animatedPointersRef.current = new Map()
+  const lastTickAtRef = useRef(0)
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -102,13 +118,45 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
 
     let attachedDoc: Document | null = null
     let lastSent = 0
+    let lastX = Number.NaN
+    let lastY = Number.NaN
+    let trailing: ReturnType<typeof setTimeout> | null = null
+
+    const publish = (x: number, y: number): void => {
+      lastSent = performance.now()
+      lastX = x
+      lastY = y
+      publishLocalPointer({ x, y, breakpointId })
+    }
     const handleMove = (event: MouseEvent): void => {
-      const now = performance.now()
-      if (now - lastSent < POINTER_PUBLISH_INTERVAL_MS) return
-      lastSent = now
-      publishLocalPointer({ x: event.clientX, y: event.clientY, breakpointId })
+      const { clientX, clientY } = event
+      // Sub-deadband tremor isn't worth a frame on the wire.
+      if (Math.hypot(clientX - lastX, clientY - lastY) < POINTER_DEADBAND_PX) return
+      const elapsed = performance.now() - lastSent
+      if (elapsed >= POINTER_PUBLISH_INTERVAL_MS) {
+        if (trailing) {
+          clearTimeout(trailing)
+          trailing = null
+        }
+        publish(clientX, clientY)
+        return
+      }
+      // Inside the throttle window: schedule ONE trailing publish so the
+      // cursor's final resting position always ships (a plain leading-edge
+      // throttle would drop the last sample and leave peers slightly off).
+      if (trailing) clearTimeout(trailing)
+      trailing = setTimeout(() => {
+        trailing = null
+        publish(clientX, clientY)
+      }, POINTER_PUBLISH_INTERVAL_MS - elapsed)
     }
     const handleLeave = (): void => {
+      if (trailing) {
+        clearTimeout(trailing)
+        trailing = null
+      }
+      lastX = Number.NaN
+      lastY = Number.NaN
       publishLocalPointer(null)
     }
     const detach = (): void => {
@@ -129,6 +177,7 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
     iframe.addEventListener('load', attach)
     return () => {
       iframe.removeEventListener('load', attach)
+      if (trailing) clearTimeout(trailing)
       detach()
       publishLocalPointer(null)
     }
@@ -154,6 +203,15 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
     const originLeft = (session.canvasRect?.left ?? 0) - session.scrollLeft
     const originTop = (session.canvasRect?.top ?? 0) - session.scrollTop
 
+    // Time-based smoothing factor — frame-rate independent (a dropped frame
+    // eases a proportionally larger step, so motion speed stays constant).
+    const now = performance.now()
+    const dt = lastTickAtRef.current === 0 ? 16 : Math.min(100, now - lastTickAtRef.current)
+    lastTickAtRef.current = now
+    const ease = 1 - Math.exp(-dt / POINTER_SMOOTHING_TAU_MS)
+    const animated = animatedPointersRef.current!
+    const livePointers = new Set<number>()
+
     const trackedIds = new Set<string>()
     const ringPlacements: Array<{ element: HTMLDivElement | null; rect: ReturnType<typeof session.measure> }> = []
     const pointPlacements: Array<{ element: HTMLDivElement | null; point: { x: number; y: number } | null; lift: boolean }> = []
@@ -172,18 +230,38 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
         lift: true,
       })
       const pointer = peer.pointer && peer.pointer.breakpointId === breakpointId ? peer.pointer : null
+      let pointerPoint: { x: number; y: number } | null = null
+      if (pointer) {
+        livePointers.add(peer.clientId)
+        const target = {
+          x: iframeRect.left + pointer.x * iframeScale - originLeft,
+          y: iframeRect.top + pointer.y * iframeScale - originTop,
+        }
+        const previous = animated.get(peer.clientId)
+        // Ease toward the sparse network samples every frame — the cursor
+        // GLIDES between 10 Hz targets instead of teleporting. Snap on first
+        // appearance and on jumps too large to glide believably.
+        pointerPoint =
+          !previous || Math.hypot(target.x - previous.x, target.y - previous.y) > POINTER_SNAP_DISTANCE_PX
+            ? target
+            : {
+                x: previous.x + (target.x - previous.x) * ease,
+                y: previous.y + (target.y - previous.y) * ease,
+              }
+        animated.set(peer.clientId, pointerPoint)
+      }
       pointPlacements.push({
         element: pointerRefs.current?.get(peer.clientId) ?? null,
-        point: pointer
-          ? {
-              x: iframeRect.left + pointer.x * iframeScale - originLeft,
-              y: iframeRect.top + pointer.y * iframeScale - originTop,
-            }
-          : null,
+        point: pointerPoint,
         lift: false,
       })
     }
     elementCache.retainOnly(trackedIds)
+    // Drop animation state for cursors that left this frame — a re-entry
+    // snaps to its new position instead of gliding from the stale one.
+    for (const clientId of [...animated.keys()]) {
+      if (!livePointers.has(clientId)) animated.delete(clientId)
+    }
 
     for (const { element, rect } of ringPlacements) positionOverlayElement(element, rect)
     for (const { element, point, lift } of pointPlacements) positionPointElement(element, point, lift)

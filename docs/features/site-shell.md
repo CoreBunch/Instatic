@@ -547,10 +547,15 @@ each doc's first sync so an unseeded doc can never receive local ops.
 
 **Presence** (`src/admin/pages/site/collab/awarenessState.ts` +
 `PeerPresenceOverlay`): every editor publishes identity (deterministic HSL
-color from the user id), active doc, selection, inline-edit state, and a
-throttled pointer through y-protocols awareness; peers render selection
-rings, name tags, and pointer dots per breakpoint frame. Peer states are
-wire data — validated with TypeBox before rendering.
+color from the user id + the same upload→Gravatar avatar fields every admin
+surface uses), active doc, selection, inline-edit state, and a pointer
+through y-protocols awareness; peers render selection rings, name tags,
+named cursors per breakpoint frame, and a toolbar avatar stack
+(`PeerAvatarStack`). The pointer ships at 10 Hz with a movement deadband
+and a trailing flush; the receiving side eases the rendered cursor toward
+each sparse sample every animation frame (exponential smoothing, snap on
+oversized jumps), so motion stays glassy at a fraction of the wire rate.
+Peer states are wire data — validated with TypeBox before rendering.
 
 MCP note: headless MCP reads hit the DB, so a browser-relayed write is
 visible to them after the relay's persist debounce (≤ ~1 s) — the old
