@@ -40,6 +40,7 @@
 import { Toolbar } from '@admin/pages/site/toolbar/Toolbar'
 import { ZoomControls } from '@admin/pages/site/toolbar/ZoomControls'
 import { PublishButton } from '@admin/pages/site/toolbar/PublishButton'
+import { PeerAvatarStack } from '@admin/pages/site/toolbar/PeerAvatarStack'
 import { useEditorAppearancePreferences } from '@admin/pages/site/preferences/editorPreferences'
 import { usePersistence } from '@admin/pages/site/hooks/usePersistence'
 import { useSiteEditorUrlSync } from '@admin/pages/site/hooks/useSiteEditorUrlSync'
@@ -220,6 +221,7 @@ export function AdminCanvasLayout() {
           )}
           rightSlot={(
             <>
+              <PeerAvatarStack />
               <ZoomControls />
               <PublishButton enabled={canPublishPages} saveStatus={persistence.saveStatus} />
             </>

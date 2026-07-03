@@ -92,10 +92,15 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
   }, [viewportActions])
 
   // ── Local pointer publisher (this frame) ─────────────────────────────────
+  // The frame boots via `srcDoc`, which REPLACES the iframe's initial
+  // about:blank document on load — listeners attached to the pre-load
+  // document die silently. Attach to the CURRENT document and re-attach on
+  // every `load` so the publisher survives the swap (and any reload).
   useEffect(() => {
-    const doc = iframeElement?.contentDocument
-    if (!doc) return undefined
+    const iframe = iframeElement
+    if (!iframe) return undefined
 
+    let attachedDoc: Document | null = null
     let lastSent = 0
     const handleMove = (event: MouseEvent): void => {
       const now = performance.now()
@@ -106,11 +111,25 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
     const handleLeave = (): void => {
       publishLocalPointer(null)
     }
-    doc.addEventListener('mousemove', handleMove)
-    doc.addEventListener('mouseleave', handleLeave)
+    const detach = (): void => {
+      attachedDoc?.removeEventListener('mousemove', handleMove)
+      attachedDoc?.removeEventListener('mouseleave', handleLeave)
+      attachedDoc = null
+    }
+    const attach = (): void => {
+      const doc = iframe.contentDocument
+      if (!doc || doc === attachedDoc) return
+      detach()
+      attachedDoc = doc
+      doc.addEventListener('mousemove', handleMove)
+      doc.addEventListener('mouseleave', handleLeave)
+    }
+
+    attach()
+    iframe.addEventListener('load', attach)
     return () => {
-      doc.removeEventListener('mousemove', handleMove)
-      doc.removeEventListener('mouseleave', handleLeave)
+      iframe.removeEventListener('load', attach)
+      detach()
       publishLocalPointer(null)
     }
   }, [iframeElement, breakpointId])
@@ -233,7 +252,10 @@ export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenc
                 }}
                 className={styles.pointer}
                 data-peer-pointer="true"
-              />
+              >
+                <span className={styles.pointerDot} />
+                <span className={styles.pointerLabel}>{peer.user.name}</span>
+              </div>
             )}
           </div>
         )

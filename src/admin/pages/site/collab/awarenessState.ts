@@ -135,6 +135,71 @@ function readPeerPresences(docId: string | null): PeerPresence[] {
   return peers
 }
 
+/** One entry per USER (an admin with two tabs is one person). */
+export interface SitePeer {
+  user: EditorPresence['user']
+  /** True when at least one of the user's clients is on `localDocId`. */
+  onSameDoc: boolean
+}
+
+function readSitePeers(localDocId: string | null): SitePeer[] {
+  const awareness = collabAwareness()
+  if (!awareness) return []
+  const byUser = new Map<string, SitePeer>()
+  for (const [clientId, raw] of awareness.getStates()) {
+    if (clientId === awareness.clientID) continue
+    const result = safeParseValue(EditorPresenceSchema, raw)
+    if (!result.ok) continue
+    const onSameDoc = localDocId !== null && result.value.docId === localDocId
+    const existing = byUser.get(result.value.user.id)
+    if (existing) {
+      existing.onSameDoc = existing.onSameDoc || onSameDoc
+    } else {
+      byUser.set(result.value.user.id, { user: result.value.user, onSameDoc })
+    }
+  }
+  return [...byUser.values()]
+}
+
+function sitePeersKey(peers: SitePeer[]): string {
+  return peers
+    .map((p) => `${p.user.id}:${p.user.name}:${p.onSameDoc ? 1 : 0}`)
+    .sort()
+    .join('|')
+}
+
+/**
+ * Everyone else connected to the site socket, deduped by user — the toolbar
+ * avatar stack. Unlike `usePeerPresences`, this is NOT docId-scoped (it
+ * answers "who's here", not "what are they touching") and only re-renders
+ * when the roster itself changes — pointer moves don't churn it.
+ */
+export function useSitePeers(localDocId: string | null): SitePeer[] {
+  const [peers, setPeers] = useState<SitePeer[]>([])
+
+  useEffect(() => {
+    let awareness: Awareness | null = null
+    const recompute = (): void => {
+      const next = readSitePeers(localDocId)
+      setPeers((current) => (sitePeersKey(current) === sitePeersKey(next) ? current : next))
+    }
+    const attach = (): void => {
+      awareness?.off('change', recompute)
+      awareness = collabAwareness()
+      awareness?.on('change', recompute)
+      recompute()
+    }
+    attach()
+    const offProvider = onCollabProviderChange(attach)
+    return () => {
+      offProvider()
+      awareness?.off('change', recompute)
+    }
+  }, [localDocId])
+
+  return peers
+}
+
 /**
  * Live peer presences on `docId` (everyone except the local client).
  * Re-renders on every awareness change — peer pointer moves included — so

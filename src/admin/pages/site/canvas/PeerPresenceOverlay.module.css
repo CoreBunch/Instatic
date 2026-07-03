@@ -40,9 +40,28 @@
 .pointer {
   position: absolute;
   display: none;
+  pointer-events: none;
+}
+
+.pointerDot {
+  display: block;
   width: 10px;
   height: 10px;
-  border-radius: 50% 50% 50% 0;
+  border-radius: 50% 0 50% 50%;
   background: var(--peer-color);
-  transform: rotate(-90deg);
+}
+
+.pointerLabel {
+  display: block;
+  margin-top: var(--space-3xs);
+  margin-left: var(--space-2xs);
+  padding: var(--space-3xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: var(--peer-color);
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  width: max-content;
 }

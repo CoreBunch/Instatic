@@ -1,0 +1,34 @@
+/*
+ * Toolbar presence avatars. All identity color flows through the inline
+ * `--peer-color` custom property (deterministic HSL from the user id —
+ * see collab/awarenessState.ts), matching the canvas presence chrome.
+ */
+
+.stack {
+  display: flex;
+  align-items: center;
+}
+
+.stack > * + * {
+  margin-left: calc(-1 * var(--space-3xs));
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--peer-color);
+  border: 2px solid var(--bg-surface);
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+
+.avatar[data-elsewhere='true'] {
+  opacity: 0.45;
+}
