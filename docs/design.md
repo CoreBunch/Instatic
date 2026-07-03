@@ -384,6 +384,7 @@ Every interactive control in the admin and editor goes through a primitive from 
 |----------------------|-----------------------------------------------------------------------------|
 | `Button`             | Every action button. Variants for primary / secondary / ghost / danger.     |
 | `Input`              | Single-line text input. Pill radius, transparent fill, bordered.            |
+| `FormField`          | Label + description shell for form controls.                               |
 | `Switch`             | Boolean toggle.                                                             |
 | `Checkbox`           | Boolean within a list / form.                                               |
 | `Select`             | Dropdown selection of fixed options.                                        |
@@ -394,19 +395,23 @@ Every interactive control in the admin and editor goes through a primitive from 
 | `RangeTabs`          | Tabbed numeric range selectors (e.g. spacing scales).                       |
 | `SegmentedControl`   | A few mutually exclusive options shown inline.                              |
 | `Tabs`               | Top-level tab navigation within a workspace.                                |
+| `Stack`              | Small flex layouts for host/admin and plugin UI.                            |
 | `Separator`          | Visual divider between sections.                                            |
 | `Section`            | Titled section block in panels.                                             |
 | `ControlRow`         | Standard label + control row in property panels.                            |
+| `Card`               | Token-backed panel surface for grouped host/admin content.                  |
 | `ContextMenu`        | Right-click and `…` overflow menus.                                         |
 | `FilterBar`          | Compound filter row (type + folder + date + query).                         |
 | `TagPill`            | Compact tinted labels, selector chips, removable tag pills. It derives a token-backed tint from the first meaningful alphanumeric character. |
 | `FloatingActionBar`  | Multi-select bulk-action bar.                                               |
 | `EmptyState`         | Empty-list / empty-page placeholder.                                        |
+| `Alert`              | Inline non-blocking status/error message.                                   |
 | `Dialog`             | Modal dialog with a title and content.                                      |
 | `Tooltip`            | Hover and cursor-anchored tooltips. Replaces the native `title` attribute (gated). |
 | `Toast`              | Transient confirmation / error notifications.                               |
-| `DataTable`          | Tabular data with sorting and selection.                                    |
-| `Widget`, `WidgetList`| Borderless tile card (the dashboard pattern). Accepts a `tint`.            |
+| `DataTable`          | Token-backed table shell; callers own row state, sorting, and selection.    |
+| `Widget`, `WidgetSkeleton`, `WidgetList` | Borderless tile card and dashboard/widget list helpers. Accepts a `tint`. |
+| `Heading`, `Text`, `Code` | Typography primitives for host/admin and plugin UI.                   |
 | `Image`              | Image with built-in blurhash fallback.                                      |
 | `CanvasModulePlaceholder`| Diagonal-stripe placeholder for empty modules.                          |
 | `ErrorBoundary`      | Component-level error containment.                                          |
