@@ -41,6 +41,10 @@ export async function handlePublishRoutes(
     const stepUp = await requireStepUp(req, db, user)
     if (stepUp) return stepUp
 
+    // Live co-editing persists through a debounced relay — flush it so the
+    // published snapshot includes edits still inside the debounce window
+    // (publish must bake exactly what the admins see).
+    await options.flushCollabDocs?.()
     const result = await publishDraftSite(db, user.id, options.uploadsDir)
     await createAuditEvent(db, {
       actorUserId: user.id,

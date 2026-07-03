@@ -177,7 +177,6 @@ export async function ensureCurrentSiteForStaticImport(): Promise<SiteDocument> 
   const loaded = await cmsAdapter.loadSite('default')
   if (loaded) {
     useEditorStore.getState().loadSite(loaded.site)
-    useEditorStore.getState().seedBaseSeqs(loaded.rowSeqs, loaded.shellSeq)
     return loaded.site
   }
 
@@ -188,10 +187,9 @@ export async function ensureCurrentSiteForStaticImport(): Promise<SiteDocument> 
 export async function saveImportedDraftSite(): Promise<void> {
   const site = useEditorStore.getState().site
   if (!site) throw new Error('Import completed, but no draft site is loaded.')
-  // Replace-mode full save (no dirty hints) — an import deliberately
-  // replaces whatever is stored, so there is no conflict check to feed.
-  const { seq } = await cmsAdapter.saveSite(site)
-  useEditorStore.getState().commitSavedBaseSeqs(site, undefined, seq)
-  useEditorStore.getState().setHasUnsavedChanges(false)
+  // Replace-mode full save — an import deliberately replaces whatever is
+  // stored. This is an out-of-relay write, so the collab relay resets the
+  // affected docs and every connected editor rebinds to the imported state.
+  await cmsAdapter.saveSite(site)
   requestCmsSiteReload()
 }

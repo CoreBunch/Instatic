@@ -31,5 +31,5 @@ export async function handleComponentsRoutes(req: Request, db: DbClient): Promis
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
 
-  return siteCollectionRowsResponse(db, url, 'components')
+  return siteCollectionRowsResponse(db, 'components')
 }

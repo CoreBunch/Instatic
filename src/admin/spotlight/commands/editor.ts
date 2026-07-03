@@ -4,7 +4,6 @@
  *
  * All commands are gated to workspace: ['site'] only.
  * Undo/redo use useEditorStore.getState() (Zustand getState is safe outside React).
- * Save flushes through `usePersistence`'s registered save (editorSaveRef) so
  * it rides the single-flight queue, the dirty-mark snapshot, and the
  * conflict-detection base seqs — a raw adapter call here would bulldoze all
  * three and ship a replace-mode full save.
@@ -27,27 +26,6 @@ const SITE_WRITE_CAPABILITIES = [
 
 export function getEditorCommands(): Command[] {
   return [
-    {
-      id: 'editor.save',
-      title: 'Save',
-      subtitle: 'Save the current draft',
-      group: 'editor',
-      iconName: 'save-solid',
-      keywords: ['save', 'draft', 'write'],
-      workspaces: ['site'],
-      capability: SITE_WRITE_CAPABILITIES,
-      run: async (ctx) => {
-        ctx.closeSpotlight()
-        try {
-          // Import lazily to avoid loading editor code in non-site contexts.
-          // No-op when the editor isn't mounted (the command is site-only).
-          const { flushEditorSave } = await import('@site/hooks/editorSaveRef')
-          await flushEditorSave()
-        } catch (err) {
-          console.error('[spotlight] save failed:', err)
-        }
-      },
-    },
     {
       id: 'editor.publish',
       title: 'Publish',

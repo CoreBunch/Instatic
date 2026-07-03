@@ -3,11 +3,7 @@
  * primitives) — key order insensitive, no prototype/cycle handling (persisted
  * CMS documents are acyclic plain data by construction).
  *
- * Shared by the server's shell diff (`server/handlers/cms/siteDiff.ts`) and
- * the editor's remote-apply echo detection (`applyRemoteSnapshot` skips the
- * swap — and the undo-history clear — when the fetched remote content is
- * identical to the local copy, which is exactly what an echo of one's own
- * save looks like).
+ * Used by the server's shell diff (`server/handlers/cms/siteDiff.ts`).
  */
 export function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true

@@ -29,6 +29,12 @@ interface ServerRuntime {
   staticDir?: string
   uploadsDir?: string
   /**
+   * Flush the collab relay's debounced persists to the DB. Wired by the
+   * server boot; handlers that read-then-act on the stored draft (publish)
+   * call it so the snapshot includes edits still inside the debounce window.
+   */
+  flushCollabDocs?: () => Promise<void>
+  /**
    * The raw `DATABASE_URL` the server booted with — forwarded down to
    * CMS handlers that need to resolve the on-disk SQLite file (e.g. the
    * storage dashboard widget).
@@ -152,6 +158,7 @@ function tryServeCmsApi(req: Request, runtime: ServerRuntime, _url: URL, pathnam
   return handleCmsRequest(req, runtime.db, {
     uploadsDir: runtime.uploadsDir,
     databaseUrl: runtime.databaseUrl,
+    flushCollabDocs: runtime.flushCollabDocs,
   })
 }
 

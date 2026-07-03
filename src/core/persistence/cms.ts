@@ -7,7 +7,7 @@ import type {
 } from './types'
 import { SaveConflictError, SaveConflictsEnvelopeSchema } from './saveConflict'
 import { parseJsonResponse } from '@core/utils/jsonValidate'
-import { apiRequest, assertOk, readEnvelope, type FetchLike } from '@core/http'
+import { assertOk, readEnvelope, type FetchLike } from '@core/http'
 import {
   CmsSiteEnvelopeSchema,
   CmsSiteDocumentSaveEnvelopeSchema,
@@ -17,7 +17,6 @@ import {
 } from './responseSchemas'
 import { validateSite, validatePages, validateVisualComponents } from './validate'
 import { validateSavedLayouts } from './validateLayouts'
-import type { DataRow } from '@core/data/schemas'
 import { pageFromRow } from '@core/data/pageFromRow'
 import { visualComponentFromRow } from '@core/data/componentFromRow'
 import { savedLayoutFromRow } from '@core/data/layoutFromRow'
@@ -25,15 +24,6 @@ import type { VisualComponent } from '@core/visualComponents'
 import type { SavedLayout } from '@core/layouts'
 
 const defaultFetch: FetchLike = (input, init) => globalThis.fetch(input, init)
-
-/** The three row-backed site collections (the shell is not one of them). */
-export type SiteCollectionTable = 'pages' | 'components' | 'layouts'
-
-const COLLECTION_ENVELOPES = {
-  pages: CmsPagesEnvelopeSchema,
-  components: CmsComponentsEnvelopeSchema,
-  layouts: CmsLayoutsEnvelopeSchema,
-} as const
 
 export class CmsAdapter implements IPersistenceAdapter {
   private readonly fetchImpl: FetchLike
@@ -129,35 +119,6 @@ export class CmsAdapter implements IPersistenceAdapter {
     }
     const saved = await readEnvelope(res, CmsSiteDocumentSaveEnvelopeSchema, 'Site save failed')
     return { seq: saved.seq }
-  }
-
-  /**
-   * Load the current shell (with its sync seq) on its own — the conflict
-   * banner's "Load theirs" fetch for a shell conflict.
-   */
-  async loadSiteShell(): Promise<{ shell: SiteShell; seq: number } | undefined> {
-    const body = await apiRequest(`${this.basePath}/site`, {
-      schema: CmsSiteEnvelopeSchema,
-      fetchImpl: this.fetchImpl,
-      fallbackMessage: 'CMS shell load failed',
-    })
-    if (!body.site) return undefined
-    return { shell: validateSite(body.site), seq: body.seq ?? 0 }
-  }
-
-  /**
-   * Load a single row of one site collection — the conflict banner's
-   * "Load theirs" fetch. Returns null when the row is (soft-)deleted:
-   * absence IS the "deleted remotely" signal.
-   */
-  async loadSiteRow(table: SiteCollectionTable, rowId: string): Promise<DataRow | null> {
-    const body = await apiRequest(`${this.basePath}/${table}`, {
-      query: { id: rowId },
-      schema: COLLECTION_ENVELOPES[table],
-      fetchImpl: this.fetchImpl,
-      fallbackMessage: `CMS ${table} row load failed`,
-    })
-    return body.rows?.[0] ?? null
   }
 
   /**

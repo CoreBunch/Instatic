@@ -199,8 +199,6 @@ describe('mutateAllPagesAndSite — atomicity', () => {
       return true
     })
 
-    const historyBefore = useEditorStore.getState()._historyPast.length
-
     // Now run the four-helper recipe.
     useEditorStore.getState().mutateAllPagesAndSite((_site, helpers) => {
       helpers.addPage({ title: 'Added', slug: 'added', nodeFragment: makeFragment() })
@@ -210,8 +208,13 @@ describe('mutateAllPagesAndSite — atomicity', () => {
       return true
     })
 
-    const historyAfter = useEditorStore.getState()._historyPast.length
-    expect(historyAfter - historyBefore).toBe(1)
+    // Exactly ONE history snapshot: a single undo reverts all four helpers.
+    useEditorStore.getState().undo()
+    const site = useEditorStore.getState().site!
+    expect(site.pages.some((p) => p.slug === 'added')).toBe(false)
+    expect(Object.values(site.styleRules).some((r) => r.name === 'new-rule')).toBe(false)
+    expect(site.pages.find((p) => p.id === existingPageId)?.title).toBe('Old')
+    expect(site.styleRules[existingRuleId]?.styles.color).toBeUndefined()
   })
 
   it('undo after the four-helper recipe reverts ALL four mutations in one press', () => {

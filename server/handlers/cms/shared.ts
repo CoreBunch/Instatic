@@ -17,7 +17,7 @@ import { Type } from '@core/utils/typeboxHelpers'
 import type { DbClient } from '../../db/client'
 import { jsonResponse } from '../../http'
 import { clientIp } from '../../auth/security'
-import { getDataRow, listDataRows } from '../../repositories/data'
+import { listDataRows } from '../../repositories/data'
 import { UserMutationError } from '../../repositories/users'
 import { RoleMutationError } from '../../repositories/roles'
 
@@ -35,6 +35,8 @@ export interface CmsHandlerOptions {
    * branch on `db.dialect` instead of inspecting the URL themselves.
    */
   databaseUrl?: string
+  /** Flush the collab relay's debounced persists before draft-reading actions (publish). */
+  flushCollabDocs?: () => Promise<void>
 }
 
 export function requestAuditContext(req: Request): { ipAddress: string | null; userAgent: string | null } {
@@ -46,22 +48,12 @@ export function requestAuditContext(req: Request): { ipAddress: string | null; u
 
 /**
  * `{ rows }` response for one of the three site collection GETs
- * (pages / components / layouts), honoring the optional `?id=<rowId>`
- * single-row filter — the conflict banner's "Load theirs" fetch. A
- * soft-deleted or foreign-table id yields `{ rows: [] }`: absence is the
- * "deleted remotely" signal, and the table check keeps the endpoint from
- * leaking rows of other data tables.
+ * (pages / components / layouts).
  */
 export async function siteCollectionRowsResponse(
   db: DbClient,
-  url: URL,
   tableId: 'pages' | 'components' | 'layouts',
 ): Promise<Response> {
-  const id = url.searchParams.get('id')
-  if (id !== null) {
-    const row = await getDataRow(db, id)
-    return jsonResponse({ rows: row && row.tableId === tableId ? [row] : [] })
-  }
   return jsonResponse({ rows: await listDataRows(db, tableId) })
 }
 

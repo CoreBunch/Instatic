@@ -82,8 +82,18 @@ function repopulateRowDoc(doc: Y.Doc, kind: 'page' | 'component' | 'layout', row
 }
 
 /** Prefix/suffix splice of a Y.Array<string> toward `next` — preserves
- * concurrent remote insertions outside the changed window. */
+ * concurrent remote insertions outside the changed window. The splice indices
+ * are only meaningful when the array still holds the PRE-mutation content; if
+ * it drifted (a remote update landed between projection and this write), fall
+ * back to a wholesale rewrite — deterministic and convergent, never a
+ * mid-transaction range error. */
 function applyChildrenDiff(arr: Y.Array<string>, pre: readonly string[], next: readonly string[]): void {
+  const actual = arr.toArray()
+  if (actual.length !== pre.length || actual.some((id, i) => id !== pre[i])) {
+    arr.delete(0, arr.length)
+    arr.insert(0, [...next])
+    return
+  }
   let prefix = 0
   const maxPrefix = Math.min(pre.length, next.length)
   while (prefix < maxPrefix && pre[prefix] === next[prefix]) prefix++
@@ -333,13 +343,21 @@ function applyRowTargets(
 // Entry point
 // ---------------------------------------------------------------------------
 
+/**
+ * Returns the doc ids the mutation touched, in priority order for undo
+ * routing: the site doc first when rosters/shell changed, then row docs.
+ */
 export function applySitePatchesToDocs(
   patches: Patches,
   preSite: SiteDocument,
   nextSite: SiteDocument,
   docs: CollabDocSet,
   origin: unknown,
-): void {
+): string[] {
+  const touchedDocs: string[] = []
+  const touch = (docId: string): void => {
+    if (!touchedDocs.includes(docId)) touchedDocs.push(docId)
+  }
   const shellHeads = new Set<string>()
   const shellEntryTargets = new Map<string, Set<string>>() // head → entry keys ('*' = whole)
   const collectionPatches = new Map<Collection, Patches[number][]>()
@@ -371,6 +389,7 @@ export function applySitePatchesToDocs(
 
   if (shellHeads.size > 0 || shellEntryTargets.size > 0 || collectionsWithMembershipOps.length > 0) {
     const siteDoc = docs.ensure('site:default')
+    touch('site:default')
     siteDoc.transact(() => {
       const shell = shellMap(siteDoc)
       for (const head of shellHeads) {
@@ -418,6 +437,7 @@ export function applySitePatchesToDocs(
             const kind = COLLECTION_KIND[col]
             rosterWork.push(() => {
               const rowDoc = docs.ensure(`${kind}:${id}`)
+              touch(`${kind}:${id}`)
               rowDoc.transact(() => repopulateRowDoc(rowDoc, kind, nextById.get(id)!), origin)
             })
           }
@@ -452,6 +472,7 @@ export function applySitePatchesToDocs(
     if (colPatches.some((p) => patchPath(p).length === 1)) {
       for (const [id, row] of nextById) {
         const rowDoc = docs.ensure(`${kind}:${id}`)
+        touch(`${kind}:${id}`)
         rowDoc.transact(() => repopulateRowDoc(rowDoc, kind, row), origin)
       }
       continue
@@ -473,6 +494,7 @@ export function applySitePatchesToDocs(
       if (rest.length === 0) {
         if (preById.get(id) !== nextById.get(id)) {
           const rowDoc = docs.ensure(`${kind}:${id}`)
+          touch(`${kind}:${id}`)
           rowDoc.transact(() => repopulateRowDoc(rowDoc, kind, row as Row), origin)
         }
         continue
@@ -486,6 +508,7 @@ export function applySitePatchesToDocs(
       const nextRow = nextById.get(id)
       if (!nextRow) continue
       const rowDoc = docs.ensure(`${kind}:${id}`)
+      touch(`${kind}:${id}`)
       if (kind === 'layout') {
         // Whole-snapshot LWW — any layout content change rewrites the snapshot.
         rowDoc.transact(() => repopulateRowDoc(rowDoc, 'layout', nextRow), origin)
@@ -497,4 +520,6 @@ export function applySitePatchesToDocs(
       )
     }
   }
+
+  return touchedDocs
 }

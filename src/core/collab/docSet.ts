@@ -9,6 +9,8 @@ import * as Y from 'yjs'
 export interface CollabDocSet {
   get(docId: string): Y.Doc | undefined
   ensure(docId: string): Y.Doc
+  /** Adopt an externally-owned doc (provider-bound) under this id. */
+  set(docId: string, doc: Y.Doc): void
   delete(docId: string): void
   entries(): IterableIterator<[string, Y.Doc]>
 }
@@ -24,6 +26,9 @@ export function createCollabDocSet(): CollabDocSet {
         docs.set(docId, doc)
       }
       return doc
+    },
+    set: (docId, doc) => {
+      docs.set(docId, doc)
     },
     delete: (docId) => {
       docs.get(docId)?.destroy()

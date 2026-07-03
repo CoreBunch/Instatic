@@ -31,5 +31,5 @@ export async function handleLayoutsRoutes(req: Request, db: DbClient): Promise<R
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
 
-  return siteCollectionRowsResponse(db, url, 'layouts')
+  return siteCollectionRowsResponse(db, 'layouts')
 }

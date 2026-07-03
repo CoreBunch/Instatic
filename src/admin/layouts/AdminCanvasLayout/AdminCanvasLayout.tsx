@@ -30,8 +30,8 @@
  * - Site explorer panel — site concepts: pages, components, styles, scripts
  * - CodeEditorPanel (Task #432) — center-stage, code editing
  *
- * J12: usePersistence handles CMS draft load on mount, preference-gated
- * 30s auto-save, toolbar Save, and Cmd+S immediate save.
+ * usePersistence handles the CMS draft load on mount and connects the
+ * live-collab provider — edits stream continuously; there is no manual save.
  *
  * Agent Panel: Phase D AI assistant — self-contained floating panel (Guideline #410).
  * Authenticates via ambient Claude Code credentials through the local Bun server.
@@ -93,15 +93,6 @@ const SettingsModal = lazy(() =>
   import('@admin/modals/Settings/SettingsModal').then((m) => ({ default: m.SettingsModal })),
 )
 
-// Save-conflict resolution banner — mounts only while a 409'd save has
-// unresolved conflicts (multi-admin conflict safety, level A), so its chunk
-// stays out of the route shell on first paint.
-const SaveConflictBanner = lazy(() =>
-  import('@admin/pages/site/ui/SaveConflictBanner/SaveConflictBanner').then((m) => ({
-    default: m.SaveConflictBanner,
-  })),
-)
-
 // Editor-only toolbar surface: preview iframe. It self-gates on store state,
 // but we ALSO conditionally render it at the call site (below) so its chunk
 // isn't fetched on first paint — the preview overlay drags in the entire
@@ -126,7 +117,6 @@ export function AdminCanvasLayout() {
   const faviconUrl = useEditorStore((s) => s.site?.settings.faviconUrl ?? null)
   // Editor-only toolbar surface — gate its lazy chunk on store state.
   const previewOpen = useEditorStore((s) => s.previewOpen)
-  const hasSaveConflicts = useEditorStore((s) => s.saveConflicts.length > 0)
   // Settings modal mount gate. adminUi is the canonical source — the
   // editor's `settingsSlice.openSettings` mirrors into it, and the admin
   // shell reads from it too.
@@ -169,11 +159,9 @@ export function AdminCanvasLayout() {
     canEditContent: canEditContentFlag,
     canEditStyle: canEditStyleFlag,
   }
-  // J12 — wire persistence: load, auto-save, toolbar Save, Cmd+S.
-  const persistence = usePersistence('default', cmsAdapter, {
-    markNewSiteUnsaved: true,
-    enabled: true,
-  })
+  // Boot the document lifecycle: HTTP load for first paint, then the collab
+  // provider — every edit streams live and the server relay persists.
+  const persistence = usePersistence('default', cmsAdapter, { enabled: true })
   // Keep the open page in lockstep with the URL: consume `?page=<slug>` on
   // load, and mirror the active page's slug back into the address bar so it's
   // directly linkable.
@@ -203,10 +191,6 @@ export function AdminCanvasLayout() {
     : null
 
   const loadEditorBody = usePostPaintEditorBodyGate()
-  async function saveBeforeWorkspaceNavigation(): Promise<void> {
-    if (!useEditorStore.getState().hasUnsavedChanges) return
-    await persistence.saveSite()
-  }
 
   return (
     <EditorPermissionsProvider value={permissions}>
@@ -227,11 +211,7 @@ export function AdminCanvasLayout() {
           faviconUrl={faviconUrl}
           section="site"
           adminNavigationSlot={(
-            <AdminSectionNavigation
-              section="site"
-              currentUser={currentUser}
-              onWorkspaceNavigateStart={canSaveSite ? saveBeforeWorkspaceNavigation : undefined}
-            />
+            <AdminSectionNavigation section="site" currentUser={currentUser} />
           )}
           overlay={previewOpen && (
             <Suspense fallback={null}>
@@ -241,20 +221,10 @@ export function AdminCanvasLayout() {
           rightSlot={(
             <>
               <ZoomControls />
-              <PublishButton
-                enabled={canPublishPages}
-                onSave={canSaveSite ? persistence.saveSite : undefined}
-                saveStatus={persistence.saveStatus}
-              />
+              <PublishButton enabled={canPublishPages} saveStatus={persistence.saveStatus} />
             </>
           )}
         />
-
-        {hasSaveConflicts && (
-          <Suspense fallback={null}>
-            <SaveConflictBanner />
-          </Suspense>
-        )}
 
         {loadEditorBody ? (
           <LazyChunkBoundary

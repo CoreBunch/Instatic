@@ -383,16 +383,4 @@ describe('CmsAdapter conflict protocol', () => {
     expect(loaded?.shellSeq).toBe(3)
     expect(loaded?.rowSeqs).toEqual({ page_home: 2 })
   })
-
-  it('loadSiteRow fetches the single-row filter and returns null for a deleted row', async () => {
-    const requested: string[] = []
-    const adapter = new CmsAdapter(async (input) => {
-      requested.push(String(input))
-      return new Response(JSON.stringify({ rows: [] }), { status: 200 })
-    })
-
-    const row = await adapter.loadSiteRow('pages', 'page-gone')
-    expect(row).toBeNull()
-    expect(requested[0]).toBe('/admin/api/cms/pages?id=page-gone')
-  })
 })

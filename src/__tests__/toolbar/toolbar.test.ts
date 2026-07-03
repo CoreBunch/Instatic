@@ -347,19 +347,17 @@ describe('PublishButton — publish state machine', () => {
     expect(src).toContain('primaryTestId="toolbar-publish-btn"')
   })
 
-  it('saves the current draft before calling the CMS publish endpoint', () => {
+  it('relies on the server-side relay flush instead of a client save before publish', () => {
     const { readFileSync } = require('fs')
     const src = readFileSync(
       new URL('../../admin/pages/site/toolbar/PublishButton.tsx', import.meta.url),
       'utf-8',
     )
-    // The publish call is wrapped in `runStepUp(() => publishCmsDraft())`
-    // so the StepUpProvider can intercept `step_up_required` and re-auth.
-    // We assert that save runs before that wrapped call lands.
-    const savePosition = src.indexOf('await onSave?.()')
-    const publishPosition = src.indexOf('publishCmsDraft()')
-    expect(savePosition).toBeGreaterThan(-1)
-    expect(publishPosition).toBeGreaterThan(savePosition)
+    // Live co-editing streams every edit to the server as it happens; the
+    // publish ENDPOINT flushes the relay's debounced persist. The button must
+    // not carry a client-side save path anymore.
+    expect(src).toContain('publishCmsDraft()')
+    expect(src).not.toContain('onSave')
   })
 
   it('loads persisted publish status when the toolbar mounts', () => {
@@ -372,13 +370,16 @@ describe('PublishButton — publish state machine', () => {
     expect(src).toContain('draftMatchesPublished')
   })
 
-  it('returns from Published to Publish when the draft has unsaved changes', () => {
+  it('returns from Published to Publish when the draft moves on', () => {
     const { readFileSync } = require('fs')
     const src = readFileSync(
       new URL('../../admin/pages/site/toolbar/PublishButton.tsx', import.meta.url),
       'utf-8',
     )
-    expect(src).toContain('hasUnsavedChanges')
+    // Every store mutation (local or a remote peer's) produces a new `site`
+    // reference; the button compares against the reference captured at
+    // publish time and drops back to idle when they diverge.
+    expect(src).toContain('publishedSiteRef')
     expect(src).toContain("setState('idle')")
   })
 
@@ -570,13 +571,14 @@ describe('Toolbar — structural requirements', () => {
       'utf-8',
     )
     expect(src).toContain('PublishActionGroup')
-    expect(src).toContain('Draft saved')
-    expect(src).toContain('Unsaved draft')
+    expect(src).toContain('Draft synced')
+    expect(src).toContain('Offline — reconnecting')
     expect(src).toContain("state === 'published' ? 'Published'")
     expect(src).toContain('state === \'published\' ? CheckIcon')
     expect(src).toContain("statusLabel={state === 'published' ? null : status.label}")
     expect(src).toContain('publishDisabled={disabled || state === \'published\'}')
-    expect(src).toContain('Save draft')
+    // Saving is continuous (live co-editing) — no manual save action remains.
+    expect(src).not.toContain('Save draft')
     expect(src).toContain('Preview page')
     // "Open live page" used to live in this menu — it's now a dedicated
     // icon button (OpenLivePageButton) next to the avatar in the Toolbar

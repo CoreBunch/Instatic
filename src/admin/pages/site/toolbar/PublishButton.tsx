@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { SiteDocument } from '@core/page-tree'
 import { selectActivePage, useEditorStore } from '@site/store/store'
 import { getCmsPublishStatus, publishCmsDraft } from '@core/persistence'
 import { LoaderIcon } from 'pixel-art-icons/icons/loader'
@@ -7,7 +8,6 @@ import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { CircleAlertSolidIcon } from 'pixel-art-icons/icons/circle-alert-solid'
 import { CloudUploadSolidIcon } from 'pixel-art-icons/icons/cloud-upload-solid'
 import { EyeSolidIcon } from 'pixel-art-icons/icons/eye-solid'
-import { SaveSolidIcon } from 'pixel-art-icons/icons/save-solid'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { SchedulePublishDialog } from '@admin/modals/SchedulePublishDialog'
 import type { PersistenceSaveStatus } from '@site/hooks/usePersistence'
@@ -16,40 +16,29 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 
 type PublishState = 'idle' | 'publishing' | 'published' | 'error'
 
-async function triggerManualSave(
-  onSave: () => void | Promise<void>,
-  setIsSaving: (v: boolean) => void,
-): Promise<void> {
-  setIsSaving(true)
-  try {
-    await onSave()
-  } catch (err) {
-    console.error('[toolbar] Manual save failed:', err)
-  } finally {
-    setIsSaving(false)
-  }
-}
-
 interface PublishButtonProps {
   enabled?: boolean
-  onSave?: () => void | Promise<void>
   saveStatus?: PersistenceSaveStatus
 }
 
-export function PublishButton({ enabled = true, onSave, saveStatus }: PublishButtonProps) {
+export function PublishButton({ enabled = true, saveStatus }: PublishButtonProps) {
   const site = useEditorStore((s) => s.site)
   const siteId = useEditorStore((s) => s.site?.id ?? null)
   const activePage = useEditorStore(selectActivePage)
   const openPreview = useEditorStore((s) => s.openPreview)
-  const hasUnsavedChanges = useEditorStore((s) => s.hasUnsavedChanges)
   const { runStepUp } = useStepUp()
   const [state, setState] = useState<PublishState>('idle')
   const [message, setMessage] = useState<string | null>(null)
-  const [isSaving, setIsSaving] = useState(false)
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false)
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const isStatusSaving = saveStatus?.state === 'saving'
-  const saveError = saveStatus?.state === 'error' ? saveStatus.message ?? 'Save failed' : null
+  /**
+   * The `site` reference captured when the button entered the "published"
+   * state. Every store mutation (local or a remote peer's) produces a new
+   * reference, so `site !== publishedSiteRef.current` is the exact "the
+   * draft moved on since publish" signal that returns the button to idle.
+   */
+  const publishedSiteRef = useRef<SiteDocument | null>(null)
+  const syncError = saveStatus?.state === 'error' ? saveStatus.message ?? 'Sync failed' : null
 
   useEffect(() => {
     return () => {
@@ -66,6 +55,7 @@ export function PublishButton({ enabled = true, onSave, saveStatus }: PublishBut
         const status = await getCmsPublishStatus()
         if (cancelled) return
         if (status.draftMatchesPublished) {
+          publishedSiteRef.current = useEditorStore.getState().site
           setState('published')
           setMessage(null)
         }
@@ -79,7 +69,7 @@ export function PublishButton({ enabled = true, onSave, saveStatus }: PublishBut
   }, [enabled, siteId])
 
   useEffect(() => {
-    if (!hasUnsavedChanges || state !== 'published') return
+    if (state !== 'published' || site === publishedSiteRef.current) return
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current)
     statusTimerRef.current = null
     const resetTimer = setTimeout(() => {
@@ -87,7 +77,7 @@ export function PublishButton({ enabled = true, onSave, saveStatus }: PublishBut
       setMessage(null)
     }, 0)
     return () => clearTimeout(resetTimer)
-  }, [hasUnsavedChanges, state])
+  }, [site, state])
 
   const resetErrorLater = () => {
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current)
@@ -118,7 +108,8 @@ export function PublishButton({ enabled = true, onSave, saveStatus }: PublishBut
     setMessage(null)
 
     try {
-      await onSave?.()
+      // No client-side flush needed: edits stream to the server live, and
+      // the publish endpoint flushes the relay's debounced persist itself.
       // Wrap the publish call in `runStepUp` so the StepUpProvider can
       // intercept the server's `step_up_required` 401, prompt the user
       // to re-enter their password, then retry. Publish is the highest-
@@ -126,6 +117,7 @@ export function PublishButton({ enabled = true, onSave, saveStatus }: PublishBut
       // which is why the server gates it behind a fresh step-up window
       // in addition to the `pages.publish` capability check.
       const result = await runStepUp(() => publishCmsDraft())
+      publishedSiteRef.current = useEditorStore.getState().site
       setState('published')
       setMessage(
         result.publishedPages === 1
@@ -148,11 +140,6 @@ export function PublishButton({ enabled = true, onSave, saveStatus }: PublishBut
     }
   }
 
-  const handleManualSave = async () => {
-    if (!onSave || isSaving || isStatusSaving) return
-    await triggerManualSave(onSave, setIsSaving)
-  }
-
   const isPublishing = state === 'publishing'
   const disabled = !site || !enabled || isPublishing
   const label =
@@ -162,21 +149,21 @@ export function PublishButton({ enabled = true, onSave, saveStatus }: PublishBut
     'Publish'
 
   const status =
-    saveError ? {
-      label: 'Draft save failed',
+    syncError ? {
+      label: 'Sync failed',
       tone: 'danger' as const,
-      ariaLabel: saveError,
+      ariaLabel: syncError,
     } :
-    isStatusSaving || isSaving ? {
-      label: 'Saving draft',
-      tone: 'neutral' as const,
-    } :
-    hasUnsavedChanges ? {
-      label: 'Unsaved draft',
+    saveStatus?.state === 'offline' ? {
+      label: 'Offline — reconnecting',
       tone: 'warning' as const,
     } :
+    saveStatus?.state === 'connecting' || saveStatus?.state === 'loading' ? {
+      label: 'Connecting',
+      tone: 'neutral' as const,
+    } :
     {
-      label: 'Draft saved',
+      label: 'Draft synced',
       tone: 'success' as const,
     }
 
@@ -187,14 +174,6 @@ export function PublishButton({ enabled = true, onSave, saveStatus }: PublishBut
     CloudUploadSolidIcon
 
   const menuItems: PublishActionMenuItem[] = [
-    {
-      id: 'save-draft',
-      label: 'Save draft',
-      icon: SaveSolidIcon,
-      disabled: !onSave || isSaving || isStatusSaving,
-      onSelect: handleManualSave,
-      testId: 'toolbar-save-draft-action',
-    },
     {
       // Per-page scheduling. The Site editor's primary Publish button
       // still publishes ALL draft pages at once (existing behaviour);

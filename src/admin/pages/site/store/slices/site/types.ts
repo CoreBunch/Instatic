@@ -7,7 +7,7 @@
  */
 
 import type { StoreApi } from 'zustand'
-import type { Draft, Patches } from 'mutative'
+import type { Draft } from 'mutative'
 import type { FrameworkColorToken, FrameworkColorUtilityType, FrameworkPreferencesSettings, FrameworkScaleManualSize, FrameworkScaleMode, FrameworkSpacingClassGenerator, FrameworkSpacingGroup, FrameworkTypographyClassGenerator, FrameworkTypographyGroup } from '@core/framework-schema'
 import type {
   DecorativeSiteExplorerSectionId,
@@ -20,41 +20,16 @@ import type {
   SiteDocument,
   SiteExplorerSectionId,
   SiteSettings,
-  SiteShell,
   PageTemplateConfig,
   ConditionDef,
   StructuralExplorerRowOrder,
   StructuralSiteExplorerSectionId,
 } from '@core/page-tree'
-import type { SaveConflict } from '@core/persistence/saveConflict'
-import type { VisualComponent } from '@core/visualComponents'
-import type { SavedLayout } from '@core/layouts'
 import type { FontEntry, FontToken } from '@core/fonts'
 import type { ImportFragment } from '@core/htmlImport'
 import type { NewStyleRule, SiteImportTransaction } from '@core/siteImport'
 import type { FrameworkChangeImpact, FrameworkPreset } from '@core/framework'
 import type { EditorStore } from '@site/store/types'
-
-/**
- * The fetched remote state of one sync target — consumed by
- * `applyRemoteSnapshot`, which serves both the conflict banner's
- * "Load theirs" and the live-sync socket's clean-row pull. `row: null`
- * means the target was deleted remotely — applying removes it locally.
- */
-export type RemoteSnapshot =
-  | { table: 'site'; shell: SiteShell; seq: number }
-  | { table: 'pages'; rowId: string; row: Page | null; seq: number }
-  | { table: 'components'; rowId: string; row: VisualComponent | null; seq: number }
-  | { table: 'layouts'; rowId: string; row: SavedLayout | null; seq: number }
-
-/** What `applyRemoteSnapshot` actually did — the socket hook toasts on it. */
-export interface RemoteApplyResult {
-  /** False when the snapshot deep-equaled local state (echo) — bookkeeping only. */
-  applied: boolean
-  /** True when undo entries existed and were discarded by the apply. */
-  clearedHistory: boolean
-}
-
 
 // ---------------------------------------------------------------------------
 // Public action surface — every method below appears as a top-level entry on
@@ -128,21 +103,6 @@ type UpdateFontTokenPatch = Partial<{
   order: number
 }>
 
-/**
- * One undoable transaction, stored as Mutative patch pairs scoped to the
- * SiteDocument (paths are relative to `site`, e.g. `['pages', 0, 'nodes', …]`).
- *
- * - `inverse` reverts the transaction (applied on undo).
- * - `forward` re-applies it (applied on redo).
- * - `coalesceKey` carries the in-progress input-burst identity so consecutive
- *   per-keystroke edits fold into a single entry (see `commitHistory`).
- */
-export interface HistoryEntry {
-  inverse: Patches
-  forward: Patches
-  coalesceKey: string | null
-}
-
 export interface SiteSlice {
   site: SiteDocument | null
 
@@ -151,27 +111,6 @@ export interface SiteSlice {
   loadSite: (site: SiteDocument) => void
   clearSite: () => void
   updateSiteName: (name: string) => void
-
-  // Save-conflict resolution (multi-admin conflict safety — level A)
-  /** Replace the pending-conflicts list (set from the save pipeline's 409 handler). */
-  setSaveConflicts: (conflicts: readonly SaveConflict[]) => void
-  /**
-   * Keep the local version: bump the target's base seq to the remote seq so
-   * the next save passes the conflict check — the overwrite becomes a stated
-   * decision instead of a silent one. Local dirty marks stay untouched.
-   */
-  resolveSaveConflictKeepMine: (conflict: SaveConflict) => void
-  /**
-   * Adopt a remote version: swap it into the document (or remove the target
-   * when deleted remotely) without pushing undo history, clear the target's
-   * dirty marks and any pending conflict for it, and sync the base seq.
-   * Clears the undo history — site-relative patches are undefined across a
-   * remotely swapped tree — EXCEPT when the remote content deep-equals the
-   * local copy (the echo of one's own save), which is bookkeeping-only.
-   * Serves the conflict banner's "Load theirs" AND the live-sync socket's
-   * clean-target pull.
-   */
-  applyRemoteSnapshot: (snapshot: RemoteSnapshot) => RemoteApplyResult
 
   // Page mutations
   addPage: (title: string, slug?: string) => Page
@@ -399,30 +338,12 @@ export interface SiteSlice {
   mutateAllPagesAndSite(fn: (site: SiteDocument, helpers: SiteImportTransaction) => SiteMutationResult): boolean
 
   // ─── Undo / Redo ──────────────────────────────────────────────────────────
-  /**
-   * Per-transaction Mutative patch pairs — most recent last. Each entry stores
-   * `inverse` (applied on undo) + `forward` (applied on redo) patches scoped to
-   * the SiteDocument, so a step costs O(change) memory instead of a full-site
-   * clone. See `HistoryEntry`.
-   */
-  _historyPast: HistoryEntry[]
-  /** Entries popped by undo, available for redo — most recent last */
-  _historyFuture: HistoryEntry[]
+  // History lives in per-doc Y.UndoManagers inside the collab binding
+  // (collabBinding.ts) — the store only mirrors availability flags.
   /** True if there's at least one state to undo to */
   canUndo: boolean
   /** True if there's at least one state to redo to */
   canRedo: boolean
-  /**
-   * Identity key of the in-progress history-coalescing burst, or `null`.
-   *
-   * Continuous-input mutations (per-keystroke text/number edits) pass a stable
-   * key derived from their target (`props:<nodeId>:<prop>`, etc.). While the
-   * incoming key matches this one, the mutation folds into the existing
-   * top-of-stack snapshot instead of cloning the whole site again — so typing a
-   * word is ONE undo step, not one per character. Any non-coalescing mutation,
-   * `undo`/`redo`, or a site (re)load resets it to `null`, ending the burst.
-   */
-  _historyCoalesceKey: string | null
   undo: () => void
   redo: () => void
 }

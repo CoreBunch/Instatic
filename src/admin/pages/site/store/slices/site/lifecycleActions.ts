@@ -14,8 +14,8 @@ import {
   DEFAULT_SITE_RUNTIME,
 } from '@core/site-runtime'
 import { clearCanvasSelectionDraft } from '../selectionSlice'
+import { resetCollabDocsFromSite } from './collabBinding'
 import { createDefaultSiteDocument } from './defaults'
-import { emptyDirtyMarks } from './dirtyTracking'
 import { reconcileFrameworkClasses } from './framework/reconcile'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
@@ -58,20 +58,12 @@ export function createLifecycleActions({
         // the prior site and would cause `mutateActiveTree` to silently no-op
         // (early-return) when the VC id is not present in the new site.
         state.activeDocument = null
-        state._historyPast = []
-        state._historyFuture = []
-        state._historyCoalesceKey = null
         state.canUndo = false
         state.canRedo = false
-        state.hasUnsavedChanges = false
-        // A brand-new site has no stored rows at all — first save is full.
-        state._dirtySave = { ...emptyDirtyMarks(), all: true }
-        // No stored rows → no sync bases and nothing to conflict with.
-        state.baseSeqs = {}
-        state.shellBaseSeq = 0
-        state.saveConflicts = []
-        state.syncCursor = 0
       })
+      // Rebuild the doc world around the fresh site (detached: seed locally;
+      // connected: rebind through the provider). Also clears undo history.
+      resetCollabDocsFromSite(site)
       return site
     },
 
@@ -94,21 +86,11 @@ export function createLifecycleActions({
         state.activePageId = (findHomePage(site.pages) ?? site.pages[0])?.id ?? null
         // Reset activeDocument — see createSite for rationale.
         state.activeDocument = null
-        state._historyPast = []
-        state._historyFuture = []
-        state._historyCoalesceKey = null
         state.canUndo = false
         state.canRedo = false
-        state.hasUnsavedChanges = false
-        state._dirtySave = emptyDirtyMarks()
-        // Sync bases for the fresh document are seeded by the load path
-        // (usePersistence → seedBaseSeqs) — reset here so a hand-assembled
-        // load never inherits a previous document's bases or conflicts.
-        state.baseSeqs = {}
-        state.shellBaseSeq = 0
-        state.saveConflicts = []
-        state.syncCursor = 0
       })
+      // See createSite — mirror the loaded site into the collab docs.
+      resetCollabDocsFromSite(site)
     },
 
     clearSite: () => {
@@ -120,17 +102,10 @@ export function createLifecycleActions({
         // Reset activeDocument — without a site there can be no active doc.
         state.activeDocument = null
         clearCanvasSelectionDraft(state)
-        state._historyPast = []
-        state._historyFuture = []
-        state._historyCoalesceKey = null
         state.canUndo = false
         state.canRedo = false
-        state._dirtySave = emptyDirtyMarks()
-        state.baseSeqs = {}
-        state.shellBaseSeq = 0
-        state.saveConflicts = []
-        state.syncCursor = 0
       })
+      resetCollabDocsFromSite(null)
     },
 
     updateSiteName: (name) => {

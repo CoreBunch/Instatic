@@ -31,5 +31,5 @@ export async function handlePagesRoutes(req: Request, db: DbClient): Promise<Res
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
 
-  return siteCollectionRowsResponse(db, url, 'pages')
+  return siteCollectionRowsResponse(db, 'pages')
 }

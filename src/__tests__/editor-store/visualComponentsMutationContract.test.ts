@@ -3,27 +3,23 @@
  *
  * Visual Components live inside the assembled SiteDocument, so every action
  * that mutates them must use the same document mutation contract as page/tree
- * actions: snapshot undo history, mark the document dirty, and allow undo to
- * restore the previous SiteDocument.
+ * actions: capture an undo step (via the collab binding's per-doc
+ * Y.UndoManagers) and allow undo to restore the previous SiteDocument.
  */
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { useEditorStore } from '@site/store/store'
+import { collabClearHistory } from '@site/store/slices/site/collabBinding'
 import { makeNode, makePage, makeSite, makeVC, makeVCNode } from '../fixtures'
 
 function freshStore() {
+  useEditorStore.getState().clearSite()
   useEditorStore.setState({
-    site: null,
     activePageId: null,
     activeDocument: null,
     selectedNodeId: null,
     selectedNodeIds: [],
     hoveredNodeId: null,
-    _historyPast: [],
-    _historyFuture: [],
-    canUndo: false,
-    canRedo: false,
-    hasUnsavedChanges: false,
-  } as Parameters<typeof useEditorStore.setState>[0])
+  })
 }
 
 function loadSiteWithCardVc() {
@@ -45,18 +41,15 @@ function loadSiteWithCardVc() {
 }
 
 function expectMutationContract(action: () => void, assertChanged: () => void): void {
-  expect(useEditorStore.getState().hasUnsavedChanges).toBe(false)
   expect(useEditorStore.getState().canUndo).toBe(false)
 
   action()
   assertChanged()
 
-  expect(useEditorStore.getState().hasUnsavedChanges).toBe(true)
   expect(useEditorStore.getState().canUndo).toBe(true)
 
   useEditorStore.getState().undo()
 
-  expect(useEditorStore.getState().hasUnsavedChanges).toBe(true)
   expect(useEditorStore.getState().canRedo).toBe(true)
 }
 
@@ -145,13 +138,7 @@ describe('Visual Component actions use the SiteDocument mutation contract', () =
     expect(useEditorStore.getState().site!.visualComponents[0].tree.nodes['vc-root'].propBindings).toBeUndefined()
 
     useEditorStore.getState().setNodePropBinding('vc-root', 'text', 'param-title')
-    useEditorStore.setState({
-      hasUnsavedChanges: false,
-      _historyPast: [],
-      _historyFuture: [],
-      canUndo: false,
-      canRedo: false,
-    } as Parameters<typeof useEditorStore.setState>[0])
+    collabClearHistory()
 
     expectMutationContract(
       () => {
