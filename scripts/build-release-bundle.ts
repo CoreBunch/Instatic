@@ -94,10 +94,13 @@ INSTATIC_IMAGE=ghcr.io/corebunch/instatic:${version} docker compose -f compose.p
 Use \`ghcr.io/corebunch/instatic:${version}\` as the Railway service source. Attach a volume at \`/app/storage\` and set:
 
 \`\`\`txt
+PORT=8080
 DATABASE_URL=sqlite:/app/storage/data/cms.db
 UPLOADS_DIR=/app/storage/uploads
 STATIC_DIR=/app/dist
+RAILWAY_RUN_UID=0
 INSTATIC_SECRET_KEY=<output of bun run scripts/generate-secret-key.ts>
+PUBLIC_ORIGIN=https://\${{RAILWAY_PUBLIC_DOMAIN}}
 \`\`\`
 
 Read \`docs/deployment/railway.md\`, \`docs/deployment/vps.md\`, and \`docs/deployment/backup-restore.md\` before running a public site.
