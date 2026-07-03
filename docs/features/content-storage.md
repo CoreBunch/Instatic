@@ -224,7 +224,7 @@ The published `SiteDocument` is stored ONCE per full publish in `site_snapshots`
 
 - **Layer A** — the publisher renders **every** page (for postType rows, the matched entry template), runs the full `applyPublishedHtmlPipeline`, and writes the final HTML to `uploads/published/<inactive-slot>/<route>.html` — a fully-static page bakes a complete document, a page with dynamic nodes bakes a static shell with `<instatic-hole>` placeholders. The CSS bundles + runtime JS are baked into the same slot. After all pages are written the symlink `current` atomic-flips to the new slot. Served entirely from disk — no DB for HTML/CSS/JS.
 - **Layer B** — the in-memory render cache evicts lazily via `bumpPublishVersion()`.
-- **Layer C** — when a page contains dynamic nodes (auto-detected from binding sources, loop sources, module flags, VC refs), the publisher emits `<instatic-hole>` placeholders in the rendered HTML; the hole runtime fetches each fragment lazily from `/_instatic/hole/<nodeId>?v=<publishVersion>`.
+- **Layer C** — when a page contains dynamic nodes (auto-detected from binding sources, loop sources, module flags, VC refs), the publisher emits `<instatic-hole>` placeholders in the rendered HTML; the hole runtime fetches each fragment lazily from `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>`, forwarding the originating page path/query so route bindings and loop pagination resolve inside the fragment.
 
 For postType rows, `publishDataRow` does the same but incrementally: writes the single row's artefact into the ACTIVE slot via `tmp + rename` (no full slot swap), bumps publishVersion, and removes the old slug's artefact if the slug changed.
 
