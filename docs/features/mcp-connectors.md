@@ -65,7 +65,7 @@ repositories (headless reads) / live editor store (browser tools)
 
 MCP exposes the **full tool catalog** (deduped by name), capability-filtered. Tools fall in two execution classes:
 
-**Single source of truth.** All page *editing* goes through the **live editor store** (browser tools, relayed to the open editor). There is deliberately **no** headless DB-mutating page-tree tool: an earlier `read_page_tree`/`mutate_page_tree` pair edited the DB directly, creating a second copy of each page with identical node ids that desynced from the open editor and got clobbered by its autosave (data loss). They were removed — structure editing uses the editor's browser tools, which the existing save-flush persists.
+**Single source of truth.** All page *editing* goes through the **live editor store** (browser tools, relayed to the open editor). There is deliberately **no** headless DB-mutating page-tree tool: an earlier `read_page_tree`/`mutate_page_tree` pair edited the DB directly, creating a second copy of each page with identical node ids that desynced from the open editor and got clobbered by its autosave (data loss). They were removed — structure editing uses the editor's browser tools, whose edits stream to the server through the collab socket and persist via the relay.
 
 **Server-resolved — work with no workspace open:**
 - Content reads — list/read collections, entries, data rows, media.
@@ -97,7 +97,8 @@ buildMcpServer → getEditorBridgeForUser(userId, tool.scope)
    ◀───────────── POST /admin/api/ai/tool-result ◀── postToolResult ◀───────┘
 ```
 
-- Browser side: `useMcpWorkspaceBridge` opens the scope-qualified NDJSON stream, runs each `toolRequest` through the SAME Site or Content dispatcher as the built-in agent panel, and POSTs the result back. It reconnects with backoff. `SitePage` flushes pending draft changes before reporting a successful tool result, so a follow-up headless read or `site_publish` sees the persisted edit immediately; a failed save makes the MCP tool fail instead of silently publishing stale data. `ContentPage` registers its bridge whenever the workspace is mounted, independent of whether the AI panel is visible.
+- Browser side: `useMcpWorkspaceBridge` opens the scope-qualified NDJSON stream, runs each `toolRequest` through the SAME Site or Content dispatcher as the built-in agent panel, and POSTs the result back. It reconnects with backoff. `ContentPage` registers its bridge whenever the workspace is mounted, independent of whether the AI panel is visible.
+- Site edits need no post-tool save step. Store mutations stream to the collab relay the moment they land, and every headless read (plus `site_publish`) flushes the relay server-side before it touches the DB — so a follow-up read or publish always observes the edit. There is no client-side save flush, and no window in which the MCP caller can see stale data.
 - Server side: reuses the chat bridge machinery wholesale — `createBridge` issues the `AiBrowserBridge`, `resolveBridgeToolResult` settles it from the existing `/admin/api/ai/tool-result` endpoint.
 
 This is why an open editor (yours, or one the agent opens) unlocks the full editing surface without reimplementing any tool.

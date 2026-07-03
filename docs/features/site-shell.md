@@ -373,6 +373,12 @@ Pages and VCs follow the same principle: `validateVisualComponents` silently dro
 
 ## Saving the site
 
+**The editor does not save over HTTP anymore** — it persists continuously
+through the real-time co-editing relay (see "Real-time co-editing" below).
+The transactional endpoint remains the write path for every **standalone
+HTTP writer**: the Settings modal outside the editor, onboarding's
+framework import, Super Import, and the fresh-install bootstrap.
+
 The whole document saves through ONE endpoint, in ONE server transaction:
 
 ```
@@ -397,22 +403,9 @@ Two modes:
   the server derives deletions as stored − shipped. `deleted*Ids` must be
   empty.
 
-Saves are **incremental**: the editor store derives which pages/VCs/layouts
-changed — and which were deleted — from the same Mutative patches that power
-undo (`src/admin/pages/site/store/slices/site/dirtyTracking.ts`; deletions
-come from a pre/post membership diff, robust to any recipe style), and
-`usePersistence.ts` ships only those — a one-prop edit uploads one page, not
-the site. Delete-then-recreate within one save window nets to a plain write
-at snapshot time; the server 400s any id in both the changed and deleted
-sets as a backstop. Anything the tracker can't attribute marks `all` and
-ships as a replace-mode full save. Granular write gates
-(`SITE_WRITE_CAPABILITIES`) enforce what each role can actually change
-inside the diff.
-
-`usePersistence` runs saves through a **single-flight queue**: at most one
-save on the wire and one queued follow-up that reads the latest store state
-— autosave, Cmd+S, save-request events, the MCP bridge, and the unmount
-flush can never interleave requests.
+Granular write gates (`SITE_WRITE_CAPABILITIES`) enforce what each role can
+actually change inside the shell/page diffs. The server 400s any id in both
+the changed and deleted sets as a backstop.
 
 The save is **atomic and fail-closed**: shell + components + layouts + pages
 commit in one transaction (`server/handlers/cms/siteDocument.ts`), so one
@@ -450,9 +443,12 @@ on every written or deleted row (`data_rows.seq`) — and on the shell, but
 unconditional stamp would make the shell seq useless as a conflict signal).
 The response returns the seq (`{ ok: true, seq }`).
 
-### Conflict detection (multi-admin level A)
+### Conflict detection (HTTP writers)
 
-Incremental saves carry **base seqs**: for every changed *and* deleted row,
+Editors co-edit through the CRDT relay and never conflict; this check guards
+the remaining HTTP writers against each other (two Settings modals open on
+two admin tabs, onboarding racing an import). Incremental saves carry
+**base seqs**: for every changed *and* deleted row,
 the stored seq the client last synchronized with (`baseSeqs`), plus the
 shell's (`shellBaseSeq`). Inside the transaction — *after* `allocateSiteSeq`,
 whose counter-row lock serializes concurrent saves on both dialects, making
@@ -474,10 +470,12 @@ written. Client-created rows have no stored counterpart and pass by
 construction; **replace-mode saves skip the check** (imports replace
 deliberately).
 
-Known v1 blind spot: writers OUTSIDE the transactional save (plugin pack
-installs via `saveDraftSite`/`saveDataRowDraft`, data-workspace row edits)
-do not stamp seqs, so conflict detection cannot see them — those flows
-coordinate through `requestCmsSiteReload()` instead.
+Writers OUTSIDE the transactional save (plugin pack installs via
+`saveDraftSite`/`saveDataRowDraft`, data-workspace row edits) do not stamp
+seqs, so this check cannot see them — but every repository write fires
+`notifyRowWrite`/`notifyShellWrite` (`server/repositories/rowWriteEvents.ts`),
+which makes the collab relay RESET the affected docs: connected editors
+rebind and pick the external change up live.
 
 One subtlety: the editor bumps `site.updatedAt` on EVERY historic mutation,
 so `shellsEqual` (`@core/persistence/shellsEqual`, shared by the server's
@@ -486,61 +484,77 @@ dirty tracker never marks the shell for `updatedAt`-only patches — otherwise
 every page edit would read as a shell change and destroy the shell seq as a
 conflict signal.
 
-### Live pull (multi-admin level B)
+### Real-time co-editing (CRDT)
 
-Open editors learn about sibling admins' saves the moment they land — no
-polling, no manual refresh:
+Every open editor is a live peer on the same document — edits merge
+granularly (two admins can restyle two nodes of the same page, or co-type
+one text node, simultaneously), presence is visible, and there is **no save
+UI at all**: the server persists continuously.
 
-- **Channel**: `GET /admin/api/cms/site-socket` upgrades to a WebSocket
-  (`server/events/siteSocket.ts`; wired at the `Bun.serve` boundary in
-  `server/index.ts` — an upgrade is a different protocol lifecycle from the
-  request/response router). Gated at upgrade time by `site.read` AND an
-  `originAllowed` check (browsers always send Origin on WS handshakes, so
-  this closes cross-site WebSocket hijacking). The dev Vite proxy forwards
-  the upgrade (`ws: true`).
-- **Events** (`@core/persistence/syncEvents`): `rows-changed` /
-  `rows-deleted` / `shell-changed` / `site-reloaded` (replace-mode saves
-  collapse to ONE event) / `published`. Events carry **ids + seqs, never
-  payloads** — they are idempotent hints. The transactional save publishes
-  them post-commit through the in-process bus (`server/events/siteEvents.ts`,
-  Bun's native pub/sub — correct for the single-process-by-definition
-  deployment model; multi-process would need a shared bus and is out of
-  scope).
-- **Self-healing reconnect**: on every (re)connect the client sends its seq
-  cursor (`{ kind: 'subscribe', cursor }`) and the server replies with the
-  missed delta synthesized from `rows where seq > cursor` (soft-deleted rows
-  included — a missed deletion surfaces as `rows-deleted`, not silence).
-  Live events are hints; the delta is truth, so a dropped frame can never
-  cause drift.
-- **Client** (`useSiteSocket` = transport with backoff reconnect,
-  `siteSyncMerge.ts` = policy): per event target — ① base seq ≥ event seq →
-  skip (own-save echo); ② target dirty locally → pending conflict (the SAME
-  banner as a 409'd save — one resolution UX for levels A and B; dirtiness
-  is re-checked after the fetch, so an edit landing mid-wire degrades to a
-  conflict, never a silent overwrite); ③ clean → fetch current state
-  (`fetchRemoteSnapshot`) and `applyRemoteSnapshot` it. The apply
-  deep-equal-skips identical content, so undo history resets only when
-  remote content genuinely replaced local state — a toast explains exactly
-  then. A remote deletion of the open page navigates home with a toast;
-  `site-reloaded` reloads the document through the ordinary persistence
-  reload path. Events process strictly in arrival order through one promise
-  chain.
+**Document model** (`src/core/collab/`): one Yjs doc per logical row —
+`page:<rowId>`, `component:<rowId>`, `layout:<rowId>` — plus one `site:default`
+doc for the shell and the roster order. Page/component trees map to
+`getMap('tree')` (`rootNodeId` + a `nodes` Y.Map of per-node Y.Maps: `props`
+as a Y.Map with the module's inline-text prop as Y.Text, nested
+`breakpointOverrides` Y.Maps, `children` as Y.Array; `parentId` is derived,
+never stored). Layout snapshots are whole-value LWW. The shell keeps
+`settings` / `styleRules` / `explorer` as per-entry Y.Maps and everything
+else plain. Deterministic reconciles (`integrity.ts` tree repair, roster
+order) run identically on every peer.
 
-Client side: `loadSite` seeds `baseSeqs`/`shellBaseSeq` in the editor store
-(per-row seqs ride the collection GET responses — `DataRow.seq`; the shell
-seq rides `GET /site`). Every successful save bumps the shipped rows' bases
-to the response seq — deleted rows **keep** their entries so an undo that
-resurrects a saved-deleted row carries the right base. On a 409,
-`usePersistence` restores the dirty snapshot, fills `saveConflicts`, and the
-**conflict banner** (`SaveConflictBanner`, mounted in `AdminCanvasLayout`)
-offers per-target resolution: **Load theirs** fetches the remote state
-(single-row `?id=` filter on the collection GETs, or `GET /site` for the
-shell) and adopts it via `resolveSaveConflictTheirs` (swaps the row without
-undo history, clears its dirty marks, clears the undo history, and for VCs
-propagates slot re-sync / ref-cascade removal into consumer pages *with*
-dirty marks); **Keep mine** bumps the base seq so the next save overwrites
-as a stated decision. Autosave is suppressed while conflicts pend; resolving
-the last one flushes the surviving edits through the save queue.
+**Editor write path** (`src/admin/pages/site/store/slices/site/collabBinding.ts`):
+local mutations keep applying directly to the Zustand store (the hot path is
+untouched), and their Mutative patches translate into targeted Y operations
+(`@core/collab` `applySitePatchesToDocs`) — text via minimal Y.Text splices,
+children via array diffs, roster membership via pre/post id-set diffs;
+anything unattributable repopulates the doc (the conservative escape hatch).
+Remote/undo/reconcile changes flow the OTHER way: a per-doc projection
+replaces the affected row or shell in the store.
+
+**Undo** is per-editor and per-doc: Y.UndoManagers track only
+`LOCAL_ORIGIN` (a peer's edits are never undone by your Cmd+Z), coalescing
+reproduces the old `coalesceKey` typing-burst semantics, and multi-doc
+mutations (convert-to-component, roster ops, Super Import) undo as ONE step
+across all their docs via a routing-group stack.
+
+**Server relay** (`server/collab/relay.ts`): owns the authoritative docs,
+seeds them from the stored JSON (the server is the ONLY seeder — fixed seed
+clientID, so two clients can never build divergent initial histories),
+persists each doc's update blob to `collab_documents` AND the derived row
+JSON to `data_rows`/site on a short debounce (~800 ms), applies
+roster-driven soft-deletes, and RESETS docs whose row was written outside
+the relay (`rowWriteEvents.ts`) — clients rebind and reseed. The publish
+endpoint flushes the relay first so the baked snapshot includes edits still
+inside the debounce window.
+
+**Wire** (`server/collab/socket.ts` + `@core/collab/protocol`): binary
+frames `docId | frameType | payload` multiplex every doc over ONE WebSocket
+at `/admin/api/cms/site-socket` (y-protocols sync + awareness + reset).
+Upgrade is gated by a session with `site.read` and `originAllowed` (CSWSH
+defense); `canWrite` resolves once from `SITE_WRITE_CAPABILITIES`, and a
+read-only connection's update frames are dropped server-side. Known v1
+granularity regression: the socket gate is coarse (any site-write cap =
+write) — the per-category structure/content/style diff validation of the
+HTTP path does not apply to relay writes yet.
+
+**Client transport** (`src/admin/pages/site/collab/collabProvider.ts`): one
+socket, every bound doc multiplexed; local transactions send updates the
+moment they commit (no flush window to lose on unload); reconnect uses
+exponential backoff, and each (re)connect re-runs syncStep1 so Yjs state
+vectors pull exactly the missed delta. `usePersistence` HTTP-loads the
+document once for first paint, then connects the provider — edits gate on
+each doc's first sync so an unseeded doc can never receive local ops.
+
+**Presence** (`src/admin/pages/site/collab/awarenessState.ts` +
+`PeerPresenceOverlay`): every editor publishes identity (deterministic HSL
+color from the user id), active doc, selection, inline-edit state, and a
+throttled pointer through y-protocols awareness; peers render selection
+rings, name tags, and pointer dots per breakpoint frame. Peer states are
+wire data — validated with TypeBox before rendering.
+
+MCP note: headless MCP reads hit the DB, so a browser-relayed write is
+visible to them after the relay's persist debounce (≤ ~1 s) — the old
+client-side flush is gone.
 
 ### Atomic diff validation
 

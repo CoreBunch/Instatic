@@ -23,11 +23,11 @@
   position: absolute;
   display: none;
   transform: translateY(-100%);
-  padding: 1px 6px 2px;
-  border-radius: var(--editor-radius-sm);
+  padding: var(--space-3xs) var(--space-xs);
+  border-radius: var(--radius-sm);
   background: var(--peer-color);
   color: var(--text);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 600;
   line-height: 1.5;
   white-space: nowrap;

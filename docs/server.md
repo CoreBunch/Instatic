@@ -38,13 +38,17 @@ server/index.ts
     ├─→ mediaStorageRegistry.configureLocalDisk({ uploadsDir })   ← register local-disk media adapter
     ├─→ activateInstalledServerPlugins(db, uploadsDir)            ← run plugin lifecycle: activate
     │
+    ├─→ createCollabRelay(db)                ← server/collab/relay.ts: live Y docs,
+    │                                           debounced persistence, reset protocol
+    ├─→ createCollabSocketLayer(relay)       ← server/collab/socket.ts: multiplexed
+    │                                           y-protocols wire + awareness
     ├─→ Bun.serve({ fetch: req => handleServerRequest(req, runtime),
-    │               websocket: createSiteSocketHandlers(db) })
-    │     (the live-sync socket `/admin/api/cms/site-socket` upgrades at this
-    │      boundary — see server/events/siteSocket.ts; everything else goes
+    │               websocket: collabSocket.handlers })
+    │     (the co-editing socket `/admin/api/cms/site-socket` upgrades at this
+    │      boundary — see server/collab/socket.ts; everything else goes
     │      through the router)
     │
-    └─→ setSiteEventPublisher(server)        ← wire the live-sync bus to Bun pub/sub
+    └─→ collabSocket.setPublisher(server)    ← wire the collab fan-out to Bun pub/sub
 ```
 
 Boot is sequential and fail-fast. If migrations fail, the process exits. If a plugin's `activate` throws, the host logs `[plugin:<id>]` and continues — one bad plugin doesn't bring the server down.
@@ -353,6 +357,7 @@ All SQL lives in `server/repositories/`. Each file owns one resource:
 | File                       | Owns                                              |
 |----------------------------|---------------------------------------------------|
 | `audit.ts`                 | Audit log writes and queries                      |
+| `collabDocuments.ts`       | Persisted CRDT document blobs (`collab_documents`) — the co-editing relay's durable state |
 | `data/`                    | `data_tables` + `data_rows` (the universal store) |
 | `fonts.ts`                 | Font assets                                       |
 | `loginAttempts.ts`         | Failed-login records for lockout                  |
@@ -364,6 +369,7 @@ All SQL lives in `server/repositories/`. Each file owns one resource:
 | `plugins.ts`               | Installed plugins + lifecycle state               |
 | `publish.ts`               | Published-page roster: snapshot getters + the transactional publish write (orchestration lives in `server/publish/publishSite.ts`) |
 | `roles.ts`                 | System and custom roles                           |
+| `rowWriteEvents.ts`        | In-process out-of-relay write notifications (repositories notify; the collab relay resets affected docs) |
 | `runtimeAsset.ts`          | Published runtime assets (JS, CSS, fonts)         |
 | `sessions.ts`              | User sessions                                     |
 | `setup.ts`                 | Setup wizard state (`isSetup`, first-run owner)   |
