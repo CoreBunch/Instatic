@@ -115,6 +115,9 @@ export function createCollabRelay(
   const persistDebounceMs = opts.persistDebounceMs ?? 800
   const entries = new Map<string, RelayEntry>()
   const opening = new Map<string, Promise<Y.Doc>>()
+  // Last roster set the site-doc persist actually swept, so shell-field-only
+  // persists skip the three full-table scans. Cleared when the site doc resets.
+  let lastSweptRostersKey: string | null = null
   const updateListeners = new Set<RelayUpdateListener>()
   const resetListeners = new Set<RelayResetListener>()
 
@@ -178,6 +181,16 @@ export function createCollabRelay(
       await saveDraftSite(db, shell, null, { collabInternal: true })
 
       // Roster-driven deletions: live rows missing from the roster are gone.
+      // The three full-table scans below are wasted when only a shell FIELD
+      // changed (settings/styleRules edits, the common case) and the rosters
+      // are identical to the last sweep — a heavy edit session would otherwise
+      // run them on every debounced persist. Skip when the roster is unchanged;
+      // out-of-relay deletions reset the doc, so a stale roster can't linger.
+      const rostersKey =
+        projected.rosters.pages.join(',') + '|' +
+        projected.rosters.components.join(',') + '|' +
+        projected.rosters.layouts.join(',')
+      if (rostersKey === lastSweptRostersKey) return
       let deletedPublished = false
       for (const [table, ids] of [
         ['pages', projected.rosters.pages],
@@ -192,6 +205,7 @@ export function createCollabRelay(
           if (deleted?.status === 'published') deletedPublished = true
         }
       }
+      lastSweptRostersKey = rostersKey
       if (deletedPublished) await bumpPublishVersionSerialized()
       return
     }
@@ -312,6 +326,9 @@ export function createCollabRelay(
   async function resetDocs(docIds: readonly string[]): Promise<void> {
     const affected = docIds.filter((id) => parseCollabDocId(id) !== null)
     if (affected.length === 0) return
+    // The site doc reseeds from the DB on next bind — force a full roster
+    // sweep on its first persist afterwards.
+    if (affected.includes(SITE_DOC_ID)) lastSweptRostersKey = null
     for (const docId of affected) {
       await evict(docId, { persist: false })
     }

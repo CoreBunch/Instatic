@@ -233,8 +233,12 @@ export function useSitePeers(localDocId: string | null): SitePeer[] {
 
 /**
  * Live peer presences on `docId` (everyone except the local client).
- * Re-renders on every awareness change — peer pointer moves included — so
- * keep consumers small and presentational.
+ *
+ * A y-protocols awareness 'change' fires for EVERY peer on EVERY doc — so a
+ * peer moving their pointer on another page would otherwise re-render every
+ * overlay here. Bail out unless THIS doc's filtered presences actually
+ * changed (same pattern as `useSitePeers`). Same-doc pointer moves still
+ * re-render — the canvas RAF reads pointer positions from the returned array.
  */
 export function usePeerPresences(docId: string | null): PeerPresence[] {
   const [peers, setPeers] = useState<PeerPresence[]>([])
@@ -242,7 +246,10 @@ export function usePeerPresences(docId: string | null): PeerPresence[] {
   useEffect(() => {
     let awareness: Awareness | null = null
     const recompute = (): void => {
-      setPeers(readPeerPresences(docId))
+      const next = readPeerPresences(docId)
+      setPeers((current) =>
+        peerPresencesKey(current) === peerPresencesKey(next) ? current : next,
+      )
     }
     const attach = (): void => {
       awareness?.off('change', recompute)
@@ -259,4 +266,19 @@ export function usePeerPresences(docId: string | null): PeerPresence[] {
   }, [docId])
 
   return peers
+}
+
+/** Structural key over this doc's presences — includes pointer + caret so the
+ *  canvas RAF still sees same-doc moves, but a change on ANOTHER doc is a
+ *  no-op here. */
+function peerPresencesKey(peers: PeerPresence[]): string {
+  return peers
+    .map(
+      (p) =>
+        `${p.clientId}:${p.selectedNodeIds.join(',')}:${p.editingNodeId ?? ''}:` +
+        `${p.pointer ? `${p.pointer.x},${p.pointer.y},${p.pointer.breakpointId}` : ''}:` +
+        `${p.textCaret ? `${p.textCaret.nodeId},${p.textCaret.anchor},${p.textCaret.head}` : ''}`,
+    )
+    .sort()
+    .join('|')
 }
