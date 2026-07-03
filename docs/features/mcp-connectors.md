@@ -13,7 +13,7 @@ The server is implemented with the official `@modelcontextprotocol/sdk`. That pa
 - **Instatic is an MCP server.** One Streamable-HTTP endpoint at `/_instatic/mcp` serves both local and remote clients (local is just `localhost`).
 - **Thin adapter over the existing tool engine.** No tool logic is duplicated. MCP is a new *caller* alongside the built-in agent and the plugin host; tool dispatch reuses `executeAiTool`.
 - **Tool surface = the full catalog.** Server-resolved tools (content reads + `site_read_styles`) run headless — no editor needed. Every browser-execution tool the agent panel has (structure edits, insert HTML, apply CSS, assign classes, set design tokens, manage pages, content CRUD, code assets, live-DOM reads) is exposed too, **relayed to an open editor via the live editor bridge** — the single source of truth for page editing. If the connector owner has no editor open, those tools return a clear "open the editor" error; the headless reads still work.
-- **Bearer-token auth, one secret per connector.** The token is shown once on creation and stored only as a SHA-256 hash. Revocable.
+- **Bearer-token auth, one secret per connector.** The token is shown once on creation and stored only as a SHA-256 hash. New tokens expire after 90 days by default; admins can choose a custom TTL or explicitly create a non-expiring token. Revocable.
 - **Capability-gated.** A connector carries a granted capability subset; the same gate the built-in agent uses (`toolAllowedForCapabilities`) filters the toolset. An MCP caller can never invoke a tool the granting capabilities couldn't authorize over HTTP.
 - **Privilege floor.** An admin can only grant capabilities they themselves hold.
 - **Managed from the admin UI:** AI workspace → **MCP** tab.
@@ -99,7 +99,7 @@ This is why an open editor (yours, or one the agent opens) unlocks the full edit
 
 ## Authentication
 
-**Phase 1 — bearer token (current).** Each connector has a long-lived secret (`imcp_…`). The client sends `Authorization: Bearer <token>`. The server hashes the presented token and looks up a non-revoked connector, yielding its capability set. Missing/invalid tokens get a `401` with `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource"`.
+**Phase 1 — bearer token (current).** Each connector has a secret (`imcp_…`). The client sends `Authorization: Bearer <token>`. The server hashes the presented token and looks up a non-revoked, non-expired connector, yielding its capability set. Missing/invalid/expired tokens get a `401` with `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource"`.
 
 Works today with Claude Code, Cursor, Claude.ai custom connectors, and custom remote agents.
 
@@ -124,7 +124,7 @@ claude mcp add instatic --transport http http://localhost:3000/_instatic/mcp \
 
 ## Data model
 
-`ai_mcp_connectors` (migration `018`, PG + SQLite parity):
+`ai_mcp_connectors` (migration `018` plus additive expiry migration `019`, PG + SQLite parity):
 
 | column | notes |
 |---|---|
@@ -134,8 +134,9 @@ claude mcp add instatic --transport http http://localhost:3000/_instatic/mcp \
 | `token_hash` | SHA-256 of the secret; never the plaintext. Unique. |
 | `capabilities_json` | granted capability subset |
 | `created_at`, `last_used_at`, `revoked_at` | lifecycle; revoked tokens fail auth |
+| `expires_at` | token expiry; new tokens default to 90 days, `NULL` means explicitly non-expiring or grandfathered |
 
-The wire-safe `McpConnectorView` (the only HTTP-returned shape) never includes the hash — gated by `ai-mcp-connectors-never-leak.test.ts`. Create and revoke are audited (`ai.mcp_connector.created` / `ai.mcp_connector.revoked`).
+The wire-safe `McpConnectorView` (the only HTTP-returned shape) includes `expiresAt` but never includes the hash — gated by `ai-mcp-connectors-never-leak.test.ts`. Create and revoke are audited (`ai.mcp_connector.created` / `ai.mcp_connector.revoked`).
 
 ---
 
@@ -153,7 +154,7 @@ An admin cannot grant a capability they do not hold (enforced in `handlers/conne
 
 ## Tests
 
-- `server/ai/mcp/connectors/{token,store}.test.ts` — token hashing + store CRUD.
+- `server/ai/mcp/connectors/{token,store}.test.ts` — token hashing, expiry, and store CRUD.
 - `server/ai/content/treeService.test.ts` — headless load/mutate/persist.
 - `server/ai/mcp/{registry,auth,server,transports/http}.test.ts` — capability filtering, bearer auth + 401, full MCP round-trip (list/read/mutate), HTTP handshake.
 - `src/__tests__/ai/mcpConnectorsHandler.test.ts` — CRUD, privilege floor, capability gating.
