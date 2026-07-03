@@ -320,6 +320,7 @@ const tree = parsePageNodeTree(raw)
   - `src/core/page-tree/subtreeRemoval.ts` — `deleteSubtree` (THE single subtree-deletion primitive), `removeNodeSubtrees`
   - `src/core/page-tree/parentIndex.ts` — `reindexNodeParents` (derive-on-entry backfill)
   - `src/core/visualComponents/schemas.ts` — `VCNode` (= `BaseNode`)
+  - `src/admin/pages/site/store/slices/site/helpers.ts` — `mutateActiveTree`, `resolveActiveTreeTarget`
   - `src/admin/pages/site/store/slices/site/nodeActions.ts` — store actions calling `mutateActiveTree`
 - Gate tests:
   - `src/__tests__/persistence/treeSchemaShape.test.ts`

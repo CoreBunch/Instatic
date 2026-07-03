@@ -9,11 +9,11 @@ The frontend is a single React 19 + Vite SPA mounted at `/admin`. Inside it, two
 ## TL;DR
 
 - **Entry:** `src/admin/main.tsx` mounts `<Router><AdminRoutes /></Router><AdminContextMenuGuard />` with React 19 root-level error callbacks. `flushSync` forces the initial render synchronous to cut LCP.
-- **Router:** `src/admin/lib/routing/` — in-house router replacing `react-router-dom`. 10 routes, all wrapped in a per-route `<ErrorBoundary>` and `<Suspense>`, plus a final `path="/admin/*"` catch-all redirecting unknown admin URLs to `/admin/dashboard` (login form when unauthenticated) instead of rendering an empty tree. Public-site 404s are NOT claimed — the publish pipeline's NotFound handling owns those.
+- **Router:** `src/admin/lib/routing/` — in-house router replacing `react-router-dom`. Ten workspace/page routes are wrapped in a per-route `<ErrorBoundary>` and `<Suspense>`, with root redirects plus a final `path="/admin/*"` catch-all redirecting unknown admin URLs to `/admin/dashboard` (login form when unauthenticated) instead of rendering an empty tree. Public-site 404s are NOT claimed — the publish pipeline's NotFound handling owns those.
 - **Cold path:** entry chunk is tiny. `AuthenticatedAdmin` is `React.lazy` and only loads post-login. Each workspace page is wrapped in `prewarmedLazy(...)`: the active page fires its import at module evaluation; the remaining pages pre-warm via `requestIdleCallback` after first paint so subsequent nav is synchronous (no Suspense flicker).
 - **Workspaces:** `dashboard`, `site` (the editor), `content`, `data`, `media`, `plugins`, `users`, `ai`, `account`, `pluginPage`. Capability-gated by `canAccessWorkspace`.
 - **Editor store** lives at `src/admin/pages/site/store/`. Zustand + Mutative (`zustand-mutative`) + `subscribeWithSelector`. 12 slices, one source of truth for the page tree. Undo/redo uses patch-based history (O(change) per step, not O(site)).
-- **Active tree routing:** `mutateActiveTree(fn)` in `siteSlice` is the **only** place that branches on page-mode vs. VC-mode. The 11 named mutation actions are one-liners that delegate to it.
+- **Active tree routing:** `mutateActiveTree(fn)` in `src/admin/pages/site/store/slices/site/helpers.ts` is the **only** place that branches on page-mode vs. VC-mode. The 11 named mutation actions are one-liners that delegate to it.
 - **Canvas:** `src/admin/pages/site/canvas/` renders the page tree into per-breakpoint `IframeFrameSurface` iframes. Two views: **design** (multiple breakpoints side-by-side with pan/zoom) and **live** (single real-size editable frame with normal scrolling). Design mode paints iframe shells with detailed skeletons first, mounts the active breakpoint's node tree after the first paint, then fills inactive breakpoint frames on idle time. Three canvas ring tokens: `--canvas-selection-ring` (neon green, selected node), `--canvas-hover-ring` (neon pink, hovered node), `--canvas-selector-ring` (neon orange, selector-panel match sweep).
 - **Spotlight:** Cmd+K palette at `src/admin/spotlight/`. Always available across workspaces. Owns its own command registry, providers, and scopes.
 
@@ -73,7 +73,7 @@ Why the split:
 
 ## Routing
 
-`src/admin/lib/routing/` contains the in-house router (`Router`, `Routes`, `Route`, `Navigate`, `Link`, `useLocation`, `useNavigate`, `useParams`). Replaces `react-router-dom` for the 10-route admin app.
+`src/admin/lib/routing/` contains the in-house router (`Router`, `MemoryRouter`, `Routes`, `Route`, `Navigate`, `Link`, `useLocation`, `useNavigate`, `useParams`, `useInRouterContext`). Replaces `react-router-dom` for the current admin route table.
 
 Use the in-house router for every internal admin navigation, including links rendered by the site editor. `react-router-dom` and raw `<a href="/admin...">` hard navigations are banned in admin UI by `admin-router-usage.test.ts`. `src/core/` and `src/modules/` stay router-free because they are shared engine / published-page code, not admin UI.
 
@@ -350,7 +350,7 @@ The combined `EditorStore` type lives at `store/types.ts` so each slice can impo
 
 ### `mutateActiveTree` — the only mode-aware function
 
-The store routes mutations to the **active tree** (page in page-mode, VC in VC-mode) through one function in `slices/site/`:
+The store routes mutations to the **active tree** (page in page-mode, VC in VC-mode) through one function in `src/admin/pages/site/store/slices/site/helpers.ts`:
 
 ```ts
 function mutateActiveTree(fn: (tree: NodeTree<PageNode>) => void): void {
@@ -734,7 +734,8 @@ See [docs/features/plugin-system.md](features/plugin-system.md) for the plugin S
   - `src/admin/layouts/AdminCanvasLayout/AdminCanvasEditorBody.tsx` — post-paint editor body
   - `src/admin/pages/site/store/store.ts` — editor store assembly
   - `src/admin/pages/site/layout/siteEditorLayoutPersistence.ts` — Site editor layout persistence mapping
-  - `src/admin/pages/site/store/slices/site/nodeActions.ts` — `mutateActiveTree`
+  - `src/admin/pages/site/store/slices/site/helpers.ts` — `mutateActiveTree`, `resolveActiveTreeTarget`
+  - `src/admin/pages/site/store/slices/site/nodeActions.ts` — tree mutation actions that call `mutateActiveTree`
   - `src/admin/pages/site/canvas/CanvasRoot.tsx` — canvas mount
   - `src/admin/spotlight/SpotlightRoot.tsx` — Cmd+K palette
   - `src/admin/pages/site/panels/PropertiesPanel/PropertiesPanelBody.tsx` — branch router for selector, multi-select, VC, and selected-node inspector surfaces; owns the node-level Styles/Attributes switch
