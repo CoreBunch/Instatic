@@ -412,8 +412,15 @@ function projectDocIntoStore(docId: string): void {
           rows.push(known)
           continue
         }
-        const fresh = rowFromDoc(encodeCollabDocId({ kind, rowId: id })) as T | null
-        if (fresh) rows.push(fresh)
+        const rowDocId = encodeCollabDocId({ kind, rowId: id })
+        const fresh = rowFromDoc(rowDocId) as T | null
+        if (fresh) {
+          rows.push(fresh)
+          continue
+        }
+        // A peer created this row — its doc isn't bound here yet. Bind it;
+        // the whenSynced hook re-projects the site once content arrives.
+        bindDocThroughProvider(rowDocId)
       }
       return rows
     }
@@ -555,17 +562,23 @@ function adoptProviderDoc(docId: string, doc: Y.Doc): { synced: boolean } {
   return gate
 }
 
+function bindDocThroughProvider(docId: string): void {
+  if (!provider || providerBindings.has(docId)) return
+  const binding = provider.bind(docId)
+  const gate = adoptProviderDoc(docId, binding.doc)
+  gate.synced = binding.synced
+  void binding.whenSynced.then(() => {
+    gate.synced = true
+    scheduleProjection(docId)
+    // A row doc bound on demand (a peer created the row) re-assembles the
+    // site once its content arrives — the roster projection skipped it
+    // while it was empty.
+    if (docId !== SITE_DOC_ID) scheduleProjection(SITE_DOC_ID)
+  })
+}
+
 function bindThroughProvider(docIds: readonly string[]): void {
-  if (!provider) return
-  for (const docId of docIds) {
-    const binding = provider.bind(docId)
-    const gate = adoptProviderDoc(docId, binding.doc)
-    gate.synced = binding.synced
-    void binding.whenSynced.then(() => {
-      gate.synced = true
-      scheduleProjection(docId)
-    })
-  }
+  for (const docId of docIds) bindDocThroughProvider(docId)
 }
 
 /**
