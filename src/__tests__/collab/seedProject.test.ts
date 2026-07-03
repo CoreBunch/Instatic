@@ -23,9 +23,11 @@ import {
   seedLayoutDoc,
   seedPageDoc,
   seedSiteDoc,
+  shellMap,
   treeMap,
 } from '@core/collab'
 import type { BaseNode } from '@core/page-tree'
+import { validateSite } from '@core/persistence/validate'
 import { makeNode, makePage, makeSite, makeVC } from '../fixtures'
 
 function fixturePage() {
@@ -148,6 +150,35 @@ describe('site doc (shell + rosters)', () => {
     expect(projected.shell.settings).toEqual(site.settings)
     expect(projected.rosters.pages).toEqual(['a', 'b'])
     expect(projected.rosters.components).toEqual(['vc1'])
+  })
+
+  it('validating the projected shell drops a malformed style rule instead of crashing', () => {
+    // A whole-shell-field value (packageJson / runtime) can end up wrongly
+    // stored under a style-rule key. The client adopts the projection through
+    // validateSite (same as the HTTP load path), which must drop the bad entry
+    // rather than reject the whole shell — otherwise a downstream panel that
+    // reads `rule.name`/`rule.styles` crashes the editor.
+    const site = makeSite({
+      styleRules: {
+        good: {
+          id: 'good', name: 'hero', kind: 'class', selector: '.hero', order: 0,
+          styles: { color: 'red' }, contextStyles: {}, createdAt: 1, updatedAt: 1,
+        },
+      },
+    })
+    const doc = new Y.Doc()
+    seedSiteDoc(doc, site)
+    // Inject a packageJson-shaped object under a nanoid style-rule key.
+    doc.transact(() => {
+      const styleRules = shellMap(doc).get('styleRules') as Y.Map<unknown>
+      styleRules.set('bad', { dependencies: { '@x/y': '1.0.0' }, devDependencies: {} })
+    })
+    const projected = projectSiteDoc(doc)
+    expect('bad' in projected.shell.styleRules).toBe(true) // projection is faithful
+
+    const shell = validateSite({ ...projected.shell, id: 'default', updatedAt: 0 })
+    expect(shell.styleRules.good.selector).toBe('.hero') // good rule survives
+    expect('bad' in shell.styleRules).toBe(false) // malformed rule dropped
   })
 
   it('reconciles roster order against membership (dedupe, append missing, drop deleted)', () => {

@@ -32,7 +32,7 @@
 import * as Y from 'yjs'
 import type { Patches } from 'mutative'
 import type { StoreApi } from 'zustand'
-import type { Page, PageNode, SiteDocument } from '@core/page-tree'
+import type { Page, PageNode, SiteDocument, SiteShell } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import type { SavedLayout } from '@core/layouts'
 import {
@@ -60,6 +60,7 @@ import {
 } from '@core/collab'
 import { clonePackageJson } from '@core/site-dependencies/manifest'
 import { cloneSiteRuntimeConfig } from '@core/site-runtime'
+import { validateSite } from '@core/persistence/validate'
 import type { EditorStore } from '@site/store/types'
 import type { Awareness } from 'y-protocols/awareness'
 import type { CollabProvider } from '@site/collab/collabProvider'
@@ -403,6 +404,26 @@ function projectDocIntoStore(docId: string): void {
     if (!doc) return
     const projected = projectSiteDoc(doc)
     if (Object.keys(projected.shell).length === 0) return
+    // The projected shell is untyped wire data — validate it before it enters
+    // the store, exactly like the HTTP load path (validateSite) and the relay's
+    // persist path both do. `validateSite` is tolerant of individual malformed
+    // entries (drops bad style rules / conditions / files rather than
+    // rejecting the whole shell), so one corrupt rule from any source can't
+    // crash a panel. `id`/`updatedAt` are non-collaborative — inject them like
+    // the persist path. If the shell is not yet coherent (mid-sync), skip this
+    // tick; the next projection re-runs once it is.
+    let shell: SiteShell
+    try {
+      shell = validateSite({
+        ...projected.shell,
+        id: 'default',
+        updatedAt:
+          typeof projected.shell.updatedAt === 'number' ? projected.shell.updatedAt : Date.now(),
+      })
+    } catch (err) {
+      console.warn('[collabBinding] projected shell failed validation — projection skipped:', err)
+      return
+    }
     const byId = {
       pages: new Map(site.pages.map((p) => [p.id, p])),
       components: new Map(site.visualComponents.map((vc) => [vc.id, vc])),
@@ -434,7 +455,7 @@ function projectDocIntoStore(docId: string): void {
     }
     const nextSite: SiteDocument = {
       ...site,
-      ...(projected.shell as Partial<SiteDocument>),
+      ...shell,
       pages: assemble(projected.rosters.pages, byId.pages, 'page'),
       visualComponents: assemble(projected.rosters.components, byId.components, 'component'),
       layouts: assemble(projected.rosters.layouts, byId.layouts, 'layout'),
