@@ -15,21 +15,17 @@
  */
 import { Type } from '@core/utils/typeboxHelpers'
 import { describeAgentDocuments } from '@core/ai'
-import type { CoreCapability } from '@core/capabilities'
 import type { AiTool, ToolContext } from '../../runtime/types'
 import { getDraftSiteDocument } from '../../../repositories/publish'
 
-const SITE_READ_CAPS: readonly CoreCapability[] = [
-  'site.read',
-  'site.structure.edit',
-  'site.content.edit',
-  'site.style.edit',
-  'pages.edit',
-]
-
-// A document ref that `documentRefEquals` never matches against a real id, so
-// the headless listing marks nothing current — there is no editor focus here.
-const NO_CURRENT_DOCUMENT: Parameters<typeof describeAgentDocuments>[2] = { type: 'page', id: '' }
+// A document ref whose id can never match a real document id, so the headless
+// listing marks nothing current — there is no server-side editor focus. Kept
+// non-empty to satisfy AgentDocumentRefSchema's `minLength: 1` if it is ever
+// validated downstream.
+const NO_CURRENT_DOCUMENT: Parameters<typeof describeAgentDocuments>[2] = {
+  type: 'page',
+  id: '__no_current_document__',
+}
 
 export const documentMcpTools: AiTool[] = [
   {
@@ -39,7 +35,7 @@ export const documentMcpTools: AiTool[] = [
     scope: 'site',
     execution: 'server',
     inputSchema: Type.Object({}, { additionalProperties: false }),
-    requiredCapabilities: SITE_READ_CAPS,
+    requiredCapabilities: ['site.read'],
     handler: async (_input, ctx: ToolContext) => {
       const site = await getDraftSiteDocument(ctx.db)
       if (!site) return { ok: false, error: 'No site found.' }
