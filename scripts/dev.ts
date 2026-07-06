@@ -21,13 +21,14 @@
  *   - Pre-checks ports 3001 (cms) and 5173 (vite) and prints an
  *     actionable message if either is held by something we don't own.
  *   - Spawns the cms (`bun --watch server/index.ts`) and vite
- *     (`vite --host 127.0.0.1`) as children, forwarding their output
+ *     (`bun run vite --host 127.0.0.1`) as children, forwarding their output
  *     and signals so Ctrl+C cleanly kills both.
  */
 
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { isSqliteUrl } from '../server/db'
+import { bunCommand, bunRunCommand } from './lib/bunCommand'
 import { ensurePortFree } from './lib/freePort'
 
 const CMS_PORT = Number(process.env.PORT ?? '3001')
@@ -234,14 +235,14 @@ log('')
 
 interface DevProcess {
   name: string
-  command: string
+  command: string[]
   env?: Record<string, string>
 }
 
 const processes: DevProcess[] = [
   {
     name: 'cms',
-    command: 'bun --watch server/index.ts',
+    command: bunCommand('--watch', 'server/index.ts'),
     env: {
       PORT: String(CMS_PORT),
       DATABASE_URL,
@@ -251,7 +252,7 @@ const processes: DevProcess[] = [
   },
   {
     name: 'vite',
-    command: `vite --host 127.0.0.1 --port ${VITE_PORT} --strictPort`,
+    command: bunRunCommand('vite', '--host', '127.0.0.1', '--port', String(VITE_PORT), '--strictPort'),
   },
 ]
 
@@ -265,9 +266,7 @@ function stopChildren(signal: NodeJS.Signals = 'SIGTERM'): void {
 }
 
 for (const cfg of processes) {
-  const args = cfg.command.split(' ')
-  if (args[0] === 'bun') args[0] = process.execPath
-  const child = Bun.spawn(args, {
+  const child = Bun.spawn(cfg.command, {
     env: { ...process.env, ...cfg.env },
     stdin: 'inherit',
     stdout: 'inherit',
