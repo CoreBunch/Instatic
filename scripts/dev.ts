@@ -21,7 +21,7 @@
  *   - Pre-checks ports 3001 (cms) and 5173 (vite) and prints an
  *     actionable message if either is held by something we don't own.
  *   - Spawns the cms (`bun --watch server/index.ts`) and vite
- *     (`bun run vite --host 127.0.0.1`) as children, forwarding their output
+ *     (`bun run dev:vite --host 127.0.0.1`) as children, forwarding their output
  *     and signals so Ctrl+C cleanly kills both.
  */
 
@@ -252,7 +252,7 @@ const processes: DevProcess[] = [
   },
   {
     name: 'vite',
-    command: bunRunCommand('vite', '--host', '127.0.0.1', '--port', String(VITE_PORT), '--strictPort'),
+    command: bunRunCommand('dev:vite', '--host', '127.0.0.1', '--port', String(VITE_PORT), '--strictPort'),
   },
 ]
 

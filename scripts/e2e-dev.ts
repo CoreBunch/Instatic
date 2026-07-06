@@ -47,7 +47,7 @@ function stopChildren(signal: NodeJS.Signals = 'SIGTERM'): void {
 
 for (const command of [
   bunCommand('server/index.ts'),
-  bunRunCommand('vite', '--host', '127.0.0.1', '--port', VITE_PORT, '--strictPort'),
+  bunRunCommand('dev:vite', '--host', '127.0.0.1', '--port', VITE_PORT, '--strictPort'),
 ]) {
   const child = Bun.spawn(command, {
     env: sharedEnv,

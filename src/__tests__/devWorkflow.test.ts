@@ -17,6 +17,7 @@ describe('development workflow', () => {
     expect(pkg.scripts['dev']).toBe('bun run scripts/dev.ts')
     expect(pkg.scripts['dev:agent']).toBe('bun run dev:server')
     expect(pkg.scripts['dev:server']).toBe('bun --watch server/index.ts')
+    expect(pkg.scripts['dev:vite']).toBe('vite')
     expect(pkg.scripts['dev:all']).toBeUndefined()
     expect(existsSync(new URL('scripts/dev.ts', root))).toBe(true)
     expect(existsSync(new URL('scripts/dev-all.ts', root))).toBe(false)
@@ -24,7 +25,7 @@ describe('development workflow', () => {
     const script = readSiteFile('scripts/dev.ts')
     // Spawns cms + vite without a recursive `bun run dev` call.
     expect(script).toContain("bunCommand('--watch', 'server/index.ts')")
-    expect(script).toContain("bunRunCommand('vite', '--host', '127.0.0.1'")
+    expect(script).toContain("bunRunCommand('dev:vite', '--host', '127.0.0.1'")
     expect(script).not.toContain('command: `vite')
     expect(script).not.toContain('command.split')
     // Knows about the docker postgres host port.
@@ -49,18 +50,20 @@ describe('development workflow', () => {
       '--watch',
       'server/index.ts',
     ])
-    expect(bunRunCommand('vite', '--host', '127.0.0.1')).toEqual([
+    expect(bunRunCommand('dev:vite', '--host', '127.0.0.1')).toEqual([
       process.execPath,
       'run',
-      'vite',
+      'dev:vite',
       '--host',
       '127.0.0.1',
     ])
 
-    expect(devScript).toContain("bunRunCommand('vite', '--host', '127.0.0.1'")
+    expect(devScript).toContain("bunRunCommand('dev:vite', '--host', '127.0.0.1'")
+    expect(devScript).not.toContain("bunRunCommand('vite'")
     expect(devScript).not.toContain('command: `vite')
     expect(devScript).not.toContain('command.split')
-    expect(e2eScript).toContain("bunRunCommand('vite', '--host', '127.0.0.1'")
+    expect(e2eScript).toContain("bunRunCommand('dev:vite', '--host', '127.0.0.1'")
+    expect(e2eScript).not.toContain("bunRunCommand('vite'")
     expect(e2eScript).not.toContain("['vite'")
     expect(e2eScript).not.toContain("['bun'")
     expect(startScript).toContain("bunRunCommand('build')")
