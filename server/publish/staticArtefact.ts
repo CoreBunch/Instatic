@@ -290,10 +290,13 @@ export async function swapSlot(uploadsDir: string, targetSlot: Slot): Promise<vo
   try {
     await rename(tmpPath, currentPath)
   } catch (err) {
-    // Win32 `MoveFile` won't replace an existing target (`EEXIST`/`EPERM`/
-    // `EACCES`). Drop the old `current` link first, then rename into the now-
-    // free path. Sub-millisecond gap where `current` is absent → `readArtefact`
-    // treats it as a miss and serves via Layer B. POSIX never reaches here.
+    // Windows-only fallback. Win32 `MoveFile` won't replace an existing target
+    // (`EEXIST`/`EPERM`/`EISDIR`/`EACCES`): drop the old `current` link first,
+    // then rename into the now-free path. Sub-millisecond gap where `current` is
+    // absent → `readArtefact` treats it as a miss and serves via Layer B. On
+    // POSIX `rename(2)` replaces the symlink atomically, so any failure there is
+    // a real error — never run the destructive remove-then-rename off Windows.
+    if (process.platform !== 'win32') throw err
     const code = (err as NodeJS.ErrnoException).code
     if (code !== 'EEXIST' && code !== 'EPERM' && code !== 'EISDIR' && code !== 'EACCES') throw err
     await removeSymlinkEntry(currentPath)
@@ -303,16 +306,20 @@ export async function swapSlot(uploadsDir: string, targetSlot: Slot): Promise<vo
 
 /**
  * Remove a symlink entry (the link itself, never its target) cross-platform.
- * `rm`/`unlink` on a Windows *directory* symlink can fail (`EFAULT`/`EPERM`);
- * `rmdir` removes a directory-symlink link there without recursing into the
- * slot it points at. Tries the POSIX path (`unlink`) first, then the Win32
- * directory-symlink path (`rmdir`). A missing path is a no-op.
+ * `unlink` handles symlinks on POSIX. On Windows a *directory* symlink/junction
+ * can reject `unlink` (`EPERM`/`EISDIR`); there `rmdir` removes the link without
+ * recursing into the slot it points at. The `rmdir` fallback is therefore
+ * Windows-only — on POSIX a non-ENOENT `unlink` failure is a real error and must
+ * surface rather than risk removing a real directory at this path. A missing
+ * path is a no-op.
  */
 async function removeSymlinkEntry(path: string): Promise<void> {
   try {
     await unlink(path)
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') return
+    if (process.platform !== 'win32') throw err
     try {
       await rmdir(path)
     } catch (err2) {
