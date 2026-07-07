@@ -41,6 +41,13 @@ export const BodyModule: ModuleDefinition<BodyProps> = {
   // `<body>` separately). Surfacing the tag here keeps the layers panel honest.
   htmlTag: 'body',
 
+  htmlContract: {
+    tag: 'body',
+    canHaveChildren: true,
+    // The body node is the page root — it's not claimed from imported HTML
+    // (the importer starts from doc.body and maps its children, not body itself).
+  },
+
   // No wrapper element — children render directly into <body>. Body-level
   // user classes are applied to <body> by publishPage(), not here.
   render: (_props, renderedChildren) => ({

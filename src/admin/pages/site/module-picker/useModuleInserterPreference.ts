@@ -16,8 +16,8 @@ interface ModuleInserterPreferenceApi {
   favorites: ModuleInserterItemRef[]
   loading: boolean
   error: string | null
-  isFavorite: (ref: ModuleInserterItemRef) => boolean
-  toggleFavorite: (ref: ModuleInserterItemRef) => void
+  isFavorite: (ref: ModuleInserterItemRef | null) => boolean
+  toggleFavorite: (ref: ModuleInserterItemRef | null) => void
   setFavorites: (refs: readonly ModuleInserterItemRef[]) => void
 }
 
@@ -67,12 +67,14 @@ export function useModuleInserterPreference(): ModuleInserterPreferenceApi {
       })
   }
 
-  function isFavorite(ref: ModuleInserterItemRef): boolean {
+  function isFavorite(ref: ModuleInserterItemRef | null): boolean {
+    if (!ref) return false
     const key = recentKey(ref)
     return current.favorites.some((favorite) => recentKey(favorite) === key)
   }
 
-  function toggleFavorite(ref: ModuleInserterItemRef): void {
+  function toggleFavorite(ref: ModuleInserterItemRef | null): void {
+    if (!ref) return
     const key = recentKey(ref)
     const existing = current.favorites.some((favorite) => recentKey(favorite) === key)
     saveFavorites(

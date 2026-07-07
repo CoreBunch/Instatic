@@ -185,6 +185,22 @@ export interface SiteSlice {
   insertNode: (moduleId: string, defaults: Record<string, unknown>, parentId: string, index?: number) => string
 
   /**
+   * Insert a DOM-native node (empty `moduleId`, has `tag`) into the active
+   * document tree under `parentId` at `index` (appended when omitted).
+   * Returns the new node's id on success, or `''` on failure.
+   */
+  insertDomNode: (
+    parentId: string,
+    tag: string,
+    options?: {
+      index?: number
+      attributes?: Record<string, string>
+      textContent?: string
+      classIds?: string[]
+    },
+  ) => string
+
+  /**
    * Insert a fragment of imported HTML nodes into the active tree under `parentId`.
    * Merges all `fragment.nodes` into the tree and wires `fragment.rootIds` as children
    * of `parentId` at `opts.index` (appended when omitted). One undo step.
@@ -218,6 +234,20 @@ export interface SiteSlice {
   /** Multi-delete: removes every id and its descendants in one undo step. */
   deleteNodes: (nodeIds: string[]) => void
   updateNodeProps: (nodeId: string, patch: Record<string, unknown>) => void
+  /**
+   * Patch a DOM-native node's fields (`tag`, `attributes`, `textContent`).
+   * Only applies to nodes with an empty `moduleId` (DOM-native). A `null`
+   * value for `attributes` clears the field; a `null` value for an
+   * individual attribute key removes that key.
+   */
+  updateDomNode: (
+    nodeId: string,
+    patch: {
+      tag?: string
+      attributes?: Record<string, string> | null
+      textContent?: string | null
+    },
+  ) => void
   /**
    * Patch a node's inline styles (`node.inlineStyles`) — the per-node `style=""`
    * layer emitted by the publisher. A `null`/`undefined`/`''` value in the patch

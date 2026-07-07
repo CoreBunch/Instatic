@@ -252,10 +252,10 @@ describe('validateSite — rejects invalid data', () => {
     expect(() => validateSite(p as unknown)).toThrow(SiteValidationError)
   })
 
-  it('throws for missing node.moduleId', () => {
+  it('throws for missing node.id', () => {
     const p = validSite()
     const node = p.pages[0].nodes.root as Record<string, unknown>
-    delete node.moduleId
+    delete node.id
     const shell = validateSite(p)
     expect(() => validatePages(shell, p.pages as unknown[])).toThrow(SiteValidationError)
   })

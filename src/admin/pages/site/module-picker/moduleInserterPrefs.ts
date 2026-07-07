@@ -53,7 +53,8 @@ export function writeModuleInserterView(view: ModuleInserterView): void {
   writeModuleInserterPrefs({ ...readModuleInserterPrefs(), view })
 }
 
-export function trackModuleInserterRecent(ref: ModuleInserterRecentRef): void {
+export function trackModuleInserterRecent(ref: ModuleInserterRecentRef | null): void {
+  if (!ref) return
   const prefs = readModuleInserterPrefs()
   const key = recentKey(ref)
   const recent = [

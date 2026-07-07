@@ -51,6 +51,15 @@ export const VisualComponentRefModule: ModuleDefinition<VisualComponentRefStored
 
   component: VisualComponentRefEditor,
 
+  htmlContract: {
+    canHaveChildren: true,
+    // Special publisher path — the VC tree is inlined, so there is no
+    // standalone wrapper element owned by this module. The root element
+    // comes from the instantiated VC's root node. Not claimable from
+    // imported HTML (VC refs are created by the editor, not imported).
+    fromHtml: () => null,
+  },
+
   /**
    * Defense-in-depth fallback: the publisher walker intercepts
    * base.visual-component-ref nodes via renderVisualComponentRef() in

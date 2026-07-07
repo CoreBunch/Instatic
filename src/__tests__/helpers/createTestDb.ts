@@ -51,11 +51,24 @@ export async function createTestDb(): Promise<TestDb> {
   return {
     db,
     cleanup: async () => {
-      // Remove the entire temp directory. bun:sqlite doesn't expose a close()
-      // method on our DbClient interface; on macOS/Linux the file can still be
-      // deleted while the handle is open, and the handle goes out of scope once
-      // the test function returns.
-      await fs.rm(path.dirname(tmpFile), { recursive: true, force: true })
+      // Close the DB connection before removing the temp directory.
+      // On Windows SQLite holds a file lock; deleting while open throws EBUSY.
+      db.close?.()
+      // Retry delete a few times — Windows may hold the handle briefly after close.
+      const dir = path.dirname(tmpFile)
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          await fs.rm(dir, { recursive: true, force: true })
+          return
+        } catch (e) {
+          const err = e as Error & { code?: string }
+          if (err.code === 'EBUSY' && attempt < 4) {
+            await new Promise((r) => setTimeout(r, 50 * (attempt + 1)))
+            continue
+          }
+          throw e
+        }
+      }
     },
   }
 }

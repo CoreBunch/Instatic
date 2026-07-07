@@ -3,7 +3,9 @@
  */
 
 import { findHomePage, reconcileSiteExplorerInPlace, reindexNodeParents } from '@core/page-tree'
-import type { SiteDocument } from '@core/page-tree'
+import type { SiteDocument, BaseNode } from '@core/page-tree'
+import { registry } from '@core/module-engine'
+import type { IModuleRegistry } from '@core/module-engine'
 import { renderCache } from '@site/canvas/renderCache'
 import {
   clonePackageJson,
@@ -35,6 +37,48 @@ function reindexSiteTreeParents(site: SiteDocument): void {
   for (const page of site.pages) reindexNodeParents(page.nodes)
   for (const vc of site.visualComponents ?? []) reindexNodeParents(vc.tree.nodes)
   for (const layout of site.layouts ?? []) reindexNodeParents(layout.nodes)
+}
+
+/** Migrate legacy module nodes (moduleId !== '', no tag) to the unified format
+ *  (moduleId === '', tag + moduleOverlay). Runs transparently on every load.
+ */
+function migrateOldFormatNodes(
+  site: SiteDocument,
+  moduleRegistry: IModuleRegistry,
+): void {
+  function migrateNode(node: BaseNode): void {
+    if (node.moduleId && !node.tag && !node.moduleOverlay) {
+      const def = moduleRegistry.get(node.moduleId)
+      if (def?.htmlContract) {
+        const contract = def.htmlContract
+        const props = node.props
+        // Derive HTML fields from the contract
+        const tag =
+          typeof contract.tag === 'function' ? contract.tag(props as never) : contract.tag
+        const attributes = contract.attributes
+          ? contract.attributes(props as never)
+          : undefined
+        const textContent = contract.textContent
+          ? contract.textContent(props as never)
+          : undefined
+        // Move module data into overlay, clear legacy moduleId
+        node.moduleOverlay = { moduleId: node.moduleId, props: { ...props } }
+        node.moduleId = ''
+        if (tag) node.tag = tag
+        if (attributes) node.attributes = attributes
+        if (textContent !== undefined) node.textContent = textContent
+      }
+    }
+  }
+  for (const page of site.pages) {
+    for (const node of Object.values(page.nodes)) migrateNode(node)
+  }
+  for (const vc of site.visualComponents ?? []) {
+    for (const node of Object.values(vc.tree.nodes)) migrateNode(node)
+  }
+  for (const layout of site.layouts ?? []) {
+    for (const node of Object.values(layout.nodes)) migrateNode(node)
+  }
 }
 
 export function createLifecycleActions({
@@ -78,6 +122,8 @@ export function createLifecycleActions({
       reconcileFrameworkClasses(site)
       reconcileSiteExplorerInPlace(site)
       reindexSiteTreeParents(site)
+      // Phase-7 backward-compat: migrate legacy module nodes to unified format.
+      migrateOldFormatNodes(site, registry)
       const packageJson = clonePackageJson(site.packageJson)
       const siteRuntime = cloneSiteRuntimeConfig(site.runtime)
       set((state) => {

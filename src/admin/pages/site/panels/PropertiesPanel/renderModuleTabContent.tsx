@@ -21,7 +21,7 @@
  * from being editable without touching the panel shell.
  */
 import { PropertyControlRenderer } from '@site/property-controls/PropertyControlRenderer'
-import { evaluateCondition } from '@core/page-tree'
+import { evaluateCondition, isDomNode } from '@core/page-tree'
 import type {
   AnyModuleDefinition,
   PropertyControl,
@@ -36,6 +36,7 @@ import type { ActiveDocument } from '../../store/slices/uiSlice'
 import { LoopPropertiesView } from './LoopPropertiesView'
 import { ParamPromotableRow } from './ParamPromotableRow'
 import { FormSettingsPanel } from './FormSettingsPanel'
+import { DomNodeProperties } from './DomNodeProperties'
 import { isFormSettingsModule } from './formSettingsAnalysis'
 
 const PROMOTED_FORM_PROPERTY_KEYS = new Set(['mode', 'formId', 'targetTableId'])
@@ -83,6 +84,11 @@ export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactN
         props={selectedNode.props as Record<string, unknown>}
       />
     )
+  }
+
+  // Branch 1b: DOM-native nodes get the dedicated DOM node editor.
+  if (selectedNode && isDomNode(selectedNode) && selectedNodeId) {
+    return <DomNodeProperties nodeId={selectedNodeId} />
   }
 
   // Branches 2 & 3 share the schema iteration; bail when there's nothing

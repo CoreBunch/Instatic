@@ -10,6 +10,18 @@ import { Type, Value, type Static } from '@core/utils/typeboxHelpers'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
 import { safeUrl } from '@modules/base/utils/escape'
 import { FORM_RUNTIME_JS } from './formRuntimeJs'
+import {
+  formHtmlContract,
+  labelHtmlContract,
+  inputHtmlContract,
+  textareaHtmlContract,
+  selectHtmlContract,
+  optionHtmlContract,
+  optionGroupHtmlContract,
+  choiceHtmlContract,
+  submitHtmlContract,
+  formMessageHtmlContract,
+} from './htmlContracts'
 import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
 import { TextStartTIcon } from 'pixel-art-icons/icons/text-start-t'
 import { CheckboxSolidIcon } from 'pixel-art-icons/icons/checkbox-solid'
@@ -43,6 +55,7 @@ const FormPropsSchema = Type.Object({
 })
 
 type FormProps = Static<typeof FormPropsSchema>
+export type { FormProps }
 
 const LabelPropsSchema = Type.Object({
   text: Type.String({ default: 'Label' }),
@@ -51,6 +64,7 @@ const LabelPropsSchema = Type.Object({
 })
 
 type LabelProps = Static<typeof LabelPropsSchema>
+export type { LabelProps }
 
 const InputPropsSchema = Type.Object({
   inputType: Type.Union([
@@ -84,6 +98,7 @@ const InputPropsSchema = Type.Object({
 })
 
 type InputProps = Static<typeof InputPropsSchema>
+export type { InputProps }
 
 const TextareaPropsSchema = Type.Object({
   fieldId: Type.String({ default: '' }),
@@ -100,6 +115,7 @@ const TextareaPropsSchema = Type.Object({
 })
 
 type TextareaProps = Static<typeof TextareaPropsSchema>
+export type { TextareaProps }
 
 const SelectPropsSchema = Type.Object({
   fieldId: Type.String({ default: '' }),
@@ -111,6 +127,7 @@ const SelectPropsSchema = Type.Object({
 })
 
 type SelectProps = Static<typeof SelectPropsSchema>
+export type { SelectProps }
 
 const OptionPropsSchema = Type.Object({
   value: Type.String({ default: '' }),
@@ -120,6 +137,7 @@ const OptionPropsSchema = Type.Object({
 })
 
 type OptionProps = Static<typeof OptionPropsSchema>
+export type { OptionProps }
 
 const OptionGroupPropsSchema = Type.Object({
   label: Type.String({ default: 'Group' }),
@@ -127,6 +145,7 @@ const OptionGroupPropsSchema = Type.Object({
 })
 
 type OptionGroupProps = Static<typeof OptionGroupPropsSchema>
+export type { OptionGroupProps }
 
 const ChoicePropsSchema = Type.Object({
   fieldId: Type.String({ default: '' }),
@@ -139,6 +158,7 @@ const ChoicePropsSchema = Type.Object({
 })
 
 type ChoiceProps = Static<typeof ChoicePropsSchema>
+export type { ChoiceProps }
 
 const SubmitPropsSchema = Type.Object({
   label: Type.String({ default: 'Submit' }),
@@ -147,6 +167,7 @@ const SubmitPropsSchema = Type.Object({
 })
 
 type SubmitProps = Static<typeof SubmitPropsSchema>
+export type { SubmitProps }
 
 const FormMessagePropsSchema = Type.Object({
   formId: Type.String({ default: '' }),
@@ -155,6 +176,7 @@ const FormMessagePropsSchema = Type.Object({
 })
 
 type FormMessageProps = Static<typeof FormMessagePropsSchema>
+export type { FormMessageProps }
 
 export const FormModule: ModuleDefinition<FormProps> = {
   id: 'base.form',
@@ -191,6 +213,7 @@ export const FormModule: ModuleDefinition<FormProps> = {
   defaults: Value.Create(FormPropsSchema),
   component: FormEditor,
   htmlTag: 'form',
+  htmlContract: formHtmlContract,
   render: (props, renderedChildren) => {
     const formId = normalizeIdentifierValue(props.formId, 'form')
     const attrs = [
@@ -235,6 +258,7 @@ export const LabelModule: ModuleDefinition<LabelProps> = {
   defaults: Value.Create(LabelPropsSchema),
   component: LabelEditor,
   htmlTag: 'label',
+  htmlContract: labelHtmlContract,
   render: (props) => {
     if (props.targetMode === 'explicit' && props.targetId) {
       return { html: `<label for="${props.targetId}">${props.text}</label>` }
@@ -257,6 +281,7 @@ export const InputModule: ModuleDefinition<InputProps> = {
   defaults: Value.Create(InputPropsSchema),
   component: InputEditor,
   htmlTag: 'input',
+  htmlContract: inputHtmlContract,
   render: (props) => ({ html: `<input${attrs([
     ['data-instatic-form-control', 'input'],
     ['data-instatic-field-id', props.fieldId],
@@ -300,6 +325,7 @@ export const TextareaModule: ModuleDefinition<TextareaProps> = {
   defaults: Value.Create(TextareaPropsSchema),
   component: TextareaEditor,
   htmlTag: 'textarea',
+  htmlContract: textareaHtmlContract,
   render: (props) => ({ html: `<textarea${attrs([
     ['data-instatic-form-control', 'textarea'],
     ['data-instatic-field-id', props.fieldId],
@@ -333,6 +359,7 @@ export const SelectModule: ModuleDefinition<SelectProps> = {
   defaults: Value.Create(SelectPropsSchema),
   component: SelectEditor,
   htmlTag: 'select',
+  htmlContract: selectHtmlContract,
   render: (props, renderedChildren) => ({
     html: `<select${attrs([
       ['data-instatic-form-control', 'select'],
@@ -362,6 +389,7 @@ export const OptionModule: ModuleDefinition<OptionProps> = {
   defaults: Value.Create(OptionPropsSchema),
   component: OptionEditor,
   htmlTag: 'option',
+  htmlContract: optionHtmlContract,
   render: (props) => ({ html: `<option${attrs([['value', props.value]])}${booleanAttrs(props, ['selected', 'disabled'])}>${props.label}</option>` }),
 }
 
@@ -382,6 +410,7 @@ export const OptionGroupModule: ModuleDefinition<OptionGroupProps> = {
   defaults: Value.Create(OptionGroupPropsSchema),
   component: OptionGroupEditor,
   htmlTag: 'optgroup',
+  htmlContract: optionGroupHtmlContract,
   render: (props, renderedChildren) => ({
     html: `<optgroup${attrs([['label', props.label]])}${booleanAttrs(props, ['disabled'])}>${renderedChildren.join('')}</optgroup>`,
   }),
@@ -419,6 +448,7 @@ export const SubmitModule: ModuleDefinition<SubmitProps> = {
   defaults: Value.Create(SubmitPropsSchema),
   component: SubmitEditor,
   htmlTag: 'button',
+  htmlContract: submitHtmlContract,
   render: (props) => ({
     html: `<button type="submit"${attrs([['form', normalizeIdentifierValue(props.formId)]])}${booleanAttrs(props, ['disabled'])}>${props.label}</button>`,
   }),
@@ -446,6 +476,7 @@ export const FormMessageModule: ModuleDefinition<FormMessageProps> = {
   defaults: Value.Create(FormMessagePropsSchema),
   component: FormMessageEditor,
   htmlTag: 'div',
+  htmlContract: formMessageHtmlContract,
   render: (props) => ({
     html: `<div data-instatic-form-message="${props.kind}" data-instatic-form-id="${normalizeIdentifierValue(props.formId)}" role="${props.kind === 'error' ? 'alert' : 'status'}">${props.text}</div>`,
   }),
@@ -512,6 +543,7 @@ function choiceModule(args: {
     defaults: Value.Create(ChoicePropsSchema),
     component: args.component,
     htmlTag: 'input',
+    htmlContract: choiceHtmlContract(args.inputType),
     render: (props) => ({
       html: `<input type="${args.inputType}"${attrs([
         ['data-instatic-form-control', args.inputType],

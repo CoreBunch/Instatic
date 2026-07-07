@@ -17,8 +17,9 @@ export type ModuleInserterSectionId =
   | 'modules'
   | 'layouts'
   | 'components'
+  | 'elements'
   | 'recent'
-type ModuleInserterItemKind = 'module' | 'savedLayout' | 'component'
+type ModuleInserterItemKind = 'module' | 'savedLayout' | 'component' | 'domNode'
 type ModuleInserterRecentRef = ModuleInserterItemRef
 
 export interface RegistryModuleForInserter {
@@ -72,10 +73,16 @@ interface ModuleInserterComponentItem extends BaseInserterItem {
   uses: number
 }
 
+interface ModuleInserterDomNodeItem extends BaseInserterItem {
+  kind: 'domNode'
+  tag: string
+}
+
 export type ModuleInserterItem =
   | ModuleInserterModuleItem
   | ModuleInserterSavedLayoutItem
   | ModuleInserterComponentItem
+  | ModuleInserterDomNodeItem
 
 const HIDDEN_MODULE_IDS = new Set([
   'base.body',
@@ -322,11 +329,53 @@ function getComponentItems(
   }))
 }
 
+const RAW_HTML_ELEMENTS: readonly { tag: string; name: string }[] = [
+  { tag: 'div', name: 'Div' },
+  { tag: 'span', name: 'Span' },
+  { tag: 'p', name: 'Paragraph' },
+  { tag: 'h1', name: 'Heading 1' },
+  { tag: 'h2', name: 'Heading 2' },
+  { tag: 'h3', name: 'Heading 3' },
+  { tag: 'ul', name: 'Unordered List' },
+  { tag: 'ol', name: 'Ordered List' },
+  { tag: 'li', name: 'List Item' },
+  { tag: 'a', name: 'Link' },
+  { tag: 'img', name: 'Image' },
+  { tag: 'br', name: 'Line Break' },
+  { tag: 'hr', name: 'Horizontal Rule' },
+  { tag: 'button', name: 'Button' },
+  { tag: 'input', name: 'Input' },
+  { tag: 'label', name: 'Label' },
+  { tag: 'section', name: 'Section' },
+  { tag: 'article', name: 'Article' },
+  { tag: 'header', name: 'Header' },
+  { tag: 'footer', name: 'Footer' },
+  { tag: 'nav', name: 'Nav' },
+  { tag: 'main', name: 'Main' },
+  { tag: 'aside', name: 'Aside' },
+]
+
+function getDomNodeItems(): ModuleInserterDomNodeItem[] {
+  return RAW_HTML_ELEMENTS.map(({ tag, name }) => ({
+    key: `domNode:${tag}`,
+    id: tag,
+    kind: 'domNode',
+    tag,
+    name,
+    description: `Raw <${tag}> element`,
+    accent: 'peach',
+    wire: { kind: 'box', children: [] },
+    searchText: searchText([name, tag, 'html', 'element']),
+  }))
+}
+
 interface BuiltModuleInserterItems {
   moduleItems: ModuleInserterModuleItem[]
   /** User-saved layouts (`SavedLayout` rows) — the sole source of the Layouts section. */
   savedLayoutItems: ModuleInserterSavedLayoutItem[]
   componentItems: ModuleInserterComponentItem[]
+  /** Raw HTML element items for the Elements section. */
+  domNodeItems: ModuleInserterDomNodeItem[]
   /** Every visible item — including disabled ones (carrying `disabledReason`). */
   allItems: ModuleInserterItem[]
 }
@@ -345,14 +394,17 @@ export function buildModuleInserterItems({
   const moduleItems = getVisibleModuleItems(modules, context)
   const savedLayoutItems = getSavedLayoutItems(savedLayouts, context, visualComponents)
   const componentItems = getComponentItems(visualComponents)
+  const domNodeItems = getDomNodeItems()
   return {
     moduleItems,
     savedLayoutItems,
     componentItems,
+    domNodeItems,
     allItems: [
       ...moduleItems,
       ...savedLayoutItems,
       ...componentItems,
+      ...domNodeItems,
     ],
   }
 }
@@ -366,7 +418,9 @@ export function filterInserterItems<TItem extends ModuleInserterItem>(
   return items.filter((item) => item.searchText.includes(q))
 }
 
-export function recentRefForItem(item: ModuleInserterItem): ModuleInserterRecentRef {
+export function recentRefForItem(item: ModuleInserterItem): ModuleInserterRecentRef | null {
+  // DOM-native elements are transient inserter items — not tracked in recents/favorites.
+  if (item.kind === 'domNode') return null
   return { kind: item.kind, id: item.id }
 }
 
@@ -418,6 +472,9 @@ export function itemDescription(item: ModuleInserterItem): string {
   if (item.kind === 'component') {
     const count = item.component.params.length
     return count === 1 ? '1 param · Saved component' : `${count} params · Saved component`
+  }
+  if (item.kind === 'domNode') {
+    return `Raw <${item.tag}> element`
   }
   return item.description
 }

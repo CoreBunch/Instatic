@@ -36,6 +36,7 @@ export function renderModule(
   props: Record<string, unknown> = {},
   renderedChildren: string[] = []
 ) {
+  if (!def.render) throw new Error(`[test] Module "${def.id}" has no render() — use htmlContract tests instead`)
   return def.render({ ...def.defaults, ...props }, renderedChildren)
 }
 
@@ -186,6 +187,11 @@ export function runModuleConformanceSuite(def: AnyModuleDefinition): void {
       expect(typeof def.defaults).toBe('object')
       expect(Array.isArray(def.defaults)).toBe(false)
 
+      // Modules that have migrated to htmlContract (no render) skip the
+      // render-specific conformance checks — those are covered by the
+      // htmlContract test suite instead.
+      if (!def.render) return
+
       const result = def.render(def.defaults, [])
       expect(typeof result).toBe('object')
       expect(result).not.toBeNull()
@@ -208,7 +214,7 @@ export function runModuleConformanceSuite(def: AnyModuleDefinition): void {
       expect(/\bon\w+\s*=/i.test(result.html)).toBe(false)
 
       const urlPropEntries = Object.entries(def.schema).filter(([, ctrl]) =>
-        new Set<PropertyControl['type']>(['url', 'image', 'media']).has(ctrl.type)
+        new Set<PropertyControl['type']>(['url', 'image', 'media']).has((ctrl as PropertyControl).type)
       )
       const unsafeVectors: Array<{ scheme: string; payload: string }> = [
         { scheme: 'javascript:', payload: 'javascript:alert(1)' },
@@ -218,8 +224,9 @@ export function runModuleConformanceSuite(def: AnyModuleDefinition): void {
       ]
 
       for (const [propKey, ctrl] of urlPropEntries) {
-        const activatingProps = ctrl.condition
-          ? activateCondition(ctrl.condition as Record<string, unknown>)
+        const c = ctrl as PropertyControl
+        const activatingProps = c.condition
+          ? activateCondition(c.condition as Record<string, unknown>)
           : {}
 
         for (const { scheme, payload } of unsafeVectors) {

@@ -46,6 +46,22 @@ export const ListModule: ModuleDefinition<ListStoredProps> = {
 
   htmlTag: (props) => (props.listType === 'ordered' ? 'ol' : 'ul'),
 
+  htmlContract: {
+    tag: (props) => (props.listType === 'ordered' ? 'ol' : 'ul'),
+    canHaveChildren: true,
+    claimSelector: 'ul, ol',
+    fromHtml: (el) => {
+      const tag = el.tagName.toLowerCase()
+      const items = Array.from(el.querySelectorAll(':scope > li'))
+        .map((li) => li.textContent ?? '')
+        .join('\n')
+      return {
+        items,
+        listType: (tag === 'ol' ? 'ordered' : 'unordered') as ListStoredProps['listType'],
+      }
+    },
+  },
+
   render: (props) => {
     const tag = props.listType === 'ordered' ? 'ol' : 'ul'
     const items = parseItems(String(props.items || ''))

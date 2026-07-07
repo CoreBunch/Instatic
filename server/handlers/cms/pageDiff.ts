@@ -162,6 +162,18 @@ function diffNode(
     requireChange(capabilities, 'style', `${nodePath}.breakpointOverrides`, 'breakpoint overrides changed')
   }
 
+  // DOM-native node fields (moduleId === ''). `tag` is structural (changing
+  // element type), `attributes` and `textContent` are content edits.
+  if (!deepEqual(previous.tag, next.tag)) {
+    requireChange(capabilities, 'structure', `${nodePath}.tag`, 'DOM tag changed')
+  }
+  if (!deepEqual(previous.attributes, next.attributes)) {
+    requireChange(capabilities, 'content', `${nodePath}.attributes`, 'DOM attributes changed')
+  }
+  if (!deepEqual(previous.textContent, next.textContent)) {
+    requireChange(capabilities, 'content', `${nodePath}.textContent`, 'DOM text content changed')
+  }
+
   diffNodeProps(capabilities, nodePath, previous, next)
 }
 

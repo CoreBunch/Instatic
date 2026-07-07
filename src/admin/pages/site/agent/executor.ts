@@ -28,6 +28,7 @@ import {
   ReplaceNodeHtmlInputSchema,
   DeleteNodeInputSchema,
   UpdateNodePropsInputSchema,
+  UpdateDomNodeInputSchema,
   MoveNodeInputSchema,
   RenameNodeInputSchema,
   DuplicateNodeInputSchema,
@@ -53,6 +54,7 @@ import {
   type ReplaceNodeHtmlInput,
   type DeleteNodeInput,
   type UpdateNodePropsInput,
+  type UpdateDomNodeInput,
   type MoveNodeInput,
   type RenameNodeInput,
   type DuplicateNodeInput,
@@ -73,6 +75,7 @@ import { importHtml } from '@core/htmlImport'
 import { cssToStyleRules } from '@core/siteImport'
 import type { NewStyleRule } from '@core/siteImport'
 import type { BaseNode, ConditionDef, PageTemplateConfig } from '@core/page-tree'
+import { isDomNode } from '@core/page-tree'
 import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/publisher'
 import { getAgentStoreApi } from './storeRef'
 import {
@@ -221,6 +224,7 @@ const AUTO_NAVIGATE_TOOLS = new Set<string>([
   'site_replace_node_html',
   'site_delete_node',
   'site_update_node_props',
+  'site_update_dom_node',
   'site_move_node',
   'site_rename_node',
   'site_duplicate_node',
@@ -293,13 +297,14 @@ function runInsertHtml(input: InsertHtmlInput): AiToolOutput {
   const postState = getStoreState()
   const nodeMap = activeDocumentNodes(postState) ?? {}
   const styleRules = postState.site?.styleRules ?? {}
-  const created: Array<{ id: string; moduleId: string; classes: string[] }> = []
+  const created: Array<{ id: string; moduleId: string; tag?: string; classes: string[] }> = []
   const visit = (id: string): void => {
     const node = nodeMap[id]
     if (!node) return
     created.push({
       id,
-      moduleId: node.moduleId,
+      moduleId: node.moduleOverlay?.moduleId ?? node.moduleId,
+      tag: node.tag || undefined,
       classes: (node.classIds ?? []).map((cid) => styleRules[cid]?.name ?? cid),
     })
     for (const childId of node.children) visit(childId)
@@ -414,6 +419,15 @@ function runDeleteNode(input: DeleteNodeInput): AiToolOutput {
 
 function runUpdateNodeProps(input: UpdateNodePropsInput): AiToolOutput {
   const store = getStoreState()
+  const node = findNodeInActiveDoc(store, input.nodeId)
+  if (!node) {
+    return nodeNotInActiveDocError(store, input.nodeId)
+  }
+  if (isDomNode(node) && !node.moduleOverlay) {
+    return aiToolError(
+      `Node ${input.nodeId} is a DOM-native node (tag: ${node.tag}). Use site_update_dom_node to update its tag, attributes, or textContent.`,
+    )
+  }
   const sanitizedPatch: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(input.patch)) {
     sanitizedPatch[key] = isRichtextPropKey(key) && typeof value === 'string'
@@ -433,9 +447,10 @@ function runUpdateNodeProps(input: UpdateNodePropsInput): AiToolOutput {
     if (!node) {
       return nodeNotInActiveDocError(store, input.nodeId)
     }
-    const definition = registry.get(node.moduleId)
+    const moduleId = node.moduleOverlay?.moduleId ?? node.moduleId
+    const definition = registry.get(moduleId)
     if (!definition) {
-      return aiToolError(`Unknown module on node: ${node.moduleId}`)
+      return aiToolError(`Unknown module on node: ${moduleId}`)
     }
     const nonOverridable = Object.keys(sanitizedPatch).filter(
       (key) => definition.schema[key]?.breakpointOverridable !== true,
@@ -453,6 +468,25 @@ function runUpdateNodeProps(input: UpdateNodePropsInput): AiToolOutput {
   } else {
     store.updateNodeProps(input.nodeId, sanitizedPatch)
   }
+  return aiToolOk()
+}
+
+function runUpdateDomNode(input: UpdateDomNodeInput): AiToolOutput {
+  const store = getStoreState()
+  const node = findNodeInActiveDoc(store, input.nodeId)
+  if (!node) {
+    return nodeNotInActiveDocError(store, input.nodeId)
+  }
+  if (!isDomNode(node)) {
+    return aiToolError(
+      `Node ${input.nodeId} is not a DOM-native node (moduleId: ${node.moduleId}). Use site_update_node_props for module-based nodes.`,
+    )
+  }
+  const patch: { tag?: string; attributes?: Record<string, string> | null; textContent?: string | null } = {}
+  if (input.tag !== undefined) patch.tag = input.tag
+  if (input.attributes !== undefined) patch.attributes = input.attributes
+  if (input.textContent !== undefined) patch.textContent = input.textContent
+  store.updateDomNode(input.nodeId, patch)
   return aiToolOk()
 }
 
@@ -638,6 +672,8 @@ export async function executeAgentTool(
         return runDeleteNode(parseValue(DeleteNodeInputSchema, rawInput))
       case 'site_update_node_props':
         return runUpdateNodeProps(parseValue(UpdateNodePropsInputSchema, rawInput))
+      case 'site_update_dom_node':
+        return runUpdateDomNode(parseValue(UpdateDomNodeInputSchema, rawInput))
       case 'site_move_node':
         return runMoveNode(parseValue(MoveNodeInputSchema, rawInput))
       case 'site_rename_node':

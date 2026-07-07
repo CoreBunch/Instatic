@@ -15,6 +15,7 @@ export type {
   ModuleComponentProps,
   InlineEditBinding,
   NodeWrapperProps,
+  ModuleHtmlContract,
 } from './types'
 
 export type {

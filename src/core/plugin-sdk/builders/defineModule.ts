@@ -39,6 +39,7 @@ import type {
   PluginModuleDependencies,
   PluginPropertyControl,
   PluginRenderOutput,
+  ModuleHtmlContract,
 } from '../modules'
 
 interface DefineModuleConfig<TDefaults extends Record<string, unknown>> {
@@ -57,11 +58,20 @@ interface DefineModuleConfig<TDefaults extends Record<string, unknown>> {
   /** Optional semver-like version string. Defaults to `'1.0.0'`. */
   version?: string
   /**
+   * Declarative HTML contract — maps props ↔ HTML fields on the node.
+   * When present, the publisher serializes the node from its HTML fields
+   * using this contract. Modules with `htmlContract` can omit `render`.
+   */
+  htmlContract?: ModuleHtmlContract
+  /**
    * Pure render function. Receives typed props (inferred from `defaults`)
    * and an array of pre-rendered children HTML strings. Must return clean
    * HTML — never use document/window/React.
+   *
+   * Optional when `htmlContract` is present — the publisher uses the
+   * contract to serialize HTML fields instead.
    */
-  render: (ctx: { props: TDefaults; children: string[] }) => PluginRenderOutput
+  render?: (ctx: { props: TDefaults; children: string[] }) => PluginRenderOutput
   /**
    * Optional preview override for the editor canvas. Falls back to `render`
    * when omitted. Useful when the editor preview should differ from the
@@ -101,10 +111,13 @@ export function defineModule<const TDefaults extends Record<string, unknown>>(
     schema: config.schema as Record<string, PluginPropertyControl>,
     canHaveChildren: config.canHaveChildren,
     htmlTag: config.htmlTag,
+    ...(config.htmlContract ? { htmlContract: config.htmlContract } : {}),
     ...(config.dependencies ? { dependencies: config.dependencies } : {}),
     ...(config.editorRuntime ? { editorRuntime: config.editorRuntime } : {}),
-    render: (props, children) =>
-      config.render({ props: props as TDefaults, children }),
+    ...(config.render
+      ? { render: (props, children) =>
+          config.render!({ props: props as TDefaults, children }) }
+      : {}),
     ...(config.preview
       ? { preview: (props, children) => config.preview!({ props: props as TDefaults, children }) }
       : {}),

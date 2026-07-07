@@ -45,9 +45,15 @@ function stopChildren(signal: NodeJS.Signals = 'SIGTERM'): void {
   }
 }
 
+// On Windows, `bun` and `vite` resolve to .cmd/.ps1 shims that uv_spawn
+// can't find directly. Use process.execPath (the real bun.exe) for bun
+// commands, and `bun x vite` for vite. On non-Windows the shims aren't an
+// issue so this works identically.
+const BUN_EXE = process.execPath
+
 for (const command of [
-  bunCommand('server/index.ts'),
-  bunRunCommand('dev:vite', '--host', '127.0.0.1', '--port', VITE_PORT, '--strictPort'),
+  [BUN_EXE, 'server/index.ts'],
+  [BUN_EXE, 'x', 'vite', '--host', '127.0.0.1', '--port', VITE_PORT, '--strictPort'],
 ]) {
   const child = Bun.spawn(command, {
     env: sharedEnv,

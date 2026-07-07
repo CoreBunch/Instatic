@@ -57,6 +57,19 @@ export const OutletModule: ModuleDefinition<OutletStoredProps> = {
 
   htmlTag: (props) => resolveHtmlTag(props.tag, props.customTag),
 
+  htmlContract: {
+    tag: (props) => resolveHtmlTag(props.tag, props.customTag),
+    attributes: () => ({ 'data-instatic-content-region': '' }),
+    textContent: (props) => (typeof props.html === 'string' ? props.html : ''),
+    claimSelector: 'instatic-outlet',
+    canHaveChildren: false,
+    fromHtml: (el) => ({
+      tag: 'custom',
+      customTag: el.tagName.toLowerCase(),
+      html: el.innerHTML,
+    }),
+  },
+
   render: (props) => {
     const tag = resolveHtmlTag(props.tag, props.customTag)
     const html = typeof props.html === 'string' ? props.html : ''

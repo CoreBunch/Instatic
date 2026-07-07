@@ -29,6 +29,7 @@ import { cn } from '@ui/cn'
 import { AppGridPlusGlyphIcon } from 'pixel-art-icons/icons/app-grid-plus-glyph'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
 import { CalendarSolidIcon } from 'pixel-art-icons/icons/calendar-solid'
+import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { Grid2x22SolidIcon } from 'pixel-art-icons/icons/grid-2x2-2-solid'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { ListBoxSolidIcon } from 'pixel-art-icons/icons/list-box-solid'
@@ -92,6 +93,7 @@ const SECTIONS: readonly SectionDefinition[] = [
   { id: 'modules', name: 'Modules', accent: 'lilac', icon: AppGridPlusGlyphIcon },
   { id: 'layouts', name: 'Layouts', accent: 'sky', icon: LayoutSolidIcon },
   { id: 'components', name: 'Components', accent: 'mint', icon: BoxStackSolidIcon },
+  { id: 'elements', name: 'Elements', accent: 'peach', icon: CodeIcon },
   { id: 'recent', name: 'Recent', accent: 'rose', icon: CalendarSolidIcon },
 ]
 
@@ -128,6 +130,7 @@ export function ModuleInserterDialog({
     moduleItems,
     savedLayoutItems,
     componentItems,
+    domNodeItems,
     allItems,
   } = buildModuleInserterItems({
     modules: registry.list(),
@@ -140,6 +143,7 @@ export function ModuleInserterDialog({
   const filteredModules = filterInserterItems(moduleItems, query)
   const filteredSavedLayouts = filterInserterItems(savedLayoutItems, query)
   const filteredComponents = filterInserterItems(componentItems, query)
+  const filteredDomNodes = filterInserterItems(domNodeItems, query)
   const filteredRecent = filterInserterItems(recentItems, query)
   // Layouts section order: the user's saved layouts, then one group per plugin
   // (labelled with the plugin's display name). All sourced from `data_rows`.
@@ -151,6 +155,7 @@ export function ModuleInserterDialog({
     modules: filteredModules,
     layouts: layoutsSection.items,
     components: filteredComponents,
+    elements: filteredDomNodes,
     recent: filteredRecent,
   })
 
@@ -166,6 +171,7 @@ export function ModuleInserterDialog({
     modules: filteredModules.length,
     layouts: layoutsSection.items.length,
     components: filteredComponents.length,
+    elements: filteredDomNodes.length,
     recent: filteredRecent.length,
   }
 
@@ -639,11 +645,13 @@ function itemsForSection(
     modules: ModuleInserterItem[]
     layouts: ModuleInserterItem[]
     components: ModuleInserterItem[]
+    elements: ModuleInserterItem[]
     recent: ModuleInserterItem[]
   },
 ): ModuleInserterItem[] {
   if (section === 'layouts') return groups.layouts
   if (section === 'components') return groups.components
+  if (section === 'elements') return groups.elements
   if (section === 'recent') return groups.recent
   return groups.modules
 }
@@ -651,11 +659,13 @@ function itemsForSection(
 function emptyTitleForSection(section: ModuleInserterSectionId): string {
   if (section === 'components') return 'No components yet'
   if (section === 'recent') return 'No recent inserts'
+  if (section === 'elements') return 'No matching elements'
   return 'Nothing to insert'
 }
 
 function emptyDescriptionForSection(section: ModuleInserterSectionId): string {
   if (section === 'components') return 'Create a Visual Component to insert it from here.'
   if (section === 'recent') return 'Inserted modules and layouts will appear here.'
+  if (section === 'elements') return 'Try a different search term.'
   return 'This section has no available items.'
 }

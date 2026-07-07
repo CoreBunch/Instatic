@@ -7,9 +7,9 @@
  *   1. A DOM — `DOMParser` for the markup, `CSSStyleSheet` for the CSS.
  *      Installed from happy-dom, the same approach the server uses for
  *      richtext sanitization (`server/richtextSanitizer.ts`).
- *   2. The base module registry — `walkAndMap` maps HTML elements to
- *      `base.*` modules through `HTML_TO_MODULE_RULES`, which resolves
- *      defaults from the registry.
+ *   2. The base module registry — `walkAndMap` maps every HTML element to a
+ *      DOM-native node first, then attaches a module overlay when the
+ *      element matches a module's `htmlContract.claimSelector`.
  *
  * The CLI evaluates the author's `instatic-plugin.config.ts` (where
  * `definePack` runs), so it installs both first. Kept out of the SDK

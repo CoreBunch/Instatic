@@ -50,6 +50,30 @@ export const SvgModule: ModuleDefinition<SvgStoredProps> = {
 
   htmlTag: 'svg',
 
+  htmlContract: {
+    tag: 'svg',
+    attributes: (props) => {
+      const attrs: Record<string, string> = {}
+      const label = String(props.title ?? '').trim()
+      if (label) {
+        attrs['role'] = 'img'
+        attrs['aria-label'] = label
+      }
+      return attrs
+    },
+    textContent: (props) => {
+      // The svg prop holds the inner SVG markup (children of <svg>).
+      // In the unified model, this becomes the node's textContent.
+      return String(props.svg ?? '')
+    },
+    claimSelector: 'svg',
+    canHaveChildren: false,
+    fromHtml: (el) => ({
+      svg: el.outerHTML,
+      title: el.getAttribute('aria-label') ?? '',
+    }),
+  },
+
   render: (props) => {
     // `props.svg` was already sanitised at the escapeProps boundary; this is
     // the final, safe markup. An a11y label, when present, is added to the

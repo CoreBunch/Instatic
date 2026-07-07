@@ -13,7 +13,9 @@ import { ANCHOR_TARGET_OPTIONS, anchorRel } from '@modules/base/shared/anchorTar
 import {
   htmlAttributesAttr,
   htmlAttributesControl,
+  htmlAttributesForReact,
 } from '@modules/base/shared/htmlAttributes'
+import { normalizeImportedText } from '@core/htmlImport'
 import { resolveButtonAnchor } from './anchor'
 import { ButtonEditor } from './ButtonEditor'
 import { ButtonPropsSchema, type ButtonStoredProps } from './props'
@@ -52,6 +54,47 @@ export const ButtonModule: ModuleDefinition<ButtonStoredProps> = {
   component: ButtonEditor,
 
   htmlTag: (props) => (resolveButtonAnchor(props.href) ? 'a' : 'button'),
+
+  htmlContract: {
+    tag: (props) => (resolveButtonAnchor(props.href) ? 'a' : 'button'),
+    attributes: (props) => {
+      const attrs = htmlAttributesForReact(props.htmlAttributes)
+      const anchor = resolveButtonAnchor(props.href)
+      if (anchor) {
+        attrs['href'] = anchor.href
+        attrs['target'] = String(props.target)
+        const rel = anchorRel(props.target)
+        if (rel) attrs['rel'] = rel
+      } else {
+        attrs['type'] = 'button'
+        if (props.disabled) {
+          attrs['disabled'] = ''
+          attrs['aria-disabled'] = 'true'
+        }
+      }
+      return attrs
+    },
+    textContent: (props) => String(props.label ?? ''),
+    claimSelector: 'button:not([type="submit"]), a.btn, .btn, [data-module="button"]',
+    canHaveChildren: false,
+    fromHtml: (el) => {
+      const tag = el.tagName.toLowerCase()
+      if (tag === 'a') {
+        const target = el.getAttribute('target') ?? '_self'
+        return {
+          label: normalizeImportedText(el.textContent ?? ''),
+          href: el.getAttribute('href') ?? '',
+          target: (['_self', '_blank', '_parent'].includes(target) ? target : '_self') as ButtonStoredProps['target'],
+          disabled: false,
+        }
+      }
+      return {
+        label: normalizeImportedText(el.textContent ?? ''),
+        href: '',
+        disabled: el.hasAttribute('disabled'),
+      }
+    },
+  },
 
   render: (props) => {
     const label = String(props.label ?? '')

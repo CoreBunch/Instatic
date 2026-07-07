@@ -1216,6 +1216,63 @@ test.describe('visual builder', () => {
         },
       })
     })
+
+    test('inserts and edits a DOM-native element via the Elements picker (BUILDER-008)', async ({
+      page,
+      browser,
+    }) => {
+      await login(page)
+      const { slug } = await openBlankPage(page, 'Builder DOM-native')
+
+      // Insert a DOM-native <figure> element from the Elements section.
+      await page.getByTestId('canvas-notch-add-btn').click()
+      const dialog = page.getByRole('dialog', { name: 'Add to canvas' })
+      await expect(dialog).toBeVisible()
+      await dialog.getByRole('button', { name: 'Elements' }).click()
+      await dialog.locator('[data-dom-node-tag="figure"]').first().click()
+      await expect(dialog).toBeHidden()
+
+      // The figure should appear in the layers tree.
+      await openLayersPanel(page)
+      const tree = page.getByRole('tree', { name: 'Page element tree' })
+      await expect(tree.getByRole('treeitem', { name: 'figure' })).toBeVisible()
+
+      // Edit the tag to <blockquote> via the properties panel.
+      await selectTreeLayer(page, 'figure')
+      await expect(page.getByTestId('dom-node-tag-input')).toBeVisible()
+      await page.getByTestId('dom-node-tag-input').fill('blockquote')
+      await page.getByTestId('dom-node-tag-input').press('Tab')
+
+      // Add text content.
+      const quoteText = `E2E quote ${Date.now().toString(36)}`
+      await expect(page.getByTestId('dom-node-text-input')).toBeVisible()
+      await page.getByTestId('dom-node-text-input').fill(quoteText)
+
+      // Add a data attribute.
+      await page.getByTestId('dom-node-attr-key-input').fill('data-author')
+      await page.getByTestId('dom-node-attr-value-input').fill('e2e')
+      await page.getByTestId('dom-node-attr-add-btn').click()
+
+      // The layers tree should now show blockquote.
+      await expect(tree.getByRole('treeitem', { name: 'blockquote' })).toBeVisible()
+
+      // The canvas should render the text.
+      await expect(canvasFrame(page).getByText(quoteText, { exact: true })).toBeVisible()
+
+      await saveDraft(page)
+      await publishDraft(page)
+
+      // The published page should have a <blockquote> with the text and attribute.
+      await visitPublicPage(browser, {
+        path: `/${slug}`,
+        assert: async (visitor) => {
+          const blockquote = visitor.locator('blockquote')
+          await expect(blockquote).toBeVisible()
+          await expect(blockquote).toHaveText(quoteText)
+          await expect(blockquote).toHaveAttribute('data-author', 'e2e')
+        },
+      })
+    })
   })
 
   test.describe('responsive', () => {

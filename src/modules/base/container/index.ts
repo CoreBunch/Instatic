@@ -20,6 +20,7 @@ import {
 import {
   htmlAttributesAttr,
   htmlAttributesControl,
+  htmlAttributesForReact,
 } from '@modules/base/shared/htmlAttributes'
 import { Value } from '@core/utils/typeboxHelpers'
 import { ContainerEditor } from './ContainerEditor'
@@ -48,6 +49,21 @@ export const ContainerModule: ModuleDefinition<ContainerStoredProps> = {
   component: ContainerEditor,
 
   htmlTag: (props) => resolveHtmlTag(props.tag, props.customTag),
+
+  htmlContract: {
+    tag: (props) => resolveHtmlTag(props.tag, props.customTag),
+    attributes: (props) => htmlAttributesForReact(props.htmlAttributes),
+    canHaveChildren: true,
+    claimSelector: 'div, section, article, main, header, footer, nav, aside, ul, ol',
+    fromHtml: (el) => {
+      const tag = el.tagName.toLowerCase()
+      const builtinTags = new Set(['div', 'section', 'article', 'main', 'header', 'footer', 'nav', 'aside', 'ul', 'ol'])
+      if (builtinTags.has(tag)) {
+        return { tag, customTag: '' }
+      }
+      return { tag: 'custom', customTag: tag }
+    },
+  },
 
   render: (props, renderedChildren) => {
     const tag = resolveHtmlTag(props.tag, props.customTag)

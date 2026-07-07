@@ -11,10 +11,25 @@
 
 import { describe, it, expect } from 'bun:test'
 import '@modules/base'
+import type { PageNode } from '@core/page-tree'
 import { importHtml } from '@core/htmlImport'
+
+function normalizeFragment(fragment: ReturnType<typeof importHtml>): void {
+  for (const id of Object.keys(fragment.nodes)) {
+    const node = fragment.nodes[id]
+    if (node?.moduleOverlay) {
+      fragment.nodes[id] = {
+        ...node,
+        moduleId: node.moduleOverlay.moduleId,
+        props: { ...node.props, ...node.moduleOverlay.props },
+      } as PageNode
+    }
+  }
+}
 
 function childrenOf(html: string) {
   const r = importHtml(html)
+  normalizeFragment(r)
   const root = r.nodes[r.rootIds[0]!]!
   return { root, kids: root.children.map((id) => r.nodes[id]!) }
 }
@@ -22,9 +37,9 @@ function childrenOf(html: string) {
 describe('<br> inside a heading is preserved', () => {
   it('heading with <br> recurses and keeps the break + both text halves', () => {
     const { root, kids } = childrenOf('<h2>Get the<br/>file-based CMS.</h2>')
-    expect(root.moduleId).toBe('base.container')
-    expect(root.props.customTag).toBe('h2')
-    const tags = kids.map((k) => k.props.customTag ?? k.moduleId)
+    expect(root.moduleId).toBe('')
+    expect(root.tag).toBe('h2')
+    const tags = kids.map((k) => k.tag ?? k.moduleId)
     expect(tags).toContain('br') // the line break survives as a node
     const texts = kids
       .filter((k) => k.moduleId === 'base.text' && k.props.tag === 'none')
@@ -39,8 +54,8 @@ describe('nested phrasing spans are preserved (not flattened)', () => {
     const { root, kids } = childrenOf(
       '<span class="led-txt"><span class="led-k">Auth &amp; access</span><span class="led-v">Sessions, MFA.</span></span>',
     )
-    expect(root.moduleId).toBe('base.container')
-    expect(root.props.customTag).toBe('span')
+    expect(root.moduleId).toBe('')
+    expect(root.tag).toBe('span')
     const texts = kids.map((k) => k.props.text)
     expect(texts).toContain('Auth & access')
     expect(texts).toContain('Sessions, MFA.')

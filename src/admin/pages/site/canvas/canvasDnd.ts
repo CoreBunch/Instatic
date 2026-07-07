@@ -3,6 +3,8 @@ import type { NodeTree } from '@core/page-tree'
 import {
   getParent,
   resolvePageTreeDropTarget,
+  isDomNode,
+  domCanHaveChildren,
   type PageTreeDropPosition,
   type PageTreeDropTarget,
 } from '@core/page-tree'
@@ -194,7 +196,7 @@ function resolvePageTreeInsertionTarget({
 
   if (
     zone === 'inside' &&
-    canHaveChildren(over.moduleId) &&
+    (isDomNode(over) ? domCanHaveChildren(over.tag!) : canHaveChildren(over.moduleId)) &&
     (!over.locked || over.moduleId === 'base.slot-instance')
   ) {
     if (over.moduleId === 'base.visual-component-ref') {

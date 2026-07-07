@@ -4,6 +4,7 @@ import type {
 } from 'react'
 import type { IconComponent } from 'pixel-art-icons/types'
 import { BracesIcon } from 'pixel-art-icons/icons/braces'
+import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { HandGrabSolidIcon } from 'pixel-art-icons/icons/hand-grab-solid'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
@@ -101,6 +102,7 @@ export function ModuleInserterItemButton({
         data-module-id={item.kind === 'module' ? item.id : undefined}
         data-saved-layout-id={item.kind === 'savedLayout' ? item.id : undefined}
         data-vc-id={item.kind === 'component' ? item.id : undefined}
+        data-dom-node-tag={item.kind === 'domNode' ? item.tag : undefined}
       >
         {isList ? <ItemRow item={item} /> : <ItemTile item={item} />}
       </Button>
@@ -173,6 +175,9 @@ function ItemIcon({ item }: { item: ModuleInserterItem }) {
   }
   if (item.kind === 'component') {
     return <BracesIcon size={13} aria-hidden="true" />
+  }
+  if (item.kind === 'domNode') {
+    return <CodeIcon size={13} aria-hidden="true" />
   }
   const _exhaustive: never = item
   return _exhaustive

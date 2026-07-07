@@ -83,3 +83,7 @@ docs/superpowers/
 .factory/
 .trae/
 .windsurf/
+
+# Runtime PID file written by the MCP relay daemon
+relay-daemon.pid
+

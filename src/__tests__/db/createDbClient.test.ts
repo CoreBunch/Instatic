@@ -12,7 +12,20 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   try {
     return await fn(dir)
   } finally {
-    await rm(dir, { recursive: true, force: true })
+    // Retry delete — Windows may hold SQLite handles briefly after close.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await rm(dir, { recursive: true, force: true })
+        break
+      } catch (e) {
+        const err = e as Error & { code?: string }
+        if (err.code === 'EBUSY' && attempt < 4) {
+          await new Promise((r) => setTimeout(r, 50 * (attempt + 1)))
+          continue
+        }
+        throw e
+      }
+    }
   }
 }
 
@@ -46,6 +59,8 @@ describe('createDbClient — DATABASE_URL dialect selection', () => {
 
         const { rows } = await db<{ count: number }>`select count(*) as count from schema_migrations`
         expect(rows[0]?.count).toBe(sqliteMigrations.length)
+
+        db.close?.()
       }
     })
   })

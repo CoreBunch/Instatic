@@ -21,9 +21,10 @@
  * ~60–80% on typical pages.
  */
 
-import type { PageNode } from '@core/page-tree'
+import type { PropertySchema } from '@core/module-engine-schema'
+import type { PageNode, Page, SiteDocument } from '@core/page-tree'
 import { isPageRef, resolvePageRef } from '@core/page-tree'
-import type { AnyModuleDefinition } from '@core/module-engine'
+import type { AnyModuleDefinition, IModuleRegistry } from '@core/module-engine'
 import { validateNodeProps } from '@core/module-engine'
 import { resolveProps } from '@core/page-tree'
 import { resolveDynamicProps, effectiveNodeBindings } from '@core/templates/dynamicBindings'
@@ -35,6 +36,7 @@ import { renderVisualComponentRef } from './renderVisualComponentRef'
 import { renderLoop } from './renderLoop'
 import { resolveAutoSizes } from './sizesResolver'
 import { sanitizeRichtext } from '@core/sanitize'
+import { VOID_HTML_ELEMENTS } from '@core/page-tree'
 import type {
   RenderConfig,
   RenderAccumulators,
@@ -118,6 +120,59 @@ function attachResolvedAutoSizes(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Overlay prop enrichment
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve effective props for a module overlay, mirroring `resolveProps`
+ * but reading from `node.moduleOverlay.props` instead of `node.props`.
+ */
+function resolveOverlayProps(
+  node: PageNode,
+  breakpointId?: string,
+  schema?: PropertySchema,
+): Record<string, unknown> {
+  const props = node.moduleOverlay?.props ?? {}
+  if (!breakpointId) return props
+  const override = node.breakpointOverrides?.[breakpointId]
+  if (!override || Object.keys(override).length === 0) return props
+  if (!schema) return { ...props, ...override }
+  const filtered: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(override)) {
+    if (schema[key]?.breakpointOverridable === true) {
+      filtered[key] = value
+    }
+  }
+  if (Object.keys(filtered).length === 0) return props
+  return { ...props, ...filtered }
+}
+
+/**
+ * Run the full prop enrichment pipeline for a module overlay:
+ * breakpoint overrides → dynamic bindings → page ref resolution →
+ * schema validation → escaping → resolved media + auto sizes.
+ * Returns the enriched props ready for htmlContract consumption.
+ */
+function enrichOverlayProps(
+  node: PageNode,
+  def: AnyModuleDefinition,
+  config: RenderConfig,
+): Record<string, unknown> {
+  const effectiveProps = resolveOverlayProps(node, config.breakpointId, def.schema)
+  const dynamicProps = resolveDynamicProps(
+    effectiveProps,
+    effectiveNodeBindings(node),
+    config.templateContext,
+  )
+  const resolvedProps = resolvePageRefProps(dynamicProps, config.site.pages)
+  const validatedProps = validateNodeProps(def, resolvedProps)
+  const safeProps = escapeProps(validatedProps, def.schema)
+  attachResolvedMediaByKey(safeProps, def, validatedProps, config.mediaAssets)
+  attachResolvedAutoSizes(safeProps, def, node, config)
+  return safeProps
+}
+
 /**
  * Standard bottom-up render path: children first, then resolve props, attach
  * resolved assets, call the module's pure render(), collect deduped CSS,
@@ -161,6 +216,15 @@ function renderStandardNode(
   attachResolvedMediaByKey(safeProps, def, validatedProps, config.mediaAssets)
   attachResolvedAutoSizes(safeProps, def, node, config)
 
+  // Legacy modules still use render(); migrated modules use htmlContract and
+  // never reach this path (unified nodes are handled by renderDomNode). The
+  // null guard is a type-safety net during the migration transition.
+  if (!def.render) {
+    throw new Error(
+      `[publisher] Module "${node.moduleId}" has no render() and no htmlContract path was taken. ` +
+        `This should be unreachable — unified nodes are handled by renderDomNode.`,
+    )
+  }
   const output = def.render(safeProps as never, renderedChildren)
 
   // CSS dedup — one entry per moduleId. Sanitize before storage to neutralise
@@ -195,7 +259,7 @@ function renderStandardNode(
   if (node.moduleId === 'base.body') return output.html
   const withClasses = injectNodeClassIds(output.html, node.classIds, config.site)
   const withStyles = injectNodeInlineStyles(withClasses, node.inlineStyles)
-  return config.annotateNodeIds ? injectNodeId(withStyles, node.id) : withStyles
+  return config.annotateNodeIds && !config.cleanMode ? injectNodeId(withStyles, node.id) : withStyles
 }
 
 /**
@@ -240,6 +304,117 @@ type SpecialRenderer = (
   acc: RenderAccumulators,
   renderNode: RenderNodeFn,
 ) => string
+
+// ---------------------------------------------------------------------------
+// Unified node rendering (DOM-native + overlay)
+// ---------------------------------------------------------------------------
+
+/**
+ * Render a unified node — one that stores canonical HTML fields (`tag`,
+ * `attributes`, `textContent`). This path handles:
+ *
+ *   - Pure DOM-native nodes (no moduleOverlay)
+ *   - Unified nodes that carry a `moduleOverlay` — contract-derived
+ *     attributes and textContent are merged on top of stored HTML fields.
+ *
+ * When `moduleOverlay` is present, `htmlContract.attributes(props)` is called
+ * with enriched props (breakpoint overrides, dynamic bindings, page refs,
+ * validated, escaped, plus resolved media / auto sizes). Module-declared
+ * attribute keys win; unknown/preserved node-stored attrs stay.
+ *
+ * Void elements emit no closing tag. `classIds`, `inlineStyles`, and optional
+ * node-id annotation are injected exactly as in the legacy module path.
+ */
+function renderUnifiedNode(
+  node: PageNode,
+  config: RenderConfig,
+  acc: RenderAccumulators,
+): string {
+  const tag = node.tag!
+
+  // Build attribute map from stored node.attributes
+  let attrs: Record<string, string> = { ...node.attributes }
+
+  // If a module overlay exists, merge contract-derived attributes
+  let enrichedProps: Record<string, unknown> | undefined
+  if (node.moduleOverlay) {
+    const overlayDef = config.registry.get(node.moduleOverlay.moduleId)
+    if (overlayDef) {
+      enrichedProps = enrichOverlayProps(node, overlayDef, config)
+      if (overlayDef.htmlContract?.attributes) {
+        const contractAttrs = overlayDef.htmlContract.attributes(enrichedProps as never)
+        for (const [key, value] of Object.entries(contractAttrs)) {
+          attrs[key] = value
+        }
+      }
+    }
+  }
+
+  // Build attribute string
+  const attrParts: string[] = []
+  for (const [key, value] of Object.entries(attrs)) {
+    attrParts.push(`${key}="${escapeHtml(value)}"`)
+  }
+  const attrStr = attrParts.length > 0 ? ' ' + attrParts.join(' ') : ''
+
+  // Void elements: self-closing, no inner content
+  if (VOID_HTML_ELEMENTS.has(tag)) {
+    let html = `<${tag}${attrStr}>`
+    html = injectNodeClassIds(html, node.classIds, config.site)
+    html = injectNodeInlineStyles(html, node.inlineStyles)
+    return config.annotateNodeIds && !config.cleanMode ? injectNodeId(html, node.id) : html
+  }
+
+  // Determine inner content
+  const hasChildren = (node.children ?? []).length > 0
+  let innerHtml: string
+  if (hasChildren) {
+    innerHtml = (node.children ?? [])
+      .map((childId) => renderNode(childId, config, acc))
+      .join('')
+  } else if (node.moduleOverlay && enrichedProps !== undefined) {
+    const overlayDef = config.registry.get(node.moduleOverlay.moduleId)
+    if (overlayDef?.htmlContract?.textContent) {
+      innerHtml = overlayDef.htmlContract.textContent(enrichedProps as never)
+    } else {
+      innerHtml = node.textContent !== undefined ? escapeHtml(node.textContent) : ''
+    }
+  } else {
+    innerHtml = node.textContent !== undefined ? escapeHtml(node.textContent) : ''
+  }
+
+  let html = `<${tag}${attrStr}>${innerHtml}</${tag}>`
+  html = injectNodeClassIds(html, node.classIds, config.site)
+  html = injectNodeInlineStyles(html, node.inlineStyles)
+  return config.annotateNodeIds && !config.cleanMode ? injectNodeId(html, node.id) : html
+}
+
+/**
+ * Serialize a single node subtree to clean, id-less HTML.
+ * Used by MCP tools and folder-watcher sync.
+ */
+export function serializeNodeHtml(
+  nodeId: string,
+  page: Page,
+  site: SiteDocument,
+  registry: IModuleRegistry,
+): string {
+  const config: RenderConfig = {
+    page,
+    site,
+    registry,
+    breakpointId: undefined,
+    cleanMode: true,
+  }
+  const acc: RenderAccumulators = {
+    cssMap: new Map(),
+    jsMap: new Map(),
+    cspSources: new Map(),
+    infiniteLoopIds: new Set(),
+    holeNodeIds: new Set(),
+  }
+  return renderNode(nodeId, config, acc)
+}
 
 /**
  * Publisher-side specialised-renderer IMPLEMENTATIONS, keyed by moduleId. Each
@@ -303,6 +478,14 @@ export function renderNode(
   if (!node) return ''
   if (node.hidden) return ''
 
+  // Unified path: any node that stores canonical HTML fields (tag) is
+  // serialised directly, regardless of whether it carries a moduleOverlay.
+  if (node.tag) {
+    return renderUnifiedNode(node, config, acc)
+  }
+
+  // Legacy path: non-empty moduleId and no tag — lookup the module
+  // definition and dispatch through render() or a special renderer.
   const def = config.registry.get(node.moduleId)
   if (!def) {
     // Unknown module — emit a comment so the page doesn't silently lose content
