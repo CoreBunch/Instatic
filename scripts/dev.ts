@@ -26,7 +26,7 @@
  */
 
 import { mkdir } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import path from 'node:path'
 import { isSqliteUrl } from '../server/db'
 import { ensurePortFree } from './lib/freePort'
 
@@ -208,7 +208,7 @@ async function waitForPostgresReady(timeoutMs = 60_000): Promise<void> {
 
 if (isSqliteUrl(DATABASE_URL)) {
   const dbPath = DATABASE_URL.replace(/^sqlite:|^file:/, '')
-  await mkdir(dirname(dbPath), { recursive: true })
+  await mkdir(path.dirname(dbPath), { recursive: true })
   log(`Using SQLite at ${dbPath} — skipping Postgres docker provisioning`)
 } else {
   if (!dockerInstalled()) {
@@ -264,15 +264,25 @@ function stopChildren(signal: NodeJS.Signals = 'SIGTERM'): void {
   }
 }
 
-// Resolve the executable for a command string. On Windows the `bun` the user
-// launched may be a shim/alias rather than a real `bun.exe` on PATH, so a bare
-// `Bun.spawn(['bun', ...])` fails with ENOENT. Use the absolute path of the
-// running Bun binary for `bun`, and `Bun.which` (which resolves local
-// node_modules/.bin entries) for everything else.
+// Resolve a command string to a spawnable argv. On Windows the `bun` the user
+// launched is a `.cmd` shim (so `Bun.spawn(['bun', ...])` fails with ENOENT),
+// and local bins like `vite` aren't on PATH inside a spawned child either
+// (`Bun.which('vite')` is null because node_modules/.bin isn't on the child's
+// PATH). Run both through the real Bun binary (`process.execPath`) — bun for
+// its own entry, and bun executing vite's JS bin for the dev server.
+const projectRoot = path.resolve(import.meta.dir, '..')
+
 function resolveCommand(command: string): string[] {
   const [bin, ...rest] = command.split(' ')
-  const resolved =
-    bin === 'bun' ? process.execPath : (Bun.which(bin) ?? bin)
+  if (bin === 'bun') return [process.execPath, ...rest]
+  if (bin === 'vite') {
+    return [
+      process.execPath,
+      path.resolve(projectRoot, 'node_modules/vite/bin/vite.js'),
+      ...rest,
+    ]
+  }
+  const resolved = Bun.which(bin) ?? bin
   return [resolved, ...rest]
 }
 
