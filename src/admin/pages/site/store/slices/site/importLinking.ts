@@ -33,7 +33,7 @@ export function indexStyleRulesByName(rules: Record<string, StyleRule>): Map<str
  *
  * Mutates `rules` (adds new entries) and `byName` (caches them) so repeated
  * names across sibling nodes resolve to one shared class. Must run inside the
- * Immer producer that owns the `site` draft.
+ * Mutative recipe that owns the `site` draft.
  */
 export function linkImportedClassNames(
   classNames: readonly string[] | undefined,
@@ -90,7 +90,7 @@ export function linkImportedClassNames(
  *     rule with the identical selector already exists, so repeated imports
  *     don't pile up duplicates.
  *
- * Mutates `siteRules` and `byName`. Must run inside the Immer producer that
+ * Mutates `siteRules` and `byName`. Must run inside the Mutative recipe that
  * owns the `site` draft, BEFORE `linkImportedClassNames`.
  */
 export function mergeImportedStyleRules(

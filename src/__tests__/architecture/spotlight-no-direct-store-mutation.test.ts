@@ -7,7 +7,7 @@
  * that are not public exports of store.ts).
  *
  * Rationale: Spotlight is a UI layer that orchestrates existing store actions.
- * It must not become a second model layer by directly mutating Immer state.
+ * It must not become a second model layer by directly mutating Mutative state.
  */
 
 import { describe, it, expect } from 'bun:test'

@@ -58,9 +58,8 @@ Railway is the fastest way to get Instatic live. Pick a template, hit the button
 |---|---|---|---|
 | **Railway** · *Recommended* | SQLite | A single site — blog, portfolio, small business | [Deploy →](https://railway.com/deploy/instatic-cms-sqlite?referralCode=Zm9bVJ&utm_medium=integration&utm_source=template&utm_campaign=generic) |
 | **Railway** | Postgres | Multiple authors, managed backups, room to grow | [Deploy →](https://railway.com/deploy/instatic-cms-postgres?referralCode=Zm9bVJ&utm_medium=integration&utm_source=template&utm_campaign=generic) |
-| **Render** | — | — | *Coming soon* |
-| **Fly.io** | — | — | *Coming soon* |
-| **DigitalOcean** | — | — | *Coming soon* |
+| **Render** | SQLite or Postgres | Teams that prefer Render services, disks, and managed Postgres | [Guide →](docs/deployment/render.md) |
+| **Docker / VPS** | SQLite or Postgres | Bring-your-own server, Caddy TLS, custom backup policy | [Guide →](docs/deployment/vps.md) |
 
 SQLite is the right default for most sites. Reach for Postgres when you've got a team of authors or want managed database backups.
 
@@ -106,7 +105,7 @@ Your whole design system lives as data. Change one token and every page that use
 - **Templates** handle the shared chrome. One layout for the whole site, separate layouts per post type, and a real 404 page you design yourself. Content flows into an outlet, so a header and footer get written once and wrap everything.
 - **Loops** repeat a layout over a collection: your posts, your pages, your media, or anything a plugin exposes as a source. Give a loop a couple of variants and it alternates between them as it goes. Good for post lists, product grids, galleries.
 - **Forms that belong to your CMS.** Build a form out of semantic fields and the submissions land in your own data tables. Instatic can read the fields you placed and create the matching table for you. No third-party form service, no embed, no monthly fee for a contact form.
-- **An AI agent that actually edits the page.** Describe what you want and it builds it on the canvas as real, editable nodes, not a screenshot or a wall of code. It writes semantic HTML for structure and CSS for style, through the same import pipeline you use when you paste markup. 28 tools under the hood. Bring your own model: Claude, OpenAI, OpenRouter, or local Ollama. Your key, your model, your bill.
+- **An AI agent that actually edits the page.** Describe what you want and it builds it on the canvas as real, editable nodes, not a screenshot or a wall of code. It writes semantic HTML for structure and CSS for style, through the same import pipeline you use when you paste markup. A 35-tool Site scope builds pages; a 15-tool Content scope edits entries. Bring your own model: Claude, OpenAI, OpenRouter, or local Ollama. Your key, your model, your bill.
 - **Imports that hold up.** Paste raw HTML and get editable nodes. Or drop a whole static site — HTML, CSS, images, fonts — and Super Import turns it into pages, style rules, design tokens, and media. Every conflict is shown to you before anything is written, and the entire import is a single undo.
 
 ### 🗂 Manage
@@ -117,7 +116,7 @@ Your whole design system lives as data. Change one token and every page that use
 - **A Data workspace where you design your own collections.** At `/admin/data` you create custom post types and custom data tables with their own fields, then work the rows in a spreadsheet-style grid: search, sort, filter, bulk publish, bulk export. Custom post types come with a real editorial workflow — draft, scheduled, published — and version history on the published copy. Plain data tables are simple grids you can point at anything: the submissions from a form, a product catalog, a lightweight CRM, a list of testimonials. And every table you build is a content source a loop can render. Define a "Team" table once, loop it onto your about page, done.
 - **A content workspace for writing.** A focused surface for posts and collections, plus live mode so authors edit inside the real design of the site instead of a gray textarea.
 - **A media workspace that works like a file manager.** Folders and smart folders, bulk operations, usage tracking so you know where a file is actually used, replacement workflows, and pluggable storage adapters when you outgrow local disk.
-- **Access control that's real, not decorative.** Roles built from 36 capabilities, token-based sessions, TOTP two-factor with secrets encrypted at rest, account lockout with backoff after repeated failures, and step-up prompts before the dangerous stuff like deleting a user or signing out every device.
+- **Access control that's real, not decorative.** Roles built from 38 capabilities, token-based sessions, TOTP two-factor with secrets encrypted at rest, account lockout with backoff after repeated failures, and step-up prompts before the dangerous stuff like deleting a user or signing out every device.
 - **⌘K for everything.** A fuzzy command palette over the whole admin. Jump anywhere, do anything, without touching the mouse.
 - **Drafts stay drafts.** Unpublished edits never leak to a visitor. What you didn't publish, they don't see.
 
@@ -129,19 +128,15 @@ Your whole design system lives as data. Change one token and every page that use
 - **An audit log that doesn't forget.** Every meaningful admin action writes a row: logins, content changes, role edits, plugin lifecycle. It's append-only, so it's a real record of who did what and when, not something anyone can quietly rewrite.
 - **Form data that's yours.** Submissions sit in your own tables. Query them, export them, build on them. No vendor in the middle.
 
-This is the youngest pillar, and the one we're pushing hardest right now. First-party, privacy-respecting analytics are next. See the [roadmap](#early-on-purpose).
+The analytics surface today is intentionally operational: dashboard status, audit history, and owned form data instead of third-party visitor tracking.
 
 ### 🔌 Extend
 
-<!-- TODO shot — extend-plugins.webp: Plugins page showing a plugin's permission prompts.
-<img src="docs/assets/readme/extend-plugins.webp" alt="The plugin system — sandboxed, permissioned, first-class" width="100%">
--->
+Every CMS has plugins. The difference here is where backend plugin code runs.
 
-Every CMS has plugins. The difference here is where they run.
+An Instatic plugin is a zip package with a manifest. Its server entrypoint runs in a per-plugin worker that hosts a **QuickJS-WASM sandbox**: no filesystem, no environment variables, no network at all unless the site owner grants it, one host at a time. Editor extensions and app-kind admin pages are different: they run in the admin window and require the explicit `editor.code` permission before install.
 
-An Instatic plugin is a zip package with a manifest, and it runs inside a **QuickJS-WASM sandbox**. No filesystem. No environment variables. No network at all, unless the site owner grants it, one host at a time. A plugin can't read your secrets or phone home, because the sandbox never hands it the door. The classic "a plugin took down my site and emailed the database to a stranger" story doesn't run here.
-
-Inside that sandbox the SDK is genuinely capable. A plugin can add:
+Through the SDK, a plugin can add:
 
 - HTTP routes and its own admin pages
 - Storage and scheduled background jobs
@@ -156,17 +151,13 @@ Start with the [plugin system docs](docs/features/plugin-system.md) and the [tem
 
 ## Fast because there's almost nothing to load
 
-<!-- TODO shot — clean-output.webp: devtools view-source of a published page next to the rendered page.
-<img src="docs/assets/readme/clean-output.webp" alt="A published Instatic page and its source — semantic HTML, compact CSS" width="100%">
--->
-
-A published Instatic page is mostly just a file sitting on disk. No framework to boot, no hydration step, no database round-trip on the common path. The browser pulls down semantic HTML and a compact stylesheet, and it's done. There's barely anything between the visitor and the content, so the pages feel instant.
+A published Instatic page is mostly just a file sitting on disk. No framework to boot, no hydration step, no database round-trip on the common path. The browser pulls down semantic HTML and compact CSS bundles, and it's done. There's barely anything between the visitor and the content, so the pages feel instant.
 
 That speed isn't a setting you tune. It falls out of how publishing works, in three layers you never have to think about:
 
 - **Static pages are baked straight to disk when you publish** and swapped in atomically. Visitors are served a file, not a render.
-- **Routes that genuinely change** hit an in-memory cache that's wiped wholesale on every publish, so nobody ever sees a stale page.
-- **The few truly per-visitor parts** are detected automatically and lazy-loaded by a runtime that weighs about 0.7 kB. Smaller than this paragraph.
+- **Routes that genuinely change** hit a versioned in-memory cache. Publishing bumps the version, so old entries miss lazily and nobody sees a stale page.
+- **The few truly per-visitor parts** are detected automatically and lazy-loaded by a runtime that weighs about 1.1 kB. Smaller than this paragraph.
 
 What comes out the other end is plain HTML and compact CSS, all the way down. Nothing from the editor rides along: no React on your public pages, no editor runtime, no framework in the markup. And because it's just HTML and CSS, nothing holds your site hostage — you can read it, host it anywhere, or take it and leave. Full design: [the publisher](docs/features/publisher.md).
 
@@ -228,7 +219,7 @@ One Bun server. A React admin built with Vite. A publisher that emits pages you'
 | **Server** | `Bun.serve` with a hand-written router |
 | **Database** | SQLite or Postgres — one `DbClient` interface, picked by `DATABASE_URL` |
 | **Validation** | TypeBox at every untyped boundary; schemas are the source of truth |
-| **Plugins** | QuickJS-WASM sandbox, owner-granted permissions |
+| **Plugins** | QuickJS-WASM backend sandbox, owner-granted permissions, explicit `editor.code` for admin-window code |
 | **AI** | Provider-agnostic drivers over raw HTTP/SSE, no vendor SDKs |
 | **Output** | Semantic HTML, compact CSS, baked static files plus auto-detected dynamic holes |
 

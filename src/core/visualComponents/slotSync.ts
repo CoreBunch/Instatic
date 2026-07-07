@@ -10,7 +10,7 @@
  *     a VC ref's children into alignment with its VC's slot params.
  *
  *   applySlotSyncResult — helper that applies a SyncResult to a mutable
- *     nodes map (called inside Mutative producers in siteSlice / visualComponentsSlice).
+ *     nodes map (called inside Mutative recipes in siteSlice / visualComponentsSlice).
  *
  * Constraint #269: This file must NOT import from editor/ or editor-store/.
  */
@@ -153,7 +153,7 @@ interface SyncResult {
  * Running on an already-synced ref produces an empty ops array and an
  * orderedChildIds that matches vcRefNode.children exactly (idempotent).
  *
- * This function is PURE — no Mutative producer, no store, no side effects.
+ * This function is PURE — no Mutative recipe, no store, no side effects.
  */
 export function syncSlotInstances(
   vcRefNode: BaseNode,
@@ -255,7 +255,7 @@ export function syncSlotInstances(
 /**
  * Apply a SyncResult (from syncSlotInstances) to a mutable nodes map.
  *
- * Intended to be called inside a Mutative producer where `treeNodes` is a
+ * Intended to be called inside a Mutative recipe where `treeNodes` is a
  * Mutative draft (or a plain object in tests).
  *
  * Steps:

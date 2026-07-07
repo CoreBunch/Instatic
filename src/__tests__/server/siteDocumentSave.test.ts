@@ -1,17 +1,35 @@
 /**
- * Incremental roster saves: PUT /admin/api/cms/pages and PUT /admin/api/cms/components.
+ * PUT /admin/api/cms/site-document — the transactional whole-document save.
  *
- * The bodies carry `{ changedPages, pageIds, baselinePageIds? }` /
- * `{ changedComponents, componentIds }` — only the changed rows are validated
- * and written; the full id roster drives reaping with full-replace semantics
- * (subject to the ISS-041 baseline on the pages side).
+ * One body carries the shell plus per-collection changed rows and explicit
+ * deleted ids:
+ *
+ *   { mode, site, changedPages, deletedPageIds,
+ *     changedComponents, deletedComponentIds,
+ *     changedLayouts, deletedLayoutIds }
+ *
+ * Covered here:
+ *   - O(change) writes: unmentioned rows are byte-untouched (no reap-by-
+ *     omission — a stale client cannot delete anything it doesn't name),
+ *   - explicit deletes (including delete + retake-slug in one batch, undo
+ *     resurrection, two-phase slug swaps),
+ *   - ATOMICITY: one invalid item rejects the whole save — shell and valid
+ *     sibling collections are not persisted,
+ *   - cross-collection validation: pages validate VC refs against the MERGED
+ *     post-save component roster (a page may reference a component created
+ *     in the SAME save),
+ *   - replace mode (imports): server-derived deletions, deleted*Ids must be
+ *     empty,
+ *   - the site-global sync seq: response seq strictly increases and is
+ *     stamped on written AND deleted rows.
  *
  * Runs against a real isolated SQLite DB through the established capability
- * harness (`createCapabilityTestHarness` → `createTestDb`): migrations applied,
- * owner user + stepped-up session seeded via the real setup/login endpoints,
- * requests dispatched through `handleCmsRequest`.
+ * harness (`createCapabilityTestHarness` → `createTestDb`): migrations
+ * applied, owner user + stepped-up session seeded via the real setup/login
+ * endpoints, requests dispatched through `handleCmsRequest`.
  */
 import { describe, expect, it } from 'bun:test'
+import type { SiteShell } from '@core/page-tree'
 import {
   createCapabilityTestHarness,
   readJson,
@@ -43,6 +61,35 @@ function pagePayload(id: string, slug: string, title = slug): Record<string, unk
   }
 }
 
+/** A page whose body contains a base.visual-component-ref to `componentId`. */
+function pageWithVCRef(id: string, slug: string, componentId: string): Record<string, unknown> {
+  const rootId = `root-${id}`
+  const refId = `ref-${id}`
+  return {
+    id,
+    slug,
+    title: slug,
+    rootNodeId: rootId,
+    nodes: {
+      [rootId]: {
+        id: rootId,
+        moduleId: 'base.body',
+        props: {},
+        breakpointOverrides: {},
+        children: [refId],
+      },
+      [refId]: {
+        id: refId,
+        moduleId: 'base.visual-component-ref',
+        props: { componentId },
+        breakpointOverrides: {},
+        children: [],
+        classIds: [],
+      },
+    },
+  }
+}
+
 function vcNode(id: string, moduleId: string, children: string[] = [], props: Record<string, unknown> = {}) {
   return { id, moduleId, props, breakpointOverrides: {}, children, classIds: [] }
 }
@@ -66,17 +113,31 @@ function vcPayload(id: string, name: string, refTo?: string): Record<string, unk
   }
 }
 
+/** A minimal saved layout — one container node, no captured classes. */
+function layoutPayload(id: string, name: string): Record<string, unknown> {
+  const rootId = `root-${id}`
+  return {
+    id,
+    name,
+    rootNodeId: rootId,
+    nodes: { [rootId]: vcNode(rootId, 'base.container') },
+    classes: {},
+    createdAt: 1_700_000_000_000,
+  }
+}
+
 interface StoredRow {
   id: string
   slug: string
   cells_json: { title?: string } & Record<string, unknown>
+  seq: number
   updated_at: string
   deleted_at: string | null
 }
 
 async function storedRows(harness: CapabilityTestHarness, tableId: string): Promise<Map<string, StoredRow>> {
   const { rows } = await harness.db<StoredRow>`
-    select id, slug, cells_json, updated_at, deleted_at
+    select id, slug, cells_json, seq, updated_at, deleted_at
     from data_rows
     where table_id = ${tableId}
   `
@@ -94,6 +155,8 @@ interface Ctx {
   cookie: string
   /** Id of the home page row the setup endpoint seeds (slug `index`). */
   homeId: string
+  /** The draft shell as stored — re-shipped verbatim on every save. */
+  shell: SiteShell
 }
 
 async function setupHarness(): Promise<Ctx> {
@@ -102,112 +165,92 @@ async function setupHarness(): Promise<Ctx> {
   const pages = await storedRows(harness, 'pages')
   expect(pages.size).toBe(1)
   const homeId = [...pages.keys()][0]
-  return { harness, cookie, homeId }
+  const shellRes = await harness.cms('/admin/api/cms/site', { method: 'GET', cookie })
+  expect(shellRes.status).toBe(200)
+  const { site: shell } = await readJson<{ site: SiteShell }>(shellRes)
+  return { harness, cookie, homeId, shell }
 }
 
-function putPages(ctx: Ctx, body: Record<string, unknown>): Promise<Response> {
-  return ctx.harness.cms('/admin/api/cms/pages', { method: 'PUT', cookie: ctx.cookie, json: body })
+interface DocOverrides {
+  mode?: 'incremental' | 'replace'
+  site?: unknown
+  changedPages?: unknown[]
+  deletedPageIds?: string[]
+  changedComponents?: unknown[]
+  deletedComponentIds?: string[]
+  changedLayouts?: unknown[]
+  deletedLayoutIds?: string[]
 }
 
-function putComponents(ctx: Ctx, body: Record<string, unknown>): Promise<Response> {
-  return ctx.harness.cms('/admin/api/cms/components', { method: 'PUT', cookie: ctx.cookie, json: body })
+function putDoc(ctx: Ctx, overrides: DocOverrides = {}): Promise<Response> {
+  return ctx.harness.cms('/admin/api/cms/site-document', {
+    method: 'PUT',
+    cookie: ctx.cookie,
+    json: {
+      mode: 'incremental',
+      site: ctx.shell,
+      changedPages: [],
+      deletedPageIds: [],
+      changedComponents: [],
+      deletedComponentIds: [],
+      changedLayouts: [],
+      deletedLayoutIds: [],
+      ...overrides,
+    },
+  })
 }
 
-function putLayouts(ctx: Ctx, body: Record<string, unknown>): Promise<Response> {
-  return ctx.harness.cms('/admin/api/cms/layouts', { method: 'PUT', cookie: ctx.cookie, json: body })
-}
-
-/** A minimal saved layout — one container node, no captured classes. */
-function layoutPayload(id: string, name: string): Record<string, unknown> {
-  const rootId = `root-${id}`
-  return {
-    id,
-    name,
-    rootNodeId: rootId,
-    nodes: { [rootId]: vcNode(rootId, 'base.container') },
-    classes: {},
-    createdAt: 1_700_000_000_000,
-  }
-}
-
-async function expectOk(res: Response): Promise<void> {
+async function expectOk(res: Response): Promise<number> {
   expect(res.status).toBe(200)
-  expect(await readJson<{ ok?: boolean }>(res)).toEqual({ ok: true })
+  const body = await readJson<{ ok?: boolean; seq?: number }>(res)
+  expect(body.ok).toBe(true)
+  expect(typeof body.seq).toBe('number')
+  return body.seq!
 }
 
 // ---------------------------------------------------------------------------
-// PUT /admin/api/cms/pages
+// Pages — O(change) writes + explicit deletes
 // ---------------------------------------------------------------------------
 
-describe('PUT /admin/api/cms/pages — incremental roster save', () => {
-  it('writes ONLY the changed page among N stored rows', async () => {
+describe('site-document save — pages', () => {
+  it('writes ONLY the changed page among N stored rows; unmentioned rows are byte-untouched', async () => {
     const ctx = await setupHarness()
     try {
-      // Store two extra pages so the table holds three rows.
-      await expectOk(await putPages(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedPages: [pagePayload('page-a', 'about'), pagePayload('page-b', 'contact')],
-        pageIds: [ctx.homeId, 'page-a', 'page-b'],
       }))
 
       await backdateRows(ctx.harness, 'pages')
       const before = await storedRows(ctx.harness, 'pages')
 
-      // Change ONLY page-a.
-      await expectOk(await putPages(ctx, {
+      // Change ONLY page-a. No rosters exist — page-b and the home page are
+      // simply not mentioned, so they cannot be touched (or deleted).
+      await expectOk(await putDoc(ctx, {
         changedPages: [pagePayload('page-a', 'about', 'About v2')],
-        pageIds: [ctx.homeId, 'page-a', 'page-b'],
       }))
 
       const after = await storedRows(ctx.harness, 'pages')
-
-      // page-a: cells rewritten, updated_at bumped off the backdated value.
       expect(after.get('page-a')!.cells_json.title).toBe('About v2')
       expect(after.get('page-a')!.updated_at).not.toBe(BACKDATED)
 
-      // The home page and page-b are untouched — identical cells AND the
-      // backdated updated_at survives, proving no redundant write happened.
       for (const id of [ctx.homeId, 'page-b']) {
         expect(after.get(id)!.updated_at).toBe(BACKDATED)
         expect(after.get(id)!.cells_json).toEqual(before.get(id)!.cells_json)
+        expect(after.get(id)!.deleted_at).toBeNull()
       }
     } finally {
       await ctx.harness.cleanup()
     }
   })
 
-  it('rejects a changed page whose id is missing from the pageIds roster', async () => {
+  it('soft-deletes exactly the explicitly named ids', async () => {
     const ctx = await setupHarness()
     try {
-      const res = await putPages(ctx, {
-        changedPages: [pagePayload('page-orphan', 'orphan')],
-        pageIds: [ctx.homeId], // page-orphan not in the roster
-      })
-      expect(res.status).toBe(400)
-      const body = await readJson<{ error: string }>(res)
-      expect(body.error).toContain('missing from pageIds roster')
-
-      // Nothing was written.
-      const rows = await storedRows(ctx.harness, 'pages')
-      expect(rows.has('page-orphan')).toBe(false)
-    } finally {
-      await ctx.harness.cleanup()
-    }
-  })
-
-  it('soft-deletes a row missing from the roster when the baseline contains it (ISS-041)', async () => {
-    const ctx = await setupHarness()
-    try {
-      await expectOk(await putPages(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedPages: [pagePayload('page-a', 'about')],
-        pageIds: [ctx.homeId, 'page-a'],
       }))
 
-      // Client knew about page-a (baseline) and dropped it from the roster.
-      await expectOk(await putPages(ctx, {
-        changedPages: [],
-        pageIds: [ctx.homeId],
-        baselinePageIds: [ctx.homeId, 'page-a'],
-      }))
+      await expectOk(await putDoc(ctx, { deletedPageIds: ['page-a'] }))
 
       const rows = await storedRows(ctx.harness, 'pages')
       expect(rows.get('page-a')!.deleted_at).not.toBeNull()
@@ -217,24 +260,19 @@ describe('PUT /admin/api/cms/pages — incremental roster save', () => {
     }
   })
 
-  it('preserves a row missing from the roster when the baseline does NOT contain it (sibling create)', async () => {
+  it('rejects a page id present in BOTH changedPages and deletedPageIds', async () => {
     const ctx = await setupHarness()
     try {
-      // page-c simulates a sibling session's just-created page.
-      await expectOk(await putPages(ctx, {
-        changedPages: [pagePayload('page-c', 'pricing')],
-        pageIds: [ctx.homeId, 'page-c'],
-      }))
-
-      // This client never loaded page-c: roster omits it, baseline omits it.
-      await expectOk(await putPages(ctx, {
-        changedPages: [],
-        pageIds: [ctx.homeId],
-        baselinePageIds: [ctx.homeId],
-      }))
+      const res = await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about')],
+        deletedPageIds: ['page-a'],
+      })
+      expect(res.status).toBe(400)
+      const body = await readJson<{ error: string }>(res)
+      expect(body.error).toContain('both changed and deleted')
 
       const rows = await storedRows(ctx.harness, 'pages')
-      expect(rows.get('page-c')!.deleted_at).toBeNull()
+      expect(rows.has('page-a')).toBe(false)
     } finally {
       await ctx.harness.cleanup()
     }
@@ -243,22 +281,19 @@ describe('PUT /admin/api/cms/pages — incremental roster save', () => {
   it('rejects a slug conflict between a changed page and an UNCHANGED stored page', async () => {
     const ctx = await setupHarness()
     try {
-      await expectOk(await putPages(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedPages: [pagePayload('page-a', 'about'), pagePayload('page-b', 'contact')],
-        pageIds: [ctx.homeId, 'page-a', 'page-b'],
       }))
 
       // page-a tries to take page-b's slug while page-b stays unchanged.
-      const res = await putPages(ctx, {
+      const res = await putDoc(ctx, {
         changedPages: [pagePayload('page-a', 'contact')],
-        pageIds: [ctx.homeId, 'page-a', 'page-b'],
       })
       expect(res.status).toBe(400)
       const body = await readJson<{ error: string }>(res)
       expect(body.error.toLowerCase()).toContain('duplicate')
       expect(body.error).toContain('slug')
 
-      // page-a keeps its old slug in storage.
       const rows = await storedRows(ctx.harness, 'pages')
       expect(rows.get('page-a')!.slug).toBe('about')
     } finally {
@@ -269,16 +304,12 @@ describe('PUT /admin/api/cms/pages — incremental roster save', () => {
   it('a changed batch may retake the slug of a row this same batch replaces (id-matched exclusion)', async () => {
     const ctx = await setupHarness()
     try {
-      await expectOk(await putPages(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedPages: [pagePayload('page-a', 'about')],
-        pageIds: [ctx.homeId, 'page-a'],
       }))
 
-      // page-a itself changes title but keeps its own slug — its stored slug
-      // must not count as a conflict against itself.
-      await expectOk(await putPages(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedPages: [pagePayload('page-a', 'about', 'About again')],
-        pageIds: [ctx.homeId, 'page-a'],
       }))
 
       const rows = await storedRows(ctx.harness, 'pages')
@@ -288,12 +319,11 @@ describe('PUT /admin/api/cms/pages — incremental roster save', () => {
     }
   })
 
-  it('creates a row for a new page id present in changedPages + pageIds', async () => {
+  it('creates a row for a new page id in changedPages', async () => {
     const ctx = await setupHarness()
     try {
-      await expectOk(await putPages(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedPages: [pagePayload('page-new', 'team', 'Team')],
-        pageIds: [ctx.homeId, 'page-new'],
       }))
 
       const rows = await storedRows(ctx.harness, 'pages')
@@ -307,21 +337,19 @@ describe('PUT /admin/api/cms/pages — incremental roster save', () => {
     }
   })
 
-  it('a changed page may take the slug of a row reaped in the same request (homepage swap + delete)', async () => {
+  it('a changed page may take the slug of a row deleted in the same request (homepage swap + delete)', async () => {
     const ctx = await setupHarness()
     try {
-      await expectOk(await putPages(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedPages: [pagePayload('page-a', 'about')],
-        pageIds: [ctx.homeId, 'page-a'],
       }))
 
       // The editor batch behind "set page-a as homepage, delete the old
       // homepage, save": page-a takes slug `index` while the row that still
-      // holds it is reaped by this same request.
-      await expectOk(await putPages(ctx, {
+      // holds it is deleted by this same request.
+      await expectOk(await putDoc(ctx, {
         changedPages: [pagePayload('page-a', 'index')],
-        pageIds: ['page-a'],
-        baselinePageIds: [ctx.homeId, 'page-a'],
+        deletedPageIds: [ctx.homeId],
       }))
 
       const rows = await storedRows(ctx.harness, 'pages')
@@ -333,13 +361,12 @@ describe('PUT /admin/api/cms/pages — incremental roster save', () => {
     }
   })
 
-  it('a new page may take the slug of a row reaped in the same request', async () => {
+  it('a new page may take the slug of a row deleted in the same request', async () => {
     const ctx = await setupHarness()
     try {
-      await expectOk(await putPages(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedPages: [pagePayload('page-fresh', 'index', 'New homepage')],
-        pageIds: ['page-fresh'],
-        baselinePageIds: [ctx.homeId],
+        deletedPageIds: [ctx.homeId],
       }))
 
       const rows = await storedRows(ctx.harness, 'pages')
@@ -353,23 +380,16 @@ describe('PUT /admin/api/cms/pages — incremental roster save', () => {
   it('restores a page deleted by an earlier save when the same id is re-submitted (undo of a delete)', async () => {
     const ctx = await setupHarness()
     try {
-      await expectOk(await putPages(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedPages: [pagePayload('page-a', 'about')],
-        pageIds: [ctx.homeId, 'page-a'],
       }))
-      // Delete page-a and save.
-      await expectOk(await putPages(ctx, {
-        changedPages: [],
-        pageIds: [ctx.homeId],
-        baselinePageIds: [ctx.homeId, 'page-a'],
-      }))
+      await expectOk(await putDoc(ctx, { deletedPageIds: ['page-a'] }))
+
       // Undo restores the page object with its ORIGINAL id; the next save
-      // ships it as a changed page again. The reaped row must be revived,
-      // not collide with its own soft-deleted primary key.
-      await expectOk(await putPages(ctx, {
+      // ships it as a changed page again. The soft-deleted row must be
+      // revived, not collide with its own primary key.
+      await expectOk(await putDoc(ctx, {
         changedPages: [pagePayload('page-a', 'about', 'About restored')],
-        pageIds: [ctx.homeId, 'page-a'],
-        baselinePageIds: [ctx.homeId],
       }))
 
       const rows = await storedRows(ctx.harness, 'pages')
@@ -384,25 +404,21 @@ describe('PUT /admin/api/cms/pages — incremental roster save', () => {
   it('two changed pages may swap slugs in one batch (two-phase write)', async () => {
     const ctx = await setupHarness()
     try {
-      await expectOk(await putPages(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedPages: [pagePayload('page-a', 'about'), pagePayload('page-b', 'contact')],
-        pageIds: [ctx.homeId, 'page-a', 'page-b'],
       }))
 
       // True swap — no in-place update order avoids a transient collision
       // with data_rows_table_slug_active_idx, so this exercises the
-      // placeholder pass. Collision-maximizing order: each page's target
-      // slug is still held by the other.
-      await expectOk(await putPages(ctx, {
+      // placeholder pass.
+      await expectOk(await putDoc(ctx, {
         changedPages: [pagePayload('page-a', 'contact'), pagePayload('page-b', 'about')],
-        pageIds: [ctx.homeId, 'page-a', 'page-b'],
-        baselinePageIds: [ctx.homeId, 'page-a', 'page-b'],
       }))
 
       const rows = await storedRows(ctx.harness, 'pages')
       expect(rows.get('page-a')!.slug).toBe('contact')
       expect(rows.get('page-b')!.slug).toBe('about')
-      // The placeholder slug '' must never survive the reconcile.
+      // The placeholder slug '' must never survive the save.
       for (const row of rows.values()) expect(row.slug).not.toBe('')
     } finally {
       await ctx.harness.cleanup()
@@ -411,31 +427,61 @@ describe('PUT /admin/api/cms/pages — incremental roster save', () => {
 })
 
 // ---------------------------------------------------------------------------
-// PUT /admin/api/cms/components
+// Atomicity — one invalid item rejects the WHOLE save
 // ---------------------------------------------------------------------------
 
-describe('PUT /admin/api/cms/components — incremental roster save', () => {
+describe('site-document save — atomicity', () => {
+  it('an invalid page rejects the batch: shell and valid components are NOT persisted', async () => {
+    const ctx = await setupHarness()
+    try {
+      const editedShell = structuredClone(ctx.shell) as SiteShell
+      editedShell.settings.metaTitle = 'Should never persist'
+
+      const res = await putDoc(ctx, {
+        site: editedShell,
+        changedComponents: [vcPayload('vc-valid', 'Valid Component')],
+        // Duplicate of the seeded home slug — validation must reject.
+        changedPages: [pagePayload('page-bad', 'index')],
+      })
+      expect(res.status).toBe(400)
+
+      // The valid component was NOT written…
+      const components = await storedRows(ctx.harness, 'components')
+      expect(components.has('vc-valid')).toBe(false)
+
+      // …and the shell change was NOT written either.
+      const shellRes = await ctx.harness.cms('/admin/api/cms/site', { method: 'GET', cookie: ctx.cookie })
+      const { site: storedShell } = await readJson<{ site: SiteShell }>(shellRes)
+      expect(storedShell.settings.metaTitle).not.toBe('Should never persist')
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Components — merged-roster validation + explicit deletes
+// ---------------------------------------------------------------------------
+
+describe('site-document save — components', () => {
   it('keeps a changed VC valid when it references an UNCHANGED stored VC', async () => {
     const ctx = await setupHarness()
     try {
-      await expectOk(await putComponents(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedComponents: [vcPayload('vc-base', 'Base'), vcPayload('vc-ref', 'RefCard', 'vc-base')],
-        componentIds: ['vc-base', 'vc-ref'],
       }))
 
       await backdateRows(ctx.harness, 'components')
 
       // Only vc-ref changes; its ref target vc-base rides along unchanged in
       // the merged validation roster.
-      await expectOk(await putComponents(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedComponents: [vcPayload('vc-ref', 'RefCard v2', 'vc-base')],
-        componentIds: ['vc-base', 'vc-ref'],
       }))
 
       const rows = await storedRows(ctx.harness, 'components')
       expect(rows.get('vc-ref')!.updated_at).not.toBe(BACKDATED)
       expect((rows.get('vc-ref')!.cells_json as { name?: string }).name).toBe('RefCard v2')
-      // The unchanged ref target was not rewritten.
       expect(rows.get('vc-base')!.updated_at).toBe(BACKDATED)
       expect(rows.get('vc-base')!.deleted_at).toBeNull()
     } finally {
@@ -443,27 +489,17 @@ describe('PUT /admin/api/cms/components — incremental roster save', () => {
     }
   })
 
-  it('rejects a changed VC referencing an id absent from the componentIds roster', async () => {
+  it('rejects a changed VC referencing a component id that does not exist', async () => {
     const ctx = await setupHarness()
     try {
-      await expectOk(await putComponents(ctx, {
-        changedComponents: [vcPayload('vc-base', 'Base')],
-        componentIds: ['vc-base'],
-      }))
-
-      // vc-ref points at vc-base, but the roster drops vc-base — the merged
-      // post-save roster would not contain the ref target.
-      const res = await putComponents(ctx, {
-        changedComponents: [vcPayload('vc-ref', 'RefCard', 'vc-base')],
-        componentIds: ['vc-ref'],
+      const res = await putDoc(ctx, {
+        changedComponents: [vcPayload('vc-ref', 'RefCard', 'vc-never-existed')],
       })
       expect(res.status).toBe(400)
       const body = await readJson<{ error: string }>(res)
       expect(body.error).toContain('references missing Visual Component')
 
-      // Neither the write nor the reap happened — vc-base survives untouched.
       const rows = await storedRows(ctx.harness, 'components')
-      expect(rows.get('vc-base')!.deleted_at).toBeNull()
       expect(rows.has('vc-ref')).toBe(false)
     } finally {
       await ctx.harness.cleanup()
@@ -473,24 +509,18 @@ describe('PUT /admin/api/cms/components — incremental roster save', () => {
   it('rejects deleting a VC that an UNCHANGED stored VC still references', async () => {
     const ctx = await setupHarness()
     try {
-      await expectOk(await putComponents(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedComponents: [vcPayload('vc-base', 'Base'), vcPayload('vc-ref', 'RefCard', 'vc-base')],
-        componentIds: ['vc-base', 'vc-ref'],
       }))
 
-      // Drop vc-base from the roster while the unchanged vc-ref still points
-      // at it. validateVisualComponentsForPartialWrite merges the kept stored
-      // roster (vc-ref) over keptIds and runs validateStrictVCRefs — the
-      // dangling ref through the UNCHANGED component must reject the save.
-      const res = await putComponents(ctx, {
-        changedComponents: [],
-        componentIds: ['vc-ref'],
-      })
+      // Delete vc-base while the unchanged vc-ref still points at it — the
+      // merged post-save roster validation must reject the dangling ref.
+      const res = await putDoc(ctx, { deletedComponentIds: ['vc-base'] })
       expect(res.status).toBe(400)
       const body = await readJson<{ error: string }>(res)
       expect(body.error).toContain('references missing Visual Component')
 
-      // The reap was rejected wholesale — vc-base is still live.
+      // The delete was rejected wholesale — vc-base is still live.
       const rows = await storedRows(ctx.harness, 'components')
       expect(rows.get('vc-base')!.deleted_at).toBeNull()
       expect(rows.get('vc-ref')!.deleted_at).toBeNull()
@@ -499,18 +529,14 @@ describe('PUT /admin/api/cms/components — incremental roster save', () => {
     }
   })
 
-  it('soft-deletes an unreferenced VC missing from the componentIds roster', async () => {
+  it('soft-deletes an unreferenced VC named in deletedComponentIds', async () => {
     const ctx = await setupHarness()
     try {
-      await expectOk(await putComponents(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedComponents: [vcPayload('vc-base', 'Base'), vcPayload('vc-lone', 'Standalone')],
-        componentIds: ['vc-base', 'vc-lone'],
       }))
 
-      await expectOk(await putComponents(ctx, {
-        changedComponents: [],
-        componentIds: ['vc-base'],
-      }))
+      await expectOk(await putDoc(ctx, { deletedComponentIds: ['vc-lone'] }))
 
       const rows = await storedRows(ctx.harness, 'components')
       expect(rows.get('vc-lone')!.deleted_at).not.toBeNull()
@@ -520,19 +546,24 @@ describe('PUT /admin/api/cms/components — incremental roster save', () => {
     }
   })
 
-  it('rejects a changed component whose id is missing from the componentIds roster', async () => {
+  it('a page may reference a component CREATED in the same save (merged-roster validation)', async () => {
     const ctx = await setupHarness()
     try {
-      const res = await putComponents(ctx, {
-        changedComponents: [vcPayload('vc-orphan', 'Orphan')],
-        componentIds: [],
-      })
-      expect(res.status).toBe(400)
-      const body = await readJson<{ error: string }>(res)
-      expect(body.error).toContain('missing from componentIds roster')
+      // Old protocol: the client had to commit components before pages or the
+      // server stripped the ref as dangling. Now both land in one transaction
+      // and pages validate against the merged post-save roster.
+      await expectOk(await putDoc(ctx, {
+        changedComponents: [vcPayload('vc-fresh', 'Fresh Component')],
+        changedPages: [pageWithVCRef('page-ref', 'with-ref', 'vc-fresh')],
+      }))
 
-      const rows = await storedRows(ctx.harness, 'components')
-      expect(rows.has('vc-orphan')).toBe(false)
+      const pages = await storedRows(ctx.harness, 'pages')
+      const stored = pages.get('page-ref')!
+      // Page trees persist in cells.body as { nodes, rootNodeId } (pageFromRow).
+      const nodes = (stored.cells_json as { body?: { nodes?: Record<string, { moduleId?: string; props?: { componentId?: string } }> } }).body?.nodes ?? {}
+      const refNode = Object.values(nodes).find((n) => n.moduleId === 'base.visual-component-ref')
+      expect(refNode).toBeDefined()
+      expect(refNode!.props?.componentId).toBe('vc-fresh')
     } finally {
       await ctx.harness.cleanup()
     }
@@ -541,11 +572,8 @@ describe('PUT /admin/api/cms/components — incremental roster save', () => {
   it('rejects two VCs whose distinct names derive the same storage slug', async () => {
     const ctx = await setupHarness()
     try {
-      // 'Button' and 'button' are distinct strings but identical slugs —
-      // without a validation reject this dies on the DB unique index as a 500.
-      const res = await putComponents(ctx, {
+      const res = await putDoc(ctx, {
         changedComponents: [vcPayload('vc-a', 'Button'), vcPayload('vc-b', 'button')],
-        componentIds: ['vc-a', 'vc-b'],
       })
       expect(res.status).toBe(400)
       const body = await readJson<{ error: string }>(res)
@@ -561,14 +589,12 @@ describe('PUT /admin/api/cms/components — incremental roster save', () => {
   it('rejects a changed VC whose name slug-collides with a kept stored VC', async () => {
     const ctx = await setupHarness()
     try {
-      await expectOk(await putComponents(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedComponents: [vcPayload('vc-a', 'Button')],
-        componentIds: ['vc-a'],
       }))
 
-      const res = await putComponents(ctx, {
+      const res = await putDoc(ctx, {
         changedComponents: [vcPayload('vc-b', 'button')],
-        componentIds: ['vc-a', 'vc-b'],
       })
       expect(res.status).toBe(400)
 
@@ -579,20 +605,19 @@ describe('PUT /admin/api/cms/components — incremental roster save', () => {
     }
   })
 
-  it('a created VC may reuse the name (and slug) of a VC reaped in the same request', async () => {
+  it('a created VC may reuse the name (and slug) of a VC deleted in the same request', async () => {
     const ctx = await setupHarness()
     try {
-      await expectOk(await putComponents(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedComponents: [vcPayload('vc-old', 'Button')],
-        componentIds: ['vc-old'],
       }))
 
       // Delete "Button" and create a fresh VC with the same name in one save —
-      // both rows derive the slug `button`, so the reap must free it before
+      // both rows derive the slug `button`, so the delete must free it before
       // the create runs.
-      await expectOk(await putComponents(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedComponents: [vcPayload('vc-new', 'Button')],
-        componentIds: ['vc-new'],
+        deletedComponentIds: ['vc-old'],
       }))
 
       const rows = await storedRows(ctx.harness, 'components')
@@ -606,18 +631,17 @@ describe('PUT /admin/api/cms/components — incremental roster save', () => {
 })
 
 // ---------------------------------------------------------------------------
-// PUT /admin/api/cms/layouts
+// Layouts
 // ---------------------------------------------------------------------------
 
-describe('PUT /admin/api/cms/layouts — incremental roster save', () => {
+describe('site-document save — layouts', () => {
   it('rejects two layouts whose distinct names derive the same storage slug', async () => {
     const ctx = await setupHarness()
     try {
       // 'Hero!' and 'Hero?' both slug to 'hero' — must reject as a 400, not
       // die on the DB unique index as a 500.
-      const res = await putLayouts(ctx, {
+      const res = await putDoc(ctx, {
         changedLayouts: [layoutPayload('lay-a', 'Hero!'), layoutPayload('lay-b', 'Hero?')],
-        layoutIds: ['lay-a', 'lay-b'],
       })
       expect(res.status).toBe(400)
 
@@ -628,22 +652,97 @@ describe('PUT /admin/api/cms/layouts — incremental roster save', () => {
     }
   })
 
-  it('a created layout may reuse the name of a layout reaped in the same request', async () => {
+  it('a created layout may reuse the name of a layout deleted in the same request', async () => {
     const ctx = await setupHarness()
     try {
-      await expectOk(await putLayouts(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedLayouts: [layoutPayload('lay-old', 'Hero')],
-        layoutIds: ['lay-old'],
       }))
 
-      await expectOk(await putLayouts(ctx, {
+      await expectOk(await putDoc(ctx, {
         changedLayouts: [layoutPayload('lay-new', 'Hero')],
-        layoutIds: ['lay-new'],
+        deletedLayoutIds: ['lay-old'],
       }))
 
       const rows = await storedRows(ctx.harness, 'layouts')
       expect(rows.get('lay-old')!.deleted_at).not.toBeNull()
       expect(rows.get('lay-new')!.deleted_at).toBeNull()
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Replace mode (imports)
+// ---------------------------------------------------------------------------
+
+describe('site-document save — replace mode', () => {
+  it('derives deletions as stored − shipped', async () => {
+    const ctx = await setupHarness()
+    try {
+      await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about'), pagePayload('page-b', 'contact')],
+      }))
+
+      // Replace with home + page-a only → page-b is reaped server-side.
+      const homeRows = await storedRows(ctx.harness, 'pages')
+      const home = homeRows.get(ctx.homeId)!
+      const homePayload = pagePayload(ctx.homeId, home.slug, home.cells_json.title ?? 'Home')
+      await expectOk(await putDoc(ctx, {
+        mode: 'replace',
+        changedPages: [homePayload, pagePayload('page-a', 'about')],
+      }))
+
+      const rows = await storedRows(ctx.harness, 'pages')
+      expect(rows.get('page-b')!.deleted_at).not.toBeNull()
+      expect(rows.get('page-a')!.deleted_at).toBeNull()
+      expect(rows.get(ctx.homeId)!.deleted_at).toBeNull()
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
+  it('rejects non-empty deleted*Ids in replace mode', async () => {
+    const ctx = await setupHarness()
+    try {
+      const res = await putDoc(ctx, {
+        mode: 'replace',
+        deletedPageIds: ['anything'],
+      })
+      expect(res.status).toBe(400)
+      const body = await readJson<{ error: string }>(res)
+      expect(body.error).toContain('replace mode')
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Sync sequence
+// ---------------------------------------------------------------------------
+
+describe('site-document save — sync seq', () => {
+  it('returns a strictly increasing seq and stamps written AND deleted rows', async () => {
+    const ctx = await setupHarness()
+    try {
+      const first = await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-a', 'about')],
+      }))
+      const second = await expectOk(await putDoc(ctx, {
+        changedPages: [pagePayload('page-b', 'contact')],
+        deletedPageIds: ['page-a'],
+      }))
+      expect(second).toBeGreaterThan(first)
+
+      const rows = await storedRows(ctx.harness, 'pages')
+      // page-b written by save #2, page-a deleted by save #2 — both stamped.
+      expect(rows.get('page-b')!.seq).toBe(second)
+      expect(rows.get('page-a')!.seq).toBe(second)
+      // The home page was never written after seeding — seq untouched (0 or
+      // whatever the seed left), definitely below save #1's seq.
+      expect(rows.get(ctx.homeId)!.seq).toBeLessThan(first)
     } finally {
       await ctx.harness.cleanup()
     }

@@ -2,9 +2,11 @@
  * In-memory LRU render cache for Layer B of the publishing architecture.
  *
  * Cache key: (urlPath, queryString) joined with a NUL separator to avoid
- * collisions. Each stored entry remembers the publishVersion it was created
- * at; a read whose stored version differs from the current version is treated
- * as a miss and the entry is replaced lazily.
+ * collisions. For public page renders, `queryString` is the caller's canonical
+ * render query (`canonicalRenderQuery`), not the raw URL search string. Each
+ * stored entry remembers the publishVersion it was created at; a read whose
+ * stored version differs from the current version is treated as a miss and the
+ * entry is replaced lazily.
  *
  * Size is capped by RENDER_CACHE_MAX_ENTRIES (env var, parsed at module init,
  * default 1000). LRU recency is maintained via Map insertion order: on a hit

@@ -1,7 +1,7 @@
 import type { PropertyControl } from '@core/module-engine'
 import {
-  isRenderableHtmlAttributeName,
   normalizeHtmlAttributeName,
+  sanitizeRenderableHtmlAttribute,
 } from '@core/htmlAttributes'
 import { escapeHtml } from '@modules/base/utils/escape'
 
@@ -21,10 +21,11 @@ function normalizeHtmlAttributes(value: unknown): Record<string, string> {
 
   const attrs: Record<string, string> = {}
   for (const [rawName, rawValue] of Object.entries(value as Record<string, unknown>)) {
-    const name = normalizeHtmlAttributeName(rawName)
-    if (!isRenderableHtmlAttributeName(name)) continue
     if (typeof rawValue !== 'string') continue
-    attrs[name] = rawValue
+    const name = normalizeHtmlAttributeName(rawName)
+    const safeValue = sanitizeRenderableHtmlAttribute(name, rawValue)
+    if (safeValue === null) continue
+    attrs[name] = safeValue
   }
   return attrs
 }

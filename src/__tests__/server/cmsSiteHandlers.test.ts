@@ -67,6 +67,19 @@ function makeFakeDb() {
     if (normalized.includes('select id, name, settings_json')) {
       return { rows: siteRow ? [siteRow as Row] : [], rowCount: siteRow ? 1 : 0 }
     }
+    // allocateSiteSeq — the site-document save's sync counter
+    if (normalized.includes('update site_sync_state')) {
+      return { rows: [{ seq: 1 } as unknown as Row], rowCount: 1 }
+    }
+    // stampDraftSiteSeq
+    if (normalized.includes('update site set seq')) {
+      return { rows: [], rowCount: 1 }
+    }
+    // listDataRows / listDataRowIdSlugs / listSoftDeletedDataRowIds — this
+    // fake stores no rows; the save round-trip ships empty change sets.
+    if (normalized.includes('from data_rows')) {
+      return { rows: [], rowCount: 0 }
+    }
     throw new Error(`Unhandled SQL: ${sql}`)
   }
 
@@ -151,9 +164,18 @@ describe('cms site handlers', () => {
     const db = makeFakeDb()
     const cookie = await createCookie(db)
 
-    const save = await handleCmsRequest(cmsRequest('http://localhost/admin/api/cms/site', {
+    const save = await handleCmsRequest(cmsRequest('http://localhost/admin/api/cms/site-document', {
       method: 'PUT',
-      body: JSON.stringify({ site: shell() }),
+      body: JSON.stringify({
+        mode: 'incremental',
+        site: shell(),
+        changedPages: [],
+        deletedPageIds: [],
+        changedComponents: [],
+        deletedComponentIds: [],
+        changedLayouts: [],
+        deletedLayoutIds: [],
+      }),
       headers: {
         'content-type': 'application/json',
         cookie,

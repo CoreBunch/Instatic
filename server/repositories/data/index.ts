@@ -51,9 +51,11 @@ export {
   scheduleDataRowPublish,
   cancelScheduledPublish,
   listDuePublishSchedules,
-  reconcileDataRowRoster,
-  rowsToReap,
+  applyDataRowChanges,
+  applyDataRowChangesInTx,
 } from './rows'
+
+export type { ApplyDataRowChangesInput, DataRowWrite } from './rows'
 
 export {
   getPublishedDataRowByRoute,

@@ -112,7 +112,8 @@ describe('Gate SH-5 — validate.ts exports validateVisualComponents', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 6 — /components handler exists and serves both GET and PUT
+// 6 — /components read handler exists; writes go through the transactional
+//     site-document save (PUT /admin/api/cms/site-document)
 // ---------------------------------------------------------------------------
 
 describe('Gate SH-6 — /admin/api/cms/components handler exists', () => {
@@ -126,9 +127,14 @@ describe('Gate SH-6 — /admin/api/cms/components handler exists', () => {
     expect(source).toMatch(/\/components/)
   })
 
-  it('components handler supports GET (list) and PUT (batch upsert)', () => {
+  it('components handler serves GET; component writes live in the site-document save', () => {
     const source = readFileSync(COMPONENTS_HANDLER, 'utf-8')
     expect(source).toMatch(/'GET'/)
-    expect(source).toMatch(/'PUT'/)
+    const siteDocumentSource = readFileSync(
+      COMPONENTS_HANDLER.replace(/components\.ts$/, 'siteDocument.ts'),
+      'utf-8',
+    )
+    expect(siteDocumentSource).toMatch(/changedComponents/)
+    expect(siteDocumentSource).toMatch(/deletedComponentIds/)
   })
 })

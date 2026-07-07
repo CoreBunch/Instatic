@@ -260,7 +260,7 @@ export const createVisualComponentsSlice: EditorStoreSliceCreator<VisualComponen
   },
 
   addParam(vcId, name, type, defaultValue = '') {
-    // Validate param name BEFORE entering Immer (pure read from current state)
+    // Validate param name BEFORE entering Mutative (pure read from current state)
     const { site } = get()
     if (site) {
       const vc = (site.visualComponents ?? []).find((v) => v.id === vcId)
@@ -478,7 +478,7 @@ export const createVisualComponentsSlice: EditorStoreSliceCreator<VisualComponen
   },
 
   renameParam(vcId, paramId, newName) {
-    // Validate BEFORE entering Immer (reads current state via get())
+    // Validate BEFORE entering Mutative (reads current state via get())
     const { site } = get()
     if (site) {
       const vc = (site.visualComponents ?? []).find((v) => v.id === vcId)

@@ -30,7 +30,13 @@ import {
   incrementalScaleFromPinchMovement,
 } from '@site/canvas/math'
 import { panToCenterBreakpointFrame } from '@site/canvas/canvasDomGeometry'
-import { panDeltaFromWheel, setCanvasSpacePanActive } from '@site/canvas/canvasPanInput'
+import {
+  CANVAS_DRAG_PAN_BUTTONS,
+  isCanvasPointerPanActive,
+  isMiddleMousePointerPan,
+  panDeltaFromWheel,
+  setCanvasSpacePanActive,
+} from '@site/canvas/canvasPanInput'
 
 interface Transform {
   zoom: number
@@ -430,11 +436,17 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
 
   // ─── Gesture handlers ─────────────────────────────────────────────────────
 
-  const bind = useGesture(
+  const gestureBind = useGesture(
     {
-      onDrag: ({ delta: [dx, dy], buttons, first, last }) => {
+      onDrag: ({ delta: [dx, dy], buttons, first, last, event }) => {
         if (first) {
-          isDraggingRef.current = spaceActiveRef.current && (buttons & 1) !== 0
+          isDraggingRef.current = isCanvasPointerPanActive(
+            { buttons },
+            { spaceHeld: spaceActiveRef.current },
+          )
+          if (isDraggingRef.current && isMiddleMousePointerPan({ buttons }) && event.cancelable) {
+            event.preventDefault()
+          }
         }
 
         if (!isDraggingRef.current) return
@@ -472,7 +484,10 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
       },
     },
     {
-      drag: { filterTaps: true },
+      drag: {
+        filterTaps: true,
+        pointer: { buttons: [...CANVAS_DRAG_PAN_BUTTONS] },
+      },
       pinch: {
         eventOptions: { passive: false },
         // Trackpad pinch already arrives here through the native ctrl/meta
@@ -482,6 +497,31 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
       },
     },
   )
+
+  const bind = () => {
+    const gestureHandlers = gestureBind()
+    return {
+      ...gestureHandlers,
+      onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
+        if (isMiddleMousePointerPan({ buttons: event.buttons }) && event.cancelable) {
+          event.preventDefault()
+        }
+        gestureHandlers.onPointerDown?.(event)
+      },
+      onMouseDown: (event: React.MouseEvent<HTMLElement>) => {
+        if (event.button === 1 && event.cancelable) {
+          event.preventDefault()
+        }
+        gestureHandlers.onMouseDown?.(event)
+      },
+      onAuxClick: (event: React.MouseEvent<HTMLElement>) => {
+        if (event.button === 1 && event.cancelable) {
+          event.preventDefault()
+        }
+        gestureHandlers.onAuxClick?.(event)
+      },
+    }
+  }
 
   // ─── Cleanup on unmount ───────────────────────────────────────────────────
 

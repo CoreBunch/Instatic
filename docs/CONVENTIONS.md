@@ -150,7 +150,7 @@ The `Related` section is mandatory. It tells the reader what to read next and wh
 
 ### Hard rules
 
-1. **Anchor every claim to a real path.** Not "the editor store" — `src/editor/store/siteSlice.ts`. Not "the page tree mutations" — `src/core/page-tree/mutations.ts`. Paths give agents the next thing to read.
+1. **Anchor every claim to a real path.** Not "the editor store" — `src/admin/pages/site/store/slices/site/helpers.ts`. Not "the page tree mutations" — `src/core/page-tree/mutations.ts`. Paths give agents the next thing to read.
 
 2. **Use the present tense and the indicative mood.** "The publisher converts the page tree to HTML." Not "The publisher should convert ..." or "The publisher will convert ...". If the behavior isn't true today, don't document it.
 

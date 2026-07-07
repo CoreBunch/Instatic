@@ -267,10 +267,10 @@ describe('toggleNodeHidden', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Immer immutability
+// Mutative immutability
 // ---------------------------------------------------------------------------
 
-describe('Immer immutability', () => {
+describe('Mutative immutability', () => {
   it('create() does not mutate the original when updating a node', () => {
     const page = makePage()
     const id = addChildToPage(page, page.rootNodeId)

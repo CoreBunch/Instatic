@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
+import { bunCommand, bunRunCommand } from '../../scripts/lib/bunCommand'
 
 const root = new URL('../../', import.meta.url)
 
@@ -16,14 +17,17 @@ describe('development workflow', () => {
     expect(pkg.scripts['dev']).toBe('bun run scripts/dev.ts')
     expect(pkg.scripts['dev:agent']).toBe('bun run dev:server')
     expect(pkg.scripts['dev:server']).toBe('bun --watch server/index.ts')
+    expect(pkg.scripts['dev:vite']).toBe('vite')
     expect(pkg.scripts['dev:all']).toBeUndefined()
     expect(existsSync(new URL('scripts/dev.ts', root))).toBe(true)
     expect(existsSync(new URL('scripts/dev-all.ts', root))).toBe(false)
 
     const script = readSiteFile('scripts/dev.ts')
-    // Spawns cms + vite directly (no recursive `bun run dev` call).
-    expect(script).toContain('bun --watch server/index.ts')
-    expect(script).toContain('vite --host 127.0.0.1')
+    // Spawns cms + vite without a recursive `bun run dev` call.
+    expect(script).toContain("bunCommand('--watch', 'server/index.ts')")
+    expect(script).toContain("bunRunCommand('dev:vite', '--host', '127.0.0.1'")
+    expect(script).not.toContain('command: `vite')
+    expect(script).not.toContain('command.split')
     // Knows about the docker postgres host port.
     expect(script).toContain('127.0.0.1')
     expect(script).toContain('5433')
@@ -34,6 +38,37 @@ describe('development workflow', () => {
     // Forwards signals to children.
     expect(script).toContain('SIGINT')
     expect(script).toContain('SIGTERM')
+  })
+
+  it('development launchers route local Vite binaries through Bun on Windows', () => {
+    const devScript = readSiteFile('scripts/dev.ts')
+    const e2eScript = readSiteFile('scripts/e2e-dev.ts')
+    const startScript = readSiteFile('scripts/start.ts')
+
+    expect(bunCommand('--watch', 'server/index.ts')).toEqual([
+      process.execPath,
+      '--watch',
+      'server/index.ts',
+    ])
+    expect(bunRunCommand('dev:vite', '--host', '127.0.0.1')).toEqual([
+      process.execPath,
+      'run',
+      'dev:vite',
+      '--host',
+      '127.0.0.1',
+    ])
+
+    expect(devScript).toContain("bunRunCommand('dev:vite', '--host', '127.0.0.1'")
+    expect(devScript).not.toContain("bunRunCommand('vite'")
+    expect(devScript).not.toContain('command: `vite')
+    expect(devScript).not.toContain('command.split')
+    expect(e2eScript).toContain("bunRunCommand('dev:vite', '--host', '127.0.0.1'")
+    expect(e2eScript).not.toContain("bunRunCommand('vite'")
+    expect(e2eScript).not.toContain("['vite'")
+    expect(e2eScript).not.toContain("['bun'")
+    expect(startScript).toContain("bunRunCommand('build')")
+    expect(startScript).toContain("bunRunCommand('server/index.ts')")
+    expect(startScript).not.toContain("['bun'")
   })
 
   it('Vite proxies CMS API and uploaded media to the local Bun server', () => {

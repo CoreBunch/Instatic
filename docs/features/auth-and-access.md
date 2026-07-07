@@ -9,7 +9,7 @@ Every state-changing CMS request goes through one auth funnel: parse the session
 ## TL;DR
 
 - **Sessions** are token-cookie based. Cookie name: `SESSION_COOKIE_NAME` (`instatic_admin_session`). Tokens are hashed before storage; the cookie carries the raw token.
-- **Capabilities** are the access model. 36 `CoreCapability` strings defined in `src/core/capabilities.ts` (`@core/capabilities`). Roles are sets of capabilities. Handlers gate on capability, not role.
+- **Capabilities** are the access model. 38 `CoreCapability` strings defined in `src/core/capabilities.ts` (`@core/capabilities`). Roles are sets of capabilities. Handlers gate on capability, not role.
 - **`requireCapability(req, db, 'site.read')`** is the canonical handler entrypoint. Returns the `AuthUser` or a 401/403 `Response`.
 - **MFA (TOTP)** is per-user opt-in. TOTP seeds are encrypted at rest with `INSTATIC_SECRET_KEY`; recovery codes are one-way hashes. Sessions for MFA-enrolled users are `pending_mfa` until verified, then become `active`. Failed MFA codes go through `mfaRateLimit` AND increment the per-account lockout counter — the same counter the password step uses. A locked account is rejected at the MFA step before any code is checked.
 - **Step-up auth** gates sensitive actions (delete user, revoke another device, sign out all) unless the user disables it on Account -> Security. The default window is 15 minutes; users can configure 5, 15, 30, or 60 minutes.
@@ -117,7 +117,7 @@ Users can list active sessions and revoke them individually. `revokeOtherSession
 
 ## Capabilities
 
-36 core capabilities. The canonical list is in `src/core/capabilities.ts` (`@core/capabilities`) as an `as const` array; `CoreCapability` is derived from it via `typeof CORE_CAPABILITIES[number]`:
+38 core capabilities. The canonical list is in `src/core/capabilities.ts` (`@core/capabilities`) as an `as const` array; `CoreCapability` is derived from it via `typeof CORE_CAPABILITIES[number]`:
 
 ```ts
 // src/core/capabilities.ts — source of truth
@@ -131,7 +131,9 @@ export const CORE_CAPABILITIES = [
   'runtime.dependencies', 'storage.elect', 'storage.migrate',
   'plugins.read', 'plugins.configure', 'plugins.install', 'plugins.lifecycle',
   'users.manage', 'roles.manage', 'audit.read',
-  'data.tables.read', 'data.tables.manage', 'data.rows.move', 'data.export', 'data.import',
+  'data.custom.tables.read', 'data.custom.tables.manage',
+  'data.system.tables.read', 'data.system.tables.manage',
+  'data.rows.move', 'data.export', 'data.import',
   'ai.chat', 'ai.tools.write', 'ai.providers.manage', 'ai.audit.read',
 ] as const
 
@@ -175,7 +177,7 @@ Four system roles, defined in `SYSTEM_ROLES`:
 |---------|-----------|------------------------------------------------------------------------------|-------------|
 | Owner   | `owner`   | All `CORE_CAPABILITIES`                                                      | Owner-only `roles.manage`. Resyncs on every boot via `syncSystemRoles(db)`. |
 | Admin   | `admin`   | All except `roles.manage`                                                    | Force-resynced on every boot. Hand-edits restored at next boot. |
-| Client  | `client`  | `dashboard.read`, `site.read`, `site.content.edit`, `media.read`, `data.tables.read` | Editable    |
+| Client  | `client`  | `dashboard.read`, `site.read`, `site.content.edit`, `media.read`, `data.custom.tables.read` | Editable    |
 | Member  | `member`  | (none)                                                                       | Editable    |
 
 `listRoles(db)` returns the built-ins in rank order (`owner`, `admin`, `client`, `member`), followed by custom roles alphabetized by name. Custom roles can be created via `roles.manage` (Owner-only). Roles are persisted in the `roles` table with `capabilities_json: CoreCapability[]`.
@@ -444,7 +446,7 @@ user.capabilities    // CoreCapability[] — flattened from role + grants
 ### Check capability without responding
 
 ```ts
-if (userHasCapability(user, 'media.manage')) { /* … */ }
+if (userHasCapability(user, 'media.read')) { /* … */ }
 if (userHasAnyCapability(user, SITE_WRITE_CAPABILITIES)) { /* … */ }
 ```
 

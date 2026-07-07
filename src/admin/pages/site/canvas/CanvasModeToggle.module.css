@@ -1,7 +1,7 @@
 /**
  * CanvasModeToggle — Design / Preview switch positioned in the top-left of
  * the canvas surface. Mirrors the visual language of CanvasNotch (rounded
- * pill on a dark surface).
+ * pill with overlay-based button states).
  */
 
 .shell {
@@ -26,7 +26,7 @@
     gap: var(--space-4xs);
     padding: var(--space-4xs);
     border-radius: 12px;
-    background: var(--bg-body);
+    background: var(--bg-surface);
     box-shadow: 0 6px 18px var(--scrim-30);
     pointer-events: auto;
     user-select: none;
@@ -118,7 +118,7 @@
 
 .tab:hover:not(.tabActive) {
     color: var(--text);
-    background: var(--bg-surface-3);
+    background: var(--overlay-10);
 }
 
 .tab:focus-visible {
@@ -127,7 +127,7 @@
 }
 
 .tabActive {
-    background: var(--bg-surface-3);
+    background: var(--overlay-20);
     color: var(--text);
 }
 

@@ -11,8 +11,8 @@
  *
  * This file is intentionally interface-only — no implementation here.
  *
- * @see src/core/siteImport/applyImport.ts — `commitImportPlan` caller
- * @see src/admin/...   — Phase 3 adapter implementation (TBD)
+ * @see src/core/siteImport/commitPlan.ts — `commitImportPlan`
+ * @see src/admin/modals/SiteImport/shared/createSiteImportAdapter.ts — admin-side adapter implementation
  */
 
 import type {
@@ -78,7 +78,7 @@ export interface SiteImportAdapter {
  *
  * Each method corresponds to one mutation operation. The admin-side
  * implementation (`Phase 3`) maps these directly to Zustand store mutations
- * inside a single `mutateActiveTreeAndSite` Immer producer.
+ * inside a single `mutateActiveTreeAndSite` Mutative recipe.
  */
 export interface SiteImportTransaction {
   /**

@@ -1109,4 +1109,30 @@ export const sqliteMigrations: Migration[] = [
       alter table ai_mcp_connectors add column expires_at text;
     `,
   },
+  {
+    // Multi-admin sync substrate: every row written or soft-deleted by the
+    // transactional site-document save is stamped with a site-global,
+    // monotonically increasing sequence number. One column serves conflict
+    // detection (stored seq > client base seq), O(delta) reconnect
+    // reconciliation (rows where seq > cursor), and event ordering.
+    // `site_sync_state` is the single-row counter (dialect-neutral: a plain
+    // row bumped with `set seq = seq + 1 returning seq` inside the save
+    // transaction — SQLite has no sequence objects).
+    id: '020_site_sync_sequence',
+    sql: `
+      alter table data_rows add column seq integer not null default 0;
+
+      create index if not exists data_rows_table_seq_idx
+        on data_rows (table_id, seq);
+
+      alter table site add column seq integer not null default 0;
+
+      create table if not exists site_sync_state (
+        id integer primary key check (id = 1),
+        seq integer not null default 0
+      );
+
+      insert into site_sync_state (id, seq) values (1, 0);
+    `,
+  },
 ]

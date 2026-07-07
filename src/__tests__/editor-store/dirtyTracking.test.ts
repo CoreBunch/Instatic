@@ -3,12 +3,16 @@
  *
  * Unit half: collectDirtyFromSitePatches resolves site-relative Mutative
  * patch paths to page / Visual Component ids against the POST-mutation site,
- * escalating anything unattributable to `all` (over-marking is safe,
- * under-marking loses edits).
+ * derives DELETED row ids from the pre/post membership diff (robust to every
+ * recipe style — splice, filter-reassign, wholesale replace), and escalates
+ * anything unattributable to `all` (over-marking is safe, under-marking
+ * loses edits).
  *
  * Store half: the real editor store wires the collector into
  * runHistoricMutation, undo/redo, the lifecycle resets, and the
- * `_dirtySave` snapshot/restore actions consumed by autosave.
+ * `_dirtySave` snapshot/restore actions consumed by autosave — including
+ * the snapshot-time netting rule (a row that exists again is never shipped
+ * as deleted; a write-mark for a gone row is dropped).
  */
 import { describe, it, expect, beforeEach } from 'bun:test'
 import type { Patches } from 'mutative'
@@ -44,7 +48,7 @@ describe('collectDirtyFromSitePatches', () => {
     const patches: Patches = [
       { op: 'replace', path: ['pages', 1, 'nodes', 'root', 'props', 'text'], value: 'x' },
     ]
-    const marks = collectDirtyFromSitePatches(patches, site)
+    const marks = collectDirtyFromSitePatches(patches, site, site)
     expect(marks.all).toBe(false)
     expect([...marks.pageIds]).toEqual(['page-b'])
     expect(marks.componentIds.size).toBe(0)
@@ -55,51 +59,68 @@ describe('collectDirtyFromSitePatches', () => {
     const patches: Patches = [
       { op: 'replace', path: ['visualComponents', 0, 'tree', 'nodes', 'vc-root', 'props', 'x'], value: 1 },
     ]
-    const marks = collectDirtyFromSitePatches(patches, site)
+    const marks = collectDirtyFromSitePatches(patches, site, site)
     expect(marks.all).toBe(false)
     expect(marks.pageIds.size).toBe(0)
     expect([...marks.componentIds]).toEqual(['vc-one'])
   })
 
-  it('marks nothing for a remove at exactly [pages, i] — the roster conveys deletions', () => {
-    const site = twoPageTwoVcSite()
+  it('attributes a remove at exactly [pages, i] to the deleted page id (membership diff)', () => {
+    const pre = twoPageTwoVcSite()
+    const post = makeSite({
+      pages: [makePage({ id: 'page-a', slug: 'index', title: 'Home' })],
+      visualComponents: pre.visualComponents,
+    })
     const patches: Patches = [{ op: 'remove', path: ['pages', 1] }]
-    const marks = collectDirtyFromSitePatches(patches, site)
-    expect(marks).toEqual(emptyDirtyMarks())
+    const marks = collectDirtyFromSitePatches(patches, pre, post)
+    expect(marks.all).toBe(false)
+    expect(marks.pageIds.size).toBe(0)
+    expect([...marks.deletedPageIds]).toEqual(['page-b'])
   })
 
-  it('marks nothing for a remove at exactly [visualComponents, i]', () => {
-    const site = twoPageTwoVcSite()
+  it('attributes a remove at exactly [visualComponents, i] to the deleted component id', () => {
+    const pre = twoPageTwoVcSite()
+    const post = makeSite({
+      pages: pre.pages,
+      visualComponents: [makeVC({ id: 'vc-one', name: 'One' })],
+    })
     const patches: Patches = [{ op: 'remove', path: ['visualComponents', 1] }]
-    const marks = collectDirtyFromSitePatches(patches, site)
-    expect(marks).toEqual(emptyDirtyMarks())
+    const marks = collectDirtyFromSitePatches(patches, pre, post)
+    expect(marks.all).toBe(false)
+    expect(marks.componentIds.size).toBe(0)
+    expect([...marks.deletedComponentIds]).toEqual(['vc-two'])
   })
 
-  it('escalates a wholesale [pages] replacement to all', () => {
-    const site = twoPageTwoVcSite()
-    const patches: Patches = [{ op: 'replace', path: ['pages'], value: site.pages }]
-    const marks = collectDirtyFromSitePatches(patches, site)
+  it('escalates a wholesale [pages] replacement to all AND still attributes deletions', () => {
+    const pre = twoPageTwoVcSite()
+    const post = makeSite({
+      pages: [makePage({ id: 'page-a', slug: 'index', title: 'Home' })],
+      visualComponents: pre.visualComponents,
+    })
+    const patches: Patches = [{ op: 'replace', path: ['pages'], value: post.pages }]
+    const marks = collectDirtyFromSitePatches(patches, pre, post)
     expect(marks.all).toBe(true)
+    expect([...marks.deletedPageIds]).toEqual(['page-b'])
   })
 
-  it('marks nothing for [pages, length] array bookkeeping', () => {
+  it('marks nothing for [pages, length] bookkeeping when membership is unchanged', () => {
     const site = twoPageTwoVcSite()
     const patches: Patches = [{ op: 'replace', path: ['pages', 'length'], value: 1 }]
-    const marks = collectDirtyFromSitePatches(patches, site)
+    const marks = collectDirtyFromSitePatches(patches, site, site)
     expect(marks).toEqual(emptyDirtyMarks())
   })
 
   it('escalates an index that does not resolve in the post-state to all', () => {
     const site = twoPageTwoVcSite() // 2 pages — index 5 resolves to nothing
     const patches: Patches = [{ op: 'replace', path: ['pages', 5, 'title'], value: 'ghost' }]
-    const marks = collectDirtyFromSitePatches(patches, site)
+    const marks = collectDirtyFromSitePatches(patches, site, site)
     expect(marks.all).toBe(true)
   })
 
   it('escalates a non-numeric, non-length second segment to all', () => {
     const site = twoPageTwoVcSite()
     const patches: Patches = [{ op: 'replace', path: ['pages', 'not-an-index'], value: 1 }]
-    const marks = collectDirtyFromSitePatches(patches, site)
+    const marks = collectDirtyFromSitePatches(patches, site, site)
     expect(marks.all).toBe(true)
   })
 
@@ -110,16 +131,21 @@ describe('collectDirtyFromSitePatches', () => {
       { op: 'replace', path: ['name'], value: 'Renamed' },
       { op: 'replace', path: ['updatedAt'], value: 123 },
     ]
-    const marks = collectDirtyFromSitePatches(patches, site)
+    const marks = collectDirtyFromSitePatches(patches, site, site)
     expect(marks).toEqual(emptyDirtyMarks())
   })
 
   it('attributes an element add at [pages, i] to the added page', () => {
-    const site = twoPageTwoVcSite()
-    const patches: Patches = [{ op: 'add', path: ['pages', 1], value: site.pages[1] }]
-    const marks = collectDirtyFromSitePatches(patches, site)
+    const post = twoPageTwoVcSite()
+    const pre = makeSite({
+      pages: [makePage({ id: 'page-a', slug: 'index', title: 'Home' })],
+      visualComponents: post.visualComponents,
+    })
+    const patches: Patches = [{ op: 'add', path: ['pages', 1], value: post.pages[1] }]
+    const marks = collectDirtyFromSitePatches(patches, pre, post)
     expect(marks.all).toBe(false)
     expect([...marks.pageIds]).toEqual(['page-b'])
+    expect(marks.deletedPageIds.size).toBe(0)
   })
 
   it('accumulates marks across a mixed patch set', () => {
@@ -129,7 +155,7 @@ describe('collectDirtyFromSitePatches', () => {
       { op: 'replace', path: ['visualComponents', 1, 'name'], value: 'Two v2' },
       { op: 'replace', path: ['styleRules', 'r1'], value: {} },
     ]
-    const marks = collectDirtyFromSitePatches(patches, site)
+    const marks = collectDirtyFromSitePatches(patches, site, site)
     expect(marks.all).toBe(false)
     expect([...marks.pageIds]).toEqual(['page-a'])
     expect([...marks.componentIds]).toEqual(['vc-two'])
@@ -137,22 +163,23 @@ describe('collectDirtyFromSitePatches', () => {
 })
 
 describe('mergeDirtyMarks', () => {
-  it('unions ids and propagates the all flag', () => {
+  it('unions write and deleted ids and propagates the all flag', () => {
     const target: DirtyMarks = {
-      all: false,
+      ...emptyDirtyMarks(),
       pageIds: new Set(['page-a']),
       componentIds: new Set(['vc-one']),
-      layoutIds: new Set(),
+      deletedPageIds: new Set(['page-gone']),
     }
     mergeDirtyMarks(target, {
-      all: false,
+      ...emptyDirtyMarks(),
       pageIds: new Set(['page-b']),
-      componentIds: new Set(),
-      layoutIds: new Set(),
+      deletedLayoutIds: new Set(['layout-gone']),
     })
     expect(target.all).toBe(false)
     expect([...target.pageIds].sort()).toEqual(['page-a', 'page-b'])
     expect([...target.componentIds]).toEqual(['vc-one'])
+    expect([...target.deletedPageIds]).toEqual(['page-gone'])
+    expect([...target.deletedLayoutIds]).toEqual(['layout-gone'])
 
     mergeDirtyMarks(target, { ...emptyDirtyMarks(), all: true })
     expect(target.all).toBe(true)
@@ -162,7 +189,7 @@ describe('mergeDirtyMarks', () => {
 
   it('never clears all once set, even when incoming is partial', () => {
     const target: DirtyMarks = { ...emptyDirtyMarks(), all: true }
-    mergeDirtyMarks(target, { all: false, pageIds: new Set(['page-a']), componentIds: new Set(), layoutIds: new Set() })
+    mergeDirtyMarks(target, { ...emptyDirtyMarks(), pageIds: new Set(['page-a']) })
     expect(target.all).toBe(true)
   })
 })
@@ -370,27 +397,21 @@ describe('editor store dirty-save tracking', () => {
     expect(marks.componentIds.size).toBe(0)
   })
 
-  it('deletePage shrinks the roster and never marks the deleted page id', () => {
+  it('deletePage records the deleted id — never as a changed page, never as all', () => {
     loadTwoPageSite()
     // Delete the LAST page so no surviving element is displaced to a new index.
     useEditorStore.getState().deletePage('page-b')
 
     const state = useEditorStore.getState()
     expect(state.site!.pages.map((p) => p.id)).toEqual(['page-a'])
-    // The deleted page must NOT appear as a changed page — its removal is
-    // conveyed by the shrunken id roster the save always ships.
+    // The deleted page must NOT appear as a changed page — its removal ships
+    // as an explicit deleted-id.
     expect(dirty().pageIds.has('page-b')).toBe(false)
-
-    // `deletePage` splices in place, so Mutative emits a `remove` patch at
-    // ['pages', i] — which the collector deliberately ignores (the shrunken
-    // id roster conveys the deletion). No full-save escalation.
+    expect([...dirty().deletedPageIds]).toEqual(['page-b'])
     expect(dirty().all).toBe(false)
-    expect(dirty().pageIds.size).toBe(0)
   })
 
-  it('a VC delete via splice does not escalate to all', () => {
-    // Contrast with deletePage: the VC slice deletes via splice(idx, 1), so
-    // the patches are index/length bookkeeping the collector can attribute.
+  it('a VC delete records the deleted component id without escalating to all', () => {
     useEditorStore.getState().loadSite(
       makeSite({
         pages: [makePage({ id: 'page-a', slug: 'index' })],
@@ -408,6 +429,35 @@ describe('editor store dirty-save tracking', () => {
     expect(state.site!.visualComponents.map((vc) => vc.id)).toEqual(['vc-one'])
     expect(dirty().all).toBe(false)
     expect(dirty().componentIds.has('vc-two')).toBe(false)
+    expect([...dirty().deletedComponentIds]).toEqual(['vc-two'])
+  })
+
+  it('snapshot netting: delete + undo within one save window ships a write, not a delete', () => {
+    loadTwoPageSite()
+    useEditorStore.getState().deletePage('page-b')
+    expect([...dirty().deletedPageIds]).toEqual(['page-b'])
+
+    useEditorStore.getState().undo() // page-b is back in the store
+
+    const snapshot = useEditorStore.getState().takeDirtySaveSnapshot()
+    // The row exists again — it must NOT ship as deleted…
+    expect(snapshot.deletedPageIds.size).toBe(0)
+    // …and the restored content ships as a plain write.
+    expect(snapshot.pageIds.has('page-b')).toBe(true)
+  })
+
+  it('snapshot netting: a write-mark for a row deleted afterwards is dropped', () => {
+    loadTwoPageSite()
+    // Edit page-b, THEN delete it — shipping it as changed would resurrect it.
+    useEditorStore.setState({ activePageId: 'page-b' })
+    useEditorStore.getState().updateNodeProps('root', { text: 'edited' })
+    expect(dirty().pageIds.has('page-b')).toBe(true)
+
+    useEditorStore.getState().deletePage('page-b')
+
+    const snapshot = useEditorStore.getState().takeDirtySaveSnapshot()
+    expect(snapshot.pageIds.has('page-b')).toBe(false)
+    expect([...snapshot.deletedPageIds]).toEqual(['page-b'])
   })
 
   it('shell-only mutations (site rename) accumulate no marks', () => {

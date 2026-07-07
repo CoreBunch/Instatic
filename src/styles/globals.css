@@ -16,11 +16,26 @@
  * The admin chrome uses the Core Framework-style token vocabulary directly.
  */
 :root {
+    color-scheme: dark;
+
     --font-sans: "Inter Variable", system-ui, sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
         monospace;
 
     /* Fluid admin type scale. Suffixes mirror Core Framework text steps. */
+    --text-3xs-base: clamp(8px, calc(7.629px + 0.095vw), 9px);
+    --text-2xs-base: clamp(9px, calc(8.629px + 0.095vw), 10px);
+    --text-xs-base: clamp(10px, calc(9.629px + 0.095vw), 11px);
+    --text-s-base: clamp(11px, calc(10.629px + 0.095vw), 12px);
+    --text-m-base: clamp(12px, calc(11.629px + 0.095vw), 13px);
+    --text-l-base: clamp(13px, calc(12.629px + 0.095vw), 14px);
+    --text-xl-base: clamp(14px, calc(13.257px + 0.19vw), 16px);
+    --text-2xl-base: clamp(16px, calc(15.257px + 0.19vw), 18px);
+    --text-3xl-base: clamp(18px, calc(17.257px + 0.19vw), 20px);
+    --text-4xl-base: clamp(20px, calc(18.514px + 0.381vw), 24px);
+    --text-5xl-base: clamp(24px, calc(22.514px + 0.381vw), 28px);
+    --text-6xl-base: clamp(32px, calc(29.029px + 0.762vw), 40px);
+    --text-7xl-base: clamp(40px, calc(34.057px + 1.524vw), 56px);
     --text-3xs: clamp(8px, calc(7.629px + 0.095vw), 9px);
     --text-2xs: clamp(9px, calc(8.629px + 0.095vw), 10px);
     --text-xs: clamp(10px, calc(9.629px + 0.095vw), 11px);
@@ -280,6 +295,153 @@
     --plugins-hero-tint-a: rgba(35, 92, 72, 0.32);
     --plugins-hero-tint-b: rgba(49, 64, 94, 0.24);
     --canvas-live-scrim: rgba(24, 24, 27, 0.82);
+}
+
+:root[data-editor-text-scale='small'],
+[data-editor-text-scale='small'] {
+    --text-3xs: calc(var(--text-3xs-base) - 1px);
+    --text-2xs: var(--text-3xs-base);
+    --text-xs: var(--text-2xs-base);
+    --text-s: var(--text-xs-base);
+    --text-m: var(--text-s-base);
+    --text-l: var(--text-m-base);
+    --text-xl: var(--text-l-base);
+    --text-2xl: var(--text-xl-base);
+    --text-3xl: var(--text-2xl-base);
+    --text-4xl: var(--text-3xl-base);
+    --text-5xl: var(--text-4xl-base);
+    --text-6xl: var(--text-5xl-base);
+    --text-7xl: var(--text-6xl-base);
+}
+
+:root[data-editor-text-scale='large'],
+[data-editor-text-scale='large'] {
+    --text-3xs: var(--text-2xs-base);
+    --text-2xs: var(--text-xs-base);
+    --text-xs: var(--text-s-base);
+    --text-s: var(--text-m-base);
+    --text-m: var(--text-l-base);
+    --text-l: var(--text-xl-base);
+    --text-xl: var(--text-2xl-base);
+    --text-2xl: var(--text-3xl-base);
+    --text-3xl: var(--text-4xl-base);
+    --text-4xl: var(--text-5xl-base);
+    --text-5xl: var(--text-6xl-base);
+    --text-6xl: var(--text-7xl-base);
+    --text-7xl: calc(var(--text-7xl-base) + 8px);
+}
+
+:root[data-editor-text-scale='extra-large'],
+[data-editor-text-scale='extra-large'] {
+    --text-3xs: var(--text-xs-base);
+    --text-2xs: var(--text-s-base);
+    --text-xs: var(--text-m-base);
+    --text-s: var(--text-l-base);
+    --text-m: var(--text-xl-base);
+    --text-l: var(--text-2xl-base);
+    --text-xl: var(--text-3xl-base);
+    --text-2xl: var(--text-4xl-base);
+    --text-3xl: var(--text-5xl-base);
+    --text-4xl: var(--text-6xl-base);
+    --text-5xl: var(--text-7xl-base);
+    --text-6xl: calc(var(--text-7xl-base) + 12px);
+    --text-7xl: calc(var(--text-7xl-base) + 20px);
+}
+
+:root[data-editor-theme='light'],
+[data-editor-theme='light'] {
+    color-scheme: light;
+
+    /* Surfaces */
+    --bg-body: #e3e7ed;
+    --bg-surface: #ffffff;
+    --bg-surface-2: #f6f7f9;
+    --bg-surface-3: #eceff3;
+    --bg-surface-4: #e1e5ea;
+    --bg-surface-5: #d3d9e1;
+
+    /* Borders */
+    --border-subtle: #eef0f3;
+    --border-muted: #dce1e7;
+    --border: #cbd3dc;
+    --border-strong: #aeb8c5;
+
+    /* Text */
+    --text-bright: #111827;
+    --text: #1f2937;
+    --text-muted: #4b5563;
+    --text-subtle: #6b7280;
+    --text-disabled: #9ca3af;
+
+    /* Identity accents tuned as foregrounds for light surfaces. */
+    --accent-1: #047857;
+    --accent-1-10: rgba(4, 120, 87, 0.1);
+    --accent-2: #6d28d9;
+    --accent-2-10: rgba(109, 40, 217, 0.1);
+    --accent-3: #0369a1;
+    --accent-3-10: rgba(3, 105, 161, 0.1);
+    --accent-4: #9a3412;
+    --accent-4-10: rgba(154, 52, 18, 0.1);
+    --accent-5: #be123c;
+    --accent-5-10: rgba(190, 18, 60, 0.1);
+    --accent-6: #3f6212;
+    --accent-6-10: rgba(63, 98, 18, 0.1);
+    --accent-7: #713f12;
+    --accent-7-10: rgba(113, 63, 18, 0.1);
+    --accent-8: #0e7490;
+    --accent-8-10: rgba(14, 116, 144, 0.1);
+    --accent-9: #a21caf;
+    --accent-9-10: rgba(162, 28, 175, 0.1);
+    --accent-10: #b91c1c;
+    --accent-10-10: rgba(185, 28, 28, 0.1);
+
+    /* Foreground overlay scale. Suffix = alpha x 100. */
+    --overlay: #111827;
+    --overlay-5: rgba(17, 24, 39, 0.05);
+    --overlay-10: rgba(17, 24, 39, 0.1);
+    --overlay-20: rgba(17, 24, 39, 0.2);
+    --overlay-30: rgba(17, 24, 39, 0.3);
+    --overlay-40: rgba(17, 24, 39, 0.4);
+    --overlay-50: rgba(17, 24, 39, 0.5);
+    --overlay-60: rgba(17, 24, 39, 0.6);
+    --overlay-70: rgba(17, 24, 39, 0.7);
+    --overlay-80: rgba(17, 24, 39, 0.8);
+    --overlay-90: rgba(17, 24, 39, 0.9);
+
+    /* Semantic state text tuned for light surfaces. */
+    --danger-text: #991b1b;
+    --warning-text: #92400e;
+    --success-text: #047857;
+    --success-text-muted: #065f46;
+    --info-text: #4338ca;
+
+    /* Shadows and focus */
+    --shadow-panel-inset-bottom: inset 0 -1px 0 var(--overlay-10);
+    --shadow-panel-drop: 0 16px 42px rgba(15, 23, 42, 0.18);
+    --shadow-input-focus:
+        inset 0 0 4px rgba(15, 23, 42, 0.06),
+        inset 0 -4px 8px rgba(15, 23, 42, 0.08),
+        0 0 0 1px rgba(15, 23, 42, 0.14);
+
+    /* Keycap */
+    --kbd-face-top: #ffffff;
+    --kbd-face-bottom: #e5e7eb;
+    --kbd-face-top-hover: #f8fafc;
+    --kbd-face-bottom-hover: #dbe1e8;
+    --kbd-border: var(--border);
+    --kbd-text: var(--text-muted);
+    --kbd-highlight: rgba(255, 255, 255, 0.85);
+    --kbd-inner-shadow: rgba(15, 23, 42, 0.1);
+    --kbd-edge: rgba(15, 23, 42, 0.18);
+    --kbd-drop: rgba(15, 23, 42, 0.16);
+
+    /* Canvas chrome */
+    --canvas-chrome-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+    --canvas-live-scrim: rgba(248, 250, 252, 0.84);
+
+    /* Bespoke surface tints */
+    --plugins-hero-tint-a: rgba(142, 230, 200, 0.18);
+    --plugins-hero-tint-b: rgba(155, 220, 255, 0.2);
 }
 
 /* Reduced motion support — Constraint from UX Guideline #189 */

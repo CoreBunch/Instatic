@@ -294,8 +294,9 @@ export function buildSiteHelpers(
       if (siteForward.length > 0) {
         commitHistory(state, { inverse: siteInverse, forward: siteForward, coalesceKey })
         // The same patches drive save-dirty attribution: autosave ships only
-        // the pages/VCs these paths name (see dirtyTracking.ts).
-        mergeDirtyMarks(state._dirtySave, collectDirtyFromSitePatches(siteForward, next.site!))
+        // the pages/VCs these paths name, plus explicit deleted-row ids
+        // derived from the pre/post membership diff (see dirtyTracking.ts).
+        mergeDirtyMarks(state._dirtySave, collectDirtyFromSitePatches(siteForward, cur.site!, next.site!))
       }
       state.hasUnsavedChanges = true
     })

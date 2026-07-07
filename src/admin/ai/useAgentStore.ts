@@ -16,7 +16,7 @@ import type { AgentSlice } from '@site/agent'
  * Typed loosely as a structural shape (subscribe + getState + setState)
  * rather than `StoreApi<AgentSlice>` so the type accepts any Zustand
  * store whose state includes AgentSlice — including stores wrapped in
- * middleware (subscribeWithSelector, immer) whose `setState` signature
+ * middleware (subscribeWithSelector, zustand-mutative) whose `setState` signature
  * widens to accept the combined store shape.
  */
 export interface AgentStoreApi {

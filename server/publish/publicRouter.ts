@@ -23,7 +23,7 @@
  *      `PublicRouteResolution`.
  *   2. `renderPublicResolution(db, url, uploadsDir?)` handles the full
  *      request. Layer A: when `uploadsDir` is set and the URL has no
- *      query string, it first tries `readArtefact` from the active
+ *      real loop-pagination query params, it first tries `readArtefact` from the active
  *      publish slot. On a hit the pre-rendered HTML is returned
  *      immediately (no DB, no render). On a miss, it falls through to
  *      `resolvePublicRoute` + Layer B.
@@ -33,7 +33,7 @@
  *      zero DB work. On a miss, redirects and not-founds resolve before the
  *      factory so they are never stored. The render factory is invoked at
  *      most once per concurrent key burst (single-flight) and its result is
- *      stored in the LRU keyed by (urlPath, queryString, publishVersion).
+ *      stored in the LRU keyed by (urlPath, canonicalQuery, publishVersion).
  *      The cache is invalidated by `bumpPublishVersion`, which fires on
  *      every mutation that changes what a published URL serves (publish,
  *      unpublish, soft-delete, table move).
@@ -51,11 +51,11 @@
  *     routes — plugin frontend injections and filters are baked into
  *     the artefact. The disk path never calls the pipeline per request.
  *   - For non-static routes (loops, request-dependent bindings), the
- *     live-render fallback runs once per (urlPath, queryString, publishVersion)
+ *     live-render fallback runs once per (urlPath, canonicalQuery, publishVersion)
  *     burst and the result is stored in the Layer B LRU.
- *   - Only no-query-string requests hit the disk path. A request with
- *     `?page=2` always falls through so Layer A never serves stale
- *     pagination output.
+ *   - Only requests whose canonical query is empty hit the disk path. Junk
+ *     params collapse to empty; real `loop_<nodeId>_page` pagination always
+ *     falls through so Layer A never serves stale pagination output.
  */
 
 import type { DbClient } from '../db/client'
@@ -194,9 +194,9 @@ async function resolvePublicRoute(
  * Returns `null` for `not-found` so the router can fall through to its
  * next handler (e.g. the setup-wizard redirect).
  *
- * Layer A fast-path: when `uploadsDir` is provided AND the request URL
- * has no query string, `readArtefact` is called first. On a hit the
- * pre-rendered HTML is returned immediately — no DB lookup, no render.
+ * Layer A fast-path: when `uploadsDir` is provided AND the request URL's
+ * canonical render query is empty, `readArtefact` is called first. On a hit
+ * the pre-rendered HTML is returned immediately — no DB lookup, no render.
  * On a miss the resolution path below runs normally.
  *
  * Redirect and not-found resolutions are returned immediately without
@@ -204,7 +204,7 @@ async function resolvePublicRoute(
  * poison the LRU.
  *
  * Layer B: the render + pipeline result for a 200 response is stored in
- * an in-memory LRU keyed by (urlPath, queryString). Entries become stale
+ * an in-memory LRU keyed by (urlPath, canonicalQuery). Entries become stale
  * when `bumpPublishVersion()` is called after any publish. Concurrent
  * requests for the same key share one in-flight factory (single-flight).
  *

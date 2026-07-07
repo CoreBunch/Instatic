@@ -233,6 +233,20 @@ export const CmsSiteEnvelopeSchema = Type.Object(
 )
 
 /**
+ * Envelope for PUT /admin/api/cms/site-document — the transactional
+ * whole-document save. `seq` is the save's site-global sync sequence number
+ * (multi-admin sync substrate; informational to the client until the
+ * live-sync plan consumes it for conflict detection).
+ */
+export const CmsSiteDocumentSaveEnvelopeSchema = Type.Object(
+  {
+    ok: Type.Literal(true),
+    seq: Type.Number(),
+  },
+  { additionalProperties: true },
+)
+
+/**
  * Envelope for GET /admin/api/cms/pages.
  * Inner items are DataRow objects; validate them at the HTTP boundary before
  * converting through pageFromRow + validatePages in the adapter.

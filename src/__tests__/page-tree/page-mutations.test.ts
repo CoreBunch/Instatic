@@ -92,12 +92,12 @@ describe('addPage', () => {
     expect(createUniquePageSlug('About', site.pages)).toBe('about-2')
   })
 
-  it('is Immer-safe — create() works with addPage', () => {
+  it('is Mutative-safe — create() works with addPage', () => {
     const site = makeSite({ pages: [makePage()] })
     const originalCount = site.pages.length
 
     const nextSite = create(site, (draft) => {
-      addPage(draft, 'Immer Test', 'immer-test')
+      addPage(draft, 'Mutative Test', 'mutative-test')
     })
 
     expect(site.pages).toHaveLength(originalCount) // original unchanged
@@ -158,7 +158,7 @@ describe('deletePage', () => {
     expect(site.pages).toHaveLength(2)
   })
 
-  it('is Immer-safe', () => {
+  it('is Mutative-safe', () => {
     const p1 = makePage({ id: 'p1', slug: 'p1' })
     const p2 = makePage({ id: 'p2', slug: 'p2' })
     const site = makeSite({ pages: [p1, p2] })
@@ -198,7 +198,7 @@ describe('renamePage', () => {
     expect(site.pages[0].title).toBe('')
   })
 
-  it('is Immer-safe', () => {
+  it('is Mutative-safe', () => {
     const page = makePage({ id: 'p1', title: 'Original' })
     const site = makeSite({ pages: [page] })
 
@@ -266,7 +266,7 @@ describe('reorderPages', () => {
     expect(site.pages.map((p) => p.id)).toEqual(['a', 'b', 'c'])
   })
 
-  it('is Immer-safe', () => {
+  it('is Mutative-safe', () => {
     const site = makeSiteWithPages(['a', 'b', 'c'])
 
     const nextSite = create(site, (draft) => {

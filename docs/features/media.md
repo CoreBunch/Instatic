@@ -8,7 +8,7 @@ The workspace is canvas-style: it uses `AdminWorkspaceCanvasLayout`, the lighter
 
 ## TL;DR
 
-- **Route:** `/admin/media`, capability-gated by `media.manage`.
+- **Route:** `/admin/media`, workspace access is capability-gated by `media.read`; mutations split across `media.write`, `media.replace`, and `media.delete`.
 - **Page entrypoint:** `src/admin/pages/media/MediaPage.tsx`.
 - **State:** one hook — `useMediaWorkspace()` — orchestrates folders, assets, selection, filters, upload queue, and folder moves. The editor store doesn't grow new slices; the Media page is self-contained.
 - **Folders:** folders render as first-class grid/list items in the canvas. Opening a folder filters the canvas to its contents, and nested folders show a parent-folder entry to navigate back.
@@ -337,7 +337,7 @@ The redirect handler is `tryServeMediaRedirect` in `server/router.ts`. The redir
 
 ### Register a plugin storage adapter
 
-See [docs/features/plugin-system.md](plugin-system.md). The plugin SDK's `api.cms.media.registerStorageAdapter(adapter)` (under `unstable.internals` today) provides the registration surface. Adapters declare a `servingMode` and either return public URLs or implement `getReadUrl(storagePath, ttlSeconds)` for signed redirects.
+See [docs/features/plugin-system.md](plugin-system.md). The plugin SDK's `api.cms.media.registerStorageAdapter(adapter)` provides the registration surface and requires `media.storage.adapter`. Adapters declare a `servingMode` and either return public URLs, implement `getReadUrl(storagePath, ttlSeconds)` for signed redirects, or implement `readStream(storagePath)` for proxy reads. The host streams upload bytes to adapter-provided upload plans; ordinary writes do not move media bytes through the QuickJS heap.
 
 ---
 
@@ -349,7 +349,7 @@ See [docs/features/plugin-system.md](plugin-system.md). The plugin SDK's `api.cm
 | Hardcoding `/uploads/...` URLs in modules                            | Use the asset's `public_path` (the host owns the URL shape) |
 | Filling `<img>` `srcset` manually                                    | Use `variants_json` + the publisher's `mediaPresentation.ts`|
 | Adding a docked panel to the Media page                              | Use a floating window — Media is canvas-style by design     |
-| Calling `api.cms.media.*` from a plugin without `unstable.internals` | Adapter registration is still gated to first-party plugins  |
+| Calling `api.cms.media.*` from a plugin without the matching media permission | Declare `media.storage.adapter`, `media.url.transform`, or `media.variant.delegate` |
 | Treating `deleted_at IS NOT NULL` rows as gone                       | They're in Trash; restore is supported until purge          |
 | Skipping `parent_id, slug` uniqueness when creating folders          | The unique constraint enforces it — handle the error path   |
 

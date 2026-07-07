@@ -8,12 +8,12 @@ Instatic is a self-hosted CMS with a built-in visual editor. One Bun process ser
 
 ## TL;DR
 
-- **One process, two off-main-thread workers**: `bun server/index.ts`. `Bun.serve` + a hand-written router (`server/router.ts`) routes every request. Plugin server code runs in per-plugin `Bun.Worker`s wrapping a QuickJS-WASM sandbox; image-variant generation (`sharp` + BlurHash) runs in a separate `Bun.Worker` pool. Everything else — HTTP, the admin API, the streaming agent endpoint, the publisher — runs on the main thread.
+- **One process, two worker families**: `bun server/index.ts`. `Bun.serve` + a hand-written router (`server/router.ts`) routes every request. Plugin server code runs in one `Bun.Worker` per active plugin, each wrapping a QuickJS-WASM sandbox; image-variant generation (`sharp` + BlurHash) runs in a separate `Bun.Worker` pool. Everything else — HTTP, the admin API, the streaming agent endpoint, the publisher — runs on the main thread.
 - **One database, two engines**: Postgres (via `Bun.sql`) or SQLite (`bun:sqlite`), selected by `DATABASE_URL`. Repositories are dialect-naive; migrations are split per dialect with identical IDs.
 - **One content model**: posts, pages, and visual components all live in `data_tables` + `data_rows`. No separate `pages` table. Page trees and VC trees both use the `NodeTree<TNode>` primitive.
 - **Two frontends, one bundle**: the admin app (`src/admin/`) shells the visual editor (`src/admin/pages/site/`). Both run in the same Vite-built SPA, mounted under `/admin/*`.
-- **Plugins run sandboxed**: server entrypoints and canvas module packs execute inside a QuickJS-WASM VM with no host access. They reach the CMS through the SDK at `src/core/plugin-sdk/`.
-- **One public-route surface, three publishing layers**: every visitor request for HTML — stand-alone pages and content rows alike — flows through `server/publish/publicRouter.ts:renderPublicResolution`. **Layer A** bakes fully-static pages to `uploads/published/current/<route>.html` at publish time via a two-slot symlink swap (atomic). **Layer B** is an in-memory LRU keyed by `(urlPath, queryString)` for dynamic routes — per-entry version tracking; bumps evict lazily on every publish, and version is captured at render start so mid-flight publishes discard results rather than caching stale HTML. **Layer C** auto-detects dynamic nodes (modules flagged `dynamic: true`, request-dependent bindings or loop sources, VC refs containing dynamic content) and emits `<instatic-hole>` placeholders that lazy-fetch their content via `/_instatic/hole/<nodeId>` using a ~668 B `IntersectionObserver` runtime. Authors don't toggle — `findDynamicNodeIds` in `src/core/publisher/dynamicDetection.ts` classifies automatically. The published `SiteDocument` is stored once per publish in `site_snapshots`; page versions reference it via `data_row_versions.site_snapshot_id`, and the reassembled `PublishedPageSnapshot` remains the canonical audit record. Output is plain semantic HTML + a single hashed CSS bundle per page, no framework runtime on the page.
+- **Plugins are permissioned; server code is sandboxed**: server entrypoints execute inside QuickJS-WASM with no host access. Canvas module packs run as ESM in the browser editor and through a QuickJS VM on the server. Editor entrypoints and app-kind admin pages are explicit `editor.code` surfaces that run in the admin window.
+- **One public-route surface, three publishing layers**: every visitor request for HTML — stand-alone pages and content rows alike — flows through `server/publish/publicRouter.ts:renderPublicResolution`. **Layer A** bakes fully-static pages and static shells to `uploads/published/current/<route>.html` at publish time via a two-slot symlink swap (atomic). **Layer B** is an in-memory LRU keyed by `(urlPath, canonicalQuery)` for live-render fallback routes — per-entry version tracking; bumps evict lazily on every publish, and version is captured at render start so mid-flight publishes discard results rather than caching stale HTML. **Layer C** auto-detects dynamic nodes (modules flagged `dynamic: true`, request-dependent/per-visitor bindings or loop sources, VC refs containing dynamic content) and emits `<instatic-hole>` placeholders that lazy-fetch their content via `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` using a ~1.1 KB `IntersectionObserver` runtime. Authors don't toggle — `findDynamicNodeIds` in `src/core/publisher/dynamicDetection.ts` classifies automatically. The published `SiteDocument` is stored once per publish in `site_snapshots`; page versions reference it via `data_row_versions.site_snapshot_id`, and the reassembled `PublishedPageSnapshot` remains the canonical audit record. Output is plain semantic HTML plus hashed CSS bundles (`reset`, `framework`, `style`, and page-specific `userStyles` when needed), no framework runtime on the page.
 - **Multi-instance HA on Postgres**: both schedulers (plugin tick + scheduled publish) share a leader-election primitive in `server/db/advisoryLock.ts` (`withSchedulerLeaderLock`) that wraps `pg_try_advisory_lock`, so running multiple containers behind a load balancer doesn't double-fire scheduled work. Each scheduler passes its own distinct lock key; on SQLite (single-instance by definition) the module returns a no-op sentinel.
 - **Every untyped boundary uses TypeBox.** HTTP responses, request bodies, persisted JSON, plugin manifests, settings. `zod` is banned repo-wide — drivers talk directly to each provider's REST API and pass TypeBox schemas through as JSON Schema; `zod` has been removed from `package.json`. Gated by `ai-driver-isolation.test.ts`.
 
@@ -53,7 +53,7 @@ Instatic is a self-hosted CMS with a built-in visual editor. One Bun process ser
 
 The same process serves visitors, admins, the API, the streaming agent endpoint, and uploads. Two kinds of work that would otherwise block the main thread are pushed into `Bun.Worker`s:
 
-- **Plugin server entrypoints + canvas module packs** run inside a per-plugin `Bun.Worker` that hosts a QuickJS-WASM sandbox. The host process never imports plugin code. A crash in one plugin worker only affects that plugin; the host respawns it with a crash budget (`server/plugins/host/crashRecovery.ts`).
+- **Plugin server entrypoints** run inside a per-plugin `Bun.Worker` that hosts a QuickJS-WASM sandbox. The host process never imports plugin server code. A crash in one plugin worker only affects that plugin; the host respawns it with a crash budget (`server/plugins/host/crashRecovery.ts`). Canvas module packs are evaluated through `server/plugins/modulePackVm.ts` on the server and as ESM in the browser editor.
 - **Image-variant generation** (`sharp` resize + WebP encode + BlurHash) runs in a small pool of `Bun.Worker`s. A 4 MP JPEG is ~200–500 ms of CPU per upload; offloading it keeps visitor requests and the admin API responsive when an admin (or a future first-party feature) uploads images in bulk.
 
 There is no message queue, no managed service surface. Scaling out is a horizontal-Postgres play: both schedulers (plugin tick + scheduled-publish tick) share a leader-election primitive at `server/db/advisoryLock.ts` (`withSchedulerLeaderLock`) that wraps `pg_try_advisory_lock` so multiple instances behind a load balancer don't double-fire scheduled work. SQLite mode is single-instance by definition; the module falls through to a no-op sentinel there.
@@ -95,9 +95,9 @@ The repo is organized by responsibility, not by feature. Every file has one reas
 | Publisher                    | `src/core/publisher/*`                | Page tree → clean HTML/CSS (`publishPage`, deterministic, no host I/O). Includes `dynamicDetection.ts`, the single walker for the auto-detection rules that power Layer A shell-vs-complete bakes and Layer C holes. |
 | Public-route surface         | `server/publish/publicRouter.ts`      | Resolve URL → page snapshot or data row + template. Layer A disk fast-path + Layer B in-memory LRU live here. |
 | Static artefact IO           | `server/publish/staticArtefact.ts`    | Layer A: two-slot symlink swap, atomic per-file rename, slot-aware read/write/purge. |
-| Render cache                 | `server/publish/renderCache.ts`       | Layer B: bounded LRU keyed by `(urlPath, queryString)`, each entry versioned. Single-flight, `bumpPublishVersion()` invalidates lazily; version captured at render start so a publish landing mid-render discards the result rather than caching stale HTML. |
-| Server-island runtime        | `server/publish/holeRuntime.ts`       | Layer C: ~668 B hand-written `IntersectionObserver` runtime served at `/_instatic/hole-runtime.js`. |
-| Hole endpoint                | `server/handlers/cms/hole.ts`         | `GET /_instatic/hole/<nodeId>?v=<publishVersion>` renders one node subtree; response cached via Layer B. |
+| Render cache                 | `server/publish/renderCache.ts`       | Layer B: bounded LRU keyed by `(urlPath, queryString)`, where public page renders pass `canonicalRenderQuery(...)` rather than the raw URL search string. Each entry is versioned. Single-flight, `bumpPublishVersion()` invalidates lazily; version captured at render start so a publish landing mid-render discards the result rather than caching stale HTML. |
+| Server-island runtime        | `server/publish/holeRuntime.ts`       | Layer C: ~1.1 KB hand-written `IntersectionObserver` runtime served at `/_instatic/hole-runtime.js`. |
+| Hole endpoint                | `server/handlers/cms/hole.ts`         | `GET /_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` renders one node subtree with the originating page route/query; shared responses cache via Layer B, per-visitor holes bypass it with `Cache-Control: no-store`. |
 | Plugin SDK                   | `src/core/plugin-sdk/*`               | Author-facing API + `instatic-plugin` CLI                                  |
 | Plugin runtime (host)        | `src/core/plugins/*`                  | In-process plugin lifecycle: install/activate/uninstall              |
 | Plugin sandbox (worker)      | `server/plugins/*`                    | QuickJS-WASM execution of plugin server code + module packs          |
@@ -164,14 +164,16 @@ A user-defined collection — a "post type" in WordPress terms. Has a `kind`:
 | `kind`       | Used for                                      |
 |--------------|-----------------------------------------------|
 | `postType`   | Blog posts, products, anything list-like      |
+| `data`       | Plain user-defined data tables                |
 | `page`       | Stand-alone pages with URLs                   |
 | `component`  | Visual components (reusable subtrees)         |
+| `layout`     | Saved layout snapshots                        |
 
-The four system tables (`posts`, `pages`, `components`, `layouts`) are seeded by the baseline migration and are locked from rename/delete.
+The four system tables (`posts`, `pages`, `components`, `layouts`) are seeded by migrations and are locked from rename/delete.
 
 ### `data_rows`
 
-Rows in a `data_tables` collection. Stored cells are typed — a row in the `pages` table has a `body` cell of type `pageTree`; a row in `components` has a `tree` cell of type `pageTree` plus a `params` cell of type `fieldSchema`.
+Rows in a `data_tables` collection. Stored cells are typed — a row in the `pages` table has a `body` cell of type `pageTree`; a row in `components` has a `body` cell of type `pageTree` plus a `params` cell of type `fieldSchema`; a row in `layouts` has a `body` page-tree snapshot plus `classes`.
 
 The shape and cell types are defined by the `data_tables` schema. There is no separate `pages` table, no `page_versions` table, no per-feature row layout. Adding a new "post type" means inserting a `data_tables` row with the right `cells` schema.
 
@@ -198,7 +200,7 @@ type NodeTree<TNode> = {
 
 Defined in `src/core/page-tree/treeSchema.ts` (single source of truth). Mutations operate on any `NodeTree` generically via `src/core/page-tree/mutations.ts`.
 
-Routing to the active tree (page vs. VC mode) is the **sole** job of `mutateActiveTree(fn)` in `src/admin/pages/site/store/siteSlice.ts`. The 11 named tree-mutation store actions (`insertNode`, `deleteNode`, `updateNodeProps`, `setBreakpointOverride`, `clearBreakpointOverride`, `renameNode`, `toggleNodeLocked`, `toggleNodeHidden`, `moveNode`, `duplicateNode`, `wrapNode`) are one-liners that call `mutateActiveTree`. They must not contain their own `kind === 'visualComponent'` routing branch — gated by `no-vc-mode-branches-in-mutations.test.ts`.
+Routing to the active tree (page vs. VC mode) is the **sole** job of `mutateActiveTree(fn)` in `src/admin/pages/site/store/slices/site/helpers.ts`. The 11 named tree-mutation store actions in `src/admin/pages/site/store/slices/site/nodeActions.ts` (`insertNode`, `deleteNode`, `updateNodeProps`, `setBreakpointOverride`, `clearBreakpointOverride`, `renameNode`, `toggleNodeLocked`, `toggleNodeHidden`, `moveNode`, `duplicateNode`, `wrapNode`) are one-liners that call `mutateActiveTree`. They must not contain their own `kind === 'visualComponent'` routing branch — gated by `no-vc-mode-branches-in-mutations.test.ts`.
 
 See [docs/reference/page-tree.md](reference/page-tree.md) for the type shape and mutation cookbook.
 
@@ -250,20 +252,21 @@ visitor request → server/router.ts → tryServePublicRoute
     └─ Layer C: server islands (holes) — only when the rendered page has
        any node in findDynamicNodeIds(...). Publisher emits a <instatic-hole>
        placeholder with optional staticPlaceholder(props) skeleton + a
-       ~668 B IntersectionObserver runtime injected once into <head>.
-       Browser fetches /_instatic/hole/<nodeId>?v=<publishVersion> lazily when
-       each placeholder approaches viewport (rootMargin 200px). Each hole
-       response is also cached via Layer B's LRU.
+       ~1.1 KB IntersectionObserver runtime injected once into <head>.
+       Browser fetches
+       /_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url> lazily when
+       each placeholder approaches viewport (rootMargin 200px). Shared hole
+       responses cache via Layer B's LRU; per-visitor holes bypass it.
 ```
 
 Key properties:
 
 - **One published-route surface.** `server/publish/publicRouter.ts:renderPublicResolution` is the single entry for every visitor URL. Stand-alone pages (`/about`) and content rows rendered through a postType's entry template (`/posts/hello`) both flow through it; only the lookup strategy differs. The earlier split between `tryServePublishedPage` and `tryServeContentRoute` collapsed into one path after the pages → `data_rows` migration finished.
 - **Atomic publishing.** `uploads/published/current` is a symlink that targets either `slot-a/` or `slot-b/`. Full publishes build the inactive slot then atomic-rename the symlink — `rename(2)` of a symlink is a single-inode swap and is atomic across POSIX filesystems. There is no moment when `current` is missing or partially populated. In-flight readers that already resolved the old symlink hold file descriptors into the old slot — Unix semantics keep those files alive until they close. Incremental row publish (`publishDataRow`) writes a single file via tmp + rename into the active slot.
-- **Auto-detection is the seam.** `findDynamicNodeIds(page, site, registry)` is backed by the single walker that powers Layer A's shell-vs-complete decision and Layer C's placeholder emission. The detection rules — `dynamic: true` modules, request-dependent bindings, request-dependent loop sources, loop-body promotion, VC-ref recursion — live in exactly one file. Cannot drift between layers.
-- **`publish.html` runs at publish time** for static routes (baked into the disk artefact). For dynamic routes, the filter still fires inside the Layer B factory but caches the result so it runs at most once per `(url, querystring, publishVersion)` triple.
-- **Three layers, automatic routing.** Layer A bakes fully-static pages to disk at publish time (`uploads/published/current/<route>.html`, atomic two-slot symlink swap). Layer B is an in-memory LRU keyed by `(urlPath, queryString)` for dynamic routes — single-flight, lazily invalidated on publish; version is captured at render start so a publish landing mid-render discards the result rather than caching stale HTML. Layer C emits `<instatic-hole>` placeholders for nodes that auto-detect as request-dependent; a tiny client runtime lazy-loads each fragment via `IntersectionObserver`. The published `SiteDocument` lives once per publish in `site_snapshots` (referenced by `data_row_versions.site_snapshot_id`); the reassembled `PublishedPageSnapshot` remains the canonical audit record from which all three layers derive.
-- **Pure render, no framework runtime on the page.** Published HTML is plain semantic HTML + CSS. Plugins can inject frontend assets (`server/publish/frontendInjections.ts`). The only first-party client script is the ~668 B Layer C hole runtime, and it's injected ONLY on pages that contain at least one `<instatic-hole>` — fully-static pages ship zero JS from us.
+- **Auto-detection is the seam.** `findDynamicNodeIds(page, site, registry)` is backed by the single walker that powers Layer A's shell-vs-complete decision and Layer C's placeholder emission. The detection rules — `dynamic: true` modules, request-dependent/per-visitor bindings or loop sources, loop-body promotion, VC-ref recursion — live in exactly one file. Cannot drift between layers.
+- **`publish.html` runs at publish time** for static routes (baked into the disk artefact). For dynamic routes, the filter still fires inside the Layer B factory but caches the result so it runs at most once per `(urlPath, canonicalQuery, publishVersion)` triple.
+- **Three layers, automatic routing.** Layer A bakes fully-static pages and static shells to disk at publish time (`uploads/published/current/<route>.html`, atomic two-slot symlink swap). Layer B is an in-memory LRU keyed by `(urlPath, canonicalQuery)` for live-render fallback routes — single-flight, lazily invalidated on publish; version is captured at render start so a publish landing mid-render discards the result rather than caching stale HTML. Layer C emits `<instatic-hole>` placeholders for nodes that auto-detect as request-dependent or per-visitor; a ~1.1 KB client runtime lazy-loads each fragment via `IntersectionObserver`. The published `SiteDocument` lives once per publish in `site_snapshots` (referenced by `data_row_versions.site_snapshot_id`); the reassembled `PublishedPageSnapshot` remains the canonical audit record from which all three layers derive.
+- **Pure render, no framework runtime on the page.** Published HTML is plain semantic HTML + hashed CSS bundles. Plugins can inject frontend assets (`server/publish/frontendInjections.ts`), modules can contribute module JS, and Layer C injects its runtime only on pages that contain at least one `<instatic-hole>`. Fully-static pages ship zero first-party JS from the publisher.
 - **Sanitization happens at the publisher boundary.** DOMPurify in `src/core/sanitize.ts` cleans rich-text, HTML strings, AND `staticPlaceholder` output before they're frozen into a snapshot or baked into a disk artefact. Browser code uses the browser DOM; the Bun server installs an explicit happy-dom-backed DOMPurify runtime from `server/richtextSanitizer.ts` without adding DOM globals. CSS property values are sanitised at the value level by `sanitiseCssValue` from `src/core/css-sanitize/` — a dependency-free leaf shared by both `@core/publisher` (every value emitted via `bagToCSS` / `bagToInlineStyle`) and `@core/framework` (every `:root {}` token variable), blocking `expression()`, `javascript:`, `{}` selector breakout, and `</` RAWTEXT escape.
 - **Visual components are inlined.** Each VC instance is expanded with its slot fills materialized as locked child nodes in the consumer page tree. The publisher pairs each `base.slot-instance` with the matching `base.slot-outlet` by `slotName`. A VC ref whose definition tree contains any dynamic node becomes a single `<instatic-hole>` at the ref boundary (the inner subtree renders inside the hole endpoint).
 
@@ -271,14 +274,15 @@ Key properties:
 
 ## Plugin system
 
-Plugins are zip packages containing a `plugin.json` manifest and bundled entrypoints. The host runs plugin code in a **QuickJS-WASM sandbox**:
+Plugins are zip packages containing a `plugin.json` manifest and bundled entrypoints. The CLI usually authors that zip from `instatic-plugin.config.ts`. Sandboxed plugin code runs through a per-plugin Bun worker that hosts **QuickJS-WASM**:
 
-- `entrypoints.server` runs in `server/plugins/quickjs/vm.ts`
-- `entrypoints.modules` (canvas module packs) run in `server/plugins/modulePackVm.ts`
+- Server entrypoints load through `server/plugins/pluginWorker.ts`, `server/plugins/host/workerPool.ts`, and `server/plugins/quickjs/vm.ts`
+- Canvas module packs load as ESM in the browser editor and through `server/plugins/modulePackVm.ts` on the server
+- Editor entrypoints and app-kind admin pages run unsandboxed in the admin window and require `editor.code`
 - Author-facing API lives in `src/core/plugin-sdk/`
 - Host-side runtime (install, activate, deactivate, uninstall) lives in `src/core/plugins/`
 
-The sandbox has no Node, no Bun, no file system, no environment variables, and no network unless the plugin declares `network.outbound` permission and a `networkAllowedHosts` allowlist. The `instatic-plugin build` CLI emits IIFE bundles and scans for forbidden literals (`'node:'`, `'bun:'`, `require(`, `process.binding`); the install handler scans again as defense-in-depth.
+The QuickJS sandbox has no Node, no Bun, no file system, no environment variables, and no network unless the plugin declares `network.outbound` permission and a `networkAllowedHosts` allowlist. The `instatic-plugin build` CLI emits the surface-specific bundle format, scans sandboxed bundles for forbidden literals (`'node:'`, `'bun:'`, `require(`, `process.binding`), and the install handler scans again as defense-in-depth.
 
 Sandbox invariants are gated by `src/__tests__/architecture/plugin-sandbox-invariants.test.ts`.
 
@@ -308,8 +312,8 @@ In-house router at `src/admin/lib/routing/`. Replaces `react-router-dom` for the
 
 ### Styling
 
-- CSS Modules only in `src/admin/` and `src/admin/pages/site/`. No Tailwind utility classes — gated by `noTailwindUtilities.test.ts`.
-- All colors and radii come from CSS custom properties in `src/styles/globals.css`. No hardcoded hex / rgb / hsl. See [docs/design.md](design.md).
+- CSS Modules only in `src/admin/`, `src/modules/`, and `src/ui/`. No Tailwind utility classes — gated by `noTailwindUtilities.test.ts`.
+- Admin/editor/UI chrome colors and radii come from CSS custom properties in `src/styles/globals.css`. No hardcoded hex / rgb / hsl in those CSS modules — gated by `css-token-policy.test.ts`. Published module CSS in `src/modules/` is exempt from the admin color-token gate because it ships to public pages. See [docs/design.md](design.md).
 - Class composition uses the in-house `cn` helper at `src/ui/cn.ts`. No `clsx`, `tailwind-merge`, `class-variance-authority`, or `@radix-ui/*`. Gated by `no-tailwind-deps.test.ts`.
 
 See [docs/editor.md](editor.md) for the visual editor deep-dive.
@@ -350,7 +354,7 @@ When making a change, this table answers "where does it go?"
 | A new database table                                   | Both `server/db/migrations-pg.ts` and `migrations-sqlite.ts` (same ID) |
 | A new repository function                              | `server/repositories/<resource>.ts`                        |
 | A new editor mutation                                  | `src/core/page-tree/mutations.ts` (tree-agnostic, takes `NodeTree`) |
-| A new editor store action                              | `src/admin/pages/site/store/siteSlice.ts` (one-liner calling `mutateActiveTree`) |
+| A new tree-mutation store action                       | `src/admin/pages/site/store/slices/site/nodeActions.ts` (one-liner calling `mutateActiveTree`) |
 | A new first-party module (block)                       | `src/modules/<module-name>/`                               |
 | A new UI primitive                                     | `src/ui/components/<Component>/`                           |
 | A new plugin SDK surface                               | `src/core/plugin-sdk/` + update `examples/plugins/template`|
@@ -430,7 +434,7 @@ bun run test:e2e          # run specs in tests/e2e/*.e2e.ts
   - `server/handlers/cms/imageVariantWorkerHost.ts` — `Bun.Worker` pool for sharp + blurhash (keeps image processing off the main thread)
   - `server/db/client.ts` — database abstraction
   - `src/core/page-tree/treeSchema.ts` — `NodeTree` primitive
-  - `src/admin/pages/site/store/siteSlice.ts` — `mutateActiveTree`
+  - `src/admin/pages/site/store/slices/site/helpers.ts` — `mutateActiveTree`
   - `src/core/publisher/` — publishing pipeline
   - `src/styles/globals.css` — design tokens
 - Gate tests: `src/__tests__/architecture/*.test.ts`

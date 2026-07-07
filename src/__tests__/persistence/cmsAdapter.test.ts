@@ -103,22 +103,24 @@ describe('CmsAdapter', () => {
     })
   })
 
-  it('saves the draft site to the CMS API', async () => {
+  it('saves the draft site with ONE PUT to the transactional site-document endpoint', async () => {
     const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
     const adapter = new CmsAdapter(async (input, init) => {
       calls.push({ input, init })
-      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+      return new Response(JSON.stringify({ ok: true, seq: 1 }), { status: 200 })
     })
 
     await adapter.saveSite(site())
 
-    expect(calls[0].input).toBe('/admin/api/cms/site')
+    expect(calls).toHaveLength(1)
+    expect(calls[0].input).toBe('/admin/api/cms/site-document')
     expect(calls[0].init).toMatchObject({
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
     })
     expect(JSON.parse(String(calls[0].init?.body))).toMatchObject({
+      mode: 'replace',
       site: { id: 'project_1', name: 'CMS Site' },
     })
   })
@@ -139,26 +141,40 @@ describe('CmsAdapter', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Incremental save wire shapes
+// Save wire shapes — the transactional site-document protocol
 //
-// saveSite PUTs four bodies:
-//   /site       → { site: <shell — no pages, visualComponents, or layouts> }
-//   /pages      → { changedPages, pageIds, baselinePageIds? }
-//   /components → { changedComponents, componentIds }
-//   /layouts    → { changedLayouts, layoutIds }
+// saveSite PUTs ONE body to /admin/api/cms/site-document:
 //
-// Only the pages/components/layouts named by opts.dirty ship in changed*; the
-// FULL id rosters always go along so server-side reaping keeps full-replace
-// semantics.
+//   { mode, site, changedPages, deletedPageIds,
+//     changedComponents, deletedComponentIds,
+//     changedLayouts, deletedLayoutIds }
+//
+//   - mode 'incremental' (opts.dirty, not all): only the rows named by the
+//     dirty marks ship as changed*, plus the explicitly deleted ids. No
+//     rosters, no baselines — unmentioned rows are untouched server-side.
+//   - mode 'replace' (no opts.dirty, or dirty.all): the full collections
+//     ship; deleted*Ids are empty and the server derives deletions.
 // ---------------------------------------------------------------------------
 
-describe('CmsAdapter incremental save wire shapes', () => {
+describe('CmsAdapter save wire shapes', () => {
   function multiDocSite(): SiteDocument {
     return {
       ...site(),
       pages: [makePage('page-1', 'index'), makePage('page-2', 'about')],
       visualComponents: [makeVC('vc-1', 'Card'), makeVC('vc-2', 'Hero')],
       layouts: [makeLayout('layout-1', 'Hero section'), makeLayout('layout-2', 'Footer')],
+    }
+  }
+
+  function emptyDirty() {
+    return {
+      all: false,
+      pageIds: new Set<string>(),
+      componentIds: new Set<string>(),
+      layoutIds: new Set<string>(),
+      deletedPageIds: new Set<string>(),
+      deletedComponentIds: new Set<string>(),
+      deletedLayoutIds: new Set<string>(),
     }
   }
 
@@ -171,151 +187,113 @@ describe('CmsAdapter incremental save wire shapes', () => {
     const calls: RecordedCall[] = []
     const adapter = new CmsAdapter(async (input, init) => {
       calls.push({ input, init })
-      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+      return new Response(JSON.stringify({ ok: true, seq: 1 }), { status: 200 })
     })
     return { adapter, calls }
   }
 
-  function bodyOf(calls: RecordedCall[], path: string): Record<string, unknown> {
-    const call = calls.find((c) => c.input === path)
-    expect(call).toBeDefined()
-    return JSON.parse(String(call!.init?.body)) as Record<string, unknown>
+  function savedBody(calls: RecordedCall[]): Record<string, unknown> {
+    expect(calls).toHaveLength(1)
+    expect(calls[0].input).toBe('/admin/api/cms/site-document')
+    return JSON.parse(String(calls[0].init?.body)) as Record<string, unknown>
   }
 
   function ids(items: unknown): string[] {
     return (items as Array<{ id: string }>).map((item) => item.id)
   }
 
-  it('full save (no opts.dirty) ships ALL pages/components plus the full rosters, no baseline', async () => {
+  it('full save (no opts.dirty) ships mode=replace with ALL collections and empty deleted ids', async () => {
     const { adapter, calls } = recordingAdapter()
     await adapter.saveSite(multiDocSite())
 
-    const shellBody = bodyOf(calls, '/admin/api/cms/site')
-    const shell = shellBody.site as Record<string, unknown>
+    const body = savedBody(calls)
+    expect(body.mode).toBe('replace')
+
+    const shell = body.site as Record<string, unknown>
     expect('pages' in shell).toBe(false)
     expect('visualComponents' in shell).toBe(false)
     expect('layouts' in shell).toBe(false)
 
-    const pagesBody = bodyOf(calls, '/admin/api/cms/pages')
-    expect(ids(pagesBody.changedPages)).toEqual(['page-1', 'page-2'])
-    expect(pagesBody.pageIds).toEqual(['page-1', 'page-2'])
-    expect('baselinePageIds' in pagesBody).toBe(false)
-
-    const componentsBody = bodyOf(calls, '/admin/api/cms/components')
-    expect(ids(componentsBody.changedComponents)).toEqual(['vc-1', 'vc-2'])
-    expect(componentsBody.componentIds).toEqual(['vc-1', 'vc-2'])
-
-    const layoutsBody = bodyOf(calls, '/admin/api/cms/layouts')
-    expect(ids(layoutsBody.changedLayouts)).toEqual(['layout-1', 'layout-2'])
-    expect(layoutsBody.layoutIds).toEqual(['layout-1', 'layout-2'])
+    expect(ids(body.changedPages)).toEqual(['page-1', 'page-2'])
+    expect(ids(body.changedComponents)).toEqual(['vc-1', 'vc-2'])
+    expect(ids(body.changedLayouts)).toEqual(['layout-1', 'layout-2'])
+    expect(body.deletedPageIds).toEqual([])
+    expect(body.deletedComponentIds).toEqual([])
+    expect(body.deletedLayoutIds).toEqual([])
   })
 
-  it('dirty save ships ONLY the named pages but always the FULL pageIds roster', async () => {
+  it('dirty save ships mode=incremental with ONLY the named rows — no rosters at all', async () => {
     const { adapter, calls } = recordingAdapter()
     await adapter.saveSite(multiDocSite(), {
-      dirty: { all: false, pageIds: new Set(['page-2']), componentIds: new Set(), layoutIds: new Set() },
+      dirty: { ...emptyDirty(), pageIds: new Set(['page-2']) },
     })
 
-    const pagesBody = bodyOf(calls, '/admin/api/cms/pages')
-    expect(ids(pagesBody.changedPages)).toEqual(['page-2'])
-    expect(pagesBody.pageIds).toEqual(['page-1', 'page-2'])
-
-    // Nothing marked on the component/layout side — empty changed batch, full roster.
-    const componentsBody = bodyOf(calls, '/admin/api/cms/components')
-    expect(componentsBody.changedComponents).toEqual([])
-    expect(componentsBody.componentIds).toEqual(['vc-1', 'vc-2'])
-
-    const layoutsBody = bodyOf(calls, '/admin/api/cms/layouts')
-    expect(layoutsBody.changedLayouts).toEqual([])
-    expect(layoutsBody.layoutIds).toEqual(['layout-1', 'layout-2'])
+    const body = savedBody(calls)
+    expect(body.mode).toBe('incremental')
+    expect(ids(body.changedPages)).toEqual(['page-2'])
+    expect(body.changedComponents).toEqual([])
+    expect(body.changedLayouts).toEqual([])
+    expect(body.deletedPageIds).toEqual([])
+    // The reap-by-omission rosters are gone from the wire.
+    expect('pageIds' in body).toBe(false)
+    expect('componentIds' in body).toBe(false)
+    expect('layoutIds' in body).toBe(false)
+    expect('baselinePageIds' in body).toBe(false)
   })
 
-  it('components PUT mirrors the pages contract: named changedComponents, full componentIds roster', async () => {
+  it('deleted-row marks ship as explicit deleted ids per collection', async () => {
     const { adapter, calls } = recordingAdapter()
-    await adapter.saveSite(multiDocSite(), {
-      dirty: { all: false, pageIds: new Set(), componentIds: new Set(['vc-2']), layoutIds: new Set() },
-    })
+    const doc = multiDocSite()
+    // Simulate a deleted page-2 / vc-2 / layout-2: gone from the document,
+    // present in the deleted marks.
+    doc.pages = doc.pages.filter((p) => p.id !== 'page-2')
+    doc.visualComponents = doc.visualComponents.filter((vc) => vc.id !== 'vc-2')
+    doc.layouts = doc.layouts.filter((l) => l.id !== 'layout-2')
 
-    const componentsBody = bodyOf(calls, '/admin/api/cms/components')
-    expect(ids(componentsBody.changedComponents)).toEqual(['vc-2'])
-    expect(componentsBody.componentIds).toEqual(['vc-1', 'vc-2'])
-
-    const pagesBody = bodyOf(calls, '/admin/api/cms/pages')
-    expect(pagesBody.changedPages).toEqual([])
-    expect(pagesBody.pageIds).toEqual(['page-1', 'page-2'])
-  })
-
-  it('layouts PUT mirrors the same contract: named changedLayouts, full layoutIds roster', async () => {
-    const { adapter, calls } = recordingAdapter()
-    await adapter.saveSite(multiDocSite(), {
-      dirty: { all: false, pageIds: new Set(), componentIds: new Set(), layoutIds: new Set(['layout-2']) },
-    })
-
-    const layoutsBody = bodyOf(calls, '/admin/api/cms/layouts')
-    expect(ids(layoutsBody.changedLayouts)).toEqual(['layout-2'])
-    expect(layoutsBody.layoutIds).toEqual(['layout-1', 'layout-2'])
-
-    const pagesBody = bodyOf(calls, '/admin/api/cms/pages')
-    expect(pagesBody.changedPages).toEqual([])
-  })
-
-  it('includes baselinePageIds when provided and omits the key otherwise', async () => {
-    const { adapter, calls } = recordingAdapter()
-    await adapter.saveSite(multiDocSite(), {
-      baselinePageIds: ['page-1'],
-      dirty: { all: false, pageIds: new Set(['page-2']), componentIds: new Set(), layoutIds: new Set() },
-    })
-
-    const pagesBody = bodyOf(calls, '/admin/api/cms/pages')
-    expect(pagesBody.baselinePageIds).toEqual(['page-1'])
-
-    // Components never carry a baseline — pages-only concurrency token (ISS-041).
-    const componentsBody = bodyOf(calls, '/admin/api/cms/components')
-    expect('baselinePageIds' in componentsBody).toBe(false)
-  })
-
-  it('dirty.all = true sends everything despite narrower id sets', async () => {
-    const { adapter, calls } = recordingAdapter()
-    await adapter.saveSite(multiDocSite(), {
-      dirty: { all: true, pageIds: new Set(['page-2']), componentIds: new Set(), layoutIds: new Set() },
-    })
-
-    const pagesBody = bodyOf(calls, '/admin/api/cms/pages')
-    expect(ids(pagesBody.changedPages)).toEqual(['page-1', 'page-2'])
-    expect(pagesBody.pageIds).toEqual(['page-1', 'page-2'])
-
-    const componentsBody = bodyOf(calls, '/admin/api/cms/components')
-    expect(ids(componentsBody.changedComponents)).toEqual(['vc-1', 'vc-2'])
-    expect(componentsBody.componentIds).toEqual(['vc-1', 'vc-2'])
-
-    const layoutsBody = bodyOf(calls, '/admin/api/cms/layouts')
-    expect(ids(layoutsBody.changedLayouts)).toEqual(['layout-1', 'layout-2'])
-    expect(layoutsBody.layoutIds).toEqual(['layout-1', 'layout-2'])
-  })
-
-  it('writes components before pages so new component refs validate on page save', async () => {
-    const events: string[] = []
-    const adapter = new CmsAdapter(async (input) => {
-      const path = String(input)
-      events.push(`start:${path}`)
-      if (path === '/admin/api/cms/components') {
-        await Promise.resolve()
-      }
-      events.push(`finish:${path}`)
-      return new Response(JSON.stringify({ ok: true }), { status: 200 })
-    })
-
-    await adapter.saveSite(multiDocSite(), {
+    await adapter.saveSite(doc, {
       dirty: {
-        all: false,
-        pageIds: new Set(['page-1']),
-        componentIds: new Set(['vc-1']),
-        layoutIds: new Set(),
+        ...emptyDirty(),
+        deletedPageIds: new Set(['page-2']),
+        deletedComponentIds: new Set(['vc-2']),
+        deletedLayoutIds: new Set(['layout-2']),
       },
     })
 
-    expect(events.indexOf('finish:/admin/api/cms/components')).toBeLessThan(
-      events.indexOf('start:/admin/api/cms/pages'),
-    )
+    const body = savedBody(calls)
+    expect(body.mode).toBe('incremental')
+    expect(body.changedPages).toEqual([])
+    expect(body.deletedPageIds).toEqual(['page-2'])
+    expect(body.deletedComponentIds).toEqual(['vc-2'])
+    expect(body.deletedLayoutIds).toEqual(['layout-2'])
+  })
+
+  it('components and layouts mirror the pages contract', async () => {
+    const { adapter, calls } = recordingAdapter()
+    await adapter.saveSite(multiDocSite(), {
+      dirty: {
+        ...emptyDirty(),
+        componentIds: new Set(['vc-2']),
+        layoutIds: new Set(['layout-1']),
+      },
+    })
+
+    const body = savedBody(calls)
+    expect(ids(body.changedComponents)).toEqual(['vc-2'])
+    expect(ids(body.changedLayouts)).toEqual(['layout-1'])
+    expect(body.changedPages).toEqual([])
+  })
+
+  it('dirty.all = true ships mode=replace with everything, despite narrower id sets', async () => {
+    const { adapter, calls } = recordingAdapter()
+    await adapter.saveSite(multiDocSite(), {
+      dirty: { ...emptyDirty(), all: true, pageIds: new Set(['page-2']) },
+    })
+
+    const body = savedBody(calls)
+    expect(body.mode).toBe('replace')
+    expect(ids(body.changedPages)).toEqual(['page-1', 'page-2'])
+    expect(ids(body.changedComponents)).toEqual(['vc-1', 'vc-2'])
+    expect(ids(body.changedLayouts)).toEqual(['layout-1', 'layout-2'])
+    expect(body.deletedPageIds).toEqual([])
   })
 })

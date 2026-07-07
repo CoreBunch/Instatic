@@ -14,6 +14,7 @@ The Content workspace renders a three-pane shell — explorer sidebar, document 
 - **Canvas modes:** `write` (bare editor surface) and `live` (entry rendered inside its template with real site styles).
 - **Settings panel:** `ContentSettingsPanel` — entry-specific; hidden when no entry is selected. Reopened via the top-right notch when collapsed.
 - **Hooks:** `useContentWorkspace` (CRUD + selection), `useContentEntryDraft` (field state + save/publish), `useContentMediaPicker` (media modal + featured media).
+- **AI assistant:** `ContentAgentMount` docks the shared Agent Panel in the content rail. It exposes the live workspace through a content-specific bridge so agent writes mutate the open draft/editor state, not stale database rows.
 
 ---
 
@@ -144,6 +145,23 @@ The mode switch is client-only. The markdown body is the source of truth in both
 
 ---
 
+## AI assistant
+
+The Content workspace has its own `content` chat scope, mounted as the `agent` panel in `ContentSidebar` when the current user has `ai.chat`.
+
+`ContentAgentMount` creates a fresh per-page `AgentSlice` store (`contentAgentStore.ts`) and registers a `ContentBridgeHandle` for the mounted `ContentPage`. The handle reads the current collections, selected entry, draft fields, schema, and current user via refs so the agent sees the same state the user sees. Tool writes go through that handle and then through `useContentWorkspace` / `useContentEntryDraft`, which keeps unsaved body/title/SEO/media changes and sidebar selection in sync.
+
+The server registers 15 content-scope tools:
+
+| Group | Tools |
+|---|---|
+| Server reads | `content_list_collections`, `content_get_collection_schema`, `content_list_documents`, `content_get_document`, `content_search_documents`, `content_list_users`, `content_list_media` |
+| Browser writes/navigation | `content_create_document`, `content_delete_document`, `content_set_document_status`, `content_set_document_field`, `content_set_document_fields`, `content_set_document_author`, `content_set_active_document`, `content_set_active_collection` |
+
+Body content is exchanged with the model as markdown. The browser bridge converts it to/from the Tiptap document when applying field writes, so the persisted `body` cell remains the same markdown source of truth used by the manual editor.
+
+---
+
 ## Forbidden patterns
 
 | Pattern | Why |
@@ -153,6 +171,7 @@ The mode switch is client-only. The markdown body is the source of truth in both
 | Storing ProseMirror JSON in the `body` cell | Body is always markdown text; the editor does the conversion |
 | Adding `useMemo` / `useCallback` in ContentPage or its hooks | React Compiler handles memoization; the only exception is async handlers extracted to module scope to avoid compiler bail-out (see `useContentEntryDraft`) |
 | Opening the settings panel via a forced `setPropertiesPanel({ collapsed: false })` on mount | The persisted layout is the source of truth; only user actions (selecting an entry, clicking the notch) open the panel |
+| Mutating content-agent writes directly against repositories | The browser bridge owns writes so unsaved draft state and the open Tiptap editor do not desync |
 
 ---
 
@@ -162,8 +181,12 @@ The mode switch is client-only. The markdown body is the source of truth in both
 - [docs/features/data-workspace.md](data-workspace.md) — parallel workspace pattern for raw data tables
 - [docs/features/content-storage.md](content-storage.md) — `data_tables` + `data_rows` schema, field types
 - [docs/features/media.md](media.md) — media workspace, `MediaPickerModal`, upload pipeline
+- [docs/features/agent.md](agent.md) — shared AI runtime, content-scope tools, and browser bridge
 - Source-of-truth files:
   - `src/admin/pages/content/ContentPage.tsx` — workspace mount point
+  - `src/admin/pages/content/agent/ContentAgentMount.tsx` — content Agent Panel mount and bridge registration
+  - `src/admin/pages/content/agent/contentBridge.ts` — content agent browser-tool dispatcher
+  - `src/admin/pages/content/agent/contentBridgeHandle.ts` — live content workspace bridge handle
   - `src/admin/pages/content/TiptapBodyEditor.tsx` — body editor
   - `src/admin/pages/content/hooks/useContentWorkspace.ts` — collection/entry state
   - `src/admin/pages/content/hooks/useContentEntryDraft.ts` — field draft state

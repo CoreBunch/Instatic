@@ -22,14 +22,23 @@ import { publicOriginIsHttps } from './auth/security'
  *
  * Admin-specific headers (pathname starts with /admin):
  *   - `X-Frame-Options: DENY` — blocks framing in legacy browsers.
- *   - `Content-Security-Policy: frame-ancestors 'none'` — blocks framing in
- *     modern browsers. Sent alongside X-Frame-Options because frame-ancestors
- *     takes precedence where supported.
+ *   - `Content-Security-Policy` — three directives that are safe today:
+ *       · `frame-ancestors 'none'` — blocks framing in modern browsers (sent
+ *         alongside X-Frame-Options, which it supersedes where supported).
+ *       · `base-uri 'self'` — blocks a `<base href>` injection from rewriting
+ *         the resolution of every relative URL on the page (the admin never
+ *         emits a `<base>` element).
+ *       · `object-src 'none'` — blocks `<object>` / `<embed>` plugin content
+ *         (the admin never embeds either).
  *
- *   A full admin CSP (default-src, script-src, etc.) is a follow-up task.
- *   The admin is a React SPA with a blob: canvas iframe and dynamically-loaded
- *   plugin module bundles; scoping beyond frame-ancestors requires auditing
- *   every source to avoid breaking the editor.
+ *   A `script-src` / `style-src` policy is deliberately NOT set here yet: the
+ *   admin ships an inline `<script type="importmap">` the plugin runtime needs,
+ *   the visual-editor canvas is `srcDoc` iframes (which inherit this policy)
+ *   that inject the site's runtime scripts as inline `<script>`, and the
+ *   editor relies on inline styles for dynamic custom properties. A safe
+ *   `script-src` therefore requires per-request nonce plumbing through the
+ *   served-HTML patcher and the canvas script injector plus a full editor
+ *   browser sweep — tracked as a dedicated follow-up, not bolted on here.
  *
  * @param res      The raw Response from the route handler.
  * @param pathname URL pathname of the incoming request.
@@ -57,7 +66,10 @@ export function applySecurityHeaders(res: Response, pathname: string): Response 
   // A framed CMS admin is a clickjacking vector for one-click publish/delete.
   if (pathname.startsWith('/admin')) {
     headers.set('x-frame-options', 'DENY')
-    headers.set('content-security-policy', "frame-ancestors 'none'")
+    headers.set(
+      'content-security-policy',
+      "frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
+    )
   }
 
   return new Response(res.body, {

@@ -15,6 +15,10 @@
     background: var(--overlay-5);
 }
 
+.sectionFlush.sectionOpen {
+    background: transparent;
+}
+
 .sectionToggle {
     display: flex;
     align-items: center;

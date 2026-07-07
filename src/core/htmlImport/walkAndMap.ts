@@ -37,8 +37,8 @@ import type { PageNode } from '@core/page-tree'
 import { createNode } from '@core/page-tree'
 import { registry } from '@core/module-engine'
 import {
-  isRenderableHtmlAttributeName,
   normalizeHtmlAttributeName,
+  sanitizeRenderableHtmlAttribute,
 } from '@core/htmlAttributes'
 import { HTML_TO_MODULE_RULES } from './rules'
 import type { ImportRule } from './rules'
@@ -153,8 +153,9 @@ function collectHtmlAttributes(el: Element, moduleId?: string): Record<string, s
   for (const attr of Array.from(el.attributes)) {
     const name = normalizeHtmlAttributeName(attr.name)
     if (generatedNames.has(name)) continue
-    if (!isRenderableHtmlAttributeName(name)) continue
-    attrs[name] = attr.value
+    const safeValue = sanitizeRenderableHtmlAttribute(name, attr.value)
+    if (safeValue === null) continue
+    attrs[name] = safeValue
   }
   return attrs
 }

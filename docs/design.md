@@ -13,6 +13,7 @@ The design is a **two-layer color model**: an achromatic base (surfaces, borders
 - **Bordered transparent inputs.** Inputs have a 1px white-alpha border, transparent background, and a pill 1em radius. Focus adds an inset achromatic glow.
 - **Floating overlay panels.** Spotlight, popovers, and modals use direct globals: `--bg-surface`, `--overlay-10`, `--panel-radius`, `--panel-blur`, and `--shadow-panel`.
 - **Editor controls** (toolbar buttons, chips) use `--radius` (6px) for default and `--radius-sm` (3px) for tight badges.
+- **Admin appearance is token-scoped.** Settings → Preferences stores `theme`, `density`, and `textScale` in `instatic-editor-prefs`; `useEditorAppearancePreferences()` mirrors them to `data-editor-theme`, `data-editor-density`, and `data-editor-text-scale` on the document and layout roots. Light mode and text scaling are token overrides, not per-component restyles.
 - **One source of truth: `src/styles/globals.css`.** No hardcoded hex / rgb / hsl in admin / ui CSS modules — gated by `css-token-policy.test.ts`. Admin font sizes use the fluid `--text-*` scale, and admin spacing uses the fluid `--space-*` scale — gated by `admin-typography-token-policy.test.ts` and `admin-spacing-token-policy.test.ts`.
 - **CSS Modules only.** No Tailwind utility classes — gated by `noTailwindUtilities.test.ts`. No Tailwind ecosystem deps — gated by `no-tailwind-deps.test.ts`.
 - **Every interactive control goes through a UI primitive** from `src/ui/components/`. Bare `<button>` is gated.
@@ -24,7 +25,7 @@ The design is a **two-layer color model**: an achromatic base (surfaces, borders
 
 ### 1. The base disappears, the meaning appears
 
-The chrome is dark, neutral, and quiet so the user's content and the system's signals are the only things competing for attention. Surfaces, borders, default text — all achromatic. Color is reserved for things that mean something: a green dot says "saved", a peach widget header says "this card is about posts", a neon ring says "the canvas selected this node".
+The chrome is neutral and quiet so the user's content and the system's signals are the only things competing for attention. The default theme is dark; the light theme swaps the achromatic base tokens and remaps identity accents to foreground-safe variants while preserving the same hierarchy. Surfaces, borders, default text — all achromatic. Color is reserved for things that mean something: a green dot says "saved", a peach widget header says "this card is about posts", a neon ring says "the canvas selected this node".
 
 If a color isn't carrying information, it doesn't belong in the chrome.
 
@@ -53,13 +54,12 @@ The base layer uses six surface tones to convey depth without shadows or gradien
 --bg-body          #000000   ← page bottom (root, behind everything)
 --bg-surface     #1b1b1b   ← darker parent of tile cards / sidebar fill
 --bg-surface-2   #282828   ← tile cards themselves, panel bodies
---bg-surface-3   #323232   ← hover state for tiles, nested controls
---bg-surface-4   #4a4a4a   ← active state
---bg-surface-5   #605f5f   ← active + focused
---bg-surface-3   #323232   ← hover state, nested controls, chips
+--bg-surface-3   #323232   ← tile/card hover, nested structural surfaces
+--bg-surface-4   #4a4a4a   ← stronger nested structural surface
+--bg-surface-5   #605f5f   ← strongest nested structural surface
 ```
 
-Hover and active states change **tone**, not border. Reach for the closest tone above the current surface; skip levels only with intent.
+Tile/card hovers change **tone**, not border. Compact interactive chrome — buttons, segmented controls, toolbar chips, selected rows, and pressed states — uses the foreground overlay scale (`--overlay-5/10/20/30`) instead of surface steps so the same state hierarchy has enough contrast in both dark and light themes.
 
 ### 4. Cards are tiles, not boxes
 
@@ -100,7 +100,7 @@ Categories of things have an associated color drawn from the numbered **accent**
 | `--accent-9` | `#f0a6ff` | Secondary violet identity tint                      |
 | `--accent-10` | `#ff9f9f` | Secondary red identity tint                          |
 
-Accent tokens don't live in `src/styles/globals.css` to be decorative — they're part of the design system. Panel rails assign these accents automatically using `assignRailAccents` (multi-item surfaces, avoids repeats inside the visible group) or `railAccent` (single item) from `src/ui/railAccent.ts`. Primitives like `Widget` can still accept an explicit tint when the category is product-defined. New identity colors are added by extending the `--accent-*` group, not by inlining a color.
+Accent tokens don't live in `src/styles/globals.css` to be decorative — they're part of the design system. Panel rails assign these accents automatically using `assignRailAccents` (multi-item surfaces, avoids repeats inside the visible group) or `railAccent` (single item) from `src/ui/railAccent.ts`. Primitives like `Widget` can still accept an explicit tint when the category is product-defined. The light theme overrides the same accent names with darker foreground colors so rail icons and badges keep contrast on white surfaces. New identity colors are added by extending the `--accent-*` group, not by inlining a color.
 
 ### 7. The canvas owns its own palette
 
@@ -151,7 +151,7 @@ Fluid admin spacing scale:
   --space-6xl, --space-7xl, --space-8xl, --space-9xl,
   --space-10xl, --space-11xl, --space-12xl
 
-Overlay scale (white alpha):
+Overlay scale (foreground alpha; white in dark theme, dark in light theme):
   --overlay, --overlay-5, --overlay-10, --overlay-20, --overlay-30,
   --overlay-40, --overlay-50, --overlay-60, --overlay-70, --overlay-80,
   --overlay-90
@@ -384,6 +384,7 @@ Every interactive control in the admin and editor goes through a primitive from 
 |----------------------|-----------------------------------------------------------------------------|
 | `Button`             | Every action button. Variants for primary / secondary / ghost / danger.     |
 | `Input`              | Single-line text input. Pill radius, transparent fill, bordered.            |
+| `FormField`          | Label + description shell for form controls.                               |
 | `Switch`             | Boolean toggle.                                                             |
 | `Checkbox`           | Boolean within a list / form.                                               |
 | `Select`             | Dropdown selection of fixed options.                                        |
@@ -394,19 +395,23 @@ Every interactive control in the admin and editor goes through a primitive from 
 | `RangeTabs`          | Tabbed numeric range selectors (e.g. spacing scales).                       |
 | `SegmentedControl`   | A few mutually exclusive options shown inline.                              |
 | `Tabs`               | Top-level tab navigation within a workspace.                                |
+| `Stack`              | Small flex layouts for host/admin and plugin UI.                            |
 | `Separator`          | Visual divider between sections.                                            |
 | `Section`            | Titled section block in panels.                                             |
 | `ControlRow`         | Standard label + control row in property panels.                            |
+| `Card`               | Token-backed panel surface for grouped host/admin content.                  |
 | `ContextMenu`        | Right-click and `…` overflow menus.                                         |
 | `FilterBar`          | Compound filter row (type + folder + date + query).                         |
 | `TagPill`            | Compact tinted labels, selector chips, removable tag pills. It derives a token-backed tint from the first meaningful alphanumeric character. |
 | `FloatingActionBar`  | Multi-select bulk-action bar.                                               |
 | `EmptyState`         | Empty-list / empty-page placeholder.                                        |
+| `Alert`              | Inline non-blocking status/error message.                                   |
 | `Dialog`             | Modal dialog with a title and content.                                      |
 | `Tooltip`            | Hover and cursor-anchored tooltips. Replaces the native `title` attribute (gated). |
 | `Toast`              | Transient confirmation / error notifications.                               |
-| `DataTable`          | Tabular data with sorting and selection.                                    |
-| `Widget`, `WidgetList`| Borderless tile card (the dashboard pattern). Accepts a `tint`.            |
+| `DataTable`          | Token-backed table shell; callers own row state, sorting, and selection.    |
+| `Widget`, `WidgetSkeleton`, `WidgetList` | Borderless tile card and dashboard/widget list helpers. Accepts a `tint`. |
+| `Heading`, `Text`, `Code` | Typography primitives for host/admin and plugin UI.                   |
 | `Image`              | Image with built-in blurhash fallback.                                      |
 | `CanvasModulePlaceholder`| Diagonal-stripe placeholder for empty modules.                          |
 | `ErrorBoundary`      | Component-level error containment.                                          |
@@ -577,7 +582,7 @@ The HTML `title` attribute is banned for hover hints — gated by `no-native-tit
 ## Adding a new UI primitive
 
 1. Create `src/ui/components/<Name>/<Name>.tsx`, `<Name>.module.css`, and `index.ts`.
-2. Re-export from `src/ui/components/index.ts` so consumers import from `@ui/components`.
+2. Export from the primitive folder's `index.ts` so consumers import from `@ui/components/<Name>`.
 3. The primitive must work with the existing tokens — do not introduce new colors, radii, font sizes, or spacing values to support it. If you need new tokens, see "Adding a new design token" first.
 4. If it replaces a bare HTML control (`button`, `input`, etc.), update the matching architecture test's allowlist or gate.
 5. Document it in the components table above and (if it has non-obvious usage) write a short [docs/reference/ui-primitives.md](reference/ui-primitives.md) entry.

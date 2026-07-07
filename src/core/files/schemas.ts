@@ -62,8 +62,8 @@ export const SiteFileSchema = Type.Object({
 
   /**
    * Binary payload for asset files — base64-encoded mime + bytes.
-   * Stored as a plain object inside SiteDocument so structuredClone/Immer
-   * equality keeps working; a real Blob would defeat that.
+   * Stored as a plain object inside SiteDocument so structuredClone and
+   * structural sharing keep working; a real Blob would defeat that.
    * Always undefined for non-asset file types.
    *
    * Lenient: a malformed blob silently becomes undefined so the file is still

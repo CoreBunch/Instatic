@@ -9,7 +9,7 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 ## TL;DR
 
 - Import from `@ui/components/<Name>` — each primitive lives in its own folder with `Component.tsx`, `Component.module.css`, and `index.ts`.
-- The 30 primitives below cover every interactive control in the admin. If something's missing, add a new primitive (see "Adding a new primitive" below) — don't reach for a third-party library.
+- The primitive catalog below covers every interactive control in the admin. If something's missing, add a new primitive (see "Adding a new primitive" below) — don't reach for a third-party library.
 - Composition uses `cn` from `@ui/cn` — a 3-line in-house helper. **Never** `clsx` / `tailwind-merge` / `cva` / `@radix-ui/*` — gated by `no-tailwind-deps.test.ts`.
 - All colors, radii, admin font sizes, and admin spacing values come from CSS custom properties in `src/styles/globals.css` — see [docs/reference/design-tokens.md](design-tokens.md).
 - Forbidden: Tailwind classes, hardcoded hex, inline `style` (except dynamic CSS custom properties), `!important`, native `title=` tooltips, native `alert()` / `confirm()`.
@@ -36,6 +36,7 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 |--------------------|----------------------------------------------------------------------|------------------------------------------------------------|
 | `Input`            | Single-line text input. Pill radius, transparent fill                | `value`, `onChange`, `placeholder`, `type`, `error`        |
 | `Textarea`         | Multi-line text input (exported from same module as `Input`)         | `value`, `onChange`, `rows`                                |
+| `FormField`        | Label + description shell around a form control                      | `label`, `description`, `layout: 'stacked' \| 'inline-end' \| 'inline-start'`, `htmlFor` |
 | `Select`           | Dropdown selection of fixed options                                  | `options`, `value`, `onChange`                             |
 | `ColorInput`       | Color picker — swatch + hex input                                    | `value`, `onChange`                                        |
 | `DateTimePicker`   | Date / time inputs                                                   | `value`, `onChange`, `mode: 'date' \| 'datetime'`          |
@@ -47,21 +48,25 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 
 | Primitive          | When to use                                                          | Key props                                                  |
 |--------------------|----------------------------------------------------------------------|------------------------------------------------------------|
+| `Stack`            | Small vertical / horizontal flex layouts, especially plugin admin UI  | `direction`, `gap`, `align`, `justify`, `wrap`, `height`   |
 | `Section`          | Collapsible titled section inside a panel (accordion)                | `title`, `children`, `defaultOpen`, `icon`, `meta`, `indicator`, `forceOpen`, `flush` |
 | `ControlRow`       | Label + control row in property panels                               | `label`, `description`, `children`                         |
 | `Separator`        | Visual divider between sections                                      | `orientation: 'horizontal' \| 'vertical'`                  |
+| `Card`             | Token-backed panel surface for plugin/admin grouped content          | `padding`, `bordered`                                      |
 | `Widget`           | Borderless tile card on a darker parent (the dashboard pattern)      | `tint`, `title`, `children`                                |
-| `WidgetList`       | List of widgets (dashboard grid wrapper)                             |                                                            |
+| `WidgetSkeleton`   | Loading placeholder for a dashboard widget slot                      | `widgetId`, `span`                                         |
+| `WidgetList`       | List layout for rows inside a widget                                 | `children`; `WidgetListRow` takes `primary`, `meta`        |
 | `EmptyState`       | Empty list / page placeholder                                        | `icon`, `title`, `description`, `actions`                  |
 
 ### Overlay / feedback
 
 | Primitive          | When to use                                                          | Key props                                                  |
 |--------------------|----------------------------------------------------------------------|------------------------------------------------------------|
+| `Alert`            | Inline non-blocking message in host/plugin admin UI                  | `tone: 'info' \| 'success' \| 'warning' \| 'danger'`, `title` |
 | `Dialog`           | Modal dialog with title + content                                    | `open`, `onClose`, `title`, `children`                     |
-| `Tooltip`          | Hover hint — replaces `title=`                                       | `content`, `side: 'top' \| 'bottom' \| 'left' \| 'right' \| 'auto'`, `children` |
+| `Tooltip`          | Hover hint — replaces `title=`; `CursorTooltip` anchors to a pointer | `content`, `side: 'top' \| 'bottom' \| 'left' \| 'right' \| 'auto'`, `children`; `CursorTooltip` takes `point` |
 | `Toast`            | Transient confirmation / error notification                          | Used via `pushToast({ kind, title, body, location? })`     |
-| `ContextMenu`      | Right-click and overflow (`…`) menus                                 | `ariaLabel`, `onClose`, `children`; `x`/`y` (point) or `anchorRef` (anchor) |
+| `ContextMenu`      | Right-click and overflow (`…`) menus; searchable and nested menus use companion exports | `ariaLabel`, `onClose`, `children`; `x`/`y` (point) or `anchorRef` (anchor); `ContextMenuItem`, `ContextMenuSubmenu`, `MenuSearchHeader` |
 | `FloatingActionBar`| Multi-select bulk-action bar                                         | `selection`, `actions`                                     |
 | `ErrorBoundary`    | Component-level error containment                                    | `location: string`, `resetKeys?`, `children`               |
 
@@ -69,8 +74,11 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 
 | Primitive                  | When to use                                                  | Key props                                                |
 |----------------------------|--------------------------------------------------------------|----------------------------------------------------------|
-| `DataTable`                | Tabular data with sorting + selection                        | `columns`, `rows`, `selection`, `onSelect`               |
+| `DataTable`                | Token-backed table shell; caller owns rows, sorting, and selection | `density`, `wrapperClassName`; compose `DataTableHead`, `DataTableBody`, `DataTableRow`, `DataTableHeader`, `DataTableCell` |
 | `TagPill`                  | Compact tinted labels, selector chips, removable tag pills   | `label`, `active`, `muted`, `size: 'xs' \| 'sm'`, `monospace`, `leading` (ReactNode prefix slot), `colorKey`, `onClick`, `onRemove`, `onContextMenu`, `mainAriaLabel`, `removeAriaLabel`, `removeTooltip` |
+| `Heading`                  | Semantic h1-h6 using editor typography tokens                | `level`, `children`                                      |
+| `Text`                     | Body, muted, strong, or monospace text in host/plugin UI     | `variant`, `size`, `children`                            |
+| `Code`                     | Preformatted snippets or logs                                | `children`                                               |
 | `Image`                    | Image with built-in blurhash fallback                        | `src`, `blurhash`, `alt`, `width`, `height`              |
 | `CanvasModulePlaceholder`  | Diagonal-stripe placeholder for empty modules on the canvas  | `label`                                                  |
 | `Kbd`                      | Single keyboard keycap. Use anywhere a key name appears as a hint. | `children`, `className`                             |
@@ -103,6 +111,8 @@ A small chart kit used by dashboard widgets and the framework scale UI. Strictly
 | `Bars`      | Horizontal / vertical bar chart        |
 | `Sparkline` | Inline sparkline                       |
 | `StackedBar`| Stacked horizontal segments (storage breakdown) |
+| `StatValue` | Large numeric headline for stat widgets |
+| `Delta`     | Small trend / change badge, usually inside `StatValue` |
 
 ---
 
@@ -591,7 +601,7 @@ Use this when the value is genuinely runtime (resize handle drag, computed bbox,
 ## Adding a new primitive
 
 1. Create `src/ui/components/<Name>/<Name>.tsx`, `<Name>.module.css`, `index.ts`.
-2. Re-export from `src/ui/components/index.ts` so consumers import from `@ui/components`.
+2. Export from the primitive folder's `index.ts` so consumers import from `@ui/components/<Name>`.
 3. CSS uses tokens from `src/styles/globals.css` — never hardcoded colors, font sizes, or spacing values.
 4. Composition uses `cn` from `@ui/cn`.
 5. Icons come from `pixel-art-icons/icons/<name>` (deep-imported).

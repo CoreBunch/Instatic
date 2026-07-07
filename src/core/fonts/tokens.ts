@@ -68,8 +68,11 @@ export function resolveFontTokenStack(
   fonts: SiteFontsSettings | null | undefined,
 ): string {
   const fallback = sanitizeFontFallbackStack(token.fallback)
+  // `items?.` mirrors generateSiteFontsCss's guard: a corrupted site document
+  // (fonts object without an items array) degrades to the fallback stack
+  // instead of throwing at render time.
   const entry = token.familyId
-    ? fonts?.items.find((item) => item.id === token.familyId)
+    ? fonts?.items?.find((item) => item.id === token.familyId)
     : undefined
   if (!entry) return fallback
   return `"${escapeCssString(entry.family)}", ${fallback}`

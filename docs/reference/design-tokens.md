@@ -21,6 +21,8 @@ The complete catalog of design tokens declared in `src/styles/globals.css`. Ever
 --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 ```
 
+Token names: `--font-sans`, `--font-mono`.
+
 Inter Variable is loaded via a targeted `@font-face` declaration in `globals.css` — Latin subset only (`unicode-range: U+0000-00FF, …`), with `font-display: swap`. Non-Latin characters fall back to `system-ui`. The monospace stack is entirely system-native; no custom monospace font is loaded.
 
 If the admin UI needs broader character coverage, add a second `@font-face` block in `globals.css` with the appropriate `unicode-range` pointing at the matching subset file under `@fontsource-variable/inter/files/`.
@@ -28,6 +30,10 @@ If the admin UI needs broader character coverage, add a second `@font-face` bloc
 ## Fluid type scale
 
 Admin UI font sizes use the Core Framework-style `--text-*` scale directly. These tokens are fluid across viewport width but intentionally narrow for dense admin chrome. Use the nearest semantic step instead of introducing one-off pixel sizes.
+
+Settings → Preferences can remap the scale through `data-editor-text-scale` on the document and layout roots. The `small`, `large`, and `extra-large` options shift the same token names down or up the base scale, so component CSS continues to say `font-size: var(--text-s)` rather than branching per preference.
+
+Each visible token has a stable base token used by those preference remaps: `--text-3xs-base`, `--text-2xs-base`, `--text-xs-base`, `--text-s-base`, `--text-m-base`, `--text-l-base`, `--text-xl-base`, `--text-2xl-base`, `--text-3xl-base`, `--text-4xl-base`, `--text-5xl-base`, `--text-6xl-base`, `--text-7xl-base`.
 
 | Token        | Fluid range | Typical use                                      |
 |--------------|-------------|--------------------------------------------------|
@@ -84,16 +90,18 @@ These are admin tokens. The published-site Framework engine also emits short nam
 
 Six surface tones for depth. Lighter is higher in the stack.
 
+The default values below are the dark theme. `data-editor-theme="light"` on the document or layout root overrides the same token names in `globals.css`, so component CSS stays theme-agnostic.
+
 | Token                  | Hex       | Use                                                            |
 |------------------------|-----------|----------------------------------------------------------------|
 | `--bg-body`          | `#000000` | Page bottom — root, behind everything                          |
 | `--bg-surface`     | `#1b1b1b` | Darker parent of tile cards / sidebar fill                     |
 | `--bg-surface-2`   | `#282828` | Tile cards themselves, panel bodies                            |
-| `--bg-surface-3`   | `#323232` | Hover state, nested controls, chips, badges                    |
-| `--bg-surface-4`   | `#4a4a4a` | Active state                                                   |
-| `--bg-surface-5`   | `#605f5f` | Active + focused                                               |
+| `--bg-surface-3`   | `#323232` | Tile/card hover, nested structural surfaces                    |
+| `--bg-surface-4`   | `#4a4a4a` | Stronger nested structural surface                             |
+| `--bg-surface-5`   | `#605f5f` | Strongest nested structural surface                            |
 
-Hover and active states change **tone**, not border. Skip levels only with intent.
+Tile/card hovers change **tone**, not border. Compact interactive chrome — buttons, segmented controls, toolbar chips, selected rows, and pressed states — uses `--overlay-5/10/20/30` for state fills so light and dark themes keep the same visible hierarchy.
 
 ---
 
@@ -104,6 +112,7 @@ Hover and active states change **tone**, not border. Skip levels only with inten
 | `--border`      | `#333333` | Default 1px borders on input controls, dividers                |
 | `--border-muted`  | `#2e2e2e` | Slightly elevated borders (active states on bordered controls) |
 | `--border-subtle`| `#1f1f1f` | Quiet dividers and low-emphasis panel edges                    |
+| `--border-strong`| `#4a4a4a` | Stronger structural borders and high-emphasis separators       |
 
 ---
 
@@ -141,32 +150,11 @@ Scrollbars are admin chrome, not identity. Keep them achromatic so the panel rai
 
 ## Overlays and scrims
 
-White overlays are used for selected rows, pressed states, borders, and subtle surface lifts. Black scrims are used for shadows and modal backdrops. Suffixes are alpha x 100.
+Foreground overlays are used for selected rows, pressed states, borders, compact control tracks, and subtle surface lifts. The dark theme uses white overlays; the light theme swaps the same token names to dark overlays. Black scrims are used for shadows and modal backdrops. Suffixes are alpha x 100.
 
-```css
---overlay
---overlay-5
---overlay-10
---overlay-20
---overlay-30
---overlay-40
---overlay-50
---overlay-60
---overlay-70
---overlay-80
---overlay-90
+Overlay tokens: `--overlay`, `--overlay-5`, `--overlay-10`, `--overlay-20`, `--overlay-30`, `--overlay-40`, `--overlay-50`, `--overlay-60`, `--overlay-70`, `--overlay-80`, `--overlay-90`.
 
---scrim
---scrim-10
---scrim-20
---scrim-30
---scrim-40
---scrim-50
---scrim-60
---scrim-70
---scrim-80
---scrim-90
-```
+Scrim tokens: `--scrim`, `--scrim-10`, `--scrim-20`, `--scrim-30`, `--scrim-40`, `--scrim-50`, `--scrim-60`, `--scrim-70`, `--scrim-80`, `--scrim-90`.
 
 ---
 
@@ -187,7 +175,7 @@ Token-backed identity colors for widget categories, panel rails, sidebar icons, 
 | `--accent-9` | `#f0a6ff` | Secondary violet identity tint                                           |
 | `--accent-10` | `#ff9f9f` | Secondary red identity tint                                               |
 
-Each accent also has a standard 10% tint (`--accent-1-10` through `--accent-10-10`) for soft backgrounds. Used by `Widget` (`tint` prop), the rail accent helper (`src/ui/railAccent.ts`), `TagPill`, and the storage breakdown chart. Adding another identity color requires a new token — don't inline a color.
+Each accent also has a standard 10% tint for soft backgrounds: `--accent-1-10`, `--accent-2-10`, `--accent-3-10`, `--accent-4-10`, `--accent-5-10`, `--accent-6-10`, `--accent-7-10`, `--accent-8-10`, `--accent-9-10`, `--accent-10-10`. Used by `Widget` (`tint` prop), the rail accent helper (`src/ui/railAccent.ts`), `TagPill`, and the storage breakdown chart. The light theme overrides the same accent token names with darker foreground-safe variants, so shared rail icons and badge text stay readable on white surfaces. Adding another identity color requires a new token — don't inline a color.
 
 ---
 
@@ -210,8 +198,11 @@ creating a second tag-specific tint scale.
 | `--danger-light`     | `#f87171`                          | Lighter danger for text               |
 | `--danger-lighter`   | `#fca5a5`                          | Very light danger tint                |
 | `--danger-text`      | `#fecaca`                          | Danger badge text                     |
+| `--danger-5`         | `rgba(239, 68, 68, 0.05)`          | Very quiet danger wash                |
 | `--danger-10`        | `rgba(239, 68, 68, 0.1)`           | Danger pill / message surface         |
 | `--danger-20`    | `rgba(239, 68, 68, 0.2)`           | Danger surface border                 |
+| `--danger-30`        | `rgba(239, 68, 68, 0.3)`           | Stronger danger border / fill         |
+| `--danger-40`        | `rgba(239, 68, 68, 0.4)`           | Highest danger alpha fill             |
 
 ### Warning
 
@@ -220,6 +211,7 @@ creating a second tag-specific tint scale.
 | `--warning`          | `#f59e0b`                          | Warning fill                          |
 | `--warning-text`     | `#fde68a`                          | Warning badge text                    |
 | `--warning-10`       | `rgba(245, 158, 11, 0.1)`          | Warning surface                       |
+| `--warning-20`       | `rgba(245, 158, 11, 0.2)`          | Warning border / stronger wash        |
 | `--warning-30`   | `rgba(245, 158, 11, 0.3)`          | Warning surface border                |
 
 ### Success
@@ -231,7 +223,9 @@ creating a second tag-specific tint scale.
 | `--success-text`        | `#d1fae5`                          | Success badge text                    |
 | `--success-text-muted`   | `#a7f3d0`                          | Success hint text                     |
 | `--success-10`          | `rgba(52, 211, 153, 0.1)`          | Success pill surface                  |
+| `--success-20`          | `rgba(52, 211, 153, 0.2)`          | Success wash / match highlight        |
 | `--success-30`      | `rgba(52, 211, 153, 0.3)`          | Success pill / alert border           |
+| `--success-40`          | `rgba(52, 211, 153, 0.4)`          | Highest success alpha fill            |
 
 ### Info
 
@@ -241,14 +235,23 @@ creating a second tag-specific tint scale.
 
 ## Canvas (selection / hover affordances)
 
-```css
---canvas-selection-ring:        inset 0 0 0 1px #39ff14;   /* neon green — selected node */
---canvas-hover-ring:            inset 0 0 0 1px #ff2bd6;   /* neon pink — hovered node */
---canvas-selector-ring:         inset 0 0 0 1px #ff8800;   /* neon orange — selector-panel match sweep */
---canvas-selection-ring-color:  #39ff14;
---canvas-hover-ring-color:      #ff2bd6;
---canvas-selector-ring-color:   #ff8800;
-```
+| Token                           | Use                                                           |
+|---------------------------------|---------------------------------------------------------------|
+| `--canvas-chrome-shadow`        | Achromatic drop shadow for canvas chrome overlays             |
+| `--canvas-selection-ring`       | Neon green inset ring for the selected node                   |
+| `--canvas-hover-ring`           | Neon pink inset ring for the hovered node                     |
+| `--canvas-selector-ring`        | Neon orange inset ring for selector-panel match sweeps        |
+| `--canvas-selection-ring-color` | Bare selection colour for outline / border / custom shadows   |
+| `--canvas-hover-ring-color`     | Bare hover colour for outline / border / custom shadows       |
+| `--canvas-selector-ring-color`  | Bare selector-affinity colour for custom shadows              |
+| `--tree-drop-line`              | Drag-and-drop insertion line in tree views                    |
+| `--tree-drop-line-shadow`       | Glow behind the tree insertion line                           |
+| `--tree-drop-inside-bg`         | Valid drop-inside row background                              |
+| `--tree-drop-inside-border`     | Valid drop-inside row border                                  |
+| `--tree-drop-invalid-bg`        | Invalid drop row background                                   |
+| `--tree-drop-invalid-border`    | Invalid drop row border                                       |
+| `--canvas-placeholder-bg`       | Shared diagonal-stripe empty-module placeholder background    |
+| `--canvas-live-scrim`           | Live-preview overlay scrim, theme-adjusted                    |
 
 Bare colour variants (`*-ring-color`) are for surfaces that need an `outline` / `border-color` / custom shadow geometry rather than the full inset-ring shorthand. Keep them in sync with the shorthands. The selector ring (`#ff8800`) is a third distinct identity so a "show me everything this selector touches" sweep reads differently from selection (green) and hover (pink).
 
@@ -304,6 +307,7 @@ Used inside CodeMirror only. Don't reach for these in editor chrome.
 | Token                          | Use                                                                       |
 |--------------------------------|---------------------------------------------------------------------------|
 | `--focus-ring`          | `0 0 0 1px var(--overlay-20)` — 1px achromatic focus ring         |
+| `--panel-blur`                 | Backdrop blur amount for floating overlay panels                          |
 | `--shadow-panel`               | Composite for floating panels: bottom-inset shadow + drop shadow           |
 | `--shadow-panel-inset-bottom`  | Sub-token: `inset 0 -1px 0 var(--scrim-40)`                            |
 | `--shadow-panel-drop`          | Sub-token: `0 12px 40px rgba(0, 0, 0, 0.65)`                               |
@@ -379,15 +383,18 @@ Cards are filled and borderless; inputs are unfilled and bordered. That's the lo
 
 ## Z-index layers
 
-Three global tokens cover the layered surfaces that float above the editor:
+Four global tokens cover the layered surfaces that float above the editor:
 
 ```css
 --z-dropdown:           20;
 --spotlight-z-index:  9000;
+--toast-z-index:     10000;
 --tooltip-z-index:   10001;
 ```
 
-`--tooltip-z-index` is deliberately the highest token so tooltips are never occluded by the surface their trigger lives on. `--spotlight-z-index` is reused by several modal-level surfaces that need to sit above the editor chrome.
+Token names: `--z-dropdown`, `--spotlight-z-index`, `--toast-z-index`, `--tooltip-z-index`.
+
+`--tooltip-z-index` is deliberately the highest token so tooltips are never occluded by the surface their trigger lives on. `--toast-z-index` sits above modal layers and below tooltips. `--spotlight-z-index` is reused by several modal-level surfaces that need to sit above the editor chrome.
 
 **Global modal layer** (all raw values in the shared admin stacking context):
 
@@ -452,6 +459,18 @@ Spotlight has only layout/z-index tokens of its own. Its colors come from the sa
 | `--success-20`                    | Match highlight background             |
 | `--danger-light` / `--danger-10`  | Destructive command states             |
 | `--progress-shimmer`              | Travelling highlight on progress bars  |
+
+---
+
+## Bespoke surface tints
+
+These tokens are narrow, named exceptions for authored surfaces that need a specific translucent treatment and cannot be expressed as a reusable semantic state.
+
+| Token                    | Use                                      |
+|--------------------------|------------------------------------------|
+| `--plugins-hero-tint-a`  | First plugins workspace hero background tint |
+| `--plugins-hero-tint-b`  | Second plugins workspace hero background tint |
+| `--canvas-live-scrim`    | Theme-adjusted live-preview overlay scrim |
 
 ---
 
@@ -522,6 +541,9 @@ The two `!important` declarations here are the **only legitimate `!important` us
 - Source-of-truth file: `src/styles/globals.css`
 - Gate tests:
   - `src/__tests__/architecture/css-token-policy.test.ts`
+  - `src/__tests__/architecture/css-token-vocabulary.test.ts`
+  - `src/__tests__/architecture/admin-typography-token-policy.test.ts`
+  - `src/__tests__/architecture/admin-spacing-token-policy.test.ts`
   - `src/__tests__/architecture/noTailwindUtilities.test.ts`
   - `src/__tests__/architecture/no-css-var-fallbacks.test.ts`
   - `src/__tests__/architecture/scrollbar-chrome.test.ts` — scrollbar tokens declared; both Firefox and WebKit/Blink styled; properties panel uses `scrollbar-gutter: stable`

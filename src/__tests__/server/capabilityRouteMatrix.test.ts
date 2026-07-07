@@ -31,6 +31,31 @@ async function loadPages(
   return body.rows.map(pageFromRow)
 }
 
+/**
+ * Body for PUT /admin/api/cms/site-document — incremental mode with empty
+ * change sets unless overridden. `site` (the shell) is always required.
+ */
+function siteDocBody(overrides: {
+  site: unknown
+  changedPages?: unknown[]
+  deletedPageIds?: string[]
+  changedComponents?: unknown[]
+  deletedComponentIds?: string[]
+  changedLayouts?: unknown[]
+  deletedLayoutIds?: string[]
+}): Record<string, unknown> {
+  return {
+    mode: 'incremental',
+    changedPages: [],
+    deletedPageIds: [],
+    changedComponents: [],
+    deletedComponentIds: [],
+    changedLayouts: [],
+    deletedLayoutIds: [],
+    ...overrides,
+  }
+}
+
 function userClass(id: string): StyleRule {
   return {
     id,
@@ -75,18 +100,18 @@ describe('capability route matrix', () => {
         ...baseShell,
         settings: { ...baseShell.settings, metaTitle: 'Client-owned title' },
       }
-      const contentAllowed = await harness.cms('/admin/api/cms/site', {
+      const contentAllowed = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: contentUser.cookie,
-        json: { site: contentEdit },
+        json: siteDocBody({ site: contentEdit }),
       })
       expect(contentAllowed.status).toBe(200)
 
       const afterContent = await loadSiteShell(harness, ownerCookie)
-      const contentStyleAttempt = await harness.cms('/admin/api/cms/site', {
+      const contentStyleAttempt = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: contentUser.cookie,
-        json: {
+        json: siteDocBody({
           site: {
             ...afterContent,
             styleRules: {
@@ -94,7 +119,7 @@ describe('capability route matrix', () => {
               contentCannotStyle: userClass('contentCannotStyle'),
             },
           },
-        },
+        }),
       })
       expect(contentStyleAttempt.status).toBe(403)
       expect(await readJson<{ kind?: string }>(contentStyleAttempt)).toMatchObject({ kind: 'style' })
@@ -106,44 +131,44 @@ describe('capability route matrix', () => {
           styleCanStyle: userClass('styleCanStyle'),
         },
       }
-      const styleAllowed = await harness.cms('/admin/api/cms/site', {
+      const styleAllowed = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: styleUser.cookie,
-        json: { site: styleEdit },
+        json: siteDocBody({ site: styleEdit }),
       })
       expect(styleAllowed.status).toBe(200)
 
       const afterStyle = await loadSiteShell(harness, ownerCookie)
-      const styleContentAttempt = await harness.cms('/admin/api/cms/site', {
+      const styleContentAttempt = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: styleUser.cookie,
-        json: {
+        json: siteDocBody({
           site: {
             ...afterStyle,
             settings: { ...afterStyle.settings, metaTitle: 'Style cannot edit copy' },
           },
-        },
+        }),
       })
       expect(styleContentAttempt.status).toBe(403)
       expect(await readJson<{ kind?: string }>(styleContentAttempt)).toMatchObject({ kind: 'content' })
 
-      const structureAllowed = await harness.cms('/admin/api/cms/site', {
+      const structureAllowed = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: structureUser.cookie,
-        json: { site: { ...afterStyle, name: 'Capability Matrix Renamed' } },
+        json: siteDocBody({ site: { ...afterStyle, name: 'Capability Matrix Renamed' } }),
       })
       expect(structureAllowed.status).toBe(200)
 
       const afterStructure = await loadSiteShell(harness, ownerCookie)
-      const structureContentAttempt = await harness.cms('/admin/api/cms/site', {
+      const structureContentAttempt = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: structureUser.cookie,
-        json: {
+        json: siteDocBody({
           site: {
             ...afterStructure,
             settings: { ...afterStructure.settings, metaDescription: 'Structure cannot edit copy' },
           },
-        },
+        }),
       })
       expect(structureContentAttempt.status).toBe(403)
       expect(await readJson<{ kind?: string }>(structureContentAttempt)).toMatchObject({ kind: 'content' })
@@ -184,39 +209,33 @@ describe('capability route matrix', () => {
       expect(pagesRead.status).toBe(200)
       const existingPages = await loadPages(harness, reader.cookie)
       const existingPageIds = existingPages.map((page) => page.id)
+      const shell = await loadSiteShell(harness, reader.cookie)
 
-      const contentCannotReconcile = await harness.cms('/admin/api/cms/pages', {
+      // Deleting pages is structural work — a content editor may not.
+      const contentCannotDelete = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: contentEditor.cookie,
-        json: {
-          changedPages: [],
-          pageIds: [],
-          baselinePageIds: existingPageIds,
-        },
+        json: siteDocBody({ site: shell, deletedPageIds: existingPageIds }),
       })
-      expect(contentCannotReconcile.status).toBe(403)
-      expect(await readJson<{ kind?: string }>(contentCannotReconcile)).toMatchObject({ kind: 'structure' })
+      expect(contentCannotDelete.status).toBe(403)
+      expect(await readJson<{ kind?: string }>(contentCannotDelete)).toMatchObject({ kind: 'structure' })
 
-      const contentNoopComponents = await harness.cms('/admin/api/cms/components', {
+      // An empty incremental save (no rows changed, nothing deleted, shell
+      // byte-identical) is a no-op any site-write capability may perform.
+      const contentNoop = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: contentEditor.cookie,
-        json: { changedComponents: [], componentIds: [] },
+        json: siteDocBody({ site: shell }),
       })
-      expect(contentNoopComponents.status).toBe(200)
+      expect(contentNoop.status).toBe(200)
 
-      const contentNoopLayouts = await harness.cms('/admin/api/cms/layouts', {
-        method: 'PUT',
-        cookie: contentEditor.cookie,
-        json: { changedLayouts: [], layoutIds: [] },
-      })
-      expect(contentNoopLayouts.status).toBe(200)
-
-      const structureCanReachReconcile = await harness.cms('/admin/api/cms/pages', {
+      // A structure editor gets PAST auth with a malformed body (400, not 401/403).
+      const structureCanReachSave = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: structureEditor.cookie,
         json: { pages: [] },
       })
-      expectPastAuth(structureCanReachReconcile)
+      expectPastAuth(structureCanReachSave)
 
       const readerPublish = await harness.cms('/admin/api/cms/publish', {
         method: 'POST',
@@ -252,7 +271,7 @@ describe('capability route matrix', () => {
       })
 
       const pages = await loadPages(harness, ownerCookie)
-      const pageIds = pages.map((page) => page.id)
+      const ownerShell = await loadSiteShell(harness, ownerCookie)
       const seededPage = structuredClone(pages[0])
       const textNodeId = 'content-edit-target'
       seededPage.nodes[seededPage.rootNodeId].children.push(textNodeId)
@@ -265,29 +284,22 @@ describe('capability route matrix', () => {
         classIds: [],
       }
 
-      const seedRes = await harness.cms('/admin/api/cms/pages', {
+      const seedRes = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: ownerCookie,
-        json: {
-          changedPages: [seededPage],
-          pageIds,
-          baselinePageIds: pageIds,
-        },
+        json: siteDocBody({ site: ownerShell, changedPages: [seededPage] }),
       })
       expect(seedRes.status).toBe(200)
 
       const editorPages = await loadPages(harness, contentEditor.cookie)
+      const editorShell = await loadSiteShell(harness, contentEditor.cookie)
       const editedPage = structuredClone(editorPages.find((page) => page.id === seededPage.id)!)
       editedPage.nodes[textNodeId].props.text = 'Content editor update'
 
-      const editRes = await harness.cms('/admin/api/cms/pages', {
+      const editRes = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: contentEditor.cookie,
-        json: {
-          changedPages: [editedPage],
-          pageIds: editorPages.map((page) => page.id),
-          baselinePageIds: editorPages.map((page) => page.id),
-        },
+        json: siteDocBody({ site: editorShell, changedPages: [editedPage] }),
       })
       expect(editRes.status).toBe(200)
 

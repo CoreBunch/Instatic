@@ -1,6 +1,6 @@
 # Editor Preferences
 
-Local UI preferences for the editor — auto-save behaviour, hover-preview gating, layers panel options, density, etc. Stored in `localStorage`, scoped to the device, never written to the site file.
+Local UI preferences for the editor — auto-save behaviour, hover-preview gating, admin theme, UI text size, density, layers panel options, etc. Stored in `localStorage`, scoped to the device, never written to the site file.
 
 The feature is **catalog-driven**: one declarative array drives the schema, the runtime defaults, and the Settings → Preferences UI. Adding a preference is two lines.
 
@@ -9,7 +9,7 @@ The feature is **catalog-driven**: one declarative array drives the schema, the 
 ## TL;DR
 
 - Source of truth: `PREFERENCE_CATALOG` in `src/admin/pages/site/preferences/catalog.ts`.
-- Read from React: `useEditorPreference('autoSave')` / `useEditorSelectPreference('density')`.
+- Read from React: `useEditorPreference('autoSave')` / `useEditorSelectPreference('density')` / `useEditorAppearancePreferences()`.
 - Read from non-React: `readEditorPreference('autoSave')` + `subscribeToEditorPrefsChanged(listener)`.
 - Settings UI renders automatically from the catalog — no per-preference wiring.
 - Storage: `localStorage["instatic-editor-prefs"]` (`EDITOR_PREFS_KEY`). `additionalProperties: true` on the schema keeps forward / backward compatibility silent.
@@ -236,6 +236,9 @@ Both setters dispatch the change event so all hook consumers re-render and the b
 {
   "autoSave": true,
   "hoverPreview": false,
+  "theme": "light",
+  "density": "comfortable",
+  "textScale": "large",
   "layersShowTag": true,
   "layersShowClasses": true
 }
@@ -249,10 +252,11 @@ Missing fields fall back to the catalog default. Unknown fields are preserved on
 
 Two tests cover the catalog-driven UI:
 
-- `src/__tests__/settings/settingsSections.test.tsx` — renders `PreferencesSection` in isolation and asserts one switch per boolean catalog entry, each by name. Adding a boolean preference: (1) increment the `toHaveLength(N)` count and (2) add a `getByRole('switch', { name: /your label/i })` assertion.
+- `src/__tests__/settings/settingsSections.test.tsx` — renders `PreferencesSection` in isolation and asserts one switch per boolean catalog entry, each by name, plus one combobox per select/select-dynamic catalog entry. Adding a boolean preference: (1) increment the switch `toHaveLength(N)` count and (2) add a `getByRole('switch', { name: /your label/i })` assertion. Adding a select preference: increment the combobox count and assert the new combobox label.
 - `src/__tests__/settings/settingsModal.test.tsx` — renders the full `SettingsModal` and asserts the overall count of switches in the Preferences section (`expect(switches.length).toBe(N)`), plus `pref-${id}` ids and `htmlFor` linkage for auto-rendered rows. Adding a boolean preference: increment the count assertion only.
+- `src/__tests__/settings/editorAppearancePreferences.test.ts` covers the global appearance defaults, persistence, and document-root data attributes used by theme/text-size/density token scopes.
 
-Adding a non-boolean (select / select-dynamic) preference does not affect these tests — the switch count stays the same and no named assertion is needed.
+Adding a non-boolean (select / select-dynamic) preference leaves the switch counts alone, but the combobox count and label assertions should move with the catalog.
 
 ---
 
@@ -266,7 +270,9 @@ The Settings → Preferences screen renders this list automatically from the cat
 | Editor           | `autoSaveDelay`             | select (5s/15s/30s/60s/5min) | `'30'` | `usePersistence.ts` (`readAutoSaveDelayMs`) |
 | Editor           | `hoverPreview`              | boolean              | `true`      | `ClassPicker.tsx`, `SpacingBoxControl.tsx`     |
 | Editor           | `confirmBeforeDelete`       | boolean              | `false`     | `ConfirmDeleteProvider`                        |
-| Editor           | `density`                   | select (compact / comfortable) | `'compact'` | `data-editor-density` on `AdminCanvasLayout` |
+| Editor           | `theme`                     | select (dark / light) | `'dark'`   | `data-editor-theme` on the document + layout roots |
+| Editor           | `density`                   | select (compact / comfortable) | `'compact'` | `data-editor-density` on the document + layout roots |
+| Editor           | `textScale`                 | select (small / default / large / extra-large) | `'default'` | `data-editor-text-scale` on the document + layout roots |
 | Canvas           | `defaultBreakpoint`         | select-dynamic (`site.breakpoints`) | `'desktop'` | `applyDefaultBreakpointPreference` |
 | Canvas           | `dimInactiveBreakpoints`    | boolean              | `true`      | `CanvasRoot.tsx`                               |
 | Layers panel     | `layersShowIcon`            | boolean              | `true`      | `TreeNode.tsx`                                 |
@@ -324,9 +330,17 @@ Notes:
 - Only **hover-triggered** previews are gated. Live as-you-type previews (e.g. `previewDraft` in `SpacingBoxControl`) are NOT gated — they reflect an explicit edit the user is making.
 - Clearing the preview on any code path (commit, mouse-leave, menu close, pref-off effect) always runs unconditionally so a stale preview never sticks around.
 
-### Density attribute
+### Appearance attributes
 
-`AdminCanvasLayout` reads `useEditorSelectPreference('density')` and sets `data-editor-density="compact"` (default) or `"comfortable"` on the root `<div>`. Surfaces that respond to density use scoped `:global([data-editor-density='comfortable'])` selectors in their CSS module to override their default values:
+`AdminEntry` and the authenticated admin layouts read `useEditorAppearancePreferences()`. The hook applies the current appearance values to `document.documentElement`, while each layout also mirrors them onto its root `<div>`:
+
+- `data-editor-theme="dark"` (default) or `"light"` drives global admin token scopes in `src/styles/globals.css`.
+- `data-editor-density="compact"` (default) or `"comfortable"` drives spacing/height overrides for dense surfaces.
+- `data-editor-text-scale="small" | "default" | "large" | "extra-large"` remaps the global `--text-*` scale without changing spacing density.
+
+The document-level attributes are required because many admin surfaces are portaled to `document.body` (select menus, context menus, tooltips, modals, toasts). The layout-level attributes avoid a first-paint mismatch for authenticated pages before the effect writes the document attributes.
+
+Surfaces that respond to density use scoped `:global([data-editor-density='comfortable'])` selectors in their CSS module to override their default values:
 
 ```css
 /* TreeRow.module.css */
@@ -340,7 +354,7 @@ Notes:
 }
 ```
 
-Adding density support to a new surface is two CSS lines.
+Adding density support to a new surface is two CSS lines. Theme and text-size support should usually require no component CSS; use the global `--bg-*`, `--text-*`, `--border*`, `--overlay-*`, and `--space-*` tokens.
 
 ---
 

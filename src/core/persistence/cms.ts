@@ -2,7 +2,13 @@ import { reconcileSiteExplorerOrganization, type SiteDocument, type SiteShell } 
 import type { IPersistenceAdapter, SaveSiteOptions } from './types'
 import { parseJsonResponse } from '@core/utils/jsonValidate'
 import { apiRequest, assertOk, type FetchLike } from '@core/http'
-import { CmsSiteEnvelopeSchema, CmsPagesEnvelopeSchema, CmsComponentsEnvelopeSchema, CmsLayoutsEnvelopeSchema } from './responseSchemas'
+import {
+  CmsSiteEnvelopeSchema,
+  CmsSiteDocumentSaveEnvelopeSchema,
+  CmsPagesEnvelopeSchema,
+  CmsComponentsEnvelopeSchema,
+  CmsLayoutsEnvelopeSchema,
+} from './responseSchemas'
 import { validateSite, validatePages, validateVisualComponents } from './validate'
 import { validateSavedLayouts } from './validateLayouts'
 import { pageFromRow } from '@core/data/pageFromRow'
@@ -26,82 +32,57 @@ export class CmsAdapter implements IPersistenceAdapter {
   }
 
   /**
-   * Save the site document:
-   *   1. PUT /admin/api/cms/site — the shell (no pages, VCs, or layouts); always written
-   *   2. PUT /admin/api/cms/pages — `{ changedPages, pageIds, baselinePageIds? }`
-   *   3. PUT /admin/api/cms/components — `{ changedComponents, componentIds }`
-   *   4. PUT /admin/api/cms/layouts — `{ changedLayouts, layoutIds }`
+   * Save the site document — ONE request, one server transaction:
    *
-   * Only the pages/components/layouts named dirty by `opts.dirty` are shipped —
-   * the full id rosters always go along so the server's reaping (delete-what's-
-   * missing) semantics are identical to a full replace. No dirty hints (or
-   * `dirty.all`) ships everything: the conservative path for imports and any
-   * caller without store-level tracking.
+   *   PUT /admin/api/cms/site-document
    *
-   * Shell is written first; components are written before pages because page
-   * validation resolves `base.visual-component-ref` targets from stored
-   * component rows. A page that references a newly-created component must not
-   * race ahead of the component write or the server will strip the ref as
-   * dangling. Layouts remain independent and can save alongside components.
+   * With `opts.dirty` (and not `dirty.all`), ships an incremental save: only
+   * the changed pages/components/layouts plus the explicitly deleted row ids
+   * the store's dirty tracking recorded. Rows the save doesn't mention are
+   * untouched server-side — deletion is stated intent, never inferred from a
+   * missing roster entry. Without hints (or with `dirty.all`) ships a
+   * replace-mode full save: the server derives deletions as stored − shipped
+   * (imports, fresh-site bootstrap).
+   *
+   * The old ordering contract (components before pages so refs resolve) is
+   * gone: the server validates pages against the merged post-save component
+   * roster inside the same transaction.
    */
   async saveSite(site: SiteDocument, opts: SaveSiteOptions = {}): Promise<void> {
     // Extract shell (strip the row-backed collections from the full SiteDocument)
     const { pages, visualComponents, layouts, ...shell } = site
-    const { baselinePageIds, dirty } = opts
+    const { dirty } = opts
+    const incremental = dirty !== undefined && !dirty.all
 
-    const changedPages = dirty && !dirty.all
-      ? pages.filter((p) => dirty.pageIds.has(p.id))
-      : pages
-    const changedComponents = dirty && !dirty.all
-      ? visualComponents.filter((vc) => dirty.componentIds.has(vc.id))
-      : visualComponents
-    const changedLayouts = dirty && !dirty.all
-      ? layouts.filter((layout) => dirty.layoutIds.has(layout.id))
-      : layouts
+    const body = incremental
+      ? {
+          mode: 'incremental',
+          site: shell,
+          changedPages: pages.filter((p) => dirty.pageIds.has(p.id)),
+          deletedPageIds: [...dirty.deletedPageIds],
+          changedComponents: visualComponents.filter((vc) => dirty.componentIds.has(vc.id)),
+          deletedComponentIds: [...dirty.deletedComponentIds],
+          changedLayouts: layouts.filter((layout) => dirty.layoutIds.has(layout.id)),
+          deletedLayoutIds: [...dirty.deletedLayoutIds],
+        }
+      : {
+          mode: 'replace',
+          site: shell,
+          changedPages: pages,
+          deletedPageIds: [],
+          changedComponents: visualComponents,
+          deletedComponentIds: [],
+          changedLayouts: layouts,
+          deletedLayoutIds: [],
+        }
 
-    await apiRequest(`${this.basePath}/site`, {
+    await apiRequest(`${this.basePath}/site-document`, {
       method: 'PUT',
-      body: { site: shell },
+      body,
+      schema: CmsSiteDocumentSaveEnvelopeSchema,
       fetchImpl: this.fetchImpl,
-      fallbackMessage: 'CMS shell save failed',
+      fallbackMessage: 'Site save failed',
     })
-
-    const componentsRequest = apiRequest(`${this.basePath}/components`, {
-      method: 'PUT',
-      body: {
-        changedComponents,
-        componentIds: visualComponents.map((vc) => vc.id),
-      },
-      fetchImpl: this.fetchImpl,
-      fallbackMessage: 'CMS components save failed',
-    })
-    const layoutsRequest = apiRequest(`${this.basePath}/layouts`, {
-      method: 'PUT',
-      body: {
-        changedLayouts,
-        layoutIds: layouts.map((layout) => layout.id),
-      },
-      fetchImpl: this.fetchImpl,
-      fallbackMessage: 'CMS layouts save failed',
-    })
-
-    await componentsRequest
-
-    // Pages validate component refs against stored component rows, so the
-    // component roster must already be committed before page writes begin.
-    await Promise.all([
-      apiRequest(`${this.basePath}/pages`, {
-        method: 'PUT',
-        body: {
-          changedPages,
-          pageIds: pages.map((p) => p.id),
-          ...(baselinePageIds ? { baselinePageIds } : {}),
-        },
-        fetchImpl: this.fetchImpl,
-        fallbackMessage: 'CMS pages save failed',
-      }),
-      layoutsRequest,
-    ])
   }
 
   /**

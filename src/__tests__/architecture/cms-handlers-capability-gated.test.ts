@@ -58,10 +58,11 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   // handler (`/me/avatar`, `/media`).
   ['mediaUpload.ts', 'Multipart parse helper called by gated parent handlers.'],
   ['svgSanitize.ts', 'Pure SVG sanitiser called by mediaUpload (itself gated parents); no handlers.'],
-  // Byte-level MIME validation + SVG sanitisation for archive imports. Called
-  // by importArchive.ts which gates the route via requireCapability; this file
-  // contains no request handler itself.
-  ['importArchiveMediaValidation.ts', 'Validation/sanitisation helper called by importArchive.ts (which gates via requireCapability); no handlers.'],
+  // Byte-level MIME validation + SVG sanitisation + write-destination policy
+  // for imported media. Called by both import.ts and importArchive.ts, which
+  // gate their routes via requireCapability; this file contains no request
+  // handler itself.
+  ['importMediaValidation.ts', 'Validation/sanitisation helper called by import.ts + importArchive.ts (which gate via requireCapability); no handlers.'],
   ['mediaUploadDispatch.ts', 'Storage adapter dispatch called by gated parent handlers.'],
   ['mediaUploadExecutor.ts', 'Filesystem write helper called by gated parent handlers.'],
   ['mediaVariants.ts', 'Variant generation helper called by gated parent handlers.'],

@@ -81,7 +81,7 @@ The rules:
 | Tree kind                | Type                  | Stored where                            |
 |--------------------------|-----------------------|-----------------------------------------|
 | `Page` (a page's tree)   | `NodeTree<PageNode>`  | `data_rows` row, table `pages`, cell `body` |
-| `VisualComponent.tree`   | `NodeTree<BaseNode>`  | `data_rows` row, table `components`, cell `tree` |
+| `VisualComponent.tree`   | `NodeTree<BaseNode>`  | `data_rows` row, table `components`, cell `body` |
 | Slot fill                | Children of `base.slot-instance` | Same page tree as its consumer  |
 
 There is no separate `pages` table, no `page_versions` table. Everything content-shaped is in `data_tables` + `data_rows`.
@@ -320,6 +320,7 @@ const tree = parsePageNodeTree(raw)
   - `src/core/page-tree/subtreeRemoval.ts` — `deleteSubtree` (THE single subtree-deletion primitive), `removeNodeSubtrees`
   - `src/core/page-tree/parentIndex.ts` — `reindexNodeParents` (derive-on-entry backfill)
   - `src/core/visualComponents/schemas.ts` — `VCNode` (= `BaseNode`)
+  - `src/admin/pages/site/store/slices/site/helpers.ts` — `mutateActiveTree`, `resolveActiveTreeTarget`
   - `src/admin/pages/site/store/slices/site/nodeActions.ts` — store actions calling `mutateActiveTree`
 - Gate tests:
   - `src/__tests__/persistence/treeSchemaShape.test.ts`

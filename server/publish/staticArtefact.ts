@@ -316,8 +316,8 @@ export async function swapSlot(uploadsDir: string, targetSlot: Slot): Promise<vo
  *   - The URL path escapes the published root (path safety).
  *   - Any other IO error occurs (treated as a miss, never thrown).
  *
- * Cheap enough to call on every no-query-string visitor request (Layer A fast
- * path: 1 syscall on cache hit, no DB).
+ * Cheap enough to call on every canonical-query-empty visitor request (Layer A
+ * fast path: 1 syscall on cache hit, no DB).
  */
 export async function readArtefact(uploadsDir: string, urlPath: string): Promise<string | null> {
   // Validate the URL and compute the relative disk path

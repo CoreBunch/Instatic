@@ -144,7 +144,7 @@ export function TokenAwareInput({
     const hoverPreviewEnabled = useEditorPreference('hoverPreview')
 
     // Local draft so we don't fire onCommit on every keystroke (which would
-    // round-trip through Immer + re-validate every press).
+    // round-trip through Mutative + re-validate every press).
     const [draft, setDraft] = useState(display)
     const [isEditing, setIsEditing] = useState(false)
     const inputRef = useRef<HTMLInputElement>(null)

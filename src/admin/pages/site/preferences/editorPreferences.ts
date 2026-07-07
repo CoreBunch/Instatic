@@ -32,6 +32,12 @@ import {
 
 export const EDITOR_PREFS_KEY = 'instatic-editor-prefs'
 
+interface EditorAppearancePreferences {
+  density: string
+  theme: string
+  textScale: string
+}
+
 // ---------------------------------------------------------------------------
 // Schema and defaults — derived from the catalog
 //
@@ -217,6 +223,38 @@ export function readAutoSavePreference(): boolean {
 export function readAutoSaveDelayMs(): number {
   const seconds = Number(readEditorSelectPreference('autoSaveDelay'))
   return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 30_000
+}
+
+// ---------------------------------------------------------------------------
+// Appearance preferences
+//
+// These three prefs define admin chrome presentation rather than a single
+// component's behaviour. Apply them to the document root so portals mounted
+// under document.body (menus, tooltips, modals, toasts) inherit the same token
+// scope as the normal React tree.
+// ---------------------------------------------------------------------------
+
+export function applyEditorAppearancePreferencesToDocument(
+  doc: Document,
+  prefs: EditorAppearancePreferences,
+): void {
+  doc.documentElement.setAttribute('data-editor-density', prefs.density)
+  doc.documentElement.setAttribute('data-editor-theme', prefs.theme)
+  doc.documentElement.setAttribute('data-editor-text-scale', prefs.textScale)
+}
+
+export function useEditorAppearancePreferences(): EditorAppearancePreferences {
+  const density = useEditorSelectPreference('density')
+  const theme = useEditorSelectPreference('theme')
+  const textScale = useEditorSelectPreference('textScale')
+
+  useEffect(() => {
+    const doc = globalThis.document
+    if (!doc) return
+    applyEditorAppearancePreferencesToDocument(doc, { density, theme, textScale })
+  }, [density, theme, textScale])
+
+  return { density, theme, textScale }
 }
 
 // ---------------------------------------------------------------------------

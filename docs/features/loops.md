@@ -64,8 +64,9 @@ interface LoopEntitySource {
   /**
    * Default `false`. Set `true` when the source returns data that varies per
    * request (live API, time-of-day data). Loops using a request-dependent source
-   * become Layer C "holes" — the publisher emits a placeholder + a tiny client
-   * runtime fetches the rendered fragment lazily via `/_instatic/hole/<nodeId>`.
+   * become Layer C "holes" — the publisher emits a placeholder + a ~1.1 KB client
+   * runtime fetches the rendered fragment lazily via
+   * `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>`.
    *
    * A `requestDependent` (non-perVisitor) hole is rendered at request time and
    * cached by Layer B per `(nodeId, query, publishVersion)`.
@@ -316,10 +317,8 @@ The HTML importer maps the marker to a real `base.loop` node, preserving classes
 
 ### Register a plugin loop source
 
-```ts
+```js
 // plugin server/index.js
-import { permissions } from '@core/plugin-sdk'
-
 export function activate(api) {
   const products = api.cms.storage.collection('products')
 
@@ -327,8 +326,8 @@ export function activate(api) {
     id:    'acme.products',
     label: 'Acme products',
     fields: [
-      { id: 'name',  label: 'Name',  format: 'text' },
-      { id: 'price', label: 'Price', format: 'number' },
+      { id: 'name',  label: 'Name',  format: 'plain' },
+      { id: 'price', label: 'Price', format: 'plain' },
       { id: 'image', label: 'Image', format: 'media' },
     ],
     filterSchema: {
@@ -347,8 +346,9 @@ export function activate(api) {
       { id: 'price:asc',      label: 'Price low → high' },
     ],
     async fetch(ctx) {
-      const all = await products.list()
-      const items = all
+      const { records } = await products.list({ limit: ctx.limit ?? 100 })
+      const items = records
+        .map((record) => ({ id: record.id, ...record.data }))
         .filter((p) => !ctx.filters?.category || p.category === ctx.filters.category)
         .sort(/* by ctx.orderBy */)
         .slice(0, ctx.limit)
@@ -364,14 +364,29 @@ export function activate(api) {
 }
 ```
 
-Manifest:
+Plugin config:
 
-```json
-{
-  "permissions": ["cms.storage", "loops.register"],
-  "resources": [{ "id": "products", "label": "Products", "fields": [...] }],
-  "entrypoints": { "server": "server/index.js" }
-}
+```ts
+import { definePlugin, permissions } from '@instatic/plugin-sdk'
+
+export default definePlugin({
+  id: 'acme.catalog',
+  name: 'Acme Catalog',
+  version: '1.0.0',
+  permissions: [permissions.cmsStorage, permissions.loopsRegister],
+  resources: [
+    {
+      id: 'products',
+      title: 'Products',
+      fields: [
+        { id: 'name', label: 'Name', type: 'text', required: true },
+        { id: 'price', label: 'Price', type: 'number' },
+        { id: 'image', label: 'Image', type: 'text' },
+        { id: 'category', label: 'Category', type: 'text' },
+      ],
+    },
+  ],
+})
 ```
 
 ### Add variants to a loop

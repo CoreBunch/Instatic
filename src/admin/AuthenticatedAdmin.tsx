@@ -5,7 +5,7 @@
  *   - SpotlightRoot (Cmd+K palette) + its keybinding listener
  *   - AdminSessionProvider (session context for authenticated children)
  *   - StepUpProvider (auth re-verification for sensitive actions)
- *   - The 9 workspace page components (DashboardPage, SitePage, …)
+ *   - The 10 workspace page components (DashboardPage, SitePage, …)
  *   - installPluginRuntime() (populates globalThis.__instatic for plugins)
  *
  * Splitting this out from `AdminEntry` keeps the cold-load JS execution
@@ -24,12 +24,12 @@
  *      'dashboard') loads first. React renders it; `prewarmedLazy`'s
  *      cold-path triggers `.preload()` and suspends to the nearest
  *      Suspense boundary until the import lands. The DASHBOARD chunk
- *      gets vite's CPU / the HTTP connection slot to itself — no 8
+ *      gets vite's CPU / the HTTP connection slot to itself — no 9
  *      sibling compilations competing for resources.
  *
  *   2. After the active page paints (i.e., the user actually sees the
  *      dashboard), an effect fires `requestIdleCallback` to schedule
- *      `.preload()` calls for the OTHER 8 workspace pages. They load
+ *      `.preload()` calls for the OTHER 9 workspace pages. They load
  *      in the background while the user is reading the dashboard.
  *
  *   3. When the user clicks any nav link, the target page's cached
@@ -40,8 +40,8 @@
  *   - React.lazy returns a fresh `.then()` chain on every render → one-
  *     tick Suspense flash on every nav even with cached chunks.
  *   - Auto-prewarming at construction time (the previous version of
- *     this file) fires all 9 imports simultaneously, which makes the
- *     active page COMPETE for vite-CPU / HTTP connections with 8
+ *     this file) fires all 10 imports simultaneously, which makes the
+ *     active page COMPETE for vite-CPU / HTTP connections with 9
  *     sibling chunks. The user perceives the active page as slower.
  *
  * Cost: same as before — every authenticated user eventually downloads
@@ -61,7 +61,7 @@ import { prewarmedLazy } from './lib/prewarmedLazy'
 import { useAdminUi } from './state/adminUi'
 import styles from './AdminEntry.module.css'
 
-// The 9 workspace pages — pre-warmed AND synchronously-renderable once
+// The 10 workspace pages — pre-warmed AND synchronously-renderable once
 // loaded. See file header for the rationale.
 const DashboardPage = prewarmedLazy(
   () => import('./pages/dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })),

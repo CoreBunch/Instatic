@@ -1,135 +1,33 @@
 /**
- * Visual Components CRUD endpoints backed by `data_rows` (table_id = 'components').
+ * Visual Components read endpoint backed by `data_rows` (table_id = 'components').
  *
  *   GET /admin/api/cms/components — list all non-deleted component rows as
  *                                   DataRow[] (gated by `site.read`). The client
  *                                   adapter converts these to VisualComponent[]
  *                                   via visualComponentFromRow + validateVisualComponents.
  *
- *   PUT /admin/api/cms/components — incremental roster save. The body carries
- *                                   `{ changedComponents, componentIds }`: only
- *                                   the VCs the editor changed are validated
- *                                   and written; `componentIds` is the client's
- *                                   full roster and rows missing from it are
- *                                   reaped — identical deletion semantics to
- *                                   the old full-replace protocol. Cross-VC
- *                                   rules run against the merged post-save
- *                                   roster (see validateVisualComponentsForPartialWrite).
- *
- *                                   Gated by any site-write capability, then
- *                                   restricted to no-op saves unless the caller
- *                                   has `site.structure.edit`. The reconcile
- *                                   can soft-delete any VC missing from the
- *                                   incoming roster, so actual VC changes and
- *                                   roster reaps remain structural work.
- *
- * The GET response returns raw DataRow objects (not VisualComponent objects) so
+ * The response returns raw DataRow objects (not VisualComponent objects) so
  * the client adapter can reconstruct VCs via visualComponentFromRow without a
- * second validation layer on the server. The adapter validates via
- * validateVisualComponents immediately after conversion.
+ * second validation layer on the server.
+ *
+ * Writes go through the transactional site-document save
+ * (PUT /admin/api/cms/site-document — see ./siteDocument.ts), which persists
+ * shell + pages + components + layouts atomically.
  */
 import type { DbClient } from '../../db/client'
-import { requireAnyCapability, requireCapability } from '../../auth/authz'
-import type { CoreCapability } from '../../auth/capabilities'
-import { listDataRows, reconcileDataRowRoster } from '../../repositories/data'
-import { visualComponentToCells, visualComponentFromRow } from '../../../src/core/data/componentFromRow'
-import { SiteValidationError, validateVisualComponentsForPartialWrite } from '@core/persistence/validate'
-import { VisualComponentSchema, vcSlugFromName, type VisualComponent } from '@core/visualComponents'
-import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
-import { Type } from '@core/utils/typeboxHelpers'
+import { requireCapability } from '../../auth/authz'
+import { listDataRows } from '../../repositories/data'
+import { jsonResponse, methodNotAllowed } from '../../http'
 import { CMS_API_PREFIX } from './shared'
-import { ForbiddenSiteChangeError } from './siteDiff'
-
-const COMPONENT_WRITE_CAPABILITIES = [
-  'site.structure.edit',
-  'site.content.edit',
-  'site.style.edit',
-] satisfies CoreCapability[]
 
 export async function handleComponentsRoutes(req: Request, db: DbClient): Promise<Response | null> {
   const url = new URL(req.url)
   if (url.pathname !== `${CMS_API_PREFIX}/components`) return null
+  if (req.method !== 'GET') return methodNotAllowed()
 
-  if (req.method === 'GET') {
-    const user = await requireCapability(req, db, 'site.read')
-    if (user instanceof Response) return user
+  const user = await requireCapability(req, db, 'site.read')
+  if (user instanceof Response) return user
 
-    const rows = await listDataRows(db, 'components')
-    return jsonResponse({ rows })
-  }
-
-  if (req.method === 'PUT') {
-    const user = await requireAnyCapability(req, db, COMPONENT_WRITE_CAPABILITIES)
-    if (user instanceof Response) return user
-
-    const ComponentsBodySchema = Type.Object({
-      // Only the VCs the editor changed since its last save.
-      changedComponents: Type.Array(VisualComponentSchema),
-      // The client's FULL component-id roster; rows missing from it are reaped.
-      componentIds: Type.Array(Type.String()),
-    }, { additionalProperties: false })
-    const body = await readValidatedBody(req, ComponentsBodySchema)
-    if (!body) return badRequest('Invalid request body')
-
-    const componentIds = new Set(body.componentIds)
-    const canEditStructure = user.capabilities.includes('site.structure.edit')
-
-    // The cross-VC rules (identity, refs, dependency-graph acyclicity) are
-    // roster-wide — a changed VC can create a cycle THROUGH an unchanged one —
-    // so validation merges the changed batch over the stored roster. This runs
-    // OUTSIDE the transaction (sanitization is CPU work; the SQLite adapter
-    // serializes every transaction through one chain).
-    const existingRows = await listDataRows(db, 'components')
-    const existingVCs = existingRows.flatMap((r) => {
-      const vc = visualComponentFromRow(r)
-      return vc ? [vc] : []
-    })
-    const reapedIds = existingVCs.filter((vc) => !componentIds.has(vc.id)).map((vc) => vc.id)
-    if (!canEditStructure && (body.changedComponents.length > 0 || reapedIds.length > 0)) {
-      return jsonResponse(
-        {
-          error: new ForbiddenSiteChangeError(
-            'structure',
-            'componentIds',
-            reapedIds.length > 0 ? `component roster removed ${reapedIds.join(', ')}` : 'component changed',
-          ).message,
-          kind: 'structure',
-          path: 'componentIds',
-        },
-        { status: 403 },
-      )
-    }
-
-    let components: VisualComponent[]
-    try {
-      components = validateVisualComponentsForPartialWrite(body.changedComponents, existingVCs, componentIds)
-      for (const vc of components) {
-        if (!componentIds.has(vc.id)) {
-          throw new SiteValidationError(`changed component "${vc.id}" missing from componentIds roster`, 'componentIds')
-        }
-      }
-    } catch (err) {
-      if (err instanceof SiteValidationError) {
-        return badRequest(err.message)
-      }
-      throw err
-    }
-
-    // Batch reconcile: soft-delete / create / update in one short transaction
-    // (reap-first + two-phase slug writes — see rows/reconcile.ts).
-    await reconcileDataRowRoster(db, {
-      tableId: 'components',
-      writes: components.map((vc) => ({
-        id: vc.id,
-        cells: visualComponentToCells(vc),
-        slug: vcSlugFromName(vc.name),
-      })),
-      keepIds: componentIds,
-      actorUserId: user.id,
-    })
-
-    return jsonResponse({ ok: true })
-  }
-
-  return methodNotAllowed()
+  const rows = await listDataRows(db, 'components')
+  return jsonResponse({ rows })
 }

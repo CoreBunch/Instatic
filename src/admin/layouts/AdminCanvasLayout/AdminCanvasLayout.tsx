@@ -40,7 +40,7 @@
 import { Toolbar } from '@admin/pages/site/toolbar/Toolbar'
 import { ZoomControls } from '@admin/pages/site/toolbar/ZoomControls'
 import { PublishButton } from '@admin/pages/site/toolbar/PublishButton'
-import { useEditorSelectPreference } from '@admin/pages/site/preferences/editorPreferences'
+import { useEditorAppearancePreferences } from '@admin/pages/site/preferences/editorPreferences'
 import { usePersistence } from '@admin/pages/site/hooks/usePersistence'
 import { useSiteEditorUrlSync } from '@admin/pages/site/hooks/useSiteEditorUrlSync'
 import { useEditorLayoutPersistence } from '@admin/pages/site/hooks/useEditorLayoutPersistence'
@@ -178,15 +178,15 @@ export function AdminCanvasLayout() {
   // and keeps the open Plugins page list refreshed.
   usePluginEventBridge(pluginBackgroundWorkEnabled)
 
-  // UI density preference — `data-editor-density` on the editor root drives
-  // CSS variables consumed by tree rows, toolbar buttons, and other density-
-  // sensitive surfaces. Reading the preference here keeps the attribute in
-  // sync with the Settings toggle without per-component subscriptions.
+  // Appearance preferences — data attributes on the editor root drive CSS
+  // variables consumed by tree rows, toolbar buttons, text scale, and the
+  // admin theme. Reading the preferences here keeps the attributes in sync
+  // with Settings without per-component subscriptions.
   //
   // Read BEFORE the `!site` early return so the hook order stays stable across
   // the hydration gate (React rules-of-hooks: hooks must run in the same order
   // on every render).
-  const density = useEditorSelectPreference('density')
+  const appearance = useEditorAppearancePreferences()
 
   const loadError = !site && persistence.saveStatus.state === 'error'
     ? persistence.saveStatus.message ?? 'Reload the admin page and try again.'
@@ -200,7 +200,12 @@ export function AdminCanvasLayout() {
 
   return (
     <EditorPermissionsProvider value={permissions}>
-      <div className={styles.shell} data-editor-density={density}>
+      <div
+        className={styles.shell}
+        data-editor-density={appearance.density}
+        data-editor-theme={appearance.theme}
+        data-editor-text-scale={appearance.textScale}
+      >
         {/* ── Top toolbar (z-60, Guideline #374) ───────────────────────────── */}
         {/* Toolbar is now a prop-driven shell — this layout supplies the
             site brand, the preview overlay lazy mount, and

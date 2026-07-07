@@ -29,7 +29,7 @@ const CAP_FOR_KIND: Record<PageChangeKind, CoreCapability> = {
 interface PageDiffInput {
   previousPages: readonly Page[]
   changedPages: readonly Page[]
-  reapedPageIds: ReadonlySet<string>
+  deletedPageIds: ReadonlySet<string>
   capabilities: readonly CoreCapability[]
 }
 
@@ -51,7 +51,7 @@ function requireChange(
 export function validatePageWriteDiff({
   previousPages,
   changedPages,
-  reapedPageIds,
+  deletedPageIds,
   capabilities,
 }: PageDiffInput): void {
   if (
@@ -62,12 +62,12 @@ export function validatePageWriteDiff({
     return
   }
 
-  if (reapedPageIds.size > 0) {
+  if (deletedPageIds.size > 0) {
     requireChange(
       capabilities,
       'structure',
       'pageIds',
-      `page roster removed ${Array.from(reapedPageIds).join(', ')}`,
+      `pages deleted ${Array.from(deletedPageIds).join(', ')}`,
     )
   }
 

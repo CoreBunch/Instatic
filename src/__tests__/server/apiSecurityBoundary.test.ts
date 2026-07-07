@@ -96,10 +96,7 @@ const CMS_MUTATION_ROUTES: MutationRoute[] = [
   { method: 'POST', path: '/admin/api/cms/roles' },
   { method: 'PATCH', path: '/admin/api/cms/roles/role-1' },
   { method: 'DELETE', path: '/admin/api/cms/roles/role-1' },
-  { method: 'PUT', path: '/admin/api/cms/site' },
-  { method: 'PUT', path: '/admin/api/cms/pages' },
-  { method: 'PUT', path: '/admin/api/cms/components' },
-  { method: 'PUT', path: '/admin/api/cms/layouts' },
+  { method: 'PUT', path: '/admin/api/cms/site-document' },
   { method: 'POST', path: '/admin/api/cms/runtime/dependencies/resolve' },
   { method: 'POST', path: '/admin/api/cms/runtime/preview' },
   { method: 'POST', path: '/admin/api/cms/media/folders' },
@@ -379,7 +376,7 @@ describe('admin API security boundary', () => {
         capabilities: ['site.read'],
       })
 
-      const response = await harness.cms('/admin/api/cms/pages', {
+      const response = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: reader.cookie,
         json: { definitelyNotThePagesEnvelope: true },
@@ -397,7 +394,7 @@ describe('admin API security boundary', () => {
     try {
       const ownerCookie = await harness.setupOwner()
 
-      const response = await harness.cms('/admin/api/cms/pages', {
+      const response = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: ownerCookie,
         json: { definitelyNotThePagesEnvelope: true },
@@ -415,7 +412,7 @@ describe('admin API security boundary', () => {
     try {
       const ownerCookie = await harness.setupOwner()
 
-      const response = await harness.cms('/admin/api/cms/pages', {
+      const response = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: ownerCookie,
         headers: { 'content-type': 'application/json' },

@@ -30,10 +30,9 @@ export interface PluginDashboardWidgetRendererProps {
  *
  *   • `id` MUST be namespaced under the plugin id (`<pluginId>.<rest>`),
  *     enforced by the registry at registration time.
- *   • `icon` is a pixel-art-icon component reference (direct import).
- *   • `component` is a regular React component. The host renders the
- *     widget chrome (title row, drag handle, kebab menu) and mounts the
- *     component inside the body — plugins only own the content.
+ *   • `iconName` is resolved by the host to a curated pixel-art icon.
+ *   • `component` is a regular React component that should compose the
+ *     host `Widget` primitive for the same chrome first-party widgets use.
  */
 export interface PluginDashboardWidget {
   id: string

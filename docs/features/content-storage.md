@@ -8,12 +8,12 @@ There are **no other content tables**. There is no `pages` table, no `page_versi
 
 ## TL;DR
 
-- Two tables, four kinds. `data_tables.kind`: `postType | data | page | component`.
+- Two tables, five kinds. `data_tables.kind`: `postType | data | page | component | layout`.
 - Four system tables seeded at boot — `pages` (kind `page`), `posts` (kind `postType`), `components` (kind `component`), `layouts` (kind `layout`) — protected from rename / delete (but users can still add custom fields). `listDataTables` and `listDataTablesWithCounts` pin them at positions 0–3 in that order; custom tables follow sorted by `created_at`.
 - Every row's cells live in `cells_json` keyed by field id. `slug` and `status` are denormalized columns for index / route lookup.
 - Post-type rows have a workflow: `draft | published | unpublished | scheduled`, with a version history (`data_row_versions`) for the published copy.
 - "Data" tables are simple key-value grids — no workflow, no built-in fields.
-- Pages and components are stored the same way: a `pages` table with `pageTree`-typed `body` cells; a `components` table with `pageTree`-typed `tree` + `fieldSchema`-typed `params`.
+- Pages, components, and layouts are stored the same way: a `pages` table with `pageTree`-typed `body` cells; a `components` table with `pageTree`-typed `body` + `fieldSchema`-typed `params`; a `layouts` table with a `pageTree`-typed `body` snapshot plus serialized `classes`.
 - Source of truth: `src/core/data/schemas.ts`. Repos: `server/repositories/data/`. Handlers: `server/handlers/cms/data/`.
 
 ---
@@ -29,13 +29,13 @@ The schema for a collection. One row per collection.
 | `id`              | text PK   |                                                                  |
 | `name`            | text      | Human-readable                                                   |
 | `slug`            | text      | URL-safe (kebab-case)                                            |
-| `kind`            | text      | `'postType' \| 'data' \| 'page' \| 'component'`                  |
+| `kind`            | text      | `'postType' \| 'data' \| 'page' \| 'component' \| 'layout'`      |
 | `singular_label`  | text      | "Post"                                                           |
 | `plural_label`    | text      | "Posts"                                                          |
 | `route_base`      | text      | Empty = not publicly routable. Post-types default to `/<slug>`. |
 | `primary_field_id`| text      | Field id used as the row's display name in grids / pickers      |
 | `fields_json`     | jsonb     | `DataField[]` — the schema                                       |
-| `system`          | boolean   | `true` for seeded tables (`posts`, `pages`, `components`)        |
+| `system`          | boolean   | `true` for seeded tables (`posts`, `pages`, `components`, `layouts`) |
 | `created_*`, `updated_*` | -  | Standard audit fields                                            |
 
 ### `data_rows`
@@ -76,20 +76,22 @@ Used to render the **currently-published** page (vs. the in-progress draft on th
 
 ---
 
-## Four kinds
+## Five kinds
 
 | `kind`       | Authored in                       | Built-in fields | Workflow | Notes                                          |
 |--------------|-----------------------------------|-----------------|----------|------------------------------------------------|
 | `postType`   | Content workspace (`/admin/content`) | `title`, `slug`, `body` (text), `featuredMedia`, `seoTitle`, `seoDescription` | `draft / published / unpublished / scheduled` + versions | Built-in fields cannot be renamed or deleted, only enabled / disabled. |
 | `data`       | Data workspace grid (`/admin/data`) | none           | none     | Pure user-defined fields. Like a database table.|
 | `page`       | Site workspace (`/admin/site`)    | `title`, `slug`, `body` (pageTree) | same as `postType` | Each row is a CMS page. `body` cell holds the `NodeTree<PageNode>`. |
-| `component`  | Site workspace, VC mode           | `name`, `tree` (pageTree), `params` (fieldSchema), `description` | none | Each row is a Visual Component. See [docs/features/visual-components.md](visual-components.md). |
+| `component`  | Site workspace, VC mode           | `name`, `slug`, `body` (pageTree), `params` (fieldSchema), `classIds` | none | Each row is a Visual Component. See [docs/features/visual-components.md](visual-components.md). |
+| `layout`     | Site workspace saved layouts      | `name`, `slug`, `body` (pageTree), `classes` | none | Each row is a saved layout snapshot. See [docs/editor.md](../editor.md) → "Saved layouts". |
 
 System tables protect their `kind`:
 
 - `posts` is `system: true, kind: 'postType'` — cannot become a `data` table.
 - `pages` is `system: true, kind: 'page'` — cannot be renamed or deleted.
 - `components` is `system: true, kind: 'component'` — cannot be renamed or deleted.
+- `layouts` is `system: true, kind: 'layout'` — cannot be renamed or deleted.
 
 Users can add their own custom fields to system tables.
 
@@ -176,11 +178,12 @@ All repository functions are dialect-naive ANSI SQL. JSON columns end in `_json`
 | File                                          | Owns                                                                    |
 |-----------------------------------------------|-------------------------------------------------------------------------|
 | `server/handlers/cms/data/`                   | Generic `/admin/api/cms/data/tables[/:id]` + `/admin/api/cms/data/rows[/:id]` endpoints |
-| `server/handlers/cms/pages.ts`                | `pages`-specific endpoints (batch upsert of the page roster from the editor; uses an optimistic-concurrency `baselinePageIds` token so a saving client never deletes a page a sibling session created concurrently) |
+| `server/handlers/cms/pages.ts`                | `pages` read endpoint (raw DataRow list for the editor's loader). Writes go through the transactional site-document save (`server/handlers/cms/siteDocument.ts`) with explicit deleted-row ids — a saving client can never delete a page a sibling session created concurrently, because deletion-by-omission no longer exists |
 | `server/handlers/cms/components.ts`           | `components`-specific endpoints                                        |
+| `server/handlers/cms/layouts.ts`              | `layouts` read endpoint for saved layout rows                          |
 | `server/handlers/cms/publish.ts`              | Publish a row, write a version, emit `publish.before/.html/.after` hooks |
 
-Pages and components have their own typed endpoints (because the editor mutates trees, not arbitrary cells), but they still **write to `data_rows`**.
+Pages, components, and layouts have their own typed endpoints (because the editor mutates trees/snapshots, not arbitrary cells), but they still **write to `data_rows`**.
 
 ---
 
@@ -221,7 +224,7 @@ The published `SiteDocument` is stored ONCE per full publish in `site_snapshots`
 
 - **Layer A** — the publisher renders **every** page (for postType rows, the matched entry template), runs the full `applyPublishedHtmlPipeline`, and writes the final HTML to `uploads/published/<inactive-slot>/<route>.html` — a fully-static page bakes a complete document, a page with dynamic nodes bakes a static shell with `<instatic-hole>` placeholders. The CSS bundles + runtime JS are baked into the same slot. After all pages are written the symlink `current` atomic-flips to the new slot. Served entirely from disk — no DB for HTML/CSS/JS.
 - **Layer B** — the in-memory render cache evicts lazily via `bumpPublishVersion()`.
-- **Layer C** — when a page contains dynamic nodes (auto-detected from binding sources, loop sources, module flags, VC refs), the publisher emits `<instatic-hole>` placeholders in the rendered HTML; the hole runtime fetches each fragment lazily from `/_instatic/hole/<nodeId>?v=<publishVersion>`.
+- **Layer C** — when a page contains dynamic nodes (auto-detected from binding sources, loop sources, module flags, VC refs), the publisher emits `<instatic-hole>` placeholders in the rendered HTML; the hole runtime fetches each fragment lazily from `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>`, forwarding the originating page path/query so route bindings and loop pagination resolve inside the fragment.
 
 For postType rows, `publishDataRow` does the same but incrementally: writes the single row's artefact into the ACTIVE slot via `tmp + rename` (no full slot swap), bumps publishVersion, and removes the old slug's artefact if the slug changed.
 

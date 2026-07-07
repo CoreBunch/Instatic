@@ -22,7 +22,7 @@ import { collectSubtreeIds } from './selectors'
  * `children[]`. Slot-sync passes `false` because it overwrites the VC ref's
  * `children` array wholesale afterwards (the parent fix is the caller's job).
  *
- * Safe to call inside a Mutative producer (the in-place splice/delete operate
+ * Safe to call inside a Mutative recipe (the in-place splice/delete operate
  * on the draft) or on a plain object map.
  */
 export function deleteSubtree(
@@ -56,7 +56,7 @@ export function deleteSubtree(
  * orphaned slot-instances or user content are left behind. Callers pick which
  * refs to remove; this performs the identical tree surgery either way.
  *
- * Safe to call inside a Mutative producer or on a plain object map.
+ * Safe to call inside a Mutative recipe or on a plain object map.
  */
 export function removeNodeSubtrees(
   nodes: Record<string, BaseNode>,

@@ -172,6 +172,18 @@ export const PREFERENCE_CATALOG = [
     default: false,
   },
   {
+    id: 'theme',
+    type: 'select',
+    category: 'editor',
+    label: 'Theme',
+    description: 'Choose whether the admin interface uses the default dark chrome or a light theme.',
+    options: [
+      { value: 'dark',  label: 'Dark' },
+      { value: 'light', label: 'Light' },
+    ],
+    default: 'dark',
+  },
+  {
     id: 'density',
     type: 'select',
     category: 'editor',
@@ -182,6 +194,20 @@ export const PREFERENCE_CATALOG = [
       { value: 'comfortable', label: 'Comfortable' },
     ],
     default: 'compact',
+  },
+  {
+    id: 'textScale',
+    type: 'select',
+    category: 'editor',
+    label: 'UI text size',
+    description: 'Scale admin interface text independently from spacing density.',
+    options: [
+      { value: 'small',       label: 'Small' },
+      { value: 'default',     label: 'Default' },
+      { value: 'large',       label: 'Large' },
+      { value: 'extra-large', label: 'Extra large' },
+    ],
+    default: 'default',
   },
 
   // ── Canvas ──────────────────────────────────────────────────────────────
