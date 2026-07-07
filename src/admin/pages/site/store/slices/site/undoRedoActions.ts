@@ -27,8 +27,9 @@ export function createUndoRedoActions({ get, set }: SiteSliceHelpers): UndoRedoA
       const packageJson = clonePackageJson(restored.packageJson)
       const siteRuntime = cloneSiteRuntimeConfig(restored.runtime)
       // Undo changes the same paths the original mutation did — the restored
-      // pages/VCs must be re-saved.
-      const dirty = collectDirtyFromSitePatches(entry.inverse, restored)
+      // pages/VCs must be re-saved (and rows the undo removes again become
+      // explicit deletions via the pre/post membership diff).
+      const dirty = collectDirtyFromSitePatches(entry.inverse, site, restored)
       set((state) => {
         state._historyPast.pop()
         state._historyFuture.push(entry)
@@ -56,8 +57,9 @@ export function createUndoRedoActions({ get, set }: SiteSliceHelpers): UndoRedoA
       const restored = apply(site, entry.forward)
       const packageJson = clonePackageJson(restored.packageJson)
       const siteRuntime = cloneSiteRuntimeConfig(restored.runtime)
-      // Redo re-applies the mutation's paths — mark the replayed pages/VCs.
-      const dirty = collectDirtyFromSitePatches(entry.forward, restored)
+      // Redo re-applies the mutation's paths — mark the replayed pages/VCs
+      // (and re-deleted rows, via the pre/post membership diff).
+      const dirty = collectDirtyFromSitePatches(entry.forward, site, restored)
       set((state) => {
         state._historyFuture.pop()
         state._historyPast.push(entry)

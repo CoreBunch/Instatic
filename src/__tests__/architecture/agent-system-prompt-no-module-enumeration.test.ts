@@ -35,7 +35,7 @@ describe('agent-system-prompt-no-module-enumeration gate', () => {
     expect(src).not.toContain('base.text')
   })
 
-  it('references insertHtml in the static prefix', () => {
+  it('references site_insert_html in the static prefix', () => {
     // The HTML-native tool must be described so the agent knows to use it.
     expect(src).toContain('site_insert_html')
   })

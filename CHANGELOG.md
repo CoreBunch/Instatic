@@ -6,6 +6,19 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 
 ## Unreleased
 
+## 0.0.10 - 2026-07-01
+
+### AI and integrations
+
+- Added an OpenAI-compatible AI provider for custom base URL endpoints.
+
+### Import, editor, and publishing
+
+- Fixed imported module scripts so their npm dependencies install correctly.
+- Aligned canvas and Layers panel keyboard shortcuts.
+- Let modules declare Content Security Policy sources, so published `base.video` YouTube embeds render correctly.
+- Fixed empty-folder explorer operations so they apply without showing the "0 paths" dialog.
+
 ## 0.0.9 - 2026-07-01
 
 ### AI and integrations

@@ -1,9 +1,8 @@
 /**
  * Activity widget — recent edits, publishes, plugin lifecycle, and
  * user/role changes pulled from `audit_events`. Reads from
- * `useDashboardStats().recentActivity` (one shared fetch with the
- * other widgets) so the dashboard makes a single network round-trip
- * on mount.
+ * `useRecentActivityStats()`, its own dashboard endpoint, so slower
+ * audit projections do not block the other widgets from rendering.
  *
  * Login/logout events are intentionally excluded server-side — those
  * belong in Account → Sign-in history. The widget is about

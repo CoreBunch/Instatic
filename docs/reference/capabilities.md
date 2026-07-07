@@ -8,7 +8,7 @@ For the broader auth flow (sessions, MFA, step-up), see [docs/features/auth-and-
 
 ## TL;DR
 
-- Defined as a `const` array in `src/core/capabilities.ts` (`@core/capabilities`); `CoreCapability` is derived via `typeof CORE_CAPABILITIES[number]`. **36 capabilities.**
+- Defined as a `const` array in `src/core/capabilities.ts` (`@core/capabilities`); `CoreCapability` is derived via `typeof CORE_CAPABILITIES[number]`. **38 capabilities.**
 - Handlers gate on capability, not on role: `requireCapability(req, db, 'site.read')`.
 - The **Owner AND Admin** roles get their capability lists force-resynced from `SYSTEM_ROLES` on every server boot. Hand-edits to either built-in role through the admin UI are restored at next boot — they are code-level decisions, not runtime ones.
 - Adding a capability: append the literal to `CORE_CAPABILITIES` in `src/core/capabilities.ts` (one place — server imports it), add it to the relevant `SYSTEM_ROLES` entries, wire `requireCapability(...)` at the gate point, and add picker meta + groups for the role-edit dialog. The two architecture tests (`capability-picker-coverage.test.ts`, `cms-handlers-capability-gated.test.ts`) catch missing pieces.
@@ -16,7 +16,7 @@ For the broader auth flow (sessions, MFA, step-up), see [docs/features/auth-and-
 
 ---
 
-## The 36 core capabilities
+## The 38 core capabilities
 
 ### Read
 
@@ -33,7 +33,7 @@ For the broader auth flow (sessions, MFA, step-up), see [docs/features/auth-and-
 | `site.content.edit`      | Modify content props (text, image src/alt, link href) on existing nodes — no structure or style edits | Owner, Admin, Client |
 | `site.style.edit`        | Modify CSS classes, style overrides, breakpoints, framework tokens  | Owner, Admin  |
 
-`SITE_WRITE_CAPABILITIES` is the convenience set `['site.structure.edit', 'site.content.edit', 'site.style.edit']` — defined locally in `server/handlers/cms/site.ts` and `src/admin/access.ts` at each point of use, not in a shared capabilities module. Used by the site shell save handler and the page-row save path. `/pages` accepts any site writer, then diff-validates each changed page by category: page roster, metadata, topology, module identity, non-content props, and dynamic bindings require `site.structure.edit`; content-category props require `site.content.edit`; inline styles/classes/breakpoint overrides require `site.style.edit`. `/components` and `/layouts` accept no-op saves from any site writer so the client can save one dirty family without tripping over empty batches, but actual changed components/layouts or roster removals still require `site.structure.edit`.
+`SITE_WRITE_CAPABILITIES` is the convenience set `['site.structure.edit', 'site.content.edit', 'site.style.edit']` — defined locally in `server/handlers/cms/siteDocument.ts` and `src/admin/access.ts` at each point of use, not in a shared capabilities module. The transactional site-document save (`PUT /admin/api/cms/site-document`) accepts any site writer, then diff-validates the batch by category: page deletions, page metadata, topology, module identity, non-content props, and dynamic bindings require `site.structure.edit`; content-category props (and site-wide SEO copy on the shell) require `site.content.edit`; inline styles/classes/breakpoint overrides and style rules require `site.style.edit`. Empty change sets are no-op saves any site writer may perform, but changed/deleted components and layouts remain structural work (`site.structure.edit`).
 
 ### Page publishing
 
@@ -149,7 +149,7 @@ The trade-off for Admin force-sync: an operator who hand-removes a capability fr
 Don't confuse them:
 
 - **Core capabilities** (this doc) govern **what a logged-in human user can do in the admin**. Stored on `users.role`.
-- **Plugin permissions** govern **what a plugin's code can do via the SDK**. Declared in `plugin.json`, approved at install. See [docs/features/plugin-system.md](../features/plugin-system.md).
+- **Plugin permissions** govern **what a plugin's code can do via the SDK**. Authored in `instatic-plugin.config.ts` and emitted into `plugin.json`, then approved at install. See [docs/features/plugin-system.md](../features/plugin-system.md).
 
 A plugin route handler can additionally gate on a core capability:
 

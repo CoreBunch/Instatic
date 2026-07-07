@@ -227,7 +227,7 @@ export function createScaleGroupActions<F extends 'typography' | 'spacing'>(
     createGroup: () => {
       const { site } = get()
       if (!site) throw new Error('[siteSlice] Site document is not initialized')
-      // Read-only view of the (Immer-frozen) live site — `ensureScaleSettings`
+      // Read-only view of the (Mutative-frozen) live site — `ensureScaleSettings`
       // mutates and would throw on the frozen object when the family branch is
       // absent. The actual write happens inside `mutateSite` below.
       const groups = readScaleGroups(site, family)

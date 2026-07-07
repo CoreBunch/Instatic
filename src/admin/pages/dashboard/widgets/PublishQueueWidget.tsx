@@ -7,8 +7,8 @@
  *   • Recently published → "PUBLISHED" badge, "5m ago" / "2d ago"
  *   • Drafts           → "DRAFT" badge, em-dash
  *
- * Data flows through `useDashboardStats().publishLineup.rows` — the
- * server already orders and limits the list so the widget just renders.
+ * Data flows through `usePublishLineupStats()` — the server already
+ * orders and limits the list so the widget just renders.
  */
 import { CloudUploadSolidIcon } from 'pixel-art-icons/icons/cloud-upload-solid'
 import type { DashboardWidgetRendererProps } from '@core/dashboard'

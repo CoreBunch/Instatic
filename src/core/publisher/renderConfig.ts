@@ -13,10 +13,11 @@
  *    received.
  *
  *  - `RenderAccumulators` (mutable): the outputs of a render pass — the
- *    deduped CSS map, the set of infinite-loop ids, and the set of nodes that
- *    actually emitted a `<instatic-hole>`. The top-level `publishPage` owns
- *    these, initialises all three up-front, and threads the SAME instances
- *    down the whole tree so every renderer appends to one shared accumulator.
+ *    deduped CSS map, deduped module-JS map, per-page CSP requirements, the
+ *    set of infinite-loop ids, and the set of nodes that actually emitted a
+ *    `<instatic-hole>`. The top-level `publishPage` owns these, initialises
+ *    all five up-front, and threads the SAME instances down the whole tree so
+ *    every renderer appends to one shared accumulator.
  *    Passing it as an explicit parameter is what makes the shared-mutable
  *    output visible at each call site.
  *

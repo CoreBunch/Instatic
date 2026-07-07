@@ -95,3 +95,17 @@ export async function saveDraftSite(
           updated_at = current_timestamp
   `
 }
+
+/**
+ * Stamp the site-global sync seq on the draft-site row. The transactional
+ * site-document save calls this right after `saveDraftSite` inside the same
+ * transaction, so shell changes participate in delta reconciliation exactly
+ * like row changes (see repositories/syncSequence.ts).
+ */
+export async function stampDraftSiteSeq(db: DbClient, seq: number): Promise<void> {
+  await db`
+    update site
+    set seq = ${seq}
+    where id = 'default'
+  `
+}

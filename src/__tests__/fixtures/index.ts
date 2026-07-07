@@ -152,6 +152,7 @@ export function makeSite(overrides: Partial<SiteDocument> = {}): SiteDocument {
     explorer: overrides.explorer ?? createDefaultSiteExplorerOrganization(),
     files: overrides.files ?? [],
     visualComponents: overrides.visualComponents ?? [],
+    layouts: overrides.layouts ?? [],
     packageJson: overrides.packageJson ?? normalizeSitePackageJson(undefined),
     runtime: overrides.runtime ?? normalizeSiteRuntimeConfig(undefined),
     createdAt: overrides.createdAt ?? 1_700_000_000_000,

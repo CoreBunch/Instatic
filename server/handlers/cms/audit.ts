@@ -1,9 +1,9 @@
 /**
  * Audit log read endpoint (gated by `audit.read`).
  *
- *   GET /admin/api/cms/audit — list every audit event in reverse-chronological
- *                              order. The repository handles the actual ordering
- *                              and the (currently unbounded) result limit.
+ *   GET /admin/api/cms/audit — list the latest audit events in reverse-
+ *                              chronological order. Query filters are not
+ *                              implemented; callers get the repository default.
  */
 import type { DbClient } from '../../db/client'
 import { requireCapability } from '../../auth/authz'

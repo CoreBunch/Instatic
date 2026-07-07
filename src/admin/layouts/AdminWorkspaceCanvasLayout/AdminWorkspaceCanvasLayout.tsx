@@ -13,7 +13,7 @@ import { Toolbar } from '@site/toolbar/Toolbar'
 import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import { ConfirmDeleteProvider } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { SidebarResizeHandle } from '@admin/shared/SidebarResizeHandle'
-import { useEditorSelectPreference } from '@site/preferences/editorPreferences'
+import { useEditorAppearancePreferences } from '@site/preferences/editorPreferences'
 import { useInstalledEditorPlugins } from '@admin/pages/plugins/hooks/useInstalledEditorPlugins'
 import { usePluginEventBridge } from '@admin/pages/plugins/hooks/usePluginEventBridge'
 import { useCurrentAdminUser } from '@admin/sessionContext'
@@ -59,7 +59,7 @@ export function AdminWorkspaceCanvasLayout({
   useInstalledEditorPlugins(pluginBackgroundWorkEnabled)
   usePluginEventBridge(pluginBackgroundWorkEnabled)
 
-  const density = useEditorSelectPreference('density')
+  const appearance = useEditorAppearancePreferences()
   const adminUiSiteName = useAdminUi((s) => s.siteName)
   const adminUiFaviconUrl = useAdminUi((s) => s.siteFaviconUrl)
   const settingsOpen = useAdminUi((s) => s.settingsOpen)
@@ -70,7 +70,12 @@ export function AdminWorkspaceCanvasLayout({
   const hasReopenableRightPanel = rightPanelAvailable && !hasRightSidebar
 
   return (
-    <div className={styles.shell} data-editor-density={density}>
+    <div
+      className={styles.shell}
+      data-editor-density={appearance.density}
+      data-editor-theme={appearance.theme}
+      data-editor-text-scale={appearance.textScale}
+    >
       <Toolbar
         siteName={adminUiSiteName}
         faviconUrl={adminUiFaviconUrl}

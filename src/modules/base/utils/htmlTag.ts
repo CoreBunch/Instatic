@@ -61,6 +61,20 @@ const BUILTIN_HTML_TAG_SET: ReadonlySet<string> = new Set(BUILTIN_HTML_TAGS)
 const CUSTOM_TAG_PATTERN = /^[a-z][a-z0-9-]{0,31}$/i
 
 /**
+ * Elements that must never be produced from the free-form custom-tag escape
+ * hatch — they execute script, load external/plugin resources, or hijack the
+ * document's base URL, and would run in the published page AND the admin editor
+ * canvas (which renders these trusted modules directly, same-origin as
+ * `/admin`). `base.video` emits its own trusted `<iframe>` via its module
+ * `htmlTag`, not this resolver, so blocking `iframe` here does not affect video
+ * embeds — it only stops a container/loop/outlet author typing a dangerous tag.
+ */
+const FORBIDDEN_CUSTOM_HTML_TAGS: ReadonlySet<string> = new Set([
+  'script', 'iframe', 'frame', 'frameset', 'object', 'embed',
+  'applet', 'base', 'link', 'meta', 'style',
+])
+
+/**
  * Resolve the tag a module should render given its `tag` + `customTag` props.
  *
  * Returns a safe lowercase tag name. Falls back to 'div' when:
@@ -74,7 +88,9 @@ export function resolveHtmlTag(tag: unknown, customTag: unknown): string {
     if (typeof customTag !== 'string') return 'div'
     const trimmed = customTag.trim()
     if (!CUSTOM_TAG_PATTERN.test(trimmed)) return 'div'
-    return trimmed.toLowerCase()
+    const lower = trimmed.toLowerCase()
+    if (FORBIDDEN_CUSTOM_HTML_TAGS.has(lower)) return 'div'
+    return lower
   }
   if (BUILTIN_HTML_TAG_SET.has(tag)) return tag.toLowerCase()
   return 'div'

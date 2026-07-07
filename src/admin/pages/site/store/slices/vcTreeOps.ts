@@ -91,7 +91,7 @@ export function collectSubtreeNodeIds(
 /**
  * Remove all `base.visual-component-ref` nodes referencing `vcId` from the
  * given flat-map node tree, along with their entire subtrees (slot-instances,
- * user content, etc.). Operates inside an Immer producer — mutates in place.
+ * user content, etc.). Operates inside a Mutative recipe — mutates in place.
  *
  * Used by `deleteVisualComponent` to cascade ref removal across every page and
  * every remaining VC tree in one atomic `mutateSite` call.
@@ -123,8 +123,8 @@ export function cascadeRemoveVCRefs(
  * - Populates idMap (oldId → newId) for each visited node so that
  *   parent `children` string arrays reference the correct new IDs.
  * - For node-scoped classes (scope.type === 'node' && scope.nodeId === oldId):
- *   rewrites scope.nodeId to the new ID in-place (must run inside an Immer
- *   producer) and records the classId in hoistedClassIds so the caller can
+ *   rewrites scope.nodeId to the new ID in-place (must run inside a Mutative
+ *   recipe) and records the classId in hoistedClassIds so the caller can
  *   attach it to the new VC's top-level classIds array.
  * - dynamicBindings is intentionally NOT copied — VCNode has no dynamicBindings.
  *
@@ -167,7 +167,7 @@ export function clonePageSubtreeToFlatNodes(
     for (const classId of pageNode.classIds) {
       const cls = siteClasses[classId]
       if (cls && cls.scope?.type === 'node' && cls.scope.nodeId === oldNodeId) {
-        // Rewrite scope in-place (Immer draft mutation)
+        // Rewrite scope in-place (Mutative draft mutation)
         cls.scope.nodeId = newId
         hoistedClassIds.add(classId)
       }

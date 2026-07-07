@@ -286,16 +286,22 @@ test.describe('admin settings', () => {
         const dialog = await openSettings(page, 'Preferences')
         const autoSave = dialog.getByRole('switch', { name: 'Auto-save' })
         const delay = dialog.getByRole('combobox', { name: 'Auto-save delay' })
+        const theme = dialog.getByRole('combobox', { name: 'Theme' })
         const density = dialog.getByRole('combobox', { name: 'UI density' })
+        const textSize = dialog.getByRole('combobox', { name: 'UI text size' })
 
         await expect(autoSave).toHaveAttribute('aria-checked', 'true')
         await expect(delay).toHaveValue('30 seconds')
+        await expect(theme).toHaveValue('Dark')
         await expect(density).toHaveValue('Compact')
+        await expect(textSize).toHaveValue('Default')
 
         await autoSave.click()
         await expect(autoSave).toHaveAttribute('aria-checked', 'false')
         await chooseComboboxOption(page, delay, '15 seconds')
+        await chooseComboboxOption(page, theme, 'Light')
         await chooseComboboxOption(page, density, 'Comfortable')
+        await chooseComboboxOption(page, textSize, 'Large')
 
         const savedPrefs = await page.evaluate((key) => {
           const raw = localStorage.getItem(key)
@@ -303,7 +309,9 @@ test.describe('admin settings', () => {
         }, EDITOR_PREFS_KEY)
         expect(savedPrefs.autoSave).toBe(false)
         expect(savedPrefs.autoSaveDelay).toBe('15')
+        expect(savedPrefs.theme).toBe('light')
         expect(savedPrefs.density).toBe('comfortable')
+        expect(savedPrefs.textScale).toBe('large')
 
         await page.keyboard.press('Escape')
         await expect(dialog).toBeHidden()
@@ -318,8 +326,14 @@ test.describe('admin settings', () => {
         await expect(
           reloadedDialog.getByRole('combobox', { name: 'Auto-save delay' }),
         ).toHaveValue('15 seconds')
+        await expect(reloadedDialog.getByRole('combobox', { name: 'Theme' })).toHaveValue(
+          'Light',
+        )
         await expect(reloadedDialog.getByRole('combobox', { name: 'UI density' })).toHaveValue(
           'Comfortable',
+        )
+        await expect(reloadedDialog.getByRole('combobox', { name: 'UI text size' })).toHaveValue(
+          'Large',
         )
         await page.keyboard.press('Escape')
         await expect(reloadedDialog).toBeHidden()
@@ -338,6 +352,9 @@ test.describe('admin settings', () => {
         await expect(dialog.getByRole('combobox', { name: 'Auto-save delay' })).toHaveValue(
           '30 seconds',
         )
+        await expect(dialog.getByRole('combobox', { name: 'Theme' })).toHaveValue('Dark')
+        await expect(dialog.getByRole('combobox', { name: 'UI density' })).toHaveValue('Compact')
+        await expect(dialog.getByRole('combobox', { name: 'UI text size' })).toHaveValue('Default')
         await page.keyboard.press('Escape')
         await expect(dialog).toBeHidden()
       })
@@ -350,7 +367,9 @@ test.describe('admin settings', () => {
         const dialog = await openSettings(page, 'Preferences')
         const preferences = dialog.getByRole('region', { name: 'Preferences' })
         await expect(preferences.getByRole('switch', { name: 'Auto-save' })).toBeVisible()
+        await expect(preferences.getByRole('combobox', { name: 'Theme' })).toBeVisible()
         await expect(preferences.getByRole('combobox', { name: 'UI density' })).toBeVisible()
+        await expect(preferences.getByRole('combobox', { name: 'UI text size' })).toBeVisible()
         await expectPageContained(page)
         await expectLocatorContained(
           page,
@@ -364,8 +383,18 @@ test.describe('admin settings', () => {
         )
         await expectLocatorContained(
           page,
+          preferences.getByRole('combobox', { name: 'Theme' }),
+          'mobile settings theme combobox',
+        )
+        await expectLocatorContained(
+          page,
           preferences.getByRole('combobox', { name: 'UI density' }),
           'mobile settings density combobox',
+        )
+        await expectLocatorContained(
+          page,
+          preferences.getByRole('combobox', { name: 'UI text size' }),
+          'mobile settings text-size combobox',
         )
       })
     } finally {
@@ -445,7 +474,7 @@ async function chooseComboboxOption(
   optionName: string,
 ): Promise<void> {
   await combobox.click()
-  await page.getByRole('option', { name: optionName }).click()
+  await page.getByRole('option', { name: optionName, exact: true }).click()
   await expect(combobox).toHaveValue(optionName)
   await expect(combobox).toBeFocused()
 }

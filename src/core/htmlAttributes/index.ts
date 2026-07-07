@@ -3,4 +3,5 @@ export {
   isRenderableHtmlAttributeName,
   isReservedRuntimeDataAttributeName,
   normalizeHtmlAttributeName,
+  sanitizeRenderableHtmlAttribute,
 } from './attributes'

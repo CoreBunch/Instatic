@@ -155,12 +155,12 @@
 }
 
 .variant-ghost:hover {
-    background: var(--bg-surface-4);
+    background: var(--overlay-10);
     color: var(--text);
 }
 
 .variant-ghost:active {
-    background: var(--bg-surface);
+    background: var(--overlay-20);
     color: var(--text);
 }
 
@@ -188,36 +188,36 @@
 
 /* ── Variant: primary ─────────────────────────────────────────────────────── */
 .variant-primary {
-    background: var(--bg-surface-4);
+    background: var(--overlay-20);
     color: var(--text);
 }
 
 .variant-primary:hover {
-    background: var(--bg-surface-5);
+    background: var(--overlay-30);
 }
 
 .variant-primary:active {
-    background: var(--bg-surface-4);
+    background: var(--overlay-20);
 }
 
 /* ── Variant: secondary ───────────────────────────────────────────────────── */
 .variant-secondary {
-    background: var(--bg-surface-2);
+    background: var(--overlay-10);
     color: var(--text-muted);
 }
 
 .variant-secondary:hover {
-    background: var(--bg-surface-3);
+    background: var(--overlay-20);
     color: var(--text);
 }
 
 .variant-secondary:active {
-    background: var(--bg-surface);
+    background: var(--overlay-30);
 }
 
 .variant-secondary[data-active="true"],
 .variant-secondary[aria-pressed="true"] {
-    background: var(--bg-surface);
+    background: var(--overlay-20);
     color: var(--text);
 }
 

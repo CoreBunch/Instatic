@@ -18,10 +18,9 @@ import { tmpdir } from 'node:os'
 import type { DbClient } from '../../db/client'
 import { requireCapability } from '../../auth/authz'
 import { jsonResponse, badRequest } from '../../http'
-import { assertPathWithin } from '../../util/pathWithin'
 import { importMediaAsset, assignAssetToFolders } from '../../repositories/media'
 import { parseValue, formatValueErrors, compiled } from '@core/utils/typeboxHelpers'
-import { validateAndSanitizeMediaBytesForImport } from './importArchiveMediaValidation'
+import { validateAndSanitizeMediaBytes, resolveMediaWriteTarget } from './importMediaValidation'
 import {
   ImportResultSchema,
   ImportStrategySchema,
@@ -185,15 +184,18 @@ export async function importStagedArchiveMediaEntries(input: {
   let imported = 0
 
   for (const { asset, stagedPath } of input.stagedMedia.entries) {
-    const target = join(input.uploadsDir, asset.storagePath)
-    assertPathWithin(input.uploadsDir, target)
+    const target = resolveMediaWriteTarget(input.uploadsDir, asset.storagePath)
     await mkdir(dirname(target), { recursive: true })
 
     // Security gate: detect the real MIME from magic bytes and sanitize SVG
     // before committing bytes to disk.  Reuses the same helpers as the normal
     // upload pipeline so there is exactly one place to update if the detection
-    // or sanitisation logic changes.
-    const safeBytes = await validateAndSanitizeMediaBytesForImport(stagedPath, asset)
+    // or sanitisation logic changes. The staged file is fully buffered here to
+    // sniff its magic bytes (unavoidable — MIME detection needs the head).
+    const safeBytes = validateAndSanitizeMediaBytes(
+      new Uint8Array(await Bun.file(stagedPath).arrayBuffer()),
+      asset,
+    )
 
     // SVG entries are written from the sanitized in-memory bytes; all other
     // types are moved from staging (zero-copy fast path).

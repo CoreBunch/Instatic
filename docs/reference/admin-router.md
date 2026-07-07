@@ -1,6 +1,6 @@
 # Admin Router
 
-Cookbook for the in-house router at `src/admin/lib/routing/`. Replaces `react-router-dom` for the admin app — a 4-component, 4-hook surface that covers everything the 10-route admin needs.
+Cookbook for the in-house router at `src/admin/lib/routing/`. Replaces `react-router-dom` for the admin app — a six-component, four-hook surface that covers the current admin route table.
 
 Use it for every internal admin navigation, including links rendered by the site editor. `src/core/` and `src/modules/` must not import it because they are shared engine / published-page code, not admin UI.
 
@@ -342,7 +342,7 @@ render(
 | `history.pushState` directly                                     | Use the router — it fires `instatic:locationchange` for you|
 | Nested routes (`<Route path="/admin/site"><Route ...>...`)       | Flat route table only. Compose with workspace internal state. |
 | Optional URL segments / wildcards                                 | Restructure the route tree.                          |
-| Catch-all 404 route                                              | The admin has 9 known paths — invalid paths route to dashboard via the index redirect. |
+| Catch-all 404 route                                              | Keep the scoped `/admin/*` redirect last — invalid admin paths route to the dashboard/login flow. |
 
 ---
 
@@ -371,7 +371,7 @@ Full contract and URL shapes are documented in [docs/editor.md](../editor.md) �
 - [docs/architecture.md](../architecture.md) — `/admin/*` namespace owned by the SPA
 - [docs/features/spotlight.md](../features/spotlight.md) — Spotlight command navigation
 - Source-of-truth files:
-  - `src/admin/lib/routing/Router.tsx` — `Router`, `MemoryRouter`, `Routes`, `Route`, `Navigate`
+  - `src/admin/lib/routing/Router.tsx` — `Router`, `MemoryRouter`, `Routes`, `Route`, `Navigate`, `Link`
   - `src/admin/lib/routing/routerHooks.ts` — `useLocation`, `useNavigate`, `useParams`, `useInRouterContext`, `matchPath`
   - `src/admin/lib/routing/index.ts` — barrel
   - `src/admin/lib/urlState/urlState.ts` — `useInitialQueryParams`, `useUrlQuerySync`

@@ -1,7 +1,7 @@
 .seg {
     display: inline-flex;
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
+    background: var(--overlay-5);
+    border: 1px solid var(--overlay-20);
     border-radius: 8px;
     padding: var(--space-4xs);
     gap: 0;
@@ -21,6 +21,6 @@
 }
 
 .tab[data-active="true"] {
-    background: var(--bg-surface-3);
+    background: var(--overlay-20);
     color: var(--text-bright);
 }

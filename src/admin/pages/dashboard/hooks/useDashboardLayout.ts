@@ -165,8 +165,7 @@ const SAVE_DEBOUNCE_MS = 600
 
 /**
  * Default layout uses ONLY first-party widget ids that the host ships
- * unconditionally. Plugin-owned widgets (Analytics → `visitors` /
- * `top-pages`, future plugins → their own ids) are NOT in the default
+ * unconditionally. Plugin-owned widgets are NOT in the default
  * grid — installing the plugin adds the widget to the registry, but the
  * user has to drop it onto the grid via the "Add block" picker (or the
  * plugin can persist a layout update via the layout API after install).

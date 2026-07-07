@@ -2,16 +2,17 @@
  * Dashboard widget types.
  *
  * The admin dashboard (`/admin/dashboard`) renders a configurable grid of
- * widgets. First-party widgets (Visitors, Pages, Storage, …) are registered
+ * widgets. First-party widgets (Pages, Storage, AI usage, …) are registered
  * during admin bootstrap; plugins register their own widgets via
  * `api.dashboard.widgets.register(...)` exposed through the plugin SDK.
  *
  * A widget is a React component plus a small set of metadata (id, name,
  * description, icon, default size, tint, owner plugin id). The grid is a
- * 12-column layout; widgets declare their default column span via `size`.
+ * 12-column layout; widgets declare their default column span via
+ * `defaultSize`.
  *
  * Plugin widget IDs MUST be prefixed with the plugin id (`<pluginId>.<key>`).
- * First-party widgets use plain keys (`visitors`, `pages`, etc.) and live
+ * First-party widgets use plain keys (`pages`, `storage`, etc.) and live
  * under the implicit `core` namespace.
  */
 import type { ComponentType } from 'react'
@@ -45,7 +46,7 @@ export interface DashboardWidgetRendererProps {
 
 export interface DashboardWidgetDefinition {
   /**
-   * Stable identifier. First-party widgets use plain keys (`visitors`).
+   * Stable identifier. First-party widgets use plain keys (`pages`).
    * Plugin-registered widgets MUST namespace under the plugin id
    * (`acme.analytics.pageviews`). The registry rejects non-namespaced
    * registrations from a plugin source at runtime.

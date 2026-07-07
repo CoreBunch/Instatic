@@ -1,7 +1,7 @@
 /**
  * Users → Audit tab.
  *
- * Read-only feed of `cms_audit_events` rows: every security-sensitive
+ * Read-only feed of `audit_events` rows: every security-sensitive
  * change in the admin area (logins, user/role mutations, plugin lifecycle,
  * publishes). Each row is rendered into a sentence-case title + optional
  * detail badges + actor attribution + timestamp.

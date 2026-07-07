@@ -6,7 +6,7 @@ CMS-native forms let the visual editor build semantic HTML forms from primitive 
 
 - Form modules live in `src/modules/base/forms/` and register from `src/modules/base/index.ts`.
 - Every form part is a node: `base.form`, `base.label`, `base.input`, `base.textarea`, `base.select`, `base.option`, `base.option-group`, `base.checkbox`, `base.radio`, `base.submit`, and `base.form-message`.
-- Presets in `src/admin/pages/site/module-picker/formPresets.ts` insert ordinary primitive nodes; nothing is hidden inside the preset.
+- The module picker exposes the form primitives in its Forms category; preview wireframes live in `src/admin/pages/site/module-picker/moduleWireframes.ts`.
 - Paste HTML, agent HTML insert/replace, and Super Import all use `@core/htmlImport`, so semantic HTML form tags import as these same primitive modules.
 - CMS form snapshots are derived at publish/request time by `src/core/forms/snapshot.ts`.
 - Public submissions go through `POST /_instatic/form/challenge` and `POST /_instatic/form/submit`, implemented in `server/forms/handler.ts`.
@@ -14,9 +14,9 @@ CMS-native forms let the visual editor build semantic HTML forms from primitive 
 
 ## Editor Model
 
-The editor exposes both primitives and presets.
+The editor exposes form primitives in the module picker.
 
-Primitives are the source of truth. A label is a `base.label` node, an input is a `base.input` node, and a submit button is a `base.submit` node. Presets only save clicks by inserting a subtree such as contact or newsletter; after insertion, the user edits the same nodes they would have created manually.
+Primitives are the source of truth. A label is a `base.label` node, an input is a `base.input` node, and a submit button is a `base.submit` node. There is no hidden field-builder shape inside `base.form`; authors compose ordinary nodes, and every node remains directly editable after insertion.
 
 `base.form` has two modes:
 
@@ -27,7 +27,7 @@ Form-related nodes get a contextual setup block rendered at the top of Module se
 
 For a selected `base.form` node, the setup block promotes three props — mode, Form ID, and target table — out of the generic property-control list. `renderModuleTabContent.tsx` suppresses them from the schema-driven rows via `PROMOTED_FORM_PROPERTY_KEYS`; the setup block renders them instead as a segmented mode selector and a stacked Form ID input. The target table is a live-loaded select backed by the CMS tables API. Only non-system `data` tables are eligible targets; seeded system tables such as Pages, Posts, and Components are hidden because public forms collect submissions, not site structure or core content records. Authors can also create a new `data` table from the current form controls: a dialog opens with an editable table name prefilled from a human-readable form name (generated id suffixes are stripped by `formSettingsNaming.ts` so names stay author-facing), then fields are inferred from the authored primitive nodes — ids, labels, types, required flags, and compatible validation defaults. If the selected table has fields not represented in the form, the block offers one-click insertion of label + compatible control primitives before the submit/message area.
 
-The `Form ID` property is a machine identifier, not the author-facing table or form name. Presets use clean ids such as `contact`, `contact-2`, and `newsletter` instead of long node ids. The editor normalizes typed spaces to identifier-safe separators, and the publisher/snapshot path normalizes the same way so form messages, external submit buttons, public tokens, and submission handlers all agree on one id.
+The `Form ID` property is a machine identifier, not the author-facing table or form name. Authors use clean ids such as `contact`, `contact-2`, and `newsletter` instead of long node ids. The editor normalizes typed spaces to identifier-safe separators, and the publisher/snapshot path normalizes the same way so form messages, external submit buttons, public tokens, and submission handlers all agree on one id.
 
 For a selected control inside a CMS-native form, the setup block exposes a field picker for compatible fields in the form's target table. Selecting a field patches the node's `fieldId`, `name`, `id`, input/control type, required state, and compatible validation defaults in one edit.
 

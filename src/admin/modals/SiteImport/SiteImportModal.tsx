@@ -16,7 +16,7 @@
  * `{siteImportOpen && <SiteImportModal />}` so the component is always freshly
  * mounted on open — no reset logic needed.
  *
- * Undo guarantee: `mutateAllPagesAndSite` wraps the full commit in one Immer
+ * Undo guarantee: `mutateAllPagesAndSite` wraps the full commit in one Mutative
  * history snapshot, so Cmd+Z reverts the entire import in one press.
  */
 

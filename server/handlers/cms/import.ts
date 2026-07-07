@@ -28,9 +28,12 @@
  *                                  shell replace is a structural edit)
  */
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { assertPathWithin } from '../../util/pathWithin'
+import { dirname } from 'node:path'
 import type { DbClient } from '../../db/client'
+import {
+  validateAndSanitizeMediaBytes,
+  resolveMediaWriteTarget,
+} from './importMediaValidation'
 import { requireCapability, requireStepUp, userHasCapability } from '../../auth/authz'
 import { saveDraftSite } from '../../repositories/site'
 import {
@@ -369,20 +372,27 @@ export async function handleImportRoute(
 
     for (const asset of bundle.media) {
       try {
-        // Write the file bytes. The schema already forbids leading-slash and
-        // `..` segments, but re-assert containment after join() — a media
-        // storagePath is otherwise an arbitrary-file-write primitive (ISS-009).
-        const bytes = Buffer.from(asset.bytesBase64, 'base64')
-        const target = join(uploadsDir, asset.storagePath)
-        assertPathWithin(uploadsDir, target)
-        await writeFile(target, bytes)
+        // Same security gate the archive import and upload pipeline apply:
+        //   - destination: no traversal, never a reserved served subtree
+        //     (published/plugins/fonts) — `resolveMediaWriteTarget`;
+        //   - content: real MIME must match the declared type + extension and
+        //     SVG is sanitised — `validateAndSanitizeMediaBytes`.
+        // Without this, a `data.import` caller could write arbitrary HTML/JS
+        // (e.g. `published/current/index.html`) served same-origin as /admin.
+        const target = resolveMediaWriteTarget(uploadsDir, asset.storagePath)
+        const safeBytes = validateAndSanitizeMediaBytes(
+          Buffer.from(asset.bytesBase64, 'base64'),
+          asset,
+        )
+        await mkdir(dirname(target), { recursive: true })
+        await writeFile(target, safeBytes)
 
         // Upsert the media_assets row
         await importMediaAsset(db, {
           id: asset.id,
           filename: asset.filename,
           mimeType: asset.mimeType,
-          sizeBytes: asset.sizeBytes,
+          sizeBytes: safeBytes.length,
           storagePath: asset.storagePath,
           publicPath: `/uploads/${asset.storagePath}`,
           altText: asset.altText,

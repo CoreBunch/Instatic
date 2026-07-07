@@ -9,7 +9,7 @@
  *   filter.ts    — operator-object filter querying (plugin content surface)
  *   mutations.ts — single-row writes (create / save / delete / move / status / author)
  *   bulk.ts      — transactional batch writes
- *   reconcile.ts — roster reconcile (the editor's incremental-save write path)
+ *   apply.ts     — explicit-delete row apply (the site-document save's write path)
  *   schedule.ts  — scheduled-publish lifecycle
  *   import.ts    — bundle-import upserts
  *
@@ -45,8 +45,8 @@ export {
 
 export { createDataRowMany, saveDataRowDraftMany, softDeleteDataRowMany } from './bulk'
 
-export { reconcileDataRowRoster, rowsToReap } from './reconcile'
-export type { ReconcileRowRosterInput, RowRosterWrite } from './reconcile'
+export { applyDataRowChanges, applyDataRowChangesInTx } from './apply'
+export type { ApplyDataRowChangesInput, DataRowWrite } from './apply'
 
 export { scheduleDataRowPublish, cancelScheduledPublish, listDuePublishSchedules } from './schedule'
 

@@ -241,6 +241,7 @@ function StyleSectionGroup({
                 property={prop}
                 value={isSet ? (storedValue as string | number) : undefined}
                 placeholder={!isSet ? fallbackValue : undefined}
+                fontFamilyValue={currentStyles.fontFamily}
                 isSet={isSet}
                 onChange={onChange}
                 onRemove={onRemove}
@@ -313,6 +314,7 @@ function AdvancedRows({
               property={prop}
               value={isSet ? (storedValue as string | number) : undefined}
               placeholder={!isSet ? fallbackValue : undefined}
+              fontFamilyValue={currentStyles.fontFamily}
               isSet={isSet}
               onChange={onChange}
               onRemove={onRemove}

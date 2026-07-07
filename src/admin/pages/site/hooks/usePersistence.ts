@@ -120,21 +120,20 @@ export function usePersistence(
   )
   /** Whether the initial load has completed — prevents auto-save before load */
   const loadedRef = useRef(false)
-  /**
-   * Page ids known to be in storage as of the last load/save — the
-   * optimistic-concurrency baseline sent on save so a sibling session's
-   * just-created page is never reaped by this client's reconcile (ISS-041).
-   */
-  const syncedPageIdsRef = useRef<string[]>([])
   /** Stable reference to the adapter so it doesn't trigger re-renders */
   const adapterRef = useRef(adapter)
   useEffect(() => {
     adapterRef.current = adapter
   }, [adapter])
 
-  // Exception #1: referenced in the auto-save and Cmd/Ctrl+S useEffect dep arrays,
+  /** The save currently on the wire, if any. */
+  const inFlightSaveRef = useRef<Promise<void> | null>(null)
+  /** The single queued follow-up save every mid-flight trigger coalesces into. */
+  const queuedSaveRef = useRef<Promise<void> | null>(null)
+
+  // Exception #1: referenced in the useCallback dep array of saveCurrentSite,
   // so exhaustive-deps requires a stable identity here.
-  const saveCurrentSite = useCallback(async () => {
+  const runSave = useCallback(async () => {
     const { site, setHasUnsavedChanges, takeDirtySaveSnapshot, restoreDirtySaveSnapshot } =
       useEditorStore.getState()
     if (!site) return
@@ -145,14 +144,14 @@ export function usePersistence(
     // failed save merges this snapshot back so nothing is lost.
     const dirty = takeDirtySaveSnapshot()
     try {
-      await adapterRef.current.saveSite(site, {
-        baselinePageIds: syncedPageIdsRef.current,
-        dirty,
-      })
-      // The save just reconciled storage to this client's roster; that set is
-      // the new concurrency baseline for the next save.
-      syncedPageIdsRef.current = site.pages.map((p) => p.id)
-      setHasUnsavedChanges(false)
+      await adapterRef.current.saveSite(site, { dirty })
+      // Clear the unsaved flag ONLY when no mutation landed while the save
+      // was on the wire — every store mutation produces a new `site`
+      // reference, so reference equality is the exact signal. Without this
+      // guard a mid-flight edit would lose its "unsaved" status (and the
+      // queued follow-up save would be skipped, dropping the edit until the
+      // next mutation re-set the flag).
+      if (useEditorStore.getState().site === site) setHasUnsavedChanges(false)
       setSaveStatus({ state: 'saved', lastSavedAt: Date.now() })
     } catch (err) {
       restoreDirtySaveSnapshot(dirty)
@@ -160,6 +159,45 @@ export function usePersistence(
       throw err
     }
   }, [])
+
+  /**
+   * SINGLE-FLIGHT save queue: at most one save on the wire and at most one
+   * queued follow-up. Every trigger (autosave, Cmd+S, save-request events,
+   * the MCP bridge, unmount flush) funnels through here, so two saves can
+   * never interleave — the failure mode the four-request protocol used to
+   * have. A queued save reads the LATEST store state when it runs, so N
+   * triggers during one in-flight save collapse into a single follow-up; it
+   * is skipped entirely when the in-flight save already shipped everything
+   * (no unsaved changes remain).
+   *
+   * Exception #1: referenced in useEffect dep arrays below, so
+   * exhaustive-deps requires a stable identity here.
+   */
+  const saveCurrentSite = useCallback((): Promise<void> => {
+    const start = (): Promise<void> => {
+      const run = runSave().finally(() => {
+        if (inFlightSaveRef.current === run) inFlightSaveRef.current = null
+      })
+      inFlightSaveRef.current = run
+      return run
+    }
+
+    const inFlight = inFlightSaveRef.current
+    if (!inFlight) return start()
+
+    queuedSaveRef.current ??= inFlight
+      // A failed in-flight save must not cancel the queued retry — its dirty
+      // marks were restored, so the follow-up ships them again.
+      .catch(() => {})
+      .then(() => {
+        queuedSaveRef.current = null
+        // The in-flight save may have already shipped everything (trigger
+        // spam without new edits) — skip the pointless follow-up.
+        if (!useEditorStore.getState().hasUnsavedChanges) return
+        return start()
+      })
+    return queuedSaveRef.current
+  }, [runSave])
 
   // Expose the save to the MCP editor-bridge so a write tool relayed from an
   // external agent can flush to the DB before a follow-up headless read.
@@ -208,7 +246,6 @@ export function usePersistence(
           const site = await adapterRef.current.loadSite(idToTry)
           if (site && !cancelled) {
             if (pendingCmsSiteReload) consumePendingCmsSiteReload()
-            syncedPageIdsRef.current = site.pages.map((p) => p.id)
             loadSite(site)
             applyDefaultBreakpointPreference(site.breakpoints)
             loadedRef.current = true
@@ -247,10 +284,10 @@ export function usePersistence(
         const created = createSite('My Site')
         applyDefaultBreakpointPreference(created.breakpoints)
         loadedRef.current = true
-        syncedPageIdsRef.current = created.pages.map((p) => p.id)
         try {
-          // Full save (no dirty hints): the site doesn't exist in storage yet.
-          await adapterRef.current.saveSite(created, { baselinePageIds: syncedPageIdsRef.current })
+          // Replace-mode full save (no dirty hints): the site doesn't exist
+          // in storage yet.
+          await adapterRef.current.saveSite(created)
           // Storage now matches the store — drop the createSite all-dirty mark.
           useEditorStore.getState().takeDirtySaveSnapshot()
           setSaveStatus({ state: 'saved', lastSavedAt: Date.now() })
@@ -285,7 +322,6 @@ export function usePersistence(
           return
         }
         const { loadSite, setHasUnsavedChanges } = useEditorStore.getState()
-        syncedPageIdsRef.current = site.pages.map((p) => p.id)
         loadSite(site)
         applyDefaultBreakpointPreference(site.breakpoints)
         // The site doc on disk is now authoritative; clear the unsaved flag so
@@ -348,34 +384,39 @@ export function usePersistence(
     )
     const prefsUnsub = subscribeToEditorPrefsChanged(scheduleAutoSave)
 
-    // Flush pending unsaved changes without resetting the dirty marks. Covers
-    // two leave paths the autosave debounce would otherwise drop:
-    //   - `beforeunload` — tab close / hard reload.
-    //   - unmount cleanup — in-app SPA navigation AWAY from the editor (e.g. to
-    //     the Data view), which does NOT fire `beforeunload`. Without this, any
-    //     edit made within the debounce window — a freshly "Saved" layout
-    //     included — is silently lost on navigation.
-    // Fire-and-forget: neither path can await async work. Marks are read (not
-    // reset) so a failed flush is retried by the next save.
-    function flushPendingSave() {
-      const { site, hasUnsavedChanges, _dirtySave } = useEditorStore.getState()
+    // beforeunload flush — tab close / hard reload. Fire-and-forget: the
+    // handler cannot await async work, so this bypasses the save queue and
+    // ships the current netted marks WITHOUT resetting them (a failed flush
+    // is retried by the next save). One request now, so either the whole
+    // save lands or none of it does — no partial-prefix commits at unload.
+    function flushBeforeUnload() {
+      const { site, hasUnsavedChanges, peekDirtySaveSnapshot } = useEditorStore.getState()
       if (!site || !loadedRef.current || !hasUnsavedChanges) return
       clearTimeout(timer)
       void adapterRef.current
-        .saveSite(site, { baselinePageIds: syncedPageIdsRef.current, dirty: _dirtySave })
+        .saveSite(site, { dirty: peekDirtySaveSnapshot() })
         .catch((err) => {
           console.error('[persistence] flush save failed:', err)
         })
     }
 
-    window.addEventListener('beforeunload', flushPendingSave)
+    window.addEventListener('beforeunload', flushBeforeUnload)
 
     return () => {
       unsub()
       prefsUnsub()
       clearTimeout(timer)
-      window.removeEventListener('beforeunload', flushPendingSave)
-      flushPendingSave()
+      window.removeEventListener('beforeunload', flushBeforeUnload)
+      // Unmount cleanup — in-app SPA navigation AWAY from the editor (e.g. to
+      // the Data view), which does NOT fire `beforeunload`. Unlike unload,
+      // the promise survives unmount, so this routes through the save queue
+      // and can never interleave with an in-flight autosave.
+      const { site, hasUnsavedChanges } = useEditorStore.getState()
+      if (site && loadedRef.current && hasUnsavedChanges) {
+        void saveCurrentSite().catch((err) => {
+          console.error('[persistence] flush save failed:', err)
+        })
+      }
     }
   }, [enabled, saveCurrentSite])
 

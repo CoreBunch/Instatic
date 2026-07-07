@@ -4,9 +4,9 @@
  * Composes the shared Button primitive: each segment is a Button with
  * `variant="secondary"` and `pressed` to surface the active state.
  *
- * The visual "track" is a 2px-padded surface around the segments. Active
- * segments lift via aria-pressed (Button.module.css already styles
- * .variant-secondary[aria-pressed="true"] with a lighter surface).
+ * The visual "track" is a 2px-padded overlay around the segments. Active
+ * segments use overlay states instead of surface steps so light theme controls
+ * still have visible contrast on pale panels.
  */
 
 .group {
@@ -16,6 +16,7 @@
     border-radius: 12px;
     padding: var(--space-4xs);
     border: 1px solid var(--overlay-20);
+    background: var(--overlay-5);
 }
 
 .fullWidth {
@@ -37,11 +38,11 @@
 }
 
 .group .segment.segment:hover {
-    background: var(--bg-surface-2);
+    background: var(--overlay-10);
 }
 
 .group .segment.segment[aria-pressed="true"] {
-    background: var(--bg-surface-2);
+    background: var(--overlay-20);
     color: var(--text);
 }
 
@@ -74,7 +75,7 @@
     align-items: center;
     justify-content: center;
     border-radius: 8px;
-    background: var(--bg-surface-2);
+    background: var(--overlay-20);
     color: var(--text);
     opacity: 0;
     pointer-events: none;

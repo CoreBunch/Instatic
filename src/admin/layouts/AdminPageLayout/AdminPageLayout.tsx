@@ -31,7 +31,7 @@ import { lazy, Suspense, type ReactNode } from 'react'
 import { Toolbar } from '@site/toolbar/Toolbar'
 import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import { SkeletonCards } from '@ui/components/Skeleton'
-import { useEditorSelectPreference } from '@site/preferences/editorPreferences'
+import { useEditorAppearancePreferences } from '@site/preferences/editorPreferences'
 import { useInstalledEditorPlugins } from '@admin/pages/plugins/hooks/useInstalledEditorPlugins'
 import { usePluginEventBridge } from '@admin/pages/plugins/hooks/usePluginEventBridge'
 import { useCurrentAdminUser } from '@admin/sessionContext'
@@ -116,13 +116,18 @@ export function AdminPageLayout({
   useInstalledEditorPlugins(pluginBackgroundWorkEnabled)
   usePluginEventBridge(pluginBackgroundWorkEnabled)
 
-  const density = useEditorSelectPreference('density')
+  const appearance = useEditorAppearancePreferences()
   const siteName = useAdminUi((s) => s.siteName)
   const faviconUrl = useAdminUi((s) => s.siteFaviconUrl)
   const settingsOpen = useAdminUi((s) => s.settingsOpen)
 
   return (
-    <div className={styles.shell} data-editor-density={density}>
+    <div
+      className={styles.shell}
+      data-editor-density={appearance.density}
+      data-editor-theme={appearance.theme}
+      data-editor-text-scale={appearance.textScale}
+    >
       <Toolbar
         siteName={siteName}
         faviconUrl={faviconUrl}

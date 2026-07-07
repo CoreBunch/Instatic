@@ -1,8 +1,8 @@
 /**
  * Tool registry root — selects the right toolset for a chat scope.
  *
- * Currently only the `site` scope has tools registered. Phase 4 will add
- * `content` + `data`; Phase 5 will add `plugin`.
+ * `site` and `content` scopes have tools registered. `data` and `plugin`
+ * are reserved scopes with no toolset yet.
  *
  * Adding a new scope:
  *   1. Create `server/ai/tools/<scope>/` with its tool files + index.ts.
@@ -33,10 +33,10 @@ function scopeToolset(scope: ToolScope): AiTool[] {
     case 'content':
       return contentTools
     case 'data':
-      // Phase 4 (data workspace)
+      // Reserved: no data-scope toolset yet.
       return []
     case 'plugin':
-      // Phase 5
+      // Reserved: no plugin-scope toolset yet.
       return []
   }
 }
@@ -45,7 +45,7 @@ function scopeToolset(scope: ToolScope): AiTool[] {
  * Returns the tools available for one chat scope, filtered against the
  * caller's capability set. The runtime hands this array to the driver
  * verbatim; drivers translate each `AiTool.inputSchema` (TypeBox) into
- * their SDK's native tool format.
+ * the provider-native tool format.
  *
  * Filtering (see `toolAllowedForCapabilities`, the single gate):
  *   - a caller without `ai.tools.write` does not see tools tagged
@@ -61,5 +61,3 @@ export function selectToolsForScope(
 ): AiTool[] {
   return scopeToolset(scope).filter((t) => toolAllowedForCapabilities(t, capabilities))
 }
-
-

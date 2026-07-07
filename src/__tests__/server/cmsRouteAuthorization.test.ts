@@ -109,6 +109,21 @@ async function currentSiteDocument(db: DbClient, cookie: string): Promise<SiteDo
   return { ...shellPayload.site, pages }
 }
 
+/** Shell-only incremental body for PUT /admin/api/cms/site-document. */
+function shellPutBody(site: SiteDocument | SiteShell): string {
+  const { pages: _pages, ...shell } = site as SiteDocument
+  return JSON.stringify({
+    mode: 'incremental',
+    site: shell,
+    changedPages: [],
+    deletedPageIds: [],
+    changedComponents: [],
+    deletedComponentIds: [],
+    changedLayouts: [],
+    deletedLayoutIds: [],
+  })
+}
+
 describe('CMS route authorization', () => {
   it('lets user managers read role options without letting them edit role definitions', async () => {
     const { db, cleanup } = await createTestDb()
@@ -177,20 +192,20 @@ describe('CMS route authorization', () => {
 
       const site = await currentSiteDocument(db, ownerCookie)
       // site.read alone is not enough — write is forbidden.
-      const readOnlyWrite = await request(db, '/admin/api/cms/site', {
+      const readOnlyWrite = await request(db, '/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: readerCookie,
-        body: JSON.stringify({ site }),
+        body: shellPutBody(site),
       })
       expect(readOnlyWrite.status).toBe(403)
 
       // A no-op save (the document is byte-identical) is allowed for any
       // caller that holds at least one site-write capability — the diff
       // walk finds no changes at all.
-      const stylistNoop = await request(db, '/admin/api/cms/site', {
+      const stylistNoop = await request(db, '/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: stylistCookie,
-        body: JSON.stringify({ site }),
+        body: shellPutBody(site),
       })
       expect(stylistNoop.status).toBe(200)
     } finally {
@@ -214,14 +229,14 @@ describe('CMS route authorization', () => {
       })
       const clientCookie = await sessionCookieForUser(db, 'client@example.com')
       const site = await currentSiteDocument(db, ownerCookie)
-      // Mutate the page title — that's content category, so a content-only
-      // client is allowed.
-      const titleEdit = structuredClone(site)
-      titleEdit.pages[0].title = `${titleEdit.pages[0].title} (edited)`
-      const allowed = await request(db, '/admin/api/cms/site', {
+      // Mutate the site-wide SEO copy — that's content category, so a
+      // content-only client is allowed.
+      const contentEdit = structuredClone(site)
+      contentEdit.settings.metaTitle = 'Edited by the copy editor'
+      const allowed = await request(db, '/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: clientCookie,
-        body: JSON.stringify({ site: titleEdit }),
+        body: shellPutBody(contentEdit),
       })
       expect(allowed.status).toBe(200)
 
@@ -240,10 +255,10 @@ describe('CMS route authorization', () => {
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }
-      const denied = await request(db, '/admin/api/cms/site', {
+      const denied = await request(db, '/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: clientCookie,
-        body: JSON.stringify({ site: styleEdit }),
+        body: shellPutBody(styleEdit),
       })
       expect(denied.status).toBe(403)
     } finally {

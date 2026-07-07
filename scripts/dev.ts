@@ -21,13 +21,14 @@
  *   - Pre-checks ports 3001 (cms) and 5173 (vite) and prints an
  *     actionable message if either is held by something we don't own.
  *   - Spawns the cms (`bun --watch server/index.ts`) and vite
- *     (`vite --host 127.0.0.1`) as children, forwarding their output
+ *     (`bun run dev:vite --host 127.0.0.1`) as children, forwarding their output
  *     and signals so Ctrl+C cleanly kills both.
  */
 
 import { mkdir } from 'node:fs/promises'
-import path from 'node:path'
+import { dirname } from 'node:path'
 import { isSqliteUrl } from '../server/db'
+import { bunCommand, bunRunCommand } from './lib/bunCommand'
 import { ensurePortFree } from './lib/freePort'
 
 const CMS_PORT = Number(process.env.PORT ?? '3001')
@@ -208,7 +209,7 @@ async function waitForPostgresReady(timeoutMs = 60_000): Promise<void> {
 
 if (isSqliteUrl(DATABASE_URL)) {
   const dbPath = DATABASE_URL.replace(/^sqlite:|^file:/, '')
-  await mkdir(path.dirname(dbPath), { recursive: true })
+  await mkdir(dirname(dbPath), { recursive: true })
   log(`Using SQLite at ${dbPath} — skipping Postgres docker provisioning`)
 } else {
   if (!dockerInstalled()) {
@@ -234,14 +235,14 @@ log('')
 
 interface DevProcess {
   name: string
-  command: string
+  command: string[]
   env?: Record<string, string>
 }
 
 const processes: DevProcess[] = [
   {
     name: 'cms',
-    command: 'bun --watch server/index.ts',
+    command: bunCommand('--watch', 'server/index.ts'),
     env: {
       PORT: String(CMS_PORT),
       DATABASE_URL,
@@ -251,7 +252,7 @@ const processes: DevProcess[] = [
   },
   {
     name: 'vite',
-    command: `vite --host 127.0.0.1 --port ${VITE_PORT} --strictPort`,
+    command: bunRunCommand('dev:vite', '--host', '127.0.0.1', '--port', String(VITE_PORT), '--strictPort'),
   },
 ]
 
@@ -264,30 +265,8 @@ function stopChildren(signal: NodeJS.Signals = 'SIGTERM'): void {
   }
 }
 
-// Resolve a command string to a spawnable argv. On Windows the `bun` the user
-// launched is a `.cmd` shim (so `Bun.spawn(['bun', ...])` fails with ENOENT),
-// and local bins like `vite` aren't on PATH inside a spawned child either
-// (`Bun.which('vite')` is null because node_modules/.bin isn't on the child's
-// PATH). Run both through the real Bun binary (`process.execPath`) — bun for
-// its own entry, and bun executing vite's JS bin for the dev server.
-const projectRoot = path.resolve(import.meta.dir, '..')
-
-function resolveCommand(command: string): string[] {
-  const [bin, ...rest] = command.split(' ')
-  if (bin === 'bun') return [process.execPath, ...rest]
-  if (bin === 'vite') {
-    return [
-      process.execPath,
-      path.resolve(projectRoot, 'node_modules/vite/bin/vite.js'),
-      ...rest,
-    ]
-  }
-  const resolved = Bun.which(bin) ?? bin
-  return [resolved, ...rest]
-}
-
 for (const cfg of processes) {
-  const child = Bun.spawn(resolveCommand(cfg.command), {
+  const child = Bun.spawn(cfg.command, {
     env: { ...process.env, ...cfg.env },
     stdin: 'inherit',
     stdout: 'inherit',

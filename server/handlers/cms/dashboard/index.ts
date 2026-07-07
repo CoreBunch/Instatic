@@ -21,10 +21,10 @@
  *      data from a new source means a new endpoint, not bloating an
  *      existing aggregate.
  *
- * No filtering / range tabs yet — the dashboard's "Today / 7d / 30d"
- * range affects only the analytics widgets (which live in the plugin's
- * own `/runtime/stats` route). The Pages / Posts / Media counters in
- * this response are point-in-time totals + a fixed "this week" delta.
+ * First-party dashboard readers have fixed scopes. The page header's
+ * local range control is not threaded into these endpoints; Pages /
+ * Posts / Media counters are point-in-time totals plus their reader's
+ * fixed deltas or histograms.
  *
  * File layout for this folder:
  *   index.ts         — this file: route handler + endpoint registry

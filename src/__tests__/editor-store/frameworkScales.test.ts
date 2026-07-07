@@ -23,12 +23,12 @@ beforeEach(resetStore)
 describe('framework typography & spacing store actions', () => {
   it('createFrameworkTypographyGroup works after a prior mutation has frozen the store (no `framework` settings)', () => {
     // Regression: previously `createFrameworkTypographyGroup` called
-    // `ensureFrameworkTypography(site)` on the Immer-frozen live site,
+    // `ensureFrameworkTypography(site)` on the Mutative-frozen live site,
     // throwing `TypeError: Cannot add property framework, object is not
     // extensible` when `site.settings.framework` was undefined.
     expect(useEditorStore.getState().site!.settings.framework).toBeUndefined()
 
-    // Any prior mutation freezes the state via Immer's `produce`.
+    // Any prior mutation freezes the state via Mutative's `create`.
     useEditorStore.getState().updateSiteName('Renamed')
 
     expect(() => {

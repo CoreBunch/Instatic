@@ -373,31 +373,83 @@ Pages and VCs follow the same principle: `validateVisualComponents` silently dro
 
 ## Saving the site
 
-The shell is saved independently of pages / VCs. Three save paths:
+The whole document saves through ONE endpoint, in ONE server transaction:
 
-| Endpoint                                    | Saves                                          |
-|---------------------------------------------|------------------------------------------------|
-| `PUT /admin/api/cms/site`                   | The shell — settings, breakpoints, classes, files (always written) |
-| `PUT /admin/api/cms/pages`                  | `{ changedPages, pageIds, baselinePageIds? }` — only changed pages; full id roster drives reaping |
-| `PUT /admin/api/cms/components`             | `{ changedComponents, componentIds }` — only changed VCs; cross-VC rules run on the merged roster |
+```
+PUT /admin/api/cms/site-document
+{ mode, site,                                    // shell — always written
+  changedPages,      deletedPageIds,
+  changedComponents, deletedComponentIds,
+  changedLayouts,    deletedLayoutIds }
+```
 
-Saves are **incremental**: the editor store derives which pages/VCs changed
-from the same Mutative patches that power undo
-(`src/admin/pages/site/store/slices/site/dirtyTracking.ts`), and
+Two modes:
+
+- **`incremental`** (every editor save): only the changed rows plus
+  **explicitly deleted** row ids ship. Rows the save doesn't mention are
+  untouched server-side — deletion is stated intent, never inferred from a
+  missing roster entry, so a stale client can't delete a sibling session's
+  rows by omission (the failure class the retired reap-by-omission protocol
+  needed `baselinePageIds` to patch).
+- **`replace`** (imports, fresh-site bootstrap): the full collections ship;
+  the server derives deletions as stored − shipped. `deleted*Ids` must be
+  empty.
+
+Saves are **incremental**: the editor store derives which pages/VCs/layouts
+changed — and which were deleted — from the same Mutative patches that power
+undo (`src/admin/pages/site/store/slices/site/dirtyTracking.ts`; deletions
+come from a pre/post membership diff, robust to any recipe style), and
 `usePersistence.ts` ships only those — a one-prop edit uploads one page, not
-the site. The full id rosters always go along, so the server's
-delete-what's-missing reconcile keeps full-replace semantics (including the
-ISS-041 baseline). Anything the tracker can't attribute marks `all` and falls
-back to a full save. Granular write gates (`SITE_WRITE_CAPABILITIES`)
-enforce what each role can actually change inside the diff.
+the site. Delete-then-recreate within one save window nets to a plain write
+at snapshot time; the server 400s any id in both the changed and deleted
+sets as a backstop. Anything the tracker can't attribute marks `all` and
+ships as a replace-mode full save. Granular write gates
+(`SITE_WRITE_CAPABILITIES`) enforce what each role can actually change
+inside the diff.
 
-The page and component roster endpoints are fail-closed: because each reconcile soft-deletes stored rows missing from the incoming roster, malformed entries reject the whole save instead of being repaired by dropping entries. Page and VC trees must have a valid root, matching node-map keys, resolvable child IDs, and no reachable child cycles. Component saves also reject duplicate IDs/names, missing VC refs, and dependency cycles. Tolerant repair remains limited to reads of persisted data where dropping bad entries cannot be misread as an intentional delete request.
+`usePersistence` runs saves through a **single-flight queue**: at most one
+save on the wire and one queued follow-up that reads the latest store state
+— autosave, Cmd+S, save-request events, the MCP bridge, and the unmount
+flush can never interleave requests.
 
-All three roster endpoints (`/pages`, `/components`, `/layouts`) write through one shared transaction, `reconcileDataRowRoster` (`server/repositories/data/rows/reconcile.ts`), whose ordering lets a single batch move a slug between rows: soft-deletes run **first** (a changed page may take the slug of a page deleted in the same save — the homepage swap), and slug-changing writes are **two-phase** (park on the placeholder slug `''`, which `data_rows_table_slug_active_idx` exempts, then take the final slug once every old slug is free) so within-batch swaps and rotations never transiently collide with the unique index. Slug-uniqueness validation for pages likewise ignores rows the same request reaps. A write whose id matches a **soft-deleted** row revives that row instead of inserting (undo of a delete re-submits the original id, which still owns the primary key). VC and layout name uniqueness is judged on the **derived slug** (`vcSlugFromName` / `layoutSlugFromName`) — names are stored as `data_rows.slug`, so "Button" and "button" are one identity and reject with a 400 instead of dying on the index.
+The save is **atomic and fail-closed**: shell + components + layouts + pages
+commit in one transaction (`server/handlers/cms/siteDocument.ts`), so one
+malformed entry rejects the whole save and nothing is persisted — no torn
+"shell saved, pages failed" states. Page and VC trees must have a valid
+root, matching node-map keys, resolvable child IDs, and no reachable child
+cycles. Component saves also reject duplicate IDs/names, missing VC refs,
+and dependency cycles — validated against the **merged post-save roster**,
+so a page may reference a component created in the same save (the old
+components-before-pages request-ordering contract is gone). Tolerant repair
+remains limited to reads of persisted data where dropping bad entries
+cannot be misread as an intentional delete request.
+
+Row writes go through `applyDataRowChanges`
+(`server/repositories/data/rows/apply.ts`), whose ordering lets a single
+batch move a slug between rows: explicit soft-deletes run **first** (a
+changed page may take the slug of a page deleted in the same save — the
+homepage swap), and slug-changing writes are **two-phase** (park on the
+placeholder slug `''`, which `data_rows_table_slug_active_idx` exempts,
+then take the final slug once every old slug is free) so within-batch swaps
+and rotations never transiently collide with the unique index.
+Slug-uniqueness validation for pages likewise ignores rows the same request
+deletes. A write whose id matches a **soft-deleted** row revives that row
+instead of inserting (undo of a delete re-submits the original id, which
+still owns the primary key). VC and layout name uniqueness is judged on the
+**derived slug** (`vcSlugFromName` / `layoutSlugFromName`) — names are
+stored as `data_rows.slug`, so "Button" and "button" are one identity and
+reject with a 400 instead of dying on the index.
+
+Every save allocates a **site-global sync sequence number**
+(`server/repositories/syncSequence.ts`) inside the transaction and stamps it
+on the shell and every written or deleted row (`data_rows.seq`); the
+response returns it (`{ ok: true, seq }`). The seq is the substrate for
+multi-admin conflict detection and delta reconciliation (live-sync plan) —
+informational to the client until that lands.
 
 ### Atomic diff validation
 
-The shell save handler validates the diff before applying — e.g. a user with only `site.content.edit` can't change a class definition (style-edit) or rename a breakpoint (structure-edit). The diff validator is in `src/core/persistence/validate.ts` → `validateSite`.
+The save handler validates the shell diff before applying — e.g. a user with only `site.content.edit` can't change a class definition (style-edit) or rename a breakpoint (structure-edit). The shell diff validator is `validateSiteWriteDiff` (`server/handlers/cms/siteDiff.ts`); per-page category diffs run through `validatePageWriteDiff` (`server/handlers/cms/pageDiff.ts`).
 
 ---
 
@@ -410,16 +462,15 @@ The editor's store works with the in-memory `SiteDocument`:
   ...siteShell,             // id, name, breakpoints, settings, classes, files, runtime, packageJson
   pages:             Page[],
   visualComponents:  VisualComponent[],
+  layouts:           SavedLayout[],
 }
 ```
 
-When the editor saves, the persistence layer **splits** the in-memory document back into:
-
-- A `SiteShell` (everything except `pages` and `visualComponents`) → `PUT /site`
-- A `Page[]` → `PUT /pages`
-- A `VisualComponent[]` → `PUT /components`
-
-The split prevents an "all-or-nothing" save: editing the page roster doesn't risk overwriting a concurrent settings change.
+When the editor saves, the persistence layer **splits** the in-memory
+document into the shell plus per-collection changed/deleted sets — all
+inside the one `PUT /site-document` body. Loading stays four parallel GETs
+(`/site`, `/pages`, `/components`, `/layouts`) — reads have no atomicity
+problem.
 
 ---
 

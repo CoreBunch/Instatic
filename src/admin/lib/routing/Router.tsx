@@ -1,5 +1,5 @@
 /**
- * Tiny admin router — replaces react-router-dom for the 4-route admin app.
+ * Tiny admin router — replaces react-router-dom for the admin app.
  *
  * What this provides
  * ------------------
@@ -19,11 +19,10 @@
  * Why custom (not react-router-dom)
  * ----------------------------------
  * react-router-dom@7 ships ~30 KB gz on the *eager* cold path for an admin
- * with 4 static routes. That's the worst kind of bundle bloat — features
+ * with a small static route table. That's the worst kind of bundle bloat — features
  * we're not using (loaders, actions, nested layouts, data routers) shipped
- * to every visitor before the editor even mounts. This file replaces it in
- * ~150 lines and lands a bigger bundle saving than any other single change
- * in the project.
+ * to every visitor before the editor even mounts. This file replaces it with
+ * only the routing features the admin actually uses.
  *
  * If/when we need data loaders or nested route layouts, this file can grow
  * incrementally — but every feature here is one we actually use.
@@ -195,8 +194,8 @@ export function Routes({ children }: RoutesProps) {
 
   // Run the match each render. We don't memoize: `children` is the result of
   // JSX and gets a new reference every parent render, so the cache would
-  // miss every time anyway. Route matching is a regex against ~4 entries —
-  // cheap.
+  // miss every time anyway. Route matching is a regex against the small admin
+  // route table, so it stays cheap.
   const list = collectRouteChildren(children)
   let matched: { element: ReactNode; params: Record<string, string> } | null = null
   for (const route of list) {

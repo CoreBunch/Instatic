@@ -46,7 +46,7 @@ import { restoreStoredSiteEditorLayout } from '@site/layout/siteEditorLayoutPers
  * it without going through this module — that's how the historical
  * store ↔ slice cycles were eliminated.
  *
- * All mutations are wrapped in Immer for structural sharing.
+ * All mutations are wrapped in Mutative for structural sharing.
  * Use subscribeWithSelector for granular Zustand subscriptions without Context re-renders.
  *
  * Constraint #182: The page tree is the single source of truth.
@@ -57,9 +57,9 @@ export type { EditorStore }
 
 export const useEditorStore = create<EditorStore>()(
   subscribeWithSelector(
-    // Mutative replaces Immer (zustand-mutative middleware). enableAutoFreeze
-    // mirrors Immer's default dev guard against accidental external mutation —
-    // existing code already tolerates frozen state, so we keep it on for parity.
+    // The zustand-mutative middleware gives slice recipes draft-mutation syntax
+    // plus structural sharing. enableAutoFreeze keeps the dev guard against
+    // accidental external mutation; existing code already tolerates frozen state.
     // Patch-based undo history opts INTO patches per-call via mutative `create`.
     mutative(
       (...args) => ({
@@ -206,7 +206,7 @@ export const selectRightSidebarExpanded = (s: EditorStore) =>
 // When activeDocument is a VC, builds a virtual Page from the VC's rootNode
 // tree so NodeRenderer + BreakpointFrame work unchanged.
 //
-// Memoised via WeakMap keyed on vc (the whole VC object) — Immer gives a new
+// Memoised via WeakMap keyed on vc (the whole VC object) — Mutative gives a new
 // ref on ANY field change (name, params, rootNode…), so the WeakMap
 // misses precisely when the VC changes and we rebuild.  Same-reference vc → cache hit.
 // ---------------------------------------------------------------------------
@@ -235,8 +235,8 @@ export const selectActiveCanvasPage = (s: EditorStore): Page | null => {
     ) ?? null
     if (!vc) return null
 
-    // WeakMap key: vc object — Immer gives a new ref on ANY field change (name,
-    // params, tree…). Keying on vc.tree would miss renames because Immer reuses
+    // WeakMap key: vc object — Mutative gives a new ref on ANY field change (name,
+    // params, tree…). Keying on vc.tree would miss renames because Mutative reuses
     // the tree object when only top-level VC fields change (O-2 / CR #666 finding).
     const cached = _vcVirtualPageCache.get(vc as object)
     if (cached) return cached

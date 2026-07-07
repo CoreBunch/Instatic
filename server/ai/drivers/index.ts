@@ -1,9 +1,9 @@
 /**
  * Driver registry — resolves a provider id to its driver implementation.
  *
- * Drivers are the ONLY place provider SDKs are imported. The runtime,
- * handlers, tools, and UI never reach into Anthropic / OpenAI / Ollama
- * SDKs directly — they go through the `AiProvider` interface here.
+ * Drivers are direct HTTP adapters. The runtime, handlers, tools, and UI
+ * never reach into Anthropic / OpenAI / Ollama SDKs — they go through the
+ * `AiProvider` interface here, and the adapters call each provider's REST API.
  */
 
 import type { AiProvider } from './types'
@@ -30,5 +30,4 @@ export function resolveDriver(providerId: AiProviderId): AiProvider {
   }
   return driver
 }
-
 

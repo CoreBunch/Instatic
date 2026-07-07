@@ -151,7 +151,7 @@ Three categories, three voices:
 | [features/mcp-connectors.md](features/mcp-connectors.md)         | Instatic as an MCP server — external AI clients drive the CMS over MCP |
 | [features/templates.md](features/templates.md)                   | Entry templates + dynamic bindings + token interpolation             |
 | [features/loops.md](features/loops.md)                           | `base.loop` + loop entity sources                                    |
-| [features/cms-native-forms.md](features/cms-native-forms.md)     | Visual form primitives, presets, secure public submissions           |
+| [features/cms-native-forms.md](features/cms-native-forms.md)     | Visual form primitives and secure public submissions                 |
 | [features/media.md](features/media.md)                           | Media workspace, upload pipeline, storage adapters                  |
 | [features/audit-log.md](features/audit-log.md)                   | Audit event catalog + recording new actions                         |
 | [features/site-transfer.md](features/site-transfer.md)           | Export / import CMS bundle (JSON round-trip between instances)      |
@@ -216,7 +216,7 @@ Quick map from "where do I look for X?" to the canonical file:
 | Plugin SDK                       | `src/core/plugin-sdk/`                                   |
 | Plugin permission catalog        | `src/core/plugin-sdk/capabilities.ts`                    |
 | Plugin manifest parser           | `src/core/plugins/manifest.ts`                           |
-| Plugin sandbox host              | `server/plugins/quickjs/vm.ts`, `server/plugins/modulePackVm.ts` |
+| Plugin worker + sandbox host     | `server/plugins/pluginWorker.ts`, `server/plugins/host/workerPool.ts`, `server/plugins/quickjs/vm.ts`, `server/plugins/modulePackVm.ts` |
 | Publisher                        | `src/core/publisher/`                                    |
 | CSS value sanitiser              | `src/core/css-sanitize/sanitiseCssValue.ts`              |
 | TypeBox helpers                  | `src/core/utils/typeboxHelpers.ts`                       |

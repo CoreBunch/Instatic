@@ -11,16 +11,16 @@
  * see `TypographyPanel.tsx` for the wiring.
  */
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Button } from '@ui/components/Button'
 import { SplitButton, type SplitButtonMenuItem } from '@ui/components/SplitButton'
 import { EmptyState } from '@ui/components/EmptyState'
 import { pushToast } from '@ui/components/Toast'
 import { useEditorStore } from '@site/store/store'
+import { useInstalledFontFaces } from '@site/hooks/useInstalledFontFaces'
 import type { FontEntry, FontToken } from '@core/fonts'
 import { compareVariants } from '@core/fonts'
-import { generateSiteFontsCss } from '@core/fonts'
 import {
   defaultFontTokenFallback,
   resolveFontTokenStack,
@@ -40,30 +40,6 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 const EMPTY_FONTS: FontEntry[] = []
 const EMPTY_TOKENS: FontToken[] = []
 
-/**
- * Inject the site's installed `@font-face` rules into the admin document head
- * so the Typography panel can render each family name in its own font.
- *
- * The canvas iframe already injects the same rules for its preview, but the
- * admin shell (where this panel lives) has no `@font-face` declarations of its
- * own — without this the `fontFamily` set on each row would silently fall back
- * to system-ui. The self-hosted `/uploads/fonts/...` `src` URLs resolve through
- * the dev proxy / published server exactly as they do on the canvas.
- */
-function useInstalledFontFaces(fonts: FontEntry[]) {
-  const css = generateSiteFontsCss({ items: fonts })
-  useEffect(() => {
-    if (!css) return
-    const styleEl = document.createElement('style')
-    styleEl.setAttribute('data-source', 'instatic-admin-installed-fonts')
-    styleEl.textContent = css
-    document.head.appendChild(styleEl)
-    return () => {
-      styleEl.remove()
-    }
-  }, [css])
-}
-
 export function FontsSection() {
   const fonts = useEditorStore((s) => s.site?.settings.fonts?.items ?? EMPTY_FONTS)
   const fontTokens = useEditorStore((s) => s.site?.settings.fonts?.tokens ?? EMPTY_TOKENS)
@@ -79,7 +55,7 @@ export function FontsSection() {
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false)
   const [editToken, setEditToken] = useState<FontToken | null>(null)
 
-  useInstalledFontFaces(fonts)
+  useInstalledFontFaces(fonts, 'instatic-admin-installed-fonts')
 
   const installedFamiliesLower = new Set(fonts.map((f) => f.family.toLowerCase()))
 

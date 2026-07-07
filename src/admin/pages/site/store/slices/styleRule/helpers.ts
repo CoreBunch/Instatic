@@ -92,7 +92,7 @@ export function findNodeWithClassIds(
 }
 
 /**
- * Apply a mutation to a node's `classIds` array inside a Mutative producer,
+ * Apply a mutation to a node's `classIds` array inside a Mutative recipe,
  * looking up the node in pages first and falling back to Visual Component
  * trees. The recipe receives the live (draft) `classIds` array — mutate it
  * in place. Initialises `classIds` to `[]` when missing.

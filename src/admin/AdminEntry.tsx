@@ -5,6 +5,7 @@ import type { AdminWorkspace } from './workspace'
 import { AdminPreAuthForm, type PreAuthPhase } from './preauth/AdminPreAuthForm'
 import { useAdminBoot } from './preauth/useAdminBoot'
 import { prewarmedLazy } from './lib/prewarmedLazy'
+import { useEditorAppearancePreferences } from '@site/preferences/editorPreferences'
 
 // AuthenticatedAdmin lives in its own chunk so the cold /admin login screen
 // never downloads / evaluates SpotlightRoot, AdminSessionProvider,
@@ -62,6 +63,7 @@ interface AdminEntryProps {
 }
 
 export default function AdminEntry({ section = 'dashboard' }: AdminEntryProps) {
+  useEditorAppearancePreferences()
   const boot = useAdminBoot()
   const [override, setOverride] = useState<PreAuthOverride | null>(null)
 

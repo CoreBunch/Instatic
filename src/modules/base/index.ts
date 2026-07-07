@@ -7,7 +7,8 @@
  * schemas) stay out of the eager entry bundle and don't ship to the login /
  * setup screens. Server uses the same module via `server/publish/publicRenderer.ts`.
  *
- * Order matters only for module IDs that reference each other — keep alphabetical.
+ * Order matters only for module IDs that reference each other — keep grouped by
+ * picker category so new base modules land in an obvious place.
  */
 
 // Page body (required — every new page starts with one)

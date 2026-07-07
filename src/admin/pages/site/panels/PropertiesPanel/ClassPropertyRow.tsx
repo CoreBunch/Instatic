@@ -18,6 +18,7 @@ import { ColorControl } from '@site/property-controls/ColorControl'
 import { SelectControl } from '@site/property-controls/SelectControl'
 import { BackgroundImageControl } from '@site/property-controls/BackgroundImageControl'
 import { FontFamilyControl } from '@site/property-controls/FontFamilyControl'
+import { useEditorStore } from '@site/store/store'
 import { ControlRow } from '@ui/components/ControlRow'
 import { TokenAwareInput } from '@site/property-controls/TokenAwareInput'
 import {
@@ -35,6 +36,7 @@ import {
   cssPropertyLabel,
   NUMBER_TYPED_PROPS,
 } from './cssControlTypes'
+import { getFontWeightOptions } from './fontWeightOptions'
 import styles from './ClassPropertyRow.module.css'
 
 // ---------------------------------------------------------------------------
@@ -45,6 +47,7 @@ interface ClassPropertyRowProps {
   property: keyof CSSPropertyBag
   value: string | number | undefined
   placeholder?: string | number
+  fontFamilyValue?: unknown
   isSet?: boolean
   onChange: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
   onRemove: (property: keyof CSSPropertyBag) => void
@@ -64,6 +67,7 @@ export function ClassPropertyRow({
   property,
   value,
   placeholder,
+  fontFamilyValue,
   isSet = true,
   onChange,
   onRemove,
@@ -74,6 +78,7 @@ export function ClassPropertyRow({
   const tokenSource = getCSSPropertyTokenSource(property)
   const label = cssPropertyLabel(String(property))
   const placeholderText = placeholder !== undefined ? String(placeholder) : undefined
+  const fonts = useEditorStore((state) => state.site?.settings.fonts ?? null)
 
   // Always read both token catalogs — hooks must run unconditionally on
   // every render. The selected catalog is forwarded to TokenAwareInput
@@ -208,7 +213,10 @@ export function ClassPropertyRow({
       break
 
     case 'select': {
-      const opts = getEnumOptions(property) ?? []
+      const enumOptions = getEnumOptions(property) ?? []
+      const opts = property === 'fontWeight'
+        ? getFontWeightOptions(fontFamilyValue, fonts, enumOptions)
+        : enumOptions
       control = (
         <SelectControl
           propKey={String(property)}

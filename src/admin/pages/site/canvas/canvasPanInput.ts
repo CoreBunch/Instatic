@@ -8,6 +8,10 @@ interface PointerPanEvent {
   button: number
 }
 
+interface PointerPanState {
+  buttons: number
+}
+
 interface PointerPanOptions {
   spaceHeld: boolean
 }
@@ -19,6 +23,16 @@ const CANVAS_SPACE_PAN_DATA_KEYS: Record<CanvasSpacePanSource, string> = {
   iframe: 'instaticCanvasIframeSpacePan',
 }
 
+const PRIMARY_MOUSE_BUTTON = 0
+const MIDDLE_MOUSE_BUTTON = 1
+const PRIMARY_MOUSE_BUTTON_MASK = 1
+const MIDDLE_MOUSE_BUTTON_MASK = 4
+
+export const CANVAS_DRAG_PAN_BUTTONS = [
+  PRIMARY_MOUSE_BUTTON_MASK,
+  MIDDLE_MOUSE_BUTTON_MASK,
+] as const
+
 export function panDeltaFromWheel(event: WheelPanEvent): { dx: number; dy: number } {
   const wheelX = event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX
   const wheelY = event.shiftKey ? 0 : event.deltaY
@@ -29,7 +43,21 @@ export function shouldStartCanvasPointerPan(
   event: PointerPanEvent,
   { spaceHeld }: PointerPanOptions,
 ): boolean {
-  return spaceHeld && event.button === 0
+  return event.button === MIDDLE_MOUSE_BUTTON || (spaceHeld && event.button === PRIMARY_MOUSE_BUTTON)
+}
+
+export function isCanvasPointerPanActive(
+  event: PointerPanState,
+  { spaceHeld }: PointerPanOptions,
+): boolean {
+  return (
+    (event.buttons & MIDDLE_MOUSE_BUTTON_MASK) !== 0 ||
+    (spaceHeld && (event.buttons & PRIMARY_MOUSE_BUTTON_MASK) !== 0)
+  )
+}
+
+export function isMiddleMousePointerPan(event: PointerPanState): boolean {
+  return (event.buttons & MIDDLE_MOUSE_BUTTON_MASK) !== 0
 }
 
 export function setCanvasSpacePanActive(

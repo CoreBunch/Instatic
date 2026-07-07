@@ -1,6 +1,6 @@
 # Template Plugin
 
-Minimal starter plugin for the Instatic. Use this as the base for your own plugin.
+Minimal raw-zip starter plugin for Instatic. Use this when you want to inspect the runtime `plugin.json` shape directly; new TypeScript-authored plugins should usually start with `bun instatic-plugin init`.
 
 ## Quick start
 
@@ -108,4 +108,3 @@ A plugin that drops its editor entrypoint (and any app-kind admin pages) can dro
 ## Further reading
 
 - [Plugin system docs](../../../docs/features/plugin-system.md)
-- [Full showcase plugin](../showcase/)

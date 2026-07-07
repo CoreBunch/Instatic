@@ -144,9 +144,18 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
       // leave its `.text-primary` / `.bg-primary` classes lingering in the saved
       // styleRules, so the Site editor keeps showing them until a hard refresh.
       reconcileFrameworkClasses(site)
+      // Shell-only incremental save: framework settings live on the shell,
+      // no rows changed and nothing was deleted.
       await cmsAdapter.saveSite(site, {
-        baselinePageIds: site.pages.map((page) => page.id),
-        dirty: { all: false, pageIds: new Set(), componentIds: new Set(), layoutIds: new Set() },
+        dirty: {
+          all: false,
+          pageIds: new Set(),
+          componentIds: new Set(),
+          layoutIds: new Set(),
+          deletedPageIds: new Set(),
+          deletedComponentIds: new Set(),
+          deletedLayoutIds: new Set(),
+        },
       })
       // The framework settings were written to storage outside the editor. If
       // the Site editor's store was hydrated earlier this session, its in-memory

@@ -6,7 +6,7 @@ Catalog of every test in `src/__tests__/architecture/`. These are structural gat
 
 ## TL;DR
 
-- 90 gate files across structural domains: SQL, JSON columns, migrations, CSS, icons, primitives, page tree, sandbox, agent, router, content storage, boundary validation, module size, AI, auth, error handling, etc.
+- 95 gate files across structural domains: SQL, JSON columns, migrations, CSS, icons, primitives, page tree, sandbox, agent, router, content storage, boundary validation, module size, AI, auth, error handling, etc.
 - Naming convention: `<topic>.test.ts` (kebab-case) or `<group>-<topic>.test.ts`. A few legacy `task<N>-*` ids remain for live invariants; new gates should use topic names.
 - Run them all: `bun test src/__tests__/architecture/`.
 - Most are **import / source scans** — they parse the files in scope and assert / reject patterns. Some are unit-style (a small in-test database, a synthesized page tree).
@@ -50,6 +50,7 @@ See [docs/reference/database-dialects.md](database-dialects.md).
 | `visual-components-mutation-contract.test.ts` | VC tree mutations preserve the slot-instance / slot-outlet invariants.           |
 | `centralized-site-mutation-history.test.ts`   | Every mutation flows through one entry-point so undo / redo stays consistent.    |
 | `no-vc-in-site-shell.test.ts`                 | `SiteShellSchema` does not declare `visualComponents` / `pages`. They live in `data_rows`. |
+| `page-tree-single-source.test.ts`             | Form analysis uses shared `@core/page-tree` traversal helpers instead of local recursive tree walkers / parent-map builders. |
 | `multiWrapDefaults.test.ts`                   | `wrapNodes` applies defaults uniformly across the wrapped set.                  |
 
 See [docs/reference/page-tree.md](page-tree.md), [docs/features/visual-components.md](../features/visual-components.md).
@@ -85,6 +86,9 @@ See [docs/features/auth-and-access.md](../features/auth-and-access.md), [docs/re
 | Test                                          | What it enforces                                                                 |
 |-----------------------------------------------|----------------------------------------------------------------------------------|
 | `css-token-policy.test.ts`                    | CSS Modules under `src/admin/`, `src/admin/pages/site/`, `src/ui/` use only token vars — no raw hex / rgb / hsl. |
+| `css-token-vocabulary.test.ts`                | Source and design docs use the current global token vocabulary directly (`--bg-*`, `--text-*`, `--border*`, `--overlay-*`, `--accent-*`, semantic state tokens), with deprecated editor/panel/rail/tag alias token families banned. |
+| `admin-spacing-token-policy.test.ts`          | Admin/shared UI chrome uses the fluid spacing scale from `globals.css` for margin/padding/gap and CSS-authored SVG dimensions; inline pixel spacing strings are banned. |
+| `admin-typography-token-policy.test.ts`       | Admin/shared UI chrome uses the fluid text scale from `globals.css`; hardcoded pixel `font-size`/font shorthands are banned in admin/ui CSS modules and editor chrome CSS. |
 | `no-css-var-fallbacks.test.ts`                | `var(--x, fallback)` is banned — every token must exist; fallbacks hide drift.   |
 | `noTailwindUtilities.test.ts`                 | No Tailwind utility class strings in `className=` in `src/admin/`, `src/modules/`, `src/ui/`. |
 | `no-tailwind-deps.test.ts`                    | No imports of `clsx`, `tailwind-merge`, `class-variance-authority`, `@radix-ui/*`, `tailwindcss`. No `@tailwind` / `@apply` directives. |
@@ -149,6 +153,7 @@ See [docs/features/spotlight.md](../features/spotlight.md).
 | `plugin-host-import-boundaries.test.ts`       | Worker transport (`server/plugins/host/`) does not import `apiDispatch` — prevents circular dependency between the pool and the dispatch layer. |
 | `plugin-host-ui-runtime-parity.test.ts`       | Plugin host UI surfaces match the SDK's declared shape.                          |
 | `plugin-schedule-invariants.test.ts`          | Scheduled job cadence + overlap policy validate at registration; `cms.schedule.*` targets are centrally gated by the `cms.schedule` permission in `TARGET_PERMISSIONS`. |
+| `plugin-secrets-never-leak.test.ts`           | HTTP handlers never touch plugin secret ciphertext/IVs or the plaintext runtime projection; browser-bound plugin settings project through `projectSecretSettings` / `listPluginSecretStates`. |
 | `sandbox-crypto-bridge.test.ts`               | Plugin sandbox's crypto surface is bridged correctly (`subtle.digest`, `subtle.sign`); crypto targets carry no permission gate (pure computation, no I/O). |
 
 See [docs/features/plugin-system.md](../features/plugin-system.md).
@@ -158,8 +163,8 @@ See [docs/features/plugin-system.md](../features/plugin-system.md).
 | Test                                          | What it enforces                                                                 |
 |-----------------------------------------------|----------------------------------------------------------------------------------|
 | `agent-no-raw-html-in-reply-rule.test.ts`     | The agent system prompt contains the narrate-only rule (1–2 sentence replies, no raw HTML/CSS/JSON in the reply body). Prevents accidental removal during prompt refactors. |
-| `agent-system-prompt-no-module-enumeration.test.ts` | The system prompt does not enumerate module ids — they're discovered via `list_modules`/`read_document` at runtime. Also asserts the HTML-native style markers (`insertHtml`, "Structure as HTML, styling as CSS"). |
-| `agent-tool-surface.test.ts`                  | Legacy node-construction tools (`insertNode`, `insertTree`) and retired class-patch tools (`createClass`, `updateClassStyles`) are absent from the site write-tool list; HTML-native replacements (`insertHtml`, `getNodeHtml`, `replaceNodeHtml`) and the unified CSS-authoring tool (`applyCss`) are present; design-system token tools and template tools are present; total count is exactly 22. |
+| `agent-system-prompt-no-module-enumeration.test.ts` | The system prompt does not enumerate module ids — they're discovered via `site_list_modules` / `site_read_document` at runtime. Also asserts the HTML-native style markers (`site_insert_html`, "Structure as HTML, styling as CSS"). |
+| `agent-tool-surface.test.ts`                  | Legacy node-construction tools (`insertNode`, `insertTree`) and retired class-patch tools (`createClass`, `updateClassStyles`) are absent from the site write-tool list; HTML-native replacements (`site_insert_html`, `site_get_node_html`, `site_replace_node_html`) and the unified CSS-authoring tool (`site_apply_css`) are present; document reads, code assets, design-system token tools, template tools, and snapshot capture are present; total count is exactly 29. |
 
 ### AI infrastructure
 
@@ -196,6 +201,7 @@ See [docs/features/media.md](../features/media.md).
 | `static-artefact-served-before-render.test.ts`| `publicRouter.ts` calls `readArtefact` BEFORE `resolvePublicRoute`; the fast-path fires when `canonicalRenderQuery(url.searchParams) === ''` — junk params (UTM, etc.) collapse to `''` and serve the artefact, only render-affecting loop-pagination params (`loop_<nodeId>_page`) fall through to the live renderer. |
 | `publish-bumps-cache-version.test.ts`         | Every publish / unpublish entry point (`publishDraftSite`, `publishDataRow`, `updateDataRowStatus`) calls `bumpPublishVersion()` imported from `publishState.ts` so Layer B evicts on every state change visitors can see. |
 | `hole-runtime-asset-route.test.ts`            | The router registers `tryServeHoleRuntimeAsset` and `tryServeHole` BEFORE `tryServePublicRoute`. The `/_instatic/hole/*` namespace can never fall through to slug resolution. |
+| `module-js-asset-route.test.ts`               | The router registers `tryServeModuleJsAsset` BEFORE `tryServePublicRoute`, and wires it from `server/handlers/cms/moduleJs`, so `/_instatic/module-js/*` requests cannot be swallowed by public-slug resolution. |
 
 The following test lives in `src/__tests__/server/` (not `architecture/`) but enforces a load-bearing publisher performance invariant:
 

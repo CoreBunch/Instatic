@@ -109,7 +109,7 @@ Splice rule (applied from innermost outward):
 - The inner content is spliced at the outlet position. Inner node ids are re-keyed with a prefix so merged trees never have collisions.
 - **Inner `base.body` drop:** the inner tree's `base.body` wrapper is removed on splice — the outermost template owns the document `<body>`. If the inner `base.body` carries non-empty `props` or `breakpointOverrides`, its children are wrapped in a `base.container` bearing those values so body-level styling is not lost.
 
-Result: one merged `Page` consumed by `publishPage` unchanged — one CSS bundle pass, one media prefetch, one HTML emit.
+Result: one merged `Page` consumed by `publishPage` unchanged — one CSS collection pass, one media prefetch, one HTML emit.
 
 ---
 

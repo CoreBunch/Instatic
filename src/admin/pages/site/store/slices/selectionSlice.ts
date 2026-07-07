@@ -174,11 +174,11 @@ export const createSelectionSlice: EditorStoreSliceCreator<SelectionSlice> = (se
 })
 
 // ---------------------------------------------------------------------------
-// Mutation helpers for use inside immer producers
+// Mutation helpers for use inside Mutative recipes
 // ---------------------------------------------------------------------------
 
 /**
- * Clear canvas selection + hover from an immer draft.
+ * Clear canvas selection + hover from a Mutative draft.
  *
  * Use this from any mutation that switches the active document (page swap,
  * VC mode entry/exit, site reload, node deletion) — anywhere a previously

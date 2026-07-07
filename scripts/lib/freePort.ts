@@ -147,8 +147,14 @@ export async function ensurePortFree(
 
   const holders = findPortHolders(port)
   if (holders.length === 0) {
-    // Port is busy but we couldn't enumerate the holder (rare — usually
-    // a permissions issue on lsof). Fall through to the manual message.
+    if (process.platform === 'win32') {
+      // On Windows we can't enumerate holders easily; just wait a bit
+      // and re-probe in case a previous dev server is shutting down.
+      for (let i = 0; i < 30; i++) {
+        if (probePort(port) === 'free') return
+        Bun.spawnSync(['cmd', '/c', 'timeout', '/t', '1', '/nobreak', '>nul', '2>&1'])
+      }
+    }
     log(`Port ${port} (${name}) is in use, but the holding process could not be identified.`)
     log(`Run \`lsof -i :${port} -P -n\` to inspect it manually.`)
     process.exit(1)
@@ -179,7 +185,7 @@ export async function ensurePortFree(
   // Re-probe to confirm the OS has released the socket.
   for (let i = 0; i < 20; i++) {
     if (probePort(port) === 'free') return
-    Bun.spawnSync(['sleep', '0.1'])
+    await Bun.sleep(100)
   }
   log(`Port ${port} is still busy after killing its holders. Aborting.`)
   process.exit(1)

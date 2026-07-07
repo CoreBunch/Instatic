@@ -51,16 +51,18 @@ const SITE_ID = 'default'
 
 /**
  * Save only the site shell (name + settings) — leave pages / components /
- * layouts untouched. `saveSite` always writes the shell; passing empty dirty
- * sets (with `all: false`) means the row collections ship an empty change set
- * against their full id roster, so the server reaps nothing and rewrites
- * nothing. See `CmsAdapter.saveSite`.
+ * layouts untouched. `saveSite` always writes the shell; empty changed and
+ * deleted sets (with `all: false`) make the incremental save touch no rows
+ * at all. See `CmsAdapter.saveSite`.
  */
 const SHELL_ONLY_DIRTY = {
   all: false,
   pageIds: new Set<string>(),
   componentIds: new Set<string>(),
   layoutIds: new Set<string>(),
+  deletedPageIds: new Set<string>(),
+  deletedComponentIds: new Set<string>(),
+  deletedLayoutIds: new Set<string>(),
 } as const
 
 interface SettingsDraftState {

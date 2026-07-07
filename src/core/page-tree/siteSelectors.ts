@@ -4,7 +4,7 @@
  * Visual-component refs are resolved repeatedly while publishing and while
  * detecting dynamic subtrees. This builds a `vcId → VisualComponent` map once
  * per `site.visualComponents` array reference and caches it in a module-level
- * WeakMap. Immer gives a fresh array reference when entries mutate, so the
+ * WeakMap. Mutative gives a fresh array reference when entries mutate, so the
  * cache invalidates when the data changes.
  */
 import type { SiteDocument } from './siteDocument'
