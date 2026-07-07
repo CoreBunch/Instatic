@@ -264,8 +264,20 @@ function stopChildren(signal: NodeJS.Signals = 'SIGTERM'): void {
   }
 }
 
+// Resolve the executable for a command string. On Windows the `bun` the user
+// launched may be a shim/alias rather than a real `bun.exe` on PATH, so a bare
+// `Bun.spawn(['bun', ...])` fails with ENOENT. Use the absolute path of the
+// running Bun binary for `bun`, and `Bun.which` (which resolves local
+// node_modules/.bin entries) for everything else.
+function resolveCommand(command: string): string[] {
+  const [bin, ...rest] = command.split(' ')
+  const resolved =
+    bin === 'bun' ? process.execPath : (Bun.which(bin) ?? bin)
+  return [resolved, ...rest]
+}
+
 for (const cfg of processes) {
-  const child = Bun.spawn(cfg.command.split(' '), {
+  const child = Bun.spawn(resolveCommand(cfg.command), {
     env: { ...process.env, ...cfg.env },
     stdin: 'inherit',
     stdout: 'inherit',

@@ -6,8 +6,8 @@
  * (via `prompt`) whether to kill them and take over. Default answer is
  * "yes" — `Enter` accepts. Anything else cancels and exits 1.
  *
- * macOS/Linux only — uses `lsof` and `ps`. The CMS isn't supported on
- * Windows for local dev today, so this is intentionally Unix-only.
+ * macOS/Linux use `lsof` + `ps`; Windows falls back to `netstat` +
+ * `tasklist` (the `lsof`/`ps` binaries aren't on the default Windows PATH).
  */
 
 const decoder = new TextDecoder()
@@ -19,32 +19,72 @@ interface PortHolder {
 
 /**
  * Returns the PID(s) currently listening on `port` along with the
- * holding process's `comm` name. Empty array when the port is free.
+ * holding process's name. Empty array when the port is free.
  */
 function findPortHolders(port: number): PortHolder[] {
-  const lsof = Bun.spawnSync(
-    ['lsof', '-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'],
-    { stdout: 'pipe', stderr: 'ignore' },
-  )
-  if (lsof.exitCode !== 0) return []
+  if (process.platform !== 'win32') {
+    const lsof = Bun.spawnSync(
+      ['lsof', '-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'],
+      { stdout: 'pipe', stderr: 'ignore' },
+    )
+    if (lsof.exitCode !== 0) return []
 
-  const pids = decoder
-    .decode(lsof.stdout)
-    .split('\n')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0)
-    .map((s) => Number(s))
-    .filter((n) => Number.isInteger(n) && n > 0)
+    const pids = decoder
+      .decode(lsof.stdout)
+      .split('\n')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .map((s) => Number(s))
+      .filter((n) => Number.isInteger(n) && n > 0)
 
+    const holders: PortHolder[] = []
+    for (const pid of pids) {
+      const ps = Bun.spawnSync(['ps', '-p', String(pid), '-o', 'comm='], {
+        stdout: 'pipe',
+        stderr: 'ignore',
+      })
+      const command =
+        ps.exitCode === 0 ? decoder.decode(ps.stdout).trim() : '<unknown>'
+      holders.push({ pid, command })
+    }
+    return holders
+  }
+
+  // Windows fallback: netstat -ano → PID, then tasklist for the image name.
+  const netstat = Bun.spawnSync(['netstat', '-ano'], {
+    stdout: 'pipe',
+    stderr: 'ignore',
+  })
+  if (netstat.exitCode !== 0) return []
+  const text = decoder.decode(netstat.stdout)
   const holders: PortHolder[] = []
-  for (const pid of pids) {
-    const ps = Bun.spawnSync(['ps', '-p', String(pid), '-o', 'comm='], {
-      stdout: 'pipe',
-      stderr: 'ignore',
-    })
-    const command =
-      ps.exitCode === 0 ? decoder.decode(ps.stdout).trim() : '<unknown>'
-    holders.push({ pid, command })
+  const seen = new Set<number>()
+  for (const line of text.split('\n')) {
+    const cols = line.trim().split(/\s+/)
+    if (cols.length < 5) continue
+    if (cols[0] !== 'TCP' && cols[0] !== 'UDP') continue
+    const local = cols[1]
+    const state = cols[3]
+    const pid = Number(cols[4])
+    if (
+      (state === 'LISTENING' || state === 'UDP') &&
+      local.endsWith(`:${port}`) &&
+      Number.isInteger(pid) &&
+      pid > 0 &&
+      !seen.has(pid)
+    ) {
+      seen.add(pid)
+      const tl = Bun.spawnSync(['tasklist', '/FI', `PID eq ${pid}`, '/NH'], {
+        stdout: 'pipe',
+        stderr: 'ignore',
+      })
+      const command =
+        tl.exitCode === 0
+          ? (decoder.decode(tl.stdout).trim().split('\n')[1]?.split(/\s+/)[0] ??
+            '<unknown>')
+          : '<unknown>'
+      holders.push({ pid, command })
+    }
   }
   return holders
 }
@@ -61,7 +101,7 @@ function probePort(port: number): 'free' | 'busy' {
   }
 }
 
-function killHolder(holder: PortHolder, log: (msg: string) => void): boolean {
+async function killHolder(holder: PortHolder, log: (msg: string) => void): Promise<boolean> {
   try {
     process.kill(holder.pid, 'SIGTERM')
   } catch (err) {
@@ -72,7 +112,7 @@ function killHolder(holder: PortHolder, log: (msg: string) => void): boolean {
   }
   // Wait briefly for graceful exit, then escalate.
   for (let i = 0; i < 20; i++) {
-    Bun.spawnSync(['sleep', '0.1'])
+    await Bun.sleep(100)
     try {
       process.kill(holder.pid, 0)
     } catch {

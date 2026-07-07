@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig } from 'vite'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 import path from 'path'
@@ -164,11 +164,17 @@ function vendorChunkName(moduleId: string): string | null {
 // add the `"use no memo"` directive at the top of the function body.
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => {
+  const isBuild = command === 'build'
+  return {
   plugins: [
     publicSiteDevProxyPlugin(),
     react(),
-    babel({ presets: [reactCompilerPreset()] }),
+    // React Compiler: production builds only. In dev it adds a full compiler
+    // pass to EVERY module transform, which (measured) accounts for a large
+    // share of the ~45s first-load transform cost. Production behaviour is
+    // unchanged — the build still compiles with the preset.
+    ...(isBuild ? [babel({ presets: [reactCompilerPreset()] })] : []),
   ],
   resolve: {
     alias: {
@@ -257,4 +263,5 @@ export default defineConfig({
       },
     },
   },
+  }
 })

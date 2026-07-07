@@ -84,6 +84,13 @@ const AdminCanvasEditorBody = prewarmedLazy<AdminCanvasEditorBodyProps>(
   { displayName: 'AdminCanvasEditorBody' },
 )
 
+// Fire the editor-body chunk fetch as early as possible (idempotent). Used by
+// the workspace prewarm so the editor chunk downloads in parallel with the
+// page render instead of as a second, serial wait after first paint.
+export const preloadAdminCanvasEditorBody = (): void => {
+  void AdminCanvasEditorBody.preload()
+}
+
 // SettingsModal is heavy (~37 KB raw) and closed 99% of the time. lazy()
 // pushes it into its own chunk and the conditional render below avoids
 // kicking off the dynamic import until the user actually opens settings.

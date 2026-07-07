@@ -58,6 +58,8 @@ import { canAccessWorkspace, firstAccessibleWorkspace, workspacePath } from './a
 import { Navigate, useInRouterContext } from './lib/routing'
 import { SpotlightRoot } from './spotlight'
 import { prewarmedLazy } from './lib/prewarmedLazy'
+import { preloadAdminCanvasEditorBody } from '@admin/layouts/AdminCanvasLayout/AdminCanvasLayout'
+
 import { useAdminUi } from './state/adminUi'
 import styles from './AdminEntry.module.css'
 
@@ -220,6 +222,17 @@ export default function AuthenticatedAdmin({ section, currentUser }: Authenticat
   // needs; in prod it's almost immediately after paint. Fallback to
   // setTimeout for browsers that don't support it (Safari < 17).
   useEffect(() => {
+    // Start the editor-body chunk fetch as early as possible, in parallel with
+    // the page render, so there is no separate serial wait for the editor.
+    // Idempotent; harmless in dev where the body is already eager.
+    if (section === 'site') preloadAdminCanvasEditorBody()
+
+    // Sibling workspace pages: prewarm in prod only. In dev this forces Vite
+    // to transform all 9 workspace-page subgraphs up front (~20s measured)
+    // and starves the editor body of CPU — skip it in dev; they load on
+    // navigation instead.
+    if (import.meta.env.DEV) return
+
     type IdleCb = (cb: () => void, options?: { timeout?: number }) => number
     type CancelIdleCb = (id: number) => void
     const w = window as unknown as {
