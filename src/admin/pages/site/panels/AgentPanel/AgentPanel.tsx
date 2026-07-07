@@ -21,13 +21,13 @@
  * @see Guideline #410 — 3 Self-Contained Independent Panels
  */
 
-import { useRef, useEffect, memo } from 'react'
+import { useRef, useEffect, useState, memo } from 'react'
 import { useAgentStore } from '@admin/ai/useAgentStore'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useAdminNavigate } from '@admin/lib/useAdminNavigate'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import { listCredentials, listModels } from '@admin/ai/api'
-import { renderMarkdownToHtml, type AgentMessage, type AgentToolCall } from '@site/agent'
+import { renderMarkdownToHtml, type AgentImageAttachment, type AgentMessage, type AgentToolCall } from '@site/agent'
 import { SquareSolidIcon } from 'pixel-art-icons/icons/square-solid'
 import { SendSolidIcon } from 'pixel-art-icons/icons/send-solid'
 import { AiBoxSolidIcon } from 'pixel-art-icons/icons/ai-box-solid'
@@ -37,6 +37,7 @@ import { ArrowRightIcon } from 'pixel-art-icons/icons/arrow-right'
 import { PanelHeader } from '@admin/shared/PanelHeader'
 import { UserAvatar } from '@admin/shared/UserAvatar'
 import { Button } from '@ui/components/Button'
+import { pushToast } from '@ui/components/Toast'
 import { EmptyState } from '@ui/components/EmptyState'
 import { Textarea } from '@ui/components/Input'
 import { useDraggablePanel } from '@site/hooks/useDraggablePanel'
@@ -52,6 +53,21 @@ const PANEL_WIDTH = 320
 const PANEL_HEIGHT = 480
 const AI_SETTINGS_ROUTE = '/admin/ai'
 type PanelVariant = 'floating' | 'docked'
+
+// Pasted-image constraints (mirrored server-side in chat.ts): allow-list of
+// MIME types and a ~10MB-per-image base64 budget.
+const ALLOWED_IMAGE_MIME = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+/** Read a File as a `data:<mime>;base64,<data>` data URL. */
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
 
 // ---------------------------------------------------------------------------
 // AgentPanel
@@ -125,6 +141,22 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const threadRef = useRef<HTMLDivElement>(null)
 
+  // Pasted image attachments awaiting send. Cleared after the message is sent.
+  const [pendingImages, setPendingImages] = useState<AgentImageAttachment[]>([])
+
+  // Active model's vision capability (null until a model is picked). Used to
+  // soft-warn when images are attached but the model can't actually see them.
+  const activeModelVisionResource = useAsyncResource(
+    async () => {
+      if (!activeProviderId || !activeCredentialId || !activeModelId) return null
+      const models = await listModels(activeProviderId, activeCredentialId)
+      return models.find((m) => m.id === activeModelId)?.capabilities.visionInput ?? null
+    },
+    [activeProviderId, activeCredentialId, activeModelId],
+    { swallowErrors: true },
+  )
+  const activeModelVision = activeModelVisionResource.data
+
   // ── Draggable panel position ───────────────────────────────────────────────
   // Default to bottom-right corner.
   const { panelRef, headerDragProps, panelPositionStyle } = useDraggablePanel(
@@ -178,10 +210,42 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
     const input = inputRef.current
     if (!input) return
     const content = input.value.trim()
-    if (!content || isStreaming) return
+    // Allow image-only sends; require at least text or an image.
+    if ((!content && pendingImages.length === 0) || isStreaming) return
     input.value = ''
     input.style.height = 'auto'
-    await sendAgentMessage(content)
+    const images = pendingImages
+    setPendingImages([])
+    await sendAgentMessage(content, images)
+  }
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const imageFiles = Array.from(e.clipboardData.files ?? []).filter((f) =>
+      f.type.startsWith('image/'),
+    )
+    if (imageFiles.length === 0) return
+    e.preventDefault()
+    void Promise.all(
+      imageFiles.map(async (file) => {
+        if (!ALLOWED_IMAGE_MIME.includes(file.type)) {
+          pushToast({
+            kind: 'error',
+            title: 'Unsupported image',
+            body: `${file.type || 'Unknown type'} is not supported. Use PNG, JPEG, WebP, or GIF.`,
+          })
+          return
+        }
+        if (file.size > MAX_IMAGE_BYTES) {
+          pushToast({ kind: 'error', title: 'Image too large', body: 'Images must be under 10MB.' })
+          return
+        }
+        const dataUrl = await readFileAsDataUrl(file)
+        const match = /^data:([^;]+);base64,(.*)$/s.exec(dataUrl)
+        if (!match) return
+        const [, mimeType, data] = match
+        setPendingImages((prev) => [...prev, { mimeType, data }])
+      }),
+    )
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -284,6 +348,38 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
         {/* Live context-window meter — renders once the active model's window
             is known (pre-turn shows 0 / window). */}
         <ContextMeter windowTokens={contextWindowResource.data} />
+        {/* Attachment tray — thumbnails of pasted images awaiting send, with
+            remove buttons. Rendered above the composer so it's visible before
+            the user types/sends. */}
+        {pendingImages.length > 0 && (
+          <div className={styles.attachmentTray} aria-label="Attached images">
+            {pendingImages.map((img, i) => (
+              <div key={i} className={styles.attachmentThumb}>
+                <img
+                  src={`data:${img.mimeType};base64,${img.data}`}
+                  alt={`Attachment ${i + 1}`}
+                  className={styles.attachmentThumbImg}
+                />
+                <button
+                  type="button"
+                  className={styles.attachmentRemove}
+                  aria-label="Remove attachment"
+                  onClick={() =>
+                    setPendingImages((prev) => prev.filter((_, idx) => idx !== i))
+                  }
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {/* Soft warning: images attached but the active model can't see them. */}
+        {pendingImages.length > 0 && activeModelVision === false && (
+          <p role="status" className={styles.visionWarning}>
+            This model can&apos;t see images — they&apos;ll be sent but ignored.
+          </p>
+        )}
         <form onSubmit={handleSubmit} className={styles.inputForm}>
           {/* Textarea is hidden while streaming — the controls row collapses
               to just the model picker + Stop button. */}
@@ -299,6 +395,7 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
               rows={2}
               resize="none"
               disabled={composerLocked}
+              onPaste={handlePaste}
               onKeyDown={handleKeyDown}
               onChange={(e) => {
                 // Auto-grow textarea
@@ -393,6 +490,8 @@ function MessageBubble({ group }: { group: ConversationGroup }) {
       {groupRenderItems(group.messages).map((item) =>
         item.kind === 'text' ? (
           <MarkdownTextBubble key={item.key} text={item.text} isUser={isUser} />
+        ) : item.kind === 'image' ? (
+          <UserImageBubble key={item.key} mimeType={item.mimeType} data={item.data} />
         ) : (
           // A run of consecutive tool calls shares one container so the rows
           // stack tightly; text blocks around them stay separate bubbles.
@@ -432,6 +531,7 @@ type MessageBlock = AgentMessage['blocks'][number]
 type MessageRenderItem =
   | { kind: 'text'; key: string; text: string }
   | { kind: 'tools'; key: string; toolCalls: AgentToolCall[] }
+  | { kind: 'image'; key: string; mimeType: string; data: string }
 
 function groupRenderItems(messages: AgentMessage[]): MessageRenderItem[] {
   const items: MessageRenderItem[] = []
@@ -440,6 +540,15 @@ function groupRenderItems(messages: AgentMessage[]): MessageRenderItem[] {
       if (block.kind === 'text') {
         // Position-based key, stable as streaming deltas append in place.
         items.push({ kind: 'text', key: `text-${message.id}-${index}`, text: block.text })
+        return
+      }
+      if (block.kind === 'image') {
+        items.push({
+          kind: 'image',
+          key: `image-${message.id}-${index}`,
+          mimeType: block.mimeType,
+          data: block.data,
+        })
         return
       }
       const last = items.at(-1)
@@ -451,6 +560,17 @@ function groupRenderItems(messages: AgentMessage[]): MessageRenderItem[] {
     })
   }
   return items
+}
+
+// Renders a user-pasted image attachment as a thumbnail in the thread.
+function UserImageBubble({ mimeType, data }: { mimeType: string; data: string }) {
+  return (
+    <img
+      src={`data:${mimeType};base64,${data}`}
+      alt="Attached image"
+      className={styles.userImage}
+    />
+  )
 }
 
 // ---------------------------------------------------------------------------

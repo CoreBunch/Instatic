@@ -57,18 +57,31 @@ import {
 } from '../runtime'
 import { normalizeContextTokens } from '../contextTokens'
 import type {
+  AiContentBlock,
   AiStreamEvent,
   ToolScope,
 } from '../runtime/types'
 import type { AiStreamRequest } from '../drivers/types'
 
+// Pasted image attachments. Keep the base64 cap just above the ~10MB binary
+// budget (10MB → ~13.3MB base64) so a single oversized paste is rejected with
+// a clear schema error rather than ballooning the request/stdb blob.
+const IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const
+const AgentImageAttachmentSchema = Type.Object({
+  mimeType: Type.Union(IMAGE_MIME_TYPES.map((m) => Type.Literal(m)) as never),
+  data: Type.String({ maxLength: 14_000_000 }),
+})
+
 const ChatRequestBodySchema = Type.Object({
   conversationId: Type.String({ minLength: 1 }),
-  prompt: Type.String({ minLength: 1 }),
+  // `prompt` is optional — a message may be image-only. Require ≥1 of
+  // text/image at the handler (below) since the schema can't express it.
+  prompt: Type.Optional(Type.String({ minLength: 1 })),
   // snapshot stays loose here — scope-specific shape; tools cast it inside
   // their handlers. The handler narrows below based on the conversation's
   // scope before passing to the system-prompt builder.
   snapshot: Type.Optional(Type.Unknown()),
+  images: Type.Optional(Type.Array(AgentImageAttachmentSchema, { maxItems: 10 })),
 })
 
 const VALID_SCOPES: ToolScope[] = ['site', 'content', 'data', 'plugin']
@@ -107,7 +120,12 @@ async function handleAiChat(
 
   const chatBody = await readValidatedBody(req, ChatRequestBodySchema)
   if (!chatBody) return badRequest('Invalid request body.')
-  const { conversationId, prompt, snapshot } = chatBody
+  const { conversationId, prompt, snapshot, images } = chatBody
+
+  // A message must carry text or at least one image.
+  if (!prompt && (!images || images.length === 0)) {
+    return badRequest('Message must contain text or an image.')
+  }
 
   const conversation = await readConversationForUser(db, user.id, conversationId)
   if (!conversation) {
@@ -148,10 +166,17 @@ async function handleAiChat(
   const tools = selectToolsForScope(scope, user.capabilities)
 
   // Append the user's message BEFORE streaming so it's persisted even if
-  // the stream aborts mid-response.
+  // the stream aborts mid-response. Build content blocks from text + any
+  // pasted image attachments; the drivers map image blocks to native
+  // multimodal content, and the blocks are replayed verbatim on follow-ups.
+  const userContent: AiContentBlock[] = []
+  if (prompt) userContent.push({ kind: 'text', text: prompt })
+  for (const img of images ?? []) {
+    userContent.push({ kind: 'image', mimeType: img.mimeType, data: img.data })
+  }
   await appendMessage(db, conversation.id, {
     role: 'user',
-    content: [{ kind: 'text', text: prompt }],
+    content: userContent,
   })
 
   // The first prompt names the conversation: replace the placeholder title

@@ -134,6 +134,9 @@ export function rehydrateMessages(
         }
         msg.blocks.push({ kind: 'toolCall', toolCall })
         toolCallIndex.set(block.toolCallId, toolCall)
+      } else if (block.kind === 'image') {
+        // Pasted image attachments rehydrate as thumbnails in the thread.
+        msg.blocks.push({ kind: 'image', mimeType: block.mimeType, data: block.data })
       }
       // image blocks — skip in v1; could render via <img> later.
     }

@@ -8,6 +8,7 @@ import {
   readConversationForUser,
   toConversationDetailView,
 } from '../../../server/ai/conversations/store'
+import { buildMessageHistory } from '../../../server/ai/conversations/history'
 import { ConversationDetailViewSchema } from '../../admin/ai/api'
 
 /**
@@ -63,5 +64,45 @@ describe('conversation detail round-trip', () => {
     expect(detail.messages[0]!.content).toEqual([{ kind: 'text', text: 'hello' }])
     // The dead context field must not reappear on the wire shape.
     expect('contextJson' in detail).toBe(false)
+  })
+
+  it('persists and replays a pasted image attachment on the user message', async () => {
+    const conv = await createConversationForUser(testDb.db, 'user_1', {
+      scope: 'site',
+      credentialId: 'cred_1',
+      modelId: 'model_1',
+    })
+
+    // Mirror what chat.ts does: append text + one image block.
+    await appendMessage(testDb.db, conv.id, {
+      role: 'user',
+      content: [
+        { kind: 'text', text: 'What does this mockup show?' },
+        { kind: 'image', mimeType: 'image/png', data: 'aGVsbG8=' },
+      ],
+    })
+
+    const record = await readConversationForUser(testDb.db, 'user_1', conv.id)
+    expect(record).not.toBeNull()
+
+    const messages = await listMessagesForConversation(testDb.db, conv.id)
+    const detail = toConversationDetailView(record!, messages)
+
+    // The detail view stays wire-valid with the image block present.
+    expect(Value.Check(ConversationDetailViewSchema, detail)).toBe(true)
+    expect(detail.messages).toHaveLength(1)
+    expect(detail.messages[0]!.content).toEqual([
+      { kind: 'text', text: 'What does this mockup show?' },
+      { kind: 'image', mimeType: 'image/png', data: 'aGVsbG8=' },
+    ])
+
+    // buildMessageHistory (what the driver replays each turn) carries the
+    // image block verbatim so the model sees the pasted image on follow-ups.
+    const history = buildMessageHistory(messages)
+    const userTurn = history.find((m) => m.role === 'user')
+    expect(userTurn?.content).toEqual([
+      { kind: 'text', text: 'What does this mockup show?' },
+      { kind: 'image', mimeType: 'image/png', data: 'aGVsbG8=' },
+    ])
   })
 })

@@ -1,7 +1,7 @@
 import type { EditorStoreSliceCreator } from '@site/store/types'
 import type { AiToolOutput } from '@core/ai'
 import type { ConversationView } from '@admin/ai/api'
-import type { AgentMessage, AgentToolScope } from './types'
+import type { AgentImageAttachment, AgentMessage, AgentToolScope } from './types'
 
 export interface AgentSliceConfig {
   /**
@@ -42,7 +42,7 @@ export interface AgentSlice {
   openAgent(): void
   closeAgent(): void
   toggleAgent(): void
-  sendAgentMessage(content: string): Promise<void>
+  sendAgentMessage(content: string, images?: AgentImageAttachment[]): Promise<void>
   abortAgent(): void
   clearAgentMessages(): void
   loadAgentConversations(): Promise<void>

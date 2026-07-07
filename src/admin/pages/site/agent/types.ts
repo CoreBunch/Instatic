@@ -162,6 +162,15 @@ export interface AgentToolCall {
 }
 
 /**
+ * A pasted image attachment, carried from the composer to the server as raw
+ * base64 (no `data:` prefix). MIME is one of the allow-listed image types.
+ */
+export interface AgentImageAttachment {
+  mimeType: string
+  data: string
+}
+
+/**
  * Chronological message blocks. Claude's response naturally interleaves text
  * and tool calls — the UI renders them in arrival order so a "text → tool →
  * text" sequence is visually three blocks, not "all text grouped above all
@@ -170,6 +179,7 @@ export interface AgentToolCall {
 type AgentMessageBlock =
   | { kind: 'text'; text: string }
   | { kind: 'toolCall'; toolCall: AgentToolCall }
+  | { kind: 'image'; mimeType: string; data: string }
 
 export interface AgentMessage {
   id: string
@@ -185,7 +195,7 @@ export interface AgentMessage {
 export interface AgentRequestBody {
   /** Per-conversation id; the chat handler loads its credential + history. */
   conversationId: string
-  /** The user's new message. */
+  /** The user's new message. Optional when an image is attached. */
   prompt: string
   /**
    * Scope-specific snapshot handed to the read tools via
@@ -194,6 +204,8 @@ export interface AgentRequestBody {
    * …); each scope's tool handlers cast at the boundary.
    */
   snapshot: unknown
+  /** Pasted image attachments (base64, no `data:` prefix). Optional. */
+  images?: AgentImageAttachment[]
 }
 
 export interface AgentLayoutRect {

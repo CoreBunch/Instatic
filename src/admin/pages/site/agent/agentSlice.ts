@@ -42,6 +42,7 @@ export type { AgentSlice, AgentSliceConfig } from './agentSliceTypes'
 import type {
   AgentBridgeRuntime,
   AgentMessage,
+  AgentMessageBlock,
   AgentRequestBody,
   AgentTextStreamSink,
 } from './types'
@@ -390,13 +391,22 @@ export function createAgentSlice(
     },
 
     // ── sendAgentMessage ─────────────────────────────────────────────────────
-    async sendAgentMessage(content) {
+    async sendAgentMessage(content, images) {
       if (get().isAgentStreaming) return // one request at a time
 
+      // Build the user message blocks: a text block (when there's text) plus
+      // one image block per pasted attachment. The image blocks ride the same
+      // user-message content channel the drivers already map to native
+      // multimodal content — no extra provider work.
+      const blocks: AgentMessageBlock[] = []
+      if (content.trim()) blocks.push({ kind: 'text', text: content })
+      for (const img of images ?? []) {
+        blocks.push({ kind: 'image', mimeType: img.mimeType, data: img.data })
+      }
       const userMsg: AgentMessage = {
         id: nanoid(),
         role: 'user',
-        blocks: [{ kind: 'text', text: content }],
+        blocks,
         timestamp: Date.now(),
       }
 
@@ -435,7 +445,12 @@ export function createAgentSlice(
           return
         }
 
-        const body: AgentRequestBody = { conversationId, prompt: content, snapshot }
+        const body: AgentRequestBody = {
+          conversationId,
+          prompt: content,
+          snapshot,
+          ...(images && images.length ? { images } : {}),
+        }
         const res = await fetch(`/admin/api/ai/chat/${config.scope}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
