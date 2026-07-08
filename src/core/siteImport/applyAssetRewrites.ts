@@ -123,7 +123,7 @@ function rewriteFragment(
   const body = fragment.body
     ? {
         ...fragment.body,
-        props: fragment.body.props ? rewriteProps(fragment.body.props, rewriteMap) : undefined,
+        attributes: fragment.body.attributes ? rewriteAttributes(fragment.body.attributes, rewriteMap) : undefined,
         inlineStyles: fragment.body.inlineStyles
           ? rewriteStringStylesBag(fragment.body.inlineStyles, rewriteMap)
           : undefined,

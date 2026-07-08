@@ -78,6 +78,9 @@ function injectModuleCss(moduleId: string, css: string): void {
 export const editorPluginModuleComponentFactory: PluginModuleComponentFactory = (definition: PluginModuleDefinition) => {
   const renderForEditor = definition.preview ?? definition.render
   const canHaveChildren = Boolean(definition.canHaveChildren)
+  if (!renderForEditor) {
+    throw new Error(`Plugin module "${definition.id}" has no render() or preview()`)
+  }
   return function PluginCanvasModule(props: ModuleComponentProps) {
     const childList: string[] = []
     // Defensive wrap — a throwing plugin preview()/render() is caught by the

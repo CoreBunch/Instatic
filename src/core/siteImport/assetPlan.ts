@@ -328,8 +328,8 @@ function normalizeFragment(
   const body = fragment.body
     ? {
         ...fragment.body,
-        props: fragment.body.props
-          ? normalizeNodeProps(fragment.body.props, htmlFilePath, fileMap, assetMap)
+        attributes: fragment.body.attributes
+          ? normalizeAttributes(fragment.body.attributes, htmlFilePath, fileMap, assetMap)
           : undefined,
         inlineStyles: fragment.body.inlineStyles
           ? normalizeCssBag(fragment.body.inlineStyles, htmlFilePath, fileMap, assetMap)

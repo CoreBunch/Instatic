@@ -333,7 +333,7 @@ function renderUnifiedNode(
   const tag = node.tag!
 
   // Build attribute map from stored node.attributes
-  let attrs: Record<string, string> = { ...node.attributes }
+  const attrs: Record<string, string> = { ...node.attributes }
 
   // If a module overlay exists, merge contract-derived attributes
   let enrichedProps: Record<string, unknown> | undefined

@@ -9,8 +9,13 @@ import { runMigrations } from '../../../server/db/runMigrations'
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   const dir = await mkdtemp(join(tmpdir(), 'instatic-db-selection-'))
+  let result: T | undefined
+  let fnError: unknown
+  let cleanupError: Error | undefined
   try {
-    return await fn(dir)
+    result = await fn(dir)
+  } catch (e) {
+    fnError = e
   } finally {
     // Retry delete — Windows may hold SQLite handles briefly after close.
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -23,10 +28,14 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
           await new Promise((r) => setTimeout(r, 50 * (attempt + 1)))
           continue
         }
-        throw e
+        cleanupError = e as Error
+        break
       }
     }
   }
+  if (fnError) throw fnError
+  if (cleanupError) throw cleanupError
+  return result!
 }
 
 describe('createDbClient — DATABASE_URL dialect selection', () => {
