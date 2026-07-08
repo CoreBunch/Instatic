@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { handleServerRequest } from '../../../server/router'
+import { DEFAULT_VITE_PORT } from '../../../server/config'
 import type { DbClient, DbResult } from '../../../server/db'
 import {
   prepareInactiveSlot,
@@ -76,7 +77,9 @@ describe('server router', () => {
     expect(res.status).toBe(404)
     expect(res.headers.get('content-type')).toContain('text/html')
     const body = await res.text()
-    expect(body).toContain('http://localhost:5173/admin')
+    // The page points at the configured Vite port — bun auto-loads .env, so
+    // the expectation must read the same override the router read at import.
+    expect(body).toContain(`http://localhost:${process.env.VITE_PORT ?? DEFAULT_VITE_PORT}/admin`)
   })
 })
 

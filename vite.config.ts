@@ -3,8 +3,9 @@ import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 import path from 'path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { DEFAULT_CMS_PORT } from './server/config'
 
-const CMS_DEV_SERVER_ORIGIN = `http://localhost:${process.env.PORT ?? '3001'}`
+const CMS_DEV_SERVER_ORIGIN = `http://localhost:${process.env.PORT ?? DEFAULT_CMS_PORT}`
 const FILE_EXTENSION_RE = /\.[a-zA-Z0-9]+$/
 
 function isEditorAppPath(pathname: string): boolean {

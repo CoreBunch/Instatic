@@ -7,7 +7,9 @@
  * the YAML/Dockerfile readable (no JSON-escaped JS one-liners) and makes the
  * healthcheck logic discoverable in the codebase.
  */
-const port = process.env.PORT ?? '3001'
+import { DEFAULT_CMS_PORT } from './config'
+
+const port = process.env.PORT ?? String(DEFAULT_CMS_PORT)
 const url = `http://127.0.0.1:${port}/health`
 
 try {

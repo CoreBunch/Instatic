@@ -1,3 +1,4 @@
+import { DEFAULT_CMS_PORT, DEFAULT_VITE_PORT } from './config'
 import { tryHandleAi } from './ai/handlers'
 import { handleMcpHttp, MCP_ENDPOINT_PATH } from './ai/mcp'
 import { handleCmsRequest } from './handlers/cms'
@@ -22,7 +23,11 @@ import type { CssBundleFile, SiteCssBundleId } from '@core/publisher'
 import { buildPublishedSiteCssBundle } from './publish/siteCssBundle'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 
-const VITE_DEV_URL = 'http://localhost:5173'
+// Dev-only pointers for the "Admin UI not served on this port" page. Both
+// respect the same env overrides `bun run dev` (scripts/dev.ts) reads, so the
+// page never sends a developer with custom ports to a dead URL.
+const VITE_DEV_URL = `http://localhost:${process.env.VITE_PORT ?? DEFAULT_VITE_PORT}`
+const CMS_DEV_PORT = process.env.PORT ?? String(DEFAULT_CMS_PORT)
 
 interface ServerRuntime {
   db: DbClient
@@ -491,7 +496,7 @@ function adminUiNotBuiltResponse(pathname: string): Response {
 </head>
 <body>
 <h1>Admin UI not served on this port</h1>
-<p>This is the CMS API server (port 3001). In development, the admin UI is served by the Vite dev server.</p>
+<p>This is the CMS API server (port ${CMS_DEV_PORT}). In development, the admin UI is served by the Vite dev server.</p>
 <p>Open <a href="${targetUrl}">${targetUrl}</a>.</p>
 <p>If Vite isn't running yet, start it with <code>bun run dev</code> from the project root.</p>
 </body>

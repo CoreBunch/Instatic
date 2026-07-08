@@ -1,3 +1,12 @@
+/**
+ * Default dev ports — the single source of truth for every consumer that
+ * falls back when `PORT` / `VITE_PORT` are unset: `readServerConfig`, the
+ * router's dev pointers, the CSRF dev-origin allowlist, the container
+ * healthcheck, `scripts/dev.ts` / `scripts/start.ts`, and `vite.config.ts`.
+ */
+export const DEFAULT_CMS_PORT = 3001
+export const DEFAULT_VITE_PORT = 5173
+
 interface ServerConfig {
   port: number
   databaseUrl: string
@@ -82,7 +91,7 @@ export function readServerConfig(
   env: Record<string, string | undefined> = process.env,
 ): ServerConfig {
   return {
-    port: Number(env.PORT ?? 3001),
+    port: Number(env.PORT ?? DEFAULT_CMS_PORT),
     databaseUrl: env.DATABASE_URL ?? 'sqlite:./.tmp/dev.db',
     uploadsDir: env.UPLOADS_DIR ?? './uploads',
     staticDir: env.STATIC_DIR ?? './dist',

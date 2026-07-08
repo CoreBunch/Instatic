@@ -21,8 +21,9 @@
 
 import { bunRunCommand } from './lib/bunCommand'
 import { ensurePortFree } from './lib/freePort'
+import { DEFAULT_CMS_PORT } from '../server/config'
 
-const CMS_PORT = Number(process.env.PORT ?? '3001')
+const CMS_PORT = Number(process.env.PORT ?? DEFAULT_CMS_PORT)
 
 function log(msg: string): void {
   console.error(`[start] ${msg}`)

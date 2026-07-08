@@ -355,7 +355,7 @@ The expected origin is derived **only** from the configured public origin set at
 
 `SameSite=Lax` on the session cookie covers the typical CSRF surface; this check closes the same-site-different-subdomain edge case.
 
-`DEV_ORIGIN_ALLOWLIST` allows `http://localhost:5173`, `http://localhost:3001`, and `http://127.0.0.1:5173` so dev-time cross-origin from Vite to the API works.
+`DEV_ORIGIN_ALLOWLIST` (built by `buildDevOriginAllowlist` in `server/auth/security.ts`) allows the Vite dev origins so dev-time cross-origin from Vite to the API works: the default ports 5173/5174 plus a `VITE_PORT` override, each as both `http://localhost:<port>` and `http://127.0.0.1:<port>`, plus an optional `VITE_ALLOWED_ORIGIN` for a non-localhost dev host.
 
 ---
 

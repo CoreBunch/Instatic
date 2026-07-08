@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import {
   DEV_ORIGIN_ALLOWLIST,
+  buildDevOriginAllowlist,
   clientIp,
   configurePublicOrigins,
   configureTrustedProxyCidrs,
@@ -168,6 +169,32 @@ describe('originAllowed', () => {
   it('uses the same dev origins for CSRF and CORS checks', () => {
     expect(DEV_ORIGIN_ALLOWLIST).toContain('http://localhost:5173')
     expect(DEV_ORIGIN_ALLOWLIST).toContain('http://127.0.0.1:5173')
+  })
+
+  describe('buildDevOriginAllowlist', () => {
+    it('contains localhost and 127.0.0.1 origins for the default Vite ports', () => {
+      const list = buildDevOriginAllowlist({})
+      expect(list).toContain('http://localhost:5173')
+      expect(list).toContain('http://127.0.0.1:5173')
+      expect(list).toContain('http://localhost:5174')
+      expect(list).toContain('http://127.0.0.1:5174')
+    })
+
+    it('adds both host variants for a custom VITE_PORT', () => {
+      const list = buildDevOriginAllowlist({ VITE_PORT: '7282' })
+      expect(list).toContain('http://localhost:7282')
+      expect(list).toContain('http://127.0.0.1:7282')
+    })
+
+    it('does not duplicate entries when VITE_PORT matches a default port', () => {
+      const list = buildDevOriginAllowlist({ VITE_PORT: '5173' })
+      expect(list.filter((origin) => origin === 'http://localhost:5173')).toHaveLength(1)
+    })
+
+    it('appends VITE_ALLOWED_ORIGIN when set', () => {
+      const list = buildDevOriginAllowlist({ VITE_ALLOWED_ORIGIN: 'http://dev.example.test:8080' })
+      expect(list).toContain('http://dev.example.test:8080')
+    })
   })
 
   it('rejects requests from a foreign origin', () => {
