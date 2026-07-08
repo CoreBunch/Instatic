@@ -13,9 +13,10 @@
  */
 
 import { describe, it, expect } from 'bun:test'
-import { bagToCSS, collectClassCSS, generateClassCSS } from '@core/publisher'
+import { bagToCSS, bagToInlineStyle, collectClassCSS, generateClassCSS } from '@core/publisher'
 import { classKindSelector, makeConditionDef } from '@core/page-tree'
 import type { StyleRule, Page, PageNode, SiteDocument } from '@core/page-tree'
+import type { RenderResolvedMedia } from '@core/publisher'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -44,6 +45,23 @@ const BREAKPOINTS = [
   { id: 'mobile', width: 375 },
   { id: 'tablet', width: 768 },
 ]
+
+function resolvedMedia(path = '/uploads/hero.png'): RenderResolvedMedia {
+  return {
+    publicPath: path,
+    mimeType: 'image/png',
+    width: 2400,
+    height: 1200,
+    altText: '',
+    blurHash: null,
+    variants: [
+      { width: 320, height: 160, format: 'webp', path: '/uploads/hero-w320.webp', sizeBytes: 12_000 },
+      { width: 1024, height: 512, format: 'webp', path: '/uploads/hero-w1024.webp', sizeBytes: 82_000 },
+      { width: 2048, height: 1024, format: 'webp', path: '/uploads/hero-w2048.webp', sizeBytes: 190_000 },
+    ],
+    posterPath: null,
+  }
+}
 
 // ---------------------------------------------------------------------------
 // bagToCSS
@@ -139,6 +157,31 @@ describe('bagToCSS', () => {
     expect(css).toContain('display: flex;')
     expect(css).toContain('gap: 8px;')
     expect(css).toContain('border-radius: 4px;')
+  })
+
+  it('rewrites media background images to optimized fallback plus image-set declarations', () => {
+    const css = bagToCSS(
+      { backgroundImage: "url('/uploads/hero.png')" },
+      { mediaAssets: new Map([['/uploads/hero.png', resolvedMedia()]]) },
+    )
+
+    expect(css).toContain('background-image: url("/uploads/hero-w2048.webp");')
+    expect(css).toContain('background-image: image-set(')
+    expect(css).toContain('url("/uploads/hero-w320.webp") 0.31x')
+    expect(css).toContain('url("/uploads/hero-w1024.webp") 1x')
+    expect(css).toContain('url("/uploads/hero-w2048.webp") 2x')
+    expect(css).not.toContain('/uploads/hero.png')
+  })
+
+  it('rewrites media background images inside inline style strings without selecting the original', () => {
+    const inline = bagToInlineStyle(
+      { backgroundImage: 'linear-gradient(red, blue), url("/uploads/hero.png")' },
+      { mediaAssets: new Map([['/uploads/hero.png', resolvedMedia()]]) },
+    )
+
+    expect(inline).toContain('linear-gradient(red, blue), url("/uploads/hero-w2048.webp")')
+    expect(inline).toContain('linear-gradient(red, blue), image-set(')
+    expect(inline).not.toContain('/uploads/hero.png')
   })
 
   it('outputs multiple properties as separate lines', () => {
@@ -555,6 +598,20 @@ describe('generateClassCSS', () => {
     expect(mobileIdx).toBeGreaterThanOrEqual(0)
     expect(tabletIdx).toBeGreaterThan(mobileIdx)
     expect(desktopIdx).toBeGreaterThan(tabletIdx)
+  })
+
+  it('rewrites class background images with responsive image-set candidates', () => {
+    const classes = {
+      hero: makeClass('hero', { backgroundImage: "url('/uploads/hero.png')" }),
+    }
+    const css = generateClassCSS(classes, BREAKPOINTS, [], {
+      mediaAssets: new Map([['/uploads/hero.png', resolvedMedia()]]),
+    })
+
+    expect(css).toContain('.hero {')
+    expect(css).toContain('background-image: url("/uploads/hero-w2048.webp");')
+    expect(css).toContain('background-image: image-set(')
+    expect(css).not.toContain('/uploads/hero.png')
   })
 })
 

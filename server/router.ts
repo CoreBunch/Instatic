@@ -6,6 +6,7 @@ import { renderNotFoundResponse, renderPublicResolution } from './publish/public
 import { readStaticAsset } from './publish/staticArtefact'
 import { getLatestSnapshotForVersion } from './publish/publishedSnapshotCache'
 import { getPublishVersion, registerVersionedCacheReset } from './publish/publishState'
+import { prefetchMediaAssets } from './publish/mediaPrefetch'
 import { getSetupStatusCached } from './repositories/setup'
 import { getPublishedRuntimeAsset } from './repositories/runtimeAsset'
 import { handleLoopRequest, isLoopRuntimeAssetPath, serveLoopRuntimeAsset } from './handlers/cms/loop'
@@ -605,12 +606,22 @@ async function rebuildSiteCssFromSnapshot(
 
   const pages = bundleId === 'userStyles' ? snapshot.site.pages : snapshot.site.pages.slice(0, 1)
   for (const page of pages) {
-    const file: CssBundleFile = buildPublishedSiteCssBundle(snapshot.site, registry, page, version)[bundleId]
+    const mediaAssets = await prefetchMediaAssets(page, snapshot.site, registry, db)
+    const file: CssBundleFile = buildPublishedSiteCssBundle(snapshot.site, registry, page, version, { mediaAssets })[bundleId]
     if (file.hash === requestedHash) return file.content
   }
   // Page-agnostic view (every enabled stylesheet) — covers a hash that
   // predates a scope change but is still referenced somewhere.
-  const fallback: CssBundleFile = buildPublishedSiteCssBundle(snapshot.site, registry, undefined, version)[bundleId]
+  const fallbackMediaAssets = snapshot.site.pages[0]
+    ? await prefetchMediaAssets(snapshot.site.pages[0], snapshot.site, registry, db)
+    : undefined
+  const fallback: CssBundleFile = buildPublishedSiteCssBundle(
+    snapshot.site,
+    registry,
+    undefined,
+    version,
+    { mediaAssets: fallbackMediaAssets },
+  )[bundleId]
   if (fallback.hash === requestedHash) return fallback.content
 
   return null

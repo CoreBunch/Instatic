@@ -41,6 +41,8 @@
 import { useEffect } from 'react'
 import { useEditorStore } from '@site/store/store'
 import { styleRuleSelector, type ConditionDef, type StyleRule } from '@core/page-tree'
+import { collectBackgroundImagePaths, collectSiteStyleBackgroundImagePaths } from '@core/publisher'
+import { useResponsiveEditorMediaAssets } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { selectorStatePseudo } from '@site/cssStatePseudo'
 import { generateCanvasClassCSS, generateForcedStateCSS, generatePreviewClassCSS } from './canvasClassCss'
 import { resolveViewportUnitsForCanvas, type CanvasViewport } from './resolveViewportUnits'
@@ -101,6 +103,14 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
   const previewClassStyles = useEditorStore((s) => s.previewClassStyles)
   const activeClassId = useEditorStore((s) => s.activeClassId)
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId)
+  const backgroundPaths = [
+    ...collectSiteStyleBackgroundImagePaths({ styleRules: classes ?? EMPTY_STYLE_RULES }),
+    ...collectBackgroundImagePaths(previewClassStyles?.styles.backgroundImage),
+  ]
+  const {
+    mediaAssets: responsiveMediaAssets,
+    signature: responsiveMediaSignature,
+  } = useResponsiveEditorMediaAssets(backgroundPaths)
 
   useEffect(() => {
     const targetDoc = targetDocument ?? document
@@ -126,6 +136,7 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
       frameworkSpacing,
       frameworkPreferences,
       fonts,
+      { mediaAssets: responsiveMediaAssets, mediaSignature: responsiveMediaSignature },
     )
     // Wrap in a named cascade layer so editor-chrome CSS (unlayered, from
     // EditorChromeInjector) always wins over author CSS regardless of specificity.
@@ -137,7 +148,20 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
     styleEl.textContent = css
       ? `@layer user-authored {\n${css}\n}`
       : '/* no classes */'
-  }, [targetDocument, viewport, classes, breakpoints, conditions, frameworkColors, frameworkTypography, frameworkSpacing, frameworkPreferences, fonts])
+  }, [
+    targetDocument,
+    viewport,
+    classes,
+    breakpoints,
+    conditions,
+    frameworkColors,
+    frameworkTypography,
+    frameworkSpacing,
+    frameworkPreferences,
+    fonts,
+    responsiveMediaAssets,
+    responsiveMediaSignature,
+  ])
 
   // Preview overlay — a higher-specificity rule emitted while a user is
   // hovering a suggestion in a property control (e.g. spacing token
@@ -166,14 +190,14 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
     const previewCss = generatePreviewClassCSS(cls, {
       breakpointId: previewClassStyles.breakpointId ?? null,
       styles: previewClassStyles.styles,
-    })
+    }, { mediaAssets: responsiveMediaAssets })
     const resolvedPreviewCss = viewport ? resolveViewportUnitsForCanvas(previewCss, viewport) : previewCss
     // Keep in the same @layer so the doubled-selector preview rule still wins
     // over the regular class rule within the layer (higher specificity).
     previewEl.textContent = resolvedPreviewCss
       ? `@layer user-authored {\n${resolvedPreviewCss}\n}`
       : ''
-  }, [targetDocument, viewport, classes, previewClassStyles])
+  }, [targetDocument, viewport, classes, previewClassStyles, responsiveMediaAssets])
 
   // Forced state preview — when a state-pseudo selector (`.btn:hover`, …) is the
   // active selector, paint its declarations onto the selected node so the state
@@ -203,10 +227,27 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
     const inflight = previewClassStyles?.classId === activeClassId
       ? { contextId: previewClassStyles.breakpointId ?? null, styles: previewClassStyles.styles }
       : null
-    const forcedCss = generateForcedStateCSS(selectedNodeId, rule, breakpoints, conditions, inflight)
+    const forcedCss = generateForcedStateCSS(
+      selectedNodeId,
+      rule,
+      breakpoints,
+      conditions,
+      inflight,
+      { mediaAssets: responsiveMediaAssets },
+    )
     const resolved = viewport ? resolveViewportUnitsForCanvas(forcedCss, viewport) : forcedCss
     forceEl.textContent = resolved ? `@layer user-authored {\n${resolved}\n}` : ''
-  }, [targetDocument, viewport, classes, breakpoints, conditions, activeClassId, selectedNodeId, previewClassStyles])
+  }, [
+    targetDocument,
+    viewport,
+    classes,
+    breakpoints,
+    conditions,
+    activeClassId,
+    selectedNodeId,
+    previewClassStyles,
+    responsiveMediaAssets,
+  ])
 
   // Cleanup: remove the style elements when the component unmounts. We
   // capture `targetDocument` into the effect so cleanup targets the same

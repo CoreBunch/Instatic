@@ -20,6 +20,7 @@ import type { SiteDocument } from '@core/page-tree'
 import { classNamesForClassIds } from '@core/page-tree'
 import { bagToInlineStyle } from './classCss'
 import { escapeHtml } from './utils'
+import type { RenderResolvedMedia } from './renderConfig'
 
 /**
  * Inject a class attribute into the ROOT element of an HTML string.
@@ -132,9 +133,10 @@ function injectStyleIntoRootElement(html: string, styleAttr: string): string {
 export function injectNodeInlineStyles(
   html: string,
   inlineStyles: Record<string, unknown> | undefined,
+  mediaAssets?: ReadonlyMap<string, RenderResolvedMedia>,
 ): string {
   if (!inlineStyles || Object.keys(inlineStyles).length === 0) return html
-  const styleAttr = bagToInlineStyle(inlineStyles)
+  const styleAttr = bagToInlineStyle(inlineStyles, { mediaAssets })
   if (!styleAttr) return html
   return injectStyleIntoRootElement(html, styleAttr)
 }

@@ -258,7 +258,7 @@ function renderStandardNode(
   // <body> in publishPage.
   if (node.moduleId === 'base.body') return output.html
   const withClasses = injectNodeClassIds(output.html, node.classIds, config.site)
-  const withStyles = injectNodeInlineStyles(withClasses, node.inlineStyles)
+  const withStyles = injectNodeInlineStyles(withClasses, node.inlineStyles, config.mediaAssets)
   return config.annotateNodeIds && !config.cleanMode ? injectNodeId(withStyles, node.id) : withStyles
 }
 
@@ -361,7 +361,7 @@ function renderUnifiedNode(
   if (VOID_HTML_ELEMENTS.has(tag)) {
     let html = `<${tag}${attrStr}>`
     html = injectNodeClassIds(html, node.classIds, config.site)
-    html = injectNodeInlineStyles(html, node.inlineStyles)
+    html = injectNodeInlineStyles(html, node.inlineStyles, config.mediaAssets)
     return config.annotateNodeIds && !config.cleanMode ? injectNodeId(html, node.id) : html
   }
 
@@ -385,7 +385,7 @@ function renderUnifiedNode(
 
   let html = `<${tag}${attrStr}>${innerHtml}</${tag}>`
   html = injectNodeClassIds(html, node.classIds, config.site)
-  html = injectNodeInlineStyles(html, node.inlineStyles)
+  html = injectNodeInlineStyles(html, node.inlineStyles, config.mediaAssets)
   return config.annotateNodeIds && !config.cleanMode ? injectNodeId(html, node.id) : html
 }
 

@@ -119,7 +119,7 @@ Collections are `data_tables` with `kind: 'postType'`. The four system tables (`
 `AdminWorkspaceCanvasLayout` treats an absent `contentRightPanel` as "no right panel available",
 so a persisted open state never reserves an empty right rail on a fresh install or after the last entry is cleared.
 
-The panel exposes: status selector, slug, author (if the user has `canEditAnyContent`), collection (move entry), SEO title, SEO description, featured media.
+The panel exposes: status selector, slug, author (if the user has `canEditAnyContent`), collection (move entry), SEO title, SEO description, featured media — followed by the collection's **custom (non-built-in) fields**, rendered generically through the Data workspace's `CellEditorRenderer` (`context="detail"`). Relation fields open the shared `RelationPickerDialog` (target-table rows resolved for display by `useRelationTargetRows`); media fields carry their own picker. `pageTree` / `fieldSchema` fields are excluded — their cells hold whole documents, not values. Custom values live in `useContentEntryDraft`'s `customCells` and save through the same Save / Publish lifecycle as the built-ins.
 
 When the panel is collapsed and an entry is selected, `AdminWorkspaceCanvasLayout` renders a compact notch in the top-right corner of the canvas (`data-testid="content-settings-notch"`) with a button labelled "Open settings panel". Clicking it reopens the panel without changing the selected entry. See [docs/editor.md](../editor.md) — "Admin shell layout" for the notch's implementation context.
 
@@ -140,7 +140,7 @@ The mode switch is client-only. The markdown body is the source of truth in both
 | Hook | Source | Owns |
 |------|--------|------|
 | `useContentWorkspace` | `hooks/useContentWorkspace.ts` | Collection list, entry list, selection, CRUD operations, error state |
-| `useContentEntryDraft` | `hooks/useContentEntryDraft.ts` | In-memory field state (`title`, `body`, `slug`, `featuredMediaId`, `seoTitle`, `seoDescription`), save / publish / status-change handlers |
+| `useContentEntryDraft` | `hooks/useContentEntryDraft.ts` | In-memory field state (`title`, `body`, `slug`, `featuredMediaId`, `seoTitle`, `seoDescription`, plus `customCells` for the collection's non-built-in fields), save / publish / status-change handlers |
 | `useContentMediaPicker` | `hooks/useContentMediaPicker.ts` | Media picker modal open/close, featured media asset hydration, body media insert |
 
 ---

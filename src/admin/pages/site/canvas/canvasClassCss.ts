@@ -4,6 +4,7 @@ import {
   generateClassCSS,
   PUBLISHER_RESET_CSS,
   type ViewportContext,
+  type ResponsiveCssOptions,
 } from '@core/publisher'
 import { generateFrameworkRootCss } from '@core/framework'
 import { generateFontsCss } from '@core/fonts'
@@ -17,6 +18,10 @@ import type {
   FrameworkTypographySettings,
 } from '@core/framework-schema'
 
+interface CanvasResponsiveCssOptions extends ResponsiveCssOptions {
+  mediaSignature?: string
+}
+
 function buildCanvasClassCSS(
   classes: Record<string, StyleRule>,
   breakpoints: ViewportContext[],
@@ -26,6 +31,7 @@ function buildCanvasClassCSS(
   frameworkSpacing?: FrameworkSpacingSettings | null,
   frameworkPreferences?: FrameworkPreferencesSettings | null,
   fonts?: SiteFontsSettings | null,
+  responsiveOptions: CanvasResponsiveCssOptions = {},
 ): string {
   const blocks: string[] = []
 
@@ -56,7 +62,7 @@ function buildCanvasClassCSS(
   // exact bytes a publish would (rule order, condition/viewport cascade, and
   // sanitized raw @keyframes rules included), so the preview cannot drift
   // from the published output.
-  const classCss = generateClassCSS(classes, breakpoints, conditions)
+  const classCss = generateClassCSS(classes, breakpoints, conditions, responsiveOptions)
   if (classCss) blocks.push(classCss)
 
   return blocks.join('\n\n')
@@ -90,6 +96,7 @@ export function createCanvasClassCssMemo(
     frameworkSpacing,
     frameworkPreferences,
     fonts,
+    responsiveOptions = {},
   ) => {
     const inputs = [
       classes,
@@ -100,6 +107,7 @@ export function createCanvasClassCssMemo(
       frameworkSpacing,
       frameworkPreferences,
       fonts,
+      responsiveOptions.mediaSignature,
     ]
     const prev = lastInputs
     if (prev && inputs.every((value, i) => Object.is(value, prev[i]))) {
@@ -114,6 +122,7 @@ export function createCanvasClassCssMemo(
       frameworkSpacing,
       frameworkPreferences,
       fonts,
+      responsiveOptions,
     )
     lastInputs = inputs
     return lastCss
@@ -137,8 +146,9 @@ export const generateCanvasClassCSS: CanvasClassCssGenerator = createCanvasClass
 export function generatePreviewClassCSS(
   cls: StyleRule,
   preview: { breakpointId?: string | null; styles: Record<string, unknown> },
+  responsiveOptions: ResponsiveCssOptions = {},
 ): string {
-  const decls = bagToCSS(preview.styles)
+  const decls = bagToCSS(preview.styles, responsiveOptions)
   if (!decls) return ''
   const selector = styleRuleSelector(cls)
   const doubled = `${selector}${selector}`
@@ -182,6 +192,7 @@ export function generateForcedStateCSS(
   breakpoints: ViewportContext[],
   conditions: ReadonlyArray<ConditionDef> = [],
   inflight?: ForcedStateInflight | null,
+  responsiveOptions: ResponsiveCssOptions = {},
 ): string {
   const rawSelector = `[data-node-id="${escapeCssAttribute(nodeId)}"]`
   const selector = `${rawSelector}${rawSelector}`
@@ -197,7 +208,7 @@ export function generateForcedStateCSS(
     contextStyles[inflight.contextId] = { ...(contextStyles[inflight.contextId] ?? {}), ...inflight.styles }
   }
 
-  const emitRule = createStyleRuleCssEmitter(breakpoints, conditions)
+  const emitRule = createStyleRuleCssEmitter(breakpoints, conditions, responsiveOptions)
   return emitRule(selector, baseStyles, contextStyles).join('\n\n')
 }
 

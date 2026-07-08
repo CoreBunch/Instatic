@@ -246,7 +246,7 @@ For **post-types**, public row routes require an explicitly authored entry templ
 2. Add a field (pick a type from `DataFieldType`).
 3. Optionally mark it `required` or set a `defaultValue`.
 
-The field appears in the postType's edit form and is queryable from loops.
+The field appears in the postType's edit form in the Data workspace, in the Content page's settings panel, and is queryable from loops.
 
 ### Create a custom post-type
 

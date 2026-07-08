@@ -12,7 +12,8 @@ import { Button } from '@ui/components/Button'
 import { CanvasModulePlaceholder } from '@ui/components/CanvasModulePlaceholder'
 import { PackageSolidIcon } from 'pixel-art-icons/icons/package-solid'
 import { cn } from '@ui/cn'
-import { generateClassCSS } from '@core/publisher'
+import { collectSiteStyleBackgroundImagePaths, generateClassCSS, type ResponsiveCssOptions } from '@core/publisher'
+import { useResponsiveEditorMediaAssets } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import {
   createSandboxSrcDoc,
   HOST_MESSAGE_SOURCE,
@@ -30,17 +31,26 @@ interface ModuleSandboxFrameProps {
   classIds?: readonly string[]
 }
 
-function getNodeClassCSS(site: SiteDocument | null, classIds: readonly string[] | undefined): string {
-  if (!site || !classIds?.length) return ''
-
+function collectNodeClassRules(site: SiteDocument | null, classIds: readonly string[] | undefined): SiteDocument['styleRules'] {
   const classes: SiteDocument['styleRules'] = {}
+  if (!site || !classIds?.length) return classes
+
   for (const id of classIds) {
     const cls = site.styleRules[id]
     if (cls) classes[id] = cls
   }
+  return classes
+}
 
+function getNodeClassCSS(
+  site: SiteDocument | null,
+  classIds: readonly string[] | undefined,
+  responsiveOptions: ResponsiveCssOptions = {},
+): string {
+  if (!site) return ''
+  const classes = collectNodeClassRules(site, classIds)
   if (Object.keys(classes).length === 0) return ''
-  return generateClassCSS(classes, site.breakpoints, site.conditions ?? [])
+  return generateClassCSS(classes, site.breakpoints, site.conditions ?? [], responsiveOptions)
 }
 
 export function ModuleSandboxFrame({
@@ -66,7 +76,10 @@ export function ModuleSandboxFrame({
   // (with a one-click "add" affordance) before mounting the iframe at all.
   const missingDependencies = getMissingModuleDependencies(moduleDefinition, packageJson)
 
-  const classCSS = getNodeClassCSS(site, classIds)
+  const nodeClassRules = collectNodeClassRules(site, classIds)
+  const classBackgroundPaths = [...collectSiteStyleBackgroundImagePaths({ styleRules: nodeClassRules })]
+  const { mediaAssets: responsiveMediaAssets } = useResponsiveEditorMediaAssets(classBackgroundPaths)
+  const classCSS = getNodeClassCSS(site, classIds, { mediaAssets: responsiveMediaAssets })
 
   // The iframe's import map is filtered from the site's precomputed
   // `runtime.packageImportmap` — the server built it from the actual

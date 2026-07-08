@@ -37,7 +37,7 @@ import {
   resolveEditorFormPreviewState,
   resolveEditorFormPreviewSuccessMessage,
 } from './canvasFormPreview'
-import { bagToReactStyle } from '@core/publisher'
+import { useResponsiveBackgroundStyle } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { getCanvasNodeClassIds, getCanvasNodeClassName } from './canvasNodeClassName'
 import { findEnclosingComponentRef, type AnnotatedPageNode } from './canvasSelectionUtils'
 import { useLoopPreviewItems } from './useLoopPreviewItems'
@@ -195,6 +195,8 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
     sel.addRange(range)
   }, [isInlineEditing, inlineEditInitialValue])
 
+  const inlineStyle = useResponsiveBackgroundStyle(node?.inlineStyles)
+
   if (!node) return null
   if (node.hidden) return null
 
@@ -259,10 +261,6 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   // `:nth-child()`, etc.) because it sat between every authored element.
   // Moving the bag onto the module's own root removes the wrapper entirely
   // and the canvas DOM matches the published DOM exactly.
-  // Per-node inline styles → React style object on the root element, matching
-  // the published `style="…"` attribute (sanitised to the same gate).
-  const inlineStyle = bagToReactStyle(node.inlineStyles)
-
   const nodeWrapperProps: NodeWrapperPropsType = {
     'data-node-id': nodeId,
     'data-module-id': moduleId,

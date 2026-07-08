@@ -161,7 +161,7 @@ BUILDER-008 note: rich-body bold/italic persistence and public entry-template re
 
 SITE-017 note: `visual-builder.e2e.ts` componentizes a Text node, adds a Slot Outlet in VC mode, returns to the page, inserts Text into the locked generated slot, saves, publishes, and verifies an anonymous visitor sees both component body and slot fill while editor-only slot labels/component names stay absent. DEF-20260623-SITE017-001 fixed the page/component incremental-save ordering bug by writing component rows before page rows.
 
-SITE-018 note: `visual-builder.e2e.ts` creates a high-priority Posts template from the Site panel, sets Template settings to Post types/Posts, inserts `{currentEntry.title}` through the binding picker, verifies synthetic canvas preview for title/body, saves and publishes the template snapshot, publishes a post, and verifies an anonymous `/posts/<slug>` visitor route renders the custom template with the published row data and no unresolved tokens.
+SITE-018 note: `visual-builder.e2e.ts` creates a high-priority Posts template from the Site panel, sets Template settings to Post types/Posts, inserts `{currentEntry.title}` through the binding picker, verifies synthetic canvas preview for title/body, saves and publishes the template snapshot, publishes a post, and verifies an anonymous `/posts/<slug>` visitor route renders the custom template with the published row data and no unresolved tokens. `content.e2e.ts` extends the binding coverage by adding a custom Posts field, inserting `{currentEntry.<customField>}` from the binding picker, verifying canvas preview resolution, publishing the template, and verifying the public post route resolves the custom value.
 
 SITE-019 note: `visual-builder.e2e.ts` saves a styled Container subtree as a layout, verifies blank and duplicate-name validation, confirms the Layouts category remains reachable at 390px, inserts the saved layout into another page with its captured class styling, renames and deletes the saved layout from the inserter manage menu, saves/reloads, publishes, and verifies anonymous public output. DEF-20260623-SITE019-001 fixed stale node selection on `addPage`; DEF-20260623-SITE019-002 fixed count-only mobile category buttons; DEF-20260623-SITE019-003 fixed the saved-layout manage menu z-index under the spotlight inserter.
 
@@ -249,6 +249,7 @@ MEDIA-007 note: unsafe SVG upload sanitization and public `/uploads` serving are
 | CONTENT-005 | P2 | partial | Live preview | Preview an entry inside its site template | Existing entry and template | Content live mode | Preview matches current draft/template context | missing template, stale draft/public state |
 | CONTENT-006 | P2 | partial | Collections | Create/update collection field settings | Logged in | Content collections/settings | Field changes are reflected in the entry editor | destructive schema changes, step-up friction |
 | CONTENT-007 | P2 | partial | AI | Use the content AI assistant panel | AI chat permission | Content AI panel | No-provider guidance or chat flow is understandable | provider failure, write-tool permission leaks |
+| CONTENT-008 | P1 | ✅ | Custom fields | Edit custom post fields and use them in Site templates | Logged in | Data Posts fields → Content settings → Site binding picker → publish post route | Custom field appears in the Content entry settings panel, persists after reload, is offered as a scoped currentEntry binding, resolves in canvas preview, and renders on the public post route | stale table metadata, unresolved custom tokens, save/publish ordering |
 
 CONTENT-003 note: slash-menu Heading 2 and Data token placeholder insertion with save/reload persistence are automated in `content.e2e.ts`; media picker insertion and sanitization edge cases remain lower-level or future browser coverage.
 
@@ -257,6 +258,8 @@ CONTENT-005 note: draft title/body rendering through the seeded entry template i
 CONTENT-006 note: content built-in field toggles are automated in `content.e2e.ts`; custom field-schema edge cases and destructive collection deletion remain covered by lower-level tests or future browser expansion.
 
 CONTENT-007 note: no-provider setup guidance in the content AI assistant is automated in `content.e2e.ts`; provider-backed conversation, streaming, and write-tool flows remain future browser coverage.
+
+CONTENT-008 note: `content.e2e.ts` adds a custom text field to the system Posts table through the Data inspector, edits that field in the Content settings sidebar, saves and reloads the entry, publishes the post, inserts the custom field from the Site builder binding picker into a Posts template, verifies the canvas preview resolves the value, publishes the template, and verifies an anonymous `/posts/<slug>` route renders the custom value without unresolved tokens. Non-text custom field editor variants remain lower-level or future matrix expansion.
 
 ## AI Workspace
 

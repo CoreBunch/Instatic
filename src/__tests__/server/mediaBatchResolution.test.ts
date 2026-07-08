@@ -171,6 +171,68 @@ describe('prefetchMediaAssets (Finding 2)', () => {
     expect(map.size).toBe(0) // both paths not in DB → hits absent from map
   })
 
+  it('collects media paths from inline and class background images in the same batched query', async () => {
+    let queryCount = 0
+    let queriedPaths: unknown[] = []
+    const db = createFakeDb(async (_sql, params) => {
+      queryCount++
+      queriedPaths = params
+      return { rows: [], rowCount: 0 }
+    })
+    const page = {
+      id: 'p',
+      nodes: {
+        root: {
+          id: 'root',
+          moduleId: 'base.body',
+          props: {},
+          children: ['n1'],
+          breakpointOverrides: {},
+          classIds: ['hero-class'],
+        },
+        n1: {
+          id: 'n1',
+          moduleId: 'base.container',
+          props: {},
+          children: [],
+          breakpointOverrides: {},
+          classIds: [],
+          inlineStyles: { backgroundImage: "url('/uploads/inline-bg.png')" },
+        },
+      },
+      rootNodeId: 'root',
+    }
+    const site = {
+      visualComponents: [],
+      styleRules: {
+        'hero-class': {
+          id: 'hero-class',
+          name: 'hero',
+          kind: 'class',
+          selector: { kind: 'class', name: 'hero' },
+          order: 0,
+          styles: { backgroundImage: "url('/uploads/class-bg.png')" },
+          contextStyles: {
+            mobile: { backgroundImage: "url('/uploads/mobile-bg.png')" },
+          },
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      },
+    }
+    const registry = { get: () => ({ id: 'base.container', schema: {} }) } as unknown as IModuleRegistry
+
+    const map = await prefetchMediaAssets(page as never, site as never, registry, db)
+
+    expect(queryCount).toBe(1)
+    expect(queriedPaths.toSorted()).toEqual([
+      '/uploads/class-bg.png',
+      '/uploads/inline-bg.png',
+      '/uploads/mobile-bg.png',
+    ])
+    expect(map.size).toBe(0)
+  })
+
   it('paths absent from the DB are absent from the returned map (real SQLite)', async () => {
     const { db, cleanup } = await createTestDb()
     try {

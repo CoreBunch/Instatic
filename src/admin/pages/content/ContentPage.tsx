@@ -267,6 +267,7 @@ export function ContentPage() {
             ...entry,
             cells: {
               ...entry.cells,
+              ...draft.customCells,
               body: draft.body,
               featuredMedia: draft.featuredMediaId,
               seoTitle: draft.seoTitle,
@@ -313,6 +314,7 @@ export function ContentPage() {
             ...entry,
             cells: {
               ...entry.cells,
+              ...draft.customCells,
               body: draft.body,
               featuredMedia: draft.featuredMediaId,
               seoTitle: draft.seoTitle,
@@ -554,6 +556,7 @@ export function ContentPage() {
             authors={workspace.authors}
             authorsLoading={workspace.authorsLoading}
             collections={workspace.collections}
+            tables={workspace.tables}
             selectedCollection={workspace.selectedCollection}
             loading={workspace.contentLoading}
             slug={draft.slug}
@@ -566,11 +569,13 @@ export function ContentPage() {
             mediaError={mediaPicker.mediaError}
             featuredMediaId={draft.featuredMediaId}
             featuredMediaAsset={mediaPicker.featuredMediaAsset}
+            customCells={draft.customCells}
             onCollectionChange={(tableId) => void handleMoveEntryCollection(tableId)}
             onAuthorChange={(authorUserId) => void handleUpdateEntryAuthor(authorUserId)}
             onSlugChange={draft.setSlug}
             onSeoTitleChange={draft.setSeoTitle}
             onSeoDescriptionChange={draft.setSeoDescription}
+            onCustomCellChange={draft.setCustomCell}
             onStatusChange={(status) => void handleStatusChange(status)}
             onChooseFeaturedMedia={() => void mediaPicker.openMediaPicker('featured')}
             onClearFeaturedMedia={() => draft.setFeaturedMediaId(null)}

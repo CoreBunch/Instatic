@@ -19,6 +19,7 @@
 
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
+import { collectNodeBackgroundImagePaths, collectSiteStyleBackgroundImagePaths } from '@core/publisher'
 import { walkRenderTree } from './renderTreeWalk'
 import type { DbClient } from '../db/client'
 import type { MediaAsset } from '../repositories/media'
@@ -43,6 +44,7 @@ function collectMediaPaths(page: Page, site: SiteDocument, registry: IModuleRegi
   walkRenderTree(page.nodes, page.rootNodeId, site, (node) => {
     const def = registry.get(node.moduleId)
     if (!def) return
+    collectNodeBackgroundImagePaths(node, paths)
     for (const [propKey, control] of Object.entries(def.schema)) {
       // Only `image` / `media` controls participate in the responsive
       // pipeline. Plain `text` URL fields (rare) aren't auto-upgraded.
@@ -52,6 +54,9 @@ function collectMediaPaths(page: Page, site: SiteDocument, registry: IModuleRegi
       paths.add(value)
     }
   })
+  for (const path of collectSiteStyleBackgroundImagePaths(site)) {
+    paths.add(path)
+  }
   return paths
 }
 

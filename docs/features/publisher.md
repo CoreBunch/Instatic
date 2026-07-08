@@ -33,6 +33,7 @@ src/core/publisher/
 ├── escapeProps.ts                  — escape string props at the render boundary, dispatched per-prop on the schema control `type`
 ├── classInjection.ts               — inject author classIds into rendered HTML
 ├── classCss.ts                     — compile user StyleRule entries → CSS, including supported raw @keyframes
+├── responsiveBackground.ts         — rewrite media-library background-image url(...) values to optimized image-set(...) ladders
 ├── cssCollector.ts                 — CssCollector + collectClassCSS + sanitizeModuleCSS
 ├── reset.ts                        — PUBLISHER_RESET_CSS (cross-browser baseline)
 ├── frameworkCss.ts                 — site framework CSS (spacing scale, typography)
@@ -52,7 +53,7 @@ server/publish/
 ├── publishedHtmlPipeline.ts        — post-process (sanitize + plugin filters + injections)
 ├── siteCssBundle.ts                — server-side hashing + file emission
 ├── frontendInjections.ts           — splice plugin <script>/<link>/<meta> into HTML
-├── mediaPresentation.ts            — <picture>/<srcset> materialization at publish time
+├── mediaPresentation.ts            — media URL materialization for originals + responsive variants
 ├── renderTreeWalk.ts               — walkRenderTree: visits every node that contributes to a rendered page (page nodes + VC definition trees, cycle-guarded); single source of truth for loop-prefetch and media-prefetch
 ├── mediaPrefetch.ts, loopPrefetch.ts — pre-warm caches needed by the renderer
 ├── republish.ts                    — bulk re-publish on site-level changes
@@ -93,7 +94,7 @@ For each node, bottom-up:
   2. resolvedProps  = resolveProps(node, breakpoint)     ← merge breakpoint overrides
   3. dynamicProps   = resolveDynamicProps(...)           ← apply data bindings
   4. safeProps      = escapeProps(dynamicProps, schema)  ← escape per schema TYPE
-  5. attachResolvedMediaByKey(safeProps, def, ...)       ← attach <picture>/<srcset>
+  5. attachResolvedMediaByKey(safeProps, def, ...)       ← attach srcset-capable media payloads
   6. attachAutoSizes(safeProps, def, ...)                ← auto <img sizes>
   7. { html, css } = def.render(safeProps, children)                  ← MODULE BOUNDARY
   8. acc.cssMap.set(moduleId, sanitizeModuleCSS(css))    ← neutralise </style (Constraint #228), dedup by moduleId
@@ -204,6 +205,21 @@ framework-<hash>.css   = buildSiteFrameworkCss(site)               ← framework
 style-<hash>.css       = collectClassCSS(site)                     ← user-defined StyleRule entries, incl. raw @keyframes
 userStyles-<hash>.css  = collectUserStylesheetCss(site, page)      ← author stylesheets, scoped to this page
 ```
+
+Media-library background images are optimized in the same publish pass as
+`<img srcset>`. `mediaPrefetch.ts` collects `/uploads/...` URLs from
+image/media module props, node `inlineStyles.backgroundImage`, and StyleRule
+`backgroundImage` values (including breakpoint/context overrides), then
+batch-fetches their media rows. During CSS emission,
+`responsiveBackground.ts` rewrites each matched `url('/uploads/original.png')`
+to two `background-image` declarations: an optimized variant URL fallback and
+an `image-set(...)` ladder built only from `media_assets.variants_json`. The
+uploaded original is excluded whenever variants exist, so a 20 MB PNG used as
+a background does not become the selectable source for modern browsers. CSS
+`image-set()` supports density descriptors (`1x`, `2x`, etc.), not HTML
+`srcset` width descriptors (`640w` + `sizes`), so the background ladder is a
+DPR-oriented mirror of the same variant policy rather than a literal copy of
+the `<img sizes>` algorithm.
 
 `reset` / `framework` / `style` are page-invariant — every page on the site
 shares the same hash. `userStyles` is **page-scoped**: each author stylesheet
@@ -349,8 +365,9 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/publish/republish.ts`                   | Bulk re-publish on settings change (touches every page).            |
 | `server/publish/publishScheduler.ts`            | Scheduled publish jobs (cron-style).                                |
 | `server/publish/frontendInjections.ts`          | Compute plugin `<script>`/`<link>`/`<meta>` tags + CSP entries.     |
-| `server/publish/mediaPresentation.ts`           | At publish time, build `<picture>` / `<img srcset>` markup from `media_assets.variants_json`. |
-| `server/publish/mediaPrefetch.ts`               | Collect every image/media-typed prop from the full render tree — including VC definition trees — via `walkRenderTree`, then batch-fetch matching `media_assets` rows into a `Map<publicPath, MediaAsset>` before render. Uses `MEDIA_ASSET_COLUMNS` and `mapMediaAssetRow` from `server/repositories/mediaAssetMapping.ts` (shared with the admin repository) so the published page and the admin panel always see one identical asset shape. |
+| `server/publish/mediaPresentation.ts`           | Materialize media paths (originals + responsive variants) for publisher consumers. |
+| `src/core/publisher/responsiveBackground.ts`    | Convert media-library `background-image: url(...)` values into optimized variant fallback + `image-set(...)` declarations. |
+| `server/publish/mediaPrefetch.ts`               | Collect every image/media-typed prop and every media-library background-image URL from the full render tree — including VC definition trees — via `walkRenderTree`, then batch-fetch matching `media_assets` rows into a `Map<publicPath, MediaAsset>` before render. Uses `MEDIA_ASSET_COLUMNS` and `mapMediaAssetRow` from `server/repositories/mediaAssetMapping.ts` (shared with the admin repository) so the published page and the admin panel always see one identical asset shape. |
 | `server/publish/loopPrefetch.ts`                | Collect every `base.loop` node from the full render tree — including VC definition trees — via `walkRenderTree`, fetch each source's items, and return a `Map<nodeId, ResolvedLoopData>` before render so the walker is purely synchronous. Also exports `canonicalRenderQuery(searchParams)` — strips all non-loop-pagination params from a URL's query, returning only `loop_<nodeId>_page` keys in sorted order (or `''` when none remain). Used by `publicRouter.ts` to normalise the Layer B cache key and Layer A fast-path eligibility. |
 | `server/publish/renderTreeWalk.ts`              | `walkRenderTree(nodes, rootNodeId, site, onNode)` — visits every node that contributes to a rendered page: all page-tree nodes reachable from `rootNodeId`, plus all nodes inside each referenced VC's definition tree (recursively, cycle-guarded by a `Set<vcId>`). Used by both `mediaPrefetch.ts` and `loopPrefetch.ts` so their traversal logic can't drift apart. |
 | `server/publish/runtime/packageServer.ts`       | Serve per-site `bun install` workspace under `/_instatic/runtime/cache/`. |

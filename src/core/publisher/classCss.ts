@@ -1,6 +1,7 @@
 import type { StyleRule, Condition, ConditionDef } from '@core/page-tree'
 import { breakpointMediaQuery, styleRuleSelector } from '@core/page-tree'
 import { sanitiseCssValue } from './utils'
+import { responsiveBackgroundImage, type ResponsiveCssOptions } from './responsiveBackground'
 
 /**
  * Convert a camelCase CSS property name to kebab-case.
@@ -137,7 +138,10 @@ function tryCollapseSides(
  * collapse, the property denylist, and value sanitisation all live here so the
  * two formatters can never drift.
  */
-function bagToDeclarations(bag: Record<string, unknown>): Array<[string, string]> {
+function bagToDeclarations(
+  bag: Record<string, unknown>,
+  options: ResponsiveCssOptions = {},
+): Array<[string, string]> {
   const decls: Array<[string, string]> = []
   // Track which prefixes have already been emitted as a collapsed shorthand
   // so we skip the remaining three side properties for that prefix.
@@ -161,7 +165,18 @@ function bagToDeclarations(bag: Record<string, unknown>): Array<[string, string]
 
     const sanitised = sanitiseCssValue(value as string | number)
     if (sanitised === null) continue
-    decls.push([toKebab(prop), sanitised])
+    const kebab = toKebab(prop)
+    if (prop === 'backgroundImage') {
+      const responsive = responsiveBackgroundImage(sanitised, options.mediaAssets)
+      const fallback = sanitiseCssValue(responsive.fallback)
+      if (fallback !== null) decls.push([kebab, fallback])
+      if (responsive.imageSet) {
+        const imageSet = sanitiseCssValue(responsive.imageSet)
+        if (imageSet !== null) decls.push([kebab, imageSet])
+      }
+      continue
+    }
+    decls.push([kebab, sanitised])
   }
   return decls
 }
@@ -171,8 +186,8 @@ function bagToDeclarations(bag: Record<string, unknown>): Array<[string, string]
  * for use inside a `{ … }` rule body). See `bagToDeclarations` for the shared
  * extraction rules.
  */
-export function bagToCSS(bag: Record<string, unknown>): string {
-  return bagToDeclarations(bag)
+export function bagToCSS(bag: Record<string, unknown>, options: ResponsiveCssOptions = {}): string {
+  return bagToDeclarations(bag, options)
     .map(([prop, value]) => `  ${prop}: ${value};`)
     .join('\n')
 }
@@ -186,8 +201,8 @@ export function bagToCSS(bag: Record<string, unknown>): string {
  * Returns `''` when no declaration survives the gate (the caller then emits no
  * `style` attribute at all).
  */
-export function bagToInlineStyle(bag: Record<string, unknown>): string {
-  return bagToDeclarations(bag)
+export function bagToInlineStyle(bag: Record<string, unknown>, options: ResponsiveCssOptions = {}): string {
+  return bagToDeclarations(bag, options)
     .map(([prop, value]) => `${prop}: ${value}`)
     .join('; ')
 }
@@ -290,6 +305,7 @@ export type StyleRuleCssEmitter = (
 export function createStyleRuleCssEmitter(
   breakpoints: ViewportContext[],
   conditions: ReadonlyArray<ConditionDef> = [],
+  options: ResponsiveCssOptions = {},
 ): StyleRuleCssEmitter {
   const breakpointById = new Map<string, { breakpoint: ViewportContext; index: number }>(
     breakpoints.map((bp, index) => [bp.id, { breakpoint: bp, index }]),
@@ -303,7 +319,7 @@ export function createStyleRuleCssEmitter(
   return (selector, styles, contextStyles) => {
     const blocks: string[] = []
 
-    const baseDecls = bagToCSS(styles)
+    const baseDecls = bagToCSS(styles, options)
     if (baseDecls) {
       blocks.push(`${selector} {\n${baseDecls}\n}`)
     }
@@ -326,7 +342,7 @@ export function createStyleRuleCssEmitter(
     // viewport-specific overrides keep winning when both contexts match.
     conditionEntries.sort((a, b) => a.index - b.index)
     for (const { bag, condition } of conditionEntries) {
-      const decls = bagToCSS(bag)
+      const decls = bagToCSS(bag, options)
       if (!decls) continue
       const prelude = conditionPrelude(condition)
       if (!prelude) continue
@@ -335,7 +351,7 @@ export function createStyleRuleCssEmitter(
 
     bpEntries.sort(compareViewportContextCascade)
     for (const { bag, breakpoint } of bpEntries) {
-      const decls = bagToCSS(bag)
+      const decls = bagToCSS(bag, options)
       if (!decls) continue
       const prelude = conditionPrelude({ kind: 'media', query: breakpointMediaQuery(breakpoint) })
       if (!prelude) continue
@@ -350,9 +366,10 @@ export function generateClassCSS(
   classes: Record<string, StyleRule>,
   breakpoints: ViewportContext[],
   conditions: ReadonlyArray<ConditionDef> = [],
+  options: ResponsiveCssOptions = {},
 ): string {
   const blocks: string[] = []
-  const emitRule = createStyleRuleCssEmitter(breakpoints, conditions)
+  const emitRule = createStyleRuleCssEmitter(breakpoints, conditions, options)
 
   // Cascade order: rules with a smaller `order` are emitted first so a later,
   // more-specific override appears later in source and wins on equal

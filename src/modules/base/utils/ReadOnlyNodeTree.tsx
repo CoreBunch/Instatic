@@ -33,7 +33,7 @@ import { registry } from '@core/module-engine'
 import type { NodeWrapperProps as NodeWrapperPropsType } from '@core/module-engine'
 import type { BaseNode, PageNode } from '@core/page-tree'
 import { classNamesForClassIds, resolveProps, type StyleRuleRegistry } from '@core/page-tree'
-import { bagToReactStyle } from '@core/publisher'
+import { useResponsiveBackgroundStyle } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import {
   effectiveNodeBindings,
   resolveDynamicProps,
@@ -171,6 +171,7 @@ function ReadOnlyNodeRenderer({
   templateContext,
 }: ReadOnlyNodeRendererProps) {
   const node = nodes[nodeId]
+  const ownStyle = useResponsiveBackgroundStyle(node?.inlineStyles)
   if (!node) return null
   if (node.hidden) return null
 
@@ -253,7 +254,6 @@ function ReadOnlyNodeRenderer({
   // A forwarded root bag's style is appended AFTER the node's own declarations
   // (so the owning node wins per property), mirroring the publisher's
   // append-order in `renderVisualComponentRef`.
-  const ownStyle = bagToReactStyle(node.inlineStyles)
   const style = ownStyle || baseWrapperProps?.style
     ? { ...ownStyle, ...baseWrapperProps?.style }
     : undefined

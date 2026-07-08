@@ -2,16 +2,21 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   ANONYMOUS_STATE,
   OWNER,
+  canvasFrame,
   completeStepUp,
+  insertNotchModule,
   login,
   openSiteEditor,
+  openSitePanel,
   publishDraft,
+  saveDraft,
+  setPropValue,
   visitPublicPage,
 } from './helpers'
 
 /**
  * CONTENT-001 / CONTENT-002 / CONTENT-003 / CONTENT-005 / CONTENT-006 /
- * CONTENT-007 —
+ * CONTENT-007 / CONTENT-008 —
  * create content entries, publish them, edit rich bodies, preview drafts inside
  * templates, manage collection-level field settings, and surface content AI
  * setup guidance.
@@ -356,6 +361,83 @@ test.describe('content', () => {
         await expect(settingsPanel.getByLabel('SEO title')).toHaveCount(0)
       })
     })
+
+    test('edits a custom Posts field and renders it through a Site template binding (CONTENT-008)', async ({
+      page,
+      browser,
+    }) => {
+      await login(page)
+      const suffix = Date.now().toString(36)
+      const fieldId = `e2e_subtitle_${suffix}`
+      const fieldLabel = `E2E subtitle ${suffix}`
+      const postTitle = `E2E Custom Field ${suffix}`
+      const postSlug = `e2e-custom-field-${suffix}`
+      const bodyText = `Body for custom field token ${suffix}`
+      const customValue = `Custom field value ${suffix}`
+      const templateName = `Custom Field Template ${suffix}`
+      const templateSlug = `custom-field-template-${suffix}`
+      const tokenText = `Custom subtitle: {currentEntry.${fieldId}}`
+      const renderedText = `Custom subtitle: ${customValue}`
+
+      await test.step('add a custom text field to the system Posts table', async () => {
+        await addPostsTextField(page, fieldId, fieldLabel)
+      })
+
+      await test.step('save the custom field value from the Content settings panel', async () => {
+        await createPostDraftWithSlug(page, postTitle, postSlug, bodyText)
+
+        const settingsPanel = page.getByTestId('content-settings-panel')
+        await expect(settingsPanel.getByTestId(`content-custom-field-${fieldId}`)).toBeVisible()
+        await settingsPanel.getByLabel(fieldLabel).fill(customValue)
+        await saveSelectedDraft(page, postTitle)
+      })
+
+      await test.step('reload Content and verify the custom field value persists', async () => {
+        await page.reload()
+        await expect(entryRow(page, postTitle)).toBeVisible()
+        await entryRow(page, postTitle).click()
+
+        const settingsPanel = page.getByTestId('content-settings-panel')
+        await expect(settingsPanel.getByLabel(fieldLabel)).toHaveValue(customValue)
+      })
+
+      await test.step('publish the post so template preview and public routes use saved row data', async () => {
+        await page.getByRole('button', { name: 'Publish post' }).click()
+        await completeStepUp(page)
+        await expect(
+          page.getByRole('button', { name: 'Published', exact: true }),
+        ).toBeDisabled({ timeout: 20_000 })
+      })
+
+      await test.step('insert the custom field from the Site builder binding picker', async () => {
+        await createPostsTemplate(page, templateName, templateSlug)
+        await insertNotchModule(page, 'text')
+        await setPropValue(page, 'text', 'Custom subtitle:')
+        await page.getByRole('button', { name: 'Insert binding for Text' }).click()
+
+        const bindingMenu = page.getByRole('menu', { name: 'Insert binding for Text' })
+        await expect(bindingMenu.getByLabel('Scoped to Posts')).toContainText(/Current row\s+.\s+Posts/)
+        const customFieldOption = bindingMenu.getByRole('button').filter({ hasText: fieldLabel }).first()
+        await expect(customFieldOption).toBeVisible()
+        await customFieldOption.click()
+        await page.keyboard.press('Escape')
+
+        await expect(page.locator('#ctrl-text')).toHaveValue(tokenText)
+        await expect(canvasFrame(page).getByText(renderedText, { exact: true })).toBeVisible({
+          timeout: 20_000,
+        })
+      })
+
+      await test.step('publish the template and verify the anonymous public post route resolves the custom token', async () => {
+        await saveDraft(page)
+        await publishDraft(page)
+        await visitPublicPage(browser, {
+          path: `/posts/${postSlug}`,
+          visibleText: [renderedText],
+          hiddenText: [tokenText, `{currentEntry.${fieldId}}`, templateName],
+        })
+      })
+    })
   })
 })
 
@@ -385,6 +467,80 @@ async function createPostDraft(
   await test.step('save the draft', async () => {
     await saveSelectedDraft(page, title)
   })
+}
+
+async function createPostDraftWithSlug(
+  page: Page,
+  title: string,
+  slug: string,
+  body: string,
+): Promise<void> {
+  await page.goto('/admin/content')
+
+  await test.step('create a new post with a stable public slug', async () => {
+    const newPost = page.getByRole('button', { name: 'New post', exact: true })
+    await expect(newPost).toBeEnabled()
+    await newPost.click()
+
+    await page.getByRole('textbox', { name: 'Title', exact: true }).fill(title)
+    await page.getByRole('textbox', { name: 'Slug' }).fill(slug)
+    await page.getByTestId('content-body-editor').click()
+    await page.keyboard.type(body)
+  })
+}
+
+async function addPostsTextField(
+  page: Page,
+  fieldId: string,
+  fieldLabel: string,
+): Promise<void> {
+  await page.goto('/admin/data')
+  await expect(page.getByTestId('data-left-sidebar')).toBeVisible({ timeout: 20_000 })
+
+  await page.getByRole('option', { name: /^Posts\b/ }).click()
+  const inspector = page.getByTestId('data-inspector-panel')
+  await expect(inspector).toBeVisible()
+
+  const fieldsToggle = inspector.getByRole('button', { name: 'Fields' })
+  if ((await fieldsToggle.getAttribute('aria-expanded')) !== 'true') {
+    await fieldsToggle.click()
+  }
+  await inspector.getByRole('button', { name: 'Add field' }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'New field' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByLabel('ID').fill(fieldId)
+  await dialog.getByLabel('Label').fill(fieldLabel)
+  await dialog.getByRole('button', { name: 'Create' }).click()
+  await completeStepUp(page)
+
+  await expect(dialog).toBeHidden({ timeout: 20_000 })
+  await expect(inspector.getByRole('button', { name: `Edit ${fieldLabel}` })).toBeVisible({
+    timeout: 20_000,
+  })
+}
+
+async function createPostsTemplate(
+  page: Page,
+  templateName: string,
+  templateSlug: string,
+): Promise<void> {
+  await openSiteEditor(page)
+  await openSitePanel(page)
+  await page.getByRole('button', { name: 'New template', exact: true }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Template settings' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByLabel('Name').fill(templateName)
+  await dialog.getByLabel('Slug').fill(templateSlug)
+  await dialog.getByLabel('Applies to').click()
+  await page.getByRole('option', { name: 'Post types' }).click()
+  await dialog.getByLabel('Posts').setChecked(true)
+  await dialog.getByLabel('Priority').fill('260')
+  await dialog.getByRole('button', { name: 'Save' }).click()
+
+  await expect(dialog).toBeHidden()
+  await expect(page.getByTestId('document-switcher')).toHaveAttribute('placeholder', templateName)
 }
 
 async function saveSelectedDraft(page: Page, title: string): Promise<void> {

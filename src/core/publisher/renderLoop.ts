@@ -119,6 +119,6 @@ export function renderLoop(
 
   // Inject the loop's own classIds + inline styles onto the wrapper element.
   const withClasses = injectNodeClassIds(html, node.classIds, config.site)
-  const withStyles = injectNodeInlineStyles(withClasses, node.inlineStyles)
+  const withStyles = injectNodeInlineStyles(withClasses, node.inlineStyles, config.mediaAssets)
   return config.annotateNodeIds && !config.cleanMode ? injectNodeId(withStyles, node.id) : withStyles
 }

@@ -6,6 +6,7 @@ import {
 } from '@site/canvas/canvasClassCss'
 import { generateFrameworkColorUtilityClasses } from '@core/framework'
 import { classKindSelector, type StyleRule } from '@core/page-tree'
+import type { RenderResolvedMedia } from '@core/publisher'
 
 function makeClass(
   id: string,
@@ -22,6 +23,23 @@ function makeClass(
     contextStyles,
     createdAt: 0,
     updatedAt: 0,
+  }
+}
+
+function resolvedMedia(path = '/uploads/hero.png'): RenderResolvedMedia {
+  return {
+    publicPath: path,
+    mimeType: 'image/png',
+    width: 2400,
+    height: 1200,
+    altText: '',
+    blurHash: null,
+    variants: [
+      { width: 320, height: 160, format: 'webp', path: '/uploads/hero-w320.webp', sizeBytes: 12_000 },
+      { width: 1024, height: 512, format: 'webp', path: '/uploads/hero-w1024.webp', sizeBytes: 82_000 },
+      { width: 2048, height: 1024, format: 'webp', path: '/uploads/hero-w2048.webp', sizeBytes: 190_000 },
+    ],
+    posterPath: null,
   }
 }
 
@@ -68,6 +86,30 @@ describe('generateCanvasClassCSS', () => {
     expect(css).toContain('@media (min-width: 375px)')
     expect(css).toContain('font-size: 36px')
     expect(css).not.toContain('[data-breakpoint-id="mobile"] .title')
+  })
+
+  it('rewrites class background images to optimized image-set candidates in the canvas CSS', () => {
+    const css = generateCanvasClassCSS(
+      {
+        hero: makeClass('hero', { backgroundImage: "url('/uploads/hero.png')" }),
+      },
+      [],
+      [],
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        mediaAssets: new Map([['/uploads/hero.png', resolvedMedia()]]),
+        mediaSignature: 'hero',
+      },
+    )
+
+    expect(css).toContain('background-image: url("/uploads/hero-w2048.webp");')
+    expect(css).toContain('background-image: image-set(')
+    expect(css).toContain('url("/uploads/hero-w1024.webp") 1x')
+    expect(css).not.toContain('/uploads/hero.png')
   })
 
   it('emits sanitized raw @keyframes rules, matching the published output', () => {
@@ -188,6 +230,27 @@ describe('createCanvasClassCssMemo', () => {
 
     memo({ ...classes }, [...breakpoints], conditions, null, null, null, null, null)
     expect(calls()).toBe(3)
+  })
+
+  it('regenerates when the responsive background media signature changes', () => {
+    const { memo, calls } = countingMemo()
+    const mediaAssets = new Map([['/uploads/hero.png', resolvedMedia()]])
+
+    memo(classes, breakpoints, conditions, null, null, null, null, null, {
+      mediaAssets,
+      mediaSignature: 'a',
+    })
+    memo(classes, breakpoints, conditions, null, null, null, null, null, {
+      mediaAssets,
+      mediaSignature: 'a',
+    })
+    expect(calls()).toBe(1)
+
+    memo(classes, breakpoints, conditions, null, null, null, null, null, {
+      mediaAssets,
+      mediaSignature: 'b',
+    })
+    expect(calls()).toBe(2)
   })
 
   it('the exported generator produces identical CSS for cached and fresh inputs', () => {

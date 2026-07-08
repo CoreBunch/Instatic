@@ -38,7 +38,7 @@ import {
 import { buildFolderTree, type MediaFolderNode } from '../utils/folderTree'
 import { collectMediaTags, filterMediaAssets, type MediaFilters, type MediaSort, type MediaType } from '../utils/filters'
 import { useUploadQueue, type UseUploadQueueResult } from './useUploadQueue'
-import { refreshCmsMediaAssetCache } from './useCmsMediaAssetByPath'
+import { primeCmsMediaAssetCache, refreshCmsMediaAssetCache } from './useCmsMediaAssetByPath'
 import type { WorkspaceLoadState } from '@admin/lib/workspaceLoadState'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import {
@@ -318,13 +318,12 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
 
   // Splice an uploaded asset into the workspace cache when the queue
   // reports success. Folder assignment (if any) happens inside the queue.
-  // Also invalidate the shared by-path cache so the editor canvas
+  // Also seed the shared by-path cache so the editor canvas
   // (`ImageEditor` / `useCmsMediaAssetByPath`) picks up the new asset
-  // immediately — otherwise an open Site editor would keep rendering a
-  // raw `<img src>` until manual reload.
+  // immediately without racing a follow-up list request.
   const onUploaded = (asset: CmsMediaAsset) => {
     setAssets((current) => [asset, ...current.filter((existing) => existing.id !== asset.id)])
-    refreshCmsMediaAssetCache()
+    primeCmsMediaAssetCache(asset)
   }
 
   const uploadQueue = useUploadQueue({

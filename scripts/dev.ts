@@ -21,14 +21,14 @@
  *   - Pre-checks ports 3001 (cms) and 5173 (vite) and prints an
  *     actionable message if either is held by something we don't own.
  *   - Spawns the cms (`bun --watch server/index.ts`) and vite
- *     (`bun run dev:vite --host 127.0.0.1`) as children, forwarding their output
+ *     (`bun node_modules/vite/bin/vite.js --host 127.0.0.1`) as children, forwarding their output
  *     and signals so Ctrl+C cleanly kills both.
  */
 
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { isSqliteUrl } from '../server/db'
-import { bunCommand, bunRunCommand } from './lib/bunCommand'
+import { bunCommand, viteCommand } from './lib/bunCommand'
 import { ensurePortFree } from './lib/freePort'
 
 const CMS_PORT = Number(process.env.PORT ?? '3001')
@@ -252,7 +252,7 @@ const processes: DevProcess[] = [
   },
   {
     name: 'vite',
-    command: bunRunCommand('dev:vite', '--host', '127.0.0.1', '--port', String(VITE_PORT), '--strictPort'),
+    command: viteCommand('--host', '127.0.0.1', '--port', String(VITE_PORT), '--strictPort'),
   },
 ]
 

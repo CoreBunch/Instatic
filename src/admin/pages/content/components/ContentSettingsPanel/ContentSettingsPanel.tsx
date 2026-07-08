@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react'
 import { Input, Textarea } from '@ui/components/Input'
 import { Select } from '@ui/components/Select'
 import { SkeletonBlock } from '@ui/components/Skeleton'
@@ -10,6 +11,8 @@ import { dataTableHasField } from '@core/data/fields'
 import {
   POST_TYPE_FIELD_FEATURED_MEDIA,
   POST_TYPE_FIELD_SEO_TITLE,
+  type DataField,
+  type DataRowCells,
   type DataTable,
   type DataRow,
   type DataRowStatus,
@@ -19,11 +22,21 @@ import propertiesStyles from '../../../site/panels/PropertiesPanel/PropertiesPan
 import { PanelHeader } from '@admin/shared/PanelHeader'
 import styles from '../../ContentPage.module.css'
 
+// Lazy-load the generic custom-field editors: they pull in the Data
+// workspace's cell-editor graph (media picker workspace, relation picker),
+// which is too heavy for the Content page's initial chunk budget. Only
+// collections that actually have custom fields pay for it.
+const ContentCustomFields = lazy(() =>
+  import('./ContentCustomFields').then((m) => ({ default: m.ContentCustomFields })),
+)
+
 interface ContentSettingsPanelProps {
   selectedEntry: DataRow | null
   authors: DataUserReference[]
   authorsLoading: boolean
   collections: DataTable[]
+  /** Every data table (all kinds) — relation custom fields can target any of them. */
+  tables: DataTable[]
   selectedCollection: DataTable | null
   loading: boolean
   slug: string
@@ -36,6 +49,8 @@ interface ContentSettingsPanelProps {
   mediaError: string | null
   featuredMediaId: string | null
   featuredMediaAsset: CmsMediaAsset | null
+  /** Draft values of the collection's custom (non-built-in) fields, keyed by field id. */
+  customCells: DataRowCells
   canEditEntry: boolean
   canMoveEntry: boolean
   canPublishEntry: boolean
@@ -45,6 +60,7 @@ interface ContentSettingsPanelProps {
   onSlugChange: (value: string) => void
   onSeoTitleChange: (value: string) => void
   onSeoDescriptionChange: (value: string) => void
+  onCustomCellChange: (fieldId: string, value: unknown) => void
   onStatusChange: (status: DataRowStatus) => void
   onChooseFeaturedMedia: () => void
   onClearFeaturedMedia: () => void
@@ -75,11 +91,22 @@ function authorOptionLabel(author: DataUserReference): string {
   return author.displayName || author.email || 'Unknown user'
 }
 
+/**
+ * Custom fields the settings panel can edit: everything the user added to
+ * the collection. `pageTree` / `fieldSchema` cells hold whole documents
+ * (a node tree / a field array), not values — they have dedicated editors
+ * and never belong to a generic input.
+ */
+function isEditableCustomField(field: DataField): boolean {
+  return field.builtIn !== true && field.type !== 'pageTree' && field.type !== 'fieldSchema'
+}
+
 export function ContentSettingsPanel({
   selectedEntry,
   authors,
   authorsLoading,
   collections,
+  tables,
   selectedCollection,
   loading,
   slug,
@@ -92,6 +119,7 @@ export function ContentSettingsPanel({
   mediaError,
   featuredMediaId,
   featuredMediaAsset,
+  customCells,
   canEditEntry,
   canMoveEntry,
   canPublishEntry,
@@ -101,6 +129,7 @@ export function ContentSettingsPanel({
   onSlugChange,
   onSeoTitleChange,
   onSeoDescriptionChange,
+  onCustomCellChange,
   onStatusChange,
   onChooseFeaturedMedia,
   onClearFeaturedMedia,
@@ -109,6 +138,7 @@ export function ContentSettingsPanel({
   const setRightPanel = useWorkspaceLayout((s) => s.setRightPanel)
   const seoEnabled = selectedCollection ? dataTableHasField(selectedCollection, POST_TYPE_FIELD_SEO_TITLE) : false
   const featuredMediaEnabled = selectedCollection ? dataTableHasField(selectedCollection, POST_TYPE_FIELD_FEATURED_MEDIA) : false
+  const customFields = selectedCollection?.fields.filter(isEditableCustomField) ?? []
   const authorRoleLabel = selectedEntry ? contentAuthorRoleLabel(selectedEntry) : null
   const selectedAuthor = selectedEntry ? contentAuthor(selectedEntry) : null
   const authorOptions = selectedAuthor && !authors.some((author) => author.id === selectedAuthor.id)
@@ -257,6 +287,18 @@ export function ContentSettingsPanel({
                 />
                 {mediaError && <p className={styles.error} role="alert">{mediaError}</p>}
               </div>
+            )}
+            {selectedEntry && customFields.length > 0 && (
+              <Suspense fallback={null}>
+                <ContentCustomFields
+                  fields={customFields}
+                  entryId={selectedEntry.id}
+                  tables={tables}
+                  customCells={customCells}
+                  readOnly={!canEditSelectedEntry}
+                  onCustomCellChange={onCustomCellChange}
+                />
+              </Suspense>
             )}
           </>
         )}

@@ -41,6 +41,9 @@ export function useContentWorkspace({
   loadAuthors: shouldLoadAuthors = true,
 }: UseContentWorkspaceOptions = {}) {
   const setRightPanel = useWorkspaceLayout((s) => s.setRightPanel)
+  // Every data table (all kinds) — relation custom fields can target any
+  // table, so the settings panel needs the full list to resolve targets.
+  const [tables, setTables] = useState<DataTable[]>([])
   const [collections, setCollections] = useState<DataTable[]>([])
   const [entries, setEntries] = useState<DataRow[]>([])
   const [authors, setAuthors] = useState<DataUserReference[]>([])
@@ -117,6 +120,7 @@ export function useContentWorkspace({
         const nextCollections = allTables.filter((table) => table.kind === 'postType')
         if (cancelled) return
         const fallbackCollectionId = nextCollections[0]?.id ?? null
+        setTables(allTables)
         setCollections(nextCollections)
         setEntriesLoading(Boolean(fallbackCollectionId))
         setSelectedCollectionId((current) => current ?? fallbackCollectionId)
@@ -281,6 +285,7 @@ export function useContentWorkspace({
     setEntriesLoading(true)
     // Always create post-type tables from the Content page.
     const collection = await createCmsDataTable({ ...input, kind: 'postType' })
+    setTables((current) => [...current, collection])
     setCollections((current) => [...current, collection])
     setEntries([])
     setSelectedCollectionId(collection.id)
@@ -294,6 +299,9 @@ export function useContentWorkspace({
   ) => {
     setError(null)
     const collection = await updateCmsDataTable(tableId, input)
+    setTables((current) => current.map((candidate) =>
+      candidate.id === collection.id ? collection : candidate
+    ))
     setCollections((current) => current.map((candidate) =>
       candidate.id === collection.id ? collection : candidate
     ))
@@ -304,6 +312,7 @@ export function useContentWorkspace({
     setError(null)
     await deleteCmsDataTable(tableId)
 
+    setTables((current) => current.filter((table) => table.id !== tableId))
     const nextCollections = collections.filter((collection) => collection.id !== tableId)
     const nextSelectedCollectionId = selectedCollectionId === tableId
       ? nextCollections[0]?.id ?? null
@@ -421,6 +430,7 @@ export function useContentWorkspace({
   }
 
   return {
+    tables,
     collections,
     entries,
     authors,

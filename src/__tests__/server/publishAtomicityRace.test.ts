@@ -15,6 +15,15 @@
  *
  * We use real tmpdir filesystem operations — not mocks — so actual rename(2)
  * and symlink atomicity semantics are exercised.
+ *
+ * Platform note: the strict "never null" guarantee relies on POSIX `rename(2)`
+ * atomically replacing a directory symlink. Win32 `MoveFile` cannot replace an
+ * existing directory-symlink target, so `swapSlot` falls back to
+ * remove-then-rename there — a sub-millisecond window where `current` is absent.
+ * Production runs Linux/Docker (atomic branch), and on Windows that transient
+ * Layer A miss is covered by the Layer B live-render path, so a visitor still
+ * never sees a 404. The strict test is therefore POSIX-only; the coherence test
+ * below (which tolerates null) runs on every platform.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
@@ -43,7 +52,10 @@ afterEach(async () => {
 })
 
 describe('publishAtomicityRace', () => {
-  it(
+  // POSIX-only: the never-null invariant depends on atomic symlink rename.
+  // On Windows swapSlot uses a non-atomic remove-then-rename fallback (Layer B
+  // covers the transient miss), so the strict assertion cannot hold there.
+  it.skipIf(process.platform === 'win32')(
     'readArtefact never returns null for routes present in both slot generations',
     async () => {
       // ── Phase 0: Seed both slots with initial content ──────────────────────

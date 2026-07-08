@@ -38,6 +38,7 @@ import {
   serializeImportmapForCsp,
 } from './runtime/packageImportmap'
 import { renderPublishedNotFound, renderPublishedSnapshot } from './publicRenderer'
+import { prefetchMediaAssets } from './mediaPrefetch'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import {
   NOT_FOUND_ARTEFACT_URL_PATH,
@@ -222,7 +223,8 @@ async function publishDraftSiteLocked(
       for (const snapshot of snapshots) {
         const page = snapshot.site.pages.find((p) => p.id === snapshot.pageRowId)
         if (!page || isTemplatePage(page)) continue // template pages only ever wrap; never baked at their own slug
-        collectCssFiles(buildPublishedSiteCssBundle(snapshot.site, registry, page, nextPublishVersion))
+        const mediaAssets = await prefetchMediaAssets(page, snapshot.site, registry, db)
+        collectCssFiles(buildPublishedSiteCssBundle(snapshot.site, registry, page, nextPublishVersion, { mediaAssets }))
       }
       for (const asset of runtimeAssetFiles) {
         if (!assetsByPath.has(asset.publicPath)) assetsByPath.set(asset.publicPath, asset.bytes)

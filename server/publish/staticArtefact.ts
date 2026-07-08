@@ -37,7 +37,9 @@ import {
   readlink,
   rename,
   rm,
+  rmdir,
   symlink,
+  unlink,
   writeFile,
 } from 'node:fs/promises'
 
@@ -260,6 +262,14 @@ export async function writeArtefact(
  *
  * Any leftover `current.tmp` from a previously-crashed publish is silently
  * removed before creating a new one.
+ *
+ * Windows note: `rename(2)` over an existing symlink is atomic on POSIX, but
+ * Win32 `MoveFile` refuses to replace an existing target (`EEXIST`/`EPERM`),
+ * leaving `current` stuck on the old slot and `current.tmp` orphaned. There we
+ * fall back to unlink-then-rename — a sub-millisecond window where `current` is
+ * absent, which `readArtefact` already treats as a miss and serves via the
+ * Layer B live-render path. Production runs Linux/Docker and always takes the
+ * atomic branch; the fallback is a dev-on-Windows affordance only.
  */
 export async function swapSlot(uploadsDir: string, targetSlot: Slot): Promise<void> {
   const publishDir = getPublishedDir(uploadsDir)
@@ -270,14 +280,52 @@ export async function swapSlot(uploadsDir: string, targetSlot: Slot): Promise<vo
   await mkdir(publishDir, { recursive: true })
 
   // Remove any leftover tmp symlink from a previous crashed publish
-  await rm(tmpPath, { force: true })
+  await removeSymlinkEntry(tmpPath)
 
   // Create a new symlink at current.tmp pointing to the target slot name.
   // symlink(target, path) creates a link at `path` that points to `target`.
   await symlink(targetSlot, tmpPath)
 
-  // Atomically replace `current` with the new symlink
-  await rename(tmpPath, currentPath)
+  // Atomically replace `current` with the new symlink.
+  try {
+    await rename(tmpPath, currentPath)
+  } catch (err) {
+    // Windows-only fallback. Win32 `MoveFile` won't replace an existing target
+    // (`EEXIST`/`EPERM`/`EISDIR`/`EACCES`): drop the old `current` link first,
+    // then rename into the now-free path. Sub-millisecond gap where `current` is
+    // absent → `readArtefact` treats it as a miss and serves via Layer B. On
+    // POSIX `rename(2)` replaces the symlink atomically, so any failure there is
+    // a real error — never run the destructive remove-then-rename off Windows.
+    if (process.platform !== 'win32') throw err
+    const code = (err as NodeJS.ErrnoException).code
+    if (code !== 'EEXIST' && code !== 'EPERM' && code !== 'EISDIR' && code !== 'EACCES') throw err
+    await removeSymlinkEntry(currentPath)
+    await rename(tmpPath, currentPath)
+  }
+}
+
+/**
+ * Remove a symlink entry (the link itself, never its target) cross-platform.
+ * `unlink` handles symlinks on POSIX. On Windows a *directory* symlink/junction
+ * can reject `unlink` (`EPERM`/`EISDIR`); there `rmdir` removes the link without
+ * recursing into the slot it points at. The `rmdir` fallback is therefore
+ * Windows-only — on POSIX a non-ENOENT `unlink` failure is a real error and must
+ * surface rather than risk removing a real directory at this path. A missing
+ * path is a no-op.
+ */
+async function removeSymlinkEntry(path: string): Promise<void> {
+  try {
+    await unlink(path)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') return
+    if (process.platform !== 'win32') throw err
+    try {
+      await rmdir(path)
+    } catch (err2) {
+      if ((err2 as NodeJS.ErrnoException).code !== 'ENOENT') throw err2
+    }
+  }
 }
 
 /**

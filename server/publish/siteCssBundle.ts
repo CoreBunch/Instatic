@@ -34,11 +34,13 @@ import type { IModuleRegistry } from '@core/module-engine'
 import {
   PUBLISHER_RESET_CSS,
   collectClassCSS,
+  collectSiteStyleBackgroundImagePaths,
   buildSiteFrameworkCss,
   collectUserStylesheetCss,
 } from '@core/publisher'
 import type {
   CssBundleFile,
+  ResponsiveCssOptions,
   SiteCssBundle,
   SiteCssBundleId,
 } from '@core/publisher'
@@ -70,9 +72,10 @@ export function buildSiteCssBundle(
   site: SiteDocument,
   registry: IModuleRegistry,
   page?: Page,
+  options: ResponsiveCssOptions = {},
 ): SiteCssBundle {
   return {
-    ...computePageInvariantBundles(site, registry),
+    ...computePageInvariantBundles(site, registry, options),
     userStyles: makeBundleFile('userStyles', collectUserStylesheetCss(site, page)),
   }
 }
@@ -100,9 +103,10 @@ export function buildPublishedSiteCssBundle(
   registry: IModuleRegistry,
   page?: Page,
   publishVersion: number = getPublishVersion(),
+  options: ResponsiveCssOptions = {},
 ): SiteCssBundle {
   return {
-    ...memoizedPageInvariantBundles(site, registry, publishVersion),
+    ...memoizedPageInvariantBundles(site, registry, publishVersion, options),
     userStyles: makeBundleFile('userStyles', collectUserStylesheetCss(site, page)),
   }
 }
@@ -111,11 +115,12 @@ export function buildPublishedSiteCssBundle(
 function computePageInvariantBundles(
   site: SiteDocument,
   registry: IModuleRegistry,
+  options: ResponsiveCssOptions,
 ): PageInvariantBundles {
   return {
     reset: makeBundleFile('reset', PUBLISHER_RESET_CSS),
     framework: makeBundleFile('framework', buildFrameworkCss(site, registry)),
-    style: makeBundleFile('style', collectClassCSS(site)),
+    style: makeBundleFile('style', collectClassCSS(site, options)),
   }
 }
 
@@ -126,7 +131,7 @@ function computePageInvariantBundles(
 // Deliberately NOT keyed on the site object: every consumer loads the snapshot
 // fresh (DB JSON parse per query), so an identity key would never hit — that
 // was exactly the bug that made every Layer B miss re-walk the whole site.
-let pageInvariantCache: { version: number; bundles: PageInvariantBundles } | null = null
+let pageInvariantCache: { version: number; mediaSignature: string; bundles: PageInvariantBundles } | null = null
 registerVersionedCacheReset(() => {
   pageInvariantCache = null
 })
@@ -139,13 +144,29 @@ function memoizedPageInvariantBundles(
   site: SiteDocument,
   registry: IModuleRegistry,
   version: number,
+  options: ResponsiveCssOptions,
 ): PageInvariantBundles {
-  if (pageInvariantCache && pageInvariantCache.version === version) {
+  const mediaSignature = styleMediaSignature(site, options)
+  if (pageInvariantCache && pageInvariantCache.version === version && pageInvariantCache.mediaSignature === mediaSignature) {
     return pageInvariantCache.bundles
   }
-  const bundles = computePageInvariantBundles(site, registry)
-  pageInvariantCache = { version, bundles }
+  const bundles = computePageInvariantBundles(site, registry, options)
+  pageInvariantCache = { version, mediaSignature, bundles }
   return bundles
+}
+
+function styleMediaSignature(site: SiteDocument, options: ResponsiveCssOptions): string {
+  if (!options.mediaAssets || options.mediaAssets.size === 0) return ''
+  const paths = collectSiteStyleBackgroundImagePaths(site)
+  if (paths.size === 0) return ''
+
+  const parts: string[] = []
+  for (const path of [...paths].sort()) {
+    const media = options.mediaAssets.get(path)
+    if (!media || media.variants.length === 0) continue
+    parts.push(`${path}=${media.variants.map((v) => `${v.width}:${v.path}`).join('|')}`)
+  }
+  return parts.join(';')
 }
 
 /**

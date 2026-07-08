@@ -100,11 +100,11 @@ export async function handleRowPreview(
   // resolution, etc.) operate against this seed.
   const draftPublishedRow: PublishedDataRow = synthesisePublishedRow(row, table, draftCells)
 
-  const cssBundle = buildSiteCssBundle(snapshot.site, registry, merged)
   const [loopData, mediaAssets] = await Promise.all([
     prefetchLoopData(merged, snapshot.site, db),
     prefetchMediaAssets(merged, snapshot.site, registry, db),
   ])
+  const cssBundle = buildSiteCssBundle(snapshot.site, registry, merged, { mediaAssets })
 
   const publicPath = buildEntryPublicPath(table.routeBase, draftPublishedRow.slug)
   const syntheticUrl = new URL(`http://localhost${publicPath}`)

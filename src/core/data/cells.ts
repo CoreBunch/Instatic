@@ -10,7 +10,7 @@
 import { NodeTreeSchema, type NodeTree } from '@core/page-tree'
 import type { BaseNode } from '@core/page-tree'
 import { DataFieldSchema, type DataField, type DataRowCells, type DataTable } from './schemas'
-import { dataTableHasField } from './fields'
+import { dataTableHasField, isPostTypeBuiltInFieldId } from './fields'
 import { slugFromTitle } from '@core/utils/slug'
 import { safeParseValue } from '@core/utils/typeboxHelpers'
 
@@ -78,6 +78,18 @@ export function readSeoTitleCell(cells: DataRowCells): string {
 
 export function readSeoDescriptionCell(cells: DataRowCells): string {
   return readStringCell(cells, 'seoDescription')
+}
+
+/**
+ * The subset of a row's cells that belongs to CUSTOM (non-built-in) fields.
+ * The Content authoring UI edits the post-type built-ins through dedicated
+ * inputs (title, slug, body, featured media, SEO); everything else is a
+ * user-defined field edited generically. Key order follows the input record.
+ */
+export function stripPostTypeBuiltInCells(cells: DataRowCells): DataRowCells {
+  return Object.fromEntries(
+    Object.entries(cells).filter(([fieldId]) => !isPostTypeBuiltInFieldId(fieldId)),
+  )
 }
 
 /**

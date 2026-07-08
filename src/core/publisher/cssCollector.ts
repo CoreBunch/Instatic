@@ -21,6 +21,7 @@
 import type { SiteDocument } from '@core/page-tree'
 import { isGeneratedClass } from '@core/page-tree'
 import { generateClassCSS } from './classCss'
+import type { ResponsiveCssOptions } from './responsiveBackground'
 
 /**
  * Collect all user-authored CSS class declarations for the classes referenced
@@ -35,7 +36,7 @@ import { generateClassCSS } from './classCss'
  * @param site The site containing the class registry, page nodes, and VCs.
  * @returns A CSS string of all used class-name rules, or empty string if none.
  */
-export function collectClassCSS(site: SiteDocument): string {
+export function collectClassCSS(site: SiteDocument, options: ResponsiveCssOptions = {}): string {
   // Defensive guard: corrupted/partial snapshots may have classes undefined
   if (!site.styleRules) return ''
 
@@ -95,7 +96,7 @@ export function collectClassCSS(site: SiteDocument): string {
 
   if (Object.keys(usedClasses).length === 0) return ''
 
-  const css = generateClassCSS(usedClasses, site.breakpoints, site.conditions ?? [])
+  const css = generateClassCSS(usedClasses, site.breakpoints, site.conditions ?? [], options)
   return sanitizeModuleCSS(css)
 }
 
