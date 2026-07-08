@@ -28,11 +28,12 @@
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { isSqliteUrl } from '../server/db'
+import { DEFAULT_CMS_PORT, DEFAULT_VITE_PORT } from '../server/config'
 import { bunCommand, bunRunCommand } from './lib/bunCommand'
 import { ensurePortFree } from './lib/freePort'
 
-const CMS_PORT = Number(process.env.PORT ?? '3001')
-const VITE_PORT = Number(process.env.VITE_PORT ?? '5173')
+const CMS_PORT = Number(process.env.PORT ?? DEFAULT_CMS_PORT)
+const VITE_PORT = Number(process.env.VITE_PORT ?? DEFAULT_VITE_PORT)
 const POSTGRES_HOST = '127.0.0.1'
 const POSTGRES_PORT = 5433
 const DATABASE_URL = process.env.DATABASE_URL ?? 'sqlite:./.tmp/dev.db'
@@ -172,7 +173,7 @@ function stopAppContainerIfRunning(): void {
   if (state === 'running') {
     runDocker(
       ['compose', 'stop', 'app'],
-      'Docker `app` container is running — stopping it (it would conflict with the local cms on port 3001)...',
+      `Docker \`app\` container is running — stopping it (it would conflict with the local cms on port ${CMS_PORT})...`,
     )
   }
 }

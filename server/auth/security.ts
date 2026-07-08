@@ -43,16 +43,33 @@
  * endpoint for rate limiting.
  */
 import { isIP } from 'node:net'
-import { normalizeOrigin } from '../config'
+import { DEFAULT_VITE_PORT, normalizeOrigin } from '../config'
 
-/** Extra origins allowed by the Origin check (set via env in dev/test). */
-export const DEV_ORIGIN_ALLOWLIST: string[] = [
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'http://localhost:5174',
-  'http://127.0.0.1:5174',
-  process.env.VITE_ALLOWED_ORIGIN ?? '',
-].filter(Boolean)
+/**
+ * Vite dev-server ports whose localhost origins are always allowed: the
+ * default port plus its auto-increment fallback (which is also the port
+ * `scripts/e2e-dev.ts` runs Vite on).
+ */
+const DEFAULT_VITE_PORTS = [DEFAULT_VITE_PORT, DEFAULT_VITE_PORT + 1]
+
+/**
+ * Build the dev-origin allowlist from the environment: the default Vite dev
+ * ports plus a `VITE_PORT` override, each as both `http://localhost:<port>`
+ * and `http://127.0.0.1:<port>`, plus an optional fully-custom
+ * `VITE_ALLOWED_ORIGIN` (for a non-localhost dev host). Without the
+ * `VITE_PORT` entries, running Vite on a custom port would 403 every
+ * state-changing request in dev. Pure so tests can exercise env combinations
+ * without reloading the module.
+ */
+export function buildDevOriginAllowlist(env: Record<string, string | undefined>): string[] {
+  const ports = [...DEFAULT_VITE_PORTS.map(String), env.VITE_PORT ?? ''].filter(Boolean)
+  const origins = ports.flatMap((port) => [`http://localhost:${port}`, `http://127.0.0.1:${port}`])
+  if (env.VITE_ALLOWED_ORIGIN) origins.push(env.VITE_ALLOWED_ORIGIN)
+  return [...new Set(origins)]
+}
+
+/** Extra origins allowed by the Origin check (Vite dev server + env overrides). */
+export const DEV_ORIGIN_ALLOWLIST: string[] = buildDevOriginAllowlist(process.env)
 
 /** Methods that mutate server state — the only ones the Origin check applies to. */
 export function isStateChangingMethod(method: string): boolean {
