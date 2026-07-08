@@ -310,9 +310,17 @@ function normalizeFragment(
     const newInlineStyles = node.inlineStyles
       ? normalizeCssBag(node.inlineStyles as Record<string, string>, htmlFilePath, fileMap, assetMap)
       : undefined
+    const newAttributes = node.attributes
+      ? normalizeAttributes(node.attributes, htmlFilePath, fileMap, assetMap)
+      : undefined
+    const newOverlay = node.moduleOverlay
+      ? { ...node.moduleOverlay, props: normalizeNodeProps(node.moduleOverlay.props, htmlFilePath, fileMap, assetMap) }
+      : undefined
     normalizedNodes[id] = {
       ...node,
       props: newProps,
+      ...(newAttributes ? { attributes: newAttributes } : {}),
+      ...(newOverlay ? { moduleOverlay: newOverlay } : {}),
       ...(newInlineStyles ? { inlineStyles: newInlineStyles } : {}),
     }
   }
@@ -389,6 +397,26 @@ function normalizeNodeProps(
     result['htmlAttributes'] = normalizedAttrs
   }
 
+  return result
+}
+
+/**
+ * Normalise URL-bearing values inside a DOM-native `node.attributes` bag.
+ * Every string value is checked against the FileMap; matches are replaced
+ * with the FileMap key and registered as assets. External / unknown URLs
+ * are left untouched.
+ */
+function normalizeAttributes(
+  attrs: Record<string, string>,
+  htmlFilePath: string,
+  fileMap: FileMap,
+  assetMap: Map<string, { sourcePath: string; mimeType: string; bytes: Uint8Array }>,
+): Record<string, string> {
+  const result: Record<string, string> = { ...attrs }
+  for (const [key, val] of Object.entries(result)) {
+    const fileMapKey = resolveAndRecord(val, htmlFilePath, fileMap, assetMap)
+    if (fileMapKey !== null) result[key] = fileMapKey
+  }
   return result
 }
 
