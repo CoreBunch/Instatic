@@ -206,7 +206,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   const moduleId = node.moduleOverlay?.moduleId ?? node.moduleId
   if (!moduleId) {
     // Pure DOM-native node — delegate to DomNodeRenderer
-    return <DomNodeRenderer nodeId={nodeId} />
+    return <DomNodeRenderer nodeId={nodeId} ChildRenderer={NodeRenderer} />
   }
 
   const definition = registry.get(moduleId)

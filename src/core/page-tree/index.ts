@@ -112,13 +112,11 @@ export type { NodeTree } from './treeSchema'
 
 export {
   createNode,
-  createDomNode,
   insertNode,
   deleteNode,
   updateNodeProps,
   setBreakpointOverride,
   clearBreakpointOverride,
-  syncModuleOverlayHtmlFields,
   renameNode,
   toggleNodeLocked,
   toggleNodeHidden,
@@ -131,6 +129,11 @@ export {
   wrapNodes,
   applyTreeOperation,
 } from './mutations'
+
+export {
+  createDomNode,
+  syncModuleOverlayHtmlFields,
+} from './domMutations'
 
 export {
   addPage,

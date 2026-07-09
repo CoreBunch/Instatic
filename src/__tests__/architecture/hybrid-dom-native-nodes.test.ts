@@ -19,8 +19,8 @@ import {
   isDomNode,
   VOID_HTML_ELEMENTS,
   domCanHaveChildren,
+  createDomNode,
 } from '@core/page-tree'
-import { createDomNode } from '@core/page-tree/mutations'
 import { importHtml } from '@core/htmlImport'
 import { validatePageWriteDiff } from '../../../server/handlers/cms/pageDiff'
 

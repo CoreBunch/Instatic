@@ -49,11 +49,11 @@
 }
 
 .attrKey {
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-mono);
 }
 
 .attrValue {
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-mono);
 }
 
 .attrRemove,

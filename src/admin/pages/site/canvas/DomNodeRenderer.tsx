@@ -17,14 +17,14 @@ import { isDomNode, VOID_HTML_ELEMENTS } from '@core/page-tree'
 import { bagToReactStyle } from '@core/publisher'
 import { getCanvasNodeClassName } from './canvasNodeClassName'
 import { CanvasBreakpointContext, CanvasSelectionContext } from './CanvasContexts'
-import { NodeRenderer } from './NodeRenderer'
 import { findEnclosingComponentRef, type AnnotatedPageNode } from './canvasSelectionUtils'
 
 interface DomNodeRendererProps {
   nodeId: string
+  ChildRenderer: React.ComponentType<{ nodeId: string }>
 }
 
-export const DomNodeRenderer = memo(function DomNodeRenderer({ nodeId }: DomNodeRendererProps) {
+export const DomNodeRenderer = memo(function DomNodeRenderer({ nodeId, ChildRenderer }: DomNodeRendererProps) {
   const node = useEditorStore((s) => selectActiveCanvasPage(s)?.nodes[nodeId] ?? null)
   const breakpointId = use(CanvasBreakpointContext)
   const { onNodeClick, onNodeHover, onNodeContextMenu, onNodeDoubleClick } = use(CanvasSelectionContext)
@@ -96,7 +96,7 @@ export const DomNodeRenderer = memo(function DomNodeRenderer({ nodeId }: DomNode
   // Render children or textContent
   const hasChildren = (node.children ?? []).length > 0
   const children: ReactNode = hasChildren
-    ? node.children.map((childId) => <NodeRenderer key={childId} nodeId={childId} />)
+    ? node.children.map((childId) => <ChildRenderer key={childId} nodeId={childId} />)
     : (node.textContent ?? undefined)
 
   return React.createElement(tag, { ...attrProps, ...editorProps }, children)

@@ -146,7 +146,7 @@ describe('Error boundary coverage gate', () => {
   it('main.tsx createRoot callbacks log via the shared logErrorChain helper', () => {
     // Catches the regression where someone replaces logErrorChain with a raw
     // `console.error(error)` and we lose the [<module>] prefix + cause chain.
-    const source = read(MAIN_FILE.replace(SRC_ROOT + '/', ''))
+    const source = read('admin/main.tsx')
     expect(source).toMatch(/logErrorChain/)
     expect(source).toMatch(/flattenErrorChain/)
   })

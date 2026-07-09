@@ -13,7 +13,7 @@ import type {
   ChoiceProps,
   SubmitProps,
   FormMessageProps,
-} from './index'
+} from './types'
 
 export const formHtmlContract: ModuleHtmlContract<FormProps> = {
   tag: 'form',
