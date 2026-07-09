@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { bunCommand, bunRunCommand, viteCommand } from '../../scripts/lib/bunCommand'
+import {
+  checkDevDependencies,
+  formatCommandForLog,
+  formatDevDependencyError,
+  formatProcessExit,
+} from '../../scripts/lib/devEnvironment'
 
 const root = new URL('../../', import.meta.url)
 
@@ -29,6 +35,8 @@ describe('development workflow', () => {
     // Spawns cms + vite without a recursive `bun run dev` call.
     expect(script).toContain("bunCommand('--watch', 'server/index.ts')")
     expect(script).toContain("viteCommand('--host', '127.0.0.1'")
+    expect(script).toContain('checkDevDependencies()')
+    expect(script).toContain('formatProcessExit(cfg.name')
     expect(script).not.toContain('command: `vite')
     expect(script).not.toContain('command.split')
     // Knows about the docker postgres host port.
@@ -70,11 +78,36 @@ describe('development workflow', () => {
     expect(e2eScript).not.toContain("bunRunCommand('vite'")
     expect(e2eScript).not.toContain("['vite'")
     expect(e2eScript).not.toContain("['bun'")
+    expect(e2eScript).toContain('formatProcessExit(cfg.name')
     expect(viteScript).toContain('viteCommand(...Bun.argv.slice(2))')
     expect(viteScript).not.toContain("['vite'")
     expect(startScript).toContain("bunRunCommand('build')")
     expect(startScript).toContain("bunRunCommand('server/index.ts')")
     expect(startScript).not.toContain("['bun'")
+  })
+
+  it('dev diagnostics explain incomplete installs and child exits', () => {
+    const missingTinyglobby = checkDevDependencies((specifier) => {
+      if (specifier === 'tinyglobby/package.json') throw new Error('missing')
+      return `/repo/node_modules/${specifier}`
+    })
+
+    expect(missingTinyglobby.ok).toBe(false)
+    expect(missingTinyglobby.missing.map((dependency) => dependency.name)).toEqual(['tinyglobby'])
+    expect(formatDevDependencyError(missingTinyglobby, 'win32')).toContain('bun install likely stopped before it finished')
+    expect(formatDevDependencyError(missingTinyglobby, 'win32')).toContain('tinyglobby')
+    expect(formatDevDependencyError(missingTinyglobby, 'win32')).toContain('Remove-Item -Recurse -Force node_modules')
+
+    const command = [
+      process.execPath,
+      'D:\\Instatic Project\\node_modules\\vite\\bin\\vite.js',
+      '--host',
+      '127.0.0.1',
+    ]
+
+    expect(formatCommandForLog(command)).toContain('"D:\\\\Instatic Project\\\\node_modules\\\\vite\\\\bin\\\\vite.js"')
+    expect(formatProcessExit('vite', 5, command)).toContain('vite exited with code 5')
+    expect(formatProcessExit('vite', 5, command)).toContain('Command:')
   })
 
   it('Vite proxies CMS API and uploaded media to the local Bun server', () => {

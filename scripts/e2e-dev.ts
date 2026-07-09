@@ -14,6 +14,7 @@
  */
 import { mkdir, rm } from 'node:fs/promises'
 import { bunCommand, viteCommand } from './lib/bunCommand'
+import { formatProcessExit } from './lib/devEnvironment'
 
 const DATABASE_PATH = './.tmp/e2e-agent.db'
 const UPLOADS_DIR = './.tmp/e2e-uploads'
@@ -45,11 +46,11 @@ function stopChildren(signal: NodeJS.Signals = 'SIGTERM'): void {
   }
 }
 
-for (const command of [
-  bunCommand('server/index.ts'),
-  viteCommand('--host', '127.0.0.1', '--port', VITE_PORT, '--strictPort'),
+for (const cfg of [
+  { name: 'cms', command: bunCommand('server/index.ts') },
+  { name: 'vite', command: viteCommand('--host', '127.0.0.1', '--port', VITE_PORT, '--strictPort') },
 ]) {
-  const child = Bun.spawn(command, {
+  const child = Bun.spawn(cfg.command, {
     env: sharedEnv,
     stdin: 'inherit',
     stdout: 'inherit',
@@ -60,6 +61,7 @@ for (const command of [
     if (shuttingDown) return
     // One half of the stack died on its own — bring the other down and exit so
     // Playwright sees the failure instead of half a stack.
+    console.error(`[e2e-dev] ${formatProcessExit(cfg.name, code, cfg.command)}`)
     stopChildren()
     process.exit(code ?? 1)
   })

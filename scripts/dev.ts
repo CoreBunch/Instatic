@@ -29,6 +29,11 @@ import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { isSqliteUrl } from '../server/db'
 import { bunCommand, viteCommand } from './lib/bunCommand'
+import {
+  checkDevDependencies,
+  formatDevDependencyError,
+  formatProcessExit,
+} from './lib/devEnvironment'
 import { ensurePortFree } from './lib/freePort'
 
 const CMS_PORT = Number(process.env.PORT ?? '3001')
@@ -207,6 +212,9 @@ async function waitForPostgresReady(timeoutMs = 60_000): Promise<void> {
 
 // --- main -----------------------------------------------------------------
 
+const dependencyCheck = checkDevDependencies()
+if (!dependencyCheck.ok) fail(formatDevDependencyError(dependencyCheck))
+
 if (isSqliteUrl(DATABASE_URL)) {
   const dbPath = DATABASE_URL.replace(/^sqlite:|^file:/, '')
   await mkdir(dirname(dbPath), { recursive: true })
@@ -276,8 +284,10 @@ for (const cfg of processes) {
   void child.exited.then((code) => {
     if (shuttingDown) return
     shuttingDown = true
+    log(formatProcessExit(cfg.name, code, cfg.command))
+    log('Shutting down the other dev process.')
     stopChildren()
-    process.exit(code)
+    process.exit(code ?? 1)
   })
 }
 
