@@ -55,6 +55,11 @@ function migrateOldFormatNodes(
         // Derive HTML fields from the contract
         const tag =
           typeof contract.tag === 'function' ? contract.tag(props as never) : contract.tag
+        // Only migrate modules that actually represent an HTML element.
+        // Structural/special modules such as base.visual-component-ref and
+        // base.slot-instance have an htmlContract but no tag, and must keep
+        // their moduleId so the VC and publisher systems can recognise them.
+        if (!tag) return
         const attributes = contract.attributes
           ? contract.attributes(props as never)
           : undefined
@@ -64,7 +69,7 @@ function migrateOldFormatNodes(
         // Move module data into overlay, clear legacy moduleId
         node.moduleOverlay = { moduleId: node.moduleId, props: { ...props } }
         node.moduleId = ''
-        if (tag) node.tag = tag
+        node.tag = tag
         if (attributes) node.attributes = attributes
         if (textContent !== undefined) node.textContent = textContent
       }
@@ -73,9 +78,10 @@ function migrateOldFormatNodes(
   for (const page of site.pages) {
     for (const node of Object.values(page.nodes)) migrateNode(node)
   }
-  for (const vc of site.visualComponents ?? []) {
-    for (const node of Object.values(vc.tree.nodes)) migrateNode(node)
-  }
+  // Visual Component trees are intentionally module-based: every node inside a
+  // VC is a component instance, not a DOM-native element. Migrating them to the
+  // unified (moduleId='', moduleOverlay) format breaks VC slot-outlet detection
+  // and slot-instance reconciliation, so they are EXCLUDED here.
   for (const layout of site.layouts ?? []) {
     for (const node of Object.values(layout.nodes)) migrateNode(node)
   }
