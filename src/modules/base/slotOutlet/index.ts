@@ -47,6 +47,13 @@ export const SlotOutletModule: ModuleDefinition<SlotOutletStoredProps> = {
 
   component: SlotOutletEditor,
 
+  htmlContract: {
+    canHaveChildren: false,
+    // Transparent placeholder — replaced by the consumer's slot-instance
+    // children at publish time. No standalone HTML element.
+    fromHtml: () => null,
+  },
+
   /**
    * Publisher safety-net: the walker reaches slot-outlet only when
    * instantiateVCAtRef kept the outlet as a placeholder — meaning no slot

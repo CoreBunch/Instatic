@@ -217,22 +217,37 @@ describe('makeHtmlPagePlan', () => {
     expect(Object.keys(pagePlan.nodeFragment.nodes).length).toBeGreaterThan(0)
   })
 
-  it('uses the shared HTML importer so Super Import creates first-class form modules', () => {
+  it('uses the shared HTML importer so Super Import respects Phase 3 claim semantics', () => {
+    // Phase 3: form primitives only claim elements that match their
+    // data-instatic-* selectors (or, for label/button, bare tag selectors).
+    // Raw <form>, <input>, and <textarea> become DOM-native nodes; only
+    // <label> and <button type="submit"> get module overlays.
     const html = `<html><body>
       <form id="lead">
         <label for="email">Email</label>
         <input id="email" name="email" type="email" required>
-        <input type="submit" value="Send">
+        <button type="submit">Send</button>
       </form>
     </body></html>`
     const { pagePlan } = makeHtmlPagePlan('lead.html', html, fileMap)
     const form = pagePlan.nodeFragment.nodes[pagePlan.nodeFragment.rootIds[0]!]!
 
-    expect(form.moduleId).toBe('base.form')
+    expect(form.moduleId).toBe('')
+    expect(form.tag).toBe('form')
+    expect(form.attributes?.id).toBe('lead')
     expect(form.children).toHaveLength(3)
-    expect(pagePlan.nodeFragment.nodes[form.children[0]!]!.moduleId).toBe('base.label')
-    expect(pagePlan.nodeFragment.nodes[form.children[1]!]!.moduleId).toBe('base.input')
-    expect(pagePlan.nodeFragment.nodes[form.children[2]!]!.moduleId).toBe('base.submit')
+
+    const label = pagePlan.nodeFragment.nodes[form.children[0]!]!
+    expect(label.moduleOverlay?.moduleId).toBe('base.label')
+    expect(label.moduleOverlay?.props.text).toBe('Email')
+
+    const input = pagePlan.nodeFragment.nodes[form.children[1]!]!
+    expect(input.moduleId).toBe('')
+    expect(input.tag).toBe('input')
+
+    const submit = pagePlan.nodeFragment.nodes[form.children[2]!]!
+    expect(submit.moduleOverlay?.moduleId).toBe('base.submit')
+    expect(submit.moduleOverlay?.props.label).toBe('Send')
   })
 
   it('sets source to the HTML file path', () => {

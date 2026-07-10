@@ -111,7 +111,7 @@ const OUTLET_BODY_BINDING: DynamicPropBinding = {
  * (`NodeRenderer`) resolve through this so the two surfaces render identically.
  */
 export function effectiveNodeBindings(node: {
-  moduleId: string
+  moduleId?: string
   dynamicBindings?: Record<string, DynamicPropBinding>
 }): Record<string, DynamicPropBinding> | undefined {
   if (node.moduleId === 'base.outlet') {

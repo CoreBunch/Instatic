@@ -41,6 +41,7 @@ import { useResponsiveBackgroundStyle } from '@admin/pages/media/hooks/useRespon
 import { getCanvasNodeClassIds, getCanvasNodeClassName } from './canvasNodeClassName'
 import { findEnclosingComponentRef, type AnnotatedPageNode } from './canvasSelectionUtils'
 import { useLoopPreviewItems } from './useLoopPreviewItems'
+import { DomNodeRenderer } from './DomNodeRenderer'
 import styles from './NodeRenderer.module.css'
 
 // ---------------------------------------------------------------------------
@@ -199,15 +200,24 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   if (!node) return null
   if (node.hidden) return null
 
-  const definition = registry.get(node.moduleId)
+  // Unified routing: moduleOverlay.moduleId takes precedence over node.moduleId.
+  // A DOM-native node with a module overlay still renders through the module
+  // path (editor UX) rather than the bare DomNodeRenderer.
+  const moduleId = node.moduleOverlay?.moduleId ?? node.moduleId
+  if (!moduleId) {
+    // Pure DOM-native node — delegate to DomNodeRenderer
+    return <DomNodeRenderer nodeId={nodeId} ChildRenderer={NodeRenderer} />
+  }
+
+  const definition = registry.get(moduleId)
   if (!definition) {
     return (
       <div
         className={styles.unknownModule}
         data-instatic-unknown-module=""
-        title={`Unknown module: ${node.moduleId}`}
+        title={`Unknown module: ${moduleId}`}
       >
-        <WarningDiamondSolidIcon size={14} /> Unknown module: {node.moduleId}
+        <WarningDiamondSolidIcon size={14} /> Unknown module: {moduleId}
       </div>
     )
   }
@@ -220,7 +230,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   // the loop body resolve against the iteration item — same semantics as
   // the publisher's renderLoop().
   const children =
-    node.moduleId === 'base.loop' && node.children.length > 0 ? (
+    moduleId === 'base.loop' && node.children.length > 0 ? (
       <LoopIterationsPreview node={node} baseTemplateContext={templateContext} />
     ) : (
       node.children.map((childId) => <NodeRenderer key={childId} nodeId={childId} />)
@@ -232,7 +242,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   // non-responsive (content) keys — text/tag/src etc. must look identical
   // across every breakpoint frame, since published HTML is one document.
   const effectiveProps = addEditorFormPreviewProps(
-    node.moduleId,
+    moduleId,
     resolveDynamicProps(
     resolveProps(node, breakpointId, definition.schema),
     effectiveNodeBindings(node),
@@ -253,7 +263,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   // and the canvas DOM matches the published DOM exactly.
   const nodeWrapperProps: NodeWrapperPropsType = {
     'data-node-id': nodeId,
-    'data-module-id': node.moduleId,
+    'data-module-id': moduleId,
     tabIndex: 0,
     ...(isSelected ? { 'data-canvas-selected': 'true' as const } : {}),
     ...(inlineStyle ? { style: inlineStyle } : {}),
@@ -386,7 +396,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   const effectiveWrapperProps: NodeWrapperPropsType = isInlineEditing
     ? {
         'data-node-id': nodeId,
-        'data-module-id': node.moduleId,
+        'data-module-id': moduleId,
         ...(isSelected ? { 'data-canvas-selected': 'true' as const } : {}),
         ...(inlineStyle ? { style: inlineStyle } : {}),
       }
@@ -401,7 +411,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   return (
     <ErrorBoundary
       location="node-renderer"
-      resetKeys={[node.moduleId, nodeId]}
+      resetKeys={[moduleId, nodeId]}
       silentToast
     >
       {shouldRenderSandbox ? (

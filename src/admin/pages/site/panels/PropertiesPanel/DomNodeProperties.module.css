@@ -1,0 +1,73 @@
+/* DomNodeProperties — editor for DOM-native node fields (tag, attributes, textContent). */
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-l);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.label {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.textarea {
+    width: 100%;
+    resize: vertical;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-xs);
+    padding: var(--space-xs) var(--space-s);
+    font-family: inherit;
+    font-size: var(--text-sm);
+    background: var(--surface-input);
+    color: var(--text-primary);
+}
+
+.textarea:focus {
+    outline: none;
+    border-color: var(--border-focus);
+}
+
+.attrList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.attrRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.attrKey {
+    font-family: var(--font-mono);
+}
+
+.attrValue {
+    font-family: var(--font-mono);
+}
+
+.attrRemove,
+.attrAdd {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    width: 28px;
+    height: 28px;
+    color: var(--text-disabled);
+}
+
+.attrRemove:hover,
+.attrAdd:hover {
+    color: var(--text-primary);
+}

@@ -147,6 +147,12 @@ interface PublishPageOptions {
    * HTML representation the agent targets nodes through.
    */
   annotateNodeIds?: boolean
+  /**
+   * Clean-output mode. When true, no editor-only annotations (uid, etc.)
+   * are emitted. Overrides `annotateNodeIds`. Used by `serializeNodeHtml`
+   * and the MCP folder-watcher to produce LLM-friendly, id-less HTML.
+   */
+  cleanMode?: boolean
 }
 
 /**
@@ -513,6 +519,7 @@ export function publishPage(
     dynamicNodeIds: dynamicNodeIds.size > 0 ? dynamicNodeIds : undefined,
     publishVersion: options.publishVersion ?? 0,
     annotateNodeIds: options.annotateNodeIds,
+    cleanMode: options.cleanMode,
   }
 
   // Mutable outputs, owned here and threaded by reference through the whole

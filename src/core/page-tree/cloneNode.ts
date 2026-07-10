@@ -58,6 +58,7 @@ export function cloneNodeWithRemap(
   // Deep-copy the remaining optional persisted sub-objects so the clone never
   // shares a mutable object with its source.
   if (node.inlineStyles) cloned.inlineStyles = { ...node.inlineStyles }
+  if (node.attributes) cloned.attributes = { ...node.attributes }
   if (node.propBindings) {
     cloned.propBindings = Object.fromEntries(
       Object.entries(node.propBindings).map(([k, v]) => [k, { ...v }]),

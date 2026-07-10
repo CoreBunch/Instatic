@@ -1,31 +1,33 @@
 /**
  * Walk a parsed (and already stripped) DOM Document and map each element to
- * a first-class PageNode via the HTML_TO_MODULE_RULES table.
+ * a DOM-native PageNode, then optionally attach a `moduleOverlay` when a
+ * module's `htmlContract.claimSelector` matches the element.
+ *
+ * Phase 3 of the Lossless HTML-Node Roundtrip migration replaced the
+ * imperative `HTML_TO_MODULE_RULES` table with a two-phase approach:
+ *
+ *   1. Every element → DOM-native node (`tag`, `attributes`, `textContent`).
+ *      Safe authored HTML attributes are collected directly onto the node.
+ *      `class` and inline `style` are handled by first-class node class/style
+ *      fields instead.
+ *   2. `registry.getByClaimSelector(el)` checks each module's claim selector.
+ *      First match wins; `fromHtml(el)` extracts overlay props. Module overlays
+ *      are optional and additive — they provide editing UX but never discard
+ *      HTML fidelity.
  *
  * Rules:
  *   - When a recursing container is walked, both its ELEMENT children and its
  *     significant TEXT children are mapped, in document order. Element children
- *     route through the rule table; a text child becomes a synthesized
- *     `base.text` node with `tag: 'none'` so direct text — e.g.
- *     `<div class="num">98%</div>` or `<li>Buy milk</li>` — is preserved
- *     without adding selector-visible wrapper elements. Whitespace-only text
- *     (indentation between tags) and comments are ignored. Leaf rules
- *     (text/link/button/image) capture `textContent` directly and never recurse.
- *   - The first matching rule in HTML_TO_MODULE_RULES is used (guaranteed
- *     to always match because the catch-all '*' rule is last).
- *   - Node creation uses the canonical factory so every produced node is a
- *     valid PageNode: createNode(moduleId, { ...def.defaults, ...ruleProps }).
+ *     route through `processElement`; a text child becomes a synthesized
+ *     `base.text` node with `tag: 'none'` so direct text is preserved.
+ *     Whitespace-only text and comments are ignored.
+ *   - Leaf modules (canHaveChildren: false) claim only elements without element
+ *     children. If an element has children but a leaf module claims it, the
+ *     overlay is skipped and the DOM structure is preserved via recursion.
  *   - class names from el.classList are preserved verbatim on node.classIds.
  *     This layer is registry-agnostic: it writes *names*, not ids. The store
  *     action `insertImportedNodes` reconciles those names into real registry
- *     class ids (linking to <style>-derived rules of the same name, or creating
- *     bare classes for unknown names) as the fragment enters the live tree.
- *   - inline `style="…"` declarations are attached to node.inlineStyles (the
- *     editor's first-class per-node style layer), harvested before stripUnsafe.
- *   - safe authored HTML attributes are preserved as `props.htmlAttributes` on
- *     base modules that emit matching authored elements, so imported CSS/JS and
- *     template runtime hooks keep working after publish. `class` and inline
- *     `style` are handled by first-class node class/style fields instead.
+ *     class ids as the fragment enters the live tree.
  *
  * Consumers (all call importHtml(source) — the single public entry point):
  *   - Paste-HTML modal (browser-side)
@@ -34,14 +36,13 @@
  */
 
 import type { PageNode } from '@core/page-tree'
-import { createNode } from '@core/page-tree'
+import { createNode, createDomNode } from '@core/page-tree'
 import { registry } from '@core/module-engine'
 import {
   normalizeHtmlAttributeName,
   sanitizeRenderableHtmlAttribute,
 } from '@core/htmlAttributes'
-import { HTML_TO_MODULE_RULES } from './rules'
-import type { ImportRule } from './rules'
+import { normalizeImportedText } from './text'
 import { parseHtml } from './parseHtml'
 import { stripUnsafe, collectStyleCss } from './stripUnsafe'
 import type { StripReport } from './stripUnsafe'
@@ -67,7 +68,7 @@ export interface ImportFragment {
 interface ImportBodyAttributes {
   classIds?: string[]
   inlineStyles?: Record<string, string>
-  props?: Record<string, unknown>
+  attributes?: Record<string, string>
 }
 
 /** The result returned by the convenience entry point importHtml(). */
@@ -91,31 +92,6 @@ export interface ImportResult extends ImportFragment {
 // global (it runs in the browser bundle and under the happy-dom test polyfill).
 const ELEMENT_NODE = 1
 const TEXT_NODE = 3
-const HTML_ATTRIBUTE_MODULES = new Set([
-  'base.container',
-  'base.text',
-  'base.link',
-  'base.button',
-  'base.image',
-])
-
-const MODULE_GENERATED_ATTRIBUTE_NAMES: Record<string, readonly string[]> = {
-  'base.button': ['aria-disabled', 'disabled', 'href', 'rel', 'target', 'type'],
-  'base.image': [
-    'alt',
-    'decoding',
-    'fetchpriority',
-    'height',
-    'loading',
-    'sizes',
-    'src',
-    'srcset',
-    'style',
-    'width',
-  ],
-  'base.link': ['href', 'rel', 'target'],
-}
-
 /**
  * Mutable accumulator threaded through the recursive walk.
  *
@@ -136,35 +112,25 @@ interface WalkContext {
 }
 
 /**
- * Find the first rule whose selector matches `el`. Always returns a rule
- * because the last rule in the table uses the catch-all '*' selector.
+ * Collect safe HTML attributes for a DOM-native node. Unlike module nodes
+ * (which store authored attrs in `props.htmlAttributes`), DOM-native nodes
+ * store them directly in `node.attributes`. `class` and `style` are excluded
+ * — they're handled by `classIds` and `inlineStyles` respectively.
  */
-function matchRule(el: Element): ImportRule {
-  for (const rule of HTML_TO_MODULE_RULES) {
-    if (el.matches(rule.match)) return rule
-  }
-  // Unreachable: the catch-all '*' rule always matches every element.
-  return HTML_TO_MODULE_RULES[HTML_TO_MODULE_RULES.length - 1]!
-}
-
-function collectHtmlAttributes(el: Element, moduleId?: string): Record<string, string> {
-  const attrs: Record<string, string> = {}
-  const generatedNames = new Set(MODULE_GENERATED_ATTRIBUTE_NAMES[moduleId ?? ''] ?? [])
+function collectDomAttributes(
+  el: Element,
+  extra?: Record<string, string>,
+): Record<string, string> {
+  const attrs: Record<string, string> = { ...(extra ?? {}) }
   for (const attr of Array.from(el.attributes)) {
     const name = normalizeHtmlAttributeName(attr.name)
-    if (generatedNames.has(name)) continue
+    if (name === 'class' || name === 'style') continue
+    if (name in attrs) continue
     const safeValue = sanitizeRenderableHtmlAttribute(name, attr.value)
     if (safeValue === null) continue
     attrs[name] = safeValue
   }
   return attrs
-}
-
-function collectElementProps(el: Element, moduleId?: string): Record<string, unknown> {
-  const props: Record<string, unknown> = {}
-  const htmlAttributes = collectHtmlAttributes(el, moduleId)
-  if (Object.keys(htmlAttributes).length > 0) props.htmlAttributes = htmlAttributes
-  return props
 }
 
 function collectBodyAttributes(
@@ -175,8 +141,8 @@ function collectBodyAttributes(
   const classIds = Array.from(body.classList)
   if (classIds.length > 0) bodyAttrs.classIds = classIds
 
-  const props = collectElementProps(body)
-  if (Object.keys(props).length > 0) bodyAttrs.props = props
+  const attributes = collectDomAttributes(body)
+  if (Object.keys(attributes).length > 0) bodyAttrs.attributes = attributes
 
   const inline = inlineStyles.get(body)
   if (inline && Object.keys(inline).length > 0) bodyAttrs.inlineStyles = inline
@@ -281,32 +247,47 @@ function mapChildNodes(parent: Element, ctx: WalkContext): string[] {
  * Returns the id of the node produced for `el`.
  */
 function processElement(el: Element, ctx: WalkContext): string {
-  const rule = matchRule(el)
-  const { moduleId, props: ruleProps } = rule.map(el)
-  const props = { ...ruleProps }
-  if (HTML_ATTRIBUTE_MODULES.has(moduleId)) {
-    Object.assign(props, collectElementProps(el, moduleId))
+  const tag = el.tagName.toLowerCase()
+  const hasElementChildren = el.children.length > 0
+
+  // 1. Build DOM-native attributes (class/style excluded — handled by classIds/inlineStyles)
+  const attributes = collectDomAttributes(el)
+
+  // 2. Try to attach a module overlay via claimSelector
+  let overlay: { moduleId: string; props: Record<string, unknown> } | undefined
+  const claimingModule = registry.getByClaimSelector(el)
+  if (claimingModule) {
+    const props = claimingModule.htmlContract?.fromHtml?.(el)
+    if (props !== null) {
+      overlay = { moduleId: claimingModule.id, props: props ?? {} }
+    }
   }
 
-  // Merge module defaults with rule-specific props so every node starts
-  // from a well-formed baseline.
-  const def = registry.getOrThrow(moduleId)
-  const node = createNode(moduleId, { ...def.defaults, ...props })
+  // 3. Create DOM-native node
+  const node = createDomNode(tag, {
+    attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
+    textContent: !hasElementChildren ? normalizeImportedText(el.textContent ?? '') : undefined,
+    moduleOverlay: overlay,
+  })
 
-  // Preserve element class *names* verbatim. This layer is registry-agnostic
+  // 4. Preserve element class *names* verbatim. This layer is registry-agnostic
   // (it has no SiteDocument), so it cannot mint real class ids here. The store
   // action `insertImportedNodes` links these names to registry class ids (and
   // auto-creates bare classes for unknown names) when the fragment is inserted.
   node.classIds = Array.from(el.classList)
 
-  // Attach the element's inline `style="…"` declarations (harvested before
+  // 5. Attach the element's inline `style="…"` declarations (harvested before
   // stripUnsafe removed the `style` attribute) as the node's inline styles —
   // the editor's first-class per-node `style=""` layer.
   const inline = ctx.inlineStyles.get(el)
   if (inline) node.inlineStyles = inline
 
+  // 6. Recurse into children when the element has them and either:
+  //    - no overlay is attached, OR
+  //    - the overlay module allows children (canHaveChildren: true)
   const shouldRecurse =
-    typeof rule.recurse === 'function' ? rule.recurse(el) : Boolean(rule.recurse)
+    hasElementChildren && (!overlay || (claimingModule?.htmlContract?.canHaveChildren ?? true))
+
   if (shouldRecurse) {
     // Walk childNodes (not just children) so direct text is preserved in
     // document order. Without this, `<div class="num">98%</div>` and
@@ -314,19 +295,17 @@ function processElement(el: Element, ctx: WalkContext): string {
     // content isn't an element.
     // Entering a <pre> switches the subtree to whitespace-preserving mode.
     const childCtx =
-      ctx.preserveWs || el.tagName.toLowerCase() === 'pre'
+      ctx.preserveWs || tag === 'pre'
         ? { ...ctx, preserveWs: true }
         : ctx
     node.children = mapChildNodes(el, childCtx)
-    // A node that recursed into real child nodes must NOT also keep a flattened
-    // `text` prop: the children (including synthesized base.text for direct
-    // text) are the source of truth. Without this, an element that both sets
-    // `text` in its rule and recurses on element children (e.g. a `<a>` wrapping
-    // tokens/spans) double-represents its content — ambiguous and can
-    // double-render. Mirrors the conditional heading/label rules.
-    if (node.children.length > 0 && 'text' in node.props) {
-      delete (node.props as Record<string, unknown>).text
-    }
+  }
+
+  // After recursing, if the node has real children and carries a module
+  // overlay, drop any flattened `text` prop to avoid double-representation
+  // (children are the source of truth).
+  if (node.children.length > 0 && overlay && 'text' in overlay.props) {
+    delete (overlay.props as Record<string, unknown>).text
   }
 
   ctx.nodes[node.id] = node
@@ -338,10 +317,10 @@ function processElement(el: Element, ctx: WalkContext): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Walk doc.body's child nodes and map each to a PageNode via
- * HTML_TO_MODULE_RULES. Returns a flat fragment (nodes map + root IDs) that
- * callers splice into the live page tree. Top-level bare text is preserved as
- * a root base.text node, mirroring nested handling.
+ * Walk doc.body's child nodes and map each to a PageNode via the unified
+ * DOM-native-first importer. Returns a flat fragment (nodes map + root IDs)
+ * that callers splice into the live page tree. Top-level bare text is
+ * preserved as a root base.text node, mirroring nested handling.
  *
  * Expects that `doc` has already been through `stripUnsafe()` — call
  * `importHtml()` to run both steps together.

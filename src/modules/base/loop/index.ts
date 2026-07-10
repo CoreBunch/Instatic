@@ -79,6 +79,25 @@ export const LoopModule: ModuleDefinition<LoopProps> = {
 
   htmlTag: (props) => resolveHtmlTag(props.tag, props.customTag),
 
+  htmlContract: {
+    tag: (props) => resolveHtmlTag(props.tag, props.customTag),
+    canHaveChildren: true,
+    claimSelector: 'instatic-loop',
+    fromHtml: (el) => ({
+      tag: 'custom',
+      customTag: el.tagName.toLowerCase(),
+      sourceId: el.getAttribute('data-source-id') ?? '',
+      tableId: el.getAttribute('data-table-id') ?? '',
+      orderBy: el.getAttribute('data-order-by') ?? '',
+      direction: (el.getAttribute('data-direction') ?? 'asc') as LoopProps['direction'],
+      limit: Number(el.getAttribute('data-limit')) || undefined,
+      offset: Number(el.getAttribute('data-offset')) || undefined,
+      pagination: (el.getAttribute('data-pagination') ?? 'infinite') as LoopProps['pagination'],
+      pageSize: Number(el.getAttribute('data-page-size')) || undefined,
+      variantIds: [],
+    }),
+  },
+
   /**
    * Defense-in-depth fallback: the publisher walker intercepts base.loop
    * nodes via `renderLoop()` in `render.ts` before this method is ever

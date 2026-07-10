@@ -13,7 +13,9 @@ import { ANCHOR_TARGET_OPTIONS, anchorRel } from '@modules/base/shared/anchorTar
 import {
   htmlAttributesAttr,
   htmlAttributesControl,
+  htmlAttributesForReact,
 } from '@modules/base/shared/htmlAttributes'
+import { normalizeImportedText } from '@core/htmlImport'
 import { linkUsesChildren } from './content'
 import { LinkEditor } from './LinkEditor'
 import { LinkPropsSchema, type LinkStoredProps } from './props'
@@ -49,6 +51,29 @@ export const LinkModule: ModuleDefinition<LinkStoredProps> = {
   component: LinkEditor,
 
   htmlTag: 'a',
+
+  htmlContract: {
+    tag: 'a',
+    attributes: (props) => {
+      const attrs = htmlAttributesForReact(props.htmlAttributes)
+      attrs['href'] = safeUrl(props.href) || '#'
+      attrs['target'] = String(props.target)
+      const rel = anchorRel(props.target)
+      if (rel) attrs['rel'] = rel
+      return attrs
+    },
+    textContent: (props) => String(props.text ?? ''),
+    canHaveChildren: true,
+    claimSelector: 'a[href]',
+    fromHtml: (el) => {
+      const target = el.getAttribute('target') ?? '_self'
+      return {
+        href: el.getAttribute('href') ?? '#',
+        text: normalizeImportedText(el.textContent ?? ''),
+        target: (['_self', '_blank', '_parent'].includes(target) ? target : '_self') as LinkStoredProps['target'],
+      }
+    },
+  },
 
   render: (props, renderedChildren) => {
     const href = safeUrl(props.href)

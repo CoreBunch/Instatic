@@ -106,7 +106,16 @@ const GRANDFATHERED: Record<string, number> = {
   // (cloneNode.ts) so the three duplicate/paste/duplicatePage callers share one
   // clone. See docs/reference/page-tree.md (parentId).
   // Ratcheted 880 → 760 when the page-roster mutations moved to pageMutations.ts.
-  'src/core/page-tree/mutations.ts': 760,
+  // Raised 760 → 801 for Phase 0 of the lossless HTML-node roundtrip migration
+  // (moduleOverlay field added to createDomNode and BaseNode schema parsing).
+  // Ratcheted 801 → 766 when createDomNode and syncModuleOverlayHtmlFields moved
+  // to domMutations.ts.
+  'src/core/page-tree/mutations.ts': 766,
+  // Grew past CEILING with the lossless HTML-node roundtrip: DOM-native node
+  // tool handling (site_update_dom_node, isDomNode guards, and htmlImport paths)
+  // landed in the browser executor. Extract DOM-native tool runners into a
+  // sibling module to graduate this entry.
+  'src/admin/pages/site/agent/executor.ts': 734,
   // server/plugins/host/handlers/content.ts graduated (786 → 661) when the
   // DB→wire projection helpers moved to contentProjection.ts.
   'src/core/siteImport/cssToStyleRules.ts': 708,

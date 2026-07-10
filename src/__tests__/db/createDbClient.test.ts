@@ -9,11 +9,33 @@ import { runMigrations } from '../../../server/db/runMigrations'
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   const dir = await mkdtemp(join(tmpdir(), 'instatic-db-selection-'))
+  let result: T | undefined
+  let fnError: unknown
+  let cleanupError: Error | undefined
   try {
-    return await fn(dir)
+    result = await fn(dir)
+  } catch (e) {
+    fnError = e
   } finally {
-    await rm(dir, { recursive: true, force: true })
+    // Retry delete — Windows may hold SQLite handles briefly after close.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await rm(dir, { recursive: true, force: true })
+        break
+      } catch (e) {
+        const err = e as Error & { code?: string }
+        if (err.code === 'EBUSY' && attempt < 4) {
+          await new Promise((r) => setTimeout(r, 50 * (attempt + 1)))
+          continue
+        }
+        cleanupError = e as Error
+        break
+      }
+    }
   }
+  if (fnError) throw fnError
+  if (cleanupError) throw cleanupError
+  return result!
 }
 
 describe('createDbClient — DATABASE_URL dialect selection', () => {
@@ -46,6 +68,8 @@ describe('createDbClient — DATABASE_URL dialect selection', () => {
 
         const { rows } = await db<{ count: number }>`select count(*) as count from schema_migrations`
         expect(rows[0]?.count).toBe(sqliteMigrations.length)
+
+        db.close?.()
       }
     })
   })

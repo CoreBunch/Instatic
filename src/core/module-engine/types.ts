@@ -240,6 +240,88 @@ type SyntheticKeyboardEvent = SyntheticMouseEvent & {
 type SyntheticFocusEvent = SyntheticMouseEvent
 
 // ---------------------------------------------------------------------------
+// Module HTML Contract — declarative props ↔ HTML field mapping
+//
+// Replaces the render-function-based HTML generation with a declarative
+// mapping that treats HTML as the source of truth. Modules declare which
+// tag(s) they produce, which props map to which attributes, and which prop
+// maps to text content. The inverse `fromHtml` lets the importer extract
+// props from an HTML element, enabling lossless round-trip editing.
+// ---------------------------------------------------------------------------
+
+/**
+ * Declarative contract between a module's props and the HTML fields stored
+ * on a unified node (`tag`/`attributes`/`textContent`).
+ *
+ * When a node has a `moduleOverlay`, the publisher and canvas use this
+ * contract to:
+ *   - Derive HTML attributes from props (forward: props → attributes)
+ *   - Derive text content from props (forward: props → textContent)
+ *   - Extract props from an HTML element (inverse: element → props)
+ *
+ * The HTML fields on the node remain the source of truth for publishing.
+ * The overlay + contract provide structured editing UX without discarding
+ * HTML fidelity.
+ */
+export interface ModuleHtmlContract<TProps extends Record<string, unknown> = Record<string, unknown>> {
+  /**
+   * The HTML tag this module produces. Either a static string or a function
+   * that derives the tag from props (e.g. `base.button` emits `a` when
+   * `href` is set, `button` otherwise).
+   *
+   * Omitted for transparent modules (e.g. `base.slot-instance`) and special
+   * modules whose publisher path doesn't emit a standalone wrapper element.
+   */
+  tag?: string | ((props: TProps) => string)
+
+  /**
+   * Maps prop values to HTML attributes. The publisher merges these
+   * attribute key→value pairs onto the node's stored `attributes`.
+   * Module-declared keys take precedence over unknown/preserved attrs.
+   *
+   * Return only the attributes this module "owns" — e.g. `base.button`
+   * returns `{ href, target, rel }` when `href` is set, or
+   * `{ type: 'button', disabled, 'aria-disabled': 'true' }` when not.
+   * The `htmlAttributes` prop (user-authored extra attrs) should also be
+   * spread here.
+   */
+  attributes?: (props: TProps) => Record<string, string>
+
+  /**
+   * Maps a prop to the element's text content. Only for leaf modules
+   * (text, button, link). When the node has element children, the children
+   * are used instead and this function is not called.
+   */
+  textContent?: (props: TProps) => string
+
+  /**
+   * Inverse mapping: given an HTML element, extract the module's props.
+   * Returns `null` if this module does not claim the element.
+   *
+   * Used by the HTML importer to attach a `moduleOverlay` to a DOM-native
+   * node when the element matches this module's `claimSelector`.
+   */
+  fromHtml?: (el: Element) => Partial<TProps> | null
+
+  /**
+   * CSS selector tested via `el.matches()` to determine if this module
+   * claims an HTML element during import. The importer tests modules in
+   * specificity order (most specific first); the first match wins.
+   *
+   * Example: `base.text` claims `h1, h2, h3, h4, h5, h6, p, span, small, strong, em`;
+   * `base.link` claims `a`; `base.image` claims `img`.
+   */
+  claimSelector?: string
+
+  /**
+   * Whether this module can wrap element children (container modules).
+   * When true, the importer recurses into the element's children. When
+   * false/omitted, the element is treated as a leaf (textContent only).
+   */
+  canHaveChildren?: boolean
+}
+
+// ---------------------------------------------------------------------------
 // Module Definition — the canonical contract every module must satisfy
 // Source of truth: Contribution #309
 // ---------------------------------------------------------------------------
@@ -415,8 +497,30 @@ export interface ModuleDefinition<
    * - ALL string props MUST be HTML-escaped before interpolation
    * - MUST reject javascript: URLs in href/src/action attributes
    * Decision #309: returns RenderOutput { html, css? } not a plain string
+   *
+   * DEPRECATED: Modules are migrating to the declarative `htmlContract`
+   * model where HTML fields on the node are the source of truth. During
+   * migration, `render` remains the fallback for legacy-format nodes
+   * (those with a non-empty top-level `moduleId` and no `moduleOverlay`).
+   * Once all modules declare `htmlContract` and all stored pages are
+   * migrated, `render` will be removed.
    */
-  render: (props: TProps, renderedChildren: string[]) => RenderOutput
+  render?: (props: TProps, renderedChildren: string[]) => RenderOutput
+
+  /**
+   * Declarative HTML contract — maps props ↔ HTML fields on the node.
+   *
+   * When present, the publisher serializes the node from its HTML fields
+   * (`tag`/`attributes`/`textContent`) using this contract to derive
+   * module-owned attributes and text content from props. The HTML importer
+   * uses `fromHtml` + `claimSelector` to attach a `moduleOverlay` when an
+   * element matches this module.
+   *
+   * Modules that declare `htmlContract` can omit `render` — the publisher
+   * uses the contract instead. During migration, both may coexist:
+   * `htmlContract` serves unified (overlay) nodes; `render` serves legacy nodes.
+   */
+  htmlContract?: ModuleHtmlContract<TProps>
 
   /**
    * Display-only hint for which HTML tag this module emits as its root element
@@ -461,6 +565,10 @@ export interface IModuleRegistry {
   has(id: string): boolean
   list(): AnyModuleDefinition[]
   listByCategory(): Record<string, AnyModuleDefinition[]>
+  /** Find the first module whose htmlContract.claimSelector matches `el`. */
+  getByClaimSelector(el: Element): AnyModuleDefinition | undefined
+  /** Return all modules whose htmlContract.tag (static) matches `tag`. */
+  getByHtmlTag(tag: string): AnyModuleDefinition[]
   /** Subscribe to registration changes — used by the editor canvas. */
   subscribe(listener: () => void): () => void
   /** Monotonic counter that bumps on every register / unregister. */

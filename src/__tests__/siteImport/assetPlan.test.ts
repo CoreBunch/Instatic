@@ -39,8 +39,8 @@ describe('buildAssetPlan — img src normalisation', () => {
 
     // Find the image node
     const nodes = Object.values(normalizedPagePlans[0].nodeFragment.nodes)
-    const imageNode = nodes.find((n) => typeof n.props['src'] === 'string' && (n.props['src'] as string).startsWith('images/'))
-    expect(imageNode?.props['src']).toBe('images/hero.png')
+    const imageNode = nodes.find((n) => typeof n.attributes?.['src'] === 'string' && (n.attributes['src'] as string).startsWith('images/'))
+    expect(imageNode?.attributes?.['src']).toBe('images/hero.png')
     // Asset should be recorded
     expect(assets.some((a) => a.sourcePath === 'images/hero.png')).toBe(true)
   })
@@ -53,8 +53,8 @@ describe('buildAssetPlan — img src normalisation', () => {
     const { normalizedPagePlans, assets } = buildAssetPlan([pagePlan], [], fileMap)
 
     const nodes = Object.values(normalizedPagePlans[0].nodeFragment.nodes)
-    const imageNode = nodes.find((n) => typeof n.props['src'] === 'string')
-    expect(imageNode?.props['src']).toBe('https://cdn.example.com/img.png')
+    const imageNode = nodes.find((n) => typeof n.attributes?.['src'] === 'string')
+    expect(imageNode?.attributes?.['src']).toBe('https://cdn.example.com/img.png')
     expect(assets).toHaveLength(0)
   })
 
@@ -84,7 +84,7 @@ describe('buildAssetPlan — HTML attribute asset normalisation', () => {
     const { normalizedPagePlans, assets } = buildAssetPlan([pagePlan], [], fileMap)
 
     const node = normalizedPagePlans[0].nodeFragment.nodes[normalizedPagePlans[0].nodeFragment.rootIds[0]!]!
-    expect(node.props['htmlAttributes']).toEqual({
+    expect(node.attributes).toEqual({
       'data-bg-src': 'assets/images/shape/heroShape1_1.png',
     })
     expect(assets.some((a) => a.sourcePath === 'assets/images/shape/heroShape1_1.png')).toBe(true)
@@ -100,7 +100,7 @@ describe('buildAssetPlan — HTML attribute asset normalisation', () => {
     const { normalizedPagePlans, assets } = buildAssetPlan([pagePlan], [], fileMap)
 
     const node = normalizedPagePlans[0].nodeFragment.nodes[normalizedPagePlans[0].nodeFragment.rootIds[0]!]!
-    expect(node.props['htmlAttributes']).toEqual({ 'data-bg-src': 'https://cdn.example.com/bg.png' })
+    expect(node.attributes).toEqual({ 'data-bg-src': 'https://cdn.example.com/bg.png' })
     expect(assets).toHaveLength(0)
   })
 })

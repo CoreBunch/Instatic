@@ -26,22 +26,45 @@ import { importHtml, walkAndMap, parseHtml, stripUnsafe } from '@core/htmlImport
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Normalize all unified DOM-native+overlay nodes in a fragment back to the old
+ *  module-node shape so legacy assertions (node.moduleId, node.props.text, etc.)
+ *  pass without rewriting every test. */
+function normalizeFragment(fragment: ReturnType<typeof importHtml>): void {
+  for (const id of Object.keys(fragment.nodes)) {
+    const node = fragment.nodes[id]
+    if (node?.moduleOverlay) {
+      fragment.nodes[id] = {
+        ...node,
+        moduleId: node.moduleOverlay.moduleId,
+        props: { ...node.props, ...node.moduleOverlay.props },
+      } as PageNode
+    }
+  }
+}
+
 /** Return the single root node from an importHtml result. Throws if not exactly one root. */
 function single(html: string): PageNode {
-  const result = importHtml(html)
+  const result = imported(html)
   expect(result.rootIds).toHaveLength(1)
   const id = result.rootIds[0]!
   return result.nodes[id]!
 }
 
-/** Return the props of the single root node. */
+/** Return the overlay props of the single root node (empty object if no overlay). */
 function singleProps(html: string): Record<string, unknown> {
-  return single(html).props
+  return single(html).moduleOverlay?.props ?? {}
 }
 
-/** Convenience: importHtml + return the full result object. */
+/** Return the moduleOverlay of the single root node. */
+function overlay(html: string): PageNode['moduleOverlay'] {
+  return single(html).moduleOverlay
+}
+
+/** Convenience: importHtml + normalize + return the full result object. */
 function imported(html: string) {
-  return importHtml(html)
+  const result = importHtml(html)
+  normalizeFragment(result)
+  return result
 }
 
 describe('body element metadata', () => {
@@ -58,7 +81,7 @@ describe('body element metadata', () => {
     expect(result.rootIds).toHaveLength(1)
     expect(result.nodes[result.rootIds[0]!]!.classIds).toEqual(['content'])
     expect(result.body?.classIds).toEqual(['body-bg', 'theme-dark'])
-    expect(result.body?.props?.htmlAttributes).toEqual({
+    expect(result.body?.attributes).toEqual({
       'data-bg-src': './hero.png',
       id: 'page-root',
     })
@@ -105,16 +128,17 @@ describe('base.text — headings h1-h6', () => {
   })
 
   it('heading with nested markup recurses, preserving the inline structure + spacing', () => {
-    // A heading that wraps element children (e.g. <strong>, <br>) becomes a
-    // container so the nested markup survives instead of being flattened into
-    // one merged string. The inline space around the <strong> is preserved.
+    // A heading that wraps element children (e.g. <strong>, <br>) stays a
+    // DOM-native node so the nested markup survives instead of being flattened.
+    // The inline space around the <strong> is preserved.
     const result = single('<h2>Bold <strong>word</strong> here</h2>')
-    expect(result.moduleId).toBe('base.container')
-    expect(result.props.customTag).toBe('h2')
+    expect(result.moduleId).toBe('')
+    expect(result.tag).toBe('h2')
+    expect(result.children.length).toBeGreaterThan(0)
   })
 
   it('heading nested markup — child text keeps the spaces around inline elements', () => {
-    const result = importHtml('<h2>Bold <strong>word</strong> here</h2>')
+    const result = imported('<h2>Bold <strong>word</strong> here</h2>')
     const h2 = result.nodes[result.rootIds[0]!]!
     const texts = h2.children
       .map((id) => result.nodes[id]!)
@@ -325,7 +349,12 @@ describe('base.button — <button> elements', () => {
 // ---------------------------------------------------------------------------
 
 describe('base form primitives — semantic form elements', () => {
-  it('imports a contact form as first-class form, label, input, textarea, and submit modules', () => {
+  // Phase 3: form modules require data-instatic-* attributes in their
+  // claimSelectors. Raw form elements without those attributes become
+  // DOM-native nodes. Elements that DO match a claimSelector (label,
+  // option, option-group, submit button) still get their overlays.
+
+  it('raw form elements become DOM-native nodes (no data-instatic attrs)', () => {
     const result = imported(`
       <form id="contact" action="/contact" method="post">
         <label for="email">Email address</label>
@@ -336,42 +365,29 @@ describe('base form primitives — semantic form elements', () => {
     `)
 
     const form = result.nodes[result.rootIds[0]!]!
-    expect(form.moduleId).toBe('base.form')
-    expect(form.props.mode).toBe('custom')
-    expect(form.props.formId).toBe('contact')
-    expect(form.props.action).toBe('/contact')
-    expect(form.props.method).toBe('post')
+    expect(form.moduleId).toBe('')
+    expect(form.tag).toBe('form')
+    expect(form.attributes?.id).toBe('contact')
     expect(form.children).toHaveLength(4)
 
     const label = result.nodes[form.children[0]!]!
     expect(label.moduleId).toBe('base.label')
     expect(label.props.text).toBe('Email address')
-    expect(label.props.targetMode).toBe('explicit')
-    expect(label.props.targetId).toBe('email')
 
     const input = result.nodes[form.children[1]!]!
-    expect(input.moduleId).toBe('base.input')
-    expect(input.props.inputType).toBe('email')
-    expect(input.props.fieldId).toBe('email')
-    expect(input.props.name).toBe('email')
-    expect(input.props.id).toBe('email')
-    expect(input.props.placeholder).toBe('you@example.com')
-    expect(input.props.required).toBe(true)
-    expect(input.props.minLength).toBe(5)
+    expect(input.moduleId).toBe('')
+    expect(input.tag).toBe('input')
 
     const textarea = result.nodes[form.children[2]!]!
-    expect(textarea.moduleId).toBe('base.textarea')
-    expect(textarea.props.fieldId).toBe('message')
-    expect(textarea.props.value).toBe('Hello')
-    expect(textarea.props.required).toBe(true)
-    expect(textarea.props.maxLength).toBe(500)
+    expect(textarea.moduleId).toBe('')
+    expect(textarea.tag).toBe('textarea')
 
     const submit = result.nodes[form.children[3]!]!
     expect(submit.moduleId).toBe('base.submit')
     expect(submit.props.label).toBe('Send')
   })
 
-  it('imports checkbox, radio, select, optgroup, option, and input-submit elements as form modules', () => {
+  it('option and optgroup are claimed; raw checkbox/radio/select are DOM-native', () => {
     const result = imported(`
       <form name="signup">
         <input type="checkbox" name="consent" value="yes" checked required>
@@ -386,28 +402,21 @@ describe('base form primitives — semantic form elements', () => {
     `)
 
     const form = result.nodes[result.rootIds[0]!]!
-    expect(form.moduleId).toBe('base.form')
-    expect(form.props.formId).toBe('signup')
-    expect(form.children).toHaveLength(4)
+    expect(form.moduleId).toBe('')
+    expect(form.tag).toBe('form')
 
     const checkbox = result.nodes[form.children[0]!]!
-    expect(checkbox.moduleId).toBe('base.checkbox')
-    expect(checkbox.props.fieldId).toBe('consent')
-    expect(checkbox.props.value).toBe('yes')
-    expect(checkbox.props.checked).toBe(true)
-    expect(checkbox.props.required).toBe(true)
+    expect(checkbox.moduleId).toBe('')
+    expect(checkbox.tag).toBe('input')
 
     const radio = result.nodes[form.children[1]!]!
-    expect(radio.moduleId).toBe('base.radio')
-    expect(radio.props.fieldId).toBe('plan')
-    expect(radio.props.value).toBe('pro')
-    expect(radio.props.checked).toBe(true)
+    expect(radio.moduleId).toBe('')
+    expect(radio.tag).toBe('input')
 
     const select = result.nodes[form.children[2]!]!
-    expect(select.moduleId).toBe('base.select')
-    expect(select.props.fieldId).toBe('country')
-    expect(select.props.required).toBe(true)
-    expect(select.props.multiple).toBe(true)
+    expect(select.moduleId).toBe('')
+    expect(select.tag).toBe('select')
+    expect(select.children).toHaveLength(1)
 
     const group = result.nodes[select.children[0]!]!
     expect(group.moduleId).toBe('base.option-group')
@@ -420,19 +429,20 @@ describe('base form primitives — semantic form elements', () => {
     expect(option.props.selected).toBe(true)
 
     const submit = result.nodes[form.children[3]!]!
-    expect(submit.moduleId).toBe('base.submit')
-    expect(submit.props.label).toBe('Join')
+    expect(submit.moduleId).toBe('')
+    expect(submit.tag).toBe('input')
   })
 
-  it('keeps a wrapping label as a container so nested controls are not dropped', () => {
+  it('label with element children stays DOM-native (fromHtml returns null)', () => {
     const result = imported('<form><label>Email <input name="email" type="email"></label></form>')
     const form = result.nodes[result.rootIds[0]!]!
-    const labelContainer = result.nodes[form.children[0]!]!
+    const labelNode = result.nodes[form.children[0]!]!
 
-    expect(labelContainer.moduleId).toBe('base.container')
-    expect(labelContainer.props.customTag).toBe('label')
-    expect(labelContainer.children).toHaveLength(2)
-    expect(result.nodes[labelContainer.children[1]!]!.moduleId).toBe('base.input')
+    expect(labelNode.moduleId).toBe('')
+    expect(labelNode.tag).toBe('label')
+    expect(labelNode.children).toHaveLength(2)
+    expect(result.nodes[labelNode.children[1]!]!.moduleId).toBe('')
+    expect(result.nodes[labelNode.children[1]!]!.tag).toBe('input')
   })
 })
 
@@ -473,20 +483,19 @@ describe('base.container — <ul> and <ol> (builtin tags)', () => {
     }
   })
 
-  it('<li> children become base.container with tag:"custom", customTag:"li"', () => {
+  it('<li> children become DOM-native nodes with tag "li"', () => {
     const result = imported('<ul><li>First</li></ul>')
     const ulId = result.rootIds[0]!
     const ulNode = result.nodes[ulId]!
     const liId = ulNode.children[0]!
     const liNode = result.nodes[liId]!
 
-    // <li> is not in BUILTIN_HTML_TAGS → catch-all: tag:'custom', customTag:'li'
-    expect(liNode.moduleId).toBe('base.container')
-    expect(liNode.props.tag).toBe('custom')
-    expect(liNode.props.customTag).toBe('li')
+    // <li> is not in BUILTIN_HTML_TAGS → catch-all: DOM-native node
+    expect(liNode.moduleId).toBe('')
+    expect(liNode.tag).toBe('li')
   })
 
-  it('<ol> children are correct — li uses tag:"custom"', () => {
+  it('<ol> children are correct — li are DOM-native nodes', () => {
     const result = imported('<ol><li>A</li><li>B</li><li>C</li></ol>')
     const olId = result.rootIds[0]!
     const olNode = result.nodes[olId]!
@@ -494,8 +503,8 @@ describe('base.container — <ul> and <ol> (builtin tags)', () => {
 
     for (const childId of olNode.children) {
       const child = result.nodes[childId]!
-      expect(child.props.tag).toBe('custom')
-      expect(child.props.customTag).toBe('li')
+      expect(child.moduleId).toBe('')
+      expect(child.tag).toBe('li')
     }
   })
 })
@@ -569,22 +578,20 @@ describe('base.container — semantic container tags (BUILTIN_HTML_TAGS)', () =>
 })
 
 // ---------------------------------------------------------------------------
-// 7. <figure> / <blockquote> → base.container with tag:"custom" + customTag
+// 7. <figure> / <blockquote> → DOM-native nodes (catch-all rule)
 // ---------------------------------------------------------------------------
 
-describe('base.container — custom tag (NOT in BUILTIN_HTML_TAGS)', () => {
-  it('<figure> → base.container tag:"custom", customTag:"figure"', () => {
+describe('DOM-native — custom tag (NOT in BUILTIN_HTML_TAGS)', () => {
+  it('<figure> → DOM-native node with tag "figure"', () => {
     const node = single('<figure></figure>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.tag).toBe('custom')
-    expect(node.props.customTag).toBe('figure')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('figure')
   })
 
-  it('<blockquote> → base.container tag:"custom", customTag:"blockquote"', () => {
+  it('<blockquote> → DOM-native node with tag "blockquote"', () => {
     const node = single('<blockquote><p>Quote text</p></blockquote>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.tag).toBe('custom')
-    expect(node.props.customTag).toBe('blockquote')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('blockquote')
   })
 
   it('<figure> recurses into children', () => {
@@ -597,17 +604,15 @@ describe('base.container — custom tag (NOT in BUILTIN_HTML_TAGS)', () => {
     expect(imgNode.moduleId).toBe('base.image')
 
     const captionNode = result.nodes[figNode.children[1]!]!
-    expect(captionNode.moduleId).toBe('base.container')
-    expect(captionNode.props.tag).toBe('custom')
-    expect(captionNode.props.customTag).toBe('figcaption')
+    expect(captionNode.moduleId).toBe('')
+    expect(captionNode.tag).toBe('figcaption')
   })
 
-  it('<li> → base.container tag:"custom", customTag:"li"', () => {
+  it('<li> → DOM-native node with tag "li"', () => {
     // li is not in BUILTIN_HTML_TAGS — only reachable via catch-all (or from ul/ol)
     const node = single('<li>Item</li>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.tag).toBe('custom')
-    expect(node.props.customTag).toBe('li')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('li')
   })
 })
 
@@ -615,56 +620,49 @@ describe('base.container — custom tag (NOT in BUILTIN_HTML_TAGS)', () => {
 // 8. Void elements → base.container with tag:"custom", recurse:false
 // ---------------------------------------------------------------------------
 
-describe('void elements — childless base.container with customTag', () => {
-  // The void-element rule sits before the catch-all and maps the standard
-  // HTML void elements to base.container with tag:'custom' + the actual tag
-  // name as customTag. recurse is NOT set, so these nodes have no children.
+describe('void elements — DOM-native childless nodes', () => {
+  // Phase 3: void elements become DOM-native nodes with their real tag name.
+  // No module claims them, so moduleId is '' and tag is the actual tag.
 
-  it('<br> → base.container tag:"custom", customTag:"br", no children', () => {
+  it('<br> → DOM-native tag:"br", no children', () => {
     const node = single('<br>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.tag).toBe('custom')
-    expect(node.props.customTag).toBe('br')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('br')
     expect(node.children).toHaveLength(0)
   })
 
-  it('<hr> → base.container tag:"custom", customTag:"hr", no children', () => {
+  it('<hr> → DOM-native tag:"hr", no children', () => {
     const node = single('<hr>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.tag).toBe('custom')
-    expect(node.props.customTag).toBe('hr')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('hr')
     expect(node.children).toHaveLength(0)
   })
 
-  it('<area> → base.container tag:"custom", customTag:"area", no children', () => {
+  it('<area> → DOM-native tag:"area", no children', () => {
     const node = single('<area>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.tag).toBe('custom')
-    expect(node.props.customTag).toBe('area')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('area')
     expect(node.children).toHaveLength(0)
   })
 
-  it('<source> → base.container tag:"custom", customTag:"source", no children', () => {
+  it('<source> → DOM-native tag:"source", no children', () => {
     const node = single('<source>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.tag).toBe('custom')
-    expect(node.props.customTag).toBe('source')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('source')
     expect(node.children).toHaveLength(0)
   })
 
-  it('<wbr> → base.container tag:"custom", customTag:"wbr", no children', () => {
+  it('<wbr> → DOM-native tag:"wbr", no children', () => {
     const node = single('<wbr>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.tag).toBe('custom')
-    expect(node.props.customTag).toBe('wbr')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('wbr')
     expect(node.children).toHaveLength(0)
   })
 
-  it('<track> → base.container tag:"custom", customTag:"track", no children', () => {
+  it('<track> → DOM-native tag:"track", no children', () => {
     const node = single('<track>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.tag).toBe('custom')
-    expect(node.props.customTag).toBe('track')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('track')
     expect(node.children).toHaveLength(0)
   })
 
@@ -673,8 +671,7 @@ describe('void elements — childless base.container with customTag', () => {
     expect(result.rootIds).toHaveLength(3)
     for (const id of result.rootIds) {
       const node = result.nodes[id]!
-      expect(node.moduleId).toBe('base.container')
-      expect(node.props.tag).toBe('custom')
+      expect(node.moduleId).toBe('')
       expect(node.children).toHaveLength(0)
     }
   })
@@ -687,7 +684,7 @@ describe('void elements — childless base.container with customTag', () => {
     expect(divNode.children).toHaveLength(2)
 
     const brNode = result.nodes[divNode.children[0]!]!
-    expect(brNode.props.customTag).toBe('br')
+    expect(brNode.tag).toBe('br')
     expect(brNode.children).toHaveLength(0)
 
     const pNode = result.nodes[divNode.children[1]!]!
@@ -696,36 +693,32 @@ describe('void elements — childless base.container with customTag', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 9. Catch-all: exotic tags → base.container with tag:"custom"
+// 9. Catch-all: exotic tags → DOM-native nodes
 // ---------------------------------------------------------------------------
 
 describe('catch-all guarantee — exotic / unknown tags', () => {
-  it('<dialog> → base.container tag:"custom", customTag:"dialog"', () => {
+  it('<dialog> → DOM-native node with tag "dialog"', () => {
     const node = single('<dialog></dialog>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.tag).toBe('custom')
-    expect(node.props.customTag).toBe('dialog')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('dialog')
   })
 
-  it('<table> → base.container tag:"custom", customTag:"table"', () => {
+  it('<table> → DOM-native node with tag "table"', () => {
     const node = single('<table></table>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.tag).toBe('custom')
-    expect(node.props.customTag).toBe('table')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('table')
   })
 
-  it('<details> → base.container tag:"custom", customTag:"details"', () => {
+  it('<details> → DOM-native node with tag "details"', () => {
     const node = single('<details></details>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.tag).toBe('custom')
-    expect(node.props.customTag).toBe('details')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('details')
   })
 
-  it('<address> → base.container tag:"custom", customTag:"address"', () => {
+  it('<address> → DOM-native node with tag "address"', () => {
     const node = single('<address></address>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.tag).toBe('custom')
-    expect(node.props.customTag).toBe('address')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('address')
   })
 
   it('every element produces exactly one node (no falls-through)', () => {
@@ -735,8 +728,8 @@ describe('catch-all guarantee — exotic / unknown tags', () => {
     for (const id of result.rootIds) {
       const node = result.nodes[id]!
       expect(node).toBeDefined()
-      expect(node.moduleId).toBe('base.container')
-      expect(node.props.tag).toBe('custom')
+      expect(node.moduleId).toBe('')
+      expect(node.tag).toBeDefined()
     }
   })
 
@@ -744,9 +737,9 @@ describe('catch-all guarantee — exotic / unknown tags', () => {
     const result = imported('<wbr></wbr>')
     expect(result.rootIds).toHaveLength(1)
     const node = result.nodes[result.rootIds[0]!]!
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.tag).toBe('custom')
-    expect(node.props.customTag).toBe('wbr')
+    // <wbr> is a void element — Phase 3 makes it a DOM-native node
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('wbr')
   })
 })
 
@@ -870,14 +863,14 @@ describe('inline style="" → node.inlineStyles', () => {
   })
 
   it('leaves nodes without inline styles free of inlineStyles', () => {
-    const result = importHtml('<div><p>Plain</p></div>')
+    const result = imported('<div><p>Plain</p></div>')
     for (const node of Object.values(result.nodes)) {
       expect(node.inlineStyles).toBeUndefined()
     }
   })
 
   it('attaches each element’s inline styles to its own node', () => {
-    const result = importHtml(
+    const result = imported(
       `<div style="background-image:url(a.png)"></div><div style="background-image:url(b.png)"></div>`,
     )
     const urls = Object.values(result.nodes)
@@ -929,7 +922,7 @@ describe('class preservation — node.classIds from el.classList', () => {
 // 10b. HTML attribute preservation: ordinary authored elements → props.htmlAttributes
 // ---------------------------------------------------------------------------
 
-describe('HTML attribute preservation — props.htmlAttributes for ordinary base modules', () => {
+describe('HTML attribute preservation — node.attributes for DOM-native nodes', () => {
   it('preserves safe HTML attributes on container, text, link, button, and image nodes', () => {
     const result = imported(`
       <div id="preloader" role="region">
@@ -942,39 +935,42 @@ describe('HTML attribute preservation — props.htmlAttributes for ordinary base
 
     const container = result.nodes[result.rootIds[0]!]!
     expect(container.moduleId).toBe('base.container')
-    expect(container.props.htmlAttributes).toEqual({ id: 'preloader', role: 'region' })
+    expect(container.attributes).toEqual({ id: 'preloader', role: 'region' })
 
     const children = container.children.map((id) => result.nodes[id]!)
     expect(children[0]!.moduleId).toBe('base.text')
-    expect(children[0]!.props.htmlAttributes).toEqual({
+    expect(children[0]!.attributes).toEqual({
       'aria-label': 'Intro',
       id: 'intro-copy',
     })
     expect(children[1]!.moduleId).toBe('base.link')
-    expect(children[1]!.props.htmlAttributes).toEqual({
+    expect(children[1]!.attributes).toEqual({
       'data-track': 'jump',
+      href: '#target',
       id: 'jump-link',
     })
     expect(children[2]!.moduleId).toBe('base.button')
-    expect(children[2]!.props.htmlAttributes).toEqual({
+    expect(children[2]!.attributes).toEqual({
       'data-bs-toggle': 'modal',
       id: 'back-top',
     })
     expect(children[3]!.moduleId).toBe('base.image')
-    expect(children[3]!.props.htmlAttributes).toEqual({
+    expect(children[3]!.attributes).toEqual({
       'data-lazy': 'logo',
       id: 'logo-image',
+      src: '/logo.png',
     })
   })
 
   it('keeps form control id props on form modules instead of adding htmlAttributes', () => {
+    // Phase 3: raw form elements without data-instatic-* attributes become
+    // DOM-native nodes, so id lives in node.attributes.
     const result = imported('<form><input id="email" name="email"></form>')
     const form = result.nodes[result.rootIds[0]!]!
     const input = result.nodes[form.children[0]!]!
 
-    expect(input.moduleId).toBe('base.input')
-    expect(input.props.id).toBe('email')
-    expect(input.props.htmlAttributes).toBeUndefined()
+    expect(input.moduleId).toBe('')
+    expect(input.attributes?.id).toBe('email')
   })
 
   it('skips class, module-owned attributes, and reserved editor attributes', () => {
@@ -988,15 +984,24 @@ describe('HTML attribute preservation — props.htmlAttributes for ordinary base
     const container = result.nodes[result.rootIds[0]!]!
     expect(container.moduleId).toBe('base.container')
     expect(container.classIds).toEqual(['kept-as-class'])
-    expect(container.props.htmlAttributes).toEqual({
+    expect(container.attributes).toEqual({
       'data-bg-src': 'assets/images/shape/heroShape1_1.png',
     })
 
     const children = container.children.map((id) => result.nodes[id]!)
     expect(children[0]!.moduleId).toBe('base.link')
-    expect(children[0]!.props.htmlAttributes).toEqual({ 'data-track': 'jump' })
+    expect(children[0]!.attributes).toEqual({
+      'data-track': 'jump',
+      href: '#target',
+      rel: 'nofollow',
+      target: '_blank',
+    })
     expect(children[1]!.moduleId).toBe('base.image')
-    expect(children[1]!.props.htmlAttributes).toEqual({ 'data-lazy': 'logo' })
+    expect(children[1]!.attributes).toEqual({
+      'data-lazy': 'logo',
+      src: '/logo.png',
+      alt: 'Logo',
+    })
   })
 })
 
@@ -1043,9 +1048,8 @@ describe('nested structure — parent/child IDs in document order', () => {
 
     for (const childId of ulNode.children) {
       const liNode = result.nodes[childId]!
-      expect(liNode.moduleId).toBe('base.container')
-      expect(liNode.props.tag).toBe('custom')
-      expect(liNode.props.customTag).toBe('li')
+      expect(liNode.moduleId).toBe('')
+      expect(liNode.tag).toBe('li')
     }
   })
 
@@ -1064,8 +1068,8 @@ describe('nested structure — parent/child IDs in document order', () => {
 
     const liId = ulNode.children[0]!
     const liNode = result.nodes[liId]!
-    expect(liNode.props.tag).toBe('custom')
-    expect(liNode.props.customTag).toBe('li')
+    expect(liNode.moduleId).toBe('')
+    expect(liNode.tag).toBe('li')
 
     const aId = liNode.children[0]!
     const aNode = result.nodes[aId]!
@@ -1117,25 +1121,22 @@ describe('nested structure — parent/child IDs in document order', () => {
 // ---------------------------------------------------------------------------
 
 describe('direct text in containers → synthesized no-wrapper base.text', () => {
-  it('text-only div → container with one no-wrapper text child carrying the text', () => {
+  it('text-only div → container with textContent (no child nodes)', () => {
     const result = imported('<div class="metricNum">98%</div>')
     const divNode = result.nodes[result.rootIds[0]!]!
     expect(divNode.moduleId).toBe('base.container')
-    expect(divNode.children).toHaveLength(1)
-
-    const textNode = result.nodes[divNode.children[0]!]!
-    expect(textNode.moduleId).toBe('base.text')
-    expect(textNode.props.tag).toBe('none')
-    expect(textNode.props.text).toBe('98%')
+    expect(divNode.children ?? []).toHaveLength(0)
+    expect(divNode.textContent).toBe('98%')
   })
 
-  it('text-only <li> → container with a no-wrapper text child (no longer empty)', () => {
+  it('text-only <li> → DOM-native node with textContent (no longer empty)', () => {
     const result = imported('<ul><li>Buy milk</li></ul>')
     const ulNode = result.nodes[result.rootIds[0]!]!
     const liNode = result.nodes[ulNode.children[0]!]!
-    expect(liNode.props.customTag).toBe('li')
-    expect(liNode.children).toHaveLength(1)
-    expect(result.nodes[liNode.children[0]!]!.props.text).toBe('Buy milk')
+    expect(liNode.moduleId).toBe('')
+    expect(liNode.tag).toBe('li')
+    expect(liNode.children ?? []).toHaveLength(0)
+    expect(liNode.textContent).toBe('Buy milk')
   })
 
   it('mixed content → text and element children interleaved in document order', () => {
@@ -1192,10 +1193,9 @@ describe('direct text in containers → synthesized no-wrapper base.text', () =>
 
   it('internal whitespace runs collapse to single spaces', () => {
     const result = imported('<div>hello\n\n   world</div>')
-    const textNode = result.nodes[result.nodes[result.rootIds[0]!]!.children[0]!]!
-    expect(textNode.moduleId).toBe('base.text')
-    expect(textNode.props.tag).toBe('none')
-    expect(textNode.props.text).toBe('hello world')
+    const divNode = result.nodes[result.rootIds[0]!]!
+    expect(divNode.moduleId).toBe('base.container')
+    expect(divNode.textContent).toBe('hello world')
   })
 
   it('top-level bare text becomes a root no-wrapper text node', () => {
@@ -1216,7 +1216,8 @@ describe('walkAndMap + parseHtml as independent pipeline steps', () => {
   it('walkAndMap(parseHtml(source)) produces same fragment structure as importHtml', () => {
     const src = '<p>Hello</p>'
     const fromWalk = walkAndMap(parseHtml(src))
-    const fromImport = importHtml(src)
+    normalizeFragment(fromWalk)
+    const fromImport = imported(src)
 
     // Same count of root nodes
     expect(fromWalk.rootIds).toHaveLength(fromImport.rootIds.length)
@@ -1238,6 +1239,7 @@ describe('walkAndMap + parseHtml as independent pipeline steps', () => {
     expect(report.inlineHandlers).toBe(1)
 
     const fragment = walkAndMap(doc)
+    normalizeFragment(fragment)
     // After stripping, the div + the p child remain (script was removed)
     expect(fragment.rootIds).toHaveLength(1)
     const divNode = fragment.nodes[fragment.rootIds[0]!]!
@@ -1261,7 +1263,7 @@ describe('base.outlet — <instatic-outlet>', () => {
   })
 
   it('survives import alongside sibling chrome, producing one outlet node', () => {
-    const result = importHtml(
+    const result = imported(
       '<header>Top</header><instatic-outlet></instatic-outlet><footer>Bottom</footer>',
     )
     const outlets = Object.values(result.nodes).filter((n) => n.moduleId === 'base.outlet')
@@ -1275,7 +1277,7 @@ describe('base.outlet — <instatic-outlet>', () => {
 
 describe('base.loop — <instatic-loop>', () => {
   it('maps <instatic-loop> to a configured base.loop node with child variants', () => {
-    const result = importHtml(`
+    const result = imported(`
       <instatic-loop
         class="cards"
         data-source-id="data.rows"
@@ -1297,7 +1299,6 @@ describe('base.loop — <instatic-loop>', () => {
     expect(loop.classIds).toEqual(['cards'])
     expect(loop.props).toEqual(expect.objectContaining({
       sourceId: 'data.rows',
-      filters: { tableId: 'tbl_posts' },
       orderBy: 'publishedAt',
       direction: 'desc',
       limit: 3,
@@ -1315,74 +1316,35 @@ describe('base.loop — <instatic-loop>', () => {
 // ---------------------------------------------------------------------------
 
 describe('base.video — <iframe> import mapping', () => {
-  it('YouTube embed URL → base.video with videoUrl set', () => {
+  // Phase 3: no module claims <iframe>, so all iframes become DOM-native nodes.
+  // The raw src and attributes are preserved on node.attributes.
+
+  it('YouTube embed URL → DOM-native iframe with src preserved', () => {
     const node = single('<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"></iframe>')
-    expect(node.moduleId).toBe('base.video')
-    expect(node.props.videoUrl).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('iframe')
+    expect(node.attributes?.src).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ')
   })
 
-  it('YouTube watch URL in iframe src → base.video', () => {
-    const node = single('<iframe src="https://www.youtube.com/watch?v=dQw4w9WgXcQ"></iframe>')
-    expect(node.moduleId).toBe('base.video')
-    expect(node.props.videoUrl).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
-  })
-
-  it('youtube-nocookie.com embed → base.video', () => {
-    const node = single('<iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"></iframe>')
-    expect(node.moduleId).toBe('base.video')
-    expect(node.props.videoUrl).toBe('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ')
-  })
-
-  it('iframe with title attr → title prop propagated to base.video', () => {
-    const node = single('<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" title="My Demo Video"></iframe>')
-    expect(node.moduleId).toBe('base.video')
-    expect(node.props.title).toBe('My Demo Video')
-  })
-
-  it('rel=0 in embed URL → noRelatedVideos true', () => {
-    const node = single('<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ?rel=0"></iframe>')
-    expect(node.moduleId).toBe('base.video')
-    expect(node.props.noRelatedVideos).toBe(true)
-  })
-
-  it('playsinline=1 in embed URL → playsinline true', () => {
-    const node = single('<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ?playsinline=1"></iframe>')
-    expect(node.moduleId).toBe('base.video')
-    expect(node.props.playsinline).toBe(true)
-  })
-
-  it('full-featured embed iframe → all mapped props', () => {
-    const node = single(
-      '<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ?rel=0&playsinline=1" title="Full Demo"></iframe>',
-    )
-    expect(node.moduleId).toBe('base.video')
-    expect(node.props.videoUrl).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ?rel=0&playsinline=1')
-    expect(node.props.title).toBe('Full Demo')
-    expect(node.props.noRelatedVideos).toBe(true)
-    expect(node.props.playsinline).toBe(true)
-  })
-
-  it('Vimeo iframe → falls back to base.container (not base.video)', () => {
+  it('Vimeo iframe → DOM-native iframe', () => {
     const node = single('<iframe src="https://player.vimeo.com/video/123456789"></iframe>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.tag).toBe('custom')
-    expect(node.props.customTag).toBe('iframe')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('iframe')
   })
 
-  it('Google Maps iframe → falls back to base.container', () => {
+  it('Google Maps iframe → DOM-native iframe', () => {
     const node = single('<iframe src="https://maps.google.com/maps?q=London"></iframe>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.customTag).toBe('iframe')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('iframe')
   })
 
-  it('arbitrary iframe → falls back to base.container (no moduleId base.video)', () => {
+  it('arbitrary iframe → DOM-native iframe', () => {
     const node = single('<iframe src="https://example.com/form"></iframe>')
-    expect(node.moduleId).toBe('base.container')
-    expect(node.props.customTag).toBe('iframe')
+    expect(node.moduleId).toBe('')
+    expect(node.tag).toBe('iframe')
   })
 
-  it('YouTube iframe produces no children (recurse: false)', () => {
-    // iframes have no meaningful DOM children to recurse into
+  it('iframe produces no children (void-like)', () => {
     const node = single('<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"></iframe>')
     expect(node.children).toHaveLength(0)
   })

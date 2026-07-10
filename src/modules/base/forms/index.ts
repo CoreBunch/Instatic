@@ -6,10 +6,44 @@
  */
 import type { ModuleDefinition } from '@core/module-engine'
 import { registry } from '@core/module-engine'
-import { Type, Value, type Static } from '@core/utils/typeboxHelpers'
+import { Value } from '@core/utils/typeboxHelpers'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
 import { safeUrl } from '@modules/base/utils/escape'
 import { FORM_RUNTIME_JS } from './formRuntimeJs'
+import {
+  FormPropsSchema,
+  LabelPropsSchema,
+  InputPropsSchema,
+  TextareaPropsSchema,
+  SelectPropsSchema,
+  OptionPropsSchema,
+  OptionGroupPropsSchema,
+  ChoicePropsSchema,
+  SubmitPropsSchema,
+  FormMessagePropsSchema,
+  type FormProps,
+  type LabelProps,
+  type InputProps,
+  type TextareaProps,
+  type SelectProps,
+  type OptionProps,
+  type OptionGroupProps,
+  type ChoiceProps,
+  type SubmitProps,
+  type FormMessageProps,
+} from './types'
+import {
+  formHtmlContract,
+  labelHtmlContract,
+  inputHtmlContract,
+  textareaHtmlContract,
+  selectHtmlContract,
+  optionHtmlContract,
+  optionGroupHtmlContract,
+  choiceHtmlContract,
+  submitHtmlContract,
+  formMessageHtmlContract,
+} from './htmlContracts'
 import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
 import { TextStartTIcon } from 'pixel-art-icons/icons/text-start-t'
 import { CheckboxSolidIcon } from 'pixel-art-icons/icons/checkbox-solid'
@@ -28,133 +62,6 @@ import {
   SubmitEditor,
   TextareaEditor,
 } from './FormControls'
-
-const FormPropsSchema = Type.Object({
-  mode: Type.Union([Type.Literal('cms'), Type.Literal('custom')], { default: 'cms' }),
-  formId: Type.String({ default: 'form' }),
-  targetTableId: Type.String({ default: '' }),
-  action: Type.String({ default: '' }),
-  method: Type.Union([Type.Literal('get'), Type.Literal('post'), Type.Literal('dialog')], { default: 'post' }),
-  successBehavior: Type.Union([Type.Literal('message'), Type.Literal('redirect')], { default: 'message' }),
-  successMessage: Type.String({ default: 'Thanks. Your submission was received.' }),
-  redirectUrl: Type.String({ default: '' }),
-  honeypotName: Type.String({ default: 'company' }),
-  minSubmitSeconds: Type.Number({ default: 2 }),
-})
-
-type FormProps = Static<typeof FormPropsSchema>
-
-const LabelPropsSchema = Type.Object({
-  text: Type.String({ default: 'Label' }),
-  targetMode: Type.Union([Type.Literal('auto'), Type.Literal('explicit')], { default: 'auto' }),
-  targetId: Type.String({ default: '' }),
-})
-
-type LabelProps = Static<typeof LabelPropsSchema>
-
-const InputPropsSchema = Type.Object({
-  inputType: Type.Union([
-    Type.Literal('text'),
-    Type.Literal('email'),
-    Type.Literal('password'),
-    Type.Literal('search'),
-    Type.Literal('tel'),
-    Type.Literal('url'),
-    Type.Literal('number'),
-    Type.Literal('date'),
-    Type.Literal('time'),
-    Type.Literal('datetime-local'),
-    Type.Literal('file'),
-    Type.Literal('hidden'),
-  ], { default: 'text' }),
-  fieldId: Type.String({ default: '' }),
-  name: Type.String({ default: '' }),
-  id: Type.String({ default: '' }),
-  placeholder: Type.String({ default: '' }),
-  value: Type.String({ default: '' }),
-  required: Type.Boolean({ default: false }),
-  disabled: Type.Boolean({ default: false }),
-  readOnly: Type.Boolean({ default: false }),
-  autocomplete: Type.String({ default: '' }),
-  min: Type.String({ default: '' }),
-  max: Type.String({ default: '' }),
-  minLength: Type.Number({ default: 0 }),
-  maxLength: Type.Number({ default: 0 }),
-  pattern: Type.String({ default: '' }),
-})
-
-type InputProps = Static<typeof InputPropsSchema>
-
-const TextareaPropsSchema = Type.Object({
-  fieldId: Type.String({ default: '' }),
-  name: Type.String({ default: '' }),
-  id: Type.String({ default: '' }),
-  placeholder: Type.String({ default: '' }),
-  value: Type.String({ default: '' }),
-  required: Type.Boolean({ default: false }),
-  disabled: Type.Boolean({ default: false }),
-  readOnly: Type.Boolean({ default: false }),
-  rows: Type.Number({ default: 4 }),
-  minLength: Type.Number({ default: 0 }),
-  maxLength: Type.Number({ default: 0 }),
-})
-
-type TextareaProps = Static<typeof TextareaPropsSchema>
-
-const SelectPropsSchema = Type.Object({
-  fieldId: Type.String({ default: '' }),
-  name: Type.String({ default: '' }),
-  id: Type.String({ default: '' }),
-  required: Type.Boolean({ default: false }),
-  disabled: Type.Boolean({ default: false }),
-  multiple: Type.Boolean({ default: false }),
-})
-
-type SelectProps = Static<typeof SelectPropsSchema>
-
-const OptionPropsSchema = Type.Object({
-  value: Type.String({ default: '' }),
-  label: Type.String({ default: 'Option' }),
-  selected: Type.Boolean({ default: false }),
-  disabled: Type.Boolean({ default: false }),
-})
-
-type OptionProps = Static<typeof OptionPropsSchema>
-
-const OptionGroupPropsSchema = Type.Object({
-  label: Type.String({ default: 'Group' }),
-  disabled: Type.Boolean({ default: false }),
-})
-
-type OptionGroupProps = Static<typeof OptionGroupPropsSchema>
-
-const ChoicePropsSchema = Type.Object({
-  fieldId: Type.String({ default: '' }),
-  name: Type.String({ default: '' }),
-  id: Type.String({ default: '' }),
-  value: Type.String({ default: 'on' }),
-  checked: Type.Boolean({ default: false }),
-  required: Type.Boolean({ default: false }),
-  disabled: Type.Boolean({ default: false }),
-})
-
-type ChoiceProps = Static<typeof ChoicePropsSchema>
-
-const SubmitPropsSchema = Type.Object({
-  label: Type.String({ default: 'Submit' }),
-  disabled: Type.Boolean({ default: false }),
-  formId: Type.String({ default: '' }),
-})
-
-type SubmitProps = Static<typeof SubmitPropsSchema>
-
-const FormMessagePropsSchema = Type.Object({
-  formId: Type.String({ default: '' }),
-  kind: Type.Union([Type.Literal('status'), Type.Literal('success'), Type.Literal('error')], { default: 'status' }),
-  text: Type.String({ default: '' }),
-})
-
-type FormMessageProps = Static<typeof FormMessagePropsSchema>
 
 export const FormModule: ModuleDefinition<FormProps> = {
   id: 'base.form',
@@ -191,6 +98,7 @@ export const FormModule: ModuleDefinition<FormProps> = {
   defaults: Value.Create(FormPropsSchema),
   component: FormEditor,
   htmlTag: 'form',
+  htmlContract: formHtmlContract,
   render: (props, renderedChildren) => {
     const formId = normalizeIdentifierValue(props.formId, 'form')
     const attrs = [
@@ -235,6 +143,7 @@ export const LabelModule: ModuleDefinition<LabelProps> = {
   defaults: Value.Create(LabelPropsSchema),
   component: LabelEditor,
   htmlTag: 'label',
+  htmlContract: labelHtmlContract,
   render: (props) => {
     if (props.targetMode === 'explicit' && props.targetId) {
       return { html: `<label for="${props.targetId}">${props.text}</label>` }
@@ -257,6 +166,7 @@ export const InputModule: ModuleDefinition<InputProps> = {
   defaults: Value.Create(InputPropsSchema),
   component: InputEditor,
   htmlTag: 'input',
+  htmlContract: inputHtmlContract,
   render: (props) => ({ html: `<input${attrs([
     ['data-instatic-form-control', 'input'],
     ['data-instatic-field-id', props.fieldId],
@@ -300,6 +210,7 @@ export const TextareaModule: ModuleDefinition<TextareaProps> = {
   defaults: Value.Create(TextareaPropsSchema),
   component: TextareaEditor,
   htmlTag: 'textarea',
+  htmlContract: textareaHtmlContract,
   render: (props) => ({ html: `<textarea${attrs([
     ['data-instatic-form-control', 'textarea'],
     ['data-instatic-field-id', props.fieldId],
@@ -333,6 +244,7 @@ export const SelectModule: ModuleDefinition<SelectProps> = {
   defaults: Value.Create(SelectPropsSchema),
   component: SelectEditor,
   htmlTag: 'select',
+  htmlContract: selectHtmlContract,
   render: (props, renderedChildren) => ({
     html: `<select${attrs([
       ['data-instatic-form-control', 'select'],
@@ -362,6 +274,7 @@ export const OptionModule: ModuleDefinition<OptionProps> = {
   defaults: Value.Create(OptionPropsSchema),
   component: OptionEditor,
   htmlTag: 'option',
+  htmlContract: optionHtmlContract,
   render: (props) => ({ html: `<option${attrs([['value', props.value]])}${booleanAttrs(props, ['selected', 'disabled'])}>${props.label}</option>` }),
 }
 
@@ -382,6 +295,7 @@ export const OptionGroupModule: ModuleDefinition<OptionGroupProps> = {
   defaults: Value.Create(OptionGroupPropsSchema),
   component: OptionGroupEditor,
   htmlTag: 'optgroup',
+  htmlContract: optionGroupHtmlContract,
   render: (props, renderedChildren) => ({
     html: `<optgroup${attrs([['label', props.label]])}${booleanAttrs(props, ['disabled'])}>${renderedChildren.join('')}</optgroup>`,
   }),
@@ -419,6 +333,7 @@ export const SubmitModule: ModuleDefinition<SubmitProps> = {
   defaults: Value.Create(SubmitPropsSchema),
   component: SubmitEditor,
   htmlTag: 'button',
+  htmlContract: submitHtmlContract,
   render: (props) => ({
     html: `<button type="submit"${attrs([['form', normalizeIdentifierValue(props.formId)]])}${booleanAttrs(props, ['disabled'])}>${props.label}</button>`,
   }),
@@ -446,6 +361,7 @@ export const FormMessageModule: ModuleDefinition<FormMessageProps> = {
   defaults: Value.Create(FormMessagePropsSchema),
   component: FormMessageEditor,
   htmlTag: 'div',
+  htmlContract: formMessageHtmlContract,
   render: (props) => ({
     html: `<div data-instatic-form-message="${props.kind}" data-instatic-form-id="${normalizeIdentifierValue(props.formId)}" role="${props.kind === 'error' ? 'alert' : 'status'}">${props.text}</div>`,
   }),
@@ -512,6 +428,7 @@ function choiceModule(args: {
     defaults: Value.Create(ChoicePropsSchema),
     component: args.component,
     htmlTag: 'input',
+    htmlContract: choiceHtmlContract(args.inputType),
     render: (props) => ({
       html: `<input type="${args.inputType}"${attrs([
         ['data-instatic-form-control', args.inputType],

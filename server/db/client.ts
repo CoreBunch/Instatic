@@ -32,4 +32,6 @@ export interface DbClient {
   unsafe<Row = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<DbResult<Row>>
   transaction<T>(fn: (tx: DbClient) => Promise<T>): Promise<T>
   readonly dialect: Dialect
+  /** Close the underlying database connection. Only implemented by SQLite. */
+  close?(): void
 }

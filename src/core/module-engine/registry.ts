@@ -37,11 +37,16 @@ class ModuleRegistry implements IModuleRegistry {
    * return empty HTML. Catching this here means a future transparent module
    * whose render is not actually empty fails loudly at boot instead of silently
    * leaking markup into the published page.
+   *
+   * Modules that have migrated to `htmlContract` (no `render`) are skipped —
+   * the transparent contract is enforced via the contract's `attributes()`
+   * returning empty, which the publisher checks at render time.
    */
   private validatePublishBehavior<T extends Record<string, unknown>>(
     definition: ModuleDefinition<T>,
   ): void {
     if (definition.publishBehavior !== 'transparent') return
+    if (!definition.render) return
     const output = definition.render(definition.defaults, [])
     if (output.html !== '' || (output.css ?? '') !== '') {
       throw new Error(
@@ -140,6 +145,36 @@ class ModuleRegistry implements IModuleRegistry {
       const cat = mod.category
       if (!result[cat]) result[cat] = []
       result[cat].push(mod)
+    }
+    return result
+  }
+
+  /**
+   * Find the first module whose `htmlContract.claimSelector` matches the
+   * given DOM element. Modules are tested in registration order; the first
+   * match wins. Used by the HTML importer to attach a `moduleOverlay` to
+   * a DOM-native node when an element matches a module's claim.
+   *
+   * Returns `undefined` when no module claims the element.
+   */
+  getByClaimSelector(el: Element): AnyModuleDefinition | undefined {
+    for (const mod of this._modules.values()) {
+      const selector = mod.htmlContract?.claimSelector
+      if (selector && el.matches(selector)) return mod
+    }
+    return undefined
+  }
+
+  /**
+   * Return all modules whose `htmlContract.tag` (static string) matches the
+   * given HTML tag name. Used as a fallback when no `claimSelector` matches
+   * but the tag name is known.
+   */
+  getByHtmlTag(tag: string): AnyModuleDefinition[] {
+    const result: AnyModuleDefinition[] = []
+    for (const mod of this._modules.values()) {
+      const contractTag = mod.htmlContract?.tag
+      if (typeof contractTag === 'string' && contractTag === tag) result.push(mod)
     }
     return result
   }

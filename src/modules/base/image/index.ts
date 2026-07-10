@@ -26,6 +26,7 @@ import { escapeHtml, safeUrl } from '@modules/base/utils/escape'
 import {
   htmlAttributesAttr,
   htmlAttributesControl,
+  htmlAttributesForReact,
 } from '@modules/base/shared/htmlAttributes'
 import { buildMediaSrcset } from '@modules/base/utils/mediaAttrs'
 import { ImageEditor } from './ImageEditor'
@@ -171,6 +172,32 @@ export const ImageModule: ModuleDefinition<ImageProps> = {
   component: ImageEditor,
 
   htmlTag: 'img',
+
+  htmlContract: {
+    tag: 'img',
+    attributes: (props) => {
+      const attrs = htmlAttributesForReact(props.htmlAttributes)
+      const src = safeUrl(props.src)
+      if (src) attrs['src'] = src
+      const loading = props.loading === 'eager' ? 'eager' : 'lazy'
+      attrs['loading'] = loading
+      attrs['decoding'] = props.decoding === 'sync' ? 'sync' : props.decoding === 'auto' ? 'auto' : 'async'
+      if (props.fetchPriority !== 'auto') attrs['fetchpriority'] = String(props.fetchPriority)
+      return attrs
+    },
+    claimSelector: 'img',
+    canHaveChildren: false,
+    fromHtml: (el) => ({
+      src: el.getAttribute('src') ?? '',
+      loading: (el.getAttribute('loading') === 'eager' ? 'eager' : 'lazy') as ImageStoredProps['loading'],
+      decoding: (['async', 'sync', 'auto'].includes(el.getAttribute('decoding') ?? '')
+        ? el.getAttribute('decoding')
+        : 'async') as ImageStoredProps['decoding'],
+      fetchPriority: (['auto', 'high', 'low'].includes(el.getAttribute('fetchpriority') ?? '')
+        ? el.getAttribute('fetchpriority')
+        : 'auto') as ImageStoredProps['fetchPriority'],
+    }),
+  },
 
   render: (props) => {
     const src = safeUrl(props.src)

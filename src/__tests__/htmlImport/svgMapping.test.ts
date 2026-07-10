@@ -11,8 +11,22 @@ import '@modules/base'
 import type { PageNode } from '@core/page-tree'
 import { importHtml } from '@core/htmlImport'
 
+function normalizeFragment(fragment: ReturnType<typeof importHtml>): void {
+  for (const id of Object.keys(fragment.nodes)) {
+    const node = fragment.nodes[id]
+    if (node?.moduleOverlay) {
+      fragment.nodes[id] = {
+        ...node,
+        moduleId: node.moduleOverlay.moduleId,
+        props: { ...node.props, ...node.moduleOverlay.props },
+      } as PageNode
+    }
+  }
+}
+
 function single(html: string): PageNode {
   const result = importHtml(html)
+  normalizeFragment(result)
   expect(result.rootIds).toHaveLength(1)
   return result.nodes[result.rootIds[0]!]!
 }
@@ -38,6 +52,7 @@ describe('inline <svg> → base.svg', () => {
 
   it('does NOT recurse into <path>/<circle> as separate nodes', () => {
     const result = importHtml('<svg viewBox="0 0 24 24"><path d="M1 1"/></svg>')
+    normalizeFragment(result)
     // Exactly one node (the svg) — children live in the markup string.
     expect(Object.keys(result.nodes)).toHaveLength(1)
   })
@@ -57,6 +72,7 @@ describe('anchor recursion preserves nested icons', () => {
 
   it('the nested <svg> becomes a base.svg child node', () => {
     const result = importHtml('<a href="/"><svg viewBox="0 0 24 24"><path d="M1 1"/></svg> brand</a>')
+    normalizeFragment(result)
     const link = result.nodes[result.rootIds[0]!]!
     const childModules = link.children.map((id) => result.nodes[id]!.moduleId)
     expect(childModules).toContain('base.svg')
@@ -73,6 +89,7 @@ describe('anchor recursion preserves nested icons', () => {
     // The loop-link case: an anchor wrapping inline spans/tokens must carry its
     // content as child nodes only — never ALSO a flattened `text` prop.
     const result = importHtml('<a href="/p"><span>PAGE</span> <span>title</span></a>')
+    normalizeFragment(result)
     const link = result.nodes[result.rootIds[0]!]!
     expect(link.moduleId).toBe('base.link')
     expect(link.children.length).toBeGreaterThan(0)

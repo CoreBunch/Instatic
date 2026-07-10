@@ -15,6 +15,11 @@ import '@modules/base'
 // Test helpers
 // ---------------------------------------------------------------------------
 
+function nodeModuleId(n: unknown): string {
+  const node = n as { moduleId: string; moduleOverlay?: { moduleId: string } | null }
+  return node.moduleOverlay?.moduleId ?? node.moduleId
+}
+
 function freshAgentState() {
   useEditorStore.setState({
     site: null,
@@ -196,7 +201,7 @@ describe('processStreamEvent — toolRequest dispatches to executor', () => {
     expect(result.ok).toBe(true)
 
     const page = useEditorStore.getState().site!.pages[0]
-    expect(Object.values(page.nodes).some((n) => n.moduleId === 'base.text')).toBe(true)
+    expect(Object.values(page.nodes).some((n) => nodeModuleId(n) === 'base.text')).toBe(true)
   })
 
   it('reports an error result when the tool input is invalid', async () => {

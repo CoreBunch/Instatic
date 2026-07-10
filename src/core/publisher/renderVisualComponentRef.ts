@@ -151,5 +151,5 @@ export function renderVisualComponentRef(
   const withStyles = injectNodeInlineStyles(rendered, node.inlineStyles, config.mediaAssets)
   // Annotate the VC root with the ref node id (the page-tree node the agent can
   // target) — outermost element only, exactly one uid per element.
-  return config.annotateNodeIds ? injectNodeId(withStyles, node.id) : withStyles
+  return config.annotateNodeIds && !config.cleanMode ? injectNodeId(withStyles, node.id) : withStyles
 }

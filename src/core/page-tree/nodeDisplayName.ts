@@ -27,13 +27,17 @@ import type { PageNode } from './pageNode'
 import type { VisualComponent } from '@core/visual-components-schema'
 import { resolveHtmlTagBadge, type AnyModuleDefinition } from '@core/module-engine-schema'
 import { classNamesForClassIds, type StyleRuleRegistry } from './classNames'
+import { isDomNode } from './baseNode'
 
 export function getNodeDisplayName(
-  node: Pick<PageNode, 'label' | 'moduleId' | 'props'>,
+  node: Pick<PageNode, 'label' | 'moduleId' | 'props' | 'tag'>,
   definition: AnyModuleDefinition | undefined,
   visualComponents: ReadonlyArray<VisualComponent> | undefined,
 ): string {
   if (node.label && node.label.length > 0) return node.label
+
+  // DOM-native nodes: use the tag as the display name (e.g. "h1", "div")
+  if (isDomNode(node)) return node.tag!
 
   if (node.moduleId === 'base.visual-component-ref') {
     const componentId = (node.props as Record<string, unknown> | undefined)?.componentId
@@ -57,6 +61,8 @@ export function getNodeDisplayName(
 /**
  * Resolve the HTML tag a module renders for the given props.
  *
+ * For DOM-native nodes, returns the node's `tag` directly.
+ *
  * Returns null when the module did not declare an `htmlTag` hint — that's the
  * signal to the layers panel to omit the `<tag>` badge for nodes that don't
  * emit a single deterministic root element (visual-component-ref, slot-outlet,
@@ -64,9 +70,10 @@ export function getNodeDisplayName(
  * stores its tag prop.
  */
 export function getNodeHtmlTag(
-  node: Pick<PageNode, 'props'>,
+  node: Pick<PageNode, 'props' | 'moduleId' | 'tag'>,
   definition: AnyModuleDefinition | undefined,
 ): string | null {
+  if (isDomNode(node)) return node.tag!
   return resolveHtmlTagBadge(definition, (node.props ?? {}) as Record<string, unknown>)
 }
 

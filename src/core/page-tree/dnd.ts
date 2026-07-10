@@ -1,6 +1,7 @@
 import type { PageNode } from './pageNode'
 import type { NodeTree } from './treeSchema'
 import { getParent, isAncestor } from './selectors'
+import { isDomNode, domCanHaveChildren } from './baseNode'
 
 export type PageTreeDropPosition = 'before' | 'after' | 'inside'
 type PageTreeDropZone = PageTreeDropPosition
@@ -55,7 +56,9 @@ export function resolvePageTreeDropTarget({
   if (draggedIds.includes(overId)) return null
 
   if (zone === 'inside') {
-    if (!canHaveChildren(over.moduleId)) return null
+    // DOM-native nodes: check void elements. Module-based nodes: check registry.
+    const canHave = isDomNode(over) ? domCanHaveChildren(over.tag!) : canHaveChildren(over.moduleId)
+    if (!canHave) return null
 
     // Slot instances under a VC ref are structural and locked, but their
     // children are the user-authored slot fill. Allow drops into those slots;

@@ -96,6 +96,17 @@ export const UpdateNodePropsInputSchema = Type.Object({
 })
 export type UpdateNodePropsInput = Static<typeof UpdateNodePropsInputSchema>
 
+export const UpdateDomNodeInputSchema = Type.Object({
+  nodeId: Type.String({ minLength: 1 }),
+  tag: Type.Optional(Type.String({ minLength: 1 })),
+  attributes: Type.Optional(Type.Union([
+    Type.Record(Type.String(), Type.String()),
+    Type.Null(),
+  ])),
+  textContent: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+})
+export type UpdateDomNodeInput = Static<typeof UpdateDomNodeInputSchema>
+
 export const MoveNodeInputSchema = Type.Object({
   nodeId: Type.String({ minLength: 1 }),
   newParentId: Type.String({ minLength: 1 }),

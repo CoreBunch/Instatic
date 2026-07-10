@@ -166,8 +166,11 @@ function applyImportedBodyAttributes(
   const body = fragment.body
   if (!body) return
 
-  if (body.props && Object.keys(body.props).length > 0) {
-    rootNode.props = { ...rootNode.props, ...body.props }
+  if (body.attributes && Object.keys(body.attributes).length > 0) {
+    rootNode.props = {
+      ...rootNode.props,
+      htmlAttributes: { ...((rootNode.props.htmlAttributes as object) ?? {}), ...body.attributes },
+    }
   }
   if (body.classIds?.length) {
     rootNode.classIds = linkImportedClassNames(body.classIds, site.styleRules, byName)

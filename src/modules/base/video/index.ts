@@ -112,6 +112,46 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
     return 'video'
   },
 
+  htmlContract: {
+    tag: (props) => {
+      const url = String(props.videoUrl ?? '')
+      if (parseYoutubeId(url)) {
+        return String(props.poster ?? '') ? 'div' : 'iframe'
+      }
+      return 'video'
+    },
+    attributes: (props) => {
+      const url = String(props.videoUrl ?? '')
+      if (parseYoutubeId(url)) return {}
+      const videoSrc = safeUrl(url)
+      const a: Record<string, string> = {}
+      if (videoSrc) a['src'] = videoSrc
+      const preload = props.preload === 'none' ? 'none' : props.preload === 'auto' ? 'auto' : 'metadata'
+      a['preload'] = preload
+      if (props.playsinline) a['playsinline'] = ''
+      if (props.autoplay) a['autoplay'] = ''
+      if (props.loop) a['loop'] = ''
+      if (props.muted) a['muted'] = ''
+      if (props.controls) a['controls'] = ''
+      return a
+    },
+    claimSelector: 'video',
+    canHaveChildren: false,
+    fromHtml: (el) => ({
+      videoUrl:
+        el.getAttribute('src')
+        ?? el.querySelector('source')?.getAttribute('src')
+        ?? '',
+      poster: el.getAttribute('poster') ?? '',
+      preload: (['none', 'metadata', 'auto'].includes(el.getAttribute('preload') ?? '') ? el.getAttribute('preload') : 'metadata') as VideoStoredProps['preload'],
+      autoplay: el.hasAttribute('autoplay'),
+      loop: el.hasAttribute('loop'),
+      muted: el.hasAttribute('muted'),
+      controls: el.hasAttribute('controls'),
+      playsinline: el.hasAttribute('playsinline'),
+    }),
+  },
+
   render: (props) => {
     const rawUrl = String(props.videoUrl ?? '')
     const youtubeId = parseYoutubeId(rawUrl)

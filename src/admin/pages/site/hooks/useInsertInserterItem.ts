@@ -24,6 +24,7 @@ export function useInsertInserterItem() {
   const insertModule = useInsertModule()
 
   const insertLayoutAction = useEditorStore((s) => s.insertLayout)
+  const insertDomNode = useEditorStore((s) => s.insertDomNode)
 
   const insertVC = (vcId: string, explicitTarget?: InsertLocation): boolean => {
     if (!canvasPage) return false
@@ -35,6 +36,16 @@ export function useInsertInserterItem() {
       resolveInsertLocation(canvasPage, selectedNodeId ?? canvasPage.rootNodeId)
     if (!location) return false
     insertComponentRef(location.parentId, vcId, location.index)
+    return true
+  }
+
+  const insertDom = (tag: string, explicitTarget?: InsertLocation): boolean => {
+    if (!canvasPage) return false
+    const location =
+      explicitTarget ??
+      resolveInsertLocation(canvasPage, selectedNodeId ?? canvasPage.rootNodeId)
+    if (!location) return false
+    insertDomNode(location.parentId, tag, { index: location.index })
     return true
   }
 
@@ -50,7 +61,9 @@ export function useInsertInserterItem() {
           ? Boolean(insertLayoutAction(item.id, target))
           : item.kind === 'component'
             ? insertVC(item.id, target)
-            : false
+            : item.kind === 'domNode'
+              ? insertDom(item.tag, target)
+              : false
 
     if (!inserted) return false
 

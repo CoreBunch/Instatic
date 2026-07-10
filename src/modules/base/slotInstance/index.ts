@@ -54,6 +54,14 @@ export const SlotInstanceModule: ModuleDefinition<SlotInstanceStoredProps> = {
 
   component: SlotInstanceEditor,
 
+  htmlContract: {
+    canHaveChildren: true,
+    // Transparent — the slot-instance never emits a wrapper element.
+    // Its children are rendered at the matching slot-outlet position by
+    // the publisher. No HTML element claims this module.
+    fromHtml: () => null,
+  },
+
   /**
    * Publisher safety-net: the walker reaches slot-instance only if the VC-ref
    * renderer somehow didn't intercept it. Return empty so the slot contributes

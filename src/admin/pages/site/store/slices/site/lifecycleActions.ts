@@ -3,7 +3,9 @@
  */
 
 import { findHomePage, reconcileSiteExplorerInPlace, reindexNodeParents } from '@core/page-tree'
-import type { SiteDocument } from '@core/page-tree'
+import type { SiteDocument, BaseNode } from '@core/page-tree'
+import { registry } from '@core/module-engine'
+import type { IModuleRegistry } from '@core/module-engine'
 import { renderCache } from '@site/canvas/renderCache'
 import {
   clonePackageJson,
@@ -35,6 +37,54 @@ function reindexSiteTreeParents(site: SiteDocument): void {
   for (const page of site.pages) reindexNodeParents(page.nodes)
   for (const vc of site.visualComponents ?? []) reindexNodeParents(vc.tree.nodes)
   for (const layout of site.layouts ?? []) reindexNodeParents(layout.nodes)
+}
+
+/** Migrate legacy module nodes (moduleId !== '', no tag) to the unified format
+ *  (moduleId === '', tag + moduleOverlay). Runs transparently on every load.
+ */
+function migrateOldFormatNodes(
+  site: SiteDocument,
+  moduleRegistry: IModuleRegistry,
+): void {
+  function migrateNode(node: BaseNode): void {
+    if (node.moduleId && !node.tag && !node.moduleOverlay) {
+      const def = moduleRegistry.get(node.moduleId)
+      if (def?.htmlContract) {
+        const contract = def.htmlContract
+        const props = node.props
+        // Derive HTML fields from the contract
+        const tag =
+          typeof contract.tag === 'function' ? contract.tag(props as never) : contract.tag
+        // Only migrate modules that actually represent an HTML element.
+        // Structural/special modules such as base.visual-component-ref and
+        // base.slot-instance have an htmlContract but no tag, and must keep
+        // their moduleId so the VC and publisher systems can recognise them.
+        if (!tag) return
+        const attributes = contract.attributes
+          ? contract.attributes(props as never)
+          : undefined
+        const textContent = contract.textContent
+          ? contract.textContent(props as never)
+          : undefined
+        // Move module data into overlay, clear legacy moduleId
+        node.moduleOverlay = { moduleId: node.moduleId, props: { ...props } }
+        node.moduleId = ''
+        node.tag = tag
+        if (attributes) node.attributes = attributes
+        if (textContent !== undefined) node.textContent = textContent
+      }
+    }
+  }
+  for (const page of site.pages) {
+    for (const node of Object.values(page.nodes)) migrateNode(node)
+  }
+  // Visual Component trees are intentionally module-based: every node inside a
+  // VC is a component instance, not a DOM-native element. Migrating them to the
+  // unified (moduleId='', moduleOverlay) format breaks VC slot-outlet detection
+  // and slot-instance reconciliation, so they are EXCLUDED here.
+  for (const layout of site.layouts ?? []) {
+    for (const node of Object.values(layout.nodes)) migrateNode(node)
+  }
 }
 
 export function createLifecycleActions({
@@ -78,6 +128,8 @@ export function createLifecycleActions({
       reconcileFrameworkClasses(site)
       reconcileSiteExplorerInPlace(site)
       reindexSiteTreeParents(site)
+      // Phase-7 backward-compat: migrate legacy module nodes to unified format.
+      migrateOldFormatNodes(site, registry)
       const packageJson = clonePackageJson(site.packageJson)
       const siteRuntime = cloneSiteRuntimeConfig(site.runtime)
       set((state) => {

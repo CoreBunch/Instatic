@@ -21,6 +21,18 @@ import '@modules/base'
 // Store reset helper
 // ---------------------------------------------------------------------------
 
+/** Effective moduleId — moduleOverlay.moduleId takes precedence over node.moduleId. */
+function nodeModuleId(n: unknown): string {
+  const node = n as { moduleId: string; moduleOverlay?: { moduleId: string } | null }
+  return node.moduleOverlay?.moduleId ?? node.moduleId
+}
+
+/** Effective props — moduleOverlay.props takes precedence over node.props. */
+function nodeProps(n: unknown): Record<string, unknown> {
+  const node = n as { props: Record<string, unknown>; moduleOverlay?: { props: Record<string, unknown> } | null }
+  return node.moduleOverlay?.props ?? node.props
+}
+
 function freshStore() {
   useEditorStore.setState({
     site: null,
@@ -125,9 +137,9 @@ describe('executeAgentTool — insertHtml', () => {
     const nodes = Object.values(page.nodes)
 
     // The section element maps to base.container
-    expect(nodes.some((n) => n.moduleId === 'base.container')).toBe(true)
+    expect(nodes.some((n) => nodeModuleId(n) === 'base.container')).toBe(true)
     // The h1 and p elements map to base.text
-    expect(nodes.some((n) => n.moduleId === 'base.text')).toBe(true)
+    expect(nodes.some((n) => nodeModuleId(n) === 'base.text')).toBe(true)
 
     // The inserted root (section) is wired as a child of the page root
     const root = page.nodes[rootId]
@@ -661,7 +673,7 @@ describe('executeAgentTool — replaceNodeHtml', () => {
     const pageAfter = useEditorStore.getState().site!.pages[0]
     // The container node is preserved as the parent
     expect(pageAfter.nodes[containerId]).toBeDefined()
-    expect(pageAfter.nodes[containerId].moduleId).toBe('base.container')
+    expect(nodeModuleId(pageAfter.nodes[containerId])).toBe('base.container')
 
     // Children are rebuilt from the new HTML (h1 + p = 2 nodes)
     expect(pageAfter.nodes[containerId].children).toHaveLength(2)
@@ -670,7 +682,7 @@ describe('executeAgentTool — replaceNodeHtml', () => {
     const childNodes = pageAfter.nodes[containerId].children.map(
       (id) => pageAfter.nodes[id],
     )
-    expect(childNodes.every((n) => n.moduleId === 'base.text')).toBe(true)
+    expect(childNodes.every((n) => nodeModuleId(n) === 'base.text')).toBe(true)
   })
 
   it('returns failure when nodeId does not exist', async () => {
@@ -901,7 +913,7 @@ describe('executeAgentTool — updateNodeProps', () => {
     const nodeId = expectNodeIds(insertResult)[0]
     await executeAgentTool('site_update_node_props', { nodeId, patch: { text: 'New' } })
     const page = useEditorStore.getState().site!.pages[0]
-    expect(page.nodes[nodeId].props.text).toBe('New')
+    expect(nodeProps(page.nodes[nodeId]).text).toBe('New')
   })
 
   it('rejects updateNodeProps with breakpointId for content props', async () => {
@@ -927,7 +939,7 @@ describe('executeAgentTool — updateNodeProps', () => {
     expectToolError(result)
     expect(result.error ?? '').toContain('breakpointOverridable')
     const page = useEditorStore.getState().site!.pages[0]
-    expect(page.nodes[nodeId].props.text).toBe('Desktop copy')
+    expect(nodeProps(page.nodes[nodeId]).text).toBe('Desktop copy')
     expect(page.nodes[nodeId].breakpointOverrides.mobile).toBeUndefined()
   })
 
@@ -1385,7 +1397,7 @@ describe('executeAgentTool — insertHtml <instatic-outlet>', () => {
     const nodeIds = expectNodeIds(result)
     expect(nodeIds.length).toBe(3)
     const nodes = useEditorStore.getState().site!.pages[0].nodes
-    const moduleIds = nodeIds.map((id) => nodes[id].moduleId)
+    const moduleIds = nodeIds.map((id) => nodeModuleId(nodes[id]))
     expect(moduleIds).toContain('base.outlet')
   })
 })
@@ -1412,8 +1424,8 @@ describe('executeAgentTool — duplicateNode', () => {
     expect(root.children).toEqual([sourceId, clonedNodeId])
     // Cloned props match source.
     const cloned = useEditorStore.getState().site!.pages[0].nodes[clonedNodeId]
-    expect(cloned.props.text).toBe('Original')
-    expect(cloned.props.tag).toBe('h2')
+    expect(nodeProps(cloned).text).toBe('Original')
+    expect(nodeProps(cloned).tag).toBe('h2')
   })
 
   it('produces N clones in arrival order when count is set', async () => {
@@ -1482,7 +1494,7 @@ describe('executeAgentTool — updateNodeProps richtext sanitization (Constraint
       patch: { richtext: '<p>Hello</p><script>alert(1)</script>' },
     })
     const page = useEditorStore.getState().site!.pages[0]
-    const stored = page.nodes[nodeId].props.richtext as string
+    const stored = nodeProps(page.nodes[nodeId]).richtext as string
     expect(stored).not.toContain('<script>')
     expect(stored).not.toContain('alert(1)')
     expect(stored).toContain('Hello')
@@ -1497,7 +1509,7 @@ describe('executeAgentTool — updateNodeProps richtext sanitization (Constraint
       patch: { richtext: '<img src=x onerror=alert(1)>' },
     })
     const page = useEditorStore.getState().site!.pages[0]
-    const stored = page.nodes[nodeId].props.richtext as string
+    const stored = nodeProps(page.nodes[nodeId]).richtext as string
     expect(stored).not.toContain('onerror')
     expect(stored).not.toContain('alert(1)')
   })
@@ -1511,7 +1523,7 @@ describe('executeAgentTool — updateNodeProps richtext sanitization (Constraint
       patch: { bodyHtml: '<a href="javascript:alert(1)">click</a>' },
     })
     const page = useEditorStore.getState().site!.pages[0]
-    const stored = page.nodes[nodeId].props.bodyHtml as string
+    const stored = nodeProps(page.nodes[nodeId]).bodyHtml as string
     expect(stored).not.toContain('javascript:')
   })
 
@@ -1525,7 +1537,7 @@ describe('executeAgentTool — updateNodeProps richtext sanitization (Constraint
       patch: { richtext: safeHtml },
     })
     const page = useEditorStore.getState().site!.pages[0]
-    const stored = page.nodes[nodeId].props.richtext as string
+    const stored = nodeProps(page.nodes[nodeId]).richtext as string
     expect(stored).toContain('Bold')
     expect(stored).toContain('italic')
   })
@@ -1539,7 +1551,7 @@ describe('executeAgentTool — updateNodeProps richtext sanitization (Constraint
       patch: { text: 'Cats & Dogs' },
     })
     const page = useEditorStore.getState().site!.pages[0]
-    expect(page.nodes[nodeId].props.text).toBe('Cats & Dogs')
+    expect(nodeProps(page.nodes[nodeId]).text).toBe('Cats & Dogs')
   })
 })
 
@@ -1569,10 +1581,10 @@ describe('executeAgentTool — insertHtml unsafe HTML stripping (Constraint #299
 
     const page = useEditorStore.getState().site!.pages[0]
     // A base.text node was created from the <p>
-    const addedNodes = Object.values(page.nodes).filter((n) => n.moduleId === 'base.text')
+    const addedNodes = Object.values(page.nodes).filter((n) => nodeModuleId(n) === 'base.text')
     expect(addedNodes.length).toBeGreaterThan(0)
     // No node props contain the script content
-    const withScript = addedNodes.find((n) => String(n.props.text).includes('alert'))
+    const withScript = addedNodes.find((n) => String(nodeProps(n).text).includes('alert'))
     expect(withScript).toBeUndefined()
   })
 })

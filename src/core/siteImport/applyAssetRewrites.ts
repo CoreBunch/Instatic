@@ -105,9 +105,17 @@ function rewriteFragment(
     const newInlineStyles = node.inlineStyles
       ? rewriteStylesBag(node.inlineStyles, rewriteMap)
       : undefined
+    const newAttributes = node.attributes
+      ? rewriteAttributes(node.attributes, rewriteMap)
+      : undefined
+    const newOverlay = node.moduleOverlay
+      ? { ...node.moduleOverlay, props: rewriteProps(node.moduleOverlay.props, rewriteMap) }
+      : undefined
     rewrittenNodes[id] = {
       ...node,
       props: newProps,
+      ...(newAttributes ? { attributes: newAttributes } : {}),
+      ...(newOverlay ? { moduleOverlay: newOverlay } : {}),
       ...(newInlineStyles ? { inlineStyles: newInlineStyles } : {}),
     }
   }
@@ -115,7 +123,7 @@ function rewriteFragment(
   const body = fragment.body
     ? {
         ...fragment.body,
-        props: fragment.body.props ? rewriteProps(fragment.body.props, rewriteMap) : undefined,
+        attributes: fragment.body.attributes ? rewriteAttributes(fragment.body.attributes, rewriteMap) : undefined,
         inlineStyles: fragment.body.inlineStyles
           ? rewriteStringStylesBag(fragment.body.inlineStyles, rewriteMap)
           : undefined,
@@ -154,6 +162,22 @@ function rewriteProps(
     result['htmlAttributes'] = rewrittenAttrs
   }
 
+  return result
+}
+
+/**
+ * Rewrite URL-bearing values inside a DOM-native `node.attributes` bag.
+ * Every string value is checked against the rewrite map; matches are replaced
+ * with the uploaded media URL. Unmatched values are left unchanged.
+ */
+function rewriteAttributes(
+  attrs: Record<string, string>,
+  rewriteMap: Record<string, string>,
+): Record<string, string> {
+  const result: Record<string, string> = { ...attrs }
+  for (const [key, val] of Object.entries(result)) {
+    result[key] = rewriteMap[val] ?? val
+  }
   return result
 }
 

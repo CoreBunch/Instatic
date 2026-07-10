@@ -27,6 +27,7 @@ import {
   ReplaceNodeHtmlInputSchema,
   DeleteNodeInputSchema,
   UpdateNodePropsInputSchema,
+  UpdateDomNodeInputSchema,
   MoveNodeInputSchema,
   RenameNodeInputSchema,
   DuplicateNodeInputSchema,
@@ -149,6 +150,16 @@ const updateNodePropsTool: AiTool = {
   description:
     'Shallow-merge a patch onto an existing node\'s props. `breakpointId` is only valid for props marked `breakpointOverridable` in the schema (rejected for content props like text/tag/src). For per-breakpoint visual variation use site_apply_css with an `@media` query, not this. Richtext props are auto-sanitised.',
   inputSchema: UpdateNodePropsInputSchema,
+}
+
+const updateDomNodeTool: AiTool = {
+  name: 'site_update_dom_node',
+  scope: 'site',
+  execution: 'browser',
+  requiredCapabilities: SITE_CONTENT_CAPS,
+  description:
+    'Update a DOM-native node (a raw HTML element with no module — e.g. <figure>, <blockquote>, <li>, <mark>). Pass `tag` to change the element type, `attributes` to replace all HTML attributes (pass null to clear), or `textContent` to set/clear leaf text (pass null to clear). Use site_update_node_props for module-based nodes instead.',
+  inputSchema: UpdateDomNodeInputSchema,
 }
 
 const moveNodeTool: AiTool = {
@@ -416,6 +427,7 @@ export const siteWriteTools: AiTool[] = [
   replaceNodeHtmlTool,
   deleteNodeTool,
   updateNodePropsTool,
+  updateDomNodeTool,
   moveNodeTool,
   renameNodeTool,
   duplicateNodeTool,

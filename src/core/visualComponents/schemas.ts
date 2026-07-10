@@ -136,7 +136,12 @@ function parseVCNode(raw: unknown): VCNode | null {
   const r = asPlainObject(raw)
   if (!r) return null
   try {
-    return parseBaseNodeFields(r, 'node')
+    const node = parseBaseNodeFields(r, 'node')
+    // VC nodes are component instances and must reference a module. A missing
+    // or empty moduleId is structural damage — drop the node rather than
+    // treating it as a DOM-native node (which is only valid in pages).
+    if (node.moduleId === '') return null
+    return node
   } catch (_err) {
     // Tolerant drop: a node missing a required field is omitted from the VC
     // tree rather than rejecting the whole VisualComponent.

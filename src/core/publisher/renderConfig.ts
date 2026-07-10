@@ -119,6 +119,12 @@ export interface RenderConfig {
    * Used by the agent read-surface (read_document).
    */
   readonly annotateNodeIds?: boolean
+  /**
+   * Clean-output mode. When true, no editor-only annotations (uid, etc.)
+   * are emitted. Overrides `annotateNodeIds`. Used by `serializeNodeHtml`
+   * and the MCP folder-watcher to produce LLM-friendly, id-less HTML.
+   */
+  readonly cleanMode?: boolean
 }
 
 /**

@@ -165,6 +165,9 @@ export function pluginModuleToHostModule(
     ...(definition.propsSchema ? { propsSchema: definition.propsSchema } : {}),
     component: componentFactory(definition),
     htmlTag: typeof definition.htmlTag === 'string' ? definition.htmlTag : undefined,
+    // Pass htmlContract through so plugin modules that declare it are
+    // handled by the publisher's unified serialization path.
+    ...(definition.htmlContract ? { htmlContract: definition.htmlContract } : {}),
     // Dependencies declared by the plugin module flow into the site's
     // package.json on insert. The host's existing
     // `getMissingModuleDependencies`/`getSiteModuleDependencyUsage` paths
@@ -181,23 +184,31 @@ export function pluginModuleToHostModule(
     // publisher (one bad module would otherwise abort the entire publish
     // job). The editor canvas separately wraps the React preview in an
     // ErrorBoundary; this wrap protects the server-side publisher path.
-    render: (props, children) => {
-      try {
-        const out = definition.render(props, children)
-        if (out.js !== undefined && !allowModuleJs) {
-          if (!warnedDroppedJs) {
-            warnedDroppedJs = true
-            console.warn(
-              `[plugin-module:${definition.id}] render() emitted js but plugin "${pluginId}" was not granted "frontend.assets" — module JS dropped.`,
-            )
-          }
-          return { html: out.html, css: out.css }
+    //
+    // If the plugin module has no render() (migrated to htmlContract only),
+    // the adapted module also omits render — the publisher's unified path
+    // handles it via renderDomNode + htmlContract.
+    ...(definition.render
+      ? {
+          render: (props: Record<string, unknown>, children: string[]) => {
+            try {
+              const out = definition.render!(props, children)
+              if (out.js !== undefined && !allowModuleJs) {
+                if (!warnedDroppedJs) {
+                  warnedDroppedJs = true
+                  console.warn(
+                    `[plugin-module:${definition.id}] render() emitted js but plugin "${pluginId}" was not granted "frontend.assets" — module JS dropped.`,
+                  )
+                }
+                return { html: out.html, css: out.css }
+              }
+              return { html: out.html, css: out.css, js: out.js }
+            } catch (err) {
+              console.error(`[plugin-module:${definition.id}] render() threw:`, err)
+              return { html: `<!-- instatic: plugin module "${definition.id}" render failed -->` }
+            }
+          },
         }
-        return { html: out.html, css: out.css, js: out.js }
-      } catch (err) {
-        console.error(`[plugin-module:${definition.id}] render() threw:`, err)
-        return { html: `<!-- instatic: plugin module "${definition.id}" render failed -->` }
-      }
-    },
+      : {}),
   }
 }

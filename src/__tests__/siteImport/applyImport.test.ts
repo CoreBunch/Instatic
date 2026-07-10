@@ -228,8 +228,13 @@ describe('buildImportPlan — structure', () => {
     expect(p.pages[0].nodeFragment.body?.classIds ?? []).toEqual([])
     // The page node still carries the class NAME (linked to an id at commit time).
     const fragment = p.pages[0].nodeFragment
-    const divNode = Object.values(fragment.nodes).find((n) => n.moduleId === 'base.container')
-    expect(divNode?.classIds).toContain('promo')
+    // In hybrid DOM-native nodes, the div may be a DOM-native node with a module overlay
+    const divNode = Object.values(fragment.nodes).find((n) =>
+      n.moduleId === 'base.container' || (n.tag === 'div' && n.moduleOverlay?.moduleId === 'base.container'),
+    )
+    // classIds may be on the node itself or on the module overlay
+    const classIds = divNode?.classIds ?? divNode?.moduleOverlay?.classIds ?? []
+    expect(classIds).toContain('promo')
   })
 
   it('collects image assets', () => {
@@ -417,7 +422,7 @@ describe('buildImportPlan — structure', () => {
 
     const body = p.pages[0].nodeFragment.body
     expect(body?.classIds).toEqual(['body-bg'])
-    expect(body?.props?.htmlAttributes).toEqual({
+    expect(body?.attributes).toEqual({
       'data-theme': 'dark',
       id: 'page-root',
     })
@@ -799,7 +804,8 @@ describe('commitImportPlan — happy path', () => {
     for (const op of addPageOps) {
       const fragment = (op.args as { nodeFragment: ImportFragment }).nodeFragment
       for (const node of Object.values(fragment.nodes)) {
-        const src = node.props['src']
+        // Check both DOM-native attributes and module overlay props
+        const src = node.attributes?.['src'] ?? node.moduleOverlay?.props['src']
         if (typeof src === 'string' && src.startsWith('/uploads/media/')) {
           foundRewrittenSrc = true
         }

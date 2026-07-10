@@ -6,11 +6,26 @@
 
 import { describe, it, expect } from 'bun:test'
 import '@modules/base'
+import type { PageNode } from '@core/page-tree'
 import { importHtml } from '@core/htmlImport'
 import { normalizeImportedText } from '@core/htmlImport'
 
+function normalizeFragment(fragment: ReturnType<typeof importHtml>): void {
+  for (const id of Object.keys(fragment.nodes)) {
+    const node = fragment.nodes[id]
+    if (node?.moduleOverlay) {
+      fragment.nodes[id] = {
+        ...node,
+        moduleId: node.moduleOverlay.moduleId,
+        props: { ...node.props, ...node.moduleOverlay.props },
+      } as PageNode
+    }
+  }
+}
+
 function singleProps(html: string): Record<string, unknown> {
   const r = importHtml(html)
+  normalizeFragment(r)
   return r.nodes[r.rootIds[0]!]!.props
 }
 

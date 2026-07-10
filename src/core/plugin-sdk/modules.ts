@@ -13,6 +13,7 @@
  */
 
 import type { TSchema } from '@core/utils/typeboxHelpers'
+import type { ModuleHtmlContract } from '@core/module-engine'
 
 // ---------------------------------------------------------------------------
 // Property control — a JSON-friendly subset of the host PropertySchema.
@@ -136,12 +137,22 @@ export interface PluginModuleDefinition {
    * Pure render function used by the publisher and (by default) the
    * editor canvas preview. Receives escaped string props; must return
    * clean HTML. NEVER use document/window/React. NEVER call fetch.
+   *
+   * Optional when `htmlContract` is present — the publisher uses the
+   * contract to serialize HTML fields instead.
    */
-  render: PluginRenderFn
+  render?: PluginRenderFn
   /** Optional editor-canvas preview. Falls back to `render` when omitted. */
   preview?: PluginRenderFn
   /** Optional concrete root tag for layer/DOM tree display. */
   htmlTag?: string
+  /**
+   * Declarative HTML contract — maps props ↔ HTML fields on the node.
+   * When present, the publisher serializes the node from its HTML fields
+   * using this contract. Plugin modules with `htmlContract` can omit
+   * `render` — the publisher uses the contract instead.
+   */
+  htmlContract?: ModuleHtmlContract
   /**
    * Package dependencies required when this module is inserted into a page.
    * Auto-written into the site's `package.json` so the Dependencies Panel
@@ -166,6 +177,10 @@ export interface PluginModuleDefinition {
 export interface PluginModulePackApi {
   pluginId: string
 }
+
+// Re-export the host-side HTML contract type so plugin authors can declare
+// htmlContract on their modules without importing from the host core.
+export type { ModuleHtmlContract }
 
 export type PluginModulePackEntrypoint = PluginModuleDefinition[] |
   ((api: PluginModulePackApi) => PluginModuleDefinition[])

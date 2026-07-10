@@ -110,7 +110,9 @@ export function deleteNode(tree: NodeTree<PageNode>, nodeId: string): void {
 // Node props update
 // ---------------------------------------------------------------------------
 
-/** Update one or more props on a node (shallow merge). */
+/** Update one or more props on a node (shallow merge).
+ *  When the node carries a moduleOverlay, props live in the overlay bag.
+ */
 export function updateNodeProps(
   tree: NodeTree<PageNode>,
   nodeId: string,
@@ -118,7 +120,11 @@ export function updateNodeProps(
 ): void {
   const node = tree.nodes[nodeId]
   if (!node) throw new Error(`[PageTree] Node "${nodeId}" not found`)
-  Object.assign(node.props, patch)
+  if (node.moduleOverlay) {
+    Object.assign(node.moduleOverlay.props, patch)
+  } else {
+    Object.assign(node.props, patch)
+  }
 }
 
 /** Set a breakpoint override for one or more props. */

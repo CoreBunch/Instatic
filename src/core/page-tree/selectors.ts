@@ -161,10 +161,11 @@ export function resolveProps(
   breakpointId?: string,
   schema?: PropertySchema,
 ): Record<string, unknown> {
-  if (!breakpointId) return node.props
+  const base = node.moduleOverlay?.props ?? node.props
+  if (!breakpointId) return base
   const override = node.breakpointOverrides[breakpointId]
-  if (!override || Object.keys(override).length === 0) return node.props
-  if (!schema) return { ...node.props, ...override }
+  if (!override || Object.keys(override).length === 0) return base
+  if (!schema) return { ...base, ...override }
   // Filter out keys the module schema does NOT mark breakpointOverridable.
   // Anything else is content; it must not vary per breakpoint at read time
   // even if the persisted data carries a value (legacy / agent / fixture).
@@ -174,8 +175,8 @@ export function resolveProps(
       filtered[key] = value
     }
   }
-  if (Object.keys(filtered).length === 0) return node.props
-  return { ...node.props, ...filtered }
+  if (Object.keys(filtered).length === 0) return base
+  return { ...base, ...filtered }
 }
 
 // ---------------------------------------------------------------------------

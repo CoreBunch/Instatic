@@ -167,15 +167,47 @@ export function instantiateVCAtRef(
     }
 
     // ── Prop binding substitution ──────────────────────────────────────────
+    //
+    // Module-based nodes: bindings patch `node.props[propKey]`.
+    // DOM-native nodes (moduleId === ''): bindings patch the top-level `tag`,
+    // `textContent`, or individual `attributes[key]` fields directly — these
+    // nodes have no `props` bag.
+    const isDomNode = !node.moduleId
     let props = node.props
+    let tag = node.tag
+    let textContent = node.textContent
+    let attributes = node.attributes
     if (node.propBindings && Object.keys(node.propBindings).length > 0) {
-      const patched: Record<string, unknown> = { ...node.props }
-      for (const [propKey, binding] of Object.entries(node.propBindings)) {
-        if (paramValues.has(binding.paramId)) {
-          patched[propKey] = paramValues.get(binding.paramId)
+      if (isDomNode) {
+        for (const [fieldKey, binding] of Object.entries(node.propBindings)) {
+          if (!paramValues.has(binding.paramId)) continue
+          const value = paramValues.get(binding.paramId)
+          if (fieldKey === 'tag' && typeof value === 'string') {
+            tag = value
+          } else if (fieldKey === 'textContent' && typeof value === 'string') {
+            textContent = value
+          } else if (fieldKey === 'attributes' && value && typeof value === 'object' && !Array.isArray(value)) {
+            attributes = value as Record<string, string>
+          } else if (fieldKey.startsWith('attributes.')) {
+            const attrKey = fieldKey.slice('attributes.'.length)
+            if (!attributes) attributes = { ...(node.attributes ?? {}) }
+            if (value === null || value === undefined) {
+              const { [attrKey]: _removed, ...rest } = attributes
+              attributes = rest
+            } else if (typeof value === 'string') {
+              attributes = { ...attributes, [attrKey]: value }
+            }
+          }
         }
+      } else {
+        const patched: Record<string, unknown> = { ...node.props }
+        for (const [propKey, binding] of Object.entries(node.propBindings)) {
+          if (paramValues.has(binding.paramId)) {
+            patched[propKey] = paramValues.get(binding.paramId)
+          }
+        }
+        props = patched
       }
-      props = patched
     }
 
     // ── Recurse into children (flat-map IDs) ──────────────────────────────
@@ -188,7 +220,7 @@ export function instantiateVCAtRef(
     // Register this node with resolved props and effective children.
     nodes[node.id] = {
       ...node,
-      props,
+      ...(isDomNode ? { tag, textContent, attributes } : { props }),
       children: effectiveChildren,
       _owningRefId: refId,
       _fromSlotContent: false,
