@@ -8,6 +8,7 @@ export {
   createCmsDataTable,
   deleteCmsDataRow,
   deleteCmsDataTable,
+  getCmsDataRow,
   listCmsDataAuthors,
   listCmsDataRows,
   listCmsDataTables,

@@ -34,7 +34,6 @@ const DocumentStatus = Type.Union([
 const CreateDocumentInput = Type.Object({
   tableId: Type.String({ minLength: 1 }),
   fields: Type.Optional(FieldsRecord),
-  status: Type.Optional(DocumentStatus),
 })
 
 // ---------------------------------------------------------------------------
@@ -68,7 +67,7 @@ const createDocumentTool: AiTool = {
   execution: 'browser',
   requiredCapabilities: ['content.create'],
   description:
-    "Create a new document in `tableId`. `fields` is a Record<fieldId, value> per the collection's schema; omit to create an empty draft. `status` defaults to 'draft'. Success data includes the new id as `documentId`; the bridge auto-switches the user's editor to the new doc so they can see what you built.",
+    "Create a new draft document in `tableId`. `fields` is a Record<fieldId, value> per the collection's schema; omit to create an empty draft. Success data includes the new id as `documentId`; the bridge auto-switches the user's editor to the new doc so they can see what you built. Use content_set_document_status separately to publish or schedule it.",
   inputSchema: CreateDocumentInput,
 }
 

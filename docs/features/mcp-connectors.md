@@ -12,11 +12,12 @@ The server is implemented with the official `@modelcontextprotocol/sdk`. That pa
 
 - **Instatic is an MCP server.** One Streamable-HTTP endpoint at `/_instatic/mcp` serves both local and remote clients (local is just `localhost`).
 - **Thin adapter over the existing tool engine.** No tool logic is duplicated. MCP is a new *caller* alongside the built-in agent and the plugin host; tool dispatch reuses `executeAiTool`.
-- **Tool surface = the full catalog.** Server-resolved tools (content reads + `site_list_documents` + `site_read_styles`) run headless — no editor needed. Every browser-execution tool the agent panel has (structure edits, insert HTML, apply CSS, assign classes, set design tokens, manage pages, content CRUD, code assets, live-DOM reads) is exposed too, **relayed to an open editor via the live editor bridge** — the single source of truth for page editing. If the connector owner has no editor open, those tools return a clear "open the editor" error; the headless reads still work.
+- **Tool surface = the full catalog.** Server-resolved tools (content reads, `site_list_documents`, `site_read_styles`, and explicit `site_publish`) run headless — no editor needed. Every browser-execution tool the agent panel has is exposed too, **relayed to the matching open Site or Content workspace** — the single source of truth for edits. If that workspace is not open, its tools return a clear, scope-specific error; headless tools still work.
+- **Draft, then publish.** Browser writes save the draft and never leak intermediate work to visitors. A connector with `ai.tools.write` + `pages.publish` calls `site_publish` once after its edit sequence; that server-side tool runs the canonical full-site pipeline and atomically swaps the rebuilt static slot.
 - **Bearer-token auth, one secret per connector.** The token is shown once on creation and stored only as a SHA-256 hash. New tokens expire after 90 days by default; admins can choose a custom TTL or explicitly create a non-expiring token. Revocable.
 - **Capability-gated.** A connector carries a granted capability subset; the same gate the built-in agent uses (`toolAllowedForCapabilities`) filters the toolset. An MCP caller can never invoke a tool the granting capabilities couldn't authorize over HTTP.
 - **Privilege floor.** An admin can only grant capabilities they themselves hold.
-- **Managed from the admin UI:** AI workspace → **MCP** tab.
+- **Managed from the admin UI:** AI workspace → **MCP** tab. Minting a long-lived connector secret is step-up authenticated.
 
 ---
 
@@ -50,9 +51,11 @@ repositories (headless reads) / live editor store (browser tools)
 | `server.ts` | Builds a capability-scoped low-level `Server` (`ListTools` / `CallTool` handlers). Uses the low-level `Server`, not `McpServer.registerTool`, because the latter needs Zod (banned) — this lets the TypeBox `inputSchema` pass through verbatim. |
 | `registry.ts` | Headless reads plus the browser-relayed site/content catalog, deduped by name and filtered by `toolAllowedForCapabilities`. |
 | `tools/documentTools.ts` | `site_list_documents` — pages, templates, and visual components, headless from the DB. |
+| `contentAuthorization.ts` | Re-checks own-vs-any connector grants against the target content row before a browser-relayed mutation. |
 | `tools/styleTools.ts` | `site_read_styles` — the design system as a CSS stylesheet, headless from the DB. |
-| `editorBridge.ts` | Per-user live editor bridge registry + `createEditorBridgeStream`; `getEditorBridgeForUser` routes browser tools to the owner's open editor. |
-| `handlers/editorBridge.ts` | `GET /admin/api/ai/editor-bridge` — the NDJSON stream the editor holds open. |
+| `tools/publishTool.ts` | `site_publish` — explicit server-side full-site publish through `publishDraftSite`, including the Layer-A static slot and MCP audit metadata. |
+| `editorBridge.ts` | Per-user, per-scope live workspace bridge registry + `createEditorBridgeStream`; browser tools route to the owner's matching Site or Content workspace. |
+| `handlers/editorBridge.ts` | `GET /admin/api/ai/editor-bridge?scope=site|content` — the capability-gated NDJSON stream each workspace holds open. |
 | `connectors/` | `types.ts` (server-only record), `token.ts` (generate + SHA-256 hash), `store.ts` (CRUD + `toConnectorView`). |
 | `handlers/connectors.ts` | `/admin/api/ai/mcp/connectors` CRUD, gated by `ai.providers.manage`. |
 
@@ -64,33 +67,37 @@ MCP exposes the **full tool catalog** (deduped by name), capability-filtered. To
 
 **Single source of truth.** All page *editing* goes through the **live editor store** (browser tools, relayed to the open editor). There is deliberately **no** headless DB-mutating page-tree tool: an earlier `read_page_tree`/`mutate_page_tree` pair edited the DB directly, creating a second copy of each page with identical node ids that desynced from the open editor and got clobbered by its autosave (data loss). They were removed — structure editing uses the editor's browser tools, which the existing save-flush persists.
 
-**Headless (server-resolved) — work with no editor open:**
+**Server-resolved — work with no workspace open:**
 - Content reads — list/read collections, entries, data rows, media.
-- `get_context({ entryId? })` — orientation in one call: is a live editor connected (browser tools need it), which "everywhere"/post-type templates wrap pages, site name. Call it first if a browser tool returns "open the editor."
+- `get_context({ entryId? })` — orientation in one call: whether the Site and Content workspace bridges are connected, which "everywhere"/post-type templates wrap pages, and the site name. Call it first if a browser tool returns an "open the workspace" error.
 - `site_list_documents` — editable pages, templates, and visual components with document references, root node ids, template metadata, and summaries. Nothing is marked active/current because headless calls have no editor focus.
 - `site_read_styles({ format?, className?, includeTokens? })` — the design system as a **CSS stylesheet**: design tokens (CSS custom properties) + every class/ambient rule, read straight from the DB via the publisher's emitters. `format:"summary"` returns a compact class catalog (selector + referenced token vars, no declarations) to scan first. Symmetric with reading pages as HTML / writing CSS via `site_apply_css`. Replaces the old snapshot-dependent `list_tokens`.
 - `site_list_breakpoints` — configured viewport ids/labels/widths (the first is the base), so `site_render_snapshot` can target one deliberately. Headless version replaces the snapshot-dependent one.
+- `site_publish` — deploys the **saved** draft. It requires `ai.tools.write` + `pages.publish`, calls `publishDraftSite` with the server's real uploads directory, rebuilds HTML/CSS/runtime assets into the inactive static slot, swaps it atomically, bumps the publish cache version, and records `source: "mcp"` plus the connector id in the publish audit event.
 
-**Browser-relayed (via the live editor bridge) — require an open editor:**
+Site and content writes deliberately do **not** call `site_publish` automatically. A multi-step agent edit can involve many tool calls; publishing each intermediate call would expose incomplete work, bypass the user's explicit deployment intent, and repeatedly run the expensive full-site pipeline. The client should finish and verify its draft changes, then call `site_publish` once when publication was requested.
+
+**Browser-relayed (via the live workspace bridge) — require the matching workspace:**
 - Structure editing — `site_insert_html`, `site_replace_node_html`, `site_delete_node`, `site_move_node`, `site_duplicate_node`, `site_rename_node`, `site_update_node_props`.
 - HTML/CSS authoring (`site_apply_css`, `site_assign_class`, `site_remove_class`), page lifecycle (`site_add_page`, …), design tokens (`site_set_color_tokens`, …), content CRUD (`content_create_document`, `content_set_document_field`, …), code assets, structure reads (`site_read_document`), and live-DOM reads (`site_render_snapshot`, `site_get_node_html`).
-- These have no server implementation — their logic runs in the editor app against the live store. The MCP server relays the call to the connector owner's open editor and awaits the result (see "Live editor bridge"); image attachments (e.g. `site_render_snapshot`'s PNG) come back as MCP image content blocks. No editor connected → a clear error asking the operator to open it.
+- These have no server implementation — their logic runs in the browser against the live workspace state. Site tools route to `SitePage`; content tools route to `ContentPage`. Image attachments (e.g. `site_render_snapshot`'s PNG) come back as MCP image content blocks. No matching workspace connected → a clear error asking the operator to open that workspace.
+- `content_create_document` always creates a draft. Publication is a separate `content_set_document_status` call, which carries the content-publish capability gate; scheduled status uses the same explicit status tool.
 
 ## Live editor bridge
 
-`server/ai/mcp/editorBridge.ts` keeps one bridge per user (newest open editor wins), keyed by `userId` so a connector can only reach **its own owner's** editor.
+`server/ai/mcp/editorBridge.ts` keeps one bridge per `(userId, scope)` (newest connection for that scope wins). A connector can only reach **its own owner's** workspaces, while the owner's Site and Content pages may stay connected at the same time.
 
 ```
-MCP browser-tool call            Editor (open in a browser)
-   │ executeAiTool(browser)         │ useEditorMcpBridge() holds the stream open
+MCP browser-tool call            Matching workspace (open in a browser)
+   │ executeAiTool(browser)         │ useMcpWorkspaceBridge(scope, dispatcher)
    ▼                                ▼
-buildMcpServer → getEditorBridgeForUser(userId)
-   │ bridge.callBrowser(tool, input) → emits toolRequest ─────────────▶ executeAgentTool(tool, input)
-   │                                                                        │ (live store)
+buildMcpServer → getEditorBridgeForUser(userId, tool.scope)
+   │ bridge.callBrowser(tool, input) → emits toolRequest ─────────────▶ Site or Content dispatcher
+   │                                                                        │ (live workspace)
    ◀───────────── POST /admin/api/ai/tool-result ◀── postToolResult ◀───────┘
 ```
 
-- Editor side: `useEditorMcpBridge` (mounted in `SitePage`) opens `GET /admin/api/ai/editor-bridge` (NDJSON, admin-session auth), runs each `toolRequest` through the SAME `executeAgentTool` the agent panel uses, and POSTs the result back. Reconnects with backoff. After a tool that leaves unsaved changes, it **flushes the draft save** (`flushEditorSave`) so a follow-up headless read (`site_read_styles` / content reads) sees the change immediately instead of waiting for the 30 s autosave.
+- Browser side: `useMcpWorkspaceBridge` opens the scope-qualified NDJSON stream, runs each `toolRequest` through the SAME Site or Content dispatcher as the built-in agent panel, and POSTs the result back. It reconnects with backoff. `SitePage` flushes pending draft changes before reporting a successful tool result, so a follow-up headless read or `site_publish` sees the persisted edit immediately; a failed save makes the MCP tool fail instead of silently publishing stale data. `ContentPage` registers its bridge whenever the workspace is mounted, independent of whether the AI panel is visible.
 - Server side: reuses the chat bridge machinery wholesale — `createBridge` issues the `AiBrowserBridge`, `resolveBridgeToolResult` settles it from the existing `/admin/api/ai/tool-result` endpoint.
 
 This is why an open editor (yours, or one the agent opens) unlocks the full editing surface without reimplementing any tool.
@@ -109,7 +116,7 @@ Managed connector UIs that require an OAuth flow are not compatible with the cur
 
 ## Connecting a client
 
-Create a connector in **AI → MCP**, choose its type and capabilities, then copy the token (shown once).
+Create a connector in **AI → MCP**, complete the step-up prompt if the session is not already fresh, choose its type and capabilities, then copy the token (shown once).
 
 **Local (Claude Code / Codex / Cursor):**
 
@@ -142,10 +149,12 @@ The wire-safe `McpConnectorView` (the only HTTP-returned shape) includes `expire
 
 ## Capabilities
 
-Connector management is gated by `ai.providers.manage` (the AI-integrations admin surface). A connector's granted capabilities flow straight into the existing tool gate:
+Connector management is gated by `ai.providers.manage` (the AI-integrations admin surface), and connector creation additionally requires a fresh step-up window because it mints a long-lived delegated secret. A connector's granted capabilities flow straight into the existing tool gate:
 
 - mutating tools require `ai.tools.write`;
 - page-tree edits require any of `site.structure.edit` / `site.content.edit` / `site.style.edit` / `pages.edit`;
+- full-site deployment additionally requires `pages.publish`;
+- own-vs-any content grants are re-checked against the target row before browser relay, so the owner's broader admin cookie cannot widen a restricted connector token;
 - reads require any site/content read grant.
 
 An admin cannot grant a capability they do not hold (enforced in `handlers/connectors.ts`).
@@ -155,6 +164,7 @@ An admin cannot grant a capability they do not hold (enforced in `handlers/conne
 ## Tests
 
 - `server/ai/mcp/connectors/{token,store}.test.ts` — token hashing, expiry, and store CRUD.
-- `server/ai/mcp/{registry,auth,server,transports/http}.test.ts` and `server/ai/mcp/tools/documentTools.test.ts` — capability filtering, headless document listing, bearer auth + 401, full MCP round-trip (list/read/mutate), HTTP handshake.
-- `src/__tests__/ai/mcpConnectorsHandler.test.ts` — CRUD, privilege floor, capability gating.
+- `server/ai/mcp/{registry,auth,server,contentAuthorization,transports/http}.test.ts` and `server/ai/mcp/tools/documentTools.test.ts` — capability filtering, headless document listing, bearer auth + 401, row ownership, scoped workspace relay, full MCP round-trip, HTTP handshake.
+- `server/ai/mcp/publishTool.test.ts` — explicit MCP publish rebuilds and swaps the real static CSS/HTML slot and records connector audit metadata.
+- `src/__tests__/ai/mcpConnectorsHandler.test.ts` — CRUD, step-up, privilege floor, capability gating.
 - `src/__tests__/architecture/ai-mcp-connectors-never-leak.test.ts` — token never serialized.

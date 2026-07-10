@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { createCapabilityTestHarness, type CapabilityTestHarness } from '../helpers/capabilityHarness'
 import { contextMcpTools } from '../../../server/ai/mcp/tools/contextTool'
+import { createEditorBridgeStream } from '../../../server/ai/mcp/editorBridge'
 import type { ToolContext } from '../../../server/ai/runtime/types'
 
 function ctxFor(harness: CapabilityTestHarness): ToolContext {
@@ -30,11 +31,12 @@ describe('get_context', () => {
 
   it('reports editor disconnected when no bridge is open and lists templates', async () => {
     const out = (await getContext.handler!({}, ctxFor(harness))) as {
-      editor: { connected: boolean }
+      editor: { siteConnected: boolean; contentConnected: boolean }
       templates: unknown[]
       site: { name: string } | null
     }
-    expect(out.editor.connected).toBe(false) // no editor bridge registered for this user
+    expect(out.editor.siteConnected).toBe(false)
+    expect(out.editor.contentConnected).toBe(false)
     expect(Array.isArray(out.templates)).toBe(true)
     expect(out.site).not.toBeNull()
   })
@@ -60,5 +62,33 @@ describe('get_context', () => {
     expect(out.templates.some((t) => t.target === 'everywhere')).toBe(true)
     expect(out.page.found).toBe(true)
     expect(out.page.wrappedByTemplates).toContain('Shell')
+  })
+
+  it('reports Site and Content workspace connections independently', async () => {
+    const siteCtrl = new AbortController()
+    const contentCtrl = new AbortController()
+    createEditorBridgeStream('no-editor-user', 'site', siteCtrl.signal)
+
+    try {
+      const siteOnly = (await getContext.handler!({}, ctxFor(harness))) as {
+        editor: { siteConnected: boolean; contentConnected: boolean }
+      }
+      expect(siteOnly.editor).toEqual({
+        siteConnected: true,
+        contentConnected: false,
+      })
+
+      createEditorBridgeStream('no-editor-user', 'content', contentCtrl.signal)
+      const both = (await getContext.handler!({}, ctxFor(harness))) as {
+        editor: { siteConnected: boolean; contentConnected: boolean }
+      }
+      expect(both.editor).toEqual({
+        siteConnected: true,
+        contentConnected: true,
+      })
+    } finally {
+      siteCtrl.abort()
+      contentCtrl.abort()
+    }
   })
 })

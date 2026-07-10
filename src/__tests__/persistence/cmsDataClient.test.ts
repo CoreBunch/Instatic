@@ -4,6 +4,7 @@ import {
   createCmsDataTable,
   updateCmsDataTable,
   deleteCmsDataTable,
+  getCmsDataRow,
   listCmsDataRows,
   createCmsDataRow,
   saveCmsDataRowDraft,
@@ -183,6 +184,25 @@ describe('CMS data client', () => {
       },
     })
     expect(calls[1].init?.body).toBe(JSON.stringify({ cells: { title: 'Hello' } }))
+  })
+
+  it('loads a single row by id and returns null for a missing row', async () => {
+    const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+
+    const row = await getCmsDataRow('row/1', async (input, init) => {
+      calls.push({ input, init })
+      return new Response(JSON.stringify({ row: rowFixture({ id: 'row/1' }) }), { status: 200 })
+    })
+    const missing = await getCmsDataRow('missing', async () =>
+      new Response(JSON.stringify({ error: 'Not found' }), { status: 404 }),
+    )
+
+    expect(row?.id).toBe('row/1')
+    expect(missing).toBeNull()
+    expect(calls[0]).toMatchObject({
+      input: '/admin/api/cms/data/rows/row%2F1',
+      init: { method: 'GET', credentials: 'include' },
+    })
   })
 
   it('lists data authors with session credentials', async () => {

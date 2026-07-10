@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { createCapabilityTestHarness, readJson, type CapabilityTestHarness } from '../helpers/capabilityHarness'
+import {
+  createCapabilityTestHarness,
+  expectStepUpRequired,
+  readJson,
+  type CapabilityTestHarness,
+} from '../helpers/capabilityHarness'
 import type { CreateMcpConnectorResult, McpConnectorList } from '@core/ai'
 
 const BASE = '/admin/api/ai/mcp/connectors'
@@ -37,6 +42,21 @@ describe('MCP connector handler', () => {
     const list = await readJson<McpConnectorList>(listRes)
     expect(list.connectors).toHaveLength(1)
     expect(JSON.stringify(list)).not.toContain(created.token)
+  })
+
+  it('requires fresh step-up authentication before minting a connector token', async () => {
+    await harness.setupOwner()
+    const { cookie } = await harness.createRoleUser({
+      name: 'Connector Manager',
+      slug: 'connector-manager',
+      capabilities: ['ai.providers.manage', 'ai.chat'],
+    })
+    const res = await harness.ai(BASE, {
+      method: 'POST',
+      cookie,
+      json: { label: 'Sensitive token', type: 'local', capabilities: ['ai.chat'] },
+    })
+    await expectStepUpRequired(res)
   })
 
   it('revokes a connector', async () => {

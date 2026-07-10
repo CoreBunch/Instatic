@@ -26,6 +26,7 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 import type { CoreCapability } from '@core/capabilities'
 import type { McpConnectorView, McpConnectorType, CreateMcpConnectorResult } from '@core/ai'
 import { CapabilityPicker, type CapabilityPickerGroup } from '@admin/shared/CapabilityPicker'
+import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import {
   listMcpConnectors,
   createMcpConnector,
@@ -223,6 +224,7 @@ function AddConnectorDialog({
   const typeInputId = useId()
   const ttlInputId = useId()
   const currentUser = useCurrentAdminUser()
+  const { runStepUp } = useStepUp()
 
   // Groups filtered to the capabilities the current admin can actually grant
   // (the unrestricted dev/owner session — currentUser null — sees everything).
@@ -255,15 +257,16 @@ function AddConnectorDialog({
       if ((!currentUser || hasCapability(currentUser, 'ai.chat')) && !capabilities.includes('ai.chat')) {
         capabilities.push('ai.chat')
       }
-      const result = await createMcpConnector({
+      const result = await runStepUp(() => createMcpConnector({
         label,
         type,
         capabilities,
         ttlDays: ttlDays === 'never' ? null : parseInt(ttlDays, 10),
-      })
+      }))
       setCreated(result)
       onCreated()
     } catch (err) {
+      if (err instanceof Error && err.message === StepUpCancelledMessage) return
       setError(err instanceof ApiError ? err.message : getErrorMessage(err, 'Failed to create connector.'))
     } finally {
       setBusy(false)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { readNdjsonStream } from '@site/agent'
+import { readNdjsonStream } from '@admin/ai/ndjsonStream'
 import { Type } from '@core/utils/typeboxHelpers'
 
 const EventSchema = Type.Object({

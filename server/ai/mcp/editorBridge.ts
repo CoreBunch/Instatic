@@ -5,16 +5,18 @@
  * content CRUD, …) have no server implementation — their logic runs in the
  * editor app against the live store. To let an external MCP client use them,
  * the editor holds a long-lived NDJSON stream open while mounted; this module
- * keeps one bridge per user (the newest open editor wins) and lets the MCP
- * server relay a browser tool call to that editor and await its result.
+ * keeps one bridge per user and workspace (the newest open instance wins)
+ * and lets the MCP server relay a browser tool call to the correct workspace
+ * before awaiting its result.
  *
  * Reuses the chat bridge machinery wholesale: `createBridge` issues the
  * `AiBrowserBridge` (whose `callBrowser` resolves when the editor POSTs back to
  * the existing `/admin/api/ai/tool-result`), and `encodeStreamEvent` frames the
  * NDJSON the editor reads with `readNdjsonStream`.
  *
- * Security: the registry is keyed by `userId`, so an MCP connector can only
- * ever reach the open editor of its OWN owner.
+ * Security: the registry is keyed by `userId` + workspace scope, so an MCP
+ * connector can only ever reach the open workspace of its OWN owner and a
+ * content tool can never be dispatched to the site editor (or vice versa).
  */
 import type { AiBrowserBridge, AiStreamEvent } from '../runtime/types'
 import { createBridge, encodeStreamEvent } from '../runtime'
@@ -25,15 +27,20 @@ interface EditorBridgeEntry {
   destroy: () => void
 }
 
-const byUser = new Map<string, EditorBridgeEntry>()
+export type EditorBridgeScope = 'site' | 'content'
 
-/** The live editor bridge for a user, or null when no editor is connected. */
-export function getEditorBridgeForUser(userId: string): AiBrowserBridge | null {
-  return byUser.get(userId)?.bridge ?? null
+const byUser = new Map<string, Map<EditorBridgeScope, EditorBridgeEntry>>()
+
+/** The live workspace bridge for a user and scope, or null when disconnected. */
+export function getEditorBridgeForUser(
+  userId: string,
+  scope: EditorBridgeScope,
+): AiBrowserBridge | null {
+  return byUser.get(userId)?.get(scope)?.bridge ?? null
 }
 
-export function hasEditorBridge(userId: string): boolean {
-  return byUser.has(userId)
+export function hasEditorBridge(userId: string, scope: EditorBridgeScope): boolean {
+  return byUser.get(userId)?.has(scope) ?? false
 }
 
 /**
@@ -41,7 +48,11 @@ export function hasEditorBridge(userId: string): boolean {
  * `toolRequest` events down it whenever an MCP browser tool is invoked for this
  * user; the editor runs the tool and POSTs the result to `/tool-result`.
  */
-export function createEditorBridgeStream(userId: string, signal: AbortSignal): ReadableStream<Uint8Array> {
+export function createEditorBridgeStream(
+  userId: string,
+  scope: EditorBridgeScope,
+  signal: AbortSignal,
+): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     start(controller) {
       let closed = false
@@ -58,11 +69,13 @@ export function createEditorBridgeStream(userId: string, signal: AbortSignal): R
 
       const { bridgeId, bridge, destroy } = createBridge(emit, signal)
 
-      // Newest editor wins: tear down any previous bridge for this user so a
-      // stale tab can't keep receiving tool requests.
-      const previous = byUser.get(userId)
+      // Newest instance of this workspace wins. The user's other workspace
+      // remains connected, so Site and Content may serve MCP simultaneously.
+      const userBridges = byUser.get(userId) ?? new Map<EditorBridgeScope, EditorBridgeEntry>()
+      const previous = userBridges.get(scope)
       if (previous) previous.destroy()
-      byUser.set(userId, { bridgeId, bridge, destroy })
+      userBridges.set(scope, { bridgeId, bridge, destroy })
+      byUser.set(userId, userBridges)
 
       emit({ type: 'bridgeReady', bridgeId })
 
@@ -82,8 +95,13 @@ export function createEditorBridgeStream(userId: string, signal: AbortSignal): R
         closed = true
         clearInterval(heartbeat)
         destroy()
-        // Only evict if we're still the current bridge for this user.
-        if (byUser.get(userId)?.bridgeId === bridgeId) byUser.delete(userId)
+        // Only evict if we're still the current bridge for this scope. Keep
+        // the user's other workspace registered until its own stream closes.
+        const liveUserBridges = byUser.get(userId)
+        if (liveUserBridges?.get(scope)?.bridgeId === bridgeId) {
+          liveUserBridges.delete(scope)
+          if (liveUserBridges.size === 0) byUser.delete(userId)
+        }
         try {
           controller.close()
         } catch {

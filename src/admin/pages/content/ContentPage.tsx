@@ -48,6 +48,7 @@ import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { ContentAgentMount } from './agent/ContentAgentMount'
+import { useContentToolBridge } from './agent/useContentToolBridge'
 import {
   canCreateContent,
   canEditAnyContent,
@@ -132,6 +133,17 @@ export function ContentPage() {
     selectedEntry: workspace.selectedEntry,
     updateSelectedEntry: workspace.updateSelectedEntry,
     setError: workspace.setError,
+  })
+  // Keep content-scope MCP tools connected whenever this workspace is open.
+  // The bridge is independent of whether the docked AI panel is visible.
+  useContentToolBridge({
+    workspace,
+    draft,
+    currentUser: {
+      id: permissionUser.id,
+      displayName: permissionUser.displayName ?? permissionUser.email,
+      email: permissionUser.email,
+    },
   })
   const mediaPicker = useContentMediaPicker({
     featuredMediaId: draft.featuredMediaId,
@@ -514,13 +526,6 @@ export function ContentPage() {
             )}
             agentPanel={(
               <ContentAgentMount
-                workspace={workspace}
-                draft={draft}
-                currentUser={{
-                  id: permissionUser.id,
-                  displayName: permissionUser.displayName ?? permissionUser.email,
-                  email: permissionUser.email,
-                }}
                 isVisible={visibleContentPanel === 'agent'}
               />
             )}

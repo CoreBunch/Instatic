@@ -1,10 +1,8 @@
 /**
  * Agent HTTP layer — the network plumbing behind the agent slice.
  *
- * Two responsibilities:
- *   1. Tool-result bridge: POST the executor's canonical `AiToolOutput` to the
- *      server so the in-flight tool waiter resolves and the driver continues.
- *   2. Conversation bootstrap: discover the per-scope default credential,
+ * Responsibilities:
+ *   1. Conversation bootstrap: discover the per-scope default credential,
  *      create the conversation row lazily on first send, and rehydrate
  *      persisted message records back into the in-memory `AgentMessage` shape.
  *
@@ -14,10 +12,8 @@
 
 import { nanoid } from 'nanoid'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
-import { ApiError, apiRequest, isAbortError } from '@core/http'
-import type { AiToolOutput } from '@core/ai'
+import { apiRequest } from '@core/http'
 import {
-  AGENT_TOOL_RESULT_PATH,
   AI_CONVERSATIONS_PATH,
   AI_DEFAULTS_PATH,
 } from './agentConfig'
@@ -27,46 +23,6 @@ import type {
   AgentToolCall,
   AgentToolScope,
 } from './types'
-
-// ---------------------------------------------------------------------------
-// Tool-result bridge
-// ---------------------------------------------------------------------------
-
-const ToolResultAckSchema = Type.Object({ ok: Type.Boolean() })
-
-export async function postToolResult(
-  bridgeId: string,
-  requestId: string,
-  result: AiToolOutput,
-  signal: AbortSignal | null,
-  snapshot?: unknown,
-): Promise<void> {
-  try {
-    await apiRequest(AGENT_TOOL_RESULT_PATH, {
-      method: 'POST',
-      body: {
-        bridgeId,
-        requestId,
-        result,
-        // Post the fresh post-mutation snapshot so the server can refresh the
-        // turn context — server read tools later in the same turn then see the
-        // state this tool just produced. Omit when no snapshot was captured.
-        ...(snapshot !== undefined ? { snapshot } : {}),
-      },
-      signal,
-      schema: ToolResultAckSchema,
-      fallbackMessage: 'Tool-result POST failed.',
-    })
-  } catch (err) {
-    // 404 means the bridge is gone (stream closed before our POST landed) —
-    // expected race during abort. AbortError is the same lifecycle from the
-    // fetch side. Anything else is a routing/config issue that would silently
-    // leave the agent loop hung server-side.
-    if (isAbortError(err)) return
-    if (err instanceof ApiError && err.status === 404) return
-    console.error('[AgentSlice] Failed to post tool-result:', err)
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Conversation bootstrap

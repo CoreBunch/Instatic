@@ -25,7 +25,7 @@
 import { nanoid } from 'nanoid'
 import { aiToolError, type AiToolOutput } from '@core/ai'
 import { Type } from '@core/utils/typeboxHelpers'
-import { postToolResult } from './agentApi'
+import { postToolResult } from '@admin/ai/toolResultApi'
 import type { EditorStoreSet } from './agentSliceTypes'
 import type {
   AgentBridgeRuntime,

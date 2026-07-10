@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import React, { type ReactNode } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from '@admin/lib/routing'
 import { useLocation } from '@admin/lib/routing'
@@ -17,6 +17,7 @@ import { Toolbar } from '@site/toolbar/Toolbar'
 import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import type { CmsCurrentUser } from '@core/persistence'
 import { CORE_CAPABILITIES } from '@core/capabilities'
+import { executeContentTool } from '@content/agent/contentBridge'
 
 const originalFetch = globalThis.fetch
 
@@ -834,6 +835,117 @@ describe('ContentPage', () => {
     })
     expect((screen.getByRole('combobox', { name: 'Author' }) as HTMLInputElement).value).toBe('Admin Name')
     expect(within(postsRegion).getByText('Admin Name')).toBeDefined()
+  })
+
+  it('commits cross-collection tool navigation before an immediate field write', async () => {
+    const post = makeRow('post_1', 'posts', {
+      title: 'Existing post',
+      slug: 'existing-post',
+    })
+    const article = makeRow('article_2', 'articles', {
+      title: 'Requested article',
+      slug: 'requested-article',
+      seoTitle: '',
+    })
+    const calls: FetchCall[] = []
+    let resolveArticleList: ((response: Response) => void) | null = null
+    const articleList = new Promise<Response>((resolve) => {
+      resolveArticleList = resolve
+    })
+
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ input, init })
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+
+      if (url === '/admin/api/cms/data/tables' && method === 'GET') {
+        return json({
+          tables: [
+            makeTable('posts', 'Posts', 'posts', '/posts', 'Post', 'Posts'),
+            makeTable('articles', 'Articles', 'articles', '/articles', 'Article', 'Articles'),
+          ],
+        })
+      }
+      if (url === '/admin/api/cms/data/tables/posts/rows' && method === 'GET') {
+        return json({ rows: [post] })
+      }
+      if (url === '/admin/api/cms/data/tables/articles/rows' && method === 'GET') {
+        return articleList
+      }
+      if (url === '/admin/api/cms/data/rows/article_2' && method === 'GET') {
+        return json({ row: article })
+      }
+      if (url === '/admin/api/cms/data/rows/article_2' && method === 'PATCH') {
+        const body = JSON.parse(String(init?.body))
+        return json({
+          row: makeRow('article_2', 'articles', body.cells, {
+            updatedAt: '2026-07-10T00:01:00.000Z',
+          }),
+        })
+      }
+      if (url === '/admin/api/cms/data/authors' && method === 'GET') {
+        return json({ authors: [ownerAuthor, editorAuthor, adminAuthor] })
+      }
+      if (url === '/admin/api/cms/media' && method === 'GET') {
+        return json({ assets: [] })
+      }
+
+      const ambient = ambientFetchFallback(url)
+      if (ambient) return ambient
+      return json({ error: `Unhandled ${method} ${url}` }, 500)
+    }
+
+    render(
+      <AdminTestProviders>
+        <ContentPage />
+      </AdminTestProviders>,
+    )
+    expect(await screen.findByRole('region', { name: 'Posts' })).toBeDefined()
+    expect(await screen.findByDisplayValue('Existing post')).toBeDefined()
+
+    let activationResult: Awaited<ReturnType<typeof executeContentTool>> | null = null
+    let writeResult: Awaited<ReturnType<typeof executeContentTool>> | null = null
+    await act(async () => {
+      activationResult = await executeContentTool('content_set_active_document', {
+        documentId: 'article_2',
+      })
+      // No waitFor or render gap: success from activation must make this write
+      // see article_2 as the live selected row immediately.
+      writeResult = await executeContentTool('content_set_document_field', {
+        documentId: 'article_2',
+        fieldId: 'seoTitle',
+        value: 'Remote SEO',
+      })
+    })
+
+    expect(activationResult?.ok).toBe(true)
+    expect(writeResult?.ok).toBe(true)
+    const patchCall = calls.find((call) =>
+      String(call.input) === '/admin/api/cms/data/rows/article_2' &&
+      call.init?.method === 'PATCH'
+    )
+    expect(JSON.parse(String(patchCall?.init?.body))).toMatchObject({
+      cells: { seoTitle: 'Remote SEO' },
+    })
+
+    await waitFor(() => expect(resolveArticleList).not.toBeNull())
+    await act(async () => {
+      resolveArticleList?.(json({ rows: [article] }))
+      await articleList
+    })
+
+    const articlesRegion = await screen.findByRole('region', { name: 'Articles' })
+    expect(within(articlesRegion).queryByText('Existing post')).toBeNull()
+    expect((screen.getByLabelText('SEO title') as HTMLInputElement).value).toBe('Remote SEO')
+
+    // Re-select from the refreshed sidebar. A stale list response must not
+    // rehydrate the pre-write row and erase the just-saved field.
+    fireEvent.click(within(articlesRegion).getByRole('button', { name: /Requested article/i }))
+    expect((screen.getByLabelText('SEO title') as HTMLInputElement).value).toBe('Remote SEO')
+
+    const params = new URLSearchParams(window.location.search)
+    expect(params.get('table')).toBe('articles')
+    expect(params.get('row')).toBe('article_2')
   })
 
   it('uses content-specific rail panels instead of editor-only panels', async () => {

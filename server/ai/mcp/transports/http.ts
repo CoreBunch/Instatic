@@ -19,7 +19,15 @@ import { buildMcpServer } from '../server'
 
 export const MCP_ENDPOINT_PATH = '/_instatic/mcp'
 
-export async function handleMcpHttp(req: Request, db: DbClient): Promise<Response | null> {
+interface McpHttpOptions {
+  uploadsDir?: string
+}
+
+export async function handleMcpHttp(
+  req: Request,
+  db: DbClient,
+  options: McpHttpOptions = {},
+): Promise<Response | null> {
   const url = new URL(req.url)
   if (url.pathname !== MCP_ENDPOINT_PATH) return null
 
@@ -31,6 +39,7 @@ export async function handleMcpHttp(req: Request, db: DbClient): Promise<Respons
     userId: auth.userId,
     connectorId: auth.connectorId,
     capabilities: auth.capabilities,
+    uploadsDir: options.uploadsDir,
   })
 
   const transport = new WebStandardStreamableHTTPServerTransport({

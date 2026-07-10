@@ -79,12 +79,17 @@ server/ai/
     ├── types.ts            — canonical AiStreamEvent / AiMessage / AiTool / ToolContext
     └── transport.ts        — createBridge() / resolveBridgeToolResult()
 
+src/admin/ai/
+├── ndjsonStream.ts         — shared validated NDJSON reader
+├── toolResultApi.ts        — shared browser-tool result POST
+└── useMcpWorkspaceBridge.ts— scope-aware external MCP stream + browser dispatcher
+
 src/admin/pages/site/agent/
 ├── index.ts                — public barrel (all external imports go through here)
 ├── agentSlice.ts           — scope-agnostic Zustand slice factory (createAgentSlice(config))
 ├── agentSliceConfig.site.ts— site-editor config: scope, snapshot builder, executor wiring
-├── agentConfig.ts          — API path constants (AGENT_TOOL_RESULT_PATH, AI_CONVERSATIONS_PATH, …)
-├── agentApi.ts             — HTTP layer: tool-result POST, conversation bootstrap, message rehydration
+├── agentConfig.ts          — conversation/default API path constants
+├── agentApi.ts             — conversation bootstrap and message rehydration
 ├── streamEvents.ts         — NDJSON schema (ServerStreamEventSchema) + processStreamEvent reducer
 ├── siteAgentSnapshot.ts    — `SiteAgentSnapshotSchema` (TypeBox) + derived `SiteAgentSnapshot` type + `buildSiteAgentSnapshot` serializer
 ├── pageContext.ts          — editor adapter: reads active page + store scalars, calls `buildSiteAgentSnapshot`
@@ -98,7 +103,9 @@ src/admin/pages/site/agent/
 src/admin/pages/content/agent/
 ├── agentSliceConfig.content.ts — content-workspace config: scope, snapshot builder, executor wiring
 ├── contentAgentStore.ts        — standalone per-mount Zustand store (AgentSlice only)
-└── contentBridge.ts            — content workspace write-tool executor
+├── contentBridge.ts            — content workspace write-tool executor
+├── contentBridgeHandle.ts      — live ContentPage operation handle
+└── useContentToolBridge.ts     — always-mounted handle + content-scope MCP relay
 
 src/admin/pages/site/panels/AgentPanel/
 ├── AgentPanel.tsx          — main panel; resolves active model's contextWindow from the models endpoint
@@ -464,7 +471,7 @@ When a node-targeting write tool (`site_insert_html`, `site_get_node_html`, `sit
 
 Content-scope tools are registered under `server/ai/tools/content/`. They use the same `POST /admin/api/ai/chat/content` stream and `POST /admin/api/ai/tool-result` bridge as the Site editor, but the snapshot and browser executor are content-specific:
 
-- `ContentAgentMount` builds a `ContentSnapshot` from the live Content workspace: visible `postType` / `page` collections, active collection id, active document fields/schema, and current user identity.
+- `ContentAgentMount` builds a `ContentSnapshot` from the live Content workspace: visible `postType` collections, active collection id, active document fields/schema, and current user identity.
 - `contentAgentStore.ts` mounts a standalone `AgentSlice` instance per `ContentPage` mount. The Content workspace is hook-based rather than a global Zustand store, so the bridge is exposed through `contentBridgeHandle.ts`.
 - Server read tools hit the data, media, and user repositories through `ctx.db`; write tools are browser-bridged so unsaved draft state in `useContentEntryDraft` and the Tiptap body editor stay authoritative.
 
@@ -490,7 +497,7 @@ Content-scope tools are registered under `server/ai/tools/content/`. They use th
 | `content_set_document_field` | Writes one field; body values are markdown and are converted by the browser bridge |
 | `content_set_document_fields` | Batch-writes multiple fields in one save |
 | `content_set_document_author` | Reassigns author; gated by the same author-management capability path as the HTTP UI |
-| `content_set_active_document` | Opens a document in the content editor before editing it visibly |
+| `content_set_active_document` | Loads a document by id across post-type collections and commits the live editor focus before subsequent writes |
 | `content_set_active_collection` | Switches the sidebar focus to a collection |
 
 The content system prompt is markdown-native: it tells the model to exchange body content as standard markdown, to read schemas before writing unfamiliar fields, and to prefer `content_set_document_fields` for whole-post generation. The prompt is built with the same `[staticPrefix, SYSTEM_PROMPT_DYNAMIC_BOUNDARY, dynamicSuffix]` shape as the Site prompt so provider prompt caching works the same way.

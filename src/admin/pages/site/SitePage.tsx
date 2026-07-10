@@ -2,7 +2,13 @@ import { useEffect } from 'react'
 import { AdminCanvasLayout } from '@admin/layouts/AdminCanvasLayout'
 import { consumePendingAction } from '@admin/spotlight/pendingAction'
 import { useEditorStore } from '@site/store/store'
-import { useEditorMcpBridge } from './agent/useEditorMcpBridge'
+import { useMcpWorkspaceBridge } from '@admin/ai/useMcpWorkspaceBridge'
+import { executeAgentTool } from './agent'
+import { flushEditorSave } from './hooks/editorSaveRef'
+
+async function flushPendingSiteDraft(): Promise<void> {
+  if (useEditorStore.getState().hasUnsavedChanges) await flushEditorSave()
+}
 
 /**
  * SitePage — visual editor route.
@@ -13,7 +19,7 @@ import { useEditorMcpBridge } from './agent/useEditorMcpBridge'
  */
 export function SitePage() {
   // Relay MCP browser-tool calls to this open editor while it's mounted.
-  useEditorMcpBridge()
+  useMcpWorkspaceBridge('site', executeAgentTool, flushPendingSiteDraft)
 
   // Consume cross-workspace pending actions queued by the spotlight. Each
   // action waits for the editor store to hydrate (site !== null) — we

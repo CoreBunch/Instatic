@@ -144,7 +144,7 @@ function tryServeAi(req: Request, runtime: ServerRuntime, url: URL, _pathname: s
  */
 function tryServeMcp(req: Request, runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response | null> | null {
   if (pathname !== MCP_ENDPOINT_PATH) return null
-  return handleMcpHttp(req, runtime.db)
+  return handleMcpHttp(req, runtime.db, { uploadsDir: runtime.uploadsDir })
 }
 
 function tryServeCmsApi(req: Request, runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response> | null {

@@ -5,6 +5,7 @@ import { MemoryRouter } from '@admin/lib/routing'
 import { AdminSessionProvider } from '@admin/session'
 import { StepUpProvider } from '@admin/shared/StepUp'
 import { ContentPage } from '@content/ContentPage'
+import { getContentBridgeHandle } from '@content/agent/contentBridgeHandle'
 import { useEditorStore } from '@site/store/store'
 import { makeSite } from '../../fixtures'
 import { CORE_CAPABILITIES } from '@core/capabilities'
@@ -113,10 +114,16 @@ describe('Content collection step-up flow', () => {
 
   it('opens the shared step-up dialog and retries when creating a collection requires step-up', async () => {
     let createAttempts = 0
+    let contentBridgeRequests = 0
     const stepUpRequests: Array<Record<string, unknown>> = []
 
     globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+
+      if (url === '/admin/api/ai/editor-bridge?scope=content') {
+        contentBridgeRequests += 1
+        return json({ error: 'Unauthorized' }, 401)
+      }
 
       if (url === '/admin/api/cms/data/tables' && init?.method !== 'POST') {
         return json({ tables: [postsTable()] })
@@ -176,6 +183,13 @@ describe('Content collection step-up flow', () => {
         <ContentPage />
       </Providers>,
     )
+
+    // The relay and imperative handle belong to ContentPage itself, not the
+    // closed AI panel (the persisted default panel here is "content").
+    await waitFor(() => {
+      expect(contentBridgeRequests).toBe(1)
+    })
+    expect(() => getContentBridgeHandle()).not.toThrow()
 
     fireEvent.click(await screen.findByRole('button', { name: 'New collection' }))
     const dialog = await screen.findByRole('dialog', { name: 'New collection' })

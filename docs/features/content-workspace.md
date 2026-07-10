@@ -14,7 +14,7 @@ The Content workspace renders a three-pane shell — explorer sidebar, document 
 - **Canvas modes:** `write` (bare editor surface) and `live` (entry rendered inside its template with real site styles).
 - **Settings panel:** `ContentSettingsPanel` — entry-specific; hidden when no entry is selected. Reopened via the top-right notch when collapsed.
 - **Hooks:** `useContentWorkspace` (CRUD + selection), `useContentEntryDraft` (field state + save/publish), `useContentMediaPicker` (media modal + featured media).
-- **AI assistant:** `ContentAgentMount` docks the shared Agent Panel in the content rail. It exposes the live workspace through a content-specific bridge so agent writes mutate the open draft/editor state, not stale database rows.
+- **AI assistant:** `ContentAgentMount` docks the shared Agent Panel in the content rail. `useContentToolBridge`, mounted by `ContentPage`, exposes the live workspace to both the built-in agent and scoped MCP relay even when the panel is closed, so writes mutate the open draft/editor state rather than stale database rows.
 
 ---
 
@@ -149,7 +149,7 @@ The mode switch is client-only. The markdown body is the source of truth in both
 
 The Content workspace has its own `content` chat scope, mounted as the `agent` panel in `ContentSidebar` when the current user has `ai.chat`.
 
-`ContentAgentMount` creates a fresh per-page `AgentSlice` store (`contentAgentStore.ts`) and registers a `ContentBridgeHandle` for the mounted `ContentPage`. The handle reads the current collections, selected entry, draft fields, schema, and current user via refs so the agent sees the same state the user sees. Tool writes go through that handle and then through `useContentWorkspace` / `useContentEntryDraft`, which keeps unsaved body/title/SEO/media changes and sidebar selection in sync.
+`ContentAgentMount` creates a fresh per-page `AgentSlice` store (`contentAgentStore.ts`) for the visible chat panel. Independently, `ContentPage` always mounts `useContentToolBridge`, which registers a `ContentBridgeHandle` and the `content` MCP stream for as long as the workspace is open. The handle reads the current collections, selected entry, draft fields, schema, and current user via refs so either caller sees the same state the user sees. Tool writes go through that handle and then through `useContentWorkspace` / `useContentEntryDraft`, which keeps unsaved body/title/SEO/media changes and sidebar selection in sync. `content_set_active_document` loads an uncached row by id, switches across post-type collections without waiting for the target sidebar list, and commits the workspace and draft focus before it returns so an immediately following write targets the selected document.
 
 The server registers 15 content-scope tools:
 
@@ -159,6 +159,8 @@ The server registers 15 content-scope tools:
 | Browser writes/navigation | `content_create_document`, `content_delete_document`, `content_set_document_status`, `content_set_document_field`, `content_set_document_fields`, `content_set_document_author`, `content_set_active_document`, `content_set_active_collection` |
 
 Body content is exchanged with the model as markdown. The browser bridge converts it to/from the Tiptap document when applying field writes, so the persisted `body` cell remains the same markdown source of truth used by the manual editor.
+
+`content_create_document` always creates a draft. Publishing or scheduling is deliberately a follow-up `content_set_document_status` call so the dedicated `content.publish.own` / `content.publish.any` capability gate cannot be bypassed through creation.
 
 ---
 
@@ -184,7 +186,8 @@ Body content is exchanged with the model as markdown. The browser bridge convert
 - [docs/features/agent.md](agent.md) — shared AI runtime, content-scope tools, and browser bridge
 - Source-of-truth files:
   - `src/admin/pages/content/ContentPage.tsx` — workspace mount point
-  - `src/admin/pages/content/agent/ContentAgentMount.tsx` — content Agent Panel mount and bridge registration
+  - `src/admin/pages/content/agent/ContentAgentMount.tsx` — content Agent Panel mount
+  - `src/admin/pages/content/agent/useContentToolBridge.ts` — always-mounted live handle + scoped MCP bridge registration
   - `src/admin/pages/content/agent/contentBridge.ts` — content agent browser-tool dispatcher
   - `src/admin/pages/content/agent/contentBridgeHandle.ts` — live content workspace bridge handle
   - `src/admin/pages/content/TiptapBodyEditor.tsx` — body editor

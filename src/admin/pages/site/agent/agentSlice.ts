@@ -5,8 +5,9 @@
  * ${scope}`. The Bun server selects the configured provider credential and
  * model, then streams through the provider-agnostic direct-HTTP runtime.
  * The NDJSON wire protocol and its per-event handling live in `streamEvents.ts`;
- * the HTTP plumbing (tool-result POSTs, conversation bootstrap) lives in
- * `agentApi.ts`; the site-specific page snapshot lives in `pageContext.ts`.
+ * conversation bootstrap lives in `agentApi.ts`; shared tool-result POSTs live
+ * in `@admin/ai/toolResultApi`; the site-specific page snapshot lives in
+ * `pageContext.ts`.
  * This module owns only the slice factory: state, actions, and the
  * send/stream-read loop.
  *
@@ -30,7 +31,7 @@ import {
   fetchScopeDefault,
   rehydrateMessages,
 } from './agentApi'
-import { readNdjsonStream } from './ndjsonStream'
+import { readNdjsonStream } from '@admin/ai/ndjsonStream'
 import { processStreamEvent, ServerStreamEventSchema } from './streamEvents'
 import type {
   AgentSlice,

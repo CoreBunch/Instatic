@@ -3,8 +3,9 @@
  * a live mutation against the content workspace via the registered
  * `ContentBridgeHandle`.
  *
- * The chat panel's stream loop calls `executeContentTool(name, input)`
- * when scope === 'content'; the result is POSTed to /admin/api/ai/tool-result.
+ * Both the chat panel and the workspace-scoped MCP relay call
+ * `executeContentTool(name, input)` for content tools; each result is posted
+ * back through the shared tool-result endpoint.
  *
  * Per-tool inputs are re-validated against TypeBox at this boundary —
  * defence in depth. The server advertises matching TypeBox schemas to the
@@ -37,7 +38,6 @@ const StatusUnion = Type.Union([
 const CreateDocumentSchema = Type.Object({
   tableId: Type.String({ minLength: 1 }),
   fields: Type.Optional(FieldsRecord),
-  status: Type.Optional(StatusUnion),
 })
 
 const DeleteDocumentSchema = Type.Object({
@@ -128,7 +128,6 @@ async function handleCreateDocument(
   const documentId = await handle.createDocument({
     tableId: input.tableId,
     fields: input.fields,
-    status: input.status,
   })
   return aiToolOk({ documentId })
 }

@@ -16,7 +16,7 @@
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { CreateMcpConnectorBodySchema } from '@core/ai'
 import { jsonResponse, readValidatedBody, badRequest } from '../../../http'
-import { requireCapability, userHasCapability } from '../../../auth/authz'
+import { requireCapability, requireStepUp, userHasCapability } from '../../../auth/authz'
 import type { DbClient } from '../../../db/client'
 import { createAuditEvent } from '../../../repositories/audit'
 import {
@@ -71,6 +71,13 @@ async function handleCreate(req: Request, db: DbClient): Promise<Response> {
       { status: 403 },
     )
   }
+
+  // Connector tokens are long-lived delegated credentials. Creating one can
+  // grant the same high-impact capabilities as the current admin (including
+  // non-interactive full-site publish), so minting the secret requires the
+  // same fresh authentication window as other sensitive admin operations.
+  const stepUp = await requireStepUp(req, db, userOrResponse)
+  if (stepUp) return stepUp
 
   try {
     const token = generateConnectorToken()

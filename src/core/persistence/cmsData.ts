@@ -164,6 +164,24 @@ export async function listCmsDataRows(
   return body.rows ?? []
 }
 
+export async function getCmsDataRow(
+  rowId: string,
+  fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
+  basePath = '/admin/api/cms',
+): Promise<DataRow | null> {
+  try {
+    const body = await apiRequest(`${basePath}/data/rows/${encodeURIComponent(rowId)}`, {
+      schema: RowEnvelope,
+      fetchImpl,
+      fallbackMessage: 'CMS data row fetch failed',
+    })
+    return body.row ?? null
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null
+    throw err
+  }
+}
+
 export async function createCmsDataRow(
   tableId: string,
   input: CreateDataRowInput,
@@ -453,4 +471,3 @@ export async function getDataMeta(
   })
   return body.meta
 }
-
