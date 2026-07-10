@@ -12,7 +12,7 @@ The server is implemented with the official `@modelcontextprotocol/sdk`. That pa
 
 - **Instatic is an MCP server.** One Streamable-HTTP endpoint at `/_instatic/mcp` serves both local and remote clients (local is just `localhost`).
 - **Thin adapter over the existing tool engine.** No tool logic is duplicated. MCP is a new *caller* alongside the built-in agent and the plugin host; tool dispatch reuses `executeAiTool`.
-- **Tool surface = the full catalog.** Server-resolved tools (content reads + `site_read_styles`) run headless — no editor needed. Every browser-execution tool the agent panel has (structure edits, insert HTML, apply CSS, assign classes, set design tokens, manage pages, content CRUD, code assets, live-DOM reads) is exposed too, **relayed to an open editor via the live editor bridge** — the single source of truth for page editing. If the connector owner has no editor open, those tools return a clear "open the editor" error; the headless reads still work.
+- **Tool surface = the full catalog.** Server-resolved tools (content reads + `site_list_documents` + `site_read_styles`) run headless — no editor needed. Every browser-execution tool the agent panel has (structure edits, insert HTML, apply CSS, assign classes, set design tokens, manage pages, content CRUD, code assets, live-DOM reads) is exposed too, **relayed to an open editor via the live editor bridge** — the single source of truth for page editing. If the connector owner has no editor open, those tools return a clear "open the editor" error; the headless reads still work.
 - **Bearer-token auth, one secret per connector.** The token is shown once on creation and stored only as a SHA-256 hash. New tokens expire after 90 days by default; admins can choose a custom TTL or explicitly create a non-expiring token. Revocable.
 - **Capability-gated.** A connector carries a granted capability subset; the same gate the built-in agent uses (`toolAllowedForCapabilities`) filters the toolset. An MCP caller can never invoke a tool the granting capabilities couldn't authorize over HTTP.
 - **Privilege floor.** An admin can only grant capabilities they themselves hold.
@@ -36,9 +36,9 @@ server/ai/mcp/server.ts               low-level SDK Server; tools filtered by ca
         │
 server/ai/mcp/registry.ts             AiTool registry → MCP tools (TypeBox inputSchema sent verbatim as JSON Schema)
         │
-executeAiTool(...) / treeService      in-process, ctx { db, userId, capabilities }
+executeAiTool(...) / live editor bridge
         ▼
-repositories (data_rows, media) + applyTreeOperation + saveDataRowDraft
+repositories (headless reads) / live editor store (browser tools)
 ```
 
 ### Module layout — `server/ai/mcp/`
@@ -48,14 +48,13 @@ repositories (data_rows, media) + applyTreeOperation + saveDataRowDraft
 | `transports/http.ts` | Mounts the SDK's Web-standard Streamable-HTTP transport; stateless per request (`enableJsonResponse`). |
 | `auth.ts` | Bearer resolution → `{ connectorId, userId, capabilities }`; spec-correct 401 with an RFC 9728 `resource_metadata` pointer. |
 | `server.ts` | Builds a capability-scoped low-level `Server` (`ListTools` / `CallTool` handlers). Uses the low-level `Server`, not `McpServer.registerTool`, because the latter needs Zod (banned) — this lets the TypeBox `inputSchema` pass through verbatim. |
-| `registry.ts` | The exposable toolset = full catalog (content + site + page-tree), deduped by name, filtered by `toolAllowedForCapabilities`. |
+| `registry.ts` | Headless reads plus the browser-relayed site/content catalog, deduped by name and filtered by `toolAllowedForCapabilities`. |
+| `tools/documentTools.ts` | `site_list_documents` — pages, templates, and visual components, headless from the DB. |
 | `tools/styleTools.ts` | `site_read_styles` — the design system as a CSS stylesheet, headless from the DB. |
 | `editorBridge.ts` | Per-user live editor bridge registry + `createEditorBridgeStream`; `getEditorBridgeForUser` routes browser tools to the owner's open editor. |
 | `handlers/editorBridge.ts` | `GET /admin/api/ai/editor-bridge` — the NDJSON stream the editor holds open. |
 | `connectors/` | `types.ts` (server-only record), `token.ts` (generate + SHA-256 hash), `store.ts` (CRUD + `toConnectorView`). |
 | `handlers/connectors.ts` | `/admin/api/ai/mcp/connectors` CRUD, gated by `ai.providers.manage`. |
-
-The headless page-tree path (load → `applyTreeOperation` → persist) lives in `server/ai/content/treeService.ts` and is shared with the plugin RPC `cms.content.tree.mutate` — neither caller duplicates the engine. Gated by `plugin-content-tree-via-engine.test.ts`.
 
 ---
 
@@ -68,6 +67,7 @@ MCP exposes the **full tool catalog** (deduped by name), capability-filtered. To
 **Headless (server-resolved) — work with no editor open:**
 - Content reads — list/read collections, entries, data rows, media.
 - `get_context({ entryId? })` — orientation in one call: is a live editor connected (browser tools need it), which "everywhere"/post-type templates wrap pages, site name. Call it first if a browser tool returns "open the editor."
+- `site_list_documents` — editable pages, templates, and visual components with document references, root node ids, template metadata, and summaries. Nothing is marked active/current because headless calls have no editor focus.
 - `site_read_styles({ format?, className?, includeTokens? })` — the design system as a **CSS stylesheet**: design tokens (CSS custom properties) + every class/ambient rule, read straight from the DB via the publisher's emitters. `format:"summary"` returns a compact class catalog (selector + referenced token vars, no declarations) to scan first. Symmetric with reading pages as HTML / writing CSS via `site_apply_css`. Replaces the old snapshot-dependent `list_tokens`.
 - `site_list_breakpoints` — configured viewport ids/labels/widths (the first is the base), so `site_render_snapshot` can target one deliberately. Headless version replaces the snapshot-dependent one.
 
@@ -155,7 +155,6 @@ An admin cannot grant a capability they do not hold (enforced in `handlers/conne
 ## Tests
 
 - `server/ai/mcp/connectors/{token,store}.test.ts` — token hashing, expiry, and store CRUD.
-- `server/ai/content/treeService.test.ts` — headless load/mutate/persist.
-- `server/ai/mcp/{registry,auth,server,transports/http}.test.ts` — capability filtering, bearer auth + 401, full MCP round-trip (list/read/mutate), HTTP handshake.
+- `server/ai/mcp/{registry,auth,server,transports/http}.test.ts` and `server/ai/mcp/tools/documentTools.test.ts` — capability filtering, headless document listing, bearer auth + 401, full MCP round-trip (list/read/mutate), HTTP handshake.
 - `src/__tests__/ai/mcpConnectorsHandler.test.ts` — CRUD, privilege floor, capability gating.
 - `src/__tests__/architecture/ai-mcp-connectors-never-leak.test.ts` — token never serialized.

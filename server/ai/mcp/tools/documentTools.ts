@@ -18,15 +18,6 @@ import { describeAgentDocuments } from '@core/ai'
 import type { AiTool, ToolContext } from '../../runtime/types'
 import { getDraftSiteDocument } from '../../../repositories/publish'
 
-// A document ref whose id can never match a real document id, so the headless
-// listing marks nothing current — there is no server-side editor focus. Kept
-// non-empty to satisfy AgentDocumentRefSchema's `minLength: 1` if it is ever
-// validated downstream.
-const NO_CURRENT_DOCUMENT: Parameters<typeof describeAgentDocuments>[2] = {
-  type: 'page',
-  id: '__no_current_document__',
-}
-
 export const documentMcpTools: AiTool[] = [
   {
     name: 'site_list_documents',
@@ -41,7 +32,7 @@ export const documentMcpTools: AiTool[] = [
       if (!site) return { ok: false, error: 'No site found.' }
       return {
         currentDocument: null,
-        documents: describeAgentDocuments(site, '', NO_CURRENT_DOCUMENT),
+        documents: describeAgentDocuments(site, null, null),
       }
     },
   },

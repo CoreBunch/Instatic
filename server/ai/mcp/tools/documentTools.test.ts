@@ -50,19 +50,32 @@ describe('mcp site_list_documents (headless)', () => {
 
   it('the MCP registry exposes a server-resolved site_list_documents that does not need a snapshot', async () => {
     const tool = mcpToolsForCapabilities(['site.read']).find((t) => t.name === 'site_list_documents')
-    expect(tool).toBeTruthy()
-    expect(tool!.execution).toBe('server')
+    if (!tool?.handler) throw new Error('Expected site_list_documents handler')
+    expect(tool.execution).toBe('server')
 
     // The site-scope (chat) version throws on `null.currentDocument`; the headless
     // one resolves the catalog from the DB. Over MCP this must not throw.
-    const result = (await tool!.handler!({}, headlessCtx(db))) as {
+    const result = (await tool.handler({}, headlessCtx(db))) as {
       currentDocument: unknown
-      documents: { document: { type: string; id: string }; slug?: string }[]
+      documents: {
+        document: { type: string; id: string }
+        slug?: string
+        active: boolean
+        current: boolean
+      }[]
     }
 
     expect(Array.isArray(result.documents)).toBe(true)
     expect(result.documents.some((d) => d.slug === 'index')).toBe(true)
     // No open-editor focus server-side, so nothing is reported as current.
     expect(result.currentDocument).toBeNull()
+    expect(result.documents.every((document) => !document.active && !document.current)).toBe(true)
+  })
+
+  it('does not expose the catalog to an edit-only connector without site.read', () => {
+    const tool = mcpToolsForCapabilities(['pages.edit']).find(
+      (candidate) => candidate.name === 'site_list_documents',
+    )
+    expect(tool).toBeUndefined()
   })
 })

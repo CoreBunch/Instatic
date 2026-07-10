@@ -3,8 +3,8 @@
  * filtered to the connector's granted capabilities.
  *
  * Two execution classes are exposed:
- *   - server-resolved tools (content reads + `site_read_styles`) run in-process and
- *     work with NO editor open;
+ *   - server-resolved tools (content reads + `site_list_documents` +
+ *     `site_read_styles`) run in-process and work with NO editor open;
  *   - browser tools (structure edits, HTML/CSS authoring, design tokens, page
  *     lifecycle, content CRUD, code assets, live-DOM reads) are relayed to the
  *     connector owner's open editor via the live editor bridge
@@ -43,9 +43,9 @@ import { documentMcpTools } from './tools/documentTools'
 const MCP_EXCLUDED_TOOLS = new Set<string>(['site_list_tokens'])
 
 function allMcpTools(): AiTool[] {
-  // De-dup by tool name. Order matters: the headless style + content tools win
-  // over the site toolset for any shared name (e.g. `list_documents`), so the
-  // version that works without an open editor is the one exposed.
+  // De-dup by tool name. Order matters: the headless MCP-specific + content
+  // tools win over the site toolset for shared names, so the version that works
+  // without an open editor is the one exposed.
   const ordered = [...contextMcpTools, ...styleMcpTools, ...documentMcpTools, ...contentTools, ...siteTools]
   const byName = new Map<string, AiTool>()
   for (const tool of ordered) {
