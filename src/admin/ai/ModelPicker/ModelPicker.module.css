@@ -75,6 +75,37 @@
     padding: var(--space-xs) var(--space-m) var(--space-4xs);
 }
 
+/* Section toggle — replaces the static groupHeader row */
+.sectionToggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    width: 100%;
+    padding: var(--space-xs) var(--space-m) var(--space-4xs);
+    border: none;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    transition: background 80ms ease;
+}
+
+.sectionToggle:hover {
+    background: var(--overlay-10);
+}
+
+.sectionIcon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    transition: transform 150ms ease;
+}
+
+.sectionIconCollapsed {
+    transform: rotate(-90deg);
+}
+
 .groupHeader {
     font-size: var(--text-2xs);
     font-weight: 600;
@@ -118,6 +149,7 @@
     font-size: var(--text-xs);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+    text-align: right;
 }
 
 .modelContext {
@@ -125,10 +157,245 @@
     font-size: var(--text-xs);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+    text-align: right;
+}
+
+/* Price tooltip rows — used inside CMS Tooltip content */
+.priceTooltipRow {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-m);
+}
+
+.priceTooltipTotal {
+    margin-block-start: var(--space-4xs);
+    padding-block-start: var(--space-4xs);
+    border-block-start: 1px solid var(--overlay-20);
+    font-weight: 600;
+}
+
+.modelNameTooltip {
+    font-weight: 600;
+    margin-bottom: var(--space-4xs);
+}
+
+.priceTooltipNote {
+    display: block;
+    color: var(--text-muted);
+    font-size: var(--text-3xs);
+    margin-bottom: var(--space-4xs);
+}
+
+/* Grid layout for model rows — aligns label / star / price / context
+   consistently across Favourites, Recents, and provider groups.
+   Columns tuned for real data: most prices are <$100 and context
+   labels are 2–5 characters (e.g. "131K", "1M"). */
+.rowGrid.rowGrid {
+    display: grid;
+    grid-template-columns: 1fr 20px 90px 42px;
+    gap: var(--space-3xs);
+    align-items: center;
+    width: 100%;
+    content-visibility: auto;
+    contain-intrinsic-height: 36px;
+}
+
+.rowGrid .favWrap {
+    margin-inline-start: 0;
+}
+
+.rowGrid .modelPrice,
+.rowGrid .modelContext {
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .emptyOption {
     padding: var(--space-xs) var(--space-m);
     font-size: var(--text-s);
     color: var(--text-subtle);
+}
+
+/* ── Favorite star + toggle button ──────────────────────────────────────── */
+/* Fixed 18×18 slot; only one child rendered at a time via conditional JSX.
+   Children are absolutely positioned so the wrapper never changes size. */
+.favWrap {
+    position: relative;
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    margin-inline-start: var(--space-2xs);
+}
+
+.favWrap .favStar,
+.favWrap .favButton {
+    position: absolute;
+    inset: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+    font-size: var(--text-xs);
+    user-select: none;
+}
+
+.favWrap .favStar {
+    color: var(--brand-50);
+}
+
+.favWrap .favButton {
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: var(--radius-s);
+    transition: color 120ms ease, opacity 80ms ease;
+}
+
+/* Non-favourited: brighten on hover so the user sees it's clickable */
+.favWrap .favButton:hover {
+    color: var(--brand-50);
+    background: var(--overlay-10);
+}
+
+/* Already-favourited: no visual change on hover */
+.favButtonActive {
+    color: var(--brand-50);
+}
+
+.favWrap .favButtonActive:hover {
+    color: var(--brand-50);
+    background: transparent;
+}
+
+/* CSS-only hover toggle: star visible by default, button hidden */
+.favStarStatic {
+    opacity: 1;
+}
+
+.favButtonHover {
+    opacity: 0;
+}
+
+/* On row hover: hide the static star, show the interactive button */
+.rowGrid:hover .favStarStatic {
+    opacity: 0;
+}
+
+.rowGrid:hover .favButtonHover {
+    opacity: 1;
+}
+
+/* ── Menu header wrapper (search + sort button) ──────────────────────── */
+.menuHeaderWrap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4xs);
+}
+
+.searchRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3xs);
+    padding: 0 var(--space-3xs);
+}
+
+.searchRow > :first-child {
+    flex: 1;
+    min-width: 0;
+}
+
+.sortTrigger {
+    flex-shrink: 0;
+}
+
+/* Collapsible sort panel — smooth open/close.
+   Tight max-height eliminates dead-zone; opacity + translateY mask
+   any remaining imperfection so both directions feel smooth. */
+.sortPanel {
+    overflow: hidden;
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-4px);
+    transition: max-height 200ms ease, opacity 120ms ease, transform 200ms ease;
+}
+
+.sortPanelOpen {
+    opacity: 1;
+    max-height: 32px;
+    transform: translateY(0);
+}
+
+.sortPanelInner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4xs);
+    padding: 0 var(--space-3xs) var(--space-3xs);
+}
+
+.sortButton {
+    padding: var(--space-4xs) var(--space-xs);
+    font-size: var(--text-3xs);
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.sortButton[aria-pressed="true"] {
+    color: var(--text);
+    background: var(--overlay-10);
+}
+
+.sortChevron {
+    display: inline-flex;
+    align-items: center;
+    margin-inline-start: var(--space-4xs);
+    color: var(--text-muted);
+}
+
+.sortButton[aria-pressed="true"] .sortChevron {
+    color: var(--text);
+}
+
+/* ── Menu resize handles (all edges + corners) ─────────────────────────── */
+
+.resizeOverlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.resizeEdge {
+    position: absolute;
+    pointer-events: auto;
+}
+
+.resizeEdgeN {
+    top: 0;
+    left: 8px;
+    right: 8px;
+    height: 6px;
+    cursor: ns-resize;
+}
+
+.resizeEdgeE {
+    right: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 6px;
+    cursor: ew-resize;
+}
+
+.resizeCornerNE {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 14px;
+    height: 14px;
+    pointer-events: auto;
+    cursor: nesw-resize;
 }

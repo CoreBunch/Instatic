@@ -32,6 +32,12 @@ interface ContextMenuProps extends Omit<HTMLAttributes<HTMLDivElement>, 'childre
    * filter box stays put while the list scrolls under it.
    */
   header?: ReactNode
+  /**
+   * Optional fixed footer rendered below the scrollable content. Does NOT
+   * scroll — stays pinned at the bottom of the menu. Use for resize handles
+   * or action buttons that must remain reachable.
+   */
+  footer?: ReactNode
   minWidth?: number
   width?: number
   /**
@@ -139,6 +145,7 @@ export function ContextMenu({
   onClose,
   children,
   header,
+  footer,
   minWidth = 176,
   width = minWidth,
   maxWidth,
@@ -303,9 +310,13 @@ export function ContextMenu({
           >
             {children}
           </div>
+          {footer}
         </>
       ) : (
-        children
+        <>
+          {children}
+          {footer}
+        </>
       )}
     </div>,
     document.body,

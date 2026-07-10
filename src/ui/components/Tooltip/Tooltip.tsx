@@ -55,6 +55,8 @@ interface TooltipProps {
   align?: TooltipAlign
   /** Gap between trigger and tooltip bubble in px. Default: 8. */
   offset?: number
+  /** Delay in ms before the tooltip opens on hover. Default: 0. */
+  openDelay?: number
   /** If true, render children as-is without any tooltip wrapping. */
   disabled?: boolean
   /** Single trigger element. Must accept mouse event handlers. */
@@ -95,6 +97,7 @@ function TooltipInner({
   side,
   align,
   offset,
+  openDelay,
   children,
 }: Required<Omit<TooltipProps, 'disabled'>>) {
   const id = useId()
@@ -111,11 +114,23 @@ function TooltipInner({
   // bubbleRef is only ever read inside useLayoutEffect (an effect), which is
   // the safe pattern the react-hooks/refs rule requires.
   const bubbleRef = useRef<HTMLDivElement>(null)
+  const showTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // useCallback kept: stable identity for the [hide] useEffect dep array (exhaustive-deps).
   const hide = useCallback(() => {
+    if (showTimerRef.current) {
+      clearTimeout(showTimerRef.current)
+      showTimerRef.current = null
+    }
     setShown(false)
     setPosition(null)
+  }, [])
+
+  // Clean up pending open timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (showTimerRef.current) clearTimeout(showTimerRef.current)
+    }
   }, [])
 
   // Measure bubble and compute position after it enters the DOM.
@@ -171,7 +186,11 @@ function TooltipInner({
       existingMouseEnter?.(e)
       // Capture the trigger element from the event (event handler, not render).
       setTriggerEl(e.currentTarget)
-      setShown(true)
+      if (openDelay > 0) {
+        showTimerRef.current = setTimeout(() => setShown(true), openDelay)
+      } else {
+        setShown(true)
+      }
     },
     onMouseLeave(e: React.MouseEvent<HTMLElement>) {
       existingMouseLeave?.(e)
@@ -220,6 +239,7 @@ export function Tooltip({
   side = 'auto',
   align = 'center',
   offset = 8,
+  openDelay = 0,
   content,
   children,
 }: TooltipProps) {
@@ -227,7 +247,7 @@ export function Tooltip({
   if (disabled) return children
 
   return (
-    <TooltipInner content={content} side={side} align={align} offset={offset}>
+    <TooltipInner content={content} side={side} align={align} offset={offset} openDelay={openDelay}>
       {children}
     </TooltipInner>
   )

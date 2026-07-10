@@ -144,7 +144,9 @@ export function useAnchorPosition({
     if (!anchorRef) return
     const menuEl = menuRef.current
     if (!menuEl || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => recompute())
+    const observer = new ResizeObserver(() => {
+      window.requestAnimationFrame(recompute)
+    })
     observer.observe(menuEl)
     return () => observer.disconnect()
   }, [anchorRef, menuRef, recompute])
