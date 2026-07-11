@@ -30,7 +30,7 @@ describe('Vite backend proxy fetch lifecycle', () => {
     expect(requestOptions.signal?.aborted).toBe(true)
   })
 
-  it('does not abort after the downstream response finishes normally', () => {
+  it('treats downstream close as terminal even after a normal response', () => {
     const downstream = downstreamResponse(true)
     const requestOptions: RequestInit = {}
     linkProxyFetchToDownstream(
@@ -41,7 +41,7 @@ describe('Vite backend proxy fetch lifecycle', () => {
 
     downstream.emitter.emit('close')
 
-    expect(requestOptions.signal?.aborted).toBe(false)
+    expect(requestOptions.signal?.aborted).toBe(true)
   })
 
   it('preserves an existing upstream abort signal', () => {

@@ -22,7 +22,7 @@ export function linkProxyFetchToDownstream(
   requestOptions.headers = headers
 
   const abortUpstream = () => {
-    if (!downstreamResponse.writableFinished) downstreamAbort.abort()
+    downstreamAbort.abort()
   }
 
   downstreamResponse.once('close', abortUpstream)
