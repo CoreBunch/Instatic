@@ -28,6 +28,7 @@ interface EditorBridgeEntry {
 }
 
 export type EditorBridgeScope = 'site' | 'content'
+const STREAM_LEASE_MS = 120_000
 
 const byUser = new Map<string, Map<EditorBridgeScope, EditorBridgeEntry>>()
 
@@ -63,11 +64,13 @@ export function createEditorBridgeStream(
       let bridgeId = ''
       let destroyBridge = (): void => {}
       let heartbeat: ReturnType<typeof setInterval> | null = null
+      let lease: ReturnType<typeof setTimeout> | null = null
 
       const cleanup = () => {
         if (closed) return
         closed = true
         if (heartbeat) clearInterval(heartbeat)
+        if (lease) clearTimeout(lease)
         signal.removeEventListener('abort', cleanup)
         destroyBridge()
 
@@ -119,6 +122,9 @@ export function createEditorBridgeStream(
           cleanup()
         }
       }, 25_000)
+      // Bound orphan lifetime when a proxy fails to propagate a closed
+      // downstream connection. The client reconnect loop restores the bridge.
+      lease = setTimeout(cleanup, STREAM_LEASE_MS)
 
       if (signal.aborted) cleanup()
       else signal.addEventListener('abort', cleanup, { once: true })

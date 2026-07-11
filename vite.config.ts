@@ -1,9 +1,8 @@
-import { defineConfig, type Plugin, type ProxyOptions } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 import path from 'path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { configureProxyResponseLifecycle } from './scripts/lib/viteProxyLifecycle'
 
 const CMS_DEV_SERVER_ORIGIN = `http://localhost:${process.env.PORT ?? '3001'}`
 const FILE_EXTENSION_RE = /\.[a-zA-Z0-9]+$/
@@ -99,14 +98,6 @@ function publicSiteDevProxyPlugin(): Plugin {
         })
       })
     },
-  }
-}
-
-function backendDevProxyOptions(): ProxyOptions {
-  return {
-    target: CMS_DEV_SERVER_ORIGIN,
-    changeOrigin: true,
-    configure: configureProxyResponseLifecycle,
   }
 }
 
@@ -247,14 +238,23 @@ export default defineConfig({
       // accompanies the request. The `ws: false` default suffices; we do
       // not need WebSocket upgrades for the agent (NDJSON streams over a
       // standard HTTP response).
-      '/admin/api': backendDevProxyOptions(),
-      '/uploads': backendDevProxyOptions(),
+      '/admin/api': {
+        target: CMS_DEV_SERVER_ORIGIN,
+        changeOrigin: true,
+      },
+      '/uploads': {
+        target: CMS_DEV_SERVER_ORIGIN,
+        changeOrigin: true,
+      },
       // Public-site runtime endpoints — frontend tracker POSTs, loop
       // pagination GETs, runtime asset / CSS bundles. Must be in this
       // explicit `proxy:` map (not just the GET-only middleware) because
       // the tracker uses POST and the GET-only `publicSiteDevProxyPlugin`
       // would otherwise drop those requests.
-      '/_instatic': backendDevProxyOptions(),
+      '/_instatic': {
+        target: CMS_DEV_SERVER_ORIGIN,
+        changeOrigin: true,
+      },
     },
   },
 })

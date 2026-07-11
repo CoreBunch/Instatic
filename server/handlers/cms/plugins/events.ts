@@ -25,6 +25,8 @@
 import { subscribePluginEvents } from '../../../plugins/eventBroadcaster'
 import { methodNotAllowed } from '../../../http'
 
+const STREAM_LEASE_MS = 120_000
+
 export function handlePluginEventsStream(req: Request): Response {
   if (req.method !== 'GET') return methodNotAllowed()
   const encoder = new TextEncoder()
@@ -35,11 +37,13 @@ export function handlePluginEventsStream(req: Request): Response {
       let closed = false
       let unsubscribe = (): void => {}
       let heartbeat: ReturnType<typeof setInterval> | null = null
+      let lease: ReturnType<typeof setTimeout> | null = null
 
       const cleanup = () => {
         if (closed) return
         closed = true
         if (heartbeat) clearInterval(heartbeat)
+        if (lease) clearTimeout(lease)
         req.signal.removeEventListener('abort', cleanup)
         unsubscribe()
         try { controller.close() } catch { /* already closed or cancelled */ }
@@ -66,6 +70,9 @@ export function handlePluginEventsStream(req: Request): Response {
       heartbeat = setInterval(() => {
         send(`: heartbeat\n\n`)
       }, 30_000)
+      // Bound orphan lifetime even when an intermediary fails to propagate a
+      // downstream disconnect. EventSource reconnects automatically.
+      lease = setTimeout(cleanup, STREAM_LEASE_MS)
 
       if (req.signal.aborted) cleanup()
       else req.signal.addEventListener('abort', cleanup, { once: true })

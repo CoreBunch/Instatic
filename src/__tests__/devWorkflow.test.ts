@@ -89,8 +89,6 @@ describe('development workflow', () => {
     expect(viteConfig).toContain("const CMS_DEV_SERVER_ORIGIN = `http://localhost:${process.env.PORT ?? '3001'}`")
     expect(viteConfig).toContain('target: CMS_DEV_SERVER_ORIGIN')
     expect(viteConfig).toContain('changeOrigin: true')
-    expect(viteConfig).toContain('configure: configureProxyResponseLifecycle')
-    expect(viteConfig.match(/backendDevProxyOptions\(\)/g)).toHaveLength(4)
   })
 
   it('Vite forwards public page routes to the CMS server instead of the admin SPA', () => {
