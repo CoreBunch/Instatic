@@ -12,6 +12,7 @@
 import { apply } from 'mutative'
 import { clonePackageJson } from '@core/site-dependencies/manifest'
 import { cloneSiteRuntimeConfig } from '@core/site-runtime'
+import { pruneCanvasSelectionDraft } from '../selectionSlice'
 import { collectDirtyFromSitePatches, mergeDirtyMarks } from './dirtyTracking'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
@@ -47,6 +48,7 @@ export function createUndoRedoActions({ get, set }: SiteSliceHelpers): UndoRedoA
         if (!state.site.pages.find((p) => p.id === state.activePageId)) {
           state.activePageId = state.site.pages[0]?.id ?? null
         }
+        pruneCanvasSelectionDraft(state)
       })
     },
 
@@ -75,6 +77,7 @@ export function createUndoRedoActions({ get, set }: SiteSliceHelpers): UndoRedoA
         if (!state.site.pages.find((p) => p.id === state.activePageId)) {
           state.activePageId = state.site.pages[0]?.id ?? null
         }
+        pruneCanvasSelectionDraft(state)
       })
     },
   }

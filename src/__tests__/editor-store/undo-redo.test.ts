@@ -81,6 +81,43 @@ describe('Undo / Redo — basic lifecycle', () => {
     expect(nodesAfterRedo).toBe(nodesBeforeUndo)
   })
 
+  it('undo prunes selection that points at the reverted insertion', () => {
+    const site = getStore().createSite('Test SiteDocument')
+    const rootId = site.pages[0].rootNodeId
+    const insertedId = useEditorStore.getState().insertNode('base.text', {}, rootId)
+
+    useEditorStore.getState().selectNode(insertedId)
+    expect(useEditorStore.getState().selectedNodeIds).toEqual([insertedId])
+
+    useEditorStore.getState().undo()
+
+    const afterUndo = useEditorStore.getState()
+    expect(afterUndo.site!.pages[0].nodes[insertedId]).toBeUndefined()
+    expect(afterUndo.selectedNodeIds).toEqual([])
+    expect(afterUndo.selectedNodeId).toBeNull()
+
+    const nextId = afterUndo.insertNode('base.text', {}, rootId)
+    expect(nextId).not.toBe('')
+    expect(useEditorStore.getState().site!.pages[0].nodes[nextId]).toBeDefined()
+  })
+
+  it('redo prunes selection when replaying a deletion', () => {
+    const site = getStore().createSite('Test SiteDocument')
+    const rootId = site.pages[0].rootNodeId
+    const insertedId = useEditorStore.getState().insertNode('base.text', {}, rootId)
+
+    useEditorStore.getState().deleteNode(insertedId)
+    useEditorStore.getState().undo()
+    useEditorStore.getState().selectNode(insertedId)
+
+    useEditorStore.getState().redo()
+
+    const afterRedo = useEditorStore.getState()
+    expect(afterRedo.site!.pages[0].nodes[insertedId]).toBeUndefined()
+    expect(afterRedo.selectedNodeIds).toEqual([])
+    expect(afterRedo.selectedNodeId).toBeNull()
+  })
+
   it('canRedo is true after undo', () => {
     const s = getStore()
     const site = s.createSite('Test SiteDocument')

@@ -345,6 +345,35 @@ describe('AgentPanel', () => {
     expect(screen.getByTestId('agent-new-chat-header-button')).toBeTruthy()
   })
 
+  it('autofocuses the composer when the open panel has no focused control', async () => {
+    installModelFetch(true)
+    renderAgentPanel({
+      agentActiveCredentialId: TEST_CREDENTIAL.id,
+      agentActiveModelId: 'model-1',
+    })
+
+    const textarea = await screen.findByLabelText('Message to AI assistant')
+    await waitFor(() => expect(document.activeElement).toBe(textarea))
+  })
+
+  it('does not steal focus from New chat when its deferred autofocus runs', async () => {
+    installModelFetch(true)
+    renderAgentPanel({
+      agentActiveCredentialId: TEST_CREDENTIAL.id,
+      agentActiveModelId: 'model-1',
+    })
+
+    const newChat = screen.getByRole('button', { name: 'New chat' })
+    newChat.focus()
+    fireEvent.click(newChat)
+    expect(document.activeElement).toBe(newChat)
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 75))
+    })
+    expect(document.activeElement).toBe(newChat)
+  })
+
   it('shows compact context, token, and cost detail beside the image action', async () => {
     const credential = { ...TEST_CREDENTIAL, id: 'cred_context_meter' }
     installModelFetch(true, true, 128_000, credential)
