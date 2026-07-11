@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { EventEmitter } from 'node:events'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { linkProxyFetchToDownstream } from './viteProxyLifecycle'
+import { prepareProxyFetch } from './viteProxyLifecycle'
 
 function downstreamResponse(writableFinished = false): {
   emitter: EventEmitter
@@ -19,7 +19,7 @@ describe('Vite backend proxy fetch lifecycle', () => {
   it('aborts an upstream fetch when the browser disconnects', () => {
     const downstream = downstreamResponse()
     const requestOptions: RequestInit = {}
-    linkProxyFetchToDownstream(
+    prepareProxyFetch(
       requestOptions,
       {} as IncomingMessage,
       downstream.response,
@@ -33,7 +33,7 @@ describe('Vite backend proxy fetch lifecycle', () => {
   it('treats downstream close as terminal even after a normal response', () => {
     const downstream = downstreamResponse(true)
     const requestOptions: RequestInit = {}
-    linkProxyFetchToDownstream(
+    prepareProxyFetch(
       requestOptions,
       {} as IncomingMessage,
       downstream.response,
@@ -48,7 +48,7 @@ describe('Vite backend proxy fetch lifecycle', () => {
     const downstream = downstreamResponse()
     const existingAbort = new AbortController()
     const requestOptions: RequestInit = { signal: existingAbort.signal }
-    linkProxyFetchToDownstream(
+    prepareProxyFetch(
       requestOptions,
       {} as IncomingMessage,
       downstream.response,
@@ -64,7 +64,7 @@ describe('Vite backend proxy fetch lifecycle', () => {
     const requestOptions: RequestInit = {
       headers: { connection: 'close', 'x-test': 'kept' },
     }
-    linkProxyFetchToDownstream(
+    prepareProxyFetch(
       requestOptions,
       {} as IncomingMessage,
       downstream.response,

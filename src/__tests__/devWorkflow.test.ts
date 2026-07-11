@@ -90,7 +90,9 @@ describe('development workflow', () => {
     expect(viteConfig).toContain('target: CMS_DEV_SERVER_ORIGIN')
     expect(viteConfig).toContain('changeOrigin: true')
     expect(viteConfig).toContain('fetch: globalThis.fetch')
-    expect(viteConfig).toContain('onBeforeRequest: linkProxyFetchToDownstream')
+    expect(viteConfig).toContain('selfHandleResponse: true')
+    expect(viteConfig).toContain('onBeforeRequest: prepareProxyFetch')
+    expect(viteConfig).toContain('onAfterResponse: forwardProxyFetchResponse')
     expect(viteConfig.match(/backendDevProxyOptions\(\)/g)).toHaveLength(4)
   })
 
