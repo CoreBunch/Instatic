@@ -25,6 +25,7 @@ The workspace is canvas-style: it uses `AdminWorkspaceCanvasLayout`, the lighter
 ```text
 src/admin/pages/media/
 ├── MediaPage.tsx                       — top-level component
+├── mediaAssetEvents.ts                 — typed cross-workspace asset-created notifications
 ├── components/
 │   ├── MediaSidebar/                   — folder tree + storage + smart folders
 │   ├── MediaCanvas/                    — file grid / list with FilterBar
@@ -251,8 +252,10 @@ Folder routes (`/admin/api/cms/media/folders/...`) are matched **before** asset 
 
 ### Upload pipeline
 
+Uploads initiated outside the Media page use the same pipeline. In particular, the Agent Panel's explicit **Save to Media** image action resolves the private chat image, wraps it in a MIME-correct `File`, and calls `uploadCmsMediaAsset`; it does not create an AI-specific storage route. On success, `mediaAssetEvents.ts` upserts the new row into an already-mounted Site → Media explorer while the normal media cache is primed for canvas consumers.
+
 ```text
-POST /admin/api/cms/media/upload
+POST /admin/api/cms/media
     │
     ▼
 mediaUpload.ts             ← validates upload (size + magic-byte MIME sniff)

@@ -217,6 +217,13 @@
   flex: 0 1 auto;
 }
 
+.inputControlActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  flex: 0 0 auto;
+}
+
 /* ── Message turn — role label + full-width text, no bubble ───────────────── */
 .messageTurn {
   display: flex;

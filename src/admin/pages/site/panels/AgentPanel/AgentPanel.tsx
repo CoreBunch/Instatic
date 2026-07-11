@@ -42,9 +42,14 @@ import { ConversationHistory } from './ConversationHistory'
 import { AgentComposer, type ComposerLockReason } from './AgentComposer'
 import {
   AgentImageGallery,
-  type AgentPreviewImage,
 } from './AgentImageGallery'
+import { AgentImageContextMenu } from './AgentImageContextMenu'
 import { AgentImagePreview } from './AgentImagePreview'
+import type {
+  AgentImageMenuRequest,
+  AgentPreviewImage,
+  OpenAgentImageMenu,
+} from './agentImageTypes'
 import { ToolCallRow } from './ToolCallRow'
 import { formatRelativeTime } from './relativeTime'
 import styles from './AgentPanel.module.css'
@@ -80,6 +85,7 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
   const activeCredentialId = useAgentStore((s) => s.agentActiveCredentialId)
   const activeModelId = useAgentStore((s) => s.agentActiveModelId)
   const [previewImage, setPreviewImage] = useState<AgentPreviewImage | null>(null)
+  const [imageMenu, setImageMenu] = useState<AgentImageMenuRequest | null>(null)
   const credentialsResource = useAsyncResource(
     (signal) => listCredentials(signal),
     [],
@@ -141,12 +147,38 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
     if (
       (previous.isAgentOpen && !state.isAgentOpen)
       || previous.agentComposerEpoch !== state.agentComposerEpoch
-    ) setPreviewImage(null)
+    ) {
+      setPreviewImage(null)
+      setImageMenu(null)
+    }
   }), [agentStore])
+
+  function openImageMenu(request: AgentImageMenuRequest): void {
+    setImageMenu(request)
+  }
+
+  function openImagePreview(image: AgentPreviewImage): void {
+    setImageMenu(null)
+    setPreviewImage(image)
+  }
+
+  function closeImageMenu(): void {
+    const returnFocus = imageMenu?.returnFocus
+    setImageMenu(null)
+    if (returnFocus?.isConnected) {
+      requestAnimationFrame(() => returnFocus.focus())
+    }
+  }
+
+  function closeImagePreview(): void {
+    setPreviewImage(null)
+    setImageMenu(null)
+  }
 
   // Escape key — close the AI panel
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (e.defaultPrevented || imageMenu !== null) return
       if (e.key === 'Escape' && isOpen) {
         e.preventDefault()
         closeAgent()
@@ -154,7 +186,7 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [isOpen, closeAgent])
+  }, [isOpen, imageMenu, closeAgent])
 
   // Always-mounted: CSS display:none when closed (via .floatPanelClosed) preserves
   // Zustand state across open/close cycles without conditional rendering.
@@ -234,7 +266,8 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
               <MessageBubble
                 key={group.id}
                 group={group}
-                onOpenImage={setPreviewImage}
+                onOpenImage={openImagePreview}
+                onOpenImageMenu={openImageMenu}
               />
             ))}
           </>
@@ -256,13 +289,19 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
         credentials={credentials}
         credentialsLoaded={credentialsLoaded}
         onRefreshCredentials={credentialsResource.refresh}
-        onOpenImage={setPreviewImage}
+        onOpenImage={openImagePreview}
+        onOpenImageMenu={openImageMenu}
       />
     </div>
       <AgentImagePreview
         image={isOpen ? previewImage : null}
-        onClose={() => setPreviewImage(null)}
+        imageMenuOpen={imageMenu !== null}
+        onOpenImageMenu={openImageMenu}
+        onClose={closeImagePreview}
       />
+      {isOpen && imageMenu && (
+        <AgentImageContextMenu request={imageMenu} onClose={closeImageMenu} />
+      )}
     </aside>
   )
 }
@@ -280,9 +319,11 @@ interface ConversationGroup {
 function MessageBubble({
   group,
   onOpenImage,
+  onOpenImageMenu,
 }: {
   group: ConversationGroup
   onOpenImage(image: AgentPreviewImage): void
+  onOpenImageMenu: OpenAgentImageMenu
 }) {
   const isUser = group.role === 'user'
   const user = useAuthenticatedAdminUser()
@@ -319,6 +360,7 @@ function MessageBubble({
             images={item.images}
             isUser={isUser}
             onOpenImage={onOpenImage}
+            onOpenImageMenu={onOpenImageMenu}
           />
         ) : (
           // A run of consecutive tool calls shares one container so the rows
@@ -327,7 +369,11 @@ function MessageBubble({
             {item.toolCalls.map((toolCall) => (
               <ToolCallRow key={toolCall.id} toolCall={toolCall} />
             ))}
-            <ToolPreviewGallery toolCalls={item.toolCalls} onOpenImage={onOpenImage} />
+            <ToolPreviewGallery
+              toolCalls={item.toolCalls}
+              onOpenImage={onOpenImage}
+              onOpenImageMenu={onOpenImageMenu}
+            />
           </div>
         ),
       )}
@@ -400,10 +446,12 @@ function MessageImageGallery({
   images,
   isUser,
   onOpenImage,
+  onOpenImageMenu,
 }: {
   images: Array<{ key: string; src: string }>
   isUser: boolean
   onOpenImage(image: AgentPreviewImage): void
+  onOpenImageMenu: OpenAgentImageMenu
 }) {
   const galleryImages = images.map((image, index): AgentPreviewImage => ({
     id: image.key,
@@ -414,6 +462,9 @@ function MessageImageGallery({
         ? `Attachment ${index + 1} of ${images.length} from you`
         : `Image ${index + 1} of ${images.length} from assistant`,
     title: isUser ? 'Your attachment' : 'Assistant image',
+    filename: isUser
+      ? `your-attachment-${index + 1}`
+      : `assistant-image-${index + 1}`,
   }))
 
   return (
@@ -421,6 +472,7 @@ function MessageImageGallery({
       images={galleryImages}
       label={isUser ? 'Images from you' : 'Images from assistant'}
       onOpenImage={onOpenImage}
+      onOpenImageMenu={onOpenImageMenu}
     />
   )
 }
@@ -428,9 +480,11 @@ function MessageImageGallery({
 function ToolPreviewGallery({
   toolCalls,
   onOpenImage,
+  onOpenImageMenu,
 }: {
   toolCalls: AgentToolCall[]
   onOpenImage(image: AgentPreviewImage): void
+  onOpenImageMenu: OpenAgentImageMenu
 }) {
   const images = toolCalls.flatMap((toolCall) =>
     (toolCall.previewImages ?? []).map((src, index): AgentPreviewImage => ({
@@ -438,6 +492,7 @@ function ToolPreviewGallery({
       src,
       alt: `Image ${index + 1} captured while running ${toolCall.actionType}`,
       title: 'Tool result image',
+      filename: `${toolCall.actionType}-${index + 1}`,
     })),
   )
   return (
@@ -445,6 +500,7 @@ function ToolPreviewGallery({
       images={images}
       label="Images captured by assistant tools"
       onOpenImage={onOpenImage}
+      onOpenImageMenu={onOpenImageMenu}
     />
   )
 }

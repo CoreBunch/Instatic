@@ -1,22 +1,50 @@
+import type { KeyboardEvent, MouseEvent } from 'react'
 import { Button } from '@ui/components/Button'
+import {
+  isContextMenuKey,
+  keyboardImageMenuPosition,
+  type AgentPreviewImage,
+  type OpenAgentImageMenu,
+} from './agentImageTypes'
 import styles from './AgentImageGallery.module.css'
-
-export interface AgentPreviewImage {
-  id: string
-  src: string
-  alt: string
-  title?: string
-}
 
 interface AgentImageGalleryProps {
   images: AgentPreviewImage[]
   label: string
   onOpenImage(image: AgentPreviewImage): void
+  onOpenImageMenu: OpenAgentImageMenu
 }
 
 /** Compact, shared gallery for user, assistant, and browser-tool images. */
-export function AgentImageGallery({ images, label, onOpenImage }: AgentImageGalleryProps) {
+export function AgentImageGallery({
+  images,
+  label,
+  onOpenImage,
+  onOpenImageMenu,
+}: AgentImageGalleryProps) {
   if (images.length === 0) return null
+
+  function openPointerMenu(image: AgentPreviewImage, event: MouseEvent<HTMLButtonElement>): void {
+    event.preventDefault()
+    event.stopPropagation()
+    onOpenImageMenu({
+      image,
+      x: event.clientX,
+      y: event.clientY,
+      returnFocus: event.currentTarget,
+    })
+  }
+
+  function openKeyboardMenu(image: AgentPreviewImage, event: KeyboardEvent<HTMLButtonElement>): void {
+    if (!isContextMenuKey(event.nativeEvent)) return
+    event.preventDefault()
+    event.stopPropagation()
+    onOpenImageMenu({
+      image,
+      ...keyboardImageMenuPosition(event.currentTarget),
+      returnFocus: event.currentTarget,
+    })
+  }
 
   return (
     <div
@@ -36,6 +64,8 @@ export function AgentImageGallery({ images, label, onOpenImage }: AgentImageGall
           aria-haspopup="dialog"
           className={styles.thumbnailButton}
           onClick={() => onOpenImage(image)}
+          onContextMenu={(event) => openPointerMenu(image, event)}
+          onKeyDown={(event) => openKeyboardMenu(image, event)}
         >
           <img
             src={image.src}

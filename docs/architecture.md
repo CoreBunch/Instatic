@@ -326,7 +326,8 @@ The codebase enforces "validate, then trust": every untyped input goes through a
 
 | Boundary                             | Helper                                                | Lives in                              |
 |--------------------------------------|-------------------------------------------------------|---------------------------------------|
-| HTTP request (client, canonical)     | `apiRequest(path, { schema, … })` → throws `ApiError` | `src/core/http/apiClient.ts`          |
+| HTTP request (client, canonical JSON) | `apiRequest(path, { schema, … })` → throws `ApiError` | `src/core/http/apiClient.ts`          |
+| HTTP request (client, binary body)   | `apiBlobRequest(path, …)` → `Blob` / throws `ApiError` | `src/core/http/apiClient.ts`          |
 | HTTP response from a held `Response`  | `readEnvelope(res, Schema, fallbackMessage)`          | `src/core/http/apiClient.ts`          |
 | Raw JSON response validation         | `parseJsonResponse(res, Schema)`                      | `src/core/utils/jsonValidate.ts`      |
 | `JSON.parse` of persisted strings    | `safeParseJson(raw, Schema)` / `parseJsonWithFallback`| `src/core/utils/jsonValidate.ts`      |

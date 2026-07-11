@@ -173,10 +173,13 @@ function createAgentStore(overrides: Partial<AgentSlice> = {}) {
   }))
 }
 
-function renderAgentPanel(overrides: Partial<AgentSlice> = {}) {
+function renderAgentPanel(
+  overrides: Partial<AgentSlice> = {},
+  user: CmsCurrentUser = testUser(),
+) {
   const store = createAgentStore(overrides)
   const view = render(
-    <AdminSessionProvider user={testUser()}>
+    <AdminSessionProvider user={user}>
       <MemoryRouter initialEntries={['/admin/site']}>
         <AgentStoreProvider store={store}>
           <AgentPanel variant="docked" />
@@ -188,7 +191,7 @@ function renderAgentPanel(overrides: Partial<AgentSlice> = {}) {
   return { ...view, store }
 }
 
-function testUser(): CmsCurrentUser {
+function testUser(capabilities: CmsCurrentUser['capabilities'] = ['ai.chat']): CmsCurrentUser {
   return {
     id: 'user-agent-panel',
     email: 'agent@example.com',
@@ -200,9 +203,9 @@ function testUser(): CmsCurrentUser {
       name: 'Admin',
       description: 'Agent panel test role',
       isSystem: true,
-      capabilities: ['ai.chat'],
+      capabilities,
     },
-    capabilities: ['ai.chat'],
+    capabilities,
     lastLoginAt: null,
     failedLoginCount: 0,
     lockedUntil: null,
@@ -562,6 +565,51 @@ describe('AgentPanel', () => {
     ])
   })
 
+  it('attaches multiple local images through the picker beside Send', async () => {
+    installModelFetch(true)
+    installImageBrowserMocks()
+    const sendAgentMessage = mock(async (_content: AiUserContentBlock[]) => ({ accepted: true }))
+    const { container } = renderAgentPanel({
+      agentActiveCredentialId: TEST_CREDENTIAL.id,
+      agentActiveModelId: 'model-1',
+      sendAgentMessage,
+    })
+
+    await screen.findByLabelText('Message to AI assistant')
+    const picker = screen.getByRole('button', { name: 'Attach images' })
+    expect(picker).toBeTruthy()
+    const input = container.querySelector<HTMLInputElement>(
+      'input[type="file"][accept="image/png,image/jpeg,image/webp"]',
+    )
+    expect(input?.multiple).toBe(true)
+
+    fireEvent.change(input!, {
+      target: {
+        files: [
+          new File([pngHeader(100, 80)], 'picked-first.png', { type: 'image/png' }),
+          new File([pngHeader(100, 80)], 'picked-second.png', { type: 'image/png' }),
+        ],
+      },
+    })
+
+    expect(input?.value).toBe('')
+    await waitFor(() => expect(screen.getAllByText('Ready')).toHaveLength(2))
+    const pendingPreview = screen.getByRole('button', {
+      name: 'Preview attached image: picked-first.png',
+    })
+    fireEvent.contextMenu(pendingPreview, { clientX: 40, clientY: 50 })
+    const menu = await screen.findByRole('menu', { name: 'Image actions' })
+    fireEvent.keyDown(menu, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('menu', { name: 'Image actions' })).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(pendingPreview))
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    await waitFor(() => expect(sendAgentMessage).toHaveBeenCalledTimes(1))
+    expect(sendAgentMessage.mock.calls[0]?.[0]).toEqual([
+      { kind: 'image', mimeType: 'image/jpeg', data: 'AQID' },
+      { kind: 'image', mimeType: 'image/jpeg', data: 'AQID' },
+    ])
+  })
+
   it('keeps an attachment visible but disables send for a non-vision model', async () => {
     installModelFetch(false)
     installImageBrowserMocks()
@@ -695,6 +743,100 @@ describe('AgentPanel', () => {
     })
     await waitFor(() => expect(screen.queryByTestId('agent-image-preview')).toBeNull())
     expect(store.getState().isAgentOpen).toBe(true)
+  })
+
+  it('opens the same image action menu from chat, keyboard, and the preview', async () => {
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.endsWith('/admin/api/ai/credentials')) return jsonResponse({ credentials: [] })
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as typeof fetch
+    renderAgentPanel({
+      agentMessages: [{
+        id: 'image-message',
+        role: 'user',
+        blocks: [{ kind: 'image', mimeType: 'image/jpeg', src: '/conversation-image/0' }],
+        timestamp: Date.now(),
+      }],
+    })
+
+    const trigger = await screen.findByRole('button', {
+      name: 'Open image preview: Attachment from you',
+    })
+    fireEvent.contextMenu(trigger, { clientX: 80, clientY: 90 })
+    let menu = await screen.findByRole('menu', { name: 'Image actions' })
+    expect(screen.getByRole('menuitem', { name: 'Copy image' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: 'Save to desktop' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: 'Save to Media' }).getAttribute('aria-disabled'))
+      .toBe('true')
+
+    fireEvent.keyDown(menu, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('menu', { name: 'Image actions' })).toBeNull())
+
+    trigger.focus()
+    fireEvent.keyDown(trigger, { key: 'F10', shiftKey: true })
+    menu = await screen.findByRole('menu', { name: 'Image actions' })
+    fireEvent.keyDown(menu, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('menu', { name: 'Image actions' })).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(trigger))
+
+    fireEvent.click(trigger)
+    const preview = await screen.findByRole('dialog', { name: 'Your attachment' })
+    const previewImage = preview.querySelector('img')!
+    fireEvent.contextMenu(previewImage, { clientX: 120, clientY: 130 })
+    menu = await screen.findByRole('menu', { name: 'Image actions' })
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Save to desktop' }), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('menu', { name: 'Image actions' })).toBeNull())
+    expect(screen.getByRole('dialog', { name: 'Your attachment' })).toBeTruthy()
+    await waitFor(() => expect(document.activeElement).toBe(preview))
+  })
+
+  it('saves a lazy conversation image through the canonical Media upload', async () => {
+    let uploadedFile: File | null = null
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.endsWith('/admin/api/ai/credentials')) return jsonResponse({ credentials: [] })
+      if (url === '/conversation-image/0') {
+        return new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), {
+          headers: { 'content-type': 'image/jpeg' },
+        })
+      }
+      if (url === '/admin/api/cms/media' && init?.method === 'POST') {
+        uploadedFile = (init.body as FormData).get('file') as File
+        return jsonResponse({
+          asset: {
+            id: 'saved-image',
+            filename: uploadedFile.name,
+            mimeType: uploadedFile.type,
+            sizeBytes: uploadedFile.size,
+            publicPath: '/uploads/saved-image.jpg',
+            uploadedByUserId: 'user-agent-panel',
+            createdAt: '2026-07-11T10:00:00.000Z',
+          },
+        }, 201)
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as typeof fetch
+    renderAgentPanel({
+      agentMessages: [{
+        id: 'image-message',
+        role: 'user',
+        blocks: [{ kind: 'image', mimeType: 'image/jpeg', src: '/conversation-image/0' }],
+        timestamp: Date.now(),
+      }],
+    }, testUser(['ai.chat', 'media.write']))
+
+    const trigger = await screen.findByRole('button', {
+      name: 'Open image preview: Attachment from you',
+    })
+    fireEvent.contextMenu(trigger, { clientX: 80, clientY: 90 })
+    const save = await screen.findByRole('menuitem', { name: 'Save to Media' })
+    expect(save.getAttribute('aria-disabled')).toBeNull()
+    fireEvent.click(save)
+
+    await waitFor(() => expect(uploadedFile).not.toBeNull())
+    expect(uploadedFile?.name).toBe('your-attachment-1.jpg')
+    expect(uploadedFile?.type).toBe('image/jpeg')
   })
 
   it('uses the same gallery for assistant and plural tool-result images', async () => {

@@ -156,10 +156,32 @@ export async function apiRequest<S extends TSchema>(
   path: string,
   options: ApiRequestOptions<S> = {},
 ): Promise<Static<S> | void> {
+  const res = await requestResponse(path, options)
+  if (!options.schema) return
+  return parseJsonResponse(res, options.schema)
+}
+
+/**
+ * Fetch a binary response through the same authenticated/error-normalized
+ * transport as {@link apiRequest}. Binary bodies have no TypeBox shape to
+ * validate; callers remain responsible for checking the returned MIME type
+ * before treating the bytes as a specific file kind.
+ */
+export async function apiBlobRequest(
+  path: string,
+  options: Omit<ApiRequestOptions, 'schema'> = {},
+): Promise<Blob> {
+  const res = await requestResponse(path, options)
+  return res.blob()
+}
+
+async function requestResponse(
+  path: string,
+  options: Omit<ApiRequestOptions, 'schema'> | ApiRequestOptions,
+): Promise<Response> {
   const {
     method = 'GET',
     body,
-    schema,
     query,
     signal,
     headers,
@@ -190,7 +212,5 @@ export async function apiRequest<S extends TSchema>(
       res.status,
     )
   }
-
-  if (!schema) return
-  return parseJsonResponse(res, schema)
+  return res
 }

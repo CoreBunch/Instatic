@@ -113,6 +113,10 @@ src/admin/pages/site/panels/AgentPanel/
 ├── AgentComposer.tsx       — controlled draft, paste/send lifecycle, active-model capability check
 ├── AgentImageGallery.tsx   — compact shared thumbnails for user and agent-tool images
 ├── AgentImagePreview.tsx   — modeless draggable full-image preview
+├── AgentImageContextMenu.tsx — shared copy/download/Media actions for every image surface
+├── PendingImageAttachmentGrid.tsx — compact pending tiles and per-image actions
+├── agentImageActions.ts    — authenticated blob reads, clipboard/download, and Media upload
+├── agentImageTypes.ts      — shared preview/menu image contracts and keyboard positioning
 ├── agentImageAttachment.ts — browser decode, resize, JPEG normalisation, and base64 encoding
 ├── usePendingImageAttachments.ts — ref-backed sequential image queue and per-item cancellation
 ├── ModelPicker.tsx         — credential + model selector used in the input bar
@@ -147,11 +151,13 @@ When the panel opens, `AgentPanel` calls `loadScopeDefault()` so the model picke
 
 The composer area includes a `<ContextMeter>` that shows "context used / window" as a progress bar. `AgentComposer` resolves the full active-model descriptor from `GET /admin/api/ai/providers/:id/models?credentialId=…` (the same catalogue-enriched response the picker uses), then uses its `contextWindow`, `capabilities.visionInput`, and `capabilities.toolCalling`. A model known not to support tools is blocked with an inline "choose an agent-capable model" message; the server repeats that gate authoritatively. The meter appears as soon as a model is selected — before the first turn. The "used" half comes from `agentContextTokens` in the store (see slice state below). The meter is hidden when no context window is known (Ollama, uncatalogued models).
 
-### Pasting a user image
+### Attaching user images
 
-The composer accepts up to eight clipboard images alongside optional text. Pasting reserves every accepted attachment slot synchronously, then normalises the files sequentially so one paste cannot fan out into eight large browser decoders; send stays disabled while any image is processing, while model support is being checked, after a processing failure, when the selected model is not vision-capable, or when it is known not to support agent tools. Pending attachments use compact thumbnails in a responsive grid. They never point an `<img>` at the potentially huge source file: a placeholder is shown during decoding, then replaced with the bounded normalised JPEG. Each primitive `Button` removes only its image. Removing an attachment or replacing the composer aborts its queued preparation and stops all downstream resize/encode work after the browser's current decode returns (`createImageBitmap` itself has no cancellation API). A message may contain only images: the server persists the turn normally and titles a new conversation `Image` or `Images`.
+The composer accepts up to eight local or clipboard images alongside optional text. The icon button beside Send uses the shared `FileUpload` primitive and supports multi-selection; picking the same file again works after removal. Pasting or picking reserves every accepted attachment slot synchronously, then normalises the files sequentially so one selection cannot fan out into eight large browser decoders. Send stays disabled while any image is processing, while model support is being checked, after a processing failure, when the selected model is not vision-capable, or when it is known not to support agent tools. Pending attachments use compact thumbnails in a responsive grid. They never point an `<img>` at the potentially huge source file: a placeholder is shown during decoding, then replaced with the bounded normalised JPEG. Each primitive `Button` removes only its image. Removing an attachment or replacing the composer aborts its queued preparation and stops all downstream resize/encode work after the browser's current decode returns (`createImageBitmap` itself has no cancellation API). A message may contain only images: the server persists the turn normally and titles a new conversation `Image` or `Images`.
 
 Prepared attachments, persisted user images, and session-only images returned by agent tools use the same compact 2/3-column gallery. Each thumbnail is a keyboard-accessible button that opens the original fitted inside a modeless draggable preview window. The window uses the shared admin `FloatingWindow` shell, has only a title and close action, closes on Escape without also closing the Agent Panel, and restores focus to the thumbnail that opened it.
+
+Right-clicking an image in a pending tile, conversation gallery, or preview opens the same point-anchored `ContextMenu`; keyboard users can use the Context Menu key or Shift+F10. Actions copy the image bytes as PNG, start a MIME-correct browser download, or explicitly upload the bytes to Media. The latter uses the canonical `uploadCmsMediaAsset` pipeline (magic-byte validation, storage adapter selection, variants), requires `media.write`, primes the editor media cache, and upserts an already-mounted Media explorer. Escape closes the menu before the preview, and the preview before the Agent Panel.
 
 The provider-neutral v1 policy is defined once in `src/core/ai/userImage.ts` and enforced on both sides of the boundary:
 
@@ -691,7 +697,7 @@ Conversations and their message history are persisted server-side in `ai_convers
 
 Providers may enforce a physical request, context, or routed image limit before accepting that full replay. The shared HTTP tool loop classifies only those explicit overflow responses (`413`, or a matching provider `400`) and retries once before any SSE or tool side effect: images on older user turns become one breadcrumb per turn, while every image on the newest/current user turn remains. Generic 400s, authentication, quota, rate-limit, and service failures are never retried. If the reduced request still fails—or only the current turn has images—the error explains that history remains saved and suggests a new conversation or a larger-context model. This is provider-triggered fallback, not a stored-image quota or an arbitrary app-side count.
 
-User attachments are private chat data, not media-library assets: the normalised base64 bytes live in the database until the conversation is deleted and purged, are exposed to the owning authorised user only through the lazy conversation-image endpoint, and are sent to the configured AI provider whenever they survive the outbound replay projection. They are never written to public uploads or published with the site.
+User attachments are private chat data by default, not media-library assets: the normalised base64 bytes live in the database until the conversation is deleted and purged, are exposed to the owning authorised user only through the lazy conversation-image endpoint, and are sent to the configured AI provider whenever they survive the outbound replay projection. They enter public Media storage only when a user with `media.write` explicitly chooses **Save to Media** from the image context menu; saving creates a separate media asset and does not change or delete the private conversation copy.
 
 The server admits only one active writer per conversation. A concurrent tab receives a retryable 409 before appending, which keeps message positions ordered. In the browser, model changes for an existing conversation are serialized; Send waits for the provider/model update to reach the server, and conversation/model controls stay disabled while a turn streams. If a model PUT times out after an ambiguous commit, the browser re-reads the conversation before re-enabling Send, so the picker cannot disagree with server routing. Stop owns the whole first-send lifecycle, including default lookup and lazy conversation creation, so an aborted bootstrap cannot leave the composer locked.
 
@@ -826,6 +832,8 @@ unblocks deletion of the credential that had been protected by the default FK.
   - `src/admin/pages/site/agent/streamEvents.ts` — `ServerStreamEventSchema` + `processStreamEvent`
   - `src/admin/pages/site/panels/AgentPanel/AgentImageGallery.tsx` — shared compact gallery for persisted and session-only images
   - `src/admin/pages/site/panels/AgentPanel/AgentImagePreview.tsx` — draggable modeless image preview
+  - `src/admin/pages/site/panels/AgentPanel/AgentImageContextMenu.tsx` — shared image actions menu
+  - `src/admin/pages/site/panels/AgentPanel/agentImageActions.ts` — clipboard, download, and Media-save pipeline
   - `src/admin/shared/FloatingWindow/` — shared portal, panel header, and persisted drag behavior for admin floating windows
   - `src/admin/pages/site/agent/pageContext.ts` — `buildCurrentPageContext`
   - `src/admin/pages/site/agent/executor.ts` — write-tool browser dispatcher + auto-navigation

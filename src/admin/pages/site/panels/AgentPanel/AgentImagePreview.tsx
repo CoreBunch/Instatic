@@ -1,29 +1,63 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useEffectEvent, useRef, type MouseEvent } from 'react'
 import { FloatingWindow } from '@admin/shared/FloatingWindow'
-import type { AgentPreviewImage } from './AgentImageGallery'
+import {
+  isContextMenuKey,
+  keyboardImageMenuPosition,
+  type AgentPreviewImage,
+  type OpenAgentImageMenu,
+} from './agentImageTypes'
 import styles from './AgentImagePreview.module.css'
 
 interface AgentImagePreviewProps {
   image: AgentPreviewImage | null
+  imageMenuOpen: boolean
+  onOpenImageMenu: OpenAgentImageMenu
   onClose(): void
 }
 
-export function AgentImagePreview({ image, onClose }: AgentImagePreviewProps) {
+export function AgentImagePreview({
+  image,
+  imageMenuOpen,
+  onOpenImageMenu,
+  onClose,
+}: AgentImagePreviewProps) {
   const windowRef = useRef<HTMLDivElement>(null)
+  const imageRef = useRef<HTMLImageElement>(null)
+  const closeFromKeyboard = useEffectEvent(onClose)
+  const openMenuFromKeyboard = useEffectEvent(onOpenImageMenu)
 
   useEffect(() => {
     if (!image) return
+    const currentImage = image
     function closeOnEscape(event: KeyboardEvent): void {
-      if (event.key !== 'Escape') return
+      if (event.key === 'Escape') {
+        // A portalled image menu owns the first Escape. Let its item-level
+        // handler close the menu while this preview stays mounted.
+        if (event.target instanceof Element && event.target.closest('[role="menu"]')) return
+        event.preventDefault()
+        // The AgentPanel also owns an Escape shortcut. Capture and stop this
+        // event so one keypress closes the preview without closing the panel.
+        event.stopImmediatePropagation()
+        closeFromKeyboard()
+        return
+      }
+      if (
+        !isContextMenuKey(event)
+        || imageMenuOpen
+        || !windowRef.current?.contains(document.activeElement)
+        || !imageRef.current
+      ) return
       event.preventDefault()
-      // The AgentPanel also owns an Escape shortcut. Capture and stop this
-      // event so one keypress closes the preview without closing the panel.
       event.stopImmediatePropagation()
-      onClose()
+      openMenuFromKeyboard({
+        image: currentImage,
+        ...keyboardImageMenuPosition(imageRef.current),
+        returnFocus: windowRef.current,
+      })
     }
     document.addEventListener('keydown', closeOnEscape, true)
     return () => document.removeEventListener('keydown', closeOnEscape, true)
-  }, [image, onClose])
+  }, [image, imageMenuOpen])
 
   useEffect(() => {
     if (!image) return
@@ -36,6 +70,18 @@ export function AgentImagePreview({ image, onClose }: AgentImagePreviewProps) {
       if (returnFocus?.isConnected) returnFocus.focus()
     }
   }, [image])
+
+  function openPointerMenu(event: MouseEvent<HTMLImageElement>): void {
+    if (!image) return
+    event.preventDefault()
+    event.stopPropagation()
+    onOpenImageMenu({
+      image,
+      x: event.clientX,
+      y: event.clientY,
+      returnFocus: windowRef.current,
+    })
+  }
 
   return (
     <FloatingWindow
@@ -57,10 +103,12 @@ export function AgentImagePreview({ image, onClose }: AgentImagePreviewProps) {
     >
       {image && (
         <img
+          ref={imageRef}
           src={image.src}
           alt={image.alt}
           draggable={false}
           className={styles.image}
+          onContextMenu={openPointerMenu}
         />
       )}
     </FloatingWindow>

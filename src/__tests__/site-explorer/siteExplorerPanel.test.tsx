@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { readFileSync } from 'fs'
 import { SiteExplorerPanel } from '@site/panels/SiteExplorerPanel'
 import { MediaExplorerPanel } from '@site/panels/MediaExplorerPanel'
+import { publishCmsMediaAssetCreated } from '@admin/pages/media/mediaAssetEvents'
+import { normalizeCmsMediaAsset } from '@core/persistence/cmsMedia'
 import { useEditorStore } from '@site/store/store'
 import { makeNode, makePage, makeSite } from '../fixtures'
 import type { VisualComponent } from '@core/visualComponents'
@@ -528,6 +530,42 @@ describe('SiteExplorerPanel', () => {
       expect(await within(panel).findByRole('button', { name: /open media intro\.mp4/i })).toBeDefined()
       // Non-media files are dropped entirely — no "Other" bucket to land in.
       expect(within(panel).queryByRole('button', { name: /open media catalog\.pdf/i })).toBeNull()
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('keeps an Agent-created media asset when an older list request finishes later', async () => {
+    loadSite()
+    const originalFetch = globalThis.fetch
+    let resolveList!: (response: Response) => void
+    globalThis.fetch = (() => new Promise<Response>((resolve) => {
+      resolveList = resolve
+    })) as typeof fetch
+
+    try {
+      render(<MediaExplorerPanel variant="tab" />)
+      const created = normalizeCmsMediaAsset({
+        id: 'agent-created-image',
+        filename: 'agent-reference.jpg',
+        mimeType: 'image/jpeg',
+        sizeBytes: 42,
+        publicPath: '/uploads/agent-reference.jpg',
+        uploadedByUserId: null,
+        createdAt: '2026-07-11T10:00:00.000Z',
+      })
+      act(() => publishCmsMediaAssetCreated(created))
+      const panel = screen.getByTestId('media-explorer-panel')
+      expect(await within(panel).findByRole('button', { name: /open media agent-reference\.jpg/i }))
+        .toBeDefined()
+
+      await act(async () => {
+        resolveList(new Response(JSON.stringify({ assets: [] }), { status: 200 }))
+      })
+      await waitFor(() => {
+        expect(within(panel).getByRole('button', { name: /open media agent-reference\.jpg/i }))
+          .toBeDefined()
+      })
     } finally {
       globalThis.fetch = originalFetch
     }

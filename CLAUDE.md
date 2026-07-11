@@ -184,8 +184,9 @@ Detailed patterns: [`docs/reference/typebox-patterns.md`](docs/reference/typebox
 
 Every untyped boundary uses TypeBox. Inside the boundary, code trusts the parsed value.
 
-- **HTTP responses (client):** `@core/http` is a single three-layer stack — there is exactly ONE way to validate a response, expressed at the altitude you need:
+- **HTTP responses (client):** `@core/http` is the single client stack — use the entry matching the response kind and altitude:
   - **`apiRequest(path, { schema, … })`** — the canonical entry. Does the `fetch` itself: sets `credentials`, serializes a JSON body (FormData passes through untouched), validates the success body against `schema`, and throws a single `ApiError` (carrying the HTTP status) on failure. Detect cancellation with `isAbortError(err)`. **Default to this** — do NOT hand-roll `fetch` + `res.ok` + `res.json()` in admin code.
+  - **`apiBlobRequest(path, …)`** — the binary-response counterpart for authenticated image/file reads. It shares `apiRequest`'s credential, cancellation, and `ApiError` behavior, then returns a `Blob`; the caller validates the MIME type before use.
   - **`readEnvelope(res, Schema, fallbackMessage)`** — for the persistence layer, which performs its own injectable `fetch` (test seam) and then hands the `Response` here. Checks `res.ok` (throws `ApiError` with status + the `{ error }` envelope message), then validates the body. Its no-body sibling is `assertOk(res, fallback)` for `void`/Blob/streaming/text responses.
   - **`parseJsonResponse(res, Schema)`** — the low-level body-validation primitive that `apiRequest` and `readEnvelope` are *built on*. It validates a body with NO HTTP-status semantics. Reserved for genuine primitives only: the `@core/http` internals, the XHR upload path (`useUploadQueue`), and server-side fetches of external APIs. Do NOT reach for it in admin/persistence code — `assertOk(res, m); parseJsonResponse(res, S)` is exactly `readEnvelope(res, S, m)`; always write the latter.
 - **`JSON.parse` of persisted data:** `safeParseJson(raw, Schema)` for hard, `parseJsonWithFallback(raw, Schema, default)` for soft.
