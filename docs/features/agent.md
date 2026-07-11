@@ -87,6 +87,7 @@ src/admin/ai/
 src/admin/pages/site/agent/
 ├── index.ts                — public barrel (all external imports go through here)
 ├── agentSlice.ts           — scope-agnostic Zustand slice factory (createAgentSlice(config))
+├── agentProviderUpdate.ts  — timed provider/model persistence and fail-closed reconciliation
 ├── agentSliceConfig.site.ts— site-editor config: scope, snapshot builder, executor wiring
 ├── agentConfig.ts          — conversation/default API path constants
 ├── agentApi.ts             — conversation bootstrap and message rehydration
@@ -609,6 +610,8 @@ export const siteAgentSliceConfig: AgentSliceConfig = {
 
 The content workspace uses the same factory with `contentAgentSliceConfig` mounted in a standalone per-page store (`contentAgentStore.ts`).
 
+`agentProviderUpdate.ts` owns the existing-conversation provider/model PUT and its failure reconciliation. A definite 4xx can roll the picker back to the re-read row; a timeout, network failure, or 5xx stays fail-closed unless the re-read already proves that the requested selection committed. `agentSlice.ts` keeps the ordering queue and Send lock because those coordinate store actions rather than HTTP persistence.
+
 Key slice state and actions:
 
 ```ts
@@ -806,6 +809,7 @@ unblocks deletion of the credential that had been protected by the default FK.
   - `src/admin/pages/ai/tabs/UsageTablePanel.tsx` — shared table scaffolding for audit rollups
   - `src/admin/pages/ai/tabs/usageFormat.ts` — `formatNumber` / `formatCost` formatting helpers
   - `src/admin/pages/site/agent/agentSlice.ts` — scope-agnostic slice factory (`createAgentSlice`)
+  - `src/admin/pages/site/agent/agentProviderUpdate.ts` — timed provider/model update and ambiguous-commit reconciliation
   - `src/admin/pages/site/agent/agentSliceConfig.site.ts` — site-editor scope config
   - `src/admin/pages/site/agent/agentApi.ts` — tool-result POST, conversation bootstrap, message rehydration
   - `src/admin/pages/site/agent/streamEvents.ts` — `ServerStreamEventSchema` + `processStreamEvent`

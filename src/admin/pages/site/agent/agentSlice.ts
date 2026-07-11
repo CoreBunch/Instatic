@@ -6,8 +6,8 @@
  * model, then streams through the provider-agnostic direct-HTTP runtime.
  * The NDJSON wire protocol and its per-event handling live in `streamEvents.ts`;
  * conversation bootstrap lives in `agentApi.ts`; shared tool-result POSTs live
- * in `@admin/ai/toolResultApi`; the site-specific page snapshot lives in
- * `pageContext.ts`.
+ * in `@admin/ai/toolResultApi`; provider update reconciliation lives in
+ * `agentProviderUpdate.ts`; the site-specific page snapshot lives in `pageContext.ts`.
  * This module owns only the slice factory: state, actions, and the
  * send/stream-read loop.
  *
@@ -25,7 +25,6 @@ import {
   listConversations,
   getConversation,
   deleteConversation,
-  updateConversationProvider,
 } from '@admin/ai/api'
 import {
   createConversationForScope,
@@ -47,6 +46,11 @@ import type {
   AgentTextStreamSink,
 } from './types'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import {
+  persistConversationProvider,
+  waitForProviderUpdate,
+  type ConfirmedProviderSelection,
+} from './agentProviderUpdate'
 
 // Session-id is in-memory only. While the editor stays open, follow-up
 // messages reuse the SDK session id (Claude has continuity across the
@@ -67,33 +71,6 @@ declare module '@site/store/types' {
 interface ResolvedCredentials {
   credentialId: string
   modelId: string
-}
-
-interface ConfirmedProviderSelection {
-  conversationId: string
-  credentialId: string | null
-  modelId: string | null
-}
-
-const AGENT_PROVIDER_UPDATE_TIMEOUT_MS = 10_000
-
-function waitForPromiseUnlessAborted(
-  promise: Promise<void>,
-  signal: AbortSignal,
-): Promise<boolean> {
-  if (signal.aborted) return Promise.resolve(false)
-  return new Promise<boolean>((resolve) => {
-    let settled = false
-    const finish = (completed: boolean) => {
-      if (settled) return
-      settled = true
-      signal.removeEventListener('abort', onAbort)
-      resolve(completed)
-    }
-    const onAbort = () => finish(false)
-    signal.addEventListener('abort', onAbort, { once: true })
-    void promise.then(() => finish(true), () => finish(true))
-  })
 }
 
 /**
@@ -459,110 +436,27 @@ export function createAgentSlice(
       if (!currentId) return  // staged for the next conversation-create call
       set({ isAgentProviderPending: true })
 
-      const update = _providerUpdateQueue.then(async () => {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(
-          () => controller.abort(),
-          AGENT_PROVIDER_UPDATE_TIMEOUT_MS,
-        )
-        try {
-          await updateConversationProvider(currentId, credentialId, modelId, controller.signal)
-        } catch (err) {
-          if (controller.signal.aborted) {
-            throw new Error('Model change timed out. Try again.', { cause: err })
-          }
-          throw err
-        } finally {
-          clearTimeout(timeoutId)
-        }
-        if (get().agentConversationId === currentId) {
-          _confirmedProviderSelection = { conversationId: currentId, credentialId, modelId }
-        }
-      })
-      let updateFailed = false
-      const handledUpdate = update.catch(async (err) => {
-        console.error('[AgentSlice] Failed to update provider:', err)
-        let message = getErrorMessage(err, 'Failed to update conversation provider.')
-        // Only a handler-originated 4xx is a definite terminal rejection.
-        // Network failures, timeouts, and proxy/origin 5xx responses can all
-        // race a server commit after the browser has received the failure.
-        const commitWasAmbiguous = !(
-          err instanceof ApiError
-          && err.status >= 400
-          && err.status < 500
-        )
-
-        // A lost response is an ambiguous commit: the server may have applied
-        // the PUT even though the browser saw a timeout/network error. Re-read
-        // the row before allowing Send so picker and chat routing cannot split.
-        const reconcileController = new AbortController()
-        const reconcileTimeoutId = setTimeout(
-          () => reconcileController.abort(),
-          AGENT_PROVIDER_UPDATE_TIMEOUT_MS,
-        )
-        let authoritative: Awaited<ReturnType<typeof getConversation>> | null = null
-        try {
-          authoritative = await getConversation(currentId, reconcileController.signal)
-        } catch (reconcileErr) {
-          console.error('[AgentSlice] Failed to reconcile provider update:', reconcileErr)
-        } finally {
-          clearTimeout(reconcileTimeoutId)
-        }
+      const handledUpdate = _providerUpdateQueue.then(async () => {
+        const result = await persistConversationProvider(currentId, credentialId, modelId)
 
         // A replacement conversation owns the UI now; this request must not
         // mutate its selection or pending state.
         if (get().agentConversationId !== currentId) return
 
-        if (authoritative) {
-          if (
-            authoritative.credentialId === credentialId
-            && authoritative.modelId === modelId
-          ) {
-            // The response was lost after commit. The requested outcome is
-            // authoritative, so treat the model change as successful.
-            _confirmedProviderSelection = {
-              conversationId: currentId,
-              credentialId: authoritative.credentialId,
-              modelId: authoritative.modelId,
-            }
-            set({
-              agentActiveCredentialId: authoritative.credentialId,
-              agentActiveModelId: authoritative.modelId,
-            })
-            return
-          }
-
-          if (!commitWasAmbiguous) {
-            // An explicit HTTP error means the PUT reached a terminal response;
-            // the subsequent read is safe to treat as the rollback state.
-            _confirmedProviderSelection = {
-              conversationId: currentId,
-              credentialId: authoritative.credentialId,
-              modelId: authoritative.modelId,
-            }
-            set({
-              agentActiveCredentialId: authoritative.credentialId,
-              agentActiveModelId: authoritative.modelId,
-            })
-          } else {
-            authoritative = null
-          }
-        }
-
-        if (!authoritative) {
-          _confirmedProviderSelection = null
-          message = `${message} The server state could not be confirmed; choose a model again.`
-          set({ agentActiveCredentialId: null, agentActiveModelId: null })
-        }
-
-        updateFailed = true
-        set({ agentError: message })
-        pushToast({
-          kind: 'error',
-          title: "Couldn't change model",
-          body: message,
-          location: 'site-editor',
+        _confirmedProviderSelection = result.selection
+        set({
+          agentActiveCredentialId: result.selection?.credentialId ?? null,
+          agentActiveModelId: result.selection?.modelId ?? null,
+          agentError: result.kind === 'rejected' ? result.message : null,
         })
+        if (result.kind === 'rejected') {
+          pushToast({
+            kind: 'error',
+            title: "Couldn't change model",
+            body: result.message,
+            location: 'site-editor',
+          })
+        }
       })
       // Later selections and Send wait until rollback/error handling finishes,
       // while this action still resolves after surfacing the operation failure.
@@ -570,14 +464,6 @@ export function createAgentSlice(
       await handledUpdate
       if (get().agentConversationId === currentId) {
         set({ isAgentProviderPending: false })
-      }
-      if (
-        !updateFailed
-        && get().agentConversationId === currentId
-        && get().agentActiveCredentialId === credentialId
-        && get().agentActiveModelId === modelId
-      ) {
-        set({ agentError: null })
       }
     },
 
@@ -649,7 +535,7 @@ export function createAgentSlice(
       try {
         // A model picked immediately before Send must reach the conversation
         // row before the chat handler resolves its capability.
-        const providerReady = await waitForPromiseUnlessAborted(
+        const providerReady = await waitForProviderUpdate(
           _providerUpdateQueue,
           controller.signal,
         )
