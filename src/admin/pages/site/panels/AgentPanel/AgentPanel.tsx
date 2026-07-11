@@ -26,10 +26,8 @@ import { useAgentStore } from '@admin/ai/useAgentStore'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useAdminNavigate } from '@admin/lib/useAdminNavigate'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
-import { listCredentials, listModels } from '@admin/ai/api'
+import { listCredentials } from '@admin/ai/api'
 import { renderMarkdownToHtml, type AgentMessage, type AgentToolCall } from '@site/agent'
-import { SquareSolidIcon } from 'pixel-art-icons/icons/square-solid'
-import { SendSolidIcon } from 'pixel-art-icons/icons/send-solid'
 import { AiBoxSolidIcon } from 'pixel-art-icons/icons/ai-box-solid'
 import { AiSettingsSolidIcon } from 'pixel-art-icons/icons/ai-settings-solid'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
@@ -38,12 +36,10 @@ import { PanelHeader } from '@admin/shared/PanelHeader'
 import { UserAvatar } from '@admin/shared/UserAvatar'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
-import { Textarea } from '@ui/components/Input'
 import { useDraggablePanel } from '@site/hooks/useDraggablePanel'
 import { cn } from '@ui/cn'
-import { ModelPicker } from './ModelPicker'
 import { ConversationHistory } from './ConversationHistory'
-import { ContextMeter } from './ContextMeter'
+import { AgentComposer, type ComposerLockReason } from './AgentComposer'
 import { ToolCallRow } from './ToolCallRow'
 import { formatRelativeTime } from './relativeTime'
 import styles from './AgentPanel.module.css'
@@ -67,13 +63,14 @@ type PanelVariant = 'floating' | 'docked'
 export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant }) {
   const isOpen = useAgentStore((s) => s.isAgentOpen)
   const isStreaming = useAgentStore((s) => s.isAgentStreaming)
+  const conversationPending = useAgentStore((s) => s.isAgentConversationPending)
+  const providerPending = useAgentStore((s) => s.isAgentProviderPending)
   const messages = useAgentStore((s) => s.agentMessages)
   const agentError = useAgentStore((s) => s.agentError)
   const closeAgent = useAgentStore((s) => s.closeAgent)
-  const sendAgentMessage = useAgentStore((s) => s.sendAgentMessage)
-  const abortAgent = useAgentStore((s) => s.abortAgent)
   const startNewAgentConversation = useAgentStore((s) => s.startNewAgentConversation)
   const loadScopeDefault = useAgentStore((s) => s.loadScopeDefault)
+  const composerEpoch = useAgentStore((s) => s.agentComposerEpoch)
   const activeCredentialId = useAgentStore((s) => s.agentActiveCredentialId)
   const activeModelId = useAgentStore((s) => s.agentActiveModelId)
   const credentialsResource = useAsyncResource(
@@ -97,7 +94,7 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
   //                   choose a model below, or set a default in AI settings.
   // While credentials are still loading we keep messaging neutral (null) so
   // the panel doesn't flash a setup prompt before the default preload lands.
-  const lockReason: 'setup' | 'chooseModel' | null = !composerLocked
+  const lockReason: ComposerLockReason | null = !composerLocked
     ? null
     : noCredentials
       ? 'setup'
@@ -105,24 +102,6 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
         ? 'chooseModel'
         : null
 
-  // Resolve the active model's context window from the catalogue (via the
-  // models endpoint) so the composer meter can show "0 / window" before the
-  // first turn. Re-runs whenever the selected credential/model changes; null
-  // until a model is picked, or when the provider has no published window
-  // (Ollama / uncatalogued) — the meter then stays hidden.
-  const activeProviderId =
-    credentials.find((c) => c.id === activeCredentialId)?.providerId ?? null
-  const contextWindowResource = useAsyncResource(
-    async () => {
-      if (!activeProviderId || !activeCredentialId || !activeModelId) return null
-      const models = await listModels(activeProviderId, activeCredentialId)
-      return models.find((m) => m.id === activeModelId)?.contextWindow ?? null
-    },
-    [activeProviderId, activeCredentialId, activeModelId],
-    { swallowErrors: true },
-  )
-
-  const inputRef = useRef<HTMLTextAreaElement>(null)
   const threadRef = useRef<HTMLDivElement>(null)
 
   // ── Draggable panel position ───────────────────────────────────────────────
@@ -143,16 +122,6 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
     if (el) el.scrollTop = el.scrollHeight
   }, [messages])
 
-  // Focus input when panel becomes active (isOpen transitions to true).
-  // The 50ms delay lets the panel's open transition settle before we steal
-  // focus; cleanup cancels the pending focus if the panel closes again
-  // (or the component unmounts) before the timer fires.
-  useEffect(() => {
-    if (!isOpen) return
-    const id = setTimeout(() => inputRef.current?.focus(), 50)
-    return () => clearTimeout(id)
-  }, [isOpen])
-
   // Preload the per-scope default credential + model when the panel opens, so
   // the picker shows the configured default immediately and the first send
   // uses it. The action no-ops if a conversation or explicit pick already
@@ -172,24 +141,6 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [isOpen, closeAgent])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const input = inputRef.current
-    if (!input) return
-    const content = input.value.trim()
-    if (!content || isStreaming) return
-    input.value = ''
-    input.style.height = 'auto'
-    await sendAgentMessage(content)
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSubmit(e as unknown as React.FormEvent)
-    }
-  }
 
   // Always-mounted: CSS display:none when closed (via .floatPanelClosed) preserves
   // Zustand state across open/close cycles without conditional rendering.
@@ -227,6 +178,7 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
           variant="ghost"
           size="xs"
           iconOnly
+          disabled={isStreaming || conversationPending || providerPending}
           onClick={startNewAgentConversation}
           tooltip="New chat"
           aria-label="New chat"
@@ -279,75 +231,14 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
         )}
       </div>
 
-      {/* ── Input bar ───────────────────────────────────────────────────────── */}
-      <div className={styles.inputBar}>
-        {/* Live context-window meter — renders once the active model's window
-            is known (pre-turn shows 0 / window). */}
-        <ContextMeter windowTokens={contextWindowResource.data} />
-        <form onSubmit={handleSubmit} className={styles.inputForm}>
-          {/* Textarea is hidden while streaming — the controls row collapses
-              to just the model picker + Stop button. */}
-          {!isStreaming && (
-            <Textarea
-              ref={inputRef}
-              placeholder={lockReason === 'setup'
-                ? 'Add AI credentials to start chatting'
-                : lockReason === 'chooseModel'
-                  ? 'Choose a model below to start'
-                  : 'Tell me what to build… (Enter to send)'}
-              aria-label="Message to AI assistant"
-              rows={2}
-              resize="none"
-              disabled={composerLocked}
-              onKeyDown={handleKeyDown}
-              onChange={(e) => {
-                // Auto-grow textarea
-                e.target.style.height = 'auto'
-                e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
-              }}
-            />
-          )}
-          {/* Controls row: model picker on the left (saves vertical space),
-              minimal icon-only send/stop button on the right. */}
-          <div className={styles.inputControls}>
-            <ModelPicker
-              className={styles.inputControlsPicker}
-              credentials={credentials}
-              credentialsLoaded={credentialsLoaded}
-              onRefreshCredentials={credentialsResource.refresh}
-            />
-            {isStreaming ? (
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                iconOnly
-                onClick={abortAgent}
-                tooltip="Stop"
-                aria-label="Stop"
-              >
-                <SquareSolidIcon size={14} />
-              </Button>
-            ) : (
-              <Button
-                type="submit"
-                variant="primary"
-                size="sm"
-                iconOnly
-                disabled={composerLocked}
-                tooltip={lockReason === 'setup'
-                  ? 'Add AI credentials first'
-                  : lockReason === 'chooseModel'
-                    ? 'Choose a model first'
-                    : 'Send'}
-                aria-label="Send"
-              >
-                <SendSolidIcon size={14} />
-              </Button>
-            )}
-          </div>
-        </form>
-      </div>
+      <AgentComposer
+        key={composerEpoch}
+        composerLocked={composerLocked}
+        lockReason={lockReason}
+        credentials={credentials}
+        credentialsLoaded={credentialsLoaded}
+        onRefreshCredentials={credentialsResource.refresh}
+      />
     </div>
     </aside>
   )
@@ -393,6 +284,8 @@ function MessageBubble({ group }: { group: ConversationGroup }) {
       {groupRenderItems(group.messages).map((item) =>
         item.kind === 'text' ? (
           <MarkdownTextBubble key={item.key} text={item.text} isUser={isUser} />
+        ) : item.kind === 'image' ? (
+          <UserImageBubble key={item.key} mimeType={item.mimeType} data={item.data} />
         ) : (
           // A run of consecutive tool calls shares one container so the rows
           // stack tightly; text blocks around them stay separate bubbles.
@@ -431,6 +324,7 @@ type MessageBlock = AgentMessage['blocks'][number]
 
 type MessageRenderItem =
   | { kind: 'text'; key: string; text: string }
+  | { kind: 'image'; key: string; mimeType: string; data: string }
   | { kind: 'tools'; key: string; toolCalls: AgentToolCall[] }
 
 function groupRenderItems(messages: AgentMessage[]): MessageRenderItem[] {
@@ -442,6 +336,15 @@ function groupRenderItems(messages: AgentMessage[]): MessageRenderItem[] {
         items.push({ kind: 'text', key: `text-${message.id}-${index}`, text: block.text })
         return
       }
+      if (block.kind === 'image') {
+        items.push({
+          kind: 'image',
+          key: `image-${message.id}-${index}`,
+          mimeType: block.mimeType,
+          data: block.data,
+        })
+        return
+      }
       const last = items.at(-1)
       if (last && last.kind === 'tools') {
         last.toolCalls.push(block.toolCall)
@@ -451,6 +354,18 @@ function groupRenderItems(messages: AgentMessage[]): MessageRenderItem[] {
     })
   }
   return items
+}
+
+function UserImageBubble({ mimeType, data }: { mimeType: string; data: string }) {
+  return (
+    <img
+      src={`data:${mimeType};base64,${data}`}
+      alt="Attachment from you"
+      loading="lazy"
+      decoding="async"
+      className={styles.userImage}
+    />
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -490,8 +405,6 @@ const MarkdownTextBubble = memo(function MarkdownTextBubble({
 // ---------------------------------------------------------------------------
 // Empty state
 // ---------------------------------------------------------------------------
-
-type ComposerLockReason = 'setup' | 'chooseModel'
 
 function AgentEmptyState({ mode }: { mode: ComposerLockReason | 'prompt' }) {
   if (mode === 'setup') {

@@ -82,6 +82,7 @@ const ModelSchema = Type.Object({
   capabilities: Type.Object({
     toolCalling: Type.Boolean(),
     visionInput: Type.Boolean(),
+    toolResultImages: Type.Boolean(),
     promptCache: Type.Boolean(),
     streaming: Type.Boolean(),
   }),
@@ -202,6 +203,7 @@ export async function createCredential(body: CreateCredentialBody): Promise<Cred
 
 export async function deleteCredential(id: string): Promise<void> {
   await apiRequest(`/admin/api/ai/credentials/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  clearModelListCache(id)
 }
 
 export interface TestResult {
@@ -231,15 +233,53 @@ export async function testCredential(id: string): Promise<TestResult> {
 // Endpoints — models
 // ---------------------------------------------------------------------------
 
+const MODEL_LIST_TIMEOUT_MS = 10_000
+const MODEL_LIST_CACHE_TTL_MS = 5 * 60_000
+const modelListRequests = new Map<string, Promise<AiModel[]>>()
+const modelListCache = new Map<string, { expiresAt: number; models: AiModel[] }>()
+
+/** Invalidate model catalogues after a credential mutation (or between tests). */
+export function clearModelListCache(credentialId?: string): void {
+  if (!credentialId) {
+    modelListCache.clear()
+    return
+  }
+  for (const key of modelListCache.keys()) {
+    if (key.endsWith(`\0${credentialId}`)) modelListCache.delete(key)
+  }
+}
+
 export async function listModels(
   providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'openai-compatible',
   credentialId?: string,
 ): Promise<AiModel[]> {
-  const body = await apiRequest(`/admin/api/ai/providers/${providerId}/models`, {
+  const key = `${providerId}\0${credentialId ?? ''}`
+  const cached = modelListCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.models
+  if (cached) modelListCache.delete(key)
+  const pending = modelListRequests.get(key)
+  if (pending) return pending
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), MODEL_LIST_TIMEOUT_MS)
+  const request = apiRequest(`/admin/api/ai/providers/${providerId}/models`, {
     query: { credentialId },
     schema: ModelListResponseSchema,
+    signal: controller.signal,
+  }).then((body) => {
+    modelListCache.set(key, {
+      expiresAt: Date.now() + MODEL_LIST_CACHE_TTL_MS,
+      models: body.models,
+    })
+    return body.models
   })
-  return body.models
+  modelListRequests.set(key, request)
+  try {
+    return await request
+  } finally {
+    clearTimeout(timeoutId)
+    if (modelListRequests.get(key) === request) modelListRequests.delete(key)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -274,9 +314,13 @@ export async function listConversations(scope: 'site' | 'content' | 'data' | 'pl
   return body.conversations
 }
 
-export async function getConversation(id: string): Promise<ConversationDetail> {
+export async function getConversation(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ConversationDetail> {
   const body = await apiRequest(`/admin/api/ai/conversations/${encodeURIComponent(id)}`, {
     schema: ConversationDetailResponseSchema,
+    signal,
   })
   return body.conversation
 }
@@ -289,11 +333,13 @@ export async function updateConversationProvider(
   id: string,
   credentialId: string,
   modelId: string,
+  signal?: AbortSignal,
 ): Promise<ConversationView> {
   const body = await apiRequest(`/admin/api/ai/conversations/${encodeURIComponent(id)}`, {
     method: 'PUT',
     body: { credentialId, modelId },
     schema: ConversationItemResponseSchema,
+    signal,
   })
   return body.conversation
 }

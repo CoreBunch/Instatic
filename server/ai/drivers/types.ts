@@ -49,6 +49,8 @@ export interface AiProviderCapabilities {
   readonly toolCalling: boolean
   /** Model accepts image content blocks. */
   readonly visionInput: boolean
+  /** Provider wire format can deliver native images inside tool results. */
+  readonly toolResultImages: boolean
   /** Provider supports Anthropic-style cache_control on the static prefix. */
   readonly promptCache: boolean
   /** Provider streams tokens. Currently always true; future non-streaming drivers may set false. */
@@ -112,10 +114,12 @@ export interface AiStreamRequest {
   readonly tools: AiTool[]
   readonly modelId: string
   /**
-   * Capabilities of `modelId`, resolved once by the chat handler via
-   * `driver.capabilities(modelId)`. The shared tool loop reads `visionInput`
-   * to decide whether the browser should capture a `render_snapshot`
-   * screenshot at all — non-vision models get the layout report only.
+   * Capabilities of `modelId`, resolved once by the chat handler. Static
+   * driver knowledge is the fast path; model-specific providers resolve the
+   * selected model from their live metadata. The shared tool loop captures a
+   * `render_snapshot` screenshot only when both `visionInput` and
+   * `toolResultImages` are true; every other channel gets the text layout
+   * report without an image it cannot carry.
    */
   readonly modelCapabilities: AiProviderCapabilities
   readonly credentials: AiResolvedCredential
@@ -174,7 +178,22 @@ export interface AiProvider {
 
   capabilities(modelId: string): AiProviderCapabilities
 
-  listModels(credentials: AiResolvedCredential): Promise<AiProviderModel[]>
+  /**
+   * Optional selected-model lookup for providers whose vision/tool support is
+   * model-specific. The chat boundary caches and de-duplicates this result;
+   * drivers should query the narrowest authoritative provider endpoint they
+   * expose. A failed lookup is treated as non-vision by the caller.
+   */
+  resolveCapabilities?(
+    credentials: AiResolvedCredential,
+    modelId: string,
+    signal: AbortSignal,
+  ): Promise<AiProviderCapabilities>
+
+  listModels(
+    credentials: AiResolvedCredential,
+    signal?: AbortSignal,
+  ): Promise<AiProviderModel[]>
 
   /**
    * Run one agent turn. Yields canonical AiStreamEvents as the model

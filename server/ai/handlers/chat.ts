@@ -4,7 +4,7 @@
  * Opens an NDJSON stream against a chat. Body:
  *   {
  *     conversationId: string,
- *     prompt:         string,
+ *     content:        Array<{ kind: 'text' | 'image', ... }>,
  *     snapshot?:      unknown   // scope-specific per-request context
  *   }
  *
@@ -19,8 +19,21 @@
  *   6. Streams NDJSON events back as the driver produces them.
  */
 
-import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
-import { jsonResponse, readValidatedBody, badRequest } from '../../http'
+import { safeParseValue } from '@core/utils/typeboxHelpers'
+import {
+  AI_CHAT_MAX_REQUEST_BYTES,
+  AI_CONVERSATION_MAX_USER_IMAGES,
+  AiChatRequestBodySchema,
+  type AiChatRequestBody,
+  type AiContentBlock,
+} from '@core/ai'
+import {
+  RequestBodyTooLargeError,
+  badRequest,
+  jsonResponse,
+  payloadTooLarge,
+  readValidatedBody,
+} from '../../http'
 import { requireCapability } from '../../auth/authz'
 import type { DbClient } from '../../db/client'
 import { createAuditEvent } from '../../repositories/audit'
@@ -28,17 +41,26 @@ import {
   appendMessage,
   listMessagesForConversation,
   readConversationForUser,
-  updateConversationForUser,
+  replaceDefaultConversationTitle,
   deriveConversationTitle,
   DEFAULT_CONVERSATION_TITLE,
 } from '../conversations/store'
-import { buildMessageHistory } from '../conversations/history'
+import {
+  buildMessageHistory,
+  projectUserImagesForModel,
+} from '../conversations/history'
 import {
   readCredentialForUser,
   resolveCredentialForDriver,
   touchCredentialLastUsed,
 } from '../credentials/store'
 import { resolveDriver } from '../drivers'
+import { resolveModelCapabilities } from '../drivers/modelCapabilities'
+import {
+  AiImageInputError,
+  canonicaliseAiUserContent,
+  preflightAiUserContent,
+} from '../inputImages'
 import { selectToolsForScope } from '../tools'
 import {
   buildSiteSystemPrompt,
@@ -62,16 +84,9 @@ import type {
 } from '../runtime/types'
 import type { AiStreamRequest } from '../drivers/types'
 
-const ChatRequestBodySchema = Type.Object({
-  conversationId: Type.String({ minLength: 1 }),
-  prompt: Type.String({ minLength: 1 }),
-  // snapshot stays loose here — scope-specific shape; tools cast it inside
-  // their handlers. The handler narrows below based on the conversation's
-  // scope before passing to the system-prompt builder.
-  snapshot: Type.Optional(Type.Unknown()),
-})
-
 const VALID_SCOPES: ToolScope[] = ['site', 'content', 'data', 'plugin']
+const activeChatConversations = new Set<string>()
+const REQUEST_ABORTED = Symbol('request-aborted')
 
 /**
  * Match `/admin/api/ai/chat/:scope`. Returns `null` if path doesn't match.
@@ -105,9 +120,19 @@ async function handleAiChat(
   if (userOrResponse instanceof Response) return userOrResponse
   const user = userOrResponse
 
-  const chatBody = await readValidatedBody(req, ChatRequestBodySchema)
+  let chatBody: AiChatRequestBody | null
+  try {
+    chatBody = await readValidatedBody(req, AiChatRequestBodySchema, {
+      maxBytes: AI_CHAT_MAX_REQUEST_BYTES,
+    })
+  } catch (err) {
+    if (err instanceof RequestBodyTooLargeError) {
+      return payloadTooLarge('Chat request is too large.')
+    }
+    throw err
+  }
   if (!chatBody) return badRequest('Invalid request body.')
-  const { conversationId, prompt, snapshot } = chatBody
+  const { conversationId, content, snapshot } = chatBody
 
   const conversation = await readConversationForUser(db, user.id, conversationId)
   if (!conversation) {
@@ -142,54 +167,172 @@ async function handleAiChat(
   }
 
   const driver = resolveDriver(credential.providerId)
-  // Capability-filtered toolset. Callers without `ai.tools.write` only see
-  // read tools registered with the driver — the model has no way to
-  // emit a write call. See B6 in the capabilities review.
-  const tools = selectToolsForScope(scope, user.capabilities)
-
-  // Append the user's message BEFORE streaming so it's persisted even if
-  // the stream aborts mid-response.
-  await appendMessage(db, conversation.id, {
-    role: 'user',
-    content: [{ kind: 'text', text: prompt }],
-  })
-
-  // The first prompt names the conversation: replace the placeholder title
-  // with an excerpt of what the user asked for. Only fires while the title is
-  // still the default, so a user-renamed chat is never overwritten.
-  if (conversation.title === DEFAULT_CONVERSATION_TITLE) {
-    const derivedTitle = deriveConversationTitle(prompt)
-    if (derivedTitle) {
-      await updateConversationForUser(db, user.id, conversation.id, { title: derivedTitle })
-        .catch((err) => { console.error('[ai/chat] auto-title failed:', err) })
+  let preflight: ReturnType<typeof preflightAiUserContent>
+  try {
+    preflight = preflightAiUserContent(content)
+  } catch (err) {
+    if (err instanceof AiImageInputError) {
+      return err.status === 413 ? payloadTooLarge(err.message) : badRequest(err.message)
+    }
+    throw err
+  }
+  const requestedImage = preflight.image !== null
+  if (requestedImage) {
+    // Avoid an expensive decode when the conversation is already at its image
+    // budget. The authoritative check is repeated under the writer lease.
+    const initialRecords = await listMessagesForConversation(db, conversation.id)
+    const existingImageCount = countUserImages(initialRecords)
+    if (existingImageCount >= AI_CONVERSATION_MAX_USER_IMAGES) {
+      return payloadTooLarge(
+        `This conversation already contains ${AI_CONVERSATION_MAX_USER_IMAGES} images. Start a new chat to attach another.`,
+      )
     }
   }
 
-  const existingMessages = await listMessagesForConversation(db, conversation.id)
-  const messages = buildMessageHistory(existingMessages)
+  // Resolve every selected model, not only image-bearing turns: the same
+  // authoritative flag also gates browser-tool screenshots. Model-specific
+  // drivers are cached/de-duplicated by the shared resolver.
+  const modelCapabilities = await waitForRequest(
+    resolveModelCapabilities(driver, resolvedCredential, conversation.modelId),
+    req.signal,
+  )
+  if (modelCapabilities === REQUEST_ABORTED) return clientClosedRequest()
+  const tools = selectToolsForScope(scope, user.capabilities)
+  if (requestedImage && !modelCapabilities.visionInput) {
+    return jsonResponse(
+      { error: 'The selected model does not support image input. Choose a vision-capable model.' },
+      { status: 422 },
+    )
+  }
+  if (tools.length > 0 && !modelCapabilities.toolCalling) {
+    return jsonResponse(
+      { error: 'The selected model does not support tool calling. Choose an agent-capable model.' },
+      { status: 422 },
+    )
+  }
+  if (req.signal.aborted) return clientClosedRequest()
 
-  const systemPrompt = buildSystemPromptForScope(scope, snapshot)
+  // Full decode/re-encode is deliberately after the cheap conversation budget
+  // and capability gates so rejected requests cannot force needless Sharp work.
+  let userContent: AiContentBlock[]
+  try {
+    userContent = await canonicaliseAiUserContent(preflight)
+  } catch (err) {
+    if (err instanceof AiImageInputError) {
+      return err.status === 413 ? payloadTooLarge(err.message) : badRequest(err.message)
+    }
+    throw err
+  }
+  if (req.signal.aborted) return clientClosedRequest()
 
-  // Capture totals reported by the persister so the audit row can hold
-  // them when the stream completes (we read them off the conversation row
-  // diff post-stream — see the post-loop block).
-  const tokensAtStart = {
-    prompt: conversation.promptTokensTotal,
-    completion: conversation.completionTokensTotal,
-    cost: conversation.costUsdTotal,
+  // One provider stream may write a conversation at a time. Besides avoiding
+  // interleaved assistant/tool rows, this lets the refreshed image-budget
+  // check below stay atomic with the append: concurrent tabs get a retryable
+  // 409 instead of overshooting the cap.
+  const releaseConversation = acquireConversationStream(conversation.id)
+  if (!releaseConversation) {
+    return jsonResponse(
+      { error: 'This conversation is already generating a response. Wait for it to finish.' },
+      { status: 409 },
+    )
+  }
+  if (req.signal.aborted) {
+    releaseConversation()
+    return clientClosedRequest()
   }
 
-  await createAuditEvent(db, {
-    actorUserId: user.id,
-    action: 'ai.chat.started',
-    targetType: 'ai_conversation',
-    targetId: conversation.id,
-    metadata: {
-      scope,
-      providerId: credential.providerId,
-      modelId: conversation.modelId,
-    },
-  })
+  let existingRecords: Awaited<ReturnType<typeof listMessagesForConversation>>
+  let latestConversation: NonNullable<Awaited<ReturnType<typeof readConversationForUser>>>
+  try {
+    const refreshedConversation = await readConversationForUser(db, user.id, conversation.id)
+    if (!refreshedConversation) {
+      releaseConversation()
+      return jsonResponse({ error: 'Conversation not found' }, { status: 404 })
+    }
+    latestConversation = refreshedConversation
+    if (
+      latestConversation.credentialId !== conversation.credentialId
+      || latestConversation.modelId !== conversation.modelId
+    ) {
+      releaseConversation()
+      return jsonResponse(
+        { error: 'The conversation model changed while this message was being prepared. Send again.' },
+        { status: 409 },
+      )
+    }
+    existingRecords = await listMessagesForConversation(db, conversation.id)
+  } catch (err) {
+    releaseConversation()
+    throw err
+  }
+  if (req.signal.aborted) {
+    releaseConversation()
+    return clientClosedRequest()
+  }
+  const currentImageCount = countUserImages(existingRecords)
+  if (requestedImage && currentImageCount >= AI_CONVERSATION_MAX_USER_IMAGES) {
+    releaseConversation()
+    return payloadTooLarge(
+      `This conversation already contains ${AI_CONVERSATION_MAX_USER_IMAGES} images. Start a new chat to attach another.`,
+    )
+  }
+
+  const prepared = await (async () => {
+    try {
+      // Append the user's message BEFORE streaming so it's persisted even if
+      // the stream aborts mid-response.
+      const appendedMessage = await appendMessage(db, conversation.id, {
+        role: 'user',
+        content: userContent,
+      })
+
+      // The first prompt names the conversation: replace the placeholder title
+      // with an excerpt of what the user asked for. Only fires while the title
+      // is still the default, so a user-renamed chat is never overwritten.
+      if (latestConversation.title === DEFAULT_CONVERSATION_TITLE) {
+        const text = userContent.find((block) => block.kind === 'text')
+        const derivedTitle = text?.kind === 'text'
+          ? deriveConversationTitle(text.text)
+          : 'Image'
+        if (derivedTitle) {
+          await replaceDefaultConversationTitle(db, user.id, conversation.id, derivedTitle)
+            .catch((err) => { console.error('[ai/chat] auto-title failed:', err) })
+        }
+      }
+
+      const messages = projectUserImagesForModel(
+        buildMessageHistory([...existingRecords, appendedMessage]),
+        modelCapabilities.visionInput,
+      )
+      const systemPrompt = buildSystemPromptForScope(scope, snapshot)
+
+      // Capture totals reported by the persister so the audit row can hold
+      // them when the stream completes (we read them off the conversation row
+      // diff post-stream — see the post-loop block).
+      const tokensAtStart = {
+        prompt: latestConversation.promptTokensTotal,
+        completion: latestConversation.completionTokensTotal,
+        cost: latestConversation.costUsdTotal,
+      }
+
+      await createAuditEvent(db, {
+        actorUserId: user.id,
+        action: 'ai.chat.started',
+        targetType: 'ai_conversation',
+        targetId: conversation.id,
+        metadata: {
+          scope,
+          providerId: credential.providerId,
+          modelId: conversation.modelId,
+        },
+      })
+      return { messages, systemPrompt, tokensAtStart }
+    } catch (err) {
+      releaseConversation()
+      throw err
+    }
+  })()
+  const { messages, systemPrompt, tokensAtStart } = prepared
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -251,7 +394,7 @@ async function handleAiChat(
           messages,
           tools,
           modelId: conversation.modelId,
-          modelCapabilities: driver.capabilities(conversation.modelId),
+          modelCapabilities,
           credentials: resolvedCredential,
           signal: req.signal,
           bridge,
@@ -274,7 +417,6 @@ async function handleAiChat(
         emit({ type: 'error', message: `AI chat failed: ${detail}` })
       } finally {
         if (destroyBridge) destroyBridge()
-        closeStream()
         // Emit the terminal audit event. Re-read the conversation row to
         // capture the deltas the persister just committed.
         try {
@@ -301,6 +443,9 @@ async function handleAiChat(
           // Audit failures must never break the user-visible stream — the
           // request already finished by the time we hit this branch.
           console.error('[ai/chat] audit emit failed:', auditErr)
+        } finally {
+          releaseConversation()
+          closeStream()
         }
       }
     },
@@ -310,7 +455,7 @@ async function handleAiChat(
     status: 200,
     headers: {
       'Content-Type': 'application/x-ndjson',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'private, no-store',
       'X-Accel-Buffering': 'no',
     },
   })
@@ -319,6 +464,45 @@ async function handleAiChat(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function acquireConversationStream(conversationId: string): (() => void) | null {
+  if (activeChatConversations.has(conversationId)) return null
+  activeChatConversations.add(conversationId)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    activeChatConversations.delete(conversationId)
+  }
+}
+
+type StoredConversationMessage = Awaited<
+  ReturnType<typeof listMessagesForConversation>
+>[number]
+
+function countUserImages(records: readonly StoredConversationMessage[]): number {
+  return records.reduce(
+    (count, record) => count + (
+      record.role === 'user'
+        ? record.content.filter((block) => block.kind === 'image').length
+        : 0
+    ),
+    0,
+  )
+}
+
+function clientClosedRequest(): Response {
+  return new Response(null, { status: 499, statusText: 'Client Closed Request' })
+}
+
+function waitForRequest<T>(promise: Promise<T>, signal: AbortSignal): Promise<T | typeof REQUEST_ABORTED> {
+  if (signal.aborted) return Promise.resolve(REQUEST_ABORTED)
+  return new Promise<T | typeof REQUEST_ABORTED>((resolve, reject) => {
+    const onAbort = () => resolve(REQUEST_ABORTED)
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+  })
+}
 
 export function buildSystemPromptForScope(
   scope: ToolScope,

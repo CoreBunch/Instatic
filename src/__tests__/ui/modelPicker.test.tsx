@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ModelPicker, type ModelChoice } from '@admin/ai/ModelPicker'
-import type { CredentialView } from '@admin/ai/api'
+import { clearModelListCache, type CredentialView } from '@admin/ai/api'
 
 const originalFetch = globalThis.fetch
 
 afterEach(() => {
   cleanup()
   globalThis.fetch = originalFetch
+  clearModelListCache()
 })
 
 function credential(over: Partial<CredentialView> = {}): CredentialView {
@@ -29,7 +30,7 @@ function credential(over: Partial<CredentialView> = {}): CredentialView {
 const MODELS = Array.from({ length: 12 }, (_, i) => ({
   id: `m${i}`,
   label: i === 3 ? 'Claude Opus' : i === 4 ? 'Claude Sonnet' : `Model ${i}`,
-  capabilities: { toolCalling: true, visionInput: false, promptCache: false, streaming: true },
+  capabilities: { toolCalling: true, visionInput: false, toolResultImages: false, promptCache: false, streaming: true },
 }))
 
 function mockModelsFetch() {
@@ -42,7 +43,10 @@ function mockModelsFetch() {
 }
 
 describe('ModelPicker', () => {
-  beforeEach(mockModelsFetch)
+  beforeEach(() => {
+    clearModelListCache()
+    mockModelsFetch()
+  })
 
   it('renders the field trigger with a placeholder when nothing is selected', () => {
     render(
@@ -58,6 +62,39 @@ describe('ModelPicker', () => {
     )
     const trigger = screen.getByRole('button', { name: 'Model for site' })
     expect(trigger.textContent).toContain('Choose a model')
+  })
+
+  it('shares and briefly caches a credential catalogue across picker instances', async () => {
+    const selected = { credentialId: 'cred-or', modelId: 'm0' }
+    const { rerender } = render(
+      <ModelPicker
+        credentials={[credential()]}
+        credentialsLoaded
+        value={selected}
+        onChange={() => {}}
+      />,
+    )
+    await waitFor(() => expect(screen.getByRole('button').textContent).toContain('Model 0'))
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <div>
+        <ModelPicker
+          credentials={[credential()]}
+          credentialsLoaded
+          value={selected}
+          onChange={() => {}}
+        />
+        <ModelPicker
+          credentials={[credential()]}
+          credentialsLoaded
+          value={selected}
+          onChange={() => {}}
+        />
+      </div>,
+    )
+    await waitFor(() => expect(screen.getAllByRole('button')).toHaveLength(2))
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
   })
 
   it('opens a searchable, grouped menu and filters models by query', async () => {

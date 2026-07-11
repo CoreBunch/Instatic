@@ -11,8 +11,9 @@
  */
 
 import { nanoid } from 'nanoid'
-import { Type, type Static } from '@core/utils/typeboxHelpers'
-import { apiRequest } from '@core/http'
+import { Type, safeParseValue, type Static } from '@core/utils/typeboxHelpers'
+import { apiRequest, isAbortError } from '@core/http'
+import { AiUserImageBlockSchema } from '@core/ai'
 import {
   AI_CONVERSATIONS_PATH,
   AI_DEFAULTS_PATH,
@@ -90,8 +91,13 @@ export function rehydrateMessages(
         }
         msg.blocks.push({ kind: 'toolCall', toolCall })
         toolCallIndex.set(block.toolCallId, toolCall)
+      } else if (rec.role === 'user' && block.kind === 'image') {
+        // Conversation payloads use the broader persisted block vocabulary.
+        // Only the bounded canonical user-image shape is safe to render as a
+        // data URL in the composer thread.
+        const parsedImage = safeParseValue(AiUserImageBlockSchema, block)
+        if (parsedImage.ok) msg.blocks.push(parsedImage.value)
       }
-      // image blocks — skip in v1; could render via <img> later.
     }
     out.push(msg)
   }
@@ -110,13 +116,20 @@ const ScopeDefaultsResponseSchema = Type.Object(
   { additionalProperties: true },
 )
 
-export async function fetchScopeDefault(scope: AgentToolScope): Promise<ScopeDefaultEntry | null> {
+export async function fetchScopeDefault(
+  scope: AgentToolScope,
+  signal?: AbortSignal,
+): Promise<ScopeDefaultEntry | null> {
   // Soft fetch: any failure (no default set, network, bad shape) just means
   // "no preselected credential/model" — the caller falls back to the picker.
   try {
-    const body = await apiRequest(AI_DEFAULTS_PATH, { schema: ScopeDefaultsResponseSchema })
+    const body = await apiRequest(AI_DEFAULTS_PATH, {
+      schema: ScopeDefaultsResponseSchema,
+      signal,
+    })
     return body.defaults?.[scope] ?? null
   } catch (err) {
+    if (signal?.aborted || isAbortError(err)) throw err
     console.error(`[AgentSlice] Failed to fetch ${scope} default:`, err)
     return null
   }
@@ -132,12 +145,14 @@ export async function createConversationForScope(
   scope: AgentToolScope,
   credentialId: string,
   modelId: string,
+  signal?: AbortSignal,
 ): Promise<CreatedConversation> {
   const body = await apiRequest(AI_CONVERSATIONS_PATH, {
     method: 'POST',
     body: { scope, credentialId, modelId },
     schema: CreatedConversationEnvelopeSchema,
     fallbackMessage: 'Conversation create failed',
+    signal,
   })
   return body.conversation
 }

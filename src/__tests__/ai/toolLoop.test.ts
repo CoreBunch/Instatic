@@ -79,7 +79,7 @@ function makeRequest(bridge: AiBrowserBridge, serverCalls: unknown[]): AiStreamR
     messages: [{ role: 'user', content: [{ kind: 'text', text: 'go' }] }],
     tools: [echoTool, paintTool],
     modelId: 'claude-sonnet-4-6',
-    modelCapabilities: { toolCalling: true, visionInput: true, promptCache: true, streaming: true },
+    modelCapabilities: { toolCalling: true, visionInput: true, toolResultImages: true, promptCache: true, streaming: true },
     credentials: { id: 'cr', providerId: 'anthropic', authMode: 'apiKey', apiKey: 'sk-test', baseUrl: null },
     signal: new AbortController().signal,
     bridge,

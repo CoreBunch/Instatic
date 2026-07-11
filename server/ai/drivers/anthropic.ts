@@ -60,13 +60,14 @@ export const anthropicDriver: AiProvider = {
     return {
       toolCalling: true,
       visionInput: true,
+      toolResultImages: true,
       promptCache: true,
       streaming: true,
     }
   },
 
-  async listModels(creds) {
-    return fetchAnthropicModels(creds)
+  async listModels(creds, signal) {
+    return fetchAnthropicModels(creds, signal)
   },
 
   async *stream(req: AiStreamRequest): AsyncIterable<AiStreamEvent> {
@@ -122,7 +123,10 @@ const AnthropicModelsResponseSchema = Type.Object(
  *   - a failed request or unparseable body throws, so the caller surfaces the
  *     error rather than masking it with a stale hardcoded list.
  */
-async function fetchAnthropicModels(creds: AiResolvedCredential): Promise<AiProviderModel[]> {
+async function fetchAnthropicModels(
+  creds: AiResolvedCredential,
+  signal?: AbortSignal,
+): Promise<AiProviderModel[]> {
   if (creds.authMode !== 'apiKey' || !creds.apiKey) return []
 
   const res = await fetch(`${ANTHROPIC_MODELS_ENDPOINT}?limit=1000`, {
@@ -130,6 +134,7 @@ async function fetchAnthropicModels(creds: AiResolvedCredential): Promise<AiProv
       'x-api-key': creds.apiKey,
       'anthropic-version': ANTHROPIC_VERSION,
     },
+    signal,
   })
   if (!res.ok) {
     throw new Error(`[ai/anthropic] models request failed: ${res.status} ${res.statusText}`)
@@ -153,6 +158,7 @@ async function fetchAnthropicModels(creds: AiResolvedCredential): Promise<AiProv
         // Default to true when the flag is absent — every current Claude
         // model accepts image input; only honour an explicit `false`.
         visionInput: model.capabilities?.image_input?.supported ?? true,
+        toolResultImages: true,
         promptCache: true,
         streaming: true,
       },

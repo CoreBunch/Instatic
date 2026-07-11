@@ -1,5 +1,5 @@
 import type { EditorStoreSliceCreator } from '@site/store/types'
-import type { AiToolOutput } from '@core/ai'
+import type { AiToolOutput, AiUserContentBlock } from '@core/ai'
 import type { ConversationView } from '@admin/ai/api'
 import type { AgentMessage, AgentToolScope } from './types'
 
@@ -38,11 +38,17 @@ export interface AgentSlice {
   agentActiveModelId: string | null
   agentConversations: ConversationView[]
   agentContextTokens: number | null
+  /** True while a history load/delete can replace the active conversation. */
+  isAgentConversationPending: boolean
+  /** True while an existing conversation's provider/model update is pending. */
+  isAgentProviderPending: boolean
+  /** Remounts local composer drafts on explicit conversation replacement. */
+  agentComposerEpoch: number
 
   openAgent(): void
   closeAgent(): void
   toggleAgent(): void
-  sendAgentMessage(content: string): Promise<void>
+  sendAgentMessage(content: AiUserContentBlock[]): Promise<{ accepted: boolean }>
   abortAgent(): void
   clearAgentMessages(): void
   loadAgentConversations(): Promise<void>

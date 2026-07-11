@@ -1,7 +1,6 @@
-import { useRef, type CSSProperties } from 'react'
+import { lazy, Suspense, useRef, type CSSProperties } from 'react'
 import { useEditorStore } from '@site/store/store'
 import type { LeftSidebarPanelId } from '@site/store/slices/uiSlice'
-import { AgentPanel } from '@site/panels/AgentPanel'
 import { AgentStoreProvider } from '@admin/ai/AgentStoreContext'
 import { FrameworkPanel } from '@site/panels/FrameworkPanel'
 import { ExplorerPanel } from '@site/panels/ExplorerPanel'
@@ -13,6 +12,14 @@ import { FrameworkChangeConfirmProvider } from '@admin/shared/dialogs/FrameworkC
 import { VCDeletionConfirmProvider } from '@admin/shared/dialogs/VCDeletionConfirmDialog'
 import { SidebarResizeHandle } from '@admin/shared/SidebarResizeHandle'
 import styles from './LeftSidebar.module.css'
+
+// Image preparation and provider catalogue code belong to the AI surface, not
+// the editor startup path. A nested boundary lets the sidebar/canvas render as
+// soon as their parent chunk is ready, then loads the always-mounted AgentPanel
+// independently so its local draft survives panel switches after first load.
+const AgentPanel = lazy(() =>
+  import('@site/panels/AgentPanel').then((module) => ({ default: module.AgentPanel })),
+)
 
 function selectActiveLeftSidebarPanel(state: ReturnType<typeof useEditorStore.getState>): LeftSidebarPanelId | null {
   // A plugin panel takes precedence over the built-in `*PanelOpen` flags;
@@ -157,7 +164,9 @@ export function LeftSidebar({
                   prefix and can't see through the dual API. */}
               {/* eslint-disable-next-line react-compiler/react-compiler */}
               <AgentStoreProvider store={useEditorStore}>
-                <AgentPanel variant="docked" />
+                <Suspense fallback={null}>
+                  <AgentPanel variant="docked" />
+                </Suspense>
               </AgentStoreProvider>
             </div>
           )}

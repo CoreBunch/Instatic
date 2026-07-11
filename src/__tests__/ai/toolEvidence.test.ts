@@ -63,8 +63,9 @@ const ANTHROPIC_DONE = sse(
   { type: 'message_stop' },
 )
 
-const VISION_CAPS: AiProviderCapabilities = { toolCalling: true, visionInput: true, promptCache: true, streaming: true }
-const NO_VISION_CAPS: AiProviderCapabilities = { toolCalling: true, visionInput: false, promptCache: false, streaming: true }
+const VISION_CAPS: AiProviderCapabilities = { toolCalling: true, visionInput: true, toolResultImages: true, promptCache: true, streaming: true }
+const NO_VISION_CAPS: AiProviderCapabilities = { toolCalling: true, visionInput: false, toolResultImages: false, promptCache: false, streaming: true }
+const USER_IMAGES_ONLY_CAPS: AiProviderCapabilities = { ...VISION_CAPS, toolResultImages: false }
 
 const renderSnapshotTool: AiTool = {
   name: 'site_render_snapshot',
@@ -154,6 +155,24 @@ describe('multimodal tool output + heavy elision (Anthropic)', () => {
     }
 
     for await (const _ of anthropicDriver.stream(makeRequest(bridge, NO_VISION_CAPS))) { void _ }
+    expect(browserInputs).toEqual([{ captureScreenshot: false }])
+  })
+
+  test('vision input without native tool-result images also skips screenshot capture', async () => {
+    let call = 0
+    globalThis.fetch = (async () => {
+      call += 1
+      return sseResponse(call === 1 ? anthropicSnapTurn('t_s1') : ANTHROPIC_DONE)
+    }) as typeof fetch
+    const browserInputs: unknown[] = []
+    const bridge: AiBrowserBridge = {
+      async callBrowser(_name, input): Promise<AiToolOutput> {
+        browserInputs.push(input)
+        return { ok: true, data: { layout: { warnings: [] } } }
+      },
+    }
+
+    for await (const _ of anthropicDriver.stream(makeRequest(bridge, USER_IMAGES_ONLY_CAPS))) { void _ }
     expect(browserInputs).toEqual([{ captureScreenshot: false }])
   })
 

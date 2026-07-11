@@ -246,7 +246,11 @@ export async function* runToolLoop<TMessage>(
 function prepareToolInput(call: TurnToolCall, req: AiStreamRequest): unknown {
   if (call.name === 'site_render_snapshot') {
     const base = call.input && typeof call.input === 'object' ? call.input : {}
-    return { ...base, captureScreenshot: req.modelCapabilities.visionInput }
+    return {
+      ...base,
+      captureScreenshot:
+        req.modelCapabilities.visionInput && req.modelCapabilities.toolResultImages,
+    }
   }
   return call.input
 }

@@ -18,6 +18,7 @@ interface ModelPickerProps {
   credentialsLoaded: boolean
   /** Re-run the credential list query when the picker opens. */
   onRefreshCredentials: () => void
+  disabled?: boolean
 }
 
 export function ModelPicker({
@@ -25,6 +26,7 @@ export function ModelPicker({
   credentials,
   credentialsLoaded,
   onRefreshCredentials,
+  disabled = false,
 }: ModelPickerProps) {
   const activeCredentialId = useAgentStore((s) => s.agentActiveCredentialId)
   const activeModelId = useAgentStore((s) => s.agentActiveModelId)
@@ -42,6 +44,7 @@ export function ModelPicker({
       placeholder="Choose a model"
       credentials={credentials}
       credentialsLoaded={credentialsLoaded}
+      disabled={disabled}
       value={value}
       onOpen={onRefreshCredentials}
       onChange={({ credentialId, modelId }) => void setAgentProvider(credentialId, modelId)}

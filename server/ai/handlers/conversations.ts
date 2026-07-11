@@ -117,7 +117,10 @@ async function handleRead(req: Request, db: DbClient, id: string): Promise<Respo
   if (!conv) return jsonResponse({ error: 'Conversation not found' }, { status: 404 })
 
   const messages = await listMessagesForConversation(db, id)
-  return jsonResponse({ conversation: toConversationDetailView(conv, messages) })
+  return jsonResponse(
+    { conversation: toConversationDetailView(conv, messages) },
+    { headers: { 'Cache-Control': 'private, no-store' } },
+  )
 }
 
 async function handleUpdate(req: Request, db: DbClient, id: string): Promise<Response> {

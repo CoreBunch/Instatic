@@ -1,7 +1,10 @@
 import { describe, test, expect } from 'bun:test'
 import {
   buildMessageHistory,
+  EARLIER_USER_IMAGE_OMITTED,
   INTERRUPTED_TOOL_RESULT_ERROR,
+  NON_VISION_USER_IMAGE_OMITTED,
+  projectUserImagesForModel,
 } from '../../../server/ai/conversations/history'
 import type { MessageRecord } from '../../../server/ai/conversations/types'
 import type { AiContentBlock } from '../../../server/ai/runtime/types'
@@ -33,6 +36,12 @@ function rec(
 
 function userText(text: string): MessageRecord {
   return rec('user', [{ kind: 'text', text }])
+}
+function userImage(data: string, text?: string): MessageRecord {
+  return rec('user', [
+    ...(text ? [{ kind: 'text' as const, text }] : []),
+    { kind: 'image', mimeType: 'image/jpeg', data },
+  ])
 }
 function assistantToolCall(id: string, name: string, input: unknown): MessageRecord {
   return rec('assistant', [{ kind: 'toolCall', toolCallId: id, toolName: name, input }], id, name)
@@ -202,5 +211,63 @@ describe('buildMessageHistory', () => {
       toolCallId: 't1',
       output: { ok: false, error: 'boom' },
     })
+  })
+})
+
+describe('user-image history projection', () => {
+  test('keeps only the newest image-bearing user turn for a vision model', () => {
+    const history = buildMessageHistory([
+      userImage('old-image', 'Old screenshot'),
+      rec('assistant', [{ kind: 'text', text: 'old answer' }]),
+      userImage('new-image'),
+      rec('assistant', [{ kind: 'text', text: 'new answer' }]),
+    ])
+    const original = JSON.stringify(history)
+
+    const projected = projectUserImagesForModel(history, true)
+
+    expect(projected).toEqual([
+      {
+        role: 'user',
+        content: [
+          { kind: 'text', text: 'Old screenshot' },
+          { kind: 'text', text: EARLIER_USER_IMAGE_OMITTED },
+        ],
+      },
+      { role: 'assistant', content: [{ kind: 'text', text: 'old answer' }] },
+      {
+        role: 'user',
+        content: [{ kind: 'image', mimeType: 'image/jpeg', data: 'new-image' }],
+      },
+      { role: 'assistant', content: [{ kind: 'text', text: 'new answer' }] },
+    ])
+    expect(JSON.stringify(history)).toBe(original)
+  })
+
+  test('elides every user image for a text-only model while keeping turns valid', () => {
+    const history = buildMessageHistory([
+      userImage('old-image', 'First'),
+      rec('assistant', [{ kind: 'text', text: 'answer' }]),
+      userImage('new-image'),
+    ])
+    const original = JSON.stringify(history)
+
+    const projected = projectUserImagesForModel(history, false)
+
+    expect(projected).toEqual([
+      {
+        role: 'user',
+        content: [
+          { kind: 'text', text: 'First' },
+          { kind: 'text', text: NON_VISION_USER_IMAGE_OMITTED },
+        ],
+      },
+      { role: 'assistant', content: [{ kind: 'text', text: 'answer' }] },
+      {
+        role: 'user',
+        content: [{ kind: 'text', text: NON_VISION_USER_IMAGE_OMITTED }],
+      },
+    ])
+    expect(JSON.stringify(history)).toBe(original)
   })
 })

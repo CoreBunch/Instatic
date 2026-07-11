@@ -43,6 +43,7 @@ const OPENROUTER_ENDPOINT = `${OPENROUTER_BASE_URL}/responses`
 const DEFAULT_CAPABILITIES: AiProviderCapabilities = {
   toolCalling: true,
   visionInput: false,
+  toolResultImages: false,
   promptCache: false,
   streaming: true,
 }
@@ -67,8 +68,14 @@ export const openrouterDriver: AiProvider = {
     return DEFAULT_CAPABILITIES
   },
 
-  async listModels(creds: AiResolvedCredential) {
-    return fetchOpenRouterModels(creds)
+  async resolveCapabilities(creds: AiResolvedCredential, modelId: string, signal: AbortSignal) {
+    const models = await fetchOpenRouterModels(creds, signal)
+    return models.find((model) => model.id === modelId)?.capabilities
+      ?? DEFAULT_CAPABILITIES
+  },
+
+  async listModels(creds: AiResolvedCredential, signal?: AbortSignal) {
+    return fetchOpenRouterModels(creds, signal)
   },
 
   async *stream(req: AiStreamRequest): AsyncIterable<AiStreamEvent> {
@@ -125,13 +132,16 @@ function perMTok(value: string | undefined): number | null {
   return perToken * 1_000_000
 }
 
-async function fetchOpenRouterModels(creds: AiResolvedCredential): Promise<AiProviderModel[]> {
+async function fetchOpenRouterModels(
+  creds: AiResolvedCredential,
+  signal?: AbortSignal,
+): Promise<AiProviderModel[]> {
   const headers: Record<string, string> = {}
   // The catalogue endpoint is public, but sending the bearer lets per-key
   // availability (e.g. BYOK-only models) reflect in the list.
   if (creds.apiKey) headers.Authorization = `Bearer ${creds.apiKey}`
 
-  const res = await fetch(`${OPENROUTER_BASE_URL}/models`, { headers })
+  const res = await fetch(`${OPENROUTER_BASE_URL}/models`, { headers, signal })
   if (!res.ok) {
     throw new Error(`[ai/openrouter] models request failed: ${res.status} ${res.statusText}`)
   }
@@ -156,6 +166,7 @@ async function fetchOpenRouterModels(creds: AiResolvedCredential): Promise<AiPro
         // chat models) rather than hiding the model from a tool-using scope.
         toolCalling: params ? params.includes('tools') : true,
         visionInput: modalities ? modalities.includes('image') : false,
+        toolResultImages: false,
         promptCache: false,
         streaming: true,
       },

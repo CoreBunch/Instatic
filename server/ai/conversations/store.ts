@@ -321,6 +321,31 @@ export async function updateConversationForUser(
 }
 
 /**
+ * Give a first turn its derived title without overwriting a rename that won
+ * the race in another tab. The placeholder predicate belongs in the UPDATE,
+ * not in a preceding read.
+ */
+export async function replaceDefaultConversationTitle(
+  db: DbClient,
+  userId: string,
+  conversationId: string,
+  title: string,
+): Promise<boolean> {
+  const nextTitle = title.trim()
+  if (!nextTitle) return false
+  const result = await db`
+    update ai_conversations
+    set title = ${nextTitle},
+        updated_at = current_timestamp
+    where id = ${conversationId}
+      and user_id = ${userId}
+      and deleted_at is null
+      and title = ${DEFAULT_CONVERSATION_TITLE}
+  `
+  return result.rowCount > 0
+}
+
+/**
  * Soft-delete by setting `deleted_at`. Idempotent — calling on an
  * already-deleted row sets deleted_at to the current time again.
  * Returns true when a row was matched.

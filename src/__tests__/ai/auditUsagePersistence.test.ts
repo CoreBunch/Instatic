@@ -21,6 +21,7 @@ const fakeTextOnlyDriver: AiProvider = {
     return {
       toolCalling: false,
       visionInput: false,
+      toolResultImages: false,
       promptCache: false,
       streaming: true,
     }

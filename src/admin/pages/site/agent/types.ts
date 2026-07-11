@@ -9,7 +9,7 @@
  * JSON). Each line is a `ServerStreamEvent` value, JSON-serialised.
  */
 
-import type { AiToolOutput } from '@core/ai'
+import type { AiContentBlock, AiToolOutput, AiUserImageBlock } from '@core/ai'
 
 // ---------------------------------------------------------------------------
 // Execution result
@@ -168,7 +168,8 @@ export interface AgentToolCall {
  * tools" (which mis-orders late text in front of earlier tool calls).
  */
 type AgentMessageBlock =
-  | { kind: 'text'; text: string }
+  | Extract<AiContentBlock, { kind: 'text' }>
+  | AiUserImageBlock
   | { kind: 'toolCall'; toolCall: AgentToolCall }
 
 export interface AgentMessage {
@@ -176,24 +177,6 @@ export interface AgentMessage {
   role: 'user' | 'assistant'
   blocks: AgentMessageBlock[]
   timestamp: number
-}
-
-// ---------------------------------------------------------------------------
-// Browser → Server request body
-// ---------------------------------------------------------------------------
-
-export interface AgentRequestBody {
-  /** Per-conversation id; the chat handler loads its credential + history. */
-  conversationId: string
-  /** The user's new message. */
-  prompt: string
-  /**
-   * Scope-specific snapshot handed to the read tools via
-   * `ToolContext.snapshot`. Loose `unknown` here because the body now
-   * crosses every scope (site → SiteAgentSnapshot, content → ContentSnapshot,
-   * …); each scope's tool handlers cast at the boundary.
-   */
-  snapshot: unknown
 }
 
 export interface AgentLayoutRect {

@@ -108,7 +108,10 @@ src/admin/pages/content/agent/
 └── useContentToolBridge.ts     — always-mounted handle + content-scope MCP relay
 
 src/admin/pages/site/panels/AgentPanel/
-├── AgentPanel.tsx          — main panel; resolves active model's contextWindow from the models endpoint
+├── AgentPanel.tsx          — panel shell, persisted message thread, and user-image rendering
+├── AgentComposer.tsx       — controlled draft, paste/send lifecycle, active-model capability check
+├── agentImageAttachment.ts — browser decode, resize, JPEG normalisation, and base64 encoding
+├── usePendingImageAttachment.ts — ref-backed one-image queue, cancellation, and bounded preview lifecycle
 ├── ModelPicker.tsx         — credential + model selector used in the input bar
 ├── ConversationHistory.tsx — history popover (browse, restore, delete past threads)
 ├── ContextMeter.tsx        — "context used / window" progress indicator (display only)
@@ -139,7 +142,23 @@ While credentials are still loading, `lockReason` stays `null` so the panel does
 
 When the panel opens, `AgentPanel` calls `loadScopeDefault()` so the model picker immediately shows the configured scope default — no "Default" placeholder, no send-time no-provider surprise. `composerLocked` is gated by `hasActiveProvider` (`Boolean(activeCredentialId && activeModelId)`), meaning a stale "No AI provider configured" error string never locks out the UI once a credential + model is staged; picking a model via `setAgentProvider` clears `agentError` immediately, re-enabling the composer.
 
-The composer area includes a `<ContextMeter>` that shows "context used / window" as a progress bar. `AgentPanel` resolves the active model's `contextWindow` from `GET /admin/api/ai/providers/:id/models?credentialId=…` (the same catalogue-enriched response the picker uses), so the meter appears as soon as a model is selected — before the first turn. The "used" half comes from `agentContextTokens` in the store (see slice state below). The meter is hidden when no context window is known (Ollama, uncatalogued models).
+The composer area includes a `<ContextMeter>` that shows "context used / window" as a progress bar. `AgentComposer` resolves the full active-model descriptor from `GET /admin/api/ai/providers/:id/models?credentialId=…` (the same catalogue-enriched response the picker uses), then uses its `contextWindow`, `capabilities.visionInput`, and `capabilities.toolCalling`. A model known not to support tools is blocked with an inline "choose an agent-capable model" message; the server repeats that gate authoritatively. The meter appears as soon as a model is selected — before the first turn. The "used" half comes from `agentContextTokens` in the store (see slice state below). The meter is hidden when no context window is known (Ollama, uncatalogued models).
+
+### Pasting a user image
+
+The composer accepts one clipboard image alongside optional text. Pasting reserves the attachment slot synchronously, then normalises the file asynchronously; send stays disabled while the image is processing, while model support is being checked, after a processing failure, when the selected model is not vision-capable, or when it is known not to support agent tools. The pending card uses a placeholder during decoding, then shows the bounded normalised JPEG itself; it never points an `<img>` at the potentially huge source file. A primitive `Button` removes it. Removing or replacing the composer aborts the preparation operation and stops all downstream resize/encode work after the browser's current decode returns (`createImageBitmap` itself has no cancellation API). A message may contain only an image: the server persists the turn normally and titles a new conversation `Image`.
+
+The provider-neutral v1 policy is defined once in `src/core/ai/userImage.ts` and enforced on both sides of the boundary:
+
+- accepted clipboard sources: PNG, JPEG, or WebP;
+- maximum source file: 12 MiB;
+- source-header guard: at most 16,384 px on either edge and 40,000,000 encoded pixels; PNG/JPEG/WebP dimensions (including JPEG EXIF orientation) are read before allocating a decoder, and `createImageBitmap` is asked for the bounded output size;
+- at most one image per message and at most eight persisted user images per conversation (the ninth returns 413 and the user starts a new chat);
+- browser output: metadata-stripped `image/jpeg`, transparent pixels composited over white;
+- maximum output: 1,500,000 bytes, 1568 px on either edge, and 1,500,000 total pixels;
+- complete chat-request envelope: 16 MiB, leaving room for the scope snapshot around the roughly 2 MB base64 image.
+
+`agentImageAttachment.ts` fits both the edge and pixel budgets, tries progressively lower JPEG qualities, then reduces dimensions when necessary. The server never trusts that browser work: `server/ai/inputImages.ts` checks canonical base64, decoded byte length, JPEG magic bytes and dimensions, then fully decodes and re-encodes the JPEG through Sharp before appending the message. That second canonicalisation rejects truncated pixel data and strips EXIF/XMP/ICC metadata even when a direct authenticated client bypasses the browser. Unsupported, malformed, or oversized content is rejected before it can enter conversation history.
 
 ---
 
@@ -152,24 +171,26 @@ Each entry in **Settings → AI → Providers** stores one credential. The provi
 | `anthropic` | Anthropic (Claude) | `apiKey` | API key (`sk-ant-…`) | — | Static `claude-*` catalogue enriched with OpenRouter prices + context windows |
 | `openai` | OpenAI | `apiKey` | API key (`sk-…`) | — | Static `gpt-*` / `o*` catalogue enriched with OpenRouter prices + context windows |
 | `openrouter` | OpenRouter | `apiKey` | API key (`sk-or-…`) | — | Live `GET /api/v1/models` (cross-provider; native cost reporting) |
-| `ollama` | Ollama (local) | `baseUrl` | Base URL (e.g. `http://localhost:11434`) | API key (bearer, for proxied deployments) | Live `GET {baseUrl}/api/tags`; static fallback list when unreachable |
+| `ollama` | Ollama (local) | `baseUrl` | Base URL (e.g. `http://localhost:11434`) | API key (bearer, for proxied deployments) | Live `GET {baseUrl}/api/tags`, with `POST {baseUrl}/api/show` capability lookup per model; static fallback list when unreachable |
 | `openai-compatible` | Custom Provider | `baseUrl` | Base URL — any host serving the OpenAI `/v1/chat/completions` wire protocol | API key (bearer; cloud services need one, local servers often don't) | Live `GET {baseUrl}/v1/models` (standard OpenAI list shape); model `id` used as label |
 
-**Custom Provider** (id `openai-compatible`) is the generic adapter for any endpoint that speaks the OpenAI chat/completions wire protocol — Groq (`https://api.groq.com/openai`), Together, DeepSeek, Mistral, Fireworks, self-hosted vLLM, LM Studio, and others. Capabilities default to `{ toolCalling: true, visionInput: false, promptCache: false, streaming: true }`; the operator is responsible for selecting a model that actually supports tool calling. Because arbitrary endpoints are not in the OpenRouter catalogue, no context-window enrichment is available and the context meter stays hidden for these models.
+**Custom Provider** (id `openai-compatible`) is the generic adapter for any endpoint that speaks the OpenAI chat/completions wire protocol — Groq (`https://api.groq.com/openai`), Together, DeepSeek, Mistral, Fireworks, self-hosted vLLM, LM Studio, and others. Capabilities default to `{ toolCalling: true, visionInput: false, toolResultImages: false, promptCache: false, streaming: true }`; the operator is responsible for selecting a model that actually supports tool calling. Because arbitrary endpoints are not in the OpenRouter catalogue, no context-window enrichment is available and the context meter stays hidden for these models.
+
+**The server is the model-capability authority.** The composer catalogue flags are early UX gates, but they are not trusted for persistence, provider calls, or tool screenshots. `chat.ts` resolves the selected model on every turn through `resolveModelCapabilities`. Providers with stable capabilities (Anthropic, OpenAI, Custom Provider) use their driver default. Model-specific providers own a selected-model lookup: OpenRouter resolves the exact entry's `architecture.input_modalities`, while Ollama sends an authenticated `POST /api/show` for only the selected model. The shared resolver de-duplicates concurrent lookups, applies a ten-second provider timeout, includes credential/backend revisions in its cache key, and caches successful results for five minutes. Missing or unavailable model-specific metadata fails closed for vision input; Custom Provider also remains fail-closed in v1. An image targeting a non-vision model, or an editor-agent turn targeting a model known not to support tools, receives 422 before the user message is stored.
 
 ---
 
 ## Flow
 
 ```text
-User types prompt → Agent Panel
+User types text and/or pastes an image → Agent Panel
     │
     ▼
-agentSlice.sendAgentMessage(content)
+agentSlice.sendAgentMessage(contentBlocks)
     │
     ├─→ buildSnapshot()  →  SiteAgentSnapshot or ContentSnapshot
     ├─→ ensure conversation row  (lazily created from AI defaults on first call)
-    ├─→ POST /admin/api/ai/chat/<scope>  { conversationId, prompt, snapshot }
+    ├─→ POST /admin/api/ai/chat/<scope>  { conversationId, content, snapshot }
     │
     ▼
 Server: chat.ts
@@ -177,13 +198,18 @@ Server: chat.ts
     ├─→ CSRF + requireCapability('ai.chat')
     ├─→ load conversation row  (credentialId, modelId) + full message history
     ├─→ decrypt credential; resolveDriver(credential.providerId)
+    ├─→ validate text/image blocks + image bytes; enforce conversation image budget
+    ├─→ resolve/cache the selected model's capabilities (also gates tool screenshots)
+    ├─→ acquire the conversation's single-writer stream lease
+    ├─→ project persisted images for bounded provider replay
     ├─→ selectToolsForScope(scope, capabilities)
     │     — write tools excluded unless caller has ai.tools.write
     ├─→ build scope system prompt  →  [staticPrefix, BOUNDARY, dynamicSuffix]
     ├─→ createBridge(emit)  →  { bridgeId, bridge, destroy }
     ├─→ emit { type: 'bridgeReady', bridgeId }
     └─→ runChat({ driver, request, persister, emit })  — streaming begins
-          │  request carries the FULL conversation history as req.messages.
+          │  request carries the conversation history as req.messages; user
+          │  images are projected to the bounded replay form described below.
           │  Direct HTTP drivers have no server-side session — every turn
           │  replays the whole log, mapped into the provider's message array.
           │
@@ -459,7 +485,7 @@ The agent works **design-system-first**: it establishes or reuses tokens, then r
 
 | Tool              | Input                 | Success `data` | What it does                                                     |
 |-------------------|-----------------------|----------------|------------------------------------------------------------------|
-| `site_render_snapshot` | `{ breakpointId?, nodeId? }`   | `{ breakpointId, nodeId?, label, width, capturedAt, layout, screenshot }` + optional `images[]` | Inspect the rendered canvas: always returns a layout report (viewport, per-node bounding boxes, overflow / broken-image / invisible warnings); on a vision-capable model a PNG is attached via the tool-output **image channel**. `breakpointId` picks the frame (defaults to active); `nodeId` scopes the capture to that node's subtree — image and report cover only that section, with coordinates relative to its box, and the report carries the same `nodeId`. Omit `nodeId` for the whole page; an unknown `nodeId` returns an `aiToolError` |
+| `site_render_snapshot` | `{ breakpointId?, nodeId? }`   | `{ breakpointId, nodeId?, label, width, capturedAt, layout, screenshot }` + optional `images[]` | Inspect the rendered canvas: always returns a layout report (viewport, per-node bounding boxes, overflow / broken-image / invisible warnings); when the active provider supports native image-bearing tool results, a PNG is attached via the tool-output **image channel**. `breakpointId` picks the frame (defaults to active); `nodeId` scopes the capture to that node's subtree — image and report cover only that section, with coordinates relative to its box, and the report carries the same `nodeId`. Omit `nodeId` for the whole page; an unknown `nodeId` returns an `aiToolError` |
 
 ### Auto-navigation
 
@@ -507,7 +533,7 @@ The content system prompt is markdown-native: it tells the model to exchange bod
 `site_render_snapshot` (and `site_read_document` / `site_get_node_html`) return large payloads. Five rules keep them from exploding context (a screenshot inlined as base64 JSON text once pushed a single turn past 1M tokens):
 
 1. **Image channel, not text.** `AiToolOutput` carries an optional `images: { mimeType, data }[]` (`src/core/ai/toolOutput.ts`). `site_render_snapshot` puts the PNG there — never in `data`. The Anthropic driver forwards it as a **native `image` block** inside the `tool_result` (billed at the rendered image's token cost). Text-only tool channels (Ollama / OpenAI-compatible `function_call_output`) **drop** the image and append a one-line `[N screenshot(s) omitted…]` note. The capture caps the screenshot's long edge at `MAX_IMAGE_EDGE` (1568px in `renderEvidence.ts`) — a tall landing page would otherwise exceed Anthropic's hard 8000px-per-dimension limit (400 error), and the model downsizes the long edge to ~1568px anyway.
-2. **Capture is vision-gated.** The chat handler resolves `driver.capabilities(modelId)` into `AiStreamRequest.modelCapabilities`. The shared tool loop injects `captureScreenshot: visionInput` into every `site_render_snapshot` call, so a non-vision model never pays the html-to-image cost — it gets the layout report only. (The model never sets `captureScreenshot` itself.)
+2. **Capture is provider-channel-gated.** The chat handler resolves the selected model on every turn and places the result in `AiStreamRequest.modelCapabilities`. `visionInput` means pasted user images are accepted; the separate `toolResultImages` flag means that provider's tool-result wire shape can actually carry a native image. The shared tool loop injects `captureScreenshot: visionInput && toolResultImages` into `site_render_snapshot`. Today Anthropic supports both; Responses and chat/completions providers accept user images but have text-only function/tool results, so they get the layout report without paying for a screenshot that would be discarded. (The model never sets `captureScreenshot` itself.)
 3. **`site_read_document` CSS is document-relevant, not the public full-site CSS bundle.** Public pages can share page-invariant CSS files, but `site_read_document` inlines CSS into model context. It keeps framework variables/utilities, font token variables, target-document module CSS, used class rules, ambient selectors whose class tokens all exist on the target document, classless/global ambient selectors, and document-targeted user stylesheets. It omits browser-only `@font-face` file declarations and ambient selectors from unrelated imported pages.
 4. **`site_read_document` is cleaned and paged before it reaches the model.** `renderAgentDocument` strips pathological strings from the broad read surface: long base64/data URLs become `data:<mime>;base64,[omitted N chars]`, and very long URLs are middle-truncated. The returned object always includes `pageInfo` with `part`, `totalParts`, `nextPart`, `ranges`, `serializedChars`, and cleanup counts. The hard budget is measured against `JSON.stringify({ html, css, pageInfo }).length`, because that is the text providers receive as the tool result. If `nextPart` is not `null`, the agent calls `site_read_document({ document, part: nextPart })` to continue. For exact node-level markup, use the `uid` with `site_get_node_html`.
 5. **Stale evidence is elided.** Within one tool loop, only the **most recent** heavy result per tool name (`site_render_snapshot`, `site_read_document`, `site_get_node_html`, or anything with an image) is replayed at full fidelity; earlier ones are rewritten to a one-line breadcrumb (`"Earlier <tool> output removed… Call <tool> again…"`). Older snapshots describe page state the model has since mutated, so they carry no value. See `applyHeavyElision` in `server/ai/drivers/http/toolLoop.ts`.
@@ -606,12 +632,18 @@ interface AgentSlice {
    * on loadAgentConversation; updated live from each turn's `usage` event.
    */
   agentContextTokens:        number | null
+  /** Blocks Send/navigation while a history load or delete may replace the active chat. */
+  isAgentConversationPending: boolean
+  /** Blocks Send/navigation while an existing chat's model PUT is pending. */
+  isAgentProviderPending:     boolean
+  /** Incremented when a conversation is replaced so local text/image drafts remount cleanly. */
+  agentComposerEpoch:        number
 
   // ── Actions ───────────────────────────────────────────────────────────
   openAgent():                                         void
   closeAgent():                                        void
   toggleAgent():                                       void
-  sendAgentMessage(content: string):                   Promise<void>
+  sendAgentMessage(content: AiUserContentBlock[]):     Promise<{ accepted: boolean }>
   abortAgent():                                        void
   clearAgentMessages():                                void
   startNewAgentConversation():                         void
@@ -628,6 +660,31 @@ interface AgentSlice {
 Conversations and their message history are persisted server-side in `ai_conversations` + `ai_messages`. `loadAgentConversation(id)` rehydrates a past thread into `agentMessages` without re-running the conversation.
 
 **Content blocks are one schema.** Every message body is an `AiContentBlock[]` — a discriminated union of `text` / `image` / `toolCall` / `toolResult` kinds defined once as a TypeBox schema in `@core/ai` (`src/core/ai/contentBlock.ts`). The server runtime type (`AiContentBlock`), the read boundary (`ContentBlocksSchema` in `conversations/store.ts`, which validates every block out of `content_json`), and the client wire schema (`MessageViewSchema` in `src/admin/ai/api.ts`) all derive from it. Add a kind there and every reader/writer sees it.
+
+**User turns use the same canonical blocks at the HTTP boundary.** `AiChatRequestBodySchema` in `src/core/ai/chatRequest.ts` accepts `{ conversationId, content, snapshot? }`, where `content` is one or two `AiUserContentBlock`s and may contain at most one trimmed text block plus at most one canonical JPEG block. The server canonicalises a mixed turn as text then image and removes whitespace-only text. It does not accept `toolCall` or `toolResult` blocks from the browser.
+
+```ts
+{
+  conversationId,
+  content: [
+    { kind: 'text', text: 'Use this mockup as the reference.' },
+    { kind: 'image', mimeType: 'image/jpeg', data: '<canonical base64>' },
+  ],
+  snapshot,
+}
+```
+
+**Persisted images and provider replay are deliberately different views.** Every accepted user JPEG is stored inline in `ai_messages.content_json` and rehydrates into the conversation UI, so reloads retain the thumbnail. Up to eight images may be stored in one conversation. Before a provider call, `projectUserImagesForModel` creates a non-mutating outbound projection:
+
+- a vision model receives the image from only the newest image-bearing user turn; images in older turns become a short "earlier image omitted" breadcrumb;
+- a non-vision model receives no image bytes at all; every persisted image becomes a text breadcrumb, so switching models cannot poison the conversation;
+- the database rows are never rewritten by projection, so the UI history remains intact and switching back to a vision model can use the newest persisted image again.
+
+User attachments are private chat data, not media-library assets: the normalised base64 bytes live in the database until the conversation is deleted and purged, are returned to authorised conversation reads for thumbnail rendering, and are sent to the configured AI provider whenever they survive the outbound replay projection. They are never written to public uploads or published with the site.
+
+The server admits only one active writer per conversation. A concurrent tab receives a retryable 409 before appending, which keeps message positions ordered and makes the eight-image budget atomic relative to persistence. In the browser, model changes for an existing conversation are serialized; Send waits for the provider/model update to reach the server, and conversation/model controls stay disabled while a turn streams. If a model PUT times out after an ambiguous commit, the browser re-reads the conversation before re-enabling Send, so the picker cannot disagree with server routing. Stop owns the whole first-send lifecycle, including default lookup and lazy conversation creation, so an aborted bootstrap cannot leave the composer locked.
+
+**User attachments are not tool screenshots.** A pasted image is a persisted `kind:'image'` block on a user message. Conversation-detail responses and chat streams use `Cache-Control: private, no-store`; the database remains the intentional durable copy. A `site_render_snapshot` PNG instead travels transiently on `AiToolOutput.images`, is subject to the heavy-evidence rules above, and its browser preview remains session-only. The two paths share provider-native image mapping but have different storage, replay, and elision lifecycles.
 
 **Tool outcomes are first-class.** A `role:'tool'` row records its result as a `{ kind: 'toolResult', ok, error? }` block — `ok` is an explicit boolean, never inferred from the emptiness of a text block. The persister writes it (`appendToolResult`), `buildMessageHistory` reads `ok`/`error` straight off the block to reconstruct the replay `AiToolOutput`, and the client folds it back into the matching tool-call badge (`rehydrateMessages`). The heavy successful `data` an `AiToolOutput` may carry is intentionally **not** persisted: the model already consumed it in the round that produced the result, so replay only needs `{ ok, error }` — re-feeding large tool payloads every turn would bloat the context for no benefit.
 
@@ -647,6 +704,8 @@ The `<ContextMeter>` shows how much of the active model's context window the cur
 **Live, per-round, not summed.** A turn makes one provider round-trip per tool batch. The toolLoop emits a `context` event **each round** carrying THAT round's input buckets; the chat handler injects the normalised `contextTokens` and the browser updates the meter on every round — so it climbs *during* a long tool loop instead of only at the end. The meter is the LATEST round's input (the current window fill), never the sum across rounds (which would over-count, since each round re-sends the growing context). The terminal `usage` event is **billing only** — its `promptTokens` stays summed across rounds (you pay input per round). The persister keeps the latest `context` value in memory (`recordContext`) and writes it once to `ai_conversations.context_tokens` with the final `usage` (overwritten per turn), so `loadAgentConversation` restores the true context on reload.
 
 ### Live model catalogue
+
+The browser de-duplicates concurrent requests for the same credential, applies a ten-second timeout, and retains successful catalogues for five minutes so the composer capability check and model picker share one result across conversation switches. Credential deletion invalidates its cached catalogue. The server independently applies the same ten-second deadline and forwards request cancellation into provider fetches; Ollama resolves `/api/show` metadata in batches of six rather than launching an unbounded fan-out.
 
 `server/ai/pricing/` is the single source for per-model prices **and context windows**. It sources from OpenRouter's public `/api/v1/models` endpoint (no key required), which publishes list prices and `context_length` for Anthropic and OpenAI models. The module lifecycle:
 
@@ -707,6 +766,8 @@ unblocks deletion of the credential that had been protected by the default FK.
 - `docs/features/content-workspace.md` — content workspace UI and content-scope Agent Panel mount
 - Source-of-truth files:
   - `src/core/ai/toolOutput.ts` — `AiToolOutput` type, `AiToolOutputSchema`, `aiToolOk`, `aiToolError` (canonical bridge result)
+  - `src/core/ai/chatRequest.ts` — canonical browser-to-server chat envelope and 16 MiB request ceiling
+  - `src/core/ai/userImage.ts` — accepted source formats, normalised JPEG schema, byte/dimension limits, and eight-image conversation budget
   - `src/core/ai/toolSchemas.ts` — all site browser-tool input schemas (single source of truth; imported by both the server registry and the browser executor)
   - `src/core/ai/documentRefs.ts` — document refs/descriptors for pages, templates, and visual components
   - `src/core/ai/readSurface.ts` — runtime-agnostic `renderAgentDocument` annotated HTML + compact CSS renderer
@@ -718,6 +779,10 @@ unblocks deletion of the credential that had been protected by the default FK.
   - `server/ai/tools/site/snapshot.ts` — `SiteAgentSnapshotSchema` + `SiteAgentSnapshot` re-export + catalog output types (`ModuleInfo`, `SnapshotTokens`, …)
   - `server/ai/tools/content/readTools.ts` — 7 server-side content read tool definitions
   - `server/ai/tools/content/writeTools.ts` — 8 browser-bridged content write/navigation tool definitions
+  - `server/ai/inputImages.ts` — server-side base64, JPEG, byte, and dimension validation before persistence
+  - `server/ai/drivers/modelCapabilities.ts` — cached, timed, authoritative/fail-closed selected-model capability resolution on every turn
+  - `server/ai/drivers/modelList.ts` — bounded provider catalogue lookup with caller cancellation
+  - `server/ai/conversations/history.ts` — interrupted-tool healing plus outbound user-image replay projection
   - `server/ai/tools/content/systemPrompt.ts` — markdown-native content system prompt
   - `server/ai/tools/content/snapshot.ts` — `ContentSnapshot` shape consumed by the content prompt and tool context
   - `src/admin/pages/site/agent/siteAgentSnapshot.ts` — `SiteAgentSnapshotSchema` (TypeBox source of truth) + `SiteAgentSnapshot` (derived type) + `buildSiteAgentSnapshot`
