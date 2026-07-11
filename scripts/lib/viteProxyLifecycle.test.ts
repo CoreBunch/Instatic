@@ -7,11 +7,13 @@ import { configureProxyResponseLifecycle } from './viteProxyLifecycle'
 function proxyHarness(): {
   upstream: EventEmitter
   downstream: EventEmitter
+  clientSocket: EventEmitter
   destroyed: () => number
 } {
   const proxy = new EventEmitter()
   const upstream = new EventEmitter()
   const downstream = new EventEmitter()
+  const clientSocket = new EventEmitter()
   let destroyCount = 0
 
   Object.assign(upstream, {
@@ -26,17 +28,17 @@ function proxyHarness(): {
   proxy.emit(
     'proxyRes',
     upstream as unknown as IncomingMessage,
-    {} as IncomingMessage,
+    { socket: clientSocket } as unknown as IncomingMessage,
     downstream as unknown as ServerResponse,
   )
 
-  return { upstream, downstream, destroyed: () => destroyCount }
+  return { upstream, downstream, clientSocket, destroyed: () => destroyCount }
 }
 
 describe('Vite backend proxy response lifecycle', () => {
   it('destroys a streaming upstream response when the browser disconnects', () => {
     const harness = proxyHarness()
-    harness.downstream.emit('close')
+    harness.clientSocket.emit('close')
     expect(harness.destroyed()).toBe(1)
   })
 
