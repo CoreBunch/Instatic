@@ -58,4 +58,20 @@ describe('Vite backend proxy fetch lifecycle', () => {
 
     expect(requestOptions.signal?.aborted).toBe(true)
   })
+
+  it('removes the Node proxy connection-close header for native fetch pooling', () => {
+    const downstream = downstreamResponse()
+    const requestOptions: RequestInit = {
+      headers: { connection: 'close', 'x-test': 'kept' },
+    }
+    linkProxyFetchToDownstream(
+      requestOptions,
+      {} as IncomingMessage,
+      downstream.response,
+    )
+
+    const headers = new Headers(requestOptions.headers)
+    expect(headers.has('connection')).toBe(false)
+    expect(headers.get('x-test')).toBe('kept')
+  })
 })
