@@ -281,6 +281,67 @@ describe('processStreamEvent — toolRequest dispatches to executor', () => {
     expect(body.result.ok).toBe(false)
     expect(body.result.error).toContain('not found')
   })
+
+  it('retains every image returned by a browser tool for the conversation gallery', async () => {
+    const { assistantId } = freshAgentState()
+    const bridge: AgentBridgeRuntime = { bridgeId: 'bridge-images' }
+    const intercept = captureFetchByRoute({
+      '/admin/api/ai/tool-result': toolResultAckResponse,
+    })
+
+    try {
+      await processStreamEvent(
+        {
+          type: 'toolCall',
+          toolCallId: 'tool-images',
+          toolName: 'site_render_snapshot',
+          input: {},
+          status: 'pending',
+        },
+        assistantId,
+        noopTextSink,
+        useEditorStore.setState,
+        bridge,
+        null,
+        executeAgentTool,
+      )
+      await processStreamEvent(
+        {
+          type: 'toolRequest',
+          requestId: 'request-images',
+          toolName: 'site_render_snapshot',
+          input: {},
+        },
+        assistantId,
+        noopTextSink,
+        useEditorStore.setState,
+        bridge,
+        null,
+        async () => ({
+          ok: true,
+          images: [
+            { mimeType: 'image/png', data: 'QUJD' },
+            { mimeType: 'image/jpeg', data: 'REVG' },
+          ],
+        }),
+      )
+    } finally {
+      intercept.restore()
+    }
+
+    const message = useEditorStore.getState().agentMessages[0]!
+    expect(getToolCallBlocks(message)[0]?.previewImages).toEqual([
+      'data:image/png;base64,QUJD',
+      'data:image/jpeg;base64,REVG',
+    ])
+    const posted = JSON.parse(intercept.calls[0]!.body) as {
+      result: { images?: Array<{ mimeType: string; data: string }> }
+    }
+    expect(posted.result.images).toEqual([
+      { mimeType: 'image/png', data: 'QUJD' },
+      { mimeType: 'image/jpeg', data: 'REVG' },
+    ])
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -527,7 +588,11 @@ describe('sendAgentMessage — request lifecycle', () => {
       content: [image],
     })
     const userMessage = useEditorStore.getState().agentMessages.find((message) => message.role === 'user')
-    expect(userMessage?.blocks).toEqual([image])
+    expect(userMessage?.blocks).toEqual([{
+      kind: 'image',
+      mimeType: 'image/jpeg',
+      src: 'data:image/jpeg;base64,QUJD',
+    }])
   })
 
   it('reuses the same conversation id on follow-up sends', async () => {
@@ -638,7 +703,11 @@ describe('loadAgentConversation — image rehydration', () => {
   it('restores persisted user image blocks and advances the composer epoch', async () => {
     freshAgentState()
     useEditorStore.setState({ isAgentStreaming: false, agentMessages: [] })
-    const image = { kind: 'image', mimeType: 'image/jpeg', data: 'QUJD' }
+    const image = {
+      kind: 'image',
+      mimeType: 'image/jpeg',
+      url: '/admin/api/ai/conversations/conv-image/messages/message-image/images/0',
+    }
     const intercept = captureFetchByRoute({
       '/admin/api/ai/conversations/conv-image': () =>
         conversationDetailResponse('conv-image', [image]),
@@ -654,7 +723,11 @@ describe('loadAgentConversation — image rehydration', () => {
     expect(state.agentConversationId).toBe('conv-image')
     expect(state.agentComposerEpoch).toBe(1)
     expect(state.agentMessages).toHaveLength(1)
-    expect(state.agentMessages[0]?.blocks).toEqual([image])
+    expect(state.agentMessages[0]?.blocks).toEqual([{
+      kind: 'image',
+      mimeType: 'image/jpeg',
+      src: image.url,
+    }])
   })
 
   it('blocks Send until an in-flight conversation load commits', async () => {

@@ -1,23 +1,22 @@
 .window {
   position: fixed;
-  /* Sits above the sidebars (z-index 85, see LeftSidebar.module.css) so a
-     floating window dragged over a sidebar wins z-order. Editor modals at
-     200+ are still intentionally above us. */
   z-index: 90;
   --floating-window-w: 320px;
+  --floating-window-h: auto;
   --floating-window-max-h: 480px;
   left: var(--panel-x);
   top: var(--panel-y);
   width: var(--floating-window-w);
+  height: var(--floating-window-h);
   max-height: var(--floating-window-max-h);
-  background: var(--bg-surface);
-  border: 1px solid var(--overlay-10);
-  border-radius: var(--panel-radius);
-  box-shadow: var(--shadow-panel);
-  backdrop-filter: blur(var(--panel-blur));
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border: 1px solid var(--overlay-10);
+  border-radius: var(--panel-radius);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(var(--panel-blur));
 }
 
 .body {

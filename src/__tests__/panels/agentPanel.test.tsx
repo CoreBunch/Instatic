@@ -226,10 +226,15 @@ function RouteProbe() {
 }
 
 function pasteImage(fileName = 'clipboard.png'): void {
+  pasteImages([fileName])
+}
+
+function pasteImages(fileNames: string[]): void {
   const textarea = screen.getByLabelText('Message to AI assistant')
   fireEvent.paste(textarea, {
     clipboardData: {
-      files: [new File([pngHeader(100, 80)], fileName, { type: 'image/png' })],
+      files: fileNames.map((fileName) =>
+        new File([pngHeader(100, 80)], fileName, { type: 'image/png' })),
     },
   })
 }
@@ -488,6 +493,75 @@ describe('AgentPanel', () => {
     expect(screen.getByLabelText('Attached image: reference.png')).toBeTruthy()
   })
 
+  it('normalizes pasted images sequentially and removes attachments independently', async () => {
+    installModelFetch(true)
+    const firstDecode = deferred<ImageBitmap>()
+    const secondDecode = deferred<ImageBitmap>()
+    const imageMocks = installImageBrowserMocks()
+    let decodeIndex = 0
+    Object.defineProperty(globalThis, 'createImageBitmap', {
+      configurable: true,
+      value: mock(() => [firstDecode.promise, secondDecode.promise][decodeIndex++]!),
+    })
+    const sendAgentMessage = mock(async (_content: AiUserContentBlock[]) => ({ accepted: true }))
+    renderAgentPanel({
+      agentActiveCredentialId: TEST_CREDENTIAL.id,
+      agentActiveModelId: 'model-1',
+      sendAgentMessage,
+    })
+
+    const textarea = await screen.findByLabelText('Message to AI assistant')
+    pasteImages(['first.png', 'second.png'])
+    expect(screen.getByLabelText('Attached image: first.png')).toBeTruthy()
+    expect(screen.getByLabelText('Attached image: second.png')).toBeTruthy()
+    await waitFor(() => expect(globalThis.createImageBitmap).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      firstDecode.resolve(imageMocks.bitmap)
+      await firstDecode.promise
+    })
+    await waitFor(() => expect(globalThis.createImageBitmap).toHaveBeenCalledTimes(2))
+    await act(async () => {
+      secondDecode.resolve(fakeBitmap())
+      await secondDecode.promise
+    })
+    await waitFor(() => expect(screen.getAllByText('Ready')).toHaveLength(2))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove attached image: first.png' }))
+    expect(screen.queryByLabelText('Attached image: first.png')).toBeNull()
+    expect(screen.getByLabelText('Attached image: second.png')).toBeTruthy()
+
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(sendAgentMessage).toHaveBeenCalledTimes(1))
+    expect(sendAgentMessage.mock.calls[0]?.[0]).toEqual([{
+      kind: 'image',
+      mimeType: 'image/jpeg',
+      data: 'AQID',
+    }])
+  })
+
+  it('sends every prepared image in its original paste order', async () => {
+    installModelFetch(true)
+    installImageBrowserMocks()
+    const sendAgentMessage = mock(async (_content: AiUserContentBlock[]) => ({ accepted: true }))
+    renderAgentPanel({
+      agentActiveCredentialId: TEST_CREDENTIAL.id,
+      agentActiveModelId: 'model-1',
+      sendAgentMessage,
+    })
+
+    const textarea = await screen.findByLabelText('Message to AI assistant')
+    pasteImages(['first.png', 'second.png'])
+    await waitFor(() => expect(screen.getAllByText('Ready')).toHaveLength(2))
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    await waitFor(() => expect(sendAgentMessage).toHaveBeenCalledTimes(1))
+    expect(sendAgentMessage.mock.calls[0]?.[0]).toEqual([
+      { kind: 'image', mimeType: 'image/jpeg', data: 'AQID' },
+      { kind: 'image', mimeType: 'image/jpeg', data: 'AQID' },
+    ])
+  })
+
   it('keeps an attachment visible but disables send for a non-vision model', async () => {
     installModelFetch(false)
     installImageBrowserMocks()
@@ -562,12 +636,99 @@ describe('AgentPanel', () => {
       agentMessages: [{
         id: 'image-message',
         role: 'user',
-        blocks: [{ kind: 'image', mimeType: 'image/jpeg', data: 'QUJD' }],
+        blocks: [{ kind: 'image', mimeType: 'image/jpeg', src: '/conversation-image/0' }],
         timestamp: Date.now(),
       }],
     })
 
     const image = await screen.findByAltText('Attachment from you') as HTMLImageElement
-    expect(image.src).toContain('data:image/jpeg;base64,QUJD')
+    expect(image.getAttribute('src')).toBe('/conversation-image/0')
+  })
+
+  it('coalesces images into compact galleries and opens a focus-restoring preview', async () => {
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.endsWith('/admin/api/ai/credentials')) return jsonResponse({ credentials: [] })
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as typeof fetch
+    const { store } = renderAgentPanel({
+      agentMessages: [{
+        id: 'image-message',
+        role: 'user',
+        blocks: [
+          { kind: 'image', mimeType: 'image/jpeg', src: '/conversation-image/0' },
+          { kind: 'image', mimeType: 'image/jpeg', src: '/conversation-image/1' },
+          { kind: 'image', mimeType: 'image/jpeg', src: '/conversation-image/2' },
+        ],
+        timestamp: Date.now(),
+      }],
+    })
+
+    const gallery = await screen.findByRole('group', { name: 'Images from you' })
+    expect(gallery.querySelectorAll('button')).toHaveLength(3)
+    const trigger = screen.getByRole('button', { name: 'Open image preview: Attachment 1 of 3 from you' })
+    trigger.focus()
+    fireEvent.click(trigger)
+
+    const preview = await screen.findByRole('dialog', { name: 'Your attachment' })
+    expect(preview.querySelector('img')?.getAttribute('alt')).toBe('Attachment 1 of 3 from you')
+    await waitFor(() => expect(document.activeElement).toBe(preview))
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('agent-image-preview')).toBeNull())
+    expect(store.getState().isAgentOpen).toBe(true)
+    await waitFor(() => expect(document.activeElement).toBe(trigger))
+
+    fireEvent.click(trigger)
+    await screen.findByRole('dialog', { name: 'Your attachment' })
+    fireEvent.click(screen.getByRole('button', { name: 'Close Your attachment panel' }))
+    await waitFor(() => expect(screen.queryByTestId('agent-image-preview')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(trigger))
+
+    fireEvent.click(trigger)
+    await screen.findByRole('dialog', { name: 'Your attachment' })
+    act(() => {
+      store.setState((state) => ({
+        agentComposerEpoch: state.agentComposerEpoch + 1,
+        agentMessages: [],
+      }))
+    })
+    await waitFor(() => expect(screen.queryByTestId('agent-image-preview')).toBeNull())
+    expect(store.getState().isAgentOpen).toBe(true)
+  })
+
+  it('uses the same gallery for assistant and plural tool-result images', async () => {
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.endsWith('/admin/api/ai/credentials')) return jsonResponse({ credentials: [] })
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as typeof fetch
+    renderAgentPanel({
+      agentMessages: [{
+        id: 'assistant-images',
+        role: 'assistant',
+        blocks: [
+          { kind: 'image', mimeType: 'image/jpeg', src: '/assistant-image/0' },
+          { kind: 'image', mimeType: 'image/jpeg', src: '/assistant-image/1' },
+          {
+            kind: 'toolCall',
+            toolCall: {
+              id: 'tool-1',
+              actionType: 'site_render_snapshot',
+              params: {},
+              result: { ok: true },
+              status: 'success',
+              previewImages: ['data:image/png;base64,R0hJ', 'data:image/png;base64,SktM'],
+            },
+          },
+        ],
+        timestamp: Date.now(),
+      }],
+    })
+
+    expect((await screen.findByRole('group', { name: 'Images from assistant' }))
+      .querySelectorAll('button')).toHaveLength(2)
+    expect(screen.getByRole('group', { name: 'Images captured by assistant tools' })
+      .querySelectorAll('button')).toHaveLength(2)
   })
 })

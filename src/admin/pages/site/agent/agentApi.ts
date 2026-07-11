@@ -11,9 +11,8 @@
  */
 
 import { nanoid } from 'nanoid'
-import { Type, safeParseValue, type Static } from '@core/utils/typeboxHelpers'
+import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { apiRequest, isAbortError } from '@core/http'
-import { AiUserImageBlockSchema } from '@core/ai'
 import {
   AI_CONVERSATIONS_PATH,
   AI_DEFAULTS_PATH,
@@ -92,11 +91,11 @@ export function rehydrateMessages(
         msg.blocks.push({ kind: 'toolCall', toolCall })
         toolCallIndex.set(block.toolCallId, toolCall)
       } else if (rec.role === 'user' && block.kind === 'image') {
-        // Conversation payloads use the broader persisted block vocabulary.
-        // Only the bounded canonical user-image shape is safe to render as a
-        // data URL in the composer thread.
-        const parsedImage = safeParseValue(AiUserImageBlockSchema, block)
-        if (parsedImage.ok) msg.blocks.push(parsedImage.value)
+        msg.blocks.push({
+          kind: 'image',
+          mimeType: block.mimeType,
+          src: block.url,
+        })
       }
     }
     out.push(msg)

@@ -24,6 +24,8 @@
  */
 
 import type {
+  AiContentBlock,
+  AiMessage,
   AiStreamEvent,
   AiTool,
   AiToolOutput,
@@ -31,7 +33,10 @@ import type {
 import type { AiStreamRequest } from '../types'
 import { parseSseStream, type SseFrame } from './sse'
 import { executeAiTool } from './execTool'
-import { isAbortError, classifyHttpError } from './errors'
+import { isAbortError, classifyHttpFailure } from './errors'
+
+export const PROVIDER_RETRY_IMAGE_OMITTED =
+  '[Earlier attached images omitted after the provider rejected the full conversation context.]'
 
 /** A resolved tool call the model issued this turn. */
 export interface TurnToolCall {
@@ -106,8 +111,10 @@ export async function* runToolLoop<TMessage>(
   req: AiStreamRequest,
 ): AsyncIterable<AiStreamEvent> {
   const toolsByName = new Map<string, AiTool>(req.tools.map((t) => [t.name, t]))
-  const messages = adapter.mapHistory(req)
+  let messages = adapter.mapHistory(req)
   const headers = adapter.buildHeaders(req)
+  let initialProviderRound = true
+  let replayOverflowRetried = false
 
   // Track tool-result messages that carry heavy evidence (screenshots,
   // full-page HTML/CSS). Once superseded they describe stale page state and are
@@ -147,7 +154,16 @@ export async function* runToolLoop<TMessage>(
     if (!res.ok) {
       const bodyText = await res.text().catch(() => '')
       console.error(`[ai/${adapter.label.toLowerCase()}] HTTP ${res.status}:`, bodyText.slice(0, 500))
-      yield { type: 'error', message: classifyHttpError(adapter.label, res.status, bodyText) }
+      const failure = classifyHttpFailure(adapter.label, res.status, bodyText)
+      if (initialProviderRound && !replayOverflowRetried && failure.kind === 'replayOverflow') {
+        const projected = elideHistoricalUserImages(req.messages)
+        if (projected) {
+          replayOverflowRetried = true
+          messages = adapter.mapHistory({ ...req, messages: projected })
+          continue
+        }
+      }
+      yield { type: 'error', message: failure.message }
       return
     }
 
@@ -170,6 +186,7 @@ export async function* runToolLoop<TMessage>(
     if (req.signal.aborted) return
 
     const turn = translator.finish()
+    initialProviderRound = false
     if (turn.usage) {
       promptTokens += turn.usage.promptTokens
       completionTokens += turn.usage.completionTokens
@@ -231,6 +248,42 @@ export async function* runToolLoop<TMessage>(
     cacheReadTokens: cacheReadTokens || undefined,
     cacheCreationTokens: cacheCreationTokens || undefined,
   }
+}
+
+/**
+ * One provider-directed retry projection: retain the newest/current user
+ * turn verbatim and replace images on earlier user turns with one breadcrumb
+ * per turn. Persistence and the caller-owned history remain untouched.
+ */
+function elideHistoricalUserImages(messages: readonly AiMessage[]): AiMessage[] | null {
+  let newestUserIndex = -1
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === 'user') {
+      newestUserIndex = index
+      break
+    }
+  }
+  if (newestUserIndex <= 0) return null
+
+  let changed = false
+  const projected = messages.map((message, messageIndex): AiMessage => {
+    if (messageIndex >= newestUserIndex || message.role !== 'user') return message
+    if (!message.content.some((block) => block.kind === 'image')) return message
+
+    changed = true
+    let breadcrumbAdded = false
+    const content: AiContentBlock[] = []
+    for (const block of message.content) {
+      if (block.kind !== 'image') {
+        content.push(block)
+      } else if (!breadcrumbAdded) {
+        content.push({ kind: 'text', text: PROVIDER_RETRY_IMAGE_OMITTED })
+        breadcrumbAdded = true
+      }
+    }
+    return { role: 'user', content }
+  })
+  return changed ? projected : null
 }
 
 // ---------------------------------------------------------------------------

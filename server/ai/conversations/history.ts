@@ -33,8 +33,6 @@ import type { MessageRecord } from './types'
 export const INTERRUPTED_TOOL_RESULT_ERROR =
   'Tool call did not complete — the previous turn was interrupted before a result was produced.'
 
-export const EARLIER_USER_IMAGE_OMITTED =
-  '[Earlier attached image omitted from model context. Ask the user to attach it again if needed.]'
 export const NON_VISION_USER_IMAGE_OMITTED =
   '[Attached image omitted because the selected model does not support image input.]'
 
@@ -107,39 +105,22 @@ export function buildMessageHistory(records: MessageRecord[]): AiMessage[] {
 }
 
 /**
- * Bound provider replay without mutating persisted history.
+ * Adapt persisted user images to the selected model without mutating history.
  *
- * Vision models receive only the newest image-bearing user turn; older images
- * become breadcrumbs. Text-only models receive breadcrumbs for every image,
- * which keeps a conversation usable after switching away from a vision model.
+ * Vision models retain every image-bearing turn. Text-only models receive one
+ * breadcrumb per image-bearing turn, which keeps a conversation usable after
+ * switching away from a vision model.
  */
 export function projectUserImagesForModel(
   messages: readonly AiMessage[],
   visionInput: boolean,
 ): AiMessage[] {
-  let latestImageMessage = -1
-  if (visionInput) {
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index]
-      if (
-        message?.role === 'user'
-        && message.content.some((block) => block.kind === 'image')
-      ) {
-        latestImageMessage = index
-        break
-      }
-    }
-  }
+  if (visionInput) return [...messages]
 
-  return messages.map((message, messageIndex) => {
+  return messages.map((message) => {
     if (message.role !== 'user' || !message.content.some((block) => block.kind === 'image')) {
       return message
     }
-    if (visionInput && messageIndex === latestImageMessage) return message
-
-    const replacement = visionInput
-      ? EARLIER_USER_IMAGE_OMITTED
-      : NON_VISION_USER_IMAGE_OMITTED
     let breadcrumbAdded = false
     const content: AiContentBlock[] = []
     for (const block of message.content) {
@@ -148,7 +129,7 @@ export function projectUserImagesForModel(
         continue
       }
       if (!breadcrumbAdded) {
-        content.push({ kind: 'text', text: replacement })
+        content.push({ kind: 'text', text: NON_VISION_USER_IMAGE_OMITTED })
         breadcrumbAdded = true
       }
     }

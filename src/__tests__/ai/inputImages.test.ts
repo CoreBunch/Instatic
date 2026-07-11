@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import sharp from 'sharp'
 import {
+  AI_USER_IMAGE_MAX_PER_MESSAGE,
   AI_USER_IMAGE_MAX_BYTES,
   AI_USER_IMAGE_MAX_EDGE,
   AI_USER_IMAGE_MAX_PIXELS,
@@ -8,6 +9,8 @@ import {
 } from '@core/ai'
 import {
   AiImageInputError,
+  canonicaliseAiUserContent,
+  preflightAiUserContent,
   validateAiUserContent,
   validateAiUserImage,
 } from '../../../server/ai/inputImages'
@@ -39,15 +42,17 @@ function makeImage(
 }
 
 describe('validateAiUserContent', () => {
-  test('normalises mixed content to trimmed text followed by the image', async () => {
+  test('normalises mixed content to trimmed text followed by every image', async () => {
     const content = await validateAiUserContent([
       imageBlock(),
       { kind: 'text', text: '  Describe this screenshot.  ' },
+      imageBlock(),
     ])
 
     expect(content[0]).toEqual({ kind: 'text', text: 'Describe this screenshot.' })
     expect(content[1]).toMatchObject({ kind: 'image', mimeType: 'image/jpeg' })
     expect((content[1] as AiUserImageBlock).data.length).toBeGreaterThan(0)
+    expect(content[2]).toMatchObject({ kind: 'image', mimeType: 'image/jpeg' })
   })
 
   test('accepts image-only content and removes whitespace-only text beside it', async () => {
@@ -63,7 +68,31 @@ describe('validateAiUserContent', () => {
     expect(besideWhitespace[0]).toMatchObject({ kind: 'image', mimeType: 'image/jpeg' })
   })
 
-  test('rejects an empty turn, duplicate text, and duplicate images', async () => {
+  test('stops before the next decode when cancellation lands between images', async () => {
+    const corruptButPreflightValid = Buffer.from([0xff, 0xd8, 0xff, 0x00])
+    const preflight = preflightAiUserContent([
+      imageBlock(),
+      imageBlock(corruptButPreflightValid.toString('base64')),
+    ])
+    let abortChecks = 0
+    const signal = {
+      throwIfAborted() {
+        abortChecks += 1
+        // Outer per-image check, metadata checks, then the first JPEG encode's
+        // before/after checks. Abort immediately after that active pipeline.
+        if (abortChecks === 5) throw new DOMException('Request aborted', 'AbortError')
+      },
+    } as AbortSignal
+
+    await expect(canonicaliseAiUserContent(preflight, signal)).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    // Reaching either another quality attempt or the corrupt second image
+    // would throw AiImageInputError instead.
+    expect(abortChecks).toBe(5)
+  })
+
+  test('rejects an empty turn, duplicate text, and more than eight images', async () => {
     await expect(validateAiUserContent([
       { kind: 'text', text: '   ' },
     ])).rejects.toMatchObject({
@@ -81,11 +110,10 @@ describe('validateAiUserContent', () => {
     })
 
     await expect(validateAiUserContent([
-      imageBlock(),
-      imageBlock(),
+      ...Array.from({ length: AI_USER_IMAGE_MAX_PER_MESSAGE + 1 }, () => imageBlock()),
     ])).rejects.toMatchObject({
       status: 400,
-      message: 'A message can contain at most one image.',
+      message: `A message can contain at most ${AI_USER_IMAGE_MAX_PER_MESSAGE} images.`,
     })
   })
 })

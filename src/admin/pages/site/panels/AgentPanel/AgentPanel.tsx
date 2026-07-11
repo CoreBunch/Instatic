@@ -21,8 +21,8 @@
  * @see Guideline #410 — 3 Self-Contained Independent Panels
  */
 
-import { useRef, useEffect, memo } from 'react'
-import { useAgentStore } from '@admin/ai/useAgentStore'
+import { useRef, useEffect, useState, memo } from 'react'
+import { useAgentStore, useAgentStoreApi } from '@admin/ai/useAgentStore'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useAdminNavigate } from '@admin/lib/useAdminNavigate'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
@@ -36,10 +36,15 @@ import { PanelHeader } from '@admin/shared/PanelHeader'
 import { UserAvatar } from '@admin/shared/UserAvatar'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
-import { useDraggablePanel } from '@site/hooks/useDraggablePanel'
+import { useDraggablePanel } from '@admin/shared/FloatingWindow'
 import { cn } from '@ui/cn'
 import { ConversationHistory } from './ConversationHistory'
 import { AgentComposer, type ComposerLockReason } from './AgentComposer'
+import {
+  AgentImageGallery,
+  type AgentPreviewImage,
+} from './AgentImageGallery'
+import { AgentImagePreview } from './AgentImagePreview'
 import { ToolCallRow } from './ToolCallRow'
 import { formatRelativeTime } from './relativeTime'
 import styles from './AgentPanel.module.css'
@@ -61,6 +66,7 @@ type PanelVariant = 'floating' | 'docked'
  * Agent routes via Vite proxy `/admin/api/agent` → local Bun server → Claude SDK.
  */
 export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant }) {
+  const agentStore = useAgentStoreApi()
   const isOpen = useAgentStore((s) => s.isAgentOpen)
   const isStreaming = useAgentStore((s) => s.isAgentStreaming)
   const conversationPending = useAgentStore((s) => s.isAgentConversationPending)
@@ -73,6 +79,7 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
   const composerEpoch = useAgentStore((s) => s.agentComposerEpoch)
   const activeCredentialId = useAgentStore((s) => s.agentActiveCredentialId)
   const activeModelId = useAgentStore((s) => s.agentActiveModelId)
+  const [previewImage, setPreviewImage] = useState<AgentPreviewImage | null>(null)
   const credentialsResource = useAsyncResource(
     (signal) => listCredentials(signal),
     [],
@@ -106,7 +113,7 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
 
   // ── Draggable panel position ───────────────────────────────────────────────
   // Default to bottom-right corner.
-  const { panelRef, headerDragProps, panelPositionStyle } = useDraggablePanel(
+  const { setPanelRef, headerDragProps, panelPositionStyle } = useDraggablePanel(
     'agent',
     () => ({
       x: typeof window !== 'undefined' ? window.innerWidth - PANEL_WIDTH - 16 : 16,
@@ -130,6 +137,13 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
     if (isOpen) void loadScopeDefault()
   }, [isOpen, loadScopeDefault])
 
+  useEffect(() => agentStore.subscribe((state, previous) => {
+    if (
+      (previous.isAgentOpen && !state.isAgentOpen)
+      || previous.agentComposerEpoch !== state.agentComposerEpoch
+    ) setPreviewImage(null)
+  }), [agentStore])
+
   // Escape key — close the AI panel
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -146,7 +160,7 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
   // Zustand state across open/close cycles without conditional rendering.
   return (
     <aside
-      ref={panelRef as React.RefObject<HTMLElement>}
+      ref={setPanelRef}
       role="complementary"
       aria-label="AI Assistant"
       data-panel=""
@@ -217,7 +231,11 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
           <>
             {lockReason && <AgentCredentialAlert mode={lockReason} />}
             {groupConsecutiveMessages(messages).map((group) => (
-              <MessageBubble key={group.id} group={group} />
+              <MessageBubble
+                key={group.id}
+                group={group}
+                onOpenImage={setPreviewImage}
+              />
             ))}
           </>
         )}
@@ -238,8 +256,13 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
         credentials={credentials}
         credentialsLoaded={credentialsLoaded}
         onRefreshCredentials={credentialsResource.refresh}
+        onOpenImage={setPreviewImage}
       />
     </div>
+      <AgentImagePreview
+        image={isOpen ? previewImage : null}
+        onClose={() => setPreviewImage(null)}
+      />
     </aside>
   )
 }
@@ -254,7 +277,13 @@ interface ConversationGroup {
   messages: AgentMessage[]
 }
 
-function MessageBubble({ group }: { group: ConversationGroup }) {
+function MessageBubble({
+  group,
+  onOpenImage,
+}: {
+  group: ConversationGroup
+  onOpenImage(image: AgentPreviewImage): void
+}) {
   const isUser = group.role === 'user'
   const user = useAuthenticatedAdminUser()
   const startedAt = group.messages[0]?.timestamp
@@ -284,8 +313,13 @@ function MessageBubble({ group }: { group: ConversationGroup }) {
       {groupRenderItems(group.messages).map((item) =>
         item.kind === 'text' ? (
           <MarkdownTextBubble key={item.key} text={item.text} isUser={isUser} />
-        ) : item.kind === 'image' ? (
-          <UserImageBubble key={item.key} mimeType={item.mimeType} data={item.data} />
+        ) : item.kind === 'images' ? (
+          <MessageImageGallery
+            key={item.key}
+            images={item.images}
+            isUser={isUser}
+            onOpenImage={onOpenImage}
+          />
         ) : (
           // A run of consecutive tool calls shares one container so the rows
           // stack tightly; text blocks around them stay separate bubbles.
@@ -293,6 +327,7 @@ function MessageBubble({ group }: { group: ConversationGroup }) {
             {item.toolCalls.map((toolCall) => (
               <ToolCallRow key={toolCall.id} toolCall={toolCall} />
             ))}
+            <ToolPreviewGallery toolCalls={item.toolCalls} onOpenImage={onOpenImage} />
           </div>
         ),
       )}
@@ -324,7 +359,11 @@ type MessageBlock = AgentMessage['blocks'][number]
 
 type MessageRenderItem =
   | { kind: 'text'; key: string; text: string }
-  | { kind: 'image'; key: string; mimeType: string; data: string }
+  | {
+      kind: 'images'
+      key: string
+      images: Array<{ key: string; src: string }>
+    }
   | { kind: 'tools'; key: string; toolCalls: AgentToolCall[] }
 
 function groupRenderItems(messages: AgentMessage[]): MessageRenderItem[] {
@@ -337,12 +376,13 @@ function groupRenderItems(messages: AgentMessage[]): MessageRenderItem[] {
         return
       }
       if (block.kind === 'image') {
-        items.push({
-          kind: 'image',
+        const image = {
           key: `image-${message.id}-${index}`,
-          mimeType: block.mimeType,
-          data: block.data,
-        })
+          src: block.src,
+        }
+        const last = items.at(-1)
+        if (last?.kind === 'images') last.images.push(image)
+        else items.push({ kind: 'images', key: image.key, images: [image] })
         return
       }
       const last = items.at(-1)
@@ -356,14 +396,55 @@ function groupRenderItems(messages: AgentMessage[]): MessageRenderItem[] {
   return items
 }
 
-function UserImageBubble({ mimeType, data }: { mimeType: string; data: string }) {
+function MessageImageGallery({
+  images,
+  isUser,
+  onOpenImage,
+}: {
+  images: Array<{ key: string; src: string }>
+  isUser: boolean
+  onOpenImage(image: AgentPreviewImage): void
+}) {
+  const galleryImages = images.map((image, index): AgentPreviewImage => ({
+    id: image.key,
+    src: image.src,
+    alt: images.length === 1
+      ? isUser ? 'Attachment from you' : 'Image from assistant'
+      : isUser
+        ? `Attachment ${index + 1} of ${images.length} from you`
+        : `Image ${index + 1} of ${images.length} from assistant`,
+    title: isUser ? 'Your attachment' : 'Assistant image',
+  }))
+
   return (
-    <img
-      src={`data:${mimeType};base64,${data}`}
-      alt="Attachment from you"
-      loading="lazy"
-      decoding="async"
-      className={styles.userImage}
+    <AgentImageGallery
+      images={galleryImages}
+      label={isUser ? 'Images from you' : 'Images from assistant'}
+      onOpenImage={onOpenImage}
+    />
+  )
+}
+
+function ToolPreviewGallery({
+  toolCalls,
+  onOpenImage,
+}: {
+  toolCalls: AgentToolCall[]
+  onOpenImage(image: AgentPreviewImage): void
+}) {
+  const images = toolCalls.flatMap((toolCall) =>
+    (toolCall.previewImages ?? []).map((src, index): AgentPreviewImage => ({
+      id: `${toolCall.id}-preview-${index}`,
+      src,
+      alt: `Image ${index + 1} captured while running ${toolCall.actionType}`,
+      title: 'Tool result image',
+    })),
+  )
+  return (
+    <AgentImageGallery
+      images={images}
+      label="Images captured by assistant tools"
+      onOpenImage={onOpenImage}
     />
   )
 }

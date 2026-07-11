@@ -58,7 +58,7 @@ describe('conversation detail round-trip', () => {
     expect(record).not.toBeNull()
 
     const messages = await listMessagesForConversation(testDb.db, conv.id)
-    const detail = toConversationDetailView(record!, messages)
+    const detail = toConversationDetailView(record!, messages, () => '/unused-image')
 
     // The exact validator that threw "Expected union value" on reopen.
     expect(Value.Check(ConversationDetailViewSchema, detail)).toBe(true)
@@ -96,13 +96,33 @@ describe('conversation detail round-trip', () => {
     const record = await readConversationForUser(testDb.db, 'user_1', conv.id)
     expect(record).not.toBeNull()
     const messages = await listMessagesForConversation(testDb.db, conv.id)
-    const detail = toConversationDetailView(record!, messages)
+    const detail = toConversationDetailView(
+      record!,
+      messages,
+      (messageId, blockIndex) => `/images/${messageId}/${blockIndex}`,
+    )
 
     expect(Value.Check(ConversationDetailViewSchema, detail)).toBe(true)
-    expect(detail.messages.map((message) => message.content)).toEqual([
+    expect(messages.map((message) => message.content)).toEqual([
       [{ kind: 'text', text: 'What is this?' }, image],
       [image],
     ])
+    expect(detail.messages.map((message) => message.content)).toEqual([
+      [
+        { kind: 'text', text: 'What is this?' },
+        {
+          kind: 'image',
+          mimeType: 'image/jpeg',
+          url: `/images/${messages[0]!.id}/1`,
+        },
+      ],
+      [{
+        kind: 'image',
+        mimeType: 'image/jpeg',
+        url: `/images/${messages[1]!.id}/0`,
+      }],
+    ])
+    expect(JSON.stringify(detail)).not.toContain(imageData)
   })
 
   it('does not let an automatic first-turn title overwrite a user rename', async () => {

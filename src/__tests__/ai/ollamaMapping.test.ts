@@ -70,15 +70,23 @@ describe('Ollama mapChatHistory', () => {
 
   test('maps an image-bearing user turn to OpenAI content parts', () => {
     const history: AiMessage[] = [
-      { role: 'user', content: [{ kind: 'text', text: 'see' }, { kind: 'image', mimeType: 'image/jpeg', data: 'B64' }] },
+      {
+        role: 'user',
+        content: [
+          { kind: 'text', text: 'compare' },
+          { kind: 'image', mimeType: 'image/jpeg', data: 'B64-1' },
+          { kind: 'image', mimeType: 'image/jpeg', data: 'B64-2' },
+        ],
+      },
     ]
     const mapped = mapChatHistory([], history).flat()
     expect(mapped).toEqual([
       {
         role: 'user',
         content: [
-          { type: 'text', text: 'see' },
-          { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,B64' } },
+          { type: 'text', text: 'compare' },
+          { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,B64-1' } },
+          { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,B64-2' } },
         ],
       },
     ])

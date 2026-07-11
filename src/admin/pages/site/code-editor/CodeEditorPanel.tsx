@@ -29,7 +29,7 @@
 import { Suspense, lazy, useEffect, useRef, type CSSProperties } from 'react'
 import { useEditorStore } from '@site/store/store'
 import { PanelHeader } from '@admin/shared/PanelHeader'
-import { useDraggablePanel } from '@site/hooks/useDraggablePanel'
+import { useDraggablePanel } from '@admin/shared/FloatingWindow'
 import { ImagePreview } from './ImagePreview'
 import { ScriptSettingsPane } from './ScriptSettingsPane'
 import { StyleSettingsPane } from './StyleSettingsPane'
@@ -105,7 +105,7 @@ export function CodeEditorPanel() {
   //   x = Math.max(220, (window.innerWidth - 800) / 2)  — avoid dom panel overlap
   //   y = 80
   // Position is persisted by useDraggablePanel in the unified editor layout.
-  const { panelRef, headerDragProps, panelPositionStyle } = useDraggablePanel(
+  const { panelRef, setPanelRef, headerDragProps, panelPositionStyle } = useDraggablePanel(
     'codeeditor',
     () => ({
       x: typeof window !== 'undefined'
@@ -182,7 +182,7 @@ export function CodeEditorPanel() {
 
   return (
     <aside
-      ref={panelRef as React.RefObject<HTMLElement>}
+      ref={setPanelRef}
       role="complementary"
       aria-label="Code Editor"
       data-panel="code-editor"

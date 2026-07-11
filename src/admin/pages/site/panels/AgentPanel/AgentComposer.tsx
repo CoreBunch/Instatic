@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useAgentStore } from '@admin/ai/useAgentStore'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { listModels, type CredentialView } from '@admin/ai/api'
-import type { AiUserContentBlock } from '@core/ai'
+import {
+  AI_USER_IMAGE_MAX_PER_MESSAGE,
+  type AiUserContentBlock,
+} from '@core/ai'
 import { Button } from '@ui/components/Button'
 import { Textarea } from '@ui/components/Input'
 import { pushToast } from '@ui/components/Toast'
@@ -11,7 +14,8 @@ import { SendSolidIcon } from 'pixel-art-icons/icons/send-solid'
 import { SquareSolidIcon } from 'pixel-art-icons/icons/square-solid'
 import { ContextMeter } from './ContextMeter'
 import { ModelPicker } from './ModelPicker'
-import { usePendingImageAttachment } from './usePendingImageAttachment'
+import type { AgentPreviewImage } from './AgentImageGallery'
+import { usePendingImageAttachments } from './usePendingImageAttachments'
 import styles from './AgentPanel.module.css'
 
 export type ComposerLockReason = 'setup' | 'chooseModel'
@@ -22,6 +26,7 @@ interface AgentComposerProps {
   credentials: CredentialView[]
   credentialsLoaded: boolean
   onRefreshCredentials(): void
+  onOpenImage(image: AgentPreviewImage): void
 }
 
 export function AgentComposer({
@@ -30,6 +35,7 @@ export function AgentComposer({
   credentials,
   credentialsLoaded,
   onRefreshCredentials,
+  onOpenImage,
 }: AgentComposerProps) {
   const isStreaming = useAgentStore((state) => state.isAgentStreaming)
   const conversationPending = useAgentStore((state) => state.isAgentConversationPending)
@@ -41,7 +47,7 @@ export function AgentComposer({
   const activeModelId = useAgentStore((state) => state.agentActiveModelId)
   const [draft, setDraft] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const attachment = usePendingImageAttachment()
+  const attachments = usePendingImageAttachments()
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -73,12 +79,13 @@ export function AgentComposer({
       : null
   const modelCannotRunAgent = activeModel?.capabilities.toolCalling === false
 
-  const imageStatus = !attachment.pending
+  const hasAttachments = attachments.pending.length > 0
+  const imageStatus = !hasAttachments
     ? 'none'
-    : attachment.pending.status === 'processing'
-      ? 'processing'
-      : attachment.pending.status === 'error'
-        ? 'error'
+    : attachments.pending.some((entry) => entry.status === 'error')
+      ? 'error'
+      : attachments.pending.some((entry) => entry.status === 'processing')
+        ? 'processing'
         : activeModelResource.loading
           ? 'checking-model'
           : activeModelResource.error || !resolvedSelection
@@ -96,28 +103,26 @@ export function AgentComposer({
       || modelCannotRunAgent
     ) return
     const text = draft.trim()
-    const pending = attachment.current()
-    if (!text && !pending) return
-    if (pending?.status === 'processing') {
-      pushToast({ kind: 'error', title: 'Image is still processing', body: 'Wait a moment, then send again.' })
+    const pending = attachments.current()
+    if (!text && pending.length === 0) return
+    if (pending.some((entry) => entry.status === 'processing')) {
+      pushToast({ kind: 'error', title: 'Images are still processing', body: 'Wait a moment, then send again.' })
       return
     }
-    if (pending?.status === 'error' || (pending && !pending.block)) return
-    if (pending && imageStatus !== 'ready') return
+    if (pending.some((entry) => entry.status === 'error' || !entry.block)) return
+    if (pending.length > 0 && imageStatus !== 'ready') return
 
     const content: AiUserContentBlock[] = []
     if (text) content.push({ kind: 'text', text })
-    if (pending?.block) content.push(pending.block)
+    for (const entry of pending) {
+      if (entry.block) content.push(entry.block)
+    }
 
     setSubmitting(true)
-    try {
-      const result = await sendAgentMessage(content)
-      if (result.accepted) {
-        setDraft('')
-        attachment.clear()
-      }
-    } finally {
-      setSubmitting(false)
+    const result = await sendAgentMessage(content).finally(() => setSubmitting(false))
+    if (result.accepted) {
+      setDraft('')
+      attachments.clear()
     }
   }
 
@@ -127,14 +132,7 @@ export function AgentComposer({
     )
     if (imageFiles.length === 0) return
     event.preventDefault()
-    attachment.queueFile(imageFiles[0]!)
-    if (imageFiles.length > 1) {
-      pushToast({
-        kind: 'error',
-        title: 'One image per message',
-        body: 'Only the first pasted image was attached.',
-      })
-    }
+    attachments.queueFiles(imageFiles, AI_USER_IMAGE_MAX_PER_MESSAGE)
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>): void {
@@ -164,60 +162,79 @@ export function AgentComposer({
   return (
     <div className={styles.inputBar}>
       <ContextMeter windowTokens={activeModel?.contextWindow ?? null} />
-      {attachment.pending && (
+      {hasAttachments && (
         <div
-          className={styles.attachmentCard}
+          className={styles.attachmentGrid}
+          data-count={Math.min(attachments.pending.length, 3)}
           role="group"
-          aria-label={`Attached image: ${attachment.pending.filename}`}
-          aria-busy={attachment.pending.status === 'processing'}
+          aria-label="Attached images"
         >
-          {attachment.pending.previewUrl ? (
-            <img
-              src={attachment.pending.previewUrl}
-              alt=""
-              className={styles.attachmentPreview}
-            />
-          ) : (
-            <div className={styles.attachmentPreviewPlaceholder} aria-hidden="true" />
-          )}
-          <div className={styles.attachmentCopy}>
-            <span className={styles.attachmentName}>{attachment.pending.filename}</span>
-            <span
-              className={styles.attachmentStatus}
-              role="status"
-              aria-live="polite"
+          {attachments.pending.map((entry) => (
+            <div
+              key={entry.id}
+              className={styles.attachmentCard}
+              aria-label={`Attached image: ${entry.filename}`}
+              aria-busy={entry.status === 'processing'}
+              title={entry.filename}
             >
-              {attachment.pending.status === 'processing'
-                ? 'Preparing…'
-                : attachment.pending.status === 'error'
-                  ? attachment.pending.error
-                  : 'Ready'}
-            </span>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            iconOnly
-            disabled={submitting || isStreaming}
-            onClick={attachment.remove}
-            tooltip="Remove image"
-            aria-label="Remove attached image"
-            className={styles.attachmentRemove}
-          >
-            <CloseIcon size={12} aria-hidden="true" />
-          </Button>
+              {entry.previewUrl ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  shape="flush"
+                  className={styles.attachmentPreviewButton}
+                  aria-label={`Preview attached image: ${entry.filename}`}
+                  aria-haspopup="dialog"
+                  onClick={() => {
+                    const previewUrl = entry.previewUrl
+                    if (!previewUrl) return
+                    onOpenImage({
+                      id: entry.id,
+                      src: previewUrl,
+                      alt: entry.filename,
+                      title: entry.filename,
+                    })
+                  }}
+                >
+                  <img src={entry.previewUrl} alt="" className={styles.attachmentPreview} />
+                </Button>
+              ) : (
+                <div className={styles.attachmentPreviewPlaceholder} aria-hidden="true" />
+              )}
+              <span className={styles.attachmentStatus} role="status" aria-live="polite">
+                {entry.status === 'processing'
+                  ? 'Preparing…'
+                  : entry.status === 'error'
+                    ? 'Failed'
+                    : 'Ready'}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="micro"
+                iconOnly
+                disabled={submitting || isStreaming}
+                onClick={() => attachments.remove(entry.id)}
+                tooltip={`Remove ${entry.filename}`}
+                aria-label={`Remove attached image: ${entry.filename}`}
+                className={styles.attachmentRemove}
+              >
+                <CloseIcon size={10} aria-hidden="true" />
+              </Button>
+            </div>
+          ))}
         </div>
       )}
-      {attachment.pending && imageStatus === 'checking-model' && (
+      {hasAttachments && imageStatus === 'checking-model' && (
         <p role="status" className={styles.attachmentNotice}>Checking whether this model accepts images…</p>
       )}
-      {attachment.pending && imageStatus === 'unsupported-model' && (
+      {hasAttachments && imageStatus === 'unsupported-model' && (
         <p role="alert" className={styles.attachmentWarning}>
           Choose a vision-capable model or remove the image.
         </p>
       )}
-      {attachment.pending && imageStatus === 'model-error' && (
+      {hasAttachments && imageStatus === 'model-error' && (
         <p role="alert" className={styles.attachmentWarning}>
           Could not verify image support for this model. Choose another model or remove the image.
         </p>
@@ -242,7 +259,7 @@ export function AgentComposer({
               ? 'Add AI credentials to start chatting'
               : lockReason === 'chooseModel'
                 ? 'Choose a model below to start'
-                : 'Tell me what to build… (paste an image or press Enter to send)'}
+                : 'Tell me what to build… (paste images or press Enter to send)'}
             aria-label="Message to AI assistant"
             rows={2}
             resize="none"

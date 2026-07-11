@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { Value } from '@sinclair/typebox/value'
 import {
+  AI_CHAT_MAX_REQUEST_BYTES,
   AI_USER_IMAGE_MAX_BASE64_CHARS,
+  AI_USER_IMAGE_MAX_PER_MESSAGE,
   AiChatRequestBodySchema,
   isAiUserImageSourceMimeType,
 } from '@core/ai'
@@ -13,7 +15,7 @@ const image = {
 }
 
 describe('AiChatRequestBodySchema', () => {
-  test('accepts text-only, image-only, and mixed user turns', () => {
+  test('accepts text-only, image-only, and multi-image user turns', () => {
     expect(Value.Check(AiChatRequestBodySchema, {
       conversationId: 'conversation-1',
       content: [{ kind: 'text', text: 'Hello' }],
@@ -27,7 +29,7 @@ describe('AiChatRequestBodySchema', () => {
 
     expect(Value.Check(AiChatRequestBodySchema, {
       conversationId: 'conversation-1',
-      content: [{ kind: 'text', text: 'Describe this' }, image],
+      content: [image, { kind: 'text', text: 'Compare these' }, image],
     })).toBe(true)
   })
 
@@ -48,7 +50,7 @@ describe('AiChatRequestBodySchema', () => {
     })).toBe(false)
   })
 
-  test('bounds the user turn to one text block and one normalised JPEG', () => {
+  test('bounds the user turn to one text block and eight normalised JPEGs', () => {
     expect(Value.Check(AiChatRequestBodySchema, {
       conversationId: 'conversation-1',
       content: [{ kind: 'text', text: 'one' }, { kind: 'text', text: 'two' }, image],
@@ -63,6 +65,22 @@ describe('AiChatRequestBodySchema', () => {
       conversationId: 'conversation-1',
       content: [{ ...image, data: 'A'.repeat(AI_USER_IMAGE_MAX_BASE64_CHARS + 1) }],
     })).toBe(false)
+
+    expect(Value.Check(AiChatRequestBodySchema, {
+      conversationId: 'conversation-1',
+      content: Array.from({ length: AI_USER_IMAGE_MAX_PER_MESSAGE }, () => image),
+    })).toBe(true)
+
+    expect(Value.Check(AiChatRequestBodySchema, {
+      conversationId: 'conversation-1',
+      content: Array.from({ length: AI_USER_IMAGE_MAX_PER_MESSAGE + 1 }, () => image),
+    })).toBe(false)
+  })
+
+  test('reserves snapshot overhead above eight maximum base64 image blocks', () => {
+    expect(AI_CHAT_MAX_REQUEST_BYTES).toBeGreaterThan(
+      AI_USER_IMAGE_MAX_PER_MESSAGE * AI_USER_IMAGE_MAX_BASE64_CHARS,
+    )
   })
 })
 

@@ -113,58 +113,77 @@
   gap: var(--space-xs);
 }
 
-.attachmentCard {
+.attachmentGrid {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-s);
-  padding: var(--space-xs);
-  border-radius: var(--radius);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2xs);
+}
+
+.attachmentGrid[data-count="1"] {
+  grid-template-columns: minmax(0, 96px);
+}
+
+.attachmentGrid[data-count="2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.attachmentCard {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
   background: var(--bg-surface-2);
+  box-shadow: inset 0 0 0 1px var(--overlay-10);
+}
+
+.attachmentPreviewButton {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
 }
 
 .attachmentPreview {
   display: block;
-  width: 48px;
-  height: 48px;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
+  object-position: top;
 }
 
 .attachmentPreviewPlaceholder {
-  width: 48px;
-  height: 48px;
+  width: 100%;
+  height: 100%;
   border-radius: var(--radius-sm);
   background: var(--bg-surface);
 }
 
-.attachmentCopy {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  gap: var(--space-4xs);
-}
-
-.attachmentName,
 .attachmentStatus {
+  position: absolute;
+  inset: auto var(--space-3xs) var(--space-3xs);
+  z-index: 1;
+  width: fit-content;
+  max-width: calc(100% - var(--space-s));
+  padding: var(--space-px) var(--space-3xs);
+  border-radius: var(--radius-sm);
+  background: var(--scrim-60);
+  color: var(--text-bright);
+  font-size: var(--text-3xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.attachmentName {
-  color: var(--text-bright);
-  font-size: var(--text-xs);
-}
-
-.attachmentStatus {
-  color: var(--text-muted);
-  font-size: var(--text-2xs);
-}
-
 .attachmentRemove {
-  align-self: start;
+  position: absolute;
+  top: var(--space-3xs);
+  right: var(--space-3xs);
+  z-index: 2;
+  background: var(--scrim-60);
+  color: var(--text-bright);
 }
 
 .attachmentNotice,
@@ -462,32 +481,6 @@
   border-radius: var(--input-radius);
   background-color: var(--bg-surface);
   background-image: linear-gradient(var(--swatch), var(--swatch));
-  box-shadow: inset 0 0 0 1px var(--overlay-10);
-}
-
-/* Preview screenshot a browser tool captured (render_snapshot). Full panel
-   width, anchored to the top so tall page captures still read, capped so a
-   long page doesn't dominate the thread. Session-only. */
-.toolCallScreenshot {
-  display: block;
-  width: 100%;
-  max-height: 280px;
-  object-fit: contain;
-  object-position: top;
-  margin: var(--space-4xs) 0;
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
-  box-shadow: inset 0 0 0 1px var(--overlay-10);
-}
-
-.userImage {
-  display: block;
-  width: 100%;
-  max-height: 280px;
-  object-fit: contain;
-  object-position: top;
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
   box-shadow: inset 0 0 0 1px var(--overlay-10);
 }
 

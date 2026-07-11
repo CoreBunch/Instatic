@@ -5,8 +5,15 @@ export {
   aiToolOk,
 } from './toolOutput'
 export type { AiToolImage, AiToolOutput } from './toolOutput'
-export { AiContentBlockSchema } from './contentBlock'
-export type { AiContentBlock } from './contentBlock'
+export {
+  AiContentBlockSchema,
+  AiContentViewBlockSchema,
+  AiContentViewImageBlockSchema,
+  AiTextBlockSchema,
+  AiToolCallBlockSchema,
+  AiToolResultBlockSchema,
+} from './contentBlock'
+export type { AiContentBlock, AiContentViewBlock } from './contentBlock'
 export {
   AI_CHAT_MAX_REQUEST_BYTES,
   AiChatRequestBodySchema,
@@ -17,7 +24,7 @@ export type {
   AiUserContentBlock,
 } from './chatRequest'
 export {
-  AI_CONVERSATION_MAX_USER_IMAGES,
+  AI_USER_IMAGE_MAX_PER_MESSAGE,
   AI_USER_IMAGE_MAX_BASE64_CHARS,
   AI_USER_IMAGE_MAX_BYTES,
   AI_USER_IMAGE_MAX_EDGE,

@@ -22,7 +22,6 @@
 import { safeParseValue } from '@core/utils/typeboxHelpers'
 import {
   AI_CHAT_MAX_REQUEST_BYTES,
-  AI_CONVERSATION_MAX_USER_IMAGES,
   AiChatRequestBodySchema,
   type AiChatRequestBody,
   type AiContentBlock,
@@ -176,18 +175,7 @@ async function handleAiChat(
     }
     throw err
   }
-  const requestedImage = preflight.image !== null
-  if (requestedImage) {
-    // Avoid an expensive decode when the conversation is already at its image
-    // budget. The authoritative check is repeated under the writer lease.
-    const initialRecords = await listMessagesForConversation(db, conversation.id)
-    const existingImageCount = countUserImages(initialRecords)
-    if (existingImageCount >= AI_CONVERSATION_MAX_USER_IMAGES) {
-      return payloadTooLarge(
-        `This conversation already contains ${AI_CONVERSATION_MAX_USER_IMAGES} images. Start a new chat to attach another.`,
-      )
-    }
-  }
+  const requestedImage = preflight.images.length > 0
 
   // Resolve every selected model, not only image-bearing turns: the same
   // authoritative flag also gates browser-tool screenshots. Model-specific
@@ -212,29 +200,34 @@ async function handleAiChat(
   }
   if (req.signal.aborted) return clientClosedRequest()
 
-  // Full decode/re-encode is deliberately after the cheap conversation budget
-  // and capability gates so rejected requests cannot force needless Sharp work.
-  let userContent: AiContentBlock[]
-  try {
-    userContent = await canonicaliseAiUserContent(preflight)
-  } catch (err) {
-    if (err instanceof AiImageInputError) {
-      return err.status === 413 ? payloadTooLarge(err.message) : badRequest(err.message)
-    }
-    throw err
-  }
-  if (req.signal.aborted) return clientClosedRequest()
-
-  // One provider stream may write a conversation at a time. Besides avoiding
-  // interleaved assistant/tool rows, this lets the refreshed image-budget
-  // check below stay atomic with the append: concurrent tabs get a retryable
-  // 409 instead of overshooting the cap.
+  // One provider stream may write a conversation at a time so concurrent tabs
+  // cannot interleave assistant/tool rows. Acquire admission before the
+  // expensive Sharp boundary: the retryable loser must not decode eight images
+  // only to discover that another request already owns the conversation.
   const releaseConversation = acquireConversationStream(conversation.id)
   if (!releaseConversation) {
     return jsonResponse(
       { error: 'This conversation is already generating a response. Wait for it to finish.' },
       { status: 409 },
     )
+  }
+  if (req.signal.aborted) {
+    releaseConversation()
+    return clientClosedRequest()
+  }
+
+  // Full decode/re-encode is deliberately after the capability gates so an
+  // incompatible selected model cannot force needless Sharp work.
+  let userContent: AiContentBlock[]
+  try {
+    userContent = await canonicaliseAiUserContent(preflight, req.signal)
+  } catch (err) {
+    releaseConversation()
+    if (req.signal.aborted) return clientClosedRequest()
+    if (err instanceof AiImageInputError) {
+      return err.status === 413 ? payloadTooLarge(err.message) : badRequest(err.message)
+    }
+    throw err
   }
   if (req.signal.aborted) {
     releaseConversation()
@@ -269,14 +262,6 @@ async function handleAiChat(
     releaseConversation()
     return clientClosedRequest()
   }
-  const currentImageCount = countUserImages(existingRecords)
-  if (requestedImage && currentImageCount >= AI_CONVERSATION_MAX_USER_IMAGES) {
-    releaseConversation()
-    return payloadTooLarge(
-      `This conversation already contains ${AI_CONVERSATION_MAX_USER_IMAGES} images. Start a new chat to attach another.`,
-    )
-  }
-
   const prepared = await (async () => {
     try {
       // Append the user's message BEFORE streaming so it's persisted even if
@@ -291,9 +276,10 @@ async function handleAiChat(
       // is still the default, so a user-renamed chat is never overwritten.
       if (latestConversation.title === DEFAULT_CONVERSATION_TITLE) {
         const text = userContent.find((block) => block.kind === 'text')
+        const imageCount = userContent.filter((block) => block.kind === 'image').length
         const derivedTitle = text?.kind === 'text'
           ? deriveConversationTitle(text.text)
-          : 'Image'
+          : imageCount === 1 ? 'Image' : 'Images'
         if (derivedTitle) {
           await replaceDefaultConversationTitle(db, user.id, conversation.id, derivedTitle)
             .catch((err) => { console.error('[ai/chat] auto-title failed:', err) })
@@ -474,21 +460,6 @@ function acquireConversationStream(conversationId: string): (() => void) | null 
     released = true
     activeChatConversations.delete(conversationId)
   }
-}
-
-type StoredConversationMessage = Awaited<
-  ReturnType<typeof listMessagesForConversation>
->[number]
-
-function countUserImages(records: readonly StoredConversationMessage[]): number {
-  return records.reduce(
-    (count, record) => count + (
-      record.role === 'user'
-        ? record.content.filter((block) => block.kind === 'image').length
-        : 0
-    ),
-    0,
-  )
 }
 
 function clientClosedRequest(): Response {

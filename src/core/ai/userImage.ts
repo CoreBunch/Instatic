@@ -11,8 +11,8 @@ export type AiUserImageSourceMimeType = typeof AI_USER_IMAGE_SOURCE_MIME_TYPES[n
 
 /**
  * User-image policy shared by browser ingestion and the server boundary.
- * The browser always re-encodes accepted clipboard images to one bounded JPEG,
- * so providers receive a single portable shape.
+ * The browser always re-encodes each accepted clipboard image to a bounded
+ * JPEG, so providers receive one portable shape regardless of source format.
  */
 export const AI_USER_IMAGE_MAX_SOURCE_BYTES = 12 * 1024 * 1024
 export const AI_USER_IMAGE_MAX_SOURCE_EDGE = 16_384
@@ -21,7 +21,8 @@ export const AI_USER_IMAGE_MAX_BYTES = 1_500_000
 export const AI_USER_IMAGE_MAX_BASE64_CHARS = Math.ceil(AI_USER_IMAGE_MAX_BYTES / 3) * 4
 export const AI_USER_IMAGE_MAX_EDGE = 1568
 export const AI_USER_IMAGE_MAX_PIXELS = 1_500_000
-export const AI_CONVERSATION_MAX_USER_IMAGES = 8
+/** Per-turn cap; conversation history itself has no image-count ceiling. */
+export const AI_USER_IMAGE_MAX_PER_MESSAGE = 8
 
 export const AiUserImageBlockSchema = Type.Object(
   {

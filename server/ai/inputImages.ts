@@ -3,6 +3,7 @@ import {
   AI_USER_IMAGE_MAX_BYTES,
   AI_USER_IMAGE_MAX_EDGE,
   AI_USER_IMAGE_MAX_PIXELS,
+  AI_USER_IMAGE_MAX_PER_MESSAGE,
   type AiContentBlock,
   type AiUserContentBlock,
   type AiUserImageBlock,
@@ -23,8 +24,8 @@ export class AiImageInputError extends Error {
 
 export interface AiUserContentPreflight {
   readonly text: string
-  readonly image: AiUserImageBlock | null
-  readonly imageBytes: Buffer | null
+  readonly images: readonly AiUserImageBlock[]
+  readonly imageBytes: readonly Buffer[]
 }
 
 /**
@@ -34,8 +35,9 @@ export interface AiUserContentPreflight {
  */
 export async function validateAiUserContent(
   content: readonly AiUserContentBlock[],
+  signal?: AbortSignal,
 ): Promise<AiContentBlock[]> {
-  return canonicaliseAiUserContent(preflightAiUserContent(content))
+  return canonicaliseAiUserContent(preflightAiUserContent(content), signal)
 }
 
 /** Cheap structural/byte checks that never invoke an image decoder. */
@@ -48,41 +50,48 @@ export function preflightAiUserContent(
   if (textBlocks.length > 1) {
     throw new AiImageInputError('A message can contain at most one text block.')
   }
-  if (imageBlocks.length > 1) {
-    throw new AiImageInputError('A message can contain at most one image.')
+  if (imageBlocks.length > AI_USER_IMAGE_MAX_PER_MESSAGE) {
+    throw new AiImageInputError(
+      `A message can contain at most ${AI_USER_IMAGE_MAX_PER_MESSAGE} images.`,
+    )
   }
 
   const text = textBlocks[0]?.text.trim() ?? ''
-  const image = imageBlocks[0]
-  if (!text && !image) {
+  if (!text && imageBlocks.length === 0) {
     throw new AiImageInputError('Message must contain text or an image.')
   }
 
-  const imageBytes = image ? preflightAiUserImage(image) : null
-  return { text, image: image ?? null, imageBytes }
+  const imageBytes = imageBlocks.map(preflightAiUserImage)
+  return { text, images: imageBlocks, imageBytes }
 }
 
 /** Full decoder boundary + canonical block reconstruction after admission gates. */
 export async function canonicaliseAiUserContent(
   preflight: AiUserContentPreflight,
+  signal?: AbortSignal,
 ): Promise<AiContentBlock[]> {
-  const canonicalImage = preflight.image && preflight.imageBytes
-    ? await canonicaliseAiUserImage(preflight.imageBytes)
-    : null
-
   // Text precedes the image in the canonical provider-facing order. This also
   // removes whitespace-only text so no driver emits an empty text part and
   // reconstructs the image so request-only extra fields cannot be persisted.
   const canonical: AiContentBlock[] = []
   if (preflight.text) canonical.push({ kind: 'text', text: preflight.text })
-  if (canonicalImage) canonical.push(canonicalImage)
+  // Decode sequentially. Eight concurrent Sharp pipelines would multiply the
+  // per-request memory peak for no user-visible benefit.
+  for (const bytes of preflight.imageBytes) {
+    signal?.throwIfAborted()
+    canonical.push(await canonicaliseAiUserImage(bytes, signal))
+    // Sharp cannot be interrupted safely mid-pipeline. Check again after the
+    // active decode so a disconnected request never starts the next image.
+    signal?.throwIfAborted()
+  }
   return canonical
 }
 
 export async function validateAiUserImage(
   image: AiUserImageBlock,
+  signal?: AbortSignal,
 ): Promise<AiUserImageBlock> {
-  return canonicaliseAiUserImage(preflightAiUserImage(image))
+  return canonicaliseAiUserImage(preflightAiUserImage(image), signal)
 }
 
 function preflightAiUserImage(image: AiUserImageBlock): Buffer {
@@ -100,13 +109,18 @@ function preflightAiUserImage(image: AiUserImageBlock): Buffer {
   return bytes
 }
 
-async function canonicaliseAiUserImage(bytes: Buffer): Promise<AiUserImageBlock> {
+async function canonicaliseAiUserImage(
+  bytes: Buffer,
+  signal?: AbortSignal,
+): Promise<AiUserImageBlock> {
+  signal?.throwIfAborted()
   let metadata: sharp.Metadata
   try {
     metadata = await sharp(bytes).metadata()
   } catch (err) {
     throw new AiImageInputError('Image data could not be decoded.', 400, { cause: err })
   }
+  signal?.throwIfAborted()
 
   if (metadata.format !== 'jpeg' || !metadata.width || !metadata.height) {
     throw new AiImageInputError('Image data is not a valid JPEG.')
@@ -122,7 +136,12 @@ async function canonicaliseAiUserImage(bytes: Buffer): Promise<AiUserImageBlock>
     )
   }
 
-  const canonicalBytes = await canonicaliseJpeg(bytes, metadata.width, metadata.height)
+  const canonicalBytes = await canonicaliseJpeg(
+    bytes,
+    metadata.width,
+    metadata.height,
+    signal,
+  )
   return {
     kind: 'image',
     mimeType: 'image/jpeg',
@@ -139,6 +158,7 @@ async function canonicaliseJpeg(
   bytes: Buffer,
   sourceWidth: number,
   sourceHeight: number,
+  signal?: AbortSignal,
 ): Promise<Buffer> {
   let width = sourceWidth
   let height = sourceHeight
@@ -147,6 +167,7 @@ async function canonicaliseJpeg(
   try {
     for (let resizeAttempt = 0; resizeAttempt < 3; resizeAttempt += 1) {
       for (const quality of SERVER_JPEG_QUALITIES) {
+        signal?.throwIfAborted()
         let pipeline = sharp(bytes, {
           failOn: 'warning',
           limitInputPixels: AI_USER_IMAGE_MAX_PIXELS,
@@ -164,6 +185,9 @@ async function canonicaliseJpeg(
         }
 
         const output = await pipeline.jpeg({ quality }).toBuffer()
+        // Sharp does not expose an abortable encode. Stop immediately after
+        // the active pipeline instead of beginning another quality/resize.
+        signal?.throwIfAborted()
         lastSize = output.byteLength
         if (output.byteLength <= AI_USER_IMAGE_MAX_BYTES) return output
       }
@@ -176,6 +200,7 @@ async function canonicaliseJpeg(
       height = Math.max(1, Math.floor(height * scale))
     }
   } catch (err) {
+    if (signal?.aborted || (err instanceof Error && err.name === 'AbortError')) throw err
     throw new AiImageInputError('Image data could not be fully decoded.', 400, { cause: err })
   }
 

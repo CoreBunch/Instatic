@@ -109,10 +109,12 @@ src/admin/pages/content/agent/
 └── useContentToolBridge.ts     — always-mounted handle + content-scope MCP relay
 
 src/admin/pages/site/panels/AgentPanel/
-├── AgentPanel.tsx          — panel shell, persisted message thread, and user-image rendering
+├── AgentPanel.tsx          — panel shell, persisted message thread, and image-gallery orchestration
 ├── AgentComposer.tsx       — controlled draft, paste/send lifecycle, active-model capability check
+├── AgentImageGallery.tsx   — compact shared thumbnails for user and agent-tool images
+├── AgentImagePreview.tsx   — modeless draggable full-image preview
 ├── agentImageAttachment.ts — browser decode, resize, JPEG normalisation, and base64 encoding
-├── usePendingImageAttachment.ts — ref-backed one-image queue, cancellation, and bounded preview lifecycle
+├── usePendingImageAttachments.ts — ref-backed sequential image queue and per-item cancellation
 ├── ModelPicker.tsx         — credential + model selector used in the input bar
 ├── ConversationHistory.tsx — history popover (browse, restore, delete past threads)
 ├── ContextMeter.tsx        — "context used / window" progress indicator (display only)
@@ -147,19 +149,21 @@ The composer area includes a `<ContextMeter>` that shows "context used / window"
 
 ### Pasting a user image
 
-The composer accepts one clipboard image alongside optional text. Pasting reserves the attachment slot synchronously, then normalises the file asynchronously; send stays disabled while the image is processing, while model support is being checked, after a processing failure, when the selected model is not vision-capable, or when it is known not to support agent tools. The pending card uses a placeholder during decoding, then shows the bounded normalised JPEG itself; it never points an `<img>` at the potentially huge source file. A primitive `Button` removes it. Removing or replacing the composer aborts the preparation operation and stops all downstream resize/encode work after the browser's current decode returns (`createImageBitmap` itself has no cancellation API). A message may contain only an image: the server persists the turn normally and titles a new conversation `Image`.
+The composer accepts up to eight clipboard images alongside optional text. Pasting reserves every accepted attachment slot synchronously, then normalises the files sequentially so one paste cannot fan out into eight large browser decoders; send stays disabled while any image is processing, while model support is being checked, after a processing failure, when the selected model is not vision-capable, or when it is known not to support agent tools. Pending attachments use compact thumbnails in a responsive grid. They never point an `<img>` at the potentially huge source file: a placeholder is shown during decoding, then replaced with the bounded normalised JPEG. Each primitive `Button` removes only its image. Removing an attachment or replacing the composer aborts its queued preparation and stops all downstream resize/encode work after the browser's current decode returns (`createImageBitmap` itself has no cancellation API). A message may contain only images: the server persists the turn normally and titles a new conversation `Image` or `Images`.
+
+Prepared attachments, persisted user images, and session-only images returned by agent tools use the same compact 2/3-column gallery. Each thumbnail is a keyboard-accessible button that opens the original fitted inside a modeless draggable preview window. The window uses the shared admin `FloatingWindow` shell, has only a title and close action, closes on Escape without also closing the Agent Panel, and restores focus to the thumbnail that opened it.
 
 The provider-neutral v1 policy is defined once in `src/core/ai/userImage.ts` and enforced on both sides of the boundary:
 
 - accepted clipboard sources: PNG, JPEG, or WebP;
 - maximum source file: 12 MiB;
 - source-header guard: at most 16,384 px on either edge and 40,000,000 encoded pixels; PNG/JPEG/WebP dimensions (including JPEG EXIF orientation) are read before allocating a decoder, and `createImageBitmap` is asked for the bounded output size;
-- at most one image per message and at most eight persisted user images per conversation (the ninth returns 413 and the user starts a new chat);
+- at most eight images per message; there is no per-conversation image-count quota;
 - browser output: metadata-stripped `image/jpeg`, transparent pixels composited over white;
 - maximum output: 1,500,000 bytes, 1568 px on either edge, and 1,500,000 total pixels;
-- complete chat-request envelope: 16 MiB, leaving room for the scope snapshot around the roughly 2 MB base64 image.
+- complete chat-request envelope: eight maximum base64 images plus a further 16 MiB reserve for JSON framing and the scope snapshot (about 32.8 MB total).
 
-`agentImageAttachment.ts` fits both the edge and pixel budgets, tries progressively lower JPEG qualities, then reduces dimensions when necessary. The server never trusts that browser work: `server/ai/inputImages.ts` checks canonical base64, decoded byte length, JPEG magic bytes and dimensions, then fully decodes and re-encodes the JPEG through Sharp before appending the message. That second canonicalisation rejects truncated pixel data and strips EXIF/XMP/ICC metadata even when a direct authenticated client bypasses the browser. Unsupported, malformed, or oversized content is rejected before it can enter conversation history.
+`agentImageAttachment.ts` fits both the edge and pixel budgets, tries progressively lower JPEG qualities, then reduces dimensions when necessary. The server never trusts that browser work: `server/ai/inputImages.ts` checks canonical base64, decoded byte length, JPEG magic bytes and dimensions, then fully decodes and re-encodes the JPEG through Sharp before appending the message. That second canonicalisation rejects truncated pixel data and strips EXIF/XMP/ICC metadata even when a direct authenticated client bypasses the browser. Unsupported, malformed, or oversized content is rejected before it can enter conversation history. The conversation single-writer lease is acquired before Sharp work, and the request signal is checked around every sequential decode: a competing request returns 409 without decoding, while a disconnected request finishes only its active Sharp pipeline and never starts the remaining images.
 
 ---
 
@@ -184,7 +188,7 @@ Each entry in **Settings → AI → Providers** stores one credential. The provi
 ## Flow
 
 ```text
-User types text and/or pastes an image → Agent Panel
+User types text and/or pastes images → Agent Panel
     │
     ▼
 agentSlice.sendAgentMessage(contentBlocks)
@@ -199,10 +203,11 @@ Server: chat.ts
     ├─→ CSRF + requireCapability('ai.chat')
     ├─→ load conversation row  (credentialId, modelId) + full message history
     ├─→ decrypt credential; resolveDriver(credential.providerId)
-    ├─→ validate text/image blocks + image bytes; enforce conversation image budget
+    ├─→ preflight text/image blocks + encoded bytes; enforce the per-message bound
     ├─→ resolve/cache the selected model's capabilities (also gates tool screenshots)
     ├─→ acquire the conversation's single-writer stream lease
-    ├─→ project persisted images for bounded provider replay
+    ├─→ fully decode/canonicalise images sequentially (request-cancellable)
+    ├─→ project persisted images for the selected model
     ├─→ selectToolsForScope(scope, capabilities)
     │     — write tools excluded unless caller has ai.tools.write
     ├─→ build scope system prompt  →  [staticPrefix, BOUNDARY, dynamicSuffix]
@@ -210,7 +215,7 @@ Server: chat.ts
     ├─→ emit { type: 'bridgeReady', bridgeId }
     └─→ runChat({ driver, request, persister, emit })  — streaming begins
           │  request carries the conversation history as req.messages; user
-          │  images are projected to the bounded replay form described below.
+          │  images use the provider replay policy described below.
           │  Direct HTTP drivers have no server-side session — every turn
           │  replays the whole log, mapped into the provider's message array.
           │
@@ -662,9 +667,9 @@ interface AgentSlice {
 
 Conversations and their message history are persisted server-side in `ai_conversations` + `ai_messages`. `loadAgentConversation(id)` rehydrates a past thread into `agentMessages` without re-running the conversation.
 
-**Content blocks are one schema.** Every message body is an `AiContentBlock[]` — a discriminated union of `text` / `image` / `toolCall` / `toolResult` kinds defined once as a TypeBox schema in `@core/ai` (`src/core/ai/contentBlock.ts`). The server runtime type (`AiContentBlock`), the read boundary (`ContentBlocksSchema` in `conversations/store.ts`, which validates every block out of `content_json`), and the client wire schema (`MessageViewSchema` in `src/admin/ai/api.ts`) all derive from it. Add a kind there and every reader/writer sees it.
+**Content blocks have one persisted vocabulary and one safe browser projection.** Every stored/provider message body is an `AiContentBlock[]` — a discriminated union of `text` / base64 `image` / `toolCall` / `toolResult` kinds defined once as a TypeBox schema in `@core/ai` (`src/core/ai/contentBlock.ts`). The server runtime type and the `content_json` read boundary derive from it. Conversation-detail responses derive from the sibling `AiContentViewBlockSchema`: non-image blocks keep the same schemas, while an image carries an authenticated lazy `url` instead of inline `data`. The client validates that view schema before rehydrating its render model.
 
-**User turns use the same canonical blocks at the HTTP boundary.** `AiChatRequestBodySchema` in `src/core/ai/chatRequest.ts` accepts `{ conversationId, content, snapshot? }`, where `content` is one or two `AiUserContentBlock`s and may contain at most one trimmed text block plus at most one canonical JPEG block. The server canonicalises a mixed turn as text then image and removes whitespace-only text. It does not accept `toolCall` or `toolResult` blocks from the browser.
+**User turns use the same canonical blocks at the HTTP boundary.** `AiChatRequestBodySchema` in `src/core/ai/chatRequest.ts` accepts `{ conversationId, content, snapshot? }`, where `content` contains at most one trimmed text block plus up to eight canonical JPEG blocks. The server canonicalises a mixed turn as text followed by the images in paste order and removes whitespace-only text. It does not accept `toolCall` or `toolResult` blocks from the browser.
 
 ```ts
 {
@@ -672,22 +677,25 @@ Conversations and their message history are persisted server-side in `ai_convers
   content: [
     { kind: 'text', text: 'Use this mockup as the reference.' },
     { kind: 'image', mimeType: 'image/jpeg', data: '<canonical base64>' },
+    { kind: 'image', mimeType: 'image/jpeg', data: '<canonical base64>' },
   ],
   snapshot,
 }
 ```
 
-**Persisted images and provider replay are deliberately different views.** Every accepted user JPEG is stored inline in `ai_messages.content_json` and rehydrates into the conversation UI, so reloads retain the thumbnail. Up to eight images may be stored in one conversation. Before a provider call, `projectUserImagesForModel` creates a non-mutating outbound projection:
+**Persisted images, browser history, and provider replay are deliberately different views.** Every accepted user JPEG is stored inline in `ai_messages.content_json`; conversations have no image-count quota. A conversation-detail response replaces each base64 block with `GET /admin/api/ai/conversations/:conversationId/messages/:messageId/images/:blockIndex`. The ownership-guarded endpoint returns only a canonical JPEG with `private, no-store`; native lazy image loading means reopening a large collection does not embed all bytes in one JSON response. Before a provider call, `projectUserImagesForModel` creates a non-mutating outbound projection:
 
-- a vision model receives the image from only the newest image-bearing user turn; images in older turns become a short "earlier image omitted" breadcrumb;
+- a vision model first receives every persisted image in conversation order; there is no Instatic replay count cap;
 - a non-vision model receives no image bytes at all; every persisted image becomes a text breadcrumb, so switching models cannot poison the conversation;
-- the database rows are never rewritten by projection, so the UI history remains intact and switching back to a vision model can use the newest persisted image again.
+- the database rows are never rewritten by projection, so the UI history remains intact and switching back to a vision model restores the complete persisted image history.
 
-User attachments are private chat data, not media-library assets: the normalised base64 bytes live in the database until the conversation is deleted and purged, are returned to authorised conversation reads for thumbnail rendering, and are sent to the configured AI provider whenever they survive the outbound replay projection. They are never written to public uploads or published with the site.
+Providers may enforce a physical request, context, or routed image limit before accepting that full replay. The shared HTTP tool loop classifies only those explicit overflow responses (`413`, or a matching provider `400`) and retries once before any SSE or tool side effect: images on older user turns become one breadcrumb per turn, while every image on the newest/current user turn remains. Generic 400s, authentication, quota, rate-limit, and service failures are never retried. If the reduced request still fails—or only the current turn has images—the error explains that history remains saved and suggests a new conversation or a larger-context model. This is provider-triggered fallback, not a stored-image quota or an arbitrary app-side count.
 
-The server admits only one active writer per conversation. A concurrent tab receives a retryable 409 before appending, which keeps message positions ordered and makes the eight-image budget atomic relative to persistence. In the browser, model changes for an existing conversation are serialized; Send waits for the provider/model update to reach the server, and conversation/model controls stay disabled while a turn streams. If a model PUT times out after an ambiguous commit, the browser re-reads the conversation before re-enabling Send, so the picker cannot disagree with server routing. Stop owns the whole first-send lifecycle, including default lookup and lazy conversation creation, so an aborted bootstrap cannot leave the composer locked.
+User attachments are private chat data, not media-library assets: the normalised base64 bytes live in the database until the conversation is deleted and purged, are exposed to the owning authorised user only through the lazy conversation-image endpoint, and are sent to the configured AI provider whenever they survive the outbound replay projection. They are never written to public uploads or published with the site.
 
-**User attachments are not tool screenshots.** A pasted image is a persisted `kind:'image'` block on a user message. Conversation-detail responses and chat streams use `Cache-Control: private, no-store`; the database remains the intentional durable copy. A `site_render_snapshot` PNG instead travels transiently on `AiToolOutput.images`, is subject to the heavy-evidence rules above, and its browser preview remains session-only. The two paths share provider-native image mapping but have different storage, replay, and elision lifecycles.
+The server admits only one active writer per conversation. A concurrent tab receives a retryable 409 before appending, which keeps message positions ordered. In the browser, model changes for an existing conversation are serialized; Send waits for the provider/model update to reach the server, and conversation/model controls stay disabled while a turn streams. If a model PUT times out after an ambiguous commit, the browser re-reads the conversation before re-enabling Send, so the picker cannot disagree with server routing. Stop owns the whole first-send lifecycle, including default lookup and lazy conversation creation, so an aborted bootstrap cannot leave the composer locked.
+
+**User attachments are not tool screenshots.** A pasted image is a persisted `kind:'image'` block on a user message. Conversation-detail responses, authenticated image responses, and chat streams use `Cache-Control: private, no-store`; the database remains the intentional durable copy. Images returned by `site_render_snapshot` or another browser tool instead travel transiently on the plural `AiToolOutput.images` channel, are subject to the heavy-evidence rules above, and remain session-only even though the panel exposes every returned image through the same gallery and draggable preview. The two paths share provider-native image mapping but have different storage and replay lifecycles.
 
 **Tool outcomes are first-class.** A `role:'tool'` row records its result as a `{ kind: 'toolResult', ok, error? }` block — `ok` is an explicit boolean, never inferred from the emptiness of a text block. The persister writes it (`appendToolResult`), `buildMessageHistory` reads `ok`/`error` straight off the block to reconstruct the replay `AiToolOutput`, and the client folds it back into the matching tool-call badge (`rehydrateMessages`). The heavy successful `data` an `AiToolOutput` may carry is intentionally **not** persisted: the model already consumed it in the round that produced the result, so replay only needs `{ ok, error }` — re-feeding large tool payloads every turn would bloat the context for no benefit.
 
@@ -769,8 +777,9 @@ unblocks deletion of the credential that had been protected by the default FK.
 - `docs/features/content-workspace.md` — content workspace UI and content-scope Agent Panel mount
 - Source-of-truth files:
   - `src/core/ai/toolOutput.ts` — `AiToolOutput` type, `AiToolOutputSchema`, `aiToolOk`, `aiToolError` (canonical bridge result)
-  - `src/core/ai/chatRequest.ts` — canonical browser-to-server chat envelope and 16 MiB request ceiling
-  - `src/core/ai/userImage.ts` — accepted source formats, normalised JPEG schema, byte/dimension limits, and eight-image conversation budget
+  - `src/core/ai/chatRequest.ts` — canonical browser-to-server chat envelope and computed multi-image request ceiling
+  - `src/core/ai/contentBlock.ts` — persisted/provider content blocks plus the lazy-URL conversation-detail view schema
+  - `src/core/ai/userImage.ts` — accepted source formats, normalised JPEG schema, byte/dimension limits, and eight-image per-message bound
   - `src/core/ai/toolSchemas.ts` — all site browser-tool input schemas (single source of truth; imported by both the server registry and the browser executor)
   - `src/core/ai/documentRefs.ts` — document refs/descriptors for pages, templates, and visual components
   - `src/core/ai/readSurface.ts` — runtime-agnostic `renderAgentDocument` annotated HTML + compact CSS renderer
@@ -785,11 +794,13 @@ unblocks deletion of the credential that had been protected by the default FK.
   - `server/ai/inputImages.ts` — server-side base64, JPEG, byte, and dimension validation before persistence
   - `server/ai/drivers/modelCapabilities.ts` — cached, timed, authoritative/fail-closed selected-model capability resolution on every turn
   - `server/ai/drivers/modelList.ts` — bounded provider catalogue lookup with caller cancellation
+  - `server/ai/drivers/http/toolLoop.ts` — provider loop, heavy tool-result elision, and one provider-triggered historical-image fallback
   - `server/ai/conversations/history.ts` — interrupted-tool healing plus outbound user-image replay projection
   - `server/ai/tools/content/systemPrompt.ts` — markdown-native content system prompt
   - `server/ai/tools/content/snapshot.ts` — `ContentSnapshot` shape consumed by the content prompt and tool context
   - `src/admin/pages/site/agent/siteAgentSnapshot.ts` — `SiteAgentSnapshotSchema` (TypeBox source of truth) + `SiteAgentSnapshot` (derived type) + `buildSiteAgentSnapshot`
   - `server/ai/handlers/chat.ts` — `POST /admin/api/ai/chat/:scope` endpoint
+  - `server/ai/handlers/conversations.ts` — conversation CRUD plus the ownership-guarded lazy image endpoint
   - `server/ai/handlers/toolResult.ts` — `POST /admin/api/ai/tool-result` endpoint
   - `server/ai/conversations/history.ts` — `buildMessageHistory()` + `INTERRUPTED_TOOL_RESULT_ERROR` (heals interrupted tool calls)
   - `server/ai/conversations/store.ts` — `appendMessage`, `listMessagesForConversation`, `readConversationForUser`
@@ -813,6 +824,9 @@ unblocks deletion of the credential that had been protected by the default FK.
   - `src/admin/pages/site/agent/agentSliceConfig.site.ts` — site-editor scope config
   - `src/admin/pages/site/agent/agentApi.ts` — tool-result POST, conversation bootstrap, message rehydration
   - `src/admin/pages/site/agent/streamEvents.ts` — `ServerStreamEventSchema` + `processStreamEvent`
+  - `src/admin/pages/site/panels/AgentPanel/AgentImageGallery.tsx` — shared compact gallery for persisted and session-only images
+  - `src/admin/pages/site/panels/AgentPanel/AgentImagePreview.tsx` — draggable modeless image preview
+  - `src/admin/shared/FloatingWindow/` — shared portal, panel header, and persisted drag behavior for admin floating windows
   - `src/admin/pages/site/agent/pageContext.ts` — `buildCurrentPageContext`
   - `src/admin/pages/site/agent/executor.ts` — write-tool browser dispatcher + auto-navigation
   - `src/admin/pages/site/agent/tokenRunners.ts` — design-system token tool runners (`site_set_color_tokens`, `site_set_font_tokens`, `site_set_type_scale`, `site_set_spacing_scale`)

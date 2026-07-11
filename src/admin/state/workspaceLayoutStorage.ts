@@ -39,6 +39,7 @@ export type FloatingPanelId =
   | 'dependencies'
   | 'codeeditor'
   | 'agent'
+  | 'agentImagePreview'
   | 'mediaUploadQueue'
   | 'mediaDetachedInspector'
   | 'mediaBulkEdit'

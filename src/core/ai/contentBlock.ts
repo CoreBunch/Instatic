@@ -5,14 +5,12 @@ import { Type, type Static } from '@core/utils/typeboxHelpers'
  * body. They are stored verbatim in `ai_messages.content_json` and replayed by
  * `buildMessageHistory` into the `AiMessage[]` a driver sends each turn.
  *
- * This schema is the SINGLE source of truth for the block shape — the server
- * runtime types (`AiContentBlock`), the persistence boundary
- * (`ContentBlocksSchema` in `conversations/store.ts`), and the client wire
- * schema (`MessageViewSchema` in `src/admin/ai/api.ts`) all derive from it.
- * Add a kind here and every reader/writer sees it.
+ * `AiContentBlockSchema` is the single persisted/provider source of truth.
+ * The browser-facing `AiContentViewBlockSchema` below reuses its non-image
+ * members but projects durable image bytes to authenticated lazy URLs.
  */
 
-const AiTextBlockSchema = Type.Object({
+export const AiTextBlockSchema = Type.Object({
   kind: Type.Literal('text'),
   text: Type.String(),
 })
@@ -23,7 +21,7 @@ const AiImageBlockSchema = Type.Object({
   data: Type.String(/* base64 */),
 })
 
-const AiToolCallBlockSchema = Type.Object({
+export const AiToolCallBlockSchema = Type.Object({
   kind: Type.Literal('toolCall'),
   toolCallId: Type.String(),
   toolName: Type.String(),
@@ -43,7 +41,7 @@ const AiToolCallBlockSchema = Type.Object({
  * context for no benefit. Replay only needs `{ ok, error }` to reconstruct the
  * `AiToolOutput` envelope the driver hands back to the model.
  */
-const AiToolResultBlockSchema = Type.Object({
+export const AiToolResultBlockSchema = Type.Object({
   kind: Type.Literal('toolResult'),
   ok: Type.Boolean(),
   error: Type.Optional(Type.String()),
@@ -57,3 +55,26 @@ export const AiContentBlockSchema = Type.Union([
 ])
 
 export type AiContentBlock = Static<typeof AiContentBlockSchema>
+
+/**
+ * Conversation-detail wire image. Persisted/provider blocks retain base64;
+ * browser history receives an authenticated lazy URL so opening a long image
+ * conversation does not inline the whole collection into one JSON response.
+ */
+export const AiContentViewImageBlockSchema = Type.Object(
+  {
+    kind: Type.Literal('image'),
+    mimeType: Type.Literal('image/jpeg'),
+    url: Type.String({ minLength: 1 }),
+  },
+  { additionalProperties: false },
+)
+
+export const AiContentViewBlockSchema = Type.Union([
+  AiTextBlockSchema,
+  AiContentViewImageBlockSchema,
+  AiToolCallBlockSchema,
+  AiToolResultBlockSchema,
+])
+
+export type AiContentViewBlock = Static<typeof AiContentViewBlockSchema>

@@ -43,7 +43,7 @@ import { MultiSelectorHeader } from './MultiSelectorInspector'
 import { type ClassPickerHandle } from './ClassPicker'
 import { useEditorStore } from '@site/store/store'
 import { PanelHeader } from '@admin/shared/PanelHeader'
-import { useDraggablePanel } from '@site/hooks/useDraggablePanel'
+import { useDraggablePanel } from '@admin/shared/FloatingWindow'
 import { Button } from '@ui/components/Button'
 import { OpenSolidIcon } from 'pixel-art-icons/icons/open-solid'
 import { DockSolidIcon } from 'pixel-art-icons/icons/dock-solid'
@@ -82,7 +82,12 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
   }
 
   // ── Draggable panel position ───────────────────────────────────────────────
-  const { panelRef: dragPanelElementRef, headerDragProps, panelPositionStyle } = useDraggablePanel(
+  const {
+    panelRef: dragPanelElementRef,
+    setPanelRef: setDragPanelElementRef,
+    headerDragProps,
+    panelPositionStyle,
+  } = useDraggablePanel(
     'properties',
     () => ({
       x: typeof window !== 'undefined' ? window.innerWidth - DEFAULT_WIDTH - 16 : 16,
@@ -128,7 +133,7 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
 
   return (
     <aside
-      ref={dragPanelElementRef}
+      ref={setDragPanelElementRef}
       data-panel=""
       data-testid="properties-panel"
       role="complementary"

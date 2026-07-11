@@ -1,6 +1,7 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { Type } from '@core/utils/typeboxHelpers'
 import { anthropicDriver } from '../../../server/ai/drivers/anthropic'
+import { PROVIDER_RETRY_IMAGE_OMITTED } from '../../../server/ai/drivers/http/toolLoop'
 import type { AiStreamRequest } from '../../../server/ai/drivers/types'
 import type { AiBrowserBridge, AiStreamEvent, AiTool, AiToolOutput } from '../../../server/ai/runtime/types'
 
@@ -162,5 +163,57 @@ describe('runToolLoop via anthropicDriver', () => {
     expect(events).toHaveLength(1)
     expect(events[0]!.type).toBe('error')
     expect((events[0] as { message: string }).message).toContain('authentication failed')
+  })
+
+  test('retries a provider overflow once with only historical images elided', async () => {
+    const requestBodies: Array<Record<string, unknown>> = []
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      requestBodies.push(JSON.parse(init.body as string))
+      if (requestBodies.length === 1) {
+        return new Response(JSON.stringify({
+          error: { type: 'request_too_large', message: 'Request exceeds the context limit' },
+        }), { status: 413 })
+      }
+      return sseResponse(TURN2)
+    }) as typeof fetch
+
+    const req = makeRequest({ async callBrowser() { return { ok: true } } }, [])
+    const image = { kind: 'image' as const, mimeType: 'image/jpeg', data: '/9j/' }
+    req.messages.splice(0, req.messages.length,
+      { role: 'user', content: [{ kind: 'text', text: 'Earlier turn' }, image] },
+      { role: 'assistant', content: [{ kind: 'text', text: 'Earlier reply' }] },
+      { role: 'user', content: [{ kind: 'text', text: 'Current turn' }, image] },
+    )
+
+    const events: AiStreamEvent[] = []
+    for await (const event of anthropicDriver.stream(req)) events.push(event)
+
+    expect(requestBodies).toHaveLength(2)
+    expect(JSON.stringify(requestBodies[0]).match(/"type":"image"/g)).toHaveLength(2)
+    expect(JSON.stringify(requestBodies[1]).match(/"type":"image"/g)).toHaveLength(1)
+    expect(JSON.stringify(requestBodies[1])).toContain(PROVIDER_RETRY_IMAGE_OMITTED)
+    expect(req.messages[0]?.content.some((block) => block.kind === 'image')).toBe(true)
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+  })
+
+  test('does not retry when only the current user turn contains images', async () => {
+    let requests = 0
+    globalThis.fetch = (async () => {
+      requests += 1
+      return new Response('', { status: 413 })
+    }) as typeof fetch
+    const req = makeRequest({ async callBrowser() { return { ok: true } } }, [])
+    req.messages[0] = {
+      role: 'user',
+      content: [{ kind: 'image', mimeType: 'image/jpeg', data: '/9j/' }],
+    }
+
+    const events: AiStreamEvent[] = []
+    for await (const event of anthropicDriver.stream(req)) events.push(event)
+
+    expect(requests).toBe(1)
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'error' })
+    expect((events[0] as { message: string }).message).toContain('Your history is still saved')
   })
 })

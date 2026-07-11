@@ -1,7 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import {
   buildMessageHistory,
-  EARLIER_USER_IMAGE_OMITTED,
   INTERRUPTED_TOOL_RESULT_ERROR,
   NON_VISION_USER_IMAGE_OMITTED,
   projectUserImagesForModel,
@@ -215,11 +214,14 @@ describe('buildMessageHistory', () => {
 })
 
 describe('user-image history projection', () => {
-  test('keeps only the newest image-bearing user turn for a vision model', () => {
+  test('keeps every image-bearing user turn for a vision model', () => {
     const history = buildMessageHistory([
       userImage('old-image', 'Old screenshot'),
       rec('assistant', [{ kind: 'text', text: 'old answer' }]),
-      userImage('new-image'),
+      rec('user', [
+        { kind: 'image', mimeType: 'image/jpeg', data: 'new-image-1' },
+        { kind: 'image', mimeType: 'image/jpeg', data: 'new-image-2' },
+      ]),
       rec('assistant', [{ kind: 'text', text: 'new answer' }]),
     ])
     const original = JSON.stringify(history)
@@ -231,13 +233,16 @@ describe('user-image history projection', () => {
         role: 'user',
         content: [
           { kind: 'text', text: 'Old screenshot' },
-          { kind: 'text', text: EARLIER_USER_IMAGE_OMITTED },
+          { kind: 'image', mimeType: 'image/jpeg', data: 'old-image' },
         ],
       },
       { role: 'assistant', content: [{ kind: 'text', text: 'old answer' }] },
       {
         role: 'user',
-        content: [{ kind: 'image', mimeType: 'image/jpeg', data: 'new-image' }],
+        content: [
+          { kind: 'image', mimeType: 'image/jpeg', data: 'new-image-1' },
+          { kind: 'image', mimeType: 'image/jpeg', data: 'new-image-2' },
+        ],
       },
       { role: 'assistant', content: [{ kind: 'text', text: 'new answer' }] },
     ])

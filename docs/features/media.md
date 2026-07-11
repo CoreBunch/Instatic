@@ -13,7 +13,7 @@ The workspace is canvas-style: it uses `AdminWorkspaceCanvasLayout`, the lighter
 - **State:** one hook — `useMediaWorkspace()` — orchestrates folders, assets, selection, filters, upload queue, and folder moves. The editor store doesn't grow new slices; the Media page is self-contained.
 - **Folders:** folders render as first-class grid/list items in the canvas. Opening a folder filters the canvas to its contents, and nested folders show a parent-folder entry to navigate back.
 - **Drag/drop:** assets can be dragged into folders from the canvas or folder tree. A drop replaces the asset's folder memberships with the target folder, matching desktop file-manager move semantics.
-- **Floating windows:** Asset viewer, upload queue, bulk edit. Each is `useDraggablePanel('mediaViewer' | 'mediaUploadQueue' | 'mediaBulkEdit')`. Position survives reload via `workspaceLayoutStorage`.
+- **Floating windows:** Asset viewer, upload queue, bulk edit. Each uses the shared `@admin/shared/FloatingWindow` shell or its `useDraggablePanel` hook with a unique id (`mediaDetachedInspector`, `mediaUploadQueue`, `mediaBulkEdit`). Position survives reload via `workspaceLayoutStorage`.
 - **Auto-open behavior:** upload queue opens when uploads start; bulk-edit opens at 2+ selected; viewer opens on primary selection.
 - **Server side:** `media_assets`, `media_folders`, `media_asset_folders` tables. Handlers under `/admin/api/cms/media`, `/admin/api/cms/media/folders`, `/admin/api/cms/media/storage`. Repositories at `server/repositories/media*.ts`.
 - **Storage adapters:** built-in local-disk plus plugin-registered adapters. Non-public-url adapters route through `/_instatic/media/<adapterId>/<storagePath>` for signed redirects.
@@ -37,7 +37,6 @@ src/admin/pages/media/
 │   ├── MediaPickerField/               — embedded picker control
 │   ├── MediaFolderPanel/               — folder list panel
 │   ├── MediaStoragePanel/              — storage adapter management
-│   ├── FloatingWindow/                 — shared floating-window shell
 │   └── viewers/                        — per-media-type viewers (image, video, pdf, etc.)
 ├── hooks/
 │   ├── useMediaWorkspace.ts            — orchestrates server state (folders, assets, filters)
@@ -54,6 +53,8 @@ src/admin/pages/media/
     ├── mediaDragDrop.ts                — TypeBox-validated drag/drop payload helpers
     ├── smartFolders.ts                 — smart folder IDs, type guard, per-ID predicates
     └── variants.ts                     — image variant URL helpers
+
+src/admin/shared/FloatingWindow/        — shared portal shell + persisted drag hook used across admin workspaces
 ```
 
 ---
@@ -144,7 +145,7 @@ The count badge shown next to each smart folder in the sidebar is computed clien
 
 ### Floating windows
 
-Each floating window has a unique `FloatingPanelId` (`'mediaViewer' | 'mediaUploadQueue' | 'mediaBulkEdit'`), uses `useDraggablePanel(id)` for position, and gets its position persisted via `workspaceLayoutStorage.ts`. Visibility differs by window:
+Each floating window has a unique `FloatingPanelId` (`'mediaDetachedInspector' | 'mediaUploadQueue' | 'mediaBulkEdit'`), uses `useDraggablePanel(id)` for position, and gets its position persisted via `workspaceLayoutStorage.ts`. Visibility differs by window:
 
 | Window          | How visibility is determined                                                                    |
 |-----------------|-------------------------------------------------------------------------------------------------|
@@ -154,7 +155,7 @@ Each floating window has a unique `FloatingPanelId` (`'mediaViewer' | 'mediaUplo
 
 The viewer and bulk-edit are derived rather than stored because "closed" is identical to "no selection" — every close path calls `workspace.clearSelection()`. Deriving avoids an extra render commit and the one-frame open lag that appeared with the old `setState`-in-effect approach.
 
-The shared `FloatingWindow` shell at `components/FloatingWindow/` provides the chrome: drag handle, close button, position bounding.
+The shared `FloatingWindow` shell at `src/admin/shared/FloatingWindow/` provides the portal, chrome, drag handle, close button, and position bounding without pulling media-specific editor code into other workspaces. Its dimension-aware clamp measures each panel and keeps at least a 50px header strip reachable on every viewport edge; stored positions are re-clamped when a window mounts, changes size, or the viewport resizes.
 
 ---
 
@@ -325,8 +326,8 @@ The redirect handler is `tryServeMediaRedirect` in `server/router.ts`. The redir
 ### Add a new floating window
 
 1. Add a unique id to `FloatingPanelId` in the layout storage module.
-2. Create `components/<WindowName>/` with the window React component using the shared `FloatingWindow` shell.
-3. Use `useDraggablePanel('newWindowId')` for position; track `open` in `MediaPage` local state.
+2. Create `components/<WindowName>/` with the window React component using `FloatingWindow` from `@admin/shared/FloatingWindow`.
+3. Pass the id to `FloatingWindow`; track `open` in `MediaPage` local state. Use the exported `useDraggablePanel` directly only for a custom shell such as `MediaViewerWindow`.
 4. Add the auto-open rule (selection threshold, upload event, etc.) inside `MediaPage`.
 
 ### Add a new sidebar panel

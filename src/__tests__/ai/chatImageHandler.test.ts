@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import sharp from 'sharp'
-import { AI_CHAT_MAX_REQUEST_BYTES, AI_CONVERSATION_MAX_USER_IMAGES } from '@core/ai'
+import { AI_CHAT_MAX_REQUEST_BYTES, AI_USER_IMAGE_MAX_PER_MESSAGE } from '@core/ai'
 import { createCapabilityTestHarness, type CapabilityTestHarness } from '../helpers/capabilityHarness'
 import {
   appendMessage,
@@ -121,24 +121,7 @@ describe('AI chat user-image boundary', () => {
     expect(await listMessagesForConversation(harness.db, conversationId)).toHaveLength(0)
   })
 
-  it('enforces the persisted user-image budget before appending another turn', async () => {
-    const image = await jpegBlock()
-    for (let index = 0; index < AI_CONVERSATION_MAX_USER_IMAGES; index += 1) {
-      await appendMessage(harness.db, conversationId, { role: 'user', content: [image] })
-    }
-
-    const response = await harness.ai('/admin/api/ai/chat/site', {
-      method: 'POST',
-      cookie,
-      json: { conversationId, content: [image] },
-    })
-
-    expect(response.status).toBe(413)
-    expect(await listMessagesForConversation(harness.db, conversationId))
-      .toHaveLength(AI_CONVERSATION_MAX_USER_IMAGES)
-  })
-
-  it('persists an image-only turn and titles a new conversation Image', async () => {
+  it('persists a multi-image turn, forwards every image, and titles it Images', async () => {
     const image = await jpegBlock()
     let providerRequest = ''
     globalThis.fetch = async (input, init) => {
@@ -163,7 +146,7 @@ describe('AI chat user-image boundary', () => {
     const response = await harness.ai('/admin/api/ai/chat/site', {
       method: 'POST',
       cookie,
-      json: { conversationId, content: [image] },
+      json: { conversationId, content: [image, image] },
     })
 
     expect(response.status).toBe(200)
@@ -173,22 +156,17 @@ describe('AI chat user-image boundary', () => {
     const conversation = await readConversationForUser(harness.db, rows[0]!.id, conversationId)
     const messages = await listMessagesForConversation(harness.db, conversationId)
 
-    expect(conversation?.title).toBe('Image')
+    expect(conversation?.title).toBe('Images')
     expect(messages[0]?.role).toBe('user')
-    expect(messages[0]?.content).toHaveLength(1)
-    const persistedImage = messages[0]?.content[0]
-    expect(persistedImage).toMatchObject({ kind: 'image', mimeType: 'image/jpeg' })
-    if (persistedImage?.kind !== 'image') throw new Error('Expected persisted image block')
-    expect(providerRequest).toContain(`data:image/jpeg;base64,${persistedImage.data}`)
+    expect(messages[0]?.content).toHaveLength(2)
+    const persistedImages = messages[0]?.content.filter((block) => block.kind === 'image') ?? []
+    expect(persistedImages).toHaveLength(2)
+    expect(providerRequest.match(/data:image\/jpeg;base64,/g)).toHaveLength(2)
     expect((JSON.parse(providerRequest) as { tools?: unknown }).tools).toBeArray()
   })
 
-  it('allows only one concurrent writer at the eight-image boundary', async () => {
+  it('allows only one concurrent writer', async () => {
     const image = await jpegBlock()
-    for (let index = 0; index < AI_CONVERSATION_MAX_USER_IMAGES - 1; index += 1) {
-      await appendMessage(harness.db, conversationId, { role: 'user', content: [image] })
-    }
-
     const capabilityStarted = deferred<void>()
     const capabilityResponse = deferred<Response>()
     const providerResponse = deferred<Response>()
@@ -233,7 +211,7 @@ describe('AI chat user-image boundary', () => {
       .filter((message) => message.role === 'user')
       .flatMap((message) => message.content)
       .filter((block) => block.kind === 'image')
-    expect(persistedUserImages).toHaveLength(AI_CONVERSATION_MAX_USER_IMAGES)
+    expect(persistedUserImages).toHaveLength(1)
   })
 
   it('does not persist a turn aborted during capability discovery', async () => {
@@ -267,23 +245,19 @@ describe('AI chat user-image boundary', () => {
     capabilityResponse.resolve(jsonResponse({ capabilities: ['vision', 'tools'] }))
   })
 
-  it('re-reads the image budget after a slower request reaches the writer lease', async () => {
+  it('retains images across turns beyond the per-message limit', async () => {
     const image = await jpegBlock()
-    for (let index = 0; index < AI_CONVERSATION_MAX_USER_IMAGES - 1; index += 1) {
+    for (let index = 0; index < AI_USER_IMAGE_MAX_PER_MESSAGE; index += 1) {
       await appendMessage(harness.db, conversationId, { role: 'user', content: [image] })
     }
-    const slowCapabilityStarted = deferred<void>()
-    const slowCapabilityResponse = deferred<Response>()
-    globalThis.fetch = async (input) => {
+    let providerRequest = ''
+    globalThis.fetch = async (input, init) => {
       const url = requestUrl(input)
       if (url === 'http://ollama.test/api/show') {
-        slowCapabilityStarted.resolve()
-        return slowCapabilityResponse.promise
-      }
-      if (url === 'http://ollama-fast.test/api/show') {
         return jsonResponse({ capabilities: ['vision', 'tools'] })
       }
-      if (url === 'http://ollama-fast.test/v1/chat/completions') {
+      if (url === 'http://ollama.test/v1/chat/completions') {
+        providerRequest = String(init?.body ?? '')
         return new Response([
           'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
           'data: [DONE]\n\n',
@@ -292,35 +266,21 @@ describe('AI chat user-image boundary', () => {
       throw new Error(`Unexpected fetch: ${url}`)
     }
 
-    const slowRequest = harness.ai('/admin/api/ai/chat/site', {
+    const response = await harness.ai('/admin/api/ai/chat/site', {
       method: 'POST',
       cookie,
-      json: { conversationId, content: [image] },
+      json: { conversationId, content: [image, image] },
     })
-    await slowCapabilityStarted.promise
-    await harness.db`
-      update ai_provider_credentials
-      set base_url = 'http://ollama-fast.test'
-      where id = ${credentialId}
-    `
-
-    const fastResponse = await harness.ai('/admin/api/ai/chat/site', {
-      method: 'POST',
-      cookie,
-      json: { conversationId, content: [image] },
-    })
-    expect(fastResponse.status).toBe(200)
-    await fastResponse.text()
-
-    slowCapabilityResponse.resolve(jsonResponse({ capabilities: ['vision', 'tools'] }))
-    const slowResponse = await slowRequest
-    expect(slowResponse.status).toBe(413)
+    expect(response.status).toBe(200)
+    await response.text()
 
     const userImages = (await listMessagesForConversation(harness.db, conversationId))
       .filter((message) => message.role === 'user')
       .flatMap((message) => message.content)
       .filter((block) => block.kind === 'image')
-    expect(userImages).toHaveLength(AI_CONVERSATION_MAX_USER_IMAGES)
+    expect(userImages).toHaveLength(AI_USER_IMAGE_MAX_PER_MESSAGE + 2)
+    expect(providerRequest.match(/data:image\/jpeg;base64,/g))
+      .toHaveLength(AI_USER_IMAGE_MAX_PER_MESSAGE + 2)
   })
 })
 

@@ -122,7 +122,14 @@ describe('Responses mapHistory', () => {
 
   test('maps base64 image blocks to a Responses input_image data URL', () => {
     const history: AiMessage[] = [
-      { role: 'user', content: [{ kind: 'image', mimeType: 'image/png', data: 'BASE64' }, { kind: 'text', text: 'look' }] },
+      {
+        role: 'user',
+        content: [
+          { kind: 'image', mimeType: 'image/png', data: 'BASE64-1' },
+          { kind: 'image', mimeType: 'image/jpeg', data: 'BASE64-2' },
+          { kind: 'text', text: 'compare' },
+        ],
+      },
     ]
     const mapped = mapResponsesHistory(history).flat()
     expect(mapped).toEqual([
@@ -130,8 +137,9 @@ describe('Responses mapHistory', () => {
         type: 'message',
         role: 'user',
         content: [
-          { type: 'input_image', image_url: 'data:image/png;base64,BASE64' },
-          { type: 'input_text', text: 'look' },
+          { type: 'input_image', image_url: 'data:image/png;base64,BASE64-1' },
+          { type: 'input_image', image_url: 'data:image/jpeg;base64,BASE64-2' },
+          { type: 'input_text', text: 'compare' },
         ],
       },
     ])

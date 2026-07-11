@@ -9,7 +9,7 @@
  * JSON). Each line is a `ServerStreamEvent` value, JSON-serialised.
  */
 
-import type { AiContentBlock, AiToolOutput, AiUserImageBlock } from '@core/ai'
+import type { AiContentBlock, AiToolOutput } from '@core/ai'
 
 // ---------------------------------------------------------------------------
 // Execution result
@@ -158,7 +158,7 @@ export interface AgentToolCall {
    * `render_snapshot` PNG). Held in memory so the panel can show what the
    * agent looked at; never persisted — it rehydrates empty after a reload.
    */
-  screenshotDataUrl?: string
+  previewImages?: string[]
 }
 
 /**
@@ -169,8 +169,15 @@ export interface AgentToolCall {
  */
 type AgentMessageBlock =
   | Extract<AiContentBlock, { kind: 'text' }>
-  | AiUserImageBlock
+  | AgentMessageImageBlock
   | { kind: 'toolCall'; toolCall: AgentToolCall }
+
+export interface AgentMessageImageBlock {
+  kind: 'image'
+  mimeType: 'image/jpeg'
+  /** Data URL for a fresh local turn; authenticated lazy URL after rehydrate. */
+  src: string
+}
 
 export interface AgentMessage {
   id: string

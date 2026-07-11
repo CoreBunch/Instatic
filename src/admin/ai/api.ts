@@ -14,7 +14,7 @@
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { apiRequest, ApiError } from '@core/http'
 import {
-  AiContentBlockSchema,
+  AiContentViewBlockSchema,
   McpConnectorListSchema,
   CreateMcpConnectorResultSchema,
   type McpConnectorView,
@@ -142,10 +142,9 @@ const MessageViewSchema = Type.Object({
   id: Type.String(),
   position: Type.Number(),
   role: Type.Union([Type.Literal('user'), Type.Literal('assistant'), Type.Literal('tool')]),
-  // The content-block shape is owned by `@core/ai` (single source of truth for
-  // text / image / toolCall / toolResult). The server persists and projects
-  // exactly these blocks; this wire schema must stay derived, not re-declared.
-  content: Type.Array(AiContentBlockSchema),
+  // The conversation-view vocabulary is owned by `@core/ai`: non-image blocks
+  // match persistence, while image bytes are projected to authenticated URLs.
+  content: Type.Array(AiContentViewBlockSchema),
   toolCallId: Type.Union([Type.String(), Type.Null()]),
   toolName: Type.Union([Type.String(), Type.Null()]),
   createdAt: Type.String(),

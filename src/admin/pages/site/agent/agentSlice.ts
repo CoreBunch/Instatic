@@ -513,7 +513,13 @@ export function createAgentSlice(
       const userMsg: AgentMessage = {
         id: nanoid(),
         role: 'user',
-        blocks: content.map((block) => ({ ...block })),
+        blocks: content.map((block) => block.kind === 'image'
+          ? {
+              kind: 'image',
+              mimeType: block.mimeType,
+              src: `data:${block.mimeType};base64,${block.data}`,
+            }
+          : { ...block }),
         timestamp: Date.now(),
       }
 

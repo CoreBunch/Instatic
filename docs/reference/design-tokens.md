@@ -418,7 +418,7 @@ The visual editor uses additional raw z-index values that are **not** tokenised.
 | 30    | Main toolbar |
 | 50    | Floating panels: PropertiesPanel, AgentPanel, DomPanel |
 | 55    | LeftSidebar, RightSidebar, PanelRail |
-| 70    | Media floating windows (FloatingWindow, MediaViewerWindow) |
+| 90    | Shared admin floating windows (`FloatingWindow`, `MediaViewerWindow`, agent image preview) |
 | 80    | CodeEditorPanel |
 | 201   | Toolbar popovers / dropdowns |
 | 400–401 | PreviewOverlay |
