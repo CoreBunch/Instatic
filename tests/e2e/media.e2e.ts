@@ -6,6 +6,7 @@ import {
   createPage,
   insertNotchModule,
   login,
+  openExplorerTab,
   openSiteEditor,
   publishDraft,
   saveDraft,
@@ -156,7 +157,7 @@ test.describe('media', () => {
     await insertNotchModule(page, 'image')
     await expect(page.getByTestId('property-control-src')).toBeVisible()
 
-    await page.getByRole('button', { name: 'Open Media panel' }).click()
+    await openExplorerTab(page, 'Media')
     const mediaPanel = page.getByTestId('media-explorer-panel')
     await expect(mediaPanel).toBeVisible()
 

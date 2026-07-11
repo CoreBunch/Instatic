@@ -62,6 +62,12 @@ For debugging against a server you started yourself, set
 `E2E_PUBLIC_BASE_URL` as needed. Do not use reuse mode for CI or for
 regression runs that need a clean database.
 
+Local trace and video capture are opt-in because a complete run keeps many SSE
+connections in one worker and can otherwise accumulate gigabytes of temporary
+artifacts before Playwright discards passing tests. Set `E2E_TRACE=1` and/or
+`E2E_VIDEO=1` for a focused debugging run. CI still records trace/video on the
+first retry automatically.
+
 ### Suite structure
 
 - **`tests/e2e/helpers/`** — small, user-behaviour-shaped helpers (setup/login,
@@ -71,19 +77,28 @@ regression runs that need a clean database.
   disposable DB is set up once per run, so first-run setup happens here (proving
   SETUP-001) and the owner's authenticated `storageState` is saved. Every spec
   depends on it.
+- **`dashboard.e2e.ts` preflight** — runs immediately after setup, before any
+  persona/plugin/content mutations, so clean-install onboarding facts stay
+  deterministic. The normal E2E project excludes this file to avoid a second run.
+- **`account-persona.setup.ts`** — the next setup project creates the
+  dedicated Admin used by `account.e2e.ts`. Password changes, MFA changes, and
+  sign-out-everywhere flows revoke other sessions for their target account; the
+  persona keeps those intentional side effects away from the saved owner session.
 - **Session rule.** Specs default to the shared owner `storageState` (fast).
   Specs that run a **step-up-gated action** (publish, profile basics, etc.) or
   **sign out** rotate the session token server-side, so they opt into
-  `ANONYMOUS_STATE` and `login()` fresh — otherwise they would invalidate the
-  shared state for later specs.
+  `ANONYMOUS_STATE` and log in fresh — otherwise they would invalidate the shared
+  state for later specs. Account-global self-management specs log in as the
+  account persona, never the owner.
 - **Selectors.** Durable user-facing selectors first (roles, labels, accessible
   names). `data-testid` only for stable editor/canvas controls where an
   accessible name is not practical (canvas notch, toolbar publish actions, the
   step-up dialog).
 - **Isolation.** With `workers: 1` all specs share one database; each spec works
   on its own uniquely-named page/post (only the core lifecycle spec edits the
-  homepage), and publish→assert happens within a single test so cross-spec order
-  never matters.
+  homepage), clean-install dashboard coverage runs before shared mutations,
+  account-global security changes stay on the account persona, fixture-owned AI
+  defaults are removed, and publish→assert happens within a single test.
 
 ### Automated coverage map
 
@@ -111,7 +126,7 @@ Playwright specs unless a focused Bun test path is included:
 | CAP-005 (plugin read/install/configure/lifecycle/schedule/pack + AI chat rail + provider/audit tab gates + AI write-tool filtering) | `capabilities.e2e.ts`, `ai.e2e.ts` |
 | ADMIN-002 (profile basics), ACCOUNT-001 (display name + profile API edges + mobile cancel/no-op), ACCOUNT-002 (avatar upload/removal/invalid upload feedback/API edges/storage error/mobile layout), ADMIN-003 (MFA setup cancel), ACCOUNT-003 (password change + mobile dialog), AUTH-002 (MFA TOTP/mobile challenge/pending-session API edges/unknown-cookie rejection/empty+wrong-code feedback/recovery-code login/reuse rejection), AUTH-004 (active-device sign-out + mobile table + session API edges), ACCOUNT-004 (MFA invalid-code feedback, QR fallback, enable/login/recovery regenerate/disable + mobile setup/login containment), ACCOUNT-005 (step-up window + mobile controls + disabled/invalid API edges), AUTH-006 (failed/successful login activity feed, disposable-account lockout/rate-limit browser flow, and suspicious activity banner) | `account.e2e.ts`, `src/__tests__/admin/accountPage.test.tsx`, `src/__tests__/server/accountSecurity.test.ts`, `src/__tests__/server/authSessions.test.ts`, `src/__tests__/server/authSessionEdgeCases.test.ts` |
 | PLUGIN-001 (ZIP package install via packaged fixtures), PLUGIN-002 (enable/disable/remove lifecycle), PLUGIN-003 (settings/secrets), PLUGIN-004 (packaged admin pages/resources/runtime route), PLUGIN-005 (schedules), PLUGIN-006 (pack install/re-sync), PLUGIN-008 (invalid manifest upload recovery) | `plugins.e2e.ts` |
-| AI-001 (Ollama credential create/delete + offline default guard), AI-002 (Data-scope default save/reload/clear), AI-003 (Site chat history load/new/delete), AI-004 (fixture-backed Site assistant streaming), AI-005 (browser `read_document` tool-result bridge), AI-006 (Audit tab rollups from streamed usage) | `ai.e2e.ts` |
+| AI-001 (Ollama credential create/delete + offline default guard), AI-002 (Data-scope default save/reload/clear), AI-003 (Site chat history load/new/delete), AI-004 (fixture-backed Site assistant streaming), AI-005 (browser `site_read_document` tool-result bridge), AI-006 (Audit tab rollups from streamed usage) | `ai.e2e.ts` |
 | A11Y-001, A11Y-002, RESP-001, RESP-002 | `accessibility.e2e.ts` |
 | PERF-001, PERF-002 (performance/reliability smokes) | `performance.e2e.ts` |
 | REL-001 | `reliability.e2e.ts` |
@@ -377,7 +392,7 @@ durable assertion brittle:
   are automated in `ai.e2e.ts`; AI-002 Data-scope default save/reload/clear
   coverage is automated there too. AI-003 Site chat history load/new/delete,
   AI-004 fixture-backed Site assistant streaming, AI-005 browser
-  `read_document` tool-result bridge, CAP-005 request-level AI write-tool filtering, and AI-006 Audit tab rollups from that
+  `site_read_document` tool-result bridge, CAP-005 request-level AI write-tool filtering, and AI-006 Audit tab rollups from that
   streamed usage are also automated in `ai.e2e.ts`. AI-007 direct
   Anthropic/OpenAI/Ollama/OpenRouter driver mapping and pricing coverage is
   automated in focused Bun tests; live-provider network behaviour remains

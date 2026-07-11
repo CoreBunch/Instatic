@@ -425,8 +425,8 @@ test.describe('AI settings', () => {
     page,
   }) => {
     const fakeOllama = await startFakeOllamaServer('E2E bridge reply.', {
-      id: 'call_read_document',
-      name: 'read_document',
+      id: 'call_site_read_document',
+      name: 'site_read_document',
       input: {},
     })
     const suffix = Date.now().toString(36)
@@ -453,7 +453,7 @@ test.describe('AI settings', () => {
         await assistantPanel.getByRole('button', { name: 'Send' }).click()
 
         await expect(
-          assistantPanel.getByRole('status', { name: 'Completed read_document' }),
+          assistantPanel.getByRole('status', { name: 'Completed Reading document' }),
         ).toBeVisible({ timeout: 20_000 })
         await expect(assistantPanel.getByText('E2E bridge reply.')).toBeVisible({
           timeout: 20_000,
@@ -465,9 +465,9 @@ test.describe('AI settings', () => {
         const firstBody = fakeOllama.requests.chatBodies[0] ?? ''
         const secondBody = fakeOllama.requests.chatBodies[1] ?? ''
         expect(firstBody).toContain('"tools"')
-        expect(firstBody).toContain('"read_document"')
+        expect(firstBody).toContain('"site_read_document"')
         expect(secondBody).toContain('"role":"tool"')
-        expect(secondBody).toContain('"tool_call_id":"call_read_document"')
+        expect(secondBody).toContain('"tool_call_id":"call_site_read_document"')
       })
 
       await test.step('clear seeded conversations/defaults and delete the credential', async () => {
@@ -549,7 +549,7 @@ test.describe('AI settings', () => {
         const menu = page.getByRole('menu', { name: 'Conversation history' })
         const savedChat = menu
           .getByRole('menuitemradio')
-          .filter({ hasText: 'New conversation' })
+          .filter({ hasText: prompt })
           .first()
         await expect(savedChat).toBeVisible()
         await savedChat.click()
@@ -562,7 +562,7 @@ test.describe('AI settings', () => {
         const assistantPanel = page.getByRole('complementary', { name: 'AI Assistant' })
         await assistantPanel.getByRole('button', { name: 'Conversation history' }).click()
         const menu = page.getByRole('menu', { name: 'Conversation history' })
-        await menu.getByRole('button', { name: 'Delete chat "New conversation"' }).click()
+        await menu.getByRole('button', { name: `Delete chat "${prompt}"` }).click()
         await expect(menu.getByText('No chats yet.')).toBeVisible()
         await expect(assistantPanel.getByText('E2E conversation reply.')).toHaveCount(0)
       })
@@ -604,6 +604,7 @@ test.describe.serial('AI write-tool capability filtering', () => {
     const email = `cap-ai-chat-only-${suffix}@example.com`
     const password = 'cap-ai-chat-only-pass-12345'
     const label = `CAP Chat Tools Ollama ${suffix}`
+    let credentialCreated = false
 
     try {
       await test.step('owner creates a temporary provider-setup chat persona', async () => {
@@ -629,6 +630,7 @@ test.describe.serial('AI write-tool capability filtering', () => {
           await personaPage.goto('/admin/ai')
           await expect(personaPage.getByRole('heading', { name: 'AI' })).toBeVisible()
           await addOllamaCredential(personaPage, label, fakeOllama.baseUrl)
+          credentialCreated = true
           await expect(personaPage.getByText(label)).toBeVisible({ timeout: 20_000 })
           await expect.poll(() => fakeOllama.requests.tags).toBeGreaterThan(0)
         })
@@ -659,17 +661,42 @@ test.describe.serial('AI write-tool capability filtering', () => {
         await test.step('provider request contains read tools but no mutating tools', async () => {
           await expect.poll(() => fakeOllama.requests.chats).toBe(1)
           const toolNames = toolNamesFromChatBody(fakeOllama.requests.chatBodies[0] ?? '')
-          expect(toolNames).toContain('read_document')
-          expect(toolNames).toContain('render_snapshot')
-          expect(toolNames).not.toContain('insertHtml')
-          expect(toolNames).not.toContain('replaceNodeHtml')
-          expect(toolNames).not.toContain('updateNodeProps')
-          expect(toolNames).not.toContain('applyCss')
-          expect(toolNames).not.toContain('write_code_asset')
-          expect(toolNames).not.toContain('addPage')
-          expect(toolNames).not.toContain('deletePage')
+          expect(toolNames).toContain('site_read_document')
+          expect(toolNames).toContain('site_render_snapshot')
+          expect(toolNames).not.toContain('site_insert_html')
+          expect(toolNames).not.toContain('site_replace_node_html')
+          expect(toolNames).not.toContain('site_update_node_props')
+          expect(toolNames).not.toContain('site_apply_css')
+          expect(toolNames).not.toContain('site_write_code_asset')
+          expect(toolNames).not.toContain('site_add_page')
+          expect(toolNames).not.toContain('site_delete_page')
         })
       } finally {
+        if (credentialCreated) {
+          // Credential creation auto-seeds the site-wide defaults. Restore the
+          // temporary capability so the persona can remove the fixture it owns,
+          // then clear those defaults before deletion (the FK is restrictive).
+          await setRoleCapabilities(page, roleName, [
+            'View site',
+            'Use AI chat',
+            'Manage AI providers',
+          ])
+          await personaPage.evaluate(async () => {
+            for (const scope of ['site', 'content', 'data', 'plugin']) {
+              const response = await fetch(`/admin/api/ai/defaults/${scope}`, {
+                method: 'DELETE',
+              })
+              if (!response.ok) {
+                throw new Error(`Failed to clear ${scope} default: ${response.status}`)
+              }
+            }
+          })
+          await personaPage.goto('/admin/ai')
+          const credentialCard = personaPage.locator('div').filter({ hasText: label }).first()
+          await expect(credentialCard).toBeVisible()
+          await credentialCard.getByRole('button', { name: 'Delete' }).click()
+          await expect(personaPage.getByText(label)).toHaveCount(0)
+        }
         await personaContext.close()
       }
     } finally {

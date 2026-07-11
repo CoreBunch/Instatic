@@ -208,11 +208,11 @@ test.describe('dashboard', () => {
 
     const panel = onboardingPanel(page)
     await expect(panel).toBeVisible({ timeout: 20_000 })
-    await expect(panel).toContainText('2 of 5 steps complete.')
+    await expect(panel).toContainText('1 of 5 steps complete.')
 
     await expectOnboardingStep(panel, 'Set site identity', 'Completed', 'Open settings')
-    await expectOnboardingStep(panel, 'Choose Core Framework import', 'In progress', 'Configure')
-    await expectOnboardingStep(panel, 'Create your first page', 'Completed', 'New page')
+    await expectOnboardingStep(panel, 'Choose Core Framework import', 'In progress', 'Import')
+    await expectOnboardingStep(panel, 'Create your first page', 'Not started', 'New page')
     await expectOnboardingStep(panel, 'Install a plugin', 'Not started', 'Browse plugins')
     await expectOnboardingStep(panel, 'Invite your team', 'Not started', 'Add members')
 

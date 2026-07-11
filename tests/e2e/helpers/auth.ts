@@ -60,7 +60,7 @@ export async function completeStepUp(
 ): Promise<void> {
   const dialog = page.getByTestId('step-up-dialog')
   const opened = await dialog
-    .waitFor({ state: 'visible', timeout: 10_000 })
+    .waitFor({ state: 'visible', timeout: 2_000 })
     .then(() => true, () => false)
   if (!opened) return
   await page.getByTestId('step-up-password').fill(password)

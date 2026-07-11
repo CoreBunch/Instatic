@@ -264,7 +264,9 @@ async function expectPublishedFormAssets(
   page: Page,
   responses: PublicAssetResponse[],
 ): Promise<void> {
-  await expect(page.locator('link[rel="stylesheet"][href*="/_instatic/css/"]')).toHaveCount(1)
+  await expect(
+    page.locator('link[rel="stylesheet"][href*="/_instatic/css/reset-"]'),
+  ).toHaveCount(1)
   await expect(page.locator('script[src*="/_instatic/module-js/base.form.js"]')).toHaveCount(1)
   await expectPublicAssetResponse(responses, /^\/_instatic\/css\/.+\.css$/, 'text/css')
   await expectPublicAssetResponse(

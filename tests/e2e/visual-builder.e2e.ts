@@ -79,6 +79,10 @@ test.describe('visual builder', () => {
       'aria-pressed',
       'true',
     )
+    // Moving off the view toggle dismisses its tooltip so Escape reaches the
+    // picker dialog instead of being capture-consumed by the tooltip.
+    await page.mouse.move(0, 0)
+    await expect(page.getByRole('tooltip')).toHaveCount(0)
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
 
@@ -502,6 +506,15 @@ test.describe('visual builder', () => {
       const postSlug = `bound-template-post-${suffix}`
       const bodyText = `Body rendered through SITE-018 ${suffix}`
 
+      await test.step('publish the post used as the explicit template preview source', async () => {
+        await createPostDraft(page, postTitle, postSlug, bodyText)
+        await page.getByRole('button', { name: 'Publish post' }).click()
+        await completeStepUp(page)
+        await expect(
+          page.getByRole('button', { name: 'Published', exact: true }),
+        ).toBeDisabled({ timeout: 20_000 })
+      })
+
       await test.step('create a high-priority Posts template from the Site panel', async () => {
         await openSiteEditor(page)
         await openSitePanel(page)
@@ -514,7 +527,7 @@ test.describe('visual builder', () => {
         await dialog.getByLabel('Applies to').click()
         await page.getByRole('option', { name: 'Post types' }).click()
         await dialog.getByLabel('Posts').setChecked(true)
-        await dialog.getByLabel('Priority').fill('200')
+        await dialog.getByLabel('Priority').fill('300')
         await dialog.getByRole('button', { name: 'Save' }).click()
 
         await expect(dialog).toBeHidden()
@@ -522,6 +535,12 @@ test.describe('visual builder', () => {
       })
 
       await test.step('insert title and body bindings into the template canvas', async () => {
+        const previewSource = page.getByLabel('Preview source')
+        await expect(previewSource).toBeVisible({ timeout: 20_000 })
+        await previewSource.click()
+        await page.getByRole('option', { name: postTitle, exact: true }).click()
+        await expect(previewSource).toHaveValue(postTitle)
+
         await insertNotchModule(page, 'text')
         await setPropValue(page, 'text', 'Template headline:')
         await page.getByRole('button', { name: 'Insert binding for Text' }).click()
@@ -533,27 +552,16 @@ test.describe('visual builder', () => {
 
         await expect(page.locator('#ctrl-text')).toHaveValue('Template headline: {currentEntry.title}')
         await expect(
-          canvasFrame(page).getByText('Template headline: Example Post Title', { exact: true }),
+          canvasFrame(page).getByText(`Template headline: ${postTitle}`, { exact: true }),
         ).toBeVisible()
 
         await insertModuleViaPicker(page, 'base.outlet')
-        await expect(
-          canvasFrame(page).getByRole('heading', { name: 'Example heading' }),
-        ).toBeVisible()
+        await expect(canvasFrame(page).getByText(bodyText, { exact: true })).toBeVisible()
       })
 
       await test.step('save and publish the template snapshot', async () => {
         await saveDraft(page)
         await publishDraft(page)
-      })
-
-      await test.step('publish a post that should render through the authored template', async () => {
-        await createPostDraft(page, postTitle, postSlug, bodyText)
-        await page.getByRole('button', { name: 'Publish post' }).click()
-        await completeStepUp(page)
-        await expect(
-          page.getByRole('button', { name: 'Published', exact: true }),
-        ).toBeDisabled({ timeout: 20_000 })
       })
 
       await visitPublicPage(browser, {
@@ -1301,9 +1309,15 @@ async function createPostDraft(
 ): Promise<void> {
   await page.goto('/admin/content')
 
+  const previousRow = new URL(page.url()).searchParams.get('row')
   const newPost = page.getByRole('button', { name: 'New post', exact: true })
   await expect(newPost).toBeEnabled()
   await newPost.click()
+  await page.waitForURL((url) => {
+    const nextRow = url.searchParams.get('row')
+    return nextRow !== null && nextRow !== previousRow
+  })
+  await expect(page.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue('')
 
   await page.getByRole('textbox', { name: 'Title', exact: true }).fill(title)
   await page.getByRole('textbox', { name: 'Slug' }).fill(slug)
@@ -1311,7 +1325,12 @@ async function createPostDraft(
   await page.keyboard.type(body)
 
   await page.getByRole('button', { name: 'More publishing actions' }).click()
+  const saveResponse = page.waitForResponse((response) =>
+    /\/admin\/api\/cms\/data\/rows\/[^/]+$/.test(new URL(response.url()).pathname) &&
+    response.request().method() === 'PATCH',
+  )
   await page.getByTestId('toolbar-content-save-draft-action').click()
+  expect((await saveResponse).ok()).toBe(true)
   await expect(page.getByRole('button').filter({ hasText: title })).toBeVisible({
     timeout: 20_000,
   })

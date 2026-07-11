@@ -4,6 +4,7 @@ import {
   OWNER,
   canvasFrame,
   completeStepUp,
+  insertModuleViaPicker,
   insertNotchModule,
   login,
   openSiteEditor,
@@ -42,9 +43,7 @@ test.describe('content', () => {
     await page.goto('/admin/content')
 
     await test.step('create a draft and open the rich body editor', async () => {
-      const newPost = page.getByRole('button', { name: 'New post', exact: true })
-      await expect(newPost).toBeEnabled()
-      await newPost.click()
+      await startNewPost(page)
       await page.getByRole('textbox', { name: 'Title', exact: true }).fill(title)
       await expect(page.getByTestId('content-body-editor')).toBeVisible()
     })
@@ -68,9 +67,7 @@ test.describe('content', () => {
     })
 
     await test.step('save and reload the rich body content', async () => {
-      await page.getByRole('button', { name: 'More publishing actions' }).click()
-      await page.getByTestId('toolbar-content-save-draft-action').click()
-      await expect(entryRow(page, title)).toBeVisible({ timeout: 20_000 })
+      await saveSelectedDraft(page, title)
 
       await page.reload()
       await expect(entryRow(page, title)).toBeVisible()
@@ -112,13 +109,12 @@ test.describe('content', () => {
       page,
     }) => {
       await login(page)
+      const suffix = Date.now().toString(36)
 
-      await test.step('publish the site snapshot live preview renders through', async () => {
-        await openSiteEditor(page)
-        await publishDraft(page)
+      await test.step('author and publish the Posts template live preview renders through', async () => {
+        await createPublishedPostsTemplate(page, suffix, 10)
       })
 
-      const suffix = Date.now().toString(36)
       const savedTitle = `E2E Live Preview ${suffix}`
       const draftTitle = `${savedTitle} Draft`
       const savedBody = 'Saved body before the live preview draft edit.'
@@ -216,12 +212,12 @@ test.describe('content', () => {
       browser,
     }) => {
       await login(page)
+      const suffix = Date.now().toString(36)
 
-      await test.step('publish the site snapshot that provides the entry template', async () => {
-        await ensureSiteSnapshotPublished(page)
+      await test.step('author and publish the Posts template for the public entry route', async () => {
+        await createPublishedPostsTemplate(page, suffix, 20)
       })
 
-      const suffix = Date.now().toString(36)
       const title = `E2E Formatted ${suffix}`
       const slug = `e2e-formatted-${suffix}`
       const boldText = `bold ${suffix}`
@@ -230,9 +226,7 @@ test.describe('content', () => {
 
       await test.step('create formatted body content and save it', async () => {
         await page.goto('/admin/content')
-        const newPost = page.getByRole('button', { name: 'New post', exact: true })
-        await expect(newPost).toBeEnabled()
-        await newPost.click()
+        await startNewPost(page)
         await page.getByRole('textbox', { name: 'Title', exact: true }).fill(title)
         await page.getByRole('textbox', { name: 'Slug' }).fill(slug)
 
@@ -455,9 +449,7 @@ async function createPostDraft(
   await test.step('create a new post', async () => {
     // The posts collection is selected by default; the New action enables once
     // it has loaded. `exact` avoids matching the canvas "New Post" CTA.
-    const newPost = page.getByRole('button', { name: 'New post', exact: true })
-    await expect(newPost).toBeEnabled()
-    await newPost.click()
+    await startNewPost(page)
 
     await page.getByRole('textbox', { name: 'Title', exact: true }).fill(title)
     await page.getByTestId('content-body-editor').click()
@@ -478,9 +470,7 @@ async function createPostDraftWithSlug(
   await page.goto('/admin/content')
 
   await test.step('create a new post with a stable public slug', async () => {
-    const newPost = page.getByRole('button', { name: 'New post', exact: true })
-    await expect(newPost).toBeEnabled()
-    await newPost.click()
+    await startNewPost(page)
 
     await page.getByRole('textbox', { name: 'Title', exact: true }).fill(title)
     await page.getByRole('textbox', { name: 'Slug' }).fill(slug)
@@ -536,7 +526,7 @@ async function createPostsTemplate(
   await dialog.getByLabel('Applies to').click()
   await page.getByRole('option', { name: 'Post types' }).click()
   await dialog.getByLabel('Posts').setChecked(true)
-  await dialog.getByLabel('Priority').fill('260')
+  await dialog.getByLabel('Priority').fill('150')
   await dialog.getByRole('button', { name: 'Save' }).click()
 
   await expect(dialog).toBeHidden()
@@ -545,22 +535,56 @@ async function createPostsTemplate(
 
 async function saveSelectedDraft(page: Page, title: string): Promise<void> {
   await page.getByRole('button', { name: 'More publishing actions' }).click()
+  const saveResponse = page.waitForResponse((response) =>
+    /\/admin\/api\/cms\/data\/rows\/[^/]+$/.test(new URL(response.url()).pathname) &&
+    response.request().method() === 'PATCH',
+  )
   await page.getByTestId('toolbar-content-save-draft-action').click()
+  expect((await saveResponse).ok()).toBe(true)
   // The new title replaces the "Untitled draft" placeholder once saved.
   await expect(entryRow(page, title)).toBeVisible({ timeout: 20_000 })
 }
 
-async function ensureSiteSnapshotPublished(page: Page): Promise<void> {
+async function startNewPost(page: Page): Promise<void> {
+  const previousRow = new URL(page.url()).searchParams.get('row')
+  const newPost = page.getByRole('button', { name: 'New post', exact: true })
+  await expect(newPost).toBeEnabled()
+  await newPost.click()
+  await page.waitForURL((url) => {
+    const nextRow = url.searchParams.get('row')
+    return nextRow !== null && nextRow !== previousRow
+  })
+  await expect(page.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue('')
+}
+
+async function createPublishedPostsTemplate(
+  page: Page,
+  suffix: string,
+  priority: number,
+): Promise<void> {
   await openSiteEditor(page)
-  const publishButton = page.getByTestId('toolbar-publish-btn')
-  await expect(publishButton).toBeVisible()
-  if (await publishButton.isEnabled()) {
-    await publishDraft(page)
-    return
-  }
-  await expect(
-    page.getByRole('button', { name: 'Published', exact: true }),
-  ).toBeDisabled()
+  await openSitePanel(page)
+  await page.getByRole('button', { name: 'New template', exact: true }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Template settings' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByLabel('Name').fill(`E2E Posts Template ${suffix}`)
+  await dialog.getByLabel('Slug').fill(`e2e-posts-template-${suffix}`)
+  await dialog.getByLabel('Applies to').click()
+  await page.getByRole('option', { name: 'Post types' }).click()
+  await dialog.getByLabel('Posts').setChecked(true)
+  await dialog.getByLabel('Priority').fill(String(priority))
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  await expect(dialog).toBeHidden()
+
+  await insertNotchModule(page, 'text')
+  await setPropValue(page, 'text', '{currentEntry.title}')
+  await page.locator('#ctrl-tag').click()
+  await page.getByRole('option', { name: 'Heading 1', exact: true }).click()
+  await expect(page.locator('#ctrl-tag')).toHaveValue('Heading 1')
+  await insertModuleViaPicker(page, 'base.outlet')
+  await saveDraft(page)
+  await publishDraft(page)
 }
 
 /** The entry's row button in the content explorer list. */

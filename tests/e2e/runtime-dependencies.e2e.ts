@@ -6,8 +6,8 @@ import {
   PUBLIC_BASE_URL,
   createPage,
   login,
+  openCodePanel,
   openSiteEditor,
-  openSitePanel,
   publishDraft,
   saveDraft,
 } from './helpers'
@@ -120,7 +120,7 @@ async function createRuntimeScript(
   source: string,
   expectedImport = 'canvas-confetti',
 ): Promise<void> {
-  await openSitePanel(page)
+  await openCodePanel(page)
   const newScript = page.getByRole('button', { name: 'New script', exact: true })
   await newScript.scrollIntoViewIfNeeded()
   await newScript.click()
