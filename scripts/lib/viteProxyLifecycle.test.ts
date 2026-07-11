@@ -1,77 +1,49 @@
 import { describe, expect, it } from 'bun:test'
 import { EventEmitter } from 'node:events'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { prepareProxyFetch } from './viteProxyLifecycle'
+import type { HttpProxy } from 'vite'
+import { configureProxyResponseLifecycle } from './viteProxyLifecycle'
 
-function downstreamResponse(writableFinished = false): {
-  emitter: EventEmitter
-  response: ServerResponse
+function proxyHarness(): {
+  upstream: EventEmitter
+  downstream: EventEmitter
+  destroyed: () => number
 } {
-  const emitter = new EventEmitter()
-  Object.defineProperty(emitter, 'writableFinished', {
-    configurable: true,
-    value: writableFinished,
+  const proxy = new EventEmitter()
+  const upstream = new EventEmitter()
+  const downstream = new EventEmitter()
+  let destroyCount = 0
+
+  Object.assign(upstream, {
+    destroy() {
+      destroyCount += 1
+      upstream.emit('close')
+      return upstream
+    },
   })
-  return { emitter, response: emitter as unknown as ServerResponse }
+
+  configureProxyResponseLifecycle(proxy as unknown as HttpProxy.ProxyServer)
+  proxy.emit(
+    'proxyRes',
+    upstream as unknown as IncomingMessage,
+    {} as IncomingMessage,
+    downstream as unknown as ServerResponse,
+  )
+
+  return { upstream, downstream, destroyed: () => destroyCount }
 }
 
-describe('Vite backend proxy fetch lifecycle', () => {
-  it('aborts an upstream fetch when the browser disconnects', () => {
-    const downstream = downstreamResponse()
-    const requestOptions: RequestInit = {}
-    prepareProxyFetch(
-      requestOptions,
-      {} as IncomingMessage,
-      downstream.response,
-    )
-
-    downstream.emitter.emit('close')
-
-    expect(requestOptions.signal?.aborted).toBe(true)
+describe('Vite backend proxy response lifecycle', () => {
+  it('destroys a streaming upstream response when the browser disconnects', () => {
+    const harness = proxyHarness()
+    harness.downstream.emit('close')
+    expect(harness.destroyed()).toBe(1)
   })
 
-  it('treats downstream close as terminal even after a normal response', () => {
-    const downstream = downstreamResponse(true)
-    const requestOptions: RequestInit = {}
-    prepareProxyFetch(
-      requestOptions,
-      {} as IncomingMessage,
-      downstream.response,
-    )
-
-    downstream.emitter.emit('close')
-
-    expect(requestOptions.signal?.aborted).toBe(true)
-  })
-
-  it('preserves an existing upstream abort signal', () => {
-    const downstream = downstreamResponse()
-    const existingAbort = new AbortController()
-    const requestOptions: RequestInit = { signal: existingAbort.signal }
-    prepareProxyFetch(
-      requestOptions,
-      {} as IncomingMessage,
-      downstream.response,
-    )
-
-    existingAbort.abort()
-
-    expect(requestOptions.signal?.aborted).toBe(true)
-  })
-
-  it('removes the Node proxy connection-close header for native fetch pooling', () => {
-    const downstream = downstreamResponse()
-    const requestOptions: RequestInit = {
-      headers: { connection: 'close', 'x-test': 'kept' },
-    }
-    prepareProxyFetch(
-      requestOptions,
-      {} as IncomingMessage,
-      downstream.response,
-    )
-
-    const headers = new Headers(requestOptions.headers)
-    expect(headers.has('connection')).toBe(false)
-    expect(headers.get('x-test')).toBe('kept')
+  it('detaches cleanup after the upstream response ends normally', () => {
+    const harness = proxyHarness()
+    harness.upstream.emit('end')
+    harness.downstream.emit('close')
+    expect(harness.destroyed()).toBe(0)
   })
 })

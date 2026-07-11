@@ -3,10 +3,7 @@ import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 import path from 'path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import {
-  forwardProxyFetchResponse,
-  prepareProxyFetch,
-} from './scripts/lib/viteProxyLifecycle'
+import { configureProxyResponseLifecycle } from './scripts/lib/viteProxyLifecycle'
 
 const CMS_DEV_SERVER_ORIGIN = `http://localhost:${process.env.PORT ?? '3001'}`
 const FILE_EXTENSION_RE = /\.[a-zA-Z0-9]+$/
@@ -109,12 +106,7 @@ function backendDevProxyOptions(): ProxyOptions {
   return {
     target: CMS_DEV_SERVER_ORIGIN,
     changeOrigin: true,
-    fetch: globalThis.fetch,
-    selfHandleResponse: true,
-    fetchOptions: {
-      onBeforeRequest: prepareProxyFetch,
-      onAfterResponse: forwardProxyFetchResponse,
-    },
+    configure: configureProxyResponseLifecycle,
   }
 }
 

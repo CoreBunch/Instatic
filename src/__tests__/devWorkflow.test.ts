@@ -89,10 +89,7 @@ describe('development workflow', () => {
     expect(viteConfig).toContain("const CMS_DEV_SERVER_ORIGIN = `http://localhost:${process.env.PORT ?? '3001'}`")
     expect(viteConfig).toContain('target: CMS_DEV_SERVER_ORIGIN')
     expect(viteConfig).toContain('changeOrigin: true')
-    expect(viteConfig).toContain('fetch: globalThis.fetch')
-    expect(viteConfig).toContain('selfHandleResponse: true')
-    expect(viteConfig).toContain('onBeforeRequest: prepareProxyFetch')
-    expect(viteConfig).toContain('onAfterResponse: forwardProxyFetchResponse')
+    expect(viteConfig).toContain('configure: configureProxyResponseLifecycle')
     expect(viteConfig.match(/backendDevProxyOptions\(\)/g)).toHaveLength(4)
   })
 
