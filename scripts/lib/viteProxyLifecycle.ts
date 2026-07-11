@@ -1,23 +1,24 @@
-import type { HttpProxy } from 'vite'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 
 /**
- * Close an active upstream response when its downstream browser connection
- * disappears. http-proxy-3 destroys the ClientRequest on downstream close,
- * but after response headers arrive that request is already complete and its
- * response socket stays open. Long-lived SSE/NDJSON responses would otherwise
- * accumulate across browser reloads until the development proxy stalls.
+ * Link a fetch-based Vite proxy request to its downstream browser response.
+ * Vite runs under Bun in this repository, so the native fetch path avoids the
+ * Node `http.request` compatibility sockets that otherwise accumulate across
+ * repeated browser contexts. Aborting also cancels long-lived SSE/NDJSON
+ * response bodies as soon as their browser consumer disappears.
  */
-export function configureProxyResponseLifecycle(proxy: HttpProxy.ProxyServer): void {
-  proxy.on('proxyRes', (proxyResponse, _req, downstreamResponse) => {
-    const destroyUpstream = () => {
-      if (!downstreamResponse.writableFinished) proxyResponse.destroy()
-    }
-    const detachDownstream = () => {
-      downstreamResponse.off('close', destroyUpstream)
-    }
+export function linkProxyFetchToDownstream(
+  requestOptions: RequestInit,
+  _req: IncomingMessage,
+  downstreamResponse: ServerResponse,
+): void {
+  const downstreamAbort = new AbortController()
+  const abortUpstream = () => {
+    if (!downstreamResponse.writableFinished) downstreamAbort.abort()
+  }
 
-    downstreamResponse.once('close', destroyUpstream)
-    proxyResponse.once('end', detachDownstream)
-    proxyResponse.once('close', detachDownstream)
-  })
+  downstreamResponse.once('close', abortUpstream)
+  requestOptions.signal = requestOptions.signal
+    ? AbortSignal.any([requestOptions.signal, downstreamAbort.signal])
+    : downstreamAbort.signal
 }
