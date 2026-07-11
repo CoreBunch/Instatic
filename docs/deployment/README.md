@@ -57,7 +57,7 @@ INSTATIC_IMAGE=ghcr.io/corebunch/instatic:latest docker compose -f compose.prod.
 Pin a semver tag for predictable upgrades:
 
 ```sh
-INSTATIC_IMAGE=ghcr.io/corebunch/instatic:0.0.10 docker compose -f compose.prod.yml -f compose.sqlite.yml up -d
+INSTATIC_IMAGE=ghcr.io/corebunch/instatic:0.0.11 docker compose -f compose.prod.yml -f compose.sqlite.yml up -d
 ```
 
 Source builds remain supported for contributors and release-candidate testing:

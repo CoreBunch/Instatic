@@ -6,6 +6,42 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 
 ## Unreleased
 
+## 0.0.11 - 2026-07-11
+
+### AI and integrations
+
+- Added multi-image AI conversations with paste and picker flows, compact galleries and previews, private history persistence, model capability checks, and optional Save to Media actions.
+- Added a compact context meter with remaining-context, token, cache, cost, and model-pricing details.
+- Made render snapshots faithfully capture authored backgrounds and breakpoint-specific layouts without changing the visible canvas state.
+- Expanded `site_apply_css` with explicit merge, replace, property-removal, and delete operations, preserved `!important` priorities, and an Anthropic-compatible provider schema.
+- Expanded MCP connectors with headless document listing, scoped Site and Content workspace bridges, and explicit capability-gated publishing after saved draft edits.
+
+### Editor, content, and publishing
+
+- Added a light admin theme and UI text-size preferences alongside the existing density setting.
+- Added editors for custom content fields, including structured, media, and relation values, directly in the Content settings panel.
+- Added middle-mouse canvas panning and improved Layers visibility, scrolling, and empty-container presentation.
+- Derived font-weight choices from installed variants, tolerated malformed stored font settings, and fixed stale selection or focus after undo, redo, and assistant-panel interactions.
+
+### Import and publishing
+
+- Imported YouTube iframes and HTML `<video>` elements as native Video modules, preserving playback and accessibility settings.
+- Optimized media-library background images into responsive variant fallbacks and `image-set()` output in both the editor and published CSS.
+- Made whole-site saves transactional with explicit deletes and a serialized save queue, preventing partial or interleaved saves before publishing.
+
+### Security and data safety
+
+- Hardened custom HTML attributes and tags against stored script injection by rejecting dangerous URL schemes, `srcdoc`, and unsafe embedded elements.
+- Applied shared magic-byte, MIME, extension, SVG-sanitization, traversal, and reserved-path validation to JSON and archive media imports.
+- Added `base-uri 'self'` and `object-src 'none'` to the admin Content Security Policy.
+
+### Platform and reliability
+
+- Fixed Postgres JSON text-column hydration and made static publish-slot swaps reliable on Windows.
+- Made Windows development startup use the active Bun runtime with safer Vite launching and stale-port recovery.
+- Recovered interrupted AI browser-tool turns as terminal, retryable failures instead of leaving conversations stuck or replaying malformed history.
+- Cleaned up disconnected MCP, editor, and plugin streams and bounded orphaned connection lifetimes so abandoned connections cannot exhaust the development proxy.
+
 ## 0.0.10 - 2026-07-01
 
 ### AI and integrations
