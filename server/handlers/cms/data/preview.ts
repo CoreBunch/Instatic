@@ -94,6 +94,9 @@ export async function handleRowPreview(
     return jsonResponse({ error: 'No entry template found for this collection' }, { status: 404 })
   }
   const merged = composeTemplateChain(chain, { kind: 'entry' })
+  // The template chain has no Page for the entry, so composeTemplateChain
+  // can't know its title — the entry's own (draft) title is the real document title.
+  if (typeof draftCells.title === 'string') merged.title = draftCells.title
 
   // Build a synthetic PublishedDataRow with the draft cells merged in.
   // Bindings inside the template (`{currentEntry.body}`, featured-media

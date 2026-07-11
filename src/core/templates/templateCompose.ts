@@ -140,7 +140,11 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
   return {
     id: innermost.id, // identifies "what was rendered" for the publish.html filter
     slug: innermost.slug,
-    title: innermost.title,
+    // The terminal page's own title is the document's real title — the
+    // wrapping template's title is chrome, never `<title>` content. Entry
+    // terminals have no Page here; their caller overrides `title` from the
+    // published row after composing.
+    title: terminal.kind === 'page' ? terminal.page.title : innermost.title,
     rootNodeId: acc.rootId,
     nodes: acc.nodes,
   }
