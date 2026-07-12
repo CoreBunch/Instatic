@@ -218,6 +218,15 @@ export function canConfigurePlugins(user: CmsCurrentUser | null): boolean {
   return hasCapability(user, 'plugins.configure')
 }
 
+/**
+ * Caller can author site-plugin source in the Plugin IDE — scaffold plugins
+ * and create/edit/rename/delete files under `plugins/<local-id>/` in the
+ * draft. Authoring only: code runs after a `plugins.install` activation.
+ */
+export function canEditPlugins(user: CmsCurrentUser | null): boolean {
+  return hasCapability(user, 'plugins.edit')
+}
+
 /** Caller can install, upgrade, uninstall, and re-sync plugin packs. */
 export function canInstallPlugins(user: CmsCurrentUser | null): boolean {
   return hasCapability(user, 'plugins.install')

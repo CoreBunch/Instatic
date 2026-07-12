@@ -71,7 +71,7 @@ export function SitePluginsSection({ canCreate }: SitePluginsSectionProps) {
           variant="secondary"
           size="md"
           disabled={!canCreate}
-          tooltip={canCreate ? undefined : 'Requires the site structure permission'}
+          tooltip={canCreate ? undefined : 'Requires the “Author site plugins” permission'}
           onClick={() => setDialogOpen(true)}
           data-testid="new-site-plugin"
         >

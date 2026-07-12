@@ -17,6 +17,9 @@
  *               the "client / copy editor" persona owns).
  *   style     — classes registry contents, settings.framework, settings.fonts,
  *               file contents.
+ *   plugins   — any change to a `type: 'plugin'` file (site-plugin source
+ *               authored in the Plugin IDE). Plugin code is a different trust
+ *               level than site structure, so it has its own capability.
  *
  * Pages are NOT diffed here (managed by /pages endpoint).
  * Visual Components are NOT diffed here (managed as data_rows via /components
@@ -26,6 +29,7 @@
  *   site.structure.edit → structure
  *   site.content.edit   → content
  *   site.style.edit     → style
+ *   plugins.edit        → plugins
  *
  * First-save semantics: when there is no previous shell (`previous === null`),
  * the incoming document is treated as a structural change in its entirety —
@@ -38,7 +42,7 @@ import type {
 } from '@core/page-tree'
 import { deepEqual } from '@core/utils/deepEqual'
 
-type SiteChangeKind = 'structure' | 'content' | 'style'
+type SiteChangeKind = 'structure' | 'content' | 'style' | 'plugins'
 
 export class ForbiddenSiteChangeError extends Error {
   // The TS `erasableSyntaxOnly` lint forbids constructor-parameter properties,
@@ -60,6 +64,7 @@ const CAP_FOR_KIND: Record<SiteChangeKind, CoreCapability> = {
   structure: 'site.structure.edit',
   content: 'site.content.edit',
   style: 'site.style.edit',
+  plugins: 'plugins.edit',
 }
 
 interface DiffContext {
@@ -91,11 +96,14 @@ export function validateSiteWriteDiff(
   capabilities: readonly CoreCapability[],
 ): void {
   // Fast path: a caller with the full set never needs the diff — they can
-  // make any change. Saves cycles on the common case.
+  // make any change. Saves cycles on the common case. `plugins.edit` is part
+  // of the full set: without it, a full site-writer must still be diffed so
+  // plugin-source changes are caught.
   if (
     capabilities.includes('site.structure.edit') &&
     capabilities.includes('site.content.edit') &&
-    capabilities.includes('site.style.edit')
+    capabilities.includes('site.style.edit') &&
+    capabilities.includes('plugins.edit')
   ) {
     return
   }
@@ -226,6 +234,18 @@ function diffFiles(
   for (const id of new Set([...prevById.keys(), ...nextById.keys()])) {
     const a = prevById.get(id)
     const b = nextById.get(id)
+    // Site-plugin source (type 'plugin') is its own trust domain: every
+    // change to it — add, remove, rename, retype, content — requires
+    // plugins.edit, never a site capability. Retyping across the boundary
+    // counts as a plugin change from either side.
+    if (a?.type === 'plugin' || b?.type === 'plugin') {
+      const changed =
+        !a || !b || a.path !== b.path || a.type !== b.type || a.content !== b.content
+      if (changed) {
+        requireChange(ctx, 'plugins', `files.${id}`, 'plugin source changed')
+      }
+      continue
+    }
     if (!a || !b) {
       requireChange(ctx, 'structure', `files.${id}`, a ? 'removed' : 'added')
       continue

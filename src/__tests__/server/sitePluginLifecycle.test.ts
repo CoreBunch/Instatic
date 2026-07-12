@@ -47,11 +47,19 @@ async function updateDraftFile(path: string, content: string): Promise<void> {
 }
 
 describe('site plugin scaffold + validate', () => {
-  test('scaffold requires site.structure.edit', async () => {
+  test('scaffold requires plugins.edit', async () => {
+    // Even a full site editor cannot scaffold — plugin authoring is its own
+    // capability, distinct from site-structure rights.
     const viewer = await harness.createRoleUser({
       name: 'Viewer',
       slug: 'viewer',
-      capabilities: ['plugins.read', 'site.read'],
+      capabilities: [
+        'plugins.read',
+        'site.read',
+        'site.structure.edit',
+        'site.content.edit',
+        'site.style.edit',
+      ],
     })
     const res = await harness.cms('/admin/api/cms/site-plugins', {
       method: 'POST',
@@ -59,6 +67,20 @@ describe('site plugin scaffold + validate', () => {
       json: { name: 'Newsletter', localId: 'newsletter', template: 'routes' },
     })
     await expectForbidden(res)
+  })
+
+  test('a plugins.edit-only developer can scaffold', async () => {
+    const developer = await harness.createRoleUser({
+      name: 'Plugin Developer',
+      slug: 'plugin-developer',
+      capabilities: ['site.read', 'plugins.edit'],
+    })
+    const res = await harness.cms('/admin/api/cms/site-plugins', {
+      method: 'POST',
+      cookie: developer.cookie,
+      json: { name: 'Dev Probe', localId: 'dev-probe', template: 'empty' },
+    })
+    expect(res.status).toBe(201)
   })
 
   test('scaffold creates plugin-typed draft files', async () => {
@@ -69,7 +91,10 @@ describe('site plugin scaffold + validate', () => {
     })
     expect(res.status).toBe(201)
     const shell = await getDraftSite(harness.db)
-    const pluginFiles = shell?.files.filter((file) => file.type === 'plugin') ?? []
+    // Scope to this plugin's folder — the suite scaffolds other plugins too.
+    const pluginFiles = (shell?.files ?? []).filter(
+      (file) => file.type === 'plugin' && file.path.startsWith('plugins/newsletter/'),
+    )
     expect(pluginFiles.map((file) => file.path).sort()).toEqual([
       'plugins/newsletter/plugin.json',
       'plugins/newsletter/server/index.ts',

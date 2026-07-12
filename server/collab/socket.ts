@@ -58,7 +58,18 @@ import type { CollabRelay, RelayDoc } from './relay'
 
 export { SITE_SOCKET_PATH }
 
-const SITE_WRITE_CAPABILITIES = ['site.structure.edit', 'site.content.edit', 'site.style.edit'] as const
+/**
+ * Any of these grants WRITE on the socket (`plugins.edit` covers the Plugin
+ * IDE persona, which co-edits plugin source over this same relay). Holding
+ * ALL of them makes the connection a "full writer" that skips the per-update
+ * capability guard.
+ */
+const RELAY_WRITE_CAPABILITIES = [
+  'site.structure.edit',
+  'site.content.edit',
+  'site.style.edit',
+  'plugins.edit',
+] as const
 
 /** y-protocols/sync message types (the payload's first varUint). */
 const SYNC_STEP_1 = 0
@@ -165,7 +176,7 @@ export interface CollabSocketData {
   /** The session identity this connection may publish over presence. */
   identity: CollabPresenceIdentity
   /**
-   * True when the user holds ALL of SITE_WRITE_CAPABILITIES — the common
+   * True when the user holds ALL of RELAY_WRITE_CAPABILITIES — the common
    * case, which skips the per-update capability guard entirely. Every other
    * connection — partial writers (e.g. content-only editors) AND read-only
    * viewers (zero write capabilities) — pays a fork+diff validation per
@@ -209,7 +220,7 @@ export async function handleCollabSocketUpgrade(
   }
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
-  const fullSiteWriter = SITE_WRITE_CAPABILITIES.every((cap) => userHasCapability(user, cap))
+  const fullSiteWriter = RELAY_WRITE_CAPABILITIES.every((cap) => userHasCapability(user, cap))
   const upgraded = server.upgrade(req, {
     data: {
       userId: user.id,

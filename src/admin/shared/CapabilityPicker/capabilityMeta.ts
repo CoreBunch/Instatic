@@ -118,6 +118,10 @@ export const CAPABILITY_META: Record<CoreCapability, CapabilityMeta> = {
     label: 'Configure plugins',
     description: 'Edit per-plugin settings and manage plugin-owned records.',
   },
+  'plugins.edit': {
+    label: 'Author site plugins',
+    description: 'Write plugin source code in the Plugin IDE (create, edit, rename, delete files in the site draft). Code only runs after someone with install rights activates it.',
+  },
   'plugins.install': {
     label: 'Install or uninstall plugins',
     description: 'Install, upgrade, and uninstall plugins. Runs third-party code on the host — RCE-class. Step-up gated.',

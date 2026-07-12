@@ -103,12 +103,13 @@ Was a single `runtime.manage`. Split because adapter election (bytes go to a plu
 
 ### Plugins (granular split)
 
-Was a single `plugins.manage`. Split per the four very different blast radii: read / configure / install (RCE-class) / lifecycle.
+Was a single `plugins.manage`. Split per the very different blast radii: read / configure / edit (authoring) / install (RCE-class) / lifecycle.
 
 | Capability             | Grants                                                              | Step-up | Roles         |
 |------------------------|---------------------------------------------------------------------|---------|---------------|
 | `plugins.read`         | List installed plugins; read masked settings; view event SSE stream; read schedule list. Also gates `/dashboard/plugins`. | no | Owner, Admin |
 | `plugins.configure`    | Edit per-plugin settings via `PUT /plugins/:id/settings`; manage plugin records via `/plugins/:id/resources/*`. | yes (settings only) | Owner, Admin |
+| `plugins.edit`         | Author site-plugin source: scaffold via `POST /site-plugins`, create/edit/rename/delete `plugins/<local-id>/**` draft files (Plugin IDE, collab relay `plugins` write category, HTTP save). Authoring only — code runs nothing until a `plugins.install` activation. | no | Owner, Admin |
 | `plugins.install`      | Install / upgrade / uninstall plugins; pack install; inspect-package. **RCE-class — runs third-party code on the host.** | yes (mutations) | Owner, Admin |
 | `plugins.lifecycle`    | Enable / disable / restart plugins; schedule run-now / pause / resume. | yes (mutations) | Owner, Admin |
 

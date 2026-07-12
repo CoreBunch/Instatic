@@ -48,9 +48,14 @@ export const CORE_CAPABILITIES = [
   'runtime.dependencies',
   'storage.elect',
   'storage.migrate',
-  // Plugins — granular split (read/configure/install/lifecycle).
+  // Plugins — granular split (read/configure/edit/install/lifecycle).
+  // `plugins.edit` = authoring site-plugin source in the draft (Plugin IDE,
+  // file CRUD over the collab socket). Distinct from `site.structure.edit`:
+  // writing plugin code is a different trust level than editing site
+  // structure, and a plugin-developer persona needs no site rights.
   'plugins.read',
   'plugins.configure',
+  'plugins.edit',
   'plugins.install',
   'plugins.lifecycle',
   'users.manage',
