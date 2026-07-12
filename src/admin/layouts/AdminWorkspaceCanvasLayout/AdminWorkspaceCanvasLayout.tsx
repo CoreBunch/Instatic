@@ -129,8 +129,7 @@ interface WorkspaceRightPanelNotchProps {
 }
 
 function WorkspaceRightPanelNotch({ workspace, onOpen }: WorkspaceRightPanelNotchProps) {
-  const label =
-    workspace === 'content' ? 'settings' : workspace === 'pluginIde' ? 'manifest' : 'inspector'
+  const label = workspace === 'content' ? 'settings' : 'inspector'
   const testId = workspace === 'content' ? 'content-settings-notch' : `${workspace}-inspector-notch`
   const stopCanvasInteraction = (event: SyntheticEvent) => {
     event.stopPropagation()
