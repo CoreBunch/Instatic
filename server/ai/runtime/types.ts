@@ -146,6 +146,12 @@ export interface ToolContext {
   readonly scope: ToolScope
   readonly conversationId: string
   readonly snapshot: unknown
+  /**
+   * The server's uploads root, for tools that build/activate on-disk plugin
+   * revisions (`plugin_activate`). Null when the transport didn't thread it
+   * (tests, misconfigured boot) — such tools fail with a clear error.
+   */
+  readonly uploadsDir: string | null
   readonly signal: AbortSignal
 }
 

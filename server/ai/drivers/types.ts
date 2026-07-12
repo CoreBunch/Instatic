@@ -157,6 +157,8 @@ export interface ToolContextBase {
    * onSnapshot) so later server read tools see post-mutation state.
    */
   snapshot: unknown
+  /** The server's uploads root — see `ToolContext.uploadsDir`. */
+  readonly uploadsDir: string | null
 }
 
 // ---------------------------------------------------------------------------

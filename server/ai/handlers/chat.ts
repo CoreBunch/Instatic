@@ -71,6 +71,11 @@ import {
   type ContentSnapshot,
 } from '../tools/content'
 import {
+  buildPluginSystemPrompt,
+  emptyPluginIdeSnapshot,
+  PluginIdeSnapshotSchema,
+} from '../tools/plugin'
+import {
   createBridge,
   createConversationsPersister,
   encodeStreamEvent,
@@ -95,17 +100,19 @@ export function tryHandleAiChat(
   req: Request,
   db: DbClient,
   pathname: string,
+  uploadsDir: string | null,
 ): Promise<Response> | null {
   if (!pathname.startsWith('/admin/api/ai/chat/')) return null
   const scope = pathname.slice('/admin/api/ai/chat/'.length)
   if (!VALID_SCOPES.includes(scope as ToolScope)) return null
-  return handleAiChat(req, db, scope as ToolScope)
+  return handleAiChat(req, db, scope as ToolScope, uploadsDir)
 }
 
 async function handleAiChat(
   req: Request,
   db: DbClient,
   scope: ToolScope,
+  uploadsDir: string | null,
 ): Promise<Response> {
   if (req.method !== 'POST') {
     return jsonResponse({ error: 'Method not allowed' }, { status: 405 })
@@ -378,6 +385,7 @@ async function handleAiChat(
           scope,
           conversationId: conversation.id,
           snapshot,
+          uploadsDir,
         }
         const { bridgeId, bridge, destroy } = createBridge(
           emit,
@@ -516,6 +524,17 @@ export function buildSystemPromptForScope(
   }
   if (scope === 'content') {
     return buildContentSystemPrompt((snapshot ?? emptyContentSnapshot()) as ContentSnapshot)
+  }
+  if (scope === 'plugin') {
+    if (snapshot === undefined || snapshot === null) {
+      return buildPluginSystemPrompt(emptyPluginIdeSnapshot())
+    }
+    const result = safeParseValue(PluginIdeSnapshotSchema, snapshot)
+    if (!result.ok) {
+      console.error('[ai/chat] invalid plugin snapshot, using empty fallback:', result.errors)
+      return buildPluginSystemPrompt(emptyPluginIdeSnapshot())
+    }
+    return buildPluginSystemPrompt(result.value)
   }
   // Other scopes don't have system prompts yet. The driver gets a minimal
   // prompt so the conversation isn't completely contextless.

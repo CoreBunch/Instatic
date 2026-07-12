@@ -201,6 +201,7 @@ export function buildMcpServer(ctx: McpServerContext): Server {
         scope: tool.scope === 'shared' ? 'content' : tool.scope,
         conversationId: `mcp:${ctx.connectorId}`,
         snapshot: null,
+        uploadsDir: ctx.uploadsDir ?? null,
       })
     } catch (err) {
       // Browser bridge rejection is terminal for a chat turn, but MCP has no

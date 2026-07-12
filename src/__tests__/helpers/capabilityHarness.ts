@@ -107,7 +107,7 @@ export async function createCapabilityTestHarness(
 
   const ai = async (path: string, requestOptions: HarnessRequestInit = {}) => {
     const req = buildRequest(path, requestOptions)
-    const response = await tryHandleAi(req, db, new URL(req.url))
+    const response = await tryHandleAi(req, db, new URL(req.url), { uploadsDir: options.uploadsDir })
     return response ?? new Response(JSON.stringify({ error: 'Not found' }), { status: 404 })
   }
 
