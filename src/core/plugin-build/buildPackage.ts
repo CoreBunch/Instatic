@@ -18,29 +18,12 @@
  * those stay with the callers.
  */
 import { existsSync, readdirSync } from 'node:fs'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import type { PluginManifest } from '@core/plugin-sdk'
 import { bundleEntrypoint } from './bundle'
+import type { ImportResolverPolicy } from './containment'
 import { generateModulesFacade } from './facades'
-
-/**
- * Import-containment seam. Absent = default resolution (CLI behavior).
- * The site plugin frontend supplies a policy that fails any resolution
- * escaping the materialized workspace. See `./containment.ts`.
- */
-export interface ImportResolverPolicy {
-  /** Absolute dir that workspace-originating imports must stay inside. */
-  workspaceRoot: string
-  /** Exact bare-specifier → absolute-path overrides (e.g. '@instatic/plugin-sdk'). */
-  bareSpecifiers: Record<string, string>
-  /**
-   * Bare specifiers allowed to stay external (resolved by a runtime import
-   * map, never bundled). Populated automatically by `bundleEntrypoint` from
-   * the bundle's own external list when not set explicitly.
-   */
-  allowedExternals?: string[]
-}
 
 export interface BuildPackageInput {
   /** Absolute dir containing the plugin source (server/, editor/, frontend/, modules/…). */
@@ -187,6 +170,31 @@ export async function buildPluginPackage(input: BuildPackageInput): Promise<Buil
       ...(input.resolve ? { resolve: input.resolve } : {}),
     })
     files.push(entry.outputPath)
+  }
+
+  // Frontend stylesheets — style assets are static files (never bundled);
+  // copy top-level frontend/*.css through so `frontend.assets[]` style
+  // declarations resolve in the package.
+  const frontendDir = join(sourceDir, 'frontend')
+  if (existsSync(frontendDir)) {
+    for (const entry of readdirSync(frontendDir, { withFileTypes: true })) {
+      if (entry.isDirectory() || !entry.name.endsWith('.css')) continue
+      const outputPath = `frontend/${entry.name}`
+      await mkdir(join(outputDir, 'frontend'), { recursive: true })
+      await copyFile(join(frontendDir, entry.name), join(outputDir, outputPath))
+      files.push(outputPath)
+    }
+  }
+
+  // Pack contents — a static JSON file in the source tree (site plugin
+  // builds materialize it from the draft). The CLI writes its pack from the
+  // evaluated config AFTER this core runs, so a missing source file is
+  // skipped, not an error.
+  if (manifest.pack && existsSync(join(sourceDir, manifest.pack.path))) {
+    const packOut = join(outputDir, manifest.pack.path)
+    await mkdir(dirname(packOut), { recursive: true })
+    await copyFile(join(sourceDir, manifest.pack.path), packOut)
+    files.push(manifest.pack.path)
   }
 
   // Admin app pages — one bundle per declared app entry. The manifest's

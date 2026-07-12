@@ -11,7 +11,7 @@ export {
   listFrontendSources,
   type BuildPackageInput,
   type BuildPackageResult,
-  type ImportResolverPolicy,
 } from './buildPackage'
+export type { ImportResolverPolicy } from './containment'
 export { bundleEntrypoint, HOST_RUNTIME_EXTERNALS, type BundleOptions } from './bundle'
 export { generateModulesFacade, generateSandboxFacade } from './facades'

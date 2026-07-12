@@ -49,6 +49,7 @@ import { handleMediaRoutes } from './media'
 import { handleMediaFolderRoutes } from './mediaFolders'
 import { handleMediaStorageAdminRoutes } from './mediaStorageAdmin'
 import { handlePluginsRoutes } from './plugins'
+import { handleSitePluginsRoutes } from './sitePlugins'
 import { handleDataRoutes } from './data'
 import { handleDashboardRoutes } from './dashboard'
 import { handleFontsRoutes } from './fonts'
@@ -114,6 +115,11 @@ export async function handleCmsRequest(
     ?? (await handleMediaStorageAdminRoutes(req, db, options))
     ?? (await handleMediaRoutes(req, db))
     ?? (await handlePluginsRoutes(req, db, options))
+    // Site plugins — authored in the site draft, activated through the same
+    // plugin lifecycle. Paths (`/site-plugins/...`) are disjoint from
+    // `/plugins/...`; adjacency here is for reading order only. They read the
+    // main draft: putting plugin sources on a branch is its own phase.
+    ?? (await handleSitePluginsRoutes(req, db, options))
     ?? (await handleDataRoutes(req, db, scope, options))
     // Dashboard stats — read-only aggregate counts used by the admin
     // dashboard widgets. Lives after data routes so future routes

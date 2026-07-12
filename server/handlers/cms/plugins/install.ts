@@ -30,6 +30,7 @@ import {
 import { parsePluginManifest } from '@core/plugins/manifest'
 import type {
   InstalledPlugin,
+  InstalledPluginSource,
   PluginManifest,
   PluginPermission,
 } from '@core/plugin-sdk'
@@ -201,23 +202,62 @@ interface InstallContext {
 // Fresh install
 // ---------------------------------------------------------------------------
 
-async function installFreshFromPackage(ctx: InstallContext): Promise<Response> {
-  const { db, options, user, req, pluginPackage, grantedPermissions } = ctx
-  // `uploadsDir` was checked by the caller; assert to narrow the type.
-  if (!options.uploadsDir) throw new Error('uploadsDir required')
+// ---------------------------------------------------------------------------
+// Disk-package activation seam
+//
+// The lifecycle half of an install/upgrade, decoupled from HOW the package
+// landed on disk. Two callers: the zip route below (writes the uploaded
+// files first) and the site plugin engine (the build already wrote the
+// package under uploads/plugins/site.<id>/<version>/). One lifecycle path,
+// zero site-local branches downstream.
+// ---------------------------------------------------------------------------
 
-  const manifest = await writePluginPackageFiles(
-    options.uploadsDir,
-    pluginPackage.manifest,
-    pluginPackage.files,
-  )
-  const installed = await installPlugin(db, manifest, grantedPermissions)
+export interface ActivatePackageFromDiskInput {
+  db: DbClient
+  options: CmsHandlerOptions
+  user: AuthUser
+  req: Request
+  /** Manifest whose assetBasePath already points at files ON DISK. */
+  manifest: PluginManifest
+  grantedPermissions: PluginPermission[]
+  source: InstalledPluginSource
+}
+
+export interface ActivatePackageOutcome {
+  plugin: InstalledPlugin
+  pack: PluginPackSummary | null
+  upgrade?: { fromVersion: string; toVersion: string }
+  /** Set when an upgrade failed and rolled back — the caller reports it. */
+  upgradeError?: string
+}
+
+/**
+ * Fresh install or upgrade, decided by the existing-row lookup. Runs the
+ * full plugin lifecycle: fresh = `install` -> `activate`; upgrade = old
+ * `deactivate` -> row swap -> `migrate({ fromVersion })` -> `activate`,
+ * with rollback to the previous version on failure. Audit + event
+ * broadcast included. Callers with version-ordering rules (the zip route
+ * rejects downgrades) enforce them BEFORE calling.
+ */
+export async function activatePluginPackageFromDisk(
+  input: ActivatePackageFromDiskInput,
+): Promise<ActivatePackageOutcome> {
+  const existingResult = await getInstalledPlugin(input.db, input.manifest.id)
+  const existing = existingResult?.kind === 'ok' ? existingResult.plugin : null
+  if (existing && semverGt(input.manifest.version, existing.version)) {
+    return upgradeFromDisk(input, existing)
+  }
+  return freshInstallFromDisk(input)
+}
+
+async function freshInstallFromDisk(
+  input: ActivatePackageFromDiskInput,
+): Promise<ActivatePackageOutcome> {
+  const { db, options, user, req, manifest, grantedPermissions, source } = input
+  const installed = await installPlugin(db, manifest, grantedPermissions, { source })
   const installLifecycle = await runPluginLifecycleHook(db, installed, options, 'install', 'installed')
   if (!installLifecycle.ok) {
-    return jsonResponse(
-      { plugin: await presentPluginSecrets(db, installLifecycle.plugin), ...(await pluginsPayload(db)) },
-      { status: 201 },
-    )
+    return { plugin: installLifecycle.plugin, pack: null }
   }
 
   // Reset worker + host state so partial registrations from `install` don't
@@ -250,11 +290,33 @@ async function installFreshFromPackage(ctx: InstallContext): Promise<Response> {
     version: activateLifecycle.plugin.version,
     occurredAt: new Date().toISOString(),
   })
+  return { plugin: activateLifecycle.plugin, pack: packSummary }
+}
+
+async function installFreshFromPackage(ctx: InstallContext): Promise<Response> {
+  const { db, options, user, req, pluginPackage, grantedPermissions } = ctx
+  // `uploadsDir` was checked by the caller; assert to narrow the type.
+  if (!options.uploadsDir) throw new Error('uploadsDir required')
+
+  const manifest = await writePluginPackageFiles(
+    options.uploadsDir,
+    pluginPackage.manifest,
+    pluginPackage.files,
+  )
+  const outcome = await freshInstallFromDisk({
+    db,
+    options,
+    user,
+    req,
+    manifest,
+    grantedPermissions,
+    source: 'installed',
+  })
   return jsonResponse(
     {
-      plugin: await presentPluginSecrets(db, activateLifecycle.plugin),
+      plugin: await presentPluginSecrets(db, outcome.plugin),
       ...(await pluginsPayload(db)),
-      pack: packSummary,
+      ...(outcome.pack !== null ? { pack: outcome.pack } : {}),
     },
     { status: 201 },
   )
@@ -290,8 +352,42 @@ interface UpgradeContext extends InstallContext {
 async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response> {
   const { db, options, user, req, existing, pluginPackage, grantedPermissions } = ctx
   if (!options.uploadsDir) throw new Error('uploadsDir required')
+
+  // Write new assets, then ride the shared disk-activation upgrade path.
+  const newManifest = await writePluginPackageFiles(
+    options.uploadsDir,
+    pluginPackage.manifest,
+    pluginPackage.files,
+  )
+  const outcome = await upgradeFromDisk(
+    { db, options, user, req, manifest: newManifest, grantedPermissions, source: 'installed' },
+    existing,
+  )
+  if (outcome.upgradeError) {
+    return jsonResponse(
+      { error: outcome.upgradeError, ...(await pluginsPayload(db)) },
+      { status: 400 },
+    )
+  }
+  return jsonResponse(
+    {
+      plugin: await presentPluginSecrets(db, outcome.plugin),
+      ...(await pluginsPayload(db)),
+      ...(outcome.pack !== null ? { pack: outcome.pack } : {}),
+      upgrade: outcome.upgrade,
+    },
+    { status: 200 },
+  )
+}
+
+async function upgradeFromDisk(
+  input: ActivatePackageFromDiskInput,
+  existing: InstalledPlugin,
+): Promise<ActivatePackageOutcome> {
+  const { db, options, user, req, manifest: newManifest, grantedPermissions, source } = input
+  if (!options.uploadsDir) throw new Error('uploadsDir required')
   const fromVersion = existing.version
-  const newVersion = pluginPackage.manifest.version
+  const newVersion = newManifest.version
   const pluginId = existing.id
 
   // 1. Deactivate the old version. Best-effort — a deactivate failure
@@ -299,16 +395,9 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
   //    about to replace it anyway). We log and move on.
   await teardownPreviousVersion(db, pluginId, existing, options.uploadsDir)
 
-  // 2. Write new assets.
-  const newManifest = await writePluginPackageFiles(
-    options.uploadsDir,
-    pluginPackage.manifest,
-    pluginPackage.files,
-  )
-
-  // 3. Replace DB row. `installPlugin` upserts — settings_json + installed_at
+  // 2. Replace DB row. `installPlugin` upserts — settings_json + installed_at
   //    are preserved by the SET clause (it doesn't reference them).
-  const upgraded = await installPlugin(db, newManifest, grantedPermissions)
+  const upgraded = await installPlugin(db, newManifest, grantedPermissions, { source })
   // Refresh settings cache from the upserted row (merging decrypted secrets)
   // so the worker's `loadPluginServerEntrypoint` seeds the right values into
   // the worker's local mirror.
@@ -343,21 +432,26 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
     const failureMessage = lifecycleErrorMessage(err)
     console.error(`[plugin:${pluginId}] upgrade ${fromVersion} → ${newVersion} failed:`, err)
     await rollbackUpgrade({ db, options, existing, newManifest })
-    return jsonResponse(
-      {
-        error: `Upgrade failed: ${failureMessage}. Rolled back to version ${fromVersion}.`,
-        ...(await pluginsPayload(db)),
-      },
-      { status: 400 },
-    )
+    const rolledBackResult = await getInstalledPlugin(db, pluginId)
+    const rolledBack =
+      (rolledBackResult?.kind === 'ok' ? rolledBackResult.plugin : null) ?? existing
+    return {
+      plugin: rolledBack,
+      pack: null,
+      upgradeError: `Upgrade failed: ${failureMessage}. Rolled back to version ${fromVersion}.`,
+    }
   }
 
   // 6. Drop the old version's assets. With worker isolation, plugin server
   //    files no longer live in the host process's `bun --watch` graph
   //    (they're imported inside the worker), so deleting them here doesn't
   //    race the response write — straightforward `await rm` is safe in
-  //    both dev and production.
-  await removePluginVersionAssets(options.uploadsDir, pluginId, fromVersion)
+  //    both dev and production. Site plugin revisions are retained for
+  //    rollback + publish coupling instead — their sweep is deferred to
+  //    `sweepSitePluginRevisions` (server/plugins/sitePlugins/retention.ts).
+  if (source !== 'site-local') {
+    await removePluginVersionAssets(options.uploadsDir, pluginId, fromVersion)
+  }
 
   // Re-fetch so the response carries the post-activation row (settings,
   // lifecycle = 'active', etc.).
@@ -380,15 +474,11 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
     toVersion: newVersion,
     occurredAt: new Date().toISOString(),
   })
-  return jsonResponse(
-    {
-      plugin: await presentPluginSecrets(db, finalRow),
-      ...(await pluginsPayload(db)),
-      pack: packSummary,
-      upgrade: { fromVersion, toVersion: newVersion },
-    },
-    { status: 200 },
-  )
+  return {
+    plugin: finalRow,
+    pack: packSummary,
+    upgrade: { fromVersion, toVersion: newVersion },
+  }
 }
 
 /**
@@ -444,12 +534,13 @@ async function rollbackUpgrade(args: {
   const { db, options, existing, newManifest } = args
   const pluginId = existing.id
 
-  // Restore DB row to previous manifest + grants. The upsert preserves
-  // settings + installed_at automatically.
+  // Restore DB row to previous manifest + grants (provenance included).
+  // The upsert preserves settings + installed_at automatically.
   const restored = await installPlugin(
     db,
     pluginManifestWithGrants(existing),
     existing.grantedPermissions,
+    { source: existing.source },
   )
 
   // Drop new version assets — the upgrade didn't take. With worker
