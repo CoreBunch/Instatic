@@ -18,6 +18,7 @@ import { PowerOffIcon } from 'pixel-art-icons/icons/power-off'
 import { ReloadIcon } from 'pixel-art-icons/icons/reload'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
+import { CodeIcon } from 'pixel-art-icons/icons/code'
 import type { InstalledPlugin } from '@core/plugin-sdk'
 import { safeUrl } from '@core/plugin-sdk'
 import styles from './PluginCard.module.css'
@@ -60,6 +61,7 @@ interface PluginCardLoadingProps {
   onReinstall?: never
   onToggle?: never
   onRemove?: never
+  onOpenIde?: never
   canConfigure?: never
   canInstall?: never
   canManageLifecycle?: never
@@ -90,6 +92,11 @@ interface PluginCardDataProps {
   onReinstall: () => void
   onToggle: (plugin: InstalledPlugin) => void
   onRemove: (plugin: InstalledPlugin) => void
+  /**
+   * Opens the Plugin IDE for a `source: 'site-local'` plugin. Rendered
+   * next to Enable/Disable only when the plugin is site-authored.
+   */
+  onOpenIde?: (plugin: InstalledPlugin) => void
 }
 
 type PluginCardProps = PluginCardLoadingProps | PluginCardDataProps
@@ -141,6 +148,7 @@ export function PluginCard(props: PluginCardProps) {
     onReinstall,
     onToggle,
     onRemove,
+    onOpenIde,
   } = props
   const status = pluginStatus(plugin)
   const iconSrc =
@@ -246,6 +254,18 @@ export function PluginCard(props: PluginCardProps) {
             >
               <ReloadIcon size={14} aria-hidden="true" />
               <span>Restart</span>
+            </Button>
+          )}
+          {onOpenIde && plugin.source === 'site-local' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy}
+              onClick={() => onOpenIde(plugin)}
+              aria-label={`Open ${plugin.name} in the Plugin IDE`}
+            >
+              <CodeIcon size={14} aria-hidden="true" />
+              <span>Open IDE</span>
             </Button>
           )}
           {canManageLifecycle && status.status !== 'error' && (

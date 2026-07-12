@@ -495,6 +495,18 @@
   height: auto;
 }
 
+/* Plain-text stand-in while the CodeMirror chunk loads. */
+.toolCallCodeFallback {
+  margin: 0;
+  padding: var(--space-s);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .toolCallStatus {
   display: inline-flex;
   align-items: center;

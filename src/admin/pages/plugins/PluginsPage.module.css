@@ -259,9 +259,3 @@
     }
 }
 
-.groupTitle {
-  margin: var(--space-l) 0 0;
-  font-size: var(--text-l);
-  font-weight: 600;
-  color: var(--text);
-}
