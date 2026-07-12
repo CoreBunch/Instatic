@@ -31,8 +31,7 @@
  */
 import * as Y from 'yjs'
 import type { Patches } from 'mutative'
-import type { StoreApi } from 'zustand'
-import type { Page, PageNode, SiteDocument, SiteShell } from '@core/page-tree'
+import type { Page, SiteDocument, SiteShell } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import type { SavedLayout } from '@core/layouts'
 import {
@@ -61,7 +60,8 @@ import {
 import { clonePackageJson } from '@core/site-dependencies/manifest'
 import { cloneSiteRuntimeConfig } from '@core/site-runtime'
 import { validateSite } from '@core/persistence/validate'
-import type { EditorStore } from '@site/store/types'
+import type { EditorStoreApi } from '@site/store/types'
+import { pruneCanvasSelectionDraft } from '../selectionSlice'
 import type { Awareness } from 'y-protocols/awareness'
 import type { CollabProvider } from '@site/collab/collabProvider'
 
@@ -71,7 +71,7 @@ interface ManagedDoc {
   detach: () => void
 }
 
-let storeApi: StoreApi<EditorStore> | null = null
+let storeApi: EditorStoreApi | null = null
 let docs: CollabDocSet = createCollabDocSet()
 let managed = new Map<string, ManagedDoc>()
 /**
@@ -99,7 +99,7 @@ let projectionFlushScheduled = false
 let alignedSiteRef: SiteDocument | null = null
 
 /** Called once by store creation — the binding's only handle into Zustand. */
-export function initCollabBinding(api: StoreApi<EditorStore>): void {
+export function initCollabBinding(api: EditorStoreApi): void {
   storeApi = api
 }
 
@@ -465,13 +465,17 @@ function projectDocIntoStore(docId: string): void {
     const siteRuntime = cloneSiteRuntimeConfig(nextSite.runtime)
     const alignedSite = { ...nextSite, packageJson, runtime: siteRuntime }
     alignedSiteRef = alignedSite
-    api.setState({
-      site: alignedSite,
-      packageJson,
-      siteRuntime,
-      ...(nextSite.pages.some((p) => p.id === state.activePageId)
-        ? {}
-        : { activePageId: nextSite.pages[0]?.id ?? null }),
+    api.setState((draft) => {
+      draft.site = alignedSite
+      draft.packageJson = packageJson
+      draft.siteRuntime = siteRuntime
+      if (!nextSite.pages.some((p) => p.id === draft.activePageId)) {
+        draft.activePageId = nextSite.pages[0]?.id ?? null
+      }
+      // A roster change can drop the whole document the selection lives in (a
+      // peer deleted the page, or an undo removed it). Prune AFTER site +
+      // activePageId land, since the pruner resolves the active tree from them.
+      pruneCanvasSelectionDraft(draft)
     })
     return
   }
@@ -486,33 +490,25 @@ function projectDocIntoStore(docId: string): void {
     const nextRows = rows.filter((r) => r.id !== parsed.rowId)
     const nextSite = { ...site, [collection]: nextRows } as SiteDocument
     alignedSiteRef = nextSite
-    api.setState({ site: nextSite })
+    api.setState((draft) => {
+      draft.site = nextSite
+      pruneCanvasSelectionDraft(draft)
+    })
     return
   }
   const nextRows = index === -1 ? [...rows, row] : rows.map((r, i) => (i === index ? row : r))
   const nextSite = { ...site, [collection]: nextRows } as SiteDocument
   alignedSiteRef = nextSite
-  const patch: Partial<EditorStore> = {
-    site: nextSite,
-  }
-  // Selection can only reference the ACTIVE tree — clear it when its node
-  // vanished from the freshly projected row.
-  if (state.selectedNodeId) {
-    const activeTree: Record<string, PageNode> | undefined =
-      state.activeDocument?.kind === 'visualComponent'
-        ? state.activeDocument.vcId === parsed.rowId
-          ? ((row as VisualComponent).tree.nodes as Record<string, PageNode>)
-          : undefined
-        : state.activePageId === parsed.rowId
-          ? ((row as Page).nodes as Record<string, PageNode>)
-          : undefined
-    if (activeTree && !activeTree[state.selectedNodeId]) {
-      patch.selectedNodeId = null
-      patch.selectedNodeIds = []
-      patch.hoveredNodeId = null
-    }
-  }
-  api.setState(patch)
+  api.setState((draft) => {
+    draft.site = nextSite
+    // The freshly projected row may have lost nodes — a peer deleted them, or a
+    // Y.UndoManager undo reverted their creation. Prune by tree-membership, the
+    // same way a local delete does: survivors keep their selection, dead ids
+    // (including descendants swept with a subtree) drop out, and an inline-edit
+    // session on a vanished node is closed. `pruneCanvasSelectionDraft` reads
+    // the ACTIVE tree, so it self-limits to the doc the user is looking at.
+    pruneCanvasSelectionDraft(draft)
+  })
 }
 
 // ---------------------------------------------------------------------------

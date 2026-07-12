@@ -59,6 +59,15 @@ mode every doc rebinds through the provider and the server seeds it.
 Editor-local state (selection, zoom, panel visibility) is not undoable —
 only document content flows through the docs.
 
+It is, however, **reconciled**. A projection can remove nodes the editor is
+still pointing at — an undo reverting an insertion, or a peer deleting the
+subtree you had selected. The projection path therefore runs
+`pruneCanvasSelectionDraft` after the new site lands, exactly as a local
+`deleteNode` does: selections are pruned by tree-membership (survivors keep
+theirs, the anchor re-syncs, descendants swept with a subtree drop out), and
+an inline-edit session whose node vanished is closed. This is why selection
+state has one pruning implementation rather than one per write path.
+
 ## Key files
 
 - `src/admin/pages/site/store/slices/site/collabBinding.ts` — undo managers,

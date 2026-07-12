@@ -9,6 +9,8 @@
  */
 import { describe, it, expect, beforeEach } from 'bun:test'
 import { useEditorStore } from '@site/store/store'
+// `startInlineEdit` resolves its `inlineTextEdit` spec from the module registry.
+import '@modules/base/text'
 
 // Helper: get fresh store state (Zustand is module-singleton — reset between tests)
 function getStore() {
@@ -97,6 +99,47 @@ describe('Undo / Redo — basic lifecycle', () => {
     const nextId = afterUndo.insertNode('base.text', {}, rootId)
     expect(nextId).not.toBe('')
     expect(useEditorStore.getState().site!.pages[0].nodes[nextId]).toBeDefined()
+  })
+
+  it('undo keeps surviving selections and only drops the reverted node', () => {
+    const site = getStore().createSite('Test SiteDocument')
+    const rootId = site.pages[0].rootNodeId
+    const survivorId = useEditorStore.getState().insertNode('base.text', {}, rootId)
+    const revertedId = useEditorStore.getState().insertNode('base.text', {}, rootId)
+
+    useEditorStore.getState().selectNode(survivorId)
+    useEditorStore.getState().addToSelection(revertedId)
+    expect(useEditorStore.getState().selectedNodeIds).toEqual([survivorId, revertedId])
+
+    // Reverts only the second insertion.
+    useEditorStore.getState().undo()
+
+    const afterUndo = useEditorStore.getState()
+    expect(afterUndo.site!.pages[0].nodes[revertedId]).toBeUndefined()
+    expect(afterUndo.site!.pages[0].nodes[survivorId]).toBeDefined()
+    // The survivor keeps its selection; the anchor re-syncs to it rather than
+    // the whole multi-selection being cleared.
+    expect(afterUndo.selectedNodeIds).toEqual([survivorId])
+    expect(afterUndo.selectedNodeId).toBe(survivorId)
+  })
+
+  it('undo closes an inline-edit session on the node it reverts', () => {
+    const site = getStore().createSite('Test SiteDocument')
+    const rootId = site.pages[0].rootNodeId
+    const breakpointId = site.breakpoints[0]!.id
+    const insertedId = useEditorStore.getState().insertNode('base.text', {}, rootId)
+
+    useEditorStore.getState().startInlineEdit(insertedId, breakpointId)
+    expect(useEditorStore.getState().activeInlineEdit?.nodeId).toBe(insertedId)
+
+    useEditorStore.getState().undo()
+
+    const afterUndo = useEditorStore.getState()
+    expect(afterUndo.site!.pages[0].nodes[insertedId]).toBeUndefined()
+    // A session pointing at a node that no longer exists must not survive —
+    // it is not necessarily part of the selection, so it is pruned by
+    // tree-membership.
+    expect(afterUndo.activeInlineEdit).toBeNull()
   })
 
   it('redo prunes selection when replaying a deletion', () => {
