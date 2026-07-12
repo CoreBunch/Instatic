@@ -349,6 +349,13 @@ interface CodeMirrorEditorProps {
    * command surfaces can pass 0 so their primary action never reads stale text.
    */
   changeDelayMs?: number
+  /**
+   * Extra CM6 extensions appended to the stack — the Plugin IDE passes the
+   * yCollab binding (Y.Text sync + remote peer cursors) here. Captured at
+   * mount like `value`/`language`; changing them mid-doc requires a docKey
+   * change (which remounts the view).
+   */
+  extensions?: Extension[]
   /** Authoritative publisher-compiler diagnostics for this document. */
   diagnostics?: SiteRuntimeDiagnostic[]
   /** Site-relative path used by the TypeScript language-service project. */
@@ -504,6 +511,7 @@ export default function CodeMirrorEditor({
   filePath,
   projectFiles = EMPTY_PROJECT_FILES,
   onTypeScriptDiagnosticsChange,
+  extensions,
 }: CodeMirrorEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -606,6 +614,7 @@ export default function CodeMirrorEditor({
             }, changeDelayMs)
           }),
           EditorView.lineWrapping,
+          ...(extensions ?? []),
         ],
       }),
       parent: container,

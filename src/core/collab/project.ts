@@ -11,6 +11,7 @@ import type { VisualComponent } from '@core/visualComponents'
 import type { SavedLayout } from '@core/layouts'
 import { dataMap, metaMap, rostersMap, shellMap, treeMap } from './schema'
 import { own, projectNodeMap } from './nodeY'
+import { projectSiteFilesValue } from './filesY'
 import { reconcileTreeIntegrity } from './integrity'
 
 function projectTree(doc: Y.Doc): { rootNodeId: string; nodes: Record<string, BaseNode> } {
@@ -81,6 +82,13 @@ export function projectSiteDoc(doc: Y.Doc): ProjectedSiteDoc {
   const shellSrc = shellMap(doc)
   const shell: Record<string, unknown> = {}
   for (const [key, value] of shellSrc.entries()) {
+    // `files` is a granular map (one entry per file, content as Y.Text) so
+    // the Plugin IDE can co-edit a file character-level; everything else in
+    // the shell projects as an owned deep copy.
+    if (key === 'files') {
+      shell[key] = projectSiteFilesValue(value)
+      continue
+    }
     if (value instanceof Y.Map) {
       const entries: Record<string, unknown> = {}
       for (const [entryKey, entryValue] of value.entries()) entries[entryKey] = own(entryValue)

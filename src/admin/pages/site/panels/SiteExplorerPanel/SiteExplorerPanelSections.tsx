@@ -198,7 +198,7 @@ export function SiteExplorerPanelSections({
 
       {sectionGroup === 'code' && scriptTreeModel && (
         <SiteExplorerTreeSection
-          title="Scripts"
+          title="Frontend scripts"
           count={scriptCount}
           actionLabel="New script"
           actionIcon={CodeIcon}

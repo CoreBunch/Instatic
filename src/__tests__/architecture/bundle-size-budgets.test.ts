@@ -227,14 +227,18 @@ function findChunk(prefix: string): { path: string; size: number } | null {
     (f) => f.startsWith(prefix) && f.endsWith('.js'),
   )
   if (matches.length === 0) return null
-  if (matches.length > 1) {
-    throw new Error(
-      `[bundle-size-budgets] Found ${matches.length} files matching prefix ` +
-      `"${prefix}" in dist/assets/: ${matches.join(', ')}. Expected exactly one.`,
-    )
-  }
+  // A module reachable through BOTH a dynamic and a static import (e.g.
+  // CodeMirrorEditor: lazy from CodeEditorPanel, static from its collab
+  // sibling lazy module) makes rolldown emit a tiny re-export facade chunk
+  // alongside the real one. Budget the SUM of all matches — that stays
+  // facade-tolerant while still catching genuine duplication (two full
+  // copies would blow the budget immediately).
+  const size = matches.reduce(
+    (total, match) => total + statSync(join(DIST_ASSETS, match)).size,
+    0,
+  )
   const path = join(DIST_ASSETS, matches[0]!)
-  return { path, size: statSync(path).size }
+  return { path, size }
 }
 
 function findChunks(prefix: string): string[] {

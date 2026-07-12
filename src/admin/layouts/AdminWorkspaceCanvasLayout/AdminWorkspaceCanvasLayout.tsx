@@ -34,7 +34,7 @@ const SettingsModal = lazy(() =>
   import('@admin/modals/Settings/SettingsModal').then((m) => ({ default: m.SettingsModal })),
 )
 
-type WorkspaceCanvasSection = Extract<AdminWorkspace, 'content' | 'data' | 'media' | 'branchReview'>
+type WorkspaceCanvasSection = Extract<AdminWorkspace, 'content' | 'data' | 'media' | 'branchReview' | 'pluginIde'>
 
 interface AdminWorkspaceCanvasLayoutProps {
   workspace: WorkspaceCanvasSection
@@ -129,7 +129,8 @@ interface WorkspaceRightPanelNotchProps {
 }
 
 function WorkspaceRightPanelNotch({ workspace, onOpen }: WorkspaceRightPanelNotchProps) {
-  const label = workspace === 'content' ? 'settings' : 'inspector'
+  const label =
+    workspace === 'content' ? 'settings' : workspace === 'pluginIde' ? 'manifest' : 'inspector'
   const testId = workspace === 'content' ? 'content-settings-notch' : `${workspace}-inspector-notch`
   const stopCanvasInteraction = (event: SyntheticEvent) => {
     event.stopPropagation()

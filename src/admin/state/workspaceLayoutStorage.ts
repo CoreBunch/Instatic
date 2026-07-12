@@ -60,7 +60,7 @@ export type FloatingPanelId =
  * pages (Plugins, Users, Account, …) render via `AdminPageLayout` and do not
  * participate in this persistence.
  */
-export type EditorWorkspaceId = 'site' | 'content' | 'data' | 'media'
+export type EditorWorkspaceId = 'site' | 'content' | 'data' | 'media' | 'pluginIde'
 
 export interface StoredWorkspaceLayout {
   /** Left sidebar pixel width (clamped to SIDEBAR_MIN/MAX_WIDTH on read). */
