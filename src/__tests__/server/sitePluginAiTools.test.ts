@@ -79,7 +79,7 @@ describe('plugin toolset selection', () => {
   test('a reader sees read tools only', () => {
     const offered = selectToolsForScope('plugin', ['ai.chat', 'site.read'])
     const names = offered.map((tool) => tool.name).sort()
-    expect(names).toEqual(['plugin_list_files', 'plugin_list_plugins', 'plugin_read_file', 'plugin_validate'])
+    expect(names).toEqual(['plugin_docs', 'plugin_list_files', 'plugin_list_plugins', 'plugin_read_file', 'plugin_validate'])
   })
 
   test('write tools require ai.tools.write AND plugins.edit', () => {
@@ -175,6 +175,25 @@ describe('plugin lifecycle tool handlers', () => {
     const result = await run('plugin_activate', { localId: 'agent-probe' }, ctx(OWNER_CAPS))
     expect(result.ok).toBe(true)
     expect(result.data).toMatchObject({ activated: false, skipped: true })
+  })
+
+  test('plugin_docs serves an index and full topics', async () => {
+    const index = await run('plugin_docs', {}, ctx(OWNER_CAPS))
+    expect(index.ok).toBe(true)
+    const { topics } = index.data as { topics: Array<{ topic: string; summary: string }> }
+    expect(topics.map((entry) => entry.topic)).toContain('admin-pages')
+
+    const topic = await run('plugin_docs', { topic: 'admin-pages' }, ctx(OWNER_CAPS))
+    expect(topic.ok).toBe(true)
+    const { content } = topic.data as { content: string }
+    // The exact contract the agent guessed wrong in live testing: app entries
+    // are JS modules default-exporting a React component.
+    expect(content).toContain('DEFAULT EXPORT must be a React component')
+    expect(content).toContain('"kind": "resource"')
+
+    const unknown = await run('plugin_docs', { topic: 'nope' }, ctx(OWNER_CAPS))
+    expect(unknown.ok).toBe(false)
+    expect(unknown.error).toContain('admin-pages')
   })
 
   test('plugin_list_plugins reports the runtime state', async () => {

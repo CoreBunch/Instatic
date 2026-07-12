@@ -108,6 +108,60 @@ describe('site plugin manifest derivation', () => {
     expect(asset && asset.kind === 'script' ? asset.src : null).toBe('frontend/tracker.js')
   })
 
+  test('rewrites and verifies adminPages app entries', () => {
+    const appManifest = (entry: string) =>
+      JSON.stringify({
+        name: 'CRM',
+        permissions: ['admin.navigation', 'editor.code'],
+        adminPages: [
+          {
+            id: 'customers',
+            title: 'Customers',
+            content: { kind: 'app', heading: 'Customers', entry },
+          },
+        ],
+      })
+    const files = [
+      file('plugins/crm/plugin.json', ''),
+      file('plugins/crm/frontend/customers.tsx', ''),
+    ]
+
+    // Source path rewrites to the built bundle.
+    const derived = deriveSitePluginManifest({
+      localId: 'crm',
+      draftManifestJson: appManifest('frontend/customers.tsx'),
+      files,
+      previousVersion: null,
+      contentHash: 'abcd1234',
+    })
+    const page = derived.adminPages[0]
+    expect(page && page.content.kind === 'app' ? page.content.entry : null).toBe(
+      'frontend/customers.js',
+    )
+
+    // A non-JS entry fails at BUILD time (used to only fail at runtime).
+    expect(() =>
+      deriveSitePluginManifest({
+        localId: 'crm',
+        draftManifestJson: appManifest('frontend/customers.html'),
+        files: [...files, file('plugins/crm/frontend/customers.html', '<html/>')],
+        previousVersion: null,
+        contentHash: 'abcd1234',
+      }),
+    ).toThrow(/must be a JS module/i)
+
+    // A dangling entry (no matching source) fails too.
+    expect(() =>
+      deriveSitePluginManifest({
+        localId: 'crm',
+        draftManifestJson: appManifest('frontend/missing.ts'),
+        files,
+        previousVersion: null,
+        contentHash: 'abcd1234',
+      }),
+    ).toThrow(/no matching source/i)
+  })
+
   test('rejects author-set derived fields', () => {
     const withId = JSON.stringify({ id: 'acme.evil', name: 'X', permissions: [] })
     expect(() =>

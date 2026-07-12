@@ -159,10 +159,38 @@ export function deriveSitePluginManifest(input: DeriveSitePluginManifestInput): 
       }
     : undefined
 
+  // adminPages `kind:'app'` entries get the same source→bundle rewrite AND
+  // an existence check: the admin shell dynamically import()s the entry as
+  // a JS module, so a dangling path (typo) or a non-JS file (.html) would
+  // otherwise pass validation and only fail at runtime in the admin.
+  const adminPages = draft.adminPages?.map((page) => {
+    if (page.content.kind !== 'app') return page
+    const entry = page.content.entry.replace(/\.(tsx?|mjs)$/, '.js')
+    if (!/^frontend\/[^/]+\.js$/.test(entry)) {
+      throw new Error(
+        `adminPages "${page.id}": app entry "${page.content.entry}" must be a JS module built from a ` +
+          `top-level frontend/ source (e.g. "frontend/${page.id}.js" from frontend/${page.id}.tsx). ` +
+          `App pages are dynamically import()ed and must default-export a React component — HTML files cannot be app entries.`,
+      )
+    }
+    const sourceBase = entry.slice('frontend/'.length, -'.js'.length)
+    const hasSource = ['ts', 'tsx', 'js', 'mjs'].some((ext) =>
+      relativePaths.has(`frontend/${sourceBase}.${ext}`),
+    )
+    if (!hasSource) {
+      throw new Error(
+        `adminPages "${page.id}": app entry "${page.content.entry}" has no matching source — ` +
+          `create frontend/${sourceBase}.tsx (default-exporting a React component) or fix the path.`,
+      )
+    }
+    return { ...page, content: { ...page.content, entry } }
+  })
+
   // Validate through the REAL parser — the same contract a zip has.
   return parsePluginManifest({
     ...draft,
     ...(frontend ? { frontend } : {}),
+    ...(adminPages ? { adminPages } : {}),
     id,
     version,
     apiVersion: PLUGIN_API_VERSION,

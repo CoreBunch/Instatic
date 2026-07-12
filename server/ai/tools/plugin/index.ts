@@ -8,6 +8,7 @@
  * relay to the open Plugin IDE; lifecycle tools run headless.
  */
 import type { AiTool } from '../types'
+import { pluginDocsTool } from './docs'
 import { pluginFileTools, PLUGIN_FILE_READ_ONLY_NAMES } from './fileTools'
 import {
   pluginLifecycleTools,
@@ -19,6 +20,7 @@ import {
 // mutating (it moves the user's visible buffer — same policy as
 // content_set_active_document).
 export const pluginTools: AiTool[] = [
+  { ...pluginDocsTool, mutates: false },
   ...pluginFileTools.map((t) => ({
     ...t,
     mutates: !PLUGIN_FILE_READ_ONLY_NAMES.has(t.name),

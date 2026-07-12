@@ -171,6 +171,8 @@ export function getToolCallDisplay(actionType: string, params: unknown): ToolCal
       return display('Building & activating', optionalString(p.localId), 'runtime', 'write')
     case 'list_plugins':
       return display('Listing site plugins', '', 'collection', 'read')
+    case 'docs':
+      return display('Reading plugin docs', optionalString(p.topic) || 'index', 'document', 'read')
 
     default:
       return display(`Running ${humanizeToolName(toolName)}`, '', 'tool', 'neutral')
