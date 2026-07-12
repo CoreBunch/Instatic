@@ -1,31 +1,8 @@
-.pane {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
+/* The Panel shell owns chrome + background — this module only lays out
+   the scrollable body. */
+.body {
   overflow-y: auto;
-  background: var(--bg-surface-2);
-}
-
-.header {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-s) var(--space-m);
-  border-bottom: 1px solid var(--border-muted);
-  background: var(--bg-surface-2);
-}
-
-.title {
-  margin: 0;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-subtle);
+  min-height: 0;
 }
 
 .sections {
