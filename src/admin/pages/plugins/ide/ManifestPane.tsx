@@ -38,6 +38,9 @@ interface ManifestPaneProps {
   files: IdeFileMeta[]
   summary: SitePluginSummary | null
   canEdit: boolean
+  /** False until the site doc's first sync — the pane must not claim
+   *  plugin.json is missing while the draft is still arriving. */
+  synced: boolean
   onOpenRawJson: () => void
 }
 
@@ -64,6 +67,7 @@ export function ManifestPane({
   files,
   summary,
   canEdit,
+  synced,
   onOpenRawJson,
 }: ManifestPaneProps) {
   const setRightPanel = useWorkspaceLayout((s) => s.setRightPanel)
@@ -148,7 +152,11 @@ export function ManifestPane({
         </Button>
       )}
     >
-      {parsed.error ? (
+      {!synced ? (
+        <p className={styles.connecting} role="status">
+          Connecting to the live draft…
+        </p>
+      ) : parsed.error ? (
         <div className={styles.parseError} role="alert">
           <p>plugin.json can’t be edited structurally right now:</p>
           <p className={styles.parseErrorDetail}>{parsed.error}</p>

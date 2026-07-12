@@ -5,6 +5,13 @@
   min-height: 0;
 }
 
+.connecting {
+  margin: 0;
+  padding: var(--space-m);
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+}
+
 .sections {
   display: flex;
   flex-direction: column;

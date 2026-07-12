@@ -323,9 +323,19 @@ describe('Bundle size budgets', () => {
     const iconChunkPatterns = vendoredIconNames().map(
       (iconName) => new RegExp(`^${regexEscape(iconName)}-[A-Za-z0-9_-]+\\.js$`),
     )
-    const individualIconChunks = readdirSync(DIST_ASSETS).filter((asset) =>
-      iconChunkPatterns.some((pattern) => pattern.test(asset)),
-    )
+    const individualIconChunks = readdirSync(DIST_ASSETS).filter((asset) => {
+      if (!iconChunkPatterns.some((pattern) => pattern.test(asset))) return false
+      // Name-collision guard: rolldown names shared feature chunks after one
+      // of their modules, and a feature module can legitimately share a name
+      // with an icon (e.g. an "upload" helpers chunk vs the upload icon). A
+      // chunk that IMPORTS the grouped icon chunk is a consumer, not an
+      // escaped icon — only an actual icon module body (svg markup, no
+      // grouped-chunk import) counts as a violation.
+      const source = readFileSync(join(DIST_ASSETS, asset), 'utf8')
+      const importsGroupedIcons = source.includes('./pixel-art-icons-')
+      const looksLikeIconBody = source.includes('viewBox')
+      return !importsGroupedIcons && looksLikeIconBody
+    })
 
     expect(individualIconChunks).toEqual([])
   })
