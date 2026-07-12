@@ -87,19 +87,36 @@ const PresenceUserSchema = Type.Object(
 )
 
 /**
- * A client may only publish presence that matches ITS OWN session, and may
- * only clear clientIDs it contributed. Decode the awareness update (varUint
- * count, then per client: varUint id, varUint clock, varString stateJSON) and:
- *   - reject any non-null state whose full identity (id + name + avatar +
- *     gravatar) differs from the session — pinning id alone let a peer keep
- *     its own id but paint another admin's name/avatar in every UI;
- *   - reject a `null` (clear) for a clientID this connection never announced —
- *     otherwise any peer could erase another's presence for everyone.
+ * Why a client's awareness frame was refused — the relay drops all three, but
+ * only two of them mean anything.
+ *
+ * `foreignClear` is ROUTINE, not an attack. Every y-protocols client runs
+ * `checkOutdatedAwarenessStates` and broadcasts a removal for any peer whose
+ * heartbeat it stopped hearing, so clients constantly try to clear clientIDs
+ * they do not own. The relay refuses — presence is cleared only by its owner or
+ * by that owner's disconnect, or one slow peer could erase another for everyone
+ * — but this is expected protocol chatter and must never be logged as a
+ * security event.
+ *
+ * `impersonation` and `malformed` are the ones worth hearing about.
  */
-function awarenessUpdateFromSession(
+type AwarenessRefusal = 'impersonation' | 'foreignClear' | 'malformed'
+
+/**
+ * A client may only publish presence that matches ITS OWN session, and may only
+ * clear clientIDs it contributed. Decode the awareness update (varUint count,
+ * then per client: varUint id, varUint clock, varString stateJSON) and:
+ *   - refuse any non-null state whose full identity (id + name + avatar +
+ *     gravatar) differs from the session — pinning id alone let a peer keep its
+ *     own id but paint another admin's name/avatar in every UI;
+ *   - refuse a `null` (clear) for a clientID this connection never announced.
+ *
+ * Returns `null` when the frame is legitimate and may be applied.
+ */
+function reviewAwarenessUpdate(
   payload: Uint8Array,
   data: Pick<CollabSocketData, 'identity' | 'awarenessClients'>,
-): boolean {
+): AwarenessRefusal | null {
   try {
     const decoder = decoding.createDecoder(payload)
     const count = decoding.readVarUint(decoder)
@@ -108,11 +125,11 @@ function awarenessUpdateFromSession(
       decoding.readVarUint(decoder) // clock
       const raw = decoding.readVarString(decoder)
       if (raw === 'null') {
-        if (!data.awarenessClients.has(clientId)) return false
+        if (!data.awarenessClients.has(clientId)) return 'foreignClear'
         continue
       }
       const parsed = safeParseValue(PresenceUserSchema, JSON.parse(raw))
-      if (!parsed.ok) return false
+      if (!parsed.ok) return 'malformed'
       const u = parsed.value.user
       if (
         u.id !== data.identity.id ||
@@ -120,13 +137,13 @@ function awarenessUpdateFromSession(
         u.avatarUrl !== data.identity.avatarUrl ||
         u.gravatarHash !== data.identity.gravatarHash
       ) {
-        return false
+        return 'impersonation'
       }
     }
-    return true
+    return null
   } catch {
-    // Malformed update — reject rather than relay garbage.
-    return false
+    // Undecodable update — refuse rather than relay garbage.
+    return 'malformed'
   }
 }
 
@@ -235,8 +252,13 @@ export function createCollabSocketLayer(relay: CollabRelay) {
       if (frame.frameType === FRAME_AWARENESS) {
         // Presence is NOT a doc write — read-only viewers are visible peers.
         if (frame.payload.byteLength > MAX_AWARENESS_PAYLOAD_BYTES) return
-        if (!awarenessUpdateFromSession(frame.payload, ws.data)) {
-          console.warn(`[collab] dropped awareness frame with spoofed identity from ${ws.data.userId}`)
+        const refusal = reviewAwarenessUpdate(frame.payload, ws.data)
+        if (refusal !== null) {
+          // A foreign clear is ordinary y-protocols timeout chatter (see
+          // AwarenessRefusal) — drop it without crying wolf in the log.
+          if (refusal !== 'foreignClear') {
+            console.warn(`[collab] dropped ${refusal} awareness frame from ${ws.data.userId}`)
+          }
           return
         }
         // Track which clientIDs this connection contributes so its peers
