@@ -3,10 +3,10 @@
  * (`/admin/plugins/develop/:localId`).
  *
  * Renders in the same workspace canvas shell Content/Data/Media use:
- * standard toolbar + section nav, a resizable left file tree, the co-edited
- * CodeMirror buffer with the diagnostics strip beneath it, and the
- * collapsible manifest panel on the right (edge-notch reopen, persisted
- * layout — all owned by the layout).
+ * standard toolbar + section nav, a resizable left file tree, and the
+ * co-edited CodeMirror buffer with the diagnostics strip beneath it. There
+ * is no right panel — plugin.json is edited as raw JSON in the buffer, and
+ * the diagnostics strip names every manifest mistake.
  *
  * Everything here co-edits live: files are CRDT state on the site socket,
  * peers' carets render inline, and there is no save button — Cmd+S re-runs
@@ -25,7 +25,6 @@ import { FileTreePane } from './FileTreePane'
 import { SitePluginPermissionReviewDialog } from './SitePluginPermissionReviewDialog'
 import { IdeFileEditor } from './IdeFileEditor'
 import { DiagnosticsStrip } from './DiagnosticsStrip'
-import { ManifestPane } from './ManifestPane'
 import { IdeActions } from './IdeActions'
 import { IdeSidebar } from './IdeSidebar'
 import styles from './SitePluginIdePage.module.css'
@@ -167,22 +166,6 @@ function SitePluginIde({ localId }: { localId: string }) {
           />
         </div>
       )}
-      contentRightPanel={
-        session ? (
-          <ManifestPane
-            session={session}
-            localId={localId}
-            files={files}
-            summary={vm.summary}
-            canEdit={canEdit}
-            synced={vm.synced}
-            onOpenRawJson={() => {
-              const manifest = files.find((file) => file.path === `${folder}plugin.json`)
-              if (manifest) selectFile(manifest.id)
-            }}
-          />
-        ) : null
-      }
       toolbarRightSlot={(
         <>
           <IdeActions

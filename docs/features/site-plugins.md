@@ -139,8 +139,10 @@ are disabled with an inline reason, never hidden.
 
 `/admin/plugins/develop/<local-id>` — a full-screen workspace-canvas route
 (`AdminWorkspace: 'pluginIde'`, layout persistence like every canvas):
-file tree (left, resizable), co-edited CodeMirror buffer + diagnostics
-strip (center), structured manifest panel (right, edge-notch reopen).
+file tree (left, resizable) and the co-edited CodeMirror buffer with the
+diagnostics strip beneath it. There is deliberately no right panel:
+`plugin.json` is edited as raw JSON in the buffer (auto-selected on open),
+and every manifest mistake surfaces as a named diagnostic.
 
 **Live multi-author co-editing**: the shell's `files` key is a granular
 Y.Map — one entry per file id, `content` as Y.Text (`@core/collab/filesY.ts`).
@@ -149,7 +151,7 @@ The IDE binds ONLY `site:default` over the site socket (its own
 
 - two admins co-type one file character-level, with per-peer colored carets
   (y-codemirror.next);
-- file CRUD, renames, and manifest edits merge per-field;
+- file CRUD and renames merge per-field;
 - the site editor's code panel rides the same granularity;
 - presence is shared: site editors see IDE users in their roster; IDE rows
   show who's editing which file;
@@ -158,10 +160,10 @@ The IDE binds ONLY `site:default` over the site socket (its own
 There is no save button — the relay persists continuously; Cmd+S re-runs
 diagnostics. Automatic validation runs debounced on every change.
 
-The manifest panel is the PRIMARY `plugin.json` editor (permission
-checklist with the `editor.code` danger note, network hosts, derived fields
-read-only); raw JSON = opening plugin.json in the buffer. Structured writes
-splice the file's Y.Text minimally so concurrent manifest edits merge.
+`plugin.json` has no structured editor — the raw buffer is the manifest
+surface. Manifest coherence (e.g. an `editor/` entry file without
+`editor.code` declared) is enforced by validation, and the human-readable
+permission treatment lives where it matters: the activation review dialog.
 
 ## Publish coupling, retention, preview
 

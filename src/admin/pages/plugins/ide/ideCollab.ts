@@ -13,7 +13,6 @@
  */
 import * as Y from 'yjs'
 import {
-  applyTextDiff,
   buildSiteFileEntry,
   buildSiteFilesMap,
   shellMap,
@@ -52,8 +51,6 @@ export interface IdeCollabSession {
   createFile(path: string, content?: string): string
   renameFile(fileId: string, nextPath: string): void
   deleteFile(fileId: string): void
-  /** Whole-value content replace as a minimal Y.Text splice (manifest panel). */
-  replaceFileContent(fileId: string, content: string): void
   destroy(): void
 }
 
@@ -216,19 +213,6 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
       undoManagers.delete(fileId)
       doc.transact(() => {
         ensureFilesMap().delete(fileId)
-      }, IDE_ORIGIN)
-    },
-
-    replaceFileContent: (fileId, content) => {
-      doc.transact(() => {
-        const entry = ensureFilesMap().get(fileId)
-        if (!(entry instanceof Y.Map)) return
-        const text = entry.get('content')
-        if (!(text instanceof Y.Text)) return
-        // Minimal splice (shared prefix/suffix preserved) so concurrent
-        // remote edits outside the change survive the replacement.
-        applyTextDiff(text, text.toString(), content)
-        entry.set('updatedAt', Date.now())
       }, IDE_ORIGIN)
     },
 
