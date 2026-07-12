@@ -20,7 +20,13 @@ What a site plugin is:
     modules/*.ts(x)  → canvas module pack (blocks users drop on pages) — requires "modules.register".
     frontend/**      → static assets published with the site.
 - Permission coherence is enforced: an entry file whose permission is missing from plugin.json fails validation with a named diagnostic. adminPages requires "admin.navigation"; adminPages with kind:'app' additionally requires "editor.code" (markdown pages don't).
-- Import containment: plugin code may import its own files and "@instatic/plugin-sdk" ONLY. Imports that escape the plugin folder fail the build.
+- Import containment: plugin code may import its own files and "@instatic/plugin-sdk" ONLY. Imports that escape the plugin folder fail the build. There is NO node_modules in the file tree — never try to read SDK sources/types as files; this summary is your API reference.
+
+Admin pages (plugin.json "adminPages": [{ id, title, navLabel?, icon?, content }]) — content is a strict union:
+- { "kind": "markdown", "body": "…markdown…", "heading"? } — static page, no code, no extra permission beyond admin.navigation.
+- { "kind": "resource", "heading": "…", "resource": "<slug>" } — a FULL CRUD table UI (list/create/edit/delete records) rendered by the host for a resource declared in "resources": [{ "slug", "labelField", "fields": [...] }]. This is the way to build "manage X records" pages (customers, leads, bookings) — no custom code needed; records live in plugin storage.
+- { "kind": "map", "heading": "…", "pins"? } — pin map page.
+- { "kind": "app", "heading": "…", "entry": "<frontend asset path>" } — custom JS page; heavyweight: needs a built frontend asset and the editor.code permission. Prefer "resource" for record management.
 
 SDK essentials (import from "@instatic/plugin-sdk"):
 - Server: export default defineServerPlugin-style hooks object; routes registered via the hooks receive (req) and return responses. sitePluginRoute(localId, path) builds the public route URL ("/admin/api/cms/plugins/site.<localId>/runtime/<path>").

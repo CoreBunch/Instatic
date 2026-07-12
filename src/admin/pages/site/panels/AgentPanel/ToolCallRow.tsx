@@ -3,10 +3,15 @@
  * human title · muted detail, status glyph, plus optional colour-token
  * swatches and an inline error message. Captured images are grouped by the
  * parent turn so they share the conversation gallery and preview window.
+ *
+ * Write/patch tools additionally expose their code payload behind a
+ * "View code / changes" toggle — a lazy CodeMirror block (unified diff for
+ * patches) so the user can see exactly what the agent wrote.
  */
-import type { CSSProperties } from 'react'
+import { lazy, Suspense, useState, type CSSProperties } from 'react'
 import type { AgentToolCall } from '@site/agent'
 import { cn } from '@ui/cn'
+import { Button } from '@ui/components/Button'
 import { Tooltip } from '@ui/components/Tooltip'
 import { LoaderIcon } from 'pixel-art-icons/icons/loader'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
@@ -30,16 +35,28 @@ import { ColorsSwatchSolidIcon } from 'pixel-art-icons/icons/colors-swatch-solid
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
 import { ZapSolidIcon } from 'pixel-art-icons/icons/zap-solid'
-import { getToolCallDisplay, extractColorSwatches, type ToolCallIcon, type ToolCallTone } from './toolCallDisplay'
+import {
+  getToolCallDisplay,
+  extractColorSwatches,
+  extractCodePayload,
+  type ToolCallIcon,
+  type ToolCallTone,
+} from './toolCallDisplay'
 import styles from './AgentPanel.module.css'
 
+// CodeMirror is ~150 kB min+gz — the code/diff block loads on first expand
+// only (same policy as the site code editor).
+const AgentCodeView = lazy(() => import('@site/code-editor/AgentCodeView'))
+
 export function ToolCallRow({ toolCall }: { toolCall: AgentToolCall }) {
+  const [codeOpen, setCodeOpen] = useState(false)
   const isPending = toolCall.status === 'pending'
   const isSuccess = toolCall.status === 'success'
   const isError = toolCall.status === 'error'
 
   const display = getToolCallDisplay(toolCall.actionType, toolCall.params)
   const swatches = extractColorSwatches(toolCall.actionType, toolCall.params)
+  const codePayload = extractCodePayload(toolCall.actionType, toolCall.params)
   const accessibleStatus = isPending ? 'Running' : isSuccess ? 'Completed' : 'Failed'
   const statusLabel = `${accessibleStatus} ${display.title}${display.detail ? ` — ${display.detail}` : ''}`
   const statusClass = isPending
@@ -89,6 +106,41 @@ export function ToolCallRow({ toolCall }: { toolCall: AgentToolCall }) {
         <p role="alert" className={styles.toolCallError}>
           {errorMessage}
         </p>
+      )}
+      {codePayload && (
+        <div className={styles.toolCallCode}>
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => setCodeOpen((open) => !open)}
+            aria-expanded={codeOpen}
+          >
+            {codeOpen
+              ? codePayload.kind === 'diff' ? 'Hide changes' : 'Hide code'
+              : codePayload.kind === 'diff' ? 'View changes' : 'View code'}
+          </Button>
+          {codeOpen && (
+            <Suspense fallback={null}>
+              {codePayload.kind === 'code' ? (
+                <div className={styles.toolCallCodeBlock}>
+                  <AgentCodeView code={codePayload.code} path={codePayload.path} />
+                </div>
+              ) : (
+                codePayload.edits.map((edit, index) => (
+                  // Edits are positional within one immutable tool call, so
+                  // the index is a stable key.
+                  <div key={index} className={styles.toolCallCodeBlock}>
+                    <AgentCodeView
+                      code={edit.newText}
+                      diffOriginal={edit.oldText}
+                      path={codePayload.path}
+                    />
+                  </div>
+                ))
+              )}
+            </Suspense>
+          )}
+        </div>
       )}
     </>
   )

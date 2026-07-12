@@ -90,13 +90,32 @@ function parseDraftManifest(localId: string, raw: string): SitePluginDraftManife
   if (!result.ok) {
     // additionalProperties:false violations usually mean an author-set
     // derived field — name them so a copy-pasted manifest fails helpfully.
+    // Union failures get a shape-specific hint: "Expected union value" alone
+    // sends authors (and agents) guessing at field names.
     throw new Error(
-      `plugin.json for "${localId}" is invalid — ${result.error.message}. ` +
-        `Note: ${SITE_PLUGIN_DERIVED_FIELDS.join(', ')} are derived by the build and must not be set.`,
+      `plugin.json for "${localId}" is invalid — ${result.error.message}.` +
+        adminPageContentHint(result.error.message) +
+        ` Note: ${SITE_PLUGIN_DERIVED_FIELDS.join(', ')} are derived by the build and must not be set.`,
       { cause: result.error },
     )
   }
   return result.value
+}
+
+/**
+ * The adminPages content union is the manifest's most-guessed shape. When
+ * that exact path fails, spell out the allowed variants instead of leaving
+ * TypeBox's opaque "Expected union value".
+ */
+function adminPageContentHint(errorMessage: string): string {
+  if (!/\/adminPages\/\d+\/content/.test(errorMessage)) return ''
+  return (
+    ' adminPages[].content must be one of:' +
+    ' { "kind": "markdown", "body": "…", "heading"? },' +
+    ' { "kind": "resource", "heading": "…", "resource": "<resource-slug from resources[]>" },' +
+    ' { "kind": "map", "heading": "…", "pins"? },' +
+    ' { "kind": "app", "heading": "…", "entry": "<built frontend asset>" }.'
+  )
 }
 
 export function deriveSitePluginManifest(input: DeriveSitePluginManifestInput): PluginManifest {

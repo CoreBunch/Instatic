@@ -473,6 +473,28 @@
   color: var(--text-disabled);
 }
 
+/* Expandable code / diff payload under write- and patch-tool rows. */
+.toolCallCode {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2xs);
+  min-width: 0;
+}
+
+.toolCallCodeBlock {
+  align-self: stretch;
+  max-height: 260px;
+  overflow: auto;
+  border-radius: 12px;
+  background: var(--bg-surface);
+}
+
+/* The read-only viewer sizes to content; the block owns the scroll. */
+.toolCallCodeBlock :global(.cm-editor) {
+  height: auto;
+}
+
 .toolCallStatus {
   display: inline-flex;
   align-items: center;
