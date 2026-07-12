@@ -28,7 +28,7 @@ interface EditorBridgeEntry {
   destroy: () => void
 }
 
-export type EditorBridgeScope = 'site' | 'content'
+export type EditorBridgeScope = 'site' | 'content' | 'plugin'
 /**
  * How long a stream may sit with NO tool traffic before the server drops it.
  * This is an IDLE lease: every relayed tool request re-arms it, so an active

@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react'
 import { AdminWorkspaceCanvasLayout } from '@admin/layouts/AdminWorkspaceCanvasLayout/AdminWorkspaceCanvasLayout'
 import { useNavigate, useParams } from '@admin/lib/routing'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
-import { canEditPlugins, canInstallPlugins } from '@admin/access'
+import { canEditPlugins, canInstallPlugins, canUseAiChat } from '@admin/access'
 import { ConfirmDeleteDialog } from '@admin/shared/dialogs/ConfirmDeleteDialog/ConfirmDeleteDialog'
 import { SITE_PLUGIN_LOCAL_ID_PATTERN, sitePluginFolder } from '@core/site-plugins'
 import { useSitePluginIde } from './useSitePluginIde'
@@ -26,7 +26,9 @@ import { SitePluginPermissionReviewDialog } from './SitePluginPermissionReviewDi
 import { IdeFileEditor } from './IdeFileEditor'
 import { DiagnosticsStrip } from './DiagnosticsStrip'
 import { IdeActions } from './IdeActions'
-import { IdeSidebar } from './IdeSidebar'
+import { IdeSidebar, type IdePanelId } from './IdeSidebar'
+import { PluginIdeAgentMount } from './agent/PluginIdeAgentMount'
+import { usePluginIdeToolBridge } from './agent/usePluginIdeToolBridge'
 import styles from './SitePluginIdePage.module.css'
 
 export function SitePluginIdePage() {
@@ -63,9 +65,10 @@ function SitePluginIde({ localId }: { localId: string }) {
   const navigate = useNavigate()
   const canEdit = canEditPlugins(currentUser)
   const canInstall = canInstallPlugins(currentUser)
+  const canChat = canUseAiChat(currentUser)
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
-  const [filesPanelOpen, setFilesPanelOpen] = useState(true)
+  const [activePanel, setActivePanel] = useState<IdePanelId | null>('files')
 
   const vm = useSitePluginIde(localId)
   const { session, files, activeFileId, selectFile, runValidation } = vm
@@ -80,6 +83,25 @@ function SitePluginIde({ localId }: { localId: string }) {
     localId,
     activeFile ? { fileId: activeFile.id, path: activeFile.path } : null,
   )
+
+  // Agent + MCP tool surface — registered for the whole page mount so an
+  // external MCP client reaches the open IDE even with the AI panel closed.
+  usePluginIdeToolBridge({
+    localId,
+    folder,
+    session,
+    files,
+    activeFile: activeFile ? { id: activeFile.id, path: activeFile.path } : null,
+    summary: vm.summary,
+    diagnostics: vm.diagnostics,
+    selectFile,
+    canEdit,
+    currentUser: {
+      id: currentUser?.id ?? '',
+      displayName: currentUser?.displayName ?? '',
+      email: currentUser?.email ?? '',
+    },
+  })
 
   // Auto-select plugin.json (or the first file) once files arrive.
   useEffect(() => {
@@ -105,37 +127,43 @@ function SitePluginIde({ localId }: { localId: string }) {
     <AdminWorkspaceCanvasLayout
       workspace="pluginIde"
       contentSidebar={(
-        <IdeSidebar panelOpen={filesPanelOpen} onPanelOpenChange={setFilesPanelOpen}>
-          <FileTreePane
-            onClose={() => setFilesPanelOpen(false)}
-            localId={localId}
-            files={files}
-            activeFileId={activeFileId}
-            peers={peers}
-            canEdit={canEdit}
-            onSelect={selectFile}
-            onCreate={(relativePath) => {
-              if (!session) return
-              const id = session.createFile(`${folder}${relativePath}`)
-              selectFile(id)
-            }}
-            onRename={(fileId, relativePath) => {
-              session?.renameFile(fileId, `${folder}${relativePath}`)
-            }}
-            onDelete={(fileId) => {
-              const file = files.find((entry) => entry.id === fileId)
-              setPendingDelete({
-                title: `Delete ${file?.path.slice(folder.length) ?? 'this file'}?`,
-                description: 'The file is removed from the live draft for every editor.',
-                confirmLabel: 'Delete file',
-                commit: () => {
-                  session?.deleteFile(fileId)
-                  if (activeFileId === fileId) selectFile(null)
-                },
-              })
-            }}
-          />
-        </IdeSidebar>
+        <IdeSidebar
+          activePanel={activePanel}
+          onActivePanelChange={setActivePanel}
+          canUseAiChat={canChat}
+          agentPanel={<PluginIdeAgentMount isVisible={activePanel === 'agent'} />}
+          filesPanel={(
+            <FileTreePane
+              onClose={() => setActivePanel(null)}
+              localId={localId}
+              files={files}
+              activeFileId={activeFileId}
+              peers={peers}
+              canEdit={canEdit}
+              onSelect={selectFile}
+              onCreate={(relativePath) => {
+                if (!session) return
+                const id = session.createFile(`${folder}${relativePath}`)
+                selectFile(id)
+              }}
+              onRename={(fileId, relativePath) => {
+                session?.renameFile(fileId, `${folder}${relativePath}`)
+              }}
+              onDelete={(fileId) => {
+                const file = files.find((entry) => entry.id === fileId)
+                setPendingDelete({
+                  title: `Delete ${file?.path.slice(folder.length) ?? 'this file'}?`,
+                  description: 'The file is removed from the live draft for every editor.',
+                  confirmLabel: 'Delete file',
+                  commit: () => {
+                    session?.deleteFile(fileId)
+                    if (activeFileId === fileId) selectFile(null)
+                  },
+                })
+              }}
+            />
+          )}
+        />
       )}
       contentCanvas={(
         <div className={styles.editorColumn} data-testid="ide-editor-column">

@@ -46,6 +46,7 @@ const NOOP_BRIDGE: AiBrowserBridge = {
 const NO_WORKSPACE_MESSAGE: Record<EditorBridgeScope, string> = {
   site: 'This tool runs in the Instatic Site editor. Open the Site editor in a browser (signed in as the connector owner) and try again.',
   content: 'This tool runs in the Instatic Content workspace. Open the Content workspace in a browser (signed in as the connector owner) and try again.',
+  plugin: 'This tool runs in the Instatic Plugin IDE. Open /admin/plugins/develop/<plugin-id> in a browser (signed in as the connector owner) and try again.',
 }
 
 /**
@@ -152,7 +153,7 @@ export function buildMcpServer(ctx: McpServerContext): Server {
     // Content; keep that invariant explicit instead of guessing a bridge.
     let bridge = NOOP_BRIDGE
     if (tool.execution === 'browser') {
-      if (tool.scope !== 'site' && tool.scope !== 'content') {
+      if (tool.scope !== 'site' && tool.scope !== 'content' && tool.scope !== 'plugin') {
         return project({
           isError: true,
           content: [{ type: 'text', text: `Browser tool "${tool.name}" has unsupported scope "${tool.scope}".` }],

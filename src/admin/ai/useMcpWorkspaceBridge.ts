@@ -35,7 +35,7 @@ const BridgeEventSchema = Type.Union([
   }),
 ])
 
-export type McpWorkspaceScope = 'site' | 'content'
+export type McpWorkspaceScope = 'site' | 'content' | 'plugin'
 export type McpToolDispatcher = (
   toolName: string,
   input: unknown,
