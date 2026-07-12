@@ -430,7 +430,7 @@ async function republishAndSweep(
     (manifest.frontend?.assets.length ?? 0) > 0 || Boolean(manifest.entrypoints?.modules)
   if (visitorFacing) {
     try {
-      await republishAllPages(db)
+      await republishAllPages(db, uploadsDir)
       await bumpPublishVersionSerialized()
     } catch (err) {
       // A failed republish must not fail the activation — but it must also

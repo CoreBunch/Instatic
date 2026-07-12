@@ -19,6 +19,7 @@ import type { DbClient } from '../db/client'
 import { getPublishedPageSnapshotById } from '../repositories/publish'
 import { renderPublishedSnapshot } from './publicRenderer'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
+import { updateArtefactInPlace } from './staticArtefact'
 
 // ---------------------------------------------------------------------------
 // Typed error — callers can distinguish "page not found / not published" from
@@ -47,7 +48,7 @@ class PageNotPublishedError extends Error {
  * Throws `PageNotPublishedError` if the page is not found or is not
  * currently published.
  */
-async function republishSinglePage(db: DbClient, pageId: string): Promise<void> {
+async function republishSinglePage(db: DbClient, pageId: string, uploadsDir?: string): Promise<void> {
   // Typed read through the publish repository — the snapshot column is parsed
   // by the DbClient (`*_json` auto-parse) and typed as `PublishedPageSnapshot`,
   // so there is no boundary cast here.
@@ -62,11 +63,19 @@ async function republishSinglePage(db: DbClient, pageId: string): Promise<void> 
   const syntheticUrl = new URL('http://localhost/__republish')
 
   // Drive the full pipeline (publish.before → frontend.assets injection →
-  // publish.html filter → publish.after). The returned HTML is discarded —
-  // the side-effects are what the caller actually needs (lets plugins
-  // catch up on pages published before they were activated).
+  // publish.html filter → publish.after) — plugin hook listeners and
+  // filters catch up on pages published before the plugin was activated.
   const rendered = await renderPublishedSnapshot(snapshot, { db, url: syntheticUrl })
-  await applyPublishedHtmlPipeline(rendered, db)
+  const html = await applyPublishedHtmlPipeline(rendered, db)
+
+  // Re-bake the Layer-A static artefact when the caller owns an uploads dir.
+  // Without this, baked pages keep serving HTML rendered against the OLD
+  // module registrations / versioned asset URLs — the exact staleness the
+  // site plugin activation coupling exists to prevent.
+  if (uploadsDir) {
+    const urlPath = rendered.slug === 'index' ? '/' : `/${rendered.slug}`
+    await updateArtefactInPlace(uploadsDir, urlPath, html)
+  }
 }
 
 /**
@@ -76,7 +85,7 @@ async function republishSinglePage(db: DbClient, pageId: string): Promise<void> 
  * Errors for individual pages are logged and do not abort the batch — the
  * count reflects pages that completed without error.
  */
-export async function republishAllPages(db: DbClient): Promise<number> {
+export async function republishAllPages(db: DbClient, uploadsDir?: string): Promise<number> {
   const { rows } = await db<{ id: string }>`
     select id
     from data_rows
@@ -86,7 +95,7 @@ export async function republishAllPages(db: DbClient): Promise<number> {
       and deleted_at is null
     order by created_at asc
   `
-  const results = await Promise.allSettled(rows.map(row => republishSinglePage(db, row.id)))
+  const results = await Promise.allSettled(rows.map(row => republishSinglePage(db, row.id, uploadsDir)))
   let count = 0
   for (const [i, result] of results.entries()) {
     if (result.status === 'fulfilled') {
