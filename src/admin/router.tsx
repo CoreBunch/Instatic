@@ -64,6 +64,13 @@ export function AdminRoutes() {
       <Route path="/admin/ai" element={withRouteBoundary(<AdminEntry section="ai" />)} />
       <Route path="/admin/ai/oauth/authorize" element={withRouteBoundary(<AdminEntry section="ai" />)} />
       <Route path="/admin/account" element={withRouteBoundary(<AdminEntry section="account" />)} />
+      {/* The IDE route must precede the generic plugin-page pattern —
+          <Routes> takes the first match, and /admin/plugins/develop/x would
+          otherwise resolve as pluginId="develop". */}
+      <Route
+        path="/admin/plugins/develop/:localId"
+        element={withRouteBoundary(<AdminEntry section="pluginIde" />)}
+      />
       <Route
         path="/admin/plugins/:pluginId/:pageId"
         element={withRouteBoundary(<AdminEntry section="pluginPage" />)}

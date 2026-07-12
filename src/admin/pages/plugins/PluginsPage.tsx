@@ -6,11 +6,13 @@ import { PluginRemoveDialog } from './components/PluginRemoveDialog/PluginRemove
 import { PermissionReviewSection } from './components/PermissionReviewSection'
 import { PluginSettingsDialog } from './components/PluginSettingsDialog/PluginSettingsDialog'
 import { PluginSchedulesDialog } from './components/PluginSchedulesDialog/PluginSchedulesDialog'
+import { SitePluginsSection } from './components/SitePluginsSection'
 import { isSandboxRelatedError, usePluginsWorkspace } from './hooks/usePluginsWorkspace'
 import { notifyCmsPluginsChanged } from './utils/pluginEvents'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import {
   canConfigurePlugins,
+  canEditStructure,
   canInstallPlugins,
   canManagePluginLifecycle,
 } from '@admin/access'
@@ -27,6 +29,7 @@ export function PluginsPage() {
   const canConfigure = canConfigurePlugins(currentUser)
   const canInstall = canInstallPlugins(currentUser)
   const canManageLifecycle = canManagePluginLifecycle(currentUser)
+  const canCreateSitePlugins = canEditStructure(currentUser)
   const vm = usePluginsWorkspace()
   const {
     fileInputRef,
@@ -130,6 +133,9 @@ export function PluginsPage() {
           />
         )}
 
+        <SitePluginsSection canCreate={canCreateSitePlugins} />
+
+        <h2 className={styles.groupTitle}>Installed</h2>
         <div
           className={styles.pluginsList}
           aria-label="Installed plugins"

@@ -1,0 +1,51 @@
+.editorColumn {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-surface);
+}
+
+.editorArea {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.editorArea :global([data-codemirror-container]) {
+  height: 100%;
+}
+
+.editorMount {
+  height: 100%;
+  min-height: 0;
+}
+
+.editorEmpty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xl);
+  color: var(--text-subtle);
+  font-size: var(--text-s);
+  text-align: center;
+}
+
+.missing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-s);
+  height: 100%;
+  color: var(--text-subtle);
+}
+
+.missingTitle {
+  margin: 0;
+  font-size: var(--text-l);
+  color: var(--text);
+}

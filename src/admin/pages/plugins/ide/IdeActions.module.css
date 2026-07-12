@@ -1,0 +1,44 @@
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.peerStack {
+  display: inline-flex;
+  align-items: center;
+  padding-right: var(--space-3xs);
+}
+
+.peerAvatar {
+  margin-left: calc(-1 * var(--space-3xs));
+}
+
+.peerAvatar:first-child {
+  margin-left: 0;
+}
+
+.stateChip {
+  padding: var(--space-px) var(--space-s);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--text-subtle);
+  background: var(--bg-surface-3);
+}
+
+.stateChip[data-state='active'] {
+  color: var(--success-text);
+}
+
+.stateChip[data-state='build-failed'],
+.stateChip[data-state='runtime-error'],
+.stateChip[data-state='source-missing'] {
+  color: var(--danger);
+}
+
+.stateChip[data-state='permission-review'] {
+  color: var(--warning);
+}

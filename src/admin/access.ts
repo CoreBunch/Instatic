@@ -287,6 +287,10 @@ export function canAccessWorkspace(user: CmsCurrentUser | null, workspace: Admin
     case 'plugins':
     case 'pluginPage':
       return canAccessPluginsWorkspace(user)
+    case 'pluginIde':
+      // Authoring site plugin source is site-developer work — activation
+      // (the power grant) is separately gated by plugins.install.
+      return hasCapability(user, 'site.read')
     case 'users':
       return canAccessUsersWorkspace(user)
     case 'ai':
@@ -319,6 +323,7 @@ export function workspacePath(workspace: AdminWorkspace): string {
     case 'media':
       return '/admin/media'
     case 'plugins':
+    case 'pluginIde':
       return '/admin/plugins'
     case 'users':
       return '/admin/users'
