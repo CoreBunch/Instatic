@@ -326,6 +326,27 @@ beforeEach(() => {
 
   const calls: FetchCall[] = []
   ;(globalThis as typeof globalThis & { __contentFetchCalls?: FetchCall[] }).__contentFetchCalls = calls
+
+  // The posts-rows endpoint is STATEFUL, like the real server: a row created by
+  // POST is visible to every later GET, and a deleted row is gone from it.
+  //
+  // A stateless `rows: []` made this mock lie about the one ordering the app is
+  // allowed to produce. The workspace treats a list response as authoritative
+  // unless the selected row changed *during* that request (see
+  // useContentWorkspace.loadEntries) — correct, because a real GET issued after
+  // a POST returns the new row. But the mock returned an empty list forever, so
+  // whenever the initial list GET happened to be issued after the create, its
+  // (bogus) empty response wiped the new row and the test failed. Which request
+  // won that race was pure scheduling luck, making every create-then-assert test
+  // in this file order-dependent.
+  let postsRows: ReturnType<typeof makeRow>[] = []
+  const putRow = (row: ReturnType<typeof makeRow>) => {
+    const i = postsRows.findIndex((r) => r.id === row.id)
+    if (i === -1) postsRows.push(row)
+    else postsRows[i] = row
+    return row
+  }
+
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     calls.push({ input, init })
     const url = String(input)
@@ -337,7 +358,7 @@ beforeEach(() => {
     }
 
     if (url === '/admin/api/cms/data/tables/posts/rows' && init?.method === 'GET') {
-      return json({ rows: [] })
+      return json({ rows: postsRows })
     }
 
     if (url === '/admin/api/cms/data/authors' && init?.method === 'GET') {
@@ -346,24 +367,25 @@ beforeEach(() => {
 
     if (url === '/admin/api/cms/data/tables/posts/rows' && init?.method === 'POST') {
       return json({
-        row: makeRow('entry_1', 'posts', { title: 'Untitled', slug: 'untitled' }, {
+        row: putRow(makeRow('entry_1', 'posts', { title: 'Untitled', slug: 'untitled' }, {
           authorUserId: ownerAuthor.id,
           author: ownerAuthor,
-        }),
+        })),
       }, 201)
     }
 
     if (url === '/admin/api/cms/data/rows/entry_1' && init?.method === 'PATCH') {
       const draft = JSON.parse(String(init.body))
       return json({
-        row: {
+        row: putRow({
           ...makeRow('entry_1', 'posts', draft.cells ?? {}),
           updatedAt: '2026-05-01T10:01:00.000Z',
-        },
+        }),
       })
     }
 
     if (url === '/admin/api/cms/data/rows/entry_1' && init?.method === 'DELETE') {
+      postsRows = postsRows.filter((r) => r.id !== 'entry_1')
       return json({
         row: makeRow('entry_1', 'posts', { title: 'Untitled', slug: 'untitled' }, {
           authorUserId: ownerAuthor.id,
@@ -375,23 +397,23 @@ beforeEach(() => {
 
     if (url === '/admin/api/cms/data/rows/entry_1/publish' && init?.method === 'POST') {
       return json({
-        row: {
+        row: putRow({
           ...makeRow('entry_1', 'posts', { title: 'My first post', slug: 'untitled', body: '## Intro', featuredMedia: null, seoTitle: '', seoDescription: '' }),
           status: 'published',
           updatedAt: '2026-05-01T10:02:00.000Z',
           publishedAt: '2026-05-01T10:02:00.000Z',
-        },
+        }),
       })
     }
 
     if (url === '/admin/api/cms/data/rows/entry_1/status' && init?.method === 'PATCH') {
       const body = JSON.parse(String(init.body))
       return json({
-        row: {
+        row: putRow({
           ...makeRow('entry_1', 'posts', { title: 'My first post', slug: 'updated-slug', body: '', featuredMedia: imageAsset.id, seoTitle: '', seoDescription: '' }),
           status: body.status,
           updatedAt: '2026-05-01T10:03:00.000Z',
-        },
+        }),
       })
     }
 
