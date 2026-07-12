@@ -106,8 +106,11 @@ describe('plugin sandbox invariants', () => {
     expect(scanCount).toBeGreaterThanOrEqual(2)
   })
 
-  it('the SDK build pipeline applies the same sandbox scan at build time', async () => {
-    const source = await read('src/core/plugin-sdk/cli/build.ts')
+  it('the shared build core applies the same sandbox scan at build time', async () => {
+    // The bundling pipeline lives in @core/plugin-build (shared by the CLI
+    // and the server-side site plugin build) — both surfaces ride the same
+    // scan + IIFE contract by construction.
+    const source = await read('src/core/plugin-build/bundle.ts')
     expect(source).toContain('assertSandboxSafe')
     // Sandboxed bundles must be emitted as IIFE (the format QuickJS can
     // eval). The build pipeline used to ship ESM with `export function …`
