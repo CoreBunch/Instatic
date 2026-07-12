@@ -66,6 +66,7 @@ function SitePluginIde({ localId }: { localId: string }) {
   const canInstall = canInstallPlugins(currentUser)
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [filesPanelOpen, setFilesPanelOpen] = useState(true)
 
   const vm = useSitePluginIde(localId)
   const { session, files, activeFileId, selectFile, runValidation } = vm
@@ -105,8 +106,9 @@ function SitePluginIde({ localId }: { localId: string }) {
     <AdminWorkspaceCanvasLayout
       workspace="pluginIde"
       contentSidebar={(
-        <IdeSidebar>
+        <IdeSidebar panelOpen={filesPanelOpen} onPanelOpenChange={setFilesPanelOpen}>
           <FileTreePane
+            onClose={() => setFilesPanelOpen(false)}
             localId={localId}
             files={files}
             activeFileId={activeFileId}

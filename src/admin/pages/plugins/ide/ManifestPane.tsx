@@ -27,6 +27,8 @@ import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
 import { Switch } from '@ui/components/Switch'
 import { Separator } from '@ui/components/Separator'
+import { Panel } from '@admin/shared/Panel'
+import { useWorkspaceLayout } from '@admin/state/workspaceLayout'
 import type { IdeCollabSession, IdeFileMeta } from './ideCollab'
 import styles from './ManifestPane.module.css'
 
@@ -64,6 +66,7 @@ export function ManifestPane({
   canEdit,
   onOpenRawJson,
 }: ManifestPaneProps) {
+  const setRightPanel = useWorkspaceLayout((s) => s.setRightPanel)
   const manifestFile = files.find((file) => file.path.endsWith('/plugin.json')) ?? null
   const manifestFileId = manifestFile?.id ?? null
 
@@ -129,14 +132,22 @@ export function ManifestPane({
   const detectedEntrypoints = detectEntrypoints(files)
 
   return (
-    <div className={styles.pane} data-testid="ide-manifest-pane">
-      <header className={styles.header}>
-        <h2 className={styles.title}>Manifest</h2>
+    // Shared panel shell — chrome, header, transparent background (the
+    // right sidebar owns the surface). The ✕ collapses the panel; the
+    // layout's edge notch reopens it, exactly like Content's settings.
+    <Panel
+      panelId="ide-manifest"
+      title="Manifest"
+      testId="ide-manifest-pane"
+      body="bare"
+      bodyClassName={styles.body}
+      onClose={() => setRightPanel({ collapsed: true })}
+      headerActions={(
         <Button variant="ghost" size="xs" onClick={onOpenRawJson}>
           Edit raw JSON
         </Button>
-      </header>
-
+      )}
+    >
       {parsed.error ? (
         <div className={styles.parseError} role="alert">
           <p>plugin.json can’t be edited structurally right now:</p>
@@ -267,7 +278,7 @@ export function ManifestPane({
           </section>
         </div>
       )}
-    </div>
+    </Panel>
   )
 }
 

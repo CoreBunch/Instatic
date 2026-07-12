@@ -1,9 +1,19 @@
 .editorColumn {
   display: flex;
   flex-direction: column;
+  /* The layout's .canvasContent is a flex row — without flex:1 the editor
+     column sizes to its content instead of filling the stage. */
+  flex: 1;
+  min-width: 0;
   height: 100%;
   min-height: 0;
-  background: var(--bg-surface);
+  overflow: hidden;
+  /* The standard elevated canvas surface (same treatment as the Data
+     grid): the shell stays --bg-body black; the working area sits on
+     --bg-surface-2 with rounded top corners. */
+  background: var(--bg-surface-2);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
 }
 
 .editorArea {

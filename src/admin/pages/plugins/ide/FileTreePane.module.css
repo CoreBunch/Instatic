@@ -1,25 +1,10 @@
-.pane {
+/* The Panel shell owns chrome + background (transparent over the sidebar's
+   black) — this module only lays out the tree body. */
+
+.body {
   display: flex;
   flex-direction: column;
-  height: 100%;
   min-height: 0;
-  background: var(--bg-surface-2);
-}
-
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-s) var(--space-m);
-  border-bottom: 1px solid var(--border-muted);
-}
-
-.title {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-subtle);
 }
 
 .tree {
@@ -27,6 +12,28 @@
   min-height: 0;
   overflow-y: auto;
   padding: var(--space-xs) 0;
+}
+
+/* Same reset the Site Explorer applies to its row buttons — the TreeRow
+   owns hover/selection paint; the button is a transparent hit surface. */
+.treeRowButton {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  gap: var(--space-4xs);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.treeRowButton:hover,
+.treeRowButton:active {
+  background: transparent;
 }
 
 .rowPeers {
@@ -37,12 +44,8 @@
   padding-right: var(--space-xs);
 }
 
-.inlineInput {
-  height: 22px;
-  font-size: var(--text-xs);
-}
-
 .footer {
+  flex-shrink: 0;
   border-top: 1px solid var(--border-muted);
   padding: var(--space-s) var(--space-m);
 }

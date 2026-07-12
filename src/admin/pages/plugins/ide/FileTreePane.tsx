@@ -1,12 +1,14 @@
 /**
  * FileTreePane — the Plugin IDE's file explorer.
  *
- * Rows derive from the plugin's live co-edited file list (folders inferred
- * from paths), rendered with the shared Tree primitives. Context menu on
- * rows offers new file, rename, and delete; new/rename edit inline. Peers
- * editing a file show as identity-colored avatars on its row.
+ * Composed from the SAME primitives as the Site Explorer / DOM panel trees:
+ * the shared `Panel` shell (chrome, header, close) with `TreeRow` rows whose
+ * interactive surface is a ghost Button (`TreeChevron` + `TreeIconSlot` +
+ * `TreeLabelGroup`), F2/double-click inline rename, and the standard
+ * point-anchored context menu. Peers editing a file show as identity
+ * avatars on its row.
  */
-import { useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import {
   TreeChevron,
   TreeContainer,
@@ -15,6 +17,7 @@ import {
   TreeLabelGroup,
   TreeRow,
 } from '@site/ui/Tree'
+import { Panel } from '@admin/shared/Panel'
 import { ContextMenu, ContextMenuItem } from '@ui/components/ContextMenu'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
@@ -98,6 +101,7 @@ interface FileTreePaneProps {
   onCreate: (relativePath: string) => void
   onRename: (fileId: string, relativePath: string) => void
   onDelete: (fileId: string) => void
+  onClose: () => void
 }
 
 export function FileTreePane({
@@ -110,6 +114,7 @@ export function FileTreePane({
   onCreate,
   onRename,
   onDelete,
+  onClose,
 }: FileTreePaneProps) {
   const folder = sitePluginFolder(localId)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
@@ -173,12 +178,18 @@ export function FileTreePane({
   }
 
   return (
-    <div className={styles.pane} data-testid="ide-file-tree">
-      <header className={styles.header}>
-        <span className={styles.title}>Files</span>
+    <Panel
+      panelId="ide-files"
+      title="Files"
+      ariaLabel="Site plugin files"
+      testId="ide-file-tree"
+      body="bare"
+      bodyClassName={styles.body}
+      onClose={onClose}
+      headerActions={(
         <Button
           variant="ghost"
-          size="micro"
+          size="xs"
           iconOnly
           aria-label="New file"
           tooltip={canEdit ? 'New file' : 'Editing requires the site structure permission'}
@@ -188,57 +199,83 @@ export function FileTreePane({
         >
           <FilePlusSolidIcon size={14} aria-hidden="true" />
         </Button>
-      </header>
-
+      )}
+    >
       <div className={styles.tree}>
         <TreeContainer ariaLabel="Site plugin files">
           {rows.map((entry) => {
             const filePeers = entry.fileId ? (peersByFileId.get(entry.fileId) ?? []) : []
+            const isRenaming = entry.kind === 'file' && renamingFileId === entry.fileId
             return (
               <TreeRow
                 key={entry.key}
                 depth={entry.depth}
                 selected={entry.kind === 'file' && entry.fileId === activeFileId}
-                onClick={() => {
-                  if (entry.kind === 'folder') toggleFolder(entry.path)
-                  else if (entry.fileId) onSelect(entry.fileId)
-                }}
-                onContextMenu={(event) => openMenu(event, entry)}
+                role="treeitem"
+                aria-label={entry.label}
+                aria-level={entry.depth + 1}
+                aria-expanded={entry.kind === 'folder' ? !collapsed.has(entry.path) : undefined}
                 data-testid={entry.kind === 'file' ? 'ide-file-row' : 'ide-folder-row'}
                 data-path={entry.path}
               >
-                {entry.kind === 'folder' ? (
+                {isRenaming ? (
                   <>
-                    <TreeChevron expanded={!collapsed.has(entry.path)} />
-                    <TreeIconSlot>
-                      <FolderGlyphIcon size={12} aria-hidden="true" />
-                    </TreeIconSlot>
-                  </>
-                ) : (
-                  <TreeIconSlot>
-                    <FileTextSolidIcon size={12} aria-hidden="true" />
-                  </TreeIconSlot>
-                )}
-                <TreeLabelGroup>
-                  {entry.kind === 'file' && renamingFileId === entry.fileId ? (
-                    <InlinePathInput
-                      defaultValue={entry.path}
-                      onSubmit={(value) => submitRename(entry.fileId!, value)}
+                    <TreeIconSlot icon={FileTextSolidIcon} iconSize={12} />
+                    <InlineRenameInput
+                      value={entry.path}
+                      ariaLabel={`Rename ${entry.label}`}
+                      onCommit={(value) => submitRename(entry.fileId!, value)}
                       onCancel={() => setRenamingFileId(null)}
                     />
-                  ) : (
-                    <TreeLabel>{entry.label}</TreeLabel>
-                  )}
-                </TreeLabelGroup>
-                {filePeers.length > 0 && (
-                  <span
-                    className={styles.rowPeers}
-                    aria-label={`${filePeers.length} peer(s) editing this file`}
+                  </>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    align="start"
+                    className={styles.treeRowButton}
+                    aria-label={entry.label}
+                    onClick={() => {
+                      if (entry.kind === 'folder') toggleFolder(entry.path)
+                      else if (entry.fileId) onSelect(entry.fileId)
+                    }}
+                    onContextMenu={(event) => openMenu(event, entry)}
+                    onDoubleClick={(event) => {
+                      if (entry.kind !== 'file' || !canEdit) return
+                      event.preventDefault()
+                      event.stopPropagation()
+                      setRenamingFileId(entry.fileId ?? null)
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'F2' && entry.kind === 'file' && canEdit) {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        setRenamingFileId(entry.fileId ?? null)
+                      }
+                    }}
                   >
-                    {filePeers.slice(0, 3).map((peer) => (
-                      <PeerAvatar key={peer.clientId} user={peer.user} size={14} />
-                    ))}
-                  </span>
+                    {entry.kind === 'folder' ? (
+                      <>
+                        <TreeChevron expanded={!collapsed.has(entry.path)} />
+                        <TreeIconSlot icon={FolderGlyphIcon} iconSize={12} />
+                      </>
+                    ) : (
+                      <TreeIconSlot icon={FileTextSolidIcon} iconSize={12} />
+                    )}
+                    <TreeLabelGroup>
+                      <TreeLabel>{entry.label}</TreeLabel>
+                    </TreeLabelGroup>
+                    {filePeers.length > 0 && (
+                      <span
+                        className={styles.rowPeers}
+                        aria-label={`${filePeers.length} peer(s) editing this file`}
+                      >
+                        {filePeers.slice(0, 3).map((peer) => (
+                          <PeerAvatar key={peer.clientId} user={peer.user} size={14} />
+                        ))}
+                      </span>
+                    )}
+                  </Button>
                 )}
               </TreeRow>
             )
@@ -246,17 +283,14 @@ export function FileTreePane({
 
           {pendingNew !== null && (
             <TreeRow depth={pendingNew === '' ? 0 : pendingNew.split('/').length}>
-              <TreeIconSlot>
-                <FilePlusSolidIcon size={12} aria-hidden="true" />
-              </TreeIconSlot>
-              <TreeLabelGroup>
-                <InlinePathInput
-                  defaultValue={pendingNew === '' ? '' : `${pendingNew}/`}
-                  placeholder="path/to/file.ts"
-                  onSubmit={submitNew}
-                  onCancel={() => setPendingNew(null)}
-                />
-              </TreeLabelGroup>
+              <TreeIconSlot icon={FilePlusSolidIcon} iconSize={12} />
+              <InlineRenameInput
+                value={pendingNew === '' ? '' : `${pendingNew}/`}
+                placeholder="path/to/file.ts"
+                ariaLabel="New file path"
+                onCommit={submitNew}
+                onCancel={() => setPendingNew(null)}
+              />
             </TreeRow>
           )}
         </TreeContainer>
@@ -314,38 +348,65 @@ export function FileTreePane({
           )}
         </ContextMenu>
       )}
-    </div>
+    </Panel>
   )
 }
 
-interface InlinePathInputProps {
-  defaultValue: string
+interface InlineRenameInputProps {
+  value: string
+  ariaLabel: string
   placeholder?: string
-  onSubmit: (value: string) => void
+  onCommit: (value: string) => void
   onCancel: () => void
 }
 
-function InlinePathInput({ defaultValue, placeholder, onSubmit, onCancel }: InlinePathInputProps) {
-  const [value, setValue] = useState(defaultValue)
+/** Same behavior as the Site Explorer's inline rename: select-all on mount,
+ *  Enter commits, Escape cancels, blur commits (empty cancels). */
+function InlineRenameInput({
+  value,
+  ariaLabel,
+  placeholder,
+  onCommit,
+  onCancel,
+}: InlineRenameInputProps) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    requestAnimationFrame(() => inputRef.current?.select())
+  }, [])
+
+  function commit(): void {
+    const trimmed = inputRef.current?.value.trim() ?? ''
+    if (!trimmed) {
+      onCancel()
+      return
+    }
+    onCommit(trimmed)
+  }
+
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
     if (event.key === 'Enter') {
       event.preventDefault()
-      onSubmit(value)
-    } else if (event.key === 'Escape') {
+      event.stopPropagation()
+      commit()
+    }
+    if (event.key === 'Escape') {
       event.preventDefault()
+      event.stopPropagation()
       onCancel()
     }
   }
+
   return (
     <Input
+      ref={inputRef}
+      fieldSize="xs"
       autoFocus
-      value={value}
+      defaultValue={value}
       placeholder={placeholder}
-      aria-label="File path"
-      className={styles.inlineInput}
-      onChange={(event) => setValue(event.currentTarget.value)}
+      aria-label={ariaLabel}
+      onBlur={commit}
       onKeyDown={handleKeyDown}
-      onBlur={onCancel}
       onClick={(event) => event.stopPropagation()}
     />
   )
