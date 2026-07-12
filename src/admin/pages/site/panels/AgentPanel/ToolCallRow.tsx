@@ -4,14 +4,13 @@
  * swatches and an inline error message. Captured images are grouped by the
  * parent turn so they share the conversation gallery and preview window.
  *
- * Write/patch tools additionally expose their code payload behind a
- * "View code / changes" toggle — a lazy CodeMirror block (unified diff for
- * patches) so the user can see exactly what the agent wrote.
+ * Write/patch tools additionally render their code payload inline — a lazy
+ * CodeMirror block (unified diff for patches) so the user always sees
+ * exactly what the agent wrote.
  */
-import { lazy, Suspense, useState, type CSSProperties } from 'react'
+import { lazy, Suspense, type CSSProperties } from 'react'
 import type { AgentToolCall } from '@site/agent'
 import { cn } from '@ui/cn'
-import { Button } from '@ui/components/Button'
 import { Tooltip } from '@ui/components/Tooltip'
 import { LoaderIcon } from 'pixel-art-icons/icons/loader'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
@@ -39,17 +38,18 @@ import {
   getToolCallDisplay,
   extractColorSwatches,
   extractCodePayload,
+  type ToolCallCodePayload,
   type ToolCallIcon,
   type ToolCallTone,
 } from './toolCallDisplay'
 import styles from './AgentPanel.module.css'
 
-// CodeMirror is ~150 kB min+gz — the code/diff block loads on first expand
-// only (same policy as the site code editor).
+// CodeMirror is ~150 kB min+gz — the chunk loads when the first code-bearing
+// tool row renders (same lazy policy as the site code editor); the plain-text
+// fallback shows the same content meanwhile.
 const AgentCodeView = lazy(() => import('@site/code-editor/AgentCodeView'))
 
 export function ToolCallRow({ toolCall }: { toolCall: AgentToolCall }) {
-  const [codeOpen, setCodeOpen] = useState(false)
   const isPending = toolCall.status === 'pending'
   const isSuccess = toolCall.status === 'success'
   const isError = toolCall.status === 'error'
@@ -109,39 +109,43 @@ export function ToolCallRow({ toolCall }: { toolCall: AgentToolCall }) {
       )}
       {codePayload && (
         <div className={styles.toolCallCode}>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => setCodeOpen((open) => !open)}
-            aria-expanded={codeOpen}
-          >
-            {codeOpen
-              ? codePayload.kind === 'diff' ? 'Hide changes' : 'Hide code'
-              : codePayload.kind === 'diff' ? 'View changes' : 'View code'}
-          </Button>
-          {codeOpen && (
-            <Suspense fallback={null}>
-              {codePayload.kind === 'code' ? (
-                <div className={styles.toolCallCodeBlock}>
-                  <AgentCodeView code={codePayload.code} path={codePayload.path} />
+          <Suspense fallback={<CodeBlockFallback payload={codePayload} />}>
+            {codePayload.kind === 'code' ? (
+              <div className={styles.toolCallCodeBlock}>
+                <AgentCodeView code={codePayload.code} path={codePayload.path} />
+              </div>
+            ) : (
+              codePayload.edits.map((edit, index) => (
+                // Edits are positional within one immutable tool call, so
+                // the index is a stable key.
+                <div key={index} className={styles.toolCallCodeBlock}>
+                  <AgentCodeView
+                    code={edit.newText}
+                    diffOriginal={edit.oldText}
+                    path={codePayload.path}
+                  />
                 </div>
-              ) : (
-                codePayload.edits.map((edit, index) => (
-                  // Edits are positional within one immutable tool call, so
-                  // the index is a stable key.
-                  <div key={index} className={styles.toolCallCodeBlock}>
-                    <AgentCodeView
-                      code={edit.newText}
-                      diffOriginal={edit.oldText}
-                      path={codePayload.path}
-                    />
-                  </div>
-                ))
-              )}
-            </Suspense>
-          )}
+              ))
+            )}
+          </Suspense>
         </div>
       )}
+    </>
+  )
+}
+
+// Plain-text stand-in while the CodeMirror chunk loads — same box, same
+// content, no highlight. Keeps the row from jumping when the viewer lands.
+function CodeBlockFallback({ payload }: { payload: ToolCallCodePayload }) {
+  const texts = payload.kind === 'code' ? [payload.code] : payload.edits.map((edit) => edit.newText)
+  return (
+    <>
+      {texts.map((text, index) => (
+        // Positional content within one immutable tool call.
+        <pre key={index} className={cn(styles.toolCallCodeBlock, styles.toolCallCodeFallback)}>
+          {text}
+        </pre>
+      ))}
     </>
   )
 }

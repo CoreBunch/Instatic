@@ -69,6 +69,9 @@ export default function AgentCodeView({ code, path, diffOriginal }: AgentCodeVie
       state: EditorState.create({
         doc: code,
         extensions: [
+          // Chat rows are denser than the editor — drop the base 12px to
+          // the fluid --text-xs token (~10-11px).
+          EditorView.theme({ '&': { fontSize: 'var(--text-xs)' } }),
           EditorState.readOnly.of(true),
           EditorView.editable.of(false),
           EditorView.lineWrapping,

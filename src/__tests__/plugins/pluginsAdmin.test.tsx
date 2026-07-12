@@ -95,6 +95,9 @@ function ambientFetchFallback(url: string): Response | undefined {
   if (url.endsWith('/admin/api/cms/site')) {
     return json({ site: null }, 404)
   }
+  if (url.endsWith('/admin/api/cms/site-plugins')) {
+    return json({ sitePlugins: [] })
+  }
   if (url.endsWith('/admin/api/cms/site/publish-status')) {
     return json({ ok: false }, 404)
   }
@@ -234,7 +237,7 @@ describe('PluginsPage', () => {
       </Wrapper>,
     )
 
-    expect(await screen.findByText('No plugins installed yet.')).toBeDefined()
+    expect(await screen.findByText('No plugins yet — upload one, or create a site plugin in the IDE.')).toBeDefined()
 
     const input = screen.getByLabelText('Plugin file')
     fireEvent.change(input, {
@@ -293,7 +296,7 @@ describe('PluginsPage', () => {
       </Wrapper>,
     )
 
-    expect(await screen.findByText('No plugins installed yet.')).toBeDefined()
+    expect(await screen.findByText('No plugins yet — upload one, or create a site plugin in the IDE.')).toBeDefined()
 
     fireEvent.change(screen.getByLabelText('Plugin file'), {
       target: {
