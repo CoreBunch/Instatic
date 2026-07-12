@@ -22,6 +22,7 @@ import { SITE_PLUGIN_LOCAL_ID_PATTERN, sitePluginFolder } from '@core/site-plugi
 import { useSitePluginIde } from './useSitePluginIde'
 import { useIdePeers, usePublishIdePresence } from './idePresence'
 import { FileTreePane } from './FileTreePane'
+import { SitePluginPermissionReviewDialog } from './SitePluginPermissionReviewDialog'
 import { IdeFileEditor } from './IdeFileEditor'
 import { DiagnosticsStrip } from './DiagnosticsStrip'
 import { ManifestPane } from './ManifestPane'
@@ -64,6 +65,7 @@ function SitePluginIde({ localId }: { localId: string }) {
   const canEdit = canEditStructure(currentUser)
   const canInstall = canInstallPlugins(currentUser)
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
+  const [reviewOpen, setReviewOpen] = useState(false)
 
   const vm = useSitePluginIde(localId)
   const { session, files, activeFileId, selectFile, runValidation } = vm
@@ -185,7 +187,16 @@ function SitePluginIde({ localId }: { localId: string }) {
             peers={peers}
             canInstall={canInstall}
             activating={vm.activating}
-            onActivate={() => void vm.activate()}
+            onActivate={() => {
+              // Grant-changing activations are consent moments — show the
+              // review (what will be granted/revoked) before building.
+              const summary = vm.summary
+              const grantsChange =
+                summary !== null &&
+                (summary.newPermissions.length > 0 || summary.removedPermissions.length > 0)
+              if (grantsChange) setReviewOpen(true)
+              else void vm.activate()
+            }}
             onPreview={vm.openPreview}
             onRollback={() => void vm.rollback()}
             onSetEnabled={(enabled) => void vm.setEnabled(enabled)}
@@ -203,6 +214,16 @@ function SitePluginIde({ localId }: { localId: string }) {
             }
             onShowDiagnostics={vm.runValidation}
           />
+          {reviewOpen && vm.summary && (
+            <SitePluginPermissionReviewDialog
+              summary={vm.summary}
+              busy={vm.activating}
+              onClose={() => setReviewOpen(false)}
+              onConfirm={() => {
+                void vm.activate().finally(() => setReviewOpen(false))
+              }}
+            />
+          )}
           {pendingDelete && (
             <ConfirmDeleteDialog
               title={pendingDelete.title}

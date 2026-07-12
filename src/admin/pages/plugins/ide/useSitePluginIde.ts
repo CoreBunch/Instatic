@@ -18,6 +18,7 @@ import {
 import { pushToast } from '@ui/components/Toast'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { useNavigate } from '@admin/lib/routing'
+import { notifyCmsPluginsChanged } from '@plugins/utils/pluginEvents'
 import { createIdeCollabSession, type IdeCollabSession, type IdeFileMeta } from './ideCollab'
 
 const ValidateResponseSchema = Type.Object({
@@ -189,6 +190,9 @@ export function useSitePluginIde(localId: string): SitePluginIdeVm {
         apiRequest(`/admin/api/cms/site-plugins/${localId}/activate`, { method: 'POST' }),
       )
       pushToast({ kind: 'success', title: 'Site plugin activated' })
+      // Open editor sessions re-run their plugin activation pass so the new
+      // revision's module pack / editor entrypoint load without a reload.
+      notifyCmsPluginsChanged()
       await refreshSummary()
     } catch (err) {
       if (!(err instanceof Error && err.message === StepUpCancelledMessage)) {
@@ -210,6 +214,7 @@ export function useSitePluginIde(localId: string): SitePluginIdeVm {
         apiRequest(`/admin/api/cms/site-plugins/${localId}/rollback`, { method: 'POST' }),
       )
       pushToast({ kind: 'success', title: 'Rolled back to the previous revision' })
+      notifyCmsPluginsChanged()
       await refreshSummary()
     } catch (err) {
       if (!(err instanceof Error && err.message === StepUpCancelledMessage)) {
@@ -231,6 +236,7 @@ export function useSitePluginIde(localId: string): SitePluginIdeVm {
             body: { enabled },
           }),
         )
+        notifyCmsPluginsChanged()
         await refreshSummary()
       } catch (err) {
         if (!(err instanceof Error && err.message === StepUpCancelledMessage)) {
@@ -251,6 +257,7 @@ export function useSitePluginIde(localId: string): SitePluginIdeVm {
         apiRequest(`/admin/api/cms/plugins/site.${localId}/restart`, { method: 'POST' }),
       )
       pushToast({ kind: 'success', title: 'Plugin restarted' })
+      notifyCmsPluginsChanged()
       await refreshSummary()
     } catch (err) {
       if (!(err instanceof Error && err.message === StepUpCancelledMessage)) {
@@ -269,6 +276,7 @@ export function useSitePluginIde(localId: string): SitePluginIdeVm {
         apiRequest(`/admin/api/cms/site-plugins/${localId}`, { method: 'DELETE' }),
       )
       pushToast({ kind: 'success', title: 'Site plugin deleted' })
+      notifyCmsPluginsChanged()
       navigate('/admin/plugins')
     } catch (err) {
       if (!(err instanceof Error && err.message === StepUpCancelledMessage)) {

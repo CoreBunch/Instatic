@@ -15,6 +15,7 @@ import * as Y from 'yjs'
 import {
   applyTextDiff,
   buildSiteFileEntry,
+  buildSiteFilesMap,
   shellMap,
   siteFileContentText,
   MAIN_SITE_DOC_ID,
@@ -84,6 +85,23 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
     return value instanceof Y.Map ? value : null
   }
 
+  /**
+   * The granular files map, upgrading a legacy LWW-array layout in place —
+   * from the EXISTING entries, never an empty map (an empty replacement
+   * would project a shell that lost every other site file). Must run
+   * inside a doc transaction.
+   */
+  const ensureFilesMap = (): Y.Map<unknown> => {
+    const shell = shellMap(doc)
+    const value = shell.get('files')
+    if (value instanceof Y.Map) return value
+    const map = Array.isArray(value)
+      ? buildSiteFilesMap(value as SiteFile[])
+      : new Y.Map<unknown>()
+    shell.set('files', map)
+    return map
+  }
+
   // Observe the whole shell deeply — file metadata changes (path renames,
   // membership) re-notify; pure content keystrokes also fire but the hook
   // layer collapses them via a metadata signature, so React work stays
@@ -95,18 +113,27 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
   }
   shellMap(doc).observeDeep(shellObserver)
 
-  const allFiles = (): Array<{ id: string; entry: Y.Map<unknown> }> => {
+  /** id/path metas across BOTH layouts (granular map, legacy LWW array). */
+  const allFileMetas = (): IdeFileMeta[] => {
     const map = filesMap()
-    if (!map) return []
-    const out: Array<{ id: string; entry: Y.Map<unknown> }> = []
-    for (const [id, entry] of map.entries()) {
-      if (entry instanceof Y.Map) out.push({ id, entry })
+    if (map) {
+      const out: IdeFileMeta[] = []
+      for (const [id, entry] of map.entries()) {
+        if (entry instanceof Y.Map) out.push(projectFileMeta(id, entry))
+      }
+      return out
     }
-    return out
+    const value = shellMap(doc).get('files')
+    if (!Array.isArray(value)) return []
+    return (value as SiteFile[]).map((file) => ({
+      id: file.id,
+      path: file.path,
+      updatedAt: file.updatedAt,
+    }))
   }
 
   const pathTaken = (path: string, exceptFileId?: string): boolean =>
-    allFiles().some(({ id, entry }) => id !== exceptFileId && entry.get('path') === path)
+    allFileMetas().some((file) => file.id !== exceptFileId && file.path === path)
 
   const requireSafePluginPath = (rawPath: string): string => {
     const normalized = normalizePath(rawPath)
@@ -126,8 +153,7 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
     synced: () => binding.synced,
 
     pluginFiles: () =>
-      allFiles()
-        .map(({ id, entry }) => projectFileMeta(id, entry))
+      allFileMetas()
         .filter((file) => file.path.startsWith(folder))
         .sort((a, b) => a.path.localeCompare(b.path)),
 
@@ -169,12 +195,7 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
         updatedAt: now,
       }
       doc.transact(() => {
-        let map = filesMap()
-        if (!map) {
-          map = new Y.Map<unknown>()
-          shellMap(doc).set('files', map)
-        }
-        map.set(id, buildSiteFileEntry(file))
+        ensureFilesMap().set(id, buildSiteFileEntry(file))
       }, IDE_ORIGIN)
       return id
     },
@@ -182,31 +203,28 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
     renameFile: (fileId, nextPath) => {
       const path = requireSafePluginPath(nextPath)
       if (pathTaken(path, fileId)) throw new Error(`A file at "${path}" already exists`)
-      const map = filesMap()
-      const entry = map?.get(fileId)
-      if (!(entry instanceof Y.Map)) return
       doc.transact(() => {
+        const entry = ensureFilesMap().get(fileId)
+        if (!(entry instanceof Y.Map)) return
         entry.set('path', path)
         entry.set('updatedAt', Date.now())
       }, IDE_ORIGIN)
     },
 
     deleteFile: (fileId) => {
-      const map = filesMap()
-      if (!map?.has(fileId)) return
       undoManagers.get(fileId)?.destroy()
       undoManagers.delete(fileId)
       doc.transact(() => {
-        map.delete(fileId)
+        ensureFilesMap().delete(fileId)
       }, IDE_ORIGIN)
     },
 
     replaceFileContent: (fileId, content) => {
-      const text = siteFileContentText(shellMap(doc), fileId)
-      const map = filesMap()
-      const entry = map?.get(fileId)
-      if (!text || !(entry instanceof Y.Map)) return
       doc.transact(() => {
+        const entry = ensureFilesMap().get(fileId)
+        if (!(entry instanceof Y.Map)) return
+        const text = entry.get('content')
+        if (!(text instanceof Y.Text)) return
         // Minimal splice (shared prefix/suffix preserved) so concurrent
         // remote edits outside the change survive the replacement.
         applyTextDiff(text, text.toString(), content)

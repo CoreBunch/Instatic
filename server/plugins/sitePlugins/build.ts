@@ -25,11 +25,13 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 import { materializeSitePluginWorkspace } from './workspace'
 
 /**
- * '@instatic/plugin-sdk' resolves to the host's own SDK barrel so pure data
- * builders (defineModule, control, html, …) inline into sandbox bundles —
- * the only bare specifier a site plugin may import.
+ * '@instatic/plugin-sdk' resolves to the SDK's inlinable runtime surface
+ * (pure data builders — defineModule, control, html, sitePluginRoute) so
+ * sandbox/module bundles stay self-contained AND small. Never the full
+ * barrel: its TypeBox-backed schema modules weigh hundreds of kB and have
+ * tripped bundler tree-shake edge cases when inlined.
  */
-const SDK_ENTRY = resolve(import.meta.dir, '../../../src/core/plugin-sdk/index.ts')
+const SDK_ENTRY = resolve(import.meta.dir, '../../../src/core/plugin-sdk/inlineRuntime.ts')
 
 /** Pathological inputs must fail fast instead of tying up the server. */
 const DEFAULT_BUILD_TIMEOUT_MS = 30_000
@@ -153,7 +155,13 @@ async function runBuild(input: SitePluginBuildInput): Promise<SitePluginBuildRes
       ...(modulesBundle !== undefined ? { modulesBundle } : {}),
     }
   } catch (err) {
-    return { ok: false, diagnostics: [getErrorMessage(err, 'Site plugin build failed')] }
+    // Diagnostics quote bundler paths inside the throwaway workspace —
+    // rewrite them to the draft's plugins/<localId>/ paths so the message
+    // names the author's file instead of leaking a server temp dir.
+    const message = getErrorMessage(err, 'Site plugin build failed')
+      .replaceAll(`${workspace.rootDir}/`, sitePluginFolder(input.localId))
+      .replaceAll(workspace.rootDir, sitePluginFolder(input.localId))
+    return { ok: false, diagnostics: [message] }
   } finally {
     await workspace.cleanup()
   }
