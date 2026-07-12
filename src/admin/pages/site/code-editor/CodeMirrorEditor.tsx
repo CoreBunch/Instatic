@@ -62,7 +62,7 @@ import { renderMarkdownDocumentation } from './markdownDocumentation'
 // ---------------------------------------------------------------------------
 // All color values are CSS custom properties from globals.css.
 // No hex, rgb(), or hsl() literals in this lazy-loaded editor module.
-const achromatic = EditorView.theme({
+export const editorChromeTheme = EditorView.theme({
   '&': {
     backgroundColor: 'var(--bg-surface)',
     color: 'var(--text)',
@@ -161,7 +161,7 @@ const achromatic = EditorView.theme({
   },
 }, { dark: true })
 
-const readableHighlightStyle = HighlightStyle.define([
+export const readableHighlightStyle = HighlightStyle.define([
   {
     tag: [
       t.comment,
@@ -301,8 +301,9 @@ export type CodeLanguage =
   | 'html'
   | 'text'
 
-/** Map a `CodeLanguage` to its CM6 language extension(s). */
-function getLanguageExtensions(language: CodeLanguage): Extension[] {
+/** Map a `CodeLanguage` to its CM6 language extension(s). Shared with the
+ * read-only agent code/diff views (`AgentCodeView.tsx`, same lazy graph). */
+export function getLanguageExtensions(language: CodeLanguage): Extension[] {
   switch (language) {
     case 'tsx':
       return [javascript({ jsx: true, typescript: true })]
@@ -580,7 +581,7 @@ export default function CodeMirrorEditor({
               ]
             : []),
           readableSyntaxHighlighting,
-          achromatic,
+          editorChromeTheme,
           editorTooltipBoundary,
           lintGutter(),
           EditorView.updateListener.of((update) => {

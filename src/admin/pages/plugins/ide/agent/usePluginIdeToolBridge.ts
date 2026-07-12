@@ -40,6 +40,16 @@ export function usePluginIdeToolBridge(options: UsePluginIdeToolBridgeOptions): 
 
   const { localId } = options
   useEffect(() => {
+    // File metas come from the LIVE session (the Y doc), never from React
+    // state: back-to-back tool calls mutate and re-read without giving React
+    // a render turn, so the state array lags one commit behind — a
+    // create-then-describe would miss its own file. Same class of problem
+    // the content bridge solves with flushSync; reading the CRDT directly is
+    // the simpler correct answer here.
+    const liveFiles = () => {
+      const current = optionsRef.current
+      return current.session?.pluginFiles() ?? current.files
+    }
     const handle: PluginIdeBridgeHandle = {
       localId,
       buildSnapshot(): PluginIdeAgentSnapshot {
@@ -47,7 +57,7 @@ export function usePluginIdeToolBridge(options: UsePluginIdeToolBridgeOptions): 
         return {
           localId,
           pluginId: sitePluginIdFromLocalId(localId),
-          files: current.files.map((file) => ({
+          files: liveFiles().map((file) => ({
             id: file.id,
             path: file.path.slice(current.folder.length),
           })),
@@ -63,7 +73,7 @@ export function usePluginIdeToolBridge(options: UsePluginIdeToolBridgeOptions): 
         }
       },
       session: () => optionsRef.current.session,
-      files: () => optionsRef.current.files,
+      files: liveFiles,
       selectFile: (fileId) => optionsRef.current.selectFile(fileId),
       canEdit: () => optionsRef.current.canEdit,
     }

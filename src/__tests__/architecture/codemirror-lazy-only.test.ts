@@ -81,6 +81,9 @@ function collectProdFiles(): string[] {
 const ALLOWED_CONSUMERS = new Set([
   'admin/pages/site/code-editor/CodeMirrorEditor.tsx',
   'admin/pages/site/code-editor/CollabCodeMirrorEditor.tsx',
+  // Read-only agent code/diff blocks — lazy-loaded by ToolCallRow, same
+  // chunk graph as the code editor.
+  'admin/pages/site/code-editor/AgentCodeView.tsx',
 ])
 
 // Matches: import ... from 'codemirror' / '@codemirror/...' / '@lezer/...'
