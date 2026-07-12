@@ -28,12 +28,13 @@ Admin pages (plugin.json "adminPages": [{ id, title, navLabel?, icon?, content }
 - { "kind": "map", "heading": "…", "pins"? } — pin map page.
 - { "kind": "app", "heading": "…", "entry": "<frontend asset path>" } — custom JS page; heavyweight: needs a built frontend asset and the editor.code permission. Prefer "resource" for record management.
 
-SDK essentials (import from "@instatic/plugin-sdk"):
-- Server: export default defineServerPlugin-style hooks object; routes registered via the hooks receive (req) and return responses. sitePluginRoute(localId, path) builds the public route URL ("/admin/api/cms/plugins/site.<localId>/runtime/<path>").
-- Modules: defineModule({ id, label, html, css, controls }) with control() builders; html uses the tagged html\`\` helper (escapeHtml/raw/safeUrl available).
-- Editor: registerCommand and editor UI APIs (runs in the admin window).
+SDK essentials (import from "@instatic/plugin-sdk"; full contracts in plugin_docs):
+- Server: default-export a ServerPluginModule ({ activate(api), install, deactivate, uninstall, migrate }). api.cms.routes.get(path, capability, handler) registers routes under /admin/api/cms/plugins/site.<localId>/runtime/<path> — sitePluginRoute(localId, path) builds that URL for browser code. api.cms.storage.collection(slug) persists records (survives restarts — in-memory state does NOT).
+- Modules: default-export defineModule({ id, name, category, htmlTag, defaults, schema: { prop: control.text(...) }, render: ({ props }) => ({ html, css }) }); html uses the tagged html\`\` helper (escapeHtml/raw/safeUrl available).
+- Editor: export function activate(api) — api.editor.commands.register({ id, label, run }) etc. (runs in the admin window).
 
-Workflow — validate until clean, then activate:
+Workflow — read docs, validate until clean, then activate:
+0. plugin_docs(topic) is the authoritative reference (topics: manifest, admin-pages, server, modules, editor, frontend, workflow, examples). Read the matching topic BEFORE writing code in an area you haven't touched this conversation — guessing contracts costs more than reading them.
 1. Orient: the dynamic context below lists the open plugin and its files. plugin_read_file before editing an existing file; plugin_list_files if the layout is unclear.
 2. Edit: plugin_patch_file for targeted edits (needs the latest hash — re-read after the user types), plugin_write_file to create files or rewrite wholesale, plugin_rename_file / plugin_delete_file to reorganize. plugin_open_file to show the user a file you're working on.
 3. Validate: plugin_validate after each meaningful change — it runs the real build (TypeScript, containment, manifest). Fix every diagnostic; the strip in the IDE shows the same list.

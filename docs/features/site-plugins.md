@@ -38,7 +38,7 @@ If browser code talks to a plugin's server code, it lives in that plugin's
 | HTTP routes + service layer (list, activation engine) | `server/handlers/cms/sitePlugins/` |
 | Disk-package activation seam (shared with zip installs) | `server/handlers/cms/plugins/install.ts` → `activatePluginPackageFromDisk` |
 | Plugin IDE | `src/admin/pages/plugins/ide/` |
-| Plugins-page group + scaffold dialog | `src/admin/pages/plugins/components/SitePluginsSection.tsx`, `NewSitePluginDialog.tsx` |
+| Plugins-page integration (merged list, draft cards, scaffold dialog) | `src/admin/pages/plugins/PluginsPage.tsx`, `components/DraftSitePluginCard.tsx`, `components/NewSitePluginDialog.tsx` |
 | Draft canvas preview (editor side) | `src/admin/pages/site/hooks/useDraftModulePackPreview.ts` |
 | Collab CodeMirror binding | `src/admin/pages/site/code-editor/CollabCodeMirrorEditor.tsx` |
 | Granular collab files (Y.Map + Y.Text content) | `src/core/collab/filesY.ts` |
@@ -176,6 +176,11 @@ The left rail's AI button (gated by `ai.chat`) docks the shared AgentPanel
   latest hash (stale edits fail instead of clobbering); write/rename/
   delete gate on `plugins.edit`; `plugin_open_file` moves the visible
   buffer.
+- **`plugin_docs`** serves the curated author reference (manifest,
+  admin-pages, server, modules, editor, frontend, workflow, examples) so
+  the agent reads contracts instead of guessing them from build errors.
+  Content lives in `server/ai/tools/plugin/docs.ts` and must track the SDK
+  contracts it documents.
 - **Lifecycle tools are server-resolved**: `plugin_list_plugins`,
   `plugin_validate` (the diagnostics-strip build), and `plugin_activate` —
   same-grant rebuilds only. A changed grant set is refused with an
