@@ -45,7 +45,13 @@ export interface CmsHandlerOptions {
   collabRelay?: CollabRelay
 }
 
-export function requestAuditContext(req: Request): { ipAddress: string | null; userAgent: string | null } {
+/**
+ * Audit fields extracted from the HTTP request. `null` covers actions with
+ * no request — e.g. AI-tool-initiated lifecycle operations, where the actor
+ * is recorded but there is no client ip/ua to attribute.
+ */
+export function requestAuditContext(req: Request | null): { ipAddress: string | null; userAgent: string | null } {
+  if (!req) return { ipAddress: null, userAgent: null }
   return {
     ipAddress: clientIp(req),
     userAgent: req.headers.get('user-agent'),

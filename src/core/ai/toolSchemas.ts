@@ -412,3 +412,66 @@ export const RenderSnapshotInputSchema = Type.Object({
   breakpointId: Type.Optional(Type.String({ minLength: 1 })),
   nodeId: Type.Optional(Type.String({ minLength: 1 })),
 })
+
+// ---------------------------------------------------------------------------
+// Plugin IDE tools (`plugin` scope)
+//
+// File paths are RELATIVE to the open plugin's folder (`plugin.json`,
+// `server/index.ts`, …) — the browser bridge resolves them against
+// `plugins/<local-id>/` and validates with isSafePath, so the model can
+// never address a file outside the plugin.
+// ---------------------------------------------------------------------------
+
+/** Address one plugin file by id (stable across renames) or relative path. */
+const PluginFileRefInputSchema = Type.Object({
+  fileId: Type.Optional(Type.String({ minLength: 1 })),
+  path: Type.Optional(Type.String({ minLength: 1 })),
+})
+
+export const PluginListFilesInputSchema = Type.Object({})
+export type PluginListFilesInput = Static<typeof PluginListFilesInputSchema>
+
+export const PluginReadFileInputSchema = Type.Composite([
+  PluginFileRefInputSchema,
+  Type.Object({
+    part: Type.Optional(Type.Integer({ minimum: 1 })),
+    maxChars: Type.Optional(Type.Integer({ minimum: 1, maximum: 100000 })),
+  }),
+])
+export type PluginReadFileInput = Static<typeof PluginReadFileInputSchema>
+
+export const PluginWriteFileInputSchema = Type.Object({
+  path: Type.String({ minLength: 1 }),
+  content: Type.String(),
+})
+export type PluginWriteFileInput = Static<typeof PluginWriteFileInputSchema>
+
+export const PluginPatchFileInputSchema = Type.Composite([
+  PluginFileRefInputSchema,
+  Type.Object({
+    expectedHash: Type.String({ minLength: 1 }),
+    replacements: Type.Array(
+      Type.Object({
+        oldText: Type.String({ minLength: 1 }),
+        newText: Type.String(),
+        replaceAll: Type.Optional(Type.Boolean()),
+      }),
+      { minItems: 1 },
+    ),
+  }),
+])
+export type PluginPatchFileInput = Static<typeof PluginPatchFileInputSchema>
+
+export const PluginRenameFileInputSchema = Type.Composite([
+  PluginFileRefInputSchema,
+  Type.Object({
+    newPath: Type.String({ minLength: 1 }),
+  }),
+])
+export type PluginRenameFileInput = Static<typeof PluginRenameFileInputSchema>
+
+export const PluginDeleteFileInputSchema = PluginFileRefInputSchema
+export type PluginDeleteFileInput = Static<typeof PluginDeleteFileInputSchema>
+
+export const PluginOpenFileInputSchema = PluginFileRefInputSchema
+export type PluginOpenFileInput = Static<typeof PluginOpenFileInputSchema>

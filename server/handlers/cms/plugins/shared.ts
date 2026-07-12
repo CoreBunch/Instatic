@@ -78,7 +78,7 @@ type PluginAuditAction =
 export async function recordPluginAuditEvent(
   db: DbClient,
   user: AuthUser,
-  req: Request,
+  req: Request | null,
   action: PluginAuditAction,
   pluginId: string,
   metadata: Record<string, unknown> = {},

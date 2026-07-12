@@ -26,7 +26,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { nanoid } from 'nanoid'
 import type { SiteFile } from '@core/files/schemas'
-import type { PluginManifest } from '@core/plugin-sdk'
+import type { InstalledPlugin, PluginManifest } from '@core/plugin-sdk'
 import { parsePluginManifest } from '@core/plugins/manifest'
 import {
   SITE_PLUGIN_LOCAL_ID_PATTERN,
@@ -99,7 +99,7 @@ function sameStringSet(a: readonly string[], b: readonly string[]): boolean {
 // GET /site-plugins — the list
 // ---------------------------------------------------------------------------
 
-async function listSitePlugins(db: DbClient): Promise<SitePluginSummary[]> {
+export async function listSitePlugins(db: DbClient): Promise<SitePluginSummary[]> {
   const draftFiles = await readDraftPluginFiles(db)
   let discovered: ReturnType<typeof discoverSitePlugins>
   try {
@@ -310,26 +310,45 @@ async function handlePreviewPack(db: DbClient, localId: string): Promise<Respons
 }
 
 // ---------------------------------------------------------------------------
-// POST /site-plugins/:localId/activate — Build & activate
+// Activation engine — shared by the HTTP route and the AI `plugin_activate`
+// tool. HTTP-free: consent (step-up) stays with the HTTP wrapper; callers
+// that cannot prompt (AI tools, MCP) pass `allowGrantChange: false` and
+// surface the `grants-changed` result as an instruction to confirm in the
+// IDE header.
 // ---------------------------------------------------------------------------
 
-async function handleActivate(
-  req: Request,
-  db: DbClient,
-  options: CmsHandlerOptions,
-  user: AuthUser,
-  localId: string,
-): Promise<Response> {
+export type SitePluginActivationResult =
+  | { status: 'ok'; plugin: InstalledPlugin; upgrade?: { fromVersion: string; toVersion: string }; skipped: boolean }
+  | { status: 'not-found'; message: string }
+  | { status: 'invalid'; message: string }
+  | { status: 'grants-changed'; newPermissions: string[]; removedPermissions: string[] }
+  | { status: 'build-failed'; diagnostics: string[] }
+  | { status: 'upgrade-error'; message: string }
+
+export async function runSitePluginActivation(input: {
+  db: DbClient
+  options: CmsHandlerOptions
+  user: AuthUser
+  /** Null for non-HTTP callers — audit rows then omit ip/ua. */
+  req: Request | null
+  localId: string
+  /**
+   * Whether a grant-set change may proceed. The HTTP route sets this true
+   * only AFTER a successful step-up; tool callers always pass false.
+   */
+  allowGrantChange: boolean
+}): Promise<SitePluginActivationResult> {
+  const { db, options, user, req, localId, allowGrantChange } = input
   if (!options.uploadsDir) {
-    return jsonResponse({ error: 'Uploads directory is not configured' }, { status: 500 })
+    return { status: 'invalid', message: 'Uploads directory is not configured' }
   }
   const draftFiles = await readDraftPluginFiles(db)
   const plugin = discoverSitePlugins(draftFiles).find((entry) => entry.localId === localId)
   if (!plugin) {
-    return jsonResponse({ error: `No site plugin source at plugins/${localId}/` }, { status: 404 })
+    return { status: 'not-found', message: `No site plugin source at plugins/${localId}/` }
   }
   if (!plugin.manifestFile?.content) {
-    return badRequest(`plugins/${localId}/plugin.json is missing`)
+    return { status: 'invalid', message: `plugins/${localId}/plugin.json is missing` }
   }
 
   const rowResult = await getInstalledPlugin(db, sitePluginIdFromLocalId(localId))
@@ -342,16 +361,12 @@ async function handleActivate(
     row.lifecycleStatus === 'active' &&
     contentHashOfVersion(row.version) === contentHash
   ) {
-    return jsonResponse({
-      plugin: await presentPluginSecrets(db, row),
-      skipped: true,
-      sitePlugins: await listSitePlugins(db),
-    })
+    return { status: 'ok', plugin: row, skipped: true }
   }
 
   // Derive BEFORE building: the grant diff decides whether this request is
-  // a consent moment (step-up) — and a manifest error should fail before
-  // any bundling work.
+  // a consent moment — and a manifest error should fail before any
+  // bundling work.
   let manifest: PluginManifest
   try {
     manifest = deriveSitePluginManifest({
@@ -362,16 +377,18 @@ async function handleActivate(
       contentHash,
     })
   } catch (err) {
-    return badRequest(getErrorMessage(err, 'Invalid site plugin manifest'))
+    return { status: 'invalid', message: getErrorMessage(err, 'Invalid site plugin manifest') }
   }
 
-  // Step-up on the consent moments only: first activation, or a changed
-  // grant set. Same-grant rebuilds skip it — the security boundary is the
-  // grant set, not the code revision.
-  const grantsChanged = !row || !sameStringSet(row.grantedPermissions, manifest.permissions)
-  if (grantsChanged) {
-    const stepUp = await requireStepUp(req, db, user)
-    if (stepUp) return stepUp
+  const granted: readonly string[] = row?.grantedPermissions ?? []
+  const declared: readonly string[] = manifest.permissions
+  const grantsChanged = !row || !sameStringSet(granted, declared)
+  if (grantsChanged && !allowGrantChange) {
+    return {
+      status: 'grants-changed',
+      newPermissions: declared.filter((p) => !granted.includes(p)),
+      removedPermissions: granted.filter((p) => !declared.includes(p)),
+    }
   }
 
   const built = await buildSitePlugin({
@@ -382,10 +399,7 @@ async function handleActivate(
     validateOnly: false,
   })
   if (!built.ok) {
-    return jsonResponse(
-      { error: `Site plugin build failed`, diagnostics: built.diagnostics },
-      { status: 400 },
-    )
+    return { status: 'build-failed', diagnostics: built.diagnostics }
   }
 
   // Grants = declared, in both directions: activation grants exactly what
@@ -400,19 +414,73 @@ async function handleActivate(
     source: 'site-local',
   })
   if (outcome.upgradeError) {
-    return jsonResponse(
-      { error: outcome.upgradeError, sitePlugins: await listSitePlugins(db) },
-      { status: 400 },
-    )
+    return { status: 'upgrade-error', message: outcome.upgradeError }
   }
 
   await republishAndSweep(db, options.uploadsDir, built.manifest)
 
-  return jsonResponse({
-    plugin: await presentPluginSecrets(db, outcome.plugin),
+  return {
+    status: 'ok',
+    plugin: outcome.plugin,
     ...(outcome.upgrade ? { upgrade: outcome.upgrade } : {}),
-    sitePlugins: await listSitePlugins(db),
+    skipped: false,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /site-plugins/:localId/activate — Build & activate
+// ---------------------------------------------------------------------------
+
+async function handleActivate(
+  req: Request,
+  db: DbClient,
+  options: CmsHandlerOptions,
+  user: AuthUser,
+  localId: string,
+): Promise<Response> {
+  // First pass without grant-change authority: a `grants-changed` result IS
+  // the consent moment — step up, then re-run with the change allowed. The
+  // repeated pass only re-does the cheap draft read + manifest derivation
+  // (the grant check fails before any build work).
+  let result = await runSitePluginActivation({
+    db, options, user, req, localId, allowGrantChange: false,
   })
+  if (result.status === 'grants-changed') {
+    const stepUp = await requireStepUp(req, db, user)
+    if (stepUp) return stepUp
+    result = await runSitePluginActivation({
+      db, options, user, req, localId, allowGrantChange: true,
+    })
+  }
+
+  switch (result.status) {
+    case 'ok':
+      return jsonResponse({
+        plugin: await presentPluginSecrets(db, result.plugin),
+        ...(result.upgrade ? { upgrade: result.upgrade } : {}),
+        ...(result.skipped ? { skipped: true } : {}),
+        sitePlugins: await listSitePlugins(db),
+      })
+    case 'not-found':
+      return jsonResponse({ error: result.message }, { status: 404 })
+    case 'invalid':
+      return result.message === 'Uploads directory is not configured'
+        ? jsonResponse({ error: result.message }, { status: 500 })
+        : badRequest(result.message)
+    case 'build-failed':
+      return jsonResponse(
+        { error: 'Site plugin build failed', diagnostics: result.diagnostics },
+        { status: 400 },
+      )
+    case 'upgrade-error':
+      return jsonResponse(
+        { error: result.message, sitePlugins: await listSitePlugins(db) },
+        { status: 400 },
+      )
+    case 'grants-changed':
+      // Unreachable — the step-up pass above re-runs with the change allowed.
+      return badRequest('Activation requires grant-change consent')
+  }
 }
 
 /**

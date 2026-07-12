@@ -1,8 +1,8 @@
 /**
  * Tool registry root — selects the right toolset for a chat scope.
  *
- * `site` and `content` scopes have tools registered. `data` and `plugin`
- * are reserved scopes with no toolset yet.
+ * `site`, `content`, and `plugin` scopes have tools registered. `data` is a
+ * reserved scope with no toolset yet.
  *
  * Adding a new scope:
  *   1. Create `server/ai/tools/<scope>/` with its tool files + index.ts.
@@ -25,6 +25,7 @@ import { toolAllowedForCapabilities } from './capabilityGate'
 import type { AiTool, ToolScope } from './types'
 import { siteTools } from './site'
 import { contentTools } from './content'
+import { pluginTools } from './plugin'
 
 function scopeToolset(scope: ToolScope): AiTool[] {
   switch (scope) {
@@ -36,8 +37,7 @@ function scopeToolset(scope: ToolScope): AiTool[] {
       // Reserved: no data-scope toolset yet.
       return []
     case 'plugin':
-      // Reserved: no plugin-scope toolset yet.
-      return []
+      return pluginTools
   }
 }
 

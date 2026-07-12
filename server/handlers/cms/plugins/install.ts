@@ -216,7 +216,8 @@ export interface ActivatePackageFromDiskInput {
   db: DbClient
   options: CmsHandlerOptions
   user: AuthUser
-  req: Request
+  /** Null for non-HTTP callers (AI tools) — audit rows then omit ip/ua. */
+  req: Request | null
   /** Manifest whose assetBasePath already points at files ON DISK. */
   manifest: PluginManifest
   grantedPermissions: PluginPermission[]

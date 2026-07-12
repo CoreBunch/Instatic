@@ -73,6 +73,13 @@ export {
   SetTypeScaleInputSchema,
   SetSpacingScaleInputSchema,
   RenderSnapshotInputSchema,
+  PluginListFilesInputSchema,
+  PluginReadFileInputSchema,
+  PluginWriteFileInputSchema,
+  PluginPatchFileInputSchema,
+  PluginRenameFileInputSchema,
+  PluginDeleteFileInputSchema,
+  PluginOpenFileInputSchema,
 } from './toolSchemas'
 export type {
   InsertHtmlInput,
@@ -101,6 +108,13 @@ export type {
   DuplicatePageInput,
   SetPageTemplateInput,
   ClearPageTemplateInput,
+  PluginListFilesInput,
+  PluginReadFileInput,
+  PluginWriteFileInput,
+  PluginPatchFileInput,
+  PluginRenameFileInput,
+  PluginDeleteFileInput,
+  PluginOpenFileInput,
 } from './toolSchemas'
 export {
   describeAgentDocuments,
