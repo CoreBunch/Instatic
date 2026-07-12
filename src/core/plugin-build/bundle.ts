@@ -7,8 +7,7 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { assertSandboxSafe } from '@core/plugins/sandboxScan'
-import type { ImportResolverPolicy } from './buildPackage'
-import { containmentPlugin } from './containment'
+import { containmentPlugin, type ImportResolverPolicy } from './containment'
 import { generateSandboxFacade } from './facades'
 
 /**

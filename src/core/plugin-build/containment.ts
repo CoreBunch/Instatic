@@ -1,7 +1,24 @@
 import { realpathSync } from 'node:fs'
 import { dirname, isAbsolute, resolve, sep } from 'node:path'
 import type { BunPlugin } from 'bun'
-import type { ImportResolverPolicy } from './buildPackage'
+
+/**
+ * Import-containment seam. Absent on a bundle = default resolution (CLI
+ * behavior). The site plugin frontend supplies a policy that fails any
+ * resolution escaping the materialized workspace.
+ */
+export interface ImportResolverPolicy {
+  /** Absolute dir that workspace-originating imports must stay inside. */
+  workspaceRoot: string
+  /** Exact bare-specifier → absolute-path overrides (e.g. '@instatic/plugin-sdk'). */
+  bareSpecifiers: Record<string, string>
+  /**
+   * Bare specifiers allowed to stay external (resolved by a runtime import
+   * map, never bundled). Populated automatically by `bundleEntrypoint` from
+   * the bundle's own external list when not set explicitly.
+   */
+  allowedExternals?: string[]
+}
 
 /**
  * Roots a workspace may legitimately appear under: as given, fully
