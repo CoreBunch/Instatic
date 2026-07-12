@@ -12,7 +12,7 @@ import { notifyCmsPluginsChanged } from './utils/pluginEvents'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import {
   canConfigurePlugins,
-  canEditStructure,
+  canEditPlugins,
   canInstallPlugins,
   canManagePluginLifecycle,
 } from '@admin/access'
@@ -29,7 +29,7 @@ export function PluginsPage() {
   const canConfigure = canConfigurePlugins(currentUser)
   const canInstall = canInstallPlugins(currentUser)
   const canManageLifecycle = canManagePluginLifecycle(currentUser)
-  const canCreateSitePlugins = canEditStructure(currentUser)
+  const canCreateSitePlugins = canEditPlugins(currentUser)
   const vm = usePluginsWorkspace()
   const {
     fileInputRef,

@@ -107,9 +107,11 @@ auto-sync on activation like installed plugins.
 
 ### Authority
 
-- **Authoring** (IDE editing, scaffold) — site write capability
-  (`site.structure.edit` for the scaffold; relay write-policy categories
-  gate live edits). Never `plugins.install`.
+- **Authoring** (IDE editing, scaffold) — `plugins.edit`, its own
+  capability: the scaffold endpoint requires it, and the relay write
+  policy's `plugins` category gates every live edit to a `type: 'plugin'`
+  file (add/rename/delete/content — even full site-writers need it).
+  Never `plugins.install`, never a `site.*` capability.
 - **Validation / preview** — no elevated capability (`site.read`).
 - **`Build & activate` / rollback / delete** — `plugins.install`; step-up
   ONLY on the consent moments: first activation, grant-set changes, and

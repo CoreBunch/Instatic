@@ -12,7 +12,8 @@
  *   DELETE /admin/api/cms/site-plugins/:localId[?force=true]  — uninstall runtime row + delete draft source
  *
  * Authority model (design → "Activation Semantics"):
- *   - authoring (scaffold) needs site write capability, never plugins.install;
+ *   - authoring (scaffold) needs `plugins.edit`, never plugins.install —
+ *     the same capability the collab guard requires for plugin-file writes;
  *   - validation/preview need no elevated capability (site.read);
  *   - activation needs `plugins.install`, with step-up ONLY on the consent
  *     moments — first activation and grant-set changes. Same-grant rebuilds
@@ -574,9 +575,10 @@ export async function handleSitePluginsRoutes(
       return jsonResponse({ sitePlugins: await listSitePlugins(db) })
     }
     if (req.method === 'POST') {
-      // Scaffolding writes draft files — structural site work, NOT a plugin
-      // power grant (activation is where powers happen).
-      const user = await requireCapability(req, db, 'site.structure.edit')
+      // Scaffolding writes plugin source into the draft — the authoring
+      // capability, NOT a plugin power grant (activation is where powers
+      // happen). Same gate as the collab guard on plugin-file writes.
+      const user = await requireCapability(req, db, 'plugins.edit')
       if (user instanceof Response) return user
       return handleScaffold(req, db)
     }

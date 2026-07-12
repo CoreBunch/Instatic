@@ -68,6 +68,7 @@ const adminCapabilities: CoreCapability[] = [
   'storage.migrate',
   'plugins.read',
   'plugins.configure',
+  'plugins.edit',
   'plugins.install',
   'plugins.lifecycle',
   'users.manage',

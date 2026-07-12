@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react'
 import { AdminWorkspaceCanvasLayout } from '@admin/layouts/AdminWorkspaceCanvasLayout/AdminWorkspaceCanvasLayout'
 import { useNavigate, useParams } from '@admin/lib/routing'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
-import { canEditStructure, canInstallPlugins } from '@admin/access'
+import { canEditPlugins, canInstallPlugins } from '@admin/access'
 import { ConfirmDeleteDialog } from '@admin/shared/dialogs/ConfirmDeleteDialog/ConfirmDeleteDialog'
 import { SITE_PLUGIN_LOCAL_ID_PATTERN, sitePluginFolder } from '@core/site-plugins'
 import { useSitePluginIde } from './useSitePluginIde'
@@ -61,7 +61,7 @@ interface PendingDelete {
 function SitePluginIde({ localId }: { localId: string }) {
   const currentUser = useAuthenticatedAdminUser()
   const navigate = useNavigate()
-  const canEdit = canEditStructure(currentUser)
+  const canEdit = canEditPlugins(currentUser)
   const canInstall = canInstallPlugins(currentUser)
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
