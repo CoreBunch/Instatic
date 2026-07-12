@@ -1359,4 +1359,15 @@ export const pgMigrations: Migration[] = [
     id: '030_iso_timestamps',
     sql: 'select 1',
   },
+  {
+    // Site plugins: provenance of an installed_plugins row. 'installed' =
+    // uploaded zip / JSON manifest; 'site-local' = generated from the site
+    // draft's plugins/<id>/ source (docs/features/site-plugins.md). Display +
+    // lifecycle routing only — the runtime never branches on it.
+    id: '031_installed_plugins_source',
+    sql: `
+      alter table installed_plugins
+        add column if not exists source text not null default 'installed';
+    `,
+  },
 ]

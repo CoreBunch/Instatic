@@ -125,6 +125,7 @@ function brokenPluginStub(
     lifecycleStatus: 'error',
     lastError: result.reason,
     grantedPermissions: [],
+    source: 'installed',
     manifest: stubManifest,
     settings: {},
     installedAt: new Date(0).toISOString(),

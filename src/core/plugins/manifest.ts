@@ -24,6 +24,19 @@ export { collectEnabledAdminPages, pluginAdminPageRoute }
 export { findPluginResource, validatePluginRecordData } from './resourceRecords'
 
 const PLUGIN_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/
+
+/**
+ * The `site.` id namespace is reserved for site plugins generated from the
+ * site draft (docs/features/site-plugins.md). Uploaded zip packages must
+ * never claim it — enforced at the zip boundary (`readPluginPackage`), NOT
+ * here in the parser, because generated site-plugin packages parse through
+ * `parsePluginManifest` with `site.*` ids.
+ */
+export const SITE_PLUGIN_ID_PREFIX = 'site.'
+
+export function isReservedSitePluginId(id: string): boolean {
+  return id.startsWith(SITE_PLUGIN_ID_PREFIX)
+}
 /**
  * Used for resource IDs and admin page IDs — these become URL path segments,
  * so they are restricted to lowercase kebab-case.

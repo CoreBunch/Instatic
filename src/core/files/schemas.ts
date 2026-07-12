@@ -26,6 +26,10 @@ const SiteFileTypeSchema = Type.Union([
   Type.Literal('asset'),     // public/* — images, fonts, etc. (binary)
   Type.Literal('config'),    // package.json, tsconfig.json, vite.config.ts, .env, etc.
   Type.Literal('doc'),       // README.md, CHANGELOG.md — markdown docs
+  Type.Literal('plugin'),    // plugins/<local-id>/** — site plugin source; NEVER enters
+                             // published bundles, _siteScripts, or module-readable file
+                             // lists, and never appears in the site editor (edited in
+                             // the Plugin IDE). Gated by site-plugin-file-isolation.test.ts.
 ])
 
 export type SiteFileType = Static<typeof SiteFileTypeSchema>
