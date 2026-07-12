@@ -84,6 +84,9 @@ const ALLOWED_CONSUMERS = new Set([
   // Read-only agent code/diff blocks — lazy-loaded by ToolCallRow, same
   // chunk graph as the code editor.
   'admin/pages/site/code-editor/AgentCodeView.tsx',
+  // Theme + language stacks shared by the three viewers above (non-component
+  // module so the component files keep react-refresh eligibility).
+  'admin/pages/site/code-editor/codeMirrorShared.ts',
 ])
 
 // Matches: import ... from 'codemirror' / '@codemirror/...' / '@lezer/...'

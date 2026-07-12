@@ -22,7 +22,7 @@ import {
   getLanguageExtensions,
   readableHighlightStyle,
   type CodeLanguage,
-} from './CodeMirrorEditor'
+} from './codeMirrorShared'
 
 /** Map a file path to the highlight language by extension. */
 function codeLanguageForPath(path: string): CodeLanguage {
