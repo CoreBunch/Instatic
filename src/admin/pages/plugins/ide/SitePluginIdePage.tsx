@@ -175,6 +175,7 @@ function SitePluginIde({ localId }: { localId: string }) {
             files={files}
             summary={vm.summary}
             canEdit={canEdit}
+            synced={vm.synced}
             onOpenRawJson={() => {
               const manifest = files.find((file) => file.path === `${folder}plugin.json`)
               if (manifest) selectFile(manifest.id)

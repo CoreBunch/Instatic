@@ -58,6 +58,31 @@ const PING_INTERVAL_MS = 10_000
  */
 const MAX_BACKLOG_BYTES = 512 * 1024
 
+/**
+ * Dev-only: the CMS server's own origin, injected by `vite.config.ts`
+ * (`define`). Vite's WebSocket proxying is broken when Vite runs under Bun
+ * (its bundled http-proxy calls `socket.destroySoon`, which Bun's
+ * net.Socket lacks — upgrades die before establishing), so in dev the
+ * socket connects DIRECTLY to the CMS instead of through the proxy.
+ * Cookies are host-scoped (port-agnostic on localhost) and the CMS's
+ * Origin allowlist admits the Vite dev origins, so the direct hop stays
+ * fully authenticated. Production serves admin + API from one origin and
+ * uses the same-origin path.
+ */
+declare const __INSTATIC_CMS_DEV_ORIGIN__: string | undefined
+
+function socketBaseUrl(): string {
+  if (
+    import.meta.env.DEV &&
+    typeof __INSTATIC_CMS_DEV_ORIGIN__ === 'string' &&
+    __INSTATIC_CMS_DEV_ORIGIN__.length > 0
+  ) {
+    return __INSTATIC_CMS_DEV_ORIGIN__.replace(/^http/, 'ws')
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  return `${protocol}://${window.location.host}`
+}
+
 /** y-protocols/sync message types (payload's first varUint). */
 const SYNC_STEP_2 = 1
 
