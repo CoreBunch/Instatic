@@ -172,7 +172,7 @@ describe('SiteExplorerPanel', () => {
 
     const panel = screen.getByTestId('site-explorer-panel')
     expect(within(panel).getByRole('heading', { name: 'Styles' })).toBeDefined()
-    expect(within(panel).getByRole('heading', { name: 'Scripts' })).toBeDefined()
+    expect(within(panel).getByRole('heading', { name: 'Frontend scripts' })).toBeDefined()
     expect(within(panel).queryByRole('heading', { name: 'Pages' })).toBeNull()
     expect(within(panel).queryByRole('heading', { name: 'Components' })).toBeNull()
 
@@ -266,7 +266,7 @@ describe('SiteExplorerPanel', () => {
 
     render(<SiteExplorerPanel sectionGroup="code" />)
     const codePanel = screen.getByTestId('site-explorer-panel')
-    const scriptsTree = within(codePanel).getByRole('tree', { name: 'Scripts' })
+    const scriptsTree = within(codePanel).getByRole('tree', { name: 'Frontend scripts' })
     expect(within(scriptsTree).getByRole('button', { name: 'assets' })).toBeDefined()
     expect(within(scriptsTree).getByRole('button', { name: 'js' })).toBeDefined()
   })

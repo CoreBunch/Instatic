@@ -18,6 +18,7 @@ import {
   type ModuleInserterSectionId,
 } from './moduleInserterModel'
 import { ModuleWireframe } from './ModuleWireframe'
+import { isDraftPreviewModule } from '@site/hooks/draftModulePreviewState'
 import styles from './ModuleInserterDialog.module.css'
 
 export type InserterView = 'grid' | 'list'
@@ -137,6 +138,9 @@ function ItemTile({ item }: { item: ModuleInserterItem }) {
         <span className={styles.itemTitle}>
           <ItemIcon item={item} />
           <span>{item.name}</span>
+          {item.kind === 'module' && isDraftPreviewModule(item.id) && (
+            <span className={styles.draftBadge}>Draft</span>
+          )}
         </span>
         <span className={styles.itemDescription}>{itemDescription(item)}</span>
       </span>
@@ -157,6 +161,9 @@ function ItemRow({ item }: { item: ModuleInserterItem }) {
         <span className={styles.itemTitle}>
           <ItemIcon item={item} />
           <span>{item.name}</span>
+          {item.kind === 'module' && isDraftPreviewModule(item.id) && (
+            <span className={styles.draftBadge}>Draft</span>
+          )}
         </span>
         <span className={styles.itemDescription}>{itemDescription(item)}</span>
       </span>
