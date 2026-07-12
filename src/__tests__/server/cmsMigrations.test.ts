@@ -62,13 +62,25 @@ describe('CMS migrations', () => {
   it('seeds the expected system roles in both dialects', () => {
     const pgSql = pgMigrations.map((m) => m.sql).join('\n')
     const sqliteSql = sqliteMigrations.map((m) => m.sql).join('\n')
+    // The migration seed is the INITIAL snapshot only — Owner/Admin are
+    // force-resynced from SYSTEM_ROLES on every boot (syncSystemRoles), so a
+    // capability added after the seed migration deliberately never appears
+    // in migration SQL (committed migrations are immutable). The gate here
+    // is: every role slug is seeded, and every capability the seed DOES
+    // grant is still a real capability (no orphaned strings surviving a
+    // rename).
+    const seededCapabilities = new Set(
+      [...`${pgSql}\n${sqliteSql}`.matchAll(/"([a-z]+(?:\.[a-zA-Z]+)+)"/g)]
+        .map((match) => match[1]!)
+        .filter((value) => /^(dashboard|site|pages|content|media|runtime|storage|plugins|users|roles|audit|data|ai)\./.test(value)),
+    )
+    const known = new Set<string>(SYSTEM_ROLES.flatMap((role) => role.capabilities))
+    for (const seeded of seededCapabilities) {
+      expect(known.has(seeded), `migration seeds unknown capability "${seeded}"`).toBe(true)
+    }
     for (const role of SYSTEM_ROLES) {
       expect(pgSql).toContain(`'${role.slug}'`)
       expect(sqliteSql).toContain(`'${role.slug}'`)
-      for (const capability of role.capabilities) {
-        expect(pgSql).toContain(capability)
-        expect(sqliteSql).toContain(capability)
-      }
     }
   })
 

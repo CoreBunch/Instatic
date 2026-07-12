@@ -18,7 +18,7 @@ describe('site plugin invariants', () => {
     const allowed = [
       /server\/repositories\/plugins\.ts$/,
       /server\/plugins\/sitePlugins\//,
-      /server\/handlers\/cms\/sitePlugins\.ts$/,
+      /server\/handlers\/cms\/sitePlugins\//,
       /server\/handlers\/cms\/plugins\/install\.ts$/,
       /server\/db\/migrations-(pg|sqlite)\.ts$/, // the source-column migration comment/default
       /src\/core\/plugin-sdk\/types\/installedPlugin\.ts$/,
@@ -62,11 +62,17 @@ describe('site plugin invariants', () => {
   })
 
   test('activation authority stays with plugins.install + conditional step-up', async () => {
-    const text = await Bun.file('server/handlers/cms/sitePlugins.ts').text()
+    const routes = await Bun.file('server/handlers/cms/sitePlugins/index.ts').text()
     // Activate + rollback gate on plugins.install…
-    expect(text.match(/requireCapability\(req, db, 'plugins\.install'\)/g)?.length).toBeGreaterThanOrEqual(2)
-    // …and step-up runs behind the grant-diff, not unconditionally.
-    expect(text).toContain('grantsChanged')
-    expect(text).toContain('requireStepUp')
+    expect(routes.match(/requireCapability\(req, db, 'plugins\.install'\)/g)?.length).toBeGreaterThanOrEqual(2)
+    // …and step-up runs behind the grant-diff (the engine reports
+    // grants-changed; only the HTTP wrapper may step up and re-run).
+    expect(routes).toContain("result.status === 'grants-changed'")
+    expect(routes).toContain('requireStepUp')
+    const service = await Bun.file('server/handlers/cms/sitePlugins/service.ts').text()
+    expect(service).toContain('grantsChanged')
+    // The engine itself must never import interactive auth — consent stays
+    // with the HTTP wrapper.
+    expect(service.includes('requireStepUp')).toBe(false)
   })
 })

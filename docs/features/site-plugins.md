@@ -35,7 +35,7 @@ If browser code talks to a plugin's server code, it lives in that plugin's
 | Server build orchestrator (workspace, single-flight, timeout) | `server/plugins/sitePlugins/build.ts` |
 | Workspace materializer | `server/plugins/sitePlugins/workspace.ts` |
 | Revision retention / rollback target | `server/plugins/sitePlugins/retention.ts` |
-| HTTP routes | `server/handlers/cms/sitePlugins.ts` |
+| HTTP routes + service layer (list, activation engine) | `server/handlers/cms/sitePlugins/` |
 | Disk-package activation seam (shared with zip installs) | `server/handlers/cms/plugins/install.ts` → `activatePluginPackageFromDisk` |
 | Plugin IDE | `src/admin/pages/plugins/ide/` |
 | Plugins-page group + scaffold dialog | `src/admin/pages/plugins/components/SitePluginsSection.tsx`, `NewSitePluginDialog.tsx` |
@@ -43,6 +43,7 @@ If browser code talks to a plugin's server code, it lives in that plugin's
 | Collab CodeMirror binding | `src/admin/pages/site/code-editor/CollabCodeMirrorEditor.tsx` |
 | Granular collab files (Y.Map + Y.Text content) | `src/core/collab/filesY.ts` |
 | SDK route helper | `src/core/plugin-sdk/sitePluginRoute.ts` |
+| AI plugin scope (tools, prompt, snapshot) | `server/ai/tools/plugin/`, `src/admin/pages/plugins/ide/agent/` |
 
 ## Source layout and field ownership
 
@@ -161,6 +162,34 @@ The IDE binds ONLY `site:default` over the site socket (its own
 
 There is no save button — the relay persists continuously; Cmd+S re-runs
 diagnostics. Automatic validation runs debounced on every change.
+
+### The AI panel (`plugin` chat scope)
+
+The left rail's AI button (gated by `ai.chat`) docks the shared AgentPanel
+— the same chat Site and Content have, on the `plugin` tool scope
+(`server/ai/tools/plugin/`):
+
+- **File tools are browser-bridged** to the live CRDT session: the agent
+  reads exactly what you see (un-persisted keystrokes included) and its
+  edits merge character-level with concurrent typing.
+  `plugin_read_file` paginates + hashes; `plugin_patch_file` requires the
+  latest hash (stale edits fail instead of clobbering); write/rename/
+  delete gate on `plugins.edit`; `plugin_open_file` moves the visible
+  buffer.
+- **Lifecycle tools are server-resolved**: `plugin_list_plugins`,
+  `plugin_validate` (the diagnostics-strip build), and `plugin_activate` —
+  same-grant rebuilds only. A changed grant set is refused with an
+  instruction to confirm in the IDE header: the permission review +
+  step-up stays a human consent moment.
+- The IDE registers its tool bridge for the whole page mount
+  (`usePluginIdeToolBridge`), so **external MCP connectors** reach the
+  open IDE with the panel closed — full parity with Site/Content
+  (docs/features/mcp-connectors.md). Lifecycle tools also run headless
+  over MCP.
+
+The per-request snapshot (open plugin, file list, active buffer, runtime
+state, latest diagnostics) rides every send; the `plugin` scope has its own
+default model row on /admin/ai/defaults.
 
 `plugin.json` has no structured editor — the raw buffer is the manifest
 surface. Manifest coherence (e.g. an `editor/` entry file without
