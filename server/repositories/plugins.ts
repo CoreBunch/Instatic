@@ -1,5 +1,6 @@
 import type {
   InstalledPlugin,
+  InstalledPluginSource,
   PluginLifecycleStatus,
   PluginManifest,
   PluginPermission,
@@ -44,6 +45,7 @@ interface InstalledPluginRow {
   granted_permissions_json?: unknown
   manifest_json: unknown
   settings_json?: unknown
+  source?: string | null
   installed_at: Date | string
   updated_at: Date | string
 }
@@ -94,6 +96,7 @@ function mapInstalledPlugin(row: InstalledPluginRow): InstalledPluginResult {
         grantedPermissions: Array.isArray(grantedPermissions)
           ? grantedPermissions as PluginPermission[]
           : manifest.grantedPermissions ?? [],
+        source: row.source === 'site-local' ? 'site-local' : 'installed',
         manifest,
         settings,
         installedAt: isoDate(row.installed_at),
@@ -171,7 +174,7 @@ function mapPluginRecord(row: PluginRecordRow): PluginRecord {
 export async function listInstalledPlugins(db: DbClient): Promise<InstalledPluginResult[]> {
   const { rows } = await db<InstalledPluginRow>`
     select id, name, version, enabled, lifecycle_status, last_error,
-           granted_permissions_json, manifest_json, settings_json, installed_at, updated_at
+           granted_permissions_json, manifest_json, settings_json, source, installed_at, updated_at
     from installed_plugins
     order by installed_at desc
   `
@@ -181,7 +184,7 @@ export async function listInstalledPlugins(db: DbClient): Promise<InstalledPlugi
 export async function getInstalledPlugin(db: DbClient, id: string): Promise<InstalledPluginResult | null> {
   const { rows } = await db<InstalledPluginRow>`
     select id, name, version, enabled, lifecycle_status, last_error,
-           granted_permissions_json, manifest_json, settings_json, installed_at, updated_at
+           granted_permissions_json, manifest_json, settings_json, source, installed_at, updated_at
     from installed_plugins
     where id = ${id}
   `
@@ -192,7 +195,9 @@ export async function installPlugin(
   db: DbClient,
   manifest: PluginManifest,
   grantedPermissions: PluginPermission[] = manifest.grantedPermissions ?? [],
+  opts: { source?: InstalledPluginSource } = {},
 ): Promise<InstalledPlugin> {
+  const source: InstalledPluginSource = opts.source ?? 'installed'
   const manifestToStore = { ...manifest, grantedPermissions }
   const declared = manifest.settings ?? []
   // Seed settings with the manifest's declared defaults so plugins reading
@@ -204,8 +209,8 @@ export async function installPlugin(
     Object.entries(pluginSettingsDefaults(declared)).filter(([key]) => !secretIds.has(key)),
   )
   const { rows } = await db<InstalledPluginRow>`
-    insert into installed_plugins (id, name, version, manifest_json, granted_permissions_json, settings_json, enabled, lifecycle_status, last_error)
-    values (${manifest.id}, ${manifest.name}, ${manifest.version}, ${writeJson(manifestToStore)}, ${writeJson(grantedPermissions)}, ${writeJson(initialSettings)}, true, 'installed', null)
+    insert into installed_plugins (id, name, version, manifest_json, granted_permissions_json, settings_json, enabled, lifecycle_status, last_error, source)
+    values (${manifest.id}, ${manifest.name}, ${manifest.version}, ${writeJson(manifestToStore)}, ${writeJson(grantedPermissions)}, ${writeJson(initialSettings)}, true, 'installed', null, ${source})
     on conflict (id) do update
       set name = excluded.name,
           version = excluded.version,
@@ -214,9 +219,10 @@ export async function installPlugin(
           enabled = true,
           lifecycle_status = 'installed',
           last_error = null,
+          source = excluded.source,
           updated_at = current_timestamp
     returning id, name, version, enabled, lifecycle_status, last_error,
-              granted_permissions_json, manifest_json, settings_json, installed_at, updated_at
+              granted_permissions_json, manifest_json, settings_json, source, installed_at, updated_at
   `
   // Secret settings with a non-empty manifest default get an encrypted row.
   // Insert-if-absent: the upgrade/rollback flows reuse this upsert and must
@@ -240,7 +246,7 @@ export async function setPluginEnabled(
     update installed_plugins set enabled = ${enabled}, updated_at = current_timestamp
     where id = ${id}
     returning id, name, version, enabled, lifecycle_status, last_error,
-              granted_permissions_json, manifest_json, settings_json, installed_at, updated_at
+              granted_permissions_json, manifest_json, settings_json, source, installed_at, updated_at
   `
   return rows[0] ? mapInstalledPlugin(rows[0]) : null
 }
@@ -255,7 +261,7 @@ export async function setPluginLifecycleStatus(
     update installed_plugins set lifecycle_status = ${lifecycleStatus}, last_error = ${lastError}, updated_at = current_timestamp
     where id = ${id}
     returning id, name, version, enabled, lifecycle_status, last_error,
-              granted_permissions_json, manifest_json, settings_json, installed_at, updated_at
+              granted_permissions_json, manifest_json, settings_json, source, installed_at, updated_at
   `
   return rows[0] ? mapInstalledPlugin(rows[0]) : null
 }
@@ -287,7 +293,7 @@ export async function setPluginSettings(
            updated_at = current_timestamp
      where id = ${id}
     returning id, name, version, enabled, lifecycle_status, last_error,
-              granted_permissions_json, manifest_json, settings_json, installed_at, updated_at
+              granted_permissions_json, manifest_json, settings_json, source, installed_at, updated_at
   `
   return rows[0] ? mapInstalledPlugin(rows[0]) : null
 }
