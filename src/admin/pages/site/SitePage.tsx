@@ -3,6 +3,7 @@ import { AdminCanvasLayout } from '@admin/layouts/AdminCanvasLayout'
 import { consumePendingAction } from '@admin/spotlight/pendingAction'
 import { useEditorStore } from '@site/store/store'
 import { useMcpWorkspaceBridge } from '@admin/ai/useMcpWorkspaceBridge'
+import { useDraftModulePackPreview } from '@site/hooks/useDraftModulePackPreview'
 import { executeAgentTool } from './agent'
 
 /**
@@ -23,6 +24,11 @@ export function SitePage() {
   // hydrated so get_context's siteConnected flag means browser tools can
   // actually see an active site.
   useMcpWorkspaceBridge('site', executeAgentTool, undefined, siteHydrated)
+
+  // Session-local site plugin draft preview (`?previewSitePlugin=<localId>`,
+  // set by the Plugin IDE's "Preview in canvas") — loads the draft module
+  // pack into THIS editor session only.
+  useDraftModulePackPreview()
 
   // Consume cross-workspace pending actions queued by the spotlight. Each
   // action waits for the editor store to hydrate (site !== null) — we
