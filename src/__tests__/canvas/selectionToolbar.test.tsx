@@ -363,6 +363,7 @@ describe('canvas selection toolbar', () => {
     expect(labels).toEqual([
       'Drag selected layers',
       'Insert module',
+      'Add selected layers to AI chat',
       'Duplicate selected layers',
       'Delete selected layers',
     ])

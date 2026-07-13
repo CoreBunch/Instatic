@@ -212,6 +212,56 @@
   min-width: 0;
 }
 
+/* ── Composer (contenteditable) ────────────────────────────────────────── */
+.composer {
+  width: 100%;
+  min-height: 44px;
+  max-height: 120px;
+  overflow-y: auto;
+  padding: var(--space-s) var(--space-m);
+  border: 1px solid var(--overlay-10);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: var(--text-m);
+  line-height: 1.5;
+  outline: none;
+  cursor: text;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.composer:focus {
+  border-color: var(--primary);
+}
+
+.composerEmpty::before {
+  content: attr(data-placeholder);
+  color: var(--text-disabled);
+  pointer-events: none;
+}
+
+.composerDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--bg-surface-2);
+}
+
+/* ── Mention pill ────────────────────────────────────────────────────────── */
+.mentionPill {
+  color: var(--accent-2);
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1.5px;
+}
+
+.mentionPill:hover {
+  text-decoration-color: currentColor;
+}
+
 /* The picker takes the leftover width but never crowds out the button. */
 .inputControlsPicker {
   min-width: 0;

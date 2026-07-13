@@ -38,7 +38,7 @@ export function ToolCallRow({ toolCall }: { toolCall: AgentToolCall }) {
   const isSuccess = toolCall.status === 'success'
   const isError = toolCall.status === 'error'
 
-  const display = getToolCallDisplay(toolCall.actionType, toolCall.params)
+  const display = getToolCallDisplay(toolCall.actionType, toolCall.params, toolCall.displayLabel)
   const swatches = extractColorSwatches(toolCall.actionType, toolCall.params)
   const accessibleStatus = isPending ? 'Running' : isSuccess ? 'Completed' : 'Failed'
   const statusLabel = `${accessibleStatus} ${display.title}${display.detail ? ` — ${display.detail}` : ''}`

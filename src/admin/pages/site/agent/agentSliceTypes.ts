@@ -1,7 +1,7 @@
 import type { EditorStoreSliceCreator } from '@site/store/types'
 import type { AiToolOutput, AiUserContentBlock } from '@core/ai'
 import type { ConversationView } from '@admin/ai/api'
-import type { AgentMessage, AgentToolScope } from './types'
+import type { AgentMessage, AgentMessageMention, AgentToolScope } from './types'
 
 export interface AgentSliceConfig {
   /**
@@ -47,6 +47,11 @@ export interface AgentConversationUsage {
   costUsd: number
 }
 
+export interface AgentDraftMention {
+  nodeId: string
+  label: string
+}
+
 export interface AgentSlice {
   isAgentOpen: boolean
   isAgentStreaming: boolean
@@ -63,11 +68,26 @@ export interface AgentSlice {
   isAgentProviderPending: boolean
   /** Remounts local composer drafts on explicit conversation replacement. */
   agentComposerEpoch: number
+  /**
+   * Mention queue for the agent composer. Set by "Add to AI Chat" actions
+   * from the canvas / layers panel; consumed once by AgentComposer then
+   * cleared. Each entry carries the layer's nodeId and display label.
+   */
+  agentDraftMentions: AgentDraftMention[]
+  /**
+   * Accumulated nodeId → human label registry across the conversation.
+   * Survives node deletion so scanned assistant mentions can still be
+   * rendered as clickable pills with friendly names after a node is gone.
+   */
+  agentMentionLabels: Record<string, string>
 
   openAgent(): void
   closeAgent(): void
   toggleAgent(): void
-  sendAgentMessage(content: AiUserContentBlock[]): Promise<{ accepted: boolean }>
+  sendAgentMessage(
+    content: AiUserContentBlock[],
+    mentions?: AgentMessageMention[],
+  ): Promise<{ accepted: boolean }>
   abortAgent(): void
   clearAgentMessages(): void
   loadAgentConversations(): Promise<void>
@@ -76,6 +96,15 @@ export interface AgentSlice {
   deleteAgentConversation(id: string): Promise<void>
   setAgentProvider(credentialId: string, modelId: string): Promise<void>
   loadScopeDefault(): Promise<void>
+  /**
+   * Queue layer mentions into the agent composer and open the panel so the
+   * user can finish their prompt. Used by "Add to AI Chat" flows.
+   */
+  stageAgentMentions(mentions: AgentDraftMention[]): void
+  /**
+   * Clear the mention queue after the composer has consumed it.
+   */
+  clearAgentDraftMentions(): void
 }
 
 export type EditorStoreSet = Parameters<EditorStoreSliceCreator<AgentSlice>>[0]

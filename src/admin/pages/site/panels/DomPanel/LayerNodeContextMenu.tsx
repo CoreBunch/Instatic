@@ -48,6 +48,7 @@ import { useInsertModule } from '@site/hooks/useInsertModule'
 import { resolveInsertLocation } from '@site/store/insertLocation'
 import { ModulePicker } from '@site/module-picker'
 import { canComponentizeNode } from '@site/componentization'
+import { getMentionLabelForNode } from '@site/agent/mentionLabel'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import type { AnyModuleDefinition } from '@core/module-engine'
 import { PenSquareSolidIcon } from 'pixel-art-icons/icons/pen-square-solid'
@@ -64,6 +65,7 @@ import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { BoxSolidIcon } from 'pixel-art-icons/icons/box-solid'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { EyeSolidIcon } from 'pixel-art-icons/icons/eye-solid'
+import { SparklesSolidIcon } from 'pixel-art-icons/icons/sparkles-solid'
 import { isNarrowEditorChromeViewport } from '@site/layout/responsiveChrome'
 import styles from './LayerNodeContextMenu.module.css'
 
@@ -318,6 +320,19 @@ export function LayerNodeContextMenu({
     onClose()
   }
 
+  const dispatchAddToAiChat = () => {
+    if (targetIds.length === 0) return
+    const state = useEditorStore.getState()
+    const site = state.site
+    const page = site?.pages.find((p) => p.id === state.activePageId)
+    const mentions = targetIds.map((id) => {
+      const { label } = getMentionLabelForNode(id, page?.nodes[id], site)
+      return { nodeId: id, label }
+    })
+    state.stageAgentMentions(mentions)
+    onClose()
+  }
+
   // Selection-count chip in the menu header (multi only). Lives as a
   // disabled menuitem-equivalent label so screen readers can read "3 layers
   // selected" before announcing the action items.
@@ -386,6 +401,11 @@ export function LayerNodeContextMenu({
               Save as layout…
             </ContextMenuItem>
           )}
+
+          <ContextMenuItem onClick={dispatchAddToAiChat}>
+            <span aria-hidden="true"><SparklesSolidIcon size={13} /></span>
+            Add to AI chat
+          </ContextMenuItem>
 
           <ContextMenuSeparator />
 
