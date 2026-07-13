@@ -286,13 +286,6 @@
         padding: var(--space-4xs) var(--space-s);
     }
 
-    .siteName,
-    .siteNameSkeleton,
-    .siteFavicon,
-    .workspaceToolbarItems {
-        order: 1;
-    }
-
     .siteName {
         max-width: 104px;
         margin-right: var(--space-4xs);
@@ -320,7 +313,6 @@
 
     .adminLink,
     .activeSection {
-        order: 2;
         justify-content: center;
         width: 30px;
         min-width: 30px;
