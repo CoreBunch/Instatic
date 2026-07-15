@@ -15,6 +15,7 @@ import { EmptyState } from '@ui/components/EmptyState'
 import { DataGrid } from '../DataGrid/DataGrid'
 import { DataGridSkeleton } from '../DataGrid/DataGridSkeleton'
 import type { DataRow, DataRowStatus, DataTable } from '@core/data/schemas'
+import { tableHasEditableFields } from '@core/data/systemTableGuard'
 // Reuse the site canvas surface token so the Data page matches
 // Site / Content / Media visual language.
 import canvasStyles from '@site/canvas/CanvasRoot.module.css'
@@ -112,6 +113,13 @@ export function DataCanvas({
     )
   }
 
+  // `pages` / `components` / `layouts` start out with every field built-in
+  // and value-locked — a generic "Add row" / "Duplicate row" through the Data
+  // grid has nothing it could actually fill in, and would only ever bounce
+  // off the server's `lockedBuiltInCellKey` rejection. Hide both affordances
+  // for those tables rather than offer an action guaranteed to fail.
+  const rowCreationSupported = tableHasEditableFields(table)
+
   return (
     <section className={`${canvasStyles.canvas} ${styles.canvas}`} aria-label={`${table.pluralLabel} data grid`}>
       <DataGrid
@@ -123,9 +131,9 @@ export function DataCanvas({
         error={error}
         readOnly={!canEdit}
         onSelectRow={onSelectRow}
-        onAddRow={onAddRow}
+        onAddRow={rowCreationSupported ? onAddRow : undefined}
         onEditInContent={onEditInContent}
-        onDuplicateRow={canCreate ? onDuplicateRow : undefined}
+        onDuplicateRow={canCreate && rowCreationSupported ? onDuplicateRow : undefined}
         onOpenInSiteEditor={onOpenInSiteEditor}
         onOpenRow={onOpenRow}
         onDeleteRow={canDelete ? onDeleteRow : undefined}
