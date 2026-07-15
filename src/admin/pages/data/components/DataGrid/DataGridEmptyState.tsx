@@ -18,7 +18,7 @@ interface DataGridEmptyStateProps {
   /** True when a search query or non-'all' status filter is narrowing the view. */
   filtered: boolean
   readOnly: boolean
-  onAddRow: () => Promise<void> | void
+  onAddRow?: () => Promise<void> | void
 }
 
 export function DataGridEmptyState({
@@ -28,20 +28,21 @@ export function DataGridEmptyState({
   onAddRow,
 }: DataGridEmptyStateProps): ReactElement {
   const noun = table.pluralLabel.toLowerCase()
+  const canAdd = !readOnly && onAddRow != null
   return (
     <div className={styles.emptyStateSpan}>
       <EmptyState
         plain
         title={filtered ? `No ${noun} match this view` : `No ${noun} yet`}
         description={
-          readOnly
+          !canAdd
             ? undefined
             : filtered
               ? 'Try clearing the search or switching views.'
               : 'Add the first row to get started.'
         }
         action={
-          !readOnly && !filtered ? (
+          canAdd && !filtered ? (
             <Button variant="secondary" size="sm" onClick={() => { void onAddRow() }}>
               <PlusIcon size={12} aria-hidden="true" />
               Add row

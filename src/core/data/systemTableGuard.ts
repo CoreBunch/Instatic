@@ -43,6 +43,21 @@ export function isBuiltInValueLocked(
 }
 
 /**
+ * Whether this table has at least one field a row write can actually set —
+ * i.e. at least one field that isn't value-locked. `pages` / `components` /
+ * `layouts` start out with EVERY field built-in and value-locked, so a brand
+ * new one of these tables has nothing a generic row create/duplicate could
+ * fill in until a custom field is added. Gates the Data grid's "Add row" /
+ * "Duplicate row" affordances — offering them here would only ever produce a
+ * `lockedBuiltInCellKey` rejection from the server.
+ */
+export function tableHasEditableFields(
+  table: Pick<DataTable, 'system' | 'kind' | 'fields'>,
+): boolean {
+  return table.fields.some((field) => !isBuiltInValueLocked(table, field))
+}
+
+/**
  * First cell key in `cells` that targets a value-locked built-in field on the
  * given table, or `null` when none do. Lets a row-write handler reject attempts
  * to hand-edit editor-managed built-in values (a page's tree, a layout's

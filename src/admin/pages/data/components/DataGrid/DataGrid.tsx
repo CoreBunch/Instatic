@@ -61,7 +61,8 @@ interface DataGridProps {
   readOnly?: boolean
   /** Click on a row — typically opens the inspector. */
   onSelectRow: (rowId: string | null) => void
-  onAddRow: () => Promise<void> | void
+  /** Create a new row. Omit to hide the "Add row" toolbar button + empty-state CTA. */
+  onAddRow?: () => Promise<void> | void
   /** Delete a row by id. Omit to hide per-row + bulk delete. */
   onDeleteRow?: (rowId: string) => void
   /** Duplicate a row. Omit to hide the duplicate action. */
