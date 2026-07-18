@@ -21,11 +21,14 @@ import { registry } from '@core/module-engine'
 import type { CssBundleFile, SiteCssBundleId } from '@core/publisher'
 import { buildPublishedSiteCssBundle } from './publish/siteCssBundle'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
+import { handlePlatformRequest } from './platform/handler'
+import type { PlatformRuntime } from './platform/runtime'
 
 const VITE_DEV_URL = 'http://localhost:5173'
 
 interface ServerRuntime {
   db: DbClient
+  platform?: PlatformRuntime | null
   staticDir?: string
   uploadsDir?: string
   /**
@@ -63,6 +66,7 @@ type RouteHandler = (
  */
 const routes: readonly RouteHandler[] = [
   tryServeHealth,
+  tryServePlatform,
   // MCP server endpoint — external AI clients (Claude Code, Codex, remote
   // agents) speak the Model Context Protocol here over its own bearer-token
   // auth. Matched before the admin-cookie-gated AI routes since it lives under
@@ -85,6 +89,7 @@ const routes: readonly RouteHandler[] = [
   tryServeMediaRedirect,
   tryServeStaticAsset,
   tryServeUpload,
+  tryServePlatformApp,
   tryServeAdminApp,
   tryServePublicRoute,
   trySetupRedirect,
@@ -116,6 +121,15 @@ export async function handleServerRequest(
 function tryServeHealth(_req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Response | null {
   if (pathname !== '/health') return null
   return jsonResponse({ status: 'ok', ts: Date.now() })
+}
+
+function tryServePlatform(
+  req: Request,
+  runtime: ServerRuntime,
+  url: URL,
+  _pathname: string,
+): Promise<Response | null> {
+  return handlePlatformRequest(req, runtime.platform ?? null, url)
 }
 
 /**
@@ -373,7 +387,7 @@ async function tryServeStaticAsset(
   pathname: string,
 ): Promise<Response | null> {
   if (!runtime.staticDir) return null
-  if (pathname === '/' || pathname === '/index.html') return null
+  if (pathname === '/' || pathname === '/index.html' || pathname === '/platform.html') return null
   return await serveStaticFile(runtime.staticDir, pathname, _req)
 }
 
@@ -427,6 +441,24 @@ async function tryServeAdminApp(
   }
   // Admin SPA isn't served from this port (dev mode, or production missing a
   // build). Tell the developer where to actually find it.
+  return adminUiNotBuiltResponse(pathname)
+}
+
+async function tryServePlatformApp(
+  req: Request,
+  runtime: ServerRuntime,
+  _url: URL,
+  pathname: string,
+): Promise<Response | null> {
+  const isPlatformPath = pathname === '/app' || pathname.startsWith('/app/')
+  if (!isPlatformPath || pathname.startsWith('/app/api/') || pathname.startsWith('/app/auth/')) {
+    return null
+  }
+  if (req.method !== 'GET' && req.method !== 'HEAD') return methodNotAllowedResponse()
+  if (runtime.staticDir) {
+    const platformApp = await serveStaticFile(runtime.staticDir, '/platform.html', req)
+    if (platformApp) return platformApp
+  }
   return adminUiNotBuiltResponse(pathname)
 }
 
@@ -500,6 +532,10 @@ function adminUiNotBuiltResponse(pathname: string): Response {
     status: 404,
     headers: { 'content-type': 'text/html; charset=utf-8' },
   })
+}
+
+function methodNotAllowedResponse(): Response {
+  return jsonResponse({ error: 'Method not allowed' }, { status: 405 })
 }
 
 /**

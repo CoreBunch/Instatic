@@ -36,6 +36,10 @@ import { getLatestSnapshotForVersion } from './publishedSnapshotCache'
 interface DataRowBakeResult {
   /** Routes successfully baked into the slot. */
   baked: number
+  /** Public URL paths successfully baked into the slot. */
+  routes: string[]
+  /** Final HTML documents used to derive the artifact runtime requirements. */
+  htmlDocuments: string[]
   /**
    * CSS bundles referenced by the baked HTML. The caller writes their files
    * into the slot alongside the page bundles — entry-template renders can
@@ -64,7 +68,7 @@ export async function bakePublishedDataRowArtefacts(
   slotDir: string,
   publishVersion: number,
 ): Promise<DataRowBakeResult> {
-  const result: DataRowBakeResult = { baked: 0, cssBundles: [] }
+  const result: DataRowBakeResult = { baked: 0, routes: [], htmlDocuments: [], cssBundles: [] }
 
   const routes = await listPublishedRowRoutes(db)
   if (routes.length === 0) return result
@@ -100,6 +104,8 @@ export async function bakePublishedDataRowArtefacts(
       const html = await applyPublishedHtmlPipeline(rendered, db)
       await writeArtefact(slotDir, urlPath, html)
       result.cssBundles.push(rendered.cssBundle)
+      result.routes.push(urlPath)
+      result.htmlDocuments.push(html)
       result.baked++
     } catch (err) {
       console.error('[publish:site] failed to bake row artefact for', urlPath, '(falls through to live renderer):', err)

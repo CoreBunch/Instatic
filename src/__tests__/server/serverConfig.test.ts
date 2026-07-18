@@ -99,6 +99,21 @@ describe('readServerConfig', () => {
       staticDir: './dist',
       trustedProxyCidrs: [],
       publicOrigins: [],
+      platform: {
+        enabled: true,
+        databaseUrl: 'sqlite:./.tmp/control-plane.db',
+        authMode: 'development',
+        workos: null,
+        cookieSecure: false,
+        appUrl: 'http://localhost:5173',
+        developmentIdentity: {
+          userId: 'user_local_owner',
+          email: 'owner@local.instatic',
+          name: 'Local Owner',
+          organizationId: 'org_local_agency',
+          organizationName: 'Local Agency',
+        },
+      },
     })
   })
 
@@ -121,6 +136,21 @@ describe('readServerConfig', () => {
       staticDir: '/srv/instatic/dist',
       trustedProxyCidrs: ['10.0.0.0/8', '192.168.0.0/16'],
       publicOrigins: ['https://cms.example.com', 'http://localhost:5173'],
+      platform: {
+        enabled: true,
+        databaseUrl: 'sqlite:./.tmp/control-plane.db',
+        authMode: 'development',
+        workos: null,
+        cookieSecure: true,
+        appUrl: 'https://cms.example.com',
+        developmentIdentity: {
+          userId: 'user_local_owner',
+          email: 'owner@local.instatic',
+          name: 'Local Owner',
+          organizationId: 'org_local_agency',
+          organizationName: 'Local Agency',
+        },
+      },
     })
   })
 })

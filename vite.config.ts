@@ -11,6 +11,9 @@ function isEditorAppPath(pathname: string): boolean {
   return (
     pathname === '/admin' ||
     pathname.startsWith('/admin/') ||
+    pathname === '/app' ||
+    pathname.startsWith('/app/') ||
+    pathname === '/platform.html' ||
     pathname === '/index.html' ||
     pathname.startsWith('/@') ||
     pathname.startsWith('/__vite') ||
@@ -101,6 +104,30 @@ function publicSiteDevProxyPlugin(): Plugin {
   }
 }
 
+function platformHtmlRewritePlugin(): Plugin {
+  return {
+    name: 'instatic-platform-html-rewrite',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        if (!req.url) {
+          next()
+          return
+        }
+        const url = new URL(req.url, CMS_DEV_SERVER_ORIGIN)
+        if (
+          (url.pathname === '/app' || url.pathname.startsWith('/app/')) &&
+          !url.pathname.startsWith('/app/api/') &&
+          !url.pathname.startsWith('/app/auth/')
+        ) {
+          req.url = `/platform.html${url.search}`
+        }
+        next()
+      })
+    },
+  }
+}
+
 // Stable vendor chunk groups for long-term browser caching. Vendor code
 // rarely changes, so isolating it from the app code means returning users
 // re-download only the (small) app chunks when we ship a new build.
@@ -167,6 +194,7 @@ function vendorChunkName(moduleId: string): string | null {
 export default defineConfig({
   plugins: [
     publicSiteDevProxyPlugin(),
+    platformHtmlRewritePlugin(),
     react(),
     babel({ presets: [reactCompilerPreset()] }),
   ],
@@ -196,6 +224,10 @@ export default defineConfig({
     // established budgets — `bundle-size-budgets.test.ts` is the actual gate.
     chunkSizeWarningLimit: 720,
     rolldownOptions: {
+      input: {
+        admin: path.resolve(__dirname, 'index.html'),
+        platform: path.resolve(__dirname, 'platform.html'),
+      },
       // Rolldown's manual chunk groups capture dependencies recursively by
       // default. That can accidentally put React internals into feature vendor
       // chunks (e.g. dnd-vendor), making React startup depend on editor-only
@@ -239,6 +271,14 @@ export default defineConfig({
       // not need WebSocket upgrades for the agent (NDJSON streams over a
       // standard HTTP response).
       '/admin/api': {
+        target: CMS_DEV_SERVER_ORIGIN,
+        changeOrigin: true,
+      },
+      '/app/api': {
+        target: CMS_DEV_SERVER_ORIGIN,
+        changeOrigin: true,
+      },
+      '/app/auth': {
         target: CMS_DEV_SERVER_ORIGIN,
         changeOrigin: true,
       },

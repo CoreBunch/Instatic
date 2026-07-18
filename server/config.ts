@@ -1,3 +1,5 @@
+import { readPlatformConfig, type PlatformConfig } from './platform/config'
+
 interface ServerConfig {
   port: number
   databaseUrl: string
@@ -5,6 +7,7 @@ interface ServerConfig {
   staticDir: string
   trustedProxyCidrs: string[]
   publicOrigins: string[]
+  platform: PlatformConfig
 }
 
 function readCsvList(value: string | undefined): string[] {
@@ -81,12 +84,14 @@ export function resolvePublicOrigins(env: Record<string, string | undefined>): s
 export function readServerConfig(
   env: Record<string, string | undefined> = process.env,
 ): ServerConfig {
+  const publicOrigins = resolvePublicOrigins(env)
   return {
     port: Number(env.PORT ?? 3001),
     databaseUrl: env.DATABASE_URL ?? 'sqlite:./.tmp/dev.db',
     uploadsDir: env.UPLOADS_DIR ?? './uploads',
     staticDir: env.STATIC_DIR ?? './dist',
     trustedProxyCidrs: readCsvList(env.TRUSTED_PROXY_CIDRS),
-    publicOrigins: resolvePublicOrigins(env),
+    publicOrigins,
+    platform: readPlatformConfig(env, publicOrigins),
   }
 }

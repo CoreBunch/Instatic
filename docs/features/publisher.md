@@ -16,7 +16,8 @@ The published output has **no framework runtime**, **no client-side hydration of
 - Module `render()` is a **pure function**: no DOM, no React, no side effects (Constraint #179).
 - Every node's props pass through `escapeProps` before `render()` (Constraint #211).
 - Server-side wrappers (`server/publish/publicRouter.ts` → `publicRenderer.ts` → `publishedHtmlPipeline.ts`) call `publishPage`, run plugin filters, and return the HTML in the visitor response.
-- Output is routed through a three-layer publishing pipeline: **Layer A** bakes pages to `uploads/published/current/<route>.html` at publish time (complete documents for fully-static pages, static shells with holes for dynamic pages, atomic two-slot symlink swap). **Layer B** memoises dynamic page renders in an in-memory LRU keyed by `(urlPath, canonicalQuery)` with per-entry version tracking; `canonicalQuery` is the output of `canonicalRenderQuery()` (in `loopPrefetch.ts`), which keeps only `loop_<nodeId>_page` pagination params — arbitrary junk params collapse to `''` so they never mint new cache slots; `bumpPublishVersion()` evicts lazily and version capture at render start discards results from mid-flight publishes. **Layer C** emits `<instatic-hole>` placeholders for nodes auto-classified as request-dependent; a ~1.1 KB `IntersectionObserver` runtime lazy-loads each fragment via `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>`.
+- Output is routed through a three-layer publishing pipeline: **Layer A** bakes pages into the inactive `uploads/published/{a,b}` slot at publish time (complete documents for fully-static pages, static shells with holes for dynamic pages), then atomically replaces the current pointer with a POSIX symlink or Windows marker. **Layer B** memoises dynamic page renders in an in-memory LRU keyed by `(urlPath, canonicalQuery)` with per-entry version tracking; `canonicalQuery` is the output of `canonicalRenderQuery()` (in `loopPrefetch.ts`), which keeps only `loop_<nodeId>_page` pagination params — arbitrary junk params collapse to `''` so they never mint new cache slots; `bumpPublishVersion()` evicts lazily and version capture at render start discards results from mid-flight publishes. **Layer C** emits `<instatic-hole>` placeholders for nodes auto-classified as request-dependent; a ~1.1 KB `IntersectionObserver` runtime lazy-loads each fragment via `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>`.
+- A full publish also makes Layer A self-describing: it writes module/runtime assets, the dependency cache, and `/.instatic/site-artifact.json` into the atomic slot. Portable sites can then be materialized with `bun run site:export` and served without the builder. See [site artifacts](site-artifacts.md).
 - Auto-classification lives in `src/core/publisher/dynamicDetection.ts:findDynamicNodeIds` — one walker, four detection rules plus a loop body promotion step (Rule 3.5), used by `render.ts`'s empty-set static check (Layer A) and `renderNode`'s placeholder emission (Layer C). Authors don't toggle anything.
 
 ---
@@ -45,7 +46,7 @@ src/core/publisher/
 
 server/publish/
 ├── publicRouter.ts                 — gateway: Layer A disk fast-path → Layer B LRU → live resolver
-├── staticArtefact.ts               — two-slot symlink swap + read/write/purge artefacts (Layer A); all URL-derived paths are validated by `resolveArtefactPath` (URL-decode + `..`-rejection + containment check after `path.join`)
+├── staticArtefact.ts               — cross-platform two-slot pointer swap + read/write/purge artefacts (Layer A); all URL-derived paths are validated by `resolveArtefactPath` (URL-decode + `..`-rejection + containment check after `path.join`)
 ├── renderCache.ts                  — in-memory LRU (Layer B); reads publishVersion from publishState
 ├── publishState.ts                 — publishVersion (bump/get) + withPublishLock + createVersionedSingleFlight
 ├── holeRuntime.ts                  — Layer C client runtime; exports runInstaticHoleRuntime (TS source) + HOLE_RUNTIME_JS (IIFE-serialized, ~1.1 KB)
@@ -353,7 +354,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | File                                            | Role                                                                |
 |-------------------------------------------------|---------------------------------------------------------------------|
 | `server/publish/publicRouter.ts`                | Gateway: Layer A disk fast-path → Layer B LRU → live `resolvePublicRoute` + `renderPublicResolution`. |
-| `server/publish/staticArtefact.ts`              | Two-slot symlink swap (`swapSlot`), per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), and reads (`readArtefact`). Layer A. |
+| `server/publish/staticArtefact.ts`              | Cross-platform two-slot pointer swap (`swapSlot`), per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), and reads (`readArtefact`). Layer A. |
 | `server/publish/renderCache.ts`                 | In-memory LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. `getOrRender` (single-flight). Reads the version from `publishState`; version captured at render start — a publish landing mid-render discards the result rather than caching stale HTML. Layer B. |
 | `server/publish/publishState.ts`                | Publish-time process state: `publishVersion` (`bumpPublishVersion`/`getPublishVersion`), `withPublishLock` (ISS-038 publish serializer), and `createVersionedSingleFlight` — the generalized version-keyed single-flight memo the hole endpoint reuses. Repositories import the version + lock from here (not from the cache). |
 | `server/publish/holeRuntime.ts`                 | Exports `runInstaticHoleRuntime` (the TypeScript source of the Layer C runtime) and `HOLE_RUNTIME_JS` (IIFE-serialized string, ~1.1 KB, served to browsers). Tests call `runInstaticHoleRuntime()` directly to avoid dynamic eval. |
@@ -442,9 +443,8 @@ publishDraftSite (server/publish/publishSite.ts)
     │         (atomic per-file: tmp + rename; per-page try/catch)
     │
     ├─→ swapSlot(uploadsDir, newActiveSlot)
-    │     uploads/published/current → flips atomically (rename of a symlink
-    │     is a single-inode swap; in-flight readers keep fds into the OLD
-    │     slot until they close)
+    │     uploads/published/current → flips atomically (POSIX symlink or
+    │     Windows marker file; retrying readers resolve the latest pointer)
     │
     └─→ bumpPublishVersion() → Layer B LRU evicts lazily on next read
 
@@ -549,6 +549,7 @@ This is rare and requires architectural review — most "new behavior" fits with
 - [docs/features/modules.md](modules.md) — defining a module
 - [docs/features/media.md](media.md) — media variants + presentation
 - [docs/features/plugin-system.md](plugin-system.md) — `publish.before/.html/.after` filters
+- [docs/features/site-artifacts.md](site-artifacts.md) — artifact schema, portability, export, and standalone runtime
 - Source-of-truth files:
   - `src/core/publisher/render.ts` — `publishPage`
   - `src/core/publisher/renderNode.ts` — the walker

@@ -1,0 +1,15 @@
+html,
+body,
+#root {
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-body);
+}
+
+* {
+  box-sizing: border-box;
+}

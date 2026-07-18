@@ -1,12 +1,28 @@
 # Railway Deployment
 
-This guide defines the Railway image-source configuration for Instatic.
+This guide defines both the website-only artifact and full builder workspace configurations for Railway.
 
-Railway is the simplest managed target for Instatic because it can run the published Docker image, inject a public HTTP port, attach a persistent volume, provision Postgres in the same project, and automatically apply image updates during a maintenance window.
+## Website-Only Artifact
+
+Use this mode when the builder runs elsewhere and Railway should host only the generated website.
+
+1. Publish the site in the builder workspace.
+2. Run `bun run site:export`.
+3. Deploy the generated `site-deploy/` directory as the Railway service root.
+
+The directory includes its own `Dockerfile` and `railway.json`. Railway builds a small Bun image, checks `/health`, and exposes `PORT`. Do not attach a database or volume. The image contains the immutable site artifact, copied local media, and generic site runtime only; it does not contain the Instatic builder repository.
+
+Export stops when the site uses a capability the standalone runtime cannot yet provide. See [site artifacts](../features/site-artifacts.md#portability) for the current list.
 
 ---
 
-## TL;DR
+## Full Builder Workspace
+
+Use this mode to run the editor, CMS, database-backed public features, and publisher on Railway. Railway can run the published builder image, inject a public HTTP port, attach a persistent volume, provision Postgres in the same project, and automatically apply image updates during a maintenance window.
+
+---
+
+### TL;DR
 
 | Template | Database | App volume | `DATABASE_URL` |
 |---|---|---|---|

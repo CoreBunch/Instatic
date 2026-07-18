@@ -22,6 +22,8 @@ docs/
 ├── features/                   ← "what X is and how it works" (per-feature)
 │   ├── plugin-system.md            ← plugin SDK, sandbox, lifecycle, permissions
 │   ├── publisher.md                ← page tree → static HTML/CSS pipeline
+│   ├── site-artifacts.md           ← builder/site boundary, export, standalone runtime
+│   ├── managed-platform.md         ← agency accounts, projects, WorkOS, deployment boundaries
 │   ├── visual-components.md        ← VCs, slots, params, instantiation
 │   ├── content-storage.md          ← data_tables + data_rows (the universal store)
 │   ├── content-workspace.md        ← Content workspace: collections, entries, body editor
@@ -138,6 +140,8 @@ Three categories, three voices:
 |------------------------------------------------------------------|----------------------------------------------------------------------|
 | [features/plugin-system.md](features/plugin-system.md)           | The plugin system end-to-end: package shape, lifecycle, sandbox, SDK, permissions, CLI |
 | [features/publisher.md](features/publisher.md)                   | The page-tree-to-HTML/CSS renderer + server-side publishing wrappers |
+| [features/site-artifacts.md](features/site-artifacts.md)         | Versioned site artifacts, portability checks, export, and the builder-free runtime |
+| [features/managed-platform.md](features/managed-platform.md)     | Agency control plane, WorkOS sessions, project records, and rollout boundaries |
 | [features/visual-components.md](features/visual-components.md)   | VCs, slots, params, instantiation, recursion guard                   |
 | [features/content-storage.md](features/content-storage.md)       | `data_tables` + `data_rows` — the universal content store           |
 | [features/content-workspace.md](features/content-workspace.md)   | Content workspace UI: collections, entries, body editor, settings panel |

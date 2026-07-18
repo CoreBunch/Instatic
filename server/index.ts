@@ -5,6 +5,7 @@ import { readServerConfig } from './config'
 import { DEV_ORIGIN_ALLOWLIST, configurePublicOrigins, configureTrustedProxyCidrs, stampSocketIp } from './auth/security'
 import { applySecurityHeaders } from './securityHeaders'
 import { startConversationPurgeTick } from './ai/boot'
+import { createPlatformRuntime } from './platform/runtime'
 
 await import('./richtextSanitizer')
 const { handleServerRequest } = await import('./router')
@@ -16,6 +17,7 @@ configureTrustedProxyCidrs(config.trustedProxyCidrs)
 configurePublicOrigins(config.publicOrigins)
 const { db, migrations } = createDbClient(config.databaseUrl)
 await runMigrations(db, migrations)
+const platform = await createPlatformRuntime(config.platform)
 // System role sync runs after migrations on every boot — the Owner row's
 // capabilities are force-reset to `CORE_CAPABILITIES` so existing
 // installations don't strand owners on a stale grant list when new
@@ -91,6 +93,7 @@ Bun.serve({
     try {
       const res = await handleServerRequest(req, {
         db,
+        platform,
         staticDir: config.staticDir,
         uploadsDir: config.uploadsDir,
         databaseUrl: config.databaseUrl,

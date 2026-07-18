@@ -65,6 +65,9 @@ data/*.db-wal
 uploads/*
 !uploads/.gitkeep
 
+# Generated website-only Railway deployment context
+/site-deploy/
+
 # E2E test run artifacts — generated, not source
 docs/e2e/runs
 

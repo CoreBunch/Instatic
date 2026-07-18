@@ -25,6 +25,8 @@ import { registry } from '@core/module-engine'
 import { isTemplatePage, resolveNotFoundTemplate } from '@core/templates'
 import type { DbClient } from '../db/client'
 import { nextDataRowVersionNumber } from '../repositories/data'
+import { listMediaAssetsForExport } from '../repositories/media'
+import { listInstalledPlugins } from '../repositories/plugins'
 import {
   getDraftSiteDocument,
   persistSitePublish,
@@ -49,6 +51,13 @@ import {
 } from './staticArtefact'
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
+import { buildSiteModuleJsMap } from './moduleJsBundle'
+import { HOLE_RUNTIME_JS } from './holeRuntime'
+import { LOOP_RUNTIME_JS } from './loopRuntime'
+import {
+  createSiteArtifactManifest,
+  writeSiteArtifactManifest,
+} from './siteArtifact'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
 
 interface PublishResult {
@@ -98,7 +107,11 @@ async function publishDraftSiteLocked(
   // write (autosaves, row publishes) behind it. `withPublishLock` already
   // serializes publishes, and version numbers are only allocated by publish
   // paths under that same lock, so reading outside the transaction is stable.
-  const site = await getDraftSiteDocument(db)
+  const [site, mediaAssets, installedPlugins] = await Promise.all([
+    getDraftSiteDocument(db),
+    listMediaAssetsForExport(db),
+    listInstalledPlugins(db),
+  ])
   if (!site) throw new Error('draft site not found')
 
   const runtime = normalizeSiteRuntimeConfig(site.runtime)
@@ -126,6 +139,13 @@ async function publishDraftSiteLocked(
       updatedByUserId: adminUserId,
     })),
   }
+  const moduleJsMap = buildSiteModuleJsMap(publishedSite, registry)
+  const hasPluginPublicRoutes = installedPlugins.some((result) =>
+    result.kind === 'ok' &&
+    result.plugin.enabled &&
+    result.plugin.lifecycleStatus !== 'error' &&
+    result.plugin.grantedPermissions.includes('cms.routes.public')
+  )
 
   const siteSnapshotId = nanoid()
   const snapshots: PublishedPageSnapshot[] = []
@@ -213,6 +233,9 @@ async function publishDraftSiteLocked(
       // walk no longer repeats per page. Only `userStyles` is page-scoped.
       const assetsByPath = new Map<string, Uint8Array>()
       const encoder = new TextEncoder()
+      const htmlDocuments: string[] = []
+      const pageRoutes: string[] = []
+      let hasNotFoundRoute = false
       const collectCssFiles = (cssBundle: SiteCssBundle): void => {
         for (const file of [cssBundle.reset, cssBundle.framework, cssBundle.style, cssBundle.userStyles]) {
           if (file.content.length === 0) continue
@@ -228,6 +251,14 @@ async function publishDraftSiteLocked(
       }
       for (const asset of runtimeAssetFiles) {
         if (!assetsByPath.has(asset.publicPath)) assetsByPath.set(asset.publicPath, asset.bytes)
+      }
+      assetsByPath.set('/_instatic/hole-runtime.js', encoder.encode(HOLE_RUNTIME_JS))
+      assetsByPath.set('/_instatic/assets/loop-runtime.js', encoder.encode(LOOP_RUNTIME_JS))
+      for (const [moduleId, source] of moduleJsMap) {
+        assetsByPath.set(
+          `/_instatic/module-js/${encodeURIComponent(moduleId)}.js`,
+          encoder.encode(source),
+        )
       }
 
       // The 404 page: bake the notFound template (wrapped in its everywhere
@@ -249,6 +280,8 @@ async function publishDraftSiteLocked(
             const html = await applyPublishedHtmlPipeline(rendered, db)
             await writeArtefact(slotDir, NOT_FOUND_ARTEFACT_URL_PATH, html)
             collectCssFiles(rendered.cssBundle)
+            htmlDocuments.push(html)
+            hasNotFoundRoute = true
           }
         } catch (err) {
           console.error('[publish:site] failed to bake the 404 artefact (falls through to live renderer):', err)
@@ -274,6 +307,8 @@ async function publishDraftSiteLocked(
           // The render's own bundle covers template-composed hashes the raw
           // page bundle above cannot (the merged page's userStyles).
           collectCssFiles(rendered.cssBundle)
+          htmlDocuments.push(html)
+          pageRoutes.push(urlPath)
         } catch (err) {
           console.error('[publish:site] failed to bake artefact for', urlPath, '(falls through to live renderer):', err)
         }
@@ -285,10 +320,25 @@ async function publishDraftSiteLocked(
       // ALL row routes would fall to the live renderer after a full publish.
       const rowBake = await bakePublishedDataRowArtefacts(db, slotDir, nextPublishVersion)
       for (const cssBundle of rowBake.cssBundles) collectCssFiles(cssBundle)
+      htmlDocuments.push(...rowBake.htmlDocuments)
 
       for (const [publicPath, bytes] of assetsByPath) {
         await writeStaticAsset(slotDir, publicPath, bytes)
       }
+      const artifactManifest = createSiteArtifactManifest({
+        artifactId: siteSnapshotId,
+        site: publishedSite,
+        publishVersion: nextPublishVersion,
+        pageRoutes,
+        contentRoutes: rowBake.routes,
+        hasNotFoundRoute,
+        htmlDocuments,
+        moduleJsAssets: moduleJsMap,
+        mediaAssets,
+        runtimePackageCacheHash: dependencyCache?.hash,
+        requirementCodes: hasPluginPublicRoutes ? ['plugin-public-routes'] : [],
+      })
+      await writeSiteArtifactManifest(slotDir, artifactManifest)
       await swapSlot(uploadsDir, slot)
     } catch (err) {
       console.error('[publish:site] static artefact write failed (live renderer remains active):', err)

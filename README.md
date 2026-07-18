@@ -4,7 +4,7 @@
 
 **Own your site. Love building it.**
 
-A self-hosted CMS where the visual editor, content engine, and publisher all live in one Bun server — and the pages it ships are clean enough to read in view-source.
+A visual CMS that can keep the builder separate from the website it publishes — and the pages it ships are clean enough to read in view-source.
 
 <p>
   <a href="https://trendshift.io/repositories/66792?utm_source=repository-badge&utm_medium=badge&utm_campaign=badge-repository-66792" target="_blank" rel="noopener noreferrer">
@@ -32,7 +32,7 @@ A self-hosted CMS where the visual editor, content engine, and publisher all liv
 
 <br>
 
-A modern website usually means assembling a stack: a headless CMS, a framework, a host, a form service, an analytics vendor, an image CDN — each with its own bill, dashboard, and 2 a.m. outage. Instatic is the opposite bet. One Bun server holds the whole thing — the canvas editor, the content engine, media, auth, forms, plugins, and the publisher — and you run it wherever you like, backed by SQLite or Postgres.
+A modern website usually means assembling a stack: a headless CMS, a framework, a host, a form service, an analytics vendor, an image CDN — each with its own bill, dashboard, and 2 a.m. outage. Instatic keeps the canvas editor, content engine, media, auth, plugins, and publisher in one builder workspace, backed by SQLite or Postgres. The website can be exported as its own artifact and hosted without shipping the builder or its database.
 
 What comes out the other end is the part most builders quietly compromise on: plain semantic HTML and compact CSS, with none of the editor's machinery left behind in the page. No framework runtime, no builder attributes, no div soup. The site loads like a static file because, most of the time, it is one.
 
@@ -159,7 +159,7 @@ That speed isn't a setting you tune. It falls out of how publishing works, in th
 - **Routes that genuinely change** hit a versioned in-memory cache. Publishing bumps the version, so old entries miss lazily and nobody sees a stale page.
 - **The few truly per-visitor parts** are detected automatically and lazy-loaded by a runtime that weighs about 1.1 kB. Smaller than this paragraph.
 
-What comes out the other end is plain HTML and compact CSS, all the way down. Nothing from the editor rides along: no React on your public pages, no editor runtime, no framework in the markup. And because it's just HTML and CSS, nothing holds your site hostage — you can read it, host it anywhere, or take it and leave. Full design: [the publisher](docs/features/publisher.md).
+What comes out the other end is plain HTML and compact CSS, all the way down. Nothing from the editor rides along: no React on your public pages, no editor runtime, no framework in the markup. Portable sites can be exported with `bun run site:export` as a complete, database-free Docker context for Railway or another container host. Full design: [the publisher](docs/features/publisher.md) and [site artifacts](docs/features/site-artifacts.md).
 
 <br>
 
@@ -209,7 +209,7 @@ APIs and workflows can still shift before 1.0. If that makes you nervous, wait f
 
 ## For developers
 
-One Bun server. A React admin built with Vite. A publisher that emits pages you'd be happy to have written yourself.
+A Bun builder workspace, a React admin built with Vite, and a separate site runtime for exported deployments.
 
 | | |
 |---|---|
@@ -217,6 +217,7 @@ One Bun server. A React admin built with Vite. A publisher that emits pages you'
 | **Language** | TypeScript everywhere |
 | **Admin app** | React 19 (React Compiler on), Vite, Zustand + Mutative, CodeMirror, dnd-kit |
 | **Server** | `Bun.serve` with a hand-written router |
+| **Site runtime** | Manifest-driven Bun file server with no database or builder imports |
 | **Database** | SQLite or Postgres — one `DbClient` interface, picked by `DATABASE_URL` |
 | **Validation** | TypeBox at every untyped boundary; schemas are the source of truth |
 | **Plugins** | QuickJS-WASM backend sandbox, owner-granted permissions, explicit `editor.code` for admin-window code |

@@ -2,7 +2,7 @@
 
 Deep dive on the server-side of Instatic — the Bun process, the router, the handlers, the auth model, the DB adapter, and how a request becomes a response.
 
-The server is a single `Bun.serve` process that boots the DB, runs migrations, activates installed plugins, then accepts HTTP requests and dispatches them through an ordered route table. There are no separate service processes or message queues. The runtime entrypoint is `server/index.ts`; CPU-heavy image variants and plugin server code run in `Bun.Worker`s owned by this process.
+The server is a single `Bun.serve` process that boots the CMS database and optional control-plane database, runs their independent migrations, activates installed plugins, then accepts HTTP requests and dispatches them through an ordered route table. There are no separate service processes or message queues. The runtime entrypoint is `server/index.ts`; CPU-heavy image variants and plugin server code run in `Bun.Worker`s owned by this process.
 
 ---
 
@@ -13,6 +13,7 @@ The server is a single `Bun.serve` process that boots the DB, runs migrations, a
 - **CMS API:** every `/admin/api/cms/*` request goes through `server/handlers/cms/index.ts`, which runs a CSRF origin check and dispatches to per-resource handler groups.
 - **Auth:** session cookie (`SESSION_COOKIE_NAME`) → `findUserBySessionHash` → `requireCapability(req, db, 'site.read')`. Every state-changing handler starts with one of these guards.
 - **DB:** one `DbClient` interface (`server/db/client.ts`) — tagged-template callable returning `{ rows, rowCount }`. Two adapters: `postgres.ts` (via `Bun.sql`) and `sqlite.ts` (via `bun:sqlite`). Selected by `DATABASE_URL`.
+- **Managed platform:** `/app` and `/app/api/*` are a separate browser entry and API domain. Their project/account data uses `CONTROL_PLANE_DATABASE_URL`; production sessions use WorkOS AuthKit. See [managed platform](features/managed-platform.md).
 - **Repositories** (`server/repositories/`) hold all SQL. Handlers never write SQL directly.
 - **Plugins:** `server/plugins/runtime.ts` activates installed plugins at boot. Server entrypoints run in per-plugin Bun workers that host QuickJS-WASM (`server/plugins/pluginWorker.ts`, `server/plugins/host/workerPool.ts`, `server/plugins/quickjs/vm.ts`); module packs use `server/plugins/modulePackVm.ts` for server-side evaluation.
 - **Published pages and content rows** are served by `tryServePublicRoute`, which delegates resolution + render to `server/publish/publicRouter.ts`. A warm Layer B cache entry is served before any DB work; on a miss the live render reads the published `SiteDocument` from `site_snapshots` (stored once per publish, referenced by `data_row_versions.site_snapshot_id`, memoised per publish version). Uploads + admin SPA assets are served from disk by `tryServeUpload` and `tryServeStaticAsset`.
@@ -479,7 +480,7 @@ Authors don't toggle anything. `src/core/publisher/dynamicDetection.ts:findDynam
               ├── bake every published data-row route into the same slot
               │     (bakeDataRows.ts — entry-template render, same pipeline)
               ├── bake CSS bundles + runtime JS → writeStaticAsset(inactiveSlot)
-              ├── swapSlot — atomic symlink rename of uploads/published/current
+              ├── swapSlot — atomic current-pointer replace (symlink or marker)
               └── bumpPublishVersion() — Layer B cache evicts lazily
 
                           on visitor request
@@ -506,7 +507,7 @@ Server-side publishing helpers live in `server/publish/`:
 | File                              | Role                                                                |
 |-----------------------------------|---------------------------------------------------------------------|
 | `publicRouter.ts`                 | Visitor URL → resolution → Response. Composes Layer A disk-read + Layer B cache. Single entry for every visitor HTML request. |
-| `staticArtefact.ts`               | Layer A. Two-slot symlink swap (`current → slot-{a,b}`), atomic per-file `tmp + rename`, slot-aware read/write/purge. |
+| `staticArtefact.ts`               | Layer A. Cross-platform two-slot pointer swap, atomic per-file `tmp + rename`, slot-aware read/write/purge. |
 | `renderCache.ts`                  | Layer B. Bounded LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. Single-flight on cache miss. `bumpPublishVersion()` invalidates lazily; version captured at render start so mid-flight publishes discard without caching stale HTML. |
 | `holeRuntime.ts`                  | Layer C client-side runtime (~1.1 KB). Exports `runInstaticHoleRuntime` (TS source) and `HOLE_RUNTIME_JS` (IIFE-serialized for browser delivery). |
 | `publishSite.ts`                  | Full-site publish orchestrator (`publishDraftSite`): phase-1 builds, the short `persistSitePublish` transaction, Layer A bake + slot swap, Layer B bump. |

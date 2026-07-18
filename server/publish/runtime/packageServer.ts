@@ -31,7 +31,7 @@
  * can keep responses indefinitely.
  */
 import { existsSync } from 'node:fs'
-import { resolve as resolvePath } from 'node:path'
+import { isAbsolute, relative, resolve as resolvePath } from 'node:path'
 import { nodeModulesDirForHash, sentinelPathForHash } from './dependencyCache'
 
 const RUNTIME_PACKAGE_PREFIX = '/_instatic/runtime/cache/'
@@ -77,7 +77,8 @@ function resolveCacheFilePath(pathname: string): { hash: string; absPath: string
 
   // Final containment check — the resolved path must live inside
   // node_modules/. Any escape attempt returns null.
-  if (!absPath.startsWith(`${nodeModulesDir}/`)) return null
+  const rel = relative(nodeModulesDir, absPath)
+  if (rel.startsWith('..') || isAbsolute(rel)) return null
 
   return { hash, absPath }
 }
@@ -98,9 +99,10 @@ export async function tryServeRuntimePackage(req: Request, pathname: string): Pr
   const file = Bun.file(resolved.absPath)
   if (!(await file.exists())) return new Response('not found', { status: 404 })
 
-  return new Response(file, {
+  return new Response(req.method === 'HEAD' ? null : file.stream(), {
     headers: {
       'content-type': contentTypeForPath(resolved.absPath),
+      'content-length': String(file.size),
       // Content-addressed by lock hash — a different lock yields different
       // URLs, so we can promise immutability.
       'cache-control': 'public, max-age=31536000, immutable',
