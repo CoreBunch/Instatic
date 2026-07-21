@@ -43,13 +43,13 @@ import {
 } from '@ui/components/ContextMenu'
 import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
 import { useShallow } from 'zustand/react/shallow'
-import { registry } from '@core/module-engine'
 import { useInsertModule } from '@site/hooks/useInsertModule'
 import { resolveInsertLocation } from '@site/store/insertLocation'
 import { ModulePicker } from '@site/module-picker'
 import { canComponentizeNode } from '@site/componentization'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import type { AnyModuleDefinition } from '@core/module-engine'
+import { useModuleDefinition } from '@site/useModuleRegistry'
 import { PenSquareSolidIcon } from 'pixel-art-icons/icons/pen-square-solid'
 import { CopyPlusSolidIcon } from 'pixel-art-icons/icons/copy-plus-solid'
 import { CopySolidIcon } from 'pixel-art-icons/icons/copy-solid'
@@ -168,16 +168,18 @@ export function LayerNodeContextMenu({
   // Whether the right-clicked node accepts children (root or canHaveChildren).
   // Used to gate the "Paste HTML here…" item — only offered when the target
   // is a genuine container so the import lands where the user expects it.
-  const isContainer = useEditorStore((s) => {
+  const isRootNode = useEditorStore((s) => {
     if (isMulti || !nodeId) return false
-    const tree = selectActiveCanvasPage(s)
-    if (!tree) return false
-    const isRoot = tree.rootNodeId === nodeId
-    const node = tree.nodes[nodeId]
-    if (!node) return false
-    const def = registry.get(node.moduleId)
-    return isRoot || def?.canHaveChildren === true
+    return selectActiveCanvasPage(s)?.rootNodeId === nodeId
   })
+  const targetModuleId = useEditorStore((s) => {
+    if (isMulti || !nodeId) return undefined
+    return selectActiveCanvasPage(s)?.nodes[nodeId]?.moduleId
+  })
+  // Registry-reactive lookup — see `useModuleRegistry.ts` for why this must
+  // come out of the hook's snapshot rather than a raw `registry.get()`.
+  const targetDefinition = useModuleDefinition(targetModuleId)
+  const isContainer = isRootNode || targetDefinition?.canHaveChildren === true
 
   const canComponentize = useEditorStore((s) => {
     if (isMulti || !nodeId) return false

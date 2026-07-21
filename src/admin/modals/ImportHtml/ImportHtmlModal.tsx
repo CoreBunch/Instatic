@@ -27,11 +27,11 @@ import { pushToast } from '@ui/components/Toast'
 import { importHtml, type ImportFragment, type ImportResult } from '@core/htmlImport'
 import { cssToStyleRules } from '@core/siteImport'
 import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
-import { registry } from '@core/module-engine'
 import { getNodeDisplayName, getNodeHtmlTag } from '@core/page-tree'
 import type { PageNode } from '@core/page-tree'
 import { TreeContainer, TreeRow } from '@site/ui/Tree'
 import { useEditorPreference } from '@site/preferences/editorPreferences'
+import { useModuleDefinition } from '@site/useModuleRegistry'
 import { LayerTreeNodeContent } from '@site/panels/DomPanel'
 import styles from './ImportHtmlModal.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -61,9 +61,11 @@ function PreviewNodeRow({
 }: PreviewNodeRowProps) {
   const node = nodes[nodeId]
   const [expanded, setExpanded] = useState(true)
+  // Registry-reactive lookup (hook precedes the null guard — hooks order).
+  // See `useModuleRegistry.ts` for why this must come from the snapshot.
+  const definition = useModuleDefinition(node?.moduleId)
   if (!node) return null
 
-  const definition = registry.get(node.moduleId)
   const displayName = getNodeDisplayName(node, definition, undefined)
   const htmlTag = getNodeHtmlTag(node, definition)
   const hasChildren = node.children.length > 0

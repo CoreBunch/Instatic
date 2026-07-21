@@ -1,6 +1,6 @@
 import { useState, type MouseEvent, type ReactNode, type SyntheticEvent } from "react";
 import { createPortal } from "react-dom";
-import { registry } from "@core/module-engine";
+import { useModuleList } from "@site/useModuleRegistry";
 import type { VisualComponent } from "@core/visualComponents";
 import type { SavedLayout } from "@core/layouts";
 import { useInsertModule } from "@site/hooks/useInsertModule";
@@ -137,6 +137,10 @@ interface FavoriteMenuState {
 }
 
 function FavoriteNotchActions() {
+  // Registry-reactive module list — favorites must recompute when plugin
+  // packs register, so the list flows from the hook's snapshot rather than
+  // the raw registry singleton. See `useModuleRegistry.ts`.
+  const allModules = useModuleList();
   const insertModule = useInsertModule();
   const { favorites, setFavorites, toggleFavorite } = useModuleInserterPreference();
   const insertionContext = useModuleInsertionContext();
@@ -149,7 +153,7 @@ function FavoriteNotchActions() {
   const [menu, setMenu] = useState<FavoriteMenuState | null>(null);
 
   const { allItems } = buildModuleInserterItems({
-    modules: registry.list(),
+    modules: allModules,
     context: insertionContext,
     savedLayouts,
     visualComponents,

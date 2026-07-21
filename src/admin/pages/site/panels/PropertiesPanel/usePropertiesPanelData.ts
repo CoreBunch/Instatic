@@ -16,6 +16,7 @@ import { useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useEditorStore, selectSelectedNode } from '@site/store/store'
 import { registry } from '@core/module-engine'
+import { useModuleDefinition } from '@site/useModuleRegistry'
 import { getAncestors, resolveProps } from '@core/page-tree'
 import { loopSourceRegistry } from '@core/loops/registry'
 import { buildClassTokenUsageMap, buildSelectorUsageMap, resolveSelectorUsage } from '../selectorUsage'
@@ -122,6 +123,7 @@ export function usePropertiesPanelData(): PropertiesPanelData {
 
   const [statusMessage, setStatusMessage] = useState('')
 
+
   // ─── Derivations ────────────────────────────────────────────────────────
   const isMultiSelect = selectedNodeIds.length > 1
   const isSelectorMultiSelect = selectedSelectorClassIds.length > 0
@@ -131,9 +133,10 @@ export function usePropertiesPanelData(): PropertiesPanelData {
     ? site?.visualComponents?.find((v) => v.id === activeDocument.vcId) ?? null
     : null
 
-  const definition: AnyModuleDefinition | null = selectedNode
-    ? registry.get(selectedNode.moduleId) ?? null
-    : null
+  // Registry-reactive lookup — see `useModuleRegistry.ts` for why this must
+  // come out of the hook's snapshot rather than a raw `registry.get()`.
+  const definition: AnyModuleDefinition | null =
+    useModuleDefinition(selectedNode?.moduleId) ?? null
   const resolvedPropsForBreakpoint = selectedNode
     ? resolveProps(
         selectedNode,

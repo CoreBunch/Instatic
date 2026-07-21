@@ -8,7 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { registry } from '@core/module-engine'
+import { useModuleList } from '@site/useModuleRegistry'
 import { pluginRuntime } from '@core/plugins/runtime'
 import type { SavedLayout } from '@core/layouts'
 import type { VisualComponent } from '@core/visualComponents'
@@ -99,6 +99,10 @@ export function ModuleInserterDialog({
   onClose,
   onInsertItem,
 }: ModuleInserterDialogProps) {
+  // Registry-reactive module list — inserter items must recompute when
+  // plugin packs register, so the list flows from the hook's snapshot rather
+  // than the raw registry singleton. See `useModuleRegistry.ts`.
+  const allModules = useModuleList()
   const prefs = readModuleInserterPrefs()
   const [query, setQuery] = useState('')
   const [section, setSection] = useState<ModuleInserterSectionId>('modules')
@@ -130,7 +134,7 @@ export function ModuleInserterDialog({
     componentItems,
     allItems,
   } = buildModuleInserterItems({
-    modules: registry.list(),
+    modules: allModules,
     context: insertionContext,
     savedLayouts,
     visualComponents,

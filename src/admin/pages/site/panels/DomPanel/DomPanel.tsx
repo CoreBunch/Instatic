@@ -39,7 +39,7 @@ import { createPortal } from 'react-dom'
 import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
 import { flattenSubtree } from '@core/page-tree'
 import { getAncestorIds } from '@site/hooks/useTreeWalkOrder'
-import { registry } from '@core/module-engine'
+import { useModuleList } from '@site/useModuleRegistry'
 import {
   getNodeDisplayName,
   getNodeHtmlTag,
@@ -154,6 +154,13 @@ function DomPanelInner({ editable = true }: { editable?: boolean }) {
   // searchable haystack and the chip text shown in results).
   const classes = useEditorStore((s) => s.site?.styleRules)
   const visualComponents = useEditorStore((s) => s.site?.visualComponents)
+  // Registry-reactive module list — the search haystack resolves display
+  // names and tags per node, and plugin module packs register asynchronously
+  // after mount. Reading through the hook's snapshot (not the raw registry
+  // singleton) keeps the React Compiler's memoization of `searchRows`
+  // invalidating when the registry changes. See `useModuleRegistry.ts`.
+  const modules = useModuleList()
+  const moduleById = new Map(modules.map((m) => [m.id, m]))
 
   // Tag / class display preferences. The SEARCH FILTER itself always considers
   // tag and class names regardless of these prefs — toggling visibility of
@@ -340,7 +347,7 @@ function DomPanelInner({ editable = true }: { editable?: boolean }) {
 
         const node = page.nodes[nodeId]
         if (!node) return []
-        const def = registry.get(node.moduleId)
+        const def = moduleById.get(node.moduleId)
         const displayName = getNodeDisplayName(node, def, visualComponents)
         const htmlTag = getNodeHtmlTag(node, def)
         const classNames = getNodeClassNames(node, classes)

@@ -1,5 +1,4 @@
 import type { CSSProperties } from 'react'
-import { registry } from '@core/module-engine'
 import {
   getNodeClassNames,
   getNodeDisplayName,
@@ -9,6 +8,7 @@ import {
 } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import { Button } from '@ui/components/Button'
+import { useModuleDefinition } from '@site/useModuleRegistry'
 import type { CanvasTreeLadderRow } from './canvasTreeLadder'
 import styles from './BreakpointSelectionOverlay.module.css'
 
@@ -33,7 +33,9 @@ export function CanvasTreeLadderRowButton({
   onHighlight,
   onCommit,
 }: CanvasTreeLadderRowButtonProps) {
-  const definition = registry.get(node.moduleId)
+  // Registry-reactive lookup — see `useModuleRegistry.ts` for why this must
+  // come out of the hook's snapshot rather than a raw `registry.get()`.
+  const definition = useModuleDefinition(node.moduleId)
   const displayName = getNodeDisplayName(node, definition, visualComponents)
   const htmlTag = getNodeHtmlTag(node, definition)
   const classNames = getNodeClassNames(node, styleRules)

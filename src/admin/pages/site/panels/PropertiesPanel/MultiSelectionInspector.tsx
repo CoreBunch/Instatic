@@ -33,7 +33,7 @@ import {
   useEditorStore,
   selectActiveCanvasPage,
 } from '@site/store/store'
-import { registry } from '@core/module-engine'
+import { useModuleList } from '@site/useModuleRegistry'
 import {
   getNodeDisplayName,
   getNodeHtmlTag,
@@ -69,6 +69,11 @@ interface MultiSelectionInspectorProps {
 export function MultiSelectionInspector({
   selectedNodeIds,
 }: MultiSelectionInspectorProps) {
+  // Registry-reactive module index — row labels and tags resolve per node,
+  // and the lookup must flow from the hook's snapshot so the React Compiler
+  // recomputes it when plugin packs register. See `useModuleRegistry.ts`.
+  const modules = useModuleList()
+  const moduleById = new Map(modules.map((m) => [m.id, m]))
   const removeFromSelection = useEditorStore((s) => s.removeFromSelection)
   const duplicateNodes = useEditorStore((s) => s.duplicateNodes)
   const deleteNodes = useEditorStore((s) => s.deleteNodes)
@@ -96,7 +101,7 @@ export function MultiSelectionInspector({
             classChip: null as string | null,
           }
         }
-        const def = registry.get(node.moduleId)
+        const def = moduleById.get(node.moduleId)
         const classNames = getNodeClassNames(node, classes)
         return {
           id,

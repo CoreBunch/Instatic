@@ -245,6 +245,8 @@ registry.generation()                          // monotonic counter — pair wit
 
 The registry is type-erased — every module is held as `AnyModuleDefinition` (props typed as `Record<string, unknown>`). The narrow → erased cast happens once at the registry boundary so user code never needs to widen its types.
 
+**Reading the registry from React render code:** always go through `useModuleDefinition(moduleId)` / `useModuleList()` (`src/admin/pages/site/useModuleRegistry.ts`), never call `registry.get()`/`registry.list()` directly in render. Plugin module packs register asynchronously after the editor mounts, and the React Compiler memoizes a raw `registry.get(node.moduleId)` keyed only on `node.moduleId` — a subscription that merely triggers a re-render (e.g. subscribing to `generation()` and discarding the value) still replays the stale cached lookup. The hooks return the resolved value out of a `useSyncExternalStore` snapshot so the compiler tracks it as a real dependency. Event handlers may keep reading the raw singleton — they always execute against live state.
+
 `register()` throws if the id is already taken (duplicate module guard). `registerOrReplace()` silently overwrites — used by every first-party module because each module's `index.ts` self-registers at import time and hot module reload will re-run the import.
 
 ### Boot-time registration

@@ -23,7 +23,7 @@ import {
   type RefObject,
 } from 'react'
 import { useEditorStore } from '@site/store/store'
-import { registry } from '@core/module-engine'
+import { useModuleList } from '@site/useModuleRegistry'
 import type { AnyModuleDefinition } from '@core/module-engine'
 import type { VisualComponent } from '@core/visualComponents'
 import { BracesIcon } from 'pixel-art-icons/icons/braces'
@@ -60,6 +60,10 @@ export function ModulePicker({
   autoFocusSearch = true,
   containerRef,
 }: ModulePickerProps) {
+  // Registry-reactive module list — the picker's groups must recompute when
+  // plugin packs register, so the list flows from the hook's snapshot rather
+  // than the raw registry singleton. See `useModuleRegistry.ts`.
+  const allModules = useModuleList()
   const [query, setQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
 
@@ -80,8 +84,14 @@ export function ModulePicker({
   // hides auto-materialized internals (body, VC refs, slot instances; slot
   // outlets outside VC mode) and disables context-bound modules (e.g. Content
   // Outlet outside a template) with a reason rendered as a tooltip.
+  const modulesByCategory = new Map<string, AnyModuleDefinition[]>()
+  for (const mod of allModules) {
+    const group = modulesByCategory.get(mod.category)
+    if (group) group.push(mod)
+    else modulesByCategory.set(mod.category, [mod])
+  }
   const moduleGroups: AnyModuleDefinition[][] = []
-  for (const mods of Object.values(registry.listByCategory())) {
+  for (const mods of modulesByCategory.values()) {
     const visible = mods.filter(
       (m) => moduleAvailability(m, insertionContext).kind !== 'hidden',
     )

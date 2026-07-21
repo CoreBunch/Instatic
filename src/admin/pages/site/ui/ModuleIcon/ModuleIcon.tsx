@@ -12,10 +12,10 @@
  * Pass either `moduleId` (preferred — handles unknown ids gracefully) or
  * `module` directly when the caller already has the resolved definition.
  */
-import { registry } from '@core/module-engine'
 import type { AnyModuleDefinition } from '@core/module-engine'
 import type { IconProps } from 'pixel-art-icons/types'
 import { SquareSolidIcon } from 'pixel-art-icons/icons/square-solid'
+import { useModuleDefinition } from '@site/useModuleRegistry'
 
 interface ModuleIconProps extends IconProps {
   /** Module id to resolve from the registry. Ignored when `module` is set. */
@@ -29,8 +29,10 @@ export function ModuleIcon({
   module: explicitModule,
   ...iconProps
 }: ModuleIconProps) {
-  const definition =
-    explicitModule ?? (moduleId ? registry.get(moduleId) ?? null : null)
+  // Registry-reactive lookup — see `useModuleRegistry.ts` for why this must
+  // come out of the hook's snapshot rather than a raw `registry.get()`.
+  const fromRegistry = useModuleDefinition(explicitModule ? undefined : moduleId)
+  const definition = explicitModule ?? fromRegistry ?? null
   const ResolvedIcon = definition?.icon ?? SquareSolidIcon
   return <ResolvedIcon {...iconProps} />
 }

@@ -12,7 +12,7 @@
 
 import { useEditorStore } from '@site/store/store'
 import { findParamOrigin } from '@core/visualComponents'
-import { registry } from '@core/module-engine'
+import { useModuleList } from '@site/useModuleRegistry'
 import type { VisualComponent, VCParam } from '@core/visualComponents'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
@@ -79,6 +79,11 @@ function summarizeParamDefault(param: VCParam): string {
 // ---------------------------------------------------------------------------
 
 export function ComponentParamsOverview({ vc }: ComponentParamsOverviewProps) {
+  // Registry-reactive module index — origin-node names resolve per param,
+  // and the lookup must flow from the hook's snapshot so the React Compiler
+  // recomputes it when plugin packs register. See `useModuleRegistry.ts`.
+  const modules = useModuleList()
+  const moduleById = new Map(modules.map((m) => [m.id, m]))
   const selectNode = useEditorStore((s) => s.selectNode)
   const removeParamWithCleanup = useEditorStore((s) => s.removeParamWithCleanup)
 
@@ -103,7 +108,7 @@ export function ComponentParamsOverview({ vc }: ComponentParamsOverviewProps) {
             const origin = findParamOrigin(vc, param.id)
             const originNode = origin ? vc.tree.nodes[origin.nodeId] ?? null : null
             const moduleName = originNode
-              ? (originNode.label || registry.get(originNode.moduleId)?.name || originNode.moduleId)
+              ? (originNode.label || moduleById.get(originNode.moduleId)?.name || originNode.moduleId)
               : null
             const sourceLabel = origin && moduleName
               ? `from ${moduleName}.${origin.propKey}`

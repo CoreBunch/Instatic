@@ -19,12 +19,12 @@
  *   stay referentially stable for unchanged data.
  */
 
-import { memo, use, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
+import { memo, use, useLayoutEffect, useRef } from 'react'
 import type { InlineEditBinding } from '@core/module-engine'
 import { readInlineEditableText, seedInlineEditableContent } from '@modules/base/shared/inlineText'
 import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
+import { useModuleDefinition } from '@site/useModuleRegistry'
 import { resolveProps } from '@core/page-tree'
-import { registry } from '@core/module-engine'
 import type { NodeWrapperProps as NodeWrapperPropsType } from '@core/module-engine'
 import { resolveDynamicProps, effectiveNodeBindings, type TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import type { PageNode } from '@core/page-tree'
@@ -158,14 +158,13 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
     onNodeHover(hoveredNodeId, breakpointId)
   }
 
-  // Subscribe to module registry changes so plugin module packs that activate
+  // Registry-reactive definition lookup so plugin module packs that activate
   // after the canvas mounted trigger a re-render — otherwise the canvas would
   // freeze on `Unknown module` even after the registry receives the module.
-  useSyncExternalStore(
-    registry.subscribe.bind(registry),
-    registry.generation.bind(registry),
-    registry.generation.bind(registry),
-  )
+  // The value must flow from the hook's snapshot (not a raw `registry.get()`)
+  // or the React Compiler replays the stale memoized lookup — see
+  // `useModuleRegistry.ts`.
+  const definition = useModuleDefinition(node?.moduleId)
 
   // On session start, seed the editable element's content imperatively (React
   // does NOT own it — see inlineEditableElementProps), then focus and drop the
@@ -197,7 +196,6 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   if (!node) return null
   if (node.hidden) return null
 
-  const definition = registry.get(node.moduleId)
   if (!definition) {
     return (
       <div

@@ -23,7 +23,6 @@
 import { memo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
-import { registry } from '@core/module-engine'
 import {
   getNodeDisplayName,
   getNodeHtmlTag,
@@ -42,6 +41,7 @@ import {
 import { getKeybindingForCommand } from '@admin/spotlight/keybindings'
 import { useEditorPreference } from '@site/preferences/editorPreferences'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
+import { useModuleDefinition } from '@site/useModuleRegistry'
 import { LayerTreeNodeContent } from './LayerTreeNodeContent'
 import { isNarrowEditorChromeViewport } from '@site/layout/responsiveChrome'
 import styles from './TreeNode.module.css'
@@ -79,6 +79,12 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
   // references it. The reference is stable across unrelated edits because
   // siteSlice mutations only swap classes when class state actually changes.
   const classes = useEditorStore((s) => s.site?.styleRules)
+
+  // Registry-reactive definition lookup — plugin module packs register
+  // asynchronously after the tree mounts, and the resolved value must come
+  // out of the hook's snapshot (not a raw `registry.get()` in render) so the
+  // React Compiler tracks it. See `useModuleRegistry.ts`.
+  const definition = useModuleDefinition(node?.moduleId)
 
   // User preferences — controls visibility of the tag pill, class chip, and
   // module icon beside each row. Re-evaluated on storage / preferences-changed
@@ -147,7 +153,6 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
   // ── Guard against unmounted nodes ─────────────────────────────────────────
   if (!node) return null
 
-  const definition = registry.get(node.moduleId)
   const displayName = getNodeDisplayName(node, definition, visualComponents)
   const htmlTag = getNodeHtmlTag(node, definition)
   const classNames = getNodeClassNames(node, classes)
