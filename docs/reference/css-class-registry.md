@@ -59,6 +59,8 @@ interface StyleRule {
 
 `styles` and `contextStyles` are typed `Record<string, unknown>` at the persistence boundary — narrowing happens at the publisher's `bagToCSS` (`classCss.ts`). The WRITE API (class slice, framework generators) uses the typed `CSSPropertyBag` shape from `src/core/page-tree/cssPropertyBag.ts`.
 
+Number-backed fields such as `opacity` and `zIndex` stay numeric at that write boundary. `src/admin/pages/site/panels/PropertiesPanel/ClassPropertyRow.tsx` holds incomplete focused text such as `0.` or `-` in a local lexical draft and commits only finite numbers; `src/admin/pages/site/property-controls/TextControl.tsx` exposes the focus and blur boundary that releases that draft.
+
 Declaration priority is stored structurally, beside the scalar property value. `stylePriorities` is a sparse property-to-`'important'` map for `styles`; `contextStylePriorities` is the equivalent sparse map keyed first by context id. The CSS importer reads priority through `CSSStyleDeclaration.getPropertyPriority()`, and the publisher appends ` !important` from this metadata. Removing a value also removes its priority entry, and tolerant persistence parsing drops orphaned or invalid priority metadata. Node inline styles deliberately keep their existing value-only shape.
 
 `rawCss` is intentionally narrow. The importer uses it for sanitised `@keyframes` blocks that cannot be represented as selector declarations; the publisher emits only supported raw keyframes after its own safety gate. General arbitrary CSS strings still belong in structured `styles` / `contextStyles` entries.

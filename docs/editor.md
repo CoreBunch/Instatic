@@ -695,6 +695,7 @@ See [docs/features/plugin-system.md](features/plugin-system.md) for the plugin S
 2. Bind it to a node prop via the module's schema (`src/core/module-engine/`).
 3. Use existing UI primitives (`Input`, `Select`, `Switch`, `ColorInput`, etc.).
 4. If the control needs token-aware autocomplete (resolving framework variables like `var(--space-md)` from a typed step label), use `TokenAwareInput` from `@site/property-controls/TokenAwareInput` — pass a `tokens` array from `useSpacingTokens()` or `useTypographyTokens()` in `tokenUtils.ts`. The component handles suggestion filtering, commit-on-Enter/Tab/blur, live-preview-on-hover (gated by the `hoverPreview` editor preference), and the Suggested/All dropdown sections. For narrow overlaid inputs (like spacing box sides), use `fieldSize="xs"`, `overlay`, and `tooltipOnOverflow`.
+5. Number-backed CSS controls rendered through `ClassPropertyRow` keep the user's focused text in a lexical draft. `src/admin/pages/site/panels/PropertiesPanel/ClassPropertyRow.tsx` persists only finite numbers, so transient input such as `0.` or `-` remains typeable without entering `CSSPropertyBag`; blur restores the canonical stored value.
 
 ## Adding a new spotlight command
 
