@@ -266,6 +266,13 @@ async function prefetchLoops(page, site, db) {
 
 The map is passed into `RenderConfig.loopData`. The walker reads from it; no async at render time.
 
+The public renderer and the editor's full-page **Preview page** overlay both
+use this server-side prefetch path. Preview sends the current in-memory draft
+to `/admin/api/cms/runtime/preview`; the server resolves loop and media data
+before calling `publishPage`. Calling the pure publisher without `loopData`
+is intentionally not a preview fallback — the loop emits its missing-data
+marker instead.
+
 ---
 
 ## Editor canvas preview

@@ -27,6 +27,13 @@ interface CmsRuntimePreviewInput {
   templateContext?: TemplateRenderDataContext
 }
 
+interface CmsRuntimePreviewRequestOptions {
+  signal?: AbortSignal
+  /** Injectable fetch — test seam only; defaults to the global `fetch`. */
+  fetchImpl?: FetchLike
+  basePath?: string
+}
+
 interface CmsRuntimeDependencyResolveResult {
   dependencyLock: SiteDependencyLock
   /**
@@ -62,9 +69,13 @@ export async function resolveCmsRuntimeDependencies(
 
 export async function buildCmsRuntimePreview(
   input: CmsRuntimePreviewInput,
-  fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
-  basePath = '/admin/api/cms',
+  options: CmsRuntimePreviewRequestOptions = {},
 ): Promise<CmsRuntimePreviewResult> {
+  const {
+    signal,
+    fetchImpl = globalThis.fetch.bind(globalThis),
+    basePath = '/admin/api/cms',
+  } = options
   // The envelope schema validates the assets, runtimeAssets, and diagnostics
   // shapes in full against the canonical @core/site-runtime schemas, so the
   // parsed body matches CmsRuntimePreviewResult directly — no cast needed.
@@ -72,6 +83,7 @@ export async function buildCmsRuntimePreview(
     method: 'POST',
     body: input,
     schema: CmsRuntimePreviewResponseSchema,
+    signal,
     fetchImpl,
     fallbackMessage: 'Runtime preview build failed',
   })

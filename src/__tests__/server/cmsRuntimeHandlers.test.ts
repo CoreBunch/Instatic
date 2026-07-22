@@ -3,6 +3,8 @@ import { SESSION_COOKIE_NAME } from '../../../server/auth/tokens'
 import type { DbClient, DbResult } from '../../../server/db'
 import { handleCmsRequest } from '../../../server/handlers/cms'
 import type { SiteDocument } from '@core/page-tree'
+import '@core/loops/sources'
+import '@modules/base'
 
 function makeFakeDb(): DbClient {
   const handle = async <Row extends Record<string, unknown> = Record<string, unknown>>(
@@ -144,6 +146,70 @@ function siteWithVC(): SiteDocument {
   }
 }
 
+function siteWithLoop(): SiteDocument {
+  const base = site()
+  return {
+    ...base,
+    pages: [
+      {
+        ...base.pages[0],
+        nodes: {
+          root: {
+            id: 'root',
+            moduleId: 'base.body',
+            props: {},
+            breakpointOverrides: {},
+            children: ['loop'],
+          },
+          loop: {
+            id: 'loop',
+            moduleId: 'base.loop',
+            props: {
+              sourceId: 'site.pages',
+              filters: {},
+              orderBy: 'definition',
+              direction: 'asc',
+              limit: 10,
+              offset: 0,
+              pagination: 'none',
+              pageSize: 10,
+              tag: 'div',
+              customTag: '',
+            },
+            breakpointOverrides: {},
+            children: ['loop_text'],
+          },
+          loop_text: {
+            id: 'loop_text',
+            moduleId: 'base.text',
+            props: { text: 'Fallback' },
+            dynamicBindings: {
+              text: { source: 'currentEntry', field: 'title' },
+            },
+            breakpointOverrides: {},
+            children: [],
+          },
+        },
+      },
+      {
+        id: 'page_loop_item',
+        title: 'ISS-234 SERVER LOOP ROW',
+        slug: 'loop-row',
+        rootNodeId: 'loop_item_root',
+        nodes: {
+          loop_item_root: {
+            id: 'loop_item_root',
+            moduleId: 'base.body',
+            props: {},
+            breakpointOverrides: {},
+            children: [],
+          },
+        },
+      },
+    ],
+  }
+}
+
 describe('CMS runtime handlers', () => {
   it('resolves an empty runtime dependency manifest', async () => {
     const res = await handleCmsRequest(runtimeRequest(
@@ -198,6 +264,18 @@ describe('CMS runtime handlers', () => {
       runtimeAssets: { scripts: [] },
       diagnostics: [],
     })
+  })
+
+  it('prefetches and renders loop rows in the runtime preview (ISS-234)', async () => {
+    const res = await handleCmsRequest(runtimeRequest(
+      'http://localhost/admin/api/cms/runtime/preview',
+      { site: siteWithLoop(), pageId: 'page_1' },
+    ), makeFakeDb())
+
+    expect(res.status).toBe(200)
+    const body = await res.text()
+    expect(body).toContain('ISS-234 SERVER LOOP ROW')
+    expect(body).not.toContain('instatic: loop data missing')
   })
 
   it('builds a runtime preview from a VC virtual page id when the editor is in VC canvas mode', async () => {

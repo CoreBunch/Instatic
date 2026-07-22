@@ -13,7 +13,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import React from 'react'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { readFileSync } from 'fs'
 import { PreviewOverlay } from '@site/preview/PreviewOverlay'
 import { useEditorStore } from '@site/store/store'
@@ -78,8 +78,29 @@ function openPreviewWithSite() {
   } as Parameters<typeof useEditorStore.setState>[0])
 }
 
-beforeEach(resetStore)
-afterEach(cleanup)
+const originalFetch = globalThis.fetch
+const runtimePreviewCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+let runtimePreviewHtml = '<!DOCTYPE html><html><head><title>Test Site</title></head><body><h1>Welcome</h1></body></html>'
+
+beforeEach(() => {
+  resetStore()
+  runtimePreviewCalls.length = 0
+  runtimePreviewHtml = '<!DOCTYPE html><html><head><title>Test Site</title></head><body><h1>Welcome</h1></body></html>'
+  globalThis.fetch = async (input, init) => {
+    runtimePreviewCalls.push({ input, init })
+    return new Response(JSON.stringify({
+      html: runtimePreviewHtml,
+      assets: [],
+      runtimeAssets: { scripts: [] },
+      diagnostics: [],
+    }), { status: 200 })
+  }
+})
+
+afterEach(() => {
+  cleanup()
+  globalThis.fetch = originalFetch
+})
 
 // ---------------------------------------------------------------------------
 // 1 — uiSlice preview actions
@@ -113,83 +134,107 @@ describe('uiSlice — preview state', () => {
 // ---------------------------------------------------------------------------
 
 describe('PreviewOverlay — DOM rendering', () => {
-  it('renders nothing when previewOpen is false', () => {
+  it('renders nothing when previewOpen is false', async () => {
     render(<PreviewOverlay />)
     expect(document.querySelector('[data-testid="preview-overlay"]')).toBeNull()
     expect(document.querySelector('[data-testid="preview-iframe"]')).toBeNull()
+    await act(async () => {})
   })
 
-  it('renders nothing when previewOpen=true but no site is loaded', () => {
+  it('renders nothing when previewOpen=true but no site is loaded', async () => {
     useEditorStore.setState({ previewOpen: true } as Parameters<typeof useEditorStore.setState>[0])
     render(<PreviewOverlay />)
     expect(document.querySelector('[data-testid="preview-overlay"]')).toBeNull()
+    await act(async () => {})
   })
 
-  it('renders the dialog overlay when previewOpen=true with a site', () => {
+  it('renders the dialog overlay when previewOpen=true with a site', async () => {
     openPreviewWithSite()
     render(<PreviewOverlay />)
     expect(document.querySelector('[data-testid="preview-overlay"]')).not.toBeNull()
+    await screen.findByTestId('preview-iframe')
   })
 
-  it('overlay has role="dialog" and aria-modal="true"', () => {
+  it('overlay has role="dialog" and aria-modal="true"', async () => {
     openPreviewWithSite()
     render(<PreviewOverlay />)
     const dialog = screen.getByRole('dialog')
     expect(dialog).toBeDefined()
     expect(dialog.getAttribute('aria-modal')).toBe('true')
+    await screen.findByTestId('preview-iframe')
   })
 
-  it('renders the preview iframe inside the dialog', () => {
+  it('renders the preview iframe inside the dialog', async () => {
     openPreviewWithSite()
     render(<PreviewOverlay />)
-    const iframe = document.querySelector('[data-testid="preview-iframe"]') as HTMLIFrameElement | null
+    const iframe = await screen.findByTestId('preview-iframe')
     expect(iframe).not.toBeNull()
   })
 
-  it('iframe has a non-empty srcdoc attribute', () => {
+  it('iframe has a non-empty srcdoc attribute', async () => {
     openPreviewWithSite()
     render(<PreviewOverlay />)
-    const iframe = document.querySelector('[data-testid="preview-iframe"]') as HTMLIFrameElement | null
-    const srcdoc = iframe?.getAttribute('srcdoc') ?? ''
+    const iframe = await screen.findByTestId('preview-iframe')
+    const srcdoc = iframe.getAttribute('srcdoc') ?? ''
     expect(srcdoc.length).toBeGreaterThan(0)
     expect(srcdoc).toContain('<!DOCTYPE html>')
   })
 
-  it('iframe srcdoc contains the page title', () => {
+  it('iframe srcdoc contains the page title', async () => {
     openPreviewWithSite()
     render(<PreviewOverlay />)
-    const iframe = document.querySelector('[data-testid="preview-iframe"]') as HTMLIFrameElement | null
-    const srcdoc = iframe?.getAttribute('srcdoc') ?? ''
+    const iframe = await screen.findByTestId('preview-iframe')
+    const srcdoc = iframe.getAttribute('srcdoc') ?? ''
     // The site name "Test Site" should appear as the page title
     expect(srcdoc).toMatch(/<title>[^<]*<\/title>/)
   })
 
-  it('close button has aria-label="Close preview"', () => {
+  it('renders server-resolved loop content from the current draft (ISS-234)', async () => {
+    runtimePreviewHtml = '<!DOCTYPE html><html><body><p>ISS-234 LOOP ROW</p></body></html>'
+    openPreviewWithSite()
+    const currentSite = useEditorStore.getState().site
+    render(<PreviewOverlay />)
+
+    const iframe = await screen.findByTestId('preview-iframe')
+    expect(iframe.getAttribute('srcdoc')).toContain('ISS-234 LOOP ROW')
+    expect(runtimePreviewCalls).toHaveLength(1)
+    expect(runtimePreviewCalls[0]?.input).toBe('/admin/api/cms/runtime/preview')
+    expect(JSON.parse(String(runtimePreviewCalls[0]?.init?.body))).toMatchObject({
+      site: currentSite,
+      pageId: 'page-1',
+    })
+  })
+
+  it('close button has aria-label="Close preview"', async () => {
     openPreviewWithSite()
     render(<PreviewOverlay />)
     const closeBtn = screen.getByLabelText('Close preview')
     expect(closeBtn).toBeDefined()
+    await screen.findByTestId('preview-iframe')
   })
 
-  it('clicking the close button closes the overlay (sets previewOpen=false)', () => {
+  it('clicking the close button closes the overlay (sets previewOpen=false)', async () => {
     openPreviewWithSite()
     render(<PreviewOverlay />)
+    await screen.findByTestId('preview-iframe')
     const closeBtn = screen.getByLabelText('Close preview')
     fireEvent.click(closeBtn)
     expect(useEditorStore.getState().previewOpen).toBe(false)
   })
 
-  it('pressing Escape closes the overlay', () => {
+  it('pressing Escape closes the overlay', async () => {
     openPreviewWithSite()
     render(<PreviewOverlay />)
+    await screen.findByTestId('preview-iframe')
     const dialog = screen.getByRole('dialog')
     fireEvent.keyDown(dialog, { key: 'Escape', code: 'Escape' })
     expect(useEditorStore.getState().previewOpen).toBe(false)
   })
 
-  it('clicking the backdrop closes the overlay', () => {
+  it('clicking the backdrop closes the overlay', async () => {
     openPreviewWithSite()
     render(<PreviewOverlay />)
+    await screen.findByTestId('preview-iframe')
     // Backdrop is the first aria-hidden element
     const backdrop = document.querySelector('[aria-hidden="true"]') as HTMLElement | null
     expect(backdrop).not.toBeNull()
@@ -197,11 +242,12 @@ describe('PreviewOverlay — DOM rendering', () => {
     expect(useEditorStore.getState().previewOpen).toBe(false)
   })
 
-  it('overlay header shows page title', () => {
+  it('overlay header shows page title', async () => {
     openPreviewWithSite()
     render(<PreviewOverlay />)
     // Header reads "Preview — {page.title}"
     expect(document.body.textContent).toContain('Preview — Home')
+    await screen.findByTestId('preview-iframe')
   })
 })
 
@@ -258,8 +304,9 @@ describe('PreviewOverlay — source enforcement', () => {
     expect(overlaySrc).toContain('aria-hidden="true"')
   })
 
-  it('calls publishPage() to generate iframe content', () => {
-    expect(overlaySrc).toContain('publishPage(')
+  it('uses the CMS runtime preview boundary instead of bypassing server prefetch', () => {
+    expect(overlaySrc).toContain('buildCmsRuntimePreview(')
+    expect(overlaySrc).not.toContain('publishPage(')
   })
 })
 

@@ -95,8 +95,8 @@ const SettingsModal = lazy(() =>
 
 // Editor-only toolbar surface: preview iframe. It self-gates on store state,
 // but we ALSO conditionally render it at the call site (below) so its chunk
-// isn't fetched on first paint — the preview overlay drags in the entire
-// publisher graph, which is large.
+// isn't fetched on first paint. The overlay is an infrequent, modal surface
+// whose server-built document should load only when the user asks for it.
 const PreviewOverlay = lazy(() =>
   import('@admin/pages/site/preview/PreviewOverlay').then((m) => ({
     default: m.PreviewOverlay,
