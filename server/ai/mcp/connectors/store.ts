@@ -4,23 +4,23 @@
  * as a JSON string (parsed back automatically on read — SQLite by the adapter,
  * Postgres by jsonb), matching the `writeJson` convention in other repos.
  *
- * `toConnectorView` is the ONLY projection the HTTP layer may serialise: it
+ * `toConnectionView` is the ONLY projection the HTTP layer may serialise: it
  * drops `tokenHash` entirely. Gated by `ai-mcp-connectors-never-leak.test.ts`.
  */
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../../../db/client'
 import type { CoreCapability } from '@core/capabilities'
-import type { McpConnectorView, McpConnectorType, McpAuthMode } from '@core/ai'
+import type { McpConnectionView, McpAuthMode } from '@core/ai'
 import type { McpConnectorRecord } from './types'
 
 const DEFAULT_TTL_DAYS = 90
+export const OAUTH_GRANT_TTL_DAYS = 90
 
 interface ConnectorRow {
   id: string
   user_id: string
   label: string
-  type: string
-  auth_mode: string
+  auth_mode: McpAuthMode
   token_hash: string | null
   // `_json` column → auto-parsed to an array on read (both dialects).
   capabilities_json: CoreCapability[]
@@ -35,27 +35,25 @@ function rowToRecord(row: ConnectorRow): McpConnectorRecord {
     id: row.id,
     userId: row.user_id,
     label: row.label,
-    type: row.type as McpConnectorType,
-    authMode: row.auth_mode as McpAuthMode,
+    authMode: row.auth_mode,
     tokenHash: row.token_hash,
     capabilities: Array.isArray(row.capabilities_json) ? row.capabilities_json : [],
     createdAt: row.created_at,
     lastUsedAt: row.last_used_at,
     revokedAt: row.revoked_at,
-    // expires_at is set by createConnector for every new bearer token.
+    // expires_at is set for every new bearer token and OAuth grant.
     // A null value (pre-migration 019 rows / grandfathered connectors) means
-    // non-expiring — findConnectorByTokenHash already accepts NULL via
+    // non-expiring — findConnectionByTokenHash already accepts NULL via
     // `(expires_at is null or expires_at > ${now})`.
     expiresAt: row.expires_at,
   }
 }
 
 /** Wire-safe projection. Never exposes the token hash. */
-export function toConnectorView(rec: McpConnectorRecord): McpConnectorView {
+export function toConnectionView(rec: McpConnectorRecord): McpConnectionView {
   return {
     id: rec.id,
     label: rec.label,
-    type: rec.type,
     authMode: rec.authMode,
     capabilities: [...rec.capabilities],
     createdAt: rec.createdAt,
@@ -65,12 +63,11 @@ export function toConnectorView(rec: McpConnectorRecord): McpConnectorView {
   }
 }
 
-export async function createConnector(
+export async function createBearerConnection(
   db: DbClient,
   input: {
     userId: string
     label: string
-    type: McpConnectorType
     capabilities: readonly CoreCapability[]
     tokenHash: string
     /**
@@ -96,20 +93,53 @@ export async function createConnector(
       created_at, expires_at
     )
     values (
-      ${id}, ${input.userId}, ${input.label}, ${input.type}, 'bearer',
+      ${id}, ${input.userId}, ${input.label}, 'local', 'bearer',
       ${input.tokenHash}, ${capabilitiesJson},
       ${createdAt}, ${expiresAt}
     )
-    returning id, user_id, label, type, auth_mode, token_hash,
+    returning id, user_id, label, auth_mode, token_hash,
               capabilities_json, created_at, last_used_at, revoked_at, expires_at
   `
   if (!rows[0]) throw new Error('Connector insert did not persist')
   return rowToRecord(rows[0])
 }
 
+/** Create the persistent user/capability grant behind an OAuth connection. */
+export async function createOAuthConnection(
+  db: DbClient,
+  input: {
+    userId: string
+    label: string
+    capabilities: readonly CoreCapability[]
+    expiresAt?: Date
+  },
+): Promise<McpConnectorRecord> {
+  const id = nanoid()
+  const capabilitiesJson = JSON.stringify(input.capabilities)
+  const createdAt = new Date()
+  const expiresAt = input.expiresAt ?? new Date(
+    createdAt.getTime() + OAUTH_GRANT_TTL_DAYS * 24 * 60 * 60 * 1000,
+  )
+
+  const { rows } = await db<ConnectorRow>`
+    insert into ai_mcp_connectors (
+      id, user_id, label, type, auth_mode, token_hash, capabilities_json,
+      created_at, expires_at
+    )
+    values (
+      ${id}, ${input.userId}, ${input.label}, 'remote', 'oauth', null,
+      ${capabilitiesJson}, ${createdAt}, ${expiresAt}
+    )
+    returning id, user_id, label, auth_mode, token_hash,
+              capabilities_json, created_at, last_used_at, revoked_at, expires_at
+  `
+  if (!rows[0]) throw new Error('OAuth connection insert did not persist')
+  return rowToRecord(rows[0])
+}
+
 export async function listConnectorsForUser(db: DbClient, userId: string): Promise<McpConnectorRecord[]> {
   const { rows } = await db<ConnectorRow>`
-    select id, user_id, label, type, auth_mode, token_hash,
+    select id, user_id, label, auth_mode, token_hash,
            capabilities_json, created_at, last_used_at, revoked_at, expires_at
     from ai_mcp_connectors
     where user_id = ${userId}
@@ -124,13 +154,13 @@ export async function listConnectorsForUser(db: DbClient, userId: string): Promi
  * @param now - Injection point for the current time; defaults to `new Date()`.
  *   Pass a fixed Date in tests to simulate future/past times without waiting.
  */
-export async function findConnectorByTokenHash(
+export async function findConnectionByTokenHash(
   db: DbClient,
   tokenHash: string,
   now: Date = new Date(),
 ): Promise<McpConnectorRecord | null> {
   const { rows } = await db<ConnectorRow>`
-    select id, user_id, label, type, auth_mode, token_hash,
+    select id, user_id, label, auth_mode, token_hash,
            capabilities_json, created_at, last_used_at, revoked_at, expires_at
     from ai_mcp_connectors
     where token_hash = ${tokenHash}

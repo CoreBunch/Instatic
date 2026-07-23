@@ -15,11 +15,15 @@ import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { apiRequest, ApiError } from '@core/http'
 import {
   AiContentViewBlockSchema,
-  McpConnectorListSchema,
-  CreateMcpConnectorResultSchema,
-  type McpConnectorView,
-  type CreateMcpConnectorBody,
-  type CreateMcpConnectorResult,
+  McpConnectionOverviewSchema,
+  CreateMcpAccessTokenResultSchema,
+  McpOAuthAuthorizationViewSchema,
+  DecideMcpOAuthAuthorizationResultSchema,
+  type McpConnectionOverview,
+  type CreateMcpAccessTokenBody,
+  type CreateMcpAccessTokenResult,
+  type McpOAuthAuthorizationView,
+  type DecideMcpOAuthAuthorizationBody,
 } from '@core/ai'
 
 // ---------------------------------------------------------------------------
@@ -421,26 +425,48 @@ export async function listAiAudit(
 }
 
 // ---------------------------------------------------------------------------
-// MCP connectors — `/admin/api/ai/mcp/connectors`. Wire shapes are the shared
-// TypeBox schemas from `@core/ai`; the plaintext token is returned only by
-// `createMcpConnector` and is never persisted client-side.
+// MCP connections + OAuth consent. Wire shapes are the shared TypeBox schemas
+// from `@core/ai`; the plaintext personal access token is returned only by
+// `createMcpAccessToken` and is never persisted client-side.
 // ---------------------------------------------------------------------------
 
-const MCP_CONNECTORS_BASE = '/admin/api/ai/mcp/connectors'
+const MCP_CONNECTIONS_BASE = '/admin/api/ai/mcp/connections'
+const MCP_ACCESS_TOKENS_PATH = '/admin/api/ai/mcp/access-tokens'
+const MCP_OAUTH_AUTHORIZATION_PATH = '/admin/api/ai/mcp/oauth/authorization'
 
-export async function listMcpConnectors(signal?: AbortSignal): Promise<McpConnectorView[]> {
-  const body = await apiRequest(MCP_CONNECTORS_BASE, { schema: McpConnectorListSchema, signal })
-  return body.connectors
+export async function getMcpConnectionOverview(signal?: AbortSignal): Promise<McpConnectionOverview> {
+  return apiRequest(MCP_CONNECTIONS_BASE, { schema: McpConnectionOverviewSchema, signal })
 }
 
-export async function createMcpConnector(body: CreateMcpConnectorBody): Promise<CreateMcpConnectorResult> {
-  return apiRequest(MCP_CONNECTORS_BASE, {
+export async function createMcpAccessToken(
+  body: CreateMcpAccessTokenBody,
+): Promise<CreateMcpAccessTokenResult> {
+  return apiRequest(MCP_ACCESS_TOKENS_PATH, {
     method: 'POST',
     body,
-    schema: CreateMcpConnectorResultSchema,
+    schema: CreateMcpAccessTokenResultSchema,
   })
 }
 
-export async function revokeMcpConnector(id: string): Promise<void> {
-  await apiRequest(`${MCP_CONNECTORS_BASE}/${encodeURIComponent(id)}`, { method: 'DELETE' })
+export async function revokeMcpConnection(id: string): Promise<void> {
+  await apiRequest(`${MCP_CONNECTIONS_BASE}/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function getMcpOAuthAuthorization(
+  search: string,
+): Promise<McpOAuthAuthorizationView> {
+  return apiRequest(`${MCP_OAUTH_AUTHORIZATION_PATH}${search}`, {
+    schema: McpOAuthAuthorizationViewSchema,
+  })
+}
+
+export async function decideMcpOAuthAuthorization(
+  body: DecideMcpOAuthAuthorizationBody,
+): Promise<string> {
+  const result = await apiRequest(MCP_OAUTH_AUTHORIZATION_PATH, {
+    method: 'POST',
+    body,
+    schema: DecideMcpOAuthAuthorizationResultSchema,
+  })
+  return result.redirectUrl
 }

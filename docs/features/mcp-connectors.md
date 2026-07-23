@@ -1,170 +1,185 @@
-# MCP Connectors
+# MCP connections
 
-MCP connectors let **external AI clients drive this Instatic instance** over the [Model Context Protocol](https://modelcontextprotocol.io). Instatic acts as an **MCP server**: a local client (Claude Code, Codex, Cursor) or a remote agent connects, lists the available tools, and operates the CMS — reading the site, editing page structure, and managing content — exactly the way the built-in AI panel does.
+MCP connections let external AI clients operate an Instatic instance through the [Model Context Protocol](https://modelcontextprotocol.io). Instatic is the MCP server: clients list its capability-filtered tools, run headless reads, relay editing tools to the connection owner's open workspace, and explicitly publish completed drafts.
 
-This is the mirror image of the **Providers** tab (`server/ai/credentials/`), which points Instatic's *own* agent outward at LLM providers. MCP connectors point inward: they let outside agents reach in.
+This is the inverse of the **Providers** tab. Providers let Instatic call model APIs; MCP connections let outside clients call Instatic.
 
-The server is implemented with the official `@modelcontextprotocol/sdk`. That package is banned everywhere else in the tree (the AI drivers hand-roll provider REST); it is allowed **only under `server/ai/mcp/`**, scoped by `ai-driver-isolation.test.ts`.
+The wire server uses `@modelcontextprotocol/sdk`. That dependency remains allowed only under `server/ai/mcp/`; provider drivers continue to use their direct REST implementations.
 
----
+## Connection modes
 
-## TL;DR
+The UI exposes two credential lifecycles instead of a cosmetic local/remote switch:
 
-- **Instatic is an MCP server.** One Streamable-HTTP endpoint at `/_instatic/mcp` serves both local and remote clients (local is just `localhost`).
-- **Thin adapter over the existing tool engine.** No tool logic is duplicated. MCP is a new *caller* alongside the built-in agent and the plugin host; tool dispatch reuses `executeAiTool`.
-- **Tool surface = the full catalog.** Server-resolved tools (content reads, `site_list_documents`, `site_read_styles`, and explicit `site_publish`) run headless — no editor needed. Every browser-execution tool the agent panel has is exposed too, **relayed to the matching open Site or Content workspace** — the single source of truth for edits. If that workspace is not open, its tools return a clear, scope-specific error; headless tools still work.
-- **Draft, then publish.** Browser writes save the draft and never leak intermediate work to visitors. A connector with `ai.tools.write` + `pages.publish` calls `site_publish` once after its edit sequence; that server-side tool runs the canonical full-site pipeline and atomically swaps the rebuilt static slot.
-- **Bearer-token auth, one secret per connector.** The token is shown once on creation and stored only as a SHA-256 hash. New tokens expire after 90 days by default; admins can choose a custom TTL or explicitly create a non-expiring token. Revocable.
-- **Capability-gated.** A connector carries a granted capability subset; the same gate the built-in agent uses (`toolAllowedForCapabilities`) filters the toolset. An MCP caller can never invoke a tool the granting capabilities couldn't authorize over HTTP.
-- **Privilege floor.** An admin can only grant capabilities they themselves hold.
-- **Managed from the admin UI:** AI workspace → **MCP** tab. Minting a long-lived connector secret is step-up authenticated.
+| Mode | Intended client | Authentication | Lifecycle |
+|---|---|---|---|
+| Hosted OAuth | Claude custom connectors and other remote MCP clients | OAuth authorization code with S256 PKCE | The client discovers the authorization server, dynamically registers, and sends the user to Instatic for consent. Access tokens last up to one hour; refresh tokens rotate; the grant expires after 90 days. |
+| Personal access token | Claude Code, Codex, Cursor, local bridges, and clients that accept an explicit header | `Authorization: Bearer imcp_pat_…` | Created after step-up authentication, shown once, scoped to selected capabilities, configurable expiry, independently revocable. |
 
----
+Both modes resolve to the same persistent connection grant and the same `toolAllowedForCapabilities` gate. OAuth does not create a wider tool path.
 
-## Architecture
+The MCP endpoint is always:
 
-```
-MCP client (Claude Code / Codex / remote agent)
-        │  JSON-RPC over Streamable HTTP
-        ▼
-server/router.ts  →  /_instatic/mcp   (tryServeMcp)
-        │
-server/ai/mcp/transports/http.ts      WebStandardStreamableHTTPServerTransport (Web Request/Response)
-        │
-server/ai/mcp/auth.ts                 Bearer token → connector → capability set (401 + WWW-Authenticate otherwise)
-        │
-server/ai/mcp/server.ts               low-level SDK Server; tools filtered by capabilities
-        │
-server/ai/mcp/registry.ts             AiTool registry → MCP tools (TypeBox inputSchema sent verbatim as JSON Schema)
-        │
-executeAiTool(...) / live editor bridge
-        ▼
-repositories (headless reads) / live editor store (browser tools)
+```text
+https://<your-host>/_instatic/mcp
 ```
 
-### Module layout — `server/ai/mcp/`
+Hosted clients run in their provider's infrastructure. They cannot reach `localhost`, a private LAN address, or an HTTP-only deployment. The MCP tab detects this and warns until Instatic's canonical public origin is HTTPS.
 
-| File | Responsibility |
+## Hosted OAuth flow
+
+Instatic implements the MCP authorization-server surface directly:
+
+| Endpoint | Purpose |
 |---|---|
-| `transports/http.ts` | Mounts the SDK's Web-standard Streamable-HTTP transport; stateless per request (`enableJsonResponse`). |
-| `auth.ts` | Bearer resolution → `{ connectorId, userId, capabilities }`; spec-correct 401 with an RFC 9728 `resource_metadata` pointer. |
-| `server.ts` | Builds a capability-scoped low-level `Server` (`ListTools` / `CallTool` handlers). Uses the low-level `Server`, not `McpServer.registerTool`, because the latter needs Zod (banned) — this lets the TypeBox `inputSchema` pass through verbatim. |
-| `registry.ts` | Headless reads plus the browser-relayed site/content catalog, deduped by name and filtered by `toolAllowedForCapabilities`. |
-| `tools/documentTools.ts` | `site_list_documents` — pages, templates, and visual components, headless from the DB. |
-| `contentAuthorization.ts` | Re-checks own-vs-any connector grants against the target content row before a browser-relayed mutation. |
-| `tools/styleTools.ts` | `site_read_styles` — the design system as a CSS stylesheet, headless from the DB. |
-| `tools/publishTool.ts` | `site_publish` — explicit server-side full-site publish through `publishDraftSite`, including the Layer-A static slot and MCP audit metadata. |
-| `editorBridge.ts` | Per-user, per-scope live workspace bridge registry + `createEditorBridgeStream`; browser tools route to the owner's matching Site or Content workspace. |
-| `handlers/editorBridge.ts` | `GET /admin/api/ai/editor-bridge?scope=site|content` — the capability-gated NDJSON stream each workspace holds open. |
-| `connectors/` | `types.ts` (server-only record), `token.ts` (generate + SHA-256 hash), `store.ts` (CRUD + `toConnectorView`). |
-| `handlers/connectors.ts` | `/admin/api/ai/mcp/connectors` CRUD, gated by `ai.providers.manage`. |
+| `/.well-known/oauth-protected-resource` | RFC 9728 protected-resource metadata for the MCP resource. |
+| `/.well-known/oauth-protected-resource/_instatic/mcp` | Path-aware protected-resource discovery alias. |
+| `/.well-known/oauth-authorization-server` | Authorization-server metadata. |
+| `/_instatic/oauth/register` | Dynamic client registration for public clients. |
+| `/admin/ai/oauth/authorize` | Signed-in consent screen. |
+| `/_instatic/oauth/token` | Form-encoded authorization-code and refresh-token exchange. |
 
----
+The authorization sequence is:
 
-## Tool surface
-
-MCP exposes the **full tool catalog** (deduped by name), capability-filtered. Tools fall in two execution classes:
-
-**Single source of truth.** All page *editing* goes through the **live editor store** (browser tools, relayed to the open editor). There is deliberately **no** headless DB-mutating page-tree tool: an earlier `read_page_tree`/`mutate_page_tree` pair edited the DB directly, creating a second copy of each page with identical node ids that desynced from the open editor and got clobbered by its autosave (data loss). They were removed — structure editing uses the editor's browser tools, which the existing save-flush persists.
-
-**Server-resolved — work with no workspace open:**
-- Content reads — list/read collections, entries, data rows, media.
-- `get_context({ entryId? })` — orientation in one call: whether the Site and Content workspace bridges are connected, which "everywhere"/post-type templates wrap pages, and the site name. Call it first if a browser tool returns an "open the workspace" error.
-- `site_list_documents` — editable pages, templates, and visual components with document references, root node ids, template metadata, and summaries. Nothing is marked active/current because headless calls have no editor focus.
-- `site_read_styles({ format?, className?, includeTokens? })` — the design system as a **CSS stylesheet**: design tokens (CSS custom properties) + every class/ambient rule, read straight from the DB via the publisher's emitters. `format:"summary"` returns a compact class catalog (selector + referenced token vars, no declarations) to scan first. Symmetric with reading pages as HTML / writing CSS via `site_apply_css`. Replaces the old snapshot-dependent `list_tokens`.
-- `site_list_breakpoints` — configured viewport ids/labels/widths (the first is the base), so `site_render_snapshot` can target one deliberately. Headless version replaces the snapshot-dependent one.
-- `site_publish` — deploys the **saved** draft. It requires `ai.tools.write` + `pages.publish`, calls `publishDraftSite` with the server's real uploads directory, rebuilds HTML/CSS/runtime assets into the inactive static slot, swaps it atomically, bumps the publish cache version, and records `source: "mcp"` plus the connector id in the publish audit event.
-
-Site and content writes deliberately do **not** call `site_publish` automatically. A multi-step agent edit can involve many tool calls; publishing each intermediate call would expose incomplete work, bypass the user's explicit deployment intent, and repeatedly run the expensive full-site pipeline. The client should finish and verify its draft changes, then call `site_publish` once when publication was requested.
-
-**Browser-relayed (via the live workspace bridge) — require the matching workspace:**
-- Structure editing — `site_insert_html`, `site_replace_node_html`, `site_delete_node`, `site_move_node`, `site_duplicate_node`, `site_rename_node`, `site_update_node_props`.
-- HTML/CSS authoring (`site_apply_css`, `site_assign_class`, `site_remove_class`), page lifecycle (`site_add_page`, …), design tokens (`site_set_color_tokens`, …), content CRUD (`content_create_document`, `content_set_document_field`, …), code assets, structure reads (`site_read_document`), and live-DOM reads (`site_render_snapshot`, `site_get_node_html`).
-- These have no server implementation — their logic runs in the browser against the live workspace state. Site tools route to `SitePage`; content tools route to `ContentPage`. Image attachments (e.g. `site_render_snapshot`'s PNG) come back as MCP image content blocks. No matching workspace connected → a clear error asking the operator to open that workspace.
-- `content_create_document` always creates a draft. Publication is a separate `content_set_document_status` call, which carries the content-publish capability gate; scheduled status uses the same explicit status tool.
-
-## Live editor bridge
-
-`server/ai/mcp/editorBridge.ts` keeps one bridge per `(userId, scope)` (newest connection for that scope wins). A connector can only reach **its own owner's** workspaces, while the owner's Site and Content pages may stay connected at the same time.
-
-```
-MCP browser-tool call            Matching workspace (open in a browser)
-   │ executeAiTool(browser)         │ useMcpWorkspaceBridge(scope, dispatcher)
-   ▼                                ▼
-buildMcpServer → getEditorBridgeForUser(userId, tool.scope)
-   │ bridge.callBrowser(tool, input) → emits toolRequest ─────────────▶ Site or Content dispatcher
-   │                                                                        │ (live workspace)
-   ◀───────────── POST /admin/api/ai/tool-result ◀── postToolResult ◀───────┘
+```text
+Hosted MCP client
+  → reads protected-resource and authorization-server metadata
+  → dynamically registers its exact callback URI
+  → opens /admin/ai/oauth/authorize with resource + state + S256 challenge
+  → user signs in, reviews the client, selects capabilities, and completes step-up
+  → Instatic redirects a one-time code to the registered callback
+  → client exchanges code + verifier for opaque access and refresh tokens
+  → client calls /_instatic/mcp with the access token
 ```
 
-- Browser side: `useMcpWorkspaceBridge` opens the scope-qualified NDJSON stream, runs each `toolRequest` through the SAME Site or Content dispatcher as the built-in agent panel, and POSTs the result back. It reconnects with backoff. `SitePage` flushes pending draft changes before reporting a successful tool result, so a follow-up headless read or `site_publish` sees the persisted edit immediately; a failed save makes the MCP tool fail instead of silently publishing stale data. `ContentPage` registers its bridge whenever the workspace is mounted, independent of whether the AI panel is visible.
-- Server side: reuses the chat bridge machinery wholesale — `createBridge` issues the `AiBrowserBridge`, `resolveBridgeToolResult` settles it from the existing `/admin/api/ai/tool-result` endpoint.
+Security properties:
 
-This is why an open editor (yours, or one the agent opens) unlocks the full editing surface without reimplementing any tool.
+- Public clients only: no generated client secret is required or stored.
+- Redirect URIs are registered exactly. HTTPS is required except for HTTP loopback callbacks used by native clients.
+- Authorization codes expire after five minutes, are stored only as SHA-256 hashes, and can be consumed once.
+- S256 PKCE, exact client id, callback, and MCP `resource` binding are checked during exchange.
+- OAuth access tokens are opaque, stored only as hashes, bound to the exact MCP resource, and expire after at most one hour.
+- Refresh tokens rotate on every use. Reuse of a rotated token revokes the connection and all of its tokens.
+- OAuth grants expire after 90 days. Disconnecting the connection immediately invalidates its access and refresh tokens.
+- The consent API requires `ai.providers.manage`; approval also requires a fresh step-up window. The approver cannot delegate a capability they do not hold.
+- Dynamic-registration client names are self-declared. The consent screen surfaces the exact callback and tells the approver to verify that they initiated the request and recognize the address.
+- The client-supplied `state` value is round-tripped on success and denial. Redirects are generated only from the callback already registered for that client.
 
----
+### Claude Desktop / Claude custom connector
 
-## Authentication
+1. Deploy Instatic at a public HTTPS origin and configure that origin through the normal server public-origin configuration.
+2. In Instatic, open **AI → MCP** and copy the **Remote MCP URL**.
+3. In Claude, open **Settings → Connectors**, add a custom connector, choose a name, and paste the URL.
+4. Leave **OAuth Client ID** and **OAuth Client Secret** empty. Claude can dynamically register as a public PKCE client.
+5. Choose **Connect**. The browser returns to Instatic, where the user selects capabilities and approves the connection.
 
-Each connector has a bearer secret (`imcp_…`). The client sends `Authorization: Bearer <token>`. The server hashes the presented token and looks up a non-revoked, non-expired connector, yielding its capability set. Missing/invalid/expired tokens get a `401` with `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource"`.
+The resulting OAuth connection appears automatically under **Authorized connections**. No Instatic token is copied into Claude.
 
-Works today with Claude Code, Cursor, Claude.ai custom connectors, and custom remote agents.
+## Personal access tokens
 
-Managed connector UIs that require an OAuth flow are not compatible with the current bearer-token implementation.
+In **AI → MCP**, choose **Create access token**, name the device/client, choose an expiry and capabilities, then complete step-up. The plaintext `imcp_pat_…` token is returned once; only its SHA-256 hash is stored.
 
----
-
-## Connecting a client
-
-Create a connector in **AI → MCP**, complete the step-up prompt if the session is not already fresh, choose its type and capabilities, then copy the token (shown once).
-
-**Local (Claude Code / Codex / Cursor):**
+Claude Code example:
 
 ```sh
 claude mcp add instatic --transport http http://localhost:3000/_instatic/mcp \
-  --header "Authorization: Bearer imcp_…"
+  --header "Authorization: Bearer imcp_pat_…"
 ```
 
-**Remote:** point the client at `https://<your-host>/_instatic/mcp` and send the token as an `Authorization: Bearer` header.
+Claude Desktop can also reach a local server through a local stdio bridge. The UI generates a ready-to-copy `mcp-remote` configuration that keeps the token in an environment variable instead of embedding it in the command arguments.
 
----
+Personal tokens are deliberately not the hosted-connector setup path. The hosted Claude connector form does not provide a general custom-header field, and a cloud-hosted connector cannot reach a local-only endpoint.
+
+## Architecture
+
+```text
+MCP client
+  │ Streamable HTTP + OAuth/PAT bearer
+  ▼
+server/router.ts
+  ├─ OAuth metadata / registration / token endpoints
+  └─ /_instatic/mcp
+       ▼
+server/ai/mcp/auth.ts
+  bearer → OAuth access token or personal token → connection capability set
+       ▼
+server/ai/mcp/server.ts + registry.ts
+  capability-filtered MCP tools
+       ▼
+executeAiTool(...) / live editor bridge
+  ├─ repositories and publisher for headless tools
+  └─ connection owner's open Site or Content workspace for browser tools
+```
+
+### Module layout
+
+| Module | Responsibility |
+|---|---|
+| `paths.ts` | Canonical MCP, OAuth, metadata, and consent paths. |
+| `oauth/protocol.ts` | Issuer/resource construction, supported scopes, redirect validation, PKCE validation, safe callback generation. |
+| `oauth/schemas.ts` | TypeBox schemas for dynamic registration and form/query parsing. |
+| `oauth/handler.ts` | Public metadata, dynamic registration, and token endpoints with protocol-shaped errors and rate limits. |
+| `oauth/store.ts` | Registered clients, hashed one-time codes, token issue/rotation, resource-bound access lookup. |
+| `handlers/oauthAuthorization.ts` | Admin-session consent read/decision API, capability floor, and step-up gate. |
+| `handlers/management.ts` | Connection overview, personal-token creation, and revoke/disconnect. |
+| `connectors/store.ts` | Persistent connection grant and the token-free `toConnectionView` projection. |
+| `connectors/token.ts` | Opaque secret generation, hashing, and PKCE challenge calculation. |
+| `auth.ts` | Resolves OAuth access tokens or personal tokens to `{ connectorId, userId, capabilities }`; returns a discovery-aware 401 otherwise. |
+| `transports/http.ts` | Stateless Web-standard Streamable HTTP transport. |
+| `server.ts` / `registry.ts` | Low-level SDK server, TypeBox input schemas, catalog deduplication, and capability filtering. |
+| `editorBridge.ts` | Per-user, per-scope live workspace bridge. |
+| `tools/publishTool.ts` | Explicit canonical full-site publish with MCP audit metadata. |
+
+## Tool execution model
+
+MCP exposes the full deduplicated tool catalog, filtered by the connection's capabilities.
+
+Server-resolved tools work without an editor open. They include content reads, `get_context`, `site_list_documents`, `site_read_styles`, `site_list_breakpoints`, and explicit `site_publish`. Publishing requires `ai.tools.write` plus `pages.publish`, runs the canonical full-site pipeline, swaps the static slot atomically, and records the connection id in the publish audit event.
+
+Browser tools run against the connection owner's live workspace. Site structure, HTML/CSS, page lifecycle, design-token, content mutation, code-asset, and live-DOM tools route to the matching open Site or Content workspace. If that workspace is not open, the tool returns a scope-specific error while headless tools remain available.
+
+There is intentionally no headless page-tree mutation path. The open editor store is the single source of truth for draft edits; a second DB mutation path would desynchronize node state and risk autosave overwrites. Successful relayed edits flush the draft before returning, so a following headless read or explicit publish sees the saved result.
+
+Writes remain drafts. Clients should finish and verify an edit sequence, then call `site_publish` once only when deployment was requested.
 
 ## Data model
 
-`ai_mcp_connectors` (migration `018` plus additive expiry migration `019`, PG + SQLite parity):
+`ai_mcp_connectors` remains the persistent owner/capability grant (migrations `018` and `019`):
 
-| column | notes |
+| Column | Notes |
 |---|---|
-| `id`, `user_id`, `label` | owner + display name |
-| `type` | `local` \| `remote` |
-| `auth_mode` | `bearer` for every connector created by the current UI/API. The schema also accepts `oauth` as a reserved storage value, but no OAuth flow creates or authenticates those rows today. |
-| `token_hash` | SHA-256 of the secret; never the plaintext. Unique. |
-| `capabilities_json` | granted capability subset |
-| `created_at`, `last_used_at`, `revoked_at` | lifecycle; revoked tokens fail auth |
-| `expires_at` | token expiry; new tokens default to 90 days, `NULL` means explicitly non-expiring or grandfathered |
+| `id`, `user_id`, `label` | Connection identity and owner. |
+| `auth_mode` | `bearer` for personal access tokens, `oauth` for hosted grants. |
+| `token_hash` | Personal-token hash; `NULL` for OAuth connections. |
+| `capabilities_json` | Granted capability subset. |
+| `created_at`, `last_used_at`, `revoked_at`, `expires_at` | Shared lifecycle. |
+| `type` | Legacy storage discriminator retained in the existing live schema; it is no longer exposed as a product choice or wire field. |
 
-The wire-safe `McpConnectorView` (the only HTTP-returned shape) includes `expiresAt` but never includes the hash — gated by `ai-mcp-connectors-never-leak.test.ts`. Create and revoke are audited (`ai.mcp_connector.created` / `ai.mcp_connector.revoked`).
+Migration `021_mcp_oauth` adds, in both dialects:
 
----
+- `ai_mcp_oauth_clients`: dynamically registered public clients and exact callback lists;
+- `ai_mcp_oauth_codes`: hashed, short-lived, one-time PKCE authorization codes;
+- `ai_mcp_oauth_tokens`: hashed access/refresh tokens with kind, client, scope, resource, expiry, and revocation state.
 
-## Capabilities
+The wire-safe `McpConnectionView` never includes a token or hash. Personal-token creation is the only response that contains a plaintext personal token. OAuth codes and tokens stay on the protocol endpoints and never appear in list/read APIs.
 
-Connector management is gated by `ai.providers.manage` (the AI-integrations admin surface), and connector creation additionally requires a fresh step-up window because it mints a long-lived delegated secret. A connector's granted capabilities flow straight into the existing tool gate:
+Create and manual revoke actions retain the existing `ai.mcp_connector.created` and `ai.mcp_connector.revoked` audit events, with the authentication mode included in create metadata.
 
-- mutating tools require `ai.tools.write`;
-- page-tree edits require any of `site.structure.edit` / `site.content.edit` / `site.style.edit` / `pages.edit`;
-- full-site deployment additionally requires `pages.publish`;
-- own-vs-any content grants are re-checked against the target row before browser relay, so the owner's broader admin cookie cannot widen a restricted connector token;
-- reads require any site/content read grant.
+## Capability enforcement
 
-An admin cannot grant a capability they do not hold (enforced in `handlers/connectors.ts`).
-
----
+- Management and consent require `ai.providers.manage`.
+- Token creation and OAuth approval require step-up authentication.
+- Mutating tools require `ai.tools.write`.
+- Page-tree edits require the matching site/page edit capabilities.
+- Full-site deployment additionally requires `pages.publish`.
+- Own-vs-any content permissions are checked again against the target row before browser relay.
+- The approver can grant only capabilities they hold.
 
 ## Tests
 
-- `server/ai/mcp/connectors/{token,store}.test.ts` — token hashing, expiry, and store CRUD.
-- `server/ai/mcp/{registry,auth,server,contentAuthorization,transports/http}.test.ts` and `server/ai/mcp/tools/documentTools.test.ts` — capability filtering, headless document listing, bearer auth + 401, row ownership, scoped workspace relay, full MCP round-trip, HTTP handshake.
-- `server/ai/mcp/publishTool.test.ts` — explicit MCP publish rebuilds and swaps the real static CSS/HTML slot and records connector audit metadata.
-- `src/__tests__/ai/mcpConnectorsHandler.test.ts` — CRUD, step-up, privilege floor, capability gating.
-- `src/__tests__/architecture/ai-mcp-connectors-never-leak.test.ts` — token never serialized.
+- `server/ai/mcp/oauth/handler.test.ts` covers discovery metadata, public dynamic registration, and callback policy.
+- `server/ai/mcp/oauth/store.test.ts` covers PKCE exchange, exact binding, one-time codes, access lookup, refresh rotation/reuse, and revocation.
+- `server/ai/mcp/auth.test.ts` covers personal and OAuth bearer resolution plus the protected-resource challenge.
+- `src/__tests__/ai/mcpOAuthAuthorizationHandler.test.ts` covers signed-in consent, capability selection, exact callback redirects, denial, and privilege floors.
+- `src/__tests__/ai/mcpConnectorsHandler.test.ts` covers connection listing, personal-token creation, step-up, revoke, and privilege floors.
+- `server/ai/mcp/e2e.test.ts`, `transports/http.test.ts`, and `publishTool.test.ts` cover the real MCP request flow and publish path.
+- `src/__tests__/architecture/ai-mcp-connectors-never-leak.test.ts` gates the token-free connection projection.
