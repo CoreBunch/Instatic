@@ -37,6 +37,7 @@ const ProviderId = Type.Union([
   Type.Literal('openai'),
   Type.Literal('ollama'),
   Type.Literal('openrouter'),
+  Type.Literal('requesty'),
   Type.Literal('openai-compatible'),
 ])
 
