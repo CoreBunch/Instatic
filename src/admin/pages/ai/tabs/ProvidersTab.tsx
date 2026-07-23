@@ -27,7 +27,7 @@ import { ApiError } from '@core/http'
 import styles from '../AiPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
-type ProviderId = 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'openai-compatible'
+type ProviderId = 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'requesty' | 'openai-compatible'
 type AuthMode = 'apiKey' | 'baseUrl'
 
 // Each provider has exactly one credential shape; the UI derives it instead
@@ -36,6 +36,7 @@ const PROVIDERS: Array<{ id: ProviderId; label: string; authMode: AuthMode }> = 
   { id: 'anthropic', label: 'Anthropic (Claude)', authMode: 'apiKey' },
   { id: 'openai', label: 'OpenAI', authMode: 'apiKey' },
   { id: 'openrouter', label: 'OpenRouter', authMode: 'apiKey' },
+  { id: 'requesty', label: 'Requesty', authMode: 'apiKey' },
   { id: 'ollama', label: 'Ollama (local)', authMode: 'baseUrl' },
   { id: 'openai-compatible', label: 'Custom Provider', authMode: 'baseUrl' },
 ]
@@ -49,6 +50,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
   openrouter: 'OpenRouter',
+  requesty: 'Requesty',
   ollama: 'Ollama',
   'openai-compatible': 'Custom Provider',
 }
@@ -57,6 +59,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
 const API_KEY_PLACEHOLDER: Partial<Record<ProviderId, string>> = {
   anthropic: 'sk-ant-...',
   openrouter: 'sk-or-...',
+  requesty: 'sk-... or rqsty-...',
   'openai-compatible': 'sk-... (optional)',
 }
 
