@@ -6,6 +6,21 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 
 ## Unreleased
 
+## 0.0.13 - 2026-07-24
+
+### Editor, import, and publishing
+
+- Added a dedicated Page settings dialog so authors can edit page slugs directly.
+- Restored contrast for editor switches and canvas mode controls.
+- Preserved node inline styles in image previews and hid empty canvas chrome for ambient style rules.
+- Rendered imported SVG sizing and presentation styles on the canvas root so editor previews match published output.
+- Preserved safe SVG fragment references through Super Import, editor rendering, and publishing so circular text paths remain visible and animated.
+
+### Platform and maintenance
+
+- Updated Sharp to its patched release.
+- Restored function-level coverage reporting for Fallow health checks.
+
 ## 0.0.12 - 2026-07-24
 
 ### AI and integrations
