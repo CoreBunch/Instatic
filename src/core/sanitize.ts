@@ -227,9 +227,10 @@ export function isRichtextPropKey(key: string): boolean {
 const SVG_CONFIG: Config = {
   USE_PROFILES: { svg: true, svgFilters: true },
   // Defence in depth — DOMPurify's svg profile already excludes these, but be
-  // explicit: no HTML embedding, no script, no nested anchors carrying hrefs.
+  // explicit: no HTML embedding, no script, and no nested anchors. URI-bearing
+  // attributes stay under DOMPurify's scheme validation so safe same-document
+  // references such as <textPath href="#ring"> can resolve their SVG geometry.
   FORBID_TAGS: ['script', 'foreignObject', 'a'],
-  FORBID_ATTR: ['xlink:href', 'href'],
   RETURN_DOM: false,
   RETURN_DOM_FRAGMENT: false,
 }

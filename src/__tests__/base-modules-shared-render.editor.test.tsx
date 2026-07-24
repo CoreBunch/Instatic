@@ -156,4 +156,37 @@ describe('SvgEditor canvas root', () => {
     expect(root?.getAttribute('style')).toContain('height: 50%')
     expect(root?.getAttribute('style')).toContain('color: red')
   })
+
+  it('renders circular text references authored for inline HTML SVG', () => {
+    const { container, queryByText } = renderEditor(
+      SvgModule,
+      {
+        svg: [
+          '<svg class="seal-ring" viewBox="0 0 100 100">',
+          '<defs><path id="sealE" d="M50,50 m-39,0 a39,39 0 1,1 78,0 a39,39 0 1,1 -78,0"/></defs>',
+          '<text><textPath href="#sealE" xlink:href="#sealE">',
+          '★ OPEN SOURCE · 4K STARS · ',
+          '</textPath></text>',
+          '</svg>',
+        ].join(''),
+      },
+    )
+
+    const textPath = container.querySelector('textPath')
+    expect(queryByText('No SVG')).toBeNull()
+    expect(textPath?.getAttribute('href')).toBe('#sealE')
+    expect(textPath?.getAttribute('xlink:href')).toBe('#sealE')
+    expect(textPath?.textContent).toContain('OPEN SOURCE')
+  })
+
+  it('keeps rejecting markup with more than one SVG root', () => {
+    const { queryByText } = renderEditor(
+      SvgModule,
+      {
+        svg: '<svg viewBox="0 0 10 10"><path d="M0 0"/></svg><svg viewBox="0 0 10 10"><path d="M1 1"/></svg>',
+      },
+    )
+
+    expect(queryByText('No SVG')).not.toBeNull()
+  })
 })

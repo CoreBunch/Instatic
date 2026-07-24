@@ -44,9 +44,25 @@ function reactSvgAttributeName(name: string): string {
  * editor component.
  */
 export function parseSvgCanvasRoot(markup: string): SvgCanvasRoot | null {
-  const doc = new DOMParser().parseFromString(markup, 'image/svg+xml')
-  const root = doc.documentElement
-  if (root.localName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) return null
+  // Published SVG markup lives inside an HTML document, where common legacy
+  // references such as `xlink:href` do not require an explicit xmlns:xlink
+  // declaration. Parsing as strict XML rejects that valid inline-HTML shape
+  // wholesale and makes the editor show "No SVG" while publish still works.
+  // Use the same HTML parsing context as the public page, then retain the
+  // module's one-SVG-root invariant explicitly.
+  const doc = new DOMParser().parseFromString(markup, 'text/html')
+  const root = doc.body.firstElementChild
+  const hasSignificantRootText = Array.from(doc.body.childNodes).some(
+    (node) => node.nodeType === 3 && Boolean(node.textContent?.trim()),
+  )
+  if (
+    !root ||
+    doc.body.children.length !== 1 ||
+    hasSignificantRootText ||
+    root.localName.toLowerCase() !== 'svg'
+  ) {
+    return null
+  }
 
   const attributes: Record<string, string> = {}
   let className: string | undefined
