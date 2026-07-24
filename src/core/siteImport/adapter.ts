@@ -203,20 +203,26 @@ export interface SiteImportTransaction {
   ): { slug: string; value: string }[]
 
   /**
-   * Add imported JavaScript files as site scripts: one `SiteFile`
+   * Upsert imported JavaScript files as site scripts: one `SiteFile`
    * (`type: 'script'`) per file plus a page-scoped `site.runtime.scripts`
    * entry so each runs where the source HTML linked it.
    *
-   * @returns The committed `{ id, path }` for each added script.
+   * A same-type file at the same path is updated in place so repeat imports
+   * preserve its id and cannot accumulate suffixed copies.
+   *
+   * @returns The committed `{ id, path }` for each upserted script.
    */
-  addScripts(scripts: ImportScript[]): { id: string; path: string }[]
+  upsertScripts(scripts: ImportScript[]): { id: string; path: string }[]
 
   /**
-   * Add stylesheets kept as files (`mode: 'file'`): one `SiteFile`
+   * Upsert stylesheets kept as files (`mode: 'file'`): one `SiteFile`
    * (`type: 'style'`) per sheet plus a page-scoped `site.runtime.styles`
    * entry so each applies exactly where the source HTML linked it.
    *
-   * @returns The committed `{ id, path }` for each added stylesheet.
+   * A same-type file at the same path is updated in place so repeat imports
+   * preserve its id and cannot accumulate suffixed copies.
+   *
+   * @returns The committed `{ id, path }` for each upserted stylesheet.
    */
-  addStylesheets(stylesheets: ImportStylesheet[]): { id: string; path: string }[]
+  upsertStylesheets(stylesheets: ImportStylesheet[]): { id: string; path: string }[]
 }

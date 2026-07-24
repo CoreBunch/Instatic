@@ -59,6 +59,9 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  * - `missing-script`: a `<script src>` referenced in an HTML file was not
  *   found in the FileMap. The page is still imported; the missing script is
  *   noted but not fatal.
+ * - `reserved-page-route`: an HTML file resolves beneath a server-owned public
+ *   namespace such as `/uploads/*`. It is not imported as a page because that
+ *   route can never be served by the public page router.
  * - `asset-upload-failed`: an individual asset upload was rejected by the
  *   media library (e.g. unsupported MIME, oversized file, server error).
  *   The remaining assets continue to upload; the failed file is left
@@ -84,6 +87,7 @@ type ImportWarningKind =
   | 'duplicate-class'
   | 'missing-stylesheet'
   | 'missing-script'
+  | 'reserved-page-route'
   | 'asset-upload-failed'
   | 'font-install-failed'
   | 'external-font'

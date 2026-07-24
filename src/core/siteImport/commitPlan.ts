@@ -358,11 +358,11 @@ function commitPageScopedFiles(
 ): void {
   const scopedScripts = resolvePageScopes(plan.scripts ?? [], pageIdBySource)
   if (scopedScripts.length > 0) {
-    results.scripts.push(...tx.addScripts(scopedScripts))
+    results.scripts.push(...tx.upsertScripts(scopedScripts))
   }
   const scopedStylesheets = resolvePageScopes(plan.stylesheets ?? [], pageIdBySource)
   if (scopedStylesheets.length > 0) {
-    results.stylesheets.push(...tx.addStylesheets(scopedStylesheets))
+    results.stylesheets.push(...tx.upsertStylesheets(scopedStylesheets))
   }
 }
 

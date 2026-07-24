@@ -11,12 +11,12 @@
  * threading more state through a 250-line body.
  */
 
-import type { SiteDocument } from '@core/page-tree'
+import { pageSlugError, type SiteDocument } from '@core/page-tree'
 import { compareVariants } from '@core/fonts'
 import { expandLinkedCssImports } from './cssImports'
 import { extractGoogleFontImports } from './fontImports'
 import { classifyFiles } from './classifyFiles'
-import { makeHtmlPagePlan } from './htmlPagePlan'
+import { deriveSlug, makeHtmlPagePlan } from './htmlPagePlan'
 import { buildAssetPlan, type CssFileResult } from './assetPlan'
 import { partitionLinkedStylesheets } from './stylesheetPlan'
 import { detectCrossSheetClassConflicts, isSharedUtilityClassName } from './classCascades'
@@ -219,6 +219,25 @@ function collectHtmlPagePlans(classified: ClassifiedFile[], fileMap: FileMap): H
 
   for (const f of classified) {
     if (f.role !== 'html') continue
+    const slug = deriveSlug(f.path)
+    // `/uploads/*` is owned by the media server. It is intentionally handled
+    // here instead of being added to the persisted-page slug validator: sites
+    // affected by the old importer may already contain these unreachable
+    // pages, and changing persisted validation would prevent their draft from
+    // loading before the user can remove them.
+    const isReservedRoute =
+      slug === 'uploads' ||
+      slug.startsWith('uploads/') ||
+      pageSlugError(slug) !== null
+    if (isReservedRoute) {
+      warnings.push({
+        kind: 'reserved-page-route',
+        message: `HTML file "${f.path}" resolves to reserved route "/${slug}" and was not imported as a page`,
+        source: f.path,
+        path: slug,
+      })
+      continue
+    }
     const htmlSource = decodeUtf8(f.bytes)
     const { pagePlan, warnings: pageWarnings, inlineCss } = makeHtmlPagePlan(f.path, htmlSource, fileMap)
     warnings.push(...pageWarnings)

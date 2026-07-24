@@ -55,6 +55,13 @@ export function buildMediaGroups(plan: ImportPlan): MediaGroup[] {
 /** Items that could not be imported — surfaced under the "Can't import" entry. */
 export function buildSkippedList(plan: ImportPlan): SkippedItem[] {
   return [
+    ...plan.warnings
+      .filter((warning) => warning.kind === 'reserved-page-route')
+      .map((warning) => ({
+        label: warning.source ?? warning.path ?? 'Reserved page route',
+        reason: warning.message,
+        kind: 'html',
+      })),
     ...plan.unusedCss.map((path) => ({
       label: path,
       reason: 'Stylesheet isn’t linked by any imported page',

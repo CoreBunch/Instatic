@@ -1,15 +1,17 @@
 /**
- * importedSiteFiles — commit imported scripts and kept stylesheets as
+ * importedSiteFiles — upsert imported scripts and kept stylesheets as
  * `SiteFile`s plus page-scoped runtime entries.
  *
  * Both kinds share one shape: a `SiteFile` (`type: 'script' | 'style'`) with
- * a normalised, unique path, and a `site.runtime.{scripts,styles}` entry
+ * a normalised path, and a `site.runtime.{scripts,styles}` entry
  * scoped to exactly the pages whose source HTML linked the file. The runtime
  * entry is mirrored onto the live `siteRuntime` draft (the canvas reads that
  * copy) exactly as `filesSlice.deleteFile` mirrors its delete.
  *
- * Paths are normalised + made unique within `site.files`; an unsafe source
- * path falls back to a sanitised name under `src/scripts/` / `src/styles/`.
+ * Paths are stable import identities: a same-type file at the same path is
+ * updated in place so repeat imports cannot accumulate `-2`, `-3`, … copies.
+ * A path occupied by the other file type is still made unique. An unsafe
+ * source path falls back under `src/scripts/` / `src/styles/`.
  */
 
 import { nanoid } from 'nanoid'
@@ -25,7 +27,7 @@ import {
   type SiteRuntimeConfig,
 } from '@core/site-runtime'
 
-export function addImportedScripts(
+export function upsertImportedScripts(
   site: Draft<SiteDocument>,
   siteRuntime: Draft<SiteRuntimeConfig> | undefined,
   scripts: ImportScript[],
@@ -34,7 +36,7 @@ export function addImportedScripts(
   ensureRuntime(site)
   site.runtime!.scripts ??= {}
 
-  return commitFiles(site, scripts, 'script', 'src/scripts/', 'script.js', (script, id, pageIds) => {
+  return upsertFiles(site, scripts, 'script', 'src/scripts/', 'script.js', (script, id, pageIds) => {
     const config = {
       ...DEFAULT_SCRIPT_RUNTIME_CONFIG,
       format: script.format,
@@ -78,7 +80,7 @@ export function addImportedScriptDependencies(
  * the Site panel's Styles section manages, so the imported sheet is
  * immediately editable there and in the code editor.
  */
-export function addImportedStylesheets(
+export function upsertImportedStylesheets(
   site: Draft<SiteDocument>,
   siteRuntime: Draft<SiteRuntimeConfig> | undefined,
   stylesheets: ImportStylesheet[],
@@ -87,7 +89,7 @@ export function addImportedStylesheets(
   ensureRuntime(site)
   site.runtime!.styles ??= {}
 
-  return commitFiles(site, stylesheets, 'style', 'src/styles/', 'styles.css', (sheet, id, pageIds) => {
+  return upsertFiles(site, stylesheets, 'style', 'src/styles/', 'styles.css', (sheet, id, pageIds) => {
     const config = {
       ...DEFAULT_STYLE_RUNTIME_CONFIG,
       priority: sheet.priority,
@@ -110,7 +112,7 @@ interface ImportedFileItem {
   pageIds?: string[]
 }
 
-function commitFiles<T extends ImportedFileItem>(
+function upsertFiles<T extends ImportedFileItem>(
   site: Draft<SiteDocument>,
   items: T[],
   type: SiteFile['type'],
@@ -122,12 +124,21 @@ function commitFiles<T extends ImportedFileItem>(
   const committed: { id: string; path: string }[] = []
 
   for (const item of items) {
-    const path = uniqueFilePath(safeFilePath(item.path, fallbackDir, fallbackName), usedPaths)
+    const desiredPath = safeFilePath(item.path, fallbackDir, fallbackName)
+    const existing = site.files.find((file) => file.path === desiredPath && file.type === type)
+    const path = existing
+      ? desiredPath
+      : uniqueFilePath(desiredPath, usedPaths)
     usedPaths.add(path)
 
-    const id = nanoid()
     const now = Date.now()
-    site.files.push({ id, path, type, content: item.content, createdAt: now, updatedAt: now })
+    const id = existing?.id ?? nanoid()
+    if (existing) {
+      existing.content = item.content
+      existing.updatedAt = now
+    } else {
+      site.files.push({ id, path, type, content: item.content, createdAt: now, updatedAt: now })
+    }
 
     const pageIds = Array.isArray(item.pageIds)
       ? item.pageIds.filter((pageId): pageId is string => typeof pageId === 'string' && pageId.length > 0)

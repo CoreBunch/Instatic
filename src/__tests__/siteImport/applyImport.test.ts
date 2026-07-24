@@ -48,8 +48,8 @@ interface MockTxOp {
     | 'addConditions'
     | 'addColorTokens'
     | 'overwriteColorTokens'
-    | 'addScripts'
-    | 'addStylesheets'
+    | 'upsertScripts'
+    | 'upsertStylesheets'
   args: unknown
   id: string
 }
@@ -146,12 +146,12 @@ function makeMockAdapter(opts?: {
           ops.push({ type: 'overwriteColorTokens', args: { items }, id: '' })
           return items.map((i) => ({ slug: i.existingTokenId, value: i.value }))
         },
-        addStylesheets(stylesheets) {
-          ops.push({ type: 'addStylesheets', args: { stylesheets }, id: '' })
+        upsertStylesheets(stylesheets) {
+          ops.push({ type: 'upsertStylesheets', args: { stylesheets }, id: '' })
           return stylesheets.map((s) => ({ id: nextId(), path: s.path }))
         },
-        addScripts(scripts) {
-          ops.push({ type: 'addScripts', args: { scripts }, id: '' })
+        upsertScripts(scripts) {
+          ops.push({ type: 'upsertScripts', args: { scripts }, id: '' })
           return scripts.map((s) => ({ id: nextId(), path: s.path }))
         },
       }
@@ -171,6 +171,42 @@ describe('buildImportPlan — structure', () => {
 
   it('produces one page per HTML file', () => {
     expect(plan.pages).toHaveLength(3)
+  })
+
+  it('skips HTML beneath the reserved uploads namespace and its page-only scripts', () => {
+    const encoder = new TextEncoder()
+    const p = buildImportPlan({
+      fileMap: {
+        files: {
+          'index.html': {
+            bytes: encoder.encode('<html><body><h1>Home</h1><script src="scripts/app.js"></script></body></html>'),
+            mimeType: 'text/html',
+          },
+          'scripts/app.js': {
+            bytes: encoder.encode('window.app = true'),
+            mimeType: 'text/javascript',
+          },
+          'uploads/index-before-copy-edit.html': {
+            bytes: encoder.encode('<html><body><h1>Backup</h1><script src="backup.js"></script></body></html>'),
+            mimeType: 'text/html',
+          },
+          'uploads/backup.js': {
+            bytes: encoder.encode('window.backup = true'),
+            mimeType: 'text/javascript',
+          },
+        },
+      },
+      currentSite,
+    })
+
+    expect(p.pages.map((page) => page.source)).toEqual(['index.html'])
+    expect(p.scripts.map((script) => script.path)).toEqual(['scripts/app.js'])
+    expect(p.warnings).toContainEqual({
+      kind: 'reserved-page-route',
+      message: 'HTML file "uploads/index-before-copy-edit.html" resolves to reserved route "/uploads/index-before-copy-edit" and was not imported as a page',
+      source: 'uploads/index-before-copy-edit.html',
+      path: 'uploads/index-before-copy-edit',
+    })
   })
 
   it('produces style rules from linked CSS', () => {
@@ -644,10 +680,10 @@ describe('commitImportPlan — happy path', () => {
 
     const addPageOps = adapter.ops.filter((o) => o.type === 'addPage')
     const indexPageId = (addPageOps.find((op) => (op.args as { title: string }).title === 'Home Page')?.args as { id?: string } | undefined)?.id
-    const addScriptsOp = adapter.ops.find((o) => o.type === 'addScripts')
+    const upsertScriptsOp = adapter.ops.find((o) => o.type === 'upsertScripts')
     expect(indexPageId).toBeDefined()
-    expect(addScriptsOp).toBeDefined()
-    const scripts = (addScriptsOp!.args as { scripts: Array<{
+    expect(upsertScriptsOp).toBeDefined()
+    const scripts = (upsertScriptsOp!.args as { scripts: Array<{
       path: string
       format: string
       pageIds?: string[]
@@ -686,9 +722,9 @@ describe('commitImportPlan — happy path', () => {
 
     const addPageOp = adapter.ops.find((o) => o.type === 'addPage')
     const pageId = (addPageOp?.args as { id?: string } | undefined)?.id
-    const addStylesheetsOp = adapter.ops.find((o) => o.type === 'addStylesheets')
-    expect(addStylesheetsOp).toBeDefined()
-    const stylesheets = (addStylesheetsOp!.args as { stylesheets: Array<{
+    const upsertStylesheetsOp = adapter.ops.find((o) => o.type === 'upsertStylesheets')
+    expect(upsertStylesheetsOp).toBeDefined()
+    const stylesheets = (upsertStylesheetsOp!.args as { stylesheets: Array<{
       path: string
       content: string
       pageIds?: string[]

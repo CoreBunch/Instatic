@@ -19,7 +19,11 @@ import { create } from 'mutative'
 import type { Draft, Patches } from 'mutative'
 import type { ImportFragment } from '@core/htmlImport'
 import type { NewStyleRule } from '@core/siteImport'
-import { addImportedScriptDependencies, addImportedScripts, addImportedStylesheets } from './importedSiteFiles'
+import {
+  addImportedScriptDependencies,
+  upsertImportedScripts,
+  upsertImportedStylesheets,
+} from './importedSiteFiles'
 import { collectDirtyFromSitePatches, mergeDirtyMarks } from './dirtyTracking'
 import type { EditorStore } from '@site/store/types'
 import { MAX_HISTORY } from './defaults'
@@ -580,7 +584,7 @@ export function buildSiteHelpers(
           return committed
         },
 
-        addScripts(scripts): { id: string; path: string }[] {
+        upsertScripts(scripts): { id: string; path: string }[] {
           const dependenciesChanged = addImportedScriptDependencies(site, scripts)
           if (dependenciesChanged) {
             draft.packageJson = {
@@ -588,13 +592,13 @@ export function buildSiteHelpers(
               devDependencies: { ...site.packageJson.devDependencies },
             }
           }
-          const committed = addImportedScripts(site, draft.siteRuntime, scripts)
+          const committed = upsertImportedScripts(site, draft.siteRuntime, scripts)
           if (committed.length > 0 || dependenciesChanged) didMutate = true
           return committed
         },
 
-        addStylesheets(stylesheets): { id: string; path: string }[] {
-          const committed = addImportedStylesheets(site, draft.siteRuntime, stylesheets)
+        upsertStylesheets(stylesheets): { id: string; path: string }[] {
+          const committed = upsertImportedStylesheets(site, draft.siteRuntime, stylesheets)
           if (committed.length > 0) didMutate = true
           return committed
         },

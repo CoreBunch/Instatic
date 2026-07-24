@@ -150,11 +150,11 @@ describe('mutateAllPagesAndSite — basic happy path', () => {
     expect(matchingPage).toBeDefined()
   })
 
-  it('addScripts installs imported runtime dependencies in the same undoable mutation', () => {
+  it('upsertScripts installs imported runtime dependencies in the same undoable mutation', () => {
     useEditorStore.getState().createSite('Test')
 
     useEditorStore.getState().mutateAllPagesAndSite((_site, helpers) => {
-      helpers.addScripts([{
+      helpers.upsertScripts([{
         path: 'motion.js',
         content: `import { Motion } from '@motion.page/sdk';`,
         format: 'module',
@@ -172,6 +172,66 @@ describe('mutateAllPagesAndSite — basic happy path', () => {
 
     expect(useEditorStore.getState().packageJson.dependencies['@motion.page/sdk']).toBeUndefined()
     expect(useEditorStore.getState().site?.packageJson.dependencies['@motion.page/sdk']).toBeUndefined()
+  })
+
+  it('upserts same-path scripts and stylesheets without suffixed duplicates', () => {
+    useEditorStore.getState().createSite('Test')
+    const pageId = useEditorStore.getState().site!.pages[0]!.id
+
+    let firstScriptId = ''
+    let firstStylesheetId = ''
+    useEditorStore.getState().mutateAllPagesAndSite((_site, helpers) => {
+      firstScriptId = helpers.upsertScripts([{
+        path: 'scripts/app.js',
+        content: 'window.version = 1',
+        format: 'classic',
+        pageSources: ['index.html'],
+        pageIds: [pageId],
+        priority: 100,
+      }])[0]!.id
+      firstStylesheetId = helpers.upsertStylesheets([{
+        path: 'styles/app.css',
+        content: 'body { color: red; }',
+        pageSources: ['index.html'],
+        pageIds: [pageId],
+        priority: 100,
+      }])[0]!.id
+      return true
+    })
+
+    useEditorStore.getState().mutateAllPagesAndSite((_site, helpers) => {
+      helpers.upsertScripts([{
+        path: 'scripts/app.js',
+        content: 'window.version = 2',
+        format: 'module',
+        pageSources: ['index.html'],
+        pageIds: [pageId],
+        priority: 120,
+      }])
+      helpers.upsertStylesheets([{
+        path: 'styles/app.css',
+        content: 'body { color: blue; }',
+        pageSources: ['index.html'],
+        pageIds: [pageId],
+        priority: 120,
+      }])
+      return true
+    })
+
+    const site = useEditorStore.getState().site!
+    expect(site.files.filter((file) => file.path === 'scripts/app.js')).toHaveLength(1)
+    expect(site.files.filter((file) => file.path === 'styles/app.css')).toHaveLength(1)
+    expect(site.files.find((file) => file.id === firstScriptId)?.content).toBe('window.version = 2')
+    expect(site.files.find((file) => file.id === firstStylesheetId)?.content).toBe('body { color: blue; }')
+    expect(site.runtime?.scripts?.[firstScriptId]).toMatchObject({
+      format: 'module',
+      priority: 120,
+      scope: { type: 'pages', pageIds: [pageId] },
+    })
+    expect(site.runtime?.styles?.[firstStylesheetId]).toMatchObject({
+      priority: 120,
+      scope: { type: 'pages', pageIds: [pageId] },
+    })
   })
 })
 

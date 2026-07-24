@@ -2092,7 +2092,8 @@ describe('commitImportPlan — uploadAsset called only for entries in plan.asset
           overwriteFontTokens: () => [],
           addColorTokens: () => [],
           overwriteColorTokens: () => [],
-          addScripts: () => [],
+          upsertScripts: () => [],
+          upsertStylesheets: () => [],
         })
       },
     }
@@ -2160,7 +2161,8 @@ describe('commitImportPlan — overwrite with no existing target falls back to a
           overwriteFontTokens: () => [],
           addColorTokens: () => [],
           overwriteColorTokens: () => [],
-          addScripts: () => [],
+          upsertScripts: () => [],
+          upsertStylesheets: () => [],
         })
       },
     }
