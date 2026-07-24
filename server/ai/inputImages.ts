@@ -1,4 +1,4 @@
-import sharp from 'sharp'
+import sharp, { type Metadata } from 'sharp'
 import {
   AI_USER_IMAGE_MAX_BYTES,
   AI_USER_IMAGE_MAX_EDGE,
@@ -114,7 +114,7 @@ async function canonicaliseAiUserImage(
   signal?: AbortSignal,
 ): Promise<AiUserImageBlock> {
   signal?.throwIfAborted()
-  let metadata: sharp.Metadata
+  let metadata: Metadata
   try {
     metadata = await sharp(bytes).metadata()
   } catch (err) {
