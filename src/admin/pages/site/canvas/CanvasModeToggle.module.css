@@ -26,7 +26,7 @@
     gap: var(--space-4xs);
     padding: var(--space-4xs);
     border-radius: 12px;
-    background: var(--bg-surface);
+    background: var(--bg-body);
     box-shadow: 0 6px 18px var(--scrim-30);
     pointer-events: auto;
     user-select: none;
