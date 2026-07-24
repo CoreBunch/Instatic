@@ -913,13 +913,13 @@ describe('base.svg — render() specifics', () => {
       } as never),
     )
 
-    const wrapper = container.querySelector('span')
-    expect(wrapper?.getAttribute('role')).toBe('img')
-    expect(wrapper?.getAttribute('aria-label')).toBe('Preview mark')
-    expect(wrapper?.classList.contains('ist-svg')).toBe(true)
-    expect(wrapper?.querySelector('svg')).not.toBeNull()
-    expect(wrapper?.innerHTML.toLowerCase()).not.toContain('<script')
-    expect(wrapper?.innerHTML.toLowerCase()).not.toContain('onload')
+    const svg = container.querySelector('svg')
+    expect(container.querySelector('span')).toBeNull()
+    expect(svg?.getAttribute('role')).toBe('img')
+    expect(svg?.getAttribute('aria-label')).toBe('Preview mark')
+    expect(svg?.classList.contains('ist-svg')).toBe(true)
+    expect(svg?.innerHTML.toLowerCase()).not.toContain('<script')
+    expect(svg?.innerHTML.toLowerCase()).not.toContain('onload')
   })
 
   it('does not access DOM globals during publish render', () => {
