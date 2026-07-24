@@ -354,14 +354,6 @@ describe('SettingsModal — close behaviours', () => {
 // ---------------------------------------------------------------------------
 
 describe('SettingsModal — focus trap keyboard logic', () => {
-  it('dialog has onKeyDown handler attached (Escape closes)', () => {
-    openModal()
-    render(<SettingsModal />)
-    const dialog = screen.getByRole('dialog')
-    fireEvent.keyDown(dialog, { key: 'Escape' })
-    expect(useEditorStore.getState().isSettingsOpen).toBe(false)
-  })
-
   it('pressing Escape on a child element inside the dialog closes the modal', () => {
     openModal()
     render(<SettingsModal />)
@@ -369,6 +361,68 @@ describe('SettingsModal — focus trap keyboard logic', () => {
     const firstBtn = nav.querySelector('button')!
     fireEvent.keyDown(firstBtn, { key: 'Escape' })
     expect(useEditorStore.getState().isSettingsOpen).toBe(false)
+  })
+
+  // Regression: Escape used to be a React `onKeyDown` on the dialog element,
+  // so it only fired while focus sat inside the dialog subtree. Clicking any
+  // non-focusable spot in the panel (a label, the section header, empty space)
+  // blurs to `<body>` — outside that subtree — and Escape went dead for the
+  // rest of the session while backdrop click kept working.
+  it('pressing Escape closes the modal when focus has left the dialog', () => {
+    openModal()
+    render(<SettingsModal />)
+
+    // Simulate the blur-to-body a click on non-focusable panel chrome causes.
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    expect(document.activeElement).toBe(document.body)
+
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(useEditorStore.getState().isSettingsOpen).toBe(false)
+  })
+
+  // A document-level Escape listener must not collapse the whole modal stack:
+  // surfaces opened from inside settings (media picker, confirm dialogs) own
+  // the keystroke until they close.
+  it('ignores Escape while another dialog is stacked above it', () => {
+    openModal()
+    render(<SettingsModal />)
+
+    const nested = document.createElement('div')
+    nested.setAttribute('role', 'dialog')
+    document.body.appendChild(nested)
+
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(useEditorStore.getState().isSettingsOpen).toBe(true)
+
+    // Once the nested dialog closes, Escape reaches settings again.
+    nested.remove()
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(useEditorStore.getState().isSettingsOpen).toBe(false)
+  })
+
+  it('keeps the panel focusable so a click on dead space cannot blur to body', () => {
+    openModal()
+    const { container } = render(<SettingsModal />)
+    const panel = container.querySelector('[data-accent]')
+    expect(panel?.getAttribute('tabindex')).toBe('-1')
+  })
+
+  // Guideline #225 / WCAG 2.4.3. The restore used to sit in an `open === false`
+  // branch that never ran — all three layouts unmount the modal on close, so
+  // `open` never flips to false while mounted. Assert the behaviour, not the
+  // implementation shape.
+  it('returns focus to the opening trigger when the modal unmounts', () => {
+    const trigger = document.createElement('button')
+    document.body.appendChild(trigger)
+    trigger.focus()
+    expect(document.activeElement).toBe(trigger)
+
+    openModal()
+    const { unmount } = render(<SettingsModal />)
+    unmount()
+
+    expect(document.activeElement).toBe(trigger)
+    trigger.remove()
   })
 })
 

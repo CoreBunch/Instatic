@@ -753,38 +753,32 @@ describe('ModulePicker — ArrowDown keyboard bridge (WCAG SC 2.1.1)', () => {
 // ---------------------------------------------------------------------------
 
 describe('SettingsModal — WCAG 2.4.3 focus-return on close (Guideline #225)', () => {
-  it('declares a triggerRef to capture the element that opened the modal', () => {
+  it('captures the opening element and restores focus in the effect cleanup', () => {
     const { readFileSync } = require('fs')
     const src = readFileSync(
       new URL('../../admin/modals/Settings/SettingsModal.tsx', import.meta.url).pathname,
       'utf-8',
     ) as string
-    // The ref must be a nullable HTMLElement ref (so .focus() is available)
-    expect(src).toContain('triggerRef')
-    expect(src).toMatch(/useRef<HTMLElement\s*\|\s*null>/)
-  })
-
-  it('captures document.activeElement into triggerRef when modal opens', () => {
-    const { readFileSync } = require('fs')
-    const src = readFileSync(
-      new URL('../../admin/modals/Settings/SettingsModal.tsx', import.meta.url).pathname,
-      'utf-8',
-    ) as string
-    // Must guard with instanceof before assigning (avoids assigning non-focusable elements)
+    // Must guard with instanceof before capturing (never stash a non-focusable node)
     expect(src).toMatch(/document\.activeElement\s+instanceof\s+HTMLElement/)
-    expect(src).toContain('triggerRef.current = document.activeElement')
+    // The restore must live in the effect CLEANUP, not an `open === false`
+    // branch: all three layouts unmount the modal on close, so `open` never
+    // transitions to false while mounted and such a branch is dead code.
+    expect(src).toMatch(/return\s*\(\)\s*=>\s*\{[^}]*trigger\?\.focus\(\)/)
   })
 
-  it('restores focus to trigger when modal closes (Guideline #225)', () => {
+  it('binds Escape on document, not as a React onKeyDown on the dialog', () => {
     const { readFileSync } = require('fs')
     const src = readFileSync(
       new URL('../../admin/modals/Settings/SettingsModal.tsx', import.meta.url).pathname,
       'utf-8',
     ) as string
-    // The else branch (open → false) must focus the captured trigger
-    expect(src).toContain('triggerRef.current?.focus()')
-    // And must clear the ref to avoid a stale reference
-    expect(src).toContain('triggerRef.current = null')
+    // A React onKeyDown only fires while focus is inside the dialog subtree;
+    // clicking non-focusable panel chrome blurs to <body> and killed Escape.
+    expect(src).toContain("document.addEventListener('keydown'")
+    expect(src).toContain("document.removeEventListener('keydown'")
+    // The remaining React onKeyDown is the Tab trap only.
+    expect(src).not.toMatch(/onKeyDown[\s\S]{0,400}?e\.key === 'Escape'/)
   })
 
   it('does not regress to a 36px touch target anywhere', () => {
