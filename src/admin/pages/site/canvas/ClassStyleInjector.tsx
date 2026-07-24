@@ -44,7 +44,12 @@ import { styleRuleSelector, type ConditionDef, type StyleRule } from '@core/page
 import { collectBackgroundImagePaths, collectSiteStyleBackgroundImagePaths } from '@core/publisher'
 import { useResponsiveEditorMediaAssets } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { selectorStatePseudo } from '@site/cssStatePseudo'
-import { generateCanvasClassCSS, generateForcedStateCSS, generatePreviewClassCSS } from './canvasClassCss'
+import {
+  generateAmbientPlaceholderSuppressionCSS,
+  generateCanvasClassCSS,
+  generateForcedStateCSS,
+  generatePreviewClassCSS,
+} from './canvasClassCss'
 import { resolveViewportUnitsForCanvas, type CanvasViewport } from './resolveViewportUnits'
 
 interface ClassStyleInjectorProps {
@@ -145,9 +150,15 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
     // within the layer). User CSS (also @layer user-authored) still wins over the
     // zero-specificity :where() publisher reset — same as before.
     const css = forCanvas(generated)
-    styleEl.textContent = css
+    const authoredCss = css
       ? `@layer user-authored {\n${css}\n}`
       : '/* no classes */'
+    const placeholderSuppressionCss = generateAmbientPlaceholderSuppressionCSS(
+      classes ?? EMPTY_STYLE_RULES,
+    )
+    styleEl.textContent = placeholderSuppressionCss
+      ? `${authoredCss}\n${placeholderSuppressionCss}`
+      : authoredCss
   }, [
     targetDocument,
     viewport,

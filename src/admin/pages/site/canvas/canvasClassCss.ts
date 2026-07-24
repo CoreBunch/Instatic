@@ -136,6 +136,55 @@ export function createCanvasClassCssMemo(
  */
 export const generateCanvasClassCSS: CanvasClassCssGenerator = createCanvasClassCssMemo()
 
+const EMPTY_CONTAINER_PLACEHOLDER_SELECTOR = '[data-canvas-module-placeholder]'
+
+function ruleHasAuthoredDeclarations(rule: StyleRule): boolean {
+  if (Object.keys(rule.styles).length > 0) return true
+  return Object.values(rule.contextStyles).some((styles) => Object.keys(styles).length > 0)
+}
+
+/**
+ * Hide the editor-only empty-container placeholder when an ambient selector
+ * styles the authored element.
+ *
+ * Class-assigned and inline-styled empty containers suppress the placeholder
+ * in `ContainerEditor` because that styling is present in the node props.
+ * Ambient rules attach only through selector matching, so the component cannot
+ * see them. These canvas-only rules let the browser perform the same selector
+ * matching it already performs for the authored CSS, including descendant,
+ * sibling, attribute, and state selectors.
+ *
+ * `:is()` keeps comma-separated selector lists scoped as one subject before
+ * the direct-child placeholder suffix is added. `:empty` is rewritten against
+ * the editor-only placeholder child so selectors authored for a genuinely
+ * empty published element still suppress the canvas affordance.
+ */
+export function generateAmbientPlaceholderSuppressionCSS(
+  rules: Record<string, StyleRule>,
+): string {
+  const selectors = Object.values(rules)
+    .filter((rule) =>
+      rule.kind === 'ambient' &&
+      !rule.rawCss &&
+      ruleHasAuthoredDeclarations(rule)
+    )
+    .map((rule) =>
+      styleRuleSelector(rule).replace(
+        /:empty\b/g,
+        `:has(> ${EMPTY_CONTAINER_PLACEHOLDER_SELECTOR}:only-child)`,
+      )
+    )
+
+  if (selectors.length === 0) return ''
+
+  return selectors
+    .map(
+      (selector) =>
+        `:is(${selector}) > ${EMPTY_CONTAINER_PLACEHOLDER_SELECTOR} { display: none; }`,
+    )
+    .join('\n')
+}
+
 /**
  * Generate a higher-specificity preview rule for a single class, used by
  * the canvas style injector while a user is hovering a suggestion. The

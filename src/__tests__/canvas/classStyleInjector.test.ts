@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import {
   createCanvasClassCssMemo,
+  generateAmbientPlaceholderSuppressionCSS,
   generateCanvasClassCSS,
   generateForcedStateCSS,
 } from '@site/canvas/canvasClassCss'
@@ -40,6 +41,25 @@ function resolvedMedia(path = '/uploads/hero.png'): RenderResolvedMedia {
       { width: 2048, height: 1024, format: 'webp', path: '/uploads/hero-w2048.webp', sizeBytes: 190_000 },
     ],
     posterPath: null,
+  }
+}
+
+function makeAmbient(
+  id: string,
+  selector: string,
+  styles: StyleRule['styles'],
+  contextStyles: StyleRule['contextStyles'] = {},
+): StyleRule {
+  return {
+    id,
+    name: selector,
+    kind: 'ambient',
+    selector,
+    order: 0,
+    styles,
+    contextStyles,
+    createdAt: 0,
+    updatedAt: 0,
   }
 }
 
@@ -198,6 +218,63 @@ describe('generateCanvasClassCSS', () => {
     expect(css).toContain('--primary: hsla(238, 100%, 62%, 1);')
     expect(css).toContain('.text-primary')
     expect(css).toContain('color: var(--primary);')
+  })
+})
+
+describe('generateAmbientPlaceholderSuppressionCSS', () => {
+  it('suppresses empty-container chrome for a matching ambient descendant selector', () => {
+    const css = generateAmbientPlaceholderSuppressionCSS({
+      dots: makeAmbient('dots', '.dots i', {
+        width: '12px',
+        height: '12px',
+        backgroundColor: 'red',
+      }),
+    })
+
+    expect(css).toBe(
+      ':is(.dots i) > [data-canvas-module-placeholder] { display: none; }',
+    )
+  })
+
+  it('keeps comma-separated selectors scoped before appending the placeholder child', () => {
+    const css = generateAmbientPlaceholderSuppressionCSS({
+      dots: makeAmbient('dots', '.dots i, .status-dot', { width: '12px' }),
+    })
+
+    expect(css).toContain(
+      ':is(.dots i, .status-dot) > [data-canvas-module-placeholder]',
+    )
+    expect(css).not.toContain('.dots i, .status-dot >')
+  })
+
+  it('matches :empty against the authored element rather than its canvas-only child', () => {
+    const css = generateAmbientPlaceholderSuppressionCSS({
+      empty: makeAmbient('empty', '.dots i:empty', { width: '12px' }),
+    })
+
+    expect(css).toContain(
+      '.dots i:has(> [data-canvas-module-placeholder]:only-child)',
+    )
+  })
+
+  it('ignores ambient entries that do not emit selector declarations', () => {
+    const rawRule = makeAmbient('keyframes', '@keyframes pulse', {})
+    rawRule.rawCss = '@keyframes pulse { from { opacity: 0; } }'
+
+    expect(generateAmbientPlaceholderSuppressionCSS({
+      empty: makeAmbient('empty', '.empty', {}),
+      raw: rawRule,
+    })).toBe('')
+  })
+
+  it('suppresses for context-only authored styling', () => {
+    const css = generateAmbientPlaceholderSuppressionCSS({
+      responsive: makeAmbient('responsive', '.dots i', {}, {
+        mobile: { width: '8px' },
+      }),
+    })
+
+    expect(css).toContain(':is(.dots i)')
   })
 })
 
