@@ -1,4 +1,5 @@
-/* Extracted from ToggleControl and Settings PreferencesSection switch styles. */
+/* High-contrast achromatic states: on = foreground track + dark thumb, off =
+ * raised gray track + light thumb, readable on every editor surface. */
 
 .switch {
     display: inline-flex;
@@ -18,6 +19,7 @@
 
 .switch:disabled {
     cursor: not-allowed;
+    opacity: 0.55;
 }
 
 .track {
@@ -32,12 +34,13 @@
 }
 
 .trackOn {
-    background: var(--bg-surface-3);
-    border-color: var(--bg-surface-3);
+    background: var(--overlay);
+    border-color: var(--overlay);
 }
 
 .trackOff {
-    background: transparent;
+    background: var(--bg-surface-4);
+    border-color: var(--bg-surface-4);
 }
 
 .switch[data-hit-area="true"] .track {
@@ -47,14 +50,6 @@
     box-sizing: content-box;
     border: 0;
     border-radius: 10px;
-}
-
-.switch[data-hit-area="true"] .trackOn {
-    background: var(--overlay);
-}
-
-.switch[data-hit-area="true"] .trackOff {
-    background: var(--border-muted);
 }
 
 .thumb {
@@ -68,7 +63,7 @@
 
 .thumbOn {
     left: 18px;
-    background: var(--text);
+    background: var(--bg-surface);
 }
 
 .thumbOff {

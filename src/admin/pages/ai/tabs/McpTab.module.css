@@ -1,3 +1,123 @@
+.oauthIcon,
+.tokenIcon {
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--mcp-accent) 24%, transparent),
+    color-mix(in srgb, var(--mcp-accent) 8%, transparent)
+  );
+  color: var(--mcp-accent);
+}
+
+.oauthIcon {
+  --mcp-accent: var(--accent-1);
+}
+
+.tokenIcon {
+  --mcp-accent: var(--accent-3);
+}
+
+.tokenBadge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  padding: var(--space-4xs) var(--space-s);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.dialogIntro,
+.setupResult p {
+  margin: 0;
+  color: var(--text-subtle);
+  font-size: var(--text-m);
+  line-height: 1.5;
+}
+
+.readinessNotice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-l);
+  padding: var(--space-l);
+  border-radius: var(--card-radius);
+  background: var(--bg-surface-2);
+}
+
+.readinessNoticeIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--panel-radius);
+  background: var(--warning-10);
+  color: var(--warning-text);
+}
+
+.readinessNotice[data-tone='success'] .readinessNoticeIcon {
+  background: var(--success-10);
+  color: var(--success-text);
+}
+
+.readinessNoticeCopy {
+  display: grid;
+  gap: var(--space-3xs);
+  color: var(--text-subtle);
+  font-size: var(--text-m);
+  line-height: 1.5;
+}
+
+.readinessNoticeCopy strong {
+  color: var(--text-bright);
+  font-size: var(--text-l);
+  font-weight: 600;
+}
+
+.steps,
+.featureList {
+  display: grid;
+  gap: var(--space-s);
+  margin: 0;
+  padding-left: var(--space-2xl);
+  color: var(--text-subtle);
+  font-size: var(--text-m);
+  line-height: 1.45;
+}
+
+.capabilityList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.capabilityChip {
+  padding: var(--space-4xs) var(--space-s);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.copyField,
+.setupResult {
+  display: grid;
+  gap: var(--space-s);
+  min-width: 0;
+}
+
+.setupResult h3 {
+  margin: var(--space-3xs) 0 0;
+  color: var(--text-bright);
+  font-size: var(--text-xl);
+  font-weight: 500;
+  line-height: 1.3;
+}
+
 .tokenBody {
   display: flex;
   flex-direction: column;
@@ -10,25 +130,44 @@
   border-radius: var(--radius-sm);
   background: var(--bg-surface-2);
   color: var(--warning-text);
+  font-size: var(--text-m);
+}
+
+.copyLabel {
+  color: var(--text-subtle);
   font-size: var(--text-s);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  text-transform: uppercase;
 }
 
 .copyRow {
-  display: flex;
-  align-items: stretch;
-  gap: var(--space-xs);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0;
+  min-width: 0;
+  padding: var(--space-3xs);
+  border-radius: var(--card-radius);
+  background: var(--bg-surface-2);
 }
 
 .codeBlock {
-  flex: 1;
+  display: flex;
+  align-items: center;
   min-width: 0;
-  padding: var(--space-xs) var(--space-s);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface-2);
+  min-height: 32px;
+  padding: var(--space-xs) var(--space-l);
   color: var(--text-bright);
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-s);
   line-height: 1.5;
   word-break: break-all;
   white-space: pre-wrap;
+}
+
+.copyButton {
+  align-self: start;
+  border-radius: var(--panel-radius);
 }

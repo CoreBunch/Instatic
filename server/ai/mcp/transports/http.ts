@@ -16,8 +16,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import type { DbClient } from '../../../db/client'
 import { resolveMcpAuth, unauthorizedResponse } from '../auth'
 import { buildMcpServer } from '../server'
-
-export const MCP_ENDPOINT_PATH = '/_instatic/mcp'
+import { MCP_ENDPOINT_PATH } from '../paths'
 
 interface McpHttpOptions {
   uploadsDir?: string
@@ -32,7 +31,7 @@ export async function handleMcpHttp(
   if (url.pathname !== MCP_ENDPOINT_PATH) return null
 
   const auth = await resolveMcpAuth(req, db)
-  if (!auth.ok) return unauthorizedResponse(url)
+  if (!auth.ok) return unauthorizedResponse(req)
 
   const server = buildMcpServer({
     db,

@@ -26,11 +26,21 @@
     border-top-right-radius: 16px;
 }
 
+.body[data-page-mode="workspace"] {
+    padding: var(--space-5xl) var(--space-6xl) var(--space-7xl);
+}
+
 .container {
     display: grid;
     gap: var(--space-6xl);
     width: min(1220px, 100%);
     margin: 0 auto;
+}
+
+.container[data-page-mode="workspace"] {
+    display: block;
+    width: 100%;
+    min-height: 100%;
 }
 
 .header {
@@ -86,6 +96,10 @@
 @media (max-width: 760px) {
     .body {
         padding: var(--space-10xl) var(--space-3xl) var(--space-7xl);
+    }
+
+    .body[data-page-mode="workspace"] {
+        padding: var(--space-2xl);
     }
 
     .header {

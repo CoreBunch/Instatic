@@ -12,6 +12,7 @@
 import { describe, it, expect } from 'bun:test'
 import '@modules/base'
 import { importHtml } from '@core/htmlImport'
+import { TextModule } from '@modules/base/text'
 
 function childrenOf(html: string) {
   const r = importHtml(html)
@@ -54,11 +55,16 @@ describe('nested phrasing spans are preserved (not flattened)', () => {
 describe('<pre> preserves significant whitespace', () => {
   it('keeps newlines between lines of a code block', () => {
     const r = importHtml('<pre><code><span>line one</span>\n<span>line two</span></code></pre>')
-    // Some descendant text node must carry the literal newline.
-    const hasNewline = Object.values(r.nodes).some(
-      (n) => typeof n.props.text === 'string' && n.props.text.includes('\n'),
+    const newlineNode = Object.values(r.nodes).find(
+      (n) => n.moduleId === 'base.text' && n.props.tag === 'none' && n.props.text === '\n',
     )
-    expect(hasNewline).toBe(true)
+    expect(newlineNode).toBeDefined()
+
+    // No-wrapper text must publish back to the same literal text node. Turning
+    // this into <br> changes childNodes and breaks scripts that snapshot code
+    // blocks before animating them (for example typewriter effects).
+    const { html } = TextModule.render(newlineNode!.props, [])
+    expect(html).toBe('\n')
   })
 
   it('outside <pre>, newlines between inline siblings collapse', () => {

@@ -1,398 +1,621 @@
-/**
- * Providers tab — list, add, test, delete AI provider credentials.
- *
- * Every credential is per-user (handled server-side); the view shown here
- * is the wire-safe `CredentialView` (no plaintext, no ciphertext).
- */
-
+/** Provider management in the shared AI master-detail workspace. */
 import { useId, useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
-import { Select } from '@ui/components/Select'
+import { pushToast } from '@ui/components/Toast'
+import { ArrowRightIcon } from 'pixel-art-icons/icons/arrow-right'
+import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
-import { CheckIcon } from 'pixel-art-icons/icons/check'
+import { getErrorMessage } from '@core/utils/errorMessage'
 import {
-  type CredentialView,
+  type AiModel,
   type CreateCredentialBody,
+  type CredentialView,
   type TestResult,
   createCredential,
   deleteCredential,
   listCredentials,
+  listModels,
   testCredential,
 } from '../../../ai/api'
-import { ApiError } from '@core/http'
+import { ProviderMark } from '../ProviderMark'
+import { AiSettingsListSection } from '../AiSettingsListSection'
+import {
+  PROVIDER_SPECS,
+  getProviderSpec,
+  type ProviderId,
+  type ProviderSpec,
+} from '../providerCatalog'
 import styles from '../AiPage.module.css'
-import { getErrorMessage } from '@core/utils/errorMessage'
 
-type ProviderId = 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'openai-compatible'
-type AuthMode = 'apiKey' | 'baseUrl'
+type Selection =
+  | { kind: 'credential'; id: string }
+  | { kind: 'provider'; providerId: ProviderId }
 
-// Each provider has exactly one credential shape; the UI derives it instead
-// of asking the user to choose an auth mode that cannot vary.
-const PROVIDERS: Array<{ id: ProviderId; label: string; authMode: AuthMode }> = [
-  { id: 'anthropic', label: 'Anthropic (Claude)', authMode: 'apiKey' },
-  { id: 'openai', label: 'OpenAI', authMode: 'apiKey' },
-  { id: 'openrouter', label: 'OpenRouter', authMode: 'apiKey' },
-  { id: 'ollama', label: 'Ollama (local)', authMode: 'baseUrl' },
-  { id: 'openai-compatible', label: 'Custom Provider', authMode: 'baseUrl' },
-]
-
-const AUTH_MODE_LABEL: Record<AuthMode, string> = {
-  apiKey: 'API key',
-  baseUrl: 'Endpoint URL',
-}
-
-const PROVIDER_LABEL: Record<ProviderId, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  openrouter: 'OpenRouter',
-  ollama: 'Ollama',
-  'openai-compatible': 'Custom Provider',
-}
-
-// Hint text for the API-key field, per provider key prefix.
 const API_KEY_PLACEHOLDER: Partial<Record<ProviderId, string>> = {
   anthropic: 'sk-ant-...',
+  openai: 'sk-...',
   openrouter: 'sk-or-...',
   'openai-compatible': 'sk-... (optional)',
 }
 
-async function deleteCredentialAction(
-  id: string,
-  setBusyIds: (updater: (prev: Set<string>) => Set<string>) => void,
-  setActionError: (error: string | null) => void,
-  refresh: () => void,
-): Promise<void> {
-  setBusyIds((prev) => new Set(prev).add(id))
-  try {
-    await deleteCredential(id)
-    setActionError(null)
-    refresh()
-  } catch (err) {
-    setActionError(getErrorMessage(err, 'Failed to delete credential.'))
-  } finally {
-    setBusyIds((prev) => {
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
-  }
-}
-
-async function testCredentialAction(
-  id: string,
-  setBusyIds: (updater: (prev: Set<string>) => Set<string>) => void,
-  setTestResults: (updater: (prev: Record<string, TestResult & { ts: number }>) => Record<string, TestResult & { ts: number }>) => void,
-): Promise<void> {
-  setBusyIds((prev) => new Set(prev).add(id))
-  try {
-    const result = await testCredential(id)
-    setTestResults((prev) => ({ ...prev, [id]: { ...result, ts: Date.now() } }))
-  } catch (err) {
-    const message = getErrorMessage(err, 'Test failed.')
-    setTestResults((prev) => ({ ...prev, [id]: { ok: false, error: message, ts: Date.now() } }))
-  } finally {
-    setBusyIds((prev) => {
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
-  }
-}
-
-export function ProvidersTab() {
+export function ProvidersTab({
+  onNavigateToDefaults,
+}: {
+  onNavigateToDefaults: () => void
+}) {
   const {
     data: loadedCredentials,
     loading,
-    error: loadError,
+    error,
     refresh,
   } = useAsyncResource(() => listCredentials(), [], {
     fallbackError: 'Failed to load credentials.',
   })
-  const credentials: CredentialView[] = loadedCredentials ?? []
-  const [showDialog, setShowDialog] = useState(false)
-  const [testResults, setTestResults] = useState<Record<string, TestResult & { ts: number }>>({})
+  const [createdCredential, setCreatedCredential] = useState<CredentialView | null>(null)
+  const [selection, setSelection] = useState<Selection | null>(null)
+  const [testResults, setTestResults] = useState<Record<string, TestResult>>({})
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set())
-  // Errors from mutations (delete/create) live alongside the load error from
-  // the resource; the view shows whichever is present.
-  const [actionError, setActionError] = useState<string | null>(null)
-  const error = loadError ?? actionError
+  const [removeCandidate, setRemoveCandidate] = useState<CredentialView | null>(null)
 
-  async function handleDelete(id: string) {
-    await deleteCredentialAction(id, setBusyIds, setActionError, refresh)
+  const loaded = loadedCredentials ?? []
+  const credentials = createdCredential && !loaded.some((item) => item.id === createdCredential.id)
+    ? [createdCredential, ...loaded]
+    : loaded
+
+  const effectiveSelection: Selection = selection
+    ?? (credentials[0]
+      ? { kind: 'credential', id: credentials[0].id }
+      : { kind: 'provider', providerId: 'anthropic' })
+  const selectedCredential = effectiveSelection.kind === 'credential'
+    ? credentials.find((credential) => credential.id === effectiveSelection.id)
+    : undefined
+
+  async function handleTest(credential: CredentialView) {
+    setBusyIds((previous) => new Set(previous).add(credential.id))
+    try {
+      const result = await testCredential(credential.id)
+      setTestResults((previous) => ({ ...previous, [credential.id]: result }))
+      if (!result.ok) {
+        pushToast({
+          kind: 'error',
+          title: 'Connection test failed',
+          body: result.error ?? 'The provider rejected the credential.',
+        })
+      }
+    } catch (err) {
+      pushToast({
+        kind: 'error',
+        title: 'Connection test failed',
+        body: getErrorMessage(err, 'Unknown provider connection error'),
+      })
+    } finally {
+      setBusyIds((previous) => {
+        const next = new Set(previous)
+        next.delete(credential.id)
+        return next
+      })
+    }
   }
 
-  async function handleTest(id: string) {
-    await testCredentialAction(id, setBusyIds, setTestResults)
+  async function handleDelete(credential: CredentialView) {
+    setBusyIds((previous) => new Set(previous).add(credential.id))
+    try {
+      await deleteCredential(credential.id)
+      const nextCredential = credentials.find((item) => item.id !== credential.id)
+      setSelection(nextCredential
+        ? { kind: 'credential', id: nextCredential.id }
+        : { kind: 'provider', providerId: credential.providerId })
+      if (createdCredential?.id === credential.id) setCreatedCredential(null)
+      setRemoveCandidate(null)
+      refresh()
+      pushToast({ kind: 'success', title: 'Credential removed' })
+    } catch (err) {
+      pushToast({
+        kind: 'error',
+        title: 'Could not remove credential',
+        body: getErrorMessage(err, 'Unknown credential removal error'),
+      })
+    } finally {
+      setBusyIds((previous) => {
+        const next = new Set(previous)
+        next.delete(credential.id)
+        return next
+      })
+    }
+  }
+
+  function handleCreated(credential: CredentialView) {
+    setCreatedCredential(credential)
+    setSelection({ kind: 'credential', id: credential.id })
+    refresh()
   }
 
   return (
-    <section className={styles.section}>
-      <div className={styles.sectionHeader}>
-        <div>
-          <h2>Credentials</h2>
-          <p>Provider credentials for AI features. Secrets are encrypted at rest.</p>
+    <section className={styles.settingsWorkspace} aria-labelledby="providers-heading">
+      <aside className={styles.settingsBrowser} aria-label="Provider browser">
+        <div className={styles.settingsBrowserHeader}>
+          <h2 id="providers-heading">Providers</h2>
         </div>
-        <Button type="button" variant="primary" size="sm" onClick={() => setShowDialog(true)}>
-          <PlusIcon size={14} aria-hidden="true" />
-          <span>Add credential</span>
-        </Button>
+
+        {error && <p role="alert" className={styles.settingsBrowserError}>{error}</p>}
+
+        <div className={styles.settingsBrowserSections}>
+          {(loading || credentials.length > 0) && (
+            <AiSettingsListSection label="Credentials">
+              {loading && credentials.length === 0 ? (
+                <p className={styles.settingsBrowserEmpty}>Loading credentials…</p>
+              ) : (
+                credentials.map((credential) => {
+                  const provider = getProviderSpec(credential.providerId)
+                  const testResult = testResults[credential.id]
+                  const healthy = credential.keyFingerprintCurrent && testResult?.ok !== false
+                  const active = effectiveSelection.kind === 'credential'
+                    && effectiveSelection.id === credential.id
+                  return (
+                    <Button
+                      key={credential.id}
+                      type="button"
+                      variant="ghost"
+                      size="md"
+                      fullWidth
+                      active={active}
+                      align="start"
+                      className={styles.settingsListItem}
+                      onClick={() => setSelection({ kind: 'credential', id: credential.id })}
+                      aria-current={active ? 'true' : undefined}
+                    >
+                      <ProviderMark providerId={credential.providerId} size="sm" />
+                      <span className={styles.settingsListIdentity}>
+                        <span className={styles.settingsListLabel}>{credential.displayLabel}</span>
+                        <span className={styles.settingsListMeta}>
+                          <span className={healthy ? styles.healthDot : styles.warningDot} />
+                          {healthy ? provider.label : 'Needs attention'}
+                        </span>
+                      </span>
+                      {!active && <ArrowRightIcon size={13} aria-hidden="true" />}
+                    </Button>
+                  )
+                })
+              )}
+            </AiSettingsListSection>
+          )}
+
+          <AiSettingsListSection label="Add provider">
+            {PROVIDER_SPECS.map((provider) => {
+              const active = effectiveSelection.kind === 'provider'
+                && effectiveSelection.providerId === provider.id
+              return (
+                <Button
+                  key={provider.id}
+                  type="button"
+                  variant="ghost"
+                  size="md"
+                  fullWidth
+                  active={active}
+                  align="start"
+                  className={styles.settingsListItem}
+                  onClick={() => setSelection({ kind: 'provider', providerId: provider.id })}
+                  aria-current={active ? 'true' : undefined}
+                >
+                  <ProviderMark providerId={provider.id} size="sm" />
+                  <span className={styles.settingsListIdentity}>
+                    <span className={styles.settingsListLabel}>{provider.label}</span>
+                    <span className={styles.settingsListMeta}>{provider.shortLabel}</span>
+                  </span>
+                  {!active && <ArrowRightIcon size={13} aria-hidden="true" />}
+                </Button>
+              )
+            })}
+          </AiSettingsListSection>
+        </div>
+      </aside>
+
+      <div className={styles.settingsDetailCanvas}>
+        {selectedCredential ? (
+          <CredentialDetail
+            key={selectedCredential.id}
+            credential={selectedCredential}
+            busy={busyIds.has(selectedCredential.id)}
+            testResult={testResults[selectedCredential.id]}
+            onTest={() => handleTest(selectedCredential)}
+            onRemove={() => setRemoveCandidate(selectedCredential)}
+            onNavigateToDefaults={onNavigateToDefaults}
+          />
+        ) : effectiveSelection.kind === 'provider' ? (
+          <ProviderSetupPanel
+            key={effectiveSelection.providerId}
+            provider={getProviderSpec(effectiveSelection.providerId)}
+            onCreated={handleCreated}
+          />
+        ) : null}
       </div>
 
-      {error && <p role="alert" className={styles.errorAlert}>{error}</p>}
-
-      {loading ? (
-        <div className={styles.emptyState}>Loading…</div>
-      ) : credentials.length === 0 ? (
-        <div className={styles.emptyState}>
-          No credentials yet. Add one to start using AI features.
-        </div>
-      ) : (
-        <div className={styles.credentialGrid}>
-          {credentials.map((cred) => {
-            const isBusy = busyIds.has(cred.id)
-            const result = testResults[cred.id]
-            return (
-              <div key={cred.id} className={styles.credentialCard}>
-                <div className={styles.credentialIdentity}>
-                  <div className={styles.credentialLabel}>{cred.displayLabel}</div>
-                  <div className={styles.credentialMeta}>
-                    <span>{PROVIDER_LABEL[cred.providerId]}</span>
-                    <span>·</span>
-                    <span>{AUTH_MODE_LABEL[cred.authMode]}</span>
-                    {!cred.keyFingerprintCurrent && (
-                      <span className={`${styles.statusBadge} ${styles.warning}`}>
-                        Master key rotated — re-enter
-                      </span>
-                    )}
-                    {cred.lastUsedAt && (
-                      <>
-                        <span>·</span>
-                        <span>Last used {new Date(cred.lastUsedAt).toLocaleString()}</span>
-                      </>
-                    )}
-                  </div>
-                  {result && (
-                    <p
-                      role="status"
-                      className={`${styles.testResult} ${result.ok ? styles.success : styles.danger}`}
-                    >
-                      {result.ok
-                        ? `✓ Test ok (${result.modelCount ?? 0} models available)`
-                        : `✗ ${result.error ?? 'Test failed.'}`}
-                    </p>
-                  )}
-                </div>
-                <div className={styles.credentialActions}>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void handleTest(cred.id)}
-                    disabled={isBusy}
-                  >
-                    <CheckIcon size={14} aria-hidden="true" />
-                    <span>Test</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void handleDelete(cred.id)}
-                    disabled={isBusy}
-                  >
-                    <TrashSolidIcon size={14} aria-hidden="true" />
-                    <span>Delete</span>
-                  </Button>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {showDialog && (
-        <AddCredentialDialog
-          onClose={() => setShowDialog(false)}
-          onCreated={() => {
-            setShowDialog(false)
-            setActionError(null)
-            refresh()
-          }}
-        />
+      {removeCandidate && (
+        <Dialog
+          open
+          onClose={() => setRemoveCandidate(null)}
+          title="Remove credential?"
+          size="sm"
+          footer={(
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setRemoveCandidate(null)}
+                disabled={busyIds.has(removeCandidate.id)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={() => void handleDelete(removeCandidate)}
+                disabled={busyIds.has(removeCandidate.id)}
+              >
+                <TrashSolidIcon size={13} aria-hidden="true" />
+                <span>Remove credential</span>
+              </Button>
+            </>
+          )}
+        >
+          <p className={styles.removeDialogCopy}>
+            This permanently removes <strong>{removeCandidate.displayLabel}</strong> and clears
+            access for any AI surface that depends on it.
+          </p>
+        </Dialog>
       )}
     </section>
   )
 }
 
-// ---------------------------------------------------------------------------
-// Add credential dialog
-// ---------------------------------------------------------------------------
+function CredentialDetail({
+  credential,
+  busy,
+  testResult,
+  onTest,
+  onRemove,
+  onNavigateToDefaults,
+}: {
+  credential: CredentialView
+  busy: boolean
+  testResult: TestResult | undefined
+  onTest: () => Promise<void>
+  onRemove: () => void
+  onNavigateToDefaults: () => void
+}) {
+  const provider = getProviderSpec(credential.providerId)
+  const {
+    data: models,
+    loading: modelsLoading,
+    error: modelsError,
+  } = useAsyncResource(
+    () => listModels(credential.providerId, credential.id),
+    [credential.id, credential.providerId],
+    { fallbackError: 'Could not load this provider model catalogue.' },
+  )
+  const status = !credential.keyFingerprintCurrent
+    ? 'Re-enter key'
+    : testResult?.ok === true
+      ? 'Connected'
+      : 'Configured'
 
-async function submitCredential(
-  effectiveAuthMode: AuthMode,
-  providerId: ProviderId,
-  displayLabel: string,
-  apiKey: string,
-  baseUrl: string,
-  onCreated: () => void,
-  setError: (error: string | null) => void,
-  setBusy: (busy: boolean) => void,
-): Promise<void> {
-  setError(null)
-  setBusy(true)
-  try {
-    const body: CreateCredentialBody =
-      effectiveAuthMode === 'apiKey' ? {
-        providerId, authMode: 'apiKey', displayLabel, apiKey,
-      } : {
-        providerId, authMode: 'baseUrl', displayLabel, baseUrl,
-        ...(apiKey ? { apiKey } : {}),
-      }
-    await createCredential(body)
-    onCreated()
-  } catch (err) {
-    if (err instanceof ApiError) {
-      setError(err.message)
-    } else {
-      setError(getErrorMessage(err, 'Failed to create credential.'))
-    }
-  } finally {
-    setBusy(false)
-  }
+  return (
+    <article className={styles.credentialDetail} aria-labelledby="credential-detail-title">
+      <header className={styles.credentialDetailHeader}>
+        <div className={styles.credentialDetailIdentity}>
+          <ProviderMark providerId={credential.providerId} size="lg" />
+          <div>
+            <div className={styles.credentialTitleRow}>
+              <h2 id="credential-detail-title">{credential.displayLabel}</h2>
+              <span
+                className={credential.keyFingerprintCurrent
+                  ? styles.connectionStatus
+                  : styles.connectionStatusWarning}
+              >
+                <span className={credential.keyFingerprintCurrent ? styles.healthDot : styles.warningDot} />
+                {status}
+              </span>
+            </div>
+            <p>{provider.label}</p>
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="md"
+          onClick={() => void onTest()}
+          disabled={busy}
+        >
+          <CheckIcon size={14} aria-hidden="true" />
+          <span>Test connection</span>
+        </Button>
+      </header>
+
+      {testResult && (
+        <p
+          role="status"
+          className={testResult.ok ? styles.connectionResultSuccess : styles.connectionResultError}
+        >
+          {testResult.ok
+            ? `Connection is healthy. ${testResult.modelCount ?? 0} models available.`
+            : testResult.error ?? 'Connection test failed.'}
+        </p>
+      )}
+
+      <DetailSection title="Connection">
+        <dl className={styles.connectionDetails}>
+          <DetailRow label="Authentication" value={credential.authMode === 'apiKey' ? 'API key' : 'Endpoint URL'} />
+          <DetailRow label="Credential" value="Encrypted credential" />
+          <DetailRow label="Endpoint" value={credential.baseUrl ?? provider.endpointLabel} code={Boolean(credential.baseUrl)} />
+          <DetailRow
+            label="Last used"
+            value={credential.lastUsedAt ? new Date(credential.lastUsedAt).toLocaleString() : 'Not used yet'}
+          />
+        </dl>
+      </DetailSection>
+
+      <DetailSection
+        title="Available models"
+        description="Models returned by this provider for the current credential."
+        action={(
+          <Button type="button" variant="ghost" size="sm" onClick={onNavigateToDefaults}>
+            <span>Set defaults</span>
+            <ArrowRightIcon size={12} aria-hidden="true" />
+          </Button>
+        )}
+      >
+        <ModelsTable models={models ?? []} loading={modelsLoading} error={modelsError} />
+      </DetailSection>
+
+      <div className={styles.credentialDangerZone}>
+        <Button type="button" variant="ghost" tone="danger" size="sm" onClick={onRemove}>
+          <TrashSolidIcon size={14} aria-hidden="true" />
+          <span>Remove credential</span>
+        </Button>
+        <p>This permanently deletes the credential and removes access for all scopes.</p>
+      </div>
+    </article>
+  )
 }
 
-function AddCredentialDialog({
-  onClose,
+function DetailSection({
+  title,
+  description,
+  action,
+  children,
+}: {
+  title: string
+  description?: string
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section className={styles.detailSection}>
+      <div className={styles.detailSectionHeader}>
+        <div>
+          <h3>{title}</h3>
+          {description && <p>{description}</p>}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function DetailRow({
+  label,
+  value,
+  code = false,
+}: {
+  label: string
+  value: string
+  code?: boolean
+}) {
+  return (
+    <div className={styles.connectionDetailRow}>
+      <dt>{label}</dt>
+      <dd>{code ? <code>{value}</code> : value}</dd>
+    </div>
+  )
+}
+
+function ModelsTable({
+  models,
+  loading,
+  error,
+}: {
+  models: AiModel[]
+  loading: boolean
+  error: string | null
+}) {
+  if (loading) return <p className={styles.detailEmpty}>Loading model catalogue…</p>
+  if (error) return <p role="alert" className={styles.detailInlineError}>{error}</p>
+  if (models.length === 0) return <p className={styles.detailEmpty}>No models reported by this provider.</p>
+
+  return (
+    <div className={styles.modelsTable} role="table" aria-label="Available models">
+      <div className={styles.modelsTableHeader} role="row">
+        <span role="columnheader">Model</span>
+        <span role="columnheader">Context window</span>
+        <span role="columnheader">Status</span>
+      </div>
+      {models.slice(0, 8).map((model) => (
+        <div key={model.id} className={styles.modelsTableRow} role="row">
+          <span role="cell" className={styles.modelIdentity}>
+            <strong>{model.label}</strong>
+            <code>{model.id}</code>
+          </span>
+          <span role="cell">{formatContextWindow(model.contextWindow)}</span>
+          <span role="cell" className={styles.modelAvailability}>
+            <span className={styles.healthDot} />
+            Available
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function formatContextWindow(contextWindow: number | undefined): string {
+  if (!contextWindow) return 'Not reported'
+  if (contextWindow >= 1_000_000) return `${(contextWindow / 1_000_000).toFixed(1).replace('.0', '')}M tokens`
+  if (contextWindow >= 1_000) return `${Math.round(contextWindow / 1_000)}K tokens`
+  return `${contextWindow} tokens`
+}
+
+function ProviderSetupPanel({
+  provider,
   onCreated,
 }: {
-  onClose: () => void
-  onCreated: () => void
+  provider: ProviderSpec
+  onCreated: (credential: CredentialView) => void
 }) {
-  const providerInputId = useId()
+  return (
+    <article className={styles.providerSetup} aria-labelledby="provider-setup-title">
+      <header className={styles.providerSetupHeader}>
+        <ProviderMark providerId={provider.id} size="lg" />
+        <div>
+          <span className={styles.detailEyebrow}>Add provider</span>
+          <h2 id="provider-setup-title">Connect {provider.label}</h2>
+          <p>{provider.description}</p>
+        </div>
+      </header>
+
+      <section className={styles.providerSetupFormSection}>
+        <div className={styles.detailSectionHeader}>
+          <div>
+            <h3>Connection details</h3>
+            <p>Instatic validates and encrypts the credential before storing it.</p>
+          </div>
+        </div>
+        <AddCredentialForm provider={provider} onCreated={onCreated} />
+      </section>
+
+    </article>
+  )
+}
+
+function AddCredentialForm({
+  provider,
+  onCreated,
+}: {
+  provider: ProviderSpec
+  onCreated: (credential: CredentialView) => void
+}) {
+  const formId = useId()
   const labelInputId = useId()
   const apiKeyInputId = useId()
   const baseUrlInputId = useId()
-  const formId = useId()
-
-  const [providerId, setProviderId] = useState<ProviderId>('anthropic')
   const [displayLabel, setDisplayLabel] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const baseUrlPlaceholder = provider.id === 'ollama'
+    ? 'http://localhost:11434'
+    : 'https://api.example.com/v1'
 
-  const providerSpec = PROVIDERS.find((p) => p.id === providerId)!
-  const effectiveAuthMode = providerSpec.authMode
-  const baseUrlPlaceholder =
-    providerId === 'ollama' ? 'http://localhost:11434' : 'https://api.groq.com/openai/v1'
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    await submitCredential(effectiveAuthMode, providerId, displayLabel, apiKey, baseUrl, onCreated, setError, setBusy)
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    try {
+      const body: CreateCredentialBody = provider.authMode === 'apiKey'
+        ? {
+            providerId: provider.id,
+            authMode: 'apiKey',
+            displayLabel,
+            apiKey,
+          }
+        : {
+            providerId: provider.id,
+            authMode: 'baseUrl',
+            displayLabel,
+            baseUrl,
+            ...(apiKey ? { apiKey } : {}),
+          }
+      const credential = await createCredential(body)
+      onCreated(credential)
+      pushToast({ kind: 'success', title: `${provider.label} connected` })
+    } catch (err) {
+      pushToast({
+        kind: 'error',
+        title: `Could not connect ${provider.label}`,
+        body: getErrorMessage(err, 'Unknown provider connection error'),
+      })
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
-    <Dialog
-      open
-      onClose={onClose}
-      title="Add AI credential"
-      size="md"
-      footer={
-        <>
-          <Button type="button" variant="secondary" size="sm" onClick={onClose} disabled={busy}>
-            <span>Cancel</span>
-          </Button>
-          <Button type="submit" form={formId} variant="primary" size="sm" disabled={busy}>
-            <PlusIcon size={14} aria-hidden="true" />
-            <span>Add credential</span>
-          </Button>
-        </>
-      }
-    >
-      <form id={formId} className={styles.dialogForm} onSubmit={(e) => void handleSubmit(e)}>
-        <div className={styles.dialogField}>
-          <label htmlFor={providerInputId} className={styles.dialogFieldLabel}>Provider</label>
-          <Select
-            id={providerInputId}
-            value={providerId}
-            onChange={(e) => setProviderId(e.currentTarget.value as ProviderId)}
-            options={PROVIDERS.map((p) => ({ value: p.id, label: p.label }))}
-          />
-        </div>
-
-        <div className={styles.dialogField}>
-          <label htmlFor={labelInputId} className={styles.dialogFieldLabel}>Display label</label>
+    <form id={formId} className={styles.providerSetupForm} onSubmit={(event) => void handleSubmit(event)}>
+      <div className={styles.providerSetupField}>
+        <label htmlFor={labelInputId}>Display label</label>
+        <div>
           <Input
             id={labelInputId}
             value={displayLabel}
-            onChange={(e) => setDisplayLabel(e.currentTarget.value)}
-            placeholder="e.g. Production"
+            onChange={(event) => setDisplayLabel(event.currentTarget.value)}
+            placeholder={`e.g. ${provider.label} production`}
             required
           />
+          <p>Use a name teammates will recognize in model pickers.</p>
         </div>
+      </div>
 
-        {effectiveAuthMode === 'apiKey' && (
-          <div className={styles.dialogField}>
-            <label htmlFor={apiKeyInputId} className={styles.dialogFieldLabel}>API key</label>
+      {provider.authMode === 'baseUrl' && (
+        <div className={styles.providerSetupField}>
+          <label htmlFor={baseUrlInputId}>Base URL</label>
+          <div>
             <Input
-              id={apiKeyInputId}
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.currentTarget.value)}
-              placeholder={API_KEY_PLACEHOLDER[providerId] ?? 'sk-...'}
-              // Browsers ignore autoComplete="off" on password fields and
-              // inject the saved admin login. "new-password" suppresses that;
-              // the data-* attributes opt out of password-manager overlays.
-              autoComplete="new-password"
-              data-1p-ignore="true"
-              data-lpignore="true"
-              data-bwignore="true"
-              data-form-type="other"
+              id={baseUrlInputId}
+              value={baseUrl}
+              onChange={(event) => setBaseUrl(event.currentTarget.value)}
+              placeholder={baseUrlPlaceholder}
               required
             />
+            <p>The root URL of the compatible API.</p>
           </div>
-        )}
+        </div>
+      )}
 
-        {effectiveAuthMode === 'baseUrl' && (
-          <>
-            <div className={styles.dialogField}>
-              <label htmlFor={baseUrlInputId} className={styles.dialogFieldLabel}>Base URL</label>
-              <Input
-                id={baseUrlInputId}
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.currentTarget.value)}
-                placeholder={baseUrlPlaceholder}
-                required
-              />
-            </div>
-            <div className={styles.dialogField}>
-              <label htmlFor={apiKeyInputId} className={styles.dialogFieldLabel}>
-                {providerId === 'ollama' ? 'Bearer token (optional)' : 'API key (optional)'}
-              </label>
-              <Input
-                id={apiKeyInputId}
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.currentTarget.value)}
-                placeholder="Leave blank if no auth"
-                // See the API key field above: "new-password" + data-* opt-outs
-                // stop the browser/password manager autofilling the admin login.
-                autoComplete="new-password"
-                data-1p-ignore="true"
-                data-lpignore="true"
-                data-bwignore="true"
-                data-form-type="other"
-              />
-            </div>
-          </>
-        )}
+      <div className={styles.providerSetupField}>
+        <label htmlFor={apiKeyInputId}>
+          {provider.authMode === 'apiKey'
+            ? 'API key'
+            : provider.id === 'ollama' ? 'Bearer token' : 'API key'}
+          {provider.authMode === 'baseUrl' && <span>Optional</span>}
+        </label>
+        <div>
+          <Input
+            id={apiKeyInputId}
+            type="password"
+            value={apiKey}
+            onChange={(event) => setApiKey(event.currentTarget.value)}
+            placeholder={API_KEY_PLACEHOLDER[provider.id] ?? 'Leave blank if no auth'}
+            autoComplete="new-password"
+            data-1p-ignore="true"
+            data-lpignore="true"
+            data-bwignore="true"
+            data-form-type="other"
+            required={provider.authMode === 'apiKey'}
+          />
+          <p>{provider.authMode === 'apiKey' ? 'Stored encrypted and never displayed again.' : 'Leave blank when the endpoint does not require authentication.'}</p>
+        </div>
+      </div>
 
-        {error && <p role="alert" className={styles.dialogError}>{error}</p>}
-      </form>
-    </Dialog>
+      <div className={styles.providerSetupActions}>
+        <Button type="submit" variant="primary" size="md" disabled={busy}>
+          <PlusIcon size={14} aria-hidden="true" />
+          <span>{busy ? 'Connecting…' : `Connect ${provider.label}`}</span>
+        </Button>
+      </div>
+    </form>
   )
 }

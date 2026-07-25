@@ -1004,6 +1004,42 @@ describe('SiteExplorerPanel', () => {
     expect(screen.getByRole('textbox', { name: 'Rename Pricing' })).toBeDefined()
   })
 
+  it('edits a page slug through the Page settings dialog', () => {
+    loadSite()
+    render(<SiteExplorerPanel sectionGroup="site" />)
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: /open page pricing/i }), {
+      clientX: 120,
+      clientY: 140,
+    })
+    fireEvent.click(screen.getByRole('menuitem', { name: /page settings/i }))
+
+    const slugInput = screen.getByLabelText('Slug') as HTMLInputElement
+    expect(slugInput.value).toBe('pricing')
+
+    fireEvent.change(slugInput, { target: { value: 'plans-and-pricing' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    const updated = useEditorStore.getState().site?.pages.find((page) => page.id === 'page-pricing')
+    expect(updated?.slug).toBe('plans-and-pricing')
+    expect(updated?.title).toBe('Pricing')
+  })
+
+  it('locks slug editing for the homepage in the Page settings dialog', () => {
+    loadSite()
+    render(<SiteExplorerPanel sectionGroup="site" />)
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: /open page home/i }), {
+      clientX: 120,
+      clientY: 140,
+    })
+    fireEvent.click(screen.getByRole('menuitem', { name: /page settings/i }))
+
+    const slugInput = screen.getByLabelText('Slug') as HTMLInputElement
+    expect(slugInput.disabled).toBe(true)
+    expect(slugInput.value).toBe('index')
+  })
+
   it('renames and deletes components from the site row context menu', () => {
     loadSite()
     render(<SiteExplorerPanel sectionGroup="site" />)

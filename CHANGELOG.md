@@ -6,6 +6,36 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 
 ## Unreleased
 
+## 0.0.13 - 2026-07-24
+
+### Editor, import, and publishing
+
+- Added a dedicated Page settings dialog so authors can edit page slugs directly.
+- Restored contrast for editor switches and canvas mode controls.
+- Preserved node inline styles in image previews and hid empty canvas chrome for ambient style rules.
+- Rendered imported SVG sizing and presentation styles on the canvas root so editor previews match published output.
+- Preserved safe SVG fragment references through Super Import, editor rendering, and publishing so circular text paths remain visible and animated.
+
+### Platform and maintenance
+
+- Updated Sharp to its patched release.
+- Restored function-level coverage reporting for Fallow health checks.
+
+## 0.0.12 - 2026-07-24
+
+### AI and integrations
+
+- Redesigned AI provider settings around clearer provider and connection management.
+- Added OAuth authorization for MCP connectors, including scoped authorization, token lifecycle handling, and hardened protocol validation.
+
+### Editor, content, and publishing
+
+- Rendered loop output in page preview so preview mode matches authored loop content.
+- Preserved in-progress decimal values in number controls instead of replacing valid partial input while editing.
+- Kept responsive admin navigation aligned to the left at narrow widths.
+- Fixed new custom data tables retaining their selected table kind instead of always becoming plain data tables.
+- Fixed composed templates so published pages, entries, and entry previews use the rendered page or entry title rather than the wrapping template title.
+
 ## 0.0.11 - 2026-07-11
 
 ### AI and integrations

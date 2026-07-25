@@ -12,8 +12,10 @@ import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
 import { sanitizeSvg } from '@core/sanitize'
 import { CanvasModulePlaceholder } from '@ui/components/CanvasModulePlaceholder'
+import { cn } from '@ui/cn'
 import { ImageSolidIcon } from 'pixel-art-icons/icons/image-solid'
 import type { SvgStoredProps } from './props'
+import { parseSvgCanvasRoot } from './svgCanvasRoot'
 
 export const SvgEditor: React.FC<ModuleComponentProps<SvgStoredProps>> = ({
   props,
@@ -21,8 +23,9 @@ export const SvgEditor: React.FC<ModuleComponentProps<SvgStoredProps>> = ({
   nodeWrapperProps,
 }) => {
   const markup = sanitizeSvg(props.svg)
+  const svgRoot = markup ? parseSvgCanvasRoot(markup) : null
 
-  if (!markup) {
+  if (!svgRoot) {
     return (
       <CanvasModulePlaceholder
         {...nodeWrapperProps}
@@ -34,12 +37,17 @@ export const SvgEditor: React.FC<ModuleComponentProps<SvgStoredProps>> = ({
   }
 
   const label = String(props.title ?? '').trim()
-  return (
-    <span
-      {...nodeWrapperProps}
-      className={mcClassName}
-      {...(label ? { role: 'img', 'aria-label': label } : {})}
-      dangerouslySetInnerHTML={{ __html: markup }}
-    />
-  )
+  const { style: nodeStyle, ...editorRootProps } = nodeWrapperProps ?? {}
+  const mergedStyle = svgRoot.style || nodeStyle
+    ? { ...svgRoot.style, ...nodeStyle }
+    : undefined
+
+  return React.createElement('svg', {
+    ...svgRoot.attributes,
+    ...editorRootProps,
+    className: cn(mcClassName, svgRoot.className) || undefined,
+    style: mergedStyle,
+    ...(label ? { role: 'img', 'aria-label': label } : {}),
+    dangerouslySetInnerHTML: { __html: svgRoot.innerHtml },
+  })
 }

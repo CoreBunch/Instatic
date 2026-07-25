@@ -176,6 +176,9 @@ export async function renderPublishedDataRowTemplate(
   const chain = resolveTemplateChain(snapshot.site, { kind: 'entry', tableSlug: row.tableSlug })
   if (chain.length === 0) return null // no entry template → 404 (unchanged behaviour)
   const merged = composeTemplateChain(chain, { kind: 'entry' })
+  // The template chain has no Page for the entry, so composeTemplateChain
+  // can't know its title — the entry's own title is the real document title.
+  if (typeof row.cells.title === 'string') merged.title = row.cells.title
 
   // Seed the entry stack with the published row + route frame from the request
   // URL. Loop interceptors push/pop iteration items on top of this stack;

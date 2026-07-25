@@ -5,8 +5,8 @@ import { join } from 'node:path'
 import { createCapabilityTestHarness, type CapabilityTestHarness } from '../../../src/__tests__/helpers/capabilityHarness'
 import { getDraftSite, saveDraftSite } from '../../repositories/site'
 import { readArtefact, readStaticAsset } from '../../publish/staticArtefact'
-import { createConnector } from './connectors/store'
-import { generateConnectorToken, hashConnectorToken } from './connectors/token'
+import { createBearerConnection } from './connectors/store'
+import { generatePersonalAccessToken, hashMcpSecret } from './connectors/token'
 import { handleMcpHttp } from './transports/http'
 
 interface AuditRow {
@@ -89,13 +89,12 @@ describe('site_publish MCP tool', () => {
     const userId = users[0]?.id
     if (!userId) throw new Error('owner user was not seeded')
 
-    const token = generateConnectorToken()
-    const connector = await createConnector(harness.db, {
+    const token = generatePersonalAccessToken()
+    const connector = await createBearerConnection(harness.db, {
       userId,
       label: 'Publish regression',
-      type: 'local',
       capabilities: ['ai.chat', 'ai.tools.write', 'pages.publish'],
-      tokenHash: await hashConnectorToken(token),
+      tokenHash: await hashMcpSecret(token),
     })
     await callMcp(harness, uploadsDir, token, 'initialize', {
       protocolVersion: '2025-06-18',

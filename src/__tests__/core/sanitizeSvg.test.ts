@@ -21,6 +21,37 @@ describe('sanitizeSvg', () => {
     expect(out).toContain('currentColor')
   })
 
+  it('preserves safe fragment references used by text paths', () => {
+    const out = sanitizeSvg(
+      '<svg viewBox="0 0 100 100"><defs><path id="ring" d="M10 50a40 40 0 1 1 80 0"/></defs><text><textPath href="#ring" xlink:href="#ring">Around the ring</textPath></text></svg>',
+    )
+
+    expect(out).toContain('<textPath')
+    expect(out).toContain('href="#ring"')
+    expect(out).toContain('xlink:href="#ring"')
+    expect(out).toContain('Around the ring')
+  })
+
+  it('strips unsafe URI schemes from SVG reference attributes', () => {
+    const out = sanitizeSvg(
+      '<svg><text><textPath href="javascript:alert(1)" xlink:href="javascript:alert(2)">Unsafe</textPath></text></svg>',
+    )
+
+    expect(out).toContain('<textPath')
+    expect(out).not.toContain('href=')
+    expect(out.toLowerCase()).not.toContain('javascript:')
+  })
+
+  it('strips data-URI SVG reuse payloads', () => {
+    const out = sanitizeSvg(
+      '<svg><use href="data:image/svg+xml,%3Csvg%20onload%3Dalert(1)%3E"></use></svg>',
+    )
+
+    expect(out.toLowerCase()).not.toContain('<use')
+    expect(out.toLowerCase()).not.toContain('data:image')
+    expect(out.toLowerCase()).not.toContain('onload')
+  })
+
   it('strips <script> inside the SVG', () => {
     const out = sanitizeSvg('<svg><script>alert(1)</script><path d="M0 0"/></svg>')
     expect(out.toLowerCase()).not.toContain('<script')

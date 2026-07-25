@@ -23,6 +23,8 @@ import {
   canManageTable,
 } from '@admin/access'
 import type { DataRow, DataRowCells, DataRowStatus } from '@core/data/schemas'
+import { pushToast } from '@ui/components/Toast'
+import { getErrorMessage } from '@core/utils/errorMessage'
 import { useDataWorkspace } from './hooks/useDataWorkspace'
 import { DataSidebar } from './components/DataSidebar/DataSidebar'
 import { DataCanvas } from './components/DataCanvas/DataCanvas'
@@ -97,6 +99,7 @@ export function DataPage() {
       workspace.selectRow(newRow.id)
     } catch (err) {
       console.error('[DataPage] Add row failed:', err)
+      pushToast({ kind: 'error', title: 'Could not add row', body: getErrorMessage(err, 'Unknown error') })
     }
   }
 
@@ -105,6 +108,7 @@ export function DataPage() {
       await workspace.duplicateRow(row)
     } catch (err) {
       console.error('[DataPage] Duplicate row failed:', err)
+      pushToast({ kind: 'error', title: 'Could not duplicate row', body: getErrorMessage(err, 'Unknown error') })
     }
   }
 

@@ -113,6 +113,7 @@ test.describe('admin navigation', () => {
         page.getByTestId('account-menu-trigger'),
         'mobile toolbar account menu trigger',
       )
+      await expectNavigationBeforeToolbarTrailer(page)
     })
   })
 
@@ -506,6 +507,20 @@ async function expectLocatorContained(
   const viewportWidth = await page.evaluate(() => document.documentElement.clientWidth)
   expect(box.x).toBeGreaterThanOrEqual(-1)
   expect(box.x + box.width).toBeLessThanOrEqual(viewportWidth + 1)
+}
+
+async function expectNavigationBeforeToolbarTrailer(page: Page): Promise<void> {
+  const toolbar = page.getByTestId('toolbar')
+  const navigationBox = await toolbar.getByRole('link', { name: 'Site' }).boundingBox()
+  const settingsBox = await toolbar.getByTestId('toolbar-settings-btn').boundingBox()
+  if (!navigationBox || !settingsBox) {
+    throw new Error('mobile toolbar navigation or settings button had no bounding box')
+  }
+
+  const navigationPrecedesSettings =
+    navigationBox.y < settingsBox.y ||
+    (Math.abs(navigationBox.y - settingsBox.y) <= 1 && navigationBox.x < settingsBox.x)
+  expect(navigationPrecedesSettings).toBe(true)
 }
 
 async function expectStoredWorkspaceLayout(

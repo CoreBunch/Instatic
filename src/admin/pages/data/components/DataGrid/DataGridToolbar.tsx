@@ -29,7 +29,7 @@ interface DataGridToolbarProps {
   readOnly: boolean
   query: string
   onQueryChange: (q: string) => void
-  onAddRow: () => Promise<void> | void
+  onAddRow?: () => Promise<void> | void
   hasPublishWorkflow: boolean
   statusViewOrder: StatusViewChip[]
   statusFilter: StatusFilter
@@ -88,7 +88,7 @@ export function DataGridToolbar({
           />
         </div>
 
-        {!readOnly && (
+        {!readOnly && onAddRow != null && (
           <Button variant="primary" size="sm" onClick={() => { void onAddRow() }}>
             <PlusIcon size={12} aria-hidden="true" />
             Add row

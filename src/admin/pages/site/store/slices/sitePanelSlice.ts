@@ -40,7 +40,7 @@ import {
   normalizeStyleRuntimeConfig,
   normalizeSiteRuntimeConfig,
 } from '@core/site-runtime'
-import { resolveCmsRuntimeDependencies } from '@core/persistence/cmsRuntime'
+import { resolveCmsRuntimeDependencies } from '@core/persistence'
 import { buildSiteHelpers } from './site/helpers'
 import { getErrorMessage } from '@core/utils/errorMessage'
 

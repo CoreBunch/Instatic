@@ -4,6 +4,7 @@ import {
   assertSystemTableUpdateAllowed,
   isBuiltInValueLocked,
   lockedBuiltInCellKey,
+  tableHasEditableFields,
 } from '@core/data/systemTableGuard'
 
 function field(id: string, overrides: Partial<DataField> = {}): DataField {
@@ -57,6 +58,27 @@ describe('lockedBuiltInCellKey', () => {
   it('returns null on a custom table (nothing locked)', () => {
     const custom = table({ kind: 'data', system: false })
     expect(lockedBuiltInCellKey(custom, { name: 'x', body: 'y' })).toBeNull()
+  })
+})
+
+describe('tableHasEditableFields', () => {
+  it('is false for a structural system table with only built-in fields', () => {
+    expect(tableHasEditableFields(table())).toBe(false)
+  })
+
+  it('is true once a structural system table has a custom field', () => {
+    const t = table({ fields: [...table().fields, field('note', { builtIn: false })] })
+    expect(tableHasEditableFields(t)).toBe(true)
+  })
+
+  it('is true for posts (editorial post type) even with only built-in fields', () => {
+    const posts = table({ id: 'posts', kind: 'postType', system: true })
+    expect(tableHasEditableFields(posts)).toBe(true)
+  })
+
+  it('is true for a custom (non-system) table', () => {
+    const custom = table({ kind: 'data', system: false })
+    expect(tableHasEditableFields(custom)).toBe(true)
   })
 })
 

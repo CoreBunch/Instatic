@@ -55,6 +55,13 @@
     white-space: nowrap;
 }
 
+.previewContent {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    background: var(--overlay);
+}
+
 .iframe {
     flex: 1;
     border: 0;

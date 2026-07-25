@@ -16,6 +16,7 @@ import { LinkModule } from '@modules/base/link'
 import { ButtonModule } from '@modules/base/button'
 import { ListModule } from '@modules/base/list'
 import { ContainerModule } from '@modules/base/container'
+import { SvgModule } from '@modules/base/svg'
 import { anchorRel } from '@modules/base/shared/anchorTarget'
 import { parseItems } from '@modules/base/list/items'
 
@@ -102,5 +103,90 @@ describe('ContainerEditor empty-state placeholder', () => {
     expect(root?.getAttribute('style')).toContain('min-height: 120px')
     expect(root?.getAttribute('data-canvas-empty-container')).toBeNull()
     expect(queryByText('Empty container')).toBeNull()
+  })
+})
+
+describe('SvgEditor canvas root', () => {
+  it('uses the authored svg as the canvas root instead of adding a sizing wrapper', () => {
+    const { container } = renderEditor(
+      SvgModule,
+      { svg: '<svg viewBox="0 0 24 24"><path d="M2 2h20v20H2z"/></svg>' },
+      {
+        mcClassName: 'seal-mark',
+        nodeWrapperProps: {
+          'data-node-id': 'svg-node',
+          style: { width: '50%', height: '50%' },
+        },
+      },
+    )
+
+    const root = container.firstElementChild
+    expect(root?.tagName.toLowerCase()).toBe('svg')
+    expect(root?.parentElement).toBe(container)
+    expect(root?.classList.contains('seal-mark')).toBe(true)
+    expect(root?.getAttribute('data-node-id')).toBe('svg-node')
+    expect(root?.getAttribute('style')).toContain('width: 50%')
+    expect(root?.getAttribute('style')).toContain('height: 50%')
+    expect(root?.querySelector('path')).not.toBeNull()
+  })
+
+  it('preserves authored root attributes while node classes and styles win in publisher order', () => {
+    const { container } = renderEditor(
+      SvgModule,
+      {
+        svg: [
+          '<svg class="source-mark" viewBox="0 0 24 24"',
+          ' style="width: 12px; height: 13px; color: red">',
+          '<circle cx="12" cy="12" r="10" fill="currentColor"/>',
+          '</svg>',
+        ].join(''),
+      },
+      {
+        mcClassName: 'seal-mark',
+        nodeWrapperProps: {
+          style: { width: '50%', height: '50%' },
+        },
+      },
+    )
+
+    const root = container.querySelector('svg')
+    expect(root?.getAttribute('viewBox')).toBe('0 0 24 24')
+    expect(root?.getAttribute('class')?.split(' ')).toEqual(['seal-mark', 'source-mark'])
+    expect(root?.getAttribute('style')).toContain('width: 50%')
+    expect(root?.getAttribute('style')).toContain('height: 50%')
+    expect(root?.getAttribute('style')).toContain('color: red')
+  })
+
+  it('renders circular text references authored for inline HTML SVG', () => {
+    const { container, queryByText } = renderEditor(
+      SvgModule,
+      {
+        svg: [
+          '<svg class="seal-ring" viewBox="0 0 100 100">',
+          '<defs><path id="sealE" d="M50,50 m-39,0 a39,39 0 1,1 78,0 a39,39 0 1,1 -78,0"/></defs>',
+          '<text><textPath href="#sealE" xlink:href="#sealE">',
+          '★ OPEN SOURCE · 4K STARS · ',
+          '</textPath></text>',
+          '</svg>',
+        ].join(''),
+      },
+    )
+
+    const textPath = container.querySelector('textPath')
+    expect(queryByText('No SVG')).toBeNull()
+    expect(textPath?.getAttribute('href')).toBe('#sealE')
+    expect(textPath?.getAttribute('xlink:href')).toBe('#sealE')
+    expect(textPath?.textContent).toContain('OPEN SOURCE')
+  })
+
+  it('keeps rejecting markup with more than one SVG root', () => {
+    const { queryByText } = renderEditor(
+      SvgModule,
+      {
+        svg: '<svg viewBox="0 0 10 10"><path d="M0 0"/></svg><svg viewBox="0 0 10 10"><path d="M1 1"/></svg>',
+      },
+    )
+
+    expect(queryByText('No SVG')).not.toBeNull()
   })
 })

@@ -87,13 +87,18 @@ export const ImageEditor: React.FC<ModuleComponentProps<ImageStoredProps>> = ({ 
     )
   }
 
+  // Merge the BlurHash backdrop with the node's inline styles carried by
+  // nodeWrapperProps.style — an explicit `style` prop after the spread would
+  // otherwise clobber them (even `style={undefined}` wins over the spread),
+  // making the canvas ignore inline styles the published render honours.
   const style = responsive.blurUrl
     ? ({
+        ...nodeWrapperProps?.style,
         backgroundImage: `url(${responsive.blurUrl})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
       } as React.CSSProperties)
-    : undefined
+    : nodeWrapperProps?.style
 
   return (
     <img

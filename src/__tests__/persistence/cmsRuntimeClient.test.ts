@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { ApiError } from '@core/http'
-import { buildCmsRuntimePreview, resolveCmsRuntimeDependencies } from '@core/persistence/cmsRuntime'
+import { buildCmsRuntimePreview, resolveCmsRuntimeDependencies } from '@core/persistence'
 
 describe('CMS runtime client', () => {
   it('posts dependency manifests to the runtime resolve endpoint', async () => {
@@ -86,23 +86,26 @@ describe('CMS runtime client', () => {
     await expect(
       buildCmsRuntimePreview(
         { site: { id: 's' }, pageId: 'p' },
-        async () =>
-          new Response(
-            JSON.stringify({
-              html: '<x>',
-              assets: [],
-              // scripts must be an array of script-asset objects, not a string.
-              runtimeAssets: { scripts: 'nope' },
-              diagnostics: [],
-            }),
-            { status: 200 },
-          ),
+        {
+          fetchImpl: async () =>
+            new Response(
+              JSON.stringify({
+                html: '<x>',
+                assets: [],
+                // scripts must be an array of script-asset objects, not a string.
+                runtimeAssets: { scripts: 'nope' },
+                diagnostics: [],
+              }),
+              { status: 200 },
+            ),
+        },
       ),
     ).rejects.toThrow()
   })
 
   it('posts site preview requests to the runtime preview endpoint', async () => {
     const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+    const controller = new AbortController()
     const result = await buildCmsRuntimePreview(
       {
         site: { id: 'site_1' },
@@ -110,14 +113,17 @@ describe('CMS runtime client', () => {
         breakpointId: 'mobile',
         templateContext: { entryStack: [] },
       },
-      async (input, init) => {
-        calls.push({ input, init })
-        return new Response(JSON.stringify({
-          html: '<!DOCTYPE html>',
-          assets: [],
-          runtimeAssets: { scripts: [] },
-          diagnostics: [],
-        }), { status: 200 })
+      {
+        signal: controller.signal,
+        fetchImpl: async (input, init) => {
+          calls.push({ input, init })
+          return new Response(JSON.stringify({
+            html: '<!DOCTYPE html>',
+            assets: [],
+            runtimeAssets: { scripts: [] },
+            diagnostics: [],
+          }), { status: 200 })
+        },
       },
     )
 
@@ -126,6 +132,7 @@ describe('CMS runtime client', () => {
       input: '/admin/api/cms/runtime/preview',
       init: { method: 'POST', credentials: 'include' },
     })
+    expect(calls[0].init?.signal).toBe(controller.signal)
     expect(calls[0].init?.body).toBe(JSON.stringify({
       site: { id: 'site_1' },
       pageId: 'page_1',

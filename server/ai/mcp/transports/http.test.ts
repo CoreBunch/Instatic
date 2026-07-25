@@ -3,8 +3,8 @@ import { createSqliteClient } from '../../../db/sqlite'
 import { sqliteMigrations } from '../../../db/migrations-sqlite'
 import { runMigrations } from '../../../db/runMigrations'
 import type { DbClient } from '../../../db/client'
-import { createConnector } from '../connectors/store'
-import { generateConnectorToken, hashConnectorToken } from '../connectors/token'
+import { createBearerConnection } from '../connectors/store'
+import { generatePersonalAccessToken, hashMcpSecret } from '../connectors/token'
 import { handleMcpHttp } from './http'
 
 function initBody() {
@@ -38,10 +38,10 @@ beforeEach(async () => {
     insert into users (id, email, email_normalized, display_name, password_hash, role_id)
     values ('u1', 'u1@example.com', 'u1@example.com', 'User One', 'x', 'owner')
   `
-  token = generateConnectorToken()
-  await createConnector(db, {
-    userId: 'u1', label: 'L', type: 'local',
-    capabilities: ['ai.chat', 'content.manage', 'site.read'], tokenHash: await hashConnectorToken(token),
+  token = generatePersonalAccessToken()
+  await createBearerConnection(db, {
+    userId: 'u1', label: 'L',
+    capabilities: ['ai.chat', 'content.manage', 'site.read'], tokenHash: await hashMcpSecret(token),
   })
 })
 

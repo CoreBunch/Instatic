@@ -1,5 +1,6 @@
 import { tryHandleAi } from './ai/handlers'
 import { handleMcpHttp, MCP_ENDPOINT_PATH } from './ai/mcp'
+import { tryHandleMcpOAuth } from './ai/mcp/oauth/handler'
 import { handleCmsRequest } from './handlers/cms'
 import type { DbClient } from './db/client'
 import { renderNotFoundResponse, renderPublicResolution } from './publish/publicRouter'
@@ -63,10 +64,14 @@ type RouteHandler = (
  */
 const routes: readonly RouteHandler[] = [
   tryServeHealth,
+  // OAuth discovery, dynamic client registration, and token exchange for
+  // hosted MCP clients. These endpoints are public protocol surfaces; the
+  // interactive consent step remains admin-session + step-up gated.
+  tryServeMcpOAuth,
   // MCP server endpoint — external AI clients (Claude Code, Codex, remote
-  // agents) speak the Model Context Protocol here over its own bearer-token
-  // auth. Matched before the admin-cookie-gated AI routes since it lives under
-  // `/_instatic/` and authenticates per-connector, not via the admin session.
+  // agents) speak the Model Context Protocol here over OAuth access tokens or
+  // scoped personal tokens. Matched before the admin-cookie-gated AI routes
+  // since it authenticates per connection, not via the admin session.
   tryServeMcp,
   // AI runtime — `/admin/api/ai/*`. The legacy `/admin/api/agent` and
   // `/admin/api/agent/tool-result` were deleted in Phase 3 of the AI
@@ -118,6 +123,15 @@ function tryServeHealth(_req: Request, _runtime: ServerRuntime, _url: URL, pathn
   return jsonResponse({ status: 'ok', ts: Date.now() })
 }
 
+function tryServeMcpOAuth(
+  req: Request,
+  runtime: ServerRuntime,
+  _url: URL,
+  pathname: string,
+): Promise<Response> | Response | null {
+  return tryHandleMcpOAuth(req, runtime.db, pathname)
+}
+
 /**
  * AI runtime — provider-agnostic stack at `/admin/api/ai/*`. Handles chat
  * streams, browser bridge, credentials CRUD, conversation history,
@@ -138,8 +152,8 @@ function tryServeAi(req: Request, runtime: ServerRuntime, url: URL, _pathname: s
 
 /**
  * MCP server endpoint (`/_instatic/mcp`). Authenticates per-connector via a
- * bearer token (NOT the admin session cookie) and exposes the capability-gated
- * CMS tool surface over the Model Context Protocol. Returns `null` for any
+ * OAuth or personal bearer token (NOT the admin session cookie) and exposes
+ * the capability-gated CMS tool surface over MCP. Returns `null` for any
  * other path so the dispatcher keeps walking.
  */
 function tryServeMcp(req: Request, runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response | null> | null {

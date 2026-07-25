@@ -1044,6 +1044,57 @@ describe('ClassPropertyRow — token-aware properties', () => {
   })
 })
 
+describe('ClassPropertyRow — number-typed CSS properties', () => {
+  it('keeps a typed opacity decimal intact while persisting a number', async () => {
+    const { nodeId, classIds } = loadSiteWithClasses(1)
+    const classId = classIds[0]
+    selectNode(nodeId)
+    render(<PropertiesPanel />)
+    fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
+
+    const opacityRow = document.querySelector('[data-testid="css-property-row-opacity"]')
+    const opacityInput = opacityRow?.querySelector('input') as HTMLInputElement
+    const user = userEvent.setup()
+
+    await user.click(opacityInput)
+    await user.type(opacityInput, '0')
+    await user.type(opacityInput, '.')
+    expect(opacityInput.value).toBe('0.')
+
+    await user.type(opacityInput, '8')
+    expect(opacityInput.value).toBe('0.8')
+    expect(useEditorStore.getState().site!.styleRules[classId].styles.opacity).toBe(0.8)
+    expect(typeof useEditorStore.getState().site!.styleRules[classId].styles.opacity).toBe('number')
+
+    await user.tab()
+    expect(opacityInput.value).toBe('0.8')
+  })
+
+  it('keeps a leading minus while typing a negative z-index', async () => {
+    const { nodeId, classIds } = loadSiteWithClasses(1)
+    const classId = classIds[0]
+    selectNode(nodeId)
+    render(<PropertiesPanel />)
+    fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
+
+    const zIndexRow = document.querySelector('[data-testid="css-property-row-zIndex"]')
+    const zIndexInput = zIndexRow?.querySelector('input') as HTMLInputElement
+    const user = userEvent.setup()
+
+    await user.click(zIndexInput)
+    await user.type(zIndexInput, '-')
+    expect(zIndexInput.value).toBe('-')
+    expect(useEditorStore.getState().site!.styleRules[classId].styles.zIndex).toBeUndefined()
+
+    await user.type(zIndexInput, '2')
+    expect(zIndexInput.value).toBe('-2')
+    expect(useEditorStore.getState().site!.styleRules[classId].styles.zIndex).toBe(-2)
+
+    await user.tab()
+    expect(zIndexInput.value).toBe('-2')
+  })
+})
+
 describe('StyleRuleComposer set style indicators', () => {
   it('marks category rail icons and section headers that contain stored class styles', () => {
     const { nodeId, classIds } = loadSiteWithClasses(1)
