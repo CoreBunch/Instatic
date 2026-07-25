@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import { handleCmsRequest } from '../../../server/handlers/cms'
 import type { DbClient } from '../../../server/db'
 import { createTestDb, type TestDb } from '../helpers/createTestDb'
+import { registerPublishFlush } from '../../../server/publish/publishFlush'
+import { upsertDataRowDraft } from '../../../server/repositories/data'
 
 const ownedPassword = 'long-enough-password'
 
@@ -325,6 +327,48 @@ describe('CMS data ownership authorization', () => {
     })
     expect(reassign.status).toBe(200)
     expect(await body(reassign)).toMatchObject({ row: { authorUserId: managerId } })
+  })
+
+  it('flushes the collab relay before reading the row to schedule', async () => {
+    // A page created in the visual editor lives only in the relay's in-memory
+    // doc until its persist debounce elapses. Scheduling one right after
+    // creating it used to 404 with "Data row not found" because this handler
+    // read the DB directly — publish flushes, so "publish later" must too.
+    const { db } = await makeDb()
+    const ownerCookie = await setupOwner(db)
+
+    const relayResidentId = 'relay-resident-row'
+    let flushed = false
+    // Stands in for the relay persisting a doc that has no DB row yet. The
+    // handler's own flush is the ONLY thing that can make this row exist.
+    const detach = registerPublishFlush(async () => {
+      flushed = true
+      await upsertDataRowDraft(
+        db,
+        {
+          id: relayResidentId,
+          tableId: 'posts',
+          cells: { title: 'Relay-resident page' },
+          slug: 'relay-resident-page',
+        },
+        null,
+        { collabInternal: true },
+      )
+    })
+    cleanupFns.push(async () => detach())
+
+    const scheduledAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+    const schedule = await request(db, `/admin/api/cms/data/rows/${relayResidentId}/schedule`, {
+      method: 'POST',
+      cookie: ownerCookie,
+      body: JSON.stringify({ at: scheduledAt }),
+    })
+
+    expect(flushed).toBe(true)
+    expect(schedule.status).toBe(200)
+    expect(await body(schedule)).toMatchObject({
+      row: { id: relayResidentId, status: 'scheduled' },
+    })
   })
 
   it('schedules and cancels row publication only through the schedule endpoint', async () => {

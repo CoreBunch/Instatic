@@ -36,6 +36,7 @@ import {
   updateDataRowTable,
 } from '../../../repositories/data'
 import { publishDataRow, removeDataRowArtefact } from '../../../publish/publishRow'
+import { runPublishFlush } from '../../../publish/publishFlush'
 import { findUserById } from '../../../repositories/users'
 import { slugForTable } from '@core/data/cells'
 import { lockedBuiltInCellKey } from '@core/data/systemTableGuard'
@@ -265,6 +266,12 @@ async function handleRowSchedulePost(
   const rowId = params.id
   const user = await requireDataPublisher(req, db)
   if (user instanceof Response) return user
+
+  // Flush the collab relay before reading the row, exactly as `publishDataRow`
+  // does. A page created or edited in the visual editor lives in the relay's
+  // in-memory doc until the persist debounce elapses, so scheduling one right
+  // after creating it would otherwise 404 with "Data row not found".
+  await runPublishFlush()
 
   const currentRow = await loadRowForAccess(db, rowId, user, canPublishDataRow)
   if (currentRow instanceof Response) return currentRow

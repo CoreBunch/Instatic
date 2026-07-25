@@ -5,7 +5,6 @@ import {
   insertNotchModule,
   openSiteEditor,
   openSitePanel,
-  saveDraft,
   setPropValue,
 } from './helpers'
 
@@ -84,13 +83,13 @@ test.describe('page management', () => {
     })
   })
 
-  test('keeps unsaved edits when switching pages and persists after save (PAGE-004)', async ({
+  test('keeps edits when switching pages and persists across a reload (PAGE-004)', async ({
     page,
   }) => {
     const suffix = Date.now().toString(36)
     const firstName = `Draft Source ${suffix}`
     const secondName = `Draft Target ${suffix}`
-    const draftText = `Unsaved page switch ${suffix}`
+    const draftText = `Page switch draft ${suffix}`
 
     await openSiteEditor(page)
     await createPage(page, firstName, `draft-source-${suffix}`)
@@ -99,26 +98,27 @@ test.describe('page management', () => {
     const firstPage = page.getByRole('treeitem', { name: `Open page ${firstName}` })
     const secondPage = page.getByRole('treeitem', { name: `Open page ${secondName}` })
 
-    await test.step('edit the first page and observe the unsaved draft state', async () => {
+    // There is no save step and no dirty state: edits stream to the collab
+    // relay as they land, so the toolbar reports a live sync, not "Unsaved".
+    await test.step('edit the first page and observe the synced state', async () => {
       await openPage(firstPage)
       await insertNotchModule(page, 'text')
       await setPropValue(page, 'text', draftText)
-      await expect(page.getByRole('status', { name: 'Unsaved draft' })).toBeVisible()
+      await expect(page.getByRole('status', { name: 'Draft synced' })).toBeVisible()
       await expect(canvasFrame(page).getByText(draftText)).toBeVisible()
     })
 
-    await test.step('switch away and back without losing the in-memory edit', async () => {
+    await test.step('switch away and back without losing the edit', async () => {
       await openSitePanel(page)
       await openPage(secondPage)
       await expect(canvasFrame(page).getByText(draftText)).toHaveCount(0)
 
       await openPage(firstPage)
       await expect(canvasFrame(page).getByText(draftText)).toBeVisible()
-      await expect(page.getByRole('status', { name: 'Unsaved draft' })).toBeVisible()
+      await expect(page.getByRole('status', { name: 'Draft synced' })).toBeVisible()
     })
 
-    await test.step('save, reload, and verify the edit persists', async () => {
-      await saveDraft(page)
+    await test.step('reload and verify the edit persists', async () => {
       await page.reload()
       await openSiteEditor(page)
       await openSitePanel(page)
@@ -127,7 +127,7 @@ test.describe('page management', () => {
     })
   })
 
-  test('reloads a saved draft at mobile width (SAVE-001)', async ({ page }) => {
+  test('reloads a synced draft at mobile width (SAVE-001)', async ({ page }) => {
     const suffix = Date.now().toString(36)
     const name = `Mobile Draft ${suffix}`
     const draftText = `Mobile reload persistence ${suffix}`
@@ -137,7 +137,6 @@ test.describe('page management', () => {
     await insertNotchModule(page, 'text')
     await setPropValue(page, 'text', draftText)
     await expect(canvasFrame(page).getByText(draftText)).toBeVisible()
-    await saveDraft(page)
 
     await page.setViewportSize({ width: 390, height: 844 })
     await page.reload()
@@ -166,7 +165,6 @@ test.describe('page management', () => {
     await createPage(page, name, slug)
     await insertNotchModule(page, 'text')
     await setPropValue(page, 'text', draftText)
-    await saveDraft(page)
 
     await test.step('schedule the active page from the Site toolbar', async () => {
       await page.getByTestId('toolbar-publish-actions-trigger').click()

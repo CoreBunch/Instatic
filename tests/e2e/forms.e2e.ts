@@ -9,7 +9,6 @@ import {
   openSiteEditor,
   openSitePanel,
   publishDraft,
-  saveDraft,
   setPropValue,
 } from './helpers'
 
@@ -56,7 +55,6 @@ test.describe('forms', () => {
       await insertModuleViaPicker(page, 'base.form-message')
       await selectPropertyOption(page, 'kind', 'Success')
 
-      await saveDraft(page)
       await publishDraft(page)
       return created
     })
@@ -115,7 +113,6 @@ test.describe('forms', () => {
       await setPropValue(page, 'formId', formId)
       await selectPropertyOption(page, 'kind', 'Error')
 
-      await saveDraft(page)
       await publishDraft(page)
       return created
     })

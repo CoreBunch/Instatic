@@ -10,7 +10,6 @@ import {
   login,
   openSiteEditor,
   publishDraft,
-  saveDraft,
   setPropValue,
   visitPublicPage,
 } from './helpers'
@@ -106,7 +105,6 @@ test.describe('public responsive', () => {
     await insertNotchModule(page, 'text')
     await setPropValue(page, 'text', text)
     await expect(canvasFrame(page).getByText(text)).toBeVisible()
-    await saveDraft(page)
     await publishDraft(page)
 
     await visitPublicPage(browser, {

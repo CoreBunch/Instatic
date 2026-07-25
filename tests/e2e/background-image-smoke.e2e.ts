@@ -11,7 +11,6 @@ import {
   openSiteEditor,
   openSitePanel,
   publishDraft,
-  saveDraft,
   setPropValue,
 } from './helpers'
 
@@ -74,7 +73,6 @@ test.describe('background image smoke', () => {
     expect(editorBackground).not.toContain('.png')
     await page.screenshot({ path: `${proofDir}/02-editor-background.png`, fullPage: true })
 
-    await saveDraft(page)
     await page.reload()
     await openSiteEditor(page)
     await openSitePanel(page)
