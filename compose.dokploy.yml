@@ -34,7 +34,13 @@ services:
       timeout: 5s
       start_period: 20s
       retries: 3
+    networks:
+      - dokploy-network
 
 volumes:
   data:
   uploads:
+
+networks:
+  dokploy-network:
+    external: true
