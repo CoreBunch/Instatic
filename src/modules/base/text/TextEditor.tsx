@@ -6,8 +6,9 @@
  * export non-component values — `normalizeTag` and the tag vocabulary live in
  * the shared `./tags` module that both this file and `index.ts` import.
  *
- * Text renders through `dangerouslySetInnerHTML` (escaped value with `\n` →
- * `<br>`) so the canvas shows the same hard breaks the published page does.
+ * Semantic text renders through `dangerouslySetInnerHTML` (escaped value with
+ * `\n` → `<br>`) so the canvas shows the same hard breaks the published page
+ * does. No-wrapper text stays a literal text node.
  *
  * Inline editing (double-click): when `inlineEdit` is present, THIS element
  * IS the editor — it becomes `contentEditable` and the canvas reads the text
@@ -69,18 +70,8 @@ export const TextEditor: React.FC<ModuleComponentProps<TextStoredProps>> = ({
 }
 
 /**
- * Bare text with `\n` → `<br>` breaks and NO wrapping element — a fragment, so
- * it adds no host element to the canvas DOM. Mirrors the publisher's
- * `textToBreakHtml` output for `tag: none` (bare text + `<br>`); React escapes
- * each text segment, matching the publisher's pre-escaped output.
+ * Bare text with no wrapping element. React escapes the value while preserving
+ * literal newlines as text, matching the publisher and the source DOM imported
+ * from mixed content or a `<pre>` subtree.
  */
-const BareText: React.FC<{ text: string }> = ({ text }) => (
-  <>
-    {text.split('\n').map((segment, i) => (
-      <React.Fragment key={i}>
-        {i > 0 ? <br /> : null}
-        {segment}
-      </React.Fragment>
-    ))}
-  </>
-)
+const BareText: React.FC<{ text: string }> = ({ text }) => <>{text}</>

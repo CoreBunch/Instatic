@@ -1,10 +1,11 @@
 /**
  * base.text hard line breaks + the shared inline-text helpers.
  *
- * The stored value keeps newlines as `\n`; both render surfaces turn each `\n`
- * into a `<br>` so a hard break shows live in the canvas AND survives publish
- * (DOMPurify's richtext config allows `<br>`). These tests cover:
- *   - base.text `render()` emits `<br>` for a `\n` and is otherwise unchanged;
+ * The stored value keeps newlines as `\n`; semantic text elements turn each
+ * newline into `<br>`, while no-wrapper text preserves the literal character
+ * so imported mixed-content DOM stays faithful. These tests cover:
+ *   - base.text `render()` emits `<br>` for semantic tags;
+ *   - no-wrapper base.text emits a literal newline;
  *   - the two text→HTML helpers (publisher path pre-escaped, canvas path raw);
  *   - `readInlineEditableText` reads `innerText` back out of a DOM element;
  *   - the published `<br>` survives the publisher-boundary sanitizer.
@@ -32,6 +33,11 @@ describe('base.text render — newlines become <br>', () => {
   it('turns multiple newlines into multiple <br>s', () => {
     const { html } = TextModule.render({ text: 'A\nB\nC', tag: 'p', htmlAttributes: {} }, [])
     expect(html).toBe('<p>A<br>B<br>C</p>')
+  })
+
+  it('preserves a literal newline for no-wrapper text', () => {
+    const { html } = TextModule.render({ text: '\n', tag: 'none', htmlAttributes: {} }, [])
+    expect(html).toBe('\n')
   })
 })
 
