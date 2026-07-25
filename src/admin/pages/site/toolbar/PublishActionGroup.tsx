@@ -1,4 +1,3 @@
-import { cn } from '@ui/cn'
 import { SplitButton, type SplitButtonMenuItem } from '@ui/components/SplitButton'
 import type { IconComponent } from 'pixel-art-icons/types'
 import styles from './Toolbar.module.css'
@@ -23,10 +22,6 @@ interface PublishActionGroupProps {
   menuItems: PublishActionMenuItem[]
   menuLabel?: string
   triggerLabel?: string
-  toast?: {
-    tone: 'status' | 'alert'
-    message: string
-  } | null
 }
 
 export function PublishActionGroup({
@@ -44,7 +39,6 @@ export function PublishActionGroup({
   menuItems,
   menuLabel = 'Publishing actions',
   triggerLabel = 'More publishing actions',
-  toast,
 }: PublishActionGroupProps) {
   return (
     <div className={styles.publishActionGroup}>
@@ -61,40 +55,26 @@ export function PublishActionGroup({
         </span>
       )}
 
-      <div className={styles.publishActionWrapper}>
-        <SplitButton
-          variant={publishState === 'error' ? 'destructive' : 'primary'}
-          size="sm"
-          label={publishLabel}
-          icon={publishIcon}
-          onClick={onPublish}
-          disabled={publishDisabled}
-          busy={publishBusy}
-          primaryAriaLabel={publishAriaLabel}
-          primaryTooltip={publishTitle}
-          primaryState={publishState}
-          primaryClassName={styles.publishPrimaryButton}
-          triggerClassName={styles.publishMenuTrigger}
-          menuItems={menuItems}
-          menuLabel={menuLabel}
-          menuTriggerLabel={triggerLabel}
-          primaryTestId="toolbar-publish-btn"
-          menuTriggerTestId="toolbar-publish-actions-trigger"
-          menuTestId="toolbar-publish-actions-menu"
-        />
-
-        {toast && (
-          <div
-            role={toast.tone === 'alert' ? 'alert' : 'status'}
-            className={cn(
-              styles.publishToast,
-              toast.tone === 'status' && styles.publishToastStatus,
-            )}
-          >
-            {toast.message}
-          </div>
-        )}
-      </div>
+      <SplitButton
+        variant={publishState === 'error' ? 'destructive' : 'primary'}
+        size="sm"
+        label={publishLabel}
+        icon={publishIcon}
+        onClick={onPublish}
+        disabled={publishDisabled}
+        busy={publishBusy}
+        primaryAriaLabel={publishAriaLabel}
+        primaryTooltip={publishTitle}
+        primaryState={publishState}
+        primaryClassName={styles.publishPrimaryButton}
+        triggerClassName={styles.publishMenuTrigger}
+        menuItems={menuItems}
+        menuLabel={menuLabel}
+        menuTriggerLabel={triggerLabel}
+        primaryTestId="toolbar-publish-btn"
+        menuTriggerTestId="toolbar-publish-actions-trigger"
+        menuTestId="toolbar-publish-actions-menu"
+      />
     </div>
   )
 }
