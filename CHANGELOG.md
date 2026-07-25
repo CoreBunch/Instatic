@@ -6,6 +6,14 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 
 ## Unreleased
 
+## 0.0.14 - 2026-07-25
+
+### Security
+
+- Fixed a URL-scheme filter bypass in `isSafeUrl()` ([GHSA-pqcp-872g-gmp8](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-pqcp-872g-gmp8)). The guard normalised input with `String.prototype.trim()`, which does not strip U+0000–U+0008 or U+000E–U+001F, while browsers strip the whole U+0000–U+0020 range before reading a URL scheme. A `javascript:` URL behind a leading control character was therefore reported safe and emitted verbatim into `href` / `src` / `action` attributes. Reported by [@overgrowncarrot1](https://github.com/overgrowncarrot1).
+- Replaced the three-entry scheme denylist with an allowlist (`http`, `https`, `mailto`, `tel`, `sms`, plus all relative forms) read through a scheme extractor that follows the WHATWG stripping rules, so the guard cannot disagree with the browser that resolves the value.
+- Consolidated three divergent URL guards into one. The plugin-SDK `safeUrl` was a weaker copy that a plain leading space defeated and that never blocked `data:` at all; the editor input gate now shares the same scheme extractor. An architecture test fails the build if a fourth copy appears.
+
 ## 0.0.13 - 2026-07-24
 
 ### Editor, import, and publishing
