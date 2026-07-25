@@ -7,8 +7,10 @@
  *   • Framework import — derived from `site.settings.framework` being
  *     populated. Defaults to `'active'` so the user is nudged to make a
  *     deliberate decision; once they pick a mode the step flips to done.
- *   • First page — done when ≥ 2 pages exist (the seed Home page
- *     doesn't count).
+ *   • First page — done when ≥ 2 pages exist (the seeded Home page
+ *     doesn't count). While only the seed exists the step reads
+ *     'active', not 'todo': the site already has a page, so "Not
+ *     started" would contradict the Pages widget's published count.
  *   • First plugin — done when any plugin is installed.
  *   • Team — done when more than the owner is in the users table.
  *
@@ -71,7 +73,7 @@ export function useOnboardingState(): OnboardingStateResult {
       loading: false,
       identity: hasIdentity || hasFavicon ? 'done' : 'active',
       framework: hasFramework ? 'done' : 'active',
-      firstPage: pageCount >= 2 ? 'done' : 'todo',
+      firstPage: pageCount >= 2 ? 'done' : pageCount >= 1 ? 'active' : 'todo',
       plugin: plugins.length > 0 ? 'done' : 'todo',
       team: users.length > 1 ? 'done' : 'todo',
     }
