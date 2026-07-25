@@ -16,6 +16,35 @@ import { inlineTextPropOf } from './schema'
 
 const STRUCTURED_KEYS = new Set(['props', 'breakpointOverrides', 'children', 'parentId'])
 
+/**
+ * Take ownership of a value read out of a Y container.
+ *
+ * Yjs stores plain JS values BY REFERENCE — `Y.Map.get()` hands back the very
+ * object living inside the CRDT. Projecting those references out would make
+ * the editor store and the doc share mutable state, which breaks in both
+ * directions:
+ *
+ *   - Consumers that normalize in place would rewrite CRDT state outside any
+ *     transaction. `validateSite` does exactly this (`normalizeFrameworkColors`
+ *     assigns `colors.tokens`), so merely projecting a shell used to rewrite
+ *     the colour tokens held in the doc — a silent, untracked mutation that
+ *     never reaches a peer.
+ *   - The editor store runs Mutative with `enableAutoFreeze: true`, so the
+ *     moment a projection lands in the store, everything reachable from it is
+ *     deep-frozen — including the objects the doc still holds. The NEXT
+ *     projection then throws `TypeError: Cannot assign to read only property`,
+ *     the projection is skipped, and the canvas never updates again.
+ *
+ * Primitives — the overwhelming majority of node props — pass straight
+ * through. Y types are returned untouched: they only reach here from a
+ * malformed doc, and `structuredClone` would throw on their internals.
+ */
+export function own<T>(value: T): T {
+  if (value === null || typeof value !== 'object') return value
+  if (value instanceof Y.AbstractType) return value
+  return structuredClone(value) as T
+}
+
 export function buildPropsMap(
   moduleId: string,
   props: Record<string, unknown>,
@@ -66,19 +95,21 @@ export function projectNodeMap(nodeMap: Y.Map<unknown>): BaseNode {
     if (key === 'props') {
       const props: Record<string, unknown> = {}
       for (const [pk, pv] of (value as Y.Map<unknown>).entries()) {
-        props[pk] = pv instanceof Y.Text ? pv.toString() : pv
+        props[pk] = pv instanceof Y.Text ? pv.toString() : own(pv)
       }
       out.props = props
     } else if (key === 'breakpointOverrides') {
       const overrides: Record<string, Record<string, unknown>> = {}
       for (const [bp, bag] of (value as Y.Map<unknown>).entries()) {
-        overrides[bp] = Object.fromEntries((bag as Y.Map<unknown>).entries())
+        const entries: Record<string, unknown> = {}
+        for (const [ok, ov] of (bag as Y.Map<unknown>).entries()) entries[ok] = own(ov)
+        overrides[bp] = entries
       }
       out.breakpointOverrides = overrides
     } else if (key === 'children') {
       out.children = (value as Y.Array<string>).toArray()
     } else {
-      out[key] = value
+      out[key] = own(value)
     }
   }
   // Structured fields always exist on a well-formed node; default defensively

@@ -10,7 +10,7 @@ import { reindexNodeParents } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import type { SavedLayout } from '@core/layouts'
 import { dataMap, metaMap, rostersMap, shellMap, treeMap } from './schema'
-import { projectNodeMap } from './nodeY'
+import { own, projectNodeMap } from './nodeY'
 import { reconcileTreeIntegrity } from './integrity'
 
 function projectTree(doc: Y.Doc): { rootNodeId: string; nodes: Record<string, BaseNode> } {
@@ -29,7 +29,9 @@ function projectTree(doc: Y.Doc): { rootNodeId: string; nodes: Record<string, Ba
 }
 
 function projectMeta(doc: Y.Doc): Record<string, unknown> {
-  return Object.fromEntries(metaMap(doc).entries())
+  const meta: Record<string, unknown> = {}
+  for (const [key, value] of metaMap(doc).entries()) meta[key] = own(value)
+  return meta
 }
 
 export function projectPageDoc(doc: Y.Doc, rowId: string): Page {
@@ -53,7 +55,7 @@ export function projectComponentDoc(doc: Y.Doc, rowId: string): VisualComponent 
 
 export function projectLayoutDoc(doc: Y.Doc, rowId: string): SavedLayout {
   const meta = projectMeta(doc)
-  const snapshot = dataMap(doc).get('snapshot')
+  const snapshot = own(dataMap(doc).get('snapshot'))
   const snapshotFields =
     snapshot && typeof snapshot === 'object' ? (snapshot as Record<string, unknown>) : {}
   return {
@@ -79,7 +81,13 @@ export function projectSiteDoc(doc: Y.Doc): ProjectedSiteDoc {
   const shellSrc = shellMap(doc)
   const shell: Record<string, unknown> = {}
   for (const [key, value] of shellSrc.entries()) {
-    shell[key] = value instanceof Y.Map ? Object.fromEntries(value.entries()) : value
+    if (value instanceof Y.Map) {
+      const entries: Record<string, unknown> = {}
+      for (const [entryKey, entryValue] of value.entries()) entries[entryKey] = own(entryValue)
+      shell[key] = entries
+    } else {
+      shell[key] = own(value)
+    }
   }
 
   const rosters = rostersMap(doc)
