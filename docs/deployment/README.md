@@ -104,6 +104,7 @@ SQLite installs also need the SQLite database file on persistent storage. On pla
 | [tls-caddy.md](tls-caddy.md) | Caddy TLS overlay for VPS Compose installs |
 | [backup-restore.md](backup-restore.md) | Database and uploads backup/restore |
 | [release-workflow.md](release-workflow.md) | Maintainer image publishing workflow |
+| [deployhq.md](deployhq.md) | Publish the static output to a bucket or web server with DeployHQ |
 
 ## Related
 
