@@ -68,13 +68,16 @@ export const TextModule: ModuleDefinition<TextStoredProps> = {
   },
 
   render: (props) => {
-    // props.text is pre-escaped by escapeProps — only turn newlines into the
-    // hard <br> breaks the author typed (sanitizer allows <br>).
-    const text = textToBreakHtml(String(props.text))
+    // props.text is pre-escaped by escapeProps. A no-wrapper text node must
+    // preserve literal whitespace so imported mixed content keeps the same DOM
+    // child-node shape (especially inside <pre>). Semantic text elements still
+    // turn authored newlines into hard <br> breaks.
+    const escapedText = String(props.text)
     const tag = normalizeTag(props.tag)
     if (tag === 'none') {
-      return { html: text }
+      return { html: escapedText }
     }
+    const text = textToBreakHtml(escapedText)
     const attrs = htmlAttributesAttr(props.htmlAttributes)
     return {
       html: `<${tag}${attrs}>${text}</${tag}>`,
