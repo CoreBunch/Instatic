@@ -14,6 +14,7 @@ import {
   treeMap,
 } from '@core/collab'
 import { createCollabRelay, type CollabRelay } from '../../../server/collab/relay'
+import type { DbClient } from '../../../server/db'
 import { getCollabDocumentState } from '../../../server/repositories/collabDocuments'
 import { saveDataRowDraft } from '../../../server/repositories/data'
 import {
@@ -38,6 +39,41 @@ async function setup(): Promise<{ harness: CapabilityTestHarness; relay: CollabR
     select id from data_rows where table_id = ${'pages'}
   `
   return { harness, relay, homeId: rows[0].id }
+}
+
+/**
+ * Wrap a DbClient so the FIRST collab blob write blocks until released. That
+ * is the only way to hold a persist mid-flight deterministically, which is
+ * exactly the window `resetDocs` has to survive.
+ */
+function gateCollabBlobWrites(db: DbClient): {
+  db: DbClient
+  blocked: Promise<void>
+  release: () => void
+} {
+  let announceBlocked!: () => void
+  const blocked = new Promise<void>((resolve) => {
+    announceBlocked = resolve
+  })
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let gated = false
+
+  const wrapped = (async <Row,>(strings: TemplateStringsArray, ...values: unknown[]) => {
+    if (!gated && strings.join('?').includes('insert into collab_documents')) {
+      gated = true
+      announceBlocked()
+      await gate
+    }
+    return db<Row>(strings, ...values)
+  }) as DbClient
+  Object.defineProperty(wrapped, 'dialect', { get: () => db.dialect })
+  wrapped.unsafe = ((sql: string, params?: unknown[]) => db.unsafe(sql, params)) as DbClient['unsafe']
+  wrapped.transaction = ((fn: Parameters<DbClient['transaction']>[0]) =>
+    db.transaction(fn)) as DbClient['transaction']
+  return { db: wrapped, blocked, release }
 }
 
 function editTitleUpdate(doc: Y.Doc, nodeText: string): void {
@@ -151,5 +187,74 @@ describe('collab relay', () => {
       select id, slug from data_rows where id = ${'fresh-row-id'}
     `
     expect(rows[0]?.slug).toBe('fresh')
+  })
+
+  // ── Lifecycle races ───────────────────────────────────────────────────────
+  // The reset seam is how every out-of-relay write (Settings save, Super
+  // Import, plugin install, data-workspace edit) reaches connected editors.
+  // Both cases below FAIL without the eviction/flush ordering in relay.ts.
+
+  it('a reset is not undone by a persist that was already in flight', async () => {
+    const harness = await createCapabilityTestHarness()
+    cleanups.push(() => harness.cleanup())
+    await harness.setupOwner()
+    const gated = gateCollabBlobWrites(harness.db)
+    const relay = createCollabRelay(gated.db, { persistDebounceMs: 5 })
+    cleanups.push(() => relay.destroy())
+    const { rows } = await harness.db<{ id: string }>`
+      select id from data_rows where table_id = ${'pages'}
+    `
+    const docId = `page:${rows[0].id}`
+
+    const doc = await relay.openDoc(docId)
+    editTitleUpdate(doc, 'About to be reset')
+
+    // Block the blob write mid-flight, then reset underneath it.
+    await gated.blocked
+    const reset = relay.resetDocs([docId])
+    gated.release()
+    await reset
+
+    // Without the await in `evict`, the released insert lands AFTER
+    // deleteCollabDocuments and resurrects the dead generation.
+    expect(await getCollabDocumentState(harness.db, docId)).toBeNull()
+  })
+
+  it('a relay-only page survives a site-doc reset instead of vanishing from the roster', async () => {
+    const { harness, relay } = await setup()
+    const rowId = 'relay-only-page'
+    const pageDoc = await relay.openDoc(`page:${rowId}`)
+    await relay.openDoc(SITE_DOC_ID)
+
+    pageDoc.transact(() => {
+      const tree = treeMap(pageDoc)
+      tree.set('rootNodeId', 'root')
+      const nodes = new Y.Map<unknown>()
+      const root = new Y.Map<unknown>()
+      root.set('id', 'root')
+      root.set('moduleId', 'base.body')
+      root.set('props', new Y.Map())
+      root.set('breakpointOverrides', new Y.Map())
+      root.set('children', new Y.Array())
+      nodes.set('root', root)
+      tree.set('nodes', nodes)
+      const meta = pageDoc.getMap('meta')
+      meta.set('title', 'Relay only')
+      meta.set('slug', 'relay-only')
+    }, LOCAL_ORIGIN)
+
+    // Reset the SITE doc while the new page exists ONLY in the relay. Its
+    // derived JSON must be flushed first, or the reseed — which builds the
+    // roster from listDataRowIdSlugs — cannot see the row at all.
+    await relay.resetDocs([SITE_DOC_ID])
+
+    const { rows } = await harness.db<{ id: string }>`
+      select id from data_rows where id = ${rowId} and deleted_at is null
+    `
+    expect(rows).toHaveLength(1)
+
+    const reseeded = await relay.openDoc(SITE_DOC_ID)
+    const pages = rostersMap(reseeded).get('pages') as Y.Map<unknown>
+    expect([...pages.keys()]).toContain(rowId)
   })
 })

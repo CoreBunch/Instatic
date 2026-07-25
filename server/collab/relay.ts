@@ -91,6 +91,8 @@ interface RelayEntry {
   detachUpdateHandler: () => void
 }
 
+type DerivedWrite = 'written' | 'incomplete' | 'invalid'
+
 export type RelayUpdateListener = (docId: string, update: Uint8Array, origin: unknown) => void
 export type RelayResetListener = (docId: string) => void
 
@@ -115,6 +117,12 @@ export function createCollabRelay(
   const persistDebounceMs = opts.persistDebounceMs ?? 800
   const entries = new Map<string, RelayEntry>()
   const opening = new Map<string, Promise<Y.Doc>>()
+  /**
+   * Docs mid-eviction or mid-reset. `openDoc` waits these out, so it can never
+   * hand back a doc that is about to be destroyed, nor resurrect one whose
+   * blob a reset is still deleting.
+   */
+  const settling = new Map<string, Promise<void>>()
   // Last roster set the site-doc persist actually swept, so shell-field-only
   // persists skip the three full-table scans. Cleared when the site doc resets.
   let lastSweptRostersKey: string | null = null
@@ -156,12 +164,19 @@ export function createCollabRelay(
 
   // ── Persistence ───────────────────────────────────────────────────────────
 
-  async function persistDerivedJson(docId: string, doc: Y.Doc): Promise<void> {
+  /**
+   * Outcome of a derived-JSON write. `invalid` is the one that MUST be
+   * retried: the blob was written but the JSON the publisher (and a reseed)
+   * read is now stale, so leaving the doc clean is how an accepted edit
+   * silently disappears. `incomplete` is a doc that is simply not assembled
+   * yet — retrying that would spin forever.
+   */
+  async function persistDerivedJson(docId: string, doc: Y.Doc): Promise<DerivedWrite> {
     const parsed = parseCollabDocId(docId)
-    if (!parsed) return
+    if (!parsed) return 'incomplete'
     if (parsed.kind === 'site') {
       const projected = projectSiteDoc(doc)
-      if (Object.keys(projected.shell).length === 0) return // never seeded
+      if (Object.keys(projected.shell).length === 0) return 'incomplete' // never seeded
       let shell: SiteShell
       try {
         // `id` and `updatedAt` are deliberately NOT collaborative (fixed row /
@@ -176,7 +191,7 @@ export function createCollabRelay(
         // The blob stays authoritative; JSON write is skipped until the doc
         // heals — never persist an invalid shell for the publisher to read.
         console.error('[collab] projected shell failed validation — JSON write skipped:', err)
-        return
+        return 'invalid'
       }
       await saveDraftSite(db, shell, null, { collabInternal: true })
 
@@ -190,7 +205,7 @@ export function createCollabRelay(
         projected.rosters.pages.join(',') + '|' +
         projected.rosters.components.join(',') + '|' +
         projected.rosters.layouts.join(',')
-      if (rostersKey === lastSweptRostersKey) return
+      if (rostersKey === lastSweptRostersKey) return 'written'
       let deletedPublished = false
       for (const [table, ids] of [
         ['pages', projected.rosters.pages],
@@ -207,7 +222,7 @@ export function createCollabRelay(
       }
       lastSweptRostersKey = rostersKey
       if (deletedPublished) await bumpPublishVersionSerialized()
-      return
+      return 'written'
     }
 
     const table = KIND_TABLE[parsed.kind]
@@ -215,17 +230,17 @@ export function createCollabRelay(
     let slug: string
     if (parsed.kind === 'page') {
       const page = projectPageDoc(doc, parsed.rowId)
-      if (!page.rootNodeId) return // never seeded / still assembling
+      if (!page.rootNodeId) return 'incomplete' // never seeded / still assembling
       cells = pageToCells(page)
       slug = page.slug
     } else if (parsed.kind === 'component') {
       const vc = projectComponentDoc(doc, parsed.rowId)
-      if (!vc.tree.rootNodeId || typeof vc.name !== 'string' || vc.name === '') return
+      if (!vc.tree.rootNodeId || typeof vc.name !== 'string' || vc.name === '') return 'incomplete'
       cells = visualComponentToCells(vc)
       slug = vcSlugFromName(vc.name)
     } else {
       const layout = projectLayoutDoc(doc, parsed.rowId)
-      if (!layout.rootNodeId || layout.name === '') return
+      if (!layout.rootNodeId || layout.name === '') return 'incomplete'
       cells = savedLayoutToCells(layout)
       slug = layoutSlugFromName(layout.name)
     }
@@ -240,6 +255,7 @@ export function createCollabRelay(
       null,
       { collabInternal: true },
     )
+    return 'written'
   }
 
   async function persistNow(docId: string): Promise<void> {
@@ -248,7 +264,11 @@ export function createCollabRelay(
     entry.dirty = false
     try {
       await putCollabDocumentState(db, docId, Y.encodeStateAsUpdate(entry.doc))
-      await persistDerivedJson(docId, entry.doc)
+      const derived = await persistDerivedJson(docId, entry.doc)
+      // A shell that failed validation MUST be retried: the blob is fresh but
+      // the derived JSON is stale, and a reset reseeds from that JSON. Leaving
+      // the doc clean here is how an accepted page silently disappears.
+      if (derived === 'invalid') entry.dirty = true
     } catch (err) {
       entry.dirty = true // retry on the next schedule
       console.error(`[collab] persist failed for ${docId}:`, err)
@@ -275,6 +295,11 @@ export function createCollabRelay(
     if (inFlight) return inFlight
 
     const open = (async () => {
+      // Never step on a doc that is being torn down: an eviction still has a
+      // persist in flight (whose blob write would resurrect state a reset is
+      // deleting), and a reset has not finished deleting the blob we would
+      // otherwise hydrate from — keeping the dead generation alive.
+      await settling.get(docId)
       const doc = new Y.Doc()
       const blob = await getCollabDocumentState(db, docId)
       if (blob) {
@@ -310,17 +335,33 @@ export function createCollabRelay(
   async function evict(docId: string, opts2: { persist: boolean }): Promise<void> {
     const entry = entries.get(docId)
     if (!entry) return
-    if (entry.persistTimer) {
-      clearTimeout(entry.persistTimer)
-      entry.persistTimer = null
-    }
-    if (opts2.persist) {
-      entry.persistChain = entry.persistChain.then(() => persistNow(docId))
+    const run = (async () => {
+      if (entry.persistTimer) {
+        clearTimeout(entry.persistTimer)
+        entry.persistTimer = null
+      }
+      // Await the chain even when NOT persisting: a persist already past its
+      // `dirty` check would otherwise resolve after `resetDocs` deleted the
+      // row and re-insert the dead blob via upsert, undoing the reset.
+      entry.persistChain = entry.persistChain.then(() =>
+        opts2.persist ? persistNow(docId) : undefined,
+      )
       await entry.persistChain
+      // An update may have landed during that await and scheduled a new timer.
+      if (entry.persistTimer) {
+        clearTimeout(entry.persistTimer)
+        entry.persistTimer = null
+      }
+      entry.detachUpdateHandler()
+      entry.doc.destroy()
+      entries.delete(docId)
+    })()
+    settling.set(docId, run.then(() => undefined, () => undefined))
+    try {
+      await run
+    } finally {
+      settling.delete(docId)
     }
-    entry.detachUpdateHandler()
-    entry.doc.destroy()
-    entries.delete(docId)
   }
 
   async function resetDocs(docIds: readonly string[]): Promise<void> {
@@ -329,10 +370,48 @@ export function createCollabRelay(
     // The site doc reseeds from the DB on next bind — force a full roster
     // sweep on its first persist afterwards.
     if (affected.includes(SITE_DOC_ID)) lastSweptRostersKey = null
+
+    // Flush the docs we are NOT resetting first. The site doc reseeds its
+    // rosters from `listDataRowIdSlugs`, so a page whose row-doc JSON is still
+    // inside the debounce window would not exist in the DB, would vanish from
+    // the reseeded roster, and would then be soft-deleted by the next sweep.
+    // The reset docs themselves are deliberately NOT flushed: the out-of-relay
+    // write that triggered the reset already committed and must win.
+    for (const docId of [...entries.keys()]) {
+      if (affected.includes(docId)) continue
+      const entry = entries.get(docId)
+      if (!entry?.dirty) continue
+      entry.persistChain = entry.persistChain.then(() => persistNow(docId))
+      await entry.persistChain
+    }
+
+    const heldRefs = new Map<string, number>()
     for (const docId of affected) {
+      const refs = entries.get(docId)?.refs ?? 0
+      if (refs > 0) heldRefs.set(docId, refs)
       await evict(docId, { persist: false })
     }
-    await deleteCollabDocuments(db, affected)
+
+    // Hold the door shut across the delete: an in-flight frame from a still
+    // connected editor would otherwise re-open the doc from the not-yet-deleted
+    // blob and the delete would land on a live doc.
+    const deletion = deleteCollabDocuments(db, affected).then(() => undefined)
+    for (const docId of affected) settling.set(docId, deletion)
+    try {
+      await deletion
+    } finally {
+      for (const docId of affected) settling.delete(docId)
+    }
+
+    // Re-register the ref counts the eviction dropped. Without this the next
+    // `openDoc` starts at 0 while N connections still list the doc in
+    // `boundDocs`, so the first close drives refs negative and evicts a doc
+    // other editors are actively writing.
+    for (const [docId, refs] of heldRefs) {
+      await openDoc(docId)
+      const reopened = entries.get(docId)
+      if (reopened) reopened.refs = refs
+    }
     for (const docId of affected) {
       for (const listener of resetListeners) listener(docId)
     }
@@ -376,9 +455,17 @@ export function createCollabRelay(
   return {
     openDoc,
     retain: async (docId) => {
-      const doc = await openDoc(docId)
-      entries.get(docId)!.refs += 1
-      return doc
+      // A reset can evict between `openDoc` resolving and the registry read,
+      // which would both crash on a non-null assertion and hand back a doc
+      // that was just destroyed. Re-open until the doc we return is the one
+      // whose refs we incremented.
+      for (;;) {
+        await openDoc(docId)
+        const entry = entries.get(docId)
+        if (!entry) continue
+        entry.refs += 1
+        return entry.doc
+      }
     },
     release: (docId) => {
       const entry = entries.get(docId)
