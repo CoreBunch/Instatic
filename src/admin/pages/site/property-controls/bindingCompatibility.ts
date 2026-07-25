@@ -48,7 +48,12 @@ export const BINDING_COMPATIBILITY: Record<PropertyControlKind, readonly DataFie
   // to a data field.
   svg:      [],
   number:   ['number'],
-  url:      ['url', 'email'],
+  // url binds in token mode: the picker inserts `{source.field}` into the href
+  // string, so any scalar that reads as a path segment is a legitimate source —
+  // linking a loop row to its template page means composing the URL out of the
+  // row's `slug` (a plain text field). richText is excluded (markup is not a
+  // URL fragment), as are multiSelect (comma-joined) and boolean.
+  url:      ['url', 'email', 'text', 'longText', 'select', 'relation', 'number', 'date', 'dateTime'],
   color:    [],
   toggle:   ['boolean'],
   select:   [],

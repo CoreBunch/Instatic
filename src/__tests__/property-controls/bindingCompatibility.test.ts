@@ -106,8 +106,16 @@ describe('isFieldBindable', () => {
     expect(isFieldBindable('url', metaField('f', 'email'))).toBe(true)
   })
 
+  it('url + text → true (a slug composes into an href token)', () => {
+    expect(isFieldBindable('url', metaField('f', 'text'))).toBe(true)
+  })
+
   it('url + boolean → false', () => {
     expect(isFieldBindable('url', metaField('f', 'boolean'))).toBe(false)
+  })
+
+  it('url + richText → false (markup is not a URL fragment)', () => {
+    expect(isFieldBindable('url', metaField('f', 'richText'))).toBe(false)
   })
 
   it('group + text → false (group has no bindings)', () => {

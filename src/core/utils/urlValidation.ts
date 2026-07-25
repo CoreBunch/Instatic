@@ -12,7 +12,8 @@
  * scheme is — they differ only in which schemes they accept.
  *
  * Allowlists:
- *   isValidUrl()       — https, http, mailto
+ *   isValidUrl()       — https, http, mailto, plus every schemeless (relative)
+ *                        form, matching what `isSafeUrl()` lets through
  *   isValidImageUrl()  — https, http, data:image/* (inline base64 images)
  */
 
@@ -44,15 +45,31 @@ function parses(v: string): boolean {
  * Returns true if `v` is a safe general-purpose URL for storing in site
  * props (e.g. a link href, a button href).
  *
- * Allows:  https:, http:, mailto:
- * Rejects: javascript:, data:, ftp:, blob:, custom schemes, schemeless values,
- *          and malformed absolute URLs (`http://`, `https://exa mple.com`)
+ * Allows:  https:, http:, mailto:, and every schemeless (relative) reference —
+ *          `/a`, `./a`, `../a`, `a.html`, `#anchor`, `?q=1`, `//cdn/x` — plus
+ *          values carrying `{source.field}` tokens the publisher interpolates
+ *          (`/blog/{currentEntry.slug}`)
+ * Rejects: javascript:, data:, ftp:, blob:, custom schemes, malformed absolute
+ *          URLs (`http://`, `https://exa mple.com`), and any value containing
+ *          whitespace
+ *
+ * Relative references are accepted because `isSafeUrl()` — the enforcement gate
+ * this one is the input-side counterpart to — accepts every relative form, and
+ * internal links, in-page anchors and data-token hrefs are all schemeless by
+ * nature. Rejecting them here left those values unsavable in the editor even
+ * though the publisher would happily emit them.
  */
 export function isValidUrl(v: string): boolean {
   if (!v) return true
   const scheme = urlScheme(v)
-  if (scheme !== 'https:' && scheme !== 'http:' && scheme !== 'mailto:') return false
-  return parses(v)
+  if (scheme !== null) {
+    if (scheme !== 'https:' && scheme !== 'http:' && scheme !== 'mailto:') return false
+    return parses(v)
+  }
+  // Schemeless — a relative reference. `new URL()` cannot parse one without a
+  // base, and there is no scheme to decide on, so the only well-formedness
+  // check left is whitespace, which is always a typo in a URL.
+  return !/\s/.test(v)
 }
 
 /**
