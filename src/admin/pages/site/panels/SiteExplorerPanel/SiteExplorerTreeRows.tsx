@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { FolderGlyphIcon } from 'pixel-art-icons/icons/folder-glyph'
 import { Button } from '@ui/components/Button'
@@ -16,7 +16,11 @@ import {
 import type { SiteExplorerSectionId } from '@core/page-tree'
 import type { SiteExplorerTreeFolder, SiteExplorerTreeItem } from './siteExplorerModel'
 import type { SiteExplorerDragData, SiteExplorerDropData, SiteExplorerDropPosition } from './useSiteExplorerDnd'
+import { SiteExplorerHoverPreview } from './SiteExplorerHoverPreview'
 import styles from './SiteExplorerPanel.module.css'
+
+const HOVER_PREVIEW_OPEN_DELAY_MS = 360
+const HOVER_PREVIEW_CLOSE_DELAY_MS = 180
 
 interface ExplorerFolderRowProps {
   folder: SiteExplorerTreeFolder
@@ -183,6 +187,9 @@ export function ExplorerItemRow<TTarget>({
   onKeyDown,
   dropPosition,
 }: ExplorerItemRowProps<TTarget>) {
+  const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null)
+  const previewOpenTimerRef = useRef<number | null>(null)
+  const previewCloseTimerRef = useRef<number | null>(null)
   const draggable = useDraggable({
     id: `site-explorer-drag-item:${sectionId}:${item.id}`,
     disabled: item.pinned === true || renameActive,
@@ -212,71 +219,131 @@ export function ExplorerItemRow<TTarget>({
     droppable.setNodeRef(node)
   }
 
+  function clearPreviewOpenTimer() {
+    if (previewOpenTimerRef.current === null) return
+    window.clearTimeout(previewOpenTimerRef.current)
+    previewOpenTimerRef.current = null
+  }
+
+  function clearPreviewCloseTimer() {
+    if (previewCloseTimerRef.current === null) return
+    window.clearTimeout(previewCloseTimerRef.current)
+    previewCloseTimerRef.current = null
+  }
+
+  function closePreview() {
+    clearPreviewOpenTimer()
+    clearPreviewCloseTimer()
+    setPreviewAnchor(null)
+  }
+
+  function schedulePreviewOpen(event: MouseEvent<HTMLElement>) {
+    if (!item.preview || renameActive || draggable.isDragging) return
+    clearPreviewOpenTimer()
+    clearPreviewCloseTimer()
+    const anchor = event.currentTarget
+    previewOpenTimerRef.current = window.setTimeout(() => {
+      setPreviewAnchor(anchor)
+      previewOpenTimerRef.current = null
+    }, HOVER_PREVIEW_OPEN_DELAY_MS)
+  }
+
+  function schedulePreviewClose() {
+    clearPreviewOpenTimer()
+    clearPreviewCloseTimer()
+    previewCloseTimerRef.current = window.setTimeout(() => {
+      setPreviewAnchor(null)
+      previewCloseTimerRef.current = null
+    }, HOVER_PREVIEW_CLOSE_DELAY_MS)
+  }
+
+  useEffect(() => () => {
+    if (previewOpenTimerRef.current !== null) {
+      window.clearTimeout(previewOpenTimerRef.current)
+    }
+    if (previewCloseTimerRef.current !== null) {
+      window.clearTimeout(previewCloseTimerRef.current)
+    }
+  }, [])
+
   return (
-    <TreeRow
-      ref={setRowRef}
-      depth={depth}
-      selected={selected || item.active}
-      dragging={draggable.isDragging}
-      className={cn(
-        dropPosition === 'before' && treeDropStyles.dropBefore,
-        dropPosition === 'after' && treeDropStyles.dropAfter,
-        dropPosition === 'inside' && treeDropStyles.dropInside,
-      )}
-      data-drop-position={dropPosition ?? undefined}
-      {...(item.pinned || renameActive ? undefined : draggable.attributes)}
-      {...(item.pinned || renameActive ? undefined : draggable.listeners)}
-      role="treeitem"
-      aria-label={item.ariaLabel}
-      aria-selected={selected}
-      aria-level={depth + 1}
-      data-pinned={item.pinned ? 'true' : undefined}
-    >
-      {renameActive ? (
-        <>
-          <TreeChevron visible={false} />
-          <TreeIconSlot icon={item.icon} iconSize={12} />
-          <InlineRenameInput
-            value={renameValue}
-            ariaLabel={`Rename ${item.label}`}
-            onCommit={onCommitRename}
-            onCancel={onCancelRename}
-          />
-        </>
-      ) : (
-        <Button
-          variant="ghost"
-          size="sm"
-          align="start"
-          className={styles.treeRowButton}
-          aria-label={item.ariaLabel}
-          aria-current={item.active ? 'page' : undefined}
-          onClick={(event) => onOpen(item, event)}
-          onContextMenu={(event) => onContextMenu(item, event)}
-          onDoubleClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            onRename(item)
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'F2') {
+    <>
+      <TreeRow
+        ref={setRowRef}
+        depth={depth}
+        selected={selected || item.active}
+        dragging={draggable.isDragging}
+        className={cn(
+          dropPosition === 'before' && treeDropStyles.dropBefore,
+          dropPosition === 'after' && treeDropStyles.dropAfter,
+          dropPosition === 'inside' && treeDropStyles.dropInside,
+        )}
+        data-drop-position={dropPosition ?? undefined}
+        {...(item.pinned || renameActive ? undefined : draggable.attributes)}
+        {...(item.pinned || renameActive ? undefined : draggable.listeners)}
+        role="treeitem"
+        aria-label={item.ariaLabel}
+        aria-selected={selected}
+        aria-level={depth + 1}
+        data-pinned={item.pinned ? 'true' : undefined}
+        onMouseEnter={schedulePreviewOpen}
+        onMouseLeave={schedulePreviewClose}
+      >
+        {renameActive ? (
+          <>
+            <TreeChevron visible={false} />
+            <TreeIconSlot icon={item.icon} iconSize={12} />
+            <InlineRenameInput
+              value={renameValue}
+              ariaLabel={`Rename ${item.label}`}
+              onCommit={onCommitRename}
+              onCancel={onCancelRename}
+            />
+          </>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            align="start"
+            className={styles.treeRowButton}
+            aria-label={item.ariaLabel}
+            aria-current={item.active ? 'page' : undefined}
+            onClick={(event) => onOpen(item, event)}
+            onContextMenu={(event) => onContextMenu(item, event)}
+            onDoubleClick={(event) => {
               event.preventDefault()
               event.stopPropagation()
               onRename(item)
-              return
-            }
-            onKeyDown(item, event)
-          }}
-        >
-          <TreeChevron visible={false} />
-          <TreeIconSlot icon={item.icon} iconSize={12} />
-          <TreeLabelGroup>
-            <TreeLabel>{item.label}</TreeLabel>
-            {item.meta && <TreeMeta>{item.meta}</TreeMeta>}
-          </TreeLabelGroup>
-        </Button>
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'F2') {
+                event.preventDefault()
+                event.stopPropagation()
+                onRename(item)
+                return
+              }
+              onKeyDown(item, event)
+            }}
+          >
+            <TreeChevron visible={false} />
+            <TreeIconSlot icon={item.icon} iconSize={12} />
+            <TreeLabelGroup>
+              <TreeLabel>{item.label}</TreeLabel>
+              {item.meta && <TreeMeta>{item.meta}</TreeMeta>}
+            </TreeLabelGroup>
+          </Button>
+        )}
+      </TreeRow>
+      {previewAnchor && item.preview && (
+        <SiteExplorerHoverPreview
+          anchor={previewAnchor}
+          preview={item.preview}
+          onMouseEnter={clearPreviewCloseTimer}
+          onMouseLeave={schedulePreviewClose}
+          onRequestClose={closePreview}
+        />
       )}
-    </TreeRow>
+    </>
   )
 }
 

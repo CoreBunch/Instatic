@@ -1,4 +1,5 @@
 import type { IconComponent } from 'pixel-art-icons/types'
+import type { Page } from '@core/page-tree'
 import type {
   StructuralExplorerRowOrder,
   StructuralExplorerSection,
@@ -17,6 +18,12 @@ export interface SiteExplorerTreeItem<TTarget> {
   pinned?: boolean
   ariaLabel: string
   target: TTarget
+  preview?: SiteExplorerItemPreview
+}
+
+export interface SiteExplorerItemPreview {
+  page: Page
+  kindLabel: 'Page' | 'Template' | 'Component'
 }
 
 export interface SiteExplorerTreeFolder {
