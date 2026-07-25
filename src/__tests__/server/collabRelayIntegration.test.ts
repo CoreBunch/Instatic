@@ -604,4 +604,41 @@ describe('collab relay integration (real server, real sockets)', () => {
     await waitFor(() => pongs.includes(FRAME_PONG))
     expect(client.status()).toBe('connected')
   })
+
+  // The mirror of "a reconnecting client catches up on edits it missed": that
+  // test proves server → client. This proves client → server, which is the
+  // direction that was silently dropping work.
+  it('recovers edits authored while the socket was down, on reconnect', async () => {
+    const stack = await startStack()
+    const docId = `page:${stack.homeId}`
+
+    const client = connectClient(stack)
+    const bound = client.bind(docId)
+    await bound.whenSynced
+    const rootId = treeMap(bound.doc).get('rootNodeId') as string
+
+    // Kill the transport, then edit. The frame is dropped on the floor —
+    // `sendFrame` cannot reach a closed socket.
+    client.lastSocket()!.close()
+    await waitFor(() => client.status() !== 'connected')
+    setNodeLabel(bound.doc, rootId, 'Written while offline')
+
+    // The relay has NOT seen it.
+    const { doc: beforeReconnect } = await stack.relay.openDoc(docId)
+    expect(nodeLabel(beforeReconnect, rootId)).not.toBe('Written while offline')
+
+    // Reconnect. The server asks what this client holds, and the client's
+    // existing readSyncMessage answers with exactly the missing delta.
+    client.reconnectNow()
+    await waitFor(async () => {
+      const { doc: authoritative } = await stack.relay.openDoc(docId)
+      return nodeLabel(authoritative, rootId) === 'Written while offline'
+    })
+
+    // And it reaches storage, not just memory.
+    await waitFor(async () => {
+      const row = await getDataRow(stack.harness.db, stack.homeId)
+      return Boolean(row && pageFromRow(row).nodes[rootId]?.label === 'Written while offline')
+    })
+  })
 })

@@ -167,6 +167,12 @@ export interface CollabSocketData {
   capabilities: readonly CoreCapability[]
   /** Doc ids this connection retained in the relay (released on close). */
   boundDocs: Set<string>
+  /**
+   * Docs this connection has already been asked to hand over its state for.
+   * Per-connection by design: a reconnect brings a fresh socket, which is
+   * exactly when the recovery probe must run again.
+   */
+  probedDocs: Set<string>
   /** Awareness clientIDs contributed by this connection. */
   awarenessClients: Set<number>
 }
@@ -207,6 +213,7 @@ export async function handleCollabSocketUpgrade(
       fullSiteWriter,
       capabilities: user.capabilities,
       boundDocs: new Set(),
+      probedDocs: new Set(),
       awarenessClients: new Set(),
     },
   })
@@ -390,6 +397,28 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         }
         Y.applyUpdate(doc, update, ws)
         return
+      }
+
+      // RECOVERY — ask a full writer what IT holds that we do not.
+      //
+      // The client's step1 only pulls the server's delta; nothing ever pulls
+      // the client's. So anything committed locally while the socket was down
+      // (or black-holed, before liveness noticed) never reached the relay,
+      // even after reconnect. y-protocols already answers a step1 with exactly
+      // the missing delta, so originating one here needs no client change at
+      // all.
+      //
+      // Gated on `fullSiteWriter` deliberately. A partial writer's reply is a
+      // single update carrying its whole missing state, and
+      // `validateGuardedUpdate` accepts or rejects that as ONE unit — a single
+      // forbidden op inside it would discard every legitimate edit alongside.
+      // Losing their recovery window is bad; silently destroying the rest of
+      // their session to attempt it is worse.
+      if (messageType === SYNC_STEP_1 && ws.data.fullSiteWriter && !ws.data.probedDocs.has(frame.docId)) {
+        ws.data.probedDocs.add(frame.docId)
+        const probe = encoding.createEncoder()
+        syncProtocol.writeSyncStep1(probe, doc)
+        ws.send(encodeCollabFrame(frame.docId, generation, FRAME_SYNC, encoding.toUint8Array(probe)))
       }
 
       const decoder = decoding.createDecoder(frame.payload)
