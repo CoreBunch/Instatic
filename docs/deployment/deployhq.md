@@ -14,24 +14,24 @@ which is how you run the CMS server itself.
 
 ## Site compatibility — read first
 
-Serving the published output from a **different origin than the CMS** works cleanly
-for fully static sites, but two Instatic behaviours need attention first:
+The `published/current` slot is self-contained HTML, CSS, and runtime assets (plus a
+`404.html`). Two things it references still resolve **against the CMS origin**, so
+serving the slot from a different origin needs a plan for them:
 
-- **Dynamic "hole" nodes.** Pages that contain request-dependent nodes export as a
-  shell whose runtime script fetches `/_instatic/hole/<nodeId>` **from the page's own
-  origin** (`server/publish/holeRuntime.ts`). On a separate static host that endpoint
-  does not exist, so the placeholder never resolves. Use this pattern only if your
-  site is hole-free, **or** proxy `/_instatic/hole/*` (and `/_instatic/hole-runtime.js`)
-  from the public origin back to the CMS, forwarding the request cookies the hole
-  depends on.
-- **Local uploads live outside the publish slot.** The slot under `published/current`
-  is HTML plus generated CSS/runtime assets; media stays referenced as raw
-  `/uploads/…` paths (`server/publish/mediaPrefetch.ts`). Those files are **not**
-  inside `published/current`, so you must ship them too or route `/uploads/*` to the
-  CMS (Step 1 and Step 3/4 below).
-
-If your site uses external object storage for media and has no dynamic holes, both
-caveats fall away.
+- **Media / uploads.** With the default local adapter, media is served at
+  `/uploads/<path>` from the CMS `UPLOADS_DIR` (`server/router.ts` strips `/uploads`
+  and resolves against that dir), and plugin bundles live under `/uploads/plugins/…`.
+  Object-storage adapters that use `servingMode: 'signed-redirect'` instead serve
+  `/_instatic/media/<adapterId>/<path>` via CMS-generated signed redirects. In both
+  cases those URLs 404 on a separate origin unless you **route them to the CMS**
+  (Step 3/4). Only a `public-url` object-storage adapter — whose media already lives
+  on its own public CDN URL — removes this entirely.
+- **Dynamic "hole" nodes.** Pages with request-dependent nodes export as a shell
+  whose runtime fetches `/_instatic/hole/<nodeId>` **from the page's own origin**
+  (`server/publish/holeRuntime.ts`). On a separate static host that endpoint does not
+  exist, so the placeholder never resolves. Use this pattern only if your site is
+  hole-free, **or** proxy `/_instatic/hole/*` (and `/_instatic/hole-runtime.js`) from
+  the public origin to the CMS, forwarding the request cookies the hole depends on.
 
 ## TL;DR
 
@@ -40,58 +40,58 @@ caveats fall away.
 | Your own web server | You run nginx/Caddy on a VPS; the robust default | Native (`try_files … .html`) | [SSH/SFTP deployment](https://www.deployhq.com/features/ssh-deployment?utm_source=instatic-docs&utm_medium=referral&utm_campaign=instatic-integration&utm_content=ssh-deployment-link) |
 | S3 / R2 / Spaces + CDN | Lowest ops, CDN-served | Requires a CDN rewrite (below) | [Static hosting](https://www.deployhq.com/features/static-hosting?utm_source=instatic-docs&utm_medium=referral&utm_campaign=instatic-integration&utm_content=static-hosting-link) |
 
-Both deploy from the same Git repository of published files and both support
-post-deploy hooks (for example, purging a CDN cache).
+Both deploy the `published/current` slot from a Git repository, route media to the
+CMS, and support post-deploy hooks (for example, purging a CDN cache).
 
 ## How it fits
 
 ```txt
-Instatic (private)              Git repo                    Public host
-┌──────────────────────┐       ┌────────────────┐          ┌────────────────────┐
-│ publish →            │ push  │ published/     │ DeployHQ  │ web server (nginx) │
-│   published/current  ├──────▶│ current + any  ├─────────▶│   or bucket + CDN  │
-│ UPLOADS_DIR (media)  │       │ /uploads media │          │                    │
-└──────────────────────┘       └────────────────┘          └────────────────────┘
+Instatic (private CMS)            Git repo             Public host
+┌────────────────────┐   push    ┌────────────┐ DeployHQ ┌──────────────────────┐
+│ published/current  ├──────────▶│ deploy repo├─────────▶│ web server / bucket  │
+│ UPLOADS_DIR media  │           └────────────┘          │  + CDN               │
+└─────────┬──────────┘                                   └───────────┬──────────┘
+          │              /uploads/* and /_instatic/media/*           │
+          └───────────────────  routed back to CMS  ◀────────────────┘
 ```
 
-DeployHQ deploys **from Git**, so the glue you provide is assembling the deploy
-artifact — the publish slot plus the public uploads it references — into a
-repository.
+DeployHQ deploys the publish slot; media stays on the CMS and is reached by routing
+`/uploads/*` (and `/_instatic/media/*` for signed-redirect adapters) at the public
+origin.
 
 ## Prerequisites
 
 - An Instatic instance that publishes to `published/current` (any of the
   [deployment](README.md) targets).
-- You know whether the site uses dynamic hole nodes (see Site compatibility).
-- A Git repository (GitHub, GitLab, Bitbucket, or self-hosted) to hold the deploy
-  artifact. Keep it separate from your application repo.
+- You know whether the site uses dynamic hole nodes, and which media adapter it uses
+  (see Site compatibility).
+- A Git repository (GitHub, GitLab, Bitbucket, or self-hosted) to hold the publish
+  slot. Keep it separate from your application repo.
 - A DeployHQ account and one of:
   - a server you can reach over SSH/SFTP, or
   - an S3-compatible bucket (AWS S3, Cloudflare R2, DigitalOcean Spaces).
 
-## Step 1 — Assemble the deploy artifact
+## Step 1 — Push the publish slot to Git
 
-Sync the publish slot **and the public uploads it references** into a clean deploy
-repository, then push. On the box that runs Instatic (or a CI job with access to the
-CMS `UPLOADS_DIR`):
+Sync the slot into a clean deploy repository and push. Exclude `.git` so the
+`--delete` pass does not wipe the repository's own metadata. On the box that runs
+Instatic (or a CI job with access to the CMS `UPLOADS_DIR`):
 
 ```bash
 # one-time
 git clone git@github.com:you/your-site-published.git deploy && cd deploy
 
 # each publish
-rsync -a --delete "$UPLOADS_DIR/published/current/" ./            # pages, CSS, runtime, 404.html
-rsync -a          "$UPLOADS_DIR/uploads/"           ./uploads/    # media referenced as /uploads/...
+rsync -a --delete --exclude='.git' "$UPLOADS_DIR/published/current/" ./
 git add -A
 git commit -m "Publish $(date -u +%FT%TZ)" || echo "nothing changed"
 git push
 ```
 
-The exported slot includes a `404.html` (the Netlify/GitHub-Pages convention) so
-hosts that fall back on 404 keep working. Adjust the `uploads/` source to wherever
-your CMS stores media; the goal is that every `/uploads/…` path the pages reference
-resolves at the public origin. If you'd rather not copy media at all, skip the second
-`rsync` and instead route `/uploads/*` to the CMS at the public origin (Step 3/4).
+The slot includes a `404.html` (the Netlify/GitHub-Pages convention) so hosts that
+fall back on 404 keep working. Media is **not** copied here — it is served from the
+CMS via routing (Step 3/4), which avoids shipping non-public objects from
+`UPLOADS_DIR`.
 
 > Want to build assets on the way out (minify, fingerprint, generate a sitemap)?
 > Add those steps to a
@@ -112,8 +112,8 @@ server in DeployHQ with the deploy path your web server serves (for example
 `/var/www/site`). Deployments are atomic — the new release is assembled and swapped
 in, so visitors never see a half-written directory.
 
-A web server resolves Instatic's `about.html` / `posts/hello.html` layout natively.
-With nginx:
+A web server resolves Instatic's `about.html` / `posts/hello.html` layout natively
+and can proxy media to the CMS. With nginx:
 
 ```txt
 location / {
@@ -121,12 +121,13 @@ location / {
 }
 error_page 404 /404.html;
 
-# only if you did NOT copy media in Step 1:
-# location /uploads/ { proxy_pass https://cms.internal; }
+# route media to the CMS (skip if you use a public-url object-storage adapter)
+location /uploads/         { proxy_pass https://cms.internal; }
+location /_instatic/media/ { proxy_pass https://cms.internal; }   # signed-redirect adapters
 ```
 
 Caddy: `try_files {path} {path}.html {path}/index.html` with `handle_errors` serving
-`/404.html`.
+`/404.html`, plus `reverse_proxy /uploads/* /_instatic/media/* https://cms.internal`.
 
 ## Step 4 — Or deploy to a bucket + CDN
 
@@ -135,16 +136,14 @@ Configure a
 destination pointing at your S3, R2, or Spaces bucket, front it with a CDN, and point
 your public domain at the CDN. DeployHQ uploads only the changed files.
 
-Buckets do **exact object-key lookup**, so extensionless routes (`/about`) will not
-resolve against `about.html` on their own. Add a CDN rewrite (CloudFront Function,
+Buckets do **exact object-key lookup**, so add a CDN rewrite (CloudFront Function,
 Cloudflare Worker, or equivalent):
 
 - `/` and paths ending `/` → append `index.html`
 - any other extensionless path → append `.html`
 - unmatched → serve `404.html`
-
-Media copied in Step 1 lands under `uploads/` in the bucket; otherwise add a CDN rule
-routing `/uploads/*` to the CMS origin.
+- `/uploads/*` and `/_instatic/media/*` → route to the CMS origin (skip only for a
+  `public-url` object-storage adapter, whose media is already on a public URL)
 
 ## Step 5 — Post-deploy hooks (optional)
 
@@ -168,9 +167,8 @@ instant pointer swap, not a re-upload.
   CMS configures the origins its CSRF check trusts (where you reach the admin) — it is
   not the public URL of the static site. After the first publish, open the deployed
   site and confirm links, images, and any sitemap resolve against the public host.
-- **Dynamic holes and uploads** are the two things that break silently across origins
-  — re-read Site compatibility if a page renders but a region stays blank or an image
-  404s.
+- **Media and dynamic holes** are what break silently across origins — re-read Site
+  compatibility if an image 404s or a region stays blank.
 
 ## Troubleshooting
 
@@ -178,7 +176,7 @@ instant pointer swap, not a re-upload.
 |---|---|
 | Nothing deploys after publish | Step 1 actually committed and pushed; DeployHQ is watching that branch |
 | Pages 404 on a bucket, homepage works | Extensionless routes need the Step 4 CDN rewrite to `.html` |
-| Images / fonts 404 | Public `/uploads/…` objects not shipped (Step 1) or not routed to the CMS |
+| Images / fonts / plugin assets 404 | `/uploads/*` (and `/_instatic/media/*` for signed-redirect) not routed to the CMS |
 | A region renders blank / stuck on placeholder | Dynamic hole node calling `/_instatic/hole/*` on an origin with no CMS — see Site compatibility |
 | Old pages still served | CDN cache not purged — add the Step 5 post-deploy hook |
 
