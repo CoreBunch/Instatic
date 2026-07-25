@@ -64,6 +64,19 @@ import type { EditorStoreApi } from '@site/store/types'
 import { pruneCanvasSelectionDraft } from '../selectionSlice'
 import type { Awareness } from 'y-protocols/awareness'
 import type { CollabProvider } from '@site/collab/collabProvider'
+import { pushToast } from '@ui/components/Toast'
+import type { ResetReason } from '@core/collab'
+
+/**
+ * What the user is told when the server discards a doc they were editing.
+ * `rewritten` never reaches here — it is the routine out-of-relay reseed.
+ */
+const RESET_REASON_COPY: Record<ResetReason, string> = {
+  rewritten: '',
+  stale: 'This document was rebuilt while you were disconnected, so unsent changes were discarded. The latest version is now loaded.',
+  refused: 'Your role does not allow that change, so it was undone.',
+  oversize: 'That change was too large to sync in one step and was undone. Try making it in smaller pieces.',
+}
 
 interface ManagedDoc {
   doc: Y.Doc
@@ -617,9 +630,26 @@ function bindThroughProvider(docIds: readonly string[]): void {
 export function connectCollabProvider(next: CollabProvider): void {
   provider = next
   detachProviderReset?.()
-  detachProviderReset = next.onReset((docId) => {
-    // The server dropped this doc (out-of-relay JSON rewrite): rebind and
-    // let the fresh server seed re-project into the store.
+  detachProviderReset = next.onReset((docId, reason) => {
+    // 'rewritten' is the routine out-of-relay reseed — another admin saved a
+    // setting, a plugin installed, the data workspace edited a row. Nothing of
+    // this user's was lost, so saying anything would be noise. The other three
+    // mean work of theirs was discarded, and they must be told.
+    if (reason !== 'rewritten') {
+      pushToast({
+        kind: 'error',
+        title: 'A change was reverted',
+        body: RESET_REASON_COPY[reason],
+      })
+    }
+    // The doc's undo history belongs to the lineage that just died: its
+    // UndoManager is rebuilt empty below, so any routing entry still naming
+    // this doc would make Cmd+Z a silent no-op that consumes a step.
+    undoRoute = undoRoute.map((group) => group.filter((id) => id !== docId)).filter((g) => g.length > 0)
+    redoRoute = redoRoute.map((group) => group.filter((id) => id !== docId)).filter((g) => g.length > 0)
+    syncUndoFlags()
+    // The server dropped this doc: rebind and let the fresh server seed
+    // re-project into the store.
     const rebound = next.bind(docId)
     const gate = adoptProviderDoc(docId, rebound.doc)
     gate.synced = rebound.synced

@@ -1200,4 +1200,15 @@ export const sqliteMigrations: Migration[] = [
       );
     `,
   },
+  {
+    // Per-doc CRDT lineage id. A reset deletes the blob and the doc reseeds at
+    // the fixed SEED_CLIENT_ID, so the new lineage reuses the old one's struct
+    // coordinates and a client that missed the reset would hand back structs
+    // from a dead lineage at live coordinates. Rows written by 022 carry '' and
+    // have a generation minted on their next open (see relay.openDoc).
+    id: '023_collab_document_generation',
+    sql: `
+      alter table collab_documents add column generation text not null default '';
+    `,
+  },
 ]

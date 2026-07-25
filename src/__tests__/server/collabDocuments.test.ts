@@ -17,12 +17,12 @@ describe('collab_documents repository', () => {
       expect(await getCollabDocumentState(db, 'page:x')).toBeNull()
 
       const first = new Uint8Array([1, 2, 3, 250])
-      await putCollabDocumentState(db, 'page:x', first)
-      expect([...(await getCollabDocumentState(db, 'page:x'))!]).toEqual([1, 2, 3, 250])
+      await putCollabDocumentState(db, 'page:x', first, 'gen-1')
+      expect([...(await getCollabDocumentState(db, 'page:x'))!.state]).toEqual([1, 2, 3, 250])
 
       const second = new Uint8Array([9, 9])
-      await putCollabDocumentState(db, 'page:x', second)
-      expect([...(await getCollabDocumentState(db, 'page:x'))!]).toEqual([9, 9])
+      await putCollabDocumentState(db, 'page:x', second, 'gen-1')
+      expect([...(await getCollabDocumentState(db, 'page:x'))!.state]).toEqual([9, 9])
 
       const { rows } = await db<{ seq: number }>`
         select seq from collab_documents where doc_id = ${'page:x'}
@@ -36,8 +36,8 @@ describe('collab_documents repository', () => {
   it('deleteCollabDocuments removes exactly the named docs', async () => {
     const { db, cleanup } = await createTestDb()
     try {
-      await putCollabDocumentState(db, 'page:a', new Uint8Array([1]))
-      await putCollabDocumentState(db, 'page:b', new Uint8Array([2]))
+      await putCollabDocumentState(db, 'page:a', new Uint8Array([1]), 'gen-1')
+      await putCollabDocumentState(db, 'page:b', new Uint8Array([2]), 'gen-1')
       await deleteCollabDocuments(db, ['page:a', 'page:missing'])
       expect(await getCollabDocumentState(db, 'page:a')).toBeNull()
       expect(await getCollabDocumentState(db, 'page:b')).not.toBeNull()

@@ -8,7 +8,9 @@
  *     clients can never build divergent initial histories). A doc with
  *     neither blob nor row starts empty: that is the client-created-row
  *     flow, whose content arrives as ordinary updates.
- *   - `applyUpdate` merges a client update and schedules a debounced persist.
+ *   - every doc carries a `generation` — its CRDT lineage id, minted on seed
+ *     and returned with the doc so the socket can refuse frames from a dead
+ *     lineage (see @core/collab/protocol).
  *   - every local doc update fans out to `subscribeUpdates` listeners (the
  *     socket layer broadcasts to the other connections).
  *   - persistence writes BOTH the CRDT blob (source of truth for editing)
@@ -28,6 +30,7 @@
  * scope, documented in docs/features/site-shell.md).
  */
 import * as Y from 'yjs'
+import { nanoid } from 'nanoid'
 import {
   encodeCollabDocId,
   parseCollabDocId,
@@ -83,6 +86,8 @@ const TABLE_KIND: Record<string, Exclude<CollabDocKind, 'site'>> = {
 
 interface RelayEntry {
   doc: Y.Doc
+  /** This doc's CRDT lineage id — see @core/collab/protocol. */
+  generation: string
   refs: number
   dirty: boolean
   persistTimer: ReturnType<typeof setTimeout> | null
@@ -93,14 +98,24 @@ interface RelayEntry {
 
 type DerivedWrite = 'written' | 'incomplete' | 'invalid'
 
-export type RelayUpdateListener = (docId: string, update: Uint8Array, origin: unknown) => void
+export type RelayUpdateListener = (
+  docId: string,
+  update: Uint8Array,
+  origin: unknown,
+  generation: string,
+) => void
 export type RelayResetListener = (docId: string) => void
 
+/** A doc plus the CRDT lineage the caller must stamp on its frames. */
+export interface RelayDoc {
+  doc: Y.Doc
+  generation: string
+}
+
 export interface CollabRelay {
-  openDoc(docId: string): Promise<Y.Doc>
-  retain(docId: string): Promise<Y.Doc>
+  openDoc(docId: string): Promise<RelayDoc>
+  retain(docId: string): Promise<RelayDoc>
   release(docId: string): void
-  applyUpdate(docId: string, update: Uint8Array, origin: unknown): Promise<void>
   subscribeUpdates(listener: RelayUpdateListener): () => void
   onReset(listener: RelayResetListener): () => void
   resetDocs(docIds: readonly string[]): Promise<void>
@@ -116,7 +131,7 @@ export function createCollabRelay(
 ): CollabRelay {
   const persistDebounceMs = opts.persistDebounceMs ?? 800
   const entries = new Map<string, RelayEntry>()
-  const opening = new Map<string, Promise<Y.Doc>>()
+  const opening = new Map<string, Promise<RelayDoc>>()
   /**
    * Docs mid-eviction or mid-reset. `openDoc` waits these out, so it can never
    * hand back a doc that is about to be destroyed, nor resurrect one whose
@@ -263,7 +278,7 @@ export function createCollabRelay(
     if (!entry || !entry.dirty) return
     entry.dirty = false
     try {
-      await putCollabDocumentState(db, docId, Y.encodeStateAsUpdate(entry.doc))
+      await putCollabDocumentState(db, docId, Y.encodeStateAsUpdate(entry.doc), entry.generation)
       const derived = await persistDerivedJson(docId, entry.doc)
       // A shell that failed validation MUST be retried: the blob is fresh but
       // the derived JSON is stale, and a reset reseeds from that JSON. Leaving
@@ -288,9 +303,9 @@ export function createCollabRelay(
 
   // ── Registry ──────────────────────────────────────────────────────────────
 
-  async function openDoc(docId: string): Promise<Y.Doc> {
+  async function openDoc(docId: string): Promise<RelayDoc> {
     const existing = entries.get(docId)
-    if (existing) return existing.doc
+    if (existing) return { doc: existing.doc, generation: existing.generation }
     const inFlight = opening.get(docId)
     if (inFlight) return inFlight
 
@@ -301,27 +316,41 @@ export function createCollabRelay(
       // otherwise hydrate from — keeping the dead generation alive.
       await settling.get(docId)
       const doc = new Y.Doc()
-      const blob = await getCollabDocumentState(db, docId)
-      if (blob) {
-        Y.applyUpdate(doc, blob, 'hydrate')
+      const stored = await getCollabDocumentState(db, docId)
+      let generation: string
+      let minted: boolean
+      if (stored) {
+        Y.applyUpdate(doc, stored.state, 'hydrate')
+        // Rows written before migration 023 carry ''.
+        minted = stored.generation === ''
+        generation = minted ? nanoid() : stored.generation
       } else {
         await seedFromJson(docId, doc)
+        generation = nanoid()
+        minted = true
       }
       const updateHandler = (update: Uint8Array, origin: unknown) => {
-        for (const listener of updateListeners) listener(docId, update, origin)
+        for (const listener of updateListeners) listener(docId, update, origin, generation)
         schedulePersist(docId)
       }
       doc.on('update', updateHandler)
       entries.set(docId, {
         doc,
+        generation,
         refs: 0,
-        dirty: !blob, // freshly seeded state should persist its blob
+        dirty: false,
         persistTimer: null,
         persistChain: Promise.resolve(),
         detachUpdateHandler: () => doc.off('update', updateHandler),
       })
-      if (!blob) schedulePersist(docId)
-      return doc
+      if (minted) {
+        // Persist the mint IMMEDIATELY rather than through the debounce. A doc
+        // that hydrated cleanly is not dirty, so a mint riding the debounce
+        // would never reach the DB — the next open would mint a DIFFERENT id
+        // and reset every bound client for a byte-identical lineage.
+        await putCollabDocumentState(db, docId, Y.encodeStateAsUpdate(doc), generation)
+      }
+      return { doc, generation }
     })()
 
     opening.set(docId, open)
@@ -464,7 +493,7 @@ export function createCollabRelay(
         const entry = entries.get(docId)
         if (!entry) continue
         entry.refs += 1
-        return entry.doc
+        return { doc: entry.doc, generation: entry.generation }
       }
     },
     release: (docId) => {
@@ -476,10 +505,6 @@ export function createCollabRelay(
           console.error(`[collab] final persist for ${docId} failed:`, err)
         })
       }
-    },
-    applyUpdate: async (docId, update, origin) => {
-      const doc = await openDoc(docId)
-      Y.applyUpdate(doc, update, origin)
     },
     subscribeUpdates: (listener) => {
       updateListeners.add(listener)

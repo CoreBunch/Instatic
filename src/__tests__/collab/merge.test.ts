@@ -145,7 +145,7 @@ describe('applyTextDiff', () => {
 describe('wire frame codec', () => {
   it('round-trips docId + frameType + payload', async () => {
     const { encodeCollabFrame, decodeCollabFrame, FRAME_SYNC } = await import('@core/collab')
-    const frame = encodeCollabFrame('page:p1', FRAME_SYNC, new Uint8Array([1, 2, 3]))
+    const frame = encodeCollabFrame('page:p1', 'gen-1', FRAME_SYNC, new Uint8Array([1, 2, 3]))
     const decoded = decodeCollabFrame(frame)
     expect([decoded.docId, decoded.frameType, [...decoded.payload]]).toEqual([
       'page:p1',
@@ -156,9 +156,33 @@ describe('wire frame codec', () => {
 
   it('round-trips an empty payload (reset frames)', async () => {
     const { encodeCollabFrame, decodeCollabFrame, FRAME_RESET } = await import('@core/collab')
-    const decoded = decodeCollabFrame(encodeCollabFrame('site:default', FRAME_RESET, new Uint8Array()))
+    const decoded = decodeCollabFrame(encodeCollabFrame('site:default', 'gen-1', FRAME_RESET, new Uint8Array()))
     expect(decoded.docId).toBe('site:default')
     expect(decoded.frameType).toBe(FRAME_RESET)
     expect(decoded.payload.length).toBe(0)
   })
+  it('round-trips the generation and refuses to lose it', async () => {
+    const { encodeCollabFrame, decodeCollabFrame } = await import('@core/collab')
+    const frame = decodeCollabFrame(encodeCollabFrame('page:p1', 'gen-abc', 0, new Uint8Array([7])))
+    expect(frame.docId).toBe('page:p1')
+    expect(frame.generation).toBe('gen-abc')
+    expect([...frame.payload]).toEqual([7])
+  })
+
+  it("treats '' as a generation, not a missing field", async () => {
+    const { encodeCollabFrame, decodeCollabFrame } = await import('@core/collab')
+    const frame = decodeCollabFrame(encodeCollabFrame('presence', '', 1, new Uint8Array()))
+    expect(frame.generation).toBe('')
+    expect(frame.frameType).toBe(1)
+  })
+
+  it('round-trips a reset reason and degrades an unknown one to the routine reseed', async () => {
+    const { encodeResetPayload, decodeResetReason } = await import('@core/collab')
+    for (const reason of ['rewritten', 'stale', 'refused', 'oversize'] as const) {
+      expect(decodeResetReason(encodeResetPayload(reason))).toBe(reason)
+    }
+    expect(decodeResetReason(new Uint8Array())).toBe('rewritten')
+    expect(decodeResetReason(new Uint8Array([9, 9, 9]))).toBe('rewritten')
+  })
+
 })

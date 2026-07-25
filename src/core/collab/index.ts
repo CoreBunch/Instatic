@@ -29,13 +29,16 @@ export { reconcileTreeIntegrity } from './integrity'
 export { applyTextDiff } from './textDiff'
 export {
   decodeCollabFrame,
+  decodeResetReason,
   encodeCollabFrame,
+  encodeResetPayload,
   FRAME_AWARENESS,
   FRAME_RESET,
   FRAME_SYNC,
   PRESENCE_DOC_ID,
   SITE_SOCKET_PATH,
   type CollabFrame,
+  type ResetReason,
 } from './protocol'
 export { createCollabDocSet, type CollabDocSet } from './docSet'
 export { applySitePatchesToDocs } from './applyPatches'

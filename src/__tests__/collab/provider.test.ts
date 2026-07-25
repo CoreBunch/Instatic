@@ -67,7 +67,7 @@ describe('collab provider', () => {
     serverDoc.getMap('tree').set('rootNodeId', 'root')
     const encoder = encoding.createEncoder()
     syncProtocol.writeSyncStep2(encoder, serverDoc, Y.encodeStateVector(new Y.Doc()))
-    socket.emit(encodeCollabFrame('page:p1', FRAME_SYNC, encoding.toUint8Array(encoder)))
+    socket.emit(encodeCollabFrame('page:p1', 'gen-1', FRAME_SYNC, encoding.toUint8Array(encoder)))
 
     await binding.whenSynced
     expect(binding.synced).toBe(true)
@@ -94,7 +94,7 @@ describe('collab provider', () => {
     const encoder = encoding.createEncoder()
     syncProtocol.writeUpdate(encoder, Y.encodeStateAsUpdate(remote))
     const countBeforeRemote = socket.sent.length
-    socket.emit(encodeCollabFrame('page:p1', FRAME_SYNC, encoding.toUint8Array(encoder)))
+    socket.emit(encodeCollabFrame('page:p1', 'gen-1', FRAME_SYNC, encoding.toUint8Array(encoder)))
     expect(doc.getMap('meta').get('title')).toBe('From remote')
     expect(socket.sent.length).toBe(countBeforeRemote)
     provider.destroy()
@@ -108,7 +108,7 @@ describe('collab provider', () => {
     const resets: string[] = []
     provider.onReset((docId) => resets.push(docId))
 
-    socket.emit(encodeCollabFrame('page:p1', FRAME_RESET, new Uint8Array()))
+    socket.emit(encodeCollabFrame('page:p1', 'gen-1', FRAME_RESET, new Uint8Array()))
     expect(resets).toEqual(['page:p1'])
     // A rebind gets a FRESH doc (the old one was destroyed).
     const rebound = provider.bind('page:p1')
@@ -128,7 +128,7 @@ describe('collab provider', () => {
     })
     // Reset (or any unbind) before the first sync must resolve the promise,
     // not leave every chained continuation pending forever.
-    socket.emit(encodeCollabFrame('page:p1', FRAME_RESET, new Uint8Array()))
+    socket.emit(encodeCollabFrame('page:p1', 'gen-1', FRAME_RESET, new Uint8Array()))
     await binding.whenSynced // resolves instead of hanging the test
     await Promise.resolve()
     expect(settled).toBe(true)

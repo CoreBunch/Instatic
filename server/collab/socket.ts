@@ -34,6 +34,7 @@ import * as awarenessProtocol from 'y-protocols/awareness'
 import {
   decodeCollabFrame,
   encodeCollabFrame,
+  encodeResetPayload,
   FRAME_AWARENESS,
   FRAME_RESET,
   FRAME_SYNC,
@@ -41,6 +42,7 @@ import {
   PRESENCE_DOC_ID,
   SITE_SOCKET_PATH,
   type CollabFrame,
+  type ResetReason,
 } from '@core/collab'
 import { requireCapability, userHasCapability } from '../auth/authz'
 import { safeParseValue, Type } from '@core/utils/typeboxHelpers'
@@ -49,7 +51,7 @@ import { validateGuardedUpdate } from './updateGuard'
 import { originAllowed } from '../auth/security'
 import type { DbClient } from '../db/client'
 import { jsonResponse } from '../http'
-import type { CollabRelay } from './relay'
+import type { CollabRelay, RelayDoc } from './relay'
 
 export { SITE_SOCKET_PATH }
 
@@ -230,15 +232,31 @@ export function createCollabSocketLayer(relay: CollabRelay) {
   // The server never contributes its own presence state.
   awareness.setLocalState(null)
 
-  relay.subscribeUpdates((docId, update) => {
+  relay.subscribeUpdates((docId, update, _origin, generation) => {
     if (!publisher) return
     const encoder = encoding.createEncoder()
     syncProtocol.writeUpdate(encoder, update)
-    publisher.publish(docTopic(docId), encodeCollabFrame(docId, FRAME_SYNC, encoding.toUint8Array(encoder)))
+    publisher.publish(
+      docTopic(docId),
+      encodeCollabFrame(docId, generation, FRAME_SYNC, encoding.toUint8Array(encoder)),
+    )
   })
   relay.onReset((docId) => {
-    publisher?.publish(docTopic(docId), encodeCollabFrame(docId, FRAME_RESET, new Uint8Array()))
+    // The lineage this frame refers to is already gone, so it carries none.
+    publisher?.publish(
+      docTopic(docId),
+      encodeCollabFrame(docId, '', FRAME_RESET, encodeResetPayload('rewritten')),
+    )
   })
+
+  /** Tell one connection its doc was dropped, and why. */
+  function sendReset(
+    ws: ServerWebSocket<CollabSocketData>,
+    docId: string,
+    reason: ResetReason,
+  ): void {
+    ws.send(encodeCollabFrame(docId, '', FRAME_RESET, encodeResetPayload(reason)))
+  }
 
   /**
    * Dispatch one decoded frame. Extracted so `message` can wrap it in a
@@ -270,25 +288,35 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         }
         publisher?.publish(
           docTopic(PRESENCE_DOC_ID),
-          encodeCollabFrame(PRESENCE_DOC_ID, FRAME_AWARENESS, frame.payload),
+          encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_AWARENESS, frame.payload),
         )
         // publish() excludes nobody server-side; the sender's own state is
         // already local — awareness re-application is idempotent.
-        ws.send(encodeCollabFrame(PRESENCE_DOC_ID, FRAME_AWARENESS, frame.payload))
+        ws.send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_AWARENESS, frame.payload))
         return
       }
 
       if (frame.frameType !== FRAME_SYNC) return
       if (!parseCollabDocId(frame.docId)) return
-      if (frame.payload.byteLength > MAX_SYNC_PAYLOAD_BYTES) return
+      if (frame.payload.byteLength > MAX_SYNC_PAYLOAD_BYTES) {
+        console.warn(
+          `[collab] oversize ${frame.docId} frame (${frame.payload.byteLength}B) from ${ws.data.userId}`,
+        )
+        // Silently dropping this diverges the client permanently: it holds
+        // structs the server will never receive, every later update queues
+        // behind them as pending, and the screen shows edits that can never
+        // publish. A visible revert is strictly better.
+        sendReset(ws, frame.docId, 'oversize')
+        return
+      }
 
       // Read-only connections may REQUEST state (step1) but never write.
       const messageType = decoding.readVarUint(decoding.createDecoder(frame.payload))
       if (messageType !== SYNC_STEP_1 && !ws.data.canWrite) return
 
-      let doc: Y.Doc
+      let bound: RelayDoc
       if (ws.data.boundDocs.has(frame.docId)) {
-        doc = await relay.openDoc(frame.docId)
+        bound = await relay.openDoc(frame.docId)
       } else {
         // Claim the doc SYNCHRONOUSLY before awaiting retain — otherwise two
         // concurrent frames for the same not-yet-bound doc both take this
@@ -297,12 +325,38 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         ws.data.boundDocs.add(frame.docId)
         ws.subscribe(docTopic(frame.docId))
         try {
-          doc = await relay.retain(frame.docId)
+          bound = await relay.retain(frame.docId)
         } catch (err) {
           ws.data.boundDocs.delete(frame.docId)
           ws.unsubscribe(docTopic(frame.docId))
           throw err
         }
+      }
+      const { doc, generation } = bound
+
+      // LINEAGE CHECK — before readSyncMessage, before the guard, before any
+      // applyUpdate. A reset reseeds at the fixed SEED_CLIENT_ID, so a client
+      // that missed the reset (it was offline; FRAME_RESET is a broadcast)
+      // holds structs at coordinates the live lineage now occupies. Answering
+      // its step1 is enough to corrupt: encodeStateAsUpdate(doc, staleSV)
+      // omits exactly the structs it "already has" and ships the full delete
+      // set, so both ends silently diverge.
+      if (frame.generation === '') {
+        // '' means "I hold no server state for this doc". Always fine for a
+        // read. For a WRITE it is only safe when there is nothing to collide
+        // with — the client-created-row flow populates a doc at bind time,
+        // before any inbound frame has taught it a generation.
+        const serverIsEmpty = Y.encodeStateVector(doc).byteLength === 1
+        if (messageType !== SYNC_STEP_1 && !serverIsEmpty) {
+          sendReset(ws, frame.docId, 'stale')
+          return
+        }
+      } else if (frame.generation !== generation) {
+        console.warn(
+          `[collab] stale generation for ${frame.docId} from ${ws.data.userId}`,
+        )
+        sendReset(ws, frame.docId, 'stale')
+        return
       }
 
       // Partial writers (canWrite but not every site capability) pass each
@@ -321,7 +375,7 @@ export function createCollabSocketLayer(relay: CollabRelay) {
           // The sender's local doc holds the forbidden change — a TARGETED
           // reset makes their client rebind and reseed from the server,
           // reverting it everywhere (including their own screen).
-          ws.send(encodeCollabFrame(frame.docId, FRAME_RESET, new Uint8Array()))
+          sendReset(ws, frame.docId, 'refused')
           return
         }
         Y.applyUpdate(doc, update, ws)
@@ -332,7 +386,7 @@ export function createCollabSocketLayer(relay: CollabRelay) {
       const encoder = encoding.createEncoder()
       syncProtocol.readSyncMessage(decoder, encoder, doc, ws)
       if (encoding.length(encoder) > 0) {
-        ws.send(encodeCollabFrame(frame.docId, FRAME_SYNC, encoding.toUint8Array(encoder)))
+        ws.send(encodeCollabFrame(frame.docId, generation, FRAME_SYNC, encoding.toUint8Array(encoder)))
       }
   }
 
@@ -347,7 +401,7 @@ export function createCollabSocketLayer(relay: CollabRelay) {
       const known = [...awareness.getStates().keys()]
       if (known.length > 0) {
         const update = awarenessProtocol.encodeAwarenessUpdate(awareness, known)
-        ws.send(encodeCollabFrame(PRESENCE_DOC_ID, FRAME_AWARENESS, update))
+        ws.send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_AWARENESS, update))
       }
     },
 
@@ -364,7 +418,7 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         // rebinds and reseeds. Awareness/malformed frames just get dropped.
         if (frame && frame.frameType === FRAME_SYNC && parseCollabDocId(frame.docId)) {
           try {
-            ws.send(encodeCollabFrame(frame.docId, FRAME_RESET, new Uint8Array()))
+            sendReset(ws, frame.docId, 'refused')
           } catch (_sendErr) {
             // Socket already closing — nothing to recover.
           }
@@ -380,7 +434,7 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         const update = awarenessProtocol.encodeAwarenessUpdate(awareness, [...ws.data.awarenessClients])
         publisher?.publish(
           docTopic(PRESENCE_DOC_ID),
-          encodeCollabFrame(PRESENCE_DOC_ID, FRAME_AWARENESS, update),
+          encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_AWARENESS, update),
         )
       }
     },

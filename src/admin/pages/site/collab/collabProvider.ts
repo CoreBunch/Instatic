@@ -35,6 +35,8 @@ import {
   FRAME_SYNC,
   PRESENCE_DOC_ID,
   REMOTE_ORIGIN,
+  decodeResetReason,
+  type ResetReason,
 } from '@core/collab'
 import { collabSocketUrl } from './socketUrl'
 
@@ -63,18 +65,27 @@ export interface BoundCollabDoc {
   whenSynced: Promise<void>
 }
 
+export type CollabResetListener = (docId: string, reason: ResetReason) => void
+
 export interface CollabProvider {
   bind(docId: string): BoundCollabDoc
   unbind(docId: string): void
   awareness: awarenessProtocol.Awareness
   status(): CollabStatus
   onStatus(listener: (status: CollabStatus) => void): () => void
-  onReset(listener: (docId: string) => void): () => void
+  onReset(listener: CollabResetListener): () => void
   destroy(): void
 }
 
 interface BoundEntry {
   doc: Y.Doc
+  /**
+   * The doc's CRDT lineage, learned from the first inbound frame. `''` means
+   * "I hold no server state yet" — the server accepts that for a step1
+   * always, and for a write only while its own doc is still empty (the
+   * client-created-row flow). See @core/collab/protocol.
+   */
+  generation: string
   synced: boolean
   whenSynced: Promise<void>
   resolveSynced: () => void
@@ -99,7 +110,7 @@ export function createCollabProvider(
 
   const bound = new Map<string, BoundEntry>()
   const statusListeners = new Set<(status: CollabStatus) => void>()
-  const resetListeners = new Set<(docId: string) => void>()
+  const resetListeners = new Set<CollabResetListener>()
   let socket: CollabSocketLike | null = null
   let status: CollabStatus = 'connecting'
   let destroyed = false
@@ -117,7 +128,7 @@ export function createCollabProvider(
 
   function sendFrame(docId: string, frameType: number, payload: Uint8Array): void {
     if (!socket || socket.readyState !== 1 /* OPEN */) return
-    socket.send(encodeCollabFrame(docId, frameType, payload))
+    socket.send(encodeCollabFrame(docId, bound.get(docId)?.generation ?? '', frameType, payload))
   }
 
   function sendSyncStep1(docId: string, doc: Y.Doc): void {
@@ -133,6 +144,7 @@ export function createCollabProvider(
     })
     const entry: BoundEntry = {
       doc,
+      generation: '',
       synced: false,
       whenSynced,
       resolveSynced,
@@ -174,9 +186,15 @@ export function createCollabProvider(
     if (!entry) return
 
     if (frame.frameType === FRAME_RESET) {
+      const reason = decodeResetReason(frame.payload)
       unbind(frame.docId)
-      for (const listener of resetListeners) listener(frame.docId)
+      for (const listener of resetListeners) listener(frame.docId, reason)
       return
+    }
+    // Adopt the server's lineage from the first frame that names one, so every
+    // subsequent outbound frame is refusable if this doc is later reseeded.
+    if (entry.generation === '' && frame.generation !== '') {
+      entry.generation = frame.generation
     }
     if (frame.frameType !== FRAME_SYNC) return
 

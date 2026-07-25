@@ -17,7 +17,11 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import * as Y from 'yjs'
 import * as awarenessProtocol from 'y-protocols/awareness'
+import * as encoding from 'lib0/encoding'
+import * as syncProtocol from 'y-protocols/sync'
 import {
+  encodeCollabFrame,
+  FRAME_SYNC,
   LOCAL_ORIGIN,
   projectPageDoc,
   SITE_SOCKET_PATH,
@@ -29,7 +33,7 @@ import {
   type CollabProvider,
   type CollabSocketLike,
 } from '@site/collab/collabProvider'
-import { createCollabRelay } from '../../../server/collab/relay'
+import { createCollabRelay, type CollabRelay } from '../../../server/collab/relay'
 import {
   createCollabSocketLayer,
   handleCollabSocketUpgrade,
@@ -68,6 +72,7 @@ async function waitFor(
 
 interface Stack {
   harness: CapabilityTestHarness
+  relay: CollabRelay
   url: string
   cookie: string
   homeId: string
@@ -101,6 +106,7 @@ async function startStack(): Promise<Stack> {
   `
   return {
     harness,
+    relay,
     url: `ws://localhost:${server.port}${SITE_SOCKET_PATH}`,
     cookie,
     homeId: rows[0].id,
@@ -186,7 +192,7 @@ describe('collab relay integration (real server, real sockets)', () => {
       const stored = await getCollabDocumentState(stack.harness.db, docId)
       if (!stored) return false
       const restored = new Y.Doc()
-      Y.applyUpdate(restored, stored)
+      Y.applyUpdate(restored, stored.state)
       return nodeLabel(restored, rootId) === 'Renamed by A'
     })
     await waitFor(async () => {
@@ -509,5 +515,66 @@ describe('collab relay integration (real server, real sockets)', () => {
     await runPublishFlush()
 
     expect(await labelInRow()).toBe('Edited seconds before publish')
+  })
+
+  // ── CRDT lineage ──────────────────────────────────────────────────────────
+
+  it('refuses a stale lineage instead of merging a dead generation', async () => {
+    const stack = await startStack()
+    const docId = `page:${stack.homeId}`
+
+    const client = connectClient(stack)
+    const bound = client.bind(docId)
+    await bound.whenSynced
+    const rootId = treeMap(bound.doc).get('rootNodeId') as string
+    setNodeLabel(bound.doc, rootId, 'Before the reset')
+    await waitFor(async () => {
+      const row = await getDataRow(stack.harness.db, stack.homeId)
+      return Boolean(row && pageFromRow(row).nodes[rootId]?.label === 'Before the reset')
+    })
+
+    const resets: string[] = []
+    client.onReset((id, reason) => resets.push(`${id}:${reason}`))
+
+    // Reset the doc the way an out-of-relay write does. The client is still
+    // bound and still holds generation N, whose structs sit at the very
+    // coordinates the reseeded generation N+1 now occupies.
+    await stack.relay.resetDocs([docId])
+
+    // The client's own frames must not be merged into the new lineage.
+    await waitFor(() => resets.length > 0)
+    expect(resets[0]).toBe(`${docId}:rewritten`)
+
+    // And the authoritative doc must project the reseeded content — no ghost
+    // nodes carried over from the dead lineage.
+    const { doc: authoritative } = await stack.relay.openDoc(docId)
+    const nodes = treeMap(authoritative).get('nodes') as Y.Map<unknown>
+    expect(nodes.has(rootId)).toBe(true)
+  })
+
+  it('a frame stamped with a dead generation is answered with a reset, not applied', async () => {
+    const stack = await startStack()
+    const docId = `page:${stack.homeId}`
+    const client = connectClient(stack)
+    const bound = client.bind(docId)
+    await bound.whenSynced
+
+    const { generation: live } = await stack.relay.openDoc(docId)
+    const rootId = treeMap(bound.doc).get('rootNodeId') as string
+    const before = nodeLabel(bound.doc, rootId)
+
+    const socket = client.lastSocket()!
+    const encoder = encoding.createEncoder()
+    const forged = new Y.Doc()
+    Y.applyUpdate(forged, Y.encodeStateAsUpdate(bound.doc))
+    setNodeLabel(forged, rootId, 'From a dead lineage')
+    syncProtocol.writeUpdate(encoder, Y.encodeStateAsUpdate(forged))
+    socket.send(
+      encodeCollabFrame(docId, `${live}-dead`, FRAME_SYNC, encoding.toUint8Array(encoder)),
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    const { doc: authoritative } = await stack.relay.openDoc(docId)
+    expect(nodeLabel(authoritative, rootId)).toBe(before)
   })
 })

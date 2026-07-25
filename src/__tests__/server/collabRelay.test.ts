@@ -42,12 +42,14 @@ async function setup(): Promise<{ harness: CapabilityTestHarness; relay: CollabR
 }
 
 /**
- * Wrap a DbClient so the FIRST collab blob write blocks until released. That
- * is the only way to hold a persist mid-flight deterministically, which is
- * exactly the window `resetDocs` has to survive.
+ * Wrap a DbClient so the first collab blob write AFTER `arm()` blocks until
+ * released. Arming is explicit because `openDoc` persists the freshly minted
+ * generation immediately — the write we want to hold is the later debounced
+ * one, not that mint.
  */
 function gateCollabBlobWrites(db: DbClient): {
   db: DbClient
+  arm: () => void
   blocked: Promise<void>
   release: () => void
 } {
@@ -59,10 +61,11 @@ function gateCollabBlobWrites(db: DbClient): {
   const gate = new Promise<void>((resolve) => {
     release = resolve
   })
+  let armed = false
   let gated = false
 
   const wrapped = (async <Row,>(strings: TemplateStringsArray, ...values: unknown[]) => {
-    if (!gated && strings.join('?').includes('insert into collab_documents')) {
+    if (armed && !gated && strings.join('?').includes('insert into collab_documents')) {
       gated = true
       announceBlocked()
       await gate
@@ -73,7 +76,7 @@ function gateCollabBlobWrites(db: DbClient): {
   wrapped.unsafe = ((sql: string, params?: unknown[]) => db.unsafe(sql, params)) as DbClient['unsafe']
   wrapped.transaction = ((fn: Parameters<DbClient['transaction']>[0]) =>
     db.transaction(fn)) as DbClient['transaction']
-  return { db: wrapped, blocked, release }
+  return { db: wrapped, arm: () => { armed = true }, blocked, release }
 }
 
 function editTitleUpdate(doc: Y.Doc, nodeText: string): void {
@@ -88,7 +91,7 @@ function editTitleUpdate(doc: Y.Doc, nodeText: string): void {
 describe('collab relay', () => {
   it('seeds a page doc deterministically from the stored row (identical state on repeat)', async () => {
     const { harness, relay, homeId } = await setup()
-    const doc = await relay.openDoc(`page:${homeId}`)
+    const { doc: doc } = await relay.openDoc(`page:${homeId}`)
     const projected = projectPageDoc(doc, homeId)
     expect(projected.slug).toBe('index')
     expect(projected.rootNodeId).not.toBe('')
@@ -97,20 +100,20 @@ describe('collab relay', () => {
     // deterministic seeding must produce an identical state vector.
     const relay2 = createCollabRelay(harness.db, { persistDebounceMs: 10 })
     cleanups.push(() => relay2.destroy())
-    const doc2 = await relay2.openDoc(`page:${homeId}`)
+    const { doc: doc2 } = await relay2.openDoc(`page:${homeId}`)
     expect(Y.encodeStateVector(doc2)).toEqual(Y.encodeStateVector(doc))
   })
 
   it('persists the blob AND the derived JSON after an update', async () => {
     const { harness, relay, homeId } = await setup()
     const docId = `page:${homeId}`
-    const doc = await relay.openDoc(docId)
+    const { doc: doc } = await relay.openDoc(docId)
     editTitleUpdate(doc, 'Hero section')
 
     await new Promise((resolve) => setTimeout(resolve, 30))
     await relay.flushAll()
 
-    expect(await getCollabDocumentState(harness.db, docId)).not.toBeNull()
+    expect((await getCollabDocumentState(harness.db, docId))?.state).toBeDefined()
     const { rows } = await harness.db<{ cells_json: Record<string, unknown> }>`
       select cells_json from data_rows where id = ${homeId}
     `
@@ -120,7 +123,7 @@ describe('collab relay', () => {
 
   it('roster removal soft-deletes the row on site-doc persist', async () => {
     const { harness, relay, homeId } = await setup()
-    const siteDoc = await relay.openDoc(SITE_DOC_ID)
+    const { doc: siteDoc } = await relay.openDoc(SITE_DOC_ID)
     siteDoc.transact(() => {
       const rosters = rostersMap(siteDoc)
       ;(rosters.get('pages') as Y.Map<unknown>).delete(homeId)
@@ -140,7 +143,7 @@ describe('collab relay', () => {
     const docId = `page:${homeId}`
     await relay.openDoc(docId)
     await relay.flushAll()
-    expect(await getCollabDocumentState(harness.db, docId)).not.toBeNull()
+    expect((await getCollabDocumentState(harness.db, docId))?.state).toBeDefined()
 
     const resets: string[] = []
     relay.onReset((id) => resets.push(id))
@@ -159,7 +162,7 @@ describe('collab relay', () => {
   it('a doc with neither blob nor row starts empty (client-created-row flow) and persists a new row', async () => {
     const { harness, relay } = await setup()
     const docId = 'page:fresh-row-id'
-    const doc = await relay.openDoc(docId)
+    const { doc: doc } = await relay.openDoc(docId)
     expect(treeMap(doc).get('rootNodeId')).toBeUndefined()
 
     // Client update arrives with full content (translator-populated shape).
@@ -206,7 +209,10 @@ describe('collab relay', () => {
     `
     const docId = `page:${rows[0].id}`
 
-    const doc = await relay.openDoc(docId)
+    const { doc } = await relay.openDoc(docId)
+    // The generation-mint write has landed; arm the gate so the DEBOUNCED
+    // persist is the one held mid-flight.
+    gated.arm()
     editTitleUpdate(doc, 'About to be reset')
 
     // Block the blob write mid-flight, then reset underneath it.
@@ -223,7 +229,7 @@ describe('collab relay', () => {
   it('a relay-only page survives a site-doc reset instead of vanishing from the roster', async () => {
     const { harness, relay } = await setup()
     const rowId = 'relay-only-page'
-    const pageDoc = await relay.openDoc(`page:${rowId}`)
+    const { doc: pageDoc } = await relay.openDoc(`page:${rowId}`)
     await relay.openDoc(SITE_DOC_ID)
 
     pageDoc.transact(() => {
@@ -253,7 +259,7 @@ describe('collab relay', () => {
     `
     expect(rows).toHaveLength(1)
 
-    const reseeded = await relay.openDoc(SITE_DOC_ID)
+    const { doc: reseeded } = await relay.openDoc(SITE_DOC_ID)
     const pages = rostersMap(reseeded).get('pages') as Y.Map<unknown>
     expect([...pages.keys()]).toContain(rowId)
   })
