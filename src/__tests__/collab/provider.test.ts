@@ -12,6 +12,7 @@ import * as syncProtocol from 'y-protocols/sync'
 import {
   decodeCollabFrame,
   encodeCollabFrame,
+  FRAME_PING,
   FRAME_RESET,
   FRAME_SYNC,
   LOCAL_ORIGIN,
@@ -24,6 +25,7 @@ import {
 class FakeSocket implements CollabSocketLike {
   binaryType = 'arraybuffer'
   readyState = 1
+  bufferedAmount = 0
   sent: Uint8Array[] = []
   onopen: (() => void) | null = null
   onmessage: ((event: { data: unknown }) => void) | null = null
@@ -132,6 +134,66 @@ describe('collab provider', () => {
     await binding.whenSynced // resolves instead of hanging the test
     await Promise.resolve()
     expect(settled).toBe(true)
+    provider.destroy()
+  })
+
+  // ── Liveness ──────────────────────────────────────────────────────────────
+  // `readyState` cannot distinguish a live socket from a black-holed one, and
+  // the write gate refuses edits it cannot deliver — so "connected" has to
+  // mean "answered a ping recently", not "the browser has not noticed yet".
+
+  it('pings on an interval and goes offline when the socket stops answering', async () => {
+    const socket = new FakeSocket()
+    const provider = createCollabProvider({ createSocket: () => socket, pingIntervalMs: 20 })
+    const seen: string[] = []
+    provider.onStatus((status) => seen.push(status))
+    socket.open()
+    expect(provider.canSend()).toBe(true)
+
+    // A ping goes out on the interval...
+    await Bun.sleep(35)
+    const pings = socket.sent.filter((f) => decodeCollabFrame(f).frameType === FRAME_PING)
+    expect(pings.length).toBeGreaterThan(0)
+
+    // ...and with no inbound traffic at all, the provider stops claiming to be
+    // connected rather than waiting for a close that may never come.
+    await Bun.sleep(80)
+    expect(provider.status()).toBe('offline')
+    expect(provider.canSend()).toBe(false)
+    expect(seen).toContain('offline')
+    provider.destroy()
+  })
+
+  it('refuses to send while the socket backlog is not draining', () => {
+    const socket = new FakeSocket()
+    const provider = createCollabProvider({ createSocket: () => socket, pingIntervalMs: 60_000 })
+    socket.open()
+    expect(provider.canSend()).toBe(true)
+
+    // Open, but the bytes are not moving — an edit now would only join a
+    // buffer the browser discards on unload.
+    socket.bufferedAmount = 1024 * 1024
+    expect(provider.canSend()).toBe(false)
+    provider.destroy()
+  })
+
+  it('reconnectNow escapes the backoff and is a no-op while connected', () => {
+    let created = 0
+    const socket = new FakeSocket()
+    const provider = createCollabProvider({
+      createSocket: () => {
+        created += 1
+        return socket
+      },
+    })
+    socket.open()
+    provider.reconnectNow()
+    expect(created).toBe(1) // already connected — nothing to do
+
+    socket.readyState = 3
+    socket.onclose?.()
+    provider.reconnectNow()
+    expect(created).toBe(2)
     provider.destroy()
   })
 })

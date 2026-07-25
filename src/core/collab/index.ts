@@ -33,6 +33,8 @@ export {
   encodeCollabFrame,
   encodeResetPayload,
   FRAME_AWARENESS,
+  FRAME_PING,
+  FRAME_PONG,
   FRAME_RESET,
   FRAME_SYNC,
   PRESENCE_DOC_ID,

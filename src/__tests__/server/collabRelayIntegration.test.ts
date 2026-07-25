@@ -20,8 +20,12 @@ import * as awarenessProtocol from 'y-protocols/awareness'
 import * as encoding from 'lib0/encoding'
 import * as syncProtocol from 'y-protocols/sync'
 import {
+  decodeCollabFrame,
   encodeCollabFrame,
+  FRAME_PING,
+  FRAME_PONG,
   FRAME_SYNC,
+  PRESENCE_DOC_ID,
   LOCAL_ORIGIN,
   projectPageDoc,
   SITE_SOCKET_PATH,
@@ -576,5 +580,28 @@ describe('collab relay integration (real server, real sockets)', () => {
     await new Promise((resolve) => setTimeout(resolve, 150))
     const { doc: authoritative } = await stack.relay.openDoc(docId)
     expect(nodeLabel(authoritative, rootId)).toBe(before)
+  })
+
+  it('answers a ping on a read-only connection without touching the relay', async () => {
+    const stack = await startStack()
+    const viewer = await stack.harness.createRoleUser({
+      name: 'Ping Viewer',
+      slug: 'collab-ping-viewer',
+      capabilities: ['site.read'],
+    })
+    const client = connectClient(stack, viewer.cookie)
+    // Give the socket a moment to open before probing liveness.
+    await waitFor(() => client.status() === 'connected')
+
+    const socket = client.lastSocket()!
+    const pongs: number[] = []
+    socket.addEventListener('message', (event: MessageEvent) => {
+      const data = new Uint8Array(event.data as ArrayBuffer)
+      pongs.push(decodeCollabFrame(data).frameType)
+    })
+    socket.send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_PING, new Uint8Array()))
+
+    await waitFor(() => pongs.includes(FRAME_PONG))
+    expect(client.status()).toBe('connected')
   })
 })

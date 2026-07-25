@@ -36,6 +36,8 @@ import {
   encodeCollabFrame,
   encodeResetPayload,
   FRAME_AWARENESS,
+  FRAME_PING,
+  FRAME_PONG,
   FRAME_RESET,
   FRAME_SYNC,
   parseCollabDocId,
@@ -267,6 +269,14 @@ export function createCollabSocketLayer(relay: CollabRelay) {
     ws: ServerWebSocket<CollabSocketData>,
     frame: CollabFrame,
   ): Promise<void> {
+      // Liveness first: a ping carries no doc and must never reach
+      // parseCollabDocId or the relay. Deliberately ungated — a read-only
+      // viewer needs to know its socket is alive exactly as much as a writer.
+      if (frame.frameType === FRAME_PING) {
+        ws.send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_PONG, new Uint8Array()))
+        return
+      }
+
       if (frame.frameType === FRAME_AWARENESS) {
         // Presence is NOT a doc write — read-only viewers are visible peers.
         if (frame.payload.byteLength > MAX_AWARENESS_PAYLOAD_BYTES) return

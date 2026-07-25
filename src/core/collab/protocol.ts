@@ -12,6 +12,8 @@
  *   FRAME_RESET     payload = varString ResetReason — the server dropped this
  *                   doc's CRDT state; clients rebind and the doc reseeds
  *                   server-side
+ *   FRAME_PING /    no payload — application-level liveness, under
+ *   FRAME_PONG      PRESENCE_DOC_ID and never gated on capabilities
  *
  * `generation` identifies the doc's CRDT LINEAGE, and is the reason this
  * envelope exists. A reset deletes the blob and the server reseeds at the
@@ -39,6 +41,15 @@ export const PRESENCE_DOC_ID = 'presence'
 export const FRAME_SYNC = 0
 export const FRAME_AWARENESS = 1
 export const FRAME_RESET = 2
+/**
+ * Liveness. `readyState` alone cannot tell a live socket from a black-holed
+ * one — on a VPN drop, captive portal, sleep/wake or mobile handover the
+ * browser keeps the socket OPEN until the TCP retransmission timeout, which is
+ * minutes. Since the editor refuses edits it cannot deliver, "connected" has
+ * to mean "reachable", and only an application-level round trip can say so.
+ */
+export const FRAME_PING = 3
+export const FRAME_PONG = 4
 
 /**
  * Why the server dropped a doc.

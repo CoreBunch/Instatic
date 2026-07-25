@@ -7,9 +7,15 @@
  *     resolves after the server's initial sync (docs are NEVER seeded
  *     client-side — the server is the only seeder, so two clients can't
  *     build divergent initial histories; the store gates edits on synced).
- *   - every local transaction (origin ≠ REMOTE_ORIGIN) sends an update
- *     frame immediately — Yjs 'update' events fire synchronously inside the
- *     transaction commit, so there is no flush window to lose on unload.
+ *   - every local transaction (origin ≠ REMOTE_ORIGIN) sends an update frame
+ *     immediately — Yjs 'update' events fire synchronously inside the
+ *     transaction commit. `send()` still only ENQUEUES, though: bytes sit in
+ *     `bufferedAmount` and the browser discards that buffer on unload, so a
+ *     large in-flight frame can still be lost by closing the tab. That window
+ *     is bounded and flagged via `beforeunload`, not zero.
+ *   - an application-level ping/pong bounds how long a black-holed socket can
+ *     masquerade as connected, because the write gate refuses edits it cannot
+ *     deliver and must not be fooled by `readyState`.
  *   - reconnect uses exponential backoff; on every (re)connect each bound
  *     doc re-runs syncStep1, and Yjs state vectors make the catch-up delta
  *     exact — the transport is self-healing by construction.
@@ -31,6 +37,8 @@ import {
   decodeCollabFrame,
   encodeCollabFrame,
   FRAME_AWARENESS,
+  FRAME_PING,
+  FRAME_PONG,
   FRAME_RESET,
   FRAME_SYNC,
   PRESENCE_DOC_ID,
@@ -42,6 +50,13 @@ import { collabSocketUrl } from './socketUrl'
 
 const RECONNECT_BASE_DELAY_MS = 1_000
 const RECONNECT_MAX_DELAY_MS = 30_000
+const PING_INTERVAL_MS = 10_000
+/**
+ * Bytes queued in the socket's send buffer. Above this the transport is not
+ * draining (or is black-holed) and further edits would only join bytes the
+ * browser throws away on unload.
+ */
+const MAX_BACKLOG_BYTES = 512 * 1024
 
 /** y-protocols/sync message types (payload's first varUint). */
 const SYNC_STEP_2 = 1
@@ -51,6 +66,7 @@ export type CollabStatus = 'connecting' | 'connected' | 'offline'
 export interface CollabSocketLike {
   binaryType: string
   readyState: number
+  bufferedAmount: number
   send(data: Uint8Array): void
   close(): void
   onopen: (() => void) | null
@@ -72,6 +88,13 @@ export interface CollabProvider {
   unbind(docId: string): void
   awareness: awarenessProtocol.Awareness
   status(): CollabStatus
+  /**
+   * Whether an edit made right now can actually reach the relay. The write
+   * gate and `sendFrame` share this because it is ONE fact.
+   */
+  canSend(): boolean
+  /** Escape the backoff (which reaches 30s) when the user says the network is back. */
+  reconnectNow(): void
   onStatus(listener: (status: CollabStatus) => void): () => void
   onReset(listener: CollabResetListener): () => void
   destroy(): void
@@ -93,8 +116,14 @@ interface BoundEntry {
 }
 
 export function createCollabProvider(
-  opts: { createSocket?: () => CollabSocketLike } = {},
+  opts: {
+    createSocket?: () => CollabSocketLike
+    /** Heartbeat period. Overridden only by tests, which cannot wait 10s. */
+    pingIntervalMs?: number
+  } = {},
 ): CollabProvider {
+  const pingIntervalMs = opts.pingIntervalMs ?? PING_INTERVAL_MS
+  const livenessTimeoutMs = pingIntervalMs * 2.5
   const createSocket =
     opts.createSocket ??
     ((): CollabSocketLike => {
@@ -116,6 +145,8 @@ export function createCollabProvider(
   let destroyed = false
   let attempts = 0
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+  let pingTimer: ReturnType<typeof setInterval> | undefined
+  let lastInboundAt = 0
 
   const presenceDoc = new Y.Doc()
   const awareness = new awarenessProtocol.Awareness(presenceDoc)
@@ -126,8 +157,27 @@ export function createCollabProvider(
     for (const listener of statusListeners) listener(next)
   }
 
+  /**
+   * `readyState` alone is not enough. On a black-holed path the browser keeps
+   * the socket OPEN until the TCP retransmission timeout — minutes — during
+   * which every `send()` silently succeeds into a buffer nobody drains. The
+   * heartbeat bounds that; `bufferedAmount` catches the slower case where the
+   * socket is genuinely open but the bytes are not moving.
+   */
+  function canSend(): boolean {
+    return (
+      status === 'connected' &&
+      socket !== null &&
+      socket.readyState === 1 /* OPEN */ &&
+      socket.bufferedAmount <= MAX_BACKLOG_BYTES
+    )
+  }
+
   function sendFrame(docId: string, frameType: number, payload: Uint8Array): void {
+    // Pings must go out even while the connection is still being judged;
+    // everything else respects the gate.
     if (!socket || socket.readyState !== 1 /* OPEN */) return
+    if (frameType !== FRAME_PING && !canSend()) return
     socket.send(encodeCollabFrame(docId, bound.get(docId)?.generation ?? '', frameType, payload))
   }
 
@@ -177,6 +227,10 @@ export function createCollabProvider(
   function handleFrame(data: Uint8Array): void {
     const frame = decodeCollabFrame(data)
 
+    // The inbound timestamp is already taken in onmessage — a pong carries no
+    // other meaning.
+    if (frame.frameType === FRAME_PONG) return
+
     if (frame.docId === PRESENCE_DOC_ID && frame.frameType === FRAME_AWARENESS) {
       awarenessProtocol.applyAwarenessUpdate(awareness, frame.payload, REMOTE_ORIGIN)
       return
@@ -220,6 +274,19 @@ export function createCollabProvider(
     socket.onopen = () => {
       attempts = 0
       setStatus('connected')
+      lastInboundAt = Date.now()
+      clearInterval(pingTimer)
+      pingTimer = setInterval(() => {
+        if (Date.now() - lastInboundAt > livenessTimeoutMs) {
+          // Publish OFFLINE synchronously: `onclose` is not prompt on a black
+          // hole, and the write gate must not keep accepting edits while the
+          // toolbar still reads "Draft synced".
+          setStatus('offline')
+          socket?.close()
+          return
+        }
+        sendFrame(PRESENCE_DOC_ID, FRAME_PING, new Uint8Array())
+      }, pingIntervalMs)
       for (const [docId, entry] of bound) sendSyncStep1(docId, entry.doc)
       // Re-announce local presence after a reconnect.
       const localState = awareness.getLocalState()
@@ -233,6 +300,7 @@ export function createCollabProvider(
     }
 
     socket.onmessage = (event) => {
+      lastInboundAt = Date.now()
       const { data } = event
       if (data instanceof ArrayBuffer) handleFrame(new Uint8Array(data))
       else if (data instanceof Uint8Array) handleFrame(data)
@@ -243,6 +311,8 @@ export function createCollabProvider(
 
     socket.onclose = () => {
       socket = null
+      clearInterval(pingTimer)
+      pingTimer = undefined
       if (destroyed) return
       setStatus('offline')
       const delay =
@@ -268,8 +338,13 @@ export function createCollabProvider(
     bound.delete(docId)
   }
 
-  function beforeUnload(): void {
+  function beforeUnload(event: BeforeUnloadEvent): void {
     awarenessProtocol.removeAwarenessStates(awareness, [awareness.clientID], 'unload')
+    // `send()` only enqueues, and the browser discards `bufferedAmount` on
+    // unload. A large paste is one multi-hundred-KB frame, and there is no
+    // client-side save path to fall back on — so warn rather than lose it
+    // silently. Browsers may ignore this without prior interaction.
+    if (socket && socket.bufferedAmount > 0) event.preventDefault()
   }
   if (typeof window !== 'undefined') {
     window.addEventListener('beforeunload', beforeUnload)
@@ -289,6 +364,13 @@ export function createCollabProvider(
     unbind,
     awareness,
     status: () => status,
+    canSend,
+    reconnectNow: () => {
+      if (destroyed || status === 'connected' || socket) return
+      clearTimeout(reconnectTimer)
+      attempts = 0
+      connect()
+    },
     onStatus: (listener) => {
       statusListeners.add(listener)
       return () => statusListeners.delete(listener)
@@ -300,6 +382,7 @@ export function createCollabProvider(
     destroy: () => {
       destroyed = true
       clearTimeout(reconnectTimer)
+      clearInterval(pingTimer)
       if (typeof window !== 'undefined') window.removeEventListener('beforeunload', beforeUnload)
       awareness.off('update', awarenessUpdateHandler)
       awarenessProtocol.removeAwarenessStates(awareness, [awareness.clientID], 'destroy')
