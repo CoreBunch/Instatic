@@ -213,8 +213,9 @@ interface ImportScript {
 
 | Source rule | Stored as |
 |---|---|
-| `.foo { … }` (single class) | `StyleRule{ kind:'class', name:'foo', selector:'.foo' }` |
-| `h1`, `body`, `a:hover`, `.hero .title` | `StyleRule{ kind:'ambient', selector: verbatim }` |
+| `.foo { … }` | `StyleRule{ kind:'class', name:'foo', selector:'.foo' }` |
+| `.hero .title`, `.group:hover .group-hover\:block` | One bindable class rule per selector-list alternative. The rightmost decoded class is `name`; the full selector is preserved. Selector dependency classes (`hero`, `group`) receive bare picker entries when they have no rule of their own. |
+| `h1`, `body`, `a:hover` | `StyleRule{ kind:'ambient', selector: verbatim }` |
 | `@media ... { … }` | Merged into a matching viewport context's `contextStyles` when it matches a configured media query (or an older/default max-width threshold); otherwise preserved as a reusable media condition |
 | Unconditional local `@import "file.css"` | Followed recursively from the linked stylesheet; the imported file keeps its own source path so relative `url(...)` assets resolve correctly |
 | Trusted Google CSS2 `@import` | Parsed into `ImportGoogleFont` install requests and committed as self-hosted installed font entries |
@@ -249,7 +250,24 @@ Resolutions apply in `applyCrossSheetClassResolutions` (via `applyConflictResolu
 
 After all renames, `normalizeBindableClassRules` enforces the registry's unique-class-name invariant: per final name, the FIRST class-kind rule (in cascade source order) stays bindable; every later same-name class fragment becomes an ambient rule with the same selector — its declarations keep their cascade position, so within-cascade overrides (`base.css .btn` + `page.css .btn`) still compose like real CSS.
 
-Separately, two groups of single-class rules are converted to `kind:'ambient'` at plan time (`preserveGloballyMatchedClassRules`): classes that no imported node actually uses, and the shared Bootstrap-like utility names above. Static templates often create or toggle unused classes from JavaScript (`.mt-cursor`, `.is-open`, `.show`, etc.); leaving those as editable class rules would let publisher class tree-shaking drop them because no imported node owns their `classIds`. Shared utilities are ambient for a different reason: nodes keep the plain class token, while every source rule for that token remains publishable in cascade order.
+All imported class-bearing selectors remain picker-addressable, whether or not
+the imported HTML currently uses them. This is what makes a large utility
+catalogue (including a full precompiled Tailwind build) useful after import:
+escaped names such as `hover:bg-blue-700` are decoded for the class picker while
+their original selectors remain intact.
+
+Publishing and the canvas use the same dependency-aware tree-shaker. A
+class-kind rule emits only when its registry id is assigned and every known
+class dependency in its selector is in use; repeated fragments demoted to
+ambient rules emit only when their known selector dependencies are in use.
+Class-free ambient selectors and supported raw blocks such as `@keyframes`
+remain conservative and global. This retains framework cascades such as `.row`
+plus `.row > *` without shipping thousands of unused utilities.
+
+Runtime code that constructs class names dynamically cannot be inferred from a
+static page tree. Those classes must be assigned in the editor (including to a
+hidden structural node) or the stylesheet should use `mode:'file'`, which is
+the explicit non-tree-shaken escape hatch for runtime-owned CSS.
 
 The escape hatch for "this sheet's resets/styles must not leak into other pages at all" is no longer a generated scope class — it is keeping that sheet as a file (`mode: 'file'`), page-scoped via runtime config.
 

@@ -3,13 +3,14 @@
  *
  * A `StyleRule` can be any CSS rule, discriminated by `kind`:
  *
- *   - `kind: 'class'` — the rule's selector is `.<name>`. It is attached to
- *     nodes via `node.classIds`; the publisher emits the name into the node's
- *     class attribute and the rule into the stylesheet. This is what the
- *     editor's ClassPicker manipulates.
+ *   - `kind: 'class'` — the rule is attached to nodes via `node.classIds`.
+ *     User-created rules use `.<name>`; imported utility variants may retain
+ *     a complex selector such as `.group:hover .group-hover\:block`, with
+ *     `name` identifying the rightmost bindable class. The publisher emits
+ *     that name into the node's class attribute and preserves the selector.
  *
  *   - `kind: 'ambient'` — the rule attaches by CSS matching, not by node
- *     assignment (e.g. `h1`, `h1 > span`, `.hero .title`, `a:hover`). The
+ *     assignment (e.g. `h1`, `h1 > span`, `a:hover`). The
  *     publisher emits the rule into the stylesheet only; nothing changes on
  *     node `class=` attributes. Used by the CSS importer and "Add ambient
  *     selector" affordance.
@@ -70,9 +71,9 @@ export const StyleRuleSchema = Type.Object({
   /**
    * The CSS selector expression emitted verbatim into the published
    * stylesheet:
-   *   - kind:'class'   → `.<escaped-name>` (always derived from `name`; not
-   *                      user-edited; kept on the object so the publisher and
-   *                      canvas can call `styleRuleSelector(rule)` uniformly).
+   *   - kind:'class'   → contains the escaped `name` class token; imported
+   *                      variants may include combinators, pseudo-classes, or
+   *                      dependency classes around that binding token.
    *   - kind:'ambient' → any valid selector (`h1`, `h1 > span`, `.hero .title`,
    *                      `a:hover`, `[data-x="y"]`, ...).
    *

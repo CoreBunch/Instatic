@@ -758,6 +758,59 @@ describe('collectClassCSS', () => {
     expect(css).not.toContain('.unused')
   })
 
+  it('emits a complex utility variant only when its selector dependencies are used', () => {
+    const group = makeClass('group', {})
+    const variant: StyleRule = {
+      ...makeClass('variant', { display: 'block' }, {}, 'group-hover:block'),
+      selector: '.group:hover .group-hover\\:block',
+    }
+    const withDependency = makeSite(
+      { group, variant },
+      { parent: ['group'], child: ['variant'] },
+    )
+    const withoutDependency = makeSite(
+      { group, variant },
+      { child: ['variant'] },
+    )
+
+    expect(collectClassCSS(withDependency)).toContain(
+      '.group:hover .group-hover\\:block',
+    )
+    expect(collectClassCSS(withoutDependency)).not.toContain('group-hover')
+  })
+
+  it('tree-shakes ambient fragments by known class dependencies', () => {
+    const used = makeClass('used', {})
+    const unused = makeClass('unused', {})
+    const usedFragment: StyleRule = {
+      ...makeClass('used-fragment', { color: 'green' }),
+      name: '.used:hover',
+      kind: 'ambient',
+      selector: '.used:hover',
+    }
+    const unusedFragment: StyleRule = {
+      ...makeClass('unused-fragment', { color: 'red' }),
+      name: '.unused:hover',
+      kind: 'ambient',
+      selector: '.unused:hover',
+    }
+    const body: StyleRule = {
+      ...makeClass('body-rule', { margin: '0' }),
+      name: 'body',
+      kind: 'ambient',
+      selector: 'body',
+    }
+    const site = makeSite(
+      { used, unused, usedFragment, unusedFragment, body },
+      { child: ['used'] },
+    )
+
+    const css = collectClassCSS(site)
+    expect(css).toContain('.used:hover')
+    expect(css).not.toContain('.unused:hover')
+    expect(css).toContain('body {')
+  })
+
   it('emits CSS for all used classes across all nodes', () => {
     const site = makeSite(
       {

@@ -206,6 +206,18 @@ style-<hash>.css       = collectClassCSS(site)                     ← user-defi
 userStyles-<hash>.css  = collectUserStylesheetCss(site, page)      ← author stylesheets, scoped to this page
 ```
 
+`styleRuleTreeShake.ts` computes the site-wide used class-id set once across
+page and Visual Component trees. A class rule emits only when its id is used
+and every known class dependency in its preserved selector is used. Ambient
+selector fragments emit when at least one selector-list alternative has all of
+its known class dependencies in use; class-free selectors and supported raw
+blocks stay conservative. The editor canvas calls the same selector and
+memoizes the filtered registry by immutable registry identity + used-id
+signature, so large imported utility catalogs do not become large iframe
+stylesheets. A full precompiled Tailwind catalog can therefore remain
+picker-addressable while the `style` bundle contains only selected utilities
+plus global preflight.
+
 Media-library background images are optimized in the same publish pass as
 `<img srcset>`. `mediaPrefetch.ts` collects `/uploads/...` URLs from
 image/media module props, node `inlineStyles.backgroundImage`, and StyleRule

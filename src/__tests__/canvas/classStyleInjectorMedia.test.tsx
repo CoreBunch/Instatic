@@ -93,14 +93,15 @@ describe('ClassStyleInjector media backgrounds', () => {
     render(<ClassStyleInjector targetDocument={document} />)
 
     await act(async () => {
-      useEditorStore.setState({
-        site: {
-          ...makeSite({ pages: [] }),
-          breakpoints: DEFAULT_BREAKPOINTS,
-          styleRules: {
-            'hero-bg': makeBackgroundClass(),
-          },
+      const site = makeSite({
+        breakpoints: DEFAULT_BREAKPOINTS,
+        styleRules: {
+          'hero-bg': makeBackgroundClass(),
         },
+      })
+      site.pages[0].nodes[site.pages[0].rootNodeId].classIds = ['hero-bg']
+      useEditorStore.setState({
+        site,
       } as Parameters<typeof useEditorStore.setState>[0])
     })
 

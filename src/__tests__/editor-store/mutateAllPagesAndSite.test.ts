@@ -21,6 +21,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { useEditorStore } from '@site/store/store'
 import type { ImportFragment } from '@core/htmlImport'
+import type { NewStyleRule } from '@core/siteImport'
 import { makePage, makeSite, makeNode } from '../fixtures'
 import '@modules/base/index'
 
@@ -522,4 +523,36 @@ describe('insertImportedNodes regression — linking refactor', () => {
     expect(heroRule!.kind).toBe('class')
     expect(insertedNode.classIds[0]).toBe(heroRule!.id)
   })
+})
+
+// ---------------------------------------------------------------------------
+// 8. Scalability — one order scan per bulk import
+// ---------------------------------------------------------------------------
+
+describe('mutateAllPagesAndSite — large selector batches', () => {
+  it('commits 10,000 style rules within the regression budget', () => {
+    useEditorStore.getState().createSite('Large import')
+    const rules: NewStyleRule[] = Array.from({ length: 10_000 }, (_, index) => ({
+      name: `utility-${index}`,
+      kind: 'class',
+      selector: `.utility-${index}`,
+      order: index,
+      styles: { color: `rgb(${index % 255} 0 0)` },
+      contextStyles: {},
+    }))
+
+    const startedAt = performance.now()
+    useEditorStore.getState().mutateAllPagesAndSite((_site, helpers) => {
+      for (const rule of rules) helpers.addStyleRule(rule)
+      return true
+    })
+    const elapsedMs = performance.now() - startedAt
+    const committed = Object.values(useEditorStore.getState().site!.styleRules)
+
+    expect(committed).toHaveLength(10_000)
+    expect(new Set(committed.map((rule) => rule.order)).size).toBe(10_000)
+    // The former per-rule max-order scan took ~17s at 10k and grew O(N²).
+    // Five seconds leaves broad CI headroom while guarding that regression.
+    expect(elapsedMs).toBeLessThan(5_000)
+  }, 15_000)
 })

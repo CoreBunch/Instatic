@@ -14,6 +14,7 @@
 import { describe, it, expect, beforeEach } from 'bun:test'
 import { useEditorStore } from '@site/store/store'
 import type { NewStyleRule } from '@core/siteImport'
+import { classKindSelector } from '@core/page-tree'
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -342,6 +343,29 @@ describe('styleRuleSlice.renameClass', () => {
     const cls = getStore().createClass('btn')
     getStore().renameClass(cls.id, 'button')
     expect(useEditorStore.getState().site!.styleRules[cls.id].selector).toBe('.button')
+  })
+
+  it('renames the binding token inside a preserved imported selector', () => {
+    setupSite()
+    const cls = getStore().createClass('group-hover:block')
+    useEditorStore.setState((state) => ({
+      site: {
+        ...state.site!,
+        styleRules: {
+          ...state.site!.styleRules,
+          [cls.id]: {
+            ...state.site!.styleRules[cls.id],
+            selector: `.group:hover ${classKindSelector('group-hover:block')}`,
+          },
+        },
+      },
+    }))
+
+    getStore().renameClass(cls.id, 'group-focus:block')
+
+    expect(useEditorStore.getState().site!.styleRules[cls.id].selector).toBe(
+      `.group:hover ${classKindSelector('group-focus:block')}`,
+    )
   })
 
   it('allows renaming to the same name (no-op, no throw)', () => {

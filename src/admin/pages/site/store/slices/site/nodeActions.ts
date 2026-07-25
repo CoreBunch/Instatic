@@ -37,7 +37,12 @@ import { wouldCreateCycle, syncSlotInstances, applySlotSyncResult } from '@core/
 import { pushToast } from '@ui/components/Toast'
 import { depthInTree, resolveActiveTreeTarget } from './helpers'
 import { pruneCanvasSelectionDraft } from '../selectionSlice'
-import { indexStyleRulesByName, linkImportedClassNames, mergeImportedStyleRules } from './importLinking'
+import {
+  createStyleRuleOrderAllocator,
+  indexStyleRulesByName,
+  linkImportedClassNames,
+  mergeImportedStyleRules,
+} from './importLinking'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
 type NodeActions = Pick<
@@ -207,13 +212,19 @@ export function createNodeActions(helpers: SiteSliceHelpers): NodeActions {
         // Nodes already carry fresh nanoid IDs from createNode — no collision
         // risk on the node map.
         const classesByName = indexStyleRulesByName(site.styleRules)
+        const allocateStyleRuleOrder = createStyleRuleOrderAllocator(site.styleRules)
 
         // Commit rules parsed from <style> blocks BEFORE linking class names so
         // a node's `class="foo"` token binds to the just-added `.foo {}` rule
         // (rather than auto-creating a bare class). These show in the Selectors
         // panel like any other rule.
         if (opts?.styleRules?.length) {
-          mergeImportedStyleRules(opts.styleRules, site.styleRules, classesByName)
+          mergeImportedStyleRules(
+            opts.styleRules,
+            site.styleRules,
+            classesByName,
+            allocateStyleRuleOrder,
+          )
         }
         // Register any reusable conditions (custom @media / @container /
         // @supports) the <style> rules reference via contextStyles keys.
@@ -232,7 +243,12 @@ export function createNodeActions(helpers: SiteSliceHelpers): NodeActions {
           // the `...node` spread — it is a first-class node field.
           tree.nodes[id] = {
             ...node,
-            classIds: linkImportedClassNames(node.classIds, site.styleRules, classesByName),
+            classIds: linkImportedClassNames(
+              node.classIds,
+              site.styleRules,
+              classesByName,
+              allocateStyleRuleOrder,
+            ),
           }
         }
 

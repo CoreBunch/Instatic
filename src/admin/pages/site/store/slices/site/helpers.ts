@@ -24,7 +24,12 @@ import { collectDirtyFromSitePatches, mergeDirtyMarks } from './dirtyTracking'
 import type { EditorStore } from '@site/store/types'
 import { MAX_HISTORY } from './defaults'
 import { reconcileFrameworkClasses } from './framework/reconcile'
-import { indexStyleRulesByName, linkImportedClassNames } from './importLinking'
+import {
+  createStyleRuleOrderAllocator,
+  indexStyleRulesByName,
+  linkImportedClassNames,
+  type StyleRuleOrderAllocator,
+} from './importLinking'
 import { addImportedColorTokens, overwriteImportedColorTokens } from './importedColorTokens'
 import { addImportedFonts, addImportedFontTokens, addInstalledFontEntries, overwriteImportedFontTokens } from './importedFonts'
 import type { HistoryEntry, SiteMutationResult, SiteSliceHelpers, SiteSliceRecipe } from './types'
@@ -162,6 +167,7 @@ function applyImportedBodyAttributes(
   fragment: ImportFragment,
   site: SiteDocument,
   byName: Map<string, string>,
+  allocateOrder: StyleRuleOrderAllocator,
 ): void {
   const body = fragment.body
   if (!body) return
@@ -170,7 +176,7 @@ function applyImportedBodyAttributes(
     rootNode.props = { ...rootNode.props, ...body.props }
   }
   if (body.classIds?.length) {
-    rootNode.classIds = linkImportedClassNames(body.classIds, site.styleRules, byName)
+    rootNode.classIds = linkImportedClassNames(body.classIds, site.styleRules, byName, allocateOrder)
   }
   if (body.inlineStyles && Object.keys(body.inlineStyles).length > 0) {
     rootNode.inlineStyles = body.inlineStyles
@@ -435,6 +441,7 @@ export function buildSiteHelpers(
       // a `addStyleRule(kind:'class', name:'btn')` followed by
       // `addPage(fragment with node.classIds:['btn'])` resolves to the same id.
       const byName = indexStyleRulesByName(site.styleRules)
+      const allocateStyleRuleOrder = createStyleRuleOrderAllocator(site.styleRules)
 
       const helpers: SiteImportTransaction = {
         addPage({ id: pageId, title, slug, nodeFragment }: { id?: string; title: string; slug: string; nodeFragment: ImportFragment }): string {
@@ -445,12 +452,23 @@ export function buildSiteHelpers(
           // Honour a caller-supplied id so the importer can pre-mint page ids
           // and rewrite internal links to `cms:page:<id>` before committing.
           if (pageId) page.id = pageId
-          applyImportedBodyAttributes(page.nodes[page.rootNodeId]!, nodeFragment, site, byName)
+          applyImportedBodyAttributes(
+            page.nodes[page.rootNodeId]!,
+            nodeFragment,
+            site,
+            byName,
+            allocateStyleRuleOrder,
+          )
           for (const [id, node] of Object.entries(nodeFragment.nodes)) {
             // `node.inlineStyles` rides along on the spread — first-class field.
             page.nodes[id] = {
               ...node,
-              classIds: linkImportedClassNames(node.classIds, site.styleRules, byName),
+              classIds: linkImportedClassNames(
+                node.classIds,
+                site.styleRules,
+                byName,
+                allocateStyleRuleOrder,
+              ),
             }
           }
           page.nodes[page.rootNodeId]!.children = [...nodeFragment.rootIds]
@@ -462,18 +480,12 @@ export function buildSiteHelpers(
         addStyleRule(rule: NewStyleRule): string {
           const id = nanoid()
           const now = Date.now()
-          // Append after every existing rule so imports don't disrupt the
-          // established cascade order.
-          let maxOrder = -1
-          for (const r of Object.values(site.styleRules)) {
-            if (typeof r.order === 'number' && r.order > maxOrder) maxOrder = r.order
-          }
           const newRule: StyleRule = {
             ...rule,
             id,
             createdAt: now,
             updatedAt: now,
-            order: maxOrder + 1,
+            order: allocateStyleRuleOrder(),
           }
           site.styleRules[id] = newRule
           // Register in byName so subsequent addPage calls referencing this
@@ -490,13 +502,18 @@ export function buildSiteHelpers(
           // Mint a fresh body root; wire fragment roots as its children.
           const rootNode = createNode('base.body')
           rootNode.children = [...nodeFragment.rootIds]
-          applyImportedBodyAttributes(rootNode, nodeFragment, site, byName)
+          applyImportedBodyAttributes(rootNode, nodeFragment, site, byName, allocateStyleRuleOrder)
 
           const newNodes: Record<string, PageNode> = { [rootNode.id]: rootNode }
           for (const [id, node] of Object.entries(nodeFragment.nodes)) {
             newNodes[id] = {
               ...node,
-              classIds: linkImportedClassNames(node.classIds, site.styleRules, byName),
+              classIds: linkImportedClassNames(
+                node.classIds,
+                site.styleRules,
+                byName,
+                allocateStyleRuleOrder,
+              ),
             }
           }
 

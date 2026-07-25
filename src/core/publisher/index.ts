@@ -58,6 +58,12 @@ export {
 export type { ResponsiveCssOptions } from './responsiveBackground'
 
 export { collectClassCSS, CssCollector, sanitizeModuleCSS } from './cssCollector'
+export {
+  collectUsedStyleRuleIds,
+  treeShakeStyleRules,
+  treeShakeStyleRulesBySignature,
+  usedStyleRuleIdSignature,
+} from './styleRuleTreeShake'
 
 export { buildSiteFrameworkCss, generateFrameworkCss } from './frameworkCss'
 
