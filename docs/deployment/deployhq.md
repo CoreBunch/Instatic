@@ -100,9 +100,10 @@ else
 fi
 ```
 
-The slot includes a `404.html` (the Netlify/GitHub-Pages convention) so hosts that
-fall back on 404 keep working. Dynamic endpoints are **not** copied here — they are
-served from the CMS via routing (Step 3/4).
+The slot includes a `404.html` **only if you have published a not-found template**
+(`publishSite` skips it otherwise) — so if you rely on the 404 fallback in Step 3/4,
+create and publish a not-found template first. Dynamic endpoints are **not** copied
+here — they are served from the CMS via routing (Step 3/4).
 
 > Want to build assets on the way out (minify, fingerprint, generate a sitemap)?
 > Add those steps to a
@@ -130,7 +131,7 @@ and can proxy the dynamic endpoints to the CMS. With nginx:
 location / {
     try_files $uri $uri.html $uri/index.html =404;
 }
-error_page 404 /404.html;
+error_page 404 /404.html;   # requires a published not-found template (see Step 1)
 
 # keep the editor/admin surface private
 location = /_instatic/mcp { return 404; }
@@ -159,7 +160,7 @@ Cloudflare Worker, or equivalent):
 
 - `/` and paths ending `/` → append `index.html`
 - any other extensionless path → append `.html`
-- unmatched → serve `404.html`
+- unmatched → serve `404.html` (only if a not-found template was published; see Step 1)
 - `/uploads/*` and the public `/_instatic/*` runtime routes → route to the CMS origin
   (skip `/uploads` for a `public-url` adapter; skip `/_instatic` for a fully static
   site). **Do not** route `/admin/*` or `/_instatic/mcp` to the public CDN.
@@ -182,11 +183,13 @@ instant pointer swap, not a re-upload.
 
 - **This deploys output, not state.** Your Instatic database and uploads volume still
   live with the CMS server — back them up per [backup-restore.md](backup-restore.md).
-- **The CMS host and the public host are different origins.** `PUBLIC_ORIGIN` on the
-  CMS configures the origins its CSRF check trusts (where you reach the admin) — it is
-  not the public URL of the static site. After the first publish, open the deployed
-  site and confirm links, images, forms, and any sitemap resolve against the public
-  host.
+- **`PUBLIC_ORIGIN` and proxied forms.** `PUBLIC_ORIGIN` is the CMS's comma-separated
+  list of CSRF-trusted origins — it is not by itself the public URL of the static
+  site. But if you proxy CSRF-checked endpoints (forms) from the public origin to the
+  CMS, you **must add the deployed public origin to `PUBLIC_ORIGIN`** alongside the
+  admin origin, or proxied form challenge/submit requests return 403. After the first
+  publish, open the deployed site and confirm links, images, forms, and any sitemap
+  resolve against the public host.
 - **Dynamic endpoints are what break silently across origins** — re-read Site
   compatibility if an image 404s, a form fails to submit, or a region stays blank.
 
@@ -198,6 +201,7 @@ instant pointer swap, not a re-upload.
 | Pages 404 on a bucket, homepage works | Extensionless routes need the Step 4 CDN rewrite to `.html` |
 | Images / fonts / plugin assets 404 | `/uploads/*` (or `/_instatic/media/*` for signed-redirect) not routed to the CMS |
 | Forms don't submit / load-more does nothing | `/_instatic/form/*` and `/_instatic/loop/*` not routed to the CMS |
+| Forms return 403 | The deployed public origin isn't in the CMS `PUBLIC_ORIGIN` list — add it (comma-separated) |
 | A region renders blank / stuck on placeholder | Dynamic hole node calling `/_instatic/hole/*` on an origin with no CMS — see Site compatibility |
 | Old pages still served | CDN cache not purged — add the Step 5 post-deploy hook |
 
