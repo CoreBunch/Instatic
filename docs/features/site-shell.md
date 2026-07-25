@@ -553,6 +553,19 @@ vectors pull exactly the missed delta. `usePersistence` HTTP-loads the
 document once for first paint, then connects the provider — edits gate on
 each doc's first sync so an unseeded doc can never receive local ops.
 
+In production the socket is same-origin. Under `vite dev` it is NOT: the
+socket dials the CMS port directly, bypassing the Vite proxy
+(`src/admin/pages/site/collab/socketUrl.ts`). `scripts/vite.ts` runs Vite
+inside Bun, and Bun's `node:http` ClientRequest never emits `'upgrade'`, so a
+proxied 101 takes the non-upgrade fallback: the browser socket hangs in
+`readyState 0` forever — never opening, never closing, so the provider's
+reconnect path is never even reached — and when that connection later ends,
+the proxy's `socket.destroySoon()` call (an API Bun's socket lacks) throws
+uncaught and kills the whole dev process. Only the PORT is swapped; the
+hostname is preserved, because the session cookie is `SameSite=Lax` and
+`localhost` ↔ `127.0.0.1` is a cross-site handshake that would drop it.
+`devWorkflow.test.ts` gates the proxy against re-enabling `ws` forwarding.
+
 **Presence** (`src/admin/pages/site/collab/awarenessState.ts`; per-frame
 publishers in `collab/framePresencePublishers.ts`, rendering in
 `PeerPresenceOverlay`): every editor publishes identity (deterministic HSL
