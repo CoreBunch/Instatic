@@ -198,7 +198,7 @@ html: { type: 'richtext', label: 'Content', hidden: true }
 
 | control `type`            | escaper at the publisher boundary                          |
 |---------------------------|------------------------------------------------------------|
-| `url` / `image` / `media` | `isSafeUrl` (blocks `javascript:` etc.; passed raw for the module's `safeUrl`) |
+| `url` / `image` / `media` | `isSafeUrl` (scheme allowlist: `http`, `https`, `mailto`, `tel`, `sms`, plus relative URLs; passed raw for the module's `safeUrl`) |
 | `richtext`                | `sanitizeRichtext` (DOMPurify)                             |
 | `svg`                     | `sanitizeSvg` (DOMPurify SVG profile)                      |
 | everything else, or a prop absent from `schema` | `escapeHtml` (safe default)          |
