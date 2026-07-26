@@ -78,7 +78,9 @@ export async function runMcpWorkspaceBridgeConnection(
     const res = await fetch(`${MCP_BRIDGE_PATH}?scope=${scope}`, {
       method: 'GET',
       credentials: 'same-origin',
-      headers: { Accept: 'application/x-ndjson' },
+      // The bridge body stays newline-delimited JSON, but the event-stream
+      // media type prevents reverse proxies from buffering the open response.
+      headers: { Accept: 'text/event-stream' },
       signal,
     })
     if (res.status === 401 || res.status === 403) return 'auth'
