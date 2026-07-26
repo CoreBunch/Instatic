@@ -15,7 +15,8 @@ which is how you run the CMS server itself.
 ## Site compatibility — read first
 
 The `published/current` slot is self-contained HTML, CSS, and runtime assets (plus a
-`404.html`), but exported pages call **CMS-backed endpoints at runtime**. Served from
+`404.html` when a not-found template is published), but exported pages call
+**CMS-backed endpoints at runtime**. Served from
 a different origin than the CMS, those requests 404 unless you route them back.
 
 - **Best case — fully static.** A site with no forms, no dynamic "hole" nodes, no
@@ -133,15 +134,18 @@ location / {
 }
 error_page 404 /404.html;   # requires a published not-found template (see Step 1)
 
-# keep the editor/admin surface private
+# non-root trailing slash → canonical path (pages are baked as <path>.html)
+location ~ ^(.+)/$ { return 301 $1$is_args$args; }
+
+# keep the editor/admin surface private (^~ so the redirect regex above can't intercept)
 location = /_instatic/mcp { return 404; }
-location /admin/          { return 404; }
+location ^~ /admin/       { return 404; }
 
 # route dynamic endpoints to the CMS
 # (skip /uploads if you use a public-url object-storage adapter,
 #  and skip /_instatic entirely if the site is fully static)
-location /uploads/   { proxy_pass https://cms.internal; }
-location /_instatic/ { proxy_pass https://cms.internal; }
+location ^~ /uploads/   { proxy_pass https://cms.internal; }
+location ^~ /_instatic/ { proxy_pass https://cms.internal; }
 ```
 
 Caddy is equivalent: `try_files {path} {path}.html {path}/index.html`, `handle_errors`
@@ -158,8 +162,11 @@ your public domain at the CDN. DeployHQ uploads only the changed files.
 Buckets do **exact object-key lookup**, so add a CDN rewrite (CloudFront Function,
 Cloudflare Worker, or equivalent):
 
-- `/` and paths ending `/` → append `index.html`
-- any other extensionless path → append `.html`
+- root `/` → serve `index.html`
+- non-root path ending `/` → 301 to the same path without the trailing slash (pages
+  are baked as `<path>.html`, not `<path>/index.html`)
+- any other extensionless path → serve `<path>.html`, falling back to
+  `<path>/index.html` for real directory pages
 - unmatched → serve `404.html` (only if a not-found template was published; see Step 1)
 - `/uploads/*` and the public `/_instatic/*` runtime routes → route to the CMS origin
   (skip `/uploads` for a `public-url` adapter; skip `/_instatic` for a fully static
@@ -178,6 +185,12 @@ If a publish ships broken markup, use
 [one-click rollback](https://www.deployhq.com/features/one-click-rollback?utm_source=instatic-docs&utm_medium=referral&utm_campaign=instatic-integration&utm_content=rollback-target)
 to redeploy the previous release. Because deployments are atomic, rollback is an
 instant pointer swap, not a re-upload.
+
+Rollback restores the deployed **files** only. For a fully static site that is a
+complete recovery. If the site uses dynamic endpoints, the CMS's published snapshot
+and `publishVersion` are unchanged, so a rolled-back shell can go stale — holes serve
+sentinels for an obsolete `?v=`, while forms and module JS resolve against the latest
+CMS snapshot. Pair a rollback of a dynamic site with a coordinated CMS rollback.
 
 ## Runtime notes
 
