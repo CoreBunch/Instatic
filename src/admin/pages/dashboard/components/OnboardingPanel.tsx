@@ -83,9 +83,9 @@ const STEPS: readonly StepDef[] = [
   },
   {
     id: 'firstPage',
-    title: 'Create your first page',
+    title: 'Create a new page',
     desc:
-      'Start from a blank canvas, a starter layout, or import HTML and we will scaffold a tree.',
+      'Import HTML, a starter layout, or create a brand new page.',
     cta: 'New page',
     icon: FileTextSolidIcon,
     action: { kind: 'navigate', to: '/admin/site' },
