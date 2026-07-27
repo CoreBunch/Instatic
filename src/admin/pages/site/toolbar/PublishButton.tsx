@@ -11,6 +11,7 @@ import { SaveSolidIcon } from 'pixel-art-icons/icons/save-solid'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { SchedulePublishDialog } from '@admin/modals/SchedulePublishDialog'
 import type { PersistenceSaveStatus } from '@site/hooks/usePersistence'
+import { pushToast } from '@ui/components/Toast'
 import { PublishActionGroup, type PublishActionMenuItem } from './PublishActionGroup'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
@@ -44,7 +45,6 @@ export function PublishButton({ enabled = true, onSave, saveStatus }: PublishBut
   const hasUnsavedChanges = useEditorStore((s) => s.hasUnsavedChanges)
   const { runStepUp } = useStepUp()
   const [state, setState] = useState<PublishState>('idle')
-  const [message, setMessage] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false)
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -67,7 +67,6 @@ export function PublishButton({ enabled = true, onSave, saveStatus }: PublishBut
         if (cancelled) return
         if (status.draftMatchesPublished) {
           setState('published')
-          setMessage(null)
         }
       } catch (err) {
         console.warn('[toolbar] Failed to load publish status:', err)
@@ -84,7 +83,6 @@ export function PublishButton({ enabled = true, onSave, saveStatus }: PublishBut
     statusTimerRef.current = null
     const resetTimer = setTimeout(() => {
       setState('idle')
-      setMessage(null)
     }, 0)
     return () => clearTimeout(resetTimer)
   }, [hasUnsavedChanges, state])
@@ -93,15 +91,6 @@ export function PublishButton({ enabled = true, onSave, saveStatus }: PublishBut
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current)
     statusTimerRef.current = setTimeout(() => {
       setState('idle')
-      setMessage(null)
-      statusTimerRef.current = null
-    }, 5000)
-  }
-
-  const clearMessageLater = () => {
-    if (statusTimerRef.current) clearTimeout(statusTimerRef.current)
-    statusTimerRef.current = setTimeout(() => {
-      setMessage(null)
       statusTimerRef.current = null
     }, 5000)
   }
@@ -115,7 +104,6 @@ export function PublishButton({ enabled = true, onSave, saveStatus }: PublishBut
     }
 
     setState('publishing')
-    setMessage(null)
 
     try {
       await onSave?.()
@@ -125,25 +113,24 @@ export function PublishButton({ enabled = true, onSave, saveStatus }: PublishBut
       // blast-radius site action (one click replaces every public page),
       // which is why the server gates it behind a fresh step-up window
       // in addition to the `pages.publish` capability check.
-      const result = await runStepUp(() => publishCmsDraft())
+      await runStepUp(() => publishCmsDraft())
       setState('published')
-      setMessage(
-        result.publishedPages === 1
-          ? '1 page published'
-          : `${result.publishedPages} pages published`,
-      )
-      clearMessageLater()
     } catch (err) {
       if (err instanceof Error && err.message === StepUpCancelledMessage) {
         // User dismissed the step-up dialog — return the button to its
         // resting state without surfacing an error message; this is the
         // same UX every other step-up-gated action uses.
         setState('idle')
-        setMessage(null)
         return
       }
+      console.error('[toolbar] Publish failed:', err)
       setState('error')
-      setMessage(getErrorMessage(err, 'Unknown publish error'))
+      pushToast({
+        kind: 'error',
+        title: 'Publish failed',
+        body: getErrorMessage(err, 'Unknown publish error'),
+        location: 'site-editor',
+      })
       resetErrorLater()
     }
   }
@@ -236,10 +223,6 @@ export function PublishButton({ enabled = true, onSave, saveStatus }: PublishBut
         publishIcon={PublishIcon}
         onPublish={handlePublish}
         menuItems={menuItems}
-        toast={message ? {
-          tone: state === 'error' ? 'alert' : 'status',
-          message,
-        } : null}
       />
       {activePage && (
         <SchedulePublishDialog
