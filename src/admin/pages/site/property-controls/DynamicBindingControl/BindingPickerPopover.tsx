@@ -43,6 +43,7 @@ import {
   buildRouteFrame,
 } from '@core/templates/contextFrames'
 import { getCmsDataTable, previewCmsDataLoopItems } from '@core/persistence/cmsData'
+import { getVisitorAuthConfig, type VisitorProfileField } from '@core/persistence'
 import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
 import { primaryTemplateTableSlug } from '@core/templates'
 import {
@@ -95,6 +96,13 @@ interface PickerPopoverProps {
   control: PropertyControl
   availableFields?: LoopSourceField[]
   sourceLabel?: string
+  /**
+   * The enclosing loop source's id (e.g. 'visitor.current'). When this is
+   * 'visitor.current', the picker fetches the site's configured custom
+   * profile fields and merges them into the available loop fields so authors
+   * can insert `{currentEntry.schoolName}` etc. without typing the token.
+   */
+  sourceId?: string
   loopTableId?: string | null
   /**
    * Insert mode — clicks insert a `{source.field}` token and the popover
@@ -130,6 +138,7 @@ export function BindingPickerPopover({
   control,
   availableFields,
   sourceLabel,
+  sourceId,
   loopTableId,
   insertMode = false,
   anchorRef,
@@ -165,6 +174,30 @@ export function BindingPickerPopover({
     }
   }, [])
 
+  // ─── Visitor custom profile fields (runtime-configured) ───────────────
+  // The `visitor.current` loop source statically declares only the core
+  // identity fields (id/displayName/email/roleName); site-builder-defined
+  // custom profile fields (e.g. schoolName) live in visitor-auth config and
+  // must be fetched + merged into the picker so authors can insert
+  // `{currentEntry.<profileField>}` tokens without typing them.
+  const [visitorProfileFields, setVisitorProfileFields] = useState<VisitorProfileField[] | null>(null)
+  useEffect(() => {
+    if (sourceId !== 'visitor.current') return // only fetch when relevant
+    let cancelled = false
+    getVisitorAuthConfig()
+      .then((cfg) => {
+        if (cancelled) return
+        setVisitorProfileFields(cfg.profileFields ?? [])
+      })
+      .catch(() => {
+        if (cancelled) return
+        setVisitorProfileFields([]) // best-effort — picker just won't offer them
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [sourceId])
+
   // ─── Active page template for auto-scope + frame data ─────────────────
   const activePageTableSlug = useEditorStore((s) => {
     const page = selectActivePage(s)
@@ -198,7 +231,22 @@ export function BindingPickerPopover({
   })()
 
   // Loop scope without a specific table — synthetic fields only.
-  const hasLoopOnlyScope = !scopedTable && (availableFields?.length ?? 0) > 0
+  //
+  // For `visitor.current`, merge the site-configured custom profile fields
+  // (runtime config, not on the source's static `fields`) into the
+  // statically-declared loop fields, deduped by id so an accidental redef of
+  // `displayName` etc. doesn't produce a duplicate row.
+  const profileLoopFields: LoopSourceField[] = (visitorProfileFields ?? []).map((f) => ({
+    id: f.id,
+    label: f.label,
+  }))
+  const mergedAvailableFields = sourceId === 'visitor.current' && profileLoopFields.length > 0
+    ? (() => {
+        const existing = new Set((availableFields ?? []).map((f) => f.id))
+        return [...(availableFields ?? []), ...profileLoopFields.filter((f) => !existing.has(f.id))]
+      })()
+    : availableFields
+  const hasLoopOnlyScope = !scopedTable && (mergedAvailableFields?.length ?? 0) > 0
 
   // ─── currentEntry preview item ─────────────────────────────────────────
   // The value shown on each row for `currentEntry.X` bindings comes from
@@ -291,9 +339,9 @@ export function BindingPickerPopover({
       result.push({ label: `${scopedTable.name} fields`, entries: tableEntries })
 
       // Loop synthetics not already present in the table.
-      if (availableFields && availableFields.length > 0) {
+      if (mergedAvailableFields && mergedAvailableFields.length > 0) {
         const tableFieldIds = new Set(scopedTable.fields.map((f) => f.id))
-        const loopEntries: FieldEntry[] = availableFields
+        const loopEntries: FieldEntry[] = mergedAvailableFields
           .filter((f) => !tableFieldIds.has(f.id))
           .filter(
             (f) =>
@@ -306,7 +354,7 @@ export function BindingPickerPopover({
       }
     } else if (hasLoopOnlyScope) {
       // 2. Loop-only scope — synthetic fields directly.
-      const loopEntries: FieldEntry[] = (availableFields ?? []).map((f) => ({
+      const loopEntries: FieldEntry[] = (mergedAvailableFields ?? []).map((f) => ({
         kind: 'loop' as const,
         field: f,
       }))

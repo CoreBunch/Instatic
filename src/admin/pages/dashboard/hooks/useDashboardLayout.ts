@@ -182,10 +182,16 @@ const DEFAULT_LAYOUT: DashboardLayout = {
     { id: 'posts',     col: 4,  row: 5,  size: 3,  rows: 3 },
     { id: 'media',     col: 7,  row: 5,  size: 3,  rows: 3 },
     { id: 'status',    col: 10, row: 5,  size: 3,  rows: 3 },
-    { id: 'activity',  col: 1,  row: 8,  size: 6,  rows: 5 },
-    { id: 'publish',   col: 7,  row: 8,  size: 6,  rows: 5 },
-    { id: 'plugins',   col: 1,  row: 13, size: 6,  rows: 5 },
-    { id: 'domain',    col: 7,  row: 13, size: 6,  rows: 3 },
+    // Membership fork: Members is first-party core product, surfaced in
+    // the default grid alongside the other content tiles (registration
+    // lives in widgets/index.ts). The tiles below shift +3 rows to make
+    // room — the grid uses explicit placement (no auto-flow), so the new
+    // tile needs a collision-free slot.
+    { id: 'members',   col: 1,  row: 8,  size: 3,  rows: 3 },
+    { id: 'activity',  col: 1,  row: 11, size: 6,  rows: 5 },
+    { id: 'publish',   col: 7,  row: 11, size: 6,  rows: 5 },
+    { id: 'plugins',   col: 1,  row: 16, size: 6,  rows: 5 },
+    { id: 'domain',    col: 7,  row: 16, size: 6,  rows: 3 },
   ],
   onboardingDismissed: false,
   libraryHeight: LIBRARY_DEFAULT_HEIGHT,
@@ -303,6 +309,30 @@ function normalizeLayout(pref: DashboardLayoutPreference): DashboardLayout {
   }
 }
 
+/**
+ * One-shot backfill for the Members widget.
+ *
+ * Existing users saved a `dashboard-layout` preference BEFORE the
+ * membership fork added the first-party Members widget, so the updated
+ * default layout never reaches them — without this they'd have to open
+ * the block library and drag the tile in manually. On load, if their
+ * saved layout lacks a `members` item, append one below every other
+ * tile (`row = max occupied row + 1`, `col: 1`). The position is
+ * collision-free by construction (nothing exists below the current
+ * lowest tile), so it needs no overlap-resolution pass.
+ *
+ * Self-cleaning + idempotent: once a `members` item is in the saved
+ * layout the `some(...)` guard short-circuits and this becomes a no-op.
+ * The appended item is persisted by the hook's normal debounced save
+ * the first time it runs, so the backfill fires at most once per user —
+ * no separate "seen" flag, no infinite save loop.
+ */
+function backfillMembers(items: DashboardItem[]): DashboardItem[] {
+  if (items.some((i) => i.id === 'members')) return items
+  const maxRow = items.reduce((m, i) => Math.max(m, i.row + i.rows - 1), 0)
+  return [...items, { id: 'members', col: 1, row: maxRow + 1, size: 3, rows: 3 }]
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -372,7 +402,14 @@ export function useDashboardLayout(): DashboardLayoutApi {
       try {
         const stored = await getUserPreference('dashboard-layout')
         if (cancelled) return
-        if (stored) setLayout(normalizeLayout(stored))
+        if (stored) {
+          // Backfill the Members widget into layouts saved before the
+          // membership fork shipped it (see `backfillMembers`). The
+          // resulting layout persists on the next debounced save, so the
+          // backfill runs at most once per user.
+          const normalized = normalizeLayout(stored)
+          setLayout({ ...normalized, items: backfillMembers(normalized.items) })
+        }
       } catch (err) {
         console.error('[dashboard] failed to load layout from server:', err)
       } finally {

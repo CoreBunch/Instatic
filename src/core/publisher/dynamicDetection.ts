@@ -11,7 +11,7 @@
  * `findDynamicNodesWithReasons(...)` returns the same set PLUS a list of
  * human-readable reason strings for diagnostics.
  *
- * The four detection rules (per spec, "Auto-detection rules"):
+ * The five detection rules (per spec, "Auto-detection rules"):
  *
  *   1. Module is flagged `dynamic: true` in the registry.
  *   2. Node has a `dynamicBindings` entry whose source is request-dependent
@@ -22,6 +22,10 @@
  *      or `perVisitor: true`.
  *   4. `moduleId === 'base.visual-component-ref'` whose VC definition tree
  *      contains any dynamic node (recursive check with cycle guard).
+ *   5. `moduleId === 'base.container'` with a non-empty `authGate` group-id
+ *      list (Phase 3 / D16 — the subtree depends on the visitor's group
+ *      membership, so it is deferred to request time and rendered by
+ *      `/_instatic/gate/<nodeId>`).
  *
  * VC ref subtlety: when the VC definition tree is dynamic, the OUTER VC ref
  * node id (in the page tree) goes into `dynamicPageNodeIds` — not the inner
@@ -158,7 +162,7 @@ function checkLoopSource(node: AnalysisNode): string | null {
 
 /**
  * The single source of truth for "is this ONE node request-dependent?". Applies
- * Rules 1–4 in order and returns the first match:
+ * Rules 1–5 in order and returns the first match:
  *
  *   1. module flagged `dynamic: true`
  *   2. structured `dynamicBindings` with a request-dependent source
@@ -166,6 +170,7 @@ function checkLoopSource(node: AnalysisNode): string | null {
  *   3. `base.loop` with a request-dependent / per-visitor source
  *   4. `base.visual-component-ref` whose VC definition tree contains any
  *      request-dependent node (recursive, cycle-guarded via `seenVcs`)
+ *   5. `base.container` with a non-empty `authGate` group-id list
  *
  * `seenVcs` carries the VC component-ids already on the DFS stack so VC → VC
  * cycles terminate; a cycle is treated as dynamic (defensive — and consistent
@@ -235,6 +240,17 @@ function classifyNode(
       return { dynamic: true, reason: innerReasons[0] }
     }
     return { dynamic: false, reason: null }
+  }
+
+  // Rule 5: base.container with a non-empty auth-gate group list (D16) — the
+  // subtree depends on the visitor's group membership, so it must be deferred
+  // to request time (rendered by the /_instatic/gate/<nodeId> endpoint). An
+  // empty array (or a non-array legacy value) means not gated.
+  if (node.moduleId === 'base.container') {
+    const gate = Array.isArray(node.props.authGate) ? node.props.authGate : []
+    if (gate.length > 0) {
+      return { dynamic: true, reason: `node "${node.id}": auth gate (${gate.length} group(s))` }
+    }
   }
 
   return { dynamic: false, reason: null }

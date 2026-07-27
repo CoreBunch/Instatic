@@ -66,6 +66,12 @@ interface DataTableRow {
    * `0`/`1`, Postgres as a boolean — `mapTable` coerces both via `Boolean`.
    */
   system: number | boolean
+  /**
+   * Per-table opt-in for the visitor-data framework (Pillar 3). `not null
+   * default 0` on both dialects; `mapTable` coerces via `Boolean` (same as
+   * `system`). True when the form handler should stamp `visitor_user_id`.
+   */
+  captures_visitor_owner: number | boolean
   created_by_user_id: string | null
   updated_by_user_id: string | null
   /**
@@ -88,6 +94,7 @@ function mapTable(row: DataTableRow): DataTable {
     primaryFieldId: row.primary_field_id,
     fields: normalizeDataTableFields(row.fields_json),
     system: Boolean(row.system),
+    capturesVisitorOwner: Boolean(row.captures_visitor_owner),
     createdByUserId: row.created_by_user_id ?? null,
     updatedByUserId: row.updated_by_user_id ?? null,
     createdAt: isoDate(row.created_at),
@@ -98,7 +105,7 @@ function mapTable(row: DataTableRow): DataTable {
 export async function listDataTables(db: DbClient): Promise<DataTable[]> {
   const { rows } = await db<DataTableRow>`
     select id, name, slug, kind, route_base, singular_label, plural_label,
-           primary_field_id, fields_json, system,
+           primary_field_id, fields_json, system, captures_visitor_owner,
            created_by_user_id, updated_by_user_id, created_at, updated_at
     from data_tables
     where deleted_at is null
@@ -126,7 +133,7 @@ export async function listDataTables(db: DbClient): Promise<DataTable[]> {
 export async function listDataTablesWithCounts(db: DbClient): Promise<DataTableListItem[]> {
   const { rows } = await db<DataTableRow & { row_count: number | string }>`
     select t.id, t.name, t.slug, t.kind, t.route_base, t.singular_label, t.plural_label,
-           t.primary_field_id, t.fields_json, t.system,
+           t.primary_field_id, t.fields_json, t.system, t.captures_visitor_owner,
            t.created_by_user_id, t.updated_by_user_id, t.created_at, t.updated_at,
            coalesce(
              (select count(*) from data_rows r where r.table_id = t.id and r.deleted_at is null),
@@ -153,7 +160,7 @@ export async function listDataTablesWithCounts(db: DbClient): Promise<DataTableL
 export async function getDataTable(db: DbClient, tableId: string): Promise<DataTable | null> {
   const { rows } = await db<DataTableRow>`
     select id, name, slug, kind, route_base, singular_label, plural_label,
-           primary_field_id, fields_json, system,
+           primary_field_id, fields_json, system, captures_visitor_owner,
            created_by_user_id, updated_by_user_id, created_at, updated_at
     from data_tables
     where id = ${tableId}
@@ -172,7 +179,7 @@ export async function getDataTable(db: DbClient, tableId: string): Promise<DataT
 export async function getDataTableBySlug(db: DbClient, slug: string): Promise<DataTable | null> {
   const { rows } = await db<DataTableRow>`
     select id, name, slug, kind, route_base, singular_label, plural_label,
-           primary_field_id, fields_json, system,
+           primary_field_id, fields_json, system, captures_visitor_owner,
            created_by_user_id, updated_by_user_id, created_at, updated_at
     from data_tables
     where slug = ${slug}
@@ -215,7 +222,7 @@ export async function createDataTable(
       ${input.updatedByUserId ?? input.createdByUserId ?? null}
     )
     returning id, name, slug, kind, route_base, singular_label, plural_label,
-              primary_field_id, fields_json, system,
+              primary_field_id, fields_json, system, captures_visitor_owner,
               created_by_user_id, updated_by_user_id, created_at, updated_at
   `
   // NOTE: table creation is pure data access. Entry templates are ordinary
@@ -244,7 +251,7 @@ export async function updateDataTable(
     where id = ${tableId}
       and deleted_at is null
     returning id, name, slug, kind, route_base, singular_label, plural_label,
-              primary_field_id, fields_json, system,
+              primary_field_id, fields_json, system, captures_visitor_owner,
               created_by_user_id, updated_by_user_id, created_at, updated_at
   `
   return rows[0] ? mapTable(rows[0]) : null
@@ -322,7 +329,7 @@ export async function softDeleteDataTable(
     where id = ${tableId}
       and deleted_at is null
     returning id, name, slug, kind, route_base, singular_label, plural_label,
-              primary_field_id, fields_json, system,
+              primary_field_id, fields_json, system, captures_visitor_owner,
               created_by_user_id, updated_by_user_id, created_at, updated_at
   `
   return rows[0] ? mapTable(rows[0]) : null

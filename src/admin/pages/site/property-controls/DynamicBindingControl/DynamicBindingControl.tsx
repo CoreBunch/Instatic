@@ -72,6 +72,13 @@ interface DynamicBindingControlProps {
   /** Human label for the loop source — shown in the left pane. */
   sourceLabel?: string
   /**
+   * The enclosing loop source's id (e.g. 'visitor.current'). Passed to the
+   * picker so it can fetch source-specific runtime-declared fields (visitor
+   * custom profile fields for 'visitor.current') that aren't in
+   * `availableFields`.
+   */
+  sourceId?: string
+  /**
    * Table id of the data table this loop iterates (only set when the
    * enclosing loop uses `data.rows`). When provided, the picker auto-scopes
    * to that single table — hiding the left pane and showing its fields
@@ -93,6 +100,7 @@ export function DynamicBindingControl({
   onInsertToken,
   availableFields,
   sourceLabel,
+  sourceId,
   loopTableId,
   children,
 }: DynamicBindingControlProps) {
@@ -190,6 +198,7 @@ export function DynamicBindingControl({
           control={control}
           availableFields={availableFields}
           sourceLabel={sourceLabel}
+          sourceId={sourceId}
           loopTableId={loopTableId}
           insertMode={insertMode}
           anchorRef={wrapperRef}

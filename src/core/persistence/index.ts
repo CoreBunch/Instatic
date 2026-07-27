@@ -16,6 +16,7 @@ export {
   listCmsDataTables,
   publishCmsDataRow,
   saveCmsDataRowDraft,
+  saveCmsPageAccess,
   scheduleCmsDataRowPublish,
   updateCmsDataRowAuthor,
   updateCmsDataRowStatus,
@@ -63,6 +64,40 @@ export {
   updateCmsUser,
 } from './cmsUsers'
 export type { CmsAuditEvent, CmsRole } from './cmsUsers'
+export {
+  createVisitorGroup,
+  createVisitorRole,
+  deleteVisitorGroup,
+  deleteVisitorRole,
+  deleteVisitorUser,
+  getVisitorAuthConfig,
+  getVisitorGroups,
+  listGroupMembers,
+  listVisitorGroups,
+  listVisitorRoles,
+  listVisitorUsers,
+  saveVisitorAuthConfig,
+  setVisitorGroups,
+  updateVisitorGroup,
+  updateVisitorRole,
+  updateVisitorUser,
+} from './visitorAuth'
+export type {
+  AdminVisitorUser,
+  ListVisitorUsersOptions,
+  VisitorAuthConfig,
+  VisitorAuthConfigPatch,
+  VisitorProfileField,
+  VisitorGroup,
+  VisitorGroupCreateInput,
+  VisitorGroupMember,
+  VisitorGroupPatchInput,
+  VisitorMembership,
+  VisitorRole,
+  VisitorRoleCreateInput,
+  VisitorRolePatchInput,
+  VisitorUserPatch,
+} from './visitorAuth'
 export {
   changeCurrentUserPassword,
   deleteCurrentUserAvatar,

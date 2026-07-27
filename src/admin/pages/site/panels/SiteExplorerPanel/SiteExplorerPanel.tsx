@@ -16,6 +16,8 @@ import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
 import { SiteCreateDialog, buildScriptPath, buildStylePath, slugifySiteItemName, type SiteCreatePayload, type SiteCreateKind } from '@admin/shared/dialogs/SiteCreateDialog'
 import type { ExplorerContextMenuItem } from '@site/explorer-actions'
 import { usePageSettingsDialogs } from './usePageSettingsDialogs'
+import { PageAccessDialog, usePageAccessDialog } from '@admin/shared/dialogs/PageAccessDialog'
+import { LockSolidIcon } from 'pixel-art-icons/icons/lock-solid'
 import { useVCDeletionConfirm } from '@admin/shared/dialogs/VCDeletionConfirmDialog'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import {
@@ -102,6 +104,8 @@ export function SiteExplorerPanel({
   const deletePage = useEditorStore((s) => s.deletePage)
   const convertPageToTemplate = useEditorStore((s) => s.convertPageToTemplate)
   const convertTemplateToPage = useEditorStore((s) => s.convertTemplateToPage)
+  const setPageAccess = useEditorStore((s) => s.setPageAccess)
+  const pageAccess = usePageAccessDialog(setPageAccess)
   const createVisualComponent = useEditorStore((s) => s.createVisualComponent)
   const renameVisualComponent = useEditorStore((s) => s.renameVisualComponent)
   const deleteVisualComponent = useEditorStore((s) => s.deleteVisualComponent)
@@ -408,6 +412,11 @@ export function SiteExplorerPanel({
         },
       }] : []),
       {
+        label: 'Page access',
+        icon: <LockSolidIcon size={13} />,
+        action: () => { pageAccess.open(page); setContextMenu(null) },
+      },
+      {
         label: 'Open in new tab',
         icon: <ExternalLinkSolidIcon size={13} />,
         action: () => {
@@ -661,6 +670,13 @@ export function SiteExplorerPanel({
           />
         )}
         {pageSettingsDialogs}
+        {pageAccess.target && (
+          <PageAccessDialog
+            page={pageAccess.target}
+            onCancel={pageAccess.cancel}
+            onSave={pageAccess.save}
+          />
+        )}
         {pathConfirmPlan && (
           <SiteExplorerPathConfirmDialog
             plan={pathConfirmPlan}

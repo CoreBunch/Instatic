@@ -4,8 +4,9 @@
  * - `requestAuditContext` — the `(ipAddress, userAgent)` pair every audit
  *   event carries.
  * - `mutationErrorResponse` — translates the typed mutation errors thrown
- *   by repositories (`UserMutationError`, `RoleMutationError`) into the
- *   `{ error }` JSON envelope clients expect.
+ *   by repositories (`UserMutationError`, `RoleMutationError`,
+ *   `VisitorRoleMutationError`) into the `{ error }` JSON envelope clients
+ *   expect.
  *
  * These helpers are intentionally small and dependency-free so any new
  * handler module can pull them in without dragging the rest of the CMS
@@ -16,6 +17,8 @@ import { jsonResponse } from '../../http'
 import { clientIp } from '../../auth/security'
 import { UserMutationError } from '../../repositories/users'
 import { RoleMutationError } from '../../repositories/roles'
+import { VisitorRoleMutationError } from '../../visitor-auth/roles'
+import { VisitorGroupMutationError } from '../../visitor-auth/groups'
 
 export const CMS_API_PREFIX = '/admin/api/cms'
 
@@ -41,7 +44,12 @@ export function requestAuditContext(req: Request): { ipAddress: string | null; u
 }
 
 export function mutationErrorResponse(err: unknown): Response {
-  if (err instanceof UserMutationError || err instanceof RoleMutationError) {
+  if (
+    err instanceof UserMutationError ||
+    err instanceof RoleMutationError ||
+    err instanceof VisitorRoleMutationError ||
+    err instanceof VisitorGroupMutationError
+  ) {
     return jsonResponse({ error: err.message }, { status: err.status })
   }
   throw err

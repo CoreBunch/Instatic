@@ -207,6 +207,22 @@
     word-break: break-all;
 }
 
+/* ── Member access (page) ────────────────────────────────────────────────── */
+
+.accessRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-l);
+}
+
+.accessLabelCol {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3xs);
+    min-width: 0;
+}
+
 /* ── Field list ──────────────────────────────────────────────────────────── */
 
 .fieldList {

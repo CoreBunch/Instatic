@@ -74,6 +74,10 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   // pages, not a CMS admin route. Reached only via the public router.
   ['loop.ts', 'Published-page runtime endpoint; not a /admin/api/cms/ route.'],
   ['hole.ts', 'Published-page runtime endpoint; not a /admin/api/cms/ route.'],
+  // Auth-gate fragment endpoint — `/_instatic/gate/<nodeId>` renders a gated
+  // container subtree for authorised visitors (same trust model as hole/loop:
+  // reached only via the public router, authorisation lives in gateHelpers).
+  ['gate.ts', 'Published-page runtime endpoint; not a /admin/api/cms/ route.'],
   // Module-JS assets — `/_instatic/module-js/<moduleId>.js` serves published
   // module runtimes to anonymous visitors, same trust model as hole/loop.
   ['moduleJs.ts', 'Published-page runtime endpoint; not a /admin/api/cms/ route.'],
@@ -110,6 +114,7 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   ['dashboard/posts.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
   ['dashboard/media.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
   ['dashboard/plugins.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
+  ['dashboard/members.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher (visitor count + registration histogram).'],
   ['dashboard/publishLineup.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
   ['dashboard/activity.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
   ['dashboard/storage.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],

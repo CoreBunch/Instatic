@@ -83,3 +83,4 @@ docs/superpowers/
 .factory/
 .trae/
 .windsurf/
+*.fuse_hidden*

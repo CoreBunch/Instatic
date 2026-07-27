@@ -38,6 +38,7 @@ const FALLBACK_COLLECTIONS: DataTable[] = [{
   pluralLabel: 'Posts',
   primaryFieldId: 'title',
   system: false,
+  capturesVisitorOwner: false,
   fields: [],
   createdByUserId: null,
   updatedByUserId: null,

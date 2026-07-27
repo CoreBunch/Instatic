@@ -4,6 +4,7 @@ import { syncSystemRoles } from './repositories/roles'
 import { readServerConfig } from './config'
 import { DEV_ORIGIN_ALLOWLIST, configurePublicOrigins, configureTrustedProxyCidrs, stampSocketIp } from './auth/security'
 import { applySecurityHeaders } from './securityHeaders'
+import { visitorAuthMiddleware } from './visitor-auth/middleware'
 import { startConversationPurgeTick } from './ai/boot'
 
 await import('./richtextSanitizer')
@@ -89,6 +90,14 @@ Bun.serve({
     }
 
     try {
+      // Visitor-auth route protection (D1). Runs before handleServerRequest so
+      // it gates every public-site request; returns null for pass-through.
+      const authResponse = await visitorAuthMiddleware(req, db)
+      if (authResponse) {
+        for (const [k, v] of Object.entries(cors)) authResponse.headers.set(k, v)
+        return applySecurityHeaders(authResponse, pathname)
+      }
+
       const res = await handleServerRequest(req, {
         db,
         staticDir: config.staticDir,

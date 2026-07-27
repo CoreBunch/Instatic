@@ -24,6 +24,7 @@ type PageActions = Pick<
   | 'reorderPages'
   | 'convertPageToTemplate'
   | 'convertTemplateToPage'
+  | 'setPageAccess'
 >
 
 export function createPageActions({
@@ -118,6 +119,25 @@ export function createPageActions({
           delete node.dynamicBindings
         }
         reconcileSiteExplorerInPlace(site)
+        return true
+      })
+    },
+
+    setPageAccess: (pageId, access) => {
+      mutateSite((site) => {
+        const page = site.pages.find((candidate) => candidate.id === pageId)
+        if (!page) return false
+        // Mirror parsePageAccess: a public level (or an empty groups list) is
+        // stored as the ABSENCE of the field so published snapshots stay lean
+        // and parse back as public. A groups level with at least one id
+        // persists the restriction.
+        const groups = access.groups ?? []
+        if (access.level === 'public' || groups.length === 0) {
+          if (page.access === undefined) return false
+          delete page.access
+        } else {
+          page.access = { level: 'groups', groups }
+        }
         return true
       })
     },

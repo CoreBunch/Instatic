@@ -20,7 +20,7 @@ export {
   assertValidNodeTree,
   parsePageNodeTree,
 } from './operationSchema'
-export { PageSchema } from './page'
+export { PageSchema, PageAccessSchema, resolvePageAccess } from './page'
 export {
   CSSDeclarationPriorityBagSchema,
   StyleRuleSchema,
@@ -37,7 +37,7 @@ export type { DynamicPropBinding } from './dynamicBinding'
 export type { PageTemplateConfig, TemplateTarget } from './pageTemplate'
 export type { PageNode } from './pageNode'
 export type { TreeOperation, TreeMutateResult } from './operationSchema'
-export type { Page } from './page'
+export type { Page, PageAccess } from './page'
 export type { CSSPropertyBag } from './cssPropertyBag'
 export type {
   CSSDeclarationPriorityBag,

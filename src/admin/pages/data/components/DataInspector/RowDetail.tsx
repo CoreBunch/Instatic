@@ -2,11 +2,19 @@ import { useState, type ReactElement, type ReactNode } from 'react'
 import { Button } from '@ui/components/Button'
 import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
+import { LockSolidIcon } from 'pixel-art-icons/icons/lock-solid'
 import { CellEditorRenderer } from '@admin/pages/data/components/DataGrid/cells/CellEditorRenderer'
 import { RelationPickerDialog } from '@admin/pages/data/components/RelationPickerDialog/RelationPickerDialog'
+import { PageAccessDialog, type PageAccessPayload } from '@admin/shared/dialogs/PageAccessDialog'
+import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useDataRowDraft } from '@admin/pages/data/hooks/useDataRowDraft'
 import { emptyCellValue } from '@admin/pages/data/utils/fieldDefaults'
 import { isBuiltInValueLocked } from '@core/data/systemTableGuard'
+import { pageFromRow } from '@core/data/pageFromRow'
+import { resolvePageAccess, type PageAccess } from '@core/page-tree'
+import { listVisitorGroups, type VisitorGroup } from '@core/persistence'
+import { getErrorMessage } from '@core/utils/errorMessage'
+import { pushToast } from '@ui/components/Toast'
 import type { DataTable, DataRow, DataRowCells } from '@core/data/schemas'
 import type { DataField } from '@core/data/schemas'
 import styles from './DataInspector.module.css'
@@ -20,6 +28,8 @@ interface RowDetailProps {
   table: DataTable
   tables: DataTable[]
   onSaveRow: (rowId: string, cells: DataRowCells) => Promise<DataRow>
+  /** Persist a page's access (Public / group-restricted) — pages write via site-document, not the data grid. */
+  onSavePageAccess: (row: DataRow, access: PageAccess) => Promise<void>
   /** Navigate the Content page to edit this post-type row. */
   onEditInContent?: (row: DataRow) => void
   /** Navigate the Site editor to open this page or component row. */
@@ -259,6 +269,105 @@ function DataRowForm({
 }
 
 // ---------------------------------------------------------------------------
+// PageAccessSection — per-page access control (D14).
+//
+// The Data workspace mirrors the Site editor's PageAccessDialog so an admin
+// can set a page's access (Public / group-restricted) from the same place they
+// edit title/slug/SEO. Access is page-level, not a data-grid cell: every
+// built-in field on the `pages` system table is value-locked, so the data-rows
+// PATCH can't carry it (it 400s on `title` for a full-cells write and would
+// wipe the row on a partial). The control reads the current access from
+// `cells.access` via `resolvePageAccess` and persists changes through the
+// site-document transaction (`onSavePageAccess`) — the same path the Site
+// editor's `setPageAccess` uses.
+// ---------------------------------------------------------------------------
+
+/**
+ * One-line access summary for the section. Resolves group ids to names via
+ * the loaded group list; ids that no longer match a group are surfaced as an
+ * "N unavailable" tail so a deleted group is never silently hidden.
+ */
+function accessSummary(
+  access: { level: 'public' | 'groups'; groups: string[] },
+  groups: VisitorGroup[],
+): string {
+  if (access.level === 'public') return 'Public — anyone can view'
+  const byId = new Map(groups.map((g) => [g.id, g.name]))
+  const known: string[] = []
+  let unknownCount = 0
+  for (const id of access.groups) {
+    const name = byId.get(id)
+    if (name) known.push(name)
+    else unknownCount += 1
+  }
+  const parts = known.slice()
+  if (unknownCount > 0) parts.push(`${unknownCount} unavailable`)
+  return `Restricted: ${parts.join(', ')}`
+}
+
+function PageAccessSection({
+  row,
+  onSavePageAccess,
+  canEdit,
+}: {
+  row: DataRow
+  onSavePageAccess: (row: DataRow, access: PageAccess) => Promise<void>
+  canEdit: boolean
+}): ReactElement {
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const access = resolvePageAccess(row.cells.access)
+  // Best-effort load of the group list (the same list the Members workspace
+  // manages) so the summary can resolve ids to names. A failed load leaves an
+  // empty list — the level is still readable and the dialog re-loads its own.
+  const { data: groups } = useAsyncResource(() => listVisitorGroups(), [], { swallowErrors: true })
+  const loadedGroups: VisitorGroup[] = groups ?? []
+  const pageTitle = typeof row.cells.title === 'string' ? row.cells.title : row.id
+
+  async function handleSave(payload: PageAccessPayload) {
+    try {
+      await onSavePageAccess(row, payload.access)
+      setDialogOpen(false)
+    } catch (err) {
+      console.error('[data-inspector] Page access save failed:', err)
+      pushToast({
+        kind: 'error',
+        title: 'Could not save access',
+        body: getErrorMessage(err, 'Failed to save page access.'),
+      })
+    }
+  }
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.accessRow}>
+        <div className={styles.accessLabelCol}>
+          <span className={styles.label}>Member access</span>
+          <span className={styles.caption}>{accessSummary(access, loadedGroups)}</span>
+        </div>
+        <Button
+          variant="secondary"
+          size="xs"
+          onClick={() => setDialogOpen(true)}
+          disabled={!canEdit}
+          aria-label={`Manage member access for ${pageTitle}`}
+        >
+          <LockSolidIcon size={12} aria-hidden="true" />
+          Manage access…
+        </Button>
+      </div>
+
+      {dialogOpen && (
+        <PageAccessDialog
+          page={pageFromRow(row)}
+          onCancel={() => setDialogOpen(false)}
+          onSave={(payload) => { void handleSave(payload) }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // RowDetail
 //
 // Composition rules per kind:
@@ -278,6 +387,7 @@ export function RowDetail({
   table,
   tables,
   onSaveRow,
+  onSavePageAccess,
   onEditInContent,
   onOpenInSiteEditor,
   onPublishRow: _onPublishRow,
@@ -338,6 +448,9 @@ export function RowDetail({
         canEdit={canEdit}
         onOpenEditor={formOpenEditor}
       />
+      {table.kind === 'page' && (
+        <PageAccessSection row={row} onSavePageAccess={onSavePageAccess} canEdit={canEdit} />
+      )}
     </>
   )
 }

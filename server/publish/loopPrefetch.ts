@@ -25,6 +25,29 @@ import { publicDataUserFromParts } from '@core/data/publicDataUser'
 import type { PublishedDataRow } from '@core/data/schemas'
 import type { DbClient } from '../db/client'
 import { walkRenderTree } from './renderTreeWalk'
+import { resolveVisitorFromCookie } from '../visitor-auth/visitorData'
+import type { SourceVisitorContext } from '@core/loops/types'
+
+/**
+ * Resolve the current visitor from the per-visitor cookie map and project it
+ * to the core `SourceVisitorContext` shape (no server types leak into
+ * `src/core`). Returns `undefined` for anonymous requests — perVisitor
+ * sources then render their empty state. Derived solely from the cookie.
+ */
+async function resolveVisitorForLoop(
+  db: DbClient,
+  cookies: Record<string, string> | undefined,
+): Promise<SourceVisitorContext | undefined> {
+  const visitor = await resolveVisitorFromCookie(db, cookies)
+  if (!visitor) return undefined
+  return {
+    id: visitor.id,
+    displayName: visitor.displayName,
+    email: visitor.email,
+    roleName: visitor.roleName ?? null,
+    profileFields: visitor.profileFields,
+  }
+}
 
 /**
  * Resolved loop data for a single loop node on a page.
@@ -243,6 +266,12 @@ async function resolveOneLoop(
     // Request context — present only when rendering inside a Layer C hole.
     // Built-in publish-time sources ignore it.
     request: ctx.request,
+    // Resolved visitor — populated ONLY for perVisitor sources with cookies,
+    // so built-in sources read `ctx.visitor` without importing session code.
+    // Derived solely from the cookie (IDOR-safe — never from loop input).
+    visitor: source.perVisitor && ctx.request
+      ? await resolveVisitorForLoop(ctx.db, ctx.request.cookies)
+      : undefined,
   }
 
   try {

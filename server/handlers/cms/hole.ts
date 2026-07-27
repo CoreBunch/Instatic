@@ -43,7 +43,7 @@ import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/pu
 import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
 import { prefetchLoopData } from '../../publish/loopPrefetch'
 import { getOrRender } from '../../publish/renderCache'
-import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
+import { findPageForNodeId, getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
 import { stampFormPageTokens } from '../../forms/formRuntime'
@@ -115,8 +115,13 @@ function isPerVisitorHole(node: PageNode): boolean {
  * Render one node subtree at request time. Builds the same named frames the
  * full-page publisher builds (route/page/site) plus pre-fetched loop data for
  * loops INSIDE this subtree, then renders fully (no `<instatic-hole>` recursion).
+ *
+ * Shared by the hole endpoint (`/_instatic/hole/<nodeId>`) and the auth-gate
+ * endpoint (`/_instatic/gate/<nodeId>`) — both render a request-time fragment
+ * for a single node subtree, so the frame/prefetch/render/stamp pipeline is
+ * identical.
  */
-async function renderHoleFragment(
+export async function renderHoleFragment(
   nodeId: string,
   page: Page,
   site: SiteDocument,
@@ -203,14 +208,18 @@ export async function handleHoleRequest(
       headers: { 'content-type': 'text/plain; charset=utf-8' },
     })
   }
-  const foundPage = snap.nodeIndex.get(nodeId)
-  if (!foundPage) {
+  const found = findPageForNodeId(snap, nodeId)
+  if (!found) {
     return new Response('Node not found', {
       status: 404,
       headers: { 'content-type': 'text/plain; charset=utf-8' },
     })
   }
-  const node = foundPage.nodes[nodeId]!
+  // Template composition prefixes node ids (c0_/t<N>_) on wrapped pages;
+  // use the effective (non-composed) id for node lookup + rendering.
+  const foundPage = found.page
+  const effectiveNodeId = found.effectiveNodeId
+  const node = foundPage.nodes[effectiveNodeId]!
 
   // Reconstruct the originating page URL forwarded by the runtime (`u`). Falls
   // back to the page's own permalink when absent (older runtime / direct hit).
@@ -236,7 +245,7 @@ export async function handleHoleRequest(
       slug: route.slug,
       cookies: parseCookies(req.headers.get('cookie')),
     }
-    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request)
+    const html = await renderHoleFragment(effectiveNodeId, foundPage, snap.site, ctx.db, pageUrl, request)
     return new Response(html, {
       status: 200,
       headers: {
@@ -261,7 +270,7 @@ export async function handleHoleRequest(
       queryString: `v=${currentVersion}&${normalizeQuery(pageUrl.searchParams)}`,
     },
     async () => {
-      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request)
+      const html = await renderHoleFragment(effectiveNodeId, foundPage, snap.site, ctx.db, pageUrl, request)
       return {
         body: html,
         headers: { 'content-type': 'text/html; charset=utf-8' },

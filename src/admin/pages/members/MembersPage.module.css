@@ -1,0 +1,180 @@
+/* Members page body — sits inside AdminPageLayout, which provides the
+   scroll container, max-width, and page header. Mirrors UsersPage.module.css. */
+.body {
+    display: grid;
+    gap: var(--space-6xl);
+}
+
+.sectionHeader {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-3xl);
+}
+
+.sectionHeader h2 {
+    margin: 0;
+    color: var(--text-bright);
+    letter-spacing: 0;
+    font-size: var(--text-2xl);
+    line-height: 1.25;
+}
+
+.sectionHeader p,
+.identity span,
+.secondaryText {
+    margin: 0;
+    color: var(--text-subtle);
+    font-size: var(--text-s);
+    line-height: 1.45;
+}
+
+.section {
+    display: grid;
+    gap: var(--space-2xl);
+}
+
+.toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2xl);
+}
+
+.search {
+    max-width: 320px;
+}
+
+.actionsHeader,
+.actionsCell {
+    text-align: right;
+}
+
+.actionsCell {
+    justify-content: flex-end;
+}
+
+.identityRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-l);
+    min-width: 0;
+}
+
+.identity {
+    display: grid;
+    gap: var(--space-2xs);
+    min-width: 0;
+}
+
+.identity strong {
+    color: var(--text-bright);
+    font-size: var(--text-l);
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.identity strong,
+.identity span {
+    overflow-wrap: anywhere;
+}
+
+/**
+ * Copyable Member ID — the visitor's stable nanoid (cross-system / CRM
+ * identifier). Inline code chip with a copy/check icon affordance.
+ */
+.memberId {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3xs);
+    width: fit-content;
+    padding: var(--space-4xs) var(--space-3xs);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-s);
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.memberId:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.memberId code {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1;
+}
+
+.roleSelect {
+    min-width: 140px;
+}
+
+.badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-s);
+}
+
+/* Groups cell: the chip cluster sits inside the ghost Button primitive as a
+   plain span so the chips read as the clickable affordance (the Button owns
+   the click + chrome; this span owns the chip wrapping). */
+.groupsCell {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-s);
+}
+
+/* Role dialog field hint + capability chip preview row. The shared dialog
+   CSS (SiteCreateDialog.module.css) has no muted-hint class, and its
+   `.checkboxRow` carries a misleading `cursor: pointer` for a non-interactive
+   chip list, so these live here instead. */
+.fieldHint {
+    color: var(--text-subtle);
+    font-weight: 400;
+}
+
+.capChips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-s);
+}
+
+.emptyState,
+.error {
+    margin: 0;
+    font-size: var(--text-s);
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+.emptyState {
+    color: var(--text-subtle);
+}
+
+.error {
+    color: var(--danger);
+}
+
+@media (max-width: 960px) {
+    .sectionHeader,
+    .toolbar {
+        grid-template-columns: 1fr;
+        align-items: start;
+    }
+
+    .actionsHeader,
+    .actionsCell {
+        text-align: left;
+    }
+
+    .actionsCell {
+        justify-content: flex-start;
+    }
+
+    .search {
+        max-width: none;
+    }
+}

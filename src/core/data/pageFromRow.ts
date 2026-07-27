@@ -18,7 +18,7 @@
  *   row.updatedByUserId     → page.updatedByUserId
  */
 
-import type { Page, PageNode, PageTemplateConfig } from '@core/page-tree'
+import type { Page, PageNode, PageAccess, PageTemplateConfig } from '@core/page-tree'
 import { parsePageTemplate } from '@core/page-tree'
 import type { DataRow, DataRowCells } from '@core/data/schemas'
 
@@ -56,6 +56,11 @@ export function pageFromRow(row: DataRow): Page {
   // Template reconstruction
   const template = readTemplateFromCells(cells)
 
+  // Access reconstruction (D14). Best-effort: a malformed cell is dropped,
+  // which is semantically `public` (the page-tree tolerant parser treats a
+  // missing access field as public). Only non-public restrictions survive.
+  const access = readAccessFromCells(cells)
+
   return {
     id: row.id,
     slug: row.slug,
@@ -63,6 +68,7 @@ export function pageFromRow(row: DataRow): Page {
     nodes,
     rootNodeId,
     ...(template !== null ? { template } : {}),
+    ...(access !== null ? { access } : {}),
     ownerUserId: row.authorUserId ?? null,
     createdByUserId: row.createdByUserId ?? null,
     updatedByUserId: row.updatedByUserId ?? null,
@@ -76,6 +82,22 @@ function readTemplateFromCells(cells: DataRowCells): PageTemplateConfig | null {
     target: cells.templateTarget,
     priority: cells.templatePriority,
   })
+}
+
+/**
+ * Read a page's `access` cell (D14). Mirrors {@link readTemplateFromCells}:
+ * returns the access object only for a non-public restriction, `null`
+ * otherwise (omitted on the Page → semantically public). Defensively coerces
+ * `groups` to a string[] and treats an empty list as public (avoid lockout).
+ */
+function readAccessFromCells(cells: DataRowCells): PageAccess | null {
+  const raw = cells.access
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const r = raw as Record<string, unknown>
+  if (r.level !== 'groups') return null
+  const groups = Array.isArray(r.groups) ? r.groups.filter((g): g is string => typeof g === 'string') : []
+  if (groups.length === 0) return null
+  return { level: 'groups', groups }
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +125,13 @@ export function pageToCells(page: Page): DataRowCells {
     cells.templateEnabled = true
     cells.templateTarget = page.template.target
     cells.templatePriority = page.template.priority
+  }
+
+  // Only persist the access cell when the page is actually restricted — a
+  // public page carries no access cell, so the snapshot stays lean and a
+  // missing cell round-trips to public via readAccessFromCells.
+  if (page.access && page.access.level === 'groups' && (page.access.groups ?? []).length > 0) {
+    cells.access = { level: 'groups', groups: page.access.groups ?? [] }
   }
 
   return cells

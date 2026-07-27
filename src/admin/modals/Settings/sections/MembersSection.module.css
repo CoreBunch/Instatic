@@ -1,0 +1,27 @@
+/* MembersSection — visitor-auth settings.
+   Shares the structural classes (field rows, toggles, section blocks) with
+   SettingsModal.module.css; this module only owns the save + status row.
+   Every colour comes from a token. */
+
+.actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-l);
+    flex-wrap: wrap;
+    margin-top: var(--space-l);
+}
+
+.status {
+    margin: 0;
+    font-size: var(--text-xs);
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+.status[data-kind="ok"] {
+    color: var(--success);
+}
+
+.status[data-kind="error"] {
+    color: var(--danger);
+}

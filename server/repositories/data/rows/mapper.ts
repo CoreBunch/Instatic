@@ -39,6 +39,13 @@ export interface InsertDataRowInput {
    * tables that have no slug field.
    */
   slug: string
+  /**
+   * Visitor who owns this row (per-visitor-data framework, Pillar 3).
+   * Stamped by the form handler from the validated session cookie when the
+   * target table opts in (`capturesVisitorOwner`). Omitted/NULL for ordinary
+   * rows and anonymous submits.
+   */
+  visitorUserId?: string | null
 }
 
 export interface UpdateDataRowDraftInput {
@@ -57,6 +64,7 @@ interface DataRowRow extends UserJoinColumns {
   slug: string
   status: DataRowStatus
   author_user_id: string | null
+  visitor_user_id: string | null
   created_by_user_id: string | null
   updated_by_user_id: string | null
   published_by_user_id: string | null
@@ -79,6 +87,7 @@ function mapRow(row: DataRowRow): DataRow {
     slug: row.slug,
     status: row.status,
     authorUserId: row.author_user_id ?? null,
+    visitorUserId: row.visitor_user_id ?? null,
     createdByUserId: row.created_by_user_id ?? null,
     updatedByUserId: row.updated_by_user_id ?? null,
     publishedByUserId: row.published_by_user_id ?? null,
@@ -115,6 +124,7 @@ const DATA_ROW_COLUMNS = `data_rows.id,
        data_rows.slug,
        data_rows.status,
        data_rows.author_user_id,
+       data_rows.visitor_user_id,
        data_rows.created_by_user_id,
        data_rows.updated_by_user_id,
        data_rows.published_by_user_id,

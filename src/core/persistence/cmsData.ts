@@ -22,6 +22,8 @@ import {
 import type { LoopItem } from '@core/loops/types'
 import { LoopItemSchema } from '@core/loops/types'
 import { apiRequest, assertOk, ApiError, type FetchLike } from '@core/http'
+import { CmsSiteEnvelopeSchema, CmsSiteDocumentSaveEnvelopeSchema } from './responseSchemas'
+import type { Page, PageAccess } from '@core/page-tree'
 
 // ---------------------------------------------------------------------------
 // Envelope schemas
@@ -470,4 +472,65 @@ export async function getDataMeta(
     fallbackMessage: 'CMS data meta request failed',
   })
   return body.meta
+}
+
+// ---------------------------------------------------------------------------
+// Page access (D14)
+//
+// Page access is a page-level concern, not a data-grid cell: every built-in
+// field on the `pages` system table is value-locked (the data-rows PATCH
+// rejects hand-edits to title/slug/body and would wipe the row on a partial).
+// Pages are written through the site-document transaction — the same path the
+// Site editor's `setPageAccess` uses — so the Data workspace mirrors it here.
+// ---------------------------------------------------------------------------
+
+/** Drop the optional `access` field, returning a fresh object (public = absent). */
+function withoutAccess(page: Page): Page {
+  const { access: _omit, ...rest } = page
+  return rest
+}
+
+/**
+ * Persist a page's access control via an incremental site-document save.
+ *
+ * Mirrors {@link PageAccess} normalisation (and the editor store's
+ * `setPageAccess`): a `groups` level with at least one id persists the
+ * restriction; `public` (or an empty list) stores the field's absence so the
+ * published snapshot stays lean and parses back as public.
+ */
+export async function saveCmsPageAccess(
+  page: Page,
+  access: PageAccess,
+  fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
+  basePath = '/admin/api/cms',
+): Promise<void> {
+  // The shell is an opaque pass-through on the save envelope — fetch it and
+  // forward it unchanged; only the one page is carried as `changedPages`.
+  const { site: shell } = await apiRequest(`${basePath}/site`, {
+    schema: CmsSiteEnvelopeSchema,
+    fetchImpl,
+    fallbackMessage: 'Site load failed',
+  })
+
+  const groups = access.groups ?? []
+  const changedPage: Page = access.level === 'groups' && groups.length > 0
+    ? { ...page, access: { level: 'groups', groups } }
+    : withoutAccess(page)
+
+  await apiRequest(`${basePath}/site-document`, {
+    method: 'PUT',
+    fetchImpl,
+    body: {
+      mode: 'incremental',
+      site: shell,
+      changedPages: [changedPage],
+      deletedPageIds: [],
+      changedComponents: [],
+      deletedComponentIds: [],
+      changedLayouts: [],
+      deletedLayoutIds: [],
+    },
+    schema: CmsSiteDocumentSaveEnvelopeSchema,
+    fallbackMessage: 'Page access save failed',
+  })
 }

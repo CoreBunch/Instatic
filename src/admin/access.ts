@@ -287,6 +287,10 @@ export function canAccessWorkspace(user: CmsCurrentUser | null, workspace: Admin
       return canAccessPluginsWorkspace(user)
     case 'users':
       return canAccessUsersWorkspace(user)
+    case 'members':
+      // Visitor-auth management reuses the `users.manage` capability (a
+      // dedicated capability is deferred — see server/handlers/cms/visitorAuth.ts).
+      return hasCapability(user, 'users.manage')
     case 'ai':
       return canAccessAiWorkspace(user)
     case 'account':
@@ -320,6 +324,8 @@ export function workspacePath(workspace: AdminWorkspace): string {
       return '/admin/plugins'
     case 'users':
       return '/admin/users'
+    case 'members':
+      return '/admin/members'
     case 'ai':
       return '/admin/ai'
     case 'pluginPage':

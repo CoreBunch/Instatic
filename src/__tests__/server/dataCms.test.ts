@@ -92,6 +92,7 @@ describe('data CMS repository', () => {
       primaryFieldId: 'title',
       fields: defaultFields,
       system: false,
+      capturesVisitorOwner: false,
       createdByUserId: null,
       updatedByUserId: null,
       createdAt: '2026-05-01T10:00:00.000Z',

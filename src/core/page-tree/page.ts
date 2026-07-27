@@ -24,6 +24,28 @@ import { PageTemplateConfigSchema, parsePageTemplate } from './pageTemplate'
 import { reindexNodeParents } from './parentIndex'
 
 // ---------------------------------------------------------------------------
+// PageAccessSchema (Phase 3 — D14)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-page access control (D14). A page is either `public` (anyone) or
+ * restricted to a set of member group ids — a logged-in visitor in ANY of
+ * the listed groups may view the page; everyone else is gated (anonymous →
+ * login, logged-in-but-not-in-group → the built-in "no access" page). The
+ * field is optional: a missing `access` (every pre-Phase-3 page) is treated
+ * as `public`, so the field is fully backward-compatible and needs no JSON
+ * migration (the `024_page_access` migration only backfills pages that were
+ * previously protected by a prefix).
+ */
+export const PageAccessSchema = Type.Object({
+  level: Type.Union([Type.Literal('public'), Type.Literal('groups')]),
+  /** Group ids allowed to view the page. Ignored when `level === 'public'`. */
+  groups: Type.Optional(Type.Array(Type.String())),
+})
+
+export type PageAccess = Static<typeof PageAccessSchema>
+
+// ---------------------------------------------------------------------------
 // PageSchema
 // ---------------------------------------------------------------------------
 
@@ -48,6 +70,11 @@ export const PageSchema = Type.Object({
    * Silently dropped if invalid — handled in parsePage.
    */
   template: Type.Optional(PageTemplateConfigSchema),
+  /**
+   * Optional per-page access control (D14). Missing → public (the default).
+   * Silently dropped to public when invalid — handled in parsePage.
+   */
+  access: Type.Optional(PageAccessSchema),
 })
 
 export type Page = Static<typeof PageSchema>
@@ -92,6 +119,7 @@ export function parsePage(raw: unknown, pageIndex: number): Page {
   reindexNodeParents(nodes)
 
   const template = parsePageTemplate(r.template)
+  const access = parsePageAccess(r.access)
 
   return {
     id: r.id,
@@ -107,5 +135,40 @@ export function parsePage(raw: unknown, pageIndex: number): Page {
     nodes,
     rootNodeId: r.rootNodeId,
     ...(template !== null ? { template } : {}),
+    ...(access !== null ? { access } : {}),
   }
+}
+
+/**
+ * Tolerant parser for a page's `access` field (D14). Returns the parsed
+ * access object only when it describes a non-public restriction; a missing,
+ * malformed, or `level: 'public'` value returns `null` (which `parsePage`
+ * omits — omitting is semantically identical to `public` and keeps published
+ * snapshots lean). A `groups` level with a non-array / empty groups list is
+ * treated as public (fail-open is wrong here — fail-closed to public would
+ * lock owners out of their own pages on a corrupt write; the middleware
+ * treats an empty `groups` list as "no one", so a `groups` level with no ids
+ * is normalised to public to avoid an accidental lockout).
+ */
+function parsePageAccess(raw: unknown): PageAccess | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const r = raw as Record<string, unknown>
+  if (r.level !== 'groups') return null // 'public' or unknown → public (omitted)
+  const groups = Array.isArray(r.groups) ? r.groups.filter((g): g is string => typeof g === 'string') : []
+  if (groups.length === 0) return null // no groups → treat as public (avoid lockout)
+  return { level: 'groups', groups }
+}
+
+/**
+ * Resolve an arbitrary value (a raw `Page.access` field, possibly from a
+ * published-site snapshot that was never re-parsed) into a normalised access
+ * shape. Missing / malformed / public → `{ level: 'public', groups: [] }`.
+ * Request-time consumers (the visitor-auth middleware) use this so a corrupt
+ * or pre-Phase-3 snapshot never crashes the gate. Kept here so the access
+ * normalisation rule lives in exactly one place alongside {@link parsePageAccess}.
+ */
+export function resolvePageAccess(raw: unknown): { level: 'public' | 'groups'; groups: string[] } {
+  const parsed = parsePageAccess(raw)
+  if (!parsed) return { level: 'public', groups: [] }
+  return { level: 'groups', groups: parsed.groups ?? [] }
 }

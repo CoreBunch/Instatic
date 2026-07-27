@@ -3,6 +3,7 @@
  *
  *   GET /admin/api/cms/dashboard/pages
  *   GET /admin/api/cms/dashboard/posts
+ *   GET /admin/api/cms/dashboard/members
  *   GET /admin/api/cms/dashboard/media
  *   GET /admin/api/cms/dashboard/plugins
  *   GET /admin/api/cms/dashboard/storage
@@ -45,6 +46,7 @@ import { CMS_API_PREFIX, type CmsHandlerOptions } from '../shared'
 import { resolveTimeZone } from '../../../time'
 import { readPagesStats } from './pages'
 import { readPostsStats } from './posts'
+import { readMembersStats } from './members'
 import { readMediaStats } from './media'
 import { readPluginsStats } from './plugins'
 import { readPublishLineup } from './publishLineup'
@@ -83,10 +85,11 @@ interface DashboardEndpoint {
 // a new widget is "new reader file + one row here". The capability
 // rules:
 //
-//   pages / posts / publish-lineup / storage
+//   pages / posts / publish-lineup / storage / members
 //                       Non-sensitive totals or paths the visitor could
 //                       hit on the public site anyway. Any authenticated
-//                       user can read.
+//                       user can read. (`members` is a registered-visitor
+//                       count — a pure total with no PII, same policy.)
 //
 //   media               Library thumbnails are part of the asset surface;
 //                       gate matches `/media` list (`media.read`).
@@ -103,6 +106,7 @@ interface DashboardEndpoint {
 const DASHBOARD_READERS: Record<string, DashboardEndpoint> = {
   'pages':          { reader: readPagesStats,     capability: null },
   'posts':          { reader: readPostsStats,     capability: null },
+  'members':        { reader: readMembersStats,   capability: null },
   'media':          { reader: readMediaStats,     capability: 'media.read' },
   'plugins':        { reader: readPluginsStats,   capability: 'plugins.read' },
   'storage':        { reader: readStorageStats,   capability: null },

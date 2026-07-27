@@ -520,7 +520,8 @@ describe('base.container — render() specifics', () => {
   })
 
   it('exposes HTML tag selection (built-in tag + custom override)', () => {
-    expect(Object.keys(ContainerModule.schema).sort()).toEqual(['customTag', 'htmlAttributes', 'tag'])
+    // visitor-auth Phase 3 adds `authGate` (member-group gating) to containers.
+    expect(Object.keys(ContainerModule.schema).sort()).toEqual(['authGate', 'customTag', 'htmlAttributes', 'tag'])
   })
 
   it('renders children HTML inside the container', () => {

@@ -35,6 +35,7 @@ import { handleAuthRoutes } from './auth'
 import { handleMeRoutes } from './me'
 import { handleUserPreferencesRoutes } from './userPreferences'
 import { handleUsersRoutes } from './users'
+import { handleVisitorAuthAdminRoutes } from './visitorAuth'
 import { handleRolesRoutes } from './roles'
 import { handleAuditRoutes } from './audit'
 import { handleSiteRoutes } from './site'
@@ -85,6 +86,10 @@ export async function handleCmsRequest(
     // account" surface. Routes mount under `/admin/api/cms/me/preferences/`.
     ?? (await handleUserPreferencesRoutes(req, db))
     ?? (await handleUsersRoutes(req, db))
+    // Visitor-auth admin management (config + visitor user table). Gated by
+    // `users.manage`; runs right after the admin users routes so the
+    // `/visitor-auth/users/*` namespace stays adjacent to admin users.
+    ?? (await handleVisitorAuthAdminRoutes(req, db))
     ?? (await handleRolesRoutes(req, db))
     ?? (await handleAuditRoutes(req, db))
     ?? (await handleSiteRoutes(req, db))

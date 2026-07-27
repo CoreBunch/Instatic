@@ -1120,4 +1120,386 @@ export const pgMigrations: Migration[] = [
         on ai_mcp_oauth_tokens (connector_id);
     `,
   },
+  {
+    // Visitor authentication & member areas (Phase 1 of docs/PRD.md §4).
+    // Five tables, fully decoupled from the admin auth tables: separate
+    // cookie name (`instatic_visitor_session`), separate middleware, separate
+    // repositories. Order is dictated by FK dependencies:
+    //   1. visitor_roles          — no FKs; seeded with two system rows
+    //   2. visitor_users          — FK visitor_roles (on delete restrict)
+    //   3. visitor_sessions       — FK visitor_users (on delete cascade)
+    //   4. visitor_login_attempts — FK visitor_users (on delete set null)
+    //   5. visitor_auth_config    — single-row config, no FKs
+    //
+    // D12 (docs/ARCHITECTURE.md): the unique constraint on a visitor's
+    // ACTIVE email is a SEPARATE `CREATE UNIQUE INDEX ... WHERE deleted_at
+    // IS NULL` rather than a table-level UNIQUE. PG could express it as a
+    // table constraint, but both dialects emit the identical statement for
+    // parity (SQLite cannot declare a partial UNIQUE inline).
+    //
+    // visitor_auth_config replaces PRD §4.6's proposal to store `visitorAuth`
+    // inside site.settings_json: SiteSettingsSchema is a closed Type.Object
+    // whose parse silently drops unknown keys, so a visitorAuth key would not
+    // survive a publish/parse round-trip. A dedicated single-row config
+    // table is fully testable and keeps the core settings type untouched.
+    id: '022_visitor_auth',
+    sql: `
+      -- ─── visitor_roles ────────────────────────────────────────────────
+
+      create table if not exists visitor_roles (
+        id text primary key,
+        name text not null unique,
+        capabilities_json jsonb not null default '[]'::jsonb,
+        is_system boolean not null default false,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
+
+      -- First-boot seed only: ON CONFLICT (id) DO NOTHING preserves any
+      -- operator edits made via the admin UI on later boots (the migration
+      -- runner never re-runs a recorded migration; the guard keeps the seed
+      -- idempotent if it ever is). Fixed string ids ('member'/'admin') so
+      -- the defaultRole / repository code can reference them by id.
+      insert into visitor_roles (id, name, capabilities_json, is_system)
+      values
+        ('member', 'member', '[]'::jsonb, true),
+        ('admin', 'admin', '["content.read","content.write"]'::jsonb, true)
+      on conflict (id) do nothing;
+
+      -- ─── visitor_users ────────────────────────────────────────────────
+
+      create table if not exists visitor_users (
+        id text primary key,
+        email text not null,
+        email_normalized text not null,
+        password_hash text not null,
+        display_name text not null default '',
+        role_id text not null references visitor_roles(id) on delete restrict,
+        status text not null default 'active',
+        failed_login_count integer not null default 0,
+        locked_until timestamptz,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        deleted_at timestamptz,
+        constraint visitor_users_display_name_check check (length(display_name) <= 200),
+        constraint visitor_users_status_check check (status in ('active', 'suspended'))
+      );
+
+      -- D12: partial unique index as a separate CREATE statement, mirroring
+      // the SQLite dialect verbatim. A soft-deleted visitor can re-register
+      // with the same email.
+      create unique index if not exists visitor_users_email_active_idx
+        on visitor_users (email_normalized)
+        where deleted_at is null;
+
+      -- ─── visitor_sessions ─────────────────────────────────────────────
+
+      create table if not exists visitor_sessions (
+        id_hash text primary key,
+        user_id text not null references visitor_users(id) on delete cascade,
+        created_at timestamptz not null default now(),
+        last_seen_at timestamptz not null default now(),
+        expires_at timestamptz not null,
+        revoked_at timestamptz,
+        ip_address text,
+        user_agent text,
+        device_label text not null default ''
+      );
+
+      create index if not exists visitor_sessions_user_idx
+        on visitor_sessions (user_id, last_seen_at desc);
+
+      -- ─── visitor_login_attempts ───────────────────────────────────────
+
+      create table if not exists visitor_login_attempts (
+        id text primary key,
+        attempted_at timestamptz not null default now(),
+        email_normalized text,
+        ip_address text,
+        user_agent text,
+        user_id text references visitor_users(id) on delete set null,
+        result text not null
+          constraint visitor_login_attempts_result_check
+          check (result in ('success', 'bad_password', 'no_user', 'locked', 'rate_limited', 'account_disabled'))
+      );
+
+      create index if not exists visitor_login_attempts_ip_idx
+        on visitor_login_attempts (ip_address);
+
+      create index if not exists visitor_login_attempts_email_idx
+        on visitor_login_attempts (email_normalized);
+
+      -- ─── visitor_auth_config (single-row config table) ────────────────
+
+      create table if not exists visitor_auth_config (
+        id text primary key default 'default',
+        enabled boolean not null default false,
+        protected_prefixes_json jsonb not null default '[]'::jsonb,
+        login_path text not null default '/login',
+        registration_open boolean not null default true,
+        default_role text not null default 'member',
+        updated_at timestamptz not null default now()
+      );
+
+      -- Seed the single default-config row on first boot. ON CONFLICT (id)
+      -- DO NOTHING preserves operator edits on later boots.
+      insert into visitor_auth_config (
+        id, enabled, protected_prefixes_json, login_path,
+        registration_open, default_role, updated_at
+      )
+      values ('default', false, '[]'::jsonb, '/login', true, 'member', now())
+      on conflict (id) do nothing;
+    `,
+  },
+  {
+    id: '023_visitor_password_reset',
+    sql: `
+      -- ─── visitor_password_reset_tokens ────────────────────────────────
+      --
+      -- One-shot password-reset tokens. The raw token is generated in JS
+      -- (randomBytes(32) base64url) and handed to the email transport; the
+      -- DB only ever holds the SHA-256 hex of it (token_hash). A token is
+      -- consumed exactly once: consumePasswordResetToken sets used_at, and
+      -- the unique hash index keeps the lookup O(log n). expires_at carries
+      -- a 1-hour TTL (VISITOR_PASSWORD_RESET_TTL_MS).
+
+      create table if not exists visitor_password_reset_tokens (
+        id text primary key,
+        user_id text not null references visitor_users(id) on delete cascade,
+        token_hash text not null,
+        expires_at timestamptz not null,
+        used_at timestamptz,
+        created_at timestamptz not null default now()
+      );
+
+      create unique index if not exists visitor_password_reset_tokens_hash_idx
+        on visitor_password_reset_tokens (token_hash);
+
+      create index if not exists visitor_password_reset_tokens_user_idx
+        on visitor_password_reset_tokens (user_id, created_at desc);
+    `,
+  },
+  {
+    id: '024_member_groups',
+    sql: `
+      -- ─── Member groups (Phase 3 — D13/D14/D15) ─────────────────────────
+      --
+      -- A group is a content-segmentation segment used for page-level access
+      -- (D14) and login-redirect landing resolution (D15). Orthogonal to
+      -- visitor_roles (D13): a role answers "what can a member DO"; a group
+      -- answers "what can a member SEE / where do they land". A visitor
+      -- belongs to 0..N groups via visitor_user_groups, with one designated
+      -- primary group (visitor_users.primary_group_id, added below).
+      --
+      -- No seed rows: admins create groups. PG dialect mirror of SQLite 023.
+
+      create table if not exists visitor_groups (
+        id            text primary key,
+        name          text not null unique,
+        slug          text not null,
+        landing_path  text not null default '/',
+        description   text not null default '',
+        is_system     boolean not null default false,
+        created_at    timestamptz not null default now(),
+        updated_at    timestamptz not null default now()
+      );
+
+      create index if not exists visitor_groups_slug_idx
+        on visitor_groups (slug);
+
+      create table if not exists visitor_user_groups (
+        id          text primary key,
+        user_id     text not null references visitor_users(id) on delete cascade,
+        group_id    text not null references visitor_groups(id) on delete cascade,
+        created_at  timestamptz not null default now(),
+        unique (user_id, group_id)
+      );
+
+      create index if not exists visitor_user_groups_user_idx
+        on visitor_user_groups (user_id);
+
+      create index if not exists visitor_user_groups_group_idx
+        on visitor_user_groups (group_id);
+
+      -- D15 primary group (nullable). ON DELETE SET NULL so deleting a
+      -- visitor's primary group simply clears the pointer (the visitor then
+      -- falls back to the configured default landing path on login) rather
+      -- than cascading the delete onto the user row.
+      alter table visitor_users
+        add column primary_group_id text references visitor_groups(id) on delete set null;
+    `,
+  },
+  {
+    id: '025_page_access',
+    sql: `
+      -- ─── Retire protected-prefixes; add default landing path (Phase 3) ────
+      --
+      -- Page access now lives on the Page object (a Page.access field in
+      -- cells_json, tolerant-parsed → public by default), so NO schema change
+      -- is needed for the access field itself. This migration:
+      --   1. ADDs visitor_auth_config.default_landing_path (D15 fallback).
+      --   2. Best-effort backfills the old Phase-1/2 protected-prefix config
+      --      onto matching pages as per-page access against a single
+      --      synthesized 'members' group (mirrors the Phase-1 "protected =
+      --      logged-in member" intent). A page is matched when its slug equals
+      --      the prefix (sans leading '/') or sits beneath it (prefix/...).
+      --   3. DROPs the now-dead protected_prefixes_json column.
+      --
+      -- The backfill updates BOTH the draft data_rows.cells_json AND the
+      -- published site_snapshots.site_json so the middleware gates correctly
+      -- immediately after upgrade. Both use the Postgres JSON manipulation
+      -- functions (jsonb_set / jsonb_agg / jsonb_array_elements). Pages that
+      -- fail to parse are skipped (best-effort; a re-publish will heal any miss).
+
+      alter table visitor_auth_config
+        add column default_landing_path text not null default '/';
+
+      -- 1. Create the synthesized 'members' group when there is at least one
+      --    prefix. ON CONFLICT (id) DO NOTHING keeps the insert idempotent.
+      insert into visitor_groups (id, name, slug, landing_path, description, is_system)
+      select
+        'vis_group_members_backfill', 'members', 'members', '/',
+        'Synthesized from protected-prefix config during the Phase-3 migration.', false
+      from visitor_auth_config
+      where id = 'default'
+        and jsonb_array_length(
+          case
+            when jsonb_typeof(protected_prefixes_json) = 'array' then protected_prefixes_json
+            else '[]'::jsonb
+          end
+        ) > 0
+      on conflict (id) do nothing;
+
+      -- 2. Stamp access onto draft pages (data_rows.cells_json) whose slug
+      --    matches any configured prefix.
+      update data_rows
+        set cells_json = jsonb_set(
+          cells_json::jsonb,
+          '{access}',
+          '{"level":"groups","groups":["vis_group_members_backfill"]}'::jsonb
+        )::text
+        where table_id = 'pages'
+          and deleted_at is null
+          and exists (
+            select 1
+            from visitor_auth_config c
+            cross join lateral jsonb_array_elements(
+              case when jsonb_typeof(c.protected_prefixes_json) = 'array'
+                   then c.protected_prefixes_json else '[]'::jsonb end
+            ) as prefix
+            where c.id = 'default'
+              and (
+                data_rows.slug = substr(prefix.value#>>'{}', 2)
+                or data_rows.slug like substr(prefix.value#>>'{}', 2) || '/%'
+              )
+          );
+
+      -- 3. Stamp access onto published pages inside every site snapshot
+      --    (site_snapshots.site_json). Rebuild the pages array, setting access
+      --    on every page whose slug matches a prefix. jsonb_agg walks every
+      --    page in the snapshot so non-matching pages pass through unchanged.
+      update site_snapshots
+        set site_json = sub.pages_json
+        from (
+          select
+            s.id as snap_id,
+            jsonb_set(
+              s.site_json,
+              '{pages}',
+              coalesce((
+                select jsonb_agg(
+                  case
+                    when exists (
+                      select 1
+                      from visitor_auth_config c
+                      cross join lateral jsonb_array_elements(
+                        case when jsonb_typeof(c.protected_prefixes_json) = 'array'
+                             then c.protected_prefixes_json else '[]'::jsonb end
+                      ) as prefix
+                      where c.id = 'default'
+                        and (
+                          page.value->>'slug' = substr(prefix.value#>>'{}', 2)
+                          or page.value->>'slug' like substr(prefix.value#>>'{}', 2) || '/%'
+                        )
+                    )
+                    then jsonb_set(
+                      page.value,
+                      '{access}',
+                      '{"level":"groups","groups":["vis_group_members_backfill"]}'::jsonb
+                    )
+                    else page.value
+                  end
+                )
+                from jsonb_array_elements(s.site_json->'pages') as page
+              ), s.site_json->'pages')
+            ) as pages_json
+          from site_snapshots s
+        ) sub
+        where site_snapshots.id = sub.snap_id
+          and exists (
+            select 1
+            from visitor_auth_config c
+            cross join lateral jsonb_array_elements(site_snapshots.site_json->'pages') as p
+            cross join lateral jsonb_array_elements(
+              case when jsonb_typeof(c.protected_prefixes_json) = 'array'
+                   then c.protected_prefixes_json else '[]'::jsonb end
+            ) as prefix
+            where c.id = 'default'
+              and (
+                p.value->>'slug' = substr(prefix.value#>>'{}', 2)
+                or p.value->>'slug' like substr(prefix.value#>>'{}', 2) || '/%'
+              )
+          );
+
+      -- 4. Drop the now-dead column. Read nowhere after this migration.
+      alter table visitor_auth_config
+        drop column protected_prefixes_json;
+    `,
+  },
+  {
+    id: '026_visitor_profile_fields',
+    sql: `
+      -- ─── Visitor custom profile fields (per-visitor-data framework) ────
+      --
+      -- Adds a JSONB column to visitor_users storing the VALUES of site-
+      -- builder-defined custom profile fields (e.g. schoolName), keyed by
+      -- field id. The field DEFINITIONS live in visitor_auth_config
+      -- (profile_fields_json, added below) and mirror the DataField[] shape
+      -- used by data_tables.fields_json. Same pattern as data_tables, smaller
+      -- surface. Values default to '{}'::jsonb so every visitor row is valid
+      -- immediately.
+
+      alter table visitor_users
+        add column profile_fields_json jsonb not null default '{}'::jsonb;
+
+      -- Store the site-builder-configured profile field DEFINITIONS on the
+      -- single visitor_auth_config row. A DataField[] JSONB array; default
+      -- '[]' = no custom profile fields (the pre-framework behaviour).
+      alter table visitor_auth_config
+        add column profile_fields_json jsonb not null default '[]'::jsonb;
+    `,
+  },
+  {
+    id: '027_visitor_owned_data',
+    sql: `
+      -- ─── Per-visitor owned data (visitor-data framework, Pillar 3) ────────
+      --
+      -- Links a data row to the visitor who owns it (e.g. a tender they
+      -- submitted). FK visitor_users with ON DELETE SET NULL so deleting a
+      -- visitor account retains the row for audit but unlinks it. Indexed
+      -- for efficient per-visitor queries. data_tables.captures_visitor_owner
+      -- is a per-table opt-in flag (0/1) — the form handler stamps
+      -- visitor_user_id only when the target table opts in, so unrelated
+      -- tables are untouched.
+
+      alter table data_rows
+        add column visitor_user_id text references visitor_users(id) on delete set null;
+
+      create index if not exists data_rows_table_visitor_idx
+        on data_rows (table_id, visitor_user_id, updated_at desc);
+
+      alter table data_tables
+        add column captures_visitor_owner integer not null default 0;
+    `,
+  },
 ]

@@ -25,6 +25,7 @@ import {
 import type { DataRow, DataRowCells, DataRowStatus } from '@core/data/schemas'
 import { pushToast } from '@ui/components/Toast'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import type { PageAccess } from '@core/page-tree'
 import { useDataWorkspace } from './hooks/useDataWorkspace'
 import { DataSidebar } from './components/DataSidebar/DataSidebar'
 import { DataCanvas } from './components/DataCanvas/DataCanvas'
@@ -114,6 +115,10 @@ export function DataPage() {
 
   async function handleSaveRow(rowId: string, cells: DataRowCells) {
     return workspace.saveRow(rowId, cells)
+  }
+
+  async function handleSavePageAccess(row: DataRow, access: PageAccess): Promise<void> {
+    return workspace.savePageAccess(row, access)
   }
 
   function handleDeleteRow(rowId: string): void {
@@ -213,6 +218,7 @@ export function DataPage() {
       row={workspace.selectedRow}
       rows={workspace.rows}
       onSaveRow={handleSaveRow}
+      onSavePageAccess={handleSavePageAccess}
       onUpdateTable={async (input) => {
         return runStepUp(() => workspace.updateTable(selectedTable.id, input))
       }}

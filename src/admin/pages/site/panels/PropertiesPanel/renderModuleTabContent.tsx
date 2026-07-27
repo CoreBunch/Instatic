@@ -145,6 +145,7 @@ export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactN
               onClear: () => onClearDynamicBinding(key),
               availableFields: enclosingLoopSource?.fields,
               sourceLabel: enclosingLoopSource?.label,
+              sourceId: enclosingLoopSource?.id,
               loopTableId: enclosingLoopTableId,
             } : undefined}
           />

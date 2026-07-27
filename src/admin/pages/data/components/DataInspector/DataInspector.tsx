@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import type { DataTable, DataRow, DataRowCells, UpdateDataTableInput } from '@core/data/schemas'
+import type { PageAccess } from '@core/page-tree'
 import { PanelHeader } from '@admin/shared/PanelHeader'
 import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
 import { useWorkspaceLayout } from '@admin/state/workspaceLayout'
@@ -22,6 +23,8 @@ interface DataInspectorProps {
   /** All rows of the current table. */
   rows: DataRow[]
   onSaveRow: (rowId: string, cells: DataRowCells) => Promise<DataRow>
+  /** Persist a page's access (Public / group-restricted) — pages write via site-document, not the data grid. */
+  onSavePageAccess: (row: DataRow, access: PageAccess) => Promise<void>
   onUpdateTable: (input: UpdateDataTableInput) => Promise<DataTable>
   onDeleteTable: () => Promise<void>
   /** Navigate the Content page to edit this post-type row. */
@@ -47,6 +50,7 @@ export function DataInspector({
   row,
   rows,
   onSaveRow,
+  onSavePageAccess,
   onUpdateTable,
   onDeleteTable,
   onEditInContent,
@@ -94,6 +98,7 @@ export function DataInspector({
             table={table}
             tables={tables}
             onSaveRow={onSaveRow}
+            onSavePageAccess={onSavePageAccess}
             onEditInContent={onEditInContent}
             onOpenInSiteEditor={onOpenInSiteEditor}
             onPublishRow={onPublishRow}

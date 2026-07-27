@@ -58,6 +58,43 @@ export function runInstaticHoleRuntime(): void {
     const box = el.firstElementChild;
     if (box) { io.observe(box); } else { instaticFetchHole(el); }
   }
+
+  // Auth-gated containers — mirror the hole logic but fetch the real subtree
+  // from /_instatic/gate/<id>. The endpoint renders the subtree only for
+  // authorised visitors and returns the baked fallback for everyone else, so
+  // unauthorised visitors keep seeing the placeholder content.
+  function instaticFetchGate(el: HTMLElement): void {
+    const id = el.dataset.instaticGate || '';
+    const version = el.dataset.instaticVersion || '';
+    const u = location.pathname + location.search;
+    fetch('/_instatic/gate/' + encodeURIComponent(id) + '?v=' + encodeURIComponent(version) + '&u=' + encodeURIComponent(u))
+      .then(function(r) { return r.text(); })
+      .then(function(html) { el.outerHTML = html; })
+      .catch(function() {});
+  }
+  const gated = document.querySelectorAll('instatic-gated[data-instatic-gate]');
+  // Only construct the gate IntersectionObserver when there are gated elements
+  // to observe — avoids creating a second observer (and clobbering any
+  // test/caller that captures the last-constructed IntersectionObserver) on
+  // pages that only use holes.
+  if (gated.length > 0) {
+    const gateIo = new IntersectionObserver(function(entries) {
+      for (let i = 0; i < entries.length; i++) {
+        const e = entries[i];
+        if (!e.isIntersecting) continue;
+        gateIo.unobserve(e.target);
+        const gate = e.target.closest('instatic-gated[data-instatic-gate]') as HTMLElement | null;
+        if (gate) instaticFetchGate(gate);
+      }
+    }, { rootMargin: '200px 0px' });
+    for (let i = 0; i < gated.length; i++) {
+      const el = gated[i] as HTMLElement;
+      // <instatic-gated> is display:contents (no box) — observe its placeholder
+      // child, which has a box. Gates without a placeholder are fetched eagerly.
+      const box = el.firstElementChild;
+      if (box) { gateIo.observe(box); } else { instaticFetchGate(el); }
+    }
+  }
 }
 
 export const HOLE_RUNTIME_JS = `(${runInstaticHoleRuntime.toString()})();`

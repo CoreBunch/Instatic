@@ -12,8 +12,11 @@ import { getSetupStatusCached } from './repositories/setup'
 import { getPublishedRuntimeAsset } from './repositories/runtimeAsset'
 import { handleLoopRequest, isLoopRuntimeAssetPath, serveLoopRuntimeAsset } from './handlers/cms/loop'
 import { handleHoleRequest, isHoleRuntimeAssetPath, serveHoleRuntimeAsset } from './handlers/cms/hole'
+import { handleGateRequest, GATE_PATH_PREFIX } from './handlers/cms/gate'
 import { handleModuleJsAssetRequest, isModuleJsAssetPath } from './handlers/cms/moduleJs'
 import { handlePublicFormRequest } from './forms/handler'
+import { handleVisitorRoutes } from './visitor-auth/handlers'
+import { VISITOR_AUTH_RUNTIME_JS } from './publish/visitorAuthRuntime'
 import { isRuntimePackagePath, tryServeRuntimePackage } from './publish/runtime/packageServer'
 import { jsonResponse } from './http'
 import { binaryResponse, toArrayBuffer } from './binary'
@@ -77,12 +80,20 @@ const routes: readonly RouteHandler[] = [
   // `/admin/api/agent/tool-result` were deleted in Phase 3 of the AI
   // runtime rewrite. The site editor now POSTs `/admin/api/ai/chat/site`.
   tryServeAi,
+  // Visitor-auth API — `/api/visitor/*`. Sits before the CMS admin API so
+  // its distinct namespace (no `/admin/` prefix) is consumed here and never
+  // falls through to the admin dispatcher. See `server/visitor-auth/`.
+  tryServeVisitorRoutes,
   tryServeCmsApi,
   tryServeLoopRuntimeAsset,
   tryServeLoop,
   tryServeHoleRuntimeAsset,
   tryServeHole,
+  tryServeGate,
   tryServeModuleJsAsset,
+  // Visitor-auth browser runtime — `/_instatic/visitor-auth.js`. Kept next
+  // to the other runtime-asset handlers so the fixed CMS assets stay grouped.
+  tryServeVisitorAuthRuntimeAsset,
   tryServePublicForm,
   tryServeRuntimeAsset,
   tryServeRuntimePackageNamespace,
@@ -170,6 +181,18 @@ function tryServeCmsApi(req: Request, runtime: ServerRuntime, _url: URL, pathnam
 }
 
 /**
+ * Visitor-auth API namespace — `/api/visitor/*`. Lives outside `/admin/api/`
+ * because visitors are not admins: a separate cookie
+ * (`instatic_visitor_session`), separate tables, separate code.
+ * `handleVisitorRoutes` owns the entire namespace and emits its own 404 for
+ * unknown sub-paths so they never fall through to the public route renderer.
+ */
+function tryServeVisitorRoutes(req: Request, runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response> | null {
+  if (!pathname.startsWith('/api/visitor/')) return null
+  return handleVisitorRoutes(req, runtime.db)
+}
+
+/**
  * The loop runtime is a fixed CMS asset, served before the per-site
  * runtime asset lookup so the request never falls through.
  */
@@ -194,12 +217,41 @@ function tryServeHoleRuntimeAsset(req: Request, _runtime: ServerRuntime, _url: U
 }
 
 /**
+ * Visitor-auth browser runtime — `/_instatic/visitor-auth.js`. A fixed CMS
+ * asset (form interception + auth-state reveal) served before the public
+ * route renderer so the exact path is consumed here. Mirrors the hole
+ * runtime asset handler.
+ */
+function tryServeVisitorAuthRuntimeAsset(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Response | null {
+  if (req.method !== 'GET' || pathname !== '/_instatic/visitor-auth.js') return null
+  return new Response(VISITOR_AUTH_RUNTIME_JS, {
+    headers: {
+      'content-type': 'application/javascript; charset=utf-8',
+      // 1 hour — the path is a well-known fixed CMS asset that only changes
+      // on a CMS version bump. Use deploy-time cache-busting if you need longer.
+      'cache-control': 'public, max-age=3600',
+    },
+  })
+}
+
+/**
  * Layer C hole fragment endpoint — `/_instatic/hole/<nodeId>`.
  * Renders a dynamic node subtree on-demand and caches the result via Layer B.
  */
 function tryServeHole(req: Request, runtime: ServerRuntime, url: URL, pathname: string): Promise<Response> | null {
   if (!pathname.startsWith('/_instatic/hole/')) return null
   return handleHoleRequest(req, url, { db: runtime.db })
+}
+
+/**
+ * Layer C auth-gate fragment endpoint — `/_instatic/gate/<nodeId>`. Renders a
+ * gated `base.container` subtree only for authorised visitors and returns the
+ * baked fallback for everyone else. Kept next to `tryServeHole` so the
+ * hole-related endpoints stay grouped and before `tryServeStaticAsset` (D11).
+ */
+function tryServeGate(req: Request, runtime: ServerRuntime, url: URL, pathname: string): Promise<Response> | null {
+  if (!pathname.startsWith(GATE_PATH_PREFIX)) return null
+  return handleGateRequest(req, url, { db: runtime.db })
 }
 
 /**

@@ -55,6 +55,31 @@ export interface PostsStats {
 }
 
 // ---------------------------------------------------------------------------
+// Members (registered visitors)
+// ---------------------------------------------------------------------------
+
+/**
+ * Members widget payload. Mirrors the Posts shape (count + trailing-28-day
+ * histogram) but against `visitor_users` registrations, plus the two
+ * visitor-auth toggles so the widget can show whether auth / registration
+ * are currently on.
+ *
+ *   • `total`             — active (non-soft-deleted) visitor count.
+ *   • `daily28`           — new registrations per local calendar day for
+ *                           the last 28 days, oldest first.
+ *   • `authEnabled`       — `visitor_auth_config.enabled`; `false` when the
+ *                           row is absent (disabled default).
+ *   • `registrationOpen`  — `visitor_auth_config.registration_open`; `true`
+ *                           when the row is absent (open default).
+ */
+export interface MembersStats {
+  total: number
+  daily28: number[]
+  authEnabled: boolean
+  registrationOpen: boolean
+}
+
+// ---------------------------------------------------------------------------
 // Media
 // ---------------------------------------------------------------------------
 

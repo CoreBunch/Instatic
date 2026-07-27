@@ -34,6 +34,44 @@ export async function createDataRow(
   actorUserId: string | null = null,
   pluginActorId: string | null = null,
 ): Promise<DataRow> {
+  // `visitor_user_id` is written ONLY when the caller resolved a visitor
+  // from the validated session (per-visitor-data framework, Pillar 3). When
+  // it is absent the column is omitted entirely so it takes its NULL default
+  // — anonymous submits and non-opt-in tables are bit-for-bit identical to
+  // the pre-framework insert.
+  if (input.visitorUserId) {
+    const { rows } = await db<{ id: string }>`
+      insert into data_rows (
+        id,
+        table_id,
+        cells_json,
+        slug,
+        status,
+        author_user_id,
+        created_by_user_id,
+        updated_by_user_id,
+        plugin_actor_id,
+        visitor_user_id
+      )
+      values (
+        ${input.id ?? nanoid()},
+        ${input.tableId},
+        ${input.cells},
+        ${input.slug},
+        ${'draft'},
+        ${actorUserId},
+        ${actorUserId},
+        ${actorUserId},
+        ${pluginActorId},
+        ${input.visitorUserId}
+      )
+      returning id
+    `
+    const created = await getDataRow(db, rows[0].id)
+    if (!created) throw new Error('data row was created but could not be re-read')
+    return created
+  }
+
   const { rows } = await db<{ id: string }>`
     insert into data_rows (
       id,

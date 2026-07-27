@@ -13,6 +13,7 @@ import { ActivityWidget } from './ActivityWidget'
 import { AiUsageWidget } from './AiUsageWidget'
 import { DomainWidget } from './DomainWidget'
 import { MediaWidget } from './MediaWidget'
+import { MembersWidget } from './MembersWidget'
 import { PagesWidget } from './PagesWidget'
 import { PluginsWidget } from './PluginsWidget'
 import { PostsWidget } from './PostsWidget'
@@ -30,6 +31,7 @@ import { GlobeSolidIcon } from 'pixel-art-icons/icons/globe-solid'
 import { ImageSolidIcon } from 'pixel-art-icons/icons/image-solid'
 import { PenSquareSolidIcon } from 'pixel-art-icons/icons/pen-square-solid'
 import { PlugSolidIcon } from 'pixel-art-icons/icons/plug-solid'
+import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
 import { ZapSolidIcon } from 'pixel-art-icons/icons/zap-solid'
 
 /**
@@ -69,6 +71,32 @@ export function registerFirstPartyDashboardWidgets(): void {
     defaultSize: 3,
     tint: 'peach',
     render: PostsWidget,
+  })
+
+  // ──────────────────────────────────────────────────────────────────
+  // DELIBERATE FORK DIVERGENCE — Members widget (membership fork).
+  //
+  // Upstream Instatic DELIBERATELY removed first-party visitor / analytics
+  // dashboard widgets (see the "Visitors widget is no longer registered
+  // first-party" note above — a plugin is expected to register its own).
+  // This is a MEMBERSHIP-focused fork, where a first-party "Members"
+  // count widget is CORE PRODUCT, not generic analytics, so it is
+  // registered first-party instead of being left to a plugin.
+  //
+  // If a future upstream rebase drops this block, treat the removal as a
+  // DECISION POINT, not a silent regression — re-confirm against the
+  // fork's membership direction before deleting. Mirrors PostsWidget
+  // (count + 28-day registration histogram from visitor_users.created_at).
+  // ──────────────────────────────────────────────────────────────────
+  dashboardWidgetRegistry.register({
+    id: 'members',
+    ownerId: 'core',
+    name: 'Members',
+    description: 'Registered visitors',
+    icon: UsersSolidIcon,
+    defaultSize: 3,
+    tint: 'mint',
+    render: MembersWidget,
   })
 
   dashboardWidgetRegistry.register({

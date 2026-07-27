@@ -10,6 +10,7 @@ import {
   listCmsDataTables,
   publishCmsDataRow,
   saveCmsDataRowDraft,
+  saveCmsPageAccess,
   updateCmsDataTable,
   updateCmsDataRowStatus,
 } from '@core/persistence'
@@ -21,6 +22,8 @@ import type {
   CreateDataTableInput,
   UpdateDataTableInput,
 } from '@core/data/schemas'
+import { pageFromRow } from '@core/data/pageFromRow'
+import type { PageAccess } from '@core/page-tree'
 import { buildDuplicateRowCells } from '@core/data/duplicateRow'
 import { buildEmptyCells } from '../utils/fieldDefaults'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -61,6 +64,8 @@ interface DataWorkspace {
   createRow: (cells?: DataRowCells) => Promise<DataRow>
   duplicateRow: (row: DataRow) => Promise<DataRow>
   saveRow: (rowId: string, cells: DataRowCells) => Promise<DataRow>
+  /** Persist a page's access (Public / group-restricted) via the site-document path. */
+  savePageAccess: (row: DataRow, access: PageAccess) => Promise<void>
   deleteRow: (rowId: string) => Promise<void>
   selectedRowId: string | null
   selectedRow: DataRow | null
@@ -338,6 +343,17 @@ export function useDataWorkspace({ shouldLoadRows }: DataWorkspaceOptions): Data
     return row
   }
 
+  // Page access is page-level, not a data-grid cell — every built-in field on
+  // the `pages` table is value-locked, so it round-trips through the
+  // site-document transaction (the same path the Site editor uses). On success
+  // the rows are refreshed so the inspector reflects the new `cells.access`.
+  // Errors propagate to the caller (the dialog) to surface a toast.
+  const savePageAccess = async (row: DataRow, access: PageAccess): Promise<void> => {
+    await saveCmsPageAccess(pageFromRow(row), access)
+    await refreshRows()
+    if (tableBacksSiteDocument(selectedTable)) requestCmsSiteReload()
+  }
+
   const deleteRow = async (rowId: string): Promise<void> => {
     setRowsError(null)
     await deleteCmsDataRow(rowId)
@@ -385,6 +401,7 @@ export function useDataWorkspace({ shouldLoadRows }: DataWorkspaceOptions): Data
     createRow,
     duplicateRow,
     saveRow,
+    savePageAccess,
     deleteRow,
     selectedRowId,
     selectedRow,

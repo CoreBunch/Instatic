@@ -189,6 +189,20 @@ export function auditTitle(
       return `MCP connector was created`
     case 'ai.mcp_connector.revoked':
       return `MCP connector was revoked`
+    case 'visitor.register':
+      return `Visitor registered${email ? ` (${email})` : ''}`
+    case 'visitor.login.success':
+      return `Visitor logged in${email ? ` (${email})` : ''}`
+    case 'visitor.login.failure':
+      return `Failed visitor login${email ? ` for ${email}` : ''}`
+    case 'visitor.login.locked':
+      return `Visitor account locked${email ? ` (${email})` : ''}`
+    case 'visitor.logout':
+      return `Visitor logged out`
+    case 'visitor.password.reset':
+      return `Visitor password was reset`
+    case 'visitor.account.deleted':
+      return `Visitor account deleted${email ? ` (${email})` : ''}`
     default:
       return humanizeActionId(event.action)
   }

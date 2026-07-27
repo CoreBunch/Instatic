@@ -62,6 +62,7 @@ import type { DbClient } from '../db/client'
 import type { PublishedPageSnapshot } from '../repositories/publish'
 import type { PublishedDataRow } from '@core/data/schemas'
 import { isTemplatePage, resolveNotFoundTemplate } from '@core/templates'
+import { resolvePageAccess } from '@core/page-tree'
 import {
   getDataRowRedirectByRoute,
   getPublishedDataRowByRoute,
@@ -182,6 +183,51 @@ async function resolvePublicRoute(
   }
 
   return { kind: 'not-found' }
+}
+
+/**
+ * Does a directly-routable published page exist at `pathname`?
+ *
+ * Mirrors the判定 inside `resolvePublicRoute` for the page-slug branch: a
+ * real page (NOT a template page) at the normalised slug. Used by the
+ * visitor-auth middleware to decide between a 302 to the operator's
+ * published login page and the built-in fallback login page — a template
+ * page is never a valid login target, so it must not count as "exists".
+ *
+ * Reuses the LOCAL `publicSlugFromPath` + `getPublishedPageBySlug` so this
+ * helper never drifts from how the public router itself resolves a slug.
+ */
+export async function publishedPageExistsAtPath(db: DbClient, pathname: string): Promise<boolean> {
+  const snap = await getPublishedPageBySlug(db, publicSlugFromPath(pathname))
+  if (!snap) return false
+  const page = snap.site.pages.find((p) => p.id === snap.pageRowId)
+  return Boolean(page && !isTemplatePage(page))
+}
+
+/**
+ * Resolved access level for a published (non-template) page at `pathname`.
+ *
+ * Returns `null` when no published page exists at the path (the caller lets
+ * the request fall through to a downstream 404). Otherwise returns the page's
+ * normalised access shape — `{ level: 'public', groups: [] }` by default,
+ * `{ level: 'groups', groups: [...] }` when the page is restricted to a set
+ * of member groups (D14). Reads `page.access` tolerantly (missing/corrupt →
+ * public) via {@link resolvePageAccess} so a pre-Phase-3 snapshot never
+ * crashes the gate.
+ *
+ * The visitor-auth middleware uses this to decide per-page gating (D17):
+ * public → pass through; restricted + anonymous → login; restricted +
+ * logged-in-but-not-in-group → the built-in "no access" page.
+ */
+export async function getPublishedPageAccessForPath(
+  db: DbClient,
+  pathname: string,
+): Promise<{ level: 'public' | 'groups'; groups: string[] } | null> {
+  const snap = await getPublishedPageBySlug(db, publicSlugFromPath(pathname))
+  if (!snap) return null
+  const page = snap.site.pages.find((p) => p.id === snap.pageRowId)
+  if (!page || isTemplatePage(page)) return null
+  return resolvePageAccess((page as { access?: unknown }).access)
 }
 
 // ---------------------------------------------------------------------------

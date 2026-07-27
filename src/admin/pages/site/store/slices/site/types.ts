@@ -20,6 +20,7 @@ import type {
   SiteDocument,
   SiteExplorerSectionId,
   SiteSettings,
+  PageAccess,
   PageTemplateConfig,
   ConditionDef,
   StructuralExplorerRowOrder,
@@ -136,6 +137,13 @@ export interface SiteSlice {
   reorderPages: (fromIndex: number, toIndex: number) => void
   convertPageToTemplate: (pageId: string, config: PageTemplateConfig) => void
   convertTemplateToPage: (pageId: string) => void
+  /**
+   * Set a page's per-page access level (D14). `level: 'public'` (or an empty
+   * `groups` list) clears the field entirely so the published snapshot stays
+   * lean and parses back as public; `level: 'groups'` persists the allowed
+   * group ids. One undo step.
+   */
+  setPageAccess: (pageId: string, access: PageAccess) => void
   createExplorerFolder: (sectionId: SiteExplorerSectionId, name: string, parentPath?: string) => string
   renameExplorerFolder: (sectionId: DecorativeSiteExplorerSectionId, folderId: string, name: string) => void
   deleteExplorerFolder: (sectionId: DecorativeSiteExplorerSectionId, folderId: string) => void

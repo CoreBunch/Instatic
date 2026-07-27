@@ -18,6 +18,12 @@
  * `'ai'` is the AI provider settings + defaults workspace. Gated by
  * `ai.providers.manage` (or `ai.audit.read` for the read-only audit tab).
  */
+/**
+ * `'members'` is the visitor-auth (members) workspace — manage registered
+ * visitor accounts (list, search, suspend/activate, change role, delete) and
+ * the visitor-auth config. Gated by `users.manage` (the same capability the
+ * `/admin/api/cms/visitor-auth/*` routes require).
+ */
 export type AdminWorkspace =
   | 'dashboard'
   | 'site'
@@ -29,3 +35,4 @@ export type AdminWorkspace =
   | 'ai'
   | 'pluginPage'
   | 'account'
+  | 'members'

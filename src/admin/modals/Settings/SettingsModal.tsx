@@ -26,10 +26,12 @@ import { SettingsCogSolidIcon } from 'pixel-art-icons/icons/settings-cog-solid'
 import { CommandIcon } from 'pixel-art-icons/icons/command'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
 import { SlidersHorizontalIcon } from 'pixel-art-icons/icons/sliders-horizontal'
+import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
 import { GeneralSection } from './sections/GeneralSection'
 import { PublishingSection } from './sections/PublishingSection'
 import { ShortcutsSection } from './sections/ShortcutsSection'
 import { PreferencesSection } from './sections/PreferencesSection'
+import { MembersSection } from './sections/MembersSection'
 import s from './SettingsModal.module.css'
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
@@ -42,6 +44,7 @@ const NAV_ITEMS = [
   { id: 'shortcuts',   label: 'Shortcuts',   icon: CommandIcon,           accent: 'sky'   },
   { id: 'publishing',  label: 'Publishing',  icon: UploadIcon,            accent: 'mint'  },
   { id: 'preferences', label: 'Preferences', icon: SlidersHorizontalIcon, accent: 'peach' },
+  { id: 'members',     label: 'Members',     icon: UsersSolidIcon,        accent: 'peach' },
 ] as const
 
 type SectionId = typeof NAV_ITEMS[number]['id']
@@ -212,6 +215,7 @@ export function SettingsModal() {
               {activeSection === 'shortcuts'   && <ShortcutsSection />}
               {activeSection === 'publishing'  && <PublishingSection />}
               {activeSection === 'preferences' && <PreferencesSection />}
+              {activeSection === 'members'     && <MembersSection />}
             </div>
           </div>
         </div>

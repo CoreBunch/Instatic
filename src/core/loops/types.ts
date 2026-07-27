@@ -131,6 +131,14 @@ export interface SourceFetchContext {
    * because cookies would fragment the Layer B cache per visitor.
    */
   request?: SourceRequestContext
+  /**
+   * Resolved visitor identity — populated ONLY for `perVisitor` sources, and
+   * only when a valid visitor session is present. `undefined` at publish time,
+   * and `undefined` for anonymous per-visitor requests. Derived solely from
+   * the validated session cookie (IDOR-safe). A per-visitor source that needs
+   * the current visitor reads this directly instead of touching `request.cookies`.
+   */
+  visitor?: SourceVisitorContext
 }
 
 /**
@@ -150,6 +158,24 @@ export interface SourceRequestContext {
    * for shared-cache `requestDependent` sources.
    */
   cookies: Record<string, string>
+}
+
+/**
+ * A resolved visitor identity for per-visitor loop sources. Populated by the
+ * server-side hole/prefetch layer from the validated session cookie and
+ * handed to a source's `fetch()` via `ctx.visitor`. Kept in `src/core` so
+ * built-in `perVisitor` sources can consume it without importing server-only
+ * session code — the load-bearing IDOR rule is that this object is derived
+ * solely from the cookie, never from loop filters or request input.
+ */
+export interface SourceVisitorContext {
+  /** The visitor's stable nanoid — safe to expose, never sequential. */
+  id: string
+  displayName: string
+  email: string
+  roleName: string | null
+  /** Custom profile field VALUES keyed by field id (e.g. `schoolName`). */
+  profileFields: Record<string, unknown>
 }
 
 /**

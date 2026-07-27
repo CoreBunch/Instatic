@@ -51,6 +51,22 @@ const AuditActionSchema = Type.Union([
   Type.Literal('ai.chat.failed'),
   Type.Literal('ai.mcp_connector.created'),
   Type.Literal('ai.mcp_connector.revoked'),
+  // Visitor-auth admin actions (see server/handlers/cms/visitorAuth.ts).
+  Type.Literal('visitor_auth.config_updated'),
+  Type.Literal('visitor_auth.user_updated'),
+  Type.Literal('visitor_auth.user_deleted'),
+  // Visitor self-service auth actions (see server/visitor-auth/handlers.ts).
+  // The actor is the visitor themselves; `actor_user_id` is always NULL
+  // here because that column FK-references admin `users(id)` and visitor
+  // ids live in `visitor_users`. The visitor's identity is carried in
+  // `target_id` (free-text, no FK) + `metadata.email`.
+  Type.Literal('visitor.login.success'),
+  Type.Literal('visitor.login.failure'),
+  Type.Literal('visitor.login.locked'),
+  Type.Literal('visitor.logout'),
+  Type.Literal('visitor.register'),
+  Type.Literal('visitor.password.reset'),
+  Type.Literal('visitor.account.deleted'),
 ])
 
 const AuditMetadataSchema = Type.Record(

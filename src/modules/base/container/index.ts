@@ -39,6 +39,16 @@ export const ContainerModule: ModuleDefinition<ContainerStoredProps> = {
     tag: htmlTagControl(),
     customTag: customHtmlTagControl(),
     htmlAttributes: htmlAttributesControl(),
+    authGate: {
+      // TRANSITIONAL (Wave 4 owns the UI): the gate is now a list of group ids
+      // (D16), not the Phase-2 member/admin select. Until the Wave-4 group
+      // picker lands this is a free-form text control accepting comma-
+      // separated group ids. The prop schema (props.ts) is the source of
+      // truth — it is `string[]`; this control only describes the editor UI.
+      type: 'text',
+      label: 'Auth gate (group ids, comma-separated)',
+      placeholder: 'group-id-1, group-id-2',
+    },
   },
 
   propsSchema: ContainerPropsSchema,

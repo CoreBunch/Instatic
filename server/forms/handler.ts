@@ -10,6 +10,8 @@ import {
   readValidatedBody,
 } from '../http'
 import { createDataRow, getDataTable } from '../repositories/data'
+import { validateVisitorSession } from '../visitor-auth/sessions'
+import { findVisitorUserById } from '../visitor-auth/repositories'
 import { getLatestPublishedSiteSnapshot } from '../repositories/publish'
 import {
   PublicFormChallengeBodySchema,
@@ -133,10 +135,24 @@ async function handleSubmit(req: Request, db: DbClient): Promise<Response> {
     return jsonResponse({ error: 'Invalid form values', errors: validation.errors }, { status: 400 })
   }
 
+  // Per-visitor-data framework (Pillar 3): when the target table opts in,
+  // stamp the row with the submitting visitor's id — resolved SOLELY from the
+  // validated session cookie (IDOR-safe). No visitor id is ever read from the
+  // form body. Anonymous submits (no opt-in or no session) are unchanged.
+  let visitorUserId: string | undefined
+  if (table.capturesVisitorOwner) {
+    const session = await validateVisitorSession(db, req)
+    if (session) {
+      const visitor = await findVisitorUserById(db, session.userId)
+      if (visitor) visitorUserId = visitor.id
+    }
+  }
+
   const row = await createDataRow(db, {
     tableId: table.id,
     cells: validation.cells,
     slug: '',
+    ...(visitorUserId ? { visitorUserId } : {}),
   })
   return jsonResponse({ ok: true, rowId: row.id })
 }

@@ -55,6 +55,13 @@ interface DynamicBindingRenderContext {
   /** Optional human label for the binding source — shown in the picker. */
   sourceLabel?: string
   /**
+   * The enclosing loop source's id (e.g. 'visitor.current'). The picker uses
+   * it to fetch source-specific runtime fields that aren't statically
+   * declared on the source — currently the visitor-auth-configured custom
+   * profile fields for 'visitor.current'.
+   */
+  sourceId?: string
+  /**
    * When the enclosing loop is bound to a specific data table, this is its
    * table id. The picker uses it to auto-scope to that single table instead
    * of listing every table in the workspace.
@@ -271,6 +278,7 @@ export function PropertyControlRenderer({
       }}
       availableFields={dynamicBinding.availableFields}
       sourceLabel={dynamicBinding.sourceLabel}
+      sourceId={dynamicBinding.sourceId}
       loopTableId={dynamicBinding.loopTableId}
     >
       {inner}

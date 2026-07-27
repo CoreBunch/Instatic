@@ -10,6 +10,9 @@
  *   • `usePagesStats()`        — Pages widget (cheap; 2 small counts)
  *   • `usePostsStats()`        — Posts widget (one query per postType
  *                                  + a 28-day histogram)
+ *   • `useMembersStats()`      — Members widget (active visitor total +
+ *                                  a 28-day registration histogram +
+ *                                  auth/registration toggle states)
  *   • `useMediaStats()`        — Media widget (totals + 16 thumbs)
  *   • `usePluginsStats()`      — Plugins widget (one scan of
  *                                  `installed_plugins`)
@@ -133,6 +136,15 @@ const DashboardPostsStatsSchema = looseObject({
 })
 type DashboardPostsStats = Static<typeof DashboardPostsStatsSchema>
 
+const DashboardMembersStatsSchema = looseObject({
+  total: Type.Number(),
+  /** New registrations per local calendar day, last 28 days, oldest first. */
+  daily28: Type.Array(Type.Number()),
+  authEnabled: Type.Boolean(),
+  registrationOpen: Type.Boolean(),
+})
+type DashboardMembersStats = Static<typeof DashboardMembersStatsSchema>
+
 const DashboardMediaStatsSchema = looseObject({
   count: Type.Number(),
   totalBytes: Type.Number(),
@@ -221,6 +233,15 @@ export function usePagesStats(): DashboardPagesStats | null {
 /** Posts widget. One query per postType table + a 28-day histogram. */
 export function usePostsStats(): DashboardPostsStats | null {
   return useDashboardEndpoint('posts', DashboardPostsStatsSchema)
+}
+
+/**
+ * Members widget. Active visitor total + a 28-day registration histogram
+ * + the auth/registration toggle states. (Membership-fork first-party
+ * widget — see `widgets/index.ts` for the deliberate-divergence note.)
+ */
+export function useMembersStats(): DashboardMembersStats | null {
+  return useDashboardEndpoint('members', DashboardMembersStatsSchema)
 }
 
 /** Media widget. Totals + 16 most-recent image thumbnails. */

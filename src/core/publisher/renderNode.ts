@@ -234,6 +234,49 @@ function renderHolePlaceholder(
   )
 }
 
+/**
+ * Emit an `<instatic-gated>` placeholder for an auth-gated container.
+ *
+ * Mirrors {@link renderHolePlaceholder}: the subtree is NOT rendered — the
+ * gate runtime fetches it at request time from
+ * `/_instatic/gate/<nodeId>?v=<version>&u=<page-url>`, which renders the
+ * real subtree ONLY for visitors whose session is a member of at least one
+ * of `requiredGroups` (Phase 3 / D16). Everyone else — including anonymous
+ * visitors and JS-less clients — sees the baked `staticPlaceholder` fallback
+ * below.
+ *
+ * The `data-instatic-groups` attribute carries the comma-joined group-id
+ * list so the runtime can stamp it onto the fetch; the server endpoint is
+ * still the single source of truth for the authorisation decision. Reuses
+ * `acc.holeNodeIds` so `render.ts` injects the shared hole-runtime script
+ * (both observers live in that one file).
+ */
+function renderGatedPlaceholder(
+  node: PageNode,
+  def: AnyModuleDefinition,
+  config: RenderConfig,
+  acc: RenderAccumulators,
+  requiredGroups: string[],
+): string {
+  // Reuse the hole accumulator so render.ts injects the runtime script for
+  // any page that contains a gated placeholder (the gate observer lives in
+  // the same hole-runtime.js bundle).
+  acc.holeNodeIds.add(node.id)
+
+  const rawPlaceholder = def.staticPlaceholder?.(node.props as never) ?? ''
+  const sanitized = rawPlaceholder ? sanitizeRichtext(rawPlaceholder) : ''
+
+  const safeId = escapeHtml(node.id)
+  const safeGroups = escapeHtml(requiredGroups.join(','))
+  const version = config.publishVersion ?? 0
+
+  return (
+    `<instatic-gated id="gate-${safeId}" data-instatic-gate="${safeId}" data-instatic-groups="${safeGroups}" data-instatic-version="${version}" style="display:contents">` +
+    sanitized +
+    `</instatic-gated>`
+  )
+}
+
 type SpecialRenderer = (
   node: PageNode,
   config: RenderConfig,
@@ -309,10 +352,20 @@ export function renderNode(
     return `<!-- instatic: unknown module "${escapeHtml(node.moduleId)}" -->`
   }
 
-  // Layer C: when this node id is in the dynamic set, emit a <instatic-hole>
-  // placeholder and do NOT recurse into the subtree. The hole runtime will
-  // fetch the full rendered fragment at request time via /_instatic/hole/<nodeId>.
+  // Layer C: when this node id is in the dynamic set, emit a placeholder and
+  // do NOT recurse into the subtree. A gated base.container emits
+  // `<instatic-gated>` (carries fallback content + the required group list);
+  // every other dynamic node keeps the `<instatic-hole>` placeholder. Both
+  // runtimes ship in the same hole-runtime.js script, so either path flags
+  // the accumulator to inject it.
   if (config.dynamicNodeIds?.has(nodeId)) {
+    const gate =
+      node.moduleId === 'base.container' && Array.isArray(node.props.authGate)
+        ? node.props.authGate
+        : []
+    if (gate.length > 0) {
+      return renderGatedPlaceholder(node, def, config, acc, gate)
+    }
     return renderHolePlaceholder(node, def, config, acc)
   }
 

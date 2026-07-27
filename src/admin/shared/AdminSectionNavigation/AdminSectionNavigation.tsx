@@ -15,6 +15,7 @@ import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
 import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { PackageSolidIcon } from 'pixel-art-icons/icons/package-solid'
+import { StarSolidIcon } from 'pixel-art-icons/icons/star-solid'
 import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
 import { listCmsPlugins } from '@core/persistence/cmsPlugins'
 import type { CmsCurrentUser } from '@core/persistence'
@@ -182,6 +183,15 @@ export function AdminSectionNavigation({
           icon={<UsersSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
           label="Users"
           active={section === 'users'}
+          onNavigateStart={onWorkspaceNavigateStart}
+        />
+      )}
+      {canAccess('members') && (
+        <NavItem
+          to="/admin/members"
+          icon={<StarSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
+          label="Members"
+          active={section === 'members'}
           onNavigateStart={onWorkspaceNavigateStart}
         />
       )}

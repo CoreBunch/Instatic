@@ -296,6 +296,14 @@ export const DataTableSchema = Type.Object({
    * migration; repositories default to `false` until then.
    */
   system: Type.Boolean(),
+  /**
+   * Per-table opt-in for the visitor-data framework (Pillar 3). When true,
+   * the form handler stamps `visitor_user_id` on every submitted row so the
+   * `visitor.owned-rows` loop source can list a visitor's own rows. Stored as
+   * integer 0/1; `mapTable` coerces via `Boolean` (same pattern as `system`).
+   * Defaults to false so existing tables are untouched.
+   */
+  capturesVisitorOwner: Type.Optional(Type.Boolean()),
   createdByUserId: Type.Union([Type.String(), Type.Null()]),
   updatedByUserId: Type.Union([Type.String(), Type.Null()]),
   /** ISO datetime string from DB */
@@ -357,6 +365,13 @@ export const DataRowSchema = Type.Object({
   slug: Type.String(),
   status: DataRowStatusSchema,
   authorUserId: NullableUserIdSchema,
+  /**
+   * Visitor who owns this row (per-visitor-data framework, Pillar 3).
+   * Stamped by the form handler from the validated session cookie when the
+   * table opts in (`capturesVisitorOwner`). Optional because pre-migration
+   * rows and non-opt-in tables never carry it.
+   */
+  visitorUserId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   createdByUserId: NullableUserIdSchema,
   updatedByUserId: NullableUserIdSchema,
   publishedByUserId: NullableUserIdSchema,

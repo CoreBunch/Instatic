@@ -59,6 +59,45 @@ interface PublishedNodeIndex {
 const nodeIndexMemo = createVersionedSingleFlight<PublishedNodeIndex>()
 
 /**
+ * Compose prefixes that `spliceIntoOutlet` (templateCompose.ts) prepends to a
+ * terminal page's node ids when it splices the page into an everywhere /
+ * postTypes template outlet: `c0_` for the terminal page, `t<N>_` for each
+ * outer template in the chain. The published hole/gate placeholder attribute
+ * carries the COMPOSED (prefixed) id; the nodeIndex here is built from the raw
+ * (non-composed) snapshot pages, so a lookup by the composed id misses. This
+ * strips one known compose prefix so hole/gate requests on template-wrapped
+ * pages resolve. Returns the original id when no prefix is present.
+ */
+const COMPOSE_PREFIX = /^(?:c0_|t\d+_)/
+function stripComposePrefix(nodeId: string): string {
+  return nodeId.replace(COMPOSE_PREFIX, '')
+}
+
+/**
+ * Compose-aware node → page lookup for the hole/gate endpoints. Tries the id
+ * as-is first (fast path: pages NOT wrapped by a template, or authored node
+ * ids that happen to be passed directly), then falls back to the compose-
+ * prefix-stripped id (template-wrapped pages). Returns the page and the
+ * EFFECTIVE node id (the form that actually exists in the page's node map —
+ * callers use this for `page.nodes[effectiveId]` and rendering, since the
+ * page's nodes are keyed on the non-composed id). Returns undefined when no
+ * form matches.
+ */
+export function findPageForNodeId(
+  index: PublishedNodeIndex,
+  nodeId: string,
+): { page: Page; effectiveNodeId: string } | undefined {
+  if (index.nodeIndex.has(nodeId)) {
+    return { page: index.nodeIndex.get(nodeId)!, effectiveNodeId: nodeId }
+  }
+  const stripped = stripComposePrefix(nodeId)
+  if (stripped !== nodeId && index.nodeIndex.has(stripped)) {
+    return { page: index.nodeIndex.get(stripped)!, effectiveNodeId: stripped }
+  }
+  return undefined
+}
+
+/**
  * The published site plus a `nodeId → page` index for `version`, so the hole
  * endpoint locates a fragment's page in O(1) instead of scanning all pages.
  */
