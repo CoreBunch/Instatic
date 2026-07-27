@@ -161,7 +161,11 @@ export function createNodeActions(helpers: SiteSliceHelpers): NodeActions {
       const newNode = createNode(moduleId, resolvedDefaults)
       let inserted = false
       let blockedByOutlet = false
-      mutateActiveTree((tree) => {
+      // `mutateActiveTree` returns whether the mutation was ACCEPTED. The
+      // Mutative recipe below runs before the collab write gate, so `inserted`
+      // alone would hand callers — including the AI and MCP tools — a live id
+      // for a node that exists nowhere.
+      const accepted = mutateActiveTree((tree) => {
         // Structural invariant: a document tree holds AT MOST ONE base.outlet.
         // Matched content (a page or the current entry body) flows into a single
         // outlet — both the publisher's `composeTemplateChain` and the canvas's
@@ -183,7 +187,7 @@ export function createNodeActions(helpers: SiteSliceHelpers): NodeActions {
           'This document already has a content outlet — matched content can flow into just one.',
         )
       }
-      return inserted ? newNode.id : ''
+      return accepted && inserted ? newNode.id : ''
     },
 
     insertImportedNodes: (parentId, fragment, opts) => {

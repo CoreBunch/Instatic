@@ -64,19 +64,14 @@ import type { EditorStoreApi } from '@site/store/types'
 import { pruneCanvasSelectionDraft } from '../selectionSlice'
 import type { Awareness } from 'y-protocols/awareness'
 import type { CollabProvider } from '@site/collab/collabProvider'
-import { pushToast } from '@ui/components/Toast'
-import type { ResetReason } from '@core/collab'
-
-/**
- * What the user is told when the server discards a doc they were editing.
- * `rewritten` never reaches here — it is the routine out-of-relay reseed.
- */
-const RESET_REASON_COPY: Record<ResetReason, string> = {
-  rewritten: '',
-  stale: 'This document was rebuilt while you were disconnected, so unsent changes were discarded. The latest version is now loaded.',
-  refused: 'Your role does not allow that change, so it was undone.',
-  oversize: 'That change was too large to sync in one step and was undone. Try making it in smaller pieces.',
-}
+import {
+  collabBlockToast,
+  clearCollabBlockNotice,
+  collabResetToast,
+  transportBlockReason,
+  type BlockedReason,
+  type LocalPatchOutcome,
+} from './collabNotices'
 
 interface ManagedDoc {
   doc: Y.Doc
@@ -99,6 +94,7 @@ let redoRoute: string[][] = []
 const lastCoalesce = new Map<string, string | null>()
 let provider: CollabProvider | null = null
 let detachProviderReset: (() => void) | null = null
+let detachProviderStatus: (() => void) | null = null
 const pendingProjections = new Set<string>()
 let projectionFlushScheduled = false
 /**
@@ -219,22 +215,31 @@ const managedDocSet: CollabDocSet = {
 // ---------------------------------------------------------------------------
 
 /**
- * Translate one local mutation's site patches into the docs. Returns false
- * when the write is currently gated (connected but the target docs have not
- * finished their first sync) — the caller then rejects the mutation.
+ * Tell the user their edit did not land (see {@link collabBlockToast} for the
+ * once-per-episode latch) and, on the first notice of an episode, snap the
+ * in-flight contentEditable back. Characters typed during the block live only
+ * in the DOM; ending the session re-renders that node from the model, so what
+ * the user sees returns to the last value we actually accepted. NOT
+ * `cancelInlineEdit` — that calls undo(), which is itself blocked right now.
  */
+export function notifyCollabBlocked(reason: BlockedReason): void {
+  if (collabBlockToast(reason)) storeApi?.getState().endInlineEdit()
+}
+
 export function applyLocalSitePatches(
   patches: Patches,
   preSite: SiteDocument,
   nextSite: SiteDocument,
   coalesceKey: string | null,
-): boolean {
+): LocalPatchOutcome {
+  const blocked = transportBlockReason(provider)
+  if (blocked) return { accepted: false, reason: blocked }
   if (provider) {
     // Every already-bound doc must be past its first sync before edits may
     // stream — writing into an unseeded doc would duplicate server content
     // on merge. (Sub-second in practice; the toolbar shows "connecting".)
     for (const [, binding] of providerBindings) {
-      if (!binding.synced) return false
+      if (!binding.synced) return { accepted: false, reason: 'syncing' }
     }
   }
 
@@ -274,7 +279,7 @@ export function applyLocalSitePatches(
 
   const touched = applySitePatchesToDocs(patches, preSite, nextSite, decidingDocSet, LOCAL_ORIGIN)
   alignedSiteRef = nextSite
-  if (touched.length === 0) return true
+  if (touched.length === 0) return { accepted: true }
 
   // Docs whose undo stack GREW form this step's routing group. Docs that
   // only folded into their existing top item (coalescing) push nothing —
@@ -287,7 +292,7 @@ export function applyLocalSitePatches(
     redoRoute = []
     syncUndoFlags()
   }
-  return true
+  return { accepted: true }
 }
 
 /** End any in-progress coalescing burst (inline-edit session boundaries). */
@@ -307,6 +312,16 @@ function syncUndoFlags(): void {
 }
 
 export function collabUndo(): boolean {
+  // Undo transacts with `origin = undoManager`, so it never passes through
+  // applyLocalSitePatches and the write gate cannot see it. Offline, a Cmd+Z
+  // would otherwise be applied to the doc, projected into the store, and then
+  // dropped by sendFrame — displayed and lost, with no warning. Checked BEFORE
+  // undoRoute.pop() so a refused undo does not consume a history step.
+  const blocked = transportBlockReason(provider)
+  if (blocked) {
+    notifyCollabBlocked(blocked)
+    return false
+  }
   while (undoRoute.length > 0) {
     const group = undoRoute.pop()!
     let undid = false
@@ -334,6 +349,11 @@ export function collabUndo(): boolean {
 }
 
 export function collabRedo(): boolean {
+  const blocked = transportBlockReason(provider)
+  if (blocked) {
+    notifyCollabBlocked(blocked)
+    return false
+  }
   while (redoRoute.length > 0) {
     const group = redoRoute.pop()!
     let redid = false
@@ -629,19 +649,15 @@ function bindThroughProvider(docIds: readonly string[]): void {
  */
 export function connectCollabProvider(next: CollabProvider): void {
   provider = next
+  detachProviderStatus?.()
+  // A recovered transport re-arms the block notice, so the NEXT outage speaks
+  // up instead of being swallowed by the previous one's latch.
+  detachProviderStatus = next.onStatus((status) => {
+    if (status === 'connected') clearCollabBlockNotice()
+  })
   detachProviderReset?.()
   detachProviderReset = next.onReset((docId, reason) => {
-    // 'rewritten' is the routine out-of-relay reseed — another admin saved a
-    // setting, a plugin installed, the data workspace edited a row. Nothing of
-    // this user's was lost, so saying anything would be noise. The other three
-    // mean work of theirs was discarded, and they must be told.
-    if (reason !== 'rewritten') {
-      pushToast({
-        kind: 'error',
-        title: 'A change was reverted',
-        body: RESET_REASON_COPY[reason],
-      })
-    }
+    collabResetToast(reason)
     // The doc's undo history belongs to the lineage that just died: its
     // UndoManager is rebuilt empty below, so any routing entry still naming
     // this doc would make Cmd+Z a silent no-op that consumes a step.
@@ -666,6 +682,8 @@ export function connectCollabProvider(next: CollabProvider): void {
 export function disconnectCollabProvider(): void {
   detachProviderReset?.()
   detachProviderReset = null
+  detachProviderStatus?.()
+  detachProviderStatus = null
   provider?.destroy()
   provider = null
   providerBindings.clear()

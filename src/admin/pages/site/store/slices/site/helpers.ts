@@ -20,7 +20,7 @@ import type { Draft, Patches } from 'mutative'
 import type { ImportFragment } from '@core/htmlImport'
 import type { NewStyleRule } from '@core/siteImport'
 import { addImportedScriptDependencies, addImportedScripts, addImportedStylesheets } from './importedSiteFiles'
-import { applyLocalSitePatches } from './collabBinding'
+import { applyLocalSitePatches, notifyCollabBlocked } from './collabBinding'
 import type { EditorStore } from '@site/store/types'
 import { reconcileFrameworkClasses } from './framework/reconcile'
 import { indexStyleRulesByName, linkImportedClassNames } from './importLinking'
@@ -192,12 +192,13 @@ export function buildSiteHelpers(
       .map((p) => ({ ...p, path: p.path.slice(1) }))
 
     if (siteForward.length > 0) {
-      const accepted = applyLocalSitePatches(siteForward, cur.site, next.site!, coalesceKey)
-      if (!accepted) {
-        // Connected but not yet synced — the mutation is rejected wholesale
-        // so an unseeded doc can never receive local ops (which would
-        // duplicate server content on merge).
-        console.warn('[collab] edit dropped — documents still syncing')
+      const outcome = applyLocalSitePatches(siteForward, cur.site, next.site!, coalesceKey)
+      if (!outcome.accepted) {
+        // The edit cannot reach the relay, and there is no save path behind
+        // it — so it is refused wholesale rather than applied to a store the
+        // server will never agree with. The user is told; silence here is how
+        // work disappeared.
+        notifyCollabBlocked(outcome.reason)
         return false
       }
     }
