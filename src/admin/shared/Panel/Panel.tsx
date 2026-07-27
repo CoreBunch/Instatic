@@ -26,11 +26,27 @@
  * @see Guideline #357 — Compact UI density (36px header)
  */
 import type { CSSProperties, ReactNode, Ref } from 'react'
-import { PanelHeader } from '@admin/shared/PanelHeader'
+import {
+  PanelHeader,
+  PanelModeButton,
+  type PanelDragHandleProps,
+} from '@admin/shared/PanelHeader'
+import type { PanelMode } from '@admin/state/workspaceLayoutStorage'
 import { cn } from '@ui/cn'
 import styles from './Panel.module.css'
 
-interface PanelProps {
+export interface DockablePanelProps {
+  /** Enables header dragging when this panel is hosted as a floating window. */
+  dragHandleProps?: PanelDragHandleProps
+  /** Reflected on the root for panel-host styling and interaction tests. */
+  mode?: PanelMode
+  /** Adds the shared dock / unpin action to the header when provided. */
+  onToggleMode?: () => void
+  /** Human-readable sidebar destination used in the dock action tooltip. */
+  dockLocation?: string
+}
+
+interface PanelProps extends DockablePanelProps {
   /** Stable identifier — feeds the `<PanelHeader>` testids and the
    *  `data-testid` on the panel root. */
   panelId: string
@@ -88,6 +104,10 @@ export function Panel({
   onClose,
   headerless = false,
   headerActions,
+  dragHandleProps,
+  mode = 'docked',
+  onToggleMode,
+  dockLocation = 'sidebar',
   body = 'padded',
   bodyClassName,
   bodyRef,
@@ -103,6 +123,7 @@ export function Panel({
       aria-label={ariaLabel ?? title}
       data-panel=""
       data-testid={testId ?? `panel-${panelId}`}
+      data-mode={mode}
       tabIndex={-1}
       onClick={(e) => e.stopPropagation()}
       className={cn(styles.panel, className)}
@@ -113,8 +134,17 @@ export function Panel({
           title={title}
           titleContent={titleContent}
           onClose={onClose}
+          dragHandleProps={dragHandleProps}
         >
           {headerActions}
+          {onToggleMode && (
+            <PanelModeButton
+              mode={mode}
+              panelLabel={title}
+              dockLocation={dockLocation}
+              onToggle={onToggleMode}
+            />
+          )}
         </PanelHeader>
       )}
 

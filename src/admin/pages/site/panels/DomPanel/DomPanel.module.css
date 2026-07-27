@@ -40,7 +40,7 @@
     top: 100%;
     height: var(--space-2xl);
     pointer-events: none;
-    background: linear-gradient(180deg, var(--bg-body) 0%, transparent);
+    background: linear-gradient(180deg, var(--panel-fade-bg) 0%, transparent);
 }
 
 .searchFill {
