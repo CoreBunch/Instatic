@@ -73,11 +73,29 @@ describe('collab socket — upgrade gating', () => {
     expect(server.data()).toBeNull()
   })
 
-  it('upgrades an authenticated same-origin handshake with canWrite resolved from capabilities', async () => {
+  it('upgrades an authenticated same-origin handshake with fullSiteWriter resolved from capabilities', async () => {
     const { harness, cookie } = await setup()
     const server = fakeServer(true)
     expect(await handleCollabSocketUpgrade(socketRequest({ cookie }), harness.db, server)).toBeNull()
-    expect(server.data()?.canWrite).toBe(true) // the owner holds every site-write cap
+    // The owner holds every site-write cap, so it skips the per-update guard.
+    expect(server.data()?.fullSiteWriter).toBe(true)
+
+    // A partial writer (one category) is NOT a full writer — its frames run
+    // through the guard, same path a read-only viewer takes.
+    const contentOnly = await harness.createRoleUser({
+      name: 'Content Only',
+      slug: 'site-content-only',
+      capabilities: ['site.read', 'site.content.edit'],
+    })
+    const contentServer = fakeServer(true)
+    expect(
+      await handleCollabSocketUpgrade(
+        socketRequest({ cookie: contentOnly.cookie }),
+        harness.db,
+        contentServer,
+      ),
+    ).toBeNull()
+    expect(contentServer.data()?.fullSiteWriter).toBe(false)
 
     const readOnly = await harness.createRoleUser({
       name: 'Site Viewer',
@@ -92,7 +110,7 @@ describe('collab socket — upgrade gating', () => {
         readOnlyServer,
       ),
     ).toBeNull()
-    expect(readOnlyServer.data()?.canWrite).toBe(false)
+    expect(readOnlyServer.data()?.fullSiteWriter).toBe(false)
   })
 
   it('returns 426 when the request is not an upgradable WebSocket handshake', async () => {

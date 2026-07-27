@@ -155,12 +155,14 @@ export interface CollabSocketData {
   userId: string
   /** The session identity this connection may publish over presence. */
   identity: CollabPresenceIdentity
-  canWrite: boolean
   /**
    * True when the user holds ALL of SITE_WRITE_CAPABILITIES — the common
-   * case, which skips the per-update capability guard entirely. Partial
-   * writers (e.g. content-only editors) pay a fork+diff validation per
-   * update frame instead (see ./updateGuard.ts).
+   * case, which skips the per-update capability guard entirely. Every other
+   * connection — partial writers (e.g. content-only editors) AND read-only
+   * viewers (zero write capabilities) — pays a fork+diff validation per
+   * update frame instead (see ./updateGuard.ts). A viewer's edit has no
+   * matching capability for any category, so the guard refuses it and resets
+   * the sender, exactly like a partial writer straying out of its lane.
    */
   fullSiteWriter: boolean
   /** The user's granted capabilities — the guard's validation input. */
@@ -198,7 +200,6 @@ export async function handleCollabSocketUpgrade(
   }
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
-  const canWrite = SITE_WRITE_CAPABILITIES.some((cap) => userHasCapability(user, cap))
   const fullSiteWriter = SITE_WRITE_CAPABILITIES.every((cap) => userHasCapability(user, cap))
   const upgraded = server.upgrade(req, {
     data: {
@@ -209,7 +210,6 @@ export async function handleCollabSocketUpgrade(
         avatarUrl: user.avatarUrl,
         gravatarHash: user.gravatarHash,
       },
-      canWrite,
       fullSiteWriter,
       capabilities: user.capabilities,
       boundDocs: new Set(),
@@ -327,9 +327,7 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         return
       }
 
-      // Read-only connections may REQUEST state (step1) but never write.
       const messageType = decoding.readVarUint(decoding.createDecoder(frame.payload))
-      if (messageType !== SYNC_STEP_1 && !ws.data.canWrite) return
 
       let bound: RelayDoc
       if (ws.data.boundDocs.has(frame.docId)) {
@@ -376,12 +374,15 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         return
       }
 
-      // Partial writers (canWrite but not every site capability) pass each
-      // update through the category guard BEFORE it touches the
-      // authoritative doc — the same structure/content/style rules the HTTP
-      // save enforces. Both non-step1 message types (step2 replies and
-      // updates) carry `varUint8Array update` after the type varUint, so one
-      // extraction covers whatever a hand-crafted client might send.
+      // Every non-full-writer — partial-capability editors AND read-only
+      // viewers — passes each update through the category guard BEFORE it
+      // touches the authoritative doc, the same structure/content/style rules
+      // the HTTP save enforces. A read-only viewer holds no write capability,
+      // so the guard refuses any real change and the reset below reverts it on
+      // the sender's own screen; a viewer's empty handshake step2 diffs to
+      // nothing and passes as a no-op. Both non-step1 message types (step2
+      // replies and updates) carry `varUint8Array update` after the type
+      // varUint, so one extraction covers whatever a client might send.
       if (messageType !== SYNC_STEP_1 && !ws.data.fullSiteWriter) {
         const guardDecoder = decoding.createDecoder(frame.payload)
         decoding.readVarUint(guardDecoder)

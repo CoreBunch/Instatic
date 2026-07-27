@@ -207,7 +207,7 @@ describe('collab relay integration (real server, real sockets)', () => {
     })
   })
 
-  it('drops update frames from a read-only connection', async () => {
+  it('refuses a read-only edit AND resets the viewer so its own screen reverts', async () => {
     const stack = await startStack()
     const docId = `page:${stack.homeId}`
 
@@ -218,19 +218,22 @@ describe('collab relay integration (real server, real sockets)', () => {
     })
     const writer = connectClient(stack)
     const readOnly = connectClient(stack, viewer.cookie)
+    const resets: string[] = []
+    readOnly.onReset((id) => resets.push(id))
     const boundWriter = writer.bind(docId)
     const boundReadOnly = readOnly.bind(docId)
     await boundWriter.whenSynced
     await boundReadOnly.whenSynced
 
     const rootId = treeMap(boundReadOnly.doc).get('rootNodeId') as string
-    // The read-only client's local doc changes, but the server ignores the
-    // update frame — no other peer ever sees it.
+    // The read-only client mutates its local doc (a not-yet-disabled UI
+    // affordance, a plugin, the console). The server refuses the update — no
+    // other peer ever sees it.
     setNodeLabel(boundReadOnly.doc, rootId, 'Sneaky viewer edit')
 
     // Happened-after marker on a DIFFERENT key — writing the same key would
     // make the assertion depend on Yjs' concurrent-set clientID tiebreak
-    // (random per run), not on the server's drop. Once the marker lands on
+    // (random per run), not on the server's refusal. Once the marker lands on
     // the viewer, the server has processed both frames.
     boundWriter.doc.transact(() => {
       const nodes = treeMap(boundWriter.doc).get('nodes') as Y.Map<unknown>
@@ -241,8 +244,17 @@ describe('collab relay integration (real server, real sockets)', () => {
       return (nodes.get(rootId) as Y.Map<unknown>).get('marker') === 'writer-was-here'
     })
 
-    // The sneaky edit never reached the WRITER — the server dropped it.
+    // The sneaky edit never reached the WRITER — the guard refused it.
     expect(nodeLabel(boundWriter.doc, rootId)).not.toBe('Sneaky viewer edit')
+
+    // …and the refusal RESETS the viewer, so its own optimistic edit reverts
+    // instead of stranding it in a divergent doc that still reports "synced".
+    // A read-only connection used to be dropped silently at a `canWrite` gate
+    // with no reset, leaving exactly that permanent local divergence.
+    await waitFor(() => resets.includes(docId))
+    const rebound = readOnly.bind(docId)
+    await rebound.whenSynced
+    expect(nodeLabel(rebound.doc, rootId)).not.toBe('Sneaky viewer edit')
   })
 
   it('enforces per-category capabilities on partial writers and relays read-only presence', async () => {
