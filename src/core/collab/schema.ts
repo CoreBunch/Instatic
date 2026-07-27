@@ -53,3 +53,21 @@ export const SHELL_PER_ENTRY_KEYS = new Set(['settings', 'styleRules', 'explorer
 export function inlineTextPropOf(moduleId: string): string | null {
   return registry.get(moduleId)?.inlineTextEdit?.prop ?? null
 }
+
+/**
+ * The Y.Text stored at `nodes[nodeId].props[prop]` of a page/component doc,
+ * or null when the path is missing or holds a plain value (a node that has
+ * never been through the collab translator stores plain strings). Shared by
+ * caret presence and the inline-edit remote merge — both no-op gracefully on
+ * null.
+ */
+export function nodeTextOf(doc: Y.Doc, nodeId: string, prop: string): Y.Text | null {
+  const nodes = treeMap(doc).get('nodes')
+  if (!(nodes instanceof Y.Map)) return null
+  const node = nodes.get(nodeId)
+  if (!(node instanceof Y.Map)) return null
+  const props = node.get('props')
+  if (!(props instanceof Y.Map)) return null
+  const value = props.get(prop)
+  return value instanceof Y.Text ? value : null
+}

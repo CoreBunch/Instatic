@@ -18,6 +18,7 @@ export {
   dataMap,
   LOCAL_ORIGIN,
   metaMap,
+  nodeTextOf,
   REMOTE_ORIGIN,
   rostersMap,
   SEED_CLIENT_ID,

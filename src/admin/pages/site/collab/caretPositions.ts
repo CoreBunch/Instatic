@@ -12,7 +12,7 @@
  */
 import * as Y from 'yjs'
 import { fromBase64, toBase64 } from 'lib0/buffer'
-import { treeMap } from '@core/collab'
+import { nodeTextOf } from '@core/collab'
 
 export interface EncodedCaretRange {
   nodeId: string
@@ -20,17 +20,6 @@ export interface EncodedCaretRange {
   /** base64-encoded Y.RelativePosition */
   anchor: string
   head: string
-}
-
-function textOf(doc: Y.Doc, nodeId: string, prop: string): Y.Text | null {
-  const nodes = treeMap(doc).get('nodes')
-  if (!(nodes instanceof Y.Map)) return null
-  const node = nodes.get(nodeId)
-  if (!(node instanceof Y.Map)) return null
-  const props = node.get('props')
-  if (!(props instanceof Y.Map)) return null
-  const value = props.get(prop)
-  return value instanceof Y.Text ? value : null
 }
 
 /** Character offsets → wire-encodable relative positions. */
@@ -41,7 +30,7 @@ export function encodeCaretRange(
   anchorIndex: number,
   headIndex: number,
 ): EncodedCaretRange | null {
-  const text = textOf(doc, nodeId, prop)
+  const text = nodeTextOf(doc, nodeId, prop)
   if (!text) return null
   const clamp = (index: number) => Math.max(0, Math.min(text.length, index))
   return {
@@ -57,7 +46,7 @@ export function resolveCaretRange(
   doc: Y.Doc,
   caret: EncodedCaretRange,
 ): { anchor: number; head: number } | null {
-  const text = textOf(doc, caret.nodeId, caret.prop)
+  const text = nodeTextOf(doc, caret.nodeId, caret.prop)
   if (!text) return null
   try {
     const anchor = Y.createAbsolutePositionFromRelativePosition(

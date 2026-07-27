@@ -511,6 +511,21 @@ anything unattributable repopulates the doc (the conservative escape hatch).
 Remote/undo/reconcile changes flow the OTHER way: a per-doc projection
 replaces the affected row or shell in the store.
 
+One surface needs more than the projection: the inline text editor is a
+contentEditable React does not own, and every keystroke commits the element's
+WHOLE string back through the snapshot diff. A frozen surface would therefore
+make the next local keystroke delete a peer's concurrent characters from the
+CRDT (the snapshot doesn't contain them, so the diff reads them as a local
+deletion). During a session, `attachInlineEditRemoteMerge`
+(`src/admin/pages/site/collab/inlineEditRemoteMerge.ts`, wired by
+`NodeRenderer`'s session effect) observes the edited prop's Y.Text and folds
+every non-local change into the DOM — content rewritten through the same
+seeding writer, local caret restored at an index transformed through the Yjs
+delta (insert-at-caret pushes right, matching relative-position association).
+IME composition defers the rewrite to `compositionend`. This is what makes
+co-typing ONE text node intent-preserving, not just convergent — gated
+end-to-end by `src/__tests__/collab/inlineEditRemoteMerge.test.tsx`.
+
 **Undo** is per-editor and per-doc: Y.UndoManagers track only
 `LOCAL_ORIGIN` (a peer's edits are never undone by your Cmd+Z), coalescing
 reproduces the old `coalesceKey` typing-burst semantics, and multi-doc
