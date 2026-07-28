@@ -76,12 +76,15 @@ export async function buildRuntimePreviewDocument(
       runtimePackageImportmap = { body: serialized.body, sha256: serialized.sha256 }
     }
   }
-  const [loopData, mediaAssets] = input.db
-    ? await Promise.all([
-        prefetchLoopData(input.page, input.site, input.db),
-        prefetchMediaAssets(input.page, input.site, input.registry, input.db),
-      ])
-    : [undefined, undefined]
+  const loopData = input.db
+    ? await prefetchLoopData(input.page, input.site, input.db)
+    : undefined
+  const mediaAssets = input.db
+    ? await prefetchMediaAssets(input.page, input.site, input.registry, input.db, {
+        templateContext: input.templateContext,
+        loopData,
+      })
+    : undefined
   const baseHtml = publishPage(input.page, input.site, input.registry, {
     breakpointId: input.breakpointId,
     templateContext: input.templateContext,

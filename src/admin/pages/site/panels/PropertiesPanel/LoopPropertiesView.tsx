@@ -16,9 +16,12 @@
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useEditorStore } from '@site/store/store'
 import { loopSourceRegistry } from '@core/loops/registry'
+import { ENTRY_FIELD_FILTER_KEY, ENTRY_FIELD_SOURCE_ID } from '@core/loops'
 import type { LoopEntitySource } from '@core/loops/types'
+import type { DataTableListItem } from '@core/data/schemas'
 import type { PropertyControl, PropertySchema } from '@core/module-engine'
 import { listCmsDataTables } from '@core/persistence/cmsData'
+import { getAncestors, type Page } from '@core/page-tree'
 import { PropertyControlRenderer } from '@site/property-controls/PropertyControlRenderer'
 import {
   CUSTOM_HTML_TAG_VALUE,
@@ -29,9 +32,10 @@ import {
 interface LoopPropertiesViewProps {
   nodeId: string
   props: Record<string, unknown>
+  activePage: Page | null
 }
 
-export function LoopPropertiesView({ nodeId, props }: LoopPropertiesViewProps) {
+export function LoopPropertiesView({ nodeId, props, activePage }: LoopPropertiesViewProps) {
   const updateNodeProps = useEditorStore((s) => s.updateNodeProps)
 
   const sources = loopSourceRegistry.list()
@@ -46,8 +50,12 @@ export function LoopPropertiesView({ nodeId, props }: LoopPropertiesViewProps) {
   // Data table list — fetched lazily for the data.rows source's tableId picker.
   // Other sources resolve to `null` (no fetch); a failed load resolves to an
   // empty list so the picker degrades gracefully.
-  const { data: tables } = useAsyncResource<Array<{ id: string; name: string }> | null>(
-    () => (sourceId === 'data.rows' ? listCmsDataTables().catch(() => []) : Promise.resolve(null)),
+  const { data: tables } = useAsyncResource<DataTableListItem[] | null>(
+    () => (
+      sourceId === 'data.rows' || sourceId === ENTRY_FIELD_SOURCE_ID
+        ? listCmsDataTables().catch(() => [])
+        : Promise.resolve(null)
+    ),
     [sourceId],
   )
 
@@ -64,6 +72,21 @@ export function LoopPropertiesView({ nodeId, props }: LoopPropertiesViewProps) {
             options: [
               { label: '— Choose a table —', value: '' },
               ...tables.map((t) => ({ label: t.name, value: t.id })),
+            ],
+          },
+        }
+      }
+    }
+    if (source.id === ENTRY_FIELD_SOURCE_ID && tables) {
+      const fieldControl = source.filterSchema[ENTRY_FIELD_FILTER_KEY]
+      if (fieldControl?.type === 'select') {
+        return {
+          ...source.filterSchema,
+          [ENTRY_FIELD_FILTER_KEY]: {
+            ...fieldControl,
+            options: [
+              { label: '— Choose an array field —', value: '' },
+              ...entryCollectionFieldOptions(activePage, nodeId, tables),
             ],
           },
         }
@@ -91,6 +114,8 @@ export function LoopPropertiesView({ nodeId, props }: LoopPropertiesViewProps) {
       sourceId: nextId,
       filters: {},
       orderBy: next?.orderByOptions[0]?.id ?? '',
+      direction: next?.kind === 'contextual' ? 'asc' : 'desc',
+      pagination: next?.kind === 'contextual' ? 'none' : props.pagination,
     })
   }
 
@@ -151,23 +176,34 @@ export function LoopPropertiesView({ nodeId, props }: LoopPropertiesViewProps) {
 
       {source ? (
         <>
-          <PropertyControlRenderer
-            propKey="orderBy"
-            control={orderOptions}
-            value={typeof props.orderBy === 'string' ? props.orderBy : ''}
-            onChange={handleScalarChange}
-          />
+          {source.kind !== 'contextual' ? (
+            <PropertyControlRenderer
+              propKey="orderBy"
+              control={orderOptions}
+              value={typeof props.orderBy === 'string' ? props.orderBy : ''}
+              onChange={handleScalarChange}
+            />
+          ) : null}
           <PropertyControlRenderer
             propKey="direction"
             control={{
               type: 'select',
               label: 'Direction',
-              options: [
-                { label: 'Descending (newest first)', value: 'desc' },
-                { label: 'Ascending (oldest first)', value: 'asc' },
-              ],
+              options: source.kind === 'contextual'
+                ? [
+                    { label: 'Original order', value: 'asc' },
+                    { label: 'Reverse order', value: 'desc' },
+                  ]
+                : [
+                    { label: 'Descending (newest first)', value: 'desc' },
+                    { label: 'Ascending (oldest first)', value: 'asc' },
+                  ],
             }}
-            value={typeof props.direction === 'string' ? props.direction : 'desc'}
+            value={
+              typeof props.direction === 'string'
+                ? props.direction
+                : source.kind === 'contextual' ? 'asc' : 'desc'
+            }
             onChange={handleScalarChange}
           />
           <PropertyControlRenderer
@@ -182,29 +218,78 @@ export function LoopPropertiesView({ nodeId, props }: LoopPropertiesViewProps) {
             value={typeof props.offset === 'number' ? props.offset : 0}
             onChange={handleScalarChange}
           />
-          <PropertyControlRenderer
-            propKey="pagination"
-            control={{
-              type: 'select',
-              label: 'Pagination',
-              options: [
-                { label: 'None', value: 'none' },
-                { label: 'Infinite scroll', value: 'infinite' },
-              ],
-            }}
-            value={typeof props.pagination === 'string' ? props.pagination : 'none'}
-            onChange={handleScalarChange}
-          />
-          {props.pagination === 'infinite' ? (
-            <PropertyControlRenderer
-              propKey="pageSize"
-              control={{ type: 'number', label: 'Page size', min: 1, max: 100, step: 1 }}
-              value={typeof props.pageSize === 'number' ? props.pageSize : 10}
-              onChange={handleScalarChange}
-            />
+          {source.kind !== 'contextual' ? (
+            <>
+              <PropertyControlRenderer
+                propKey="pagination"
+                control={{
+                  type: 'select',
+                  label: 'Pagination',
+                  options: [
+                    { label: 'None', value: 'none' },
+                    { label: 'Infinite scroll', value: 'infinite' },
+                  ],
+                }}
+                value={typeof props.pagination === 'string' ? props.pagination : 'none'}
+                onChange={handleScalarChange}
+              />
+              {props.pagination === 'infinite' ? (
+                <PropertyControlRenderer
+                  propKey="pageSize"
+                  control={{ type: 'number', label: 'Page size', min: 1, max: 100, step: 1 }}
+                  value={typeof props.pageSize === 'number' ? props.pageSize : 10}
+                  onChange={handleScalarChange}
+                />
+              ) : null}
+            </>
           ) : null}
         </>
       ) : null}
     </>
   )
+}
+
+function entryCollectionFieldOptions(
+  activePage: Page | null,
+  nodeId: string,
+  tables: DataTableListItem[],
+): Array<{ label: string; value: string }> {
+  if (!activePage) return []
+
+  const enclosingDataRowsLoop = [...getAncestors(activePage, nodeId)]
+    .reverse()
+    .find((node) => node.moduleId === 'base.loop' && node.props.sourceId === 'data.rows')
+  const filters = enclosingDataRowsLoop?.props.filters
+  const enclosingTableId =
+    filters && typeof filters === 'object' && !Array.isArray(filters)
+      ? (filters as Record<string, unknown>).tableId
+      : null
+
+  let contextTables: DataTableListItem[]
+  if (typeof enclosingTableId === 'string' && enclosingTableId) {
+    contextTables = tables.filter((table) => table.id === enclosingTableId)
+  } else if (activePage.template?.target.kind === 'postTypes') {
+    const slugs = new Set(activePage.template.target.tableSlugs)
+    contextTables = tables.filter((table) => slugs.has(table.slug))
+  } else {
+    contextTables = []
+  }
+
+  const showTableName = contextTables.length > 1
+  const seen = new Set<string>()
+  const options: Array<{ label: string; value: string }> = []
+  for (const table of contextTables) {
+    for (const field of table.fields) {
+      const isCollection =
+        field.type === 'multiSelect' ||
+        ((field.type === 'media' || field.type === 'relation') && field.allowMultiple === true)
+      if (!isCollection || seen.has(field.id)) continue
+      seen.add(field.id)
+      options.push({
+        label: showTableName ? `${table.name} → ${field.label}` : field.label,
+        value: field.id,
+      })
+    }
+  }
+  return options
 }

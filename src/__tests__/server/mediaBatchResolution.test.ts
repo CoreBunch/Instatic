@@ -270,4 +270,33 @@ describe('prefetchMediaAssets (Finding 2)', () => {
       await cleanup()
     }
   })
+
+  it('resolves media ids stored in entry array fields and keys them by id and path', async () => {
+    const { db, cleanup } = await createTestDb()
+    try {
+      await insertMediaAsset(db, 'gallery-1', '/uploads/gallery-1.png')
+      const page = makePageWithImageProp('n1', 'content', 'no static media path')
+      const registry = { get: () => ({ id: 'base.text', schema: {} }) } as unknown as IModuleRegistry
+
+      const map = await prefetchMediaAssets(
+        page as never,
+        { visualComponents: [] } as never,
+        registry,
+        db,
+        {
+          templateContext: {
+            entryStack: [{
+              id: 'project-1',
+              fields: { gallery: ['gallery-1'] },
+            }],
+          },
+        },
+      )
+
+      expect(map.get('gallery-1')?.publicPath).toBe('/uploads/gallery-1.png')
+      expect(map.get('/uploads/gallery-1.png')?.id).toBe('gallery-1')
+    } finally {
+      await cleanup()
+    }
+  })
 })
