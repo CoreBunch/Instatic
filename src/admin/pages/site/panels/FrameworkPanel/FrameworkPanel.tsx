@@ -8,7 +8,7 @@
  * which is mounted once via FrameworkManagerHost.
  */
 import { useEditorStore } from '@site/store/store'
-import { Panel } from '@admin/shared/Panel'
+import { Panel, type DockablePanelProps } from '@admin/shared/Panel'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { Button } from '@ui/components/Button'
 import { SlidersHorizontalIcon } from 'pixel-art-icons/icons/sliders-horizontal'
@@ -27,7 +27,11 @@ const TABS: ReadonlyArray<{ value: FrameworkPanelTab; label: string }> = [
   { value: 'spacing', label: 'Space' },
 ]
 
-export function FrameworkPanel() {
+export function FrameworkPanel({
+  mode,
+  dragHandleProps,
+  onToggleMode,
+}: DockablePanelProps) {
   const tab = useEditorStore((s) => s.frameworkPanelTab)
   const setTab = useEditorStore((s) => s.setFrameworkPanelTab)
   const setOpen = useEditorStore((s) => s.setFrameworkPanelOpen)
@@ -39,6 +43,10 @@ export function FrameworkPanel() {
       title="Framework"
       testId="framework-panel"
       onClose={() => setOpen(false)}
+      mode={mode}
+      dragHandleProps={dragHandleProps}
+      onToggleMode={onToggleMode}
+      dockLocation="left sidebar"
       headerActions={
         <Button
           variant="ghost"

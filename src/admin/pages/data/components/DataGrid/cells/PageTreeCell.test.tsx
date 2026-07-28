@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it, mock } from 'bun:test'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'bun:test'
+import { cleanup, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createNode } from '@core/page-tree'
-import type { DataField } from '@core/data/schemas'
 import { PageTreeCell } from './PageTreeCell'
+import type { DataField } from '@core/data/schemas'
 
 afterEach(cleanup)
 
@@ -29,21 +30,32 @@ function renderCell(props: { readOnly?: boolean; onOpenEditor?: () => void }) {
   )
 }
 
-describe('PageTreeCell', () => {
-  it('keeps visual-editor navigation enabled when the Data cell is read-only', () => {
-    const onOpenEditor = mock()
-    renderCell({ readOnly: true, onOpenEditor })
+function button(): HTMLButtonElement {
+  return screen.getByRole('button') as HTMLButtonElement
+}
 
-    const button = screen.getByRole('button', { name: 'Body: Open editor' }) as HTMLButtonElement
-    expect(button.disabled).toBe(false)
-    fireEvent.click(button)
-    expect(onOpenEditor).toHaveBeenCalledTimes(1)
+describe('PageTreeCell', () => {
+  // A `pageTree` cell on a system table is ALWAYS readOnly — every built-in
+  // field of `pages` / `components` / `layouts` is value-locked. The button
+  // navigates to the visual editor rather than editing the cell, so gating it
+  // on readOnly disabled it on exactly the rows it exists for.
+  it('stays enabled on a read-only cell when a handler is wired', async () => {
+    let opened = 0
+    renderCell({ readOnly: true, onOpenEditor: () => { opened += 1 } })
+
+    expect(button().disabled).toBe(false)
+
+    await userEvent.click(button())
+    expect(opened).toBe(1)
   })
 
-  it('disables navigation when no visual-editor handler is available', () => {
+  it('is disabled when no handler is wired', () => {
     renderCell({ readOnly: false })
+    expect(button().disabled).toBe(true)
+  })
 
-    const button = screen.getByRole('button', { name: 'Body: Open editor' }) as HTMLButtonElement
-    expect(button.disabled).toBe(true)
+  it('labels the button for the row it can open', () => {
+    renderCell({ readOnly: true, onOpenEditor: () => {} })
+    expect(button().getAttribute('aria-label')).toBe('Body: Open editor')
   })
 })

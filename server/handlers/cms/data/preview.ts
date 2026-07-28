@@ -103,20 +103,21 @@ export async function handleRowPreview(
   // resolution, etc.) operate against this seed.
   const draftPublishedRow: PublishedDataRow = synthesisePublishedRow(row, table, draftCells)
 
-  const [loopData, mediaAssets] = await Promise.all([
-    prefetchLoopData(merged, snapshot.site, db),
-    prefetchMediaAssets(merged, snapshot.site, registry, db),
-  ])
-  const cssBundle = buildSiteCssBundle(snapshot.site, registry, merged, { mediaAssets })
-
   const publicPath = buildEntryPublicPath(table.routeBase, draftPublishedRow.slug)
   const syntheticUrl = new URL(`http://localhost${publicPath}`)
+  const templateContext = {
+    entryStack: [publishedDataRowToLoopItem(draftPublishedRow)],
+    route: buildRouteFrame(syntheticUrl.toString()),
+  }
+  const loopData = await prefetchLoopData(merged, snapshot.site, db)
+  const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, db, {
+    templateContext,
+    loopData,
+  })
+  const cssBundle = buildSiteCssBundle(snapshot.site, registry, merged, { mediaAssets })
 
   const published = publishPage(merged, snapshot.site, registry, {
-    templateContext: {
-      entryStack: [publishedDataRowToLoopItem(draftPublishedRow)],
-      route: buildRouteFrame(syntheticUrl.toString()),
-    },
+    templateContext,
     runtimeAssets: snapshot.runtimeAssets,
     runtimePackageImportmap: snapshot.runtimePackageImportmap,
     cssEmission: 'external',

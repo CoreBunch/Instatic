@@ -81,6 +81,7 @@ export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactN
       <LoopPropertiesView
         nodeId={selectedNodeId}
         props={selectedNode.props as Record<string, unknown>}
+        activePage={activePage}
       />
     )
   }
