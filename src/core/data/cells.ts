@@ -48,6 +48,20 @@ export function readStringArrayCell(cells: DataRowCells, fieldId: string): strin
 }
 
 /**
+ * Read every media-asset id from a media cell, tolerating both cardinalities:
+ * a single-value media field stores a bare id string, a multi-value field
+ * (`allowMultiple`) stores a `string[]`. Empty / malformed cells yield `[]`.
+ */
+export function readMediaCellIds(cells: DataRowCells, fieldId: string): string[] {
+  const value = cells[fieldId]
+  if (typeof value === 'string') return value.length > 0 ? [value] : []
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+  }
+  return []
+}
+
+/**
  * Read an ordered repeater value. Malformed legacy or manually-edited values
  * resolve to an empty collection instead of leaking an untyped shape into
  * record editors and loop projection.

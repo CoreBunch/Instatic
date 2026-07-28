@@ -24,7 +24,7 @@ import { isoDate } from '../../utils/isoDate'
 import { firstImagePathFromMarkdown } from '@core/markdown/renderMarkdown'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { publicDataUserFromParts } from '@core/data/publicDataUser'
-import { readFeaturedMediaCell } from '@core/data/cells'
+import { readFeaturedMediaCell, readMediaCellIds } from '@core/data/cells'
 import type { DataRowCells } from '@core/data/schemas'
 
 // ---------------------------------------------------------------------------
@@ -38,6 +38,7 @@ interface PublishedDataRowSqlRow {
   table_slug: string
   table_kind: string
   table_route_base: string
+  table_fields_json: unknown
   version_number: number
   cells_json: Record<string, unknown>
   slug: string
@@ -83,10 +84,11 @@ function positionalParam(db: LoopSourceDb, index: number): string {
 // ---------------------------------------------------------------------------
 // Media path resolution
 //
-// Featured media lives inside cells_json, not as a SQL column. We extract
-// the media id from each row's cells in TypeScript, deduplicate the set, and
-// resolve all unique ids with a SINGLE batched IN-query. One round trip
-// regardless of how many rows the page slice returned.
+// Media ids live inside cells_json, not as SQL columns — the built-in
+// `featuredMedia` cell plus every user-defined `media` field. We extract the
+// ids from each row's cells in TypeScript, deduplicate the set, and resolve
+// all unique ids with a SINGLE batched IN-query. One round trip regardless of
+// how many rows (or media fields) the page slice returned.
 // ---------------------------------------------------------------------------
 
 /**
@@ -111,13 +113,60 @@ export async function resolveMediaIdsToPaths(
   return pathMap
 }
 
-function extractFeaturedMediaIds(rows: Array<{ cells_json: Record<string, unknown> }>): string[] {
+/**
+ * Field ids of every media-typed field on the table, read from the parsed
+ * `fields_json`. Deliberately tolerant — it reads only `type`/`id` so an
+ * unrelated or newer field shape never throws inside a loop fetch.
+ */
+function mediaFieldIdsFromJson(fieldsJson: unknown): string[] {
+  if (!Array.isArray(fieldsJson)) return []
   const ids: string[] = []
-  for (const row of rows) {
-    const id = readFeaturedMediaCell(row.cells_json as DataRowCells)
-    if (id) ids.push(id)
+  for (const field of fieldsJson) {
+    if (field === null || typeof field !== 'object') continue
+    const record = field as Record<string, unknown>
+    if (record.type === 'media' && typeof record.id === 'string') ids.push(record.id)
   }
   return ids
+}
+
+/**
+ * Collect every media id referenced by a page of rows: the built-in
+ * `featuredMedia` cell plus every user-defined `media` field (`mediaFieldIds`).
+ * Multi-value media cells contribute all their ids so the batch resolve covers
+ * them, even though the projection later flattens to the first.
+ */
+function collectMediaIds(
+  rows: Array<{ cells_json: Record<string, unknown> }>,
+  mediaFieldIds: string[],
+): string[] {
+  const ids: string[] = []
+  for (const row of rows) {
+    const cells = row.cells_json as DataRowCells
+    const featured = readFeaturedMediaCell(cells)
+    if (featured) ids.push(featured)
+    for (const fieldId of mediaFieldIds) ids.push(...readMediaCellIds(cells, fieldId))
+  }
+  return ids
+}
+
+/**
+ * Resolve each user-defined media field to its public path, flattening a
+ * multi-value cell to its first element (a scalar `img src` binding renders
+ * one image; iterating all elements is a nested-loop concern, not this one).
+ * Returns an overlay to spread over the raw cells so `{currentEntry.<field>}`
+ * yields a URL instead of the stored media id.
+ */
+function resolvedMediaOverlay(
+  cells: DataRowCells,
+  mediaFieldIds: string[],
+  mediaPathMap: Map<string, string>,
+): Record<string, string | null> {
+  const overlay: Record<string, string | null> = {}
+  for (const fieldId of mediaFieldIds) {
+    const firstId = readMediaCellIds(cells, fieldId)[0] ?? null
+    overlay[fieldId] = firstId ? (mediaPathMap.get(firstId) ?? null) : null
+  }
+  return overlay
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +176,7 @@ function extractFeaturedMediaIds(rows: Array<{ cells_json: Record<string, unknow
 function rowToLoopItem(
   row: PublishedDataRowSqlRow,
   mediaPathMap: Map<string, string>,
+  mediaFieldIds: string[],
 ): LoopItem {
   const cells = row.cells_json as DataRowCells
   const tableRouteBase = normalizeRouteBase(row.table_route_base || `/${row.table_slug}`)
@@ -157,6 +207,9 @@ function rowToLoopItem(
     fields: {
       // Cells — all user-defined fields accessible by fieldId
       ...cells,
+      // Media fields: replace stored ids with resolved public paths so a
+      // `{currentEntry.<field>}` binding renders a URL, not the raw id.
+      ...resolvedMediaOverlay(cells, mediaFieldIds, mediaPathMap),
       // System identity (overlay after cells so these are never shadowed)
       id: row.row_id,
       rowId: row.row_id,
@@ -227,6 +280,7 @@ async function fetchPage(
             data_tables.slug as table_slug,
             data_tables.kind as table_kind,
             data_tables.route_base as table_route_base,
+            data_tables.fields_json as table_fields_json,
             data_row_versions.version_number,
             data_row_versions.cells_json,
             data_row_versions.slug,
@@ -276,6 +330,7 @@ interface DataKindRowSqlRow {
   table_id: string
   table_slug: string
   table_route_base: string
+  table_fields_json: unknown
   cells_json: Record<string, unknown>
   slug: string
   author_user_id: string | null
@@ -290,6 +345,7 @@ interface DataKindRowSqlRow {
 function dataKindRowToLoopItem(
   row: DataKindRowSqlRow,
   mediaPathMap: Map<string, string>,
+  mediaFieldIds: string[],
 ): LoopItem {
   const cells = row.cells_json as DataRowCells
   const tableRouteBase = normalizeRouteBase(row.table_route_base || `/${row.table_slug}`)
@@ -308,6 +364,9 @@ function dataKindRowToLoopItem(
     id: row.row_id,
     fields: {
       ...cells,
+      // Media fields: replace stored ids with resolved public paths (see
+      // `rowToLoopItem`).
+      ...resolvedMediaOverlay(cells, mediaFieldIds, mediaPathMap),
       id: row.row_id,
       rowId: row.row_id,
       tableId: row.table_id,
@@ -369,6 +428,7 @@ async function fetchDataKindPage(
             data_rows.table_id,
             data_tables.slug as table_slug,
             data_tables.route_base as table_route_base,
+            data_tables.fields_json as table_fields_json,
             data_rows.cells_json,
             data_rows.slug,
             data_rows.author_user_id,
@@ -445,9 +505,10 @@ export async function fetchPublishedDataRowItems(
     const sqlRows = await fetchDataKindPage(
       db, opts.tableId, orderBy, direction, opts.limit, opts.offset,
     )
-    const mediaPathMap = await resolveMediaIdsToPaths(db, extractFeaturedMediaIds(sqlRows))
+    const mediaFieldIds = mediaFieldIdsFromJson(sqlRows[0]?.table_fields_json)
+    const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(sqlRows, mediaFieldIds))
     return {
-      items: sqlRows.map((row) => dataKindRowToLoopItem(row, mediaPathMap)),
+      items: sqlRows.map((row) => dataKindRowToLoopItem(row, mediaPathMap, mediaFieldIds)),
       totalItems,
     }
   }
@@ -465,10 +526,11 @@ export async function fetchPublishedDataRowItems(
   if (totalItems === 0) return { items: [], totalItems: 0 }
 
   const sqlRows = await fetchPage(db, opts.tableId, orderBy, direction, opts.limit, opts.offset)
-  const mediaPathMap = await resolveMediaIdsToPaths(db, extractFeaturedMediaIds(sqlRows))
+  const mediaFieldIds = mediaFieldIdsFromJson(sqlRows[0]?.table_fields_json)
+  const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(sqlRows, mediaFieldIds))
 
   return {
-    items: sqlRows.map((row) => rowToLoopItem(row, mediaPathMap)),
+    items: sqlRows.map((row) => rowToLoopItem(row, mediaPathMap, mediaFieldIds)),
     totalItems,
   }
 }

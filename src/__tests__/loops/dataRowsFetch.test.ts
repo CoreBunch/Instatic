@@ -401,6 +401,116 @@ describe('fetchPublishedDataRowItems — data-kind ordering', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Custom media fields — id → public URL resolution in loops
+//
+// Built-in `featuredMedia` is resolved above; these lock in that a
+// user-defined `media` field (single) and a multi-value one both resolve to
+// public URLs, and that an unresolved id becomes null rather than leaking the
+// raw media id into an `img src`. Covers both projections: a custom post-type
+// table (rowToLoopItem) and a data-kind table (dataKindRowToLoopItem).
+// ---------------------------------------------------------------------------
+
+describe('fetchPublishedDataRowItems — custom media field resolution', () => {
+  beforeAll(async () => {
+    for (const [id, path] of [
+      ['m-logo', '/uploads/logo.png'],
+      ['m-g1', '/uploads/g1.png'],
+      ['m-g2', '/uploads/g2.png'],
+    ] as const) {
+      await db`
+        insert into media_assets
+          (id, filename, mime_type, size_bytes, storage_path, public_path,
+           storage_adapter_id, externally_hosted)
+        values (${id}, ${id + '.png'}, 'image/png', 100, ${id + '.png'}, ${path}, '', 0)
+      `
+    }
+
+    // Data-kind table with a single media field (`logo`) and a multi one
+    // (`gallery`, allowMultiple).
+    await db`
+      insert into data_tables
+        (id, name, slug, kind, route_base, singular_label, plural_label, fields_json)
+      values ('clients', 'Clients', 'clients', 'data', '/clients', 'Client', 'Clients', ${JSON.stringify([
+        { id: 'title', label: 'Title', type: 'text' },
+        { id: 'logo', label: 'Logo', type: 'media' },
+        { id: 'gallery', label: 'Gallery', type: 'media', allowMultiple: true },
+      ])})
+    `
+    await seedDataRow(db, 'clients', {
+      rowId: 'client-a', slug: 'a',
+      cells: { title: 'Acme', logo: 'm-logo', gallery: ['m-g1', 'm-g2'] },
+      createdAt: '2026-03-01T00:00:00.000Z', updatedAt: '2026-03-01T00:00:00.000Z',
+    })
+    await seedDataRow(db, 'clients', {
+      rowId: 'client-b', slug: 'b',
+      cells: { title: 'Beta', logo: null, gallery: [] },
+      createdAt: '2026-03-02T00:00:00.000Z', updatedAt: '2026-03-02T00:00:00.000Z',
+    })
+    await seedDataRow(db, 'clients', {
+      rowId: 'client-c', slug: 'c',
+      cells: { title: 'Gamma', logo: 'missing-media' },
+      createdAt: '2026-03-03T00:00:00.000Z', updatedAt: '2026-03-03T00:00:00.000Z',
+    })
+
+    // Post-type table with a custom single media field, to cover rowToLoopItem.
+    await db`
+      insert into data_tables
+        (id, name, slug, kind, route_base, singular_label, plural_label, fields_json)
+      values ('vendors', 'Vendors', 'vendors', 'postType', '/vendors', 'Vendor', 'Vendors', ${JSON.stringify([
+        { id: 'title', label: 'Title', type: 'text' },
+        { id: 'logo', label: 'Logo', type: 'media' },
+      ])})
+    `
+    const vendorCells = JSON.stringify({ title: 'Vendere', logo: 'm-logo' })
+    await db`
+      insert into data_rows (id, table_id, cells_json, slug, status, updated_at)
+      values ('vendor-a', 'vendors', ${vendorCells}, 'vendere', 'published', '2026-03-01T00:00:00.000Z')
+    `
+    await db`
+      insert into data_row_versions
+        (id, row_id, version_number, cells_json, slug, published_at, created_at)
+      values ('vendor-a-v1', 'vendor-a', 1, ${vendorCells}, 'vendere',
+              '2026-03-01T00:00:00.000Z', '2026-03-01T00:00:00.000Z')
+    `
+    await db`update data_rows set active_version_id = 'vendor-a-v1' where id = 'vendor-a'`
+  })
+
+  async function clientFields(rowId: string): Promise<Record<string, unknown>> {
+    const { items } = await fetchPublishedDataRowItems(db, {
+      tableId: 'clients', orderBy: 'slug', direction: 'asc', limit: 50, offset: 0,
+    })
+    return items.find((i) => i.id === rowId)!.fields
+  }
+
+  it('resolves a single custom media cell to its public URL (data-kind)', async () => {
+    expect((await clientFields('client-a'))['logo']).toBe('/uploads/logo.png')
+  })
+
+  it('flattens a multi-value media cell to the first element URL', async () => {
+    expect((await clientFields('client-a'))['gallery']).toBe('/uploads/g1.png')
+  })
+
+  it('resolves empty / null media cells to null', async () => {
+    const b = await clientFields('client-b')
+    expect(b['logo']).toBeNull()
+    expect(b['gallery']).toBeNull()
+  })
+
+  it('resolves a dangling media id to null, never the raw id', async () => {
+    const c = await clientFields('client-c')
+    expect(c['logo']).toBeNull()
+    expect(c['logo']).not.toBe('missing-media')
+  })
+
+  it('resolves a custom media field on the post-type path (rowToLoopItem)', async () => {
+    const { items } = await fetchPublishedDataRowItems(db, {
+      tableId: 'vendors', orderBy: 'slug', direction: 'asc', limit: 50, offset: 0,
+    })
+    expect(items[0]!.fields['logo']).toBe('/uploads/logo.png')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Degenerate inputs
 // ---------------------------------------------------------------------------
 
