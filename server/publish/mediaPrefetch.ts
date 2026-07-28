@@ -19,7 +19,12 @@
 
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
-import { collectNodeBackgroundImagePaths, collectSiteStyleBackgroundImagePaths } from '@core/publisher'
+import {
+  collectNodeBackgroundImagePaths,
+  collectSiteStyleBackgroundImagePaths,
+  type ResolvedLoopRenderData,
+} from '@core/publisher'
+import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { walkRenderTree } from './renderTreeWalk'
 import type { DbClient } from '../db/client'
 import type { MediaAsset } from '../repositories/media'
@@ -32,6 +37,11 @@ import { materializeAssetMapForClient } from './mediaPresentation'
 
 /** Map keyed by the asset's `public_path` for O(1) lookup at render time. */
 type MediaAssetMap = Map<string, MediaAsset>
+
+interface MediaPrefetchOptions {
+  templateContext?: TemplateRenderDataContext
+  loopData?: ReadonlyMap<string, ResolvedLoopRenderData>
+}
 
 /**
  * Collect every `/uploads/...` path referenced by an image/media-typed prop
@@ -72,32 +82,62 @@ export async function prefetchMediaAssets(
   site: SiteDocument,
   registry: IModuleRegistry,
   db: DbClient,
+  options: MediaPrefetchOptions = {},
 ): Promise<MediaAssetMap> {
   const map = new Map<string, MediaAsset>()
   const paths = collectMediaPaths(page, site, registry)
-  if (paths.size === 0) return map
+  const entryReferences = collectEntryArrayReferences(options)
+  if (paths.size === 0 && entryReferences.size === 0) return map
 
-  // `collectMediaPaths` already returns a Set, so the paths are unique.
+  // `collectMediaPaths` and `collectEntryArrayReferences` both return Sets,
+  // so the lookup values are unique. Entry references are queried against
+  // both `id` and `public_path`: multi-media cells store ids, while plugin or
+  // imported entry arrays may already carry public paths.
   const pathsToFetch = [...paths]
-  const placeholders = pathsToFetch.map((_, i) =>
-    db.dialect === 'postgres' ? `$${i + 1}` : '?'
-  ).join(', ')
+  const entryReferencesToFetch = [...entryReferences]
+  const allReferences = [...new Set([...pathsToFetch, ...entryReferencesToFetch])]
   // Bespoke batched-by-`public_path` SELECT (the render path resolves by stored
   // URL, not asset id, and legitimately skips the folder-id join). It maps
   // through the SAME canonical `mapMediaAssetRow` as the repository, so the
   // published page and the admin see one identical asset shape — including
   // storageAdapterId, externallyHosted, and the variants' storagePath /
   // storageAdapterId derivation.
-  const { rows } = await db.unsafe<MediaAssetRow>(
-    `select ${MEDIA_ASSET_COLUMNS}
-     from media_assets
-     where public_path in (${placeholders}) and deleted_at is null`,
-    pathsToFetch,
-  )
+  let rows: MediaAssetRow[]
+  if (entryReferencesToFetch.length === 0) {
+    const placeholders = pathsToFetch.map((_, i) =>
+      db.dialect === 'postgres' ? `$${i + 1}` : '?'
+    ).join(', ')
+    const result = await db.unsafe<MediaAssetRow>(
+      `select ${MEDIA_ASSET_COLUMNS}
+       from media_assets
+       where public_path in (${placeholders}) and deleted_at is null`,
+      pathsToFetch,
+    )
+    rows = result.rows
+  } else {
+    const pathPlaceholders = allReferences.map((_, i) =>
+      db.dialect === 'postgres' ? `$${i + 1}` : '?'
+    ).join(', ')
+    const idPlaceholders = allReferences.map((_, i) =>
+      db.dialect === 'postgres' ? `$${allReferences.length + i + 1}` : '?'
+    ).join(', ')
+    const result = await db.unsafe<MediaAssetRow>(
+      `select ${MEDIA_ASSET_COLUMNS}
+       from media_assets
+       where (public_path in (${pathPlaceholders}) or id in (${idPlaceholders}))
+         and deleted_at is null`,
+      [...allReferences, ...allReferences],
+    )
+    rows = result.rows
+  }
   const byPath = new Map(rows.map(r => [r.public_path, r]))
-  for (const path of pathsToFetch) {
-    const row = byPath.get(path)
-    if (row) map.set(path, mapMediaAssetRow(row))
+  const byId = new Map(rows.map(r => [r.id, r]))
+  for (const reference of allReferences) {
+    const row = byPath.get(reference) ?? byId.get(reference)
+    if (!row) continue
+    const asset = mapMediaAssetRow(row)
+    map.set(reference, asset)
+    map.set(asset.publicPath, asset)
   }
   // Apply the `media.url.transform` filter chain to every asset's URLs
   // (publicPath + variants[*].path). The map KEY stays the page tree's
@@ -105,4 +145,30 @@ export async function prefetchMediaAssets(
   // rewritten so transformer plugins (passive CDN, image-CDN) take effect
   // on the published page AND the editor preview iframe in one place.
   return materializeAssetMapForClient(map)
+}
+
+function collectEntryArrayReferences(options: MediaPrefetchOptions): Set<string> {
+  const references = new Set<string>()
+  const visit = (value: unknown, insideArray: boolean): void => {
+    if (typeof value === 'string') {
+      if (insideArray && value) references.add(value)
+      return
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, true)
+      return
+    }
+    if (!value || typeof value !== 'object') return
+    for (const child of Object.values(value as Record<string, unknown>)) {
+      visit(child, insideArray)
+    }
+  }
+
+  for (const entry of options.templateContext?.entryStack ?? []) {
+    visit(entry.fields, false)
+  }
+  for (const data of options.loopData?.values() ?? []) {
+    for (const item of data.items) visit(item.fields, false)
+  }
+  return references
 }

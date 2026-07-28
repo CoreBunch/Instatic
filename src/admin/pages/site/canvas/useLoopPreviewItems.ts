@@ -37,9 +37,18 @@
 import { use, useEffect, useState } from 'react'
 import { useEditorStore } from '@site/store/store'
 import { loopSourceRegistry } from '@core/loops/registry'
-import { type LoopItem, pageToLoopItem, filterPagesForLoop } from '@core/loops'
+import {
+  ENTRY_FIELD_FILTER_KEY,
+  ENTRY_FIELD_SOURCE_ID,
+  filterPagesForLoop,
+  pageToLoopItem,
+  resolveEntryFieldItems,
+  type EntryFieldMedia,
+  type LoopItem,
+} from '@core/loops'
 import type { DataTable } from '@core/data/schemas'
 import type { Page, PageNode } from '@core/page-tree'
+import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { getCmsDataTable, previewCmsDataLoopItems } from '@core/persistence/cmsData'
 import { listCmsMediaAssets, type CmsMediaAsset } from '@core/persistence/cmsMedia'
 import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
@@ -224,9 +233,17 @@ export function selectSitePagesLoopItems(node: PageNode, pages: readonly Page[] 
 // Hook
 // ---------------------------------------------------------------------------
 
-const BUILT_IN_SOURCE_IDS = new Set(['data.rows', 'site.media', 'site.pages'])
+const BUILT_IN_SOURCE_IDS = new Set([
+  'data.rows',
+  'site.media',
+  'site.pages',
+  ENTRY_FIELD_SOURCE_ID,
+])
 
-export function useLoopPreviewItems(node: PageNode): LoopItem[] {
+export function useLoopPreviewItems(
+  node: PageNode,
+  templateContext?: TemplateRenderDataContext,
+): LoopItem[] {
   const previewReadiness = use(CanvasPreviewReadinessContext)
   // `readLoopProps()` reuses the shared `EMPTY_FILTERS` sentinel when the
   // node has no filters set, so `filters` identity is stable across renders
@@ -298,7 +315,7 @@ export function useLoopPreviewItems(node: PageNode): LoopItem[] {
 
   // ── Async fetch: site.media ─────────────────────────────────────────
   useEffect(() => {
-    if (sourceId !== 'site.media') return
+    if (sourceId !== 'site.media' && sourceId !== ENTRY_FIELD_SOURCE_ID) return
     let cancelled = false
     const request = listCmsMediaAssets()
       .then((assets) => {
@@ -339,13 +356,31 @@ export function useLoopPreviewItems(node: PageNode): LoopItem[] {
     return sorted.slice(offset, offset + limit).map(mediaAssetToLoopItem)
   }
 
+  if (sourceId === ENTRY_FIELD_SOURCE_ID) {
+    const fieldId = filters[ENTRY_FIELD_FILTER_KEY]
+    if (typeof fieldId !== 'string' || !fieldId) return EMPTY_ITEMS
+    const stack = templateContext?.entryStack ?? []
+    const entry = stack[stack.length - 1]
+    const mediaByReference = new Map<string, EntryFieldMedia>()
+    for (const asset of asyncMedia) {
+      mediaByReference.set(asset.id, asset)
+      mediaByReference.set(asset.publicPath, asset)
+    }
+    return resolveEntryFieldItems(entry?.fields[fieldId], {
+      offset,
+      limit,
+      direction,
+      mediaByReference,
+    }).items
+  }
+
   if (sourceId === 'site.pages') return sitePagesItems
 
   // Plugin source fallback — synchronous preview() with no client-side
   // sort. Plugins that need ordering should apply it inside their own
   // preview() implementation.
   const source = loopSourceRegistry.get(sourceId)
-  if (!source || !pluginSite) return EMPTY_ITEMS
+  if (!source || source.kind === 'contextual' || !pluginSite) return EMPTY_ITEMS
   try {
     return source.preview({ site: pluginSite, filters, limit }).slice(offset, offset + limit)
   } catch {

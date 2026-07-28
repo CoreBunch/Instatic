@@ -300,7 +300,7 @@ function ReadOnlyLoopIterationsPreview({
   readonlyMarkers,
   templateContext,
 }: ReadOnlyLoopIterationsPreviewProps) {
-  const items = useLoopPreviewItems(node)
+  const items = useLoopPreviewItems(node, templateContext)
   if (items.length === 0) return null
 
   const baseStack = templateContext?.entryStack ?? []
