@@ -82,6 +82,7 @@ export type DataTableKind = Static<typeof DataTableKindSchema>
 //   media (multi)                             → media ids (string[])
 //   relation (single)                         → row id (string) | null
 //   relation (multi)                          → row ids (string[])
+//   repeater                                  → ordered { id, cells }[]
 // ---------------------------------------------------------------------------
 
 const FieldCommonProps = {
@@ -202,6 +203,40 @@ const RelationFieldSchema = Type.Object({
 })
 
 /**
+ * Fields allowed inside a repeater item.
+ *
+ * This deliberately excludes `repeater`, `pageTree`, and `fieldSchema`.
+ * Repeater v1 is one level deep: it models an ordered collection of ordinary
+ * authorable values without introducing recursive schemas or nested document
+ * trees.
+ */
+export const RepeaterItemFieldSchema = Type.Union([
+  TextFieldSchema,
+  LongTextFieldSchema,
+  RichTextFieldSchema,
+  NumberFieldSchema,
+  BooleanFieldSchema,
+  DateFieldSchema,
+  DateTimeFieldSchema,
+  SelectFieldSchema,
+  MultiSelectFieldSchema,
+  UrlFieldSchema,
+  EmailFieldSchema,
+  MediaFieldSchema,
+  RelationFieldSchema,
+])
+
+export type RepeaterItemField = Static<typeof RepeaterItemFieldSchema>
+
+const RepeaterFieldSchema = Type.Object({
+  type: Type.Literal('repeater'),
+  ...FieldCommonProps,
+  fields: Type.Array(RepeaterItemFieldSchema),
+  /** Optional field id used as the collapsed item summary. */
+  itemLabelFieldId: Type.Optional(Type.String()),
+})
+
+/**
  * PageTree field — stores a full page-node tree (`NodeTree<PageNode>`) in the
  * cell. Used as the `body` field on `page` and `component` table rows.
  *
@@ -239,6 +274,7 @@ export const DataFieldSchema = Type.Union([
   EmailFieldSchema,
   MediaFieldSchema,
   RelationFieldSchema,
+  RepeaterFieldSchema,
   PageTreeFieldSchema,
   FieldSchemaFieldSchema,
 ])
@@ -267,6 +303,7 @@ export const DATA_FIELD_TYPES = [
   'email',
   'media',
   'relation',
+  'repeater',
   'pageTree',
   'fieldSchema',
 ] as const
@@ -327,6 +364,17 @@ export type DataTableListItem = Static<typeof DataTableListItemSchema>
 const DataRowCellsSchema = Type.Record(Type.String(), Type.Unknown())
 
 export type DataRowCells = Static<typeof DataRowCellsSchema>
+
+export const RepeaterItemSchema = Type.Object({
+  id: Type.String(),
+  cells: DataRowCellsSchema,
+})
+
+export type RepeaterItem = Static<typeof RepeaterItemSchema>
+
+export const RepeaterValueSchema = Type.Array(RepeaterItemSchema)
+
+export type RepeaterValue = Static<typeof RepeaterValueSchema>
 
 // ---------------------------------------------------------------------------
 // DataUserReference (was: ContentUserReference)
@@ -548,11 +596,9 @@ export type SaveDataRowDraftInput = Static<typeof SaveDataRowDraftInputSchema>
 // omitted — keep the payload lean.
 // ---------------------------------------------------------------------------
 
-const DataMetaFieldSchema = Type.Object({
+const DataMetaRepeaterItemFieldSchema = Type.Object({
   id: Type.String(),
   label: Type.String(),
-  // NOTE: pageTree and fieldSchema are intentionally excluded — they are
-  // structural types not surfaced in the instatic binding catalog.
   type: Type.Union([
     Type.Literal('text'), Type.Literal('longText'), Type.Literal('richText'),
     Type.Literal('number'), Type.Literal('boolean'),
@@ -565,8 +611,32 @@ const DataMetaFieldSchema = Type.Object({
     Type.Literal('image'), Type.Literal('video'), Type.Literal('any'),
   ])),
   allowMultiple: Type.Optional(Type.Boolean()),
+  targetTableSlug: Type.Optional(Type.String()),
+})
+
+const DataMetaFieldSchema = Type.Object({
+  id: Type.String(),
+  label: Type.String(),
+  // NOTE: pageTree and fieldSchema are intentionally excluded — they are
+  // document-level types not surfaced in the instatic binding catalog.
+  type: Type.Union([
+    Type.Literal('text'), Type.Literal('longText'), Type.Literal('richText'),
+    Type.Literal('number'), Type.Literal('boolean'),
+    Type.Literal('date'), Type.Literal('dateTime'),
+    Type.Literal('select'), Type.Literal('multiSelect'),
+    Type.Literal('url'), Type.Literal('email'),
+    Type.Literal('media'), Type.Literal('relation'),
+    Type.Literal('repeater'),
+  ]),
+  mediaKind: Type.Optional(Type.Union([
+    Type.Literal('image'), Type.Literal('video'), Type.Literal('any'),
+  ])),
+  allowMultiple: Type.Optional(Type.Boolean()),
   /** Resolved slug of the target table. Relation fields only. */
   targetTableSlug: Type.Optional(Type.String()),
+  /** Lean item schema for repeater fields. */
+  fields: Type.Optional(Type.Array(DataMetaRepeaterItemFieldSchema)),
+  itemLabelFieldId: Type.Optional(Type.String()),
 })
 
 const DataMetaTableSchema = Type.Object({
@@ -587,5 +657,6 @@ export const DataMetaSchema = Type.Object({
 })
 
 export type DataMetaField = Static<typeof DataMetaFieldSchema>
+export type DataMetaRepeaterItemField = Static<typeof DataMetaRepeaterItemFieldSchema>
 export type DataMetaTable = Static<typeof DataMetaTableSchema>
 export type DataMeta = Static<typeof DataMetaSchema>

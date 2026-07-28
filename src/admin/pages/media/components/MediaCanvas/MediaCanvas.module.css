@@ -51,6 +51,7 @@
 }
 
 .tileItem {
+    position: relative;
     list-style: none;
     display: block;
 }
@@ -139,9 +140,9 @@
     background: var(--tree-drop-inside-bg);
 }
 
-/* Skeleton previews render a direct child span. Loaded previews render an
- * `<img>` / `<video>` / icon directly inside `.tilePreview`, so this only
- * matches during loading. */
+/* Skeleton previews render a direct child span. Loaded previews render image,
+ * video, or icon content directly inside `.tilePreview`, so this only matches
+ * during loading. */
 .tilePreview > span {
     display: block;
     width: 100%;
@@ -189,8 +190,48 @@
 }
 
 .rowItem {
+    position: relative;
     list-style: none;
     display: block;
+}
+
+.itemActions {
+    position: absolute;
+    z-index: 1;
+    top: var(--space-s);
+    right: var(--space-s);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-px);
+    padding: var(--space-3xs);
+    border-radius: var(--panel-radius);
+    background: var(--bg-surface-3);
+    box-shadow: var(--shadow-panel-inset-bottom);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+}
+
+.itemActions > button {
+    /* Keep every pressed/hover surface concentric with the floating toolbar. */
+    border-radius: calc(var(--panel-radius) - var(--space-3xs));
+}
+
+.tileItem:hover > .itemActions,
+.tileItem:focus-within > .itemActions,
+.rowItem:hover > .itemActions,
+.rowItem:focus-within > .itemActions {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.rowItem[data-has-actions="true"] .row {
+    padding-right: var(--space-8xl);
+}
+
+.rowItem > .itemActions {
+    top: 50%;
+    transform: translateY(-50%);
 }
 
 .row {

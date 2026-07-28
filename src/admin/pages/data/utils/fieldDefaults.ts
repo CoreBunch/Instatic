@@ -25,6 +25,8 @@ export function emptyCellValue(field: DataField): unknown {
       return field.allowMultiple ? [] : null
     case 'relation':
       return field.allowMultiple ? [] : null
+    case 'repeater':
+      return []
 
     case 'pageTree': {
       // Minimal valid NodeTree with a single root `base.body` node.

@@ -8,6 +8,7 @@
     border-radius: var(--input-radius);
     color: var(--text);
     font-family: var(--font-sans);
+    font-weight: 500;
     outline: none;
 }
 

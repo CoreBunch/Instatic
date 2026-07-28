@@ -123,6 +123,7 @@ function MediaPreviewMulti({
       {overflow > 0 && (
         <span className={styles.mediaOverflow}>+{overflow}</span>
       )}
+      <span className={styles.mediaCount}>{ids.length} selected</span>
     </span>
   )
 }
@@ -160,6 +161,12 @@ export function MediaCell({
     } else {
       onChange(asset.id)
     }
+    setPickerOpen(false)
+    onCommit?.()
+  }
+
+  function handlePickMultiple(assets: CmsMediaAsset[]) {
+    onChange(assets.map((asset) => asset.id))
     setPickerOpen(false)
     onCommit?.()
   }
@@ -239,7 +246,10 @@ export function MediaCell({
         onClose={() => setPickerOpen(false)}
         mediaKind={resolvePickerKind(field)}
         currentValue={!isMulti && firstId ? firstId : null}
+        currentValues={isMulti ? currentIds : undefined}
+        allowMultiple={isMulti}
         onPick={handlePick}
+        onPickMultiple={handlePickMultiple}
       />
     </>
   )

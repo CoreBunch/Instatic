@@ -38,7 +38,6 @@ import {
 import { publishDataRow, removeDataRowArtefact } from '../../../publish/publishRow'
 import { findUserById } from '../../../repositories/users'
 import { slugForTable } from '@core/data/cells'
-import { lockedBuiltInCellKey } from '@core/data/systemTableGuard'
 import { badRequest, jsonResponse, readValidatedBody } from '../../../http'
 import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import type { CmsHandlerOptions } from '../shared'
@@ -167,16 +166,6 @@ async function handleRowItemPatch(
 
   const table = await getDataTable(db, currentRow.tableId)
   if (!table) return rowNotFound()
-
-  // Built-in field values on structural system tables (pages/components/
-  // layouts) are editor-managed — reject hand-edits through the Data grid.
-  // The site editor writes those trees via its own endpoints, not here.
-  if (body.cells) {
-    const locked = lockedBuiltInCellKey(table, body.cells)
-    if (locked) {
-      return badRequest(`The "${locked}" field is managed by the editor and can't be edited here.`)
-    }
-  }
 
   const rawCells = body.cells ?? currentRow.cells
   // Run the `content.entry.cells` filter pipeline before persistence so

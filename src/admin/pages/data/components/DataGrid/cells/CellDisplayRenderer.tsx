@@ -18,6 +18,7 @@ import {
   readFieldSchemaCell,
   readNodeTreeCell,
   readNumberCell,
+  readRepeaterCell,
   readStringArrayCell,
   readStringCell,
 } from '@core/data/cells'
@@ -424,6 +425,15 @@ export function CellDisplayRenderer({
             return typeof v === 'string' && v.length > 0 ? [v] : []
           })()
       return <RelationDisplay ids={ids} field={field} tables={tables} rows={rows} />
+    }
+    case 'repeater': {
+      const items = readRepeaterCell(cells, field.id)
+      if (items.length === 0) return <Empty />
+      return (
+        <span className={styles.text}>
+          {items.length} {items.length === 1 ? 'item' : 'items'}
+        </span>
+      )
     }
     case 'pageTree': {
       const tree = readNodeTreeCell(cells, field.id)

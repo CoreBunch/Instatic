@@ -3,9 +3,16 @@ import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
-import { buildPostTypeDefaultFields } from '@core/data/fields'
-import { type CreateDataTableInput, type DataTableKind } from '@core/data/schemas'
+import { pushToast } from '@ui/components/Toast'
+import { buildPostTypeDefaultFields, isPrimaryFieldCandidate } from '@core/data/fields'
+import {
+  type CreateDataTableInput,
+  type DataField,
+  type DataTable,
+  type DataTableKind,
+} from '@core/data/schemas'
 import { StepUpCancelledMessage } from '@admin/shared/StepUp'
+import { FieldSchemaComposer } from '../FieldSchemaComposer'
 import styles from './NewTableDialog.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
@@ -21,6 +28,13 @@ function slugify(name: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+function singularFromPlural(value: string): string {
+  if (/[^aeiou]ies$/i.test(value)) return value.replace(/ies$/i, 'y')
+  if (/(?:s|x|z|ch|sh)es$/i.test(value)) return value.replace(/es$/i, '')
+  if (/ss$/i.test(value)) return value
+  return value.replace(/s$/i, '') || value
+}
+
 function errorMessage(err: unknown): string {
   return getErrorMessage(err, 'Could not create table').replace(/^\[[^\]]+\]\s*/, '')
 }
@@ -33,6 +47,7 @@ interface NewTableDialogProps {
   open: boolean
   onClose: () => void
   onCreate: (input: CreateDataTableInput) => Promise<void>
+  tables: DataTable[]
 }
 
 const KIND_OPTIONS: ReadonlyArray<{ value: DataTableKind; label: string }> = [
@@ -49,6 +64,7 @@ const KIND_DESCRIPTIONS: Record<DataTableKind, string> = {
 }
 
 const FORM_ID = 'new-table-dialog-form'
+const SLUG_PLACEHOLDER = 'projects'
 
 // ---------------------------------------------------------------------------
 // Component
@@ -58,6 +74,7 @@ export function NewTableDialog({
   open,
   onClose,
   onCreate,
+  tables,
 }: NewTableDialogProps) {
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
@@ -67,8 +84,15 @@ export function NewTableDialog({
   const [singularTouched, setSingularTouched] = useState(false)
   const [pluralLabel, setPluralLabel] = useState('')
   const [pluralTouched, setPluralTouched] = useState(false)
+  const [fieldsByKind, setFieldsByKind] = useState<Record<'data' | 'postType', DataField[]>>({
+    data: [{ type: 'text', id: 'name', label: 'Name', required: true }],
+    postType: buildPostTypeDefaultFields(),
+  })
+  const [primaryFieldsByKind, setPrimaryFieldsByKind] = useState<Record<'data' | 'postType', string>>({
+    data: 'name',
+    postType: 'title',
+  })
   const [saving, setSaving] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const inputRef = useRef<HTMLInputElement>(null)
   const nameId = useId()
@@ -78,13 +102,21 @@ export function NewTableDialog({
 
   // Derived values
   const trimmedName = name.trim()
-  const displayedSlug = slugTouched ? slug : (trimmedName ? slugify(trimmedName) : '')
-  const effectiveSlug = slugify(displayedSlug || trimmedName)
+  const generatedSlug = trimmedName ? slugify(trimmedName) : ''
+  const displayedSlug = slugTouched ? slug : generatedSlug
+  const effectiveSlug = kind === 'postType'
+    ? slugify(displayedSlug || trimmedName)
+    : generatedSlug
 
-  const displayedSingular = singularTouched ? singularLabel : trimmedName
-  const displayedPlural = pluralTouched ? pluralLabel : (trimmedName ? `${trimmedName}s` : '')
+  const displayedPlural = pluralTouched ? pluralLabel : trimmedName
+  const displayedSingular = singularTouched
+    ? singularLabel
+    : singularFromPlural(displayedPlural.trim())
+  const editableKind = kind === 'postType' ? 'postType' : 'data'
+  const fields = fieldsByKind[editableKind]
+  const primaryFieldId = primaryFieldsByKind[editableKind]
 
-  const canCreate = Boolean(trimmedName && effectiveSlug && !saving)
+  const canCreate = Boolean(trimmedName && effectiveSlug && fields.length > 0 && primaryFieldId && !saving)
 
   function resetForm() {
     setName('')
@@ -95,8 +127,12 @@ export function NewTableDialog({
     setSingularTouched(false)
     setPluralLabel('')
     setPluralTouched(false)
+    setFieldsByKind({
+      data: [{ type: 'text', id: 'name', label: 'Name', required: true }],
+      postType: buildPostTypeDefaultFields(),
+    })
+    setPrimaryFieldsByKind({ data: 'name', postType: 'title' })
     setSaving(false)
-    setSubmitError(null)
   }
 
   function handleClose() {
@@ -108,12 +144,6 @@ export function NewTableDialog({
     event.preventDefault()
     if (!canCreate) return
 
-    const fields =
-      kind === 'postType'
-        ? buildPostTypeDefaultFields()
-        : [{ type: 'text' as const, id: 'name', label: 'Name', required: true }]
-
-    const primaryFieldId = kind === 'postType' ? 'title' : 'name'
     const routeBase = kind === 'postType' ? `/${effectiveSlug}` : ''
 
     const input: CreateDataTableInput = {
@@ -122,13 +152,12 @@ export function NewTableDialog({
       kind,
       routeBase,
       singularLabel: displayedSingular.trim() || trimmedName,
-      pluralLabel: displayedPlural.trim() || `${trimmedName}s`,
+      pluralLabel: displayedPlural.trim() || trimmedName,
       primaryFieldId,
       fields,
     }
 
     setSaving(true)
-    setSubmitError(null)
     try {
       await onCreate(input)
       resetForm()
@@ -137,7 +166,14 @@ export function NewTableDialog({
         setSaving(false)
         return
       }
-      setSubmitError(errorMessage(err))
+      const message = errorMessage(err)
+      console.error('[NewTableDialog] Table creation failed:', err)
+      pushToast({
+        kind: 'error',
+        title: 'Table creation failed',
+        body: message,
+        location: 'data-workspace',
+      })
       setSaving(false)
     }
   }
@@ -147,8 +183,11 @@ export function NewTableDialog({
       open={open}
       onClose={handleClose}
       title="New table"
-      size="sm"
+      eyebrow="Data model"
+      size="2xl"
       initialFocusRef={inputRef}
+      className={styles.dialog}
+      bodyClassName={styles.dialogBody}
       footer={
         <>
           <Button variant="ghost" size="sm" type="button" onClick={handleClose}>
@@ -167,98 +206,122 @@ export function NewTableDialog({
       }
     >
       <form id={FORM_ID} className={styles.form} onSubmit={handleSubmit}>
-        {/* Name */}
-        <div className={styles.field}>
-          <label htmlFor={nameId} className={styles.label}>Name</label>
-          <Input
-            id={nameId}
-            ref={inputRef}
-            fieldSize="sm"
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value)
-              setSubmitError(null)
+        <div className={styles.setupPane}>
+          <div className={styles.setupSections}>
+            <section className={styles.setupSection}>
+              <div className={styles.kindPicker}>
+                <SegmentedControl
+                  value={kind}
+                  options={KIND_OPTIONS}
+                  onChange={setKind}
+                  fullWidth
+                  aria-label="Table kind"
+                />
+                <span className={styles.caption}>{KIND_DESCRIPTIONS[kind]}</span>
+              </div>
+
+              <div className={styles.field}>
+                <label htmlFor={nameId} className={styles.label}>Name</label>
+                <Input
+                  id={nameId}
+                  ref={inputRef}
+                  fieldSize="sm"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Projects"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+
+              {kind === 'postType' && (
+                <div className={styles.field}>
+                  <label htmlFor={slugId} className={styles.label}>Slug</label>
+                  <Input
+                    id={slugId}
+                    fieldSize="sm"
+                    value={displayedSlug}
+                    onChange={(event) => {
+                      setSlugTouched(true)
+                      setSlug(slugify(event.target.value))
+                    }}
+                    placeholder={SLUG_PLACEHOLDER}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <span className={styles.caption}>
+                    {slugTouched
+                      ? `Entry URLs use /${effectiveSlug || SLUG_PLACEHOLDER}/…`
+                      : 'Generated from the name; edit to change entry URLs.'}
+                  </span>
+                  <div className={styles.routePreview}>
+                    <span>Entry URL pattern</span>
+                    <code>/{effectiveSlug || SLUG_PLACEHOLDER}/entry-slug</code>
+                  </div>
+                </div>
+              )}
+
+              <div className={styles.labelGrid}>
+                <div className={styles.field}>
+                  <label htmlFor={singularId} className={styles.label}>Singular label</label>
+                  <Input
+                    id={singularId}
+                    fieldSize="sm"
+                    value={displayedSingular}
+                    onChange={(event) => {
+                      setSingularTouched(true)
+                      setSingularLabel(event.target.value)
+                    }}
+                    placeholder="Project"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label htmlFor={pluralId} className={styles.label}>Plural label</label>
+                  <Input
+                    id={pluralId}
+                    fieldSize="sm"
+                    value={displayedPlural}
+                    onChange={(event) => {
+                      setPluralTouched(true)
+                      setPluralLabel(event.target.value)
+                    }}
+                    placeholder="Projects"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <div className={styles.schemaPane}>
+          <FieldSchemaComposer
+            fields={fields}
+            tables={tables}
+            onChange={(nextFields) => {
+              setFieldsByKind((current) => ({ ...current, [editableKind]: nextFields }))
+              const candidates = nextFields.filter(isPrimaryFieldCandidate)
+              if (!candidates.some((field) => field.id === primaryFieldId)) {
+                setPrimaryFieldsByKind((current) => ({
+                  ...current,
+                  [editableKind]: candidates[0]?.id ?? '',
+                }))
+              }
             }}
-            placeholder="Products"
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </div>
-
-        {/* Slug */}
-        <div className={styles.field}>
-          <label htmlFor={slugId} className={styles.label}>Slug</label>
-          <Input
-            id={slugId}
-            fieldSize="sm"
-            value={displayedSlug}
-            onChange={(event) => {
-              setSlugTouched(true)
-              setSlug(slugify(event.target.value))
-              setSubmitError(null)
+            title="Record structure"
+            primaryFieldId={primaryFieldId}
+            onPrimaryFieldChange={(fieldId) => {
+              setPrimaryFieldsByKind((current) => ({
+                ...current,
+                [editableKind]: fieldId,
+              }))
             }}
-            placeholder="products"
-            autoComplete="off"
-            spellCheck={false}
           />
-          {!slugTouched && (
-            <span className={styles.caption}>Auto-generated from name</span>
-          )}
-        </div>
 
-        {/* Kind */}
-        <div className={styles.field}>
-          <span className={styles.label}>Kind</span>
-          <SegmentedControl
-            value={kind}
-            options={KIND_OPTIONS}
-            onChange={setKind}
-            fullWidth
-          />
-          <span className={styles.caption}>{KIND_DESCRIPTIONS[kind]}</span>
         </div>
-
-        {/* Singular label */}
-        <div className={styles.field}>
-          <label htmlFor={singularId} className={styles.label}>Singular label</label>
-          <Input
-            id={singularId}
-            fieldSize="sm"
-            value={displayedSingular}
-            onChange={(event) => {
-              setSingularTouched(true)
-              setSingularLabel(event.target.value)
-              setSubmitError(null)
-            }}
-            placeholder="Product"
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </div>
-
-        {/* Plural label */}
-        <div className={styles.field}>
-          <label htmlFor={pluralId} className={styles.label}>Plural label</label>
-          <Input
-            id={pluralId}
-            fieldSize="sm"
-            value={displayedPlural}
-            onChange={(event) => {
-              setPluralTouched(true)
-              setPluralLabel(event.target.value)
-              setSubmitError(null)
-            }}
-            placeholder="Products"
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </div>
-
-        {submitError && (
-          <p role="alert" className={styles.errorText}>
-            {submitError}
-          </p>
-        )}
       </form>
     </Dialog>
   )

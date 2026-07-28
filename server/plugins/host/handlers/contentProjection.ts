@@ -11,7 +11,13 @@ import type {
   ContentTableSchema as ContentTableSchemaShape,
   ContentTableSummary,
 } from '@core/plugin-sdk/contentSchemas'
-import type { DataField, DataRow, DataTable } from '@core/data/schemas'
+import type { PluginRepeaterItemField } from '@core/plugin-sdk/types/content'
+import type {
+  DataField,
+  DataRow,
+  DataTable,
+  RepeaterItemField,
+} from '@core/data/schemas'
 import type { DbClient } from '../../../db/client'
 import { getDataTableBySlug, listDataTables } from '../../../repositories/data'
 
@@ -24,6 +30,60 @@ import { getDataTableBySlug, listDataTables } from '../../../repositories/data'
  * `tableSlugById` maps the host's internal `targetTableId` to the
  * public-facing slug so the plugin boundary never leaks DB ids.
  */
+function projectRepeaterItemField(
+  field: RepeaterItemField,
+  tableSlugById: Map<string, string>,
+): PluginRepeaterItemField | null {
+  switch (field.type) {
+    case 'text':
+    case 'longText':
+    case 'richText':
+    case 'number':
+      return {
+        type: field.type,
+        id: field.id,
+        label: field.label,
+        required: field.required,
+      }
+    case 'select':
+    case 'multiSelect':
+      return {
+        type: field.type,
+        id: field.id,
+        label: field.label,
+        options: (field.options ?? []).map((option) => ({
+          value: option.value,
+          label: option.label,
+        })),
+      }
+    case 'media':
+      return {
+        type: field.type,
+        id: field.id,
+        label: field.label,
+        mediaKind: field.mediaKind,
+        allowMultiple: field.allowMultiple,
+      }
+    case 'relation': {
+      const targetTableSlug = tableSlugById.get(field.targetTableId)
+      if (targetTableSlug === undefined) return null
+      return {
+        type: field.type,
+        id: field.id,
+        label: field.label,
+        targetTableSlug,
+        allowMultiple: field.allowMultiple,
+      }
+    }
+    case 'boolean':
+    case 'date':
+    case 'dateTime':
+    case 'url':
+    case 'email':
+      return { type: field.type, id: field.id, label: field.label }
+  }
+}
+
 function projectFields(
   fields: DataField[],
   tableSlugById: Map<string, string>,
@@ -62,6 +122,22 @@ function projectFields(
           targetTableSlug: tableSlugById.get(f.targetTableId) ?? '',
         })
         break
+      case 'repeater': {
+        const fields = f.fields
+          .map((field) => projectRepeaterItemField(field, tableSlugById))
+          .filter((field) => field !== null)
+        out.push({
+          type: 'repeater',
+          id: f.id,
+          label: f.label,
+          required: f.required,
+          fields,
+          itemLabelFieldId: fields.some((field) => field.id === f.itemLabelFieldId)
+            ? f.itemLabelFieldId
+            : undefined,
+        })
+        break
+      }
       case 'pageTree':
         out.push({ type: 'pageTree', id: f.id, label: f.label })
         break
