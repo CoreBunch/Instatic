@@ -1,15 +1,10 @@
 import { useState, type ReactElement } from 'react'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
-import { Select } from '@ui/components/Select'
 import { Section } from '@ui/components/Section'
 import { ControlRow } from '@ui/components/ControlRow'
 import sectionStyles from '@ui/components/Section/Section.module.css'
 import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
-import { LinkIcon } from 'pixel-art-icons/icons/link'
-import { EyeSolidIcon } from 'pixel-art-icons/icons/eye-solid'
-import { ListBoxSolidIcon } from 'pixel-art-icons/icons/list-box-solid'
-import { BoxSolidIcon } from 'pixel-art-icons/icons/box-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { StepUpCancelledMessage } from '@admin/shared/StepUp'
@@ -39,7 +34,6 @@ interface SettingsDraft {
   slug: string
   singularLabel: string
   pluralLabel: string
-  routeBase: string
   primaryFieldId: string
 }
 
@@ -114,17 +108,8 @@ function tableToDraft(table: DataTable): SettingsDraft {
     slug: table.slug,
     singularLabel: table.singularLabel,
     pluralLabel: table.pluralLabel,
-    routeBase: table.routeBase,
     primaryFieldId: table.primaryFieldId,
   }
-}
-
-const KIND_LABELS: Record<DataTable['kind'], string> = {
-  postType: 'Post type',
-  data: 'Data table',
-  page: 'Page',
-  component: 'Component',
-  layout: 'Layout',
 }
 
 // ---------------------------------------------------------------------------
@@ -191,15 +176,10 @@ export function TableSettings({
     })
   }
 
-  const primaryFieldOptions = table.fields.map((f) => ({
-    value: f.id,
-    label: f.label,
-  }))
-
   // System tables (posts/pages/components/layouts) have a frozen identity and
-  // built-in fields. The General / Routing / Kind / Danger sections are hidden
-  // — only Display (primary field) and Fields (where custom fields can be
-  // added) remain. The server enforces the same frozen-vs-mutable split.
+  // built-in fields. The General / Danger sections are hidden
+  // — the Schema section keeps primary-field selection and custom field
+  // management together. The server enforces the same frozen-vs-mutable split.
   const isSystem = table.system
 
   return (
@@ -232,22 +212,23 @@ export function TableSettings({
             />
           </ControlRow>
 
-          <ControlRow
-            propKey="slug"
-            label="Slug"
-            description="Changing the slug will break existing links."
-          >
-            <Input
-              id="ctrl-slug"
-              fieldSize="sm"
-              value={draft.slug}
-              disabled={!canEdit}
-              onChange={(e) => patchDraft('slug', e.target.value)}
-              onBlur={() => void handleBlurField('slug')}
-              autoComplete="off"
-              monospace
-            />
-          </ControlRow>
+          {table.kind === 'postType' && (
+            <ControlRow
+              propKey="slug"
+              label="Slug"
+              description="Used in entry URLs. Changing it can break existing links."
+            >
+              <Input
+                id="ctrl-slug"
+                fieldSize="sm"
+                value={draft.slug}
+                disabled={!canEdit}
+                onChange={(e) => patchDraft('slug', e.target.value)}
+                onBlur={() => void handleBlurField('slug')}
+                autoComplete="off"
+              />
+            </ControlRow>
+          )}
 
           <ControlRow propKey="singularLabel" label="Singular label">
             <Input
@@ -276,77 +257,16 @@ export function TableSettings({
       </Section>
       )}
 
-      {/* ── Routing ──
-        Available for both `postType` and `data` kinds. Tables with a
-        non-empty `routeBase` serve each published row at
-        `/<routeBase>/<slug>` (rendered via the template system, or via the
-        fallback data-row document when no template is configured). `data`
-        kinds default to an empty `routeBase` (not routable).
-        Hidden for system tables — their route base is fixed. */}
-      {!isSystem && (
-      <Section title="Routing" icon={LinkIcon}>
-        <div className={sectionStyles.sectionBody}>
-          <ControlRow
-            propKey="routeBase"
-            label="Route base"
-            description="Public URL prefix for entries. Empty = not publicly routable."
-          >
-            <Input
-              id="ctrl-routeBase"
-              fieldSize="sm"
-              value={draft.routeBase}
-              disabled={!canEdit}
-              onChange={(e) => patchDraft('routeBase', e.target.value)}
-              onBlur={() => void handleBlurField('routeBase')}
-              autoComplete="off"
-              monospace
-              placeholder={table.kind === 'postType' ? '/posts' : `/${draft.slug || 'items'}`}
-            />
-          </ControlRow>
-        </div>
-      </Section>
-      )}
-
-      {/* ── Display ── */}
-      <Section title="Display" icon={EyeSolidIcon} defaultOpen>
-        <div className={sectionStyles.sectionBody}>
-          <ControlRow
-            propKey="primaryFieldId"
-            label="Primary field"
-            description="Used as the row display name in grids and relation pickers."
-          >
-            <Select
-              id="ctrl-primaryFieldId"
-              fieldSize="sm"
-              value={draft.primaryFieldId}
-              options={primaryFieldOptions}
-              disabled={!canEdit || primaryFieldOptions.length === 0}
-              onChange={(e) => void handlePrimaryFieldChange(e.target.value)}
-            />
-          </ControlRow>
-        </div>
-      </Section>
-
       {/* ── Fields ── */}
-      <Section title="Fields" icon={ListBoxSolidIcon}>
-        <FieldsSection
-          table={table}
-          tables={tables}
-          rowCount={rows.length}
-          onUpdateTable={onUpdateTable}
-          canEdit={canEdit}
-        />
-      </Section>
-
-      {/* ── Kind (read-only; hidden for system tables) ── */}
-      {!isSystem && (
-      <Section title="Kind" icon={BoxSolidIcon}>
-        <div className={styles.kindRow}>
-          <span className={styles.kindBadge}>{KIND_LABELS[table.kind]}</span>
-          <span className={styles.kindCaption}>Table kind cannot be changed after creation.</span>
-        </div>
-      </Section>
-      )}
+      <FieldsSection
+        table={table}
+        tables={tables}
+        rowCount={rows.length}
+        onUpdateTable={onUpdateTable}
+        canEdit={canEdit}
+        primaryFieldId={draft.primaryFieldId}
+        onPrimaryFieldChange={handlePrimaryFieldChange}
+      />
 
       {/* ── Danger zone ── */}
       {canDelete && (

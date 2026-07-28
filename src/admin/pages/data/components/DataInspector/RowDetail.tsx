@@ -1,4 +1,4 @@
-import { useState, type ReactElement, type ReactNode } from 'react'
+import { useEffect, useEffectEvent, useState, type ReactElement, type ReactNode } from 'react'
 import { Button } from '@ui/components/Button'
 import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
@@ -6,7 +6,6 @@ import { CellEditorRenderer } from '@admin/pages/data/components/DataGrid/cells/
 import { RelationPickerDialog } from '@admin/pages/data/components/RelationPickerDialog/RelationPickerDialog'
 import { useDataRowDraft } from '@admin/pages/data/hooks/useDataRowDraft'
 import { emptyCellValue } from '@admin/pages/data/utils/fieldDefaults'
-import { isBuiltInValueLocked } from '@core/data/systemTableGuard'
 import type { DataTable, DataRow, DataRowCells } from '@core/data/schemas'
 import type { DataField } from '@core/data/schemas'
 import styles from './DataInspector.module.css'
@@ -29,6 +28,14 @@ interface RowDetailProps {
   /** Resolve a row id to a row object for display in relation cells. */
   resolveRow: (rowId: string) => DataRow | null
   canEdit: boolean
+  onDraftStateChange?: (state: DataRowDraftState | null) => void
+}
+
+export interface DataRowDraftState {
+  isDirty: boolean
+  isSaving: boolean
+  saveError: string | null
+  flush: () => Promise<DataRow | null>
 }
 
 interface PickerState {
@@ -169,6 +176,7 @@ function DataRowForm({
   resolveRow,
   canEdit,
   onOpenEditor,
+  onDraftStateChange,
 }: {
   row: DataRow
   table: DataTable
@@ -178,6 +186,7 @@ function DataRowForm({
   canEdit: boolean
   /** Forwarded to PageTreeCell — opens the visual editor for this row. */
   onOpenEditor?: () => void
+  onDraftStateChange?: (state: DataRowDraftState | null) => void
 }): ReactElement {
   const draft = useDataRowDraft(row, onSaveRow)
   const [pickerState, setPickerState] = useState<PickerState | null>(null)
@@ -199,14 +208,31 @@ function DataRowForm({
     ? (pickerField.allowMultiple ?? false)
     : false
 
+  const reportDraftState = useEffectEvent(() => {
+    onDraftStateChange?.({
+      isDirty: draft.isDirty,
+      isSaving: draft.isSaving,
+      saveError: draft.saveError,
+      flush: draft.flush,
+    })
+  })
+  useEffect(() => {
+    reportDraftState()
+    return () => onDraftStateChange?.(null)
+  }, [draft.isDirty, draft.isSaving, draft.saveError, onDraftStateChange])
+
   return (
     <>
       <div className={styles.section}>
         {table.fields.map((field) => (
-          <label key={field.id} className={styles.formGroup}>
-            <span className={styles.label}>{field.label}</span>
-            {field.description && (
-              <span className={styles.labelDescription}>{field.description}</span>
+          <div key={field.id} className={styles.formGroup}>
+            {field.type !== 'repeater' && (
+              <>
+                <span className={styles.label}>{field.label}</span>
+                {field.description && (
+                  <span className={styles.labelDescription}>{field.description}</span>
+                )}
+              </>
             )}
             <CellEditorRenderer
               field={field}
@@ -214,8 +240,9 @@ function DataRowForm({
               onChange={(next) => draft.setCell(field.id, next)}
               onCommit={() => void draft.flush()}
               context="detail"
-              readOnly={!canEdit || isBuiltInValueLocked(table, field)}
+              readOnly={!canEdit}
               rowId={row.id}
+              tables={tables}
               resolveRelationTarget={resolveRow}
               onOpenPicker={
                 field.type === 'relation'
@@ -224,20 +251,19 @@ function DataRowForm({
               }
               onOpenEditor={field.type === 'pageTree' ? onOpenEditor : undefined}
             />
-          </label>
+          </div>
         ))}
 
-        <div className={styles.saveStatus} aria-live="polite" aria-atomic="true">
-          {draft.isSaving && (
-            <span className={styles.savingText}>Saving…</span>
-          )}
-          {!draft.isSaving && draft.saveError && (
-            <span className={styles.saveErrorText} role="alert">{draft.saveError}</span>
-          )}
-          {!draft.isSaving && !draft.saveError && !draft.isDirty && (
-            <span className={styles.savedText}>Saved</span>
-          )}
-        </div>
+        {(draft.isSaving || draft.saveError) && (
+          <div className={styles.saveStatus} aria-live="polite" aria-atomic="true">
+            {draft.isSaving && (
+              <span className={styles.savingText}>Saving…</span>
+            )}
+            {!draft.isSaving && draft.saveError && (
+              <span className={styles.saveErrorText} role="alert">{draft.saveError}</span>
+            )}
+          </div>
+        )}
       </div>
 
       <RelationPickerDialog
@@ -284,6 +310,7 @@ export function RowDetail({
   onSetRowStatus: _onSetRowStatus,
   resolveRow,
   canEdit,
+  onDraftStateChange,
 }: RowDetailProps): ReactElement {
   const showHeader = table.kind === 'postType' || table.kind === 'page' || table.kind === 'component'
 
@@ -337,6 +364,7 @@ export function RowDetail({
         resolveRow={resolveRow}
         canEdit={canEdit}
         onOpenEditor={formOpenEditor}
+        onDraftStateChange={onDraftStateChange}
       />
     </>
   )

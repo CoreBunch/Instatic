@@ -8,6 +8,10 @@
  *
  * The optional `onOpenEditor` prop follows the same extra-prop threading
  * pattern that `RelationCell` uses for `onOpenPicker`.
+ *
+ * `readOnly` deliberately does not gate this navigation action. It controls
+ * whether a value can be edited in Data, while the visual editor applies its
+ * own permissions after navigation.
  */
 import type { ReactElement } from 'react'
 import { Button } from '@ui/components/Button'
@@ -27,7 +31,6 @@ export interface PageTreeCellProps extends CellEditorProps<PageTreeField> {
 export function PageTreeCell({
   field,
   value,
-  readOnly,
   ariaLabel,
   onOpenEditor,
 }: PageTreeCellProps): ReactElement {
@@ -40,7 +43,7 @@ export function PageTreeCell({
       <Button
         variant="secondary"
         size="sm"
-        disabled={readOnly || !onOpenEditor}
+        disabled={!onOpenEditor}
         aria-label={ariaLabel ?? `${field.label}: ${hasTree ? 'Open editor' : 'No content'}`}
         onClick={() => onOpenEditor?.()}
         align="start"

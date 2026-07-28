@@ -23,6 +23,7 @@ interface SectionProps {
   indicatorTestId?: string;
   icon?: IconComponent;
   meta?: React.ReactNode;
+  headerAction?: React.ReactNode;
   forceOpen?: boolean;
   /**
    * Drop the section's own vertical padding so spacing comes entirely from the
@@ -41,6 +42,7 @@ export function Section({
   indicatorTestId,
   icon: SectionIcon,
   meta,
+  headerAction,
   forceOpen = false,
   flush = false,
 }: SectionProps) {
@@ -49,30 +51,35 @@ export function Section({
 
   return (
     <div className={cn(styles.section, flush && styles.sectionFlush, expanded && styles.sectionOpen)}>
-      <button
-        onClick={() => {
-          if (!forceOpen) setOpen((o) => !o);
-        }}
-        className={styles.sectionToggle}
-        aria-expanded={expanded}
-      >
-        {SectionIcon && (
-          <span className={styles.sectionIcon}>
-            <SectionIcon size={13} />
-          </span>
-        )}
-        <span className={styles.sectionTitleGroup}>
-          <span className={styles.sectionTitle}>{title}</span>
-          {indicator && (
-            <span
-              className={styles.sectionIndicatorDot}
-              data-testid={indicatorTestId}
-              aria-hidden="true"
-            />
+      <div className={cn(styles.sectionHeader, headerAction && styles.sectionHeaderWithAction)}>
+        <button
+          onClick={() => {
+            if (!forceOpen) setOpen((o) => !o);
+          }}
+          className={styles.sectionToggle}
+          aria-expanded={expanded}
+        >
+          {SectionIcon && (
+            <span className={styles.sectionIcon}>
+              <SectionIcon size={13} />
+            </span>
           )}
-        </span>
-        {meta && <span className={styles.sectionMeta}>{meta}</span>}
-      </button>
+          <span className={styles.sectionTitleGroup}>
+            <span className={styles.sectionTitle}>{title}</span>
+            {indicator && (
+              <span
+                className={styles.sectionIndicatorDot}
+                data-testid={indicatorTestId}
+                aria-hidden="true"
+              />
+            )}
+          </span>
+          {meta && <span className={styles.sectionMeta}>{meta}</span>}
+        </button>
+        {headerAction && (
+          <span className={styles.sectionHeaderAction}>{headerAction}</span>
+        )}
+      </div>
       {expanded && <div className={styles.sectionContent}>{children}</div>}
     </div>
   );

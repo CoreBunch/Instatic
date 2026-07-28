@@ -7,6 +7,7 @@ import { cn } from '@ui/cn'
 import propertiesStyles from '@admin/pages/site/panels/PropertiesPanel/PropertiesPanel.module.css'
 import styles from './DataInspector.module.css'
 import { RowDetail } from './RowDetail'
+import type { DataRowDraftState } from './RowDetail'
 import { TableSettings } from './TableSettings'
 
 // ---------------------------------------------------------------------------
@@ -35,6 +36,7 @@ interface DataInspectorProps {
   /** Schema editing in Table settings — kind-aware (custom vs system manage). */
   canManageSchema: boolean
   canDelete: boolean
+  onDraftStateChange?: (state: DataRowDraftState | null) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +58,7 @@ export function DataInspector({
   canEdit,
   canManageSchema,
   canDelete,
+  onDraftStateChange,
 }: DataInspectorProps): ReactElement {
   const setRightPanel = useWorkspaceLayout((s) => s.setRightPanel)
 
@@ -100,6 +103,7 @@ export function DataInspector({
             onSetRowStatus={onSetRowStatus}
             resolveRow={resolveRow}
             canEdit={canEdit}
+            onDraftStateChange={onDraftStateChange}
           />
         ) : (
           <TableSettings

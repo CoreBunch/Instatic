@@ -14,7 +14,9 @@
 import { useEffect, useEffectEvent, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import { Button } from '@ui/components/Button'
 import { Skeleton } from '@ui/components/Skeleton'
+import { TagPill } from '@ui/components/TagPill'
 import { railAccent, railTintVar } from '@ui/railAccent'
+import type { PillAccent } from '@ui/pillAccent'
 import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { ArrowDownIcon } from 'pixel-art-icons/icons/arrow-down'
@@ -57,6 +59,13 @@ interface TableContextMenuState {
   x: number
   y: number
   tableId: string
+}
+
+const TABLE_KIND_ACCENT: Record<DataTableListItem['kind'], PillAccent> = {
+  page: 'a',
+  postType: 'b',
+  component: 'c',
+  data: 'd',
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +126,10 @@ export function DataSidebar({
 
   function renderTableButton(table: DataTableListItem) {
     const selected = table.id === selectedTableId
+    const kindLabel = table.kind === 'postType' ? 'post-type'
+      : table.kind === 'page' ? 'page'
+      : table.kind === 'component' ? 'component'
+      : 'data'
     return (
       <Button
         key={table.id}
@@ -134,12 +147,12 @@ export function DataSidebar({
       >
         <DatabaseSolidIcon size={13} aria-hidden="true" />
         <span className={styles.tableLabel}>{table.pluralLabel}</span>
-        <span className={styles.kindBadge}>
-          {table.kind === 'postType' ? 'post-type'
-            : table.kind === 'page' ? 'page'
-            : table.kind === 'component' ? 'component'
-            : 'data'}
-        </span>
+        <TagPill
+          label={kindLabel}
+          accent={TABLE_KIND_ACCENT[table.kind]}
+          size="xs"
+          className={styles.tableKindBadge}
+        />
       </Button>
     )
   }

@@ -82,8 +82,8 @@ function renderCanvas(table: DataTable, rows: DataRow[], overrides: Partial<Reac
   )
 }
 
-describe('DataCanvas — row creation on locked system tables', () => {
-  it('hides "Add row" and "Duplicate row" when every field on the table is a locked built-in', () => {
+describe('DataCanvas — row creation', () => {
+  it('hides "Add row" and "Duplicate row" for a system table', () => {
     renderCanvas(makePagesTable(), [makeRow()])
 
     expect(screen.queryByRole('button', { name: /add row/i })).toBeNull()
@@ -92,7 +92,7 @@ describe('DataCanvas — row creation on locked system tables', () => {
     expect(screen.queryByRole('menuitem', { name: /duplicate row/i })).toBeNull()
   })
 
-  it('shows "Add row" and "Duplicate row" once the table has a custom (non-built-in) field', () => {
+  it('still hides both actions when a system table has a custom editable field', () => {
     const table = makePagesTable({
       fields: [
         { type: 'text', id: 'title', label: 'Title', required: true, builtIn: true },
@@ -102,9 +102,29 @@ describe('DataCanvas — row creation on locked system tables', () => {
     })
     renderCanvas(table, [makeRow()])
 
-    expect(screen.getByRole('button', { name: /add row/i })).toBeDefined()
+    expect(screen.queryByRole('button', { name: /add row/i })).toBeNull()
 
     fireEvent.contextMenu(screen.getByText('Home').closest('[role="row"]')!, { clientX: 100, clientY: 100 })
+    expect(screen.queryByRole('menuitem', { name: /duplicate row/i })).toBeNull()
+  })
+
+  it('shows "Add row" and "Duplicate row" for a custom table with editable fields', () => {
+    const table = makePagesTable({
+      id: 'table-projects',
+      name: 'projects',
+      slug: 'projects',
+      kind: 'data',
+      singularLabel: 'Project',
+      pluralLabel: 'Projects',
+      system: false,
+      fields: [{ type: 'text', id: 'name', label: 'Name', required: true }],
+      primaryFieldId: 'name',
+    })
+    renderCanvas(table, [makeRow({ tableId: table.id, cells: { name: 'Campaign' } })])
+
+    expect(screen.getByRole('button', { name: /add row/i })).toBeDefined()
+
+    fireEvent.contextMenu(screen.getByText('Campaign').closest('[role="row"]')!, { clientX: 100, clientY: 100 })
     expect(screen.getByRole('menuitem', { name: /duplicate row/i })).toBeDefined()
   })
 

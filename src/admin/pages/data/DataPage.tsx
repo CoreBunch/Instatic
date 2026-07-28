@@ -4,7 +4,7 @@
  * Composes the DataSidebar, DataCanvas, and DataInspector through
  * AdminWorkspaceCanvasLayout. Capability resolution mirrors ContentPage.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AdminWorkspaceCanvasLayout } from '@admin/layouts/AdminWorkspaceCanvasLayout'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import { useNavigate } from '@admin/lib/routing'
@@ -21,15 +21,30 @@ import {
   canImportData,
   canManageDataTables,
   canManageTable,
+  canPublishContentEntry,
 } from '@admin/access'
 import type { DataRow, DataRowCells, DataRowStatus } from '@core/data/schemas'
 import { pushToast } from '@ui/components/Toast'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { PublishActionGroup, type PublishActionMenuItem } from '@site/toolbar/PublishActionGroup'
+import { CheckIcon } from 'pixel-art-icons/icons/check'
+import { CircleAlertSolidIcon } from 'pixel-art-icons/icons/circle-alert-solid'
+import { LoaderIcon } from 'pixel-art-icons/icons/loader'
+import { SaveSolidIcon } from 'pixel-art-icons/icons/save-solid'
+import { SendSolidIcon } from 'pixel-art-icons/icons/send-solid'
 import { useDataWorkspace } from './hooks/useDataWorkspace'
 import { DataSidebar } from './components/DataSidebar/DataSidebar'
 import { DataCanvas } from './components/DataCanvas/DataCanvas'
 import { DataInspector } from './components/DataInspector/DataInspector'
 import { NewTableDialog } from './components/NewTableDialog/NewTableDialog'
+import type { DataRowDraftState } from './components/DataInspector/RowDetail'
+
+function hasDraftChanges(row: DataRow): boolean {
+  if (row.status === 'scheduled') return false
+  if (row.status !== 'published') return true
+  if (row.publishedAt === null) return true
+  return new Date(row.updatedAt).getTime() > new Date(row.publishedAt).getTime()
+}
 
 // ---------------------------------------------------------------------------
 // DataPage
@@ -62,6 +77,9 @@ export function DataPage() {
   const { runStepUp } = useStepUp()
 
   const [newTableDialogOpen, setNewTableDialogOpen] = useState(false)
+  const [activeDraft, setActiveDraft] = useState<DataRowDraftState | null>(null)
+  const activeDraftRef = useRef<DataRowDraftState | null>(null)
+  const [publishState, setPublishState] = useState<'idle' | 'publishing' | 'published' | 'error'>('idle')
 
   useEffect(() => {
     function refreshAfterBundleImport() {
@@ -114,6 +132,58 @@ export function DataPage() {
 
   async function handleSaveRow(rowId: string, cells: DataRowCells) {
     return workspace.saveRow(rowId, cells)
+  }
+
+  function handleDraftStateChange(state: DataRowDraftState | null) {
+    activeDraftRef.current = state
+    setActiveDraft(state)
+    if (state?.isDirty) setPublishState('idle')
+  }
+
+  async function handleSaveActiveDraft(): Promise<DataRow | null> {
+    const draft = activeDraftRef.current
+    if (!draft || draft.isSaving) return null
+    return draft.flush()
+  }
+
+  async function handlePublishData(): Promise<void> {
+    if (publishState === 'publishing' || activeDraftRef.current?.isSaving) return
+    setPublishState('publishing')
+    try {
+      const flushedRow = await handleSaveActiveDraft()
+      const currentDraft = activeDraftRef.current
+      if (currentDraft && !currentDraft.isSaving && !flushedRow) {
+        throw new Error('The active row draft could not be saved')
+      }
+
+      const rows = flushedRow
+        ? workspace.rows.map((row) => row.id === flushedRow.id ? flushedRow : row)
+        : workspace.rows
+      const publishableRows = rows.filter((row) =>
+        hasDraftChanges(row) && canPublishContentEntry(permissionUser, row),
+      )
+
+      for (const row of publishableRows) {
+        await workspace.publishRow(row.id)
+      }
+
+      setPublishState('published')
+      pushToast({
+        kind: 'success',
+        title: 'Data published',
+        body: `${publishableRows.length} row${publishableRows.length === 1 ? '' : 's'} published.`,
+        location: 'data-workspace',
+      })
+    } catch (err) {
+      console.error('[DataPage] Publish data failed:', err)
+      setPublishState('error')
+      pushToast({
+        kind: 'error',
+        title: 'Data publish failed',
+        body: getErrorMessage(err, 'Could not publish data'),
+        location: 'data-workspace',
+      })
+    }
   }
 
   function handleDeleteRow(rowId: string): void {
@@ -195,6 +265,35 @@ export function DataPage() {
   }
 
   const selectedTable = workspace.selectedTable
+  const rowsWithDraftChanges = workspace.rows.filter(hasDraftChanges)
+  const activeDraftDirty = activeDraft?.isDirty ?? false
+  const hasPublishableChanges = activeDraftDirty || rowsWithDraftChanges.some((row) =>
+    canPublishContentEntry(permissionUser, row),
+  )
+  const isSavingDraft = activeDraft?.isSaving ?? false
+  const publishBusy = publishState === 'publishing'
+  const publishMenuItems: PublishActionMenuItem[] = [{
+    id: 'save-draft',
+    label: 'Save draft',
+    icon: SaveSolidIcon,
+    disabled: !activeDraftDirty || isSavingDraft || publishBusy,
+    onSelect: () => { void handleSaveActiveDraft() },
+    testId: 'toolbar-data-save-draft-action',
+  }]
+  const publishStatus = activeDraft?.saveError
+    ? { label: 'Draft save failed', tone: 'danger' as const }
+    : isSavingDraft
+      ? { label: 'Saving draft', tone: 'neutral' as const }
+      : hasPublishableChanges
+        ? { label: activeDraftDirty ? 'Unsaved draft' : 'Draft changes', tone: 'warning' as const }
+        : { label: 'Published', tone: 'success' as const }
+  const PublishDataIcon = publishBusy
+    ? LoaderIcon
+    : publishState === 'error'
+      ? CircleAlertSolidIcon
+      : !hasPublishableChanges
+        ? CheckIcon
+        : SendSolidIcon
 
   // ---------------------------------------------------------------------------
   // Right panel (inspector)
@@ -226,6 +325,7 @@ export function DataPage() {
       canEdit={canEditRows}
       canManageSchema={canManageSchema}
       canDelete={canDeleteTable}
+      onDraftStateChange={handleDraftStateChange}
     />
   ) : undefined
 
@@ -237,6 +337,23 @@ export function DataPage() {
     <>
       <AdminWorkspaceCanvasLayout
         workspace="data"
+        toolbarRightSlot={selectedTable ? (
+          <PublishActionGroup
+            statusLabel={publishStatus.label}
+            statusTone={publishStatus.tone}
+            publishLabel={publishBusy ? 'Publishing' : !hasPublishableChanges ? 'Published' : 'Publish data'}
+            publishAriaLabel={!hasPublishableChanges ? 'Data published' : 'Publish data'}
+            publishTitle={!hasPublishableChanges ? 'Data published' : `Publish changes to ${selectedTable.pluralLabel}`}
+            publishState={publishBusy ? 'busy' : publishState === 'error' ? 'error' : !hasPublishableChanges ? 'success' : 'idle'}
+            publishBusy={publishBusy}
+            publishDisabled={!hasPublishableChanges || activeDraftDirty || isSavingDraft || publishBusy}
+            publishIcon={PublishDataIcon}
+            onPublish={handlePublishData}
+            menuItems={publishMenuItems}
+            menuLabel="Data publishing actions"
+            triggerLabel="More data publishing actions"
+          />
+        ) : null}
         contentSidebar={(
           <DataSidebar
             tables={workspace.tables}
@@ -293,6 +410,7 @@ export function DataPage() {
         <NewTableDialog
           open={newTableDialogOpen}
           onClose={() => setNewTableDialogOpen(false)}
+          tables={workspace.tables}
           onCreate={async (input) => {
             await runStepUp(() => workspace.createTable(input))
             setNewTableDialogOpen(false)

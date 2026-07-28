@@ -59,7 +59,10 @@ import {
   requireDataCreator,
   requireDataTablesRead,
 } from './access'
-import { assertSystemTableUpdateAllowed, lockedBuiltInCellKey } from '@core/data/systemTableGuard'
+import {
+  assertSystemTableUpdateAllowed,
+  protectedBuiltInCreateCellKey,
+} from '@core/data/systemTableGuard'
 import { requireStepUp } from '../../../auth/authz'
 
 // ---------------------------------------------------------------------------
@@ -308,7 +311,7 @@ async function handleTableRows(
 
     // Editor-managed built-in values can't be set through the Data grid.
     if (body.cells) {
-      const locked = lockedBuiltInCellKey(table, body.cells)
+      const locked = protectedBuiltInCreateCellKey(table, body.cells)
       if (locked) {
         return badRequest(`The "${locked}" field is managed by the editor and can't be set here.`)
       }

@@ -26,7 +26,9 @@ import {
   type DataField,
   type DataMeta,
   type DataMetaField,
+  type DataMetaRepeaterItemField,
   type DataTable,
+  type RepeaterItemField,
 } from './schemas'
 
 export function normalizeDataTableFields(value: unknown): DataField[] {
@@ -39,6 +41,21 @@ function findField(table: Pick<DataTable, 'fields'>, fieldId: string): DataField
 
 export function dataTableHasField(table: Pick<DataTable, 'fields'>, fieldId: string): boolean {
   return findField(table, fieldId) !== null
+}
+
+/**
+ * Primary fields name records in grids and pickers, so collection/document
+ * values and multi-value fields are not meaningful candidates.
+ */
+export function isPrimaryFieldCandidate(field: DataField): boolean {
+  if (field.type === 'repeater' || field.type === 'pageTree' || field.type === 'fieldSchema') {
+    return false
+  }
+  if (field.type === 'multiSelect') return false
+  if (field.type === 'media' || field.type === 'relation') {
+    return field.allowMultiple !== true
+  }
+  return true
 }
 
 const POST_TYPE_BUILTIN_FIELD_IDS = new Set<string>([
@@ -60,6 +77,35 @@ export function isPostTypeBuiltInFieldId(fieldId: string): boolean {
 // Relation fields whose targetTableId does not resolve to a known table are
 // omitted from the output — a dangling reference is not useful in a picker.
 // ---------------------------------------------------------------------------
+
+function buildMetaRepeaterItemField(
+  field: RepeaterItemField,
+  tableSlugById: Map<string, string>,
+): DataMetaRepeaterItemField | null {
+  if (field.type === 'media') {
+    const entry: DataMetaRepeaterItemField = {
+      id: field.id,
+      label: field.label,
+      type: field.type,
+    }
+    if (field.mediaKind !== undefined) entry.mediaKind = field.mediaKind
+    if (field.allowMultiple !== undefined) entry.allowMultiple = field.allowMultiple
+    return entry
+  }
+  if (field.type === 'relation') {
+    const targetTableSlug = tableSlugById.get(field.targetTableId)
+    if (targetTableSlug === undefined) return null
+    const entry: DataMetaRepeaterItemField = {
+      id: field.id,
+      label: field.label,
+      type: field.type,
+      targetTableSlug,
+    }
+    if (field.allowMultiple !== undefined) entry.allowMultiple = field.allowMultiple
+    return entry
+  }
+  return { id: field.id, label: field.label, type: field.type }
+}
 
 function buildMetaFields(
   fields: DataField[],
@@ -83,6 +129,19 @@ function buildMetaFields(
       }
       if (field.allowMultiple !== undefined) entry.allowMultiple = field.allowMultiple
       result.push(entry)
+    } else if (field.type === 'repeater') {
+      const fields = field.fields
+        .map((itemField) => buildMetaRepeaterItemField(itemField, tableSlugById))
+        .filter((itemField) => itemField !== null)
+      result.push({
+        id: field.id,
+        label: field.label,
+        type: field.type,
+        fields,
+        itemLabelFieldId: fields.some((itemField) => itemField.id === field.itemLabelFieldId)
+          ? field.itemLabelFieldId
+          : undefined,
+      })
     } else if (field.type === 'pageTree' || field.type === 'fieldSchema') {
       // Structural types — not part of the instatic binding catalog.
       // pageTree and fieldSchema cells hold whole documents (tree/field array),

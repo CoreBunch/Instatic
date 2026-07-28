@@ -51,4 +51,53 @@ describe('pluginContentFieldsToDataFields', () => {
       ], new Map()),
     ).toThrow(/unknown table "authors"/)
   })
+
+  it('maps a one-level repeater schema and resolves its relation slugs', () => {
+    const [field] = pluginContentFieldsToDataFields([{
+      type: 'repeater',
+      id: 'gallery',
+      label: 'Gallery',
+      itemLabelFieldId: 'caption',
+      fields: [
+        { type: 'text', id: 'caption', label: 'Caption', required: true },
+        {
+          type: 'media',
+          id: 'images',
+          label: 'Images',
+          mediaKind: 'image',
+          allowMultiple: true,
+        },
+        {
+          type: 'relation',
+          id: 'credit',
+          label: 'Credit',
+          targetTableSlug: 'people',
+        },
+      ],
+    }], new Map([['people', 'table-people']]))
+
+    expect(field).toEqual({
+      type: 'repeater',
+      id: 'gallery',
+      label: 'Gallery',
+      itemLabelFieldId: 'caption',
+      fields: [
+        { type: 'text', id: 'caption', label: 'Caption', required: true },
+        {
+          type: 'media',
+          id: 'images',
+          label: 'Images',
+          mediaKind: 'image',
+          allowMultiple: true,
+        },
+        {
+          type: 'relation',
+          id: 'credit',
+          label: 'Credit',
+          targetTableId: 'table-people',
+        },
+      ],
+    })
+    expect(Value.Check(DataFieldSchema, field)).toBe(true)
+  })
 })

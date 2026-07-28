@@ -1,8 +1,8 @@
 /**
  * Narrowed projection of `DataField` for the plugin boundary.
  *
- * The host's full `DataField` union has 15 types (`src/core/data/schemas.ts`).
- * Three are too rich / recursive for the JSON RPC boundary:
+ * The host's full `DataField` union has 16 types (`src/core/data/schemas.ts`).
+ * One is omitted and two are narrowed for the JSON RPC boundary:
  *
  *   - `fieldSchema` — recursive (a field whose value is `DataField[]`).
  *   - `relation`    — exposed as `{ id, targetTableSlug }` only; plugins
@@ -11,13 +11,59 @@
  *                     `api.cms.content.tree(...)`.
  *
  * Plugins receive a `PluginContentField[]` from `api.cms.content.tables.get`,
- * which is faithful to the host's catalog for the 14 supported types and
+ * which is faithful to the host's catalog for the 15 projected types and
  * intentionally omits `fieldSchema`. Adding new field kinds to the host's
  * union is its own follow-up plan (Gap A.4) — it requires extending this
  * projection in lock-step.
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+
+const PluginRepeaterItemCommon = {
+  id: Type.String(),
+  label: Type.String(),
+  required: Type.Optional(Type.Boolean()),
+}
+
+const PluginRepeaterItemFieldSchema = Type.Union([
+  Type.Object({ type: Type.Literal('text'), ...PluginRepeaterItemCommon }),
+  Type.Object({ type: Type.Literal('longText'), ...PluginRepeaterItemCommon }),
+  Type.Object({ type: Type.Literal('richText'), ...PluginRepeaterItemCommon }),
+  Type.Object({ type: Type.Literal('number'), ...PluginRepeaterItemCommon }),
+  Type.Object({ type: Type.Literal('boolean'), ...PluginRepeaterItemCommon }),
+  Type.Object({ type: Type.Literal('date'), ...PluginRepeaterItemCommon }),
+  Type.Object({ type: Type.Literal('dateTime'), ...PluginRepeaterItemCommon }),
+  Type.Object({ type: Type.Literal('url'), ...PluginRepeaterItemCommon }),
+  Type.Object({ type: Type.Literal('email'), ...PluginRepeaterItemCommon }),
+  Type.Object({
+    type: Type.Literal('select'),
+    ...PluginRepeaterItemCommon,
+    options: Type.Array(Type.Object({ value: Type.String(), label: Type.String() })),
+  }),
+  Type.Object({
+    type: Type.Literal('multiSelect'),
+    ...PluginRepeaterItemCommon,
+    options: Type.Array(Type.Object({ value: Type.String(), label: Type.String() })),
+  }),
+  Type.Object({
+    type: Type.Literal('media'),
+    ...PluginRepeaterItemCommon,
+    mediaKind: Type.Optional(Type.Union([
+      Type.Literal('image'),
+      Type.Literal('video'),
+      Type.Literal('any'),
+    ])),
+    allowMultiple: Type.Optional(Type.Boolean()),
+  }),
+  Type.Object({
+    type: Type.Literal('relation'),
+    ...PluginRepeaterItemCommon,
+    targetTableSlug: Type.String(),
+    allowMultiple: Type.Optional(Type.Boolean()),
+  }),
+])
+
+export type PluginRepeaterItemField = Static<typeof PluginRepeaterItemFieldSchema>
 
 export const PluginContentFieldSchema = Type.Union([
   Type.Object({
@@ -95,6 +141,14 @@ export const PluginContentFieldSchema = Type.Union([
     id: Type.String(),
     label: Type.String(),
     targetTableSlug: Type.String(),
+  }),
+  Type.Object({
+    type: Type.Literal('repeater'),
+    id: Type.String(),
+    label: Type.String(),
+    required: Type.Optional(Type.Boolean()),
+    fields: Type.Array(PluginRepeaterItemFieldSchema),
+    itemLabelFieldId: Type.Optional(Type.String()),
   }),
   Type.Object({
     type: Type.Literal('pageTree'),
