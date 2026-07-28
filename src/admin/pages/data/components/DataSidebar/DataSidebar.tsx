@@ -66,6 +66,7 @@ const TABLE_KIND_ACCENT: Record<DataTableListItem['kind'], PillAccent> = {
   postType: 'b',
   component: 'c',
   data: 'd',
+  layout: 'l',
 }
 
 // ---------------------------------------------------------------------------

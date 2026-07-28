@@ -51,7 +51,10 @@ export function Section({
 
   return (
     <div className={cn(styles.section, flush && styles.sectionFlush, expanded && styles.sectionOpen)}>
-      <div className={cn(styles.sectionHeader, headerAction && styles.sectionHeaderWithAction)}>
+      <div className={cn(
+        styles.sectionHeader,
+        Boolean(headerAction) && styles.sectionHeaderWithAction,
+      )}>
         <button
           onClick={() => {
             if (!forceOpen) setOpen((o) => !o);
