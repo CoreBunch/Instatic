@@ -390,7 +390,7 @@ applyPublishedHtmlPipeline(renderedOutput, db)
     ├─→ Splice in declarative tags from plugin manifests' `frontend.assets[]`
     ├─→ Stamp form page tokens onto CMS-native <form> tags (`stampFormPageTokens`)
     ├─→ Inject per-module published JS: one `<script src="/_instatic/module-js/<id>.js?v=N" defer data-instatic-module-js="<id>">` per moduleId in the page's injection set (render-emitted ∪ hole-subtree ∩ site jsMap), sorted; CSP script-src → 'self' iff ≥ 1 tag
-    ├─→ Run `publish.html` filters in registration order (plugins transform the HTML string)
+    ├─→ Run `publish.html` filters in registration order with `{ siteId, pageId, slug, path }`
     ├─→ Emit `publish.after` hook
     └─→ Return final HTML
 ```

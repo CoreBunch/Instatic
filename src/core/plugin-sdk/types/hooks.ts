@@ -70,14 +70,23 @@ export interface CmsServerFilters {
  *
  * Filter handlers destructure what they need:
  * ```ts
- * api.cms.hooks.filter('publish.html', (html, { siteId, pageId, slug }) => {
- *   return html.replace('</body>', `<!-- page:${slug} -->\n</body>`)
+ * api.cms.hooks.filter('publish.html', (html, { siteId, pageId, slug, path }) => {
+ *   return html.replace('</body>', `<!-- page:${slug} path:${path} -->\n</body>`)
  * })
  * ```
  */
+interface PublishFilterContext {
+  siteId: string
+  pageId: string
+  /** Slug of the rendered page or template document. */
+  slug: string
+  /** Public URL pathname of the emitted page, such as `/` or `/posts/hello`. */
+  path: string
+}
+
 export interface CmsServerFilterContexts {
-  'publish.html': { siteId: string; pageId: string; slug: string }
-  'publish.headers': { siteId: string; pageId: string; slug: string }
+  'publish.html': PublishFilterContext
+  'publish.headers': PublishFilterContext
   'content.entry.cells': {
     tableSlug: string
     entryId: string

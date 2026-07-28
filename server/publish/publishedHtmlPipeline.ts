@@ -62,6 +62,7 @@ export async function applyPublishedHtmlPipeline(
     siteId: rendered.siteId,
     pageId: rendered.pageId,
     slug: rendered.slug,
+    path: rendered.path,
   })
   await hookBus.emit('publish.after', {
     siteId: rendered.siteId,

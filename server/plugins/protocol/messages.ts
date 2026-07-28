@@ -162,7 +162,7 @@ export interface RunHookFilterRequest {
    * Extra context fields forwarded from `hookBus.applyFilter`. Plugin
    * handlers receive these merged into `{ pluginId, ...context }`.
    * For `publish.html` / `publish.headers` this carries
-   * `{ siteId, pageId, slug }`.
+   * `{ siteId, pageId, slug, path }`.
    */
   context?: Record<string, unknown>
 }
