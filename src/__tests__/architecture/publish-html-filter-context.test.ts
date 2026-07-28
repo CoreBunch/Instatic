@@ -3,7 +3,7 @@
  * server must pass a third argument (the context object).
  *
  * This ensures that plugin filter handlers for `publish.html` always receive
- * `{ siteId, pageId, slug }` in their context — without this, plugins that
+ * `{ siteId, pageId, slug, path }` in their context — without this, plugins that
  * destructure those fields would silently receive `undefined`.
  */
 

@@ -7,15 +7,12 @@
  * published pages, without writing a new snapshot. The side-effects — hook
  * listeners and filter handlers firing — are the whole point.
  *
- * Note on the synthetic URL: `renderPublishedSnapshot` accepts an optional
- * `url` on its context for per-loop pagination and `{route.*}` binding
- * resolution. For background republish (not driven by an inbound HTTP
- * request), we pass a synthetic localhost URL so the renderer has a valid
- * URL object to work with. The URL is not user-visible and its exact value
- * is irrelevant beyond being parseable.
+ * Background republishes use the page's public permalink as their synthetic
+ * URL so route bindings and plugin filter context match a visitor render.
  */
 
 import type { DbClient } from '../db/client'
+import { buildPageFrame } from '@core/templates/contextFrames'
 import { getPublishedPageSnapshotById } from '../repositories/publish'
 import { renderPublishedSnapshot } from './publicRenderer'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
@@ -56,10 +53,11 @@ async function republishSinglePage(db: DbClient, pageId: string): Promise<void> 
     throw new PageNotPublishedError(pageId)
   }
 
-  // Synthetic URL for background republish. The URL object is used by
-  // renderPublishedSnapshot for pagination helpers and {route.*} bindings.
-  // Its exact value is irrelevant for background re-renders.
-  const syntheticUrl = new URL('http://localhost/__republish')
+  const page = snapshot.site.pages.find((candidate) => candidate.id === snapshot.pageRowId)
+  if (!page) {
+    throw new PageNotPublishedError(pageId)
+  }
+  const syntheticUrl = new URL(buildPageFrame(page).permalink, 'http://localhost')
 
   // Drive the full pipeline (publish.before → frontend.assets injection →
   // publish.html filter → publish.after). The returned HTML is discarded —

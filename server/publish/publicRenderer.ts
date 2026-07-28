@@ -41,6 +41,8 @@ export interface RendererOutput {
   /** Identifies what was rendered, for the publish.html filter context. */
   pageId: string
   slug: string
+  /** Public URL pathname for this rendered artefact or request. */
+  path: string
   siteId: string
   /**
    * Sorted moduleIds whose published JS this page must load — already
@@ -66,8 +68,8 @@ export interface RendererOutput {
 
 interface RenderPublishedSnapshotContext {
   db: DbClient
-  /** Optional request URL — when present, drives per-loop pagination. */
-  url?: URL
+  /** Public/request URL — drives route bindings, loop pagination, and plugin context. */
+  url: URL
   /**
    * Publish version to stamp into `<instatic-hole data-instatic-version>` placeholders.
    * Defaults to the live `getPublishVersion()`. The full/incremental publish
@@ -133,16 +135,21 @@ export async function renderPublishedSnapshot(
   const chain = resolveTemplateChain(snapshot.site, { kind: 'page' })
   const merged = composeTemplateChain(chain, { kind: 'page', page })
 
-  // Seed route frame from the actual request URL (when available) so
+  // Seed route frame from the actual request URL so
   // `{route.slug}` / `{route.path}` bindings resolve to live values.
-  // publishPage falls back to the page permalink if no templateContext
-  // is provided.
-  const templateContext: TemplateRenderDataContext | undefined = ctx.url
-    ? { entryStack: [], route: buildRouteFrame(ctx.url.toString()) }
-    : undefined
+  const templateContext: TemplateRenderDataContext = {
+    entryStack: [],
+    route: buildRouteFrame(ctx.url.toString()),
+  }
 
   const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
-  return { ...rendered, pageId: snapshot.pageRowId, slug: page.slug, siteId: snapshot.site.id }
+  return {
+    ...rendered,
+    pageId: snapshot.pageRowId,
+    slug: page.slug,
+    path: ctx.url.pathname,
+    siteId: snapshot.site.id,
+  }
 }
 
 /**
@@ -162,12 +169,19 @@ export async function renderPublishedNotFound(
   const chain = resolveTemplateChain(snapshot.site, { kind: 'page' })
   const merged = composeTemplateChain(chain, { kind: 'page', page })
 
-  const templateContext: TemplateRenderDataContext | undefined = ctx.url
-    ? { entryStack: [], route: buildRouteFrame(ctx.url.toString()) }
-    : undefined
+  const templateContext: TemplateRenderDataContext = {
+    entryStack: [],
+    route: buildRouteFrame(ctx.url.toString()),
+  }
 
   const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
-  return { ...rendered, pageId: page.id, slug: page.slug, siteId: snapshot.site.id }
+  return {
+    ...rendered,
+    pageId: page.id,
+    slug: page.slug,
+    path: ctx.url.pathname,
+    siteId: snapshot.site.id,
+  }
 }
 
 export async function renderPublishedDataRowTemplate(
@@ -193,7 +207,7 @@ export async function renderPublishedDataRowTemplate(
   // seed. page/site/viewer frames are filled by `publishPage` from the document.
   const templateContext: TemplateRenderDataContext = {
     entryStack: [publishedDataRowToLoopItem(row)],
-    ...(ctx.url ? { route: buildRouteFrame(ctx.url.toString()) } : {}),
+    route: buildRouteFrame(ctx.url.toString()),
   }
 
   const rendered = await renderMergedTemplate(
@@ -203,5 +217,11 @@ export async function renderPublishedDataRowTemplate(
     ctx,
     readEntrySeoOverride(row.cells),
   )
-  return { ...rendered, pageId: merged.id, slug: merged.slug, siteId: snapshot.site.id }
+  return {
+    ...rendered,
+    pageId: merged.id,
+    slug: merged.slug,
+    path: ctx.url.pathname,
+    siteId: snapshot.site.id,
+  }
 }
