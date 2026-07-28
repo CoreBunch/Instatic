@@ -639,7 +639,7 @@ export async function handleContentRepublishAll(
   _entry: HostPluginRecord,
   _db: DbClient,
 ): Promise<void> {
-  // `republishAll` operates on the host's full published-pages set —
+  // `republishAll` operates on the host's directly routable published pages —
   // the per-table access check would over-constrain a callee that only
   // wants to flush the publish pipeline. The kernel-of-correctness
   // remains the `cms.content.publish` permission grant.

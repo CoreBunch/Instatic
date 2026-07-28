@@ -7,12 +7,15 @@
  * published pages, without writing a new snapshot. The side-effects — hook
  * listeners and filter handlers firing — are the whole point.
  *
- * Background republishes use the page's public permalink as their synthetic
- * URL so route bindings and plugin filter context match a visitor render.
+ * Background republishes skip template documents, which have no standalone
+ * public route. Directly routable pages use their public permalink as the
+ * synthetic URL so route bindings and plugin filter context match a visitor
+ * render.
  */
 
 import type { DbClient } from '../db/client'
 import { buildPageFrame } from '@core/templates/contextFrames'
+import { isTemplatePage } from '@core/templates'
 import { getPublishedPageSnapshotById } from '../repositories/publish'
 import { renderPublishedSnapshot } from './publicRenderer'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
@@ -41,10 +44,14 @@ class PageNotPublishedError extends Error {
  * fire plugin hook listeners and filters so their side-effects are applied to
  * a page that was published before the plugin was activated.
  *
- * Throws `PageNotPublishedError` if the page is not found or is not
- * currently published.
+ * Returns `false` for a published template document because templates only
+ * wrap public routes and must not be presented to plugins as standalone
+ * public pages.
+ *
+ * Throws `PageNotPublishedError` if the page is not found or is not currently
+ * published.
  */
-async function republishSinglePage(db: DbClient, pageId: string): Promise<void> {
+async function republishSinglePage(db: DbClient, pageId: string): Promise<boolean> {
   // Typed read through the publish repository — the snapshot column is parsed
   // by the DbClient (`*_json` auto-parse) and typed as `PublishedPageSnapshot`,
   // so there is no boundary cast here.
@@ -57,6 +64,9 @@ async function republishSinglePage(db: DbClient, pageId: string): Promise<void> 
   if (!page) {
     throw new PageNotPublishedError(pageId)
   }
+  if (isTemplatePage(page)) {
+    return false
+  }
   const syntheticUrl = new URL(buildPageFrame(page).permalink, 'http://localhost')
 
   // Drive the full pipeline (publish.before → frontend.assets injection →
@@ -65,11 +75,13 @@ async function republishSinglePage(db: DbClient, pageId: string): Promise<void> 
   // catch up on pages published before they were activated).
   const rendered = await renderPublishedSnapshot(snapshot, { db, url: syntheticUrl })
   await applyPublishedHtmlPipeline(rendered, db)
+  return true
 }
 
 /**
- * Republish every currently-published page. Iterates all published pages and
- * calls `republishSinglePage` for each. Returns the total count published.
+ * Republish every currently-published, directly routable page. Template
+ * documents are intentionally skipped because they do not have standalone
+ * public paths. Returns the total count republished.
  *
  * Errors for individual pages are logged and do not abort the batch — the
  * count reflects pages that completed without error.
@@ -87,7 +99,7 @@ export async function republishAllPages(db: DbClient): Promise<number> {
   let count = 0
   for (const [i, result] of results.entries()) {
     if (result.status === 'fulfilled') {
-      count++
+      if (result.value) count++
     } else {
       console.error(`[publish:republish] republishSinglePage("${rows[i].id}") threw:`, result.reason)
     }

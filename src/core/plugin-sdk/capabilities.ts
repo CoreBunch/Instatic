@@ -156,7 +156,7 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
   {
     permission: 'cms.content.publish',
     label: 'Publish CMS content',
-    description: 'Allows the plugin to publish or schedule-publish individual entries and to republish every published page. The full publish pipeline runs (publish.before → publish.html → publish.after), so hook listeners from other plugins fire as part of the chain.',
+    description: 'Allows the plugin to publish or schedule-publish individual entries and to republish every directly routable published page. The full publish pipeline runs (publish.before → publish.html → publish.after), so hook listeners from other plugins fire as part of the chain.',
     risk: 'high',
     surfaces: ['server', 'cms'],
   },

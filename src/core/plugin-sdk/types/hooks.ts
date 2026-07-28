@@ -75,7 +75,7 @@ export interface CmsServerFilters {
  * })
  * ```
  */
-interface PublishFilterContext {
+interface PublishHtmlFilterContext {
   siteId: string
   pageId: string
   /** Slug of the rendered page or template document. */
@@ -85,8 +85,8 @@ interface PublishFilterContext {
 }
 
 export interface CmsServerFilterContexts {
-  'publish.html': PublishFilterContext
-  'publish.headers': PublishFilterContext
+  'publish.html': PublishHtmlFilterContext
+  'publish.headers': { siteId: string; pageId: string; slug: string }
   'content.entry.cells': {
     tableSlug: string
     entryId: string
