@@ -165,8 +165,9 @@ class HookBus {
    * unchanged.
    *
    * @param contextExtras  Additional context fields forwarded to every
-   *   handler alongside `{ pluginId }`. Used by `publish.html` and
-   *   `publish.headers` to pass `{ siteId, pageId, slug, path }`.
+   *   handler alongside `{ pluginId }`. `publish.html` passes
+   *   `{ siteId, pageId, slug, path }`; `publish.headers` passes
+   *   `{ siteId, pageId, slug }`.
    */
   async applyFilter<T>(
     name: string,
