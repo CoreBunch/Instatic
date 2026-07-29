@@ -1185,6 +1185,33 @@ export const sqliteMigrations: Migration[] = [
     `,
   },
   {
+    // Real-time co-editing (Yjs): one CRDT state blob per collab document
+    // (site shell, page, component, layout — doc_id is '<kind>:<rowId>').
+    // The blob is the live-editing source of truth; derived JSON keeps
+    // flowing into data_rows/site for the publisher and non-editor reads.
+    // `seq` counts persists (future delta APIs / diagnostics).
+    id: '022_collab_documents',
+    sql: `
+      create table if not exists collab_documents (
+        doc_id text primary key,
+        state_blob blob not null,
+        seq integer not null default 0,
+        updated_at text not null default current_timestamp
+      );
+    `,
+  },
+  {
+    // Per-doc CRDT lineage id. A reset deletes the blob and the doc reseeds at
+    // the fixed SEED_CLIENT_ID, so the new lineage reuses the old one's struct
+    // coordinates and a client that missed the reset would hand back structs
+    // from a dead lineage at live coordinates. Rows written by 022 carry '' and
+    // have a generation minted on their next open (see relay.openDoc).
+    id: '023_collab_document_generation',
+    sql: `
+      alter table collab_documents add column generation text not null default '';
+    `,
+  },
+  {
     // Visitor authentication & member areas (Phase 1 of docs/PRD.md §4).
     // Five tables, fully decoupled from the admin auth tables: separate
     // cookie name (`instatic_visitor_session`), separate middleware, separate
@@ -1212,7 +1239,7 @@ export const sqliteMigrations: Migration[] = [
     //   timestamptz      → text  (ISO 8601)
     //   boolean          → integer  (0/1; repos use Boolean(row.enabled))
     //   default now()    → default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    id: '022_visitor_auth',
+    id: '024_visitor_auth',
     sql: `
       -- ─── visitor_roles ────────────────────────────────────────────────
 
@@ -1322,7 +1349,7 @@ export const sqliteMigrations: Migration[] = [
     `,
   },
   {
-    id: '023_visitor_password_reset',
+    id: '025_visitor_password_reset',
     sql: `
       -- ─── visitor_password_reset_tokens ────────────────────────────────
       --
@@ -1350,7 +1377,7 @@ export const sqliteMigrations: Migration[] = [
     `,
   },
   {
-    id: '024_member_groups',
+    id: '026_member_groups',
     sql: `
       -- ─── Member groups (Phase 3 — D13/D14/D15) ─────────────────────────
       --
@@ -1404,7 +1431,7 @@ export const sqliteMigrations: Migration[] = [
     `,
   },
   {
-    id: '025_page_access',
+    id: '027_page_access',
     sql: `
       -- ─── Retire protected-prefixes; add default landing path (Phase 3) ────
       --
@@ -1542,7 +1569,7 @@ export const sqliteMigrations: Migration[] = [
     `,
   },
   {
-    id: '026_visitor_profile_fields',
+    id: '028_visitor_profile_fields',
     sql: `
       -- ─── Visitor custom profile fields (per-visitor-data framework) ────
       --
@@ -1568,7 +1595,7 @@ export const sqliteMigrations: Migration[] = [
     `,
   },
   {
-    id: '027_visitor_owned_data',
+    id: '029_visitor_owned_data',
     sql: `
       -- ─── Per-visitor owned data (visitor-data framework, Pillar 3) ────────
       --

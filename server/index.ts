@@ -11,6 +11,9 @@ await import('./richtextSanitizer')
 const { handleServerRequest } = await import('./router')
 const { activateInstalledServerPlugins } = await import('./plugins/runtime')
 const { mediaStorageRegistry } = await import('@core/plugins/mediaStorageRegistry')
+const { createCollabRelay } = await import('./collab/relay')
+const { SITE_SOCKET_PATH, createCollabSocketLayer, handleCollabSocketUpgrade } =
+  await import('./collab/socket')
 
 const config = readServerConfig()
 configureTrustedProxyCidrs(config.trustedProxyCidrs)
@@ -30,6 +33,11 @@ await activateInstalledServerPlugins(db, config.uploadsDir)
 // AI runtime: start the nightly conversation-purge tick. Operators add
 // their own provider credentials via /admin/ai/providers on first install.
 startConversationPurgeTick(db)
+// Real-time co-editing: the relay owns live Y documents, their persistence,
+// and the reset protocol for out-of-relay writes. The socket layer speaks
+// the multiplexed y-protocols wire (see server/collab/socket.ts).
+const collabRelay = createCollabRelay(db)
+const collabSocket = createCollabSocketLayer(collabRelay)
 
 /**
  * Build the CORS response headers for an incoming request.
@@ -59,7 +67,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
   }
 }
 
-Bun.serve({
+const server = Bun.serve({
   port: config.port,
 
   // Disable Bun's default 10-second idle timeout. The agent endpoint streams
@@ -87,6 +95,17 @@ Bun.serve({
         new Response(null, { status: 204, headers: cors }),
         pathname,
       )
+    }
+
+    // Real-time co-editing socket — a WebSocket upgrade is a different
+    // protocol lifecycle from the request/response router, so it dispatches
+    // here at the `Bun.serve` boundary (the only place `server.upgrade` is
+    // available). Returning `undefined` hands the connection to the
+    // `websocket` handlers below.
+    if (pathname === SITE_SOCKET_PATH) {
+      const rejection = await handleCollabSocketUpgrade(req, db, server)
+      if (rejection === null) return undefined
+      return applySecurityHeaders(rejection, pathname)
     }
 
     try {
@@ -125,10 +144,36 @@ Bun.serve({
     }
   },
 
+  websocket: collabSocket.handlers,
+
   error(err: Error) {
     console.error('[server] Unhandled error:', err)
     return new Response('Internal Server Error', { status: 500 })
   },
 })
+
+// The collab fan-out publishes through Bun pub/sub — register the live
+// server handle now that `Bun.serve` returned.
+collabSocket.setPublisher(server)
+
+// Graceful shutdown: the relay persists on an 800 ms debounce, so a redeploy
+// (SIGTERM) or Ctrl-C (SIGINT) mid-window would drop the un-persisted edits
+// the old transactional save made durable on ack. Flush every dirty doc
+// before exiting. Idempotent + guarded so a double signal can't double-run.
+let shuttingDown = false
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`[server] ${signal} received — flushing collab docs before exit`)
+  try {
+    await collabRelay.destroy() // final-persists every live doc, detaches sources
+  } catch (err) {
+    console.error('[server] collab flush on shutdown failed:', err)
+  }
+  server.stop()
+  process.exit(0)
+}
+process.on('SIGTERM', () => void shutdown('SIGTERM'))
+process.on('SIGINT', () => void shutdown('SIGINT'))
 
 console.log(`[server] Listening on http://localhost:${config.port}`)

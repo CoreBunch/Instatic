@@ -8,7 +8,6 @@ import {
   logout,
   openSiteEditor,
   publishDraft,
-  saveDraft,
   selectTreeLayer,
   setPropValue,
   visitPublicPage,
@@ -49,7 +48,6 @@ test.describe('core owner lifecycle', () => {
       await insertNotchModule(page, 'text')
       await setPropValue(page, 'text', PUBLISHED_TEXT)
       await expect(canvasFrame(page).getByText(PUBLISHED_TEXT)).toBeVisible()
-      await saveDraft(page)
     })
 
     await test.step('reload and confirm draft persistence (SAVE-001)', async () => {
@@ -70,7 +68,6 @@ test.describe('core owner lifecycle', () => {
       await selectTreeLayer(page, 'Text')
       await setPropValue(page, 'text', DRAFT_ONLY_TEXT)
       await expect(canvasFrame(page).getByText(DRAFT_ONLY_TEXT)).toBeVisible()
-      await saveDraft(page)
 
       // The unpublished edit must not leak: the public page still shows the
       // last published headline, not the new draft-only text.

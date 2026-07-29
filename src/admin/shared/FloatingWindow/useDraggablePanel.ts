@@ -112,6 +112,7 @@ export function useDraggablePanel(
 
   useEffect(() => {
     function onResize(): void {
+      if (dragRef.current) return
       setPosition((current) => {
         const clamped = clampToViewport(current, panelRef.current)
         positionRef.current = clamped
@@ -139,6 +140,10 @@ export function useDraggablePanel(
       x: dragRef.current.startPanelX + event.clientX - dragRef.current.startClientX,
       y: dragRef.current.startPanelY + event.clientY - dragRef.current.startClientY,
     }, panelRef.current)
+    // ResizeObserver callbacks and ordinary panel re-renders can run between
+    // pointer events. Keep their imperative source aligned with the pixels on
+    // screen so they cannot restore the pointer-down position mid-drag.
+    positionRef.current = clamped
     panelRef.current?.style.setProperty('--panel-x', `${clamped.x}px`)
     panelRef.current?.style.setProperty('--panel-y', `${clamped.y}px`)
   }

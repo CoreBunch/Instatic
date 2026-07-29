@@ -15,6 +15,18 @@
     background: var(--overlay-5);
 }
 
+.sectionHeader {
+    display: flex;
+    align-items: center;
+}
+
+.sectionHeaderWithAction {
+    gap: var(--space-3xs);
+    padding: var(--space-3xs);
+    border-radius: var(--panel-radius);
+    background: var(--overlay-10);
+}
+
 .sectionFlush.sectionOpen {
     background: transparent;
 }
@@ -34,6 +46,21 @@
     border-radius: 12px;
     font-family: inherit;
     text-align: left;
+}
+
+.sectionHeaderWithAction .sectionToggle {
+    min-height: 28px;
+    background: transparent;
+    border-radius: calc(var(--panel-radius) - var(--space-3xs));
+}
+
+.sectionHeaderWithAction .sectionToggle:hover {
+    background: var(--overlay-5);
+}
+
+.sectionHeaderAction {
+    display: inline-flex;
+    flex-shrink: 0;
 }
 
 .sectionToggle:hover {

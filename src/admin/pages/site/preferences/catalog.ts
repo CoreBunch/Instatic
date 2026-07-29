@@ -133,29 +133,6 @@ type PreferenceDef =
 export const PREFERENCE_CATALOG = [
   // ── Editor ──────────────────────────────────────────────────────────────
   {
-    id: 'autoSave',
-    type: 'boolean',
-    category: 'editor',
-    label: 'Auto-save',
-    description: 'Automatically save the site after a period of inactivity.',
-    default: true,
-  },
-  {
-    id: 'autoSaveDelay',
-    type: 'select',
-    category: 'editor',
-    label: 'Auto-save delay',
-    description: 'How long to wait after the last edit before saving. Only applies when auto-save is on.',
-    options: [
-      { value: '5',   label: '5 seconds' },
-      { value: '15',  label: '15 seconds' },
-      { value: '30',  label: '30 seconds' },
-      { value: '60',  label: '1 minute' },
-      { value: '300', label: '5 minutes' },
-    ],
-    default: '30',
-  },
-  {
     id: 'hoverPreview',
     type: 'boolean',
     category: 'editor',

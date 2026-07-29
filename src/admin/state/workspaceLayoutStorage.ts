@@ -1,7 +1,7 @@
 import { Type } from '@sinclair/typebox'
 import { safeParseJson } from '@core/utils/jsonValidate'
 
-export type PropertiesPanelMode = 'docked' | 'floating'
+export type PanelMode = 'docked' | 'floating'
 
 /**
  * Per-workspace editor layout storage.
@@ -26,6 +26,12 @@ export const EDITOR_LAYOUT_STORAGE_KEY = 'instatic-editor-layout-v2'
 export interface PanelPosition {
   x: number
   y: number
+}
+
+/** Persisted dimensions for a user-resizable floating panel. */
+export interface PanelSize {
+  width: number
+  height: number
 }
 
 export type FloatingPanelId =
@@ -83,7 +89,11 @@ export interface StoredWorkspaceLayout {
   /** Whether the floating code editor is visible (site only). */
   codeEditorPanelOpen?: boolean
   /** Properties panel docked vs floating (site only). */
-  propertiesPanelMode?: PropertiesPanelMode
+  propertiesPanelMode?: PanelMode
+  /** Left-rail panel docked vs floating (site only). */
+  leftSidebarMode?: PanelMode
+  /** Whether the independent floating AI assistant is open (site only). */
+  agentPanelOpen?: boolean
 }
 
 interface StoredEditorLayout {
@@ -93,6 +103,8 @@ interface StoredEditorLayout {
    * unique to a single workspace so positions are kept at the top level.
    */
   panelPositions?: Partial<Record<FloatingPanelId, PanelPosition>>
+  /** User-set dimensions for floating panels that support two-axis resizing. */
+  panelSizes?: Partial<Record<FloatingPanelId, PanelSize>>
   /** Per-workspace sidebar / panel state. */
   workspaces?: Partial<Record<EditorWorkspaceId, StoredWorkspaceLayout>>
 }
@@ -111,6 +123,14 @@ const PanelPositionSchema = Type.Object(
   { additionalProperties: true },
 )
 
+const PanelSizeSchema = Type.Object(
+  {
+    width: Type.Number(),
+    height: Type.Number(),
+  },
+  { additionalProperties: true },
+)
+
 const StoredWorkspaceLayoutSchema = Type.Object(
   {
     leftWidth: Type.Optional(Type.Number()),
@@ -121,9 +141,11 @@ const StoredWorkspaceLayoutSchema = Type.Object(
     explorerPanelTab: Type.Optional(Type.String()),
     activeEditorFileId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     codeEditorPanelOpen: Type.Optional(Type.Boolean()),
-    // PropertiesPanelMode is a string union; keep loose to avoid coupling to
-    // its exact membership here.
+    // Panel modes are string unions; keep them loose to avoid coupling this
+    // persisted boundary to their exact membership.
     propertiesPanelMode: Type.Optional(Type.String()),
+    leftSidebarMode: Type.Optional(Type.String()),
+    agentPanelOpen: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: true },
 )
@@ -133,6 +155,9 @@ const StoredEditorLayoutSchema = Type.Object(
     version: Type.Literal(2),
     panelPositions: Type.Optional(
       Type.Record(Type.String(), PanelPositionSchema),
+    ),
+    panelSizes: Type.Optional(
+      Type.Record(Type.String(), PanelSizeSchema),
     ),
     workspaces: Type.Optional(
       Type.Record(Type.String(), StoredWorkspaceLayoutSchema),
@@ -150,6 +175,13 @@ function isPanelPosition(value: unknown): value is PanelPosition {
   const pos = value as Partial<PanelPosition>
   return typeof pos.x === 'number' && Number.isFinite(pos.x)
     && typeof pos.y === 'number' && Number.isFinite(pos.y)
+}
+
+function isPanelSize(value: unknown): value is PanelSize {
+  if (!value || typeof value !== 'object') return false
+  const size = value as Partial<PanelSize>
+  return typeof size.width === 'number' && Number.isFinite(size.width)
+    && typeof size.height === 'number' && Number.isFinite(size.height)
 }
 
 export function readEditorLayout(): StoredEditorLayout | null {
@@ -221,6 +253,22 @@ export function writeStoredPanelPosition(panelId: FloatingPanelId, position: Pan
     panelPositions: {
       ...layout.panelPositions,
       [panelId]: position,
+    },
+  }))
+}
+
+export function readStoredPanelSize(panelId: FloatingPanelId): PanelSize | null {
+  const size = readEditorLayout()?.panelSizes?.[panelId]
+  return isPanelSize(size) ? size : null
+}
+
+export function writeStoredPanelSize(panelId: FloatingPanelId, size: PanelSize) {
+  updateEditorLayout((layout) => ({
+    ...layout,
+    version: 2,
+    panelSizes: {
+      ...layout.panelSizes,
+      [panelId]: size,
     },
   }))
 }

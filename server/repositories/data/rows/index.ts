@@ -19,6 +19,8 @@
 export {
   listDataRows,
   listDataRowIdSlugs,
+  listDataRowSeqs,
+  listChangedDataRowRefsSince,
   getDataRow,
   getDataRowMany,
   getDataRowBySlug,
@@ -35,6 +37,7 @@ export { listDataRowsWithFilter } from './filter'
 export {
   createDataRow,
   saveDataRowDraft,
+  upsertDataRowDraft,
   updateDataRowDraftCells,
   softDeleteDataRow,
   updateDataRowTable,

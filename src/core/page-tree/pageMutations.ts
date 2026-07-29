@@ -7,8 +7,8 @@
  * the node-clone primitives the tree engine shares.
  *
  * `deletePage` splices in place deliberately — a wholesale `pages` array
- * replacement emits a patch the editor's incremental save cannot attribute
- * to one page (see store slices/site/dirtyTracking.ts), forcing a full save.
+ * replacement emits a patch the editor's collab translator cannot attribute
+ * to one page (see @core/collab applyPatches), forcing a doc repopulate.
  */
 import { nanoid } from 'nanoid'
 import type { Page } from './page'

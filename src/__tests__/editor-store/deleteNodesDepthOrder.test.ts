@@ -74,7 +74,6 @@ describe('deleteNodes — batch ordering and routing', () => {
     const childB = useEditorStore.getState().insertNode('base.text', { text: 'b' }, container)
     const sibling = useEditorStore.getState().insertNode('base.text', { text: 's' }, rootId)
     const baseline = Object.keys(useEditorStore.getState().site!.pages[0].nodes).length
-    const depthBefore = useEditorStore.getState()._historyPast.length
 
     // Parent first — depth-DESC ordering must delete the leaves first so the
     // already-deleted descendants hit the "node not found" guard cleanly.
@@ -86,9 +85,8 @@ describe('deleteNodes — batch ordering and routing', () => {
     expect(nodes[childB]).toBeUndefined()
     expect(nodes[sibling]).toBeUndefined()
     expect(Object.keys(nodes).length).toBe(baseline - 4)
-    expect(useEditorStore.getState()._historyPast.length).toBe(depthBefore + 1)
 
-    // One undo restores the whole batch.
+    // One undo restores the whole batch — the deletion was a single step.
     useEditorStore.getState().undo()
     const restored = useEditorStore.getState().site!.pages[0].nodes
     expect(Object.keys(restored).length).toBe(baseline)

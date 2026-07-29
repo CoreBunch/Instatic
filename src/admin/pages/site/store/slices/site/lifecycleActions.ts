@@ -14,8 +14,8 @@ import {
   DEFAULT_SITE_RUNTIME,
 } from '@core/site-runtime'
 import { clearCanvasSelectionDraft } from '../selectionSlice'
+import { resetCollabDocsFromSite } from './collabBinding'
 import { createDefaultSiteDocument } from './defaults'
-import { emptyDirtyMarks } from './dirtyTracking'
 import { reconcileFrameworkClasses } from './framework/reconcile'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
@@ -58,15 +58,12 @@ export function createLifecycleActions({
         // the prior site and would cause `mutateActiveTree` to silently no-op
         // (early-return) when the VC id is not present in the new site.
         state.activeDocument = null
-        state._historyPast = []
-        state._historyFuture = []
-        state._historyCoalesceKey = null
         state.canUndo = false
         state.canRedo = false
-        state.hasUnsavedChanges = false
-        // A brand-new site has no stored rows at all — first save is full.
-        state._dirtySave = { ...emptyDirtyMarks(), all: true }
       })
+      // Rebuild the doc world around the fresh site (detached: seed locally;
+      // connected: rebind through the provider). Also clears undo history.
+      resetCollabDocsFromSite(site)
       return site
     },
 
@@ -89,14 +86,11 @@ export function createLifecycleActions({
         state.activePageId = (findHomePage(site.pages) ?? site.pages[0])?.id ?? null
         // Reset activeDocument — see createSite for rationale.
         state.activeDocument = null
-        state._historyPast = []
-        state._historyFuture = []
-        state._historyCoalesceKey = null
         state.canUndo = false
         state.canRedo = false
-        state.hasUnsavedChanges = false
-        state._dirtySave = emptyDirtyMarks()
       })
+      // See createSite — mirror the loaded site into the collab docs.
+      resetCollabDocsFromSite(site)
     },
 
     clearSite: () => {
@@ -108,13 +102,10 @@ export function createLifecycleActions({
         // Reset activeDocument — without a site there can be no active doc.
         state.activeDocument = null
         clearCanvasSelectionDraft(state)
-        state._historyPast = []
-        state._historyFuture = []
-        state._historyCoalesceKey = null
         state.canUndo = false
         state.canRedo = false
-        state._dirtySave = emptyDirtyMarks()
       })
+      resetCollabDocsFromSite(null)
     },
 
     updateSiteName: (name) => {

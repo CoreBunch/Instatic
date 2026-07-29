@@ -1,7 +1,13 @@
 import { reconcileSiteExplorerOrganization, type SiteDocument, type SiteShell } from '@core/page-tree'
-import type { IPersistenceAdapter, SaveSiteOptions } from './types'
+import type {
+  IPersistenceAdapter,
+  SaveSiteOptions,
+  SaveSiteResult,
+  SiteLoadResult,
+} from './types'
+import { SaveConflictError, SaveConflictsEnvelopeSchema } from './saveConflict'
 import { parseJsonResponse } from '@core/utils/jsonValidate'
-import { apiRequest, assertOk, type FetchLike } from '@core/http'
+import { assertOk, readEnvelope, type FetchLike } from '@core/http'
 import {
   CmsSiteEnvelopeSchema,
   CmsSiteDocumentSaveEnvelopeSchema,
@@ -48,11 +54,28 @@ export class CmsAdapter implements IPersistenceAdapter {
    * gone: the server validates pages against the merged post-save component
    * roster inside the same transaction.
    */
-  async saveSite(site: SiteDocument, opts: SaveSiteOptions = {}): Promise<void> {
+  async saveSite(site: SiteDocument, opts: SaveSiteOptions = {}): Promise<SaveSiteResult> {
     // Extract shell (strip the row-backed collections from the full SiteDocument)
     const { pages, visualComponents, layouts, ...shell } = site
     const { dirty } = opts
     const incremental = dirty !== undefined && !dirty.all
+
+    // Ship the base seqs covering exactly the rows this save touches —
+    // changed AND deleted (deleting a remotely-newer row is an overwrite
+    // too). Rows the client has never synchronized (its own creations) have
+    // no entry, which is how the server tells creations apart.
+    const baseSeqs: Record<string, number> = {}
+    if (incremental) {
+      const shippedIds = [
+        ...dirty.pageIds, ...dirty.deletedPageIds,
+        ...dirty.componentIds, ...dirty.deletedComponentIds,
+        ...dirty.layoutIds, ...dirty.deletedLayoutIds,
+      ]
+      for (const id of shippedIds) {
+        const base = opts.baseSeqs?.[id]
+        if (base !== undefined) baseSeqs[id] = base
+      }
+    }
 
     const body = incremental
       ? {
@@ -64,6 +87,8 @@ export class CmsAdapter implements IPersistenceAdapter {
           deletedComponentIds: [...dirty.deletedComponentIds],
           changedLayouts: layouts.filter((layout) => dirty.layoutIds.has(layout.id)),
           deletedLayoutIds: [...dirty.deletedLayoutIds],
+          baseSeqs,
+          shellBaseSeq: opts.shellBaseSeq ?? 0,
         }
       : {
           mode: 'replace',
@@ -74,15 +99,26 @@ export class CmsAdapter implements IPersistenceAdapter {
           deletedComponentIds: [],
           changedLayouts: layouts,
           deletedLayoutIds: [],
+          // Ignored in replace mode — imports and bootstraps replace
+          // deliberately, so there is nothing to conflict with.
+          baseSeqs,
+          shellBaseSeq: opts.shellBaseSeq ?? 0,
         }
 
-    await apiRequest(`${this.basePath}/site-document`, {
+    // Own fetch instead of `apiRequest`: a 409 carries the typed conflicts
+    // payload, which the generic ApiError cannot transport.
+    const res = await this.fetchImpl(`${this.basePath}/site-document`, {
       method: 'PUT',
-      body,
-      schema: CmsSiteDocumentSaveEnvelopeSchema,
-      fetchImpl: this.fetchImpl,
-      fallbackMessage: 'Site save failed',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     })
+    if (res.status === 409) {
+      const conflictBody = await parseJsonResponse(res, SaveConflictsEnvelopeSchema)
+      throw new SaveConflictError(conflictBody.conflicts)
+    }
+    const saved = await readEnvelope(res, CmsSiteDocumentSaveEnvelopeSchema, 'Site save failed')
+    return { seq: saved.seq }
   }
 
   /**
@@ -96,8 +132,11 @@ export class CmsAdapter implements IPersistenceAdapter {
    *      savedLayoutFromRow, validated by validateSavedLayouts)
    *
    * Returns undefined when any endpoint returns 404 (before setup).
+   *
+   * Alongside the document, returns the sync-seq bases (per-row + shell) the
+   * editor tracks for save conflict detection.
    */
-  async loadSite(_id: string): Promise<SiteDocument | undefined> {
+  async loadSite(_id: string): Promise<SiteLoadResult | undefined> {
     // Parallel fetch — all four are GETs with no dependency on each other
     const [shellRes, pagesRes, componentsRes, layoutsRes] = await Promise.all([
       this.fetchImpl(`${this.basePath}/site`, {
@@ -168,7 +207,14 @@ export class CmsAdapter implements IPersistenceAdapter {
 
     const site: SiteDocument = { ...shell, pages, visualComponents, layouts }
     site.explorer = reconcileSiteExplorerOrganization(site.explorer, site)
-    return site
+
+    // Sync-seq bases: one entry per stored row (across all three
+    // collections — row ids are globally unique) plus the shell's seq.
+    const rowSeqs: Record<string, number> = {}
+    for (const row of [...rawDataRows, ...rawVCRows, ...(layoutsBody.rows ?? [])]) {
+      rowSeqs[row.id] = row.seq ?? 0
+    }
+    return { site, rowSeqs, shellSeq: shellBody.seq ?? 0 }
   }
 }
 

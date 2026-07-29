@@ -7,7 +7,6 @@ import {
   openCodePanel,
   openSiteEditor,
   publishDraft,
-  saveDraft,
 } from './helpers'
 
 test.describe('site files and code editor', () => {
@@ -33,7 +32,6 @@ html body {
 }
 `)
 
-    await saveDraft(page)
     await publishDraft(page)
 
     const context = await browser.newContext()

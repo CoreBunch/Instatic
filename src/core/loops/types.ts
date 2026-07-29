@@ -196,13 +196,14 @@ export interface LoopFetchResult {
 }
 
 /**
- * Pluggable entity source.
+ * Properties shared by every loop source.
  *
- * Built-in sources live under `src/core/loops/sources/*` and self-register
- * on import. Plugins register additional sources via the plugin SDK
- * (see `src/core/plugin-sdk`).
+ * Most sources are prefetched: their items come from the database, site
+ * document, or a plugin fetch hook before the synchronous render walk starts.
+ * Contextual sources are different: they derive their items from the active
+ * render entry (for example a multi-media field on the current Project).
  */
-export interface LoopEntitySource {
+interface LoopEntitySourceBase {
   /** Namespaced ID, e.g. `data.rows`, `site.pages`, `acme.products`. */
   id: string
   /** Human label for the source picker. */
@@ -249,11 +250,39 @@ export interface LoopEntitySource {
   orderByOptions: { id: string; label: string }[]
   /** Fields available for `dynamicBindings` inside the loop. */
   fields: LoopSourceField[]
+}
+
+/**
+ * A source whose data is resolved before the publisher's synchronous walk.
+ *
+ * `kind` is optional so existing first-party and plugin sources remain the
+ * concise default. Contextual sources opt into their distinct behavior with
+ * the explicit `kind: 'contextual'` discriminant.
+ */
+export interface PrefetchedLoopEntitySource extends LoopEntitySourceBase {
+  kind?: 'prefetched'
   /** Server-side: produce items + totalItems for the resolved filters/page. */
   fetch(ctx: SourceFetchContext): Promise<LoopFetchResult>
   /** Editor-side: synthesise representative items without DB access. */
   preview(ctx: SourcePreviewContext): LoopItem[]
 }
+
+/**
+ * A source resolved against the current render entry for each enclosing loop
+ * iteration. It performs no I/O and therefore has no fetch/preview callbacks;
+ * the shared loop engine owns its deterministic projection.
+ */
+export interface ContextualLoopEntitySource extends LoopEntitySourceBase {
+  kind: 'contextual'
+}
+
+/**
+ * Pluggable entity source.
+ *
+ * Built-in sources live under `src/core/loops/sources/*` and self-register
+ * on import. Plugins register prefetched sources via the plugin SDK.
+ */
+export type LoopEntitySource = PrefetchedLoopEntitySource | ContextualLoopEntitySource
 
 // ---------------------------------------------------------------------------
 // Registry interface

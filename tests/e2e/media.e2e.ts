@@ -9,7 +9,6 @@ import {
   openExplorerTab,
   openSiteEditor,
   publishDraft,
-  saveDraft,
 } from './helpers'
 
 /** A minimal but valid 1×1 PNG — enough for the server's magic-byte check. */
@@ -75,7 +74,6 @@ test.describe('media', () => {
       canvasFrame(page).locator('img[src*="/uploads/"]').first(),
     ).toBeVisible()
 
-    await saveDraft(page)
     await publishDraft(page)
 
     // The visitor-facing page serves and decodes the same uploaded image.
@@ -179,7 +177,6 @@ test.describe('media', () => {
 
     await expect(canvasFrame(page).locator('img[src*="/uploads/"]').first()).toBeVisible()
 
-    await saveDraft(page)
     await publishDraft(page)
     await visitPublishedMediaPage(browser, slug)
   })

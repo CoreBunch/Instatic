@@ -451,6 +451,7 @@ Why this matters: selection rings and the floating selection toolbar are portale
 | AgentPanel (floating)                 | 50      | `panels/AgentPanel/AgentPanel.module.css` |
 | PanelRail                             | 55      | `sidebars/PanelRail/PanelRail.module.css` |
 | LeftSidebar, RightSidebar             | 85      | `sidebars/{Left,Right}Sidebar/` |
+| Undocked left-panel host              | 90      | `sidebars/LeftSidebar/LeftSidebar.module.css` |
 | CodeEditorPanel (floats over sidebars)| 95      | `code-editor/CodeEditorPanel.module.css` |
 | Toolbar popovers / dropdowns          | 201     | `toolbar/Toolbar.module.css` |
 | PreviewOverlay                        | 400–401 | `preview/PreviewOverlay.module.css` |
@@ -533,6 +534,21 @@ Opens the rail-selected panel:
 - `PluginEditorPanel` — plugin-provided editor panels
 - `AgentPanel` — AI assistant
 
+Explorer, Selectors, Framework, Dependencies, and plugin panels use the shared
+`Panel` header contract and can be unpinned into one draggable canvas window.
+Switching among those rail items while unpinned replaces the window content
+without redocking it; the same header action docks the active panel back into
+the left sidebar. A keyboard-accessible bottom-right handle resizes the
+floating window in both axes (arrow keys resize by 10px; Shift+arrow by 40px).
+`leftSidebarMode`, the shared floating position, and its user-set width and
+height are persisted through `siteEditorLayoutPersistence` /
+`workspaceLayoutStorage`.
+
+The AI Assistant is an independent draggable and resizable floating window, so
+it can stay open beside Explorer/Layers or any other hosted panel. Its position,
+dimensions, and open state persist separately across reloads. Properties
+follows the same independent floating-window interaction contract on the right.
+
 ### Right sidebar (`RightSidebar`)
 
 `src/admin/pages/site/sidebars/RightSidebar/RightSidebar.tsx`. Accepts a `mode` prop (`'site' | 'hidden'`):
@@ -602,7 +618,7 @@ Site-specific controls that were previously sections of this modal (Pages roster
 
 **Data source — `useSiteSettingsController`** (`src/admin/modals/Settings/useSiteSettingsController.ts`): the General and Publishing sections edit fields of the persisted `SiteDocument` (`name`, `settings.*`, framework preferences), but where that document lives depends on the route. The modal is global, so a section cannot just read the editor store — that store is only hydrated on the Site editor (`AdminCanvasLayout`). The controller hides the split behind one uniform shape:
 
-- **Site editor** (editor store holds a live draft): delegate to the editor-store mutations. Settings edits join the unsaved draft and persist through the editor's autosave / Save pipeline alongside page-tree edits — never clobbered.
+- **Site editor** (editor store holds the live document): delegate to the editor-store mutations. Settings edits ride the collab write path alongside page-tree edits — streamed live to every peer and persisted by the server relay.
 - **Every other admin page** (no in-memory draft): a standalone Zustand store loads the document once via `cmsAdapter`, edits a local copy, and persists immediately with a shell-only `saveSite` (empty dirty sets, so pages / components / layouts are left untouched). After each save it refreshes the `adminUi` site summary and fires `CMS_SITE_RELOAD_EVENT` so the toolbar brand and `useSiteSummary` re-sync. There is no Save button on those pages, so writes commit on blur / toggle.
 
 Because the controller is imported only by the lazy section components, the editor-store import it carries stays inside the `SettingsModal` chunk and never enters the eager graph of the lightweight layouts. This is what makes the modal *actually* global — before it, General and Publishing rendered a permanent skeleton anywhere outside the Site editor.

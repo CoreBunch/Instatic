@@ -166,28 +166,6 @@ export async function createPage(
   ).toBeVisible()
 }
 
-/** Save the current draft and wait for the "Draft saved" status. */
-export async function saveDraft(page: Page): Promise<void> {
-  const trigger = page.getByTestId('toolbar-publish-actions-trigger')
-  const saveAction = page.getByTestId('toolbar-save-draft-action')
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await trigger.click()
-    const opened = await saveAction.isVisible({ timeout: 1_000 }).catch(() => false)
-    if (opened) break
-    await page.keyboard.press('Escape')
-  }
-  await expect(saveAction).toBeVisible()
-  const saveResponse = page.waitForResponse((response) =>
-    new URL(response.url()).pathname === '/admin/api/cms/site-document' &&
-    response.request().method() === 'PUT',
-  )
-  await saveAction.click()
-  expect((await saveResponse).ok()).toBe(true)
-  await expect(page.getByRole('status', { name: 'Draft saved' })).toBeVisible({
-    timeout: 20_000,
-  })
-}
-
 /**
  * Publish the current draft. Publishing is a sensitive action that may require
  * a fresh-password step-up; this satisfies the prompt with the owner password

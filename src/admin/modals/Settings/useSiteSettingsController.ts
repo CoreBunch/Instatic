@@ -39,6 +39,7 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import { cmsAdapter } from '@core/persistence/cms'
+import { SaveConflictError } from '@core/persistence/saveConflict'
 import { DEFAULT_FRAMEWORK_PREFERENCES } from '@core/framework'
 import type { SiteDocument, SiteSettings } from '@core/page-tree'
 import type { FrameworkPreferencesSettings } from '@core/framework-schema'
@@ -68,6 +69,11 @@ const SHELL_ONLY_DIRTY = {
 interface SettingsDraftState {
   /** The persisted document loaded for standalone (non-editor) editing. */
   doc: SiteDocument | null
+  /**
+   * The shell seq this store last synchronized with — the conflict-detection
+   * base its shell-only saves ship (and bump from each save response).
+   */
+  shellBaseSeq: number
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   /** Load the document once (idempotent; shares a single in-flight fetch). */
@@ -91,8 +97,16 @@ const useSettingsDraftStore = create<SettingsDraftState>((set, get) => {
   function persist(next: SiteDocument): void {
     set({ doc: next })
     saveChain = saveChain
-      .then(() => cmsAdapter.saveSite(next, { dirty: SHELL_ONLY_DIRTY }))
-      .then(() => {
+      .then(() =>
+        cmsAdapter.saveSite(next, {
+          dirty: SHELL_ONLY_DIRTY,
+          baseSeqs: {},
+          shellBaseSeq: get().shellBaseSeq,
+        }),
+      )
+      .then(({ seq }) => {
+        // This save's seq is the new shell base for the next one.
+        set({ shellBaseSeq: seq })
         // Refresh the toolbar brand + any other site-summary readers, and let
         // the editor store re-hydrate from disk next time it loads.
         useAdminUi.getState().setSiteSummary({
@@ -103,12 +117,24 @@ const useSettingsDraftStore = create<SettingsDraftState>((set, get) => {
       })
       .catch((err: unknown) => {
         console.error('[useSiteSettingsController] failed to save site settings:', err)
+        if (err instanceof SaveConflictError) {
+          // Another admin changed the shell since this modal loaded. The
+          // stale doc must not be re-saved over their work — force a reload
+          // on the next open instead of offering a per-row banner here.
+          set({
+            doc: null,
+            status: 'idle',
+            error: 'Site settings were changed by another admin — close and reopen Settings to load the latest.',
+          })
+          return
+        }
         set({ error: getErrorMessage(err, 'Failed to save site settings') })
       })
   }
 
   return {
     doc: null,
+    shellBaseSeq: 0,
     status: 'idle',
     error: null,
 
@@ -118,12 +144,12 @@ const useSettingsDraftStore = create<SettingsDraftState>((set, get) => {
       set({ status: 'loading', error: null })
       inFlightLoad = (async () => {
         try {
-          const site = await cmsAdapter.loadSite(SITE_ID)
-          if (!site) {
+          const result = await cmsAdapter.loadSite(SITE_ID)
+          if (!result) {
             set({ status: 'error', error: 'No site found. Complete first-run setup first.' })
             return
           }
-          set({ doc: site, status: 'ready', error: null })
+          set({ doc: result.site, shellBaseSeq: result.shellSeq, status: 'ready', error: null })
         } catch (err) {
           console.error('[useSiteSettingsController] failed to load site settings:', err)
           set({ status: 'error', error: getErrorMessage(err, 'Failed to load site settings') })

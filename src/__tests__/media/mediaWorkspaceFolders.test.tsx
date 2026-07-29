@@ -374,4 +374,35 @@ describe('Media workspace folder grid', () => {
     expect(result.current.folderSelection).toBe(FOLDER_ALL)
     expect(result.current.visibleAssets.map((entry) => entry.id)).toEqual(['foldered_image'])
   })
+
+  it('returns multi-selected assets in selection order, not library order', async () => {
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/media/folders')) {
+        return new Response(JSON.stringify({ folders: [] }), { status: 200 })
+      }
+      if (url.endsWith('/media')) {
+        return new Response(JSON.stringify({
+          assets: [
+            asset({ id: 'library-first', filename: 'first.png' }),
+            asset({ id: 'library-second', filename: 'second.png' }),
+            asset({ id: 'library-third', filename: 'third.png' }),
+          ],
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ error: 'Unexpected URL' }), { status: 404 })
+    }) as typeof fetch
+
+    const { result } = renderHook(() => useMediaWorkspace())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.addToSelection(['library-third', 'library-first'])
+    })
+
+    expect(result.current.selectedAssets.map((entry) => entry.id)).toEqual([
+      'library-third',
+      'library-first',
+    ])
+  })
 })

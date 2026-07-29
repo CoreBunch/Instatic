@@ -63,6 +63,7 @@ interface DataRowRow extends UserJoinColumns {
   cells_json: Record<string, unknown>
   slug: string
   status: DataRowStatus
+  seq: number
   author_user_id: string | null
   visitor_user_id: string | null
   created_by_user_id: string | null
@@ -86,6 +87,7 @@ function mapRow(row: DataRowRow): DataRow {
     cells: row.cells_json,
     slug: row.slug,
     status: row.status,
+    seq: Number(row.seq),
     authorUserId: row.author_user_id ?? null,
     visitorUserId: row.visitor_user_id ?? null,
     createdByUserId: row.created_by_user_id ?? null,
@@ -123,6 +125,7 @@ const DATA_ROW_COLUMNS = `data_rows.id,
        data_rows.cells_json,
        data_rows.slug,
        data_rows.status,
+       data_rows.seq,
        data_rows.author_user_id,
        data_rows.visitor_user_id,
        data_rows.created_by_user_id,

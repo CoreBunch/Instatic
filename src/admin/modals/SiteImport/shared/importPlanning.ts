@@ -174,10 +174,10 @@ export async function ensureCurrentSiteForStaticImport(): Promise<SiteDocument> 
   const existingSite = useEditorStore.getState().site
   if (existingSite) return existingSite
 
-  const loadedSite = await cmsAdapter.loadSite('default')
-  if (loadedSite) {
-    useEditorStore.getState().loadSite(loadedSite)
-    return loadedSite
+  const loaded = await cmsAdapter.loadSite('default')
+  if (loaded) {
+    useEditorStore.getState().loadSite(loaded.site)
+    return loaded.site
   }
 
   return useEditorStore.getState().createSite('My Site')
@@ -187,7 +187,9 @@ export async function ensureCurrentSiteForStaticImport(): Promise<SiteDocument> 
 export async function saveImportedDraftSite(): Promise<void> {
   const site = useEditorStore.getState().site
   if (!site) throw new Error('Import completed, but no draft site is loaded.')
+  // Replace-mode full save — an import deliberately replaces whatever is
+  // stored. This is an out-of-relay write, so the collab relay resets the
+  // affected docs and every connected editor rebinds to the imported state.
   await cmsAdapter.saveSite(site)
-  useEditorStore.getState().setHasUnsavedChanges(false)
   requestCmsSiteReload()
 }

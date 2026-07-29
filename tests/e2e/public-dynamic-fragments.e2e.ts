@@ -8,7 +8,6 @@ import {
   login,
   openSiteEditor,
   publishDraft,
-  saveDraft,
   setPropValue,
 } from './helpers'
 
@@ -43,7 +42,6 @@ test.describe('public dynamic fragments', () => {
     await setPropValue(page, 'text', authoredText)
     await expect(canvasFrame(page).getByText(/Dynamic result:/)).toBeVisible()
 
-    await saveDraft(page)
     await publishDraft(page)
 
     await expectDynamicFragmentVisitor(browser, {

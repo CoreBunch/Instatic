@@ -308,6 +308,44 @@ describe('publisher loop renderer', () => {
       const footerIdx = html.lastIndexOf('<p>OUTER</p>')
       expect(footerIdx).toBeGreaterThan(html.indexOf('<p>Beta</p>'))
     })
+
+    it('resolves an entry-field loop separately for every outer item', () => {
+      const page = makePage({
+        root: { moduleId: 'base.body', children: ['outer'] },
+        outer: { moduleId: 'base.loop', children: ['inner'], props: { sourceId: 'outer' } },
+        inner: {
+          moduleId: 'base.loop',
+          children: ['card'],
+          props: {
+            sourceId: 'entry.field',
+            filters: { fieldId: 'gallery' },
+            direction: 'asc',
+            limit: 10,
+          },
+        },
+        card: {
+          moduleId: 'test.pair',
+          props: { parent: '', current: '' },
+          dynamicBindings: {
+            parent: { source: 'parentEntry', field: 'title' },
+            current: { source: 'currentEntry', field: 'value' },
+          },
+        },
+      })
+      const outerItems: LoopItem[] = [
+        { id: 'p1', fields: { title: 'Project 1', gallery: ['p1-a', 'p1-b'] } },
+        { id: 'p2', fields: { title: 'Project 2', gallery: ['p2-a'] } },
+      ]
+      const html = publishPage(page, makeSite(), baseRegistry, {
+        loopData: new Map([['outer', loopData(outerItems)]]),
+      }).html
+
+      expect(html).toContain('<p>Project 1/p1-a</p>')
+      expect(html).toContain('<p>Project 1/p1-b</p>')
+      expect(html).toContain('<p>Project 2/p2-a</p>')
+      expect(html).not.toContain('Project 1/p2-a')
+      expect(html).not.toContain('Project 2/p1-a')
+    })
   })
 
   it('attaches data attrs and registers infinite mode', () => {

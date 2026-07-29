@@ -157,17 +157,20 @@ describe('styleRuleSlice.clearClassStyleProperties', () => {
     getStore().updateClassStyles(cls.id, { display: 'flex', alignItems: 'center', color: 'red' })
     getStore().setClassContextStyles(cls.id, 'mobile', { gap: '8px' })
 
-    const historyBefore = historyLength()
     getStore().clearClassStyleProperties(cls.id, ['display', 'alignItems', 'gap'])
 
-    const rule = useEditorStore.getState().site!.styleRules[cls.id]
+    let rule = useEditorStore.getState().site!.styleRules[cls.id]
     // Pruned everywhere; the unrelated `color` survives.
     expect('display' in rule.styles).toBe(false)
     expect('alignItems' in rule.styles).toBe(false)
     expect(rule.styles.color).toBe('red')
     expect('gap' in (rule.contextStyles.mobile ?? {})).toBe(false)
-    // Single undo step.
-    expect(historyLength()).toBe(historyBefore + 1)
+    // Single undo step: ONE undo restores base + context properties together.
+    getStore().undo()
+    rule = useEditorStore.getState().site!.styleRules[cls.id]
+    expect(rule.styles.display).toBe('flex')
+    expect(rule.styles.alignItems).toBe('center')
+    expect(rule.contextStyles.mobile?.gap).toBe('8px')
   })
 
   it('is a no-op (no history) when none of the properties are set', () => {

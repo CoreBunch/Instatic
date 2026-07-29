@@ -12,9 +12,9 @@
 
 import type { Page, PageNode, SiteDocument } from '@core/page-tree'
 import type {
-  LoopEntitySource,
   LoopFetchResult,
   LoopItem,
+  PrefetchedLoopEntitySource,
   SourceFetchContext,
   SourceRequestContext,
 } from '@core/loops/types'
@@ -242,7 +242,7 @@ function readPageNumber(url: URL | undefined, loopNodeId: string): number {
  */
 async function resolveOneLoop(
   node: PageNode,
-  source: LoopEntitySource,
+  source: PrefetchedLoopEntitySource,
   ctx: { db: DbClient; site: SiteDocument; url?: URL; request?: SourceRequestContext },
 ): Promise<ResolvedLoopData> {
   const props = readLoopProps(node)
@@ -317,7 +317,7 @@ export async function prefetchLoopData(
     nodes.map(async (node) => {
       const props = readLoopProps(node)
       const source = props.sourceId ? loopSourceRegistry.get(props.sourceId) : undefined
-      if (!source) {
+      if (!source || source.kind === 'contextual') {
         return [
           node.id,
           { items: [], totalItems: 0, pageNumber: 1, hasMore: false },

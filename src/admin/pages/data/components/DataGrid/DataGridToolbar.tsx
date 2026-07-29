@@ -58,7 +58,7 @@ export function DataGridToolbar({
   sortLabel,
   onClearSort,
 }: DataGridToolbarProps): ReactElement {
-  const totalNoun = totalCount === 1 ? table.singularLabel : table.pluralLabel
+  const totalNoun = totalCount === 1 ? 'row' : 'rows'
   const groupedByStatus =
     hasPublishWorkflow &&
     (statusFilter === 'all' || statusFilter === 'pages' || statusFilter === 'templates') &&
@@ -83,8 +83,8 @@ export function DataGridToolbar({
           <SearchBar
             value={query}
             onValueChange={onQueryChange}
-            placeholder={`Search ${table.pluralLabel.toLowerCase()}…`}
-            aria-label={`Search ${table.pluralLabel.toLowerCase()}`}
+            placeholder="Search…"
+            aria-label="Search"
           />
         </div>
 

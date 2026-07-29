@@ -84,6 +84,24 @@ describe('bagToCSS', () => {
     expect(css).not.toContain('display: block !important')
   })
 
+  it('emits nothing for a non-object bag instead of throwing (corrupt rule resilience)', () => {
+    // A malformed persisted rule can carry a non-object `styles` (bad import,
+    // plugin write, older data). `Object.entries(null)` would throw and blank
+    // the whole canvas — one bad rule must degrade to empty, not crash.
+    expect(bagToCSS(undefined as never)).toBe('')
+    expect(bagToCSS(null as never)).toBe('')
+    expect(bagToCSS(42 as never)).toBe('')
+  })
+
+  it('one malformed rule does not stop the rest of the stylesheet emitting', () => {
+    const good = makeClass('good', { color: 'red' })
+    // A packageJson-shaped object wrongly stored as a style rule: no `styles`.
+    const corrupt = { dependencies: {}, devDependencies: {} } as unknown as StyleRule
+    const css = generateClassCSS({ corrupt, good }, [], [])
+    expect(css).toContain('color: red')
+    expect(css).not.toContain('dependencies')
+  })
+
   it('converts camelCase to kebab-case', () => {
     const css = bagToCSS({ backgroundColor: '#fff', borderTopLeftRadius: '4px' })
     expect(css).toContain('background-color: #fff;')

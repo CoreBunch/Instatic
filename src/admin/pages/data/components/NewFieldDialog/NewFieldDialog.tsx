@@ -4,9 +4,17 @@ import { Dialog } from '@ui/components/Dialog'
 import { Input, Textarea } from '@ui/components/Input'
 import { Select } from '@ui/components/Select'
 import { Switch } from '@ui/components/Switch'
+import { pushToast } from '@ui/components/Toast'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
-import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
-import { DataFieldSchema, type DataField, type DataFieldType, type DataSelectOption, type DataTable } from '@core/data/schemas'
+import {
+  DataFieldSchema,
+  RepeaterItemFieldSchema,
+  type DataField,
+  type DataFieldType,
+  type DataSelectOption,
+  type DataTable,
+  type RepeaterItemField,
+} from '@core/data/schemas'
 import { buildPostTypeDefaultFields } from '@core/data/fields'
 import { safeParseValue, formatValueErrors } from '@core/utils/typeboxHelpers'
 import { StepUpCancelledMessage } from '@admin/shared/StepUp'
@@ -14,26 +22,17 @@ import styles from './NewFieldDialog.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import {
   FIELD_TYPE_OPTIONS,
-  MEDIA_KIND_OPTIONS,
-  NUMBER_FORMAT_OPTIONS,
-  RICH_TEXT_FORMAT_OPTIONS,
+  fieldIdFromLabel,
   fieldIdError,
   makeOption,
   slugifyOptionValue,
   type DraftOption,
 } from './newFieldDialogModel'
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+import { FieldTypeSettings } from './FieldTypeSettings'
 
 function isStepUpCancelled(err: unknown): boolean {
   return err instanceof Error && err.message === StepUpCancelledMessage
 }
-
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
 
 interface NewFieldDialogProps {
   open: boolean
@@ -47,12 +46,14 @@ interface NewFieldDialogProps {
    * canonical built-in field shape without needing to fill the form.
    */
   missingOptionalBuiltInIds?: readonly string[]
+  /** Repeater sub-fields pass false to enforce the non-recursive v1 model. */
+  allowRepeater?: boolean
+  /** Existing field to edit. Its type and machine id stay stable. */
+  initialField?: DataField
+  /** Built-in fields keep their author-facing label stable. */
+  lockLabel?: boolean
   onCreate: (field: DataField) => Promise<void>
 }
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function NewFieldDialog({
   open,
@@ -60,52 +61,87 @@ export function NewFieldDialog({
   existingFieldIds,
   tables,
   missingOptionalBuiltInIds,
+  allowRepeater = true,
+  initialField,
+  lockLabel = false,
   onCreate,
 }: NewFieldDialogProps) {
-  // Common fields
-  const [type, setType] = useState<DataFieldType>('text')
-  const [id, setId] = useState('')
-  const [idTouched, setIdTouched] = useState(false)
-  const [label, setLabel] = useState('')
-  const [required, setRequired] = useState(false)
-  const [description, setDescription] = useState('')
+  const [type, setType] = useState<DataFieldType>(initialField?.type ?? 'text')
+  const [id, setId] = useState(initialField?.id ?? '')
+  const [idManuallyEdited, setIdManuallyEdited] = useState(false)
+  const [label, setLabel] = useState(initialField?.label ?? '')
+  const [required, setRequired] = useState(initialField?.required ?? false)
+  const [description, setDescription] = useState(initialField?.description ?? '')
 
-  // text-specific
-  const [textMaxLength, setTextMaxLength] = useState('')
-  const [textPlaceholder, setTextPlaceholder] = useState('')
+  const [textMaxLength, setTextMaxLength] = useState(
+    initialField?.type === 'text' ? (initialField.maxLength?.toString() ?? '') : '',
+  )
+  const [textPlaceholder, setTextPlaceholder] = useState(
+    initialField?.type === 'text' ? (initialField.placeholder ?? '') : '',
+  )
 
-  // richText-specific
-  const [richTextFormat, setRichTextFormat] = useState<'markdown' | 'html'>('markdown')
+  const [richTextFormat, setRichTextFormat] = useState<'markdown' | 'html'>(
+    initialField?.type === 'richText' ? initialField.format : 'markdown',
+  )
 
-  // number-specific
-  const [numberMin, setNumberMin] = useState('')
-  const [numberMax, setNumberMax] = useState('')
-  const [numberStep, setNumberStep] = useState('')
-  const [numberInteger, setNumberInteger] = useState(false)
-  const [numberFormat, setNumberFormat] = useState<'number' | 'currency' | 'percent'>('number')
-  const [numberCurrency, setNumberCurrency] = useState('')
+  const [numberMin, setNumberMin] = useState(
+    initialField?.type === 'number' ? (initialField.min?.toString() ?? '') : '',
+  )
+  const [numberMax, setNumberMax] = useState(
+    initialField?.type === 'number' ? (initialField.max?.toString() ?? '') : '',
+  )
+  const [numberStep, setNumberStep] = useState(
+    initialField?.type === 'number' ? (initialField.step?.toString() ?? '') : '',
+  )
+  const [numberInteger, setNumberInteger] = useState(
+    initialField?.type === 'number' ? (initialField.integer ?? false) : false,
+  )
+  const [numberFormat, setNumberFormat] = useState<'number' | 'currency' | 'percent'>(
+    initialField?.type === 'number' ? (initialField.format ?? 'number') : 'number',
+  )
+  const [numberCurrency, setNumberCurrency] = useState(
+    initialField?.type === 'number' ? (initialField.currency ?? '') : '',
+  )
 
-  // boolean-specific
-  const [booleanDefault, setBooleanDefault] = useState(false)
+  const [booleanDefault, setBooleanDefault] = useState(
+    initialField?.type === 'boolean' ? (initialField.defaultValue ?? false) : false,
+  )
 
-  // select/multiSelect
-  const [selectOptions, setSelectOptions] = useState<DraftOption[]>([makeOption('')])
+  const [selectOptions, setSelectOptions] = useState<DraftOption[]>(
+    initialField?.type === 'select' || initialField?.type === 'multiSelect'
+      ? initialField.options.map((option) => ({ ...option }))
+      : [makeOption('')],
+  )
 
-  // media-specific
-  const [mediaKind, setMediaKind] = useState<'image' | 'video' | 'any'>('any')
-  const [mediaAllowMultiple, setMediaAllowMultiple] = useState(false)
+  const [mediaKind, setMediaKind] = useState<'image' | 'video' | 'any'>(
+    initialField?.type === 'media' ? (initialField.mediaKind ?? 'any') : 'any',
+  )
+  const [mediaAllowMultiple, setMediaAllowMultiple] = useState(
+    initialField?.type === 'media' ? (initialField.allowMultiple ?? false) : false,
+  )
 
-  // relation-specific
-  const [relationTargetTableId, setRelationTargetTableId] = useState('')
-  const [relationAllowMultiple, setRelationAllowMultiple] = useState(false)
+  const [relationTargetTableId, setRelationTargetTableId] = useState(
+    initialField?.type === 'relation' ? initialField.targetTableId : '',
+  )
+  const [relationAllowMultiple, setRelationAllowMultiple] = useState(
+    initialField?.type === 'relation' ? (initialField.allowMultiple ?? false) : false,
+  )
 
-  // Submit state
+  const [repeaterFields, setRepeaterFields] = useState<RepeaterItemField[]>(
+    initialField?.type === 'repeater' ? initialField.fields : [],
+  )
+  const [repeaterItemLabelFieldId, setRepeaterItemLabelFieldId] = useState(
+    initialField?.type === 'repeater' ? (initialField.itemLabelFieldId ?? '') : '',
+  )
+  const [nestedFieldDialogOpen, setNestedFieldDialogOpen] = useState(false)
+  const [editingNestedField, setEditingNestedField] = useState<RepeaterItemField | null>(null)
+
   const [saving, setSaving] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
-  // Form field ids — pair labels with their controls via htmlFor.
   const idInputId = useId()
   const labelInputId = useId()
+  const typeSelectId = useId()
   const descriptionInputId = useId()
   const textMaxLengthId = useId()
   const textPlaceholderId = useId()
@@ -113,13 +149,15 @@ export function NewFieldDialog({
   const numberMaxId = useId()
   const numberStepId = useId()
   const numberCurrencyId = useId()
+  const formId = useId()
 
   const trimmedId = id.trim()
   const trimmedLabel = label.trim()
-  const idErr = idTouched ? fieldIdError(trimmedId, existingFieldIds) : null
+  const idErr = trimmedId ? fieldIdError(trimmedId, existingFieldIds) : null
   const needsSelectOption = (type === 'select' || type === 'multiSelect') && selectOptions.every((o) => !o.label.trim())
 
   const needsRelationTarget = type === 'relation' && !relationTargetTableId
+  const needsRepeaterField = type === 'repeater' && repeaterFields.length === 0
 
   const canCreate = Boolean(
     trimmedId &&
@@ -127,13 +165,14 @@ export function NewFieldDialog({
     !fieldIdError(trimmedId, existingFieldIds) &&
     !needsSelectOption &&
     !needsRelationTarget &&
+    !needsRepeaterField &&
     !saving,
   )
 
   function resetForm() {
     setType('text')
     setId('')
-    setIdTouched(false)
+    setIdManuallyEdited(false)
     setLabel('')
     setRequired(false)
     setDescription('')
@@ -152,6 +191,10 @@ export function NewFieldDialog({
     setMediaAllowMultiple(false)
     setRelationTargetTableId('')
     setRelationAllowMultiple(false)
+    setRepeaterFields([])
+    setRepeaterItemLabelFieldId('')
+    setNestedFieldDialogOpen(false)
+    setEditingNestedField(null)
     setSaving(false)
     setSubmitError(null)
   }
@@ -185,6 +228,10 @@ export function NewFieldDialog({
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
+    // This dialog can be portalled from inside the New Table form. React
+    // events follow the component tree across portals, so stop the nested
+    // submit before it reaches and prematurely submits the table form.
+    event.stopPropagation()
     if (!canCreate) return
 
     // Build common props
@@ -193,6 +240,7 @@ export function NewFieldDialog({
       label: trimmedLabel,
       ...(required ? { required: true } : {}),
       ...(description.trim() ? { description: description.trim() } : {}),
+      ...(initialField?.builtIn ? { builtIn: true } : {}),
     }
 
     // Build type-specific field object
@@ -285,6 +333,20 @@ export function NewFieldDialog({
         }
         break
       }
+      case 'repeater': {
+        fieldShape = {
+          type: 'repeater',
+          ...common,
+          fields: repeaterFields,
+          ...(repeaterItemLabelFieldId ? { itemLabelFieldId: repeaterItemLabelFieldId } : {}),
+        }
+        break
+      }
+      case 'pageTree':
+      case 'fieldSchema': {
+        // Structural fields are internal and never offered by this dialog.
+        break
+      }
     }
 
     // Validate against DataFieldSchema
@@ -304,7 +366,17 @@ export function NewFieldDialog({
         setSaving(false)
         return
       }
-      setSubmitError(getErrorMessage(err, 'Could not create field').replace(/^\[[^\]]+\]\s*/, ''))
+      const message = getErrorMessage(
+        err,
+        initialField ? 'Could not save field' : 'Could not create field',
+      ).replace(/^\[[^\]]+\]\s*/, '')
+      console.error('[NewFieldDialog] Field save failed:', err)
+      pushToast({
+        kind: 'error',
+        title: initialField ? 'Field update failed' : 'Field creation failed',
+        body: message,
+        location: 'data-workspace',
+      })
       setSaving(false)
     }
   }
@@ -328,17 +400,39 @@ export function NewFieldDialog({
         setSaving(false)
         return
       }
-      setSubmitError(getErrorMessage(err, 'Could not add field').replace(/^\[[^\]]+\]\s*/, ''))
+      const message = getErrorMessage(err, 'Could not add field').replace(/^\[[^\]]+\]\s*/, '')
+      console.error('[NewFieldDialog] Built-in field add failed:', err)
+      pushToast({
+        kind: 'error',
+        title: 'Field creation failed',
+        body: message,
+        location: 'data-workspace',
+      })
       setSaving(false)
     }
   }
+
+  const hasTypeSettings = [
+    'text',
+    'richText',
+    'number',
+    'boolean',
+    'select',
+    'multiSelect',
+    'media',
+    'relation',
+    'repeater',
+  ].includes(type)
 
   return (
     <Dialog
       open={open}
       onClose={handleClose}
-      title="New field"
-      size="md"
+      title={initialField ? `Edit ${initialField.label}` : 'New field'}
+      size={type === 'repeater' ? 'xl' : 'md'}
+      className={styles.dialog}
+      closeOnEscape={!nestedFieldDialogOpen}
+      closeOnBackdrop={!nestedFieldDialogOpen}
       footer={
         <>
           <Button variant="ghost" size="sm" type="button" onClick={handleClose}>
@@ -348,10 +442,10 @@ export function NewFieldDialog({
             variant="primary"
             size="sm"
             type="submit"
-            form="new-field-dialog-form"
+            form={formId}
             disabled={!canCreate}
           >
-            {saving ? 'Creating…' : 'Create'}
+            {saving ? 'Saving…' : initialField ? 'Save field' : 'Create field'}
           </Button>
         </>
       }
@@ -379,273 +473,187 @@ export function NewFieldDialog({
         </div>
       )}
 
-      <form id="new-field-dialog-form" className={styles.form} onSubmit={handleSubmit}>
-        {/* Type */}
-        <div className={styles.field}>
-          <span className={styles.label}>Type</span>
-          <Select
-            fieldSize="sm"
-            value={type}
-            options={[...FIELD_TYPE_OPTIONS]}
-            onChange={(event) => {
-              setType(event.target.value as DataFieldType)
-              setSubmitError(null)
-            }}
-          />
-        </div>
+      <form id={formId} className={styles.form} onSubmit={handleSubmit}>
+        <section className={styles.formSection}>
+          <div className={styles.sectionHeading}>
+            <h3>Field identity</h3>
+            <p>Name the value authors will see and the stable key used by templates.</p>
+          </div>
 
-        {/* ID */}
-        <div className={styles.field}>
-          <label htmlFor={idInputId} className={styles.label}>ID</label>
-          <Input
-            id={idInputId}
-            fieldSize="sm"
-            value={id}
-            invalid={Boolean(idErr)}
-            onChange={(event) => {
-              setIdTouched(true)
-              setId(event.target.value)
-              setSubmitError(null)
-            }}
-            onBlur={() => setIdTouched(true)}
-            placeholder="product_name"
-            autoComplete="off"
-            spellCheck={false}
-            monospace
-          />
-          {idErr && (
-            <span className={styles.fieldError} role="alert">{idErr}</span>
-          )}
-          {!idErr && (
-            <span className={styles.caption}>Machine name: lowercase letters, numbers, underscores.</span>
-          )}
-        </div>
-
-        {/* Label */}
-        <div className={styles.field}>
-          <label htmlFor={labelInputId} className={styles.label}>Label</label>
-          <Input
-            id={labelInputId}
-            fieldSize="sm"
-            value={label}
-            onChange={(event) => {
-              setLabel(event.target.value)
-              setSubmitError(null)
-            }}
-            placeholder="Product name"
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </div>
-
-        {/* Required */}
-        <div className={styles.switchRow}>
-          <span className={styles.switchLabel}>Required</span>
-          <Switch checked={required} onCheckedChange={setRequired} />
-        </div>
-
-        {/* Description */}
-        <div className={styles.field}>
-          <label htmlFor={descriptionInputId} className={styles.label}>Description <span className={styles.optional}>(optional)</span></label>
-          <Textarea
-            id={descriptionInputId}
-            fieldSize="sm"
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            placeholder="Shown next to the field in the editor"
-            rows={2}
-          />
-        </div>
-
-        {/* ── Type-specific fields ── */}
-
-        {type === 'text' && (
-          <>
-            <div className={styles.field}>
-              <label htmlFor={textMaxLengthId} className={styles.label}>Max length <span className={styles.optional}>(optional)</span></label>
-              <Input
-                id={textMaxLengthId}
-                fieldSize="sm"
-                type="number"
-                value={textMaxLength}
-                onChange={(event) => setTextMaxLength(event.target.value)}
-                placeholder="255"
-                min={1}
-              />
-            </div>
-            <div className={styles.field}>
-              <label htmlFor={textPlaceholderId} className={styles.label}>Placeholder <span className={styles.optional}>(optional)</span></label>
-              <Input
-                id={textPlaceholderId}
-                fieldSize="sm"
-                value={textPlaceholder}
-                onChange={(event) => setTextPlaceholder(event.target.value)}
-                placeholder="Enter a value…"
-              />
-            </div>
-          </>
-        )}
-
-        {type === 'richText' && (
           <div className={styles.field}>
-            <span className={styles.label}>Format</span>
-            <Select
+            <label htmlFor={labelInputId} className={styles.label}>
+              Label <span className={styles.requiredIndicator} aria-hidden="true" title="Required">*</span>
+            </label>
+            <Input
+              id={labelInputId}
               fieldSize="sm"
-              value={richTextFormat}
-              options={RICH_TEXT_FORMAT_OPTIONS}
-              onChange={(event) => setRichTextFormat(event.target.value as 'markdown' | 'html')}
+              value={label}
+              disabled={lockLabel}
+              onChange={(event) => {
+                const nextLabel = event.target.value
+                setLabel(nextLabel)
+                if (!initialField && !idManuallyEdited) {
+                  setId(fieldIdFromLabel(nextLabel))
+                }
+                setSubmitError(null)
+              }}
+              placeholder="Product name"
+              autoComplete="off"
+              spellCheck={false}
             />
           </div>
-        )}
 
-        {type === 'number' && (
-          <>
-            <div className={styles.fieldRow}>
-              <div className={styles.field}>
-                <label htmlFor={numberMinId} className={styles.label}>Min <span className={styles.optional}>(optional)</span></label>
-                <Input id={numberMinId} fieldSize="sm" type="number" value={numberMin} onChange={(event) => setNumberMin(event.target.value)} />
-              </div>
-              <div className={styles.field}>
-                <label htmlFor={numberMaxId} className={styles.label}>Max <span className={styles.optional}>(optional)</span></label>
-                <Input id={numberMaxId} fieldSize="sm" type="number" value={numberMax} onChange={(event) => setNumberMax(event.target.value)} />
-              </div>
-              <div className={styles.field}>
-                <label htmlFor={numberStepId} className={styles.label}>Step <span className={styles.optional}>(optional)</span></label>
-                <Input id={numberStepId} fieldSize="sm" type="number" value={numberStep} onChange={(event) => setNumberStep(event.target.value)} />
-              </div>
-            </div>
-            <div className={styles.switchRow}>
-              <span className={styles.switchLabel}>Integer only</span>
-              <Switch checked={numberInteger} onCheckedChange={setNumberInteger} />
-            </div>
+          <div className={styles.identityRow}>
             <div className={styles.field}>
-              <span className={styles.label}>Format</span>
-              <Select
+              <label htmlFor={idInputId} className={styles.label}>
+                ID <span className={styles.requiredIndicator} aria-hidden="true" title="Required">*</span>
+              </label>
+              <Input
+                id={idInputId}
                 fieldSize="sm"
-                value={numberFormat}
-                options={NUMBER_FORMAT_OPTIONS}
-                onChange={(event) => setNumberFormat(event.target.value as 'number' | 'currency' | 'percent')}
+                value={id}
+                invalid={Boolean(idErr)}
+                onChange={(event) => {
+                  setIdManuallyEdited(true)
+                  setId(event.target.value)
+                  setSubmitError(null)
+                }}
+                placeholder="product_name"
+                autoComplete="off"
+                spellCheck={false}
+                monospace
+                disabled={Boolean(initialField)}
               />
-            </div>
-            {numberFormat === 'currency' && (
-              <div className={styles.field}>
-                <label htmlFor={numberCurrencyId} className={styles.label}>Currency code <span className={styles.optional}>(e.g. USD)</span></label>
-                <Input
-                  id={numberCurrencyId}
-                  fieldSize="sm"
-                  value={numberCurrency}
-                  onChange={(event) => setNumberCurrency(event.target.value)}
-                  placeholder="USD"
-                  maxLength={10}
-                />
-              </div>
-            )}
-          </>
-        )}
-
-        {type === 'boolean' && (
-          <div className={styles.switchRow}>
-            <span className={styles.switchLabel}>Default value</span>
-            <Switch checked={booleanDefault} onCheckedChange={setBooleanDefault} />
-          </div>
-        )}
-
-        {(type === 'select' || type === 'multiSelect') && (
-          <div className={styles.field}>
-            <span className={styles.label}>Options</span>
-            <div className={styles.optionList}>
-              {selectOptions.map((opt, index) => (
-                <div key={opt.id} className={styles.optionRow}>
-                  <Input
-                    fieldSize="sm"
-                    value={opt.label}
-                    onChange={(event) => updateSelectOption(index, { label: event.target.value })}
-                    placeholder="Label"
-                    autoComplete="off"
-                  />
-                  <Input
-                    fieldSize="sm"
-                    value={opt.value}
-                    onChange={(event) => updateSelectOption(index, { value: event.target.value })}
-                    placeholder="value"
-                    autoComplete="off"
-                    monospace
-                  />
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    iconOnly
-                    type="button"
-                    aria-label="Remove option"
-                    onClick={() => removeSelectOption(index)}
-                    disabled={selectOptions.length <= 1}
-                  >
-                    <TrashSolidIcon size={12} aria-hidden="true" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-            {needsSelectOption && (
-              <span className={styles.fieldError} role="alert">At least one option is required.</span>
-            )}
-            <Button
-              variant="ghost"
-              size="xs"
-              type="button"
-              align="start"
-              onClick={addSelectOption}
-            >
-              <PlusIcon size={11} aria-hidden="true" />
-              Add option
-            </Button>
-          </div>
-        )}
-
-        {type === 'media' && (
-          <>
-            <div className={styles.field}>
-              <span className={styles.label}>Media kind</span>
-              <Select
-                fieldSize="sm"
-                value={mediaKind}
-                options={MEDIA_KIND_OPTIONS}
-                onChange={(event) => setMediaKind(event.target.value as 'image' | 'video' | 'any')}
-              />
-            </div>
-            <div className={styles.switchRow}>
-              <span className={styles.switchLabel}>Allow multiple</span>
-              <Switch checked={mediaAllowMultiple} onCheckedChange={setMediaAllowMultiple} />
-            </div>
-          </>
-        )}
-
-        {type === 'relation' && (
-          <>
-            <div className={styles.field}>
-              <span className={styles.label}>Target table</span>
-              {tableOptions.length > 0 ? (
-                <Select
-                  fieldSize="sm"
-                  value={relationTargetTableId}
-                  options={tableOptions}
-                  placeholder="Select a table…"
-                  onChange={(event) => {
-                    setRelationTargetTableId(event.target.value)
-                    setSubmitError(null)
-                  }}
-                />
-              ) : (
-                <span className={styles.caption}>No other tables available yet.</span>
+              {idErr && (
+                <span className={styles.fieldError} role="alert">{idErr}</span>
               )}
-              {needsRelationTarget && tableOptions.length > 0 && (
-                <span className={styles.fieldError} role="alert">A target table is required.</span>
+              {!idErr && (
+                <span className={styles.caption}>
+                  {initialField
+                    ? 'ID is fixed after creation.'
+                    : 'Generated from the label. You can change it.'}
+                </span>
               )}
             </div>
-            <div className={styles.switchRow}>
-              <span className={styles.switchLabel}>Allow multiple</span>
-              <Switch checked={relationAllowMultiple} onCheckedChange={setRelationAllowMultiple} />
+
+            <div className={styles.field}>
+              <label htmlFor={typeSelectId} className={styles.label}>
+                Type <span className={styles.requiredIndicator} aria-hidden="true" title="Required">*</span>
+              </label>
+              <Select
+                id={typeSelectId}
+                fieldSize="sm"
+                value={type}
+                options={FIELD_TYPE_OPTIONS.filter((option) => allowRepeater || option.value !== 'repeater')}
+                disabled={Boolean(initialField)}
+                onChange={(event) => {
+                  setType(event.target.value as DataFieldType)
+                  setSubmitError(null)
+                }}
+              />
+              <span className={styles.caption}>
+                {initialField ? 'Type is fixed after creation.' : 'Controls the value and authoring UI.'}
+              </span>
             </div>
-          </>
+          </div>
+        </section>
+
+        <section className={styles.formSection}>
+          <div className={styles.sectionHeading}>
+            <h3>Authoring</h3>
+            <p>Set the expectations and guidance shown when someone edits a record.</p>
+          </div>
+
+          <div className={styles.wideNarrowRow}>
+            <div className={styles.field}>
+              <label htmlFor={descriptionInputId} className={styles.label}>Description <span className={styles.optional}>(optional)</span></label>
+              <Textarea
+                id={descriptionInputId}
+                fieldSize="sm"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder="Shown next to the field in the editor"
+                rows={2}
+              />
+            </div>
+
+            <div className={styles.field}>
+              <span className={styles.label}>Required</span>
+              <div className={styles.switchControl}>
+                <Switch
+                  checked={required}
+                  onCheckedChange={setRequired}
+                  aria-label="Required"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {hasTypeSettings && (
+          <section className={`${styles.formSection} ${styles.typeSettingsSection}`}>
+            <div className={styles.sectionHeading}>
+              <h3>{type === 'repeater' ? 'Item structure' : 'Field behavior'}</h3>
+              <p>
+                {type === 'repeater'
+                  ? 'Build the reusable group of values stored inside every item.'
+                  : 'Configure how this field accepts and presents values.'}
+              </p>
+            </div>
+
+            <FieldTypeSettings
+              type={type}
+              textMaxLengthId={textMaxLengthId}
+              textMaxLength={textMaxLength}
+              setTextMaxLength={setTextMaxLength}
+              textPlaceholderId={textPlaceholderId}
+              textPlaceholder={textPlaceholder}
+              setTextPlaceholder={setTextPlaceholder}
+              richTextFormat={richTextFormat}
+              setRichTextFormat={setRichTextFormat}
+              numberMinId={numberMinId}
+              numberMin={numberMin}
+              setNumberMin={setNumberMin}
+              numberMaxId={numberMaxId}
+              numberMax={numberMax}
+              setNumberMax={setNumberMax}
+              numberStepId={numberStepId}
+              numberStep={numberStep}
+              setNumberStep={setNumberStep}
+              numberInteger={numberInteger}
+              setNumberInteger={setNumberInteger}
+              numberFormat={numberFormat}
+              setNumberFormat={setNumberFormat}
+              numberCurrencyId={numberCurrencyId}
+              numberCurrency={numberCurrency}
+              setNumberCurrency={setNumberCurrency}
+              booleanDefault={booleanDefault}
+              setBooleanDefault={setBooleanDefault}
+              selectOptions={selectOptions}
+              updateSelectOption={updateSelectOption}
+              removeSelectOption={removeSelectOption}
+              addSelectOption={addSelectOption}
+              mediaKind={mediaKind}
+              setMediaKind={setMediaKind}
+              mediaAllowMultiple={mediaAllowMultiple}
+              setMediaAllowMultiple={setMediaAllowMultiple}
+              relationTargetTableId={relationTargetTableId}
+              setRelationTargetTableId={setRelationTargetTableId}
+              relationAllowMultiple={relationAllowMultiple}
+              setRelationAllowMultiple={setRelationAllowMultiple}
+              tableOptions={tableOptions}
+              clearSubmitError={() => setSubmitError(null)}
+              repeaterFields={repeaterFields}
+              setRepeaterFields={setRepeaterFields}
+              repeaterItemLabelFieldId={repeaterItemLabelFieldId}
+              setRepeaterItemLabelFieldId={setRepeaterItemLabelFieldId}
+              onAddRepeaterField={() => setNestedFieldDialogOpen(true)}
+              onEditRepeaterField={(field) => {
+                setEditingNestedField(field)
+                setNestedFieldDialogOpen(true)
+              }}
+            />
+          </section>
         )}
 
         {submitError && (
@@ -654,6 +662,34 @@ export function NewFieldDialog({
           </p>
         )}
       </form>
+
+      {nestedFieldDialogOpen && (
+        <NewFieldDialog
+          open
+          onClose={() => {
+            setNestedFieldDialogOpen(false)
+            setEditingNestedField(null)
+          }}
+          existingFieldIds={repeaterFields
+            .filter((field) => field.id !== editingNestedField?.id)
+            .map((field) => field.id)}
+          tables={tables}
+          allowRepeater={false}
+          initialField={editingNestedField ?? undefined}
+          onCreate={async (field) => {
+            const result = safeParseValue(RepeaterItemFieldSchema, field)
+            if (!result.ok) {
+              throw new Error('This field type cannot be used inside a repeater.')
+            }
+            setRepeaterFields((current) => editingNestedField
+              ? current.map((item) => item.id === editingNestedField.id ? result.value : item)
+              : [...current, result.value],
+            )
+            setNestedFieldDialogOpen(false)
+            setEditingNestedField(null)
+          }}
+        />
+      )}
     </Dialog>
   )
 }

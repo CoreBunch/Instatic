@@ -3,9 +3,11 @@ import {
   EDITOR_LAYOUT_STORAGE_KEY,
   readEditorLayout,
   readStoredPanelPosition,
+  readStoredPanelSize,
   readWorkspaceLayout,
   workspaceFromPathname,
   writeStoredPanelPosition,
+  writeStoredPanelSize,
   writeWorkspaceLayout,
 } from '@admin/state/workspaceLayoutStorage'
 
@@ -34,6 +36,28 @@ describe('workspaceLayoutStorage — floating panel positions', () => {
     writeStoredPanelPosition('agent', { x: 24, y: 180 })
 
     expect(localStorage.getItem('instatic-agent-panel-pos')).toBeNull()
+  })
+})
+
+describe('workspaceLayoutStorage — floating panel sizes', () => {
+  it('stores floating panel dimensions without clobbering its position', () => {
+    writeStoredPanelPosition('site', { x: 420, y: 140 })
+    writeStoredPanelSize('site', { width: 540, height: 460 })
+
+    expect(readStoredPanelPosition('site')).toEqual({ x: 420, y: 140 })
+    expect(readStoredPanelSize('site')).toEqual({ width: 540, height: 460 })
+    expect(readEditorLayout()?.panelSizes?.site).toEqual({ width: 540, height: 460 })
+  })
+
+  it('preserves workspace layout state when updating floating dimensions', () => {
+    writeWorkspaceLayout('site', { leftWidth: 380, leftSidebarMode: 'floating' })
+    writeStoredPanelSize('properties', { width: 480, height: 620 })
+
+    expect(readWorkspaceLayout('site')).toMatchObject({
+      leftWidth: 380,
+      leftSidebarMode: 'floating',
+    })
+    expect(readStoredPanelSize('properties')).toEqual({ width: 480, height: 620 })
   })
 })
 

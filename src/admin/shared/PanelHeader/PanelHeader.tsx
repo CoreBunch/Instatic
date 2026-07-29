@@ -23,6 +23,13 @@ import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { Button } from '@ui/components/Button'
 import styles from './PanelHeader.module.css'
 
+export interface PanelDragHandleProps {
+  onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void
+  onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => void
+  onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => void
+  onPointerCancel: (event: React.PointerEvent<HTMLDivElement>) => void
+}
+
 interface PanelHeaderProps {
   /** Panel title displayed in the header. */
   title: string
@@ -42,12 +49,7 @@ interface PanelHeaderProps {
    * Spread onto the header div to enable drag-to-reposition.
    * Provided by the `useDraggablePanel` hook via its `headerDragProps` field.
    */
-  dragHandleProps?: {
-    onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void
-    onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => void
-    onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => void
-    onPointerCancel: (e: React.PointerEvent<HTMLDivElement>) => void
-  }
+  dragHandleProps?: PanelDragHandleProps
   /**
    * Optional extra action buttons rendered between the title and the close button.
    * Example: AgentPanel's "clear conversation" button.

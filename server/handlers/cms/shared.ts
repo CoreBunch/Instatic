@@ -7,14 +7,18 @@
  *   by repositories (`UserMutationError`, `RoleMutationError`,
  *   `VisitorRoleMutationError`) into the `{ error }` JSON envelope clients
  *   expect.
+ * - `siteCollectionRowsResponse` — the one `{ rows }` list/single-row read
+ *   shared by the pages / components / layouts GET endpoints.
  *
  * These helpers are intentionally small and dependency-free so any new
  * handler module can pull them in without dragging the rest of the CMS
  * surface along with it.
  */
 import { Type } from '@core/utils/typeboxHelpers'
+import type { DbClient } from '../../db/client'
 import { jsonResponse } from '../../http'
 import { clientIp } from '../../auth/security'
+import { listDataRows } from '../../repositories/data'
 import { UserMutationError } from '../../repositories/users'
 import { RoleMutationError } from '../../repositories/roles'
 import { VisitorRoleMutationError } from '../../visitor-auth/roles'
@@ -41,6 +45,17 @@ export function requestAuditContext(req: Request): { ipAddress: string | null; u
     ipAddress: clientIp(req),
     userAgent: req.headers.get('user-agent'),
   }
+}
+
+/**
+ * `{ rows }` response for one of the three site collection GETs
+ * (pages / components / layouts).
+ */
+export async function siteCollectionRowsResponse(
+  db: DbClient,
+  tableId: 'pages' | 'components' | 'layouts',
+): Promise<Response> {
+  return jsonResponse({ rows: await listDataRows(db, tableId) })
 }
 
 export function mutationErrorResponse(err: unknown): Response {

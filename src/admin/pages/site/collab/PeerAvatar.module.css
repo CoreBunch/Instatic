@@ -1,0 +1,17 @@
+/*
+ * Identity ring around the shared UserAvatar — the peer's deterministic
+ * color (set inline via --peer-color) matches their selection ring and
+ * cursor, so one person reads the same on every presence surface.
+ */
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  user-select: none;
+}
+
+.ring {
+  border: 2px solid var(--peer-color);
+}

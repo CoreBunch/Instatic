@@ -31,6 +31,8 @@ export {
 export {
   listDataRows,
   listDataRowIdSlugs,
+  listDataRowSeqs,
+  listChangedDataRowRefsSince,
   listDataRowsWithFilter,
   searchDataRows,
   getDataRow,
@@ -41,6 +43,7 @@ export {
   createDataRow,
   createDataRowMany,
   saveDataRowDraft,
+  upsertDataRowDraft,
   updateDataRowDraftCells,
   saveDataRowDraftMany,
   softDeleteDataRow,
