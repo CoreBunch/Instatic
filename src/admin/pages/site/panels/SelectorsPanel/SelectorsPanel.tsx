@@ -18,7 +18,7 @@ import { FilterBar, type FilterBarItem } from '@ui/components/FilterBar'
 import { Skeleton } from '@ui/components/Skeleton'
 import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
-import { Panel } from '@admin/shared/Panel'
+import { Panel, type DockablePanelProps } from '@admin/shared/Panel'
 import { cn } from '@ui/cn'
 import { DeleteSelectorDialog, SelectorNameDialog } from '../SelectorDialogs'
 import { SelectorContextMenu } from './SelectorContextMenu'
@@ -33,9 +33,7 @@ import {
 } from '../selectorUsage'
 import styles from './SelectorsPanel.module.css'
 
-interface SelectorsPanelProps {
-  variant?: 'docked'
-}
+type SelectorsPanelProps = DockablePanelProps
 
 type SelectorFilter = 'all' | 'user' | 'utility' | 'unused'
 
@@ -81,7 +79,11 @@ function getEmptyFilterMessage(filter: SelectorFilter, query: string): string {
   return 'No selectors match the current filters.'
 }
 
-export function SelectorsPanel({ variant = 'docked' }: SelectorsPanelProps) {
+export function SelectorsPanel({
+  mode = 'docked',
+  dragHandleProps,
+  onToggleMode,
+}: SelectorsPanelProps) {
   const site = useEditorStore((s) => s.site)
   const isOpen = useEditorStore((s) => s.selectorsPanelOpen)
   const selectedSelectorClassId = useEditorStore((s) => s.selectedSelectorClassId)
@@ -201,7 +203,7 @@ export function SelectorsPanel({ variant = 'docked' }: SelectorsPanelProps) {
     return () => observer.disconnect()
   }, [hasMore, showSkeleton, visibleCount])
 
-  if (!isOpen || variant !== 'docked') return null
+  if (!isOpen) return null
 
   function openContextMenu(classId: string, event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault()
@@ -306,6 +308,10 @@ export function SelectorsPanel({ variant = 'docked' }: SelectorsPanelProps) {
         testId="selectors-panel"
         bodyRef={scrollRef}
         onClose={() => setSelectorsPanelOpen(false)}
+        mode={mode}
+        dragHandleProps={dragHandleProps}
+        onToggleMode={onToggleMode}
+        dockLocation="left sidebar"
       >
         <FilterBar<SelectorFilter>
             items={SELECTOR_FILTER_ITEMS}

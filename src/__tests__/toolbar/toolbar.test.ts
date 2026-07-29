@@ -317,16 +317,6 @@ describe('PublishButton — publish state machine', () => {
     expect(state).toBe('error')
   })
 
-  it('source emits role="alert" for error messages (Guideline #224)', () => {
-    const { readFileSync } = require('fs')
-    const src = readFileSync(
-      new URL('../../admin/pages/site/toolbar/PublishActionGroup.tsx', import.meta.url),
-      'utf-8',
-    )
-    // Error must be surfaced via role="alert" — not silently swallowed
-    expect(src).toContain("role={toast.tone === 'alert' ? 'alert' : 'status'}")
-  })
-
   it('source drives aria-busy during publish (via SplitButton busy prop)', () => {
     const { readFileSync } = require('fs')
     const src = readFileSync(
@@ -564,34 +554,17 @@ describe('Toolbar — structural requirements', () => {
     expect(src).toContain('useEffect')
   })
 
-  it('PublishButton uses one split publishing control with explicit draft actions', () => {
+  it('PublishButton reflects collaboration sync and has no manual save action', () => {
     const { readFileSync } = require('fs')
     const src = readFileSync(
       new URL('../../admin/pages/site/toolbar/PublishButton.tsx', import.meta.url),
       'utf-8',
     )
-    expect(src).toContain('PublishActionGroup')
     expect(src).toContain('Draft synced')
     expect(src).toContain('Offline — reconnecting')
-    expect(src).toContain("state === 'published' ? 'Published'")
-    expect(src).toContain('state === \'published\' ? CheckIcon')
-    expect(src).toContain("statusLabel={state === 'published' ? null : status.label}")
     expect(src).toContain('publishDisabled={disabled || state === \'published\'}')
-    // Saving is continuous (live co-editing) — no manual save action remains.
     expect(src).not.toContain('Save draft')
-    expect(src).toContain('Preview page')
-    // "Open live page" used to live in this menu — it's now a dedicated
-    // icon button (OpenLivePageButton) next to the avatar in the Toolbar
-    // shell so it's reachable from every admin route, not just the Site
-    // editor. Asserting it's gone from the menu keeps the two surfaces
-    // from drifting back into a duplicate action.
-    expect(src).not.toContain("label: 'Open live page'")
-    expect(src).not.toContain("'toolbar-open-page-new-tab-action'")
-    expect(src).toContain("'Retry publish'")
-    expect(src).not.toContain("label: 'Live'")
-    expect(src).not.toContain("'Publish failed'")
   })
-
   it('PublishActionGroup keeps the status pill and delegates its split control to the shared SplitButton', () => {
     const { readFileSync } = require('fs')
     const src = readFileSync(

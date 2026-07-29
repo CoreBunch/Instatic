@@ -70,6 +70,7 @@
 
 .subtitle {
     font-size: var(--text-s);
+    font-weight: 500;
     color: var(--text-subtle);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;

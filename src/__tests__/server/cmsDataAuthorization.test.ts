@@ -205,6 +205,39 @@ describe('CMS data ownership authorization', () => {
     return testDb
   }
 
+  it('allows editing built-in fields on an existing system-table row', async () => {
+    const { db } = await makeDb()
+    const ownerCookie = await setupOwner(db)
+
+    const list = await request(db, '/admin/api/cms/data/tables/pages/rows', {
+      method: 'GET',
+      cookie: ownerCookie,
+    })
+    expect(list.status).toBe(200)
+    const rows = (await body(list)).rows as Array<{
+      id: string
+      cells: Record<string, unknown>
+    }>
+    const home = rows[0]
+    expect(home).toBeDefined()
+
+    const update = await request(db, `/admin/api/cms/data/rows/${home.id}`, {
+      method: 'PATCH',
+      cookie: ownerCookie,
+      body: JSON.stringify({
+        cells: {
+          ...home.cells,
+          seoTitle: 'Updated from Data',
+          seoDescription: 'Bulk-editable metadata',
+        },
+      }),
+    })
+    expect(update.status).toBe(200)
+    const updated = (await body(update)).row as { cells: Record<string, unknown> }
+    expect(updated.cells.seoTitle).toBe('Updated from Data')
+    expect(updated.cells.seoDescription).toBe('Bulk-editable metadata')
+  })
+
   it('filters own-edit users to their rows and lets any-edit users see all rows', async () => {
     const { db } = await makeDb()
     const ownerCookie = await setupOwner(db)

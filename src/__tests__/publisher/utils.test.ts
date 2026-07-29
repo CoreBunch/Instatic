@@ -110,6 +110,60 @@ describe('isSafeUrl', () => {
     expect(isSafeUrl('data:text/html,<script>alert(1)</script>')).toBe(false)
     expect(isSafeUrl('data:image/png;base64,abc')).toBe(false)
   })
+
+  // GHSA-pqcp-872g-gmp8 — the old guard normalised with
+  // `.replace(/[\t\n\r]/g, '').trim()`, which leaves U+0000–U+0008 and
+  // U+000E–U+001F in place. The WHATWG URL parser strips the whole
+  // U+0000–U+0020 range before reading a scheme, so 27 of 32 C0 code points
+  // made isSafeUrl() return true while the browser resolved `javascript:`.
+  it('blocks javascript: behind every C0 control prefix (GHSA-pqcp-872g-gmp8)', () => {
+    const leaked: string[] = []
+    for (let code = 0; code < 0x20; code++) {
+      if (isSafeUrl(`${String.fromCharCode(code)}javascript:alert(1)`)) {
+        leaked.push(`0x${code.toString(16).padStart(2, '0')}`)
+      }
+    }
+    expect(leaked).toEqual([])
+  })
+
+  it('blocks vbscript: and data: behind a C0 control prefix', () => {
+    expect(isSafeUrl('\u0001vbscript:MsgBox(1)')).toBe(false)
+    expect(isSafeUrl('\u001Fdata:text/html,<script>alert(1)</script>')).toBe(false)
+  })
+
+  it('blocks mixed leading/trailing/embedded disguises', () => {
+    expect(isSafeUrl('\u0001\u000Ejava\tscript:alert(1)\u0000')).toBe(false)
+    expect(isSafeUrl(' \u0001 javascript:alert(1)')).toBe(false)
+  })
+
+  it('is an allowlist — non-web schemes collapse without any disguise', () => {
+    expect(isSafeUrl('blob:https://example.com/8f1a')).toBe(false)
+    expect(isSafeUrl('file:///etc/passwd')).toBe(false)
+    expect(isSafeUrl('ftp://example.com/x')).toBe(false)
+    expect(isSafeUrl('intent://x#Intent;scheme=http;end')).toBe(false)
+    expect(isSafeUrl('view-source:https://example.com/')).toBe(false)
+  })
+
+  it('keeps every legitimate URL shape the publisher must emit', () => {
+    for (const url of [
+      'https://example.com/a?b=1&c=2',
+      'http://example.com',
+      'mailto:user@example.com',
+      'tel:+420123456789',
+      'sms:+420123456789',
+      '/about',
+      './page.html',
+      '../up.html',
+      'page.html',
+      'uploads/img.png',
+      '#anchor',
+      '?q=1',
+      '//cdn.example.com/a.png',
+      '',
+    ]) {
+      expect(isSafeUrl(url)).toBe(true)
+    }
+  })
 })
 
 // ===========================================================================

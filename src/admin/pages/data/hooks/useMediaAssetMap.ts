@@ -11,7 +11,7 @@
  * mounts. A single in-flight `listCmsMediaAssets()` request is shared across
  * all concurrent callers — no N+1 fetches for a grid full of cells.
  */
-import { useEffect, useEffectEvent, useReducer } from 'react'
+import { useEffect, useReducer } from 'react'
 import { listCmsMediaAssets } from '@core/persistence'
 import type { CmsMediaAsset } from '@core/persistence'
 
@@ -58,6 +58,19 @@ async function ensureAssetsCached(ids: readonly string[]): Promise<void> {
   }
 }
 
+function buildAssetMap(
+  ids: readonly string[],
+  cacheVersion: number,
+): Map<string, CmsMediaAsset | null> {
+  const result = new Map<string, CmsMediaAsset | null>()
+  for (const id of ids) {
+    if (cacheVersion >= 0 && assetCache.has(id)) {
+      result.set(id, assetCache.get(id) ?? null)
+    }
+  }
+  return result
+}
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -66,29 +79,21 @@ export function useMediaAssetMap(ids: readonly string[]): Map<string, CmsMediaAs
   // Stable cache-key: sort so order doesn't matter.
   const idsKey = ids.slice().sort().join('\0')
 
-  const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
-
-  // The effect should only re-fire when the *set* of ids changes (idsKey is a
-  // sorted-join of ids). useEffectEvent reads the latest `ids` array snapshot
-  // without making it a dep — equivalent identities yield idsKey collisions
-  // and no extra fetches.
-  const fetchMissing = useEffectEvent(() => {
-    if (ids.length === 0) return
-    const missing = ids.filter((id) => !assetCache.has(id))
-    if (missing.length === 0) return
-    void ensureAssetsCached(ids).then(() => forceUpdate())
-  })
+  const [cacheVersion, forceUpdate] = useReducer((version: number) => version + 1, 0)
 
   useEffect(() => {
-    fetchMissing()
+    const requestedIds = idsKey ? idsKey.split('\0') : []
+    if (requestedIds.length === 0) return undefined
+    let active = true
+    void ensureAssetsCached(requestedIds).then(() => {
+      if (active) forceUpdate()
+    })
+    return () => {
+      active = false
+    }
   }, [idsKey])
 
-  // Build result from cache; absent keys mean "still loading".
-  const result = new Map<string, CmsMediaAsset | null>()
-  for (const id of ids) {
-    if (assetCache.has(id)) {
-      result.set(id, assetCache.get(id) ?? null)
-    }
-  }
-  return result
+  // Passing the version makes the module-level cache mutation visible to the
+  // React Compiler, so it cannot reuse a pre-fetch map when the ids are stable.
+  return buildAssetMap(ids, cacheVersion)
 }

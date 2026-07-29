@@ -95,6 +95,23 @@ describe('mcp server', () => {
     await client.close()
   })
 
+  it('advertises the open-workspace requirement on browser tools, not on headless ones', async () => {
+    const client = await connectClient(db, ['ai.chat', 'ai.tools.write', 'site.structure.edit', 'content.manage'])
+    const { tools } = await client.listTools()
+
+    const sitePage = tools.find((t) => t.name === 'site_add_page')
+    expect(sitePage?.description).toContain('Requires the Instatic Site editor to be open')
+
+    const contentTool = tools.find((t) => t.name === 'content_set_document_field')
+    expect(contentTool?.description).toContain('Requires the Instatic Content workspace to be open')
+
+    // Headless tools must stay free of the hint — they work with no editor open.
+    const headless = tools.find((t) => t.name === 'site_read_styles')
+    expect(headless?.description).not.toContain('Requires the Instatic')
+
+    await client.close()
+  })
+
   it('routes Site and Content browser tools to their matching workspace bridges', async () => {
     const userId = 'u1-scoped-workspaces'
     const siteCtrl = new AbortController()

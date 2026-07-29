@@ -123,6 +123,11 @@
     max-width: 360px;
 }
 
+.pickedCount {
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+}
+
 .pickedWrongKind {
     font-size: var(--text-xs);
     color: var(--danger);

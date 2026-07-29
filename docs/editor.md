@@ -451,6 +451,7 @@ Why this matters: selection rings and the floating selection toolbar are portale
 | AgentPanel (floating)                 | 50      | `panels/AgentPanel/AgentPanel.module.css` |
 | PanelRail                             | 55      | `sidebars/PanelRail/PanelRail.module.css` |
 | LeftSidebar, RightSidebar             | 85      | `sidebars/{Left,Right}Sidebar/` |
+| Undocked left-panel host              | 90      | `sidebars/LeftSidebar/LeftSidebar.module.css` |
 | CodeEditorPanel (floats over sidebars)| 95      | `code-editor/CodeEditorPanel.module.css` |
 | Toolbar popovers / dropdowns          | 201     | `toolbar/Toolbar.module.css` |
 | PreviewOverlay                        | 400–401 | `preview/PreviewOverlay.module.css` |
@@ -532,6 +533,21 @@ Opens the rail-selected panel:
 - `DependenciesPanel` — site package.json / `bun install`
 - `PluginEditorPanel` — plugin-provided editor panels
 - `AgentPanel` — AI assistant
+
+Explorer, Selectors, Framework, Dependencies, and plugin panels use the shared
+`Panel` header contract and can be unpinned into one draggable canvas window.
+Switching among those rail items while unpinned replaces the window content
+without redocking it; the same header action docks the active panel back into
+the left sidebar. A keyboard-accessible bottom-right handle resizes the
+floating window in both axes (arrow keys resize by 10px; Shift+arrow by 40px).
+`leftSidebarMode`, the shared floating position, and its user-set width and
+height are persisted through `siteEditorLayoutPersistence` /
+`workspaceLayoutStorage`.
+
+The AI Assistant is an independent draggable and resizable floating window, so
+it can stay open beside Explorer/Layers or any other hosted panel. Its position,
+dimensions, and open state persist separately across reloads. Properties
+follows the same independent floating-window interaction contract on the right.
 
 ### Right sidebar (`RightSidebar`)
 

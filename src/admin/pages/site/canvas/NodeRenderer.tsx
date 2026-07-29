@@ -479,7 +479,7 @@ interface LoopIterationsPreviewProps {
  * arrives the component re-renders with real iterations.
  */
 function LoopIterationsPreview({ node, baseTemplateContext }: LoopIterationsPreviewProps) {
-  const items = useLoopPreviewItems(node)
+  const items = useLoopPreviewItems(node, baseTemplateContext)
   if (items.length === 0) return null
 
   const baseStack = baseTemplateContext?.entryStack ?? []

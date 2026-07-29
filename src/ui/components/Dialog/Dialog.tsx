@@ -142,6 +142,8 @@ export function Dialog({
     if (!open || !closeOnEscape) return undefined
     function onKeyDown(event: globalThis.KeyboardEvent) {
       if (event.key === 'Escape') {
+        const openDialogs = document.querySelectorAll<HTMLElement>('[data-ui-dialog="true"]')
+        if (openDialogs[openDialogs.length - 1] !== dialogRef.current) return
         event.preventDefault()
         event.stopPropagation()
         onClose()
@@ -198,6 +200,7 @@ export function Dialog({
         aria-label={ariaLabel}
         aria-describedby={children ? descId : undefined}
         aria-busy={loading || undefined}
+        data-ui-dialog="true"
         data-size={size}
         data-tone={tone}
         className={cn(styles.dialog, className)}

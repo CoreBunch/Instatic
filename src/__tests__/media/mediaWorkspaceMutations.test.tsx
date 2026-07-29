@@ -75,6 +75,40 @@ async function mountWorkspace(initialAssets: Record<string, unknown>[]) {
 }
 
 describe('useMediaWorkspace mutation envelope (assetMut)', () => {
+  it('can reselect an asset after moving it out of an ordered selection', async () => {
+    routeFetch([
+      assetRow({ id: 'asset_1', folderIds: [] }),
+      assetRow({ id: 'asset_2', filename: 'two.png', folderIds: [] }),
+    ], (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as { add?: string[] }
+      return jsonResponse({
+        asset: assetRow({
+          id: body.add?.[0] === 'folder_2' ? 'asset_2' : 'asset_1',
+          folderIds: body.add ?? [],
+        }),
+      })
+    })
+    const view = await mountWorkspace([
+      assetRow({ id: 'asset_1', folderIds: [] }),
+      assetRow({ id: 'asset_2', filename: 'two.png', folderIds: [] }),
+    ])
+
+    act(() => {
+      view.result.current.addToSelection(['asset_1', 'asset_2'])
+    })
+    await act(async () => {
+      await view.result.current.moveAssetsToFolder(['asset_1'], 'folder_1')
+    })
+    act(() => {
+      view.result.current.toggleAssetInSelection('asset_1')
+    })
+
+    expect(view.result.current.selectedAssets.map((asset) => asset.id)).toEqual([
+      'asset_2',
+      'asset_1',
+    ])
+  })
+
   it('a thrown op sets the error and returns null without throwing', async () => {
     routeFetch([assetRow()], () =>
       jsonResponse({ error: 'Filename already taken' }, 409),

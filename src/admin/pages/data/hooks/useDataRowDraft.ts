@@ -13,7 +13,7 @@ interface DataRowDraft {
   /** Replace the entire cells record (used when the selected row changes). */
   setCells: (cells: DataRowCells) => void
   /** Force an immediate save, cancelling any pending debounce timer. */
-  flush: () => Promise<void>
+  flush: () => Promise<DataRow | null>
   /** Reset to the saved state, discarding any pending changes. */
   reset: (cells: DataRowCells) => void
 }
@@ -72,15 +72,17 @@ export function useDataRowDraft(
     return () => clearTimer()
   }, [])
 
-  async function performSave(rowId: string, snapshot: DataRowCells) {
+  async function performSave(rowId: string, snapshot: DataRowCells): Promise<DataRow | null> {
     setIsSaving(true)
     setSaveError(null)
     try {
       const saved = await onSave(rowId, snapshot)
       setSavedCells(saved.cells)
+      return saved
     } catch (err) {
       console.error('[data-row-draft] Save failed:', err)
       setSaveError(getErrorMessage(err, 'Could not save row'))
+      return null
     } finally {
       setIsSaving(false)
     }
@@ -113,9 +115,9 @@ export function useDataRowDraft(
   }
 
   async function flush() {
-    if (!row?.id) return
+    if (!row?.id) return null
     clearTimer()
-    await performSave(row.id, cellsRef.current)
+    return performSave(row.id, cellsRef.current)
   }
 
   function reset(next: DataRowCells) {

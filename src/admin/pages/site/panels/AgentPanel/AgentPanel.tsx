@@ -36,7 +36,11 @@ import { PanelHeader } from '@admin/shared/PanelHeader'
 import { UserAvatar } from '@admin/shared/UserAvatar'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
-import { useDraggablePanel } from '@admin/shared/FloatingWindow'
+import {
+  PanelResizeHandle,
+  useDraggablePanel,
+  useResizablePanel,
+} from '@admin/shared/FloatingWindow'
 import { cn } from '@ui/cn'
 import { ConversationHistory } from './ConversationHistory'
 import { AgentComposer, type ComposerLockReason } from './AgentComposer'
@@ -59,6 +63,10 @@ const PANEL_HEIGHT = 480
 const AI_SETTINGS_ROUTE = '/admin/ai'
 type PanelVariant = 'floating' | 'docked'
 
+interface AgentPanelProps {
+  variant?: PanelVariant
+}
+
 // ---------------------------------------------------------------------------
 // AgentPanel
 // ---------------------------------------------------------------------------
@@ -70,7 +78,7 @@ type PanelVariant = 'floating' | 'docked'
  * (`.floatPanelClosed`) to preserve Zustand conversation state across open/close cycles.
  * Agent routes via Vite proxy `/admin/api/agent` → local Bun server → Claude SDK.
  */
-export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant }) {
+export function AgentPanel({ variant = 'floating' }: AgentPanelProps) {
   const agentStore = useAgentStoreApi()
   const isOpen = useAgentStore((s) => s.isAgentOpen)
   const isStreaming = useAgentStore((s) => s.isAgentStreaming)
@@ -119,14 +127,27 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
 
   // ── Draggable panel position ───────────────────────────────────────────────
   // Default to bottom-right corner.
-  const { setPanelRef, headerDragProps, panelPositionStyle } = useDraggablePanel(
+  const {
+    panelRef,
+    setPanelRef,
+    headerDragProps,
+    panelPositionStyle,
+  } = useDraggablePanel(
     'agent',
     () => ({
       x: typeof window !== 'undefined' ? window.innerWidth - PANEL_WIDTH - 16 : 16,
       y: typeof window !== 'undefined'
         ? window.innerHeight - PANEL_HEIGHT - 16
         : 200,
-    }),
+      }),
+  )
+  const {
+    panelSizeStyle,
+    resizeHandleProps,
+  } = useResizablePanel(
+    'agent',
+    panelRef,
+    () => ({ width: PANEL_WIDTH, height: PANEL_HEIGHT }),
   )
 
   // Auto-scroll to bottom when new messages arrive
@@ -198,8 +219,11 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
       data-panel=""
       tabIndex={-1}
       onClick={(e) => e.stopPropagation()}
-      // Panel position is drag-driven — CSS var injection from useDraggablePanel
-      style={variant === 'floating' ? panelPositionStyle : undefined}
+      style={
+        variant === 'floating'
+          ? { ...panelPositionStyle, ...panelSizeStyle }
+          : undefined
+      }
       className={cn(
         styles.floatPanel,
         variant === 'docked' && styles.floatPanelDocked,
@@ -301,6 +325,12 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
       />
       {isOpen && imageMenu && (
         <AgentImageContextMenu request={imageMenu} onClose={closeImageMenu} />
+      )}
+      {variant === 'floating' && (
+        <PanelResizeHandle
+          panelLabel="AI Assistant"
+          resizeHandleProps={resizeHandleProps}
+        />
       )}
     </aside>
   )

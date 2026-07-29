@@ -20,6 +20,12 @@
 
 .tableButton {
     gap: var(--space-xs);
+    padding-right: var(--space-3xs);
+    border-radius: var(--panel-radius);
+}
+
+.tableKindBadge {
+    border-radius: calc(var(--panel-radius) - var(--space-3xs));
 }
 
 /* Skeleton row — mirrors the real `.tableButton` row's padding, gap
@@ -58,18 +64,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     text-align: start;
-}
-
-.kindBadge {
-    font-size: var(--text-3xs);
-    font-weight: 600;
-    color: var(--text-subtle);
-    background: var(--bg-surface-3);
-    padding: var(--space-px) var(--space-3xs);
-    border-radius: var(--radius-sm);
-    flex-shrink: 0;
-    letter-spacing: 0.02em;
-    text-transform: lowercase;
 }
 
 .errorText {
@@ -121,4 +115,3 @@
     align-items: center;
     gap: var(--space-4xs);
 }
-

@@ -6,9 +6,9 @@
  * a Dialog with a clear "Use selected" / "Cancel" footer.
  *
  * Constraints vs the standalone Media page:
- *   - Single-select only (no multi-select / bulk-edit).
+ *   - Selection can be single or multi, but bulk-edit actions stay out.
  *   - Filtered to one media kind (`image` or `video`) so the user can't
- *     accidentally pick a video for an `<img>` slot.
+ *     accidentally pick a video for an image slot.
  *   - No floating windows mount here (no viewer, no upload queue, no bulk
  *     edit) — the modal is the surface.
  *   - The workspace hook is mounted internally so each picker session has
@@ -52,8 +52,13 @@ interface MediaPickerModalProps {
    * field highlights the right tile immediately.
    */
   currentValue?: string | null
+  /** Existing ids or public paths for a multi-value field. */
+  currentValues?: string[]
+  /** Plain click toggles assets and the footer commits the whole selection. */
+  allowMultiple?: boolean
   /** Called when the user clicks "Use selected" with a valid pick. */
   onPick: (asset: CmsMediaAsset) => void
+  onPickMultiple?: (assets: CmsMediaAsset[]) => void
 }
 
 export function MediaPickerModal({
@@ -61,7 +66,10 @@ export function MediaPickerModal({
   onClose,
   mediaKind,
   currentValue,
+  currentValues,
+  allowMultiple = false,
   onPick,
+  onPickMultiple,
 }: MediaPickerModalProps) {
   // The picker mounts/unmounts; the workspace hook lives only while open.
   // That avoids loading folders + assets at startup of every editor session.
@@ -71,7 +79,10 @@ export function MediaPickerModal({
       onClose={onClose}
       mediaKind={mediaKind}
       currentValue={currentValue}
+      currentValues={currentValues}
+      allowMultiple={allowMultiple}
       onPick={onPick}
+      onPickMultiple={onPickMultiple}
     />
   )
 }
@@ -80,7 +91,10 @@ function MediaPickerModalBody({
   onClose,
   mediaKind,
   currentValue,
+  currentValues,
+  allowMultiple = false,
   onPick,
+  onPickMultiple,
 }: Omit<MediaPickerModalProps, 'open'>) {
   const workspace = useMediaWorkspace()
   const [activePanel, setActivePanel] = useState<MediaSidebarPanelId | null>('folders')
@@ -99,14 +113,24 @@ function MediaPickerModalBody({
   // Seed the picker selection from the field's current value (matches by
   // publicPath since that's what the module prop stores). useEffectEvent
   // reads latest workspace.assets + setter without adding workspace to deps.
-  const seedSelectionFromValue = useEffectEvent((value: string) => {
-    const match = workspace.assets.find((asset) => asset.publicPath === value)
-    if (match) workspace.setSelectedAssetId(match.id)
+  const currentSelectionKey = allowMultiple
+    ? JSON.stringify(currentValues ?? [])
+    : JSON.stringify(currentValue ? [currentValue] : [])
+  const seedCurrentSelection = useEffectEvent(() => {
+    const values = allowMultiple ? (currentValues ?? []) : currentValue ? [currentValue] : []
+    const matches = values
+      .map((value) => workspace.assets.find(
+        (asset) => asset.id === value || asset.publicPath === value,
+      )?.id)
+      .filter((id): id is string => id !== undefined)
+    if (matches.length === 0) return
+    if (allowMultiple) workspace.addToSelection(matches)
+    else workspace.setSelectedAssetId(matches[0] ?? null)
   })
   useEffect(() => {
-    if (!currentValue) return
-    seedSelectionFromValue(currentValue)
-  }, [currentValue, workspace.assets])
+    if (currentSelectionKey === '[]') return
+    seedCurrentSelection()
+  }, [currentSelectionKey, workspace.assets])
 
   // Close on Escape — matches Dialog primitive behavior. We don't use the
   // Dialog primitive itself because we need a much larger surface than
@@ -130,8 +154,21 @@ function MediaPickerModalBody({
         : bucketForMime(picked.mimeType) === mediaKind)
     : false
   const canCommit = picked !== null && pickedMatchesKind
+  const pickedMany = workspace.selectedAssets.filter((asset) =>
+    mediaKind === 'any' ||
+    (mediaKind === 'svg'
+      ? isSvgMime(asset.mimeType)
+      : bucketForMime(asset.mimeType) === mediaKind),
+  )
+  const canCommitMany = allowMultiple && pickedMany.length > 0
 
   function commit() {
+    if (allowMultiple) {
+      if (!canCommitMany) return
+      onPickMultiple?.(pickedMany)
+      onClose()
+      return
+    }
     if (!picked || !pickedMatchesKind) return
     onPick(picked)
     onClose()
@@ -174,12 +211,17 @@ function MediaPickerModalBody({
             onActivePanelChange={setActivePanel}
           />
           <div className={styles.canvasArea}>
-            <MediaCanvas workspace={workspace} />
+            <MediaCanvas workspace={workspace} selectionMode={allowMultiple ? 'multiple' : 'standard'} />
           </div>
         </div>
 
         <footer className={styles.footer}>
-          <PickedSummary asset={picked} matchesKind={pickedMatchesKind} mediaKind={mediaKind} />
+          <PickedSummary
+            asset={allowMultiple ? (pickedMany.at(-1) ?? null) : picked}
+            matchesKind={allowMultiple ? pickedMany.length > 0 : pickedMatchesKind}
+            mediaKind={mediaKind}
+            selectionCount={allowMultiple ? pickedMany.length : picked ? 1 : 0}
+          />
           <div className={styles.footerActions}>
             <Button variant="ghost" size="sm" onClick={onClose}>
               Cancel
@@ -187,10 +229,12 @@ function MediaPickerModalBody({
             <Button
               variant="primary"
               size="sm"
-              disabled={!canCommit}
+              disabled={allowMultiple ? !canCommitMany : !canCommit}
               onClick={commit}
             >
-              Use selected
+              {allowMultiple && pickedMany.length > 0
+                ? `Use ${pickedMany.length} selected`
+                : 'Use selected'}
             </Button>
           </div>
         </footer>
@@ -204,6 +248,7 @@ interface PickedSummaryProps {
   asset: CmsMediaAsset | null
   matchesKind: boolean
   mediaKind: 'image' | 'video' | 'svg' | 'any'
+  selectionCount: number
 }
 
 /**
@@ -212,7 +257,7 @@ interface PickedSummaryProps {
  * exact gap the cramped sidebar picker had ("not clear which media is
  * picked").
  */
-function PickedSummary({ asset, matchesKind, mediaKind }: PickedSummaryProps) {
+function PickedSummary({ asset, matchesKind, mediaKind, selectionCount }: PickedSummaryProps) {
   const summary = asset
     ? {
         bucket: bucketForMime(asset.mimeType),
@@ -225,7 +270,7 @@ function PickedSummary({ asset, matchesKind, mediaKind }: PickedSummaryProps) {
     const kindLabel = mediaKind === 'image' ? 'image' : mediaKind === 'video' ? 'video' : mediaKind === 'svg' ? 'SVG' : 'asset'
     return (
       <p className={styles.pickedEmpty}>
-        No {kindLabel} selected — pick one from the grid.
+        No {kindLabel} selected — pick {selectionCount === 0 ? 'one' : 'from the grid'}.
       </p>
     )
   }
@@ -248,6 +293,9 @@ function PickedSummary({ asset, matchesKind, mediaKind }: PickedSummaryProps) {
       </span>
       <span className={styles.pickedMeta}>
         <span className={styles.pickedName}>{asset.filename}</span>
+        {selectionCount > 1 && (
+          <span className={styles.pickedCount}>{selectionCount} assets selected</span>
+        )}
         {!matchesKind && mediaKind !== 'any' && (
           <span className={styles.pickedWrongKind} role="alert">
             This is not {mediaKind === 'image' ? 'an image' : mediaKind === 'video' ? 'a video' : mediaKind === 'svg' ? 'an SVG' : 'a matching'} asset.

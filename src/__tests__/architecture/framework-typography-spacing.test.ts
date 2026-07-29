@@ -135,6 +135,6 @@ describe('architecture — left sidebar', () => {
   const layoutSource = readSource('admin/pages/site/sidebars/LeftSidebar/LeftSidebar.tsx')
 
   it('mounts the consolidated FrameworkPanel', () => {
-    expect(layoutSource).toContain('<FrameworkPanel />')
+    expect(layoutSource).toMatch(/<FrameworkPanel\b/)
   })
 })

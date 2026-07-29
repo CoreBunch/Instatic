@@ -47,6 +47,29 @@ const NO_WORKSPACE_MESSAGE: Record<EditorBridgeScope, string> = {
   content: 'This tool runs in the Instatic Content workspace. Open the Content workspace in a browser (signed in as the connector owner) and try again.',
 }
 
+/**
+ * Same requirement as `NO_WORKSPACE_MESSAGE`, stated up front.
+ *
+ * An MCP client picks its tools from `tools/list` and nothing else, so a
+ * browser tool that reads like a headless one gets called blind: the model
+ * only learns the editor has to be open by burning a turn on the failure. That
+ * is the wrong end of the loop to teach it from — it can neither open the
+ * editor itself nor tell from the error whether retrying is worthwhile, so it
+ * retries anyway. Advertising the precondition alongside the description lets
+ * the model ask the user to open the workspace before it spends anything.
+ */
+const BROWSER_WORKSPACE_REQUIREMENT: Record<EditorBridgeScope, string> = {
+  site: 'Requires the Instatic Site editor to be open in a browser, signed in as the connector owner; this tool edits that live workspace and cannot run headlessly.',
+  content: 'Requires the Instatic Content workspace to be open in a browser, signed in as the connector owner; this tool edits that live workspace and cannot run headlessly.',
+}
+
+/** Tool description as advertised over MCP — browser tools carry their precondition. */
+function advertisedDescription(tool: AiTool): string {
+  if (tool.execution !== 'browser') return tool.description
+  if (tool.scope !== 'site' && tool.scope !== 'content') return tool.description
+  return `${tool.description}\n\n${BROWSER_WORKSPACE_REQUIREMENT[tool.scope]}`
+}
+
 export function buildMcpServer(ctx: McpServerContext): Server {
   const server = new Server(
     { name: 'instatic', version: '1.0.0' },
@@ -64,7 +87,7 @@ export function buildMcpServer(ctx: McpServerContext): Server {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: tools.map((t) => ({
       name: t.name,
-      description: t.description,
+      description: advertisedDescription(t),
       // Our TypeBox object schema IS a valid JSON-Schema tool definition. The
       // `AiTool.inputSchema` field is the general `TSchema`, so we adapt it to
       // the SDK's object-schema shape (a type-level adaptation, not a runtime

@@ -8,6 +8,13 @@
  *
  * The optional `onOpenEditor` prop follows the same extra-prop threading
  * pattern that `RelationCell` uses for `onOpenPicker`.
+ *
+ * `readOnly` deliberately does NOT gate the button. It means "this value is
+ * not editable in the grid", which is always true for a `pageTree` cell on a
+ * system table (`isBuiltInValueLocked` holds for every built-in field of
+ * `pages` / `components` / `layouts`). The button edits nothing — it navigates
+ * to the visual editor, which enforces its own permissions. Gating it on
+ * `readOnly` disabled it on exactly the rows it exists for.
  */
 import type { ReactElement } from 'react'
 import { Button } from '@ui/components/Button'
@@ -27,7 +34,6 @@ export interface PageTreeCellProps extends CellEditorProps<PageTreeField> {
 export function PageTreeCell({
   field,
   value,
-  readOnly,
   ariaLabel,
   onOpenEditor,
 }: PageTreeCellProps): ReactElement {
@@ -40,7 +46,7 @@ export function PageTreeCell({
       <Button
         variant="secondary"
         size="sm"
-        disabled={readOnly || !onOpenEditor}
+        disabled={!onOpenEditor}
         aria-label={ariaLabel ?? `${field.label}: ${hasTree ? 'Open editor' : 'No content'}`}
         onClick={() => onOpenEditor?.()}
         align="start"

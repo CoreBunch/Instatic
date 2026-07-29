@@ -63,6 +63,7 @@ export function ContentCustomFields({
             context="detail"
             readOnly={readOnly}
             rowId={entryId}
+            tables={tables}
             resolveRelationTarget={resolveRelationRow}
             onOpenPicker={
               field.type === 'relation'
