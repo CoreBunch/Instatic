@@ -20,7 +20,7 @@
  * through a synthesized single-splice delta instead.
  */
 import * as Y from 'yjs'
-import { LOCAL_ORIGIN, SEED_ORIGIN, nodeTextOf } from '@core/collab'
+import { LOCAL_ORIGIN, SEED_ORIGIN, nodeTextOf, treeMap } from '@core/collab'
 import {
   readInlineEditableText,
   seedInlineEditableContent,
@@ -169,16 +169,16 @@ export function attachInlineEditRemoteMerge(options: {
   doc: Y.Doc
   nodeId: string
   prop: string
+  onInvalidated?: () => void
 }): () => void {
-  const { el, doc, nodeId, prop } = options
-  const text = nodeTextOf(doc, nodeId, prop)
-  if (!text) return () => {}
+  const { el, doc, nodeId, prop, onInvalidated } = options
+  if (!nodeTextOf(doc, nodeId, prop)) return () => {}
 
   let composing = false
   let deferredWhileComposing = false
+  let invalidated = false
 
-  const mergeIntoSurface = (delta: readonly TextDeltaOp[]): void => {
-    const nextValue = text.toString()
+  const mergeIntoSurface = (nextValue: string, delta: readonly TextDeltaOp[]): void => {
     if (readInlineEditableText(el) === nextValue) return
 
     const view = el.ownerDocument.defaultView
@@ -214,15 +214,38 @@ export function attachInlineEditRemoteMerge(options: {
     }
   }
 
-  const observer = (event: Y.YTextEvent, transaction: Y.Transaction): void => {
+  const observer = (
+    events: readonly Y.YEvent<Y.AbstractType<unknown>>[],
+    transaction: Y.Transaction,
+  ): void => {
     // Local edits are already in the DOM (the DOM is where they came from);
     // seeds mirror content the session was opened on.
     if (transaction.origin === LOCAL_ORIGIN || transaction.origin === SEED_ORIGIN) return
+    const text = nodeTextOf(doc, nodeId, prop)
+    if (!text) {
+      if (!invalidated) {
+        invalidated = true
+        onInvalidated?.()
+      }
+      return
+    }
+    invalidated = false
     if (composing) {
       deferredWhileComposing = true
       return
     }
-    mergeIntoSurface(event.delta as readonly TextDeltaOp[])
+    const matchingEvent = events.find(
+      (event) => event instanceof Y.YTextEvent && event.target === text,
+    )
+    const textEvent = matchingEvent instanceof Y.YTextEvent ? matchingEvent : null
+    const currentSurface = readInlineEditableText(el)
+    const nextValue = text.toString()
+    mergeIntoSurface(
+      nextValue,
+      textEvent
+        ? textEvent.delta as readonly TextDeltaOp[]
+        : spliceDelta(currentSurface, nextValue),
+    )
   }
 
   const onCompositionStart = (): void => {
@@ -232,16 +255,29 @@ export function attachInlineEditRemoteMerge(options: {
     composing = false
     if (!deferredWhileComposing) return
     deferredWhileComposing = false
+    const text = nodeTextOf(doc, nodeId, prop)
+    if (!text) {
+      if (!invalidated) {
+        invalidated = true
+        onInvalidated?.()
+      }
+      return
+    }
     // No single Yjs delta covers the deferred window — synthesize the splice
     // between what the surface shows and what the doc now holds.
-    mergeIntoSurface(spliceDelta(readInlineEditableText(el), text.toString()))
+    const nextValue = text.toString()
+    mergeIntoSurface(nextValue, spliceDelta(readInlineEditableText(el), nextValue))
   }
 
-  text.observe(observer)
+  const tree = treeMap(doc)
+  // Observe the tree rather than one Y.Text instance. A whole-node remote
+  // write replaces the node map and its nested Y.Text; observing only the old
+  // instance silently froze the editing surface after that replacement.
+  tree.observeDeep(observer)
   el.addEventListener('compositionstart', onCompositionStart)
   el.addEventListener('compositionend', onCompositionEnd)
   return () => {
-    text.unobserve(observer)
+    tree.unobserveDeep(observer)
     el.removeEventListener('compositionstart', onCompositionStart)
     el.removeEventListener('compositionend', onCompositionEnd)
   }

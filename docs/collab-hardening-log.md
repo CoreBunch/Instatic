@@ -22,42 +22,90 @@ here. Keep this file honest — it is the only memory between runs.
   microtask (`scheduleProjection` → `queueMicrotask`), so the store is always
   projected before the next input-event macrotask reads it. The stale party
   was the *DOM surface*, not the store (analysis 2026-07-27; the store-level
-  path has no dedicated contention test — see open finding 1).
+  path is now additionally guarded against drift). (2026-07-27, hardened
+  2026-07-29)
+- **Patch-to-Y text drift cannot corrupt the live document** —
+  `applySitePatchesToDocs` detects a projected pre-value that differs from the
+  authoritative Y.Text and falls back to a safe diff from the actual value.
+  Gated by `src/__tests__/collab/applyPatches.test.ts`. (2026-07-29)
+- **Whole-node replacement does not freeze an inline session** —
+  `attachInlineEditRemoteMerge` observes the tree deeply and re-resolves the
+  current Y.Text after every non-local transaction, so replacing a node map
+  and its nested text instance keeps merging. Removing the text invalidates
+  the session. Gated by
+  `src/__tests__/collab/inlineEditRemoteMerge.test.tsx`. (2026-07-29)
+- **RESET closes an inline session only for its active document** — the store
+  ends the contentEditable session before rebinding the fresh CRDT lineage;
+  unrelated document resets leave it alone. Gated by
+  `src/__tests__/collab/awareness.test.tsx`. (2026-07-29)
+- **Properties-panel textarea follows the projected value** — it is a
+  controlled React input with immediate `onChange`; a remote projection
+  rewrites any not-yet-dispatched native DOM value before the next local input
+  event, so the stale DOM snapshot cannot clobber the peer. Gated by
+  `src/__tests__/collab/propertiesPanelTextarea.test.tsx`. (2026-07-29)
+- **Reconnect and reset cannot merge a dead CRDT lineage** — reconnect catches
+  up edits missed in either direction, while a stale generation receives a
+  RESET instead of being applied. Gated over real WebSockets by
+  `src/__tests__/server/collabRelayIntegration.test.ts`. (2026-07-29)
+- **Partial-role relay writes use the same category policy as HTTP saves** —
+  direct guard tests cover content/style/structure separation for page and
+  site docs, roster membership, and the structure-only component/layout rule.
+  Gated by `src/__tests__/server/collabUpdateGuard.test.ts` plus the real-socket
+  refused-write/reset path. (2026-07-29)
+- **Transient persistence failure cannot silently evict an accepted edit** —
+  a dirty zero-reference doc remains resident, retries automatically, and is
+  evicted only after persistence succeeds. Explicit publish/reset flushes fail
+  rather than continuing with stale derived JSON. Gated by
+  `src/__tests__/server/collabRelay.test.ts`. Normal shutdown, last-client
+  release, and publish all flush synchronously; a hard process/host crash can
+  still lose at most the default 800 ms debounce window (an explicit bounded
+  recovery-point tradeoff, not an unbounded dirty state). (2026-07-29)
+- **Offline/backlogged transport blocks edits visibly once per episode** —
+  heartbeat timeout and buffered-byte pressure both close the write gate; the
+  first refused edit toasts and snaps inline editing back, repeats stay quiet,
+  and recovery re-arms the notice. Gated by
+  `src/__tests__/collab/provider.test.ts` and
+  `src/__tests__/collab/collabNotices.test.ts`. (2026-07-29)
+- **Provider teardown is terminal** — destroy detaches socket callbacks before
+  close, clears timers/listeners, and removes every Y.Doc update handler; a
+  socket that finishes opening late cannot resurrect the heartbeat. Gated by
+  `src/__tests__/collab/provider.test.ts`. (2026-07-29)
+- **PostgreSQL collaboration persistence parity** — on a disposable Postgres
+  16 database, the migrations applied from scratch, relay persistence wrote
+  both `collab_documents` state and derived row JSON, and two real WebSocket
+  clients edited concurrently, converged, and persisted. The same focused
+  tests also pass on SQLite. (2026-07-29)
 
 ## Open findings (ranked)
 
-1. **`applyTextDiff` has no drift guard** (`src/core/collab/applyPatches.ts`
-   ~line 290). `applyChildrenDiff` explicitly detects "actual array ≠
-   pre-mutation array" and falls back to a wholesale rewrite;
-   the Y.Text path applies splice indices computed from the store's
-   `preValue` blindly. If `existing.toString() !== preValue` (unreachable
-   from browser input ordering as far as this run could prove, but MCP
-   bridge / plugin RPC / future callers may differ), the splice corrupts
-   text or throws Yjs "Length exceeded" mid-transaction. Add the analogous
-   guard (diff against `existing.toString()` on drift) + a test.
-2. **Y.Text instance replacement mid-session freezes the merge** — a remote
-   whole-node rebuild (`yNodes.set(nodeId, buildNodeMap(...))`) swaps the
-   props map and its Y.Text; `attachInlineEditRemoteMerge` observes the dead
-   instance, so the surface silently degrades to frozen (and the next local
-   keystroke overwrites the peer's whole-node write). Re-resolve the Y.Text
-   per event (observeDeep on the node map) or force-end the session.
-3. **Doc RESET mid-inline-session** — `connectCollabProvider`'s reset handler
-   rebinds a fresh doc; an active inline session keeps observing the dead
-   doc's Y.Text and its node may not exist in the reseed. Probably should
-   force-end the inline session when the active doc resets.
-4. **Properties-panel textarea under co-editing** — same whole-string commit
-   path (`updateNodeProps`), but a controlled input re-rendered from the
-   store: an in-flight local value can clobber a just-projected remote edit
-   between renders. Unreviewed; needs the same adversarial pass the canvas
-   surface got.
-5. **Priority areas untouched by any run yet** (from the loop brief, in
-   order): reconnect/reset overlap + stale-generation frames; crash
-   durability of the persist debounce; update-guard adversarial bypass
-   siblings; Postgres parity for `collab_documents` + continuous persistence;
-   offline-block stress (flaky transport, toast latch); relay/awareness/
-   provider leak+lifetime audit.
+None from the release-hardening brief. The bounded hard-crash recovery point
+(at most the default 800 ms persistence debounce) is documented above.
 
 ## Done this run
+
+### 2026-07-29 — release integration and text-surface hardening
+
+- Merged current `origin/main`; the only conflicts were the newer removal of
+  the publish success callout. The resolution keeps collab sync gating and
+  adopts the newer global error-toast behavior.
+- Guarded patch-to-Y text translation against a stale projected pre-value.
+- Reworked inline remote merge to follow replacement Y.Text instances and
+  invalidate when the edited text disappears.
+- Closed active inline editing before a reset rebinds that document.
+- Proved the controlled Properties-panel textarea adopts remote projection
+  before the next local input event.
+- Hardened failed persistence: automatic retry, no dirty-doc eviction, and
+  explicit flush failure instead of stale publish/reset continuation.
+- Added adversarial per-document capability-guard coverage.
+- Verified real-socket reconnect, offline-authored edit recovery, reset overlap,
+  stale-generation refusal, and publish flush behavior.
+- Verified migrations, continuous persistence, and two-client convergence on
+  a disposable PostgreSQL 16 instance as well as SQLite.
+- Closed provider late-open/listener teardown and pinned the offline notice
+  latch across outage/recovery episodes.
+- Production build and lint pass; the full suite passes 6,419/6,419 tests,
+  including the real-WebSocket collaboration integration and architecture
+  gates.
 
 ### 2026-07-27 — co-typing one text node deleted the peer's characters
 

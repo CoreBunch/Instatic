@@ -264,6 +264,60 @@ describe('attachInlineEditRemoteMerge (surface-level)', () => {
     detach()
   })
 
+  it('keeps merging after a remote whole-node write replaces the Y.Text instance', () => {
+    const { doc, el, nodeId, detach } = seededSurface('hello')
+    const nodes = treeMap(doc).get('nodes') as Y.Map<unknown>
+    const replacement = new Y.Map<unknown>()
+    const props = new Y.Map<unknown>()
+    props.set('text', new Y.Text('replaced'))
+    props.set('tag', 'p')
+    replacement.set('id', nodeId)
+    replacement.set('moduleId', 'base.text')
+    replacement.set('props', props)
+    replacement.set('breakpointOverrides', new Y.Map())
+    replacement.set('children', new Y.Array())
+
+    doc.transact(() => {
+      nodes.set(nodeId, replacement)
+    }, 'remote-whole-node')
+    expect(el.textContent).toBe('replaced')
+
+    yTextOf(doc, nodeId).insert(8, ' again')
+    expect(el.textContent).toBe('replaced again')
+    detach()
+  })
+
+  it('invalidates the edit session when a remote write removes its Y.Text', () => {
+    let invalidations = 0
+    const doc = new Y.Doc()
+    seedPageDoc(
+      doc,
+      makePage({
+        id: 'p1',
+        rootNodeId: 'root',
+        nodes: {
+          root: makeNode({ id: 'root', moduleId: 'base.body', children: ['t1'] }),
+          t1: makeNode({ id: 't1', moduleId: 'base.text', props: { text: 'hello', tag: 'p' } }),
+        },
+      }),
+    )
+    const el = document.createElement('p')
+    seedInlineEditableContent(el, 'hello')
+    const detach = attachInlineEditRemoteMerge({
+      el,
+      doc,
+      nodeId: 't1',
+      prop: 'text',
+      onInvalidated: () => { invalidations++ },
+    })
+
+    doc.transact(() => {
+      ;(treeMap(doc).get('nodes') as Y.Map<unknown>).delete('t1')
+    }, 'remote-delete')
+    expect(invalidations).toBe(1)
+    detach()
+  })
+
   it('stops merging after detach', () => {
     const { doc, el, nodeId, detach } = seededSurface('hello')
     detach()

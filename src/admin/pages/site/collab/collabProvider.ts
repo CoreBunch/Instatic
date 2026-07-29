@@ -388,8 +388,20 @@ export function createCollabProvider(
       awarenessProtocol.removeAwarenessStates(awareness, [awareness.clientID], 'destroy')
       awareness.destroy()
       for (const docId of [...bound.keys()]) unbind(docId)
-      socket?.close()
+      const closingSocket = socket
       socket = null
+      if (closingSocket) {
+        // A socket can finish opening after the editor has already unmounted.
+        // Detach every callback before close so that late browser events cannot
+        // resurrect the heartbeat or notify listeners on a destroyed provider.
+        closingSocket.onopen = null
+        closingSocket.onmessage = null
+        closingSocket.onclose = null
+        closingSocket.onerror = null
+        closingSocket.close()
+      }
+      statusListeners.clear()
+      resetListeners.clear()
     },
   }
 }

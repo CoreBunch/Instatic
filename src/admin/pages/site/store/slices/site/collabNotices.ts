@@ -12,7 +12,7 @@
  *     must be told; the routine out-of-relay reseed (`rewritten`) is silent.
  */
 import { pushToast } from '@ui/components/Toast'
-import type { ResetReason } from '@core/collab'
+import { parseCollabDocId, type ResetReason } from '@core/collab'
 import type { CollabProvider } from '@site/collab/collabProvider'
 
 /**
@@ -86,4 +86,29 @@ export function clearCollabBlockNotice(): void {
 export function collabResetToast(reason: ResetReason): void {
   if (reason === 'rewritten') return
   pushToast({ kind: 'error', title: 'A change was reverted', body: RESET_REASON_COPY[reason] })
+}
+
+type ActiveEditorDocument =
+  | { kind: 'page'; pageId: string }
+  | { kind: 'visualComponent'; vcId: string }
+  | null
+  | undefined
+
+/** Whether a reset invalidated the Y.Text owned by the active inline editor. */
+export function resetTargetsActiveDocument(
+  docId: string,
+  activeDocument: ActiveEditorDocument,
+  fallbackActivePageId: string | null | undefined,
+): boolean {
+  const parsed = parseCollabDocId(docId)
+  const activePageId =
+    activeDocument?.kind === 'page' ? activeDocument.pageId : fallbackActivePageId
+  return (
+    (parsed?.kind === 'page' && activePageId === parsed.rowId) ||
+    (
+      parsed?.kind === 'component' &&
+      activeDocument?.kind === 'visualComponent' &&
+      activeDocument.vcId === parsed.rowId
+    )
+  )
 }

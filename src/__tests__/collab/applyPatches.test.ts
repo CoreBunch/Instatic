@@ -62,6 +62,13 @@ function seededDocSet(site: SiteDocument): CollabDocSet {
   return docs
 }
 
+function yTextOf(doc: Y.Doc, nodeId: string): Y.Text {
+  const nodes = treeMap(doc).get('nodes') as Y.Map<unknown>
+  const node = nodes.get(nodeId) as Y.Map<unknown>
+  const props = node.get('props') as Y.Map<unknown>
+  return props.get('text') as Y.Text
+}
+
 function mutate(
   site: SiteDocument,
   recipe: (draft: SiteDocument) => void,
@@ -113,6 +120,24 @@ describe('applySitePatchesToDocs — page tree edits', () => {
     expect(merged).toContain('brave')
     expect(merged).toContain('[remote]')
     expect(projectPageDoc(remote, 'p1').nodes.t1.props.text).toBe(merged)
+  })
+
+  it('falls back safely when the projected pre-value drifted from the live Y.Text', () => {
+    const site = fixtureSite()
+    const docs = seededDocSet(site)
+    const local = docs.ensure('page:p1')
+    // Simulate a caller holding a stale JSON snapshot after a remote update
+    // already landed in the authoritative doc. The stale splice indexes used
+    // to target the wrong characters or throw when the live text was shorter.
+    yTextOf(local, 't1').delete(0, 11)
+    yTextOf(local, 't1').insert(0, 'x')
+
+    expect(() => {
+      translate(site, docs, (d) => {
+        updateNodeProps(d.pages[0], 't1', { text: 'hello brave world' })
+      })
+    }).not.toThrow()
+    expect(projectPageDoc(local, 'p1').nodes.t1.props.text).toBe('hello brave world')
   })
 
   it('node move and delete project back identical children', () => {

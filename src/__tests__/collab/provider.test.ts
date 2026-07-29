@@ -196,4 +196,32 @@ describe('collab provider', () => {
     expect(created).toBe(2)
     provider.destroy()
   })
+
+  it('detaches a late-opening socket and every document listener on destroy', async () => {
+    const socket = new FakeSocket()
+    const provider = createCollabProvider({
+      createSocket: () => socket,
+      pingIntervalMs: 10,
+    })
+    const binding = provider.bind('page:p1')
+    const statuses: string[] = []
+    const resets: string[] = []
+    provider.onStatus((status) => statuses.push(status))
+    provider.onReset((docId) => resets.push(docId))
+    const sentBeforeDestroy = socket.sent.length
+
+    provider.destroy()
+    binding.doc.getMap('meta').set('title', 'After destroy')
+    socket.open()
+    socket.emit(encodeCollabFrame('page:p1', 'gen-1', FRAME_RESET, new Uint8Array()))
+    await Bun.sleep(30)
+
+    expect(socket.onopen).toBeNull()
+    expect(socket.onmessage).toBeNull()
+    expect(socket.onclose).toBeNull()
+    expect(socket.onerror).toBeNull()
+    expect(socket.sent).toHaveLength(sentBeforeDestroy)
+    expect(statuses).toEqual([])
+    expect(resets).toEqual([])
+  })
 })

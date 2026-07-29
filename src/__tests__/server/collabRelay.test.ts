@@ -4,7 +4,7 @@
  * Runs on a real migrated database via the capability harness (setup seeds
  * the home page row exactly like a live install).
  */
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import * as Y from 'yjs'
 import {
   LOCAL_ORIGIN,
@@ -79,6 +79,37 @@ function gateCollabBlobWrites(db: DbClient): {
   return { db: wrapped, arm: () => { armed = true }, blocked, release }
 }
 
+function failNextCollabBlobWrite(db: DbClient): {
+  db: DbClient
+  arm: () => void
+  failed: Promise<void>
+} {
+  let announceFailed!: () => void
+  const failed = new Promise<void>((resolve) => {
+    announceFailed = resolve
+  })
+  let armed = false
+  let hasFailed = false
+
+  const wrapped = (async <Row,>(strings: TemplateStringsArray, ...values: unknown[]) => {
+    if (
+      armed &&
+      !hasFailed &&
+      strings.join('?').includes('insert into collab_documents')
+    ) {
+      hasFailed = true
+      announceFailed()
+      throw new Error('simulated transient collab persistence failure')
+    }
+    return db<Row>(strings, ...values)
+  }) as DbClient
+  Object.defineProperty(wrapped, 'dialect', { get: () => db.dialect })
+  wrapped.unsafe = ((sql: string, params?: unknown[]) => db.unsafe(sql, params)) as DbClient['unsafe']
+  wrapped.transaction = ((fn: Parameters<DbClient['transaction']>[0]) =>
+    db.transaction(fn)) as DbClient['transaction']
+  return { db: wrapped, arm: () => { armed = true }, failed }
+}
+
 function editTitleUpdate(doc: Y.Doc, nodeText: string): void {
   doc.transact(() => {
     const nodes = treeMap(doc).get('nodes') as Y.Map<unknown>
@@ -119,6 +150,67 @@ describe('collab relay', () => {
     `
     const body = rows[0].cells_json.body as { nodes: Record<string, { label?: string }>; rootNodeId: string }
     expect(body.nodes[body.rootNodeId].label).toBe('Hero section')
+  })
+
+  it('keeps a dirty doc resident and retries when the final persist fails', async () => {
+    const errorLog = spyOn(console, 'error').mockImplementation(() => {})
+    const harness = await createCapabilityTestHarness()
+    cleanups.push(() => harness.cleanup())
+    await harness.setupOwner()
+    const failing = failNextCollabBlobWrite(harness.db)
+    const relay = createCollabRelay(failing.db, { persistDebounceMs: 5 })
+    cleanups.push(() => relay.destroy())
+    const { rows } = await harness.db<{ id: string }>`
+      select id from data_rows where table_id = ${'pages'}
+    `
+    const homeId = rows[0].id
+    const docId = `page:${homeId}`
+    const { doc } = await relay.retain(docId)
+
+    failing.arm()
+    editTitleUpdate(doc, 'Survives a transient failure')
+    relay.release(docId)
+    await failing.failed
+
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    const persisted = await getCollabDocumentState(harness.db, docId)
+    expect(persisted?.state).toBeDefined()
+    const { rows: pageRows } = await harness.db<{ cells_json: Record<string, unknown> }>`
+      select cells_json from data_rows where id = ${homeId}
+    `
+    const body = pageRows[0].cells_json.body as {
+      nodes: Record<string, { label?: string }>
+      rootNodeId: string
+    }
+    expect(body.nodes[body.rootNodeId].label).toBe('Survives a transient failure')
+    expect(errorLog).toHaveBeenCalled()
+    errorLog.mockRestore()
+  })
+
+  it('makes an explicit flush fail instead of publishing stale derived JSON', async () => {
+    const errorLog = spyOn(console, 'error').mockImplementation(() => {})
+    const harness = await createCapabilityTestHarness()
+    cleanups.push(() => harness.cleanup())
+    await harness.setupOwner()
+    const failing = failNextCollabBlobWrite(harness.db)
+    const relay = createCollabRelay(failing.db, { persistDebounceMs: 1_000 })
+    cleanups.push(() => relay.destroy())
+    const { rows } = await harness.db<{ id: string }>`
+      select id from data_rows where table_id = ${'pages'}
+    `
+    const docId = `page:${rows[0].id}`
+    const { doc } = await relay.openDoc(docId)
+
+    failing.arm()
+    editTitleUpdate(doc, 'Must not publish yet')
+    await expect(relay.flushAll()).rejects.toThrow('collaborative state persistence failed')
+    await failing.failed
+
+    // The failed flush schedules a retry; a later explicit flush can safely
+    // wait for it and succeeds once the transient database error is gone.
+    await relay.flushAll()
+    expect(errorLog).toHaveBeenCalled()
+    errorLog.mockRestore()
   })
 
   it('roster removal soft-deletes the row on site-doc persist', async () => {

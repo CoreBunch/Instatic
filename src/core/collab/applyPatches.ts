@@ -289,7 +289,19 @@ function applyRowTargets(
         const existing = props.get(key)
         if (existing instanceof Y.Text) {
           const preValue = preTree?.nodes[nodeId]?.props[key]
-          applyTextDiff(existing, typeof preValue === 'string' ? preValue : existing.toString(), nextValue)
+          const expectedValue = typeof preValue === 'string' ? preValue : existing.toString()
+          const actualValue = existing.toString()
+          // Browser input ordering normally keeps the projected pre-value
+          // aligned with the Y.Text. Other callers (MCP, plugin RPC, future
+          // async surfaces) may hold a stale JSON snapshot, though. Applying
+          // stale splice indexes to the live text can throw "Length exceeded"
+          // or edit the wrong characters, so fall back to a safe rewrite diff
+          // against the actual document value when drift is detected.
+          applyTextDiff(
+            existing,
+            actualValue === expectedValue ? expectedValue : actualValue,
+            nextValue,
+          )
         } else {
           props.set(key, new Y.Text(nextValue))
         }

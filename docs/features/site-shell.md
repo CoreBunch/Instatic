@@ -540,7 +540,11 @@ JSON to `data_rows`/site on a short debounce (~800 ms), applies
 roster-driven soft-deletes, and RESETS docs whose row was written outside
 the relay (`rowWriteEvents.ts`) — clients rebind and reseed. The publish
 endpoint flushes the relay first so the baked snapshot includes edits still
-inside the debounce window.
+inside the debounce window. A transient persistence failure keeps the dirty
+doc resident and retries; explicit publish/reset flushes fail instead of
+continuing against stale derived JSON. Normal shutdown and final-client
+release flush synchronously. A hard process/host crash can still lose the
+bounded debounce window (at most ~800 ms with the default).
 
 **Wire** (`server/collab/socket.ts` + `@core/collab/protocol`): binary
 frames `docId | frameType | payload` multiplex every doc over ONE WebSocket
@@ -597,9 +601,10 @@ each sparse sample every animation frame (exponential smoothing, snap on
 oversized jumps), so motion stays glassy at a fraction of the wire rate.
 Peer states are wire data — validated with TypeBox before rendering.
 
-MCP note: headless MCP reads hit the DB, so a browser-relayed write is
-visible to them after the relay's persist debounce (≤ ~1 s) — the old
-client-side flush is gone.
+MCP note: headless MCP reads hit the DB, so every headless read and
+`site_publish` runs the server-side relay flush before touching persisted
+rows. A browser-relayed write is therefore immediately ordered before the
+following MCP read/publish without a client-side save step.
 
 ### Atomic diff validation
 

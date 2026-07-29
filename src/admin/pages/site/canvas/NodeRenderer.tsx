@@ -213,6 +213,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
       doc: collabDoc,
       nodeId,
       prop: session.prop,
+      onInvalidated: () => useEditorStore.getState().endInlineEdit(),
     })
   }, [isInlineEditing, inlineEditInitialValue, nodeId])
 

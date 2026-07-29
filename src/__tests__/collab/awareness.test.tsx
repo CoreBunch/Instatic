@@ -18,15 +18,24 @@ import {
   connectCollabProvider,
   disconnectCollabProvider,
 } from '@site/store/slices/site/collabBinding'
-import type { BoundCollabDoc, CollabProvider } from '@site/collab/collabProvider'
+import type {
+  BoundCollabDoc,
+  CollabProvider,
+  CollabResetListener,
+} from '@site/collab/collabProvider'
+import type { ResetReason } from '@core/collab'
 import { PeerPresenceOverlay } from '@admin/pages/site/canvas/PeerPresenceOverlay'
 import '@modules/base/index'
 
 /** Minimal provider stub: real Awareness, synced-on-bind docs, no transport. */
-function fakeProvider(): CollabProvider & { awareness: awarenessProtocol.Awareness } {
+function fakeProvider(): CollabProvider & {
+  awareness: awarenessProtocol.Awareness
+  triggerReset: (docId: string, reason?: ResetReason) => void
+} {
   const presenceDoc = new Y.Doc()
   const awareness = new awarenessProtocol.Awareness(presenceDoc)
   const bound = new Map<string, BoundCollabDoc>()
+  const resetListeners = new Set<CollabResetListener>()
   return {
     bind: (docId) => {
       let entry = bound.get(docId)
@@ -42,8 +51,16 @@ function fakeProvider(): CollabProvider & { awareness: awarenessProtocol.Awarene
     },
     awareness,
     status: () => 'connected',
+    canSend: () => true,
+    reconnectNow: () => {},
     onStatus: () => () => {},
-    onReset: () => () => {},
+    onReset: (listener) => {
+      resetListeners.add(listener)
+      return () => resetListeners.delete(listener)
+    },
+    triggerReset: (docId, reason = 'rewritten') => {
+      for (const listener of resetListeners) listener(docId, reason)
+    },
     destroy: () => {
       awareness.destroy()
       presenceDoc.destroy()
@@ -93,6 +110,28 @@ describe('activeEditorDocId', () => {
     ).toBe('component:vc-1')
     expect(activeEditorDocId({ activeDocument: null, activePageId: 'p1' })).toBe('page:p1')
     expect(activeEditorDocId({ activeDocument: null, activePageId: null })).toBeNull()
+  })
+})
+
+describe('collab reset during inline editing', () => {
+  it('ends only the inline session owned by the reset document', () => {
+    const store = useEditorStore.getState()
+    store.createSite('Reset Site')
+    const pageId = useEditorStore.getState().activePageId!
+    const page = useEditorStore.getState().site!.pages[0]
+    const nodeId = useEditorStore
+      .getState()
+      .insertNode('base.text', { text: 'hello' }, page.rootNodeId)
+    useEditorStore.getState().startInlineEdit(nodeId, 'desktop')
+    expect(useEditorStore.getState().activeInlineEdit).not.toBeNull()
+
+    const provider = fakeProvider()
+    connectCollabProvider(provider)
+    provider.triggerReset('page:another-page')
+    expect(useEditorStore.getState().activeInlineEdit).not.toBeNull()
+
+    provider.triggerReset(`page:${pageId}`)
+    expect(useEditorStore.getState().activeInlineEdit).toBeNull()
   })
 })
 

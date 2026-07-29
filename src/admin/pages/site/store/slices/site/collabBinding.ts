@@ -68,11 +68,11 @@ import {
   collabBlockToast,
   clearCollabBlockNotice,
   collabResetToast,
+  resetTargetsActiveDocument,
   transportBlockReason,
   type BlockedReason,
   type LocalPatchOutcome,
 } from './collabNotices'
-
 interface ManagedDoc {
   doc: Y.Doc
   manager: Y.UndoManager
@@ -658,7 +658,14 @@ export function connectCollabProvider(next: CollabProvider): void {
   detachProviderReset?.()
   detachProviderReset = next.onReset((docId, reason) => {
     collabResetToast(reason)
-    // The doc's undo history belongs to the lineage that just died: its
+    const current = storeApi?.getState()
+    if (
+      current?.activeInlineEdit &&
+      resetTargetsActiveDocument(docId, current.activeDocument, current.activePageId)
+    ) {
+      current.endInlineEdit()
+    }
+    // The undo history belongs to the lineage that just died: its
     // UndoManager is rebuilt empty below, so any routing entry still naming
     // this doc would make Cmd+Z a silent no-op that consumes a step.
     undoRoute = undoRoute.map((group) => group.filter((id) => id !== docId)).filter((g) => g.length > 0)

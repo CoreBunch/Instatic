@@ -97,6 +97,7 @@ interface RelayEntry {
 }
 
 type DerivedWrite = 'written' | 'incomplete' | 'invalid'
+type PersistOutcome = 'clean' | 'retry' | 'invalid'
 
 export type RelayUpdateListener = (
   docId: string,
@@ -273,9 +274,9 @@ export function createCollabRelay(
     return 'written'
   }
 
-  async function persistNow(docId: string): Promise<void> {
+  async function persistNow(docId: string): Promise<PersistOutcome> {
     const entry = entries.get(docId)
-    if (!entry || !entry.dirty) return
+    if (!entry || !entry.dirty) return 'clean'
     entry.dirty = false
     try {
       await putCollabDocumentState(db, docId, Y.encodeStateAsUpdate(entry.doc), entry.generation)
@@ -283,10 +284,15 @@ export function createCollabRelay(
       // A shell that failed validation MUST be retried: the blob is fresh but
       // the derived JSON is stale, and a reset reseeds from that JSON. Leaving
       // the doc clean here is how an accepted page silently disappears.
-      if (derived === 'invalid') entry.dirty = true
+      if (derived === 'invalid') {
+        entry.dirty = true
+        return 'invalid'
+      }
+      return 'clean'
     } catch (err) {
-      entry.dirty = true // retry on the next schedule
+      entry.dirty = true
       console.error(`[collab] persist failed for ${docId}:`, err)
+      return 'retry'
     }
   }
 
@@ -297,7 +303,19 @@ export function createCollabRelay(
     if (entry.persistTimer) return
     entry.persistTimer = setTimeout(() => {
       entry.persistTimer = null
-      entry.persistChain = entry.persistChain.then(() => persistNow(docId))
+      const persist = entry.persistChain.then(() => persistNow(docId))
+      entry.persistChain = persist.then(() => undefined)
+      void persist.then((outcome) => {
+        if (outcome === 'retry') {
+          schedulePersist(docId)
+        } else if (outcome === 'clean' && entry.refs <= 0) {
+          // A final persist may have failed after the last editor disconnected.
+          // Keep the doc resident until a retry succeeds, then finish eviction.
+          void evict(docId, { persist: false }).catch((err) => {
+            console.error(`[collab] eviction after retry failed for ${docId}:`, err)
+          })
+        }
+      })
     }, persistDebounceMs)
   }
 
@@ -372,10 +390,19 @@ export function createCollabRelay(
       // Await the chain even when NOT persisting: a persist already past its
       // `dirty` check would otherwise resolve after `resetDocs` deleted the
       // row and re-insert the dead blob via upsert, undoing the reset.
-      entry.persistChain = entry.persistChain.then(() =>
-        opts2.persist ? persistNow(docId) : undefined,
+      const persist = entry.persistChain.then(() =>
+        opts2.persist ? persistNow(docId) : Promise.resolve<PersistOutcome>('clean'),
       )
-      await entry.persistChain
+      entry.persistChain = persist.then(() => undefined)
+      const outcome = await persist
+      if (outcome !== 'clean') {
+        if (outcome === 'retry') schedulePersist(docId)
+        throw new Error(
+          outcome === 'invalid'
+            ? `cannot evict ${docId}: collaborative state does not project to valid persisted JSON`
+            : `cannot evict ${docId}: collaborative state persistence failed`,
+        )
+      }
       // An update may have landed during that await and scheduled a new timer.
       if (entry.persistTimer) {
         clearTimeout(entry.persistTimer)
@@ -410,8 +437,13 @@ export function createCollabRelay(
       if (affected.includes(docId)) continue
       const entry = entries.get(docId)
       if (!entry?.dirty) continue
-      entry.persistChain = entry.persistChain.then(() => persistNow(docId))
-      await entry.persistChain
+      const persist = entry.persistChain.then(() => persistNow(docId))
+      entry.persistChain = persist.then(() => undefined)
+      const outcome = await persist
+      if (outcome !== 'clean') {
+        if (outcome === 'retry') schedulePersist(docId)
+        throw new Error(`cannot reset ${affected.join(', ')}: failed to flush ${docId}`)
+      }
     }
 
     const heldRefs = new Map<string, number>()
@@ -472,8 +504,17 @@ export function createCollabRelay(
         clearTimeout(entry.persistTimer)
         entry.persistTimer = null
       }
-      entry.persistChain = entry.persistChain.then(() => persistNow(docId))
-      await entry.persistChain
+      const persist = entry.persistChain.then(() => persistNow(docId))
+      entry.persistChain = persist.then(() => undefined)
+      const outcome = await persist
+      if (outcome !== 'clean') {
+        if (outcome === 'retry') schedulePersist(docId)
+        throw new Error(
+          outcome === 'invalid'
+            ? `cannot flush ${docId}: collaborative state does not project to valid persisted JSON`
+            : `cannot flush ${docId}: collaborative state persistence failed`,
+        )
+      }
     }
   }
 
