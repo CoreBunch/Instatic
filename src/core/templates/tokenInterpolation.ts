@@ -65,15 +65,12 @@ export function bindingToToken(source: DynamicPropBinding['source'], fieldPath: 
  * string-typed props in a published page contain no token syntax at all
  * (button labels, html tags, etc.). Detecting that case in O(n) without
  * allocations short-circuits a full parse + concat per render.
+ *
+ * Any `{` warrants a parse — including an escaped `\{`, which the parser
+ * still processes to strip the backslash and emit a literal `{`.
  */
 export function containsTokens(value: string): boolean {
-  // Need at least `{x.y}` — 5 chars minimum. Looking for an unescaped `{`.
-  if (value.length < 5) return false
-  for (let i = 0; i < value.length; i++) {
-    const c = value[i]
-    if (c === '{' && (i === 0 || value[i - 1] !== '\\')) return true
-  }
-  return false
+  return value.includes('{')
 }
 
 // ---------------------------------------------------------------------------
