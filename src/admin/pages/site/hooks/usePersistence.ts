@@ -29,6 +29,7 @@ import type { IPersistenceAdapter } from '@core/persistence/types'
 import { cmsAdapter } from '@core/persistence/cms'
 import { SiteValidationError } from '@core/persistence/validate'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { pushToast } from '@ui/components/Toast'
 import { readEditorSelectPreference } from '@site/preferences/editorPreferences'
 import type { CollabProvider } from '@site/collab/collabProvider'
 import {
@@ -138,12 +139,19 @@ export function usePersistence(
         }
       } catch (err) {
         if (err instanceof SiteValidationError) {
-          console.warn('[persistence] Corrupt CMS site data:', err.message)
+          console.error('[persistence] Corrupt CMS site data:', err)
         } else {
-          console.warn('[persistence] Failed to load CMS site:', err)
+          console.error('[persistence] Failed to load CMS site:', err)
         }
         if (!cancelled) {
-          setLoadState({ phase: 'error', message: getErrorMessage(err, 'Failed to load CMS site') })
+          const message = getErrorMessage(err, 'Failed to load CMS site')
+          setLoadState({ phase: 'error', message })
+          pushToast({
+            kind: 'error',
+            title: 'Site load failed',
+            body: message,
+            location: 'site-editor:persistence',
+          })
         }
         return
       }
@@ -162,7 +170,15 @@ export function usePersistence(
         if (!cancelled) setLoadState({ phase: 'ready' })
       } catch (err) {
         if (!cancelled) {
-          setLoadState({ phase: 'error', message: getErrorMessage(err, 'Draft not saved yet') })
+          const message = getErrorMessage(err, 'Draft not saved yet')
+          console.error('[persistence] Failed to create CMS draft:', err)
+          setLoadState({ phase: 'error', message })
+          pushToast({
+            kind: 'error',
+            title: 'Draft creation failed',
+            body: message,
+            location: 'site-editor:persistence',
+          })
         }
       }
     }
@@ -171,31 +187,44 @@ export function usePersistence(
     let offStatus: (() => void) | null = null
 
     async function boot(): Promise<void> {
-      // Fetch the provider module (yjs transport) in parallel with the HTTP
-      // load — a dynamic import keeps it out of the route-shell chunk.
-      const providerModule = import('@site/collab/collabProvider')
-      await load()
-      if (cancelled) return
-      // Only connect when the store actually holds a site to bind. A hard load
-      // failure with NO in-memory site would otherwise open a socket with zero
-      // docs and an infinite reconnect loop; skip it and let saveStatus show
-      // the error. When a stale in-memory site survived a transient reload
-      // failure, we DO connect — live sync recovers against those docs and the
-      // connected state then supersedes the stale load error in saveStatus.
-      if (useEditorStore.getState().site === null) return
-      const { createCollabProvider } = await providerModule
-      if (cancelled) return
-      provider = createCollabProvider()
-      offStatus = provider.onStatus((status) => {
-        setCollabState(status === 'connected' ? 'connected' : status)
-      })
-      setCollabState(provider.status() === 'connected' ? 'connected' : provider.status())
-      // Connect AFTER the HTTP load hydrated the store: connectCollabProvider
-      // rebinds every doc for the loaded site through the provider
-      // (server-seeded), and the HTTP-loaded projection keeps the canvas
-      // painted while the initial sync streams in.
-      connected = true
-      connectCollabProvider(provider)
+      try {
+        // Fetch the provider module (yjs transport) in parallel with the HTTP
+        // load — a dynamic import keeps it out of the route-shell chunk.
+        const providerModule = import('@site/collab/collabProvider')
+        await load()
+        if (cancelled) return
+        // Only connect when the store actually holds a site to bind. A hard load
+        // failure with NO in-memory site would otherwise open a socket with zero
+        // docs and an infinite reconnect loop; skip it and let saveStatus show
+        // the error. When a stale in-memory site survived a transient reload
+        // failure, we DO connect — live sync recovers against those docs and the
+        // connected state then supersedes the stale load error in saveStatus.
+        if (useEditorStore.getState().site === null) return
+        const { createCollabProvider } = await providerModule
+        if (cancelled) return
+        provider = createCollabProvider()
+        offStatus = provider.onStatus((status) => {
+          setCollabState(status === 'connected' ? 'connected' : status)
+        })
+        setCollabState(provider.status() === 'connected' ? 'connected' : provider.status())
+        // Connect AFTER the HTTP load hydrated the store: connectCollabProvider
+        // rebinds every doc for the loaded site through the provider
+        // (server-seeded), and the HTTP-loaded projection keeps the canvas
+        // painted while the initial sync streams in.
+        connected = true
+        connectCollabProvider(provider)
+      } catch (err) {
+        if (cancelled) return
+        const message = getErrorMessage(err, 'Failed to start collaborative editing')
+        console.error('[persistence] Failed to start collaborative editing:', err)
+        setLoadState({ phase: 'error', message })
+        pushToast({
+          kind: 'error',
+          title: 'Collaboration startup failed',
+          body: message,
+          location: 'site-editor:persistence',
+        })
+      }
     }
     void boot()
 

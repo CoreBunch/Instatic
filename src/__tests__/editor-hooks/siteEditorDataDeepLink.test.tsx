@@ -9,6 +9,10 @@ import type { SiteDocument } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import type { IPersistenceAdapter } from '@core/persistence/types'
 import { buildCoreFrameworkSettings } from '@core/framework'
+import {
+  subscribeToasts,
+  type Toast,
+} from '@ui/components/Toast/toastBus'
 
 afterEach(cleanup)
 
@@ -196,5 +200,65 @@ describe('Site editor Data workspace deep links', () => {
     await waitFor(() => {
       expect(useEditorStore.getState().site?.settings.framework).toBeDefined()
     })
+  })
+})
+
+describe('Site editor persistence failures', () => {
+  it('reports a failed site load through the global toast bus', async () => {
+    const toasts: Toast[] = []
+    const unsubscribe = subscribeToasts((snapshot) => {
+      toasts.splice(0, toasts.length, ...snapshot)
+    })
+    const adapter: IPersistenceAdapter = {
+      async loadSite() {
+        throw new Error('Database unavailable')
+      },
+      async saveSite() {
+        return { seq: 1 }
+      },
+    }
+
+    const hook = renderHook(() => usePersistence('default', adapter, { enabled: true }))
+
+    await waitFor(() => {
+      expect(hook.result.current.saveStatus).toEqual({
+        state: 'error',
+        message: 'Database unavailable',
+      })
+      expect(toasts).toContainEqual(expect.objectContaining({
+        kind: 'error',
+        title: 'Site load failed',
+        body: 'Database unavailable',
+        location: 'site-editor:persistence',
+      }))
+    })
+    unsubscribe()
+  })
+
+  it('reports a failed initial draft creation through the global toast bus', async () => {
+    const toasts: Toast[] = []
+    const unsubscribe = subscribeToasts((snapshot) => {
+      toasts.splice(0, toasts.length, ...snapshot)
+    })
+    const adapter: IPersistenceAdapter = {
+      async loadSite() {
+        return null
+      },
+      async saveSite() {
+        throw new Error('Storage is read-only')
+      },
+    }
+
+    renderHook(() => usePersistence('default', adapter, { enabled: true }))
+
+    await waitFor(() => {
+      expect(toasts).toContainEqual(expect.objectContaining({
+        kind: 'error',
+        title: 'Draft creation failed',
+        body: 'Storage is read-only',
+        location: 'site-editor:persistence',
+      }))
+    })
+    unsubscribe()
   })
 })
