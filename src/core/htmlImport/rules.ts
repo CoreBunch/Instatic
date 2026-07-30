@@ -275,7 +275,12 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
     map: (el) => ({
       moduleId: 'base.option',
       props: {
-        value: attr(el, 'value') || normalizeImportedText(el.textContent ?? ''),
+        // `value=""` is the conventional "no choice" option and is meaningful,
+        // so presence decides here — falling back on emptiness would turn the
+        // placeholder into a real filter value named after its own label.
+        value: el.hasAttribute('value')
+          ? attr(el, 'value')
+          : normalizeImportedText(el.textContent ?? ''),
         label: attr(el, 'label') || normalizeImportedText(el.textContent ?? ''),
         selected: el.hasAttribute('selected'),
         disabled: el.hasAttribute('disabled'),
@@ -324,6 +329,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
           props: {
             label: submitLabel(el),
             disabled: el.hasAttribute('disabled'),
+            buttonType: type,
           },
         }
       }
@@ -421,7 +427,11 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
       }
       return {
         moduleId: 'base.button',
-        props: { label: normalizeImportedText(el.textContent ?? ''), disabled: el.hasAttribute('disabled') },
+        props: {
+          label: normalizeImportedText(el.textContent ?? ''),
+          disabled: el.hasAttribute('disabled'),
+          buttonType: type === 'reset' ? 'reset' : 'button',
+        },
       }
     },
   },

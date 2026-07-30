@@ -93,6 +93,13 @@ function orderFoldersParentFirst<T extends { id: string; parentId: string | null
   return ordered
 }
 
+/** ZIP local-file-header magic (`PK\x03\x04`) — enough to tell an archive from JSON. */
+function looksLikeZipArchive(body: ArrayBuffer): boolean {
+  if (body.byteLength < 4) return false
+  const head = new Uint8Array(body, 0, 4)
+  return head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04
+}
+
 export async function handleImportRoute(
   req: Request,
   db: DbClient,
@@ -130,7 +137,22 @@ export async function handleImportRoute(
     if (stepUp) return stepUp
   }
 
-  // Parse and validate the bundle body
+  // Parse and validate the bundle body. This endpoint takes the JSON bundle;
+  // the ZIP archive the export UI downloads belongs to /import/archive. Sent
+  // here it fails schema validation, and a bare schema error sends the caller
+  // hunting a bug in their bundle instead of at the wrong door — so name the
+  // mistake when the body is recognisably an archive.
+  const rawBody = await req.clone().arrayBuffer()
+  if (looksLikeZipArchive(rawBody)) {
+    return jsonResponse(
+      {
+        error:
+          'This endpoint accepts a JSON site bundle. The exported .zip archive goes to '
+          + `${CMS_API_PREFIX}/import/archive (same strategy query parameter).`,
+      },
+      { status: 400 },
+    )
+  }
   const bundle = await readValidatedBody(req, SiteBundleSchema)
   if (!bundle) {
     return jsonResponse({ error: 'Invalid bundle: body does not conform to SiteBundleSchema' }, { status: 400 })

@@ -42,6 +42,15 @@ export const ButtonModule: ModuleDefinition<ButtonStoredProps> = {
       options: [...ANCHOR_TARGET_OPTIONS],
     },
     disabled: { type: 'toggle', label: 'Disabled' },
+    buttonType: {
+      type: 'select',
+      label: 'Button type',
+      condition: { field: 'href', eq: '' },
+      options: [
+        { label: 'Button', value: 'button' },
+        { label: 'Reset', value: 'reset' },
+      ],
+    },
     htmlAttributes: htmlAttributesControl(),
   },
 
@@ -63,7 +72,8 @@ export const ButtonModule: ModuleDefinition<ButtonStoredProps> = {
       return { html: `<a${attrs} href="${anchor.href}" target="${String(props.target)}"${relAttr}>${label}</a>` }
     }
     const disabledAttr = props.disabled ? ' disabled aria-disabled="true"' : ''
-    return { html: `<button${attrs} type="button"${disabledAttr}>${label}</button>` }
+    const buttonType = props.buttonType === 'reset' ? 'reset' : 'button'
+    return { html: `<button${attrs} type="${buttonType}"${disabledAttr}>${label}</button>` }
   },
 }
 
