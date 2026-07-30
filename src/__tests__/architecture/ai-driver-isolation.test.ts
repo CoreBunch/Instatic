@@ -21,7 +21,8 @@
  *   - `@anthropic-ai/sdk`               — the plain SDK, always banned
  *
  * Scoped (allowed under one prefix only):
- *   - `@modelcontextprotocol/sdk`       — allowed ONLY under `server/ai/mcp/`,
+ *   - `@modelcontextprotocol/*`         — the official split v2 packages are
+ *                                         allowed ONLY under `server/ai/mcp/`,
  *                                         where Instatic implements an MCP
  *                                         *server* (a real wire protocol — a
  *                                         legitimate SDK use). Still banned in
@@ -74,8 +75,8 @@ const RULES: PackageRule[] = [
     allowed: [],
   },
   {
-    label: '@modelcontextprotocol/sdk',
-    importRe: /from\s+['"]@modelcontextprotocol\/sdk['"]|require\s*\(\s*['"]@modelcontextprotocol\/sdk['"]\s*\)|from\s+['"]@modelcontextprotocol\/sdk\/|require\s*\(\s*['"]@modelcontextprotocol\/sdk\//,
+    label: '@modelcontextprotocol/*',
+    importRe: /from\s+['"]@modelcontextprotocol\/(?:server|client|core|node|sdk)(?:\/[^'"]*)?['"]|require\s*\(\s*['"]@modelcontextprotocol\/(?:server|client|core|node|sdk)(?:\/[^'"]*)?['"]\s*\)/,
     // Allowed only inside the MCP server module — banned everywhere else.
     allowed: [],
     allowedPrefixes: ['server/ai/mcp/'],

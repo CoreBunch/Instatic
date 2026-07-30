@@ -126,6 +126,16 @@ function mapLoopProps(el: Element): Record<string, unknown> {
   }
 }
 
+function mapOutletProps(el: Element): Record<string, unknown> {
+  const customTag = attr(el, 'data-custom-tag')
+  const tag = attr(el, 'data-tag')
+  return customTag
+    ? { tag: 'custom', customTag }
+    : tag
+      ? { tag }
+      : {}
+}
+
 export const HTML_TO_MODULE_RULES: ImportRule[] = [
   // CMS content outlet → base.outlet (LEAF). The agent (and any hand-authored
   // template HTML) writes `<instatic-outlet>` to mark where matched content —
@@ -133,7 +143,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
   // so we never recurse; any inner markup is ignored (the composer fills it).
   {
     match: 'instatic-outlet',
-    map: () => ({ moduleId: 'base.outlet', props: {} }),
+    map: (el) => ({ moduleId: 'base.outlet', props: mapOutletProps(el) }),
   },
 
   // CMS loop → base.loop (RECURSE). The agent writes this custom element when

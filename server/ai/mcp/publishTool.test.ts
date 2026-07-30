@@ -50,7 +50,8 @@ async function callMcp(
   if (!response) throw new Error('MCP HTTP handler did not claim its endpoint')
   expect(response.status).toBe(200)
   const text = await response.text()
-  const payload = text.startsWith('data:') ? text.slice(text.indexOf('{')) : text
+  const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
+  const payload = dataLine?.slice(6) ?? text
   return JSON.parse(payload) as RpcResponse
 }
 

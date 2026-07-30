@@ -1260,6 +1260,19 @@ describe('base.outlet — <instatic-outlet>', () => {
     expect(node.children ?? []).toHaveLength(0)
   })
 
+  it('preserves built-in and custom outlet semantics', () => {
+    const builtIn = single('<instatic-outlet data-tag="div"></instatic-outlet>')
+    expect(builtIn.props).toMatchObject({ tag: 'div' })
+
+    const custom = single(
+      '<instatic-outlet data-custom-tag="section-heading"></instatic-outlet>',
+    )
+    expect(custom.props).toMatchObject({
+      tag: 'custom',
+      customTag: 'section-heading',
+    })
+  })
+
   it('survives import alongside sibling chrome, producing one outlet node', () => {
     const result = importHtml(
       '<header>Top</header><instatic-outlet></instatic-outlet><footer>Bottom</footer>',

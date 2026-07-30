@@ -4,7 +4,7 @@ MCP connections let external AI clients operate an Instatic instance through the
 
 This is the inverse of the **Providers** tab. Providers let Instatic call model APIs; MCP connections let outside clients call Instatic.
 
-The wire server uses `@modelcontextprotocol/sdk`. That dependency remains allowed only under `server/ai/mcp/`; provider drivers continue to use their direct REST implementations.
+The wire server uses the stable split `@modelcontextprotocol/server` v2 package. That dependency remains allowed only under `server/ai/mcp/`; provider drivers continue to use their direct REST implementations.
 
 ## Connection modes
 
@@ -24,6 +24,21 @@ https://<your-host>/_instatic/mcp
 ```
 
 Hosted clients run in their provider's infrastructure. They cannot reach `localhost`, a private LAN address, or an HTTP-only deployment. The MCP tab detects this and warns until Instatic's canonical public origin is HTTPS.
+
+## Wire protocol
+
+The endpoint uses the official v2 `createMcpHandler` Web-standard entry and serves stable MCP `2026-07-28`. That revision is stateless at the protocol layer:
+
+- clients probe capabilities with `server/discover`; there is no modern `initialize` / `notifications/initialized` handshake;
+- every request carries `MCP-Protocol-Version: 2026-07-28`, the required `Mcp-Method` routing header, and `Mcp-Name` when the operation addresses a named tool/resource/prompt;
+- the request's `params._meta` carries the protocol version, client identity, and client capabilities;
+- the endpoint never creates or returns `Mcp-Session-Id` for modern requests.
+
+The same handler keeps the SDK's `legacy: 'stateless'` fallback enabled. Clients speaking a 2025-era revision may still send an `initialize` request and then make independent authenticated POSTs, but no protocol session is created. This compatibility path can be removed when supported clients have all migrated.
+
+Every request is bearer-authenticated before the SDK dispatches it. Browser-originated requests are also checked against Instatic's configured public-origin policy before authentication or dispatch; requests without `Origin` remain valid for native and server-to-server MCP clients.
+
+See the official [TypeScript SDK v2 migration guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/migration/support-2026-07-28.md), [stable MCP 2026-07-28 specification](https://modelcontextprotocol.io/specification/2026-07-28), and [release changelog](https://modelcontextprotocol.io/specification/2026-07-28/changelog) for the wire revision.
 
 ## Hosted OAuth flow
 
@@ -124,7 +139,7 @@ executeAiTool(...) / live editor bridge
 | `connectors/store.ts` | Persistent connection grant and the token-free `toConnectionView` projection. |
 | `connectors/token.ts` | Opaque secret generation, hashing, and PKCE challenge calculation. |
 | `auth.ts` | Resolves OAuth access tokens or personal tokens to `{ connectorId, userId, capabilities }`; returns a discovery-aware 401 otherwise. |
-| `transports/http.ts` | Stateless Web-standard Streamable HTTP transport. |
+| `transports/http.ts` | Authenticated, Origin-validated `createMcpHandler` entry for MCP 2026-07-28 plus the stateless 2025 fallback. |
 | `server.ts` / `registry.ts` | Low-level SDK server, TypeBox input schemas, catalog deduplication, and capability filtering. |
 | `editorBridge.ts` | Per-user, per-scope live workspace bridge. |
 | `tools/publishTool.ts` | Explicit canonical full-site publish with MCP audit metadata. |
