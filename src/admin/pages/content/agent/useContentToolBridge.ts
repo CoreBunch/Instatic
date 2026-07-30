@@ -33,6 +33,8 @@ const CONTENT_KIND_VISIBLE: ReadonlySet<string> = new Set(['postType'])
 
 interface ContentToolWorkspaceSurface {
   collections: DataTable[]
+  /** Re-reads the roster from the server and returns the fresh post types. */
+  refreshCollections(): Promise<DataTable[]>
   entries: DataRow[]
   selectedEntry: DataRow | null
   selectedCollectionId: string | null
@@ -77,6 +79,29 @@ export function useContentToolBridge({
   })
 
   useEffect(() => {
+    /**
+     * Find a Content-visible collection, refreshing the roster once if the id
+     * is unknown.
+     *
+     * The workspace caches its collections at mount, so a table created after
+     * that — by an import, another admin, or an MCP connector building a site
+     * — is invisible here and every write against it fails with "not found"
+     * until someone reloads the page. One refresh distinguishes "created a
+     * moment ago" from "does not exist".
+     */
+    const resolveCollection = async (tableId: string): Promise<DataTable | null> => {
+      const visible = (table: DataTable | undefined): DataTable | null =>
+        table && CONTENT_KIND_VISIBLE.has(table.kind) ? table : null
+
+      const cached = visible(
+        workspaceRef.current.collections.find((candidate) => candidate.id === tableId),
+      )
+      if (cached) return cached
+
+      const refreshed = await workspaceRef.current.refreshCollections()
+      return visible(refreshed.find((candidate) => candidate.id === tableId))
+    }
+
     const handle: ContentBridgeHandle = {
       buildSnapshot() {
         return buildSnapshotFromWorkspace(
@@ -106,16 +131,13 @@ export function useContentToolBridge({
         return opened
       },
       async selectCollection(tableId) {
-        const ws = workspaceRef.current
-        const table = ws.collections.find((candidate) => candidate.id === tableId)
-        if (!table || !CONTENT_KIND_VISIBLE.has(table.kind)) return false
-        flushSync(() => ws.selectCollection(tableId))
+        const table = await resolveCollection(tableId)
+        if (!table) return false
+        flushSync(() => workspaceRef.current.selectCollection(tableId))
         return true
       },
       async createDocument({ tableId, fields }) {
-        const ws = workspaceRef.current
-        const table = ws.collections.find((candidate) => candidate.id === tableId)
-        if (!table || !CONTENT_KIND_VISIBLE.has(table.kind)) {
+        if (!(await resolveCollection(tableId))) {
           throw new Error(`Collection ${tableId} not found.`)
         }
         const cells = fields ? normalizeEditableFields(fields) : {}

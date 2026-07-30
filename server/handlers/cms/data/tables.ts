@@ -33,6 +33,7 @@ import {
   softDeleteDataTable,
   updateDataTable,
   createDataRow,
+  getDataRowBySlug,
   listDataRows,
 } from '../../../repositories/data'
 import { normalizeDataTableFields } from '@core/data/fields'
@@ -326,6 +327,20 @@ async function handleTableRows(
       actor: { kind: 'user', userId: user.id },
     })
     const slug = slugForTable(table, cells)
+
+    // A slug collision is an ordinary, recoverable authoring conflict, but the
+    // unique index raises a driver error that would otherwise surface as an
+    // opaque 500 — leaving the caller (often a script or an MCP connector) to
+    // guess whether it hit a bug or a duplicate. Name it instead.
+    if (slug) {
+      const clash = await getDataRowBySlug(db, tableId, slug)
+      if (clash) {
+        return jsonResponse(
+          { error: `A row with slug "${slug}" already exists in this table.`, conflictRowId: clash.id },
+          { status: 409 },
+        )
+      }
+    }
 
     const row = await createDataRow(db, { tableId, cells, slug }, user.id)
     await emitContentEntryCreated(db, row.id, { kind: 'user', userId: user.id })

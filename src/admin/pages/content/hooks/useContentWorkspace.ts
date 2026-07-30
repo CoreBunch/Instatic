@@ -118,6 +118,26 @@ export function useContentWorkspace({
     setEntries((current) => updateRowList(current, entry))
   }
 
+  /**
+   * Re-read the collection roster from the server and return it.
+   *
+   * The mount-time load is a snapshot: a collection created after it — by an
+   * import, another admin, or an MCP connector — is invisible to this
+   * workspace until a reload, and every write against it fails with
+   * "Collection not found". Callers that hit an unknown id refresh through
+   * here and retry rather than making the operator reload the page.
+   *
+   * Returns the fresh post-type list directly, so a caller can act on it in
+   * the same tick instead of waiting for a re-render.
+   */
+  const refreshCollections = useCallback(async (): Promise<DataTable[]> => {
+    const allTables = await listCmsDataTables()
+    const nextCollections = allTables.filter((table) => table.kind === 'postType')
+    setTables(allTables)
+    setCollections(nextCollections)
+    return nextCollections
+  }, [])
+
   useEffect(() => {
     let cancelled = false
 
@@ -488,6 +508,7 @@ export function useContentWorkspace({
   return {
     tables,
     collections,
+    refreshCollections,
     entries,
     authors,
     authorsLoading,
