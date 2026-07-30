@@ -1,5 +1,8 @@
 /**
- * Site-shell write diff validator — enforces granular capabilities on PUT /admin/api/cms/site.
+ * Site-shell write diff validator — the per-category capability POLICY for
+ * shell changes, shared by BOTH write transports: the transactional HTTP
+ * save (server/handlers/cms/siteDocument.ts) and the collab relay's update
+ * guard (server/collab/updateGuard.ts).
  *
  * The save endpoint accepts the site shell and replaces the draft.
  * To support a "Client" role with `site.content.edit` only, we walk the diff
@@ -28,11 +31,12 @@
  * the incoming document is treated as a structural change in its entirety —
  * a content-only caller cannot bootstrap a site from nothing.
  */
-import type { CoreCapability } from '../../auth/capabilities'
+import type { CoreCapability } from '../auth/capabilities'
 import type {
   StyleRule,
   SiteShell,
 } from '@core/page-tree'
+import { deepEqual } from '@core/utils/deepEqual'
 
 type SiteChangeKind = 'structure' | 'content' | 'style'
 
@@ -237,33 +241,4 @@ function diffFiles(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Small deep-equal helpers
-// ---------------------------------------------------------------------------
 
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true
-  if (a === null || b === null) return a === b
-  if (typeof a !== typeof b) return false
-  if (typeof a !== 'object') return false
-  if (Array.isArray(a)) {
-    if (!Array.isArray(b)) return false
-    if (a.length !== b.length) return false
-    for (let i = 0; i < a.length; i++) {
-      if (!deepEqual(a[i], b[i])) return false
-    }
-    return true
-  }
-  if (Array.isArray(b)) return false
-  const aKeys = Object.keys(a as Record<string, unknown>)
-  const bKeys = Object.keys(b as Record<string, unknown>)
-  if (aKeys.length !== bKeys.length) return false
-  for (const k of aKeys) {
-    if (!Object.prototype.hasOwnProperty.call(b, k)) return false
-    if (!deepEqual(
-      (a as Record<string, unknown>)[k],
-      (b as Record<string, unknown>)[k],
-    )) return false
-  }
-  return true
-}

@@ -21,6 +21,28 @@ async function loadSiteShell(
   return body.site
 }
 
+/** The shell's live sync seq — the conflict-detection base a fresh client would hold. */
+async function loadShellSeq(
+  harness: Awaited<ReturnType<typeof createCapabilityTestHarness>>,
+  cookie: string,
+): Promise<number> {
+  const res = await harness.cms('/admin/api/cms/site', { method: 'GET', cookie })
+  expect(res.status).toBe(200)
+  const body = await readJson<{ seq?: number }>(res)
+  return body.seq ?? 0
+}
+
+/** Live per-row sync seqs for the pages collection — a fresh client's base map. */
+async function pagesBaseSeqs(
+  harness: Awaited<ReturnType<typeof createCapabilityTestHarness>>,
+  cookie: string,
+): Promise<Record<string, number>> {
+  const res = await harness.cms('/admin/api/cms/pages', { method: 'GET', cookie })
+  expect(res.status).toBe(200)
+  const body = await readJson<{ rows: DataRow[] }>(res)
+  return Object.fromEntries((body.rows ?? []).map((row) => [row.id, row.seq ?? 0]))
+}
+
 async function loadPages(
   harness: Awaited<ReturnType<typeof createCapabilityTestHarness>>,
   cookie: string,
@@ -43,6 +65,8 @@ function siteDocBody(overrides: {
   deletedComponentIds?: string[]
   changedLayouts?: unknown[]
   deletedLayoutIds?: string[]
+  baseSeqs?: Record<string, number>
+  shellBaseSeq?: number
 }): Record<string, unknown> {
   return {
     mode: 'incremental',
@@ -52,6 +76,11 @@ function siteDocBody(overrides: {
     deletedComponentIds: [],
     changedLayouts: [],
     deletedLayoutIds: [],
+    // Conflict-detection bases — scenarios that expect a save to LAND pass
+    // live values; scenarios rejected by the capability diff gate (403,
+    // phase 1) never reach the conflict check, so the defaults suffice.
+    baseSeqs: {},
+    shellBaseSeq: 0,
     ...overrides,
   }
 }
@@ -134,7 +163,10 @@ describe('capability route matrix', () => {
       const styleAllowed = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: styleUser.cookie,
-        json: siteDocBody({ site: styleEdit }),
+        json: siteDocBody({
+          site: styleEdit,
+          shellBaseSeq: await loadShellSeq(harness, styleUser.cookie),
+        }),
       })
       expect(styleAllowed.status).toBe(200)
 
@@ -155,7 +187,10 @@ describe('capability route matrix', () => {
       const structureAllowed = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: structureUser.cookie,
-        json: siteDocBody({ site: { ...afterStyle, name: 'Capability Matrix Renamed' } }),
+        json: siteDocBody({
+          site: { ...afterStyle, name: 'Capability Matrix Renamed' },
+          shellBaseSeq: await loadShellSeq(harness, structureUser.cookie),
+        }),
       })
       expect(structureAllowed.status).toBe(200)
 
@@ -287,7 +322,11 @@ describe('capability route matrix', () => {
       const seedRes = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: ownerCookie,
-        json: siteDocBody({ site: ownerShell, changedPages: [seededPage] }),
+        json: siteDocBody({
+          site: ownerShell,
+          changedPages: [seededPage],
+          baseSeqs: await pagesBaseSeqs(harness, ownerCookie),
+        }),
       })
       expect(seedRes.status).toBe(200)
 
@@ -299,7 +338,11 @@ describe('capability route matrix', () => {
       const editRes = await harness.cms('/admin/api/cms/site-document', {
         method: 'PUT',
         cookie: contentEditor.cookie,
-        json: siteDocBody({ site: editorShell, changedPages: [editedPage] }),
+        json: siteDocBody({
+          site: editorShell,
+          changedPages: [editedPage],
+          baseSeqs: await pagesBaseSeqs(harness, contentEditor.cookie),
+        }),
       })
       expect(editRes.status).toBe(200)
 

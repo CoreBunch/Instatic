@@ -13,7 +13,6 @@ function resetStore() {
     selectedNodeId: null,
     selectedNodeIds: [],
     hoveredNodeId: null,
-    hasUnsavedChanges: false,
   })
 }
 
@@ -51,7 +50,7 @@ describe('site runtime store actions', () => {
     expect(useEditorStore.getState().site?.runtime).toEqual(useEditorStore.getState().siteRuntime)
   })
 
-  it('patches script runtime settings, marks the project dirty, and participates in undo', () => {
+  it('patches script runtime settings and participates in undo', () => {
     const store = useEditorStore.getState()
     store.createSite('Runtime Site')
     const fileId = useEditorStore.getState().createFile('src/scripts/confetti.ts', 'script')
@@ -60,7 +59,6 @@ describe('site runtime store actions', () => {
       _historyFuture: [],
       canUndo: false,
       canRedo: false,
-      hasUnsavedChanges: false,
     })
 
     useEditorStore.getState().patchScriptRuntimeConfig(fileId, {
@@ -70,7 +68,6 @@ describe('site runtime store actions', () => {
     })
 
     const afterPatch = useEditorStore.getState()
-    expect(afterPatch.hasUnsavedChanges).toBe(true)
     expect(afterPatch.canUndo).toBe(true)
     expect(afterPatch.siteRuntime.scripts[fileId]).toEqual({
       ...DEFAULT_SCRIPT_RUNTIME_CONFIG,
@@ -107,19 +104,17 @@ describe('site runtime store actions', () => {
     expect(useEditorStore.getState().site?.runtime?.scripts[fileId]).toBeUndefined()
   })
 
-  it('marks dependency manifest edits dirty and makes them undoable', () => {
+  it('makes dependency manifest edits undoable', () => {
     useEditorStore.getState().createSite('Runtime Site')
     useEditorStore.setState({
       _historyPast: [],
       _historyFuture: [],
       canUndo: false,
       canRedo: false,
-      hasUnsavedChanges: false,
     })
 
     useEditorStore.getState().setDependency('canvas-confetti', '^1.9.3')
 
-    expect(useEditorStore.getState().hasUnsavedChanges).toBe(true)
     expect(useEditorStore.getState().canUndo).toBe(true)
     expect(useEditorStore.getState().packageJson.dependencies['canvas-confetti']).toBe('^1.9.3')
     expect(useEditorStore.getState().site?.packageJson?.dependencies['canvas-confetti']).toBe('^1.9.3')

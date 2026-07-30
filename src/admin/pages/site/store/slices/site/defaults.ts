@@ -1,5 +1,5 @@
 /**
- * Default SiteDocument constructor + history sizing constants for the site slice.
+ * Default SiteDocument constructor for the site slice.
  */
 
 import { nanoid } from 'nanoid'
@@ -19,9 +19,6 @@ import {
   cloneSiteRuntimeConfig,
   DEFAULT_SITE_RUNTIME,
 } from '@core/site-runtime'
-
-/** Maximum undo history depth — prevents unbounded memory growth. */
-export const MAX_HISTORY = 50
 
 export function createDefaultSiteDocument(name: string): SiteDocument {
   const rootNode = createNode('base.body')

@@ -272,7 +272,10 @@ describe('canvas selection toolbar', () => {
       act(() => {
         // Iframe content is mounted on the iframe's `load` event (microtask
         // in happy-dom). One RAF tick may run before the iframe portal has
-        // populated, so flush a few in case the first observation is stale.
+        // populated, and sibling overlays (peer presence) enqueue their own
+        // portal-capture frames — flush a few so the positioning tick runs.
+        raf.flushOne()
+        raf.flushOne()
         raf.flushOne()
         raf.flushOne()
         raf.flushOne()

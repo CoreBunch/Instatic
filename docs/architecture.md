@@ -89,6 +89,7 @@ The repo is organized by responsibility, not by feature. Every file has one reas
 | HTTP & routing               | `server/router.ts`, `server/http.ts`  | Request dispatch, body parsing, error envelopes                      |
 | CMS endpoints                | `server/handlers/cms/*.ts`            | Per-resource handlers (pages, posts, components, media, plugins, …)  |
 | Auth & sessions              | `server/auth/*`                       | Session validation, capability checks, login flow                    |
+| Real-time co-editing         | `src/core/collab/`, `server/collab/*` | CRDT co-editing (Yjs): one Y doc per row + the site shell, multiplexed over the `/admin/api/cms/site-socket` WebSocket; the server relay persists continuously and resets docs on out-of-relay writes |
 | Repositories                 | `server/repositories/*.ts`            | Database access; dialect-naive ANSI SQL only                         |
 | Database adapters            | `server/db/postgres.ts`, `sqlite.ts`  | Engine-specific `DbClient` implementation                            |
 | Migrations                   | `server/db/migrations-*.ts`           | Schema in both dialects, parity-gated                                |

@@ -9,13 +9,14 @@
  * in slices/site/nodeActions.ts) — the whole typing burst is ONE undo entry,
  * which is what lets `cancelInlineEdit` revert with a single `undo()`.
  *
- * Burst isolation: `startInlineEdit` and `endInlineEdit` both reset
- * `_historyCoalesceKey`, so the inline burst can never fold into a
+ * Burst isolation: `startInlineEdit` and `endInlineEdit` both call
+ * `collabBreakCoalescing`, so the inline burst can never fold into a
  * Properties-panel typing burst for the same prop (or vice versa) — Escape
  * must revert exactly the inline session, nothing more.
  */
 import { registry } from '@core/module-engine'
 import type { EditorStoreSliceCreator } from '@site/store/types'
+import { collabBreakCoalescing } from './site/collabBinding'
 import { getActiveTree } from './selectionSlice'
 
 interface ActiveInlineEdit {
@@ -90,10 +91,10 @@ export const createInlineEditSlice: EditorStoreSliceCreator<InlineEditSlice> = (
         initialValue: value,
         committed: false,
       }
-      // Isolate the session's burst from any in-flight coalescing burst for
-      // the same key (e.g. Properties-panel typing on the same prop).
-      s._historyCoalesceKey = null
     })
+    // Isolate the session's burst from any in-flight coalescing burst for
+    // the same key (e.g. Properties-panel typing on the same prop).
+    collabBreakCoalescing()
   },
 
   applyInlineEditValue: (value) => {
@@ -118,20 +119,20 @@ export const createInlineEditSlice: EditorStoreSliceCreator<InlineEditSlice> = (
     if (!get().activeInlineEdit) return
     set((s) => {
       s.activeInlineEdit = null
-      // End the burst: later edits of the same prop get a fresh undo entry.
-      s._historyCoalesceKey = null
     })
+    // End the burst: later edits of the same prop get a fresh undo entry.
+    collabBreakCoalescing()
   },
 
   cancelInlineEdit: () => {
     const session = get().activeInlineEdit
     if (!session) return
     // The whole session is one coalesced entry — a single undo() restores
-    // the pre-session value. undo() also resets _historyCoalesceKey.
+    // the pre-session value. undo() also breaks coalescing.
     if (session.committed) get().undo()
     set((s) => {
       s.activeInlineEdit = null
-      s._historyCoalesceKey = null
     })
+    collabBreakCoalescing()
   },
 })

@@ -7,7 +7,7 @@
  */
 
 import type { StoreApi } from 'zustand'
-import type { Draft, Patches } from 'mutative'
+import type { Draft } from 'mutative'
 import type { FrameworkColorToken, FrameworkColorUtilityType, FrameworkPreferencesSettings, FrameworkScaleManualSize, FrameworkScaleMode, FrameworkSpacingClassGenerator, FrameworkSpacingGroup, FrameworkTypographyClassGenerator, FrameworkTypographyGroup } from '@core/framework-schema'
 import type {
   DecorativeSiteExplorerSectionId,
@@ -30,7 +30,6 @@ import type { ImportFragment } from '@core/htmlImport'
 import type { NewStyleRule, SiteImportTransaction } from '@core/siteImport'
 import type { FrameworkChangeImpact, FrameworkPreset } from '@core/framework'
 import type { EditorStore } from '@site/store/types'
-
 
 // ---------------------------------------------------------------------------
 // Public action surface — every method below appears as a top-level entry on
@@ -103,21 +102,6 @@ type UpdateFontTokenPatch = Partial<{
   fallback: string
   order: number
 }>
-
-/**
- * One undoable transaction, stored as Mutative patch pairs scoped to the
- * SiteDocument (paths are relative to `site`, e.g. `['pages', 0, 'nodes', …]`).
- *
- * - `inverse` reverts the transaction (applied on undo).
- * - `forward` re-applies it (applied on redo).
- * - `coalesceKey` carries the in-progress input-burst identity so consecutive
- *   per-keystroke edits fold into a single entry (see `commitHistory`).
- */
-export interface HistoryEntry {
-  inverse: Patches
-  forward: Patches
-  coalesceKey: string | null
-}
 
 export interface SiteSlice {
   site: SiteDocument | null
@@ -354,30 +338,12 @@ export interface SiteSlice {
   mutateAllPagesAndSite(fn: (site: SiteDocument, helpers: SiteImportTransaction) => SiteMutationResult): boolean
 
   // ─── Undo / Redo ──────────────────────────────────────────────────────────
-  /**
-   * Per-transaction Mutative patch pairs — most recent last. Each entry stores
-   * `inverse` (applied on undo) + `forward` (applied on redo) patches scoped to
-   * the SiteDocument, so a step costs O(change) memory instead of a full-site
-   * clone. See `HistoryEntry`.
-   */
-  _historyPast: HistoryEntry[]
-  /** Entries popped by undo, available for redo — most recent last */
-  _historyFuture: HistoryEntry[]
+  // History lives in per-doc Y.UndoManagers inside the collab binding
+  // (collabBinding.ts) — the store only mirrors availability flags.
   /** True if there's at least one state to undo to */
   canUndo: boolean
   /** True if there's at least one state to redo to */
   canRedo: boolean
-  /**
-   * Identity key of the in-progress history-coalescing burst, or `null`.
-   *
-   * Continuous-input mutations (per-keystroke text/number edits) pass a stable
-   * key derived from their target (`props:<nodeId>:<prop>`, etc.). While the
-   * incoming key matches this one, the mutation folds into the existing
-   * top-of-stack snapshot instead of cloning the whole site again — so typing a
-   * word is ONE undo step, not one per character. Any non-coalescing mutation,
-   * `undo`/`redo`, or a site (re)load resets it to `null`, ending the burst.
-   */
-  _historyCoalesceKey: string | null
   undo: () => void
   redo: () => void
 }

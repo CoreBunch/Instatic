@@ -276,6 +276,45 @@ describe('generateAmbientPlaceholderSuppressionCSS', () => {
 
     expect(css).toContain(':is(.dots i)')
   })
+
+  // Same resilience contract the shared serializer already honours
+  // (`bagToDeclarations` in @core/publisher/classCss): a corrupt or legacy
+  // rule can carry a non-object `styles`/`contextStyles` bag, and
+  // `Object.keys(null)` throws. This runs BEFORE that serializer, so an
+  // unguarded read here blanks the whole canvas on one bad rule.
+  it('treats a malformed style bag as unauthored instead of throwing', () => {
+    const nullStyles = makeAmbient('nullStyles', '.a', null as never)
+    const nullContexts = makeAmbient('nullContexts', '.b', {}, null as never)
+    const nullContextBag = makeAmbient('nullContextBag', '.c', {}, {
+      mobile: null as never,
+    })
+
+    expect(generateAmbientPlaceholderSuppressionCSS({ nullStyles })).toBe('')
+    expect(generateAmbientPlaceholderSuppressionCSS({ nullContexts })).toBe('')
+    expect(generateAmbientPlaceholderSuppressionCSS({ nullContextBag })).toBe('')
+  })
+
+  it('one malformed ambient rule does not stop the rest suppressing', () => {
+    // A packageJson-shaped object wrongly stored under a style-rule key.
+    const corrupt = {
+      id: 'corrupt',
+      name: 'corrupt',
+      kind: 'ambient',
+      selector: '.corrupt',
+      order: 0,
+      dependencies: {},
+      createdAt: 0,
+      updatedAt: 0,
+    } as unknown as StyleRule
+
+    const css = generateAmbientPlaceholderSuppressionCSS({
+      corrupt,
+      dots: makeAmbient('dots', '.dots i', { width: '12px' }),
+    })
+
+    expect(css).toContain(':is(.dots i)')
+    expect(css).not.toContain('.corrupt')
+  })
 })
 
 describe('createCanvasClassCssMemo', () => {

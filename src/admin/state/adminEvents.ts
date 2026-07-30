@@ -51,23 +51,3 @@ export function consumePendingCmsSiteReload(): boolean {
  * lists should refresh when they are mounted.
  */
 export const CMS_SITE_BUNDLE_IMPORTED_EVENT = 'cms-site-bundle-imported'
-
-/**
- * Fired on `window` to ask the mounted Site editor to persist the current draft
- * immediately, bypassing the autosave debounce. Used by deliberate, discrete
- * save actions (e.g. "Save as layout") so the change is written to storage at
- * the moment the user takes the action — instead of waiting for the autosave
- * timer, which is dropped entirely if the user navigates away from the editor
- * before it fires. `usePersistence` listens and runs its normal save pipeline.
- */
-export const EDITOR_SAVE_REQUEST_EVENT = 'editor-save-request'
-
-/**
- * Request an immediate editor-draft save. No-op when no editor is mounted (the
- * change still rides the next save the way any other unsaved edit would).
- */
-export function requestEditorSave(): void {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event(EDITOR_SAVE_REQUEST_EVENT))
-  }
-}

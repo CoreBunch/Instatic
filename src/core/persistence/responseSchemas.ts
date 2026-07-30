@@ -227,16 +227,24 @@ export const CmsRuntimePreviewResponseSchema = Type.Object(
 // cms.ts — envelopes only; inner types are deep
 // ---------------------------------------------------------------------------
 
+/**
+ * Envelope for GET /admin/api/cms/site. `seq` is the shell's sync sequence
+ * number — the client's conflict-detection base for shell changes (absent
+ * only in pre-setup 404 shapes, which return no `site` either).
+ */
 export const CmsSiteEnvelopeSchema = Type.Object(
-  { site: Type.Optional(Type.Unknown()) },
+  {
+    site: Type.Optional(Type.Unknown()),
+    seq: Type.Optional(Type.Number()),
+  },
   { additionalProperties: true },
 )
 
 /**
  * Envelope for PUT /admin/api/cms/site-document — the transactional
- * whole-document save. `seq` is the save's site-global sync sequence number
- * (multi-admin sync substrate; informational to the client until the
- * live-sync plan consumes it for conflict detection).
+ * whole-document save. `seq` is the save's site-global sync sequence number:
+ * every row the save wrote or deleted (and the shell, when it changed) is
+ * stamped with it, so the client bumps its base seqs to `seq` on success.
  */
 export const CmsSiteDocumentSaveEnvelopeSchema = Type.Object(
   {

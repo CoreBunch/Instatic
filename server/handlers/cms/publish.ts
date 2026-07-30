@@ -41,6 +41,8 @@ export async function handlePublishRoutes(
     const stepUp = await requireStepUp(req, db, user)
     if (stepUp) return stepUp
 
+    // publishDraftSite flushes the collab relay itself (see publishFlush.ts),
+    // so the snapshot includes edits still inside the debounce window.
     const result = await publishDraftSite(db, user.id, options.uploadsDir)
     await createAuditEvent(db, {
       actorUserId: user.id,

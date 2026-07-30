@@ -1120,4 +1120,31 @@ export const pgMigrations: Migration[] = [
         on ai_mcp_oauth_tokens (connector_id);
     `,
   },
+  {
+    // Real-time co-editing (Yjs): one CRDT state blob per collab document
+    // (site shell, page, component, layout — doc_id is '<kind>:<rowId>').
+    // The blob is the live-editing source of truth; derived JSON keeps
+    // flowing into data_rows/site for the publisher and non-editor reads.
+    // `seq` counts persists (future delta APIs / diagnostics).
+    id: '022_collab_documents',
+    sql: `
+      create table if not exists collab_documents (
+        doc_id text primary key,
+        state_blob bytea not null,
+        seq bigint not null default 0,
+        updated_at timestamptz not null default now()
+      );
+    `,
+  },
+  {
+    // Per-doc CRDT lineage id. A reset deletes the blob and the doc reseeds at
+    // the fixed SEED_CLIENT_ID, so the new lineage reuses the old one's struct
+    // coordinates and a client that missed the reset would hand back structs
+    // from a dead lineage at live coordinates. Rows written by 022 carry '' and
+    // have a generation minted on their next open (see relay.openDoc).
+    id: '023_collab_document_generation',
+    sql: `
+      alter table collab_documents add column generation text not null default '';
+    `,
+  },
 ]

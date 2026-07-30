@@ -1,5 +1,4 @@
-import type { StoreApi } from 'zustand'
-import type { EditorStore } from '@site/store/types'
+import type { EditorStoreApi } from '@site/store/types'
 import {
   createCmsPluginResourceRecord,
   deleteCmsPluginResourceRecord,
@@ -29,7 +28,7 @@ import {
  * only valid inside the editor canvas (Site / Content / Data / Media
  * pages).
  */
-let editorStoreApi: StoreApi<EditorStore> | null = null
+let editorStoreApi: EditorStoreApi | null = null
 
 /**
  * Wire the editor store into the plugin runtime so granted plugins can call
@@ -42,11 +41,11 @@ let editorStoreApi: StoreApi<EditorStore> | null = null
  * `settingsSlice.ts` — both used to be exported as `bindEditorStoreApi`
  * and required call-site aliases to disambiguate.
  */
-export function bindPluginRuntimeStoreApi(api: StoreApi<unknown>): void {
-  editorStoreApi = api as StoreApi<EditorStore>
+export function bindPluginRuntimeStoreApi(api: EditorStoreApi): void {
+  editorStoreApi = api
 }
 
-function requireEditorStore(): StoreApi<EditorStore> {
+function requireEditorStore(): EditorStoreApi {
   if (!editorStoreApi) {
     throw new Error(
       '[plugin-runtime] editor store accessed before initialization. ' +
@@ -503,16 +502,7 @@ export function createEditorPluginApi(
           // full via `editor.store.read`. Operators gate the capability at
           // install time; that single grant is the trust boundary.
           assertPluginPermission(manifest, 'editor.store.write')
-          // The underlying editor store is created with the mutative middleware
-          // (see `useEditorStore` in `@site/store/store`), so `setState`
-          // accepts a void-returning mutator that mutates the draft in place.
-          // The bare `StoreApi<EditorStore>` type can't see the mutative-augmented
-          // signature, hence the cast — runtime behavior is fully covered by
-          // mutative's `create`.
-          const setState = requireEditorStore().setState as (
-            updater: (state: EditorStore) => void,
-          ) => void
-          setState((state) => {
+          requireEditorStore().setState((state) => {
             mutate(state)
           })
         },

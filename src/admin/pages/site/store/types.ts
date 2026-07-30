@@ -55,14 +55,26 @@ export interface EditorStore {}
  *
  * IMPORTANT: never call `create()`/`produce()` manually inside `set()`. The
  * middleware already does. Manual nesting yields revoked proxies in subscribers.
- * (The patch-based undo history is the one deliberate exception — it calls
- * mutative `create(get().site, …, { enablePatches: true })` on a plain snapshot,
- * NOT on a live draft, then assigns the result via `set`.)
+ * (`runHistoricMutation` is the one deliberate exception — it calls mutative
+ * `create(get(), …, { enablePatches: true })` on a plain snapshot, NOT on a live
+ * draft, to harvest the patches that feed the collab write path.)
  */
-import type { StateCreator } from 'zustand'
+import type { Mutate, StateCreator, StoreApi } from 'zustand'
 export type EditorStoreSliceCreator<T> = StateCreator<
   EditorStore,
   [['zustand/mutative', never]],
   [],
   T
 >
+
+/**
+ * The editor store's api as the mutative middleware actually augments it: its
+ * `setState` accepts a void-returning draft recipe, not just a partial.
+ *
+ * Anything that holds the store by reference (the collab binding, the plugin
+ * runtime) must type it with this alias. A bare `StoreApi<EditorStore>` erases
+ * the augmentation, which forces callers to either cast or hand-roll partial
+ * patches — and a hand-rolled patch cannot reuse the draft-mutating helpers the
+ * slices share, so state invariants get reimplemented and drift.
+ */
+export type EditorStoreApi = Mutate<StoreApi<EditorStore>, [['zustand/mutative', never]]>

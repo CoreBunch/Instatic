@@ -14,6 +14,7 @@ The server is a single `Bun.serve` process that boots the DB, runs migrations, a
 - **Auth:** session cookie (`SESSION_COOKIE_NAME`) → `findUserBySessionHash` → `requireCapability(req, db, 'site.read')`. Every state-changing handler starts with one of these guards.
 - **DB:** one `DbClient` interface (`server/db/client.ts`) — tagged-template callable returning `{ rows, rowCount }`. Two adapters: `postgres.ts` (via `Bun.sql`) and `sqlite.ts` (via `bun:sqlite`). Selected by `DATABASE_URL`.
 - **Repositories** (`server/repositories/`) hold all SQL. Handlers never write SQL directly.
+- **Write policy** (`server/writePolicy/`) — pure per-capability diff validators (`validateSiteWriteDiff`, `validatePageWriteDiff`) shared by BOTH write transports: the HTTP save handler (`server/handlers/cms/siteDocument.ts`) and the collab relay's CRDT update guard (`server/collab/updateGuard.ts`). No DB, no HTTP — plain data in, verdict out.
 - **Plugins:** `server/plugins/runtime.ts` activates installed plugins at boot. Server entrypoints run in per-plugin Bun workers that host QuickJS-WASM (`server/plugins/pluginWorker.ts`, `server/plugins/host/workerPool.ts`, `server/plugins/quickjs/vm.ts`); module packs use `server/plugins/modulePackVm.ts` for server-side evaluation.
 - **Published pages and content rows** are served by `tryServePublicRoute`, which delegates resolution + render to `server/publish/publicRouter.ts`. A warm Layer B cache entry is served before any DB work; on a miss the live render reads the published `SiteDocument` from `site_snapshots` (stored once per publish, referenced by `data_row_versions.site_snapshot_id`, memoised per publish version). Uploads + admin SPA assets are served from disk by `tryServeUpload` and `tryServeStaticAsset`.
 
@@ -38,7 +39,17 @@ server/index.ts
     ├─→ mediaStorageRegistry.configureLocalDisk({ uploadsDir })   ← register local-disk media adapter
     ├─→ activateInstalledServerPlugins(db, uploadsDir)            ← run plugin lifecycle: activate
     │
-    └─→ Bun.serve({ fetch: req => handleServerRequest(req, runtime) })
+    ├─→ createCollabRelay(db)                ← server/collab/relay.ts: live Y docs,
+    │                                           debounced persistence, reset protocol
+    ├─→ createCollabSocketLayer(relay)       ← server/collab/socket.ts: multiplexed
+    │                                           y-protocols wire + awareness
+    ├─→ Bun.serve({ fetch: req => handleServerRequest(req, runtime),
+    │               websocket: collabSocket.handlers })
+    │     (the co-editing socket `/admin/api/cms/site-socket` upgrades at this
+    │      boundary — see server/collab/socket.ts; everything else goes
+    │      through the router)
+    │
+    └─→ collabSocket.setPublisher(server)    ← wire the collab fan-out to Bun pub/sub
 ```
 
 Boot is sequential and fail-fast. If migrations fail, the process exits. If a plugin's `activate` throws, the host logs `[plugin:<id>]` and continues — one bad plugin doesn't bring the server down.
@@ -347,6 +358,7 @@ All SQL lives in `server/repositories/`. Each file owns one resource:
 | File                       | Owns                                              |
 |----------------------------|---------------------------------------------------|
 | `audit.ts`                 | Audit log writes and queries                      |
+| `collabDocuments.ts`       | Persisted CRDT document blobs (`collab_documents`) — the co-editing relay's durable state |
 | `data/`                    | `data_tables` + `data_rows` (the universal store) |
 | `fonts.ts`                 | Font assets                                       |
 | `loginAttempts.ts`         | Failed-login records for lockout                  |
@@ -358,11 +370,12 @@ All SQL lives in `server/repositories/`. Each file owns one resource:
 | `plugins.ts`               | Installed plugins + lifecycle state               |
 | `publish.ts`               | Published-page roster: snapshot getters + the transactional publish write (orchestration lives in `server/publish/publishSite.ts`) |
 | `roles.ts`                 | System and custom roles                           |
+| `rowWriteEvents.ts`        | In-process out-of-relay write notifications (repositories notify; the collab relay resets affected docs) |
 | `runtimeAsset.ts`          | Published runtime assets (JS, CSS, fonts)         |
 | `sessions.ts`              | User sessions                                     |
 | `setup.ts`                 | Setup wizard state (`isSetup`, first-run owner)   |
 | `site.ts`                  | The single site shell row                         |
-| `syncSequence.ts`          | Site-global sync sequence counter (multi-admin sync substrate — stamped on every row the site-document save writes or deletes) |
+| `syncSequence.ts`          | Site-global sync sequence counter (multi-admin sync substrate — stamped on every row the site-document save writes or deletes, and on the shell only when its content changed; the save's conflict check compares client base seqs against these inside the transaction) |
 | `userPreferences.ts`       | Per-user editor preferences                       |
 | `users.ts`                 | Users + auth fields                               |
 

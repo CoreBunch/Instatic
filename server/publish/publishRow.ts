@@ -30,6 +30,7 @@ import { renderPublishedDataRowTemplate } from './publicRenderer'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import { removeArtefactInPlace, updateArtefactInPlace } from './staticArtefact'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
+import { runPublishFlush } from './publishFlush'
 
 export interface PublishDataRowResult {
   row: DataRow
@@ -47,6 +48,10 @@ export async function publishDataRow(
   publisherUserId: string | null,
   uploadsDir?: string,
 ): Promise<PublishDataRowResult> {
+  // Flush the collab relay before reading the row — a page/component/row doc
+  // edited live may still hold un-persisted changes inside the debounce
+  // window, and per-row publish must bake exactly what the admins see.
+  await runPublishFlush()
   // Serialize against every other publish so the version read→bake→bump window
   // can't interleave and mis-stamp baked hole shells (ISS-038).
   return withPublishLock(() => publishDataRowLocked(db, rowId, publisherUserId, uploadsDir))

@@ -158,6 +158,11 @@ function bagToDeclarations(
   priorities: CSSDeclarationPriorityBag = {},
 ): Array<[string, string, boolean]> {
   const decls: Array<[string, string, boolean]> = []
+  // The bag is the wide persistence type: a corrupt/legacy rule (bad import,
+  // plugin write, older data) can carry a non-object `styles`/context bag, and
+  // `Object.entries(null)` throws. One malformed rule must NOT blank the whole
+  // canvas — emit nothing for it and let every other rule render.
+  if (bag === null || typeof bag !== 'object') return decls
   // Track which prefixes have already been emitted as a collapsed shorthand
   // so we skip the remaining three side properties for that prefix.
   const collapsedPrefixes = new Set<SideShorthandPrefix>()

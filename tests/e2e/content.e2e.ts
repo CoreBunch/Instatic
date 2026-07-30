@@ -10,7 +10,6 @@ import {
   openSiteEditor,
   openSitePanel,
   publishDraft,
-  saveDraft,
   setPropValue,
   visitPublicPage,
 } from './helpers'
@@ -423,7 +422,6 @@ test.describe('content', () => {
       })
 
       await test.step('publish the template and verify the anonymous public post route resolves the custom token', async () => {
-        await saveDraft(page)
         await publishDraft(page)
         await visitPublicPage(browser, {
           path: `/posts/${postSlug}`,
@@ -583,7 +581,6 @@ async function createPublishedPostsTemplate(
   await page.getByRole('option', { name: 'Heading 1', exact: true }).click()
   await expect(page.locator('#ctrl-tag')).toHaveValue('Heading 1')
   await insertModuleViaPicker(page, 'base.outlet')
-  await saveDraft(page)
   await publishDraft(page)
 }
 

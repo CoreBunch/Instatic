@@ -58,7 +58,7 @@ export function useOnboardingState(): OnboardingStateResult {
       listCmsUsers(),
     ])
 
-    const site = siteResult.status === 'fulfilled' ? siteResult.value : undefined
+    const site = siteResult.status === 'fulfilled' ? siteResult.value?.site : undefined
     const plugins = pluginsResult.status === 'fulfilled' ? pluginsResult.value.plugins : []
     const users = usersResult.status === 'fulfilled' ? usersResult.value : []
 

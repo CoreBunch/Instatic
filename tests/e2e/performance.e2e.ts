@@ -9,7 +9,6 @@ import {
   login,
   openSiteEditor,
   publishDraft,
-  saveDraft,
   setPropValue,
   visitPublicPage,
 } from './helpers'
@@ -85,7 +84,6 @@ test.describe('performance and reliability', () => {
       await expect(frame.getByRole('link', { name: ctaLabel })).toBeVisible()
       await expect(frame.locator('img[src*="/uploads/"]').first()).toBeVisible()
 
-      await saveDraft(page)
       const publishStartedAt = Date.now()
       await publishDraft(page)
       const publishMs = Date.now() - publishStartedAt

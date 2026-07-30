@@ -15,7 +15,6 @@ function resetStore() {
     _historyFuture: [],
     canUndo: false,
     canRedo: false,
-    hasUnsavedChanges: false,
   } as Parameters<typeof useEditorStore.setState>[0])
 }
 
@@ -60,14 +59,12 @@ describe('dynamic template model', () => {
       site,
       activePageId: page.id,
       activeDocument: { kind: 'page', pageId: page.id },
-      hasUnsavedChanges: false,
     })
     useEditorStore.getState().convertTemplateToPage(page.id)
 
     const nextPage = useEditorStore.getState().site?.pages[0]
     expect(nextPage?.template).toBeUndefined()
     expect(nextPage?.nodes[page.rootNodeId].dynamicBindings).toBeUndefined()
-    expect(useEditorStore.getState().hasUnsavedChanges).toBe(true)
   })
 
   it('sets and removes a node dynamic binding without changing the static prop fallback', () => {
@@ -80,7 +77,6 @@ describe('dynamic template model', () => {
       site,
       activePageId: page.id,
       activeDocument: { kind: 'page', pageId: page.id },
-      hasUnsavedChanges: false,
     })
     useEditorStore.getState().setNodeDynamicBinding(root.id, 'text', {
       source: 'currentEntry',

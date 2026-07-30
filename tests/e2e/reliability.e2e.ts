@@ -6,7 +6,6 @@ import {
   insertNotchModule,
   openSiteEditor,
   openSitePanel,
-  saveDraft,
   setPropValue,
 } from './helpers'
 
@@ -28,7 +27,6 @@ test.describe('reliability', () => {
     await insertNotchModule(page, 'text')
     await setPropValue(page, 'text', text)
     await expect(canvasFrame(page).getByText(text, { exact: true })).toBeVisible()
-    await saveDraft(page)
 
     await page.reload()
     await expectEditorReady(page)
