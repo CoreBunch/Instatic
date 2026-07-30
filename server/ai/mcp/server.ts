@@ -1,19 +1,19 @@
 /**
  * Build a capability-scoped MCP `Server` over Instatic's existing tool engine.
  *
- * We use the low-level SDK `Server` + `setRequestHandler` (not the higher-level
- * `McpServer.registerTool`, which requires Zod schemas — banned repo-wide).
- * This lets us advertise our canonical TypeBox `inputSchema` verbatim as JSON
- * Schema (exactly as the AI drivers send it to providers) and run each call
- * through `executeAiTool`, which already does TypeBox input validation, a
- * capability re-check, and `{ ok, data | error }` normalisation.
+ * We use the low-level SDK `Server` + `setRequestHandler` so our canonical
+ * TypeBox `inputSchema` remains the source of truth and is advertised verbatim
+ * as JSON Schema (exactly as the AI drivers send it to providers). Each call
+ * still runs through `executeAiTool`, which already does TypeBox input
+ * validation, a capability re-check, and `{ ok, data | error }`
+ * normalisation.
  */
-import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
+  Server,
   type CallToolResult,
-} from '@modelcontextprotocol/sdk/types.js'
+  type JSONValue,
+  type Tool,
+} from '@modelcontextprotocol/server'
 import type { DbClient } from '../../db/client'
 import type { CoreCapability } from '@core/capabilities'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -70,6 +70,47 @@ function advertisedDescription(tool: AiTool): string {
   return `${tool.description}\n\n${BROWSER_WORKSPACE_REQUIREMENT[tool.scope]}`
 }
 
+/**
+ * TypeBox schemas are JSON Schema plus symbol-keyed runtime metadata. MCP v2
+ * validates the advertised schema as JSON data, so project only the enumerable
+ * string-keyed JSON value while preserving the canonical schema itself.
+ */
+function plainJsonValue(value: unknown): JSONValue {
+  if (Array.isArray(value)) {
+    return value.map((item) => item === undefined ? null : plainJsonValue(item))
+  }
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return value
+  }
+  if (typeof value !== 'object') {
+    throw new TypeError('TypeBox schema contains a non-JSON value')
+  }
+
+  const out: Record<string, JSONValue> = {}
+  for (const [key, item] of Object.entries(value)) {
+    if (item !== undefined) out[key] = plainJsonValue(item)
+  }
+  return out
+}
+
+function plainInputSchema(schema: AiTool['inputSchema']): Tool['inputSchema'] {
+  const value = plainJsonValue(schema)
+  if (
+    value === null ||
+    Array.isArray(value) ||
+    typeof value !== 'object' ||
+    value.type !== 'object'
+  ) {
+    throw new TypeError('MCP tool input schema must be a JSON Schema object')
+  }
+  return value as Tool['inputSchema']
+}
+
 export function buildMcpServer(ctx: McpServerContext): Server {
   const server = new Server(
     { name: 'instatic', version: '1.0.0' },
@@ -84,23 +125,24 @@ export function buildMcpServer(ctx: McpServerContext): Server {
   )
   const byName = new Map<string, AiTool>(tools.map((t) => [t.name, t]))
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  server.setRequestHandler('tools/list', async () => ({
     tools: tools.map((t) => ({
       name: t.name,
       description: advertisedDescription(t),
-      // Our TypeBox object schema IS a valid JSON-Schema tool definition. The
-      // `AiTool.inputSchema` field is the general `TSchema`, so we adapt it to
-      // the SDK's object-schema shape (a type-level adaptation, not a runtime
-      // data boundary — every MCP tool's schema is a `Type.Object`).
-      inputSchema: t.inputSchema as unknown as { type: 'object'; properties?: Record<string, unknown> },
+      // Every MCP tool schema is a Type.Object. Remove TypeBox's symbol-keyed
+      // runtime annotations before handing the otherwise unchanged JSON Schema
+      // to the v2 wire validator.
+      inputSchema: plainInputSchema(t.inputSchema),
     })),
   }))
 
-  server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToolResult> => {
+  server.setRequestHandler('tools/call', async (request, requestContext): Promise<CallToolResult> => {
     const { name, arguments: args } = request.params
     const tool = byName.get(name)
+    const project = (result: CallToolResult) =>
+      server.projectCallToolResult(result, undefined)
     if (!tool) {
-      return { isError: true, content: [{ type: 'text', text: `Unknown tool: ${name}` }] }
+      return project({ isError: true, content: [{ type: 'text', text: `Unknown tool: ${name}` }] })
     }
 
     // Server-resolved tools run in-process; browser tools are relayed to the
@@ -110,15 +152,18 @@ export function buildMcpServer(ctx: McpServerContext): Server {
     let bridge = NOOP_BRIDGE
     if (tool.execution === 'browser') {
       if (tool.scope !== 'site' && tool.scope !== 'content') {
-        return {
+        return project({
           isError: true,
           content: [{ type: 'text', text: `Browser tool "${tool.name}" has unsupported scope "${tool.scope}".` }],
-        }
+        })
       }
       const browserScope: EditorBridgeScope = tool.scope
       const live = getEditorBridgeForUser(ctx.userId, browserScope)
       if (!live) {
-        return { isError: true, content: [{ type: 'text', text: NO_WORKSPACE_MESSAGE[browserScope] }] }
+        return project({
+          isError: true,
+          content: [{ type: 'text', text: NO_WORKSPACE_MESSAGE[browserScope] }],
+        })
       }
       bridge = browserScope === 'content'
         ? {
@@ -144,10 +189,9 @@ export function buildMcpServer(ctx: McpServerContext): Server {
       await runPublishFlush()
     }
 
-    const controller = new AbortController()
     let output: AiToolOutput
     try {
-      output = await executeAiTool(tool, args ?? {}, bridge, controller.signal, {
+      output = await executeAiTool(tool, args ?? {}, bridge, requestContext.mcpReq.signal, {
         db: ctx.db,
         userId: ctx.userId,
         capabilities: ctx.capabilities,
@@ -160,17 +204,20 @@ export function buildMcpServer(ctx: McpServerContext): Server {
       // surrounding provider loop to terminate. Translate the same transport
       // failure into the protocol's normal tool-error result instead of
       // letting the request handler reject with an internal MCP error.
-      return {
+      return project({
         isError: true,
         content: [{
           type: 'text',
           text: getErrorMessage(err, `Browser tool "${tool.name}" could not return a result.`),
         }],
-      }
+      })
     }
 
     if (!output.ok) {
-      return { isError: true, content: [{ type: 'text', text: output.error ?? 'Tool failed.' }] }
+      return project({
+        isError: true,
+        content: [{ type: 'text', text: output.error ?? 'Tool failed.' }],
+      })
     }
     // A tool that mutates but returns no payload (e.g. deleteNode) must still
     // read as an unambiguous success — never the literal "null".
@@ -182,7 +229,7 @@ export function buildMcpServer(ctx: McpServerContext): Server {
     for (const image of output.images ?? []) {
       content.push({ type: 'image', data: image.data, mimeType: image.mimeType })
     }
-    return { content }
+    return project({ content })
   })
 
   return server

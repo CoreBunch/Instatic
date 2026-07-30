@@ -121,12 +121,12 @@ const listPostTypesTool: AiTool = {
   execution: 'server',
   requiredCapabilities: ['site.read'],
   description:
-    'List the post types (routable collections) a `postTypes` template can target. Each entry has { slug, label, routeBase, kind }; pass the `slug` values to site_set_page_template\'s `target.tableSlugs`. Only collections with a public route appear — non-routable data tables are excluded.',
+    'List the routable post types a `postTypes` template can target. Each entry has { slug, label, routeBase, kind }; pass the `slug` values to site_set_page_template\'s `target.tableSlugs`. System tables, pages, components, layouts, and reusable data tables are excluded.',
   inputSchema: ListPostTypesInput,
   handler: async (_input, ctx) => {
     const tables = await listDataTablesWithCounts(ctx.db)
     const postTypes = tables
-      .filter((t) => t.routeBase.trim() !== '')
+      .filter((t) => t.kind === 'postType' && t.routeBase.trim() !== '')
       .map((t) => ({
         slug: t.slug,
         label: t.pluralLabel || t.name,
