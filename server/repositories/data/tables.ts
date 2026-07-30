@@ -16,7 +16,7 @@ import { nanoid } from 'nanoid'
 import type { DbClient } from '../../db/client'
 import { countDataRows } from './rows/read'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
-import { normalizeDataTableFields } from '@core/data/fields'
+import { buildPostTypeDefaultFields, normalizeDataTableFields } from '@core/data/fields'
 import type {
   DataField,
   DataTable,
@@ -182,11 +182,30 @@ export async function getDataTableBySlug(db: DbClient, slug: string): Promise<Da
   return rows[0] ? mapTable(rows[0]) : null
 }
 
+/**
+ * A post type is routable only if it carries the built-in `title`/`slug`
+ * fields: `slugForTable` returns an empty slug for a table without a `slug`
+ * field, and an entry with an empty slug has no public route. The Content UI
+ * seeds those fields client-side, so a table created through any other caller
+ * (the data API, an MCP connector, an import) used to arrive unroutable.
+ * Seeding here makes the invariant hold for every caller instead.
+ *
+ * Caller-supplied fields win on id collision, so an explicit `title` override
+ * (a different label, say) survives; omitted built-ins are prepended in their
+ * canonical order.
+ */
+function withPostTypeBuiltIns(kind: DataTableKind | undefined, fields: DataField[]): DataField[] {
+  if (kind !== 'postType') return fields
+  const supplied = new Set(fields.map((field) => field.id))
+  const missing = buildPostTypeDefaultFields().filter((field) => !supplied.has(field.id))
+  return [...missing, ...fields]
+}
+
 export async function createDataTable(
   db: DbClient,
   input: CreateDataTableInput,
 ): Promise<DataTable> {
-  const fields = normalizeDataTableFields(input.fields ?? [])
+  const fields = withPostTypeBuiltIns(input.kind, normalizeDataTableFields(input.fields ?? []))
   const { rows } = await db<DataTableRow>`
     insert into data_tables (
       id,
