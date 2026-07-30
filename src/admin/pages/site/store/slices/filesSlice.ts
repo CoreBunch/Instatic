@@ -21,6 +21,7 @@ import type { EditorStoreSliceCreator } from '@site/store/types'
 import type { SiteFile, SiteFileType } from '@core/files/schemas'
 import { isSafePath, normalizePath } from '@core/files/pathValidation'
 import { reconcileSiteExplorerInPlace } from '@core/page-tree'
+import { buildSiteHelpers } from './site/helpers'
 
 // ---------------------------------------------------------------------------
 // Slice interface
@@ -78,7 +79,17 @@ declare module '@site/store/types' {
   interface EditorStore extends FilesSlice {}
 }
 
-export const createFilesSlice: EditorStoreSliceCreator<FilesSlice> = (set, get) => ({
+/**
+ * Every action routes through `mutateSiteState` rather than a raw `set`.
+ * Site persistence is the collab relay: only mutations that produce site
+ * patches are translated into Y operations, so a direct `set` updates this
+ * tab's store and reaches neither the relay nor the database — the file looks
+ * written, survives a readback, and is gone on reload.
+ */
+export const createFilesSlice: EditorStoreSliceCreator<FilesSlice> = (set, get) => {
+  const { mutateSiteState } = buildSiteHelpers(set, get)
+
+  return {
   createFile(path, type, content) {
     const { site } = get()
     if (!site) throw new Error('[filesSlice] Site document is not initialized')
@@ -96,39 +107,40 @@ export const createFilesSlice: EditorStoreSliceCreator<FilesSlice> = (set, get) 
     const now = Date.now()
     const id = nanoid()
 
-    set((state) => {
-        if (!state.site) return
-        const newFile: SiteFile = {
-          id,
-          path: normalized,
-          type,
-          // For non-asset types, initialize content to provided value or empty string
-          content: type !== 'asset' ? (content ?? '') : undefined,
-          createdAt: now,
-          updatedAt: now,
-        }
-        state.site.files.push(newFile)
-        reconcileSiteExplorerInPlace(state.site)
-        state.site.updatedAt = now
-      })
+    mutateSiteState((state, siteDraft) => {
+      const newFile: SiteFile = {
+        id,
+        path: normalized,
+        type,
+        // For non-asset types, initialize content to provided value or empty string
+        content: type !== 'asset' ? (content ?? '') : undefined,
+        createdAt: now,
+        updatedAt: now,
+      }
+      siteDraft.files.push(newFile)
+      reconcileSiteExplorerInPlace(siteDraft)
+      siteDraft.updatedAt = now
+      void state
+      return true
+    })
 
     return id
   },
 
   deleteFile(id) {
-    set((state) => {
-        if (!state.site) return
-        const idx = state.site.files.findIndex((f) => f.id === id)
-        if (idx === -1) return
-        state.site.files.splice(idx, 1)
-        if (state.site.runtime?.scripts) delete state.site.runtime.scripts[id]
-        if (state.site.runtime?.styles) delete state.site.runtime.styles[id]
-        delete state.siteRuntime.scripts[id]
-        delete state.siteRuntime.styles[id]
-        if (state.activeEditorFileId === id) state.activeEditorFileId = null
-        reconcileSiteExplorerInPlace(state.site)
-        state.site.updatedAt = Date.now()
-      })
+    mutateSiteState((state, siteDraft) => {
+      const idx = siteDraft.files.findIndex((f) => f.id === id)
+      if (idx === -1) return false
+      siteDraft.files.splice(idx, 1)
+      if (siteDraft.runtime?.scripts) delete siteDraft.runtime.scripts[id]
+      if (siteDraft.runtime?.styles) delete siteDraft.runtime.styles[id]
+      delete state.siteRuntime.scripts[id]
+      delete state.siteRuntime.styles[id]
+      if (state.activeEditorFileId === id) state.activeEditorFileId = null
+      reconcileSiteExplorerInPlace(siteDraft)
+      siteDraft.updatedAt = Date.now()
+      return true
+    })
   },
 
   renameFile(id, newPath) {
@@ -146,37 +158,41 @@ export const createFilesSlice: EditorStoreSliceCreator<FilesSlice> = (set, get) 
       throw new Error(`[filesSlice] A file at path "${normalized}" already exists`)
     }
 
-    set((state) => {
-        if (!state.site) return
-        const file = state.site.files.find((f) => f.id === id)
-        if (!file) return
-        file.path = normalized
-        file.updatedAt = Date.now()
-        state.site.updatedAt = Date.now()
-      })
+    mutateSiteState((state, siteDraft) => {
+      const file = siteDraft.files.find((f) => f.id === id)
+      if (!file) return false
+      file.path = normalized
+      file.updatedAt = Date.now()
+      siteDraft.updatedAt = Date.now()
+      void state
+      return true
+    })
   },
 
   updateFileContent(id, content) {
-    set((state) => {
-        if (!state.site) return
-        const file = state.site.files.find((f) => f.id === id)
-        if (!file) return
-        file.content = content
-        if (file.generated) file.ejected = true
-        file.updatedAt = Date.now()
-        state.site.updatedAt = Date.now()
-      })
+    mutateSiteState((state, siteDraft) => {
+      const file = siteDraft.files.find((f) => f.id === id)
+      if (!file) return false
+      file.content = content
+      if (file.generated) file.ejected = true
+      file.updatedAt = Date.now()
+      siteDraft.updatedAt = Date.now()
+      void state
+      return true
+    })
   },
 
   updateFileBlob(id, blob) {
-    set((state) => {
-        if (!state.site) return
-        const file = state.site.files.find((f) => f.id === id)
-        if (!file) return
-        file.blob = blob
-        if (file.generated) file.ejected = true
-        file.updatedAt = Date.now()
-        state.site.updatedAt = Date.now()
-      })
+    mutateSiteState((state, siteDraft) => {
+      const file = siteDraft.files.find((f) => f.id === id)
+      if (!file) return false
+      file.blob = blob
+      if (file.generated) file.ejected = true
+      file.updatedAt = Date.now()
+      siteDraft.updatedAt = Date.now()
+      void state
+      return true
+    })
   },
-})
+  }
+}

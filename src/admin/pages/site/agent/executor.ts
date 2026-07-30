@@ -73,6 +73,8 @@ import { importHtml } from '@core/htmlImport'
 import type { BaseNode, PageTemplateConfig } from '@core/page-tree'
 import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/publisher'
 import { getAgentStoreApi } from './storeRef'
+import { whenCollabWritable } from '@site/store/slices/site/collabWriteGate'
+import { AUTO_NAVIGATE_TOOLS, SITE_MUTATION_TOOLS } from './toolClassification'
 import {
   runSetColorTokens,
   runSetFontTokens,
@@ -188,24 +190,6 @@ function nodeNotInActiveDocError(store: EditorStore, nodeId: string): AiToolOutp
   )
 }
 
-/**
- * Tools that target an existing node (by `nodeId`/`parentId`) and should pull
- * the canvas to that node's document before running. Excludes catalog/page/
- * token tools (no node target) and `site_render_snapshot` (captures the live DOM, so
- * a node outside the mounted canvas is genuinely uncapturable, not navigable).
- */
-const AUTO_NAVIGATE_TOOLS = new Set<string>([
-  'site_insert_html',
-  'site_get_node_html',
-  'site_replace_node_html',
-  'site_delete_node',
-  'site_update_node_props',
-  'site_move_node',
-  'site_rename_node',
-  'site_duplicate_node',
-  'site_assign_class',
-  'site_remove_class',
-])
 
 /** Pull the node/parent id a write tool targets out of its raw input bag. */
 function targetNodeIdFromInput(raw: unknown): string | undefined {
@@ -289,6 +273,17 @@ function runInsertHtml(input: InsertHtmlInput): AiToolOutput {
     for (const childId of node.children) visit(childId)
   }
   for (const rootId of insertedRootIds) visit(rootId)
+
+  // `insertedRootIds` are the ids the insert INTENDED to create. If none of
+  // them is in the store afterwards the mutation was refused (collab gate,
+  // offline transport), and reporting those ids would claim a subtree that
+  // does not exist — the caller then builds on nodes the server never saw.
+  if (created.length === 0) {
+    return aiToolError(
+      'Insert was refused before it reached the store, so nothing was created. '
+      + 'The editor is usually still syncing; retry shortly.',
+    )
+  }
 
   return aiToolOk({ nodeIds: insertedRootIds, created })
 }
@@ -581,6 +576,16 @@ export async function executeAgentTool(
   rawInput: unknown,
 ): Promise<AiToolOutput> {
   try {
+    // A write refused by the collab sync gate never reaches the relay, so wait
+    // for the gate to open rather than reporting a success the server will
+    // never see. Sub-second in practice; the deadline exists so a genuinely
+    // stuck socket surfaces as an error instead of hanging the tool call.
+    if (SITE_MUTATION_TOOLS.has(toolName) && !(await whenCollabWritable())) {
+      return aiToolError(
+        'Editor is still syncing with the collaboration relay; the write was not applied. Retry shortly.',
+      )
+    }
+
     // Auto-navigate: if a node-targeting tool references a node that lives in a
     // different document, switch the canvas to that document BEFORE running, so
     // the mutation lands in the right tree and stays visible to the user.

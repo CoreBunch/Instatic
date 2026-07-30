@@ -73,6 +73,8 @@ import {
   type BlockedReason,
   type LocalPatchOutcome,
 } from './collabNotices'
+import { anyGateUnsynced, clearProviderGates, hasProviderGate, registerProviderGate, setGatesActive } from './collabWriteGate'
+
 interface ManagedDoc {
   doc: Y.Doc
   manager: Y.UndoManager
@@ -238,9 +240,7 @@ export function applyLocalSitePatches(
     // Every already-bound doc must be past its first sync before edits may
     // stream — writing into an unseeded doc would duplicate server content
     // on merge. (Sub-second in practice; the toolbar shows "connecting".)
-    for (const [, binding] of providerBindings) {
-      if (!binding.synced) return { accepted: false, reason: 'syncing' }
-    }
+    if (anyGateUnsynced()) return { accepted: false, reason: 'syncing' }
   }
 
   if (!provider && preSite !== alignedSiteRef) {
@@ -548,8 +548,6 @@ function projectDocIntoStore(docId: string): void {
 // Lifecycle + provider connection
 // ---------------------------------------------------------------------------
 
-const providerBindings = new Map<string, { synced: boolean }>()
-
 function allDocIdsForSite(site: SiteDocument): string[] {
   return [
     SITE_DOC_ID,
@@ -568,7 +566,7 @@ export function resetCollabDocsFromSite(site: SiteDocument | null): void {
   alignedSiteRef = site
   for (const [, entry] of managed) entry.detach()
   managed = new Map()
-  providerBindings.clear()
+  clearProviderGates()
   const previous = docs
   docs = createCollabDocSet()
   for (const [docId] of previous.entries()) {
@@ -615,18 +613,12 @@ function seedDetachedDocs(site: SiteDocument): void {
   }
 }
 
-function adoptProviderDoc(docId: string, doc: Y.Doc): { synced: boolean } {
-  docs.set(docId, doc)
-  ensureManaged(docId, doc)
-  const gate = { synced: false }
-  providerBindings.set(docId, gate)
-  return gate
-}
-
 function bindDocThroughProvider(docId: string): void {
-  if (!provider || providerBindings.has(docId)) return
+  if (!provider || hasProviderGate(docId)) return
   const binding = provider.bind(docId)
-  const gate = adoptProviderDoc(docId, binding.doc)
+  docs.set(docId, binding.doc)
+  ensureManaged(docId, binding.doc)
+  const gate = registerProviderGate(docId, binding.whenSynced)
   gate.synced = binding.synced
   void binding.whenSynced.then(() => {
     gate.synced = true
@@ -649,6 +641,7 @@ function bindThroughProvider(docIds: readonly string[]): void {
  */
 export function connectCollabProvider(next: CollabProvider): void {
   provider = next
+  setGatesActive(true)
   detachProviderStatus?.()
   // A recovered transport re-arms the block notice, so the NEXT outage speaks
   // up instead of being swallowed by the previous one's latch.
@@ -674,7 +667,9 @@ export function connectCollabProvider(next: CollabProvider): void {
     // The server dropped this doc: rebind and let the fresh server seed
     // re-project into the store.
     const rebound = next.bind(docId)
-    const gate = adoptProviderDoc(docId, rebound.doc)
+    docs.set(docId, rebound.doc)
+    ensureManaged(docId, rebound.doc)
+    const gate = registerProviderGate(docId, rebound.whenSynced)
     gate.synced = rebound.synced
     void rebound.whenSynced.then(() => {
       gate.synced = true
@@ -693,7 +688,8 @@ export function disconnectCollabProvider(): void {
   detachProviderStatus = null
   provider?.destroy()
   provider = null
-  providerBindings.clear()
+  setGatesActive(false)
+  clearProviderGates()
   const site = storeApi?.getState().site ?? null
   resetCollabDocsFromSite(site)
   notifyProviderChange()
