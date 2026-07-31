@@ -43,6 +43,12 @@
   font-weight: 600;
 }
 
+/* Secondary note inside a field label — lighter than the label it follows. */
+.hint {
+  color: var(--text-subtle);
+  font-weight: 400;
+}
+
 @keyframes instaticAdminSpin {
   to {
     transform: rotate(360deg);

@@ -49,24 +49,22 @@ describe('loopPrefetch', () => {
       createdAt: '2026-05-01T10:02:00.000Z',
     })
 
+    // Every people key is a LEAF. `author` used to be the reference object,
+    // so a template binding it published `{"displayName":…,"roleSlug":…}`
+    // straight into the page.
     expect(item.fields).toMatchObject({
-      author: {
-        displayName: 'Author Name',
-        roleSlug: 'editor',
-        roleName: 'Editor',
-      },
+      author: 'Author Name',
       authorName: 'Author Name',
       authorRoleName: 'Editor',
       authorRoleSlug: 'editor',
-      publishedBy: {
-        displayName: 'Publisher Name',
-        roleSlug: 'admin',
-        roleName: 'Admin',
-      },
+      publishedBy: 'Publisher Name',
       publishedByName: 'Publisher Name',
       publishedByRoleName: 'Admin',
       publishedByRoleSlug: 'admin',
     })
+    for (const key of ['author', 'publishedBy']) {
+      expect(typeof item.fields[key]).not.toBe('object')
+    }
     expect('authorUserId' in item.fields).toBe(false)
     expect('authorId' in item.fields).toBe(false)
     expect('publishedByUserId' in item.fields).toBe(false)

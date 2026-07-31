@@ -164,12 +164,12 @@ function rowToLoopItem(
       versionNumber: Number(row.version_number),
       tableId: row.table_id,
       tableSlug: row.table_slug,
-      // People
-      author,
+      // People — display names, never the reference object. See loopPrefetch.
+      author: author?.displayName ?? null,
       authorName: author?.displayName ?? null,
       authorRoleSlug: author?.roleSlug ?? null,
       authorRoleName: author?.roleName ?? null,
-      publishedBy,
+      publishedBy: publishedBy?.displayName ?? null,
       publishedByName: publishedBy?.displayName ?? null,
       publishedByRoleSlug: publishedBy?.roleSlug ?? null,
       publishedByRoleName: publishedBy?.roleName ?? null,
@@ -503,7 +503,8 @@ export const DataRowsSource: LoopEntitySource = {
   fields: [
     { id: 'slug', label: 'Slug' },
     { id: 'title', label: 'Title (post-type)' },
-    { id: 'authorName', label: 'Author name' },
+    { id: 'author', label: 'Author name' },
+    { id: 'authorName', label: 'Author name (alias)' },
     { id: 'authorRoleName', label: 'Author role' },
     { id: 'body', label: 'Body (post-type, markdown)', format: 'html' },
     { id: 'featuredMedia', label: 'Featured media (post-type)', format: 'media' },

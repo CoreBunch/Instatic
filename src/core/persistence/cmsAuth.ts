@@ -11,6 +11,8 @@ interface CmsSetupInput {
   siteName: string
   email: string
   password: string
+  /** The owner's public name. Omitted or empty means author bindings render nothing. */
+  displayName?: string
 }
 
 interface CmsLoginInput {

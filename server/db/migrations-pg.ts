@@ -1147,4 +1147,13 @@ export const pgMigrations: Migration[] = [
       alter table collab_documents add column generation text not null default '';
     `,
   },
+  {
+    // See migrations-sqlite.ts:024 — clears display names that are just the
+    // account's email address, because author bindings render them publicly.
+    id: '024_clear_email_display_names',
+    sql: `
+      update users set display_name = ''
+       where trim(lower(display_name)) = trim(lower(email));
+    `,
+  },
 ]
