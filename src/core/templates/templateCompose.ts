@@ -112,7 +112,14 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
     // matched template as-is (chrome without a body). `chain` is non-empty here
     // because the renderer 404s an entry route with no matching template.
     const t = chain[chain.length - 1]
-    return { id: t.id, slug: t.slug, title: t.title, rootNodeId: t.rootNodeId, nodes: { ...t.nodes } }
+    return {
+      id: t.id,
+      slug: t.slug,
+      title: t.title,
+      ...(t.template ? { template: t.template } : {}),
+      rootNodeId: t.rootNodeId,
+      nodes: { ...t.nodes },
+    }
   }
 
   // Build the merged tree from the INNERMOST effective template outward.
@@ -145,6 +152,11 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
     // terminals have no Page here; their caller overrides `title` from the
     // published row after composing.
     title: terminal.kind === 'page' ? terminal.page.title : innermost.title,
+    // Carry the innermost template's `template` config. `assetScopeAppliesToPage`
+    // gates its `templates` branch on `Boolean(page.template)`, so dropping it
+    // here meant a stylesheet scoped to an entry template never applied to that
+    // template's own routes — the one place it was meant to.
+    ...(innermost.template ? { template: innermost.template } : {}),
     rootNodeId: acc.rootId,
     nodes: acc.nodes,
   }

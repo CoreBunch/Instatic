@@ -970,6 +970,78 @@ describe('ContentPage', () => {
     expect(params.get('row')).toBe('article_2')
   })
 
+  it('publishing another document does not steal the active document', async () => {
+    // `applyStatus` used to call `updateSelectedEntry` for whatever row it
+    // published, active or not. That retargeted the workspace — discarding the
+    // author's unsaved draft — and left a tool loop of
+    // `set_document_fields → set_document_status` writing one document behind
+    // itself, so every field write after the first was refused.
+    const postA = makeRow('post_a', 'posts', { title: 'Open post', slug: 'open-post', seoTitle: '' })
+    const postB = makeRow('post_b', 'posts', { title: 'Other post', slug: 'other-post', seoTitle: '' })
+
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+
+      if (url === '/admin/api/cms/data/tables' && method === 'GET') {
+        return json({ tables: [makeTable('posts', 'Posts', 'posts', '/posts', 'Post', 'Posts')] })
+      }
+      if (url === '/admin/api/cms/data/tables/posts/rows' && method === 'GET') {
+        return json({ rows: [postA, postB] })
+      }
+      if (url === '/admin/api/cms/data/rows/post_a' && method === 'GET') return json({ row: postA })
+      if (url === '/admin/api/cms/data/rows/post_b' && method === 'GET') return json({ row: postB })
+      if (url === '/admin/api/cms/data/rows/post_a' && method === 'PATCH') {
+        const body = JSON.parse(String(init?.body))
+        return json({ row: makeRow('post_a', 'posts', body.cells) })
+      }
+      if (url === '/admin/api/cms/data/rows/post_b/publish' && method === 'POST') {
+        return json({ row: { ...postB, status: 'published', publishedAt: '2026-05-01T10:02:00.000Z' } })
+      }
+      if (url === '/admin/api/cms/data/authors' && method === 'GET') return json({ authors: [] })
+      if (url === '/admin/api/cms/media' && method === 'GET') return json({ assets: [] })
+
+      const ambient = ambientFetchFallback(url)
+      if (ambient) return ambient
+      return json({ error: `Unhandled ${method} ${url}` }, 500)
+    }
+
+    render(
+      <AdminTestProviders>
+        <ContentPage />
+      </AdminTestProviders>,
+    )
+    expect(await screen.findByRole('region', { name: 'Posts' })).toBeDefined()
+
+    // Each call gets its own act() so React commits in between and the bridge's
+    // workspace ref refreshes. Batching them hides the bug: the ref would still
+    // hold the pre-publish workspace and the last write would pass either way.
+    let statusResult: Awaited<ReturnType<typeof executeContentTool>> | null = null
+    let writeResult: Awaited<ReturnType<typeof executeContentTool>> | null = null
+    await act(async () => {
+      await executeContentTool('content_set_active_document', { documentId: 'post_a' })
+    })
+    await act(async () => {
+      // Publish the OTHER document…
+      statusResult = await executeContentTool('content_set_document_status', {
+        documentId: 'post_b',
+        status: 'published',
+      })
+    })
+    await act(async () => {
+      // …post_a must still be the active document, so this write must land.
+      writeResult = await executeContentTool('content_set_document_field', {
+        documentId: 'post_a',
+        fieldId: 'seoTitle',
+        value: 'Still mine',
+      })
+    })
+
+    expect(statusResult?.ok).toBe(true)
+    expect(writeResult?.ok).toBe(true)
+    expect(String(writeResult?.error ?? '')).not.toContain('not the active doc')
+  })
+
   it('uses content-specific rail panels instead of editor-only panels', async () => {
     render(
       <AdminTestProviders>

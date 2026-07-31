@@ -32,6 +32,7 @@ import { renderPublishedDataRowTemplate } from './publicRenderer'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import { writeArtefact } from './staticArtefact'
 import { getLatestSnapshotForVersion } from './publishedSnapshotCache'
+import { snapshotForEntryRoute } from './entryTemplateSnapshot'
 
 interface DataRowBakeResult {
   /** Routes successfully baked into the slot. */
@@ -91,7 +92,10 @@ export async function bakePublishedDataRowArtefacts(
       const row = await getPublishedDataRowByRoute(db, route.tableRouteBase, route.rowSlug)
       if (!row) continue
       const syntheticUrl = new URL(`http://localhost${urlPath}`)
-      const rendered = await renderPublishedDataRowTemplate(siteSnapshot, row, {
+      // Runtime assets come from this table's entry template, not from the
+      // arbitrary page the site-wide snapshot happens to name.
+      const snapshot = await snapshotForEntryRoute(db, siteSnapshot, route.tableSlug)
+      const rendered = await renderPublishedDataRowTemplate(snapshot, row, {
         db,
         url: syntheticUrl,
         publishVersion,
