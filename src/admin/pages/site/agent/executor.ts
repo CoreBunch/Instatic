@@ -217,7 +217,7 @@ function targetNodeIdFromInput(raw: unknown): string | undefined {
  */
 function runInsertHtml(input: InsertHtmlInput): AiToolOutput {
   // (1) Parse and walk the HTML to produce a flat node fragment + any <style> CSS
-  const { nodes, rootIds, styleCss, stripped } = importHtml(input.html)
+  const { nodes, rootIds, styleCss, stripped, warnings } = importHtml(input.html)
   const { rules, conditions } = parseImportedStyleCss(styleCss)
 
   if (rootIds.length === 0) {
@@ -285,7 +285,15 @@ function runInsertHtml(input: InsertHtmlInput): AiToolOutput {
     )
   }
 
-  return aiToolOk({ nodeIds: insertedRootIds, created })
+  // Report references the importer could not resolve. Without this an
+  // `<instatic-loop>` naming a source that does not exist inserts cleanly,
+  // publishes an empty section, and passes every downstream check — the
+  // caller only finds out by looking at the rendered page.
+  return aiToolOk({
+    nodeIds: insertedRootIds,
+    created,
+    ...(warnings.length > 0 ? { warnings: warnings.map((w) => w.message) } : {}),
+  })
 }
 
 /**
@@ -351,7 +359,7 @@ function runReplaceNodeHtml(input: ReplaceNodeHtmlInput): AiToolOutput {
 
   // Parse + validate the payload BEFORE mutating, so an empty / invalid payload
   // never wipes the node's existing children first and then errors out.
-  const { nodes, rootIds, styleCss, stripped } = importHtml(input.html)
+  const { nodes, rootIds, styleCss, stripped, warnings } = importHtml(input.html)
   const { rules, conditions } = parseImportedStyleCss(styleCss)
 
   if (rootIds.length === 0) {
@@ -388,7 +396,11 @@ function runReplaceNodeHtml(input: ReplaceNodeHtmlInput): AiToolOutput {
     return aiToolError(`Node does not accept children: ${input.nodeId}`)
   }
 
-  return aiToolOk({ nodeIds: insertedRootIds })
+  // Same unresolved-reference report as insertHtml.
+  return aiToolOk({
+    nodeIds: insertedRootIds,
+    ...(warnings.length > 0 ? { warnings: warnings.map((w) => w.message) } : {}),
+  })
 }
 
 function runDeleteNode(input: DeleteNodeInput): AiToolOutput {
