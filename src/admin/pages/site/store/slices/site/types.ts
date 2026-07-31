@@ -245,6 +245,15 @@ export interface SiteSlice {
 
   // Framework color mutations
   createFrameworkColorToken: (input: CreateFrameworkColorTokenInput) => FrameworkColorToken
+  /**
+   * Create-or-update many tokens in ONE mutation. `accepted` is false when the
+   * collab write path refused the whole batch (offline / still syncing) — the
+   * caller must not report those tokens as installed.
+   */
+  upsertFrameworkColorTokens: (inputs: readonly CreateFrameworkColorTokenInput[]) => {
+    tokens: Array<{ slug: string; action: 'created' | 'updated' }>
+    accepted: boolean
+  }
   updateFrameworkColorToken: (tokenId: string, patch: UpdateFrameworkColorTokenPatch) => void
   duplicateFrameworkColorToken: (tokenId: string) => FrameworkColorToken | null
   reorderFrameworkColorToken: (tokenId: string, direction: 'up' | 'down') => void
