@@ -1,8 +1,15 @@
 /**
  * Public-facing user reference attached to published data rows.
  *
- * Strips internal-only ids and email addresses, retaining only the bits the
- * publisher and frontend templates need to render bylines safely.
+ * Drops internal-only ids and the `email` field, retaining only the bits the
+ * publisher and frontend templates need to render bylines.
+ *
+ * It does NOT guarantee the result is free of email addresses: `displayName`
+ * carries whatever the account has set, and setup used to default that to the
+ * address. Two things keep it out of public HTML now — a display name is empty
+ * until someone sets one (`createUser`), and the binding frames expose the
+ * display name as a leaf string rather than this object, because a non-scalar
+ * binding used to be serialised wholesale into the page.
  */
 
 interface PublicDataUserReference {

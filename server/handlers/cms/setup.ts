@@ -54,12 +54,16 @@ export async function handleSetupRoutes(req: Request, db: DbClient): Promise<Res
       siteName: Type.String(),
       email: Type.String(),
       password: Type.String(),
+      // Optional: the owner's public name. Left empty, author bindings render
+      // nothing rather than the email address.
+      displayName: Type.Optional(Type.String()),
     })
     const body = await readValidatedBody(req, SetupBodySchema)
     if (!body) return badRequest('Invalid request body')
     const siteName = body.siteName.trim()
     const email = body.email.trim().toLowerCase()
     const password = body.password.trim()
+    const displayName = body.displayName?.trim() ?? ''
 
     if (!siteName) return badRequest('Missing siteName')
     if (!email.includes('@')) return badRequest('Invalid email')
@@ -70,7 +74,7 @@ export async function handleSetupRoutes(req: Request, db: DbClient): Promise<Res
       const owner = await createUser(tx, {
         id: nanoid(),
         email,
-        displayName: email,
+        displayName,
         passwordHash: await hashPassword(password),
         roleId: 'owner',
         allowOwnerRole: true,

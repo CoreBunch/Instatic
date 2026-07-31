@@ -1211,4 +1211,17 @@ export const sqliteMigrations: Migration[] = [
       alter table collab_documents add column generation text not null default '';
     `,
   },
+  {
+    // `display_name` is rendered on PUBLIC pages through author bindings, and
+    // setup used to default it to the account's email address — so every
+    // install created before this has an address sitting in a public field.
+    // Clear it only where it is exactly the address; a name somebody actually
+    // chose is left alone. Admin surfaces already fall back to the email for
+    // their own display, so an empty value costs nothing there.
+    id: '024_clear_email_display_names',
+    sql: `
+      update users set display_name = ''
+       where trim(lower(display_name)) = trim(lower(email));
+    `,
+  },
 ]
