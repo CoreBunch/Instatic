@@ -1,65 +1,24 @@
 /**
- * Tabs — underline-indicator style. Intentionally distinct from RangeTabs
- * (pill segmented control). This is page-level chrome.
+ * Tabs — page-level section tabs.
  *
- * Tokens: --border, --text, --text-subtle (from globals.css).
- * No hardcoded hex values — all colours come from var(--*) tokens per policy.
+ * The tab triggers themselves are Button primitives (primary = active,
+ * secondary = inactive), so all trigger chrome lives in Button.module.css.
+ * This module only owns the row layout and the panel reveal.
  */
 
 /* ── Tablist ──────────────────────────────────────────────────────────────── */
 
 .tabList {
     display: flex;
-    gap: var(--space-4xs);
-    border-bottom: 1px solid var(--border);
-}
-
-/* ── Tab trigger ──────────────────────────────────────────────────────────── */
-
-.tab {
-    padding: var(--space-s) var(--space-2xl);
-    font-size: 0.875rem; /* 14px */
-    font-weight: 500;
-    color: var(--text-subtle);
-    background: none;
-    border: none;
-    /* 2px underline sits flush against the tablist's 1px border-bottom.
-       margin-bottom: calc(var(--space-px) * -1) lets the active underline overlap the border
-       so the two lines visually merge into one clean indicator. */
-    border-bottom: var(--space-4xs) solid transparent;
-    margin-bottom: calc(var(--space-px) * -1);
-    cursor: pointer;
-    font-family: inherit;
-    line-height: 1;
-    transition:
-        color 0.1s ease,
-        border-color 0.1s ease;
-}
-
-.tab:hover {
-    color: var(--text);
-}
-
-.tab:focus-visible {
-    outline: none;
-    box-shadow: var(--focus-ring);
-    border-radius: var(--radius-sm);
-}
-
-/* ── Active tab ───────────────────────────────────────────────────────────── */
-
-.tabActive {
-    color: var(--text);
-    border-bottom-color: var(--text);
-    font-weight: 600;
+    flex-wrap: wrap;
+    gap: var(--space-s);
 }
 
 /* ── Tab panel ────────────────────────────────────────────────────────────── */
 
 .tabPanel {
-    /* Subtle fade-in + upward slide on panel reveal. Kept (not dropped) because
-       the 0.12s duration is imperceptible as a delay but noticeably smooths
-       hard content swaps — identical to the Search plugin's panel animation.
+    /* Subtle fade-in + upward slide on panel reveal. The 0.12s duration is
+       imperceptible as a delay but noticeably smooths hard content swaps.
        The hidden attribute gates visibility so the animation only fires when
        a panel becomes active, not on initial render of inactive panels. */
     animation: fadeIn 0.12s ease;

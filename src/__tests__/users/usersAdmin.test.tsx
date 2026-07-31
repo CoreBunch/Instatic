@@ -286,9 +286,9 @@ describe('UsersPage', () => {
     )
 
     expect(await screen.findByRole('table', { name: 'Users' })).toBeDefined()
-    expect(screen.getByRole('button', { name: 'Users' })).toBeDefined()
-    expect(screen.queryByRole('button', { name: 'Roles' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Audit' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Users' })).toBeDefined()
+    expect(screen.queryByRole('tab', { name: 'Roles' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Audit' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Create User' })).toBeDefined()
     expect(calls).toContain('GET /admin/api/cms/users')
     expect(calls).toContain('GET /admin/api/cms/roles')
@@ -315,9 +315,9 @@ describe('UsersPage', () => {
     )
 
     expect(await screen.findByRole('table', { name: 'Roles' })).toBeDefined()
-    expect(screen.queryByRole('button', { name: 'Users' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Roles' })).toBeDefined()
-    expect(screen.queryByRole('button', { name: 'Audit' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Users' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Roles' })).toBeDefined()
+    expect(screen.queryByRole('tab', { name: 'Audit' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Create Role' })).toBeDefined()
     expect(calls).not.toContain('GET /admin/api/cms/users')
     expect(calls).toContain('GET /admin/api/cms/roles')
@@ -348,9 +348,9 @@ describe('UsersPage', () => {
     )
 
     expect(await screen.findByRole('table', { name: 'Audit events' })).toBeDefined()
-    expect(screen.queryByRole('button', { name: 'Users' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Roles' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Audit' })).toBeDefined()
+    expect(screen.queryByRole('tab', { name: 'Users' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Roles' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Audit' })).toBeDefined()
     expect(screen.queryByRole('button', { name: /create user/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /create role/i })).toBeNull()
     expect(screen.getByText('Tester One was created')).toBeDefined()
@@ -464,7 +464,7 @@ describe('UsersPage', () => {
       </Wrapper>,
     )
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Roles' }))
+    fireEvent.click(await screen.findByRole('tab', { name: 'Roles' }))
 
     expect(screen.queryByRole('heading', { name: 'Create Role' })).toBeNull()
     const rolesTable = await screen.findByRole('table', { name: 'Roles' })
@@ -525,7 +525,7 @@ describe('UsersPage', () => {
       </Wrapper>,
     )
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Audit' }))
+    fireEvent.click(await screen.findByRole('tab', { name: 'Audit' }))
 
     const auditTable = await screen.findByRole('table', { name: 'Audit events' })
     expect(auditTable.getAttribute('data-density')).toBe('compact')

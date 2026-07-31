@@ -28,7 +28,7 @@
  * overlay panels (DOM tree, properties) on the Site workspace.
  */
 import { useState } from 'react'
-import { Button } from '@ui/components/Button'
+import { Tab, TabList, TabPanel, Tabs } from '@ui/components/Tabs'
 import { AdminPageLayout } from '@admin/layouts/AdminPageLayout'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import { ProfileTab } from './tabs/ProfileTab'
@@ -37,16 +37,16 @@ import { SecurityTab } from './tabs/SecurityTab'
 import { ActivityTab } from './tabs/ActivityTab'
 import styles from './AccountPage.module.css'
 
-type Tab = 'profile' | 'sessions' | 'security' | 'activity'
+type AccountTab = 'profile' | 'sessions' | 'security' | 'activity'
 
-const TAB_LABELS: Record<Tab, string> = {
+const TAB_LABELS: Record<AccountTab, string> = {
   profile: 'Profile',
   sessions: 'Active devices',
   security: 'Security',
   activity: 'Sign-in history',
 }
 
-const TAB_ORDER: readonly Tab[] = ['profile', 'sessions', 'security', 'activity']
+const TAB_ORDER: readonly AccountTab[] = ['profile', 'sessions', 'security', 'activity']
 
 export function AccountPage() {
   // The page renders inside the authenticated branch of `AdminEntry` — by
@@ -55,41 +55,34 @@ export function AccountPage() {
   // hand a non-nullable `user` down to its tabs without a "what if it's
   // null" fallback.
   const user = useAuthenticatedAdminUser()
-  const [tab, setTab] = useState<Tab>('profile')
+  const [tab, setTab] = useState<AccountTab>('profile')
 
   const tabs = (
-    <div role="tablist" aria-label="Account sections" className={styles.tabsRow}>
+    <TabList ariaLabel="Account sections">
       {TAB_ORDER.map((id) => (
-        <Button
-          key={id}
-          type="button"
-          variant={tab === id ? 'primary' : 'secondary'}
-          size="sm"
-          onClick={() => setTab(id)}
-          role="tab"
-          aria-selected={tab === id}
-          data-testid={`account-tab-${id}`}
-        >
+        <Tab key={id} value={id} testId={`account-tab-${id}`}>
           <span>{TAB_LABELS[id]}</span>
-        </Button>
+        </Tab>
       ))}
-    </div>
+    </TabList>
   )
 
   return (
-    <AdminPageLayout
-      workspace="account"
-      title="Account"
-      titleId="account-title"
-      description="Manage your profile, devices, security, and sign-in activity."
-      tabs={tabs}
-    >
-      <div className={styles.body}>
-        {tab === 'profile' && <ProfileTab user={user} />}
-        {tab === 'sessions' && <SessionsTab />}
-        {tab === 'security' && <SecurityTab user={user} />}
-        {tab === 'activity' && <ActivityTab />}
-      </div>
-    </AdminPageLayout>
+    <Tabs value={tab} onChange={setTab}>
+      <AdminPageLayout
+        workspace="account"
+        title="Account"
+        titleId="account-title"
+        description="Manage your profile, devices, security, and sign-in activity."
+        tabs={tabs}
+      >
+        <div className={styles.body}>
+          <TabPanel value="profile"><ProfileTab user={user} /></TabPanel>
+          <TabPanel value="sessions"><SessionsTab /></TabPanel>
+          <TabPanel value="security"><SecurityTab user={user} /></TabPanel>
+          <TabPanel value="activity"><ActivityTab /></TabPanel>
+        </div>
+      </AdminPageLayout>
+    </Tabs>
   )
 }

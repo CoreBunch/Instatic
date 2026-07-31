@@ -19,12 +19,6 @@
     line-height: 1.45;
 }
 
-.tabsRow {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-s);
-}
-
 .section {
     display: grid;
     gap: var(--space-2xl);
