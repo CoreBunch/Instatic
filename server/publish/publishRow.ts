@@ -26,6 +26,7 @@ import {
   type PreviousPublishedRoute,
 } from '../repositories/data/publish'
 import { getLatestPublishedSiteSnapshot } from '../repositories/publish'
+import { snapshotForEntryRoute } from './entryTemplateSnapshot'
 import { renderPublishedDataRowTemplate } from './publicRenderer'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import { removeArtefactInPlace, updateArtefactInPlace } from './staticArtefact'
@@ -132,7 +133,10 @@ async function writeDataRowArtefact(
 
   const newPath = publicDataPath(tableInfo.tableRouteBase, publishedRow.slug)
   const syntheticUrl = new URL(`http://localhost${newPath}`)
-  const rendered = await renderPublishedDataRowTemplate(siteSnapshot, publishedDataRow, {
+  // Runtime assets come from this table's entry template, not from the
+  // arbitrary page the site-wide snapshot happens to name.
+  const snapshot = await snapshotForEntryRoute(db, siteSnapshot, tableInfo.tableSlug)
+  const rendered = await renderPublishedDataRowTemplate(snapshot, publishedDataRow, {
     db,
     url: syntheticUrl,
     publishVersion,

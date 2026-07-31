@@ -44,6 +44,8 @@ interface ContentToolWorkspaceSurface {
   updateEntryStatus(entry: DataRow, status: 'draft' | 'unpublished'): Promise<DataRow>
   updateEntryAuthor(entry: DataRow, userId: string): Promise<DataRow>
   updateSelectedEntry(entry: DataRow): void
+  /** Refresh a row, selecting it only if it is already the active document. */
+  applyEntryUpdate(entry: DataRow): void
 }
 
 interface ContentToolDraftSurface {
@@ -291,6 +293,22 @@ function applyFieldsToDraft(
   }
 }
 
+/**
+ * Publish/schedule a row without moving the active document.
+ *
+ * `updateSelectedEntry` sets `selectedEntry`, so calling it for a row that is
+ * NOT the active one silently retargets the workspace. Two things went wrong
+ * with that. A caller looping `set_document_fields` → `set_document_status`
+ * over several documents left the active pointer one step behind itself, and
+ * the field writes — which require the active document — then failed on every
+ * document after the first. And it yanked whatever a human had open, taking
+ * their unsaved draft with it, because `useContentEntryDraft` re-applies on a
+ * `selectedEntry` id change.
+ *
+ * The non-agent paths already guard this way (`useContentWorkspace`'s
+ * `updateEntryStatus` / `updateEntryAuthor`); this brings the agent path in
+ * line rather than leaving the two asymmetric.
+ */
 async function applyStatus(
   ws: ContentToolWorkspaceSurface,
   row: DataRow,
@@ -299,13 +317,11 @@ async function applyStatus(
 ): Promise<void> {
   if (status === 'scheduled') {
     if (!scheduledAt) throw new Error('scheduledAt is required for scheduled publishing.')
-    const scheduled = await scheduleCmsDataRowPublish(row.id, scheduledAt)
-    ws.updateSelectedEntry(scheduled)
+    ws.applyEntryUpdate(await scheduleCmsDataRowPublish(row.id, scheduledAt))
     return
   }
   if (status === 'published') {
-    const published = await publishCmsDataRow(row.id)
-    ws.updateSelectedEntry(published)
+    ws.applyEntryUpdate(await publishCmsDataRow(row.id))
     return
   }
   await ws.updateEntryStatus(row, status)

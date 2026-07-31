@@ -119,6 +119,20 @@ export function useContentWorkspace({
   }
 
   /**
+   * Refresh a row in the list, making it the active document ONLY if it
+   * already was. Use this for any update that is not itself a navigation —
+   * `updateSelectedEntry` retargets the workspace, which silently discards
+   * whatever the author had open and unsaved.
+   */
+  const applyEntryUpdate = (entry: DataRow) => {
+    if (selectedEntryRef.current?.id === entry.id) {
+      updateSelectedEntry(entry)
+      return
+    }
+    setEntries((current) => updateRowList(current, entry))
+  }
+
+  /**
    * Re-read the collection roster from the server and return it.
    *
    * The mount-time load is a snapshot: a collection created after it — by an
@@ -522,6 +536,7 @@ export function useContentWorkspace({
     openEntry,
     selectEntry,
     updateSelectedEntry,
+    applyEntryUpdate,
     createUntitledEntry,
     duplicateEntry,
     createCollection,
