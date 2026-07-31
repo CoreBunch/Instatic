@@ -21,15 +21,13 @@
  * @see Guideline #410 — 3 Self-Contained Independent Panels
  */
 
-import { useRef, useEffect, memo } from 'react'
-import { useAgentStore } from '@admin/ai/useAgentStore'
+import { useRef, useEffect, useState, memo } from 'react'
+import { useAgentStore, useAgentStoreApi } from '@admin/ai/useAgentStore'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useAdminNavigate } from '@admin/lib/useAdminNavigate'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
-import { listCredentials, listModels } from '@admin/ai/api'
+import { listCredentials } from '@admin/ai/api'
 import { renderMarkdownToHtml, type AgentMessage, type AgentToolCall } from '@site/agent'
-import { SquareSolidIcon } from 'pixel-art-icons/icons/square-solid'
-import { SendSolidIcon } from 'pixel-art-icons/icons/send-solid'
 import { AiBoxSolidIcon } from 'pixel-art-icons/icons/ai-box-solid'
 import { AiSettingsSolidIcon } from 'pixel-art-icons/icons/ai-settings-solid'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
@@ -38,12 +36,24 @@ import { PanelHeader } from '@admin/shared/PanelHeader'
 import { UserAvatar } from '@admin/shared/UserAvatar'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
-import { Textarea } from '@ui/components/Input'
-import { useDraggablePanel } from '@site/hooks/useDraggablePanel'
+import {
+  PanelResizeHandle,
+  useDraggablePanel,
+  useResizablePanel,
+} from '@admin/shared/FloatingWindow'
 import { cn } from '@ui/cn'
-import { ModelPicker } from './ModelPicker'
 import { ConversationHistory } from './ConversationHistory'
-import { ContextMeter } from './ContextMeter'
+import { AgentComposer, type ComposerLockReason } from './AgentComposer'
+import {
+  AgentImageGallery,
+} from './AgentImageGallery'
+import { AgentImageContextMenu } from './AgentImageContextMenu'
+import { AgentImagePreview } from './AgentImagePreview'
+import type {
+  AgentImageMenuRequest,
+  AgentPreviewImage,
+  OpenAgentImageMenu,
+} from './agentImageTypes'
 import { ToolCallRow } from './ToolCallRow'
 import { formatRelativeTime } from './relativeTime'
 import styles from './AgentPanel.module.css'
@@ -52,6 +62,10 @@ const PANEL_WIDTH = 320
 const PANEL_HEIGHT = 480
 const AI_SETTINGS_ROUTE = '/admin/ai'
 type PanelVariant = 'floating' | 'docked'
+
+interface AgentPanelProps {
+  variant?: PanelVariant
+}
 
 // ---------------------------------------------------------------------------
 // AgentPanel
@@ -64,18 +78,22 @@ type PanelVariant = 'floating' | 'docked'
  * (`.floatPanelClosed`) to preserve Zustand conversation state across open/close cycles.
  * Agent routes via Vite proxy `/admin/api/agent` → local Bun server → Claude SDK.
  */
-export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant }) {
+export function AgentPanel({ variant = 'floating' }: AgentPanelProps) {
+  const agentStore = useAgentStoreApi()
   const isOpen = useAgentStore((s) => s.isAgentOpen)
   const isStreaming = useAgentStore((s) => s.isAgentStreaming)
+  const conversationPending = useAgentStore((s) => s.isAgentConversationPending)
+  const providerPending = useAgentStore((s) => s.isAgentProviderPending)
   const messages = useAgentStore((s) => s.agentMessages)
   const agentError = useAgentStore((s) => s.agentError)
   const closeAgent = useAgentStore((s) => s.closeAgent)
-  const sendAgentMessage = useAgentStore((s) => s.sendAgentMessage)
-  const abortAgent = useAgentStore((s) => s.abortAgent)
   const startNewAgentConversation = useAgentStore((s) => s.startNewAgentConversation)
   const loadScopeDefault = useAgentStore((s) => s.loadScopeDefault)
+  const composerEpoch = useAgentStore((s) => s.agentComposerEpoch)
   const activeCredentialId = useAgentStore((s) => s.agentActiveCredentialId)
   const activeModelId = useAgentStore((s) => s.agentActiveModelId)
+  const [previewImage, setPreviewImage] = useState<AgentPreviewImage | null>(null)
+  const [imageMenu, setImageMenu] = useState<AgentImageMenuRequest | null>(null)
   const credentialsResource = useAsyncResource(
     (signal) => listCredentials(signal),
     [],
@@ -97,7 +115,7 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
   //                   choose a model below, or set a default in AI settings.
   // While credentials are still loading we keep messaging neutral (null) so
   // the panel doesn't flash a setup prompt before the default preload lands.
-  const lockReason: 'setup' | 'chooseModel' | null = !composerLocked
+  const lockReason: ComposerLockReason | null = !composerLocked
     ? null
     : noCredentials
       ? 'setup'
@@ -105,36 +123,31 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
         ? 'chooseModel'
         : null
 
-  // Resolve the active model's context window from the catalogue (via the
-  // models endpoint) so the composer meter can show "0 / window" before the
-  // first turn. Re-runs whenever the selected credential/model changes; null
-  // until a model is picked, or when the provider has no published window
-  // (Ollama / uncatalogued) — the meter then stays hidden.
-  const activeProviderId =
-    credentials.find((c) => c.id === activeCredentialId)?.providerId ?? null
-  const contextWindowResource = useAsyncResource(
-    async () => {
-      if (!activeProviderId || !activeCredentialId || !activeModelId) return null
-      const models = await listModels(activeProviderId, activeCredentialId)
-      return models.find((m) => m.id === activeModelId)?.contextWindow ?? null
-    },
-    [activeProviderId, activeCredentialId, activeModelId],
-    { swallowErrors: true },
-  )
-
-  const inputRef = useRef<HTMLTextAreaElement>(null)
   const threadRef = useRef<HTMLDivElement>(null)
 
   // ── Draggable panel position ───────────────────────────────────────────────
   // Default to bottom-right corner.
-  const { panelRef, headerDragProps, panelPositionStyle } = useDraggablePanel(
+  const {
+    panelRef,
+    setPanelRef,
+    headerDragProps,
+    panelPositionStyle,
+  } = useDraggablePanel(
     'agent',
     () => ({
       x: typeof window !== 'undefined' ? window.innerWidth - PANEL_WIDTH - 16 : 16,
       y: typeof window !== 'undefined'
         ? window.innerHeight - PANEL_HEIGHT - 16
         : 200,
-    }),
+      }),
+  )
+  const {
+    panelSizeStyle,
+    resizeHandleProps,
+  } = useResizablePanel(
+    'agent',
+    panelRef,
+    () => ({ width: PANEL_WIDTH, height: PANEL_HEIGHT }),
   )
 
   // Auto-scroll to bottom when new messages arrive
@@ -142,16 +155,6 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
     const el = threadRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [messages])
-
-  // Focus input when panel becomes active (isOpen transitions to true).
-  // The 50ms delay lets the panel's open transition settle before we steal
-  // focus; cleanup cancels the pending focus if the panel closes again
-  // (or the component unmounts) before the timer fires.
-  useEffect(() => {
-    if (!isOpen) return
-    const id = setTimeout(() => inputRef.current?.focus(), 50)
-    return () => clearTimeout(id)
-  }, [isOpen])
 
   // Preload the per-scope default credential + model when the panel opens, so
   // the picker shows the configured default immediately and the first send
@@ -161,9 +164,42 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
     if (isOpen) void loadScopeDefault()
   }, [isOpen, loadScopeDefault])
 
+  useEffect(() => agentStore.subscribe((state, previous) => {
+    if (
+      (previous.isAgentOpen && !state.isAgentOpen)
+      || previous.agentComposerEpoch !== state.agentComposerEpoch
+    ) {
+      setPreviewImage(null)
+      setImageMenu(null)
+    }
+  }), [agentStore])
+
+  function openImageMenu(request: AgentImageMenuRequest): void {
+    setImageMenu(request)
+  }
+
+  function openImagePreview(image: AgentPreviewImage): void {
+    setImageMenu(null)
+    setPreviewImage(image)
+  }
+
+  function closeImageMenu(): void {
+    const returnFocus = imageMenu?.returnFocus
+    setImageMenu(null)
+    if (returnFocus?.isConnected) {
+      requestAnimationFrame(() => returnFocus.focus())
+    }
+  }
+
+  function closeImagePreview(): void {
+    setPreviewImage(null)
+    setImageMenu(null)
+  }
+
   // Escape key — close the AI panel
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (e.defaultPrevented || imageMenu !== null) return
       if (e.key === 'Escape' && isOpen) {
         e.preventDefault()
         closeAgent()
@@ -171,38 +207,23 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [isOpen, closeAgent])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const input = inputRef.current
-    if (!input) return
-    const content = input.value.trim()
-    if (!content || isStreaming) return
-    input.value = ''
-    input.style.height = 'auto'
-    await sendAgentMessage(content)
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSubmit(e as unknown as React.FormEvent)
-    }
-  }
+  }, [isOpen, imageMenu, closeAgent])
 
   // Always-mounted: CSS display:none when closed (via .floatPanelClosed) preserves
   // Zustand state across open/close cycles without conditional rendering.
   return (
     <aside
-      ref={panelRef as React.RefObject<HTMLElement>}
+      ref={setPanelRef}
       role="complementary"
       aria-label="AI Assistant"
       data-panel=""
       tabIndex={-1}
       onClick={(e) => e.stopPropagation()}
-      // Panel position is drag-driven — CSS var injection from useDraggablePanel
-      style={variant === 'floating' ? panelPositionStyle : undefined}
+      style={
+        variant === 'floating'
+          ? { ...panelPositionStyle, ...panelSizeStyle }
+          : undefined
+      }
       className={cn(
         styles.floatPanel,
         variant === 'docked' && styles.floatPanelDocked,
@@ -227,6 +248,7 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
           variant="ghost"
           size="xs"
           iconOnly
+          disabled={isStreaming || conversationPending || providerPending}
           onClick={startNewAgentConversation}
           tooltip="New chat"
           aria-label="New chat"
@@ -265,7 +287,12 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
           <>
             {lockReason && <AgentCredentialAlert mode={lockReason} />}
             {groupConsecutiveMessages(messages).map((group) => (
-              <MessageBubble key={group.id} group={group} />
+              <MessageBubble
+                key={group.id}
+                group={group}
+                onOpenImage={openImagePreview}
+                onOpenImageMenu={openImageMenu}
+              />
             ))}
           </>
         )}
@@ -279,76 +306,32 @@ export function AgentPanel({ variant = 'floating' }: { variant?: PanelVariant })
         )}
       </div>
 
-      {/* ── Input bar ───────────────────────────────────────────────────────── */}
-      <div className={styles.inputBar}>
-        {/* Live context-window meter — renders once the active model's window
-            is known (pre-turn shows 0 / window). */}
-        <ContextMeter windowTokens={contextWindowResource.data} />
-        <form onSubmit={handleSubmit} className={styles.inputForm}>
-          {/* Textarea is hidden while streaming — the controls row collapses
-              to just the model picker + Stop button. */}
-          {!isStreaming && (
-            <Textarea
-              ref={inputRef}
-              placeholder={lockReason === 'setup'
-                ? 'Add AI credentials to start chatting'
-                : lockReason === 'chooseModel'
-                  ? 'Choose a model below to start'
-                  : 'Tell me what to build… (Enter to send)'}
-              aria-label="Message to AI assistant"
-              rows={2}
-              resize="none"
-              disabled={composerLocked}
-              onKeyDown={handleKeyDown}
-              onChange={(e) => {
-                // Auto-grow textarea
-                e.target.style.height = 'auto'
-                e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
-              }}
-            />
-          )}
-          {/* Controls row: model picker on the left (saves vertical space),
-              minimal icon-only send/stop button on the right. */}
-          <div className={styles.inputControls}>
-            <ModelPicker
-              className={styles.inputControlsPicker}
-              credentials={credentials}
-              credentialsLoaded={credentialsLoaded}
-              onRefreshCredentials={credentialsResource.refresh}
-            />
-            {isStreaming ? (
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                iconOnly
-                onClick={abortAgent}
-                tooltip="Stop"
-                aria-label="Stop"
-              >
-                <SquareSolidIcon size={14} />
-              </Button>
-            ) : (
-              <Button
-                type="submit"
-                variant="primary"
-                size="sm"
-                iconOnly
-                disabled={composerLocked}
-                tooltip={lockReason === 'setup'
-                  ? 'Add AI credentials first'
-                  : lockReason === 'chooseModel'
-                    ? 'Choose a model first'
-                    : 'Send'}
-                aria-label="Send"
-              >
-                <SendSolidIcon size={14} />
-              </Button>
-            )}
-          </div>
-        </form>
-      </div>
+      <AgentComposer
+        key={composerEpoch}
+        composerLocked={composerLocked}
+        lockReason={lockReason}
+        credentials={credentials}
+        credentialsLoaded={credentialsLoaded}
+        onRefreshCredentials={credentialsResource.refresh}
+        onOpenImage={openImagePreview}
+        onOpenImageMenu={openImageMenu}
+      />
     </div>
+      <AgentImagePreview
+        image={isOpen ? previewImage : null}
+        imageMenuOpen={imageMenu !== null}
+        onOpenImageMenu={openImageMenu}
+        onClose={closeImagePreview}
+      />
+      {isOpen && imageMenu && (
+        <AgentImageContextMenu request={imageMenu} onClose={closeImageMenu} />
+      )}
+      {variant === 'floating' && (
+        <PanelResizeHandle
+          panelLabel="AI Assistant"
+          resizeHandleProps={resizeHandleProps}
+        />
+      )}
     </aside>
   )
 }
@@ -363,7 +346,15 @@ interface ConversationGroup {
   messages: AgentMessage[]
 }
 
-function MessageBubble({ group }: { group: ConversationGroup }) {
+function MessageBubble({
+  group,
+  onOpenImage,
+  onOpenImageMenu,
+}: {
+  group: ConversationGroup
+  onOpenImage(image: AgentPreviewImage): void
+  onOpenImageMenu: OpenAgentImageMenu
+}) {
   const isUser = group.role === 'user'
   const user = useAuthenticatedAdminUser()
   const startedAt = group.messages[0]?.timestamp
@@ -393,6 +384,14 @@ function MessageBubble({ group }: { group: ConversationGroup }) {
       {groupRenderItems(group.messages).map((item) =>
         item.kind === 'text' ? (
           <MarkdownTextBubble key={item.key} text={item.text} isUser={isUser} />
+        ) : item.kind === 'images' ? (
+          <MessageImageGallery
+            key={item.key}
+            images={item.images}
+            isUser={isUser}
+            onOpenImage={onOpenImage}
+            onOpenImageMenu={onOpenImageMenu}
+          />
         ) : (
           // A run of consecutive tool calls shares one container so the rows
           // stack tightly; text blocks around them stay separate bubbles.
@@ -400,6 +399,11 @@ function MessageBubble({ group }: { group: ConversationGroup }) {
             {item.toolCalls.map((toolCall) => (
               <ToolCallRow key={toolCall.id} toolCall={toolCall} />
             ))}
+            <ToolPreviewGallery
+              toolCalls={item.toolCalls}
+              onOpenImage={onOpenImage}
+              onOpenImageMenu={onOpenImageMenu}
+            />
           </div>
         ),
       )}
@@ -431,6 +435,11 @@ type MessageBlock = AgentMessage['blocks'][number]
 
 type MessageRenderItem =
   | { kind: 'text'; key: string; text: string }
+  | {
+      kind: 'images'
+      key: string
+      images: Array<{ key: string; src: string }>
+    }
   | { kind: 'tools'; key: string; toolCalls: AgentToolCall[] }
 
 function groupRenderItems(messages: AgentMessage[]): MessageRenderItem[] {
@@ -442,6 +451,16 @@ function groupRenderItems(messages: AgentMessage[]): MessageRenderItem[] {
         items.push({ kind: 'text', key: `text-${message.id}-${index}`, text: block.text })
         return
       }
+      if (block.kind === 'image') {
+        const image = {
+          key: `image-${message.id}-${index}`,
+          src: block.src,
+        }
+        const last = items.at(-1)
+        if (last?.kind === 'images') last.images.push(image)
+        else items.push({ kind: 'images', key: image.key, images: [image] })
+        return
+      }
       const last = items.at(-1)
       if (last && last.kind === 'tools') {
         last.toolCalls.push(block.toolCall)
@@ -451,6 +470,69 @@ function groupRenderItems(messages: AgentMessage[]): MessageRenderItem[] {
     })
   }
   return items
+}
+
+function MessageImageGallery({
+  images,
+  isUser,
+  onOpenImage,
+  onOpenImageMenu,
+}: {
+  images: Array<{ key: string; src: string }>
+  isUser: boolean
+  onOpenImage(image: AgentPreviewImage): void
+  onOpenImageMenu: OpenAgentImageMenu
+}) {
+  const galleryImages = images.map((image, index): AgentPreviewImage => ({
+    id: image.key,
+    src: image.src,
+    alt: images.length === 1
+      ? isUser ? 'Attachment from you' : 'Image from assistant'
+      : isUser
+        ? `Attachment ${index + 1} of ${images.length} from you`
+        : `Image ${index + 1} of ${images.length} from assistant`,
+    title: isUser ? 'Your attachment' : 'Assistant image',
+    filename: isUser
+      ? `your-attachment-${index + 1}`
+      : `assistant-image-${index + 1}`,
+  }))
+
+  return (
+    <AgentImageGallery
+      images={galleryImages}
+      label={isUser ? 'Images from you' : 'Images from assistant'}
+      onOpenImage={onOpenImage}
+      onOpenImageMenu={onOpenImageMenu}
+    />
+  )
+}
+
+function ToolPreviewGallery({
+  toolCalls,
+  onOpenImage,
+  onOpenImageMenu,
+}: {
+  toolCalls: AgentToolCall[]
+  onOpenImage(image: AgentPreviewImage): void
+  onOpenImageMenu: OpenAgentImageMenu
+}) {
+  const images = toolCalls.flatMap((toolCall) =>
+    (toolCall.previewImages ?? []).map((src, index): AgentPreviewImage => ({
+      id: `${toolCall.id}-preview-${index}`,
+      src,
+      alt: `Image ${index + 1} captured while running ${toolCall.actionType}`,
+      title: 'Tool result image',
+      filename: `${toolCall.actionType}-${index + 1}`,
+    })),
+  )
+  return (
+    <AgentImageGallery
+      images={images}
+      label="Images captured by assistant tools"
+      onOpenImage={onOpenImage}
+      onOpenImageMenu={onOpenImageMenu}
+    />
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -490,8 +572,6 @@ const MarkdownTextBubble = memo(function MarkdownTextBubble({
 // ---------------------------------------------------------------------------
 // Empty state
 // ---------------------------------------------------------------------------
-
-type ComposerLockReason = 'setup' | 'chooseModel'
 
 function AgentEmptyState({ mode }: { mode: ComposerLockReason | 'prompt' }) {
   if (mode === 'setup') {

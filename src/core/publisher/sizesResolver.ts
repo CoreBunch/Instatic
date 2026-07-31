@@ -222,15 +222,36 @@ function effectiveBag(
   breakpointId: string | null,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {}
+  const importantProperties = new Set<string>()
+  const applyLayer = (
+    styles: Record<string, unknown> | undefined,
+    priorities: Record<string, 'important'> | undefined,
+  ) => {
+    if (!styles) return
+    for (const [property, value] of Object.entries(styles)) {
+      const important = priorities?.[property] === 'important'
+      if (importantProperties.has(property) && !important) continue
+      out[property] = value
+      if (important) importantProperties.add(property)
+      else importantProperties.delete(property)
+    }
+  }
   const classes = (node.classIds ?? [])
     .map((classId) => site.styleRules[classId])
     .filter((cls) => cls !== undefined)
     .sort((a, b) => (typeof a.order === 'number' ? a.order : 0) - (typeof b.order === 'number' ? b.order : 0))
   for (const cls of classes) {
-    Object.assign(out, cls.styles)
-    if (breakpointId) Object.assign(out, cls.contextStyles?.[breakpointId])
+    applyLayer(cls.styles, cls.stylePriorities)
+    if (breakpointId) {
+      applyLayer(
+        cls.contextStyles?.[breakpointId],
+        cls.contextStylePriorities?.[breakpointId],
+      )
+    }
   }
-  if (node.inlineStyles) Object.assign(out, node.inlineStyles)
+  // Normal inline declarations outrank normal class declarations, but an
+  // author-important class declaration outranks a normal inline declaration.
+  applyLayer(node.inlineStyles, undefined)
   return out
 }
 

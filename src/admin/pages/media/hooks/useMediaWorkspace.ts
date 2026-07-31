@@ -38,7 +38,7 @@ import {
 import { buildFolderTree, type MediaFolderNode } from '../utils/folderTree'
 import { collectMediaTags, filterMediaAssets, type MediaFilters, type MediaSort, type MediaType } from '../utils/filters'
 import { useUploadQueue, type UseUploadQueueResult } from './useUploadQueue'
-import { refreshCmsMediaAssetCache } from './useCmsMediaAssetByPath'
+import { primeCmsMediaAssetCache, refreshCmsMediaAssetCache } from './useCmsMediaAssetByPath'
 import type { WorkspaceLoadState } from '@admin/lib/workspaceLoadState'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import {
@@ -132,6 +132,7 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
   const [folderSelection, setFolderSelectionState] = useState<FolderSelection>(FOLDER_ALL)
   const [selectedAssetId, setSelectedAssetIdState] = useState<string | null>(null)
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(() => new Set())
+  const [selectedAssetOrder, setSelectedAssetOrder] = useState<string[]>([])
   const [filterType, setFilterType] = useState<MediaType>('all')
   const [query, setQuery] = useState('')
   const [tag, setTag] = useState('')
@@ -184,6 +185,7 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
     // the previous selection's asset may no longer be visible in the new view.
     setSelectedAssetIdState(null)
     setSelectedAssetIds(new Set())
+    setSelectedAssetOrder([])
     setFolderSelectionState(selection)
   }
 
@@ -193,6 +195,7 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
   const setSelectedAssetId = (id: string | null) => {
     setSelectedAssetIdState(id)
     setSelectedAssetIds(id ? new Set([id]) : new Set())
+    setSelectedAssetOrder(id ? [id] : [])
   }
 
   const toggleAssetInSelection = (id: string) => {
@@ -202,6 +205,10 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
       else next.add(id)
       return next
     })
+    setSelectedAssetOrder((previous) => previous.includes(id)
+      ? previous.filter((candidate) => candidate !== id)
+      : [...previous, id],
+    )
     setSelectedAssetIdState(id)
   }
 
@@ -211,12 +218,17 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
       for (const id of ids) next.add(id)
       return next
     })
+    setSelectedAssetOrder((previous) => [
+      ...previous,
+      ...ids.filter((id) => !previous.includes(id)),
+    ])
     if (ids.length > 0) setSelectedAssetIdState(ids[ids.length - 1])
   }
 
   const clearSelection = () => {
     setSelectedAssetIdState(null)
     setSelectedAssetIds(new Set())
+    setSelectedAssetOrder([])
   }
 
   // Smart folders and All files are global library views, so they don't filter
@@ -253,7 +265,10 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
     ? assets.find((asset) => asset.id === selectedAssetId) ?? null
     : null
 
-  const selectedAssets = assets.filter((asset) => selectedAssetIds.has(asset.id))
+  const assetById = new Map(assets.map((asset) => [asset.id, asset]))
+  const selectedAssets = selectedAssetOrder
+    .map((id) => assetById.get(id))
+    .filter((asset): asset is CmsMediaAsset => asset !== undefined && selectedAssetIds.has(asset.id))
 
   // Range select — shift-click between two anchors in the visible canvas
   // order, so the user-visible range matches what they actually see.
@@ -269,6 +284,10 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
         next.add(targetId)
         return next
       })
+      setSelectedAssetOrder((previous) => previous.includes(targetId)
+        ? previous
+        : [...previous, targetId],
+      )
       return
     }
     const start = Math.min(anchorIdx, targetIdx)
@@ -279,6 +298,10 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
       for (const id of range) next.add(id)
       return next
     })
+    setSelectedAssetOrder((previous) => [
+      ...previous,
+      ...range.filter((id) => !previous.includes(id)),
+    ])
     setSelectedAssetIdState(targetId)
   }
 
@@ -314,17 +337,17 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
       next.delete(assetId)
       return next
     })
+    setSelectedAssetOrder((current) => current.filter((id) => id !== assetId))
   }
 
   // Splice an uploaded asset into the workspace cache when the queue
   // reports success. Folder assignment (if any) happens inside the queue.
-  // Also invalidate the shared by-path cache so the editor canvas
+  // Also seed the shared by-path cache so the editor canvas
   // (`ImageEditor` / `useCmsMediaAssetByPath`) picks up the new asset
-  // immediately — otherwise an open Site editor would keep rendering a
-  // raw `<img src>` until manual reload.
+  // immediately without racing a follow-up list request.
   const onUploaded = (asset: CmsMediaAsset) => {
     setAssets((current) => [asset, ...current.filter((existing) => existing.id !== asset.id)])
-    refreshCmsMediaAssetCache()
+    primeCmsMediaAssetCache(asset)
   }
 
   const uploadQueue = useUploadQueue({
@@ -444,6 +467,9 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
         for (const id of uniqueIds) next.delete(id)
         return next
       })
+      setSelectedAssetOrder((current) =>
+        current.filter((id) => !uniqueIds.includes(id)),
+      )
     } catch (err) {
       setError(getErrorMessage(err, 'Could not move assets'))
       void refresh()

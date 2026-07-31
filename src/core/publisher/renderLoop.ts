@@ -12,7 +12,13 @@
  */
 
 import type { PageNode } from '@core/page-tree'
-import type { LoopItem } from '@core/loops/types'
+import {
+  ENTRY_FIELD_FILTER_KEY,
+  ENTRY_FIELD_SOURCE_ID,
+  resolveEntryFieldItems,
+  type EntryFieldMedia,
+  type LoopItem,
+} from '@core/loops'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { resolveHtmlTag } from '@modules/base/utils/htmlTag'
 import { injectNodeClassIds, injectNodeId, injectNodeInlineStyles } from './classInjection'
@@ -57,7 +63,7 @@ export function renderLoop(
   renderNode: RenderNodeFn,
 ): string {
   const loopId = node.id
-  const data = config.loopData?.get(loopId)
+  const data = resolveLoopData(node, config)
   // No pre-fetched data — most likely an editor preview or a test that did
   // not seed loopData. Emit a marker comment rather than an empty string so
   // diagnostics in the rendered output are visible.
@@ -119,6 +125,36 @@ export function renderLoop(
 
   // Inject the loop's own classIds + inline styles onto the wrapper element.
   const withClasses = injectNodeClassIds(html, node.classIds, config.site)
-  const withStyles = injectNodeInlineStyles(withClasses, node.inlineStyles)
+  const withStyles = injectNodeInlineStyles(withClasses, node.inlineStyles, config.mediaAssets)
   return config.annotateNodeIds ? injectNodeId(withStyles, node.id) : withStyles
+}
+
+function resolveLoopData(node: PageNode, config: RenderConfig) {
+  if (node.props.sourceId !== ENTRY_FIELD_SOURCE_ID) {
+    return config.loopData?.get(node.id)
+  }
+
+  const filters = node.props.filters
+  const fieldId =
+    filters && typeof filters === 'object' && !Array.isArray(filters)
+      ? (filters as Record<string, unknown>)[ENTRY_FIELD_FILTER_KEY]
+      : undefined
+  if (typeof fieldId !== 'string' || !fieldId) {
+    return { items: [], totalItems: 0, pageNumber: 1, hasMore: false }
+  }
+
+  const stack = config.templateContext?.entryStack ?? []
+  const entry = stack[stack.length - 1]
+  const value = entry?.fields[fieldId]
+  const resolved = resolveEntryFieldItems(value, {
+    offset: typeof node.props.offset === 'number' ? node.props.offset : 0,
+    limit: typeof node.props.limit === 'number' ? node.props.limit : 10,
+    direction: node.props.direction === 'desc' ? 'desc' : 'asc',
+    mediaByReference: config.mediaAssets as ReadonlyMap<string, EntryFieldMedia> | undefined,
+  })
+  return {
+    ...resolved,
+    pageNumber: 1,
+    hasMore: false,
+  }
 }

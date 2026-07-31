@@ -84,7 +84,12 @@ async function readFormJsonField(req: Request, fieldName: string): Promise<unkno
 }
 
 async function readJsonWithLimit(req: Request, maxBytes: number): Promise<unknown> {
-  if (maxBytes < 1) throw new Error('readValidatedBody: maxBytes must be >= 1')
+  return JSON.parse(await readTextBodyWithLimit(req, maxBytes))
+}
+
+/** Read a UTF-8 request body with a hard streaming byte limit. */
+export async function readTextBodyWithLimit(req: Request, maxBytes: number): Promise<string> {
+  if (maxBytes < 1) throw new Error('readTextBodyWithLimit: maxBytes must be >= 1')
   const contentLength = req.headers.get('content-length')
   if (contentLength) {
     const parsed = Number(contentLength)
@@ -94,7 +99,7 @@ async function readJsonWithLimit(req: Request, maxBytes: number): Promise<unknow
   }
 
   const reader = req.body?.getReader()
-  if (!reader) return null
+  if (!reader) return ''
 
   const chunks: Uint8Array[] = []
   let received = 0
@@ -116,7 +121,7 @@ async function readJsonWithLimit(req: Request, maxBytes: number): Promise<unknow
     offset += chunk.byteLength
   }
 
-  return JSON.parse(new TextDecoder().decode(bytes))
+  return new TextDecoder().decode(bytes)
 }
 
 export function setCookieHeader(res: Response, value: string): Response {

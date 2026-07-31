@@ -57,6 +57,9 @@ export function cloneScopedClassesForNodeMap(
       id: newId,
       scope: { ...cls.scope, nodeId: newScopeNodeId },
       styles: { ...cls.styles },
+      ...(cls.stylePriorities
+        ? { stylePriorities: { ...cls.stylePriorities } }
+        : {}),
       // Deep-clone every per-context override bag so the clone owns independent
       // maps — the bare `...cls` spread would share the same bag objects with
       // the source rule (the shared-reference hazard F-0005 addresses for
@@ -65,6 +68,16 @@ export function cloneScopedClassesForNodeMap(
       contextStyles: Object.fromEntries(
         Object.entries(cls.contextStyles).map(([ctx, s]) => [ctx, { ...s }]),
       ),
+      ...(cls.contextStylePriorities
+        ? {
+            contextStylePriorities: Object.fromEntries(
+              Object.entries(cls.contextStylePriorities).map(([ctx, priorities]) => [
+                ctx,
+                { ...priorities },
+              ]),
+            ),
+          }
+        : {}),
       ...(cls.tags !== undefined ? { tags: [...cls.tags] } : {}),
       createdAt: now,
       updatedAt: now,

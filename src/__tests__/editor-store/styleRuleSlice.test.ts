@@ -13,6 +13,8 @@
 
 import { describe, it, expect, beforeEach } from 'bun:test'
 import { useEditorStore } from '@site/store/store'
+import type { NewStyleRule } from '@core/siteImport'
+import { classKindSelector } from '@core/page-tree'
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -156,17 +158,20 @@ describe('styleRuleSlice.clearClassStyleProperties', () => {
     getStore().updateClassStyles(cls.id, { display: 'flex', alignItems: 'center', color: 'red' })
     getStore().setClassContextStyles(cls.id, 'mobile', { gap: '8px' })
 
-    const historyBefore = historyLength()
     getStore().clearClassStyleProperties(cls.id, ['display', 'alignItems', 'gap'])
 
-    const rule = useEditorStore.getState().site!.styleRules[cls.id]
+    let rule = useEditorStore.getState().site!.styleRules[cls.id]
     // Pruned everywhere; the unrelated `color` survives.
     expect('display' in rule.styles).toBe(false)
     expect('alignItems' in rule.styles).toBe(false)
     expect(rule.styles.color).toBe('red')
     expect('gap' in (rule.contextStyles.mobile ?? {})).toBe(false)
-    // Single undo step.
-    expect(historyLength()).toBe(historyBefore + 1)
+    // Single undo step: ONE undo restores base + context properties together.
+    getStore().undo()
+    rule = useEditorStore.getState().site!.styleRules[cls.id]
+    expect(rule.styles.display).toBe('flex')
+    expect(rule.styles.alignItems).toBe('center')
+    expect(rule.contextStyles.mobile?.gap).toBe('8px')
   })
 
   it('is a no-op (no history) when none of the properties are set', () => {
@@ -217,6 +222,50 @@ describe('styleRuleSlice.setClassContextStyles', () => {
     getStore().updateClassStyles(cls.id, { fontSize: '14px' })
     getStore().setClassContextStyles(cls.id, 'mobile', { fontSize: '12px' })
     expect(useEditorStore.getState().site!.styleRules[cls.id].styles.fontSize).toBe('14px')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// applyCssRules
+// ---------------------------------------------------------------------------
+
+describe('styleRuleSlice.applyCssRules', () => {
+  it('skips identical writes and prunes priority metadata when values are cleared', () => {
+    setupSite()
+    const incoming: NewStyleRule = {
+      name: 'priority',
+      kind: 'class',
+      selector: '.priority',
+      order: 0,
+      styles: { color: 'red' },
+      stylePriorities: { color: 'important' },
+      contextStyles: { mobile: { color: 'blue' } },
+      contextStylePriorities: { mobile: { color: 'important' } },
+    }
+
+    expect(getStore().applyCssRules([incoming], [], 'merge')).toEqual({
+      created: 1,
+      updated: 0,
+      blockedSelectors: [],
+    })
+    const rule = Object.values(useEditorStore.getState().site!.styleRules)
+      .find((candidate) => candidate.selector === '.priority')!
+    const historyBeforeNoop = historyLength()
+    const updatedAtBeforeNoop = rule.updatedAt
+
+    expect(getStore().applyCssRules([incoming], [], 'merge')).toEqual({
+      created: 0,
+      updated: 0,
+      blockedSelectors: [],
+    })
+    expect(historyLength()).toBe(historyBeforeNoop)
+    expect(useEditorStore.getState().site!.styleRules[rule.id].updatedAt).toBe(updatedAtBeforeNoop)
+
+    getStore().updateClassStyles(rule.id, { color: undefined })
+    getStore().setClassContextStyles(rule.id, 'mobile', { color: undefined })
+    const cleared = useEditorStore.getState().site!.styleRules[rule.id]
+    expect(cleared.stylePriorities).toBeUndefined()
+    expect(cleared.contextStylePriorities).toBeUndefined()
   })
 })
 
@@ -297,6 +346,29 @@ describe('styleRuleSlice.renameClass', () => {
     const cls = getStore().createClass('btn')
     getStore().renameClass(cls.id, 'button')
     expect(useEditorStore.getState().site!.styleRules[cls.id].selector).toBe('.button')
+  })
+
+  it('renames the binding token inside a preserved imported selector', () => {
+    setupSite()
+    const cls = getStore().createClass('group-hover:block')
+    useEditorStore.setState((state) => ({
+      site: {
+        ...state.site!,
+        styleRules: {
+          ...state.site!.styleRules,
+          [cls.id]: {
+            ...state.site!.styleRules[cls.id],
+            selector: `.group:hover ${classKindSelector('group-hover:block')}`,
+          },
+        },
+      },
+    }))
+
+    getStore().renameClass(cls.id, 'group-focus:block')
+
+    expect(useEditorStore.getState().site!.styleRules[cls.id].selector).toBe(
+      `.group:hover ${classKindSelector('group-focus:block')}`,
+    )
   })
 
   it('allows renaming to the same name (no-op, no throw)', () => {

@@ -41,6 +41,9 @@ export function useContentWorkspace({
   loadAuthors: shouldLoadAuthors = true,
 }: UseContentWorkspaceOptions = {}) {
   const setRightPanel = useWorkspaceLayout((s) => s.setRightPanel)
+  // Every data table (all kinds) — relation custom fields can target any
+  // table, so the settings panel needs the full list to resolve targets.
+  const [tables, setTables] = useState<DataTable[]>([])
   const [collections, setCollections] = useState<DataTable[]>([])
   const [entries, setEntries] = useState<DataRow[]>([])
   const [authors, setAuthors] = useState<DataUserReference[]>([])
@@ -50,6 +53,12 @@ export function useContentWorkspace({
   const [loading, setLoading] = useState(true)
   const [entriesLoading, setEntriesLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Mirrors the collection state synchronously so two imperative bridge calls
+  // in one React turn never make routing decisions from the previous render.
+  const selectedCollectionIdRef = useRef<string | null>(null)
+  // The list request and imperative bridge both need the newest active row,
+  // including updates that React has not committed to a new render yet.
+  const selectedEntryRef = useRef<DataRow | null>(null)
 
   // Capture the deep-link query params present at mount once — later
   // replaceState writes (from the URL sync below) don't change what the
@@ -62,6 +71,9 @@ export function useContentWorkspace({
   const deepLinkAppliedRef = useRef(false)
   // Set by deep-link effect A; consumed and cleared by effect B.
   const pendingDeepLinkRef = useRef<{ rowId: string | null } | null>(null)
+  // Synchronously invalidates an older collection load before React has
+  // rendered the newly selected collection and run the old effect's cleanup.
+  const entriesLoadEpochRef = useRef(0)
 
   const selectedCollection = collections.find((collection) => collection.id === selectedCollectionId) ?? null
   const contentLoading = loading || entriesLoading
@@ -69,6 +81,7 @@ export function useContentWorkspace({
   // Exception #1: referenced in deep-link effect B's dependency array, so it
   // needs a stable identity for react-hooks/exhaustive-deps.
   const selectEntry = useCallback((entry: DataRow | null) => {
+    selectedEntryRef.current = entry
     setSelectedEntry(entry)
     if (entry) setRightPanel({ collapsed: false })
   }, [setRightPanel])
@@ -100,9 +113,44 @@ export function useContentWorkspace({
   }, [shouldLoadAuthors])
 
   const updateSelectedEntry = (entry: DataRow) => {
+    selectedEntryRef.current = entry
     setSelectedEntry(entry)
     setEntries((current) => updateRowList(current, entry))
   }
+
+  /**
+   * Refresh a row in the list, making it the active document ONLY if it
+   * already was. Use this for any update that is not itself a navigation —
+   * `updateSelectedEntry` retargets the workspace, which silently discards
+   * whatever the author had open and unsaved.
+   */
+  const applyEntryUpdate = (entry: DataRow) => {
+    if (selectedEntryRef.current?.id === entry.id) {
+      updateSelectedEntry(entry)
+      return
+    }
+    setEntries((current) => updateRowList(current, entry))
+  }
+
+  /**
+   * Re-read the collection roster from the server and return it.
+   *
+   * The mount-time load is a snapshot: a collection created after it — by an
+   * import, another admin, or an MCP connector — is invisible to this
+   * workspace until a reload, and every write against it fails with
+   * "Collection not found". Callers that hit an unknown id refresh through
+   * here and retry rather than making the operator reload the page.
+   *
+   * Returns the fresh post-type list directly, so a caller can act on it in
+   * the same tick instead of waiting for a re-render.
+   */
+  const refreshCollections = useCallback(async (): Promise<DataTable[]> => {
+    const allTables = await listCmsDataTables()
+    const nextCollections = allTables.filter((table) => table.kind === 'postType')
+    setTables(allTables)
+    setCollections(nextCollections)
+    return nextCollections
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -117,9 +165,15 @@ export function useContentWorkspace({
         const nextCollections = allTables.filter((table) => table.kind === 'postType')
         if (cancelled) return
         const fallbackCollectionId = nextCollections[0]?.id ?? null
+        setTables(allTables)
         setCollections(nextCollections)
         setEntriesLoading(Boolean(fallbackCollectionId))
-        setSelectedCollectionId((current) => current ?? fallbackCollectionId)
+        entriesLoadEpochRef.current += 1
+        setSelectedCollectionId((current) => {
+          const next = current ?? fallbackCollectionId
+          selectedCollectionIdRef.current = next
+          return next
+        })
       } catch (err) {
         if (!cancelled) {
           setEntriesLoading(false)
@@ -135,14 +189,18 @@ export function useContentWorkspace({
   }, [])
 
   useEffect(() => {
+    const loadEpoch = ++entriesLoadEpochRef.current
     if (!selectedCollectionId) {
       let cancelled = false
       queueMicrotask(() => {
-        if (!cancelled) setEntriesLoading(false)
+        if (!cancelled && loadEpoch === entriesLoadEpochRef.current) {
+          setEntriesLoading(false)
+        }
       })
       return () => { cancelled = true }
     }
     const tableId = selectedCollectionId
+    const selectedAtLoadStart = selectedEntryRef.current
     let cancelled = false
 
     async function loadEntries() {
@@ -150,30 +208,32 @@ export function useContentWorkspace({
       setError(null)
       try {
         const nextEntries = await listCmsDataRows(tableId)
-        if (cancelled) return
-        setEntries(nextEntries)
-        setSelectedEntry((current) => {
-          // Auto-select the first entry when none was previously
-          // selected (or the previous selection belonged to a
-          // different table). We deliberately do NOT force the right
-          // sidebar open here — that used to call
-          // `setPropertiesPanel({ collapsed: false })`, which fired
-          // AFTER the network fetch resolved and animated the sidebar
-          // in from 0 → saved width on every page load. The right
-          // sidebar's expanded state is now sourced from
-          // `propertiesPanel.collapsed` directly by
-          // AdminWorkspaceCanvasLayout, so if the user previously closed
-          // it, it stays closed; if they had it open, it's already open
-          // at the saved width from the first paint.
-          if (!current || current.tableId !== tableId) {
-            return nextEntries[0] ?? null
-          }
-          return current
-        })
+        if (cancelled || loadEpoch !== entriesLoadEpochRef.current) return
+        // A row changed after this request began (for example by an MCP save)
+        // wins over the older list snapshot. Otherwise the response is
+        // authoritative, including when it omits a concurrently deleted row.
+        const current = selectedEntryRef.current
+        const currentIsInTable = current?.tableId === tableId
+        const currentChangedDuringLoad = currentIsInTable && current !== selectedAtLoadStart
+        const serverSelected = currentIsInTable
+          ? nextEntries.find((entry) => entry.id === current.id) ?? null
+          : null
+        const nextSelected = currentChangedDuringLoad
+          ? current
+          : serverSelected ?? nextEntries[0] ?? null
+        selectedEntryRef.current = nextSelected
+        setEntries(currentChangedDuringLoad && nextSelected
+          ? updateRowList(nextEntries, nextSelected)
+          : nextEntries)
+        setSelectedEntry(nextSelected)
       } catch (err) {
-        if (!cancelled) setError(getErrorMessage(err, 'Could not load entries'))
+        if (!cancelled && loadEpoch === entriesLoadEpochRef.current) {
+          setError(getErrorMessage(err, 'Could not load entries'))
+        }
       } finally {
-        if (!cancelled) setEntriesLoading(false)
+        if (!cancelled && loadEpoch === entriesLoadEpochRef.current) {
+          setEntriesLoading(false)
+        }
       }
     }
 
@@ -201,8 +261,12 @@ export function useContentWorkspace({
     // Store the row id so effect B can resolve it once the target collection's
     // entries have loaded. null means "no specific row — keep default".
     pendingDeepLinkRef.current = { rowId: initialRowIdRef.current }
-    setSelectedCollectionId(targetCollection.id)
-    setEntriesLoading(true)
+    if (targetCollection.id !== selectedCollectionIdRef.current) {
+      entriesLoadEpochRef.current += 1
+      selectedCollectionIdRef.current = targetCollection.id
+      setSelectedCollectionId(targetCollection.id)
+      setEntriesLoading(true)
+    }
   }, [loading, collections])
 
   // Deep-link effect B: once entries finish loading for the deep-linked
@@ -238,9 +302,33 @@ export function useContentWorkspace({
   )
 
   const selectCollection = (tableId: string) => {
-    if (tableId === selectedCollectionId) return
+    if (tableId === selectedCollectionIdRef.current) return
+    entriesLoadEpochRef.current += 1
     setEntriesLoading(true)
+    selectedCollectionIdRef.current = tableId
     setSelectedCollectionId(tableId)
+  }
+
+  const openEntry = (entry: DataRow): boolean => {
+    if (!collections.some((collection) => collection.id === entry.tableId)) return false
+
+    if (entry.tableId !== selectedCollectionIdRef.current) {
+      // Invalidate the previous collection's in-flight list immediately. The
+      // new collection effect will load its complete list after this render;
+      // seeding the requested row keeps the editor and URL coherent meanwhile.
+      entriesLoadEpochRef.current += 1
+      setEntriesLoading(true)
+      selectedCollectionIdRef.current = entry.tableId
+      setSelectedCollectionId(entry.tableId)
+      setEntries([entry])
+    } else {
+      setEntries((current) => current.every((candidate) => candidate.tableId === entry.tableId)
+        ? updateRowList(current, entry)
+        : [entry])
+    }
+
+    selectEntry(entry)
+    return true
   }
 
   const createUntitledEntry = async () => {
@@ -281,8 +369,11 @@ export function useContentWorkspace({
     setEntriesLoading(true)
     // Always create post-type tables from the Content page.
     const collection = await createCmsDataTable({ ...input, kind: 'postType' })
+    setTables((current) => [...current, collection])
     setCollections((current) => [...current, collection])
     setEntries([])
+    entriesLoadEpochRef.current += 1
+    selectedCollectionIdRef.current = collection.id
     setSelectedCollectionId(collection.id)
     selectEntry(null)
     return collection
@@ -294,6 +385,9 @@ export function useContentWorkspace({
   ) => {
     setError(null)
     const collection = await updateCmsDataTable(tableId, input)
+    setTables((current) => current.map((candidate) =>
+      candidate.id === collection.id ? collection : candidate
+    ))
     setCollections((current) => current.map((candidate) =>
       candidate.id === collection.id ? collection : candidate
     ))
@@ -304,6 +398,7 @@ export function useContentWorkspace({
     setError(null)
     await deleteCmsDataTable(tableId)
 
+    setTables((current) => current.filter((table) => table.id !== tableId))
     const nextCollections = collections.filter((collection) => collection.id !== tableId)
     const nextSelectedCollectionId = selectedCollectionId === tableId
       ? nextCollections[0]?.id ?? null
@@ -311,6 +406,8 @@ export function useContentWorkspace({
     setCollections(nextCollections)
 
     if (selectedCollectionId === tableId) {
+      entriesLoadEpochRef.current += 1
+      selectedCollectionIdRef.current = nextSelectedCollectionId
       setSelectedCollectionId(nextSelectedCollectionId)
       setEntries([])
       setEntriesLoading(Boolean(nextSelectedCollectionId))
@@ -414,6 +511,8 @@ export function useContentWorkspace({
     setError(null)
     setEntriesLoading(true)
     const entry = await updateCmsDataRowTable(selectedEntry.id, tableId)
+    entriesLoadEpochRef.current += 1
+    selectedCollectionIdRef.current = tableId
     setSelectedCollectionId(tableId)
     setEntries([entry])
     selectEntry(entry)
@@ -421,7 +520,9 @@ export function useContentWorkspace({
   }
 
   return {
+    tables,
     collections,
+    refreshCollections,
     entries,
     authors,
     authorsLoading,
@@ -432,8 +533,10 @@ export function useContentWorkspace({
     error,
     setError,
     selectCollection,
+    openEntry,
     selectEntry,
     updateSelectedEntry,
+    applyEntryUpdate,
     createUntitledEntry,
     duplicateEntry,
     createCollection,

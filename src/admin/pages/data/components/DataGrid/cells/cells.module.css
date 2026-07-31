@@ -122,8 +122,8 @@
 
 /* Empty-state placeholder text */
 .mediaEmpty {
-  color: var(--text-subtle);
-  font-style: italic;
+  color: var(--text-muted);
+  font-weight: 600;
 }
 
 /*
@@ -188,6 +188,14 @@
   color: var(--text-subtle);
   padding: 0 var(--space-4xs);
   flex-shrink: 0;
+}
+
+.mediaCount {
+  overflow: hidden;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---- Relation cell ---- */
@@ -364,4 +372,192 @@
   color: var(--text-subtle);
   padding: 0 var(--space-4xs);
   flex-shrink: 0;
+}
+
+/* Repeater — ordered structured item editor. */
+.repeaterEditor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-s);
+  min-width: 0;
+}
+
+.repeaterToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-s);
+}
+
+.repeaterHeading {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--space-xs);
+}
+
+.repeaterLabel {
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.repeaterCount {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.repeaterDescription {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  line-height: 1.3;
+}
+
+.mediaRepeater {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-s);
+}
+
+.mediaRepeaterHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-s);
+}
+
+.mediaRepeaterControls {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.mediaRepeaterEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-2xl) var(--space-l);
+  border-radius: var(--card-radius);
+  background: var(--bg-surface-2);
+  color: var(--text-muted);
+  font-size: var(--text-s);
+  text-align: center;
+}
+
+.mediaRepeaterEmptyTitle {
+  color: var(--text-bright);
+  font-size: var(--text-m);
+  font-weight: 700;
+}
+
+.repeaterItems {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-l);
+}
+
+.repeaterItem {
+  overflow: hidden;
+  border-radius: var(--card-radius);
+  background: var(--bg-surface-2);
+}
+
+.repeaterItemHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: 44px;
+  padding: var(--space-s) var(--space-m);
+  background: var(--bg-surface-3);
+}
+
+.repeaterItemNumber {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--input-radius);
+  background: var(--overlay-10);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.repeaterItemSummary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--text-s);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repeaterItemDisclosure {
+  flex: 1;
+  min-width: 0;
+  justify-content: space-between;
+}
+
+.repeaterItemDisclosure .repeaterItemSummary {
+  text-align: left;
+}
+
+.repeaterItemActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-px);
+}
+
+.repeaterItemFields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+  padding: var(--space-xl);
+  border-top: 1px solid var(--border);
+}
+
+.repeaterItemField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.repeaterItemField > span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.repeaterItemField > small {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.repeaterEmptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-2xl) var(--space-l);
+  border-radius: var(--card-radius);
+  background: var(--bg-surface-2);
+  color: var(--text-muted);
+  font-size: var(--text-s);
+  text-align: center;
+}
+
+.repeaterEmptyState > span:first-child {
+  color: var(--text-bright);
+  font-size: var(--text-m);
+  font-weight: 700;
 }

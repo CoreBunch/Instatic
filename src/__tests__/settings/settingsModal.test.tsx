@@ -409,30 +409,32 @@ describe('SettingsModal — PreferencesSection toggles', () => {
     openModal('preferences')
     render(<SettingsModal />)
     const switches = screen.getAllByRole('switch')
-    expect(switches.length).toBe(12)
+    expect(switches.length).toBe(11)
   })
 
-  it('Auto-save toggle has aria-checked="true" by default', () => {
+  it('Hover-preview toggle has aria-checked="true" by default', () => {
     openModal('preferences')
     render(<SettingsModal />)
-    const autoSaveToggle = screen.getByRole('switch', { name: /auto-save/i })
-    expect(autoSaveToggle.getAttribute('aria-checked')).toBe('true')
+    const previewToggle = screen.getByRole('switch', { name: /preview suggestions on hover/i })
+    expect(previewToggle.getAttribute('aria-checked')).toBe('true')
   })
 
-  it('retired snap-to-grid and reduce-motion preferences are not rendered', () => {
+  it('retired snap-to-grid, reduce-motion and auto-save preferences are not rendered', () => {
     openModal('preferences')
     render(<SettingsModal />)
     expect(screen.queryByRole('switch', { name: /snap to grid/i })).toBeNull()
     expect(screen.queryByRole('switch', { name: /reduce motion/i })).toBeNull()
+    // Auto-save retired with live co-editing — the relay persists continuously.
+    expect(screen.queryByRole('switch', { name: /auto-save/i })).toBeNull()
   })
 
   it('clicking a toggle flips its aria-checked state', () => {
     openModal('preferences')
     render(<SettingsModal />)
-    const autoSaveToggle = screen.getByRole('switch', { name: /auto-save/i })
-    expect(autoSaveToggle.getAttribute('aria-checked')).toBe('true')
-    fireEvent.click(autoSaveToggle)
-    expect(autoSaveToggle.getAttribute('aria-checked')).toBe('false')
+    const previewToggle = screen.getByRole('switch', { name: /preview suggestions on hover/i })
+    expect(previewToggle.getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(previewToggle)
+    expect(previewToggle.getAttribute('aria-checked')).toBe('false')
   })
 
   it('hover preview toggle is enabled by default and can be disabled', () => {
@@ -450,11 +452,11 @@ describe('SettingsModal — PreferencesSection toggles', () => {
   it('toggle labels are linked via htmlFor / id (label accessibility)', () => {
     openModal('preferences')
     render(<SettingsModal />)
-    const autoSaveToggle = document.getElementById('pref-autoSave')
-    expect(autoSaveToggle).not.toBeNull()
-    const label = document.querySelector('label[for="pref-autoSave"]')
+    const previewToggle = document.getElementById('pref-hoverPreview')
+    expect(previewToggle).not.toBeNull()
+    const label = document.querySelector('label[for="pref-hoverPreview"]')
     expect(label).not.toBeNull()
-    expect(label!.textContent).toContain('Auto-save')
+    expect(label!.textContent).toContain('Preview suggestions on hover')
   })
 })
 

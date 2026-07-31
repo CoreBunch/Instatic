@@ -12,11 +12,12 @@
  * site_render_snapshot, site_get_node_html).
  *
  * The input schemas are the single source of truth in `@core/ai`
- * (`src/core/ai/toolSchemas.ts`). This module imports each `*InputSchema`
- * for its tool `inputSchema`; the browser executor at
- * `src/admin/pages/site/agent/executor.ts` imports the SAME schemas to
- * validate each call. Neither side redeclares them, so a constraint added
- * here is enforced in the browser too — at build time.
+ * (`src/core/ai/toolSchemas.ts`). This module imports each provider-facing
+ * `*InputSchema`; the browser executor imports the same schemas for validation.
+ * `site_apply_css` has one deliberate second layer: providers receive a flat
+ * object because Anthropic rejects root schema composition, then the executor
+ * validates the call against the exact `ApplyCssExecutionInputSchema` union.
+ * Both CSS layers reuse the same field schemas in the shared leaf.
  */
 
 import {
@@ -55,7 +56,7 @@ import type { AiTool } from '../types'
 
 // ---------------------------------------------------------------------------
 // Capability requirements (ANY-OF) — mirror the editor's change-class model
-// (structure / content / style — see server/handlers/cms/siteDiff.ts and the
+// (structure / content / style — see server/writePolicy/siteDiff.ts and the
 // `site.structure.edit` gate on PUT /admin/api/cms/pages). Selection-time
 // gating only: persistence is independently re-validated server-side.
 // `site_get_node_html`, `site_read_document`, `site_open_document`, and `site_render_snapshot` are
@@ -84,7 +85,7 @@ const insertHtmlTool: AiTool = {
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
   description:
-    'Insert semantic HTML as a subtree of editable nodes under an existing parent. Write structure as HTML (<section>, <h1>, <a>, <button>, <img>, <ul>, ...) and style it with CSS in the same call: put a <style> block in the HTML and/or class= attributes. Custom importer markers: <instatic-loop data-source-id="…" ...> creates a real Loop node (call site_list_loop_sources first for source/table ids and {currentEntry.*} tokens); <instatic-outlet> creates a template content outlet. The importer parses every rule — a bare `.foo {}` selector becomes a reusable Selectors-panel class bound to class="foo"; any other selector (`.hero a`, `a:hover`, `nav > li`) becomes an ambient rule. Inline style= attributes land on the node\'s inline styles. To author or edit CSS on its own — pseudo/hover/descendant selectors, or restyling existing rules — use the dedicated site_apply_css tool instead (site_insert_html is for inserting structure). Returns `nodeIds` (the inserted roots) and `created` — every inserted node as { id, moduleId, classes } — so you can target a nested node (e.g. the wrapper you just added) without re-reading the whole tree.',
+    'Insert semantic HTML as a subtree of editable nodes under an existing parent. Write structure as HTML (<section>, <h1>, <a>, <button>, <img>, <ul>, ...) and style it with CSS in the same call: put a <style> block in the HTML and/or class= attributes. Custom importer markers: <instatic-loop data-source-id="…" ...> creates a real Loop node (call site_list_loop_sources first for source/table ids and {currentEntry.*} tokens); <instatic-outlet data-tag="div"> creates a neutral template content outlet (omit data-tag only when this outlet should own the page\'s main landmark; use data-custom-tag for a safe custom element). The importer parses every rule — a bare `.foo {}` selector becomes a reusable Selectors-panel class bound to class="foo"; any other selector (`.hero a`, `a:hover`, `nav > li`) becomes an ambient rule. Inline style= attributes land on the node\'s inline styles. To author or edit CSS on its own — pseudo/hover/descendant selectors, or restyling existing rules — use the dedicated site_apply_css tool instead (site_insert_html is for inserting structure). Returns `nodeIds` (the inserted roots) and `created` — every inserted node as { id, moduleId, classes } — so you can target a nested node (e.g. the wrapper you just added) without re-reading the whole tree.',
   inputSchema: InsertHtmlInputSchema,
 }
 
@@ -123,7 +124,7 @@ const replaceNodeHtmlTool: AiTool = {
   execution: 'browser',
   requiredCapabilities: SITE_STRUCTURE_CAPS,
   description:
-    "Replace a node subtree's children with new HTML. The target node is preserved as the parent; its existing children are rebuilt from the HTML. Style with CSS exactly as in site_insert_html: a <style> block and/or class= attributes; bare `.foo` selectors become reusable classes, other selectors become ambient rules. Custom importer markers work here too: <instatic-loop data-source-id=\"…\" ...> creates a real Loop node and <instatic-outlet> creates a template content outlet. To author or edit CSS on its own (without rebuilding children), use the dedicated site_apply_css tool instead.",
+    "Replace a node subtree's children with new HTML. The target node is preserved as the parent; its existing children are rebuilt from the HTML. Style with CSS exactly as in site_insert_html: a <style> block and/or class= attributes; bare `.foo` selectors become reusable classes, other selectors become ambient rules. Custom importer markers work here too: <instatic-loop data-source-id=\"…\" ...> creates a real Loop node and <instatic-outlet data-tag=\"div\"> creates a neutral template content outlet (omit data-tag only when the outlet should render as main). To author or edit CSS on its own (without rebuilding children), use the dedicated site_apply_css tool instead.",
   inputSchema: ReplaceNodeHtmlInputSchema,
 }
 
@@ -191,7 +192,7 @@ const applyCssTool: AiTool = {
   execution: 'browser',
   requiredCapabilities: SITE_STYLE_CAPS,
   description:
-    'Author or edit CSS — the single tool for ALL styling that isn\'t attached inline. Pass real CSS text and it is parsed and UPSERTED into the site: a bare `.foo { … }` selector creates or edits a reusable class (bound to class="foo"); ANY other selector — descendant (`.hero a`), child (`nav > li`), pseudo-class/element (`a:hover`, `.card::before`), attribute, element (`h1`) — creates or edits an ambient rule that attaches by matching, no class attribute needed. `@media` queries fold into per-breakpoint overrides (matched against the site breakpoints); other `@media`/`@supports`/`@container` round-trip as reusable conditions. Re-applying a selector MERGES onto the existing rule, so this both creates new styles and edits existing ones (e.g. `.hero a:hover { color: var(--primary) }` to restyle an existing descendant rule). Reference design tokens — `var(--primary)`, `var(--text-l)`, `var(--space-m)` — not raw hex/px. A reusable class is just a bare `.name` selector (a CSS identifier, no spaces). Success data: `{ cssRulesCreated, cssRulesUpdated }`.',
+    'Author, repair, or delete CSS rules. `operation:"merge"` plus real CSS creates missing selectors and patches only authored declarations/contexts; use it for normal additive edits. `operation:"replace"` makes each supplied selector\'s COMPLETE CSS payload authoritative, removing omitted base/context declarations while preserving rule identity, cascade order, and class assignments. `operation:"remove-properties"` removes named CSS properties from base and every context without disturbing other declarations. `operation:"delete"` removes whole rules by exact emitted selector and detaches deleted classes. Selector identity is exact: `.grad`, `.hero .grad`, and `.grad, .hero .grad` are different rules; copy the full selector from site_read_document before destructive operations. Bare `.foo` rules are reusable classes; descendant/pseudo/element/grouped selectors are ambient rules. `@media`/`@supports`/`@container`, vendor properties, custom properties, and `!important` round-trip. Reference design tokens rather than repeated literals. Success data uses `cssRulesCreated`, `cssRulesUpdated`, `cssRulesDeleted`, and/or `cssPropertiesRemoved`.',
   inputSchema: ApplyCssInputSchema,
 }
 
@@ -400,7 +401,7 @@ const renderSnapshotTool: AiTool = {
   scope: 'site',
   execution: 'browser',
   description:
-    "Inspect the rendered canvas. Returns a layout report: viewport size, per-node bounding boxes, image-load status, and warnings (overflow / broken-image / invisible-node) — enough to catch most layout bugs in text. On a vision-capable model a screenshot is also attached as an image. Pass `breakpointId` to choose which breakpoint frame (defaults to active). Pass `nodeId` to capture just that node's subtree — a sharper, cheaper image than the whole page, and a report scoped to that section with coordinates relative to the node; omit `nodeId` to capture the full page.",
+    "Inspect the rendered canvas. Returns viewport and node geometry, image-load status, overflow/visibility warnings, and key computed styles including color, background image/clip, and WebKit text-mask values. Those computed fields expose cascade failures such as a shorthand resetting `background-clip:text`; compare them with source CSS from site_read_document. When the provider supports image-bearing tool results, a screenshot is also attached. Pass any configured `breakpointId` to render a readiness-aware one-shot frame at that exact width, independent of collapsed/disabled frames or Live mode (defaults to active; unknown ids error). Pass `nodeId` to crop the document to that node while preserving its HTML/body/ancestor paint; omit it for the full page.",
   inputSchema: RenderSnapshotInputSchema,
 }
 

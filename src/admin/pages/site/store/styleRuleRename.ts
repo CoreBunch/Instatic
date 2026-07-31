@@ -2,6 +2,7 @@ import {
   assertValidCssClassName,
   classKindSelector,
   isGeneratedClassLocked,
+  replaceCssSelectorClassName,
   type StyleRule,
 } from '@core/page-tree'
 
@@ -147,7 +148,11 @@ export function renameStyleRule(
   }
 
   assertValidCssClassName(trimmed)
-  const selector = classKindSelector(trimmed)
+  const escapedName = classKindSelector(trimmed).slice(1)
+  const renamedSelector = replaceCssSelectorClassName(rule.selector, rule.name, escapedName)
+  const selector = renamedSelector === rule.selector && rule.name !== trimmed
+    ? classKindSelector(trimmed)
+    : renamedSelector
   if (Object.is(rule.name, trimmed) && Object.is(rule.selector, selector)) return false
 
   const existing = Object.values(styleRules).find(

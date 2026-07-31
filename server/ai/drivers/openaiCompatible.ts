@@ -11,6 +11,7 @@
  */
 
 import { Type, parseValue } from '@core/utils/typeboxHelpers'
+import { isAbortError } from '@core/http'
 import type { AiAuthMode, AiStreamEvent } from '../runtime/types'
 import type {
   AiProvider,
@@ -26,6 +27,7 @@ const SUPPORTED_AUTH_MODES: AiAuthMode[] = ['baseUrl']
 const GENERIC_CAPABILITIES = {
   toolCalling: true,
   visionInput: false,
+  toolResultImages: false,
   promptCache: false,
   streaming: true,
 } as const
@@ -42,9 +44,9 @@ export const openaiCompatibleDriver: AiProvider = {
     return { ...GENERIC_CAPABILITIES }
   },
 
-  async listModels(creds: AiResolvedCredential) {
+  async listModels(creds: AiResolvedCredential, signal?: AbortSignal) {
     if (creds.authMode !== 'baseUrl' || !creds.baseUrl) return []
-    return fetchOpenAiCompatibleModels(creds.baseUrl, creds.apiKey)
+    return fetchOpenAiCompatibleModels(creds.baseUrl, creds.apiKey, signal)
   },
 
   async *stream(req: AiStreamRequest): AsyncIterable<AiStreamEvent> {
@@ -86,11 +88,12 @@ const ModelsResponseSchema = Type.Object(
 async function fetchOpenAiCompatibleModels(
   baseUrl: string,
   apiKey: string | null,
+  signal?: AbortSignal,
 ): Promise<AiProviderModel[]> {
   try {
     const headers: Record<string, string> = {}
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`
-    const res = await fetch(`${normalizeOpenAiBaseUrl(baseUrl)}/v1/models`, { headers })
+    const res = await fetch(`${normalizeOpenAiBaseUrl(baseUrl)}/v1/models`, { headers, signal })
     if (!res.ok) return []
     const parsed = parseValue(ModelsResponseSchema, await res.json())
     return parsed.data.map((m) => ({
@@ -100,6 +103,7 @@ async function fetchOpenAiCompatibleModels(
       capabilities: { ...GENERIC_CAPABILITIES },
     }))
   } catch (err) {
+    if (signal?.aborted || isAbortError(err)) throw err
     console.error('[ai/openai-compatible] models request failed:', err)
     return []
   }

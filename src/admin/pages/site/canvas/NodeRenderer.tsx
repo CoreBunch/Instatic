@@ -22,6 +22,9 @@
 import { memo, use, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import type { InlineEditBinding } from '@core/module-engine'
 import { readInlineEditableText, seedInlineEditableContent } from '@modules/base/shared/inlineText'
+import { activeEditorDocId } from '@site/collab/awarenessState'
+import { attachInlineEditRemoteMerge } from '@site/collab/inlineEditRemoteMerge'
+import { collabDocFor } from '@site/store/slices/site/collabBinding'
 import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
 import { resolveProps } from '@core/page-tree'
 import { registry } from '@core/module-engine'
@@ -37,7 +40,7 @@ import {
   resolveEditorFormPreviewState,
   resolveEditorFormPreviewSuccessMessage,
 } from './canvasFormPreview'
-import { bagToReactStyle } from '@core/publisher'
+import { useResponsiveBackgroundStyle } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { getCanvasNodeClassIds, getCanvasNodeClassName } from './canvasNodeClassName'
 import { findEnclosingComponentRef, type AnnotatedPageNode } from './canvasSelectionUtils'
 import { useLoopPreviewItems } from './useLoopPreviewItems'
@@ -172,8 +175,11 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   // caret at the end. Layout effect → runs before paint, so the editor is live
   // on the first frame. The element lives in the breakpoint iframe
   // (same-origin); focusing it focuses the iframe in the parent — no
-  // cross-frame negotiation needed. Deps are constant for the whole session, so
-  // this runs once per session (never mid-edit, which would wipe the edits).
+  // cross-frame negotiation needed. Deps are constant for the whole session,
+  // so this runs once per session — React never rewrites mid-edit; the ONLY
+  // mid-session writer is the remote merge attached below, which folds a
+  // peer's Y.Text edits into the surface with the local caret transformed
+  // (see inlineEditRemoteMerge.ts for why a frozen surface would lose them).
   // Trade-off: a programmatic mutation that swaps the node's element mid-session
   // (e.g. an RPC changing base.text's `tag`) remounts a fresh, unseeded element
   // and is not re-seeded. Unreachable from the UI — interacting with the
@@ -186,13 +192,32 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
     el.focus()
     const doc = el.ownerDocument
     const sel = doc.defaultView?.getSelection()
-    if (!sel) return
-    const range = doc.createRange()
-    range.selectNodeContents(el)
-    range.collapse(false)
-    sel.removeAllRanges()
-    sel.addRange(range)
-  }, [isInlineEditing, inlineEditInitialValue])
+    if (sel) {
+      const range = doc.createRange()
+      range.selectNodeContents(el)
+      range.collapse(false)
+      sel.removeAllRanges()
+      sel.addRange(range)
+    }
+    // Co-typing: keep the session surface live. A peer's Y.Text edits merge
+    // into the contentEditable mid-session (caret transformed through the
+    // delta) — a frozen surface would make the next local keystroke's
+    // whole-string snapshot diff DELETE the peer's characters from the CRDT.
+    const state = useEditorStore.getState()
+    const session = state.activeInlineEdit
+    const collabDocId = activeEditorDocId(state)
+    const collabDoc = collabDocId ? collabDocFor(collabDocId) : null
+    if (!session || !collabDoc) return
+    return attachInlineEditRemoteMerge({
+      el,
+      doc: collabDoc,
+      nodeId,
+      prop: session.prop,
+      onInvalidated: () => useEditorStore.getState().endInlineEdit(),
+    })
+  }, [isInlineEditing, inlineEditInitialValue, nodeId])
+
+  const inlineStyle = useResponsiveBackgroundStyle(node?.inlineStyles)
 
   if (!node) return null
   if (node.hidden) return null
@@ -249,10 +274,6 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   // `:nth-child()`, etc.) because it sat between every authored element.
   // Moving the bag onto the module's own root removes the wrapper entirely
   // and the canvas DOM matches the published DOM exactly.
-  // Per-node inline styles → React style object on the root element, matching
-  // the published `style="…"` attribute (sanitised to the same gate).
-  const inlineStyle = bagToReactStyle(node.inlineStyles)
-
   const nodeWrapperProps: NodeWrapperPropsType = {
     'data-node-id': nodeId,
     'data-module-id': node.moduleId,
@@ -459,7 +480,7 @@ interface LoopIterationsPreviewProps {
  * arrives the component re-renders with real iterations.
  */
 function LoopIterationsPreview({ node, baseTemplateContext }: LoopIterationsPreviewProps) {
-  const items = useLoopPreviewItems(node)
+  const items = useLoopPreviewItems(node, baseTemplateContext)
   if (items.length === 0) return null
 
   const baseStack = baseTemplateContext?.entryStack ?? []

@@ -48,6 +48,7 @@ import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { ContentAgentMount } from './agent/ContentAgentMount'
+import { useContentToolBridge } from './agent/useContentToolBridge'
 import {
   canCreateContent,
   canEditAnyContent,
@@ -132,6 +133,17 @@ export function ContentPage() {
     selectedEntry: workspace.selectedEntry,
     updateSelectedEntry: workspace.updateSelectedEntry,
     setError: workspace.setError,
+  })
+  // Keep content-scope MCP tools connected whenever this workspace is open.
+  // The bridge is independent of whether the docked AI panel is visible.
+  useContentToolBridge({
+    workspace,
+    draft,
+    currentUser: {
+      id: permissionUser.id,
+      displayName: permissionUser.displayName ?? permissionUser.email,
+      email: permissionUser.email,
+    },
   })
   const mediaPicker = useContentMediaPicker({
     featuredMediaId: draft.featuredMediaId,
@@ -267,6 +279,7 @@ export function ContentPage() {
             ...entry,
             cells: {
               ...entry.cells,
+              ...draft.customCells,
               body: draft.body,
               featuredMedia: draft.featuredMediaId,
               seoTitle: draft.seoTitle,
@@ -313,6 +326,7 @@ export function ContentPage() {
             ...entry,
             cells: {
               ...entry.cells,
+              ...draft.customCells,
               body: draft.body,
               featuredMedia: draft.featuredMediaId,
               seoTitle: draft.seoTitle,
@@ -512,13 +526,6 @@ export function ContentPage() {
             )}
             agentPanel={(
               <ContentAgentMount
-                workspace={workspace}
-                draft={draft}
-                currentUser={{
-                  id: permissionUser.id,
-                  displayName: permissionUser.displayName ?? permissionUser.email,
-                  email: permissionUser.email,
-                }}
                 isVisible={visibleContentPanel === 'agent'}
               />
             )}
@@ -554,6 +561,7 @@ export function ContentPage() {
             authors={workspace.authors}
             authorsLoading={workspace.authorsLoading}
             collections={workspace.collections}
+            tables={workspace.tables}
             selectedCollection={workspace.selectedCollection}
             loading={workspace.contentLoading}
             slug={draft.slug}
@@ -566,11 +574,13 @@ export function ContentPage() {
             mediaError={mediaPicker.mediaError}
             featuredMediaId={draft.featuredMediaId}
             featuredMediaAsset={mediaPicker.featuredMediaAsset}
+            customCells={draft.customCells}
             onCollectionChange={(tableId) => void handleMoveEntryCollection(tableId)}
             onAuthorChange={(authorUserId) => void handleUpdateEntryAuthor(authorUserId)}
             onSlugChange={draft.setSlug}
             onSeoTitleChange={draft.setSeoTitle}
             onSeoDescriptionChange={draft.setSeoDescription}
+            onCustomCellChange={draft.setCustomCell}
             onStatusChange={(status) => void handleStatusChange(status)}
             onChooseFeaturedMedia={() => void mediaPicker.openMediaPicker('featured')}
             onClearFeaturedMedia={() => draft.setFeaturedMediaId(null)}

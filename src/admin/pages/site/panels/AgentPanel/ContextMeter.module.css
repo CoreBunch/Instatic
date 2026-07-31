@@ -1,52 +1,205 @@
-/* ContextMeter — compact single-line "context used / window" indicator in the
-   chat composer. Achromatic by default; the fill shifts to amber/red as a
-   state signal when the window is nearly full. */
-
 .meter {
-    display: flex;
-    align-items: center;
-    gap: var(--space-s);
-    padding: var(--space-4xs) var(--space-4xs) var(--space-xs);
-    font-size: var(--text-2xs);
-    color: var(--text-subtle);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-subtle);
+  cursor: help;
+  outline: none;
 }
 
-.label {
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-weight: 600;
-    flex-shrink: 0;
+.meter:hover {
+  background: var(--overlay-5);
 }
 
-.track {
-    position: relative;
-    flex: 1;
-    min-width: 0;
-    height: 4px;
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface-3);
-    overflow: hidden;
+.meter:focus-visible {
+  box-shadow: var(--focus-ring);
+  background: var(--overlay-5);
 }
 
-.fill {
-    position: absolute;
-    inset-block: 0;
-    inset-inline-start: 0;
-    width: var(--ctx-fill);
-    border-radius: var(--radius-sm);
-    background: var(--text-subtle);
-    transition: width 240ms ease;
+.battery {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-px);
+  width: 19px;
+  height: 10px;
+  padding: var(--space-4xs);
+  border: 1px solid var(--overlay-20);
+  border-radius: var(--radius-sm);
 }
 
-.track[data-tone="warning"] .fill {
-    background: var(--warning);
+.battery::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: -3px;
+  width: 2px;
+  height: 4px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--overlay-20);
 }
 
-.track[data-tone="danger"] .fill {
-    background: var(--danger);
+.battery > span,
+.detailsGauge > span {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: var(--radius-sm);
+  background: var(--chart-segment-empty);
 }
 
-.count {
-    flex-shrink: 0;
-    font-variant-numeric: tabular-nums;
+.meter[data-tone='healthy'] [data-filled='true'],
+.detailsGauge[data-tone='healthy'] [data-filled='true'] {
+  background: var(--success);
+}
+
+.meter[data-tone='warning'] [data-filled='true'],
+.detailsGauge[data-tone='warning'] [data-filled='true'] {
+  background: var(--warning);
+}
+
+.meter[data-tone='danger'] [data-filled='true'],
+.detailsGauge[data-tone='danger'] [data-filled='true'] {
+  background: var(--danger);
+}
+
+.meter[data-tone='danger'] .battery {
+  border-color: var(--danger);
+}
+
+.meter[data-tone='danger'] .battery::after {
+  background: var(--danger);
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
+  width: 100%;
+}
+
+.detailsHeader,
+.billingHeader,
+.contextNumbers,
+.pricing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-m);
+}
+
+.detailsHeader > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}
+
+.eyebrow {
+  color: var(--text-subtle);
+  font-size: var(--text-3xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.contextHeadline {
+  color: var(--text-bright);
+  font-size: var(--text-l);
+  font-variant-numeric: tabular-nums;
+}
+
+.status {
+  padding: var(--space-3xs) var(--space-xs);
+  border-radius: var(--input-radius);
+  background: var(--overlay-5);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}
+
+.status[data-tone='healthy'] {
+  background: var(--success-10);
+  color: var(--success-text-muted);
+}
+
+.status[data-tone='warning'] {
+  background: var(--warning-10);
+  color: var(--warning-text);
+}
+
+.status[data-tone='danger'] {
+  background: var(--danger-10);
+  color: var(--danger-text);
+}
+
+.detailsGauge {
+  display: flex;
+  gap: var(--space-3xs);
+  height: 8px;
+}
+
+.contextNumbers {
+  margin-top: calc(-1 * var(--space-xs));
+  color: var(--text-subtle);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.billingHeader {
+  padding-top: var(--space-m);
+  border-top: 1px solid var(--overlay-10);
+}
+
+.billingHeader strong {
+  color: var(--text-bright);
+  font-size: var(--text-m);
+  font-variant-numeric: tabular-nums;
+}
+
+.usageGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-xs);
+  margin: 0;
+}
+
+.usageGrid > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: var(--overlay-5);
+}
+
+.usageGrid dt {
+  color: var(--text-subtle);
+  font-size: var(--text-3xs);
+}
+
+.usageGrid dd {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.pricing {
+  align-items: flex-start;
+  color: var(--text-subtle);
+  font-size: var(--text-3xs);
+}
+
+.pricing strong {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }

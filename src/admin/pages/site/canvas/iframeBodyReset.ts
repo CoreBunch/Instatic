@@ -23,6 +23,20 @@ import { CANVAS_VIEWPORT_HEIGHT } from './resolveViewportUnits'
  */
 export type IframeInteraction = 'canvas' | 'live'
 
+/**
+ * Inline declarations owned by the design-frame sizing contract. Authored
+ * body styles still publish normally and apply in live mode, but these fields
+ * cannot replace the design iframe's grow-to-content/scrollbar reset after it
+ * has mounted.
+ */
+export const CANVAS_BODY_RESET_PROPERTIES = new Set([
+  'height',
+  'min-height',
+  'overflow',
+  'overflow-x',
+  'overflow-y',
+])
+
 // Canvas-only chrome: neutralize interaction affordances inside design frames.
 // Kept at module scope so the React Compiler does not treat the cross-frame
 // DOM writes as React-owned state mutation.
@@ -53,6 +67,7 @@ export function applyIframeBodyReset(
   interaction: IframeInteraction,
 ): void {
   iframeDoc.body.setAttribute('data-breakpoint-id', breakpointId)
+  iframeDoc.body.dataset.instaticIframeInteraction = interaction
   // Live frames render the page exactly as published: html/body keep the
   // `:where(html, body) { height: 100% }` reset (the iframe is the scroll
   // viewport, short pages still fill it), and the canvas-chrome CSS
@@ -60,10 +75,7 @@ export function applyIframeBodyReset(
   // cursors, text selection, and embedded iframes behave like the live site.
   if (interaction === 'live') {
     iframeDoc.documentElement.style.height = ''
-    iframeDoc.body.style.height = ''
-    iframeDoc.body.style.minHeight = ''
     iframeDoc.documentElement.style.overflow = ''
-    iframeDoc.body.style.overflow = ''
     return
   }
   iframeDoc.documentElement.style.height = 'auto'

@@ -32,6 +32,7 @@ import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import { MediaPickerField } from '@admin/pages/media/components/MediaPickerField'
 import { MediaViewerWindow } from '@admin/pages/media/components/MediaViewerWindow/MediaViewerWindow'
 import { useStandaloneMediaEditor } from '@admin/pages/media/hooks/useStandaloneMediaEditor'
+import { primeCmsMediaAssetCache } from '@admin/pages/media/hooks/useCmsMediaAssetByPath'
 import styles from './controls.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
@@ -172,6 +173,7 @@ export function MediaLibraryControl({
   function handlePickFromModal(asset: CmsMediaAsset) {
     // Keep the local asset cache up to date so the "currently picked"
     // preview can render the right thumb without re-fetching.
+    primeCmsMediaAssetCache(asset)
     setCmsAssets((current) => {
       if (current.some((a) => a.id === asset.id)) return current
       return [asset, ...current]

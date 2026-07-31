@@ -3,13 +3,14 @@
  *
  * A `StyleRule` can be any CSS rule, discriminated by `kind`:
  *
- *   - `kind: 'class'` — the rule's selector is `.<name>`. It is attached to
- *     nodes via `node.classIds`; the publisher emits the name into the node's
- *     class attribute and the rule into the stylesheet. This is what the
- *     editor's ClassPicker manipulates.
+ *   - `kind: 'class'` — the rule is attached to nodes via `node.classIds`.
+ *     User-created rules use `.<name>`; imported utility variants may retain
+ *     a complex selector such as `.group:hover .group-hover\:block`, with
+ *     `name` identifying the rightmost bindable class. The publisher emits
+ *     that name into the node's class attribute and preserves the selector.
  *
  *   - `kind: 'ambient'` — the rule attaches by CSS matching, not by node
- *     assignment (e.g. `h1`, `h1 > span`, `.hero .title`, `a:hover`). The
+ *     assignment (e.g. `h1`, `h1 > span`, `a:hover`). The
  *     publisher emits the rule into the stylesheet only; nothing changes on
  *     node `class=` attributes. Used by the CSS importer and "Add ambient
  *     selector" affordance.
@@ -51,6 +52,17 @@ import { escapeCssIdentifier as escapeCssIdent } from './cssIdentifier'
 const StyleRuleKindSchema = Type.Union([Type.Literal('class'), Type.Literal('ambient')])
 export type StyleRuleKind = Static<typeof StyleRuleKindSchema>
 
+/**
+ * CSS declaration priority is deliberately stored beside — never inside — a
+ * property value. Keeping the metadata sparse preserves the scalar
+ * CSSPropertyBag values consumed by editor controls and node inline styles.
+ */
+export const CSSDeclarationPriorityBagSchema = Type.Record(
+  Type.String(),
+  Type.Literal('important'),
+)
+export type CSSDeclarationPriorityBag = Static<typeof CSSDeclarationPriorityBagSchema>
+
 export const StyleRuleSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
@@ -59,9 +71,9 @@ export const StyleRuleSchema = Type.Object({
   /**
    * The CSS selector expression emitted verbatim into the published
    * stylesheet:
-   *   - kind:'class'   → `.<escaped-name>` (always derived from `name`; not
-   *                      user-edited; kept on the object so the publisher and
-   *                      canvas can call `styleRuleSelector(rule)` uniformly).
+   *   - kind:'class'   → contains the escaped `name` class token; imported
+   *                      variants may include combinators, pseudo-classes, or
+   *                      dependency classes around that binding token.
    *   - kind:'ambient' → any valid selector (`h1`, `h1 > span`, `.hero .title`,
    *                      `a:hover`, `[data-x="y"]`, ...).
    *
@@ -88,6 +100,8 @@ export const StyleRuleSchema = Type.Object({
    * Falls back to {} when missing or invalid — handled in parseStyleRule.
    */
   styles: withFallback(Type.Record(Type.String(), Type.Unknown()), {} as Record<string, unknown>),
+  /** Sparse property -> `important` metadata for base declarations. */
+  stylePriorities: Type.Optional(CSSDeclarationPriorityBagSchema),
   /**
    * Per-context overrides — same persistence semantics as `styles`. The unified
    * "editing context" model (docs/plans/2026-05-30-unified-condition-axis.md):
@@ -103,6 +117,8 @@ export const StyleRuleSchema = Type.Object({
     Type.Record(Type.String(), Type.Record(Type.String(), Type.Unknown())),
     {} as Record<string, Record<string, unknown>>,
   ),
+  /** Sparse context id -> declaration-priority metadata. */
+  contextStylePriorities: Type.Optional(Type.Record(Type.String(), CSSDeclarationPriorityBagSchema)),
   /** Sanitised raw CSS for supported stylesheet-level rules such as @keyframes. */
   rawCss: Type.Optional(Type.String()),
   /** Optional search/filter tags. Invalid items silently dropped — handled in parseStyleRule. */
@@ -161,6 +177,34 @@ function parseContextStyles(raw: Record<string, unknown>): Record<string, Record
   return parseBreakpointStylesBag(raw.contextStyles)
 }
 
+/** Keep only valid priority entries that still have a declaration value. */
+function parsePriorityBag(
+  raw: unknown,
+  styles: Record<string, unknown>,
+): CSSDeclarationPriorityBag | undefined {
+  const record = asPlainObject(raw)
+  if (!record) return undefined
+  const priorities: CSSDeclarationPriorityBag = {}
+  for (const [property, priority] of Object.entries(record)) {
+    if (priority === 'important' && property in styles) priorities[property] = 'important'
+  }
+  return Object.keys(priorities).length > 0 ? priorities : undefined
+}
+
+function parseContextStylePriorities(
+  raw: unknown,
+  contextStyles: Record<string, Record<string, unknown>>,
+): Record<string, CSSDeclarationPriorityBag> | undefined {
+  const record = asPlainObject(raw)
+  if (!record) return undefined
+  const priorities: Record<string, CSSDeclarationPriorityBag> = {}
+  for (const [contextId, contextPriorities] of Object.entries(record)) {
+    const parsed = parsePriorityBag(contextPriorities, contextStyles[contextId] ?? {})
+    if (parsed) priorities[contextId] = parsed
+  }
+  return Object.keys(priorities).length > 0 ? priorities : undefined
+}
+
 /** Parse a StyleRule scope (currently only `{ type: 'node', nodeId, role: 'module-style' }`). */
 function parseStyleRuleScope(raw: unknown): StyleRule['scope'] {
   const s = asPlainObject(raw)
@@ -184,7 +228,10 @@ export function parseStyleRule(raw: unknown): StyleRule | null {
 
   const scope = parseStyleRuleScope(r.scope)
   const tags = parseStringArrayField(r.tags)
+  const styles = parseStylesBag(r.styles)
   const contextStyles = parseContextStyles(r)
+  const stylePriorities = parsePriorityBag(r.stylePriorities, styles)
+  const contextStylePriorities = parseContextStylePriorities(r.contextStylePriorities, contextStyles)
   const generated = compiledCheck(GeneratedClassMetadataSchema, r.generated)
     ? (r.generated as StyleRule['generated'])
     : undefined
@@ -197,8 +244,10 @@ export function parseStyleRule(raw: unknown): StyleRule | null {
     order: r.order,
     ...(typeof r.description === 'string' ? { description: r.description } : {}),
     ...(scope !== undefined ? { scope } : {}),
-    styles: parseStylesBag(r.styles),
+    styles,
+    ...(stylePriorities !== undefined ? { stylePriorities } : {}),
     contextStyles,
+    ...(contextStylePriorities !== undefined ? { contextStylePriorities } : {}),
     ...(typeof r.rawCss === 'string' && r.rawCss.trim() ? { rawCss: r.rawCss } : {}),
     ...(tags !== undefined ? { tags } : {}),
     ...(generated !== undefined ? { generated } : {}),

@@ -23,6 +23,7 @@ import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import { type InsertDataRowInput, type UpdateDataRowDraftInput } from './mapper'
 import { isoDateOrNull } from '@core/utils/isoDate'
 import { getDataRow } from './read'
+import { notifyRowWrite } from '../../rowWriteEvents'
 
 type UpdateDataRowTableResult =
   | { ok: true; row: DataRow }
@@ -33,6 +34,7 @@ export async function createDataRow(
   input: InsertDataRowInput,
   actorUserId: string | null = null,
   pluginActorId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
 ): Promise<DataRow> {
   const { rows } = await db<{ id: string }>`
     insert into data_rows (
@@ -61,6 +63,11 @@ export async function createDataRow(
   `
   const created = await getDataRow(db, rows[0].id)
   if (!created) throw new Error('data row was created but could not be re-read')
+  // Out-of-relay creations invalidate collab state (roster + row doc) — see
+  // rowWriteEvents. The relay's own persistence opts out.
+  if (!opts.collabInternal) {
+    notifyRowWrite({ tableId: created.tableId, rowIds: [created.id], kind: 'create' })
+  }
   return created
 }
 
@@ -70,9 +77,14 @@ export async function saveDataRowDraft(
   input: UpdateDataRowDraftInput,
   actorUserId: string | null = null,
   pluginActorId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
 ): Promise<DataRow | null> {
   const updated = await updateDataRowDraftCells(db, rowId, input, actorUserId, pluginActorId)
-  return updated ? getDataRow(db, rowId) : null
+  const row = updated ? await getDataRow(db, rowId) : null
+  if (row && !opts.collabInternal) {
+    notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'update' })
+  }
+  return row
 }
 
 /**
@@ -127,6 +139,40 @@ export async function resurrectDataRow(
 }
 
 /**
+ * Idempotent draft write by id — update a live row, RESURRECT a soft-deleted
+ * one, or create it fresh. The three-way decision the collab relay needs: a
+ * row the roster sweep soft-deleted and a peer then restored (undo of a page
+ * delete) still occupies its primary key, so a plain insert would conflict —
+ * exactly the flow `apply.ts` handles for HTTP batches, here for one row.
+ */
+export async function upsertDataRowDraft(
+  db: DbClient,
+  input: InsertDataRowInput & { id: string },
+  actorUserId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
+): Promise<void> {
+  const draft = { cells: input.cells, slug: input.slug }
+  const updated = await updateDataRowDraftCells(db, input.id, draft, actorUserId)
+  if (updated) {
+    if (!opts.collabInternal) {
+      notifyRowWrite({ tableId: input.tableId, rowIds: [input.id], kind: 'update' })
+    }
+    return
+  }
+  const { rows } = await db<{ id: string }>`
+    select id from data_rows where id = ${input.id} and deleted_at is not null
+  `
+  if (rows.length > 0) {
+    await resurrectDataRow(db, input.id, draft, actorUserId)
+  } else {
+    await createDataRow(db, input, actorUserId, null, { collabInternal: true })
+  }
+  if (!opts.collabInternal) {
+    notifyRowWrite({ tableId: input.tableId, rowIds: [input.id], kind: 'create' })
+  }
+}
+
+/**
  * Slug-only write — the second phase of the roster reconcile's two-phase
  * slug update (see rows/reconcile.ts). The row's cells and audit columns were
  * already written by `updateDataRowDraftCells` in the same transaction; this
@@ -158,6 +204,7 @@ export async function softDeleteDataRow(
   db: DbClient,
   rowId: string,
   actorUserId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
 ): Promise<DeletedRowSummary | null> {
   const { rows } = await db<{
     id: string
@@ -176,6 +223,9 @@ export async function softDeleteDataRow(
   `
   const row = rows[0]
   if (!row) return null
+  if (!opts.collabInternal) {
+    notifyRowWrite({ tableId: row.table_id, rowIds: [row.id], kind: 'delete' })
+  }
   return {
     id: row.id,
     tableId: row.table_id,

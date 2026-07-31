@@ -38,6 +38,7 @@ import {
   serializeImportmapForCsp,
 } from './runtime/packageImportmap'
 import { renderPublishedNotFound, renderPublishedSnapshot } from './publicRenderer'
+import { prefetchMediaAssets } from './mediaPrefetch'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import {
   NOT_FOUND_ARTEFACT_URL_PATH,
@@ -49,6 +50,7 @@ import {
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
+import { runPublishFlush } from './publishFlush'
 
 interface PublishResult {
   publishedPages: number
@@ -80,6 +82,10 @@ export async function publishDraftSite(
   adminUserId: string,
   uploadsDir?: string,
 ): Promise<PublishResult> {
+  // Flush the collab relay so the published snapshot includes edits still
+  // inside the debounce window (publish bakes exactly what the admins see).
+  // Intrinsic to publishing now, not bolted onto the HTTP route.
+  await runPublishFlush()
   // Serialize against every other publish so the version read→bake→bump window
   // can't interleave and mis-stamp baked hole shells (ISS-038).
   return withPublishLock(() => publishDraftSiteLocked(db, adminUserId, uploadsDir))
@@ -222,7 +228,8 @@ async function publishDraftSiteLocked(
       for (const snapshot of snapshots) {
         const page = snapshot.site.pages.find((p) => p.id === snapshot.pageRowId)
         if (!page || isTemplatePage(page)) continue // template pages only ever wrap; never baked at their own slug
-        collectCssFiles(buildPublishedSiteCssBundle(snapshot.site, registry, page, nextPublishVersion))
+        const mediaAssets = await prefetchMediaAssets(page, snapshot.site, registry, db)
+        collectCssFiles(buildPublishedSiteCssBundle(snapshot.site, registry, page, nextPublishVersion, { mediaAssets }))
       }
       for (const asset of runtimeAssetFiles) {
         if (!assetsByPath.has(asset.publicPath)) assetsByPath.set(asset.publicPath, asset.bytes)

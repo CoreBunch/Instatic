@@ -1,8 +1,10 @@
 /**
- * PreviewOverlay — full-screen in-browser preview of the published page.
+ * PreviewOverlay — full-screen in-browser preview of the current draft page.
  *
- * Renders the active page via publishPage() into a sandboxed <iframe> so
- * the user can see exactly what visitors will see before exporting.
+ * Builds the active in-memory draft through the authenticated runtime-preview
+ * endpoint, then renders the result into a sandboxed <iframe>. The server path
+ * owns request-time concerns such as loop and media prefetch, keeping Preview
+ * aligned with the public renderer without publishing the draft.
  *
  * Accessibility (Guideline #225 / WCAG 2.1 AA):
  * - role="dialog" + aria-modal="true"
@@ -17,21 +19,88 @@
  */
 
 import { useEffect, useRef } from 'react'
+import type { Page, SiteDocument } from '@core/page-tree'
+import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { useEditorStore, selectActivePage } from '@site/store/store'
-import { publishPage } from '@core/publisher'
-import { registry } from '@core/module-engine'
 import { useTemplatePreviewContext } from '@site/hooks/useTemplatePreviewContext'
 import { EyeSolidIcon } from 'pixel-art-icons/icons/eye-solid'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { Button } from '@ui/components/Button'
+import { EmptyState } from '@ui/components/EmptyState'
+import { pushToast } from '@ui/components/Toast'
+import { useRuntimePreviewDocument } from './useRuntimePreviewDocument'
 import styles from './PreviewOverlay.module.css'
+
+interface PreviewDocumentProps {
+  site: SiteDocument
+  page: Page
+  templatePreviewContext: TemplateRenderDataContext | undefined
+}
+
+function PreviewDocument({ site, page, templatePreviewContext }: PreviewDocumentProps) {
+  const reportedErrorRef = useRef<string | null>(null)
+  const { html, loading, error, refresh } = useRuntimePreviewDocument(
+    site,
+    page,
+    templatePreviewContext,
+  )
+
+  useEffect(() => {
+    if (!error) {
+      reportedErrorRef.current = null
+      return
+    }
+    if (reportedErrorRef.current === error) return
+    reportedErrorRef.current = error
+    pushToast({
+      kind: 'error',
+      title: "Couldn't build preview",
+      body: error,
+      location: 'preview-overlay',
+    })
+  }, [error])
+
+  if (error) {
+    return (
+      <EmptyState
+        variant="centered"
+        title="Preview unavailable"
+        description={error}
+        action={<Button variant="secondary" onClick={refresh}>Retry preview</Button>}
+        role="alert"
+        data-testid="preview-error"
+      />
+    )
+  }
+
+  if (loading || !html) {
+    return (
+      <EmptyState
+        variant="centered"
+        title="Building preview…"
+        description="Resolving dynamic content and page assets."
+        data-testid="preview-loading"
+      />
+    )
+  }
+
+  return (
+    <iframe
+      srcDoc={html}
+      sandbox=""
+      title={`Preview: ${page.title}`}
+      data-testid="preview-iframe"
+      className={styles.iframe}
+    />
+  )
+}
 
 export function PreviewOverlay() {
   const open = useEditorStore((s) => s.previewOpen)
   const closePreview = useEditorStore((s) => s.closePreview)
   const site = useEditorStore((s) => s.site)
   const activePage = useEditorStore(selectActivePage)
-  const templatePreviewContext = useTemplatePreviewContext(activePage)
+  const { context: templatePreviewContext } = useTemplatePreviewContext(activePage)
 
   const closeBtnRef = useRef<HTMLButtonElement>(null)
   const triggerRef = useRef<HTMLElement | null>(null)
@@ -58,10 +127,6 @@ export function PreviewOverlay() {
   }
 
   if (!open || !site || !activePage) return null
-
-  const { html } = publishPage(activePage, site, registry, {
-    templateContext: templatePreviewContext,
-  })
 
   return (
     <>
@@ -103,14 +168,14 @@ export function PreviewOverlay() {
             </Button>
           </div>
 
-          {/* ── Sandboxed iframe ───────────────────────────────────────── */}
-          <iframe
-            srcDoc={html}
-            sandbox=""
-            title={`Preview: ${activePage.title}`}
-            data-testid="preview-iframe"
-            className={styles.iframe}
-          />
+          {/* ── Sandboxed server-built preview ─────────────────────────── */}
+          <div className={styles.previewContent}>
+            <PreviewDocument
+              site={site}
+              page={activePage}
+              templatePreviewContext={templatePreviewContext}
+            />
+          </div>
         </div>
       </div>
     </>

@@ -1,14 +1,31 @@
 import { createHmac } from 'node:crypto'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import {
+  ACCOUNT_PERSONA,
   ANONYMOUS_STATE,
   OWNER,
-  completeStepUp,
+  completeStepUp as runStepUp,
   expectLoggedIn,
-  login,
+  login as loginOwner,
   loginAs,
   logout,
 } from './helpers'
+
+/**
+ * Account self-management is deliberately exercised as the dedicated persona.
+ * Security actions in this file revoke account-global sessions, so using the
+ * owner would invalidate `OWNER_STATE_FILE` and log later specs out.
+ */
+async function login(page: Page): Promise<void> {
+  await loginAs(page, ACCOUNT_PERSONA.email, ACCOUNT_PERSONA.password)
+}
+
+async function completeStepUp(
+  page: Page,
+  password: string = ACCOUNT_PERSONA.password,
+): Promise<void> {
+  await runStepUp(page, password)
+}
 
 /** A minimal but valid 1×1 PNG for the avatar upload. */
 const PNG_1X1 = Buffer.from(
@@ -53,7 +70,7 @@ function totpCode(secret: string, now = Date.now()): string {
 async function completeStepUpWithMfa(page: Page, secret: string): Promise<void> {
   const dialog = page.getByTestId('step-up-dialog')
   await expect(dialog).toBeVisible({ timeout: 20_000 })
-  await page.getByTestId('step-up-password').fill(OWNER.password)
+  await page.getByTestId('step-up-password').fill(ACCOUNT_PERSONA.password)
   await page.getByTestId('step-up-mfa-code').fill(totpCode(secret))
   await page.getByTestId('step-up-confirm').click()
   await expect(dialog).toBeHidden({ timeout: 20_000 })
@@ -65,7 +82,7 @@ async function completeStepUpWithMfaIfOpened(page: Page, secret: string): Promis
     .waitFor({ state: 'visible', timeout: 1_000 })
     .then(() => true, () => false)
   if (!opened) return
-  await page.getByTestId('step-up-password').fill(OWNER.password)
+  await page.getByTestId('step-up-password').fill(ACCOUNT_PERSONA.password)
   await page.getByTestId('step-up-mfa-code').fill(totpCode(secret))
   await page.getByTestId('step-up-confirm').click()
   await expect(dialog).toBeHidden({ timeout: 20_000 })
@@ -127,7 +144,7 @@ async function createAccountActivityUser(
   await page.locator('input[name="new-user-initial-password"]').fill(user.password)
   await page.locator('select[name="new-user-role"]').selectOption({ label: user.role })
   await page.locator('button[form="users-page-user-form"]').click()
-  await completeStepUp(page)
+  await completeStepUp(page, OWNER.password)
   await expect(page.getByText(user.email)).toBeVisible()
 }
 
@@ -155,11 +172,11 @@ async function clearUploadedAvatarIfPresent(page: Page): Promise<void> {
  * without enabling MFA.
  */
 test.describe('account', () => {
-  test.describe('profile basics', () => {
-    test.use({ storageState: ANONYMOUS_STATE })
+  test.use({ storageState: ANONYMOUS_STATE })
 
+  test.describe('profile basics', () => {
     test('updates a display name that persists (ADMIN-002 / ACCOUNT-001)', async ({ page }) => {
-      const displayName = `Owner ${Date.now().toString(36)}`
+      const displayName = `Account Persona ${Date.now().toString(36)}`
 
       await login(page)
       await page.goto('/admin/account')
@@ -187,7 +204,7 @@ test.describe('account', () => {
 
       const originalDisplayName = await page.getByTestId('profile-display-name').inputValue()
       const originalEmail = await page.getByTestId('profile-email').inputValue()
-      const draftDisplayName = `Owner mobile ${Date.now().toString(36)}`
+      const draftDisplayName = `Account Persona mobile ${Date.now().toString(36)}`
 
       await page.getByTestId('profile-display-name').fill(draftDisplayName)
       await expect(page.getByTestId('profile-save')).toBeEnabled()
@@ -212,6 +229,7 @@ test.describe('account', () => {
   })
 
   test('uploads a profile picture that persists (ADMIN-002 / ACCOUNT-002)', async ({ page }) => {
+    await login(page)
     await page.goto('/admin/account')
     await page.getByTestId('account-tab-profile').click()
 
@@ -232,6 +250,7 @@ test.describe('account', () => {
   test('removes a profile picture that stays removed after reload (ACCOUNT-002)', async ({
     page,
   }) => {
+    await login(page)
     await page.goto('/admin/account')
     await page.getByTestId('account-tab-profile').click()
 
@@ -259,6 +278,7 @@ test.describe('account', () => {
   test('rejects an unsupported profile picture with inline feedback (ACCOUNT-002)', async ({
     page,
   }) => {
+    await login(page)
     await page.goto('/admin/account')
     await page.getByTestId('account-tab-profile').click()
 
@@ -278,6 +298,7 @@ test.describe('account', () => {
   test('rejects an oversized profile picture with inline feedback (ACCOUNT-002)', async ({
     page,
   }) => {
+    await login(page)
     await page.goto('/admin/account')
     await page.getByTestId('account-tab-profile').click()
 
@@ -297,6 +318,7 @@ test.describe('account', () => {
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 })
+    await login(page)
     await page.goto('/admin/account')
     await page.getByTestId('account-tab-profile').click()
 
@@ -325,8 +347,6 @@ test.describe('account', () => {
   })
 
   test.describe('security', () => {
-    test.use({ storageState: ANONYMOUS_STATE })
-
     test('starts and cancels MFA setup without enabling MFA (ADMIN-003)', async ({
       page,
     }) => {
@@ -423,20 +443,18 @@ test.describe('account', () => {
   })
 
   test.describe('activity', () => {
-    test.use({ storageState: ANONYMOUS_STATE })
-
     test('shows failed and successful login attempts in sign-in history (AUTH-006)', async ({
       page,
     }) => {
       await page.goto('/admin')
       await expect(page.getByRole('heading', { name: 'Admin Login' })).toBeVisible()
 
-      await page.getByLabel('Email').fill(OWNER.email)
-      await page.getByLabel('Password').fill(`${OWNER.password}-wrong`)
+      await page.getByLabel('Email').fill(ACCOUNT_PERSONA.email)
+      await page.getByLabel('Password').fill(`${ACCOUNT_PERSONA.password}-wrong`)
       await page.getByRole('button', { name: 'Sign In' }).click()
       await expect(page.getByRole('alert')).toHaveText(/invalid email or password/i)
 
-      await page.getByLabel('Password').fill(OWNER.password)
+      await page.getByLabel('Password').fill(ACCOUNT_PERSONA.password)
       await page.getByRole('button', { name: 'Sign In' }).click()
       await expectLoggedIn(page)
 
@@ -463,7 +481,7 @@ test.describe('account', () => {
       page,
       browser,
     }) => {
-      await login(page)
+      await loginOwner(page)
       const suffix = Date.now().toString(36)
       const accountUser = {
         email: `activity-lockout-${suffix}@example.com`,
@@ -529,8 +547,6 @@ test.describe('account', () => {
   })
 
   test.describe('sessions', () => {
-    test.use({ storageState: ANONYMOUS_STATE })
-
     test('lists active devices and signs out everywhere else (AUTH-004)', async ({
       page,
       browser,
@@ -598,8 +614,6 @@ test.describe('account', () => {
   })
 
   test.describe('mfa lifecycle', () => {
-    test.use({ storageState: ANONYMOUS_STATE })
-
     test('keeps MFA setup dialog usable at mobile width (ACCOUNT-004)', async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 844 })
       await login(page)
@@ -695,8 +709,8 @@ test.describe('account', () => {
       await expect(page.getByTestId('security-recovery-regenerate')).toBeEnabled()
 
       await logout(page)
-      await page.getByLabel('Email').fill(OWNER.email)
-      await page.getByLabel('Password').fill(OWNER.password)
+      await page.getByLabel('Email').fill(ACCOUNT_PERSONA.email)
+      await page.getByLabel('Password').fill(ACCOUNT_PERSONA.password)
       await page.getByRole('button', { name: 'Sign In' }).click()
       await expect(
         page.getByRole('heading', { name: 'Two-Factor Authentication' }),
@@ -757,8 +771,8 @@ test.describe('account', () => {
       await expect(page.getByTestId('security-mfa-card')).toContainText('On')
 
       await logout(page)
-      await page.getByLabel('Email').fill(OWNER.email)
-      await page.getByLabel('Password').fill(OWNER.password)
+      await page.getByLabel('Email').fill(ACCOUNT_PERSONA.email)
+      await page.getByLabel('Password').fill(ACCOUNT_PERSONA.password)
       await page.getByRole('button', { name: 'Sign In' }).click()
       await expect(
         page.getByRole('heading', { name: 'Two-Factor Authentication' }),
@@ -783,7 +797,7 @@ test.describe('account', () => {
       await expect(stepUpDialog.getByTestId('step-up-confirm')).toBeDisabled()
 
       const wrongStepUpCode = totpCode(secret) === '000000' ? '000001' : '000000'
-      await page.getByTestId('step-up-password').fill(OWNER.password)
+      await page.getByTestId('step-up-password').fill(ACCOUNT_PERSONA.password)
       await page.getByTestId('step-up-mfa-code').fill(wrongStepUpCode)
       await page.getByTestId('step-up-confirm').click()
       await expect(stepUpDialog.getByRole('alert')).toHaveText('Invalid authentication code')
@@ -813,8 +827,8 @@ test.describe('account', () => {
 
       await logout(page)
       await page.setViewportSize({ width: 390, height: 844 })
-      await page.getByLabel('Email').fill(OWNER.email)
-      await page.getByLabel('Password').fill(OWNER.password)
+      await page.getByLabel('Email').fill(ACCOUNT_PERSONA.email)
+      await page.getByLabel('Password').fill(ACCOUNT_PERSONA.password)
       await page.getByRole('button', { name: 'Sign In' }).click()
 
       await expect(
@@ -854,8 +868,8 @@ test.describe('account', () => {
       if (!recoveryCode) throw new Error('MFA setup did not render a recovery code')
 
       await logout(page)
-      await page.getByLabel('Email').fill(OWNER.email)
-      await page.getByLabel('Password').fill(OWNER.password)
+      await page.getByLabel('Email').fill(ACCOUNT_PERSONA.email)
+      await page.getByLabel('Password').fill(ACCOUNT_PERSONA.password)
       await page.getByRole('button', { name: 'Sign In' }).click()
       await expect(
         page.getByRole('heading', { name: 'Two-Factor Authentication' }),
@@ -872,8 +886,8 @@ test.describe('account', () => {
       )
 
       await logout(page)
-      await page.getByLabel('Email').fill(OWNER.email)
-      await page.getByLabel('Password').fill(OWNER.password)
+      await page.getByLabel('Email').fill(ACCOUNT_PERSONA.email)
+      await page.getByLabel('Password').fill(ACCOUNT_PERSONA.password)
       await page.getByRole('button', { name: 'Sign In' }).click()
       await expect(
         page.getByRole('heading', { name: 'Two-Factor Authentication' }),
@@ -896,8 +910,6 @@ test.describe('account', () => {
   })
 
   test.describe('password', () => {
-    test.use({ storageState: ANONYMOUS_STATE })
-
     test('keeps password change usable at mobile width (ACCOUNT-003)', async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 844 })
       await login(page)
@@ -931,7 +943,7 @@ test.describe('account', () => {
       await expect(dialog).toBeHidden()
     })
 
-    test('changes password, rejects invalid form input, and restores the shared credential (ACCOUNT-003)', async ({
+    test('changes password, rejects invalid form input, and restores the persona credential (ACCOUNT-003)', async ({
       page,
     }) => {
       const temporaryPassword = `changed-pass-${Date.now().toString(36)}`
@@ -961,8 +973,8 @@ test.describe('account', () => {
       await expect(page.getByText('Password updated. Other devices were signed out.')).toBeVisible()
 
       await logout(page)
-      await page.getByLabel('Email').fill(OWNER.email)
-      await page.getByLabel('Password').fill(OWNER.password)
+      await page.getByLabel('Email').fill(ACCOUNT_PERSONA.email)
+      await page.getByLabel('Password').fill(ACCOUNT_PERSONA.password)
       await page.getByRole('button', { name: 'Sign In' }).click()
       await expect(page.getByRole('alert')).toHaveText(/invalid email or password/i)
 
@@ -974,8 +986,8 @@ test.describe('account', () => {
       await page.getByTestId('account-tab-security').click()
       await page.getByTestId('security-change-password').click()
       await expect(dialog).toBeVisible()
-      await page.getByTestId('security-password-new').fill(OWNER.password)
-      await page.getByTestId('security-password-confirm').fill(OWNER.password)
+      await page.getByTestId('security-password-new').fill(ACCOUNT_PERSONA.password)
+      await page.getByTestId('security-password-confirm').fill(ACCOUNT_PERSONA.password)
       await page.getByTestId('security-password-submit').click()
       await completeStepUp(page, temporaryPassword)
       await expect(dialog).toBeHidden({ timeout: 20_000 })

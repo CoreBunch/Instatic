@@ -2,7 +2,8 @@ import { useEffect } from 'react'
 import { AdminCanvasLayout } from '@admin/layouts/AdminCanvasLayout'
 import { consumePendingAction } from '@admin/spotlight/pendingAction'
 import { useEditorStore } from '@site/store/store'
-import { useEditorMcpBridge } from './agent/useEditorMcpBridge'
+import { useMcpWorkspaceBridge } from '@admin/ai/useMcpWorkspaceBridge'
+import { executeAgentTool } from './agent'
 
 /**
  * SitePage — visual editor route.
@@ -12,8 +13,12 @@ import { useEditorMcpBridge } from './agent/useEditorMcpBridge'
  * lazy-loaded one level down by AdminCanvasLayout after the shell has painted.
  */
 export function SitePage() {
-  // Relay MCP browser-tool calls to this open editor while it's mounted.
-  useEditorMcpBridge()
+  // Relay MCP browser-tool calls to this open editor while it's mounted. No
+  // post-tool persistence step: store mutations stream to the relay through the
+  // collab socket the moment they land, and every headless MCP read flushes the
+  // relay server-side first (see server/ai/mcp/server.ts), so a follow-up read
+  // always observes the edit.
+  useMcpWorkspaceBridge('site', executeAgentTool)
 
   // Consume cross-workspace pending actions queued by the spotlight. Each
   // action waits for the editor store to hydrate (site !== null) — we

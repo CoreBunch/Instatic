@@ -251,4 +251,27 @@ describe('parseStyleRule persisted shape', () => {
       updatedAt: 0,
     })).toBeNull()
   })
+
+  it('keeps sparse declaration priorities and drops invalid or orphaned entries', async () => {
+    const { parseStyleRule } = await import('@core/page-tree')
+    const parsed = parseStyleRule({
+      id: 'x',
+      name: 'x',
+      kind: 'class',
+      selector: '.x',
+      order: 0,
+      styles: { color: 'red' },
+      stylePriorities: { color: 'important', gap: 'important', display: 'normal' },
+      contextStyles: { mobile: { color: 'blue' } },
+      contextStylePriorities: {
+        mobile: { color: 'important', gap: 'important' },
+        orphan: { color: 'important' },
+      },
+      createdAt: 0,
+      updatedAt: 0,
+    })
+
+    expect(parsed?.stylePriorities).toEqual({ color: 'important' })
+    expect(parsed?.contextStylePriorities).toEqual({ mobile: { color: 'important' } })
+  })
 })

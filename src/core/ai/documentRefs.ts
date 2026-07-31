@@ -26,8 +26,8 @@ export function documentRefEquals(a: AgentDocumentRef | null | undefined, b: Age
 
 export function describeAgentDocuments(
   site: SiteDocument,
-  activePageId: string,
-  currentDocument: AgentDocumentRef,
+  activePageId: string | null,
+  currentDocument: AgentDocumentRef | null,
 ): AgentDocumentDescriptor[] {
   const descriptors: AgentDocumentDescriptor[] = []
 

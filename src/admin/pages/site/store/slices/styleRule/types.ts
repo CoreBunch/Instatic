@@ -46,6 +46,28 @@ interface ClassStylesPreview {
   styles: Partial<CSSPropertyBag>
 }
 
+export type CssRuleApplyMode = 'merge' | 'replace'
+
+export interface CssRuleApplyResult {
+  created: number
+  updated: number
+  blockedSelectors: string[]
+}
+
+export interface CssRuleDeleteResult {
+  deleted: number
+  missingSelectors: string[]
+  blockedSelectors: string[]
+}
+
+export interface CssRulePropertyRemovalResult {
+  updated: number
+  removed: number
+  missingSelectors: string[]
+  missingProperties: string[]
+  blockedSelectors: string[]
+}
+
 // ---------------------------------------------------------------------------
 // Slice interface
 // ---------------------------------------------------------------------------
@@ -97,25 +119,29 @@ export interface StyleRuleSlice {
   updateClassStyles(classId: string, patch: Partial<CSSPropertyBag>): void
 
   /**
-   * Apply a batch of CSS rules parsed from authored CSS text (see
-   * `cssToStyleRules`) to the registry with UPSERT semantics: a rule whose
-   * `name` (class) or `selector` (ambient) already exists is MERGED onto the
-   * existing rule — base `styles` and every per-context override — so the same
-   * call both creates new selectors and EDITS existing ones. New selectors are
-   * minted at the end of the cascade. Framework-generated/locked token classes
-   * are never overwritten. Any referenced reusable conditions are registered
-   * first. The whole batch is one undo step. Returns how many rules were
-   * created vs. updated.
-   *
-   * This is the engine behind the agent's `applyCss` tool and the element-less
-   * `<style>` payload path — the editing counterpart to the additive
-   * `mergeImportedStyleRules` used when importing structure (which deliberately
-   * does NOT clobber shared classes as a side effect of inserting nodes).
+   * Apply parsed authored CSS by exact emitted selector. Merge patches only
+   * the addressed declarations/contexts; replace makes the incoming rule's
+   * complete CSS payload authoritative while preserving registry identity,
+   * cascade order, assignments, and metadata. Duplicate exact selectors are
+   * all updated atomically. New selectors append in authored order.
    */
-  upsertCssRules(
+  applyCssRules(
     rules: NewStyleRule[],
     conditions: ConditionDef[],
-  ): { created: number; updated: number }
+    mode: CssRuleApplyMode,
+  ): CssRuleApplyResult
+
+  /** Delete every editable rule whose emitted selector exactly matches. */
+  deleteCssRules(selectors: string[]): CssRuleDeleteResult
+
+  /**
+   * Remove storage-key CSS properties from base and every context of every
+   * exact selector match, as one atomic history entry.
+   */
+  removeCssRuleProperties(
+    selectors: string[],
+    properties: string[],
+  ): CssRulePropertyRemovalResult
 
   // ── Per-context overrides (unified viewport-context + custom-condition axis) ─
   /**

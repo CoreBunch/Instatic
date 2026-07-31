@@ -127,15 +127,23 @@ describe('Anthropic mapHistory', () => {
 
   test('maps base64 image blocks to Anthropic image source', () => {
     const history: AiMessage[] = [
-      { role: 'user', content: [{ kind: 'image', mimeType: 'image/png', data: 'BASE64' }, { kind: 'text', text: 'look' }] },
+      {
+        role: 'user',
+        content: [
+          { kind: 'image', mimeType: 'image/png', data: 'BASE64-1' },
+          { kind: 'image', mimeType: 'image/jpeg', data: 'BASE64-2' },
+          { kind: 'text', text: 'compare' },
+        ],
+      },
     ]
     const mapped = mapHistory(history)
     expect(mapped).toEqual([
       {
         role: 'user',
         content: [
-          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'BASE64' } },
-          { type: 'text', text: 'look' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'BASE64-1' } },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'BASE64-2' } },
+          { type: 'text', text: 'compare' },
         ],
       },
     ])

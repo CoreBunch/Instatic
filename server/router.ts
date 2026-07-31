@@ -1,11 +1,13 @@
 import { tryHandleAi } from './ai/handlers'
 import { handleMcpHttp, MCP_ENDPOINT_PATH } from './ai/mcp'
+import { tryHandleMcpOAuth } from './ai/mcp/oauth/handler'
 import { handleCmsRequest } from './handlers/cms'
 import type { DbClient } from './db/client'
 import { renderNotFoundResponse, renderPublicResolution } from './publish/publicRouter'
 import { readStaticAsset } from './publish/staticArtefact'
 import { getLatestSnapshotForVersion } from './publish/publishedSnapshotCache'
 import { getPublishVersion, registerVersionedCacheReset } from './publish/publishState'
+import { prefetchMediaAssets } from './publish/mediaPrefetch'
 import { getSetupStatusCached } from './repositories/setup'
 import { getPublishedRuntimeAsset } from './repositories/runtimeAsset'
 import { handleLoopRequest, isLoopRuntimeAssetPath, serveLoopRuntimeAsset } from './handlers/cms/loop'
@@ -62,10 +64,14 @@ type RouteHandler = (
  */
 const routes: readonly RouteHandler[] = [
   tryServeHealth,
+  // OAuth discovery, dynamic client registration, and token exchange for
+  // hosted MCP clients. These endpoints are public protocol surfaces; the
+  // interactive consent step remains admin-session + step-up gated.
+  tryServeMcpOAuth,
   // MCP server endpoint — external AI clients (Claude Code, Codex, remote
-  // agents) speak the Model Context Protocol here over its own bearer-token
-  // auth. Matched before the admin-cookie-gated AI routes since it lives under
-  // `/_instatic/` and authenticates per-connector, not via the admin session.
+  // agents) speak the Model Context Protocol here over OAuth access tokens or
+  // scoped personal tokens. Matched before the admin-cookie-gated AI routes
+  // since it authenticates per connection, not via the admin session.
   tryServeMcp,
   // AI runtime — `/admin/api/ai/*`. The legacy `/admin/api/agent` and
   // `/admin/api/agent/tool-result` were deleted in Phase 3 of the AI
@@ -117,6 +123,15 @@ function tryServeHealth(_req: Request, _runtime: ServerRuntime, _url: URL, pathn
   return jsonResponse({ status: 'ok', ts: Date.now() })
 }
 
+function tryServeMcpOAuth(
+  req: Request,
+  runtime: ServerRuntime,
+  _url: URL,
+  pathname: string,
+): Promise<Response> | Response | null {
+  return tryHandleMcpOAuth(req, runtime.db, pathname)
+}
+
 /**
  * AI runtime — provider-agnostic stack at `/admin/api/ai/*`. Handles chat
  * streams, browser bridge, credentials CRUD, conversation history,
@@ -137,13 +152,13 @@ function tryServeAi(req: Request, runtime: ServerRuntime, url: URL, _pathname: s
 
 /**
  * MCP server endpoint (`/_instatic/mcp`). Authenticates per-connector via a
- * bearer token (NOT the admin session cookie) and exposes the capability-gated
- * CMS tool surface over the Model Context Protocol. Returns `null` for any
+ * OAuth or personal bearer token (NOT the admin session cookie) and exposes
+ * the capability-gated CMS tool surface over MCP. Returns `null` for any
  * other path so the dispatcher keeps walking.
  */
 function tryServeMcp(req: Request, runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response | null> | null {
   if (pathname !== MCP_ENDPOINT_PATH) return null
-  return handleMcpHttp(req, runtime.db)
+  return handleMcpHttp(req, runtime.db, { uploadsDir: runtime.uploadsDir })
 }
 
 function tryServeCmsApi(req: Request, runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response> | null {
@@ -605,12 +620,22 @@ async function rebuildSiteCssFromSnapshot(
 
   const pages = bundleId === 'userStyles' ? snapshot.site.pages : snapshot.site.pages.slice(0, 1)
   for (const page of pages) {
-    const file: CssBundleFile = buildPublishedSiteCssBundle(snapshot.site, registry, page, version)[bundleId]
+    const mediaAssets = await prefetchMediaAssets(page, snapshot.site, registry, db)
+    const file: CssBundleFile = buildPublishedSiteCssBundle(snapshot.site, registry, page, version, { mediaAssets })[bundleId]
     if (file.hash === requestedHash) return file.content
   }
   // Page-agnostic view (every enabled stylesheet) — covers a hash that
   // predates a scope change but is still referenced somewhere.
-  const fallback: CssBundleFile = buildPublishedSiteCssBundle(snapshot.site, registry, undefined, version)[bundleId]
+  const fallbackMediaAssets = snapshot.site.pages[0]
+    ? await prefetchMediaAssets(snapshot.site.pages[0], snapshot.site, registry, db)
+    : undefined
+  const fallback: CssBundleFile = buildPublishedSiteCssBundle(
+    snapshot.site,
+    registry,
+    undefined,
+    version,
+    { mediaAssets: fallbackMediaAssets },
+  )[bundleId]
   if (fallback.hash === requestedHash) return fallback.content
 
   return null

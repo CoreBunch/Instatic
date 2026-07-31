@@ -246,7 +246,7 @@ export function useDataWorkspace({ shouldLoadRows }: DataWorkspaceOptions): Data
 
   const createTable = async (input: CreateDataTableInput): Promise<DataTable> => {
     setTablesError(null)
-    const table = await createCmsDataTable({ ...input, kind: 'data' })
+    const table = await createCmsDataTable(input)
     // Newly created table has no rows yet.
     setTables((current) => [...current, { ...table, rowCount: 0 }])
     setSelectedTableId(table.id)

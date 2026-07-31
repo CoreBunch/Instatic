@@ -5,8 +5,8 @@
  * an AiToolOutput carrying `images`; the MCP server must surface them.
  */
 import { describe, expect, it, beforeEach } from 'bun:test'
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/server'
+import { Client } from '@modelcontextprotocol/client'
 import { createSqliteClient } from '../../db/sqlite'
 import { sqliteMigrations } from '../../db/migrations-sqlite'
 import { runMigrations } from '../../db/runMigrations'
@@ -52,7 +52,7 @@ describe('MCP image forwarding', () => {
   it('forwards render_snapshot PNG as an MCP image content block', async () => {
     // Simulate the open editor: register its bridge stream for u1.
     const ctrl = new AbortController()
-    const reader = createEditorBridgeStream('u1', ctrl.signal).getReader()
+    const reader = createEditorBridgeStream('u1', 'site', ctrl.signal).getReader()
     const ready = await readUntil(reader, (e) => e.type === 'bridgeReady')
     const bridgeId = ready.bridgeId as string
 

@@ -42,11 +42,12 @@ import { MultiSelectionHeader } from './MultiSelectionInspector'
 import { MultiSelectorHeader } from './MultiSelectorInspector'
 import { type ClassPickerHandle } from './ClassPicker'
 import { useEditorStore } from '@site/store/store'
-import { PanelHeader } from '@admin/shared/PanelHeader'
-import { useDraggablePanel } from '@site/hooks/useDraggablePanel'
-import { Button } from '@ui/components/Button'
-import { OpenSolidIcon } from 'pixel-art-icons/icons/open-solid'
-import { DockSolidIcon } from 'pixel-art-icons/icons/dock-solid'
+import { PanelHeader, PanelModeButton } from '@admin/shared/PanelHeader'
+import {
+  PanelResizeHandle,
+  useDraggablePanel,
+  useResizablePanel,
+} from '@admin/shared/FloatingWindow'
 import { cn } from '@ui/cn'
 import styles from './PropertiesPanel.module.css'
 
@@ -82,11 +83,27 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
   }
 
   // ── Draggable panel position ───────────────────────────────────────────────
-  const { panelRef: dragPanelElementRef, headerDragProps, panelPositionStyle } = useDraggablePanel(
+  const {
+    panelRef: dragPanelElementRef,
+    setPanelRef: setDragPanelElementRef,
+    headerDragProps,
+    panelPositionStyle,
+  } = useDraggablePanel(
     'properties',
     () => ({
       x: typeof window !== 'undefined' ? window.innerWidth - DEFAULT_WIDTH - 16 : 16,
-      y: 16,
+      y: 64,
+    }),
+  )
+  const {
+    panelSizeStyle,
+    resizeHandleProps,
+  } = useResizablePanel(
+    'properties',
+    dragPanelElementRef,
+    () => ({
+      width: data.width,
+      height: typeof window !== 'undefined' ? Math.min(680, window.innerHeight - 80) : 680,
     }),
   )
 
@@ -128,7 +145,7 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
 
   return (
     <aside
-      ref={dragPanelElementRef}
+      ref={setDragPanelElementRef}
       data-panel=""
       data-testid="properties-panel"
       role="complementary"
@@ -140,7 +157,7 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
       onClick={(e) => e.stopPropagation()}
       style={
         variant === 'floating'
-          ? { '--panel-w': `${data.width}px`, ...panelPositionStyle } as React.CSSProperties
+          ? { ...panelPositionStyle, ...panelSizeStyle }
           : undefined
       }
       className={cn(styles.panel, variant === 'docked' && styles.panelDocked)}
@@ -174,8 +191,10 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
         dragHandleProps={variant === 'floating' ? headerDragProps : undefined}
       >
         <PanelModeButton
-          variant={variant}
-          onClick={() => data.setPropertiesPanelMode(variant === 'docked' ? 'floating' : 'docked')}
+          mode={variant}
+          panelLabel="Properties"
+          dockLocation="right sidebar"
+          onToggle={() => data.setPropertiesPanelMode(variant === 'docked' ? 'floating' : 'docked')}
         />
       </PanelHeader>
 
@@ -205,6 +224,12 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
         />
       </div>
 
+      {variant === 'floating' && (
+        <PanelResizeHandle
+          panelLabel="Properties"
+          resizeHandleProps={resizeHandleProps}
+        />
+      )}
     </aside>
   )
 }
@@ -272,35 +297,4 @@ function HeaderTitleContent({
     )
   }
   return undefined
-}
-
-// ---------------------------------------------------------------------------
-// PanelModeButton — icon-only toggle between docked and floating modes,
-// rendered as a child of PanelHeader.
-// ---------------------------------------------------------------------------
-
-interface PanelModeButtonProps {
-  variant: PanelVariant
-  onClick: () => void
-}
-
-function PanelModeButton({ variant, onClick }: PanelModeButtonProps) {
-  const label = variant === 'docked' ? 'Unpin Properties panel' : 'Dock Properties panel'
-  const tooltip = variant === 'docked' ? 'Unpin to floating panel' : 'Dock in right sidebar'
-  return (
-    <Button
-      variant="ghost"
-      size="xs"
-      iconOnly
-      onClick={onClick}
-      aria-label={label}
-      tooltip={tooltip}
-    >
-      {variant === 'docked' ? (
-        <OpenSolidIcon size={12} aria-hidden="true" />
-      ) : (
-        <DockSolidIcon size={12} aria-hidden="true" />
-      )}
-    </Button>
-  )
 }

@@ -28,9 +28,13 @@ Release flow:
 
 ## Pre-Tag Template Updates
 
-Before tagging a release, update every checked-in deployment surface that intentionally pins the release image:
+Before tagging a release, update the package/changelog version and every checked-in deployment surface that intentionally pins the release image:
 
 ```txt
+package.json
+CHANGELOG.md
+docs/deployment/README.md
+docs/deployment/docker-image.md
 docs/deployment/railway.md
 ```
 

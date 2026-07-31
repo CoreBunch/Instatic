@@ -94,26 +94,30 @@ export async function handleRowPreview(
     return jsonResponse({ error: 'No entry template found for this collection' }, { status: 404 })
   }
   const merged = composeTemplateChain(chain, { kind: 'entry' })
+  // The template chain has no Page for the entry, so composeTemplateChain
+  // can't know its title — the entry's own (draft) title is the real document title.
+  if (typeof draftCells.title === 'string') merged.title = draftCells.title
 
   // Build a synthetic PublishedDataRow with the draft cells merged in.
   // Bindings inside the template (`{currentEntry.body}`, featured-media
   // resolution, etc.) operate against this seed.
   const draftPublishedRow: PublishedDataRow = synthesisePublishedRow(row, table, draftCells)
 
-  const cssBundle = buildSiteCssBundle(snapshot.site, registry, merged)
-  const [loopData, mediaAssets] = await Promise.all([
-    prefetchLoopData(merged, snapshot.site, db),
-    prefetchMediaAssets(merged, snapshot.site, registry, db),
-  ])
-
   const publicPath = buildEntryPublicPath(table.routeBase, draftPublishedRow.slug)
   const syntheticUrl = new URL(`http://localhost${publicPath}`)
+  const templateContext = {
+    entryStack: [publishedDataRowToLoopItem(draftPublishedRow)],
+    route: buildRouteFrame(syntheticUrl.toString()),
+  }
+  const loopData = await prefetchLoopData(merged, snapshot.site, db)
+  const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, db, {
+    templateContext,
+    loopData,
+  })
+  const cssBundle = buildSiteCssBundle(snapshot.site, registry, merged, { mediaAssets })
 
   const published = publishPage(merged, snapshot.site, registry, {
-    templateContext: {
-      entryStack: [publishedDataRowToLoopItem(draftPublishedRow)],
-      route: buildRouteFrame(syntheticUrl.toString()),
-    },
+    templateContext,
     runtimeAssets: snapshot.runtimeAssets,
     runtimePackageImportmap: snapshot.runtimePackageImportmap,
     cssEmission: 'external',

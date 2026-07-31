@@ -285,7 +285,13 @@ export async function createUser(
   const email = input.email.trim()
   const emailNormalized = normalizeEmail(email)
   if (!emailNormalized.includes('@')) throw new UserMutationError('Invalid email')
-  const displayName = input.displayName.trim() || email
+  // Empty means empty. `display_name` is rendered on PUBLIC pages through
+  // author bindings, so defaulting it to the email address publishes the
+  // address the moment anyone binds an author field. Admin surfaces already
+  // fall back to the email for their own display (UserAvatar,
+  // AccountMenuButton, ContentSettingsPanel, ActivityWidget) — that fallback
+  // is authenticated-only and stays.
+  const displayName = input.displayName.trim()
   const id = input.id ?? nanoid()
   const status = input.status ?? 'active'
   if (input.roleId === 'owner' && input.allowOwnerRole !== true) {
@@ -318,9 +324,10 @@ export async function updateUser(
   const email = input.email === undefined ? current.email : input.email.trim()
   const emailNormalized = normalizeEmail(email)
   if (!emailNormalized.includes('@')) throw new UserMutationError('Invalid email')
+  // Clearing the field is allowed and means "no public name" — see createUser.
   const displayName = input.displayName === undefined
     ? current.displayName
-    : input.displayName.trim() || email
+    : input.displayName.trim()
   const status = input.status ?? current.status
   const roleId = input.roleId ?? current.role.id
   const passwordHash = input.passwordHash ?? current.passwordHash

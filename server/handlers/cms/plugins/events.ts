@@ -15,51 +15,75 @@
  *   - Initial `event: ping` keeps proxies (vite, nginx) from idle-closing
  *     the long-lived connection. Followed by a periodic heartbeat every
  *     30s for the same reason.
- *   - On `req.signal` abort (tab closed, EventSource paused), we
- *     unsubscribe from the broadcaster and stop the heartbeat. No leaks.
+ *   - Request abort and response-stream cancellation both unsubscribe from
+ *     the broadcaster and stop the heartbeat. Bun reports a disconnected
+ *     response consumer through `ReadableStream.cancel()` without necessarily
+ *     aborting the server Request.
  *   - The stream never ends voluntarily — clients reconnect via the
  *     standard EventSource auto-reconnect on transport errors.
  */
 import { subscribePluginEvents } from '../../../plugins/eventBroadcaster'
 import { methodNotAllowed } from '../../../http'
 
+const STREAM_LEASE_MS = 120_000
+
 export function handlePluginEventsStream(req: Request): Response {
   if (req.method !== 'GET') return methodNotAllowed()
   const encoder = new TextEncoder()
+  let closeStream: (() => void) | null = null
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
+      let closed = false
+      let unsubscribe = (): void => {}
+      let heartbeat: ReturnType<typeof setInterval> | null = null
+      let lease: ReturnType<typeof setTimeout> | null = null
+
+      const cleanup = () => {
+        if (closed) return
+        closed = true
+        if (heartbeat) clearInterval(heartbeat)
+        if (lease) clearTimeout(lease)
+        req.signal.removeEventListener('abort', cleanup)
+        unsubscribe()
+        try { controller.close() } catch { /* already closed or cancelled */ }
+      }
+      closeStream = cleanup
+
       function send(payload: string): void {
+        if (closed) return
         try {
           controller.enqueue(encoder.encode(payload))
         } catch {
-          // Stream already closed (client gone). Listeners + heartbeat
-          // are torn down via the abort handler below.
+          cleanup()
         }
       }
 
-      // Initial ping so the client sees a successful connection immediately,
-      // even before the first real event arrives.
-      send(`event: ping\ndata: connected\n\n`)
-
       // Subscribe to the broadcaster — every event becomes one SSE message.
       // SSE requires `data:` lines + a terminating blank line.
-      const unsubscribe = subscribePluginEvents((event) => {
+      unsubscribe = subscribePluginEvents((event) => {
         send(`event: ${event.kind}\ndata: ${JSON.stringify(event)}\n\n`)
       })
 
       // Heartbeat keeps proxies + the EventSource itself happy. SSE comments
       // (`: heartbeat`) are ignored by the client but reset idle timers.
-      const heartbeat = setInterval(() => {
+      heartbeat = setInterval(() => {
         send(`: heartbeat\n\n`)
       }, 30_000)
+      // Bound orphan lifetime even when an intermediary fails to propagate a
+      // downstream disconnect. EventSource reconnects automatically.
+      lease = setTimeout(cleanup, STREAM_LEASE_MS)
 
-      // Tear down when the client disconnects.
-      req.signal.addEventListener('abort', () => {
-        unsubscribe()
-        clearInterval(heartbeat)
-        try { controller.close() } catch { /* already closed */ }
-      })
+      if (req.signal.aborted) cleanup()
+      else req.signal.addEventListener('abort', cleanup, { once: true })
+
+      // Initial ping so the client sees a successful connection immediately,
+      // even before the first real event arrives.
+      send(`event: ping\ndata: connected\n\n`)
+    },
+    cancel() {
+      closeStream?.()
+      closeStream = null
     },
   })
 

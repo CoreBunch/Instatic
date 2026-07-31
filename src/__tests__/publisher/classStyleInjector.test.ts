@@ -13,9 +13,10 @@
  */
 
 import { describe, it, expect } from 'bun:test'
-import { bagToCSS, collectClassCSS, generateClassCSS } from '@core/publisher'
+import { bagToCSS, bagToInlineStyle, collectClassCSS, generateClassCSS } from '@core/publisher'
 import { classKindSelector, makeConditionDef } from '@core/page-tree'
 import type { StyleRule, Page, PageNode, SiteDocument } from '@core/page-tree'
+import type { RenderResolvedMedia } from '@core/publisher'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,6 +46,23 @@ const BREAKPOINTS = [
   { id: 'tablet', width: 768 },
 ]
 
+function resolvedMedia(path = '/uploads/hero.png'): RenderResolvedMedia {
+  return {
+    publicPath: path,
+    mimeType: 'image/png',
+    width: 2400,
+    height: 1200,
+    altText: '',
+    blurHash: null,
+    variants: [
+      { width: 320, height: 160, format: 'webp', path: '/uploads/hero-w320.webp', sizeBytes: 12_000 },
+      { width: 1024, height: 512, format: 'webp', path: '/uploads/hero-w1024.webp', sizeBytes: 82_000 },
+      { width: 2048, height: 1024, format: 'webp', path: '/uploads/hero-w2048.webp', sizeBytes: 190_000 },
+    ],
+    posterPath: null,
+  }
+}
+
 // ---------------------------------------------------------------------------
 // bagToCSS
 // ---------------------------------------------------------------------------
@@ -53,6 +71,35 @@ describe('bagToCSS', () => {
   it('converts a single property to a CSS declaration', () => {
     const css = bagToCSS({ fontSize: '16px' })
     expect(css).toBe('  font-size: 16px;')
+  })
+
+  it('emits sparse declaration priority separately from the property value', () => {
+    const css = bagToCSS(
+      { color: 'red', display: 'block' },
+      {},
+      { color: 'important' },
+    )
+    expect(css).toContain('color: red !important;')
+    expect(css).toContain('display: block;')
+    expect(css).not.toContain('display: block !important')
+  })
+
+  it('emits nothing for a non-object bag instead of throwing (corrupt rule resilience)', () => {
+    // A malformed persisted rule can carry a non-object `styles` (bad import,
+    // plugin write, older data). `Object.entries(null)` would throw and blank
+    // the whole canvas — one bad rule must degrade to empty, not crash.
+    expect(bagToCSS(undefined as never)).toBe('')
+    expect(bagToCSS(null as never)).toBe('')
+    expect(bagToCSS(42 as never)).toBe('')
+  })
+
+  it('one malformed rule does not stop the rest of the stylesheet emitting', () => {
+    const good = makeClass('good', { color: 'red' })
+    // A packageJson-shaped object wrongly stored as a style rule: no `styles`.
+    const corrupt = { dependencies: {}, devDependencies: {} } as unknown as StyleRule
+    const css = generateClassCSS({ corrupt, good }, [], [])
+    expect(css).toContain('color: red')
+    expect(css).not.toContain('dependencies')
   })
 
   it('converts camelCase to kebab-case', () => {
@@ -139,6 +186,31 @@ describe('bagToCSS', () => {
     expect(css).toContain('display: flex;')
     expect(css).toContain('gap: 8px;')
     expect(css).toContain('border-radius: 4px;')
+  })
+
+  it('rewrites media background images to optimized fallback plus image-set declarations', () => {
+    const css = bagToCSS(
+      { backgroundImage: "url('/uploads/hero.png')" },
+      { mediaAssets: new Map([['/uploads/hero.png', resolvedMedia()]]) },
+    )
+
+    expect(css).toContain('background-image: url("/uploads/hero-w2048.webp");')
+    expect(css).toContain('background-image: image-set(')
+    expect(css).toContain('url("/uploads/hero-w320.webp") 0.31x')
+    expect(css).toContain('url("/uploads/hero-w1024.webp") 1x')
+    expect(css).toContain('url("/uploads/hero-w2048.webp") 2x')
+    expect(css).not.toContain('/uploads/hero.png')
+  })
+
+  it('rewrites media background images inside inline style strings without selecting the original', () => {
+    const inline = bagToInlineStyle(
+      { backgroundImage: 'linear-gradient(red, blue), url("/uploads/hero.png")' },
+      { mediaAssets: new Map([['/uploads/hero.png', resolvedMedia()]]) },
+    )
+
+    expect(inline).toContain('linear-gradient(red, blue), url("/uploads/hero-w2048.webp")')
+    expect(inline).toContain('linear-gradient(red, blue), image-set(')
+    expect(inline).not.toContain('/uploads/hero.png')
   })
 
   it('outputs multiple properties as separate lines', () => {
@@ -257,6 +329,27 @@ describe('bagToCSS', () => {
     expect(css).not.toContain('margin-left')
   })
 
+  it('collapses sides only when all four declaration priorities match', () => {
+    const styles = {
+      paddingTop: '8px',
+      paddingRight: '8px',
+      paddingBottom: '8px',
+      paddingLeft: '8px',
+    }
+    const allImportant = bagToCSS(styles, {}, {
+      paddingTop: 'important',
+      paddingRight: 'important',
+      paddingBottom: 'important',
+      paddingLeft: 'important',
+    })
+    expect(allImportant).toBe('  padding: 8px !important;')
+
+    const mixed = bagToCSS(styles, {}, { paddingTop: 'important' })
+    expect(mixed).not.toMatch(/^\s*padding:/m)
+    expect(mixed).toContain('padding-top: 8px !important;')
+    expect(mixed).toContain('padding-right: 8px;')
+  })
+
   it('refuses to collapse when a side is dropped by the sanitiser', () => {
     // expression(...) is sanitised to null → the collapse must abort and the
     // remaining safe sides emit as longhand instead.
@@ -353,6 +446,18 @@ describe('generateClassCSS', () => {
     expect(css).toContain('color: #fff;')
     expect(css).toContain('font-size: 16px;')
     expect(css).toContain('}')
+  })
+
+  it('emits base and context priorities from the style rule metadata', () => {
+    const rule = makeClass('notice', { color: 'red' }, {
+      mobile: { color: 'blue' },
+    })
+    rule.stylePriorities = { color: 'important' }
+    rule.contextStylePriorities = { mobile: { color: 'important' } }
+
+    const css = generateClassCSS({ notice: rule }, BREAKPOINTS)
+    expect(css).toContain('color: red !important;')
+    expect(css).toContain('color: blue !important;')
   })
 
   it('uses the class name in the selector, not the generated id', () => {
@@ -556,6 +661,20 @@ describe('generateClassCSS', () => {
     expect(tabletIdx).toBeGreaterThan(mobileIdx)
     expect(desktopIdx).toBeGreaterThan(tabletIdx)
   })
+
+  it('rewrites class background images with responsive image-set candidates', () => {
+    const classes = {
+      hero: makeClass('hero', { backgroundImage: "url('/uploads/hero.png')" }),
+    }
+    const css = generateClassCSS(classes, BREAKPOINTS, [], {
+      mediaAssets: new Map([['/uploads/hero.png', resolvedMedia()]]),
+    })
+
+    expect(css).toContain('.hero {')
+    expect(css).toContain('background-image: url("/uploads/hero-w2048.webp");')
+    expect(css).toContain('background-image: image-set(')
+    expect(css).not.toContain('/uploads/hero.png')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -655,6 +774,59 @@ describe('collectClassCSS', () => {
     const css = collectClassCSS(site)
     expect(css).toContain('.used {')
     expect(css).not.toContain('.unused')
+  })
+
+  it('emits a complex utility variant only when its selector dependencies are used', () => {
+    const group = makeClass('group', {})
+    const variant: StyleRule = {
+      ...makeClass('variant', { display: 'block' }, {}, 'group-hover:block'),
+      selector: '.group:hover .group-hover\\:block',
+    }
+    const withDependency = makeSite(
+      { group, variant },
+      { parent: ['group'], child: ['variant'] },
+    )
+    const withoutDependency = makeSite(
+      { group, variant },
+      { child: ['variant'] },
+    )
+
+    expect(collectClassCSS(withDependency)).toContain(
+      '.group:hover .group-hover\\:block',
+    )
+    expect(collectClassCSS(withoutDependency)).not.toContain('group-hover')
+  })
+
+  it('tree-shakes ambient fragments by known class dependencies', () => {
+    const used = makeClass('used', {})
+    const unused = makeClass('unused', {})
+    const usedFragment: StyleRule = {
+      ...makeClass('used-fragment', { color: 'green' }),
+      name: '.used:hover',
+      kind: 'ambient',
+      selector: '.used:hover',
+    }
+    const unusedFragment: StyleRule = {
+      ...makeClass('unused-fragment', { color: 'red' }),
+      name: '.unused:hover',
+      kind: 'ambient',
+      selector: '.unused:hover',
+    }
+    const body: StyleRule = {
+      ...makeClass('body-rule', { margin: '0' }),
+      name: 'body',
+      kind: 'ambient',
+      selector: 'body',
+    }
+    const site = makeSite(
+      { used, unused, usedFragment, unusedFragment, body },
+      { child: ['used'] },
+    )
+
+    const css = collectClassCSS(site)
+    expect(css).toContain('.used:hover')
+    expect(css).not.toContain('.unused:hover')
+    expect(css).toContain('body {')
   })
 
   it('emits CSS for all used classes across all nodes', () => {

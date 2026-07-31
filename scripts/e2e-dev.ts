@@ -13,7 +13,7 @@
  * admin app mid-test either.
  */
 import { mkdir, rm } from 'node:fs/promises'
-import { bunCommand, bunRunCommand } from './lib/bunCommand'
+import { bunCommand, viteCommand } from './lib/bunCommand'
 
 const DATABASE_PATH = './.tmp/e2e-agent.db'
 const UPLOADS_DIR = './.tmp/e2e-uploads'
@@ -47,7 +47,7 @@ function stopChildren(signal: NodeJS.Signals = 'SIGTERM'): void {
 
 for (const command of [
   bunCommand('server/index.ts'),
-  bunRunCommand('dev:vite', '--host', '127.0.0.1', '--port', VITE_PORT, '--strictPort'),
+  viteCommand('--host', '127.0.0.1', '--port', VITE_PORT, '--strictPort'),
 ]) {
   const child = Bun.spawn(command, {
     env: sharedEnv,

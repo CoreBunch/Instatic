@@ -40,6 +40,9 @@ import { rankBySuggestionScore } from './classPickerRanking'
 // doesn't leave the dropdown sparse.
 const SUFFICIENT_HISTORY_THRESHOLD = CLASS_USAGE_RECENT_LIMIT
 
+/** Bound mounted picker rows while retaining full-registry exact-name lookup. */
+export const CLASS_PICKER_RESULT_LIMIT = 100
+
 interface ClassPickerSuggestionsInput {
   /** Every user-visible class in the site, regardless of node assignment. */
   allClasses: readonly StyleRule[]
@@ -136,11 +139,11 @@ export function useClassPickerSuggestions(
     ? createIntent.name.toLowerCase()
     : trimmedQuery
   const filteredSuggestions = isEmptyQuery
-    ? candidates
-    : rankBySuggestionScore(candidates, classSearchQuery)
+    ? candidates.slice(0, CLASS_PICKER_RESULT_LIMIT)
+    : rankBySuggestionScore(candidates, classSearchQuery).slice(0, CLASS_PICKER_RESULT_LIMIT)
   const selectorSuggestions = isEmptyQuery
-    ? selectorItems.slice()
-    : rankSelectorSuggestions(selectorItems, trimmedQuery)
+    ? selectorItems.slice(0, CLASS_PICKER_RESULT_LIMIT)
+    : rankSelectorSuggestions(selectorItems, trimmedQuery).slice(0, CLASS_PICKER_RESULT_LIMIT)
 
   // Empty-query layout: surface Recent + Frequent first, then optionally an
   // "All classes" section so fresh sites with sparse history stay browsable.
@@ -150,7 +153,9 @@ export function useClassPickerSuggestions(
     : { recent: [] as string[], frequent: [] as string[] }
   const surfacedSet = new Set<string>([...recentIds, ...frequentIds])
   const surfacedCount = surfacedSet.size
-  const remainingCandidates = candidates.filter((c) => !surfacedSet.has(c.id))
+  const remainingCandidates = candidates
+    .filter((c) => !surfacedSet.has(c.id))
+    .slice(0, CLASS_PICKER_RESULT_LIMIT)
   const shouldShowAllSection =
     isEmptyQuery && (surfacedCount === 0 || surfacedCount < SUFFICIENT_HISTORY_THRESHOLD)
 

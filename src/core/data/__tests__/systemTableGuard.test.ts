@@ -2,8 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import type { DataField, DataTable } from '@core/data/schemas'
 import {
   assertSystemTableUpdateAllowed,
-  isBuiltInValueLocked,
-  lockedBuiltInCellKey,
+  protectedBuiltInCreateCellKey,
 } from '@core/data/systemTableGuard'
 
 function field(id: string, overrides: Partial<DataField> = {}): DataField {
@@ -29,34 +28,16 @@ function table(overrides: Partial<DataTable> = {}): DataTable {
   } as DataTable
 }
 
-describe('isBuiltInValueLocked', () => {
-  it('locks built-in values on structural system tables', () => {
+describe('protectedBuiltInCreateCellKey', () => {
+  it('flags a create payload that targets a protected built-in value', () => {
     const t = table()
-    expect(isBuiltInValueLocked(t, field('body', { builtIn: true }))).toBe(true)
-    expect(isBuiltInValueLocked(t, field('custom', { builtIn: false }))).toBe(false)
-  })
-
-  it('does NOT lock built-ins on posts (editorial post type)', () => {
-    const posts = table({ id: 'posts', kind: 'postType', system: true })
-    expect(isBuiltInValueLocked(posts, field('title', { builtIn: true }))).toBe(false)
-  })
-
-  it('does NOT lock anything on custom tables', () => {
-    const custom = table({ id: 'books', kind: 'data', system: false })
-    expect(isBuiltInValueLocked(custom, field('isbn', { builtIn: true }))).toBe(false)
-  })
-})
-
-describe('lockedBuiltInCellKey', () => {
-  it('flags a write that targets a locked built-in value', () => {
-    const t = table()
-    expect(lockedBuiltInCellKey(t, { body: 'x' })).toBe('body')
-    expect(lockedBuiltInCellKey(t, { custom: 'x' })).toBeNull()
+    expect(protectedBuiltInCreateCellKey(t, { body: 'x' })).toBe('body')
+    expect(protectedBuiltInCreateCellKey(t, { custom: 'x' })).toBeNull()
   })
 
   it('returns null on a custom table (nothing locked)', () => {
     const custom = table({ kind: 'data', system: false })
-    expect(lockedBuiltInCellKey(custom, { name: 'x', body: 'y' })).toBeNull()
+    expect(protectedBuiltInCreateCellKey(custom, { name: 'x', body: 'y' })).toBeNull()
   })
 })
 

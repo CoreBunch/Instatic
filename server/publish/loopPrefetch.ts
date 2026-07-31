@@ -12,9 +12,9 @@
 
 import type { Page, PageNode, SiteDocument } from '@core/page-tree'
 import type {
-  LoopEntitySource,
   LoopFetchResult,
   LoopItem,
+  PrefetchedLoopEntitySource,
   SourceFetchContext,
   SourceRequestContext,
 } from '@core/loops/types'
@@ -79,12 +79,15 @@ export function publishedDataRowToLoopItem(row: PublishedDataRow): LoopItem {
       versionNumber: row.versionNumber,
       tableId: row.tableId,
       tableSlug: row.tableSlug,
-      // People
-      author,
+      // People. `author` and `publishedBy` are the DISPLAY NAME, not the
+      // reference object — a binding lands in public HTML, and a non-scalar
+      // there used to be JSON-stringified, publishing display name, role slug
+      // and role name together. Every people key here is now a leaf.
+      author: author?.displayName ?? null,
       authorName: author?.displayName ?? null,
       authorRoleSlug: author?.roleSlug ?? null,
       authorRoleName: author?.roleName ?? null,
-      publishedBy,
+      publishedBy: publishedBy?.displayName ?? null,
       publishedByName: publishedBy?.displayName ?? null,
       publishedByRoleSlug: publishedBy?.roleSlug ?? null,
       publishedByRoleName: publishedBy?.roleName ?? null,
@@ -219,7 +222,7 @@ function readPageNumber(url: URL | undefined, loopNodeId: string): number {
  */
 async function resolveOneLoop(
   node: PageNode,
-  source: LoopEntitySource,
+  source: PrefetchedLoopEntitySource,
   ctx: { db: DbClient; site: SiteDocument; url?: URL; request?: SourceRequestContext },
 ): Promise<ResolvedLoopData> {
   const props = readLoopProps(node)
@@ -288,7 +291,7 @@ export async function prefetchLoopData(
     nodes.map(async (node) => {
       const props = readLoopProps(node)
       const source = props.sourceId ? loopSourceRegistry.get(props.sourceId) : undefined
-      if (!source) {
+      if (!source || source.kind === 'contextual') {
         return [
           node.id,
           { items: [], totalItems: 0, pageNumber: 1, hasMore: false },

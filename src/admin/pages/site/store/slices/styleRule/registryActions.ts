@@ -120,10 +120,23 @@ export function createRegistryActions({
         order: nextRuleOrder(site.styleRules),
         description: cls.description,
         styles: { ...cls.styles },
+        ...(cls.stylePriorities
+          ? { stylePriorities: { ...cls.stylePriorities } }
+          : {}),
         // Per-context overrides reference the shared site-level conditions
         // registry by id, so cloning the bags (independent copies) is enough —
         // no per-rule condition definitions to clone.
         contextStyles: cloneContextStyles(cls.contextStyles),
+        ...(cls.contextStylePriorities
+          ? {
+              contextStylePriorities: Object.fromEntries(
+                Object.entries(cls.contextStylePriorities).map(([contextId, priorities]) => [
+                  contextId,
+                  { ...priorities },
+                ]),
+              ),
+            }
+          : {}),
         tags: cls.tags ? [...cls.tags] : undefined,
         createdAt: now,
         updatedAt: now,

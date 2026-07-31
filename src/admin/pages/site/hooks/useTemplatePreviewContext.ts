@@ -10,8 +10,9 @@ import { useEditorStore } from '@site/store/store'
 /**
  * Build the canvas-side render context used by `resolveDynamicProps`.
  *
- * Always returns a populated context so bindings resolve live in the
- * editor without needing preview mode:
+ * Returns the context plus its post-type entry loading state so bindings
+ * resolve live in the editor and Agent evidence can wait for real preview
+ * data before capturing:
  *   - `page`, `site`, `route` — built from the in-memory site document
  *     and the currently active page. Match the values the publisher
  *     will compute at render time.
@@ -19,7 +20,13 @@ import { useEditorStore } from '@site/store/store'
  *     synthetic preview row from the table's schema. Loop iterations
  *     push/pop on top of this stack via `NodeRenderer`'s loop branch.
  */
-export function useTemplatePreviewContext(page: Page | null): TemplateRenderDataContext | undefined {
+interface TemplatePreviewContextState {
+  context: TemplateRenderDataContext | undefined
+  /** True while a post-type template's real preview row is still loading. */
+  loading: boolean
+}
+
+export function useTemplatePreviewContext(page: Page | null): TemplatePreviewContextState {
   // Read site once; the page argument is already reactive via the caller.
   const site = useEditorStore((s) => s.site)
 
@@ -37,7 +44,7 @@ export function useTemplatePreviewContext(page: Page | null): TemplateRenderData
   // Fetch a window of published rows once per table; the chosen row is picked
   // from it below so changing the preview selection never refetches. A failed
   // load resolves to an empty window so bindings stay empty rather than throw.
-  const { data: previewState } = useAsyncResource<{
+  const { data: previewState, loading } = useAsyncResource<{
     tableSlug: string
     items: TemplateRenderDataContext['entryStack']
     synthetic: TemplateRenderDataContext['entryStack'][number] | null
@@ -69,7 +76,8 @@ export function useTemplatePreviewContext(page: Page | null): TemplateRenderData
   // tableSlug; outside that, the stack stays empty so bindings against
   // currentEntry stay empty until the loop interceptor pushes a real
   // iteration on top.
-  if (!page || !site) return undefined
+  const previewEntryLoading = Boolean(tableSlug) && loading
+  if (!page || !site) return { context: undefined, loading: previewEntryLoading }
   let entryStack: TemplateRenderDataContext['entryStack'] = []
   if (tableSlug && previewState?.tableSlug === tableSlug) {
     // Selected row → first published row → synthetic sample (empty table).
@@ -81,12 +89,15 @@ export function useTemplatePreviewContext(page: Page | null): TemplateRenderData
   }
   const pageFrame = buildPageFrame(page)
   return {
-    entryStack,
-    page: pageFrame,
-    site: buildSiteFrame(site),
-    // Route frame mirrors what the published page will see. Editor
-    // doesn't have the real request URL, so we derive from the page's
-    // permalink — same shape, same fields.
-    route: buildRouteFrame(pageFrame.permalink),
+    loading: previewEntryLoading,
+    context: {
+      entryStack,
+      page: pageFrame,
+      site: buildSiteFrame(site),
+      // Route frame mirrors what the published page will see. Editor
+      // doesn't have the real request URL, so we derive from the page's
+      // permalink — same shape, same fields.
+      route: buildRouteFrame(pageFrame.permalink),
+    },
   }
 }

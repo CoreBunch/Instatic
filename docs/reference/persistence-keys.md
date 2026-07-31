@@ -24,7 +24,7 @@ Catalog of every `localStorage` / `sessionStorage` key the admin app writes, and
 | `instatic-clipboard-v1`                         | The editor clipboard (copy / cut / paste of layer subtrees)            | `src/admin/pages/site/store/clipboard/clipboardStorage.ts` → `CLIPBOARD_STORAGE_KEY` |
 | `instatic-class-usage`                          | Recently-used classes in the ClassPicker autocomplete                 | `src/admin/pages/site/preferences/classUsage.ts` → `CLASS_USAGE_STORAGE_KEY` |
 | `instatic-data-grid-primary-widths-v1`          | Per-table primary-column widths in the Data workspace grid            | `src/admin/pages/data/components/DataGrid/usePrimaryColumnWidth.ts` |
-| `instatic-media-page-view-mode`                 | Media workspace view mode (grid / list / large thumbs)                | `src/admin/pages/media/components/MediaCanvas/MediaCanvas.tsx`   |
+| `instatic-media-page-view-mode`                 | Shared Media workspace and media-gallery view mode (grid / list)      | `src/admin/pages/media/utils/viewMode.ts`                         |
 | `instatic-media-explorer-view-mode`             | Media Explorer panel view mode (site workspace)                       | `src/admin/pages/site/panels/MediaExplorerPanel/mediaExplorerUtils.ts` → `VIEW_MODE_STORAGE_KEY` |
 | `instatic-module-inserter-v1`                   | Module inserter view mode and recent inserts | `src/admin/pages/site/module-picker/moduleInserterPrefs.ts`      |
 | `instatic-onboarding-dismissed`                 | Dashboard onboarding panel: dismissed / open per-device              | `src/admin/pages/dashboard/hooks/useOnboardingState.ts`         |

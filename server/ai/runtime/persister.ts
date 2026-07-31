@@ -32,7 +32,7 @@ export interface ConversationsPersister {
     costUsd?: number
     cacheReadTokens?: number
     cacheCreationTokens?: number
-  }): Promise<void>
+  }): Promise<number>
   /**
    * Record one round's context size (input buckets). Kept in memory; the LAST
    * value seen this turn is the true "context used" and is written to the
@@ -127,12 +127,10 @@ export function createConversationsPersister(
 
     async recordUsage(usage) {
       // Persist usage as a denormalised update on the LAST assistant
-      // message so a per-message cost view is possible later. If no
-      // assistant message exists yet, the conversation totals will pick
-      // up the increment anyway (appendMessage bumps them per row), so we
-      // simply skip — the totals are still correct, only the per-message
-      // attribution is lost in that edge case.
-      if (!lastAssistantMessageId) return
+      // message so a per-message cost view is possible later. A normal turn
+      // always has a text or tool-call row by this point; if a non-conforming
+      // provider reports only usage, still resolve and return its wire cost but
+      // do not invent a blank message in persisted conversation history.
       // Driver-supplied cost wins (OpenRouter reports a native per-call USD
       // cost). When absent (Anthropic, OpenAI) we price from the live
       // OpenRouter catalogue, cache-aware; Ollama is free. Token counts are
@@ -148,6 +146,7 @@ export function createConversationsPersister(
           cacheCreationTokens: usage.cacheCreationTokens ?? 0,
         },
       )
+      if (!lastAssistantMessageId) return costUsd
       // Provider-normalised "context used now" snapshot for the conversation
       // row, restored by the meter on reload. Prefer the LAST round's context
       // (tracked via recordContext) — the true current context size. Fall back
@@ -171,6 +170,7 @@ export function createConversationsPersister(
         usage.cacheCreationTokens ?? 0,
         contextTokens,
       )
+      return costUsd
     },
   }
 }

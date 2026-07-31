@@ -8,6 +8,7 @@ const FULL: Parameters<typeof mcpToolsForCapabilities>[0] = [
   'site.structure.edit',
   'site.content.edit',
   'site.style.edit',
+  'pages.publish',
   'content.manage',
   'content.create',
   'content.edit.any',
@@ -23,6 +24,7 @@ describe('mcp registry', () => {
     const names = tools.map((t) => t.name)
     // headless (server-resolved) reads
     expect(names).toContain('site_read_styles') // headless design-system read
+    expect(names).toContain('site_publish') // explicit full-site deployment
     expect(names).toContain('content_list_collections')
     // browser-execution editing (relayed via the editor bridge)
     expect(names).toContain('site_insert_html')
@@ -65,5 +67,13 @@ describe('mcp registry', () => {
     expect(tools.some((t) => t.mutates)).toBe(false)
     expect(tools.some((t) => t.name === 'mutate_page_tree')).toBe(false)
     expect(tools.some((t) => t.name === 'site_insert_html')).toBe(false)
+  })
+
+  it('only exposes full-site publish when both write and publish capabilities are granted', () => {
+    expect(mcpToolsForCapabilities(FULL).map((t) => t.name)).toContain('site_publish')
+    expect(mcpToolsForCapabilities(FULL.filter((c) => c !== 'pages.publish')).map((t) => t.name))
+      .not.toContain('site_publish')
+    expect(mcpToolsForCapabilities(FULL.filter((c) => c !== 'ai.tools.write')).map((t) => t.name))
+      .not.toContain('site_publish')
   })
 })

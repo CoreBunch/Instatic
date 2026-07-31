@@ -9,14 +9,18 @@
 
 // Slice factory + its public contract.
 export { createAgentSlice } from './agentSlice'
-export type { AgentSlice, AgentSliceConfig } from './agentSliceTypes'
+export type {
+  AgentConversationUsage,
+  AgentSlice,
+  AgentSliceConfig,
+} from './agentSliceTypes'
 
 // Site-editor wiring (scope, snapshot, dispatcher) handed to the factory.
 export { siteAgentSliceConfig } from './agentSliceConfig.site'
 
 // Stream protocol — schema + per-event reducer + NDJSON reader.
 export { processStreamEvent } from './streamEvents'
-export { readNdjsonStream } from './ndjsonStream'
+export { rehydrateMessages } from './agentApi'
 
 // Site-specific snapshot builder — emits the raw authoritative tree the server
 // renders into the agent's HTML read surface.
@@ -24,7 +28,13 @@ export { buildCurrentPageContext } from './pageContext'
 
 // Browser-side tool dispatch + render evidence + markdown rendering.
 export { executeAgentTool } from './executor'
-export { captureAgentRenderSnapshot, SnapshotNodeNotFoundError } from './renderEvidence'
+export {
+  captureAgentRenderSnapshot,
+  findAgentRenderFrame,
+  waitForAgentRenderFrame,
+  SnapshotNodeNotFoundError,
+} from './renderEvidence'
+export type { AgentRenderFrameQuery } from './renderEvidence'
 export { renderMarkdownToHtml } from './markdown'
 
 // Store handle wiring.

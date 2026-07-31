@@ -30,7 +30,7 @@ import type {
 } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import type { LoopEntitySource } from '@core/loops/types'
-import type { ActiveDocument, PanelState, FocusedPanel, PropertiesPanelMode } from '../../store/slices/uiSlice'
+import type { ActiveDocument, PanelState, FocusedPanel, PanelMode } from '../../store/slices/uiSlice'
 
 const DEFAULT_WIDTH = 360
 const MIN_WIDTH = 280
@@ -82,7 +82,7 @@ interface PropertiesPanelData {
   // ─── Panel chrome actions ──────────────────────────────────────────────
   setStatusMessage: (msg: string) => void
   togglePropertiesPanel: () => void
-  setPropertiesPanelMode: (mode: PropertiesPanelMode) => void
+  setPropertiesPanelMode: (mode: PanelMode) => void
   setFocusedPanel: (panel: FocusedPanel) => void
   renameClass: (classId: string, name: string) => void
   deleteClass: (classId: string) => void

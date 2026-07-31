@@ -28,31 +28,31 @@ async function readUntil(
 describe('editor bridge', () => {
   it('registers a bridge for the user on connect and clears it on disconnect', async () => {
     const userId = `u_${Math.floor(performance.now())}`
-    expect(getEditorBridgeForUser(userId)).toBeNull()
-    expect(hasEditorBridge(userId)).toBe(false)
+    expect(getEditorBridgeForUser(userId, 'site')).toBeNull()
+    expect(hasEditorBridge(userId, 'site')).toBe(false)
 
     const ctrl = new AbortController()
-    const stream = createEditorBridgeStream(userId, ctrl.signal)
+    const stream = createEditorBridgeStream(userId, 'site', ctrl.signal)
     const reader = stream.getReader()
     const ready = await readUntil(reader, (e) => e.type === 'bridgeReady')
     expect(typeof ready.bridgeId).toBe('string')
-    expect(getEditorBridgeForUser(userId)).not.toBeNull()
+    expect(getEditorBridgeForUser(userId, 'site')).not.toBeNull()
 
     ctrl.abort()
     // Give the abort listener a tick to run.
     await reader.read().catch(() => {})
-    expect(getEditorBridgeForUser(userId)).toBeNull()
+    expect(getEditorBridgeForUser(userId, 'site')).toBeNull()
   })
 
   it('relays a tool call to the stream and resolves on the result POST', async () => {
     const userId = `u_${Math.floor(performance.now())}_2`
     const ctrl = new AbortController()
-    const stream = createEditorBridgeStream(userId, ctrl.signal)
+    const stream = createEditorBridgeStream(userId, 'site', ctrl.signal)
     const reader = stream.getReader()
     const ready = await readUntil(reader, (e) => e.type === 'bridgeReady')
     const bridgeId = ready.bridgeId as string
 
-    const bridge = getEditorBridgeForUser(userId)!
+    const bridge = getEditorBridgeForUser(userId, 'site')!
     const callPromise = bridge.callBrowser('site_insert_html', { html: '<p>hi</p>' })
 
     const toolRequest = await readUntil(reader, (e) => e.type === 'toolRequest')
@@ -69,5 +69,66 @@ describe('editor bridge', () => {
 
     ctrl.abort()
     await reader.read().catch(() => {})
+  })
+
+  it('keeps Site and Content bridges connected independently for one user', async () => {
+    const userId = `u_${Math.floor(performance.now())}_scoped`
+    const siteCtrl = new AbortController()
+    const contentCtrl = new AbortController()
+    const siteReader = createEditorBridgeStream(userId, 'site', siteCtrl.signal).getReader()
+    const contentReader = createEditorBridgeStream(userId, 'content', contentCtrl.signal).getReader()
+
+    await Promise.all([
+      readUntil(siteReader, (e) => e.type === 'bridgeReady'),
+      readUntil(contentReader, (e) => e.type === 'bridgeReady'),
+    ])
+    expect(hasEditorBridge(userId, 'site')).toBe(true)
+    expect(hasEditorBridge(userId, 'content')).toBe(true)
+
+    siteCtrl.abort()
+    await siteReader.read().catch(() => {})
+    expect(hasEditorBridge(userId, 'site')).toBe(false)
+    expect(hasEditorBridge(userId, 'content')).toBe(true)
+
+    contentCtrl.abort()
+    await contentReader.read().catch(() => {})
+    expect(hasEditorBridge(userId, 'content')).toBe(false)
+  })
+
+  it('clears a bridge when the stream consumer cancels without aborting the request', async () => {
+    const userId = `u_${Math.floor(performance.now())}_cancelled`
+    const ctrl = new AbortController()
+    const reader = createEditorBridgeStream(userId, 'site', ctrl.signal).getReader()
+
+    await readUntil(reader, (e) => e.type === 'bridgeReady')
+    expect(hasEditorBridge(userId, 'site')).toBe(true)
+
+    await reader.cancel()
+    expect(ctrl.signal.aborted).toBe(false)
+    expect(hasEditorBridge(userId, 'site')).toBe(false)
+  })
+
+  it('does not evict the newest bridge when a superseded consumer disconnects', async () => {
+    const userId = `u_${Math.floor(performance.now())}_superseded`
+    const firstReader = createEditorBridgeStream(
+      userId,
+      'site',
+      new AbortController().signal,
+    ).getReader()
+    await readUntil(firstReader, (e) => e.type === 'bridgeReady')
+
+    const secondReader = createEditorBridgeStream(
+      userId,
+      'site',
+      new AbortController().signal,
+    ).getReader()
+    await readUntil(secondReader, (e) => e.type === 'bridgeReady')
+    expect(hasEditorBridge(userId, 'site')).toBe(true)
+
+    await firstReader.cancel()
+    expect(hasEditorBridge(userId, 'site')).toBe(true)
+
+    await secondReader.cancel()
+    expect(hasEditorBridge(userId, 'site')).toBe(false)
   })
 })

@@ -1,0 +1,33 @@
+.handle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    z-index: 4;
+    width: 20px;
+    height: 20px;
+    cursor: nwse-resize;
+    outline: none;
+}
+
+.handle::after {
+    content: "";
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    width: 7px;
+    height: 7px;
+    border-right: 1px solid var(--overlay-30);
+    border-bottom: 1px solid var(--overlay-30);
+    transition: border-color 120ms ease;
+}
+
+.handle:hover::after,
+.handle:focus-visible::after {
+    border-color: var(--overlay-70);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .handle::after {
+        transition: none;
+    }
+}

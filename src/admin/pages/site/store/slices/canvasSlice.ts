@@ -9,6 +9,11 @@ import {
 
 type CanvasMode = 'select' | 'pan' | 'insert'
 
+interface AgentSnapshotCaptureRequest {
+  requestId: string
+  breakpointId: string
+}
+
 /**
  * Canvas render mode.
  *
@@ -71,6 +76,13 @@ interface CanvasSlice {
    * the frame entirely via Settings). Reloading the editor clears it.
    */
   collapsedBreakpointIds: string[]
+  /**
+   * One ephemeral, offscreen frame requested by `site_render_snapshot` when the
+   * exact viewport is not already mounted on the visible canvas. This is editor
+   * session state only: it never changes the active viewport, canvas mode, or
+   * persisted breakpoint configuration.
+   */
+  agentSnapshotCaptureRequest: AgentSnapshotCaptureRequest | null
 
   setZoom: (zoom: number) => void
   setPan: (x: number, y: number) => void
@@ -85,6 +97,8 @@ interface CanvasSlice {
   setRunScripts: (run: boolean) => void
   /** Toggle whether a breakpoint's design-canvas frame is collapsed to its slim header. */
   toggleBreakpointCollapsed: (id: string) => void
+  /** Mount or release the agent's one-shot offscreen snapshot frame. */
+  setAgentSnapshotCaptureRequest: (request: AgentSnapshotCaptureRequest | null) => void
   resetView: () => void
   /**
    * Step zoom up to the next preset level. When `originX`/`originY` are
@@ -117,6 +131,7 @@ export const createCanvasSlice: EditorStoreSliceCreator<CanvasSlice> = (set, get
   canvasView: 'design',
   runScripts: false,
   collapsedBreakpointIds: [],
+  agentSnapshotCaptureRequest: null,
 
   setZoom: (zoom) => set({ zoom: clampZoom(zoom) }),
 
@@ -146,6 +161,10 @@ export const createCanvasSlice: EditorStoreSliceCreator<CanvasSlice> = (set, get
     const idx = s.collapsedBreakpointIds.indexOf(id)
     if (idx === -1) s.collapsedBreakpointIds.push(id)
     else s.collapsedBreakpointIds.splice(idx, 1)
+  }),
+
+  setAgentSnapshotCaptureRequest: (agentSnapshotCaptureRequest) => set({
+    agentSnapshotCaptureRequest,
   }),
 
   resetView: () => set({ zoom: RESET_ZOOM, panX: 0, panY: 0 }),

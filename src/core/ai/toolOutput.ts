@@ -24,6 +24,15 @@ export const AiToolOutputSchema = Type.Object({
 
 export type AiToolOutput = Static<typeof AiToolOutputSchema>
 
+/**
+ * Canonical failure for a persisted tool call whose matching result never
+ * landed because its turn was interrupted (reload, disconnect, or restart).
+ * Shared by provider-history healing and browser conversation rehydration so
+ * the model and the user see the same terminal outcome.
+ */
+export const INTERRUPTED_TOOL_RESULT_ERROR =
+  'Tool call did not complete — the previous turn was interrupted before a result was produced.'
+
 export function aiToolOk(data?: unknown, images?: AiToolImage[]): AiToolOutput {
   const out: AiToolOutput = { ok: true }
   if (data !== undefined) out.data = data

@@ -9,8 +9,15 @@
 
 import { NodeTreeSchema, type NodeTree } from '@core/page-tree'
 import type { BaseNode } from '@core/page-tree'
-import { DataFieldSchema, type DataField, type DataRowCells, type DataTable } from './schemas'
-import { dataTableHasField } from './fields'
+import {
+  DataFieldSchema,
+  RepeaterValueSchema,
+  type DataField,
+  type DataRowCells,
+  type DataTable,
+  type RepeaterValue,
+} from './schemas'
+import { dataTableHasField, isPostTypeBuiltInFieldId } from './fields'
 import { slugFromTitle } from '@core/utils/slug'
 import { safeParseValue } from '@core/utils/typeboxHelpers'
 
@@ -38,6 +45,16 @@ export function readStringArrayCell(cells: DataRowCells, fieldId: string): strin
   const value = cells[fieldId]
   if (!Array.isArray(value)) return []
   return value.filter((item): item is string => typeof item === 'string')
+}
+
+/**
+ * Read an ordered repeater value. Malformed legacy or manually-edited values
+ * resolve to an empty collection instead of leaking an untyped shape into
+ * record editors and loop projection.
+ */
+export function readRepeaterCell(cells: DataRowCells, fieldId: string): RepeaterValue {
+  const result = safeParseValue(RepeaterValueSchema, cells[fieldId])
+  return result.ok ? result.value : []
 }
 
 /**
@@ -78,6 +95,18 @@ export function readSeoTitleCell(cells: DataRowCells): string {
 
 export function readSeoDescriptionCell(cells: DataRowCells): string {
   return readStringCell(cells, 'seoDescription')
+}
+
+/**
+ * The subset of a row's cells that belongs to CUSTOM (non-built-in) fields.
+ * The Content authoring UI edits the post-type built-ins through dedicated
+ * inputs (title, slug, body, featured media, SEO); everything else is a
+ * user-defined field edited generically. Key order follows the input record.
+ */
+export function stripPostTypeBuiltInCells(cells: DataRowCells): DataRowCells {
+  return Object.fromEntries(
+    Object.entries(cells).filter(([fieldId]) => !isPostTypeBuiltInFieldId(fieldId)),
+  )
 }
 
 /**

@@ -22,11 +22,19 @@ export {
 } from './operationSchema'
 export { PageSchema } from './page'
 export {
+  CSSDeclarationPriorityBagSchema,
   StyleRuleSchema,
   classKindSelector,
   classifySelectorCreateInput,
   parseStyleRule,
 } from './styleRule'
+export {
+  extractCssSelectorClasses,
+  replaceCssSelectorClassName,
+  selectorBindingClassName,
+  splitCssSelectorList,
+} from './cssSelectorClasses'
+export type { CssSelectorClassToken } from './cssSelectorClasses'
 export { SiteShellSchema } from './siteDocument'
 export {   parsePageTemplate } from './pageTemplate'
 
@@ -38,7 +46,12 @@ export type { PageNode } from './pageNode'
 export type { TreeOperation, TreeMutateResult } from './operationSchema'
 export type { Page } from './page'
 export type { CSSPropertyBag } from './cssPropertyBag'
-export type { SelectorCreateInput, StyleRule, StyleRuleKind } from './styleRule'
+export type {
+  CSSDeclarationPriorityBag,
+  SelectorCreateInput,
+  StyleRule,
+  StyleRuleKind,
+} from './styleRule'
 export type { Condition, ConditionDef } from './condition'
 export type { SiteSettings } from './siteSettings'
 export type { SiteShell, SiteDocument } from './siteDocument'

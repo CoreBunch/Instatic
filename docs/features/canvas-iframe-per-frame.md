@@ -8,9 +8,10 @@ Each viewport frame runs in its own `<iframe>` with its own `<html><body>`. The 
 
 ## TL;DR
 
-- `IframeFrameSurface` is the iframe primitive. It boots from an empty `srcDoc`, captures the iframe document, and mounts children via `createPortal(tree, iframeDoc.body)`.
+- `IframeFrameSurface` is the iframe primitive. It boots from a sentinel-tagged empty `srcDoc`, ignores the browser's short-lived initial `about:blank` document, and mounts children once via `createPortal(tree, iframeDoc.body)` only after the final document is ready. `CanvasDocumentContext` exposes that document to body ownership/evidence helpers without inserting probe elements into authored DOM.
 - **Design mode** renders one `IframeFrameSurface` per framed viewport context inside `CanvasTransformLayer` (pan/zoom). All frames mount as soon as the page document is in the store — the tree is already in memory, so there is nothing to stagger; `CanvasTransformLayer` renders skeleton frames only while the document itself hasn't loaded yet (`page === null`). **Live mode** renders a single real-size `IframeFrameSurface` inside `CanvasLiveSurface` (normal scroll).
 - Both modes are fully editable — click-to-select, properties panel, structural edits all work. Neither is a read-only preview.
+- Agent evidence can request any configured viewport. Each capture renders once through an offscreen `AgentSnapshotFrame` at the configured width, then removes it without changing the visible canvas state.
 - CSS arrives in each iframe via three injectors: `EditorChromeInjector` (unlayered), `ClassStyleInjector` (`@layer user-authored`), `UserStylesheetInjector` (`@layer user-authored`).
 - Wheel, pointer, and keyboard events are forwarded from inside the iframe to the parent's gesture / reorder-drag / shortcut handlers. `Tab` is blocked to prevent tab-walking inside the design preview.
 - Plugin canvas modules use a separate, sandboxed `ModuleSandboxFrame` (not `IframeFrameSurface`).
@@ -73,6 +74,18 @@ Frames mount as soon as the page document is in the store. The node tree is alre
 (An earlier version staged inactive frames behind a `requestAnimationFrame` → `setTimeout` → `requestIdleCallback` chain. That was an unmeasured optimization for a cost — mounting in-memory trees — that is cheap in practice, and it could strand frames as skeletons forever whenever `requestAnimationFrame` was suspended, e.g. a backgrounded tab or a headless CI runner. It was removed in favour of mounting directly.)
 
 The active viewport context (highlighted, drives style override routing) is tracked by `activeBreakpointId` in `canvasSlice`.
+
+### Agent evidence frames
+
+`site_render_snapshot` always asks `CanvasRoot` to mount one `AgentSnapshotFrame` through a portal outside the canvas clipping/transform layers. It uses the same `IframeFrameSurface`, `CanvasComposedTree`, breakpoint context, class CSS, and user stylesheet path as the editor, at the breakpoint's configured width. A deterministic transient path avoids capturing a visible frame midway through an asynchronous preview fetch and makes Live/collapsed/disabled-frame state irrelevant. The frame sits offscreen rather than using `display:none`, so it has real layout geometry for evidence collection.
+
+This frame is transient editor-session state. It does not change the active viewport, Design/Live mode, pan/zoom, or collapsed frame ids, and it never runs authored runtime scripts (a read must not duplicate arbitrary side effects or network calls). A revisioned readiness tracker covers post-type preview rows, loop data, and media metadata; capture additionally waits for fonts, React/DOM settling, and cloned image/background embedding. The request-specific marker is stored on the host iframe rather than authored DOM. The executor captures only after that marker appears and releases the request in `finally`. Explicit breakpoint lookup is exact; it never substitutes another frame.
+
+### Body presentation and snapshot paint
+
+The iframe's real `<body>` owns the root node's classes, inline styles, and sanitized authored HTML attributes, matching the publisher's `<body class="…" style="…" data-…>`. `applyIframeBodyPresentation` is shared by the editable `base.body` component and template composition, where the outermost wrapper body owns the published body. Both consume `CanvasDocumentContext` and render no editor-only probe child, so `body > :first-child`, `:nth-child`, sibling, and `:empty` selectors see the published structure. The helper restores only the declarations/attributes it touched; design-frame height/overflow declarations remain owned by the grow-to-content reset, while Live keeps authored body sizing exactly as published.
+
+Agent screenshots preserve the complete document paint. A full capture rasterises `<html>` at the exact iframe viewport width and full document height; a node-scoped capture rasterises the same HTML/body/ancestor context and crops it to the target rectangle instead of detaching the transparent subtree. The raster fallback is composited behind the finished page pixels, so it cannot overwrite authored colors, gradients, or background images.
 
 **Initial centering on load and document switch.** The transform layer always starts at pan `(0, 0)`, which places the leftmost (narrowest) frame at the top-left. On first load and whenever the active document changes (page switch, entering/leaving a Visual Component), `CanvasRoot` runs a `useEffect` keyed on `canvasPage.id` that calls `useCanvas().centerOnBreakpointFrame` to pan the canvas so the active breakpoint frame is horizontally centered and its top sits just below the viewport top. The geometry is computed by `panToCenterBreakpointFrame` in `canvasDomGeometry.ts`. The effect retries on a short `setTimeout` loop (not `requestAnimationFrame`, which is skipped for backgrounded tabs) until the iframe-backed frames have real layout geometry. The current zoom is preserved; only the pan changes. Breakpoint switches within the same document (toolbar, node clicks) do not re-center — the designer keeps their place. See [docs/features/editor-preferences.md](editor-preferences.md) for how the `defaultBreakpoint` preference plugs into this.
 
@@ -198,6 +211,7 @@ Tests that render the canvas and query nodes must use the `iframeCanvasQuery.ts`
 - Source-of-truth files:
   - `src/admin/pages/site/canvas/IframeFrameSurface.tsx` — iframe primitive
   - `src/admin/pages/site/canvas/CanvasLiveSurface.tsx` — live mode surface
+  - `src/admin/pages/site/canvas/AgentSnapshotFrame.tsx` — one-shot offscreen frame for exact Agent breakpoint evidence
   - `src/admin/pages/site/canvas/BreakpointFrame.tsx` — design mode per-viewport frame
   - `src/admin/pages/site/canvas/CanvasTransformLayer.tsx` — design mode pan/zoom container; renders all frames once the document loads, skeleton frames while it hasn't
   - `src/admin/shared/CanvasFrameSkeleton/CanvasFrameSkeleton.tsx` — shared frame skeleton for the document-loading / startup states

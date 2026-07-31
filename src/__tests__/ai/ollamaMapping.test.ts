@@ -1,6 +1,7 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { Type } from '@core/utils/typeboxHelpers'
 import { ollamaDriver } from '../../../server/ai/drivers/ollama'
+import { resolveModelCapabilities } from '../../../server/ai/drivers/modelCapabilities'
 import {
   ChatCompletionsTurnTranslator,
   mapChatHistory,
@@ -69,15 +70,38 @@ describe('Ollama mapChatHistory', () => {
 
   test('maps an image-bearing user turn to OpenAI content parts', () => {
     const history: AiMessage[] = [
-      { role: 'user', content: [{ kind: 'image', mimeType: 'image/png', data: 'B64' }, { kind: 'text', text: 'see' }] },
+      {
+        role: 'user',
+        content: [
+          { kind: 'text', text: 'compare' },
+          { kind: 'image', mimeType: 'image/jpeg', data: 'B64-1' },
+          { kind: 'image', mimeType: 'image/jpeg', data: 'B64-2' },
+        ],
+      },
     ]
     const mapped = mapChatHistory([], history).flat()
     expect(mapped).toEqual([
       {
         role: 'user',
         content: [
-          { type: 'image_url', image_url: { url: 'data:image/png;base64,B64' } },
-          { type: 'text', text: 'see' },
+          { type: 'text', text: 'compare' },
+          { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,B64-1' } },
+          { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,B64-2' } },
+        ],
+      },
+    ])
+  })
+
+  test('maps an image-only user turn without inventing text', () => {
+    const history: AiMessage[] = [
+      { role: 'user', content: [{ kind: 'image', mimeType: 'image/jpeg', data: 'B64' }] },
+    ]
+
+    expect(mapChatHistory([], history).flat()).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,B64' } },
         ],
       },
     ])
@@ -144,7 +168,7 @@ function makeRequest(serverCalls: unknown[]): AiStreamRequest {
     messages: [{ role: 'user', content: [{ kind: 'text', text: 'go' }] }],
     tools: [echoTool],
     modelId: 'llama3.3',
-    modelCapabilities: { toolCalling: true, visionInput: false, promptCache: false, streaming: true },
+    modelCapabilities: { toolCalling: true, visionInput: false, toolResultImages: false, promptCache: false, streaming: true },
     credentials: { id: 'cr', providerId: 'ollama', authMode: 'baseUrl', apiKey: null, baseUrl: 'http://localhost:11434' },
     signal: new AbortController().signal,
     bridge,
@@ -191,5 +215,93 @@ describe('runToolLoop via ollamaDriver', () => {
     expect(usage).toBeDefined()
     expect(usage!.promptTokens).toBe(45)
     expect(usage!.completionTokens).toBe(15)
+  })
+})
+
+describe('Ollama live model capabilities', () => {
+  test('uses /api/show to distinguish vision and text-only installed models', async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString()
+      requests.push({ url, init })
+
+      if (url === 'http://localhost:11434/api/tags') {
+        return Response.json({
+          models: [
+            { name: 'llava:latest' },
+            { model: 'llama3.3:latest' },
+          ],
+        })
+      }
+
+      expect(url).toBe('http://localhost:11434/api/show')
+      const body = JSON.parse(init?.body as string) as { model: string }
+      return Response.json({
+        capabilities: body.model === 'llava:latest'
+          ? ['completion', 'vision']
+          : ['completion'],
+      })
+    }) as typeof fetch
+
+    const models = await ollamaDriver.listModels({
+      id: 'credential-1',
+      providerId: 'ollama',
+      authMode: 'baseUrl',
+      apiKey: 'proxy-secret',
+      baseUrl: 'http://localhost:11434/',
+    })
+
+    expect(models).toEqual([
+      expect.objectContaining({
+        id: 'llava:latest',
+        catalogueSource: 'live',
+        capabilities: expect.objectContaining({ visionInput: true }),
+      }),
+      expect.objectContaining({
+        id: 'llama3.3:latest',
+        catalogueSource: 'live',
+        capabilities: expect.objectContaining({ visionInput: false }),
+      }),
+    ])
+    expect(requests.map(({ url }) => url)).toEqual([
+      'http://localhost:11434/api/tags',
+      'http://localhost:11434/api/show',
+      'http://localhost:11434/api/show',
+    ])
+    expect(requests.slice(1).map(({ init }) => ({
+      method: init?.method,
+      contentType: (init?.headers as Record<string, string>)['content-type'],
+      authorization: (init?.headers as Record<string, string>).Authorization,
+    }))).toEqual([
+      { method: 'POST', contentType: 'application/json', authorization: 'Bearer proxy-secret' },
+      { method: 'POST', contentType: 'application/json', authorization: 'Bearer proxy-secret' },
+    ])
+    expect(requests[0]?.init?.headers).toEqual({ Authorization: 'Bearer proxy-secret' })
+  })
+
+  test('resolves only the selected model, fails closed over a positive fallback, and authenticates', async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString()
+      requests.push({ url, init })
+      return Response.json({ capabilities: ['completion'] })
+    }) as typeof fetch
+
+    const capabilities = await resolveModelCapabilities(ollamaDriver, {
+      id: 'proxy-credential',
+      providerId: 'ollama',
+      authMode: 'baseUrl',
+      apiKey: 'proxy-secret',
+      baseUrl: 'http://localhost:11434/',
+    }, 'llama4')
+
+    expect(capabilities.visionInput).toBe(false)
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.url).toBe('http://localhost:11434/api/show')
+    expect(requests[0]?.init?.method).toBe('POST')
+    expect(requests[0]?.init?.headers).toEqual({
+      'content-type': 'application/json',
+      Authorization: 'Bearer proxy-secret',
+    })
   })
 })

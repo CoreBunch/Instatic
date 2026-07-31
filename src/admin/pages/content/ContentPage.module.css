@@ -266,6 +266,26 @@
     font-size: var(--text-xs);
 }
 
+/* Custom (non-built-in) collection fields, rendered generically via
+ * CellEditorRenderer. The label style is scoped to the DIRECT child span —
+ * the cell editors nest their own spans (media filename, relation display)
+ * that must keep their own styling. */
+.customField {
+    display: grid;
+    gap: var(--space-s);
+}
+
+.customField > span {
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+    font-weight: 750;
+}
+
+.customField > small {
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+}
+
 @media (max-width: 720px) {
     .documentScroll {
         padding: var(--space-11xl) var(--space-2xl) var(--space-9xl);

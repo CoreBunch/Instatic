@@ -97,10 +97,23 @@ const HTML_ATTRIBUTE_MODULES = new Set([
   'base.link',
   'base.button',
   'base.image',
+  // A form is the anchor an authored progressive-enhancement script binds to,
+  // so its safe data-* / ARIA attributes have to survive import like any other
+  // element's. Without this the hooks silently vanish and the script no-ops.
+  'base.form',
 ])
 
 const MODULE_GENERATED_ATTRIBUTE_NAMES: Record<string, readonly string[]> = {
   'base.button': ['aria-disabled', 'disabled', 'href', 'rel', 'target', 'type'],
+  'base.form': [
+    'action',
+    'data-instatic-form-id',
+    'data-instatic-form-mode',
+    'data-instatic-success-message',
+    'data-instatic-success-redirect',
+    'data-instatic-target-table',
+    'method',
+  ],
   'base.image': [
     'alt',
     'decoding',

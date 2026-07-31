@@ -9,7 +9,6 @@ import {
   openSiteEditor,
   openSitePanel,
   publishDraft,
-  saveDraft,
   setPropValue,
 } from './helpers'
 
@@ -56,7 +55,6 @@ test.describe('forms', () => {
       await insertModuleViaPicker(page, 'base.form-message')
       await selectPropertyOption(page, 'kind', 'Success')
 
-      await saveDraft(page)
       await publishDraft(page)
       return created
     })
@@ -115,7 +113,6 @@ test.describe('forms', () => {
       await setPropValue(page, 'formId', formId)
       await selectPropertyOption(page, 'kind', 'Error')
 
-      await saveDraft(page)
       await publishDraft(page)
       return created
     })
@@ -264,7 +261,9 @@ async function expectPublishedFormAssets(
   page: Page,
   responses: PublicAssetResponse[],
 ): Promise<void> {
-  await expect(page.locator('link[rel="stylesheet"][href*="/_instatic/css/"]')).toHaveCount(1)
+  await expect(
+    page.locator('link[rel="stylesheet"][href*="/_instatic/css/reset-"]'),
+  ).toHaveCount(1)
   await expect(page.locator('script[src*="/_instatic/module-js/base.form.js"]')).toHaveCount(1)
   await expectPublicAssetResponse(responses, /^\/_instatic\/css\/.+\.css$/, 'text/css')
   await expectPublicAssetResponse(

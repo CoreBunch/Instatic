@@ -52,9 +52,14 @@ async function handleAiToolResult(req: Request, db: DbClient): Promise<Response>
 
   const matched = resolveBridgeToolResult(bridgeId, requestId, result, snapshot)
   if (!matched) {
-    // Bridge gone or unknown requestId — likely the stream was aborted
-    // before the browser's POST arrived. Not a fatal client error.
-    return jsonResponse({ ok: false }, { status: 404 })
+    // The browser completed work for a turn this runtime no longer owns — most
+    // commonly after a server restart. The active chat client must abort its
+    // old response instead of silently waiting 90 seconds and letting the
+    // model retry the same tool repeatedly.
+    return jsonResponse(
+      { error: 'The AI tool bridge is no longer active. The server may have restarted; send the message again.' },
+      { status: 404 },
+    )
   }
   return jsonResponse({ ok: true })
 }

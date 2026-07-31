@@ -34,7 +34,6 @@ const DocumentStatus = Type.Union([
 const CreateDocumentInput = Type.Object({
   tableId: Type.String({ minLength: 1 }),
   fields: Type.Optional(FieldsRecord),
-  status: Type.Optional(DocumentStatus),
 })
 
 // ---------------------------------------------------------------------------
@@ -68,7 +67,7 @@ const createDocumentTool: AiTool = {
   execution: 'browser',
   requiredCapabilities: ['content.create'],
   description:
-    "Create a new document in `tableId`. `fields` is a Record<fieldId, value> per the collection's schema; omit to create an empty draft. `status` defaults to 'draft'. Success data includes the new id as `documentId`; the bridge auto-switches the user's editor to the new doc so they can see what you built.",
+    "Create a new draft document in `tableId`. `fields` is a Record<fieldId, value> per the collection's schema; omit to create an empty draft. Success data includes the new id as `documentId`; the bridge auto-switches the user's editor to the new doc so they can see what you built. Use content_set_document_status separately to publish or schedule it.",
   inputSchema: CreateDocumentInput,
 }
 
@@ -126,7 +125,7 @@ const setDocumentFieldTool: AiTool = {
   execution: 'browser',
   requiredCapabilities: DOCUMENT_EDIT_CAPS,
   description:
-    "Write one field on a document. `value` shape depends on the field type (read content_get_collection_schema first if unsure): text/longText/richText/url/email → string; number → number; boolean → boolean; date/dateTime → ISO string; select → option id; multiSelect → option id[]; media → { id } or { id }[]; relation → { rowId } or { rowId }[]; body → markdown string. Bridge converts markdown ↔ Tiptap automatically for body.",
+    "Write one field on a document. The document MUST be the active one — call content_set_active_document first, or the write is refused. (content_create_document leaves the new document active, so create-then-fill needs no extra call.) `value` shape depends on the field type (read content_get_collection_schema first if unsure): text/longText/richText/url/email → string; number → number; boolean → boolean; date/dateTime → ISO string; select → option id; multiSelect → option id[]; media → { id } or { id }[]; relation → { rowId } or { rowId }[]; body → markdown string. Bridge converts markdown ↔ Tiptap automatically for body.",
   inputSchema: SetDocumentFieldInput,
 }
 
@@ -145,7 +144,7 @@ const setDocumentFieldsTool: AiTool = {
   execution: 'browser',
   requiredCapabilities: DOCUMENT_EDIT_CAPS,
   description:
-    'Batch-write multiple fields on one document. `fields` is Record<fieldId, value>; same per-type shapes as content_set_document_field. Prefer this when generating a whole post (title + slug + body + seo* in one call).',
+    'Batch-write multiple fields on one document. The document MUST be the active one — call content_set_active_document first, or the write is refused. `fields` is Record<fieldId, value>; same per-type shapes as content_set_document_field. Prefer this when generating a whole post (title + slug + body + seo* in one call), and when filling several documents in sequence set each one active before writing to it.',
   inputSchema: SetDocumentFieldsInput,
 }
 

@@ -9,8 +9,7 @@
  * ----------------
  * Two layers:
  *   1. `subscribeToEditorPrefsChanged()` — low-level event bus used by
- *      non-React consumers (e.g. `usePersistence.ts`'s scheduler) that need to
- *      react to changes imperatively.
+ *      non-React consumers that need to react to changes imperatively.
  *   2. `useEditorPreference(id)` — React hook that reads a value, subscribes
  *      to the bus, and re-renders when the value changes. This is the
  *      preferred path for components.
@@ -76,9 +75,9 @@ const DEFAULT_EDITOR_PREFS: Required<EditorPrefs> = (() => {
 // ---------------------------------------------------------------------------
 // Storage IO + in-memory cache
 //
-// `readEditorPrefs` is called on every preference read (auto-save scheduler
-// tick, every `useEditorPreference` mount, every command-palette telemetry
-// fan-out, etc.). The dominant per-read cost is `JSON.parse` + TypeBox
+// `readEditorPrefs` is called on every preference read (every
+// `useEditorPreference` mount, every command-palette telemetry fan-out,
+// etc.). The dominant per-read cost is `JSON.parse` + TypeBox
 // validation (~0.5 ms), not `localStorage.getItem` itself. We cache the
 // PARSED snapshot alongside the raw string it was parsed from. Every read
 // still does a fast `localStorage.getItem` and compares raw strings: a
@@ -170,7 +169,7 @@ function writeEditorPrefs(next: EditorPrefs): void {
 //
 // Two flavours: boolean and string (for select / select-dynamic). Each is
 // strongly typed against the catalog so calling
-//   readEditorPreference('autoSaveDelay')   // string preference id
+//   readEditorPreference('density')          // string preference id
 // against the boolean variant is a compile error.
 // ---------------------------------------------------------------------------
 
@@ -202,27 +201,6 @@ export function readEditorSelectPreference(id: SelectPreferenceId): string {
 export function setEditorSelectPreference(id: SelectPreferenceId, value: string): void {
   const current = readEditorPrefs()
   writeEditorPrefs({ ...current, [id]: value })
-}
-
-// ---------------------------------------------------------------------------
-// Named convenience getters
-//
-// These wrap `readEditorPreference` for callers that aren't React components
-// (auto-save scheduler, etc.) while keeping call sites self-documenting.
-// ---------------------------------------------------------------------------
-
-export function readAutoSavePreference(): boolean {
-  return readEditorPreference('autoSave')
-}
-
-/**
- * Read the auto-save delay preference as milliseconds. The catalog stores the
- * delay in seconds (string) for UI presentation; this function does the
- * conversion to ms so callers don't repeat the parse logic.
- */
-export function readAutoSaveDelayMs(): number {
-  const seconds = Number(readEditorSelectPreference('autoSaveDelay'))
-  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 30_000
 }
 
 // ---------------------------------------------------------------------------

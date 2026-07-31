@@ -5,10 +5,13 @@
  */
 import type { DragEvent, ReactElement } from 'react'
 import { Button } from '@ui/components/Button'
+import { TagPill } from '@ui/components/TagPill'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { LockSolidIcon } from 'pixel-art-icons/icons/lock-solid'
-import { DragAndDropSolidIcon } from 'pixel-art-icons/icons/drag-and-drop-solid'
+import { ArrowUpIcon } from 'pixel-art-icons/icons/arrow-up'
+import { ArrowDownIcon } from 'pixel-art-icons/icons/arrow-down'
+import { StarSolidIcon } from 'pixel-art-icons/icons/star-solid'
 import { getFieldIcon } from '@admin/pages/data/utils/fieldIcons'
 import type { DataField } from '@core/data/schemas'
 import { FIELD_TYPE_LABELS } from './fieldGuards'
@@ -17,7 +20,11 @@ import styles from './DataInspector.module.css'
 interface FieldRowProps {
   field: DataField
   canDrag: boolean
+  canMoveUp: boolean
+  canMoveDown: boolean
   canEdit: boolean
+  primary: boolean
+  canSetPrimary: boolean
   deletable: boolean
   /** Tooltip for a disabled delete button (undefined when deletable). */
   deleteTooltip?: string
@@ -30,6 +37,9 @@ interface FieldRowProps {
   isDragging: boolean
   onEditToggle: () => void
   onDelete: () => void
+  onMoveUp: () => void
+  onMoveDown: () => void
+  onSetPrimary: () => void
   onDragStart: (e: DragEvent<HTMLDivElement>) => void
   onDragOver: (e: DragEvent<HTMLDivElement>) => void
   onDragLeave: () => void
@@ -40,7 +50,11 @@ interface FieldRowProps {
 export function FieldRow({
   field,
   canDrag,
+  canMoveUp,
+  canMoveDown,
   canEdit,
+  primary,
+  canSetPrimary,
   deletable,
   deleteTooltip,
   mandatory,
@@ -50,6 +64,9 @@ export function FieldRow({
   isDragging,
   onEditToggle,
   onDelete,
+  onMoveUp,
+  onMoveDown,
+  onSetPrimary,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -72,15 +89,6 @@ export function FieldRow({
       onDrop={canDrag ? onDrop : undefined}
       onDragEnd={canDrag ? onDragEnd : undefined}
     >
-      {/* Drag handle — shown only for draggable fields */}
-      {canDrag ? (
-        <span className={styles.dragHandle} aria-hidden="true">
-          <DragAndDropSolidIcon size={12} />
-        </span>
-      ) : (
-        <span className={styles.dragHandleSpacer} aria-hidden="true" />
-      )}
-
       {/* Field type icon — called directly (not as <FieldIcon/>) to avoid the
           react-hooks/static-components rule, matching DataGridHeaderCell. */}
       <span className={styles.fieldIcon} aria-hidden="true">
@@ -99,17 +107,62 @@ export function FieldRow({
 
       {/* Optional built-in badge */}
       {!mandatory && optionalBuiltIn && (
-        <span className={styles.typeBadge}>built-in</span>
+        <span className={styles.builtInBadge}>built-in</span>
       )}
 
       {/* Type badge */}
       {!mandatory && (
-        <span className={styles.typeBadge}>{FIELD_TYPE_LABELS[field.type]}</span>
+        <TagPill
+          label={FIELD_TYPE_LABELS[field.type]}
+          size="xs"
+        />
+      )}
+
+      {canSetPrimary && (
+        <Button
+          variant="ghost"
+          size="xs"
+          iconOnly
+          type="button"
+          className={styles.primaryFieldButton}
+          pressed={primary}
+          aria-label={primary
+            ? `${field.label} is the primary field`
+            : `Set ${field.label} as primary field`}
+          tooltip={primary ? 'Primary field' : 'Set as primary field'}
+          onClick={primary ? undefined : onSetPrimary}
+        >
+          <StarSolidIcon size={11} aria-hidden="true" />
+        </Button>
       )}
 
       {/* Actions — not shown for mandatory built-ins */}
       {!mandatory && canEdit && (
         <div className={styles.fieldActions}>
+          <Button
+            variant="ghost"
+            size="xs"
+            iconOnly
+            type="button"
+            aria-label={`Move ${field.label} up`}
+            tooltip={`Move ${field.label} up`}
+            disabled={!canMoveUp}
+            onClick={onMoveUp}
+          >
+            <ArrowUpIcon size={11} aria-hidden="true" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="xs"
+            iconOnly
+            type="button"
+            aria-label={`Move ${field.label} down`}
+            tooltip={`Move ${field.label} down`}
+            disabled={!canMoveDown}
+            onClick={onMoveDown}
+          >
+            <ArrowDownIcon size={11} aria-hidden="true" />
+          </Button>
           {/* Edit — always shown (lock only for label/type in the form) */}
           <Button
             variant="ghost"

@@ -13,9 +13,11 @@ The Data workspace lets operators define and edit table schemas (field types, ro
 - **DataGrid:** read-only spreadsheet over `data_rows` — cells display via `CellDisplayRenderer`, editing opens in the inspector. Owns search, status filter, sort, selection, group collapse, and column resize state. Sub-components handle toolbar, header row, group headers, skeleton loading, empty state, and bulk actions.
 - **DataInspector:** right panel — switches between `RowDetail` (cell editor) and `TableSettings` (schema editor) based on row selection.
 - **Context menus:** `DataTableContextMenu` handles table-list actions; `DataRowContextMenu` handles grid-row actions. Both use the shared `ContextMenu` primitive.
-- **TableSettings** owns field management via `FieldsSection`, which is split into `FieldRow`, `FieldEditForm`, `fieldGuards`, and `fieldEditState`.
+- **NewTableDialog** creates collection identity and its full field schema in one atomic request.
+- **FieldSchemaComposer** is shared by new-table setup and `TableSettings`; `NewFieldDialog` also uses the same definitions for repeater item schemas.
+- **TableSettings** adapts persisted-table locks and warnings into the shared composer through `FieldsSection`.
 - Field classification: three tiers — mandatory built-ins (locked), optional built-ins (editable/deletable with badge), custom fields (fully editable/deletable).
-- Field edit state uses a flat `FieldEditState` draft that `fieldToEditState` / `applyEditState` convert to/from the persisted `DataField`.
+- `RepeaterCell` authors ordered structured items with add, duplicate, reorder, and delete actions. A media-only repeater delegates to `MediaRepeaterGallery`, which reuses the Media workspace asset rows/tiles and shared grid/list preference.
 - Mutations to system `page` and `component` rows request a retained Site-editor reload through `requestCmsSiteReload()` so `/admin/site` sees Data-created pages and Visual Components even when the editor store was already hydrated.
 
 ---
@@ -45,11 +47,13 @@ DataPage.tsx
     └── DataInspector.tsx          ← right-hand inspector panel
         ├── RowDetail.tsx           ← row selected: cell-by-cell editor
         └── TableSettings.tsx       ← no row selected: schema + metadata editor
-            └── FieldsSection.tsx   ← field list: DnD reorder, inline edit, delete, add
-                ├── FieldRow.tsx        ← presentational field row
-                ├── FieldEditForm.tsx   ← inline field edit form
-                ├── fieldGuards.ts      ← pure field classification
-                └── fieldEditState.ts   ← draft state shape + conversions
+            └── FieldsSection.tsx   ← persisted-table adapter
+                └── FieldSchemaComposer
+
+NewTableDialog.tsx
+└── FieldSchemaComposer             ← local schema draft submitted with table identity
+    ├── FieldRow.tsx                ← ordered field summary
+    └── NewFieldDialog.tsx          ← add/edit definition and repeater sub-fields
 ```
 
 ---
@@ -71,18 +75,27 @@ DataPage.tsx
 
 ## TableSettings and field management
 
-`TableSettings.tsx` renders collapsible sections (General, Routing, Display, Fields, Kind, Danger zone). The **Fields** section delegates to `FieldsSection`.
+`TableSettings.tsx` renders collapsible sections (General, Routing, Schema, Kind, Danger zone). The **Schema** section delegates to `FieldsSection`; each eligible field row carries a star action for assigning the primary field directly where the structure is defined.
 
-**System tables** (`posts`/`pages`/`components`/`layouts`) render a **reduced** panel: only **Display** (primary field) and **Fields** are shown, gated by `data.system.tables.manage`. General / Routing / Kind / Danger zone are hidden because a system table's identity is frozen (the server's `assertSystemTableUpdateAllowed` rejects identity + built-in-field changes for everyone). Managers can still add/manage **custom** fields and change the primary field.
+**System tables** (`posts`/`pages`/`components`/`layouts`) render a **reduced** panel containing only **Schema**, gated by `data.system.tables.manage`. General / Routing / Kind / Danger zone are hidden because a system table's identity is frozen (the server's `assertSystemTableUpdateAllowed` rejects identity + built-in-field changes for everyone). Managers can still add/manage **custom** fields and change the primary field from an eligible field row.
 
-### FieldsSection
+### Shared schema composer
 
-`FieldsSection.tsx` owns all field-list state:
+`FieldSchemaComposer.tsx` owns the reusable field-list interaction:
 
 - **Drag-and-drop reorder** — native HTML5 drag API; `handleDrop` reorders `table.fields` and calls `onUpdateTable`.
-- **Inline edit** — `editingFieldId` + `editState` (`FieldEditState`) track the open editor. State is owned here; `FieldEditForm` is purely presentational.
+- **Edit** — opens `NewFieldDialog` with the author-facing label first and the immutable machine id/type beside each other.
 - **Delete** — via `useConfirmDelete`; calls `onUpdateTable` with the field removed.
 - **New field** — via `NewFieldDialog`.
+
+For a new field, `NewFieldDialog` derives the machine ID from the label until
+the author edits the ID manually. Existing IDs and types remain fixed so saved
+row values keep stable keys.
+
+`FieldsSection.tsx` computes table-specific lock, label, built-in, and delete
+sets with `fieldGuards.ts`, then passes them into the composer.
+`NewTableDialog.tsx` gives the same composer a local field array and submits
+that array with collection identity in the single create request.
 
 ### Field classification — `fieldGuards.ts`
 
@@ -107,22 +120,24 @@ deleteTooltip(field, table)         // disabled-button tooltip text, or undefine
 
 Built-in field **values** (row cells) are additionally read-only on the *structural* system tables (pages/components/layouts) via `isBuiltInValueLocked` (`@core/data/systemTableGuard`); `posts` built-in values stay editable. The same predicate backs the server's row-write rejection (`lockedBuiltInCellKey`).
 
-`FIELD_TYPE_LABELS` maps every `DataFieldType` to a human-readable string and is shared by `FieldRow` and `FieldEditForm`.
+`FIELD_TYPE_LABELS` maps every `DataFieldType` to a human-readable string and
+is shared by `FieldRow` and `FieldSchemaComposer`.
 
-### Draft/commit pattern — `fieldEditState.ts`
+### Repeater authoring
 
-Field editing uses a flat draft object to keep all form inputs controlled:
+`RepeaterCell.tsx` reads values through `readRepeaterCell`, initializes nested
+cells through `emptyCellValue`, and writes the complete ordered value through
+the ordinary row draft. Nested relation and media fields reuse their shared
+pickers. Multi-media fields place `MediaPickerModal` in true multi-selection
+mode: plain clicks toggle assets and the footer commits the entire selection.
 
-```ts
-fieldToEditState(field: DataField): FieldEditState  // persisted → editable draft
-applyEditState(field, state, labelLocked): DataField // draft → persisted
-```
-
-`FieldEditState` flattens all type-specific options to primitives (numeric constraints as `string`, select options as `DraftOption[]`). `applyEditState` converts them back and reconstructs the correct `DataField` discriminant via a fully-exhaustive `switch (field.type)`.
-
-### React Compiler — async helper extraction
-
-`FieldsSection.tsx` and `TableSettings.tsx` extract async save handlers to **module-level functions** (`saveFieldEdit`, `saveTableField`, `savePrimaryField`). This is required because `async/await` with `try/catch` nested inside a component function forces the React Compiler to bail out of auto-memoization for that component. Extracting the async body to module scope lets the compiler memoize the component normally.
+When a repeater contains exactly one single-value media field,
+`MediaRepeaterGallery.tsx` replaces the generic structured-item cards with the
+Media workspace presentation. It renders the shared `AssetTile` / `AssetRow`
+components, uses the same persisted grid/list switcher, fills empty slots from
+a multi-selection picker, and keeps replace, reorder, and remove actions on
+each asset. Removing an item never deletes the underlying Media library file.
+Repeaters with additional fields continue to use the generic card editor.
 
 ---
 
@@ -202,8 +217,9 @@ Both actions are opened from `DataSidebar`.
 | Reimplementing title copy naming or slug collision logic when duplicating rows | Use `buildDuplicateRowCells` from `src/core/data/duplicateRow.ts` |
 | Comparing field classification inline | Import from `fieldGuards.ts` |
 | Adding a `kind === 'postType'` branch inside `FieldsSection` | Classification belongs in `fieldGuards.ts`; `FieldsSection` reads `isMandatoryField`, `isOptionalBuiltIn`, etc. |
-| Editing a field's `type` after creation | Type is immutable; `FieldEditForm` shows it read-only with "(cannot be changed)" |
-| Writing manual `useMemo`/`useCallback` in any of these components | React Compiler auto-memoizes; the only exception is the async helper extraction pattern above |
+| Editing a field's type or machine id after creation | `NewFieldDialog` disables both while editing so stored row values keep stable keys |
+| Allowing a repeater inside a repeater | `RepeaterItemFieldSchema` excludes `repeater`, `pageTree`, and `fieldSchema` |
+| Writing manual `useMemo`/`useCallback` in any of these components | React Compiler auto-memoizes; use only the repository-level documented exceptions |
 | Putting filter / sort / group logic in `DataGrid.tsx` | That logic lives in `dataGridRows.ts` (pure, side-effect free). `DataGrid.tsx` only holds interaction state and wires sub-components. |
 | Treating the DataGrid as an inline cell editor | The grid is read-only. `CellEditorRenderer.tsx` belongs to the inspector (`RowDetail.tsx`), not to the grid. |
 | Adding a "Table settings" shortcut to the `DataPage` toolbar | `TableSettings` is reached by deselecting a row — the inspector switches automatically. A duplicate toolbar affordance was removed; `src/__tests__/admin/data/dataPageToolbar.test.ts` prevents it from returning. |

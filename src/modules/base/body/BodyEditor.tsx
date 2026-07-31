@@ -8,45 +8,41 @@
  *
  * Editor metadata that used to live on a wrapping `<div>` (data-node-id,
  * canvas selection attrs, click handlers, the user's mcClassName) is now
- * applied to the iframe's actual `<body>` element via `useEffect` —
- * `BodyOwnerProbe` is a tiny
- * `display: contents` component that gives the effect a ref into the
- * iframe document. The probe element contributes no layout or accessible
- * affordance; it disappears from the DOM tree from CSS's perspective.
+ * applied to the iframe's actual `<body>` element via the document context
+ * supplied by `IframeFrameSurface`. No editor-only probe is inserted into the
+ * body, so authored child/sibling selectors see the published DOM exactly.
  *
  * Component-only file so React Fast Refresh can hot-patch edits without
  * re-running module registration.
  */
-import { useEffect, useRef } from 'react'
+import { use, useEffect } from 'react'
 import type { ModuleComponentProps, NodeWrapperProps as NodeWrapperPropsType } from '@core/module-engine'
+import { applyIframeBodyPresentation } from '@site/canvas/iframeBodyPresentation'
+import { htmlAttributesForReact } from '@modules/base/shared/htmlAttributes'
+import { CanvasDocumentContext } from '@site/canvas/CanvasContexts'
 
-type BodyProps = Record<string, unknown>
+type BodyProps = { htmlAttributes?: unknown }
 
-export const BodyEditor = ({ children, mcClassName, nodeWrapperProps }: ModuleComponentProps<BodyProps>) => {
-  // `display: contents` probe — has zero layout footprint and is invisible
-  // to CSS selectors used by the user, but it has an `ownerDocument` we
-  // can read inside the effect to apply attrs to the iframe `<body>`.
-  const probeRef = useRef<HTMLDivElement | null>(null)
+export const BodyEditor = ({
+  children,
+  mcClassName,
+  nodeWrapperProps,
+  props,
+}: ModuleComponentProps<BodyProps>) => {
+  const iframeDocument = use(CanvasDocumentContext)
 
   useEffect(() => {
-    const probe = probeRef.current
-    if (!probe) return
-    const body = probe.ownerDocument?.body
+    const body = iframeDocument?.body
     if (!body) return
-    return applyEditorAttrsToBody(body, mcClassName, nodeWrapperProps)
-  }, [mcClassName, nodeWrapperProps])
+    return applyEditorAttrsToBody(
+      body,
+      mcClassName,
+      nodeWrapperProps,
+      htmlAttributesForReact(props.htmlAttributes),
+    )
+  }, [iframeDocument, mcClassName, nodeWrapperProps, props.htmlAttributes])
 
-  return (
-    <>
-      <div
-        ref={probeRef}
-        aria-hidden="true"
-        style={{ display: 'contents' }}
-        data-instatic-body-probe=""
-      />
-      {children}
-    </>
-  )
+  return children
 }
 
 /**
@@ -58,7 +54,21 @@ function applyEditorAttrsToBody(
   body: HTMLElement,
   mcClassName: string | undefined,
   nodeWrapperProps: NodeWrapperPropsType | undefined,
+  htmlAttributes: Record<string, string>,
 ): () => void {
+  const restorePresentation = applyIframeBodyPresentation(body, {
+    className: mcClassName,
+    style: nodeWrapperProps?.style,
+    attributes: htmlAttributes,
+  })
+  const restoreEditorAttributes = snapshotBodyAttributes(body, [
+    'data-node-id',
+    'data-module-id',
+    'tabindex',
+    'data-canvas-selected',
+    'data-hovered',
+  ])
+
   if (nodeWrapperProps?.['data-node-id']) {
     body.setAttribute('data-node-id', nodeWrapperProps['data-node-id'])
   }
@@ -66,8 +76,6 @@ function applyEditorAttrsToBody(
     body.setAttribute('data-module-id', nodeWrapperProps['data-module-id'])
   }
   body.setAttribute('tabindex', '0')
-  body.removeAttribute('role')
-  body.removeAttribute('aria-pressed')
   if (nodeWrapperProps?.['data-canvas-selected']) {
     body.setAttribute('data-canvas-selected', nodeWrapperProps['data-canvas-selected'])
   } else {
@@ -78,10 +86,6 @@ function applyEditorAttrsToBody(
   } else {
     body.removeAttribute('data-hovered')
   }
-  if (mcClassName !== undefined) {
-    body.className = mcClassName
-  }
-
   const handlers: Array<[string, EventListener]> = []
   const addListener = <K extends keyof HTMLElementEventMap>(
     name: K,
@@ -112,6 +116,18 @@ function applyEditorAttrsToBody(
   return () => {
     for (const [name, handler] of handlers) {
       body.removeEventListener(name, handler)
+    }
+    restoreEditorAttributes()
+    restorePresentation()
+  }
+}
+
+function snapshotBodyAttributes(body: HTMLElement, names: string[]): () => void {
+  const previous = names.map((name) => ({ name, value: body.getAttribute(name) }))
+  return () => {
+    for (const attribute of previous) {
+      if (attribute.value === null) body.removeAttribute(attribute.name)
+      else body.setAttribute(attribute.name, attribute.value)
     }
   }
 }

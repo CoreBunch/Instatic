@@ -12,7 +12,6 @@ import {
   openSitePanel,
   openSiteEditor,
   publishDraft,
-  saveDraft,
   selectTreeLayer,
   setPropValue,
   visitPublicPage,
@@ -79,6 +78,10 @@ test.describe('visual builder', () => {
       'aria-pressed',
       'true',
     )
+    // Moving off the view toggle dismisses its tooltip so Escape reaches the
+    // picker dialog instead of being capture-consumed by the tooltip.
+    await page.mouse.move(0, 0)
+    await expect(page.getByRole('tooltip')).toHaveCount(0)
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
 
@@ -167,7 +170,6 @@ test.describe('visual builder', () => {
     page,
   }) => {
     const { name } = await openBlankPage(page, 'Builder history')
-    await saveDraft(page)
     await page.reload()
     await openSiteEditor(page)
     await openSitePanel(page)
@@ -210,7 +212,6 @@ test.describe('visual builder', () => {
     await expect(textNode).toHaveCount(0)
     await expect(redoButton).toHaveAttribute('aria-disabled', 'true')
 
-    await saveDraft(page)
     await page.reload()
     await openSiteEditor(page)
     await openSitePanel(page)
@@ -354,7 +355,6 @@ test.describe('visual builder', () => {
     await dragTreeRowBefore(page, textRows.nth(2), textRows.nth(0))
     await expectCanvasTextOrder(page, [gamma, alpha, beta])
 
-    await saveDraft(page)
     await page.reload()
     await openSiteEditor(page)
     await openSitePanel(page)
@@ -419,7 +419,6 @@ test.describe('visual builder', () => {
       await setPropValue(page, 'label', 'Visit Example')
       await setPropValue(page, 'href', 'https://example.com')
 
-      await saveDraft(page)
       await publishDraft(page)
 
       // The published button renders as a semantic anchor with the intended
@@ -481,7 +480,6 @@ test.describe('visual builder', () => {
       await expect(canvasFrame(page).getByText(componentText, { exact: true })).toBeVisible()
       await expect(canvasFrame(page).getByText(slotText, { exact: true })).toBeVisible()
 
-      await saveDraft(page)
       await publishDraft(page)
       await visitPublicPage(browser, {
         path: `/${slug}`,
@@ -502,6 +500,15 @@ test.describe('visual builder', () => {
       const postSlug = `bound-template-post-${suffix}`
       const bodyText = `Body rendered through SITE-018 ${suffix}`
 
+      await test.step('publish the post used as the explicit template preview source', async () => {
+        await createPostDraft(page, postTitle, postSlug, bodyText)
+        await page.getByRole('button', { name: 'Publish post' }).click()
+        await completeStepUp(page)
+        await expect(
+          page.getByRole('button', { name: 'Published', exact: true }),
+        ).toBeDisabled({ timeout: 20_000 })
+      })
+
       await test.step('create a high-priority Posts template from the Site panel', async () => {
         await openSiteEditor(page)
         await openSitePanel(page)
@@ -514,7 +521,7 @@ test.describe('visual builder', () => {
         await dialog.getByLabel('Applies to').click()
         await page.getByRole('option', { name: 'Post types' }).click()
         await dialog.getByLabel('Posts').setChecked(true)
-        await dialog.getByLabel('Priority').fill('200')
+        await dialog.getByLabel('Priority').fill('300')
         await dialog.getByRole('button', { name: 'Save' }).click()
 
         await expect(dialog).toBeHidden()
@@ -522,6 +529,12 @@ test.describe('visual builder', () => {
       })
 
       await test.step('insert title and body bindings into the template canvas', async () => {
+        const previewSource = page.getByLabel('Preview source')
+        await expect(previewSource).toBeVisible({ timeout: 20_000 })
+        await previewSource.click()
+        await page.getByRole('option', { name: postTitle, exact: true }).click()
+        await expect(previewSource).toHaveValue(postTitle)
+
         await insertNotchModule(page, 'text')
         await setPropValue(page, 'text', 'Template headline:')
         await page.getByRole('button', { name: 'Insert binding for Text' }).click()
@@ -533,27 +546,15 @@ test.describe('visual builder', () => {
 
         await expect(page.locator('#ctrl-text')).toHaveValue('Template headline: {currentEntry.title}')
         await expect(
-          canvasFrame(page).getByText('Template headline: Example Post Title', { exact: true }),
+          canvasFrame(page).getByText(`Template headline: ${postTitle}`, { exact: true }),
         ).toBeVisible()
 
         await insertModuleViaPicker(page, 'base.outlet')
-        await expect(
-          canvasFrame(page).getByRole('heading', { name: 'Example heading' }),
-        ).toBeVisible()
+        await expect(canvasFrame(page).getByText(bodyText, { exact: true })).toBeVisible()
       })
 
-      await test.step('save and publish the template snapshot', async () => {
-        await saveDraft(page)
+      await test.step('publish the template snapshot', async () => {
         await publishDraft(page)
-      })
-
-      await test.step('publish a post that should render through the authored template', async () => {
-        await createPostDraft(page, postTitle, postSlug, bodyText)
-        await page.getByRole('button', { name: 'Publish post' }).click()
-        await completeStepUp(page)
-        await expect(
-          page.getByRole('button', { name: 'Published', exact: true }),
-        ).toBeDisabled({ timeout: 20_000 })
       })
 
       await visitPublicPage(browser, {
@@ -632,7 +633,6 @@ test.describe('visual builder', () => {
       })
 
       await test.step('insert the layout from the module inserter on another page', async () => {
-        await saveDraft(page)
         const nextPage = await openBlankPage(page, 'Builder layout target')
         target.name = nextPage.name
         target.slug = nextPage.slug
@@ -682,7 +682,6 @@ test.describe('visual builder', () => {
         await expect(inserterDialog).toBeHidden()
 
         await expect(canvasFrame(page).getByText(layoutText, { exact: true })).toBeVisible()
-        await saveDraft(page)
         await page.reload()
         await openSiteEditor(page)
         await openSitePanel(page)
@@ -739,7 +738,6 @@ test.describe('visual builder', () => {
       await fontSizeInput.blur()
       await expect(canvasHeadline).toHaveCSS('font-size', '28px')
 
-      await saveDraft(page)
       await page.reload()
       await openSiteEditor(page)
       await openSitePanel(page)
@@ -799,7 +797,6 @@ test.describe('visual builder', () => {
       await fontSizeInput.blur()
       await expect(canvasHeadline).toHaveCSS('font-size', '30px')
 
-      await saveDraft(page)
       await page.reload()
       await openSiteEditor(page)
       await openSitePanel(page)
@@ -862,7 +859,6 @@ test.describe('visual builder', () => {
         'Event handler attributes are not allowed.',
       )
 
-      await saveDraft(page)
       await page.reload()
       await openSiteEditor(page)
       await openSitePanel(page)
@@ -919,7 +915,6 @@ test.describe('visual builder', () => {
       await fontSizeInput.fill('31px')
       await fontSizeInput.blur()
 
-      await saveDraft(page)
       await publishDraft(page)
       await visitPublicPage(browser, {
         path: `/${slug}`,
@@ -976,7 +971,6 @@ test.describe('visual builder', () => {
       await expect(mobileButton).toHaveCSS('font-size', '33px')
       await expect(desktopButton).toHaveCSS('font-size', '20px')
 
-      await saveDraft(page)
       await publishDraft(page)
       await visitPublicPage(browser, {
         path: `/${slug}`,
@@ -1058,7 +1052,6 @@ test.describe('visual builder', () => {
       await expect(desktopButton).toHaveClass(new RegExp(`\\b${classA}\\b`))
       await expect(desktopButton).toHaveClass(new RegExp(`\\b${classB}\\b`))
 
-      await saveDraft(page)
       await page.reload()
       await openSiteEditor(page)
       await openSitePanel(page)
@@ -1122,7 +1115,6 @@ test.describe('visual builder', () => {
       ).toBeVisible()
       await expectComputedCustomProperty(desktopButton, customProperty, customValue)
 
-      await saveDraft(page)
       await page.reload()
       await openSiteEditor(page)
       await openSitePanel(page)
@@ -1190,7 +1182,6 @@ test.describe('visual builder', () => {
       await paddingTopInput.blur()
       await expect(desktopButton).toHaveCSS('padding-top', '12px')
 
-      await saveDraft(page)
       await page.reload()
       await openSiteEditor(page)
       await openSitePanel(page)
@@ -1301,9 +1292,15 @@ async function createPostDraft(
 ): Promise<void> {
   await page.goto('/admin/content')
 
+  const previousRow = new URL(page.url()).searchParams.get('row')
   const newPost = page.getByRole('button', { name: 'New post', exact: true })
   await expect(newPost).toBeEnabled()
   await newPost.click()
+  await page.waitForURL((url) => {
+    const nextRow = url.searchParams.get('row')
+    return nextRow !== null && nextRow !== previousRow
+  })
+  await expect(page.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue('')
 
   await page.getByRole('textbox', { name: 'Title', exact: true }).fill(title)
   await page.getByRole('textbox', { name: 'Slug' }).fill(slug)
@@ -1311,7 +1308,12 @@ async function createPostDraft(
   await page.keyboard.type(body)
 
   await page.getByRole('button', { name: 'More publishing actions' }).click()
+  const saveResponse = page.waitForResponse((response) =>
+    /\/admin\/api\/cms\/data\/rows\/[^/]+$/.test(new URL(response.url()).pathname) &&
+    response.request().method() === 'PATCH',
+  )
   await page.getByTestId('toolbar-content-save-draft-action').click()
+  expect((await saveResponse).ok()).toBe(true)
   await expect(page.getByRole('button').filter({ hasText: title })).toBeVisible({
     timeout: 20_000,
   })

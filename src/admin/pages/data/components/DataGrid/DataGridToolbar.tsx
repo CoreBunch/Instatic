@@ -29,7 +29,7 @@ interface DataGridToolbarProps {
   readOnly: boolean
   query: string
   onQueryChange: (q: string) => void
-  onAddRow: () => Promise<void> | void
+  onAddRow?: () => Promise<void> | void
   hasPublishWorkflow: boolean
   statusViewOrder: StatusViewChip[]
   statusFilter: StatusFilter
@@ -58,7 +58,7 @@ export function DataGridToolbar({
   sortLabel,
   onClearSort,
 }: DataGridToolbarProps): ReactElement {
-  const totalNoun = totalCount === 1 ? table.singularLabel : table.pluralLabel
+  const totalNoun = totalCount === 1 ? 'row' : 'rows'
   const groupedByStatus =
     hasPublishWorkflow &&
     (statusFilter === 'all' || statusFilter === 'pages' || statusFilter === 'templates') &&
@@ -83,12 +83,12 @@ export function DataGridToolbar({
           <SearchBar
             value={query}
             onValueChange={onQueryChange}
-            placeholder={`Search ${table.pluralLabel.toLowerCase()}…`}
-            aria-label={`Search ${table.pluralLabel.toLowerCase()}`}
+            placeholder="Search…"
+            aria-label="Search"
           />
         </div>
 
-        {!readOnly && (
+        {!readOnly && onAddRow != null && (
           <Button variant="primary" size="sm" onClick={() => { void onAddRow() }}>
             <PlusIcon size={12} aria-hidden="true" />
             Add row

@@ -15,8 +15,9 @@
  * invalidates on `refreshCmsMediaAssetCache()` — call after a replace /
  * delete so stale rows don't linger.
  */
-import { useEffect, useState } from 'react'
+import { use, useEffect, useState } from 'react'
 import { listCmsMediaAssets, type CmsMediaAsset } from '@core/persistence/cmsMedia'
+import { CanvasPreviewReadinessContext } from '@site/canvas/CanvasPreviewReadiness'
 
 // Module-level cache, shared across every consumer. CmsMediaAsset objects
 // are small (< 1 KB each), so a Map of every asset the user has touched
@@ -25,12 +26,47 @@ const cache = new Map<string, CmsMediaAsset>()
 let listPromise: Promise<CmsMediaAsset[]> | null = null
 const subscribers = new Set<() => void>()
 
+interface CachedAssetSnapshot {
+  key: string
+  assets: ReadonlyMap<string, CmsMediaAsset>
+}
+
+const EMPTY_PATHS: string[] = []
+const EMPTY_ASSETS = new Map<string, CmsMediaAsset>()
+
+function notifySubscribers(): void {
+  for (const sub of subscribers) sub()
+}
+
+function publicPathsKey(publicPaths: readonly string[]): string {
+  return [...new Set(publicPaths)].sort().join('\0')
+}
+
+function pathsFromKey(key: string): string[] {
+  return key ? key.split('\0') : EMPTY_PATHS
+}
+
+function cachedAssetsForKey(key: string): ReadonlyMap<string, CmsMediaAsset> {
+  if (!key) return EMPTY_ASSETS
+
+  const assets = new Map<string, CmsMediaAsset>()
+  for (const path of pathsFromKey(key)) {
+    const asset = cache.get(path)
+    if (asset) assets.set(path, asset)
+  }
+  return assets
+}
+
+function cacheAssetList(assets: readonly CmsMediaAsset[]): void {
+  for (const asset of assets) cache.set(asset.publicPath, asset)
+  notifySubscribers()
+}
+
 function ensureList(): Promise<CmsMediaAsset[]> {
   if (listPromise) return listPromise
   listPromise = listCmsMediaAssets()
     .then((assets) => {
-      for (const asset of assets) cache.set(asset.publicPath, asset)
-      for (const sub of subscribers) sub()
+      cacheAssetList(assets)
       return assets
     })
     .catch((err) => {
@@ -49,30 +85,53 @@ function ensureList(): Promise<CmsMediaAsset[]> {
 export function refreshCmsMediaAssetCache(): void {
   cache.clear()
   listPromise = null
-  for (const sub of subscribers) sub()
+  notifySubscribers()
+}
+
+export function primeCmsMediaAssetCache(asset: CmsMediaAsset): void {
+  cacheAssetList([asset])
 }
 
 export function useCmsMediaAssetByPath(publicPath: string | null | undefined): CmsMediaAsset | null {
-  // Tiny state so the component re-renders when the cache populates. The
-  // value itself comes from the module-level Map.
-  const [, setTick] = useState(0)
+  const assets = useCmsMediaAssetsByPath(publicPath ? [publicPath] : EMPTY_PATHS)
+  return publicPath ? assets.get(publicPath) ?? null : null
+}
+
+export function useCmsMediaAssetsByPath(publicPaths: readonly string[]): ReadonlyMap<string, CmsMediaAsset> {
+  const previewReadiness = use(CanvasPreviewReadinessContext)
+  const key = publicPathsKey(publicPaths)
+  const [snapshot, setSnapshot] = useState<CachedAssetSnapshot>(() => ({
+    key,
+    assets: cachedAssetsForKey(key),
+  }))
+  const currentAssets = snapshot.key === key ? snapshot.assets : cachedAssetsForKey(key)
 
   useEffect(() => {
-    if (!publicPath) return
-    if (cache.has(publicPath)) return
+    const paths = pathsFromKey(key)
+    if (paths.length === 0) return
+
     let canceled = false
-    void ensureList()
-      .then(() => { if (!canceled) setTick((n) => n + 1) })
-      .catch(() => { /* swallow — editor still renders raw src */ })
-    return () => { canceled = true }
-  }, [publicPath])
 
-  // Subscribe to cache invalidation so refresh() bumps every consumer.
-  useEffect(() => {
-    const sub = () => setTick((n) => n + 1)
-    subscribers.add(sub)
-    return () => { subscribers.delete(sub) }
-  }, [])
+    const updateSnapshot = () => {
+      if (!canceled) setSnapshot({ key, assets: cachedAssetsForKey(key) })
+    }
 
-  return publicPath ? cache.get(publicPath) ?? null : null
+    updateSnapshot()
+    subscribers.add(updateSnapshot)
+
+    if (!paths.every((path) => cache.has(path))) {
+      const request = ensureList()
+      previewReadiness?.track(request)
+      void request
+        .then(updateSnapshot)
+        .catch(() => { /* swallow — editor still renders raw urls */ })
+    }
+
+    return () => {
+      canceled = true
+      subscribers.delete(updateSnapshot)
+    }
+  }, [key, previewReadiness])
+
+  return currentAssets
 }

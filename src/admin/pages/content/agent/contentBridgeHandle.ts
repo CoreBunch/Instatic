@@ -16,11 +16,7 @@
  * and revisit later if the surface grows.
  */
 
-import type {
-  DataRow,
-  DataRowStatus,
-  DataTable,
-} from '@core/data/schemas'
+import type { DataRowStatus } from '@core/data/schemas'
 
 // ---------------------------------------------------------------------------
 // Snapshot shape — wire format the agent receives.
@@ -91,15 +87,6 @@ export interface ContentBridgeHandle {
    */
   buildSnapshot(): ContentAgentSnapshot
 
-  /** Snapshot of every (postType/page) collection — light projection. */
-  listCollections(): DataTable[]
-  /** Active collection in the sidebar; null when none selected. */
-  getActiveCollectionId(): string | null
-  /** Currently-open document, if any. */
-  getActiveDocument(): DataRow | null
-  /** Resolve a row id to its live DataRow (looks up the workspace cache). */
-  findDocument(documentId: string): DataRow | null
-
   /**
    * Switch which document the editor shows. Loads the row if it's not in
    * the workspace cache yet. Returns true on success, false when the row
@@ -111,13 +98,12 @@ export interface ContentBridgeHandle {
 
   /**
    * Create a new draft row in `tableId`. When `fields` is provided, the
-   * built-in field values land on the draft before save. Returns the new
+   * field values land on the draft before save. Returns the new
    * document's id; the editor auto-switches to it.
    */
   createDocument(args: {
     tableId: string
     fields?: Record<string, unknown>
-    status?: DataRowStatus
   }): Promise<string>
 
   /** Soft-delete a document by id. */

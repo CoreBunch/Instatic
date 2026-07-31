@@ -71,4 +71,14 @@ describe('extractRootColorTokens', () => {
     expect(colorTokens).toEqual([{ slug: 'brand', value: '#f00' }])
     expect(out[0].styles).toEqual({ color: 'red' })
   })
+
+  it('leaves an important custom property authored instead of losing its priority', () => {
+    const rule = ambient(':root', { '--brand': '#f00', '--plain': '#0f0' })
+    rule.stylePriorities = { '--brand': 'important' }
+    const { rules: out, colorTokens } = extractRootColorTokens([rule])
+
+    expect(colorTokens).toEqual([{ slug: 'plain', value: '#0f0' }])
+    expect(out[0].styles).toEqual({ '--brand': '#f00' })
+    expect(out[0].stylePriorities).toEqual({ '--brand': 'important' })
+  })
 })

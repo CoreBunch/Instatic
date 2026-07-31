@@ -87,9 +87,13 @@ export function createBridge(
   const bridgeId = nanoid()
   const entry: BridgeEntry = { pending: new Map(), emit, onSnapshot }
   activeBridges.set(bridgeId, entry)
+  let destroyed = false
 
   const bridge: AiBrowserBridge = {
     callBrowser(toolName, input) {
+      if (destroyed) {
+        return Promise.reject(new Error('AI chat stream ended before tool result arrived.'))
+      }
       const requestId = nanoid()
       return new Promise<AiToolOutput>((resolve, reject) => {
         // Settle (and remove) the pending wait on timeout or client disconnect
@@ -125,6 +129,8 @@ export function createBridge(
   }
 
   const destroy = () => {
+    if (destroyed) return
+    destroyed = true
     const live = activeBridges.get(bridgeId)
     if (!live) return
     if (live.pending.size > 0) {

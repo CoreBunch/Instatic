@@ -6,10 +6,9 @@
  *     editor panels, the page canvas, and the SiteExplorer DnD context.
  *   - AdminWorkspaceCanvasLayout — used by Content / Data / Media. Keeps the
  *     canvas chrome without importing Site-only editor panels.
- *   - AdminPageLayout (this file) — used by Plugins, Users, Account, and
- *     plugin admin pages. Strips the canvas / sidebar / DnD chrome and
- *     renders a simple centered page body with a unified header (title,
- *     description, optional tabs and actions slots).
+ *   - AdminPageLayout (this file) — used by Plugins, Users, Account, AI, and
+ *     plugin admin pages. Strips the canvas / sidebar / DnD chrome and renders
+ *     either a centered page with a unified header or a full-width workspace.
  *
  * Pick AdminWorkspaceCanvasLayout for non-site canvas workspaces. Pick this
  * layout when the page is a regular admin page (lists, forms, settings).
@@ -53,8 +52,8 @@ const SettingsModal = lazy(() =>
 interface AdminPageLayoutProps {
   /** Active section — drives the toolbar's nav highlight. */
   workspace: AdminWorkspace
-  /** Page title rendered in the H1 of the page header. */
-  title: string
+  /** Page title rendered in the H1 of the page header. Omit when children own the page heading. */
+  title?: string
   /** Optional description shown under the title. */
   description?: string
   /**
@@ -86,6 +85,11 @@ interface AdminPageLayoutProps {
    * prop, no per-page skeleton markup.
    */
   loading?: boolean
+  /**
+   * `workspace` removes the centered document header and uses the available
+   * canvas for a self-contained settings workspace with its own navigation.
+   */
+  mode?: 'page' | 'workspace'
   /** Page body. */
   children?: ReactNode
 }
@@ -99,6 +103,7 @@ export function AdminPageLayout({
   toolbarRightSlot,
   titleId,
   loading = false,
+  mode = 'page',
   children,
 }: AdminPageLayoutProps) {
   const currentUser = useCurrentAdminUser()
@@ -141,24 +146,26 @@ export function AdminPageLayout({
         rightSlot={toolbarRightSlot}
       />
 
-      <main className={styles.body} aria-busy={loading || undefined}>
-        <div className={styles.container}>
-          <header className={styles.header}>
-            <div className={styles.titleGroup}>
-              <h1 id={titleId}>{title}</h1>
-              {description && <p>{description}</p>}
-            </div>
-            {(tabs || actions) && (
-              <div className={styles.headerEnd}>
-                {tabs && (
-                  <div className={styles.tabs}>{tabs}</div>
-                )}
-                {actions && (
-                  <div className={styles.actions}>{actions}</div>
-                )}
+      <main className={styles.body} data-page-mode={mode} aria-busy={loading || undefined}>
+        <div className={styles.container} data-page-mode={mode}>
+          {(title || description || tabs || actions) && (
+            <header className={styles.header}>
+              <div className={styles.titleGroup}>
+                {title && <h1 id={titleId}>{title}</h1>}
+                {description && <p>{description}</p>}
               </div>
-            )}
-          </header>
+              {(tabs || actions) && (
+                <div className={styles.headerEnd}>
+                  {tabs && (
+                    <div className={styles.tabs}>{tabs}</div>
+                  )}
+                  {actions && (
+                    <div className={styles.actions}>{actions}</div>
+                  )}
+                </div>
+              )}
+            </header>
+          )}
           {loading ? <SkeletonCards count={3} /> : children}
         </div>
       </main>

@@ -23,9 +23,13 @@ import type {
 import type { ToolContextBase } from '../types'
 
 /**
- * Execute one tool call and return the canonical `AiToolOutput`. Never throws —
- * validation, handler, and bridge failures all collapse to `{ ok: false, error }`
- * so the loop can feed the failure back to the model and let it recover.
+ * Execute one tool call and return the canonical `AiToolOutput`.
+ *
+ * Input, permission, and server-handler failures are ordinary tool outcomes:
+ * the loop feeds `{ ok: false, error }` back to the model so it can recover.
+ * A rejected browser bridge is different — no result can reach the active
+ * turn, so that infrastructure failure propagates to the loop and terminates
+ * the turn instead of inviting the model to retry against the same dead bridge.
  */
 export async function executeAiTool(
   aiTool: AiTool,
@@ -64,12 +68,9 @@ export async function executeAiTool(
   }
 
   // Browser execution: forward to the bridge and wait for the POST-back.
-  try {
-    return await bridge.callBrowser(aiTool.name, validated)
-  } catch (err) {
-    const message = err instanceof Error ? err.message : `Tool ${aiTool.name} failed.`
-    return { ok: false, error: message }
-  }
+  // A resolved `{ ok: false }` remains a recoverable domain failure. Rejection
+  // means the transport itself is unavailable and deliberately propagates.
+  return await bridge.callBrowser(aiTool.name, validated)
 }
 
 /**

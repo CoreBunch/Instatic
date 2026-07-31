@@ -13,7 +13,7 @@
  * every explorer drag — so they deliberately share one instance + DnD scope.
  */
 import { useEditorStore } from '@site/store/store'
-import { Panel } from '@admin/shared/Panel'
+import { Panel, type DockablePanelProps } from '@admin/shared/Panel'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { DomPanel } from '@site/panels/DomPanel'
 import { SiteExplorerPanel } from '@site/panels/SiteExplorerPanel'
@@ -28,12 +28,17 @@ const TABS: ReadonlyArray<{ value: ExplorerPanelTab; label: string }> = [
   { value: 'media', label: 'Media' },
 ]
 
-interface ExplorerPanelProps {
+interface ExplorerPanelProps extends DockablePanelProps {
   /** Whether the caller can perform structural edits (drives DnD/insert). */
   editable?: boolean
 }
 
-export function ExplorerPanel({ editable = true }: ExplorerPanelProps) {
+export function ExplorerPanel({
+  editable = true,
+  mode,
+  dragHandleProps,
+  onToggleMode,
+}: ExplorerPanelProps) {
   const tab = useEditorStore((s) => s.explorerPanelTab)
   const setTab = useEditorStore((s) => s.setExplorerPanelTab)
   const setOpen = useEditorStore((s) => s.setExplorerPanelOpen)
@@ -44,6 +49,10 @@ export function ExplorerPanel({ editable = true }: ExplorerPanelProps) {
       title="Explorer"
       testId="explorer-panel"
       onClose={() => setOpen(false)}
+      mode={mode}
+      dragHandleProps={dragHandleProps}
+      onToggleMode={onToggleMode}
+      dockLocation="left sidebar"
       body="bare"
     >
       <div className={styles.tabsRow}>

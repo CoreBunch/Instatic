@@ -4,7 +4,7 @@ import {
   saveCmsDataRowDraft,
   updateCmsDataRowStatus,
 } from '@core/persistence'
-import type { DataRow, DataRowStatus } from '@core/data/schemas'
+import type { DataRow, DataRowCells, DataRowStatus } from '@core/data/schemas'
 import {
   readBodyCell,
   readFeaturedMediaCell,
@@ -12,6 +12,7 @@ import {
   readSeoTitleCell,
   readSlugCell,
   readTitleCell,
+  stripPostTypeBuiltInCells,
 } from '@core/data/cells'
 import { slugFromTitle } from '@core/utils/slug'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -44,6 +45,10 @@ export function useContentEntryDraft({
   const [seoDescription, setSeoDescription] = useState('')
   const [featuredMediaId, setFeaturedMediaId] = useState<string | null>(null)
   const [body, setBody] = useState('')
+  // Values of the collection's CUSTOM (non-built-in) fields, keyed by field
+  // id — edited generically in the Content settings panel and saved through
+  // the same draft lifecycle as the built-ins above.
+  const [customCells, setCustomCells] = useState<DataRowCells>({})
   const [saveMessage, setSaveMessage] = useState<SaveMessage>('idle')
 
   // Exception #1: referenced in the useLayoutEffect dep array below, so it
@@ -55,8 +60,13 @@ export function useContentEntryDraft({
     setSeoDescription(entry ? readSeoDescriptionCell(entry.cells) : '')
     setFeaturedMediaId(entry ? readFeaturedMediaCell(entry.cells) : null)
     setBody(entry ? readBodyCell(entry.cells) : '')
+    setCustomCells(entry ? stripPostTypeBuiltInCells(entry.cells) : {})
     setSaveMessage('idle')
   }, [])
+
+  const setCustomCell = (fieldId: string, value: unknown) => {
+    setCustomCells((cells) => ({ ...cells, [fieldId]: value }))
+  }
 
   /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useLayoutEffect(() => {
@@ -70,6 +80,7 @@ export function useContentEntryDraft({
     setSeoTitle(readSeoTitleCell(entry.cells))
     setSeoDescription(readSeoDescriptionCell(entry.cells))
     setFeaturedMediaId(readFeaturedMediaCell(entry.cells))
+    setCustomCells(stripPostTypeBuiltInCells(entry.cells))
   }
 
   const isDirty = (() => {
@@ -79,7 +90,10 @@ export function useContentEntryDraft({
       seoTitle !== readSeoTitleCell(selectedEntry.cells) ||
       seoDescription !== readSeoDescriptionCell(selectedEntry.cells) ||
       featuredMediaId !== readFeaturedMediaCell(selectedEntry.cells) ||
-      body !== readBodyCell(selectedEntry.cells)
+      body !== readBodyCell(selectedEntry.cells) ||
+      // Cell values are JSON by definition (persisted via cells_json), so a
+      // stringify comparison is exact — same approach as useDataRowDraft.
+      JSON.stringify(customCells) !== JSON.stringify(stripPostTypeBuiltInCells(selectedEntry.cells))
   })()
 
   const saveDraft = async (): Promise<DataRow | null> => {
@@ -89,6 +103,7 @@ export function useContentEntryDraft({
     const row = await saveCmsDataRowDraft(selectedEntry.id, {
       cells: {
         ...selectedEntry.cells,
+        ...customCells,
         title: nextTitle,
         slug: nextSlug,
         body,
@@ -174,6 +189,7 @@ export function useContentEntryDraft({
     seoDescription,
     featuredMediaId,
     body,
+    customCells,
     isDirty,
     saveMessage,
     setTitle,
@@ -182,6 +198,7 @@ export function useContentEntryDraft({
     setSeoDescription,
     setFeaturedMediaId,
     setBody,
+    setCustomCell,
     setSaveMessage,
     handleSaveDraft,
     handlePublish,

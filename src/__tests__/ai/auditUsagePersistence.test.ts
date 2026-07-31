@@ -21,6 +21,7 @@ const fakeTextOnlyDriver: AiProvider = {
     return {
       toolCalling: false,
       visionInput: false,
+      toolResultImages: false,
       promptCache: false,
       streaming: true,
     }
@@ -141,6 +142,11 @@ describe('AI audit usage persistence', () => {
       'usage',
       'done',
     ])
+    expect(emitted.find((event) => event.type === 'usage')).toMatchObject({
+      promptTokens: 123,
+      completionTokens: 45,
+      costUsd: 0,
+    })
 
     const since = new Date(Date.now() - 60_000).toISOString()
     const totals = await getUsageTotals(harness.db, since)

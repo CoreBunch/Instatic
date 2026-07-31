@@ -1,12 +1,16 @@
 /**
- * Undo/Redo store tests — verifies J4 requirements:
- * - undo/redo operates only on site state
- * - canUndo / canRedo flags stay accurate
- * - history is capped at MAX_HISTORY (50)
- * - undo then modify creates a new branch (future is cleared)
+ * Undo/Redo store tests.
+ *
+ * History lives in per-doc Y.UndoManagers inside the collab binding
+ * (slices/site/collabBinding.ts) — these tests pin down the OBSERVABLE
+ * contract through the store: undo/redo operates only on site state,
+ * canUndo/canRedo stay accurate, coalescing folds a typing burst into one
+ * step, and undo-then-modify clears the redo branch.
  */
 import { describe, it, expect, beforeEach } from 'bun:test'
 import { useEditorStore } from '@site/store/store'
+// `startInlineEdit` resolves its `inlineTextEdit` spec from the module registry.
+import '@modules/base/text'
 
 // Helper: get fresh store state (Zustand is module-singleton — reset between tests)
 function getStore() {
@@ -14,17 +18,13 @@ function getStore() {
 }
 
 beforeEach(() => {
-  // Reset store to a clean slate before each test
+  // Reset store to a clean slate before each test. clearSite also resets the
+  // collab binding's docs + undo managers.
+  useEditorStore.getState().clearSite()
   useEditorStore.setState({
-    site: null,
-    _historyPast: [],
-    _historyFuture: [],
-    canUndo: false,
-    canRedo: false,
     selectedNodeId: null,
     selectedNodeIds: [],
     hoveredNodeId: null,
-    hasUnsavedChanges: false,
   })
 })
 
@@ -81,6 +81,84 @@ describe('Undo / Redo — basic lifecycle', () => {
     expect(nodesAfterRedo).toBe(nodesBeforeUndo)
   })
 
+  it('undo prunes selection that points at the reverted insertion', () => {
+    const site = getStore().createSite('Test SiteDocument')
+    const rootId = site.pages[0].rootNodeId
+    const insertedId = useEditorStore.getState().insertNode('base.text', {}, rootId)
+
+    useEditorStore.getState().selectNode(insertedId)
+    expect(useEditorStore.getState().selectedNodeIds).toEqual([insertedId])
+
+    useEditorStore.getState().undo()
+
+    const afterUndo = useEditorStore.getState()
+    expect(afterUndo.site!.pages[0].nodes[insertedId]).toBeUndefined()
+    expect(afterUndo.selectedNodeIds).toEqual([])
+    expect(afterUndo.selectedNodeId).toBeNull()
+
+    const nextId = afterUndo.insertNode('base.text', {}, rootId)
+    expect(nextId).not.toBe('')
+    expect(useEditorStore.getState().site!.pages[0].nodes[nextId]).toBeDefined()
+  })
+
+  it('undo keeps surviving selections and only drops the reverted node', () => {
+    const site = getStore().createSite('Test SiteDocument')
+    const rootId = site.pages[0].rootNodeId
+    const survivorId = useEditorStore.getState().insertNode('base.text', {}, rootId)
+    const revertedId = useEditorStore.getState().insertNode('base.text', {}, rootId)
+
+    useEditorStore.getState().selectNode(survivorId)
+    useEditorStore.getState().addToSelection(revertedId)
+    expect(useEditorStore.getState().selectedNodeIds).toEqual([survivorId, revertedId])
+
+    // Reverts only the second insertion.
+    useEditorStore.getState().undo()
+
+    const afterUndo = useEditorStore.getState()
+    expect(afterUndo.site!.pages[0].nodes[revertedId]).toBeUndefined()
+    expect(afterUndo.site!.pages[0].nodes[survivorId]).toBeDefined()
+    // The survivor keeps its selection; the anchor re-syncs to it rather than
+    // the whole multi-selection being cleared.
+    expect(afterUndo.selectedNodeIds).toEqual([survivorId])
+    expect(afterUndo.selectedNodeId).toBe(survivorId)
+  })
+
+  it('undo closes an inline-edit session on the node it reverts', () => {
+    const site = getStore().createSite('Test SiteDocument')
+    const rootId = site.pages[0].rootNodeId
+    const breakpointId = site.breakpoints[0]!.id
+    const insertedId = useEditorStore.getState().insertNode('base.text', {}, rootId)
+
+    useEditorStore.getState().startInlineEdit(insertedId, breakpointId)
+    expect(useEditorStore.getState().activeInlineEdit?.nodeId).toBe(insertedId)
+
+    useEditorStore.getState().undo()
+
+    const afterUndo = useEditorStore.getState()
+    expect(afterUndo.site!.pages[0].nodes[insertedId]).toBeUndefined()
+    // A session pointing at a node that no longer exists must not survive —
+    // it is not necessarily part of the selection, so it is pruned by
+    // tree-membership.
+    expect(afterUndo.activeInlineEdit).toBeNull()
+  })
+
+  it('redo prunes selection when replaying a deletion', () => {
+    const site = getStore().createSite('Test SiteDocument')
+    const rootId = site.pages[0].rootNodeId
+    const insertedId = useEditorStore.getState().insertNode('base.text', {}, rootId)
+
+    useEditorStore.getState().deleteNode(insertedId)
+    useEditorStore.getState().undo()
+    useEditorStore.getState().selectNode(insertedId)
+
+    useEditorStore.getState().redo()
+
+    const afterRedo = useEditorStore.getState()
+    expect(afterRedo.site!.pages[0].nodes[insertedId]).toBeUndefined()
+    expect(afterRedo.selectedNodeIds).toEqual([])
+    expect(afterRedo.selectedNodeId).toBeNull()
+  })
+
   it('canRedo is true after undo', () => {
     const s = getStore()
     const site = s.createSite('Test SiteDocument')
@@ -111,7 +189,6 @@ describe('Undo / Redo — basic lifecycle', () => {
     useEditorStore.getState().insertNode('base.text', {}, rootId)
 
     expect(useEditorStore.getState().canRedo).toBe(false)
-    expect(useEditorStore.getState()._historyFuture).toHaveLength(0)
   })
 
   it('multiple mutations are each individually undoable', () => {
@@ -156,8 +233,6 @@ describe('Undo / Redo — basic lifecycle', () => {
     useEditorStore.getState().createSite('New SiteDocument')
     expect(useEditorStore.getState().canUndo).toBe(false)
     expect(useEditorStore.getState().canRedo).toBe(false)
-    expect(useEditorStore.getState()._historyPast).toHaveLength(0)
-    expect(useEditorStore.getState()._historyFuture).toHaveLength(0)
   })
 
   it('canvas/UI state (zoom, panX) is not affected by undo', () => {
@@ -186,31 +261,39 @@ describe('Undo / Redo — input coalescing', () => {
 
   it('coalesces consecutive same-prop edits into one undo entry', () => {
     const { nodeId } = setupTextNode()
-    const depthAfterInsert = useEditorStore.getState()._historyPast.length
 
     // Simulate per-keystroke typing on a single prop.
     for (const text of ['H', 'He', 'Hel', 'Hell', 'Hello']) {
       useEditorStore.getState().updateNodeProps(nodeId, { text })
     }
-
-    // The whole typing burst added exactly ONE history entry, not five.
-    expect(useEditorStore.getState()._historyPast.length).toBe(depthAfterInsert + 1)
     expect(useEditorStore.getState().site!.pages[0].nodes[nodeId].props.text).toBe('Hello')
 
-    // A single undo reverts the entire burst back to the pre-typing value.
+    // A single undo reverts the entire burst back to the pre-typing value —
+    // NOT one keystroke — and the node insert stays applied.
     useEditorStore.getState().undo()
     expect(useEditorStore.getState().site!.pages[0].nodes[nodeId].props.text).toBe('')
+    expect(useEditorStore.getState().site!.pages[0].nodes[nodeId]).toBeDefined()
   })
 
   it('does not coalesce edits to different props', () => {
     const { nodeId } = setupTextNode()
-    const depthAfterInsert = useEditorStore.getState()._historyPast.length
 
+    // Capture the module-default tag value BEFORE the edit — different test
+    // files may register base.text with different default props.
+    const tagBefore = useEditorStore.getState().site!.pages[0].nodes[nodeId].props.tag
     useEditorStore.getState().updateNodeProps(nodeId, { text: 'hi' })
     useEditorStore.getState().updateNodeProps(nodeId, { tag: 'h1' })
 
-    // Different prop keys → two distinct undo entries.
-    expect(useEditorStore.getState()._historyPast.length).toBe(depthAfterInsert + 2)
+    // Different prop keys → two distinct undo entries: the first undo
+    // reverts ONLY the tag edit, the text edit survives it.
+    useEditorStore.getState().undo()
+    let node = useEditorStore.getState().site!.pages[0].nodes[nodeId]
+    expect(node.props.tag).toBe(tagBefore)
+    expect(node.props.text).toBe('hi')
+
+    useEditorStore.getState().undo()
+    node = useEditorStore.getState().site!.pages[0].nodes[nodeId]
+    expect(node.props.text).toBe('')
   })
 
   it('breaks the burst after undo so the next edit is a fresh entry', () => {
@@ -219,11 +302,16 @@ describe('Undo / Redo — input coalescing', () => {
     useEditorStore.getState().updateNodeProps(nodeId, { text: 'a' })
     useEditorStore.getState().updateNodeProps(nodeId, { text: 'ab' })
     useEditorStore.getState().undo() // back to ''
-    const depthAfterUndo = useEditorStore.getState()._historyPast.length
+    expect(useEditorStore.getState().site!.pages[0].nodes[nodeId].props.text).toBe('')
 
-    // Typing again must NOT fold into the undone burst.
+    // Typing again must NOT fold into the undone burst: it forms a fresh
+    // entry whose undo returns to '' (the post-undo value), and the node
+    // insert stays applied.
     useEditorStore.getState().updateNodeProps(nodeId, { text: 'x' })
-    expect(useEditorStore.getState()._historyPast.length).toBe(depthAfterUndo + 1)
+    expect(useEditorStore.getState().site!.pages[0].nodes[nodeId].props.text).toBe('x')
+    useEditorStore.getState().undo()
+    expect(useEditorStore.getState().site!.pages[0].nodes[nodeId].props.text).toBe('')
+    expect(useEditorStore.getState().site!.pages[0].nodes[nodeId]).toBeDefined()
   })
 
   it('a non-coalescing mutation ends the burst', () => {
@@ -234,10 +322,12 @@ describe('Undo / Redo — input coalescing', () => {
     useEditorStore.getState().updateNodeProps(nodeId, { text: 'a' })
     // Structural mutation in between resets the coalescing key.
     useEditorStore.getState().insertNode('base.text', { text: '' }, rootId)
-    const depth = useEditorStore.getState()._historyPast.length
-
     useEditorStore.getState().updateNodeProps(nodeId, { text: 'ab' })
-    expect(useEditorStore.getState()._historyPast.length).toBe(depth + 1)
+
+    // 'ab' formed its OWN entry (no folding across the structural break):
+    // the first undo reverts only it, back to 'a' — not to ''.
+    useEditorStore.getState().undo()
+    expect(useEditorStore.getState().site!.pages[0].nodes[nodeId].props.text).toBe('a')
   })
 
   it('redo replays a coalesced burst back to its final value', () => {
@@ -286,10 +376,11 @@ describe('Undo / Redo — patch correctness', () => {
     const b = useEditorStore.getState().insertNode('base.container', {}, rootId)
     useEditorStore.getState().moveNode(a, b, 0)
 
-    const afterMove = JSON.stringify(useEditorStore.getState().site!.pages[0].nodes)
+    const afterMove = structuredClone(useEditorStore.getState().site!.pages[0].nodes)
     useEditorStore.getState().undo()
     useEditorStore.getState().redo()
-    const afterRoundTrip = JSON.stringify(useEditorStore.getState().site!.pages[0].nodes)
-    expect(afterRoundTrip).toBe(afterMove)
+    // Deep equality, not string equality — the projection rebuilds node
+    // objects from the Y maps, so key ORDER may differ; content must not.
+    expect(useEditorStore.getState().site!.pages[0].nodes).toEqual(afterMove)
   })
 })

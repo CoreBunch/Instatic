@@ -46,6 +46,18 @@ describe('inline <svg> → base.svg', () => {
     const node = single('<svg aria-label="Company logo" viewBox="0 0 24 24"><path d="M1 1"/></svg>')
     expect(node.props.title).toBe('Company logo')
   })
+
+  it('preserves circular text paths and their fragment references', () => {
+    const node = single(
+      '<svg class="seal-ring" viewBox="0 0 100 100"><defs><path id="sealE" d="M50,50 m-39,0 a39,39 0 1,1 78,0 a39,39 0 1,1 -78,0"></path></defs><text><textPath href="#sealE" xlink:href="#sealE" startOffset="0" textLength="245" lengthAdjust="spacing">★ OPEN SOURCE · 4K STARS · </textPath></text></svg>',
+    )
+    const markup = String(node.props.svg)
+
+    expect(markup).toContain('<textPath')
+    expect(markup).toContain('href="#sealE"')
+    expect(markup).toContain('xlink:href="#sealE"')
+    expect(markup).toContain('★ OPEN SOURCE · 4K STARS ·')
+  })
 })
 
 describe('anchor recursion preserves nested icons', () => {

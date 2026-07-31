@@ -2,10 +2,10 @@
 
 The site's style rule registry — `Record<string, StyleRule>` stored on the site shell (`site.styleRules`). Every user-defined CSS rule lives here. The publisher compiles entries to CSS at publish time; the editor's canvas injects the same CSS for live preview.
 
-Two kinds of rules:
+Three forms of rules:
 
-1. **Author-facing class rules** (`kind: 'class'`) — the user picks a name (`hero-button`, `card-meta`) and the editor applies them via `node.classIds`. Selector is `.<name>`.
-2. **Ambient rules** (`kind: 'ambient'`) — attach by CSS selector matching, not by node assignment (e.g. `h1`, `.hero .title`, `a:hover`). The publisher emits the rule but never writes to `class=` attributes. Supported stylesheet-level imports such as `@keyframes` are stored as ambient rules with `rawCss`.
+1. **Author-facing class rules** (`kind: 'class'`) — the user picks a name (`hero-button`, `card-meta`) and the editor applies it via `node.classIds`. User-created selectors are `.<name>`; imported utility rules can retain complex selectors such as `.group:hover .group-hover\:block` while exposing the decoded binding name `group-hover:block`.
+2. **Ambient rules** (`kind: 'ambient'`) — attach by CSS selector matching, not by node assignment (e.g. `h1`, `a:hover`). The publisher emits the rule but never writes it to `class=` attributes. Supported stylesheet-level imports such as `@keyframes` are stored as ambient rules with `rawCss`.
 3. **Scoped classes** — generated class-kind rules owned by a single node (for "set this property only on this element"). The scope object pins the rule to its node.
 
 ---
@@ -16,7 +16,7 @@ Two kinds of rules:
 - Source-of-truth schema: `StyleRuleSchema` in `src/core/page-tree/styleRule.ts`.
 - Compiled to CSS by `classCss.ts` in the publisher; collected via `collectClassCSS(site)`.
 - Each node references class-kind rules by id (`node.classIds: string[]`). Later ids in the array win in cascade order.
-- Selector UI surfaces display the rule's CSS selector (`styleRuleSelector(rule)`): class-kind rules appear as `.<name>`, ambient rules appear as their verbatim `selector` text.
+- Selector UI surfaces display the rule's CSS selector (`styleRuleSelector(rule)`): canonical classes appear as `.<name>`, imported class rules retain their verbatim selector, and ambient rules also use their verbatim `selector` text.
 - Rule **name** is the class token for class-kind rules. For ambient rules, `selector` is the source of truth; user edits keep `name` aligned to the selector so old class-name-only UI paths cannot add an extra dot.
 - Rule **id** is the stable internal identifier (`<nanoid>`).
 - Scoped rules (`scope: { type: 'node', nodeId, role: 'module-style' }`) are pinned to one node.
@@ -39,12 +39,14 @@ interface StyleRule {
     nodeId: string
     role:   'module-style'
   }
-  styles:           Record<string, unknown>          // base CSS properties (CSSPropertyBag-shaped at write time)
-  contextStyles:     Record<string, Record<string, unknown>>  // per-context overrides, keyed by context id
-  rawCss?:          string                            // supported raw at-rule CSS, currently imported @keyframes
-  generated?:    GeneratedClassMetadata               // framework-generated flags
-  createdAt?:   number
-  updatedAt?:   number
+  styles:                  Record<string, unknown>    // base CSS properties (CSSPropertyBag-shaped at write time)
+  stylePriorities?:        Record<string, 'important'>
+  contextStyles:           Record<string, Record<string, unknown>>
+  contextStylePriorities?: Record<string, Record<string, 'important'>>
+  rawCss?:                 string                     // supported raw at-rule CSS, currently imported @keyframes
+  generated?:              GeneratedClassMetadata    // framework-generated flags
+  createdAt?:              number
+  updatedAt?:              number
 }
 ```
 
@@ -56,6 +58,10 @@ interface StyleRule {
 `parseStyleRule` reads only the current `contextStyles` shape. Obsolete per-rule context fields are ignored rather than migrated.
 
 `styles` and `contextStyles` are typed `Record<string, unknown>` at the persistence boundary — narrowing happens at the publisher's `bagToCSS` (`classCss.ts`). The WRITE API (class slice, framework generators) uses the typed `CSSPropertyBag` shape from `src/core/page-tree/cssPropertyBag.ts`.
+
+Number-backed fields such as `opacity` and `zIndex` stay numeric at that write boundary. `src/admin/pages/site/panels/PropertiesPanel/ClassPropertyRow.tsx` holds incomplete focused text such as `0.` or `-` in a local lexical draft and commits only finite numbers; `src/admin/pages/site/property-controls/TextControl.tsx` exposes the focus and blur boundary that releases that draft.
+
+Declaration priority is stored structurally, beside the scalar property value. `stylePriorities` is a sparse property-to-`'important'` map for `styles`; `contextStylePriorities` is the equivalent sparse map keyed first by context id. The CSS importer reads priority through `CSSStyleDeclaration.getPropertyPriority()`, and the publisher appends ` !important` from this metadata. Removing a value also removes its priority entry, and tolerant persistence parsing drops orphaned or invalid priority metadata. Node inline styles deliberately keep their existing value-only shape.
 
 `rawCss` is intentionally narrow. The importer uses it for sanitised `@keyframes` blocks that cannot be represented as selector declarations; the publisher emits only supported raw keyframes after its own safety gate. General arbitrary CSS strings still belong in structured `styles` / `contextStyles` entries.
 
@@ -69,7 +75,7 @@ Class-kind rule **name** is the public class token. It is stored without the lea
 - No leading, trailing, or embedded ASCII whitespace
 - No control characters
 
-The selector itself is produced by `classKindSelector(name)`, which escapes the token for CSS when needed. Ambient rule **name** mirrors the ambient selector after user edits so older class-name-only surfaces cannot accidentally render an extra leading dot.
+New class selectors are produced by `classKindSelector(name)`, which escapes the token for CSS when needed. Imported class-bearing selectors preserve their original escaped selector; renaming rewrites the decoded class token in place. Ambient rule **name** mirrors the ambient selector after user edits so older class-name-only surfaces cannot accidentally render an extra leading dot.
 
 Rule **id** is internal (a nanoid). Refs from nodes (`classIds`) and from internal data structures use the id, not the name. This means renaming a rule doesn't break anything that references it.
 
@@ -172,7 +178,7 @@ All usage logic lives in `src/admin/pages/site/panels/selectorUsage.ts`.
 ```text
 For each rule in registry (sorted by order):
   selector = rule.selector               // e.g. '.hero-button' or 'h1 > span'
-  base CSS  = bagToCSS(rule.styles)
+  base CSS  = bagToCSS(rule.styles, options, rule.stylePriorities)
   emit:     '${selector} { ${base CSS} }'
 
   for each (contextId, bag) in rule.contextStyles:
@@ -182,7 +188,8 @@ For each rule in registry (sorted by order):
       prelude = '@media ${breakpoint.mediaQuery ?? `(max-width: ${width}px)`}'
     else:  // orphaned key — skipped
       continue
-    emit: '${prelude} { ${selector} { ${bagToCSS(bag)} } }'
+    priorities = rule.contextStylePriorities?.[contextId]
+    emit: '${prelude} { ${selector} { ${bagToCSS(bag, options, priorities)} } }'
 ```
 
 Cascade order within a rule: base → custom conditions (registry order) → viewport contexts. Pure max-width contexts emit widest first so narrower queries win; pure min-width contexts emit narrowest first so wider queries win; mixed/custom viewport queries keep registry order.
@@ -194,11 +201,12 @@ The compiled string is part of the per-page CSS bundle (see [docs/features/publi
 Translates the property bag (`{ color: '#fff', padding: { top: 16, right: 8 } }`) to CSS strings. Handles:
 
 - Plain values: `color: #fff;`
+- Sparse priority metadata: `color: #fff !important;`
 - Spacing bags: `padding: 16px 8px 0 0;` (decomposed)
 - Variable references: `color: var(--site-primary);`
 - Multi-value props (transforms, transitions): joined per CSS rules
 
-Invalid entries are silently dropped — the bag is tolerant.
+Invalid entries are silently dropped — the bag is tolerant. Four stored padding or margin sides collapse to a shorthand only when all four priorities match; mixed priorities remain longhands so the cascade is preserved.
 
 ---
 

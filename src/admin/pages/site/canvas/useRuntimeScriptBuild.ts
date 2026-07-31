@@ -31,7 +31,7 @@ import { useEditorStore } from '@site/store/store'
 import {
   buildCmsRuntimePreview,
   type CmsRuntimePreviewResult,
-} from '@core/persistence/cmsRuntime'
+} from '@core/persistence'
 import type { SiteRuntimeDiagnostic, SiteScriptFormat, SiteScriptPlacement } from '@core/site-runtime'
 import { getErrorMessage } from '@core/utils/errorMessage'
 

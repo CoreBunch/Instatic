@@ -4,6 +4,7 @@ import type { SiteFile } from '@core/files/schemas'
 import type { ExplorerPathChangePlan, Page, SiteExplorerSectionId, StructuralSiteExplorerSectionId } from '@core/page-tree'
 import { createUniquePageSlug, pagePublicPath, isHomePage } from '@core/page-tree'
 import { templateTargetLabel } from '@core/templates'
+import { flattenVCToVirtualPage } from '@core/visualComponents'
 import { SkeletonBlock } from '@ui/components/Skeleton'
 import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
 import { FolderGlyphIcon } from 'pixel-art-icons/icons/folder-glyph'
@@ -12,9 +13,10 @@ import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
 import { GlobeSolidIcon } from 'pixel-art-icons/icons/globe-solid'
+import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
 import { SiteCreateDialog, buildScriptPath, buildStylePath, slugifySiteItemName, type SiteCreatePayload, type SiteCreateKind } from '@admin/shared/dialogs/SiteCreateDialog'
 import type { ExplorerContextMenuItem } from '@site/explorer-actions'
-import { TemplateSettingsDialog, type TemplateSettingsPayload } from '@admin/shared/dialogs/TemplateSettingsDialog'
+import { usePageSettingsDialogs } from './usePageSettingsDialogs'
 import { useVCDeletionConfirm } from '@admin/shared/dialogs/VCDeletionConfirmDialog'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import {
@@ -121,7 +123,6 @@ export function SiteExplorerPanel({
   const [createKind, setCreateKind] = useState<SiteCreateKind | null>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [inlineRenameTarget, setInlineRenameTarget] = useState<SiteExplorerContextTarget | null>(null)
-  const [templateSettingsTarget, setTemplateSettingsTarget] = useState<Page | null>(null)
   const [pathConfirmPlan, setPathConfirmPlan] = useState<ExplorerPathChangePlan | null>(null)
   const explorerSelection = useSiteExplorerSelection<SiteExplorerContextTarget>()
 
@@ -152,6 +153,12 @@ export function SiteExplorerPanel({
   }
 
   const pages = site?.pages ?? []
+  const { openTemplateSettings, openPageSettings, dialogs: pageSettingsDialogs } = usePageSettingsDialogs({
+    pages,
+    renamePage,
+    convertPageToTemplate,
+    openPageInCanvas,
+  })
   const normalPages = pages.filter((page) => !page.template)
   const templatePages = pages.filter((page) => page.template)
   const components = site?.visualComponents ?? []
@@ -350,15 +357,7 @@ export function SiteExplorerPanel({
     const slug = createUniquePageSlug('Post Template', pages)
     const page = addPage('Post Template', slug)
     openPageInCanvas(page.id)
-    setTemplateSettingsTarget(page)
-  }
-
-  function handleSaveTemplateSettings(payload: TemplateSettingsPayload) {
-    if (!templateSettingsTarget) return
-    renamePage(templateSettingsTarget.id, payload.title, payload.slug)
-    convertPageToTemplate(templateSettingsTarget.id, payload.template)
-    setTemplateSettingsTarget(null)
-    openPageInCanvas(templateSettingsTarget.id)
+    openTemplateSettings(page)
   }
 
   function templateMenuItems(target: SiteExplorerContextTarget) {
@@ -371,7 +370,7 @@ export function SiteExplorerPanel({
           label: 'Template settings',
           icon: <FileTextSolidIcon size={13} />,
           action: () => {
-            setTemplateSettingsTarget(page)
+            openTemplateSettings(page)
             setContextMenu(null)
           },
         },
@@ -390,7 +389,7 @@ export function SiteExplorerPanel({
       label: 'Use as template',
       icon: <FileTextSolidIcon size={13} />,
       action: () => {
-        setTemplateSettingsTarget(page)
+        openTemplateSettings(page)
         setContextMenu(null)
       },
     }]
@@ -417,6 +416,16 @@ export function SiteExplorerPanel({
           setContextMenu(null)
         },
       },
+      // Templates get title+slug through "Template settings" already — avoid
+      // a second, redundant slug editor for the same page.
+      ...(!page.template ? [{
+        label: 'Page settings',
+        icon: <Settings2SolidIcon size={13} />,
+        action: () => {
+          openPageSettings(page)
+          setContextMenu(null)
+        },
+      }] : []),
       ...templateMenuItems(target),
     ]
   }
@@ -528,6 +537,7 @@ export function SiteExplorerPanel({
         pinned: isHomePage(page),
         ariaLabel: `Open page ${page.title}`,
         target: { kind: 'page', id: page.id, title: page.title, slug: page.slug },
+        preview: { page, kindLabel: 'Page' },
       })),
     )
     : null
@@ -544,6 +554,7 @@ export function SiteExplorerPanel({
         active: page.id === activePageId && activeDocument?.kind !== 'visualComponent',
         ariaLabel: `Open template ${page.title}`,
         target: { kind: 'page', id: page.id, title: page.title, slug: page.slug },
+        preview: { page, kindLabel: 'Template' },
       })),
     )
     : null
@@ -560,6 +571,7 @@ export function SiteExplorerPanel({
         active: activeDocument?.kind === 'visualComponent' && activeDocument.vcId === component.id,
         ariaLabel: `Open component ${component.name}`,
         target: { kind: 'component', id: component.id, name: component.name },
+        preview: { page: flattenVCToVirtualPage(component), kindLabel: 'Component' },
       })),
     )
     : null
@@ -652,14 +664,7 @@ export function SiteExplorerPanel({
             onDelete={() => handleDeleteContext(contextMenu)}
           />
         )}
-        {templateSettingsTarget && (
-          <TemplateSettingsDialog
-            page={templateSettingsTarget}
-            pages={pages}
-            onCancel={() => setTemplateSettingsTarget(null)}
-            onSave={handleSaveTemplateSettings}
-          />
-        )}
+        {pageSettingsDialogs}
         {pathConfirmPlan && (
           <SiteExplorerPathConfirmDialog
             plan={pathConfirmPlan}

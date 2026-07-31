@@ -5,10 +5,10 @@
  * `.tmp/e2e-*` database once per run and then serves a single shared stack:
  * one admin origin, one public origin, one SQLite database. Every spec runs
  * serially against that shared state (`workers: 1`), so these constants are the
- * single source of truth for the owner account and origins.
+ * single source of truth for the suite identities and origins.
  */
 
-/** First-run owner created by the `setup` project. Reused by every spec. */
+/** First-run owner created by the `setup` project and reused by ordinary specs. */
 export const OWNER = {
   email: 'owner.e2e@example.com',
   password: 'qwerty123456',
@@ -33,3 +33,16 @@ export const OWNER_STATE_FILE = '.tmp/e2e-owner-state.json'
  * owner state.
  */
 export const ANONYMOUS_STATE = { cookies: [], origins: [] }
+
+/**
+ * Dedicated identity for account-global security flows. Password changes, MFA
+ * changes, and "sign out everywhere else" revoke other sessions for the target
+ * account, so `account.e2e.ts` uses this Admin instead of invalidating the owner
+ * session saved in `OWNER_STATE_FILE` for the rest of the suite.
+ */
+export const ACCOUNT_PERSONA = {
+  email: 'account.persona.e2e@example.com',
+  password: 'account-persona-pass-12345',
+  displayName: 'Account Persona',
+  role: 'Admin',
+} as const

@@ -58,12 +58,13 @@ const SCHEMA_READ_CAPS: readonly CoreCapability[] = [
 // ---------------------------------------------------------------------------
 
 /**
- * Decide which kinds of collections are visible to the content agent.
- * `data` (custom data tables) and `component` (visual-component definitions)
- * stay hidden — they belong to the Data + Site workspaces respectively.
- * Otherwise the agent would happily list every internal table.
+ * Decide which kinds of collections are visible to the Content workspace.
+ * Pages, reusable data, components, and layouts belong to the Site/Data
+ * workspaces and cannot be activated by the Content browser bridge. Keeping
+ * this catalog aligned with the actual writable surface avoids advertising a
+ * collection that every subsequent focus/write tool must reject.
  */
-const CONTENT_KIND_VISIBLE: ReadonlySet<string> = new Set(['postType', 'page'])
+const CONTENT_KIND_VISIBLE: ReadonlySet<string> = new Set(['postType'])
 
 function projectCollection(table: DataTableListItem) {
   return {
@@ -129,7 +130,7 @@ const listCollectionsTool: AiTool = {
   execution: 'server',
   requiredCapabilities: SCHEMA_READ_CAPS,
   description:
-    'List every content collection (postType + page tables) with id, slug, label, kind, row count, and primary field id. Use to discover where a document lives before reading/writing.',
+    'List every Content-workspace collection (routable post types only) with id, slug, label, kind, row count, and primary field id. Pages are edited through Site tools; reusable tables through Data tools.',
   inputSchema: ListCollectionsInput,
   handler: async (_input, ctx) => {
     const tables = await listDataTablesWithCounts(ctx.db)
@@ -277,7 +278,7 @@ const searchDocumentsTool: AiTool = {
   handler: async (input, ctx) => {
     const { query, limit } = input as Static<typeof SearchDocumentsInput>
     const results = await searchDataRows(ctx.db, query, limit ?? 25)
-    // Only surface postType/page rows — `data` tables aren't content.
+    // Only surface Content-workspace post-type rows.
     const tables = await listDataTablesWithCounts(ctx.db)
     const visibleTableIds = new Set(
       tables.filter((t) => CONTENT_KIND_VISIBLE.has(t.kind)).map((t) => t.id),

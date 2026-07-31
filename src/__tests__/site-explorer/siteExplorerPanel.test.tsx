@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { readFileSync } from 'fs'
 import { SiteExplorerPanel } from '@site/panels/SiteExplorerPanel'
 import { MediaExplorerPanel } from '@site/panels/MediaExplorerPanel'
+import { publishCmsMediaAssetCreated } from '@admin/pages/media/mediaAssetEvents'
+import { normalizeCmsMediaAsset } from '@core/persistence/cmsMedia'
 import { useEditorStore } from '@site/store/store'
 import { makeNode, makePage, makeSite } from '../fixtures'
 import type { VisualComponent } from '@core/visualComponents'
@@ -191,6 +193,39 @@ describe('SiteExplorerPanel', () => {
     expect(rows[0].textContent).toContain('Home')
     expect(rows[0].getAttribute('data-pinned')).toBe('true')
     expect(rows[0].getAttribute('draggable')).not.toBe('true')
+  })
+
+  it('shows a server-built desktop preview when a page row is hovered', async () => {
+    const originalFetch = globalThis.fetch
+    const previewRequests: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+    globalThis.fetch = async (input, init) => {
+      previewRequests.push({ input, init })
+      return new Response(JSON.stringify({
+        html: '<!doctype html><html><body><main>Hover preview</main></body></html>',
+        assets: [],
+        runtimeAssets: { scripts: [] },
+        diagnostics: [],
+      }), { status: 200 })
+    }
+
+    try {
+      loadSite()
+      render(<SiteExplorerPanel sectionGroup="site" />)
+
+      fireEvent.mouseEnter(rowForButton(/open page home/i))
+      const preview = await screen.findByTestId('site-explorer-hover-preview')
+      const iframe = await screen.findByTestId('site-explorer-hover-preview-iframe')
+
+      expect(preview.textContent).not.toContain('Desktop · 1440 px')
+      expect(iframe.getAttribute('srcdoc')).toContain('Hover preview')
+      expect(previewRequests).toHaveLength(1)
+      expect(previewRequests[0]?.input).toBe('/admin/api/cms/runtime/preview')
+      expect(JSON.parse(String(previewRequests[0]?.init?.body))).toMatchObject({
+        pageId: 'page-home',
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 
   it('renders nested page and script paths as recursive folders', () => {
@@ -528,6 +563,42 @@ describe('SiteExplorerPanel', () => {
       expect(await within(panel).findByRole('button', { name: /open media intro\.mp4/i })).toBeDefined()
       // Non-media files are dropped entirely — no "Other" bucket to land in.
       expect(within(panel).queryByRole('button', { name: /open media catalog\.pdf/i })).toBeNull()
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('keeps an Agent-created media asset when an older list request finishes later', async () => {
+    loadSite()
+    const originalFetch = globalThis.fetch
+    let resolveList!: (response: Response) => void
+    globalThis.fetch = (() => new Promise<Response>((resolve) => {
+      resolveList = resolve
+    })) as typeof fetch
+
+    try {
+      render(<MediaExplorerPanel variant="tab" />)
+      const created = normalizeCmsMediaAsset({
+        id: 'agent-created-image',
+        filename: 'agent-reference.jpg',
+        mimeType: 'image/jpeg',
+        sizeBytes: 42,
+        publicPath: '/uploads/agent-reference.jpg',
+        uploadedByUserId: null,
+        createdAt: '2026-07-11T10:00:00.000Z',
+      })
+      act(() => publishCmsMediaAssetCreated(created))
+      const panel = screen.getByTestId('media-explorer-panel')
+      expect(await within(panel).findByRole('button', { name: /open media agent-reference\.jpg/i }))
+        .toBeDefined()
+
+      await act(async () => {
+        resolveList(new Response(JSON.stringify({ assets: [] }), { status: 200 }))
+      })
+      await waitFor(() => {
+        expect(within(panel).getByRole('button', { name: /open media agent-reference\.jpg/i }))
+          .toBeDefined()
+      })
     } finally {
       globalThis.fetch = originalFetch
     }
@@ -964,6 +1035,42 @@ describe('SiteExplorerPanel', () => {
     fireEvent.doubleClick(screen.getByRole('button', { name: /open page pricing/i }))
 
     expect(screen.getByRole('textbox', { name: 'Rename Pricing' })).toBeDefined()
+  })
+
+  it('edits a page slug through the Page settings dialog', () => {
+    loadSite()
+    render(<SiteExplorerPanel sectionGroup="site" />)
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: /open page pricing/i }), {
+      clientX: 120,
+      clientY: 140,
+    })
+    fireEvent.click(screen.getByRole('menuitem', { name: /page settings/i }))
+
+    const slugInput = screen.getByLabelText('Slug') as HTMLInputElement
+    expect(slugInput.value).toBe('pricing')
+
+    fireEvent.change(slugInput, { target: { value: 'plans-and-pricing' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    const updated = useEditorStore.getState().site?.pages.find((page) => page.id === 'page-pricing')
+    expect(updated?.slug).toBe('plans-and-pricing')
+    expect(updated?.title).toBe('Pricing')
+  })
+
+  it('locks slug editing for the homepage in the Page settings dialog', () => {
+    loadSite()
+    render(<SiteExplorerPanel sectionGroup="site" />)
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: /open page home/i }), {
+      clientX: 120,
+      clientY: 140,
+    })
+    fireEvent.click(screen.getByRole('menuitem', { name: /page settings/i }))
+
+    const slugInput = screen.getByLabelText('Slug') as HTMLInputElement
+    expect(slugInput.disabled).toBe(true)
+    expect(slugInput.value).toBe('index')
   })
 
   it('renames and deletes components from the site row context menu', () => {

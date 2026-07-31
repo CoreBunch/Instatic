@@ -30,8 +30,8 @@
  * - Site explorer panel — site concepts: pages, components, styles, scripts
  * - CodeEditorPanel (Task #432) — center-stage, code editing
  *
- * J12: usePersistence handles CMS draft load on mount, preference-gated
- * 30s auto-save, toolbar Save, and Cmd+S immediate save.
+ * usePersistence handles the CMS draft load on mount and connects the
+ * live-collab provider — edits stream continuously; there is no manual save.
  *
  * Agent Panel: Phase D AI assistant — self-contained floating panel (Guideline #410).
  * Authenticates via ambient Claude Code credentials through the local Bun server.
@@ -40,6 +40,7 @@
 import { Toolbar } from '@admin/pages/site/toolbar/Toolbar'
 import { ZoomControls } from '@admin/pages/site/toolbar/ZoomControls'
 import { PublishButton } from '@admin/pages/site/toolbar/PublishButton'
+import { PeerAvatarStack } from '@admin/pages/site/toolbar/PeerAvatarStack'
 import { useEditorAppearancePreferences } from '@admin/pages/site/preferences/editorPreferences'
 import { usePersistence } from '@admin/pages/site/hooks/usePersistence'
 import { useSiteEditorUrlSync } from '@admin/pages/site/hooks/useSiteEditorUrlSync'
@@ -95,8 +96,8 @@ const SettingsModal = lazy(() =>
 
 // Editor-only toolbar surface: preview iframe. It self-gates on store state,
 // but we ALSO conditionally render it at the call site (below) so its chunk
-// isn't fetched on first paint — the preview overlay drags in the entire
-// publisher graph, which is large.
+// isn't fetched on first paint. The overlay is an infrequent, modal surface
+// whose server-built document should load only when the user asks for it.
 const PreviewOverlay = lazy(() =>
   import('@admin/pages/site/preview/PreviewOverlay').then((m) => ({
     default: m.PreviewOverlay,
@@ -159,11 +160,9 @@ export function AdminCanvasLayout() {
     canEditContent: canEditContentFlag,
     canEditStyle: canEditStyleFlag,
   }
-  // J12 — wire persistence: load, auto-save, toolbar Save, Cmd+S.
-  const persistence = usePersistence('default', cmsAdapter, {
-    markNewSiteUnsaved: true,
-    enabled: true,
-  })
+  // Boot the document lifecycle: HTTP load for first paint, then the collab
+  // provider — every edit streams live and the server relay persists.
+  const persistence = usePersistence('default', cmsAdapter, { enabled: true })
   // Keep the open page in lockstep with the URL: consume `?page=<slug>` on
   // load, and mirror the active page's slug back into the address bar so it's
   // directly linkable.
@@ -193,10 +192,6 @@ export function AdminCanvasLayout() {
     : null
 
   const loadEditorBody = usePostPaintEditorBodyGate()
-  async function saveBeforeWorkspaceNavigation(): Promise<void> {
-    if (!useEditorStore.getState().hasUnsavedChanges) return
-    await persistence.saveSite()
-  }
 
   return (
     <EditorPermissionsProvider value={permissions}>
@@ -217,11 +212,7 @@ export function AdminCanvasLayout() {
           faviconUrl={faviconUrl}
           section="site"
           adminNavigationSlot={(
-            <AdminSectionNavigation
-              section="site"
-              currentUser={currentUser}
-              onWorkspaceNavigateStart={canSaveSite ? saveBeforeWorkspaceNavigation : undefined}
-            />
+            <AdminSectionNavigation section="site" currentUser={currentUser} />
           )}
           overlay={previewOpen && (
             <Suspense fallback={null}>
@@ -230,12 +221,9 @@ export function AdminCanvasLayout() {
           )}
           rightSlot={(
             <>
+              <PeerAvatarStack />
               <ZoomControls />
-              <PublishButton
-                enabled={canPublishPages}
-                onSave={canSaveSite ? persistence.saveSite : undefined}
-                saveStatus={persistence.saveStatus}
-              />
+              <PublishButton enabled={canPublishPages} saveStatus={persistence.saveStatus} />
             </>
           )}
         />

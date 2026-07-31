@@ -24,7 +24,7 @@ import {
   type AiUsageByUserRow,
 } from '../../../ai/api'
 import { UsageTablePanel } from './UsageTablePanel'
-import { formatCost, formatNumber } from './usageFormat'
+import { formatCost, formatNumber } from '@admin/ai/usageFormat'
 import styles from '../AiPage.module.css'
 
 type Range = 'today' | '7d' | '30d' | 'all'

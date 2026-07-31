@@ -110,13 +110,6 @@ export const KEYBINDINGS: ReadonlyArray<KeybindingDefinition> = [
     scope: 'global',
   },
 
-  {
-    commandId: 'editor.save',
-    shortcut: { mac: '⌘S', win: 'Ctrl+S' },
-    ariaKeyshortcuts: isPlatformMac() ? 'Meta+S' : 'Control+S',
-    match: (e) => (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's',
-    scope: 'global',
-  },
 
   {
     commandId: 'settings.open',

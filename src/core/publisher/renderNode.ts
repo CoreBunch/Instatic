@@ -194,7 +194,7 @@ function renderStandardNode(
   // <body> in publishPage.
   if (node.moduleId === 'base.body') return output.html
   const withClasses = injectNodeClassIds(output.html, node.classIds, config.site)
-  const withStyles = injectNodeInlineStyles(withClasses, node.inlineStyles)
+  const withStyles = injectNodeInlineStyles(withClasses, node.inlineStyles, config.mediaAssets)
   return config.annotateNodeIds ? injectNodeId(withStyles, node.id) : withStyles
 }
 

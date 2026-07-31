@@ -156,12 +156,25 @@ export function insertSnapshotSubtrees(
           id: newId,
           scope: { ...cls.scope, nodeId: newScopeNodeId },
           styles: { ...cls.styles },
+          ...(cls.stylePriorities
+            ? { stylePriorities: { ...cls.stylePriorities } }
+            : {}),
           contextStyles: Object.fromEntries(
             Object.entries(cls.contextStyles).map(([ctx, s]) => [
               ctx,
               { ...s },
             ]),
           ),
+          ...(cls.contextStylePriorities
+            ? {
+                contextStylePriorities: Object.fromEntries(
+                  Object.entries(cls.contextStylePriorities).map(([ctx, priorities]) => [
+                    ctx,
+                    { ...priorities },
+                  ]),
+                ),
+              }
+            : {}),
           createdAt: now,
           updatedAt: now,
         },
@@ -190,12 +203,25 @@ export function insertSnapshotSubtrees(
           cls: {
             ...cls,
             styles: { ...cls.styles },
+            ...(cls.stylePriorities
+              ? { stylePriorities: { ...cls.stylePriorities } }
+              : {}),
             contextStyles: Object.fromEntries(
               Object.entries(cls.contextStyles).map(([ctx, s]) => [
                 ctx,
                 { ...s },
               ]),
             ),
+            ...(cls.contextStylePriorities
+              ? {
+                  contextStylePriorities: Object.fromEntries(
+                    Object.entries(cls.contextStylePriorities).map(([ctx, priorities]) => [
+                      ctx,
+                      { ...priorities },
+                    ]),
+                  ),
+                }
+              : {}),
           },
         })
       }

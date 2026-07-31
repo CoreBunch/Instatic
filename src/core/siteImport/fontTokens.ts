@@ -129,15 +129,28 @@ export function extractRootFontTokens(
     }
 
     const remaining: Record<string, unknown> = {}
+    const remainingPriorities: Record<string, 'important'> = {}
     for (const [prop, value] of Object.entries(rule.styles)) {
-      const token = typeof value === 'string' ? importTokenFromDeclaration(prop, value.trim()) : null
+      const important = rule.stylePriorities?.[prop] === 'important'
+      const token = !important && typeof value === 'string'
+        ? importTokenFromDeclaration(prop, value.trim())
+        : null
       if (token) fontTokens.push(token)
-      else remaining[prop] = value
+      else {
+        remaining[prop] = value
+        if (important) remainingPriorities[prop] = 'important'
+      }
     }
 
     const hasContext = Object.keys(rule.contextStyles ?? {}).length > 0
     if (Object.keys(remaining).length > 0 || hasContext) {
-      out.push({ ...rule, styles: remaining })
+      const rewritten = { ...rule, styles: remaining }
+      if (Object.keys(remainingPriorities).length > 0) {
+        rewritten.stylePriorities = remainingPriorities
+      } else {
+        delete rewritten.stylePriorities
+      }
+      out.push(rewritten)
     }
   }
 

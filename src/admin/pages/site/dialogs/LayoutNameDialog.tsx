@@ -18,7 +18,6 @@ import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { pushToast } from '@ui/components/Toast'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { requestEditorSave } from '@admin/state/adminEvents'
 import { useEditorStore } from '@site/store/store'
 import { SavedLayoutNameError } from '@site/store/slices/layoutsSlice'
 import type { LayoutNameDialogRequest } from '@site/store/slices/uiSlice'
@@ -62,10 +61,6 @@ function LayoutNameDialogBody({
           setError('This element can no longer be saved as a layout.')
           return
         }
-        // "Save as layout" reads as a deliberate save — persist immediately
-        // rather than relying on the autosave debounce, which is dropped if the
-        // user leaves the editor (e.g. to the Data view) before it fires.
-        requestEditorSave()
         pushToast({
           kind: 'success',
           title: `Saved layout "${name.trim()}"`,

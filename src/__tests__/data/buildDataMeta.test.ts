@@ -189,6 +189,73 @@ describe('buildDataMeta', () => {
     expect(fields.find((f) => f.id === 'missing')).toBeUndefined()
   })
 
+  it('projects a repeater item schema with media and resolved relations', () => {
+    const authorTable = makeDataTable({
+      id: 'table-authors',
+      slug: 'authors',
+      name: 'Authors',
+    })
+    const projectTable = makePostTypeTable({
+      fields: [{
+        type: 'repeater',
+        id: 'gallery',
+        label: 'Project gallery',
+        itemLabelFieldId: 'caption',
+        fields: [
+          { type: 'text', id: 'caption', label: 'Caption' },
+          {
+            type: 'media',
+            id: 'images',
+            label: 'Images',
+            mediaKind: 'image',
+            allowMultiple: true,
+          },
+          {
+            type: 'relation',
+            id: 'photographer',
+            label: 'Photographer',
+            targetTableId: 'table-authors',
+          },
+          {
+            type: 'relation',
+            id: 'missing',
+            label: 'Missing',
+            targetTableId: 'table-missing',
+          },
+        ],
+      }],
+    })
+
+    const meta = buildDataMeta([authorTable, projectTable])
+    const gallery = meta.tables
+      .find((table) => table.id === projectTable.id)
+      ?.fields.find((field) => field.id === 'gallery')
+
+    expect(gallery).toEqual({
+      id: 'gallery',
+      label: 'Project gallery',
+      type: 'repeater',
+      itemLabelFieldId: 'caption',
+      fields: [
+        { id: 'caption', label: 'Caption', type: 'text' },
+        {
+          id: 'images',
+          label: 'Images',
+          type: 'media',
+          mediaKind: 'image',
+          allowMultiple: true,
+        },
+        {
+          id: 'photographer',
+          label: 'Photographer',
+          type: 'relation',
+          targetTableSlug: 'authors',
+        },
+      ],
+    })
+    expect(Value.Check(DataMetaSchema, meta)).toBe(true)
+  })
+
   it('output validates against DataMetaSchema', () => {
     const authorTable = makeDataTable({
       id: 'table-authors',

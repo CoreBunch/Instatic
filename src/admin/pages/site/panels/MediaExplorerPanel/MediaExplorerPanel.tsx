@@ -5,6 +5,7 @@ import {
   type ChangeEvent,
   type KeyboardEvent,
   type MouseEvent,
+  type RefObject,
 } from 'react'
 import { createPortal } from 'react-dom'
 import { useEditorStore } from '@site/store/store'
@@ -34,6 +35,7 @@ import {
 } from '@site/explorer-actions'
 import { MediaViewerWindow } from '@admin/pages/media/components/MediaViewerWindow/MediaViewerWindow'
 import { useStandaloneMediaEditor } from '@admin/pages/media/hooks/useStandaloneMediaEditor'
+import { subscribeCmsMediaAssetCreated } from '@admin/pages/media/mediaAssetEvents'
 import {
   BUCKET_LABELS,
   type MediaBucket,
@@ -68,6 +70,13 @@ interface ContextMenuState {
   x: number
   y: number
   target: CmsMediaAsset
+}
+
+function externalAssetBuffer(
+  ref: RefObject<Map<string, CmsMediaAsset> | null>,
+): Map<string, CmsMediaAsset> {
+  ref.current ??= new Map()
+  return ref.current
 }
 
 export function MediaExplorerPanel({
@@ -107,6 +116,9 @@ export function MediaExplorerPanel({
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>('all')
   const [viewMode, setViewModeState] = useState<MediaViewMode>(readStoredViewMode)
   const mediaCanvasDrag = useMediaCanvasInsertionDrag()
+  const externallyCreatedAssetsRef = useRef<Map<string, CmsMediaAsset> | null>(null)
+  const mediaListGenerationRef = useRef(0)
+  const mediaListActiveRef = useRef(false)
   const setViewMode = (mode: MediaViewMode) => {
     setViewModeState(mode)
     writeStoredViewMode(mode)
@@ -143,6 +155,10 @@ export function MediaExplorerPanel({
     if (!isOpen) return
 
     let canceled = false
+    const externallyCreatedAssets = externalAssetBuffer(externallyCreatedAssetsRef)
+    const generation = mediaListGenerationRef.current + 1
+    mediaListGenerationRef.current = generation
+    mediaListActiveRef.current = true
     queueMicrotask(() => {
       if (!canceled) {
         setMediaLoading(true)
@@ -151,7 +167,11 @@ export function MediaExplorerPanel({
     })
     listCmsMediaAssets()
       .then((assets) => {
-        if (!canceled) setCmsAssets(assets)
+        if (!canceled) {
+          const external = [...externallyCreatedAssets.values()]
+          const externalIds = new Set(external.map((asset) => asset.id))
+          setCmsAssets([...external, ...assets.filter((asset) => !externalIds.has(asset.id))])
+        }
       })
       .catch((err) => {
         if (!canceled) {
@@ -160,12 +180,28 @@ export function MediaExplorerPanel({
       })
       .finally(() => {
         if (!canceled) setMediaLoading(false)
+        if (mediaListGenerationRef.current === generation) {
+          mediaListActiveRef.current = false
+          externallyCreatedAssets.clear()
+        }
       })
 
     return () => {
       canceled = true
+      if (mediaListGenerationRef.current === generation) {
+        mediaListActiveRef.current = false
+        externallyCreatedAssets.clear()
+      }
     }
   }, [isOpen])
+
+  useEffect(() => subscribeCmsMediaAssetCreated((asset) => {
+    const externallyCreatedAssets = externalAssetBuffer(externallyCreatedAssetsRef)
+    if (mediaListActiveRef.current) {
+      externallyCreatedAssets.set(asset.id, asset)
+    }
+    setCmsAssets((assets) => [asset, ...assets.filter((item) => item.id !== asset.id)])
+  }), [])
 
   if (!isOpen) return null
 

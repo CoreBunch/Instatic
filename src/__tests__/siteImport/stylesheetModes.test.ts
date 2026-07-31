@@ -110,6 +110,34 @@ describe('cross-sheet class conflicts', () => {
     expect(btnClassRules).toHaveLength(1)
   })
 
+  it('uses important-aware cascade semantics when comparing definitions', () => {
+    const plan = buildImportPlan({
+      fileMap: twoPageFileMap(
+        '.btn { color: red !important; } .btn { color: blue; }',
+        '.btn { color: red !important; }',
+      ),
+      currentSite: makeEmptySiteDocument(),
+    })
+
+    expect(plan.conflicts.crossSheetClasses).toHaveLength(0)
+  })
+
+  it('preserves priority when materialising a renamed divergent definition', () => {
+    const plan = buildImportPlan({
+      fileMap: twoPageFileMap(
+        '.btn { color: red; }',
+        '.btn { color: blue !important; }',
+      ),
+      currentSite: makeEmptySiteDocument(),
+    })
+    const resolved = resolveWithDefaults(plan)
+    const renamed = resolved.styleRules.find(
+      (rule) => rule.kind === 'class' && rule.name === 'btn-2',
+    )
+    expect(renamed?.styles.color).toBe('blue')
+    expect(renamed?.stylePriorities).toEqual({ color: 'important' })
+  })
+
   it('keep-first (skip) drops the divergent definition and binds its pages to the first', () => {
     const plan = buildImportPlan({
       fileMap: twoPageFileMap(

@@ -1,0 +1,8 @@
+.frame {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline-start: -100000px;
+  inline-size: max-content;
+  block-size: max-content;
+  pointer-events: none;
+}

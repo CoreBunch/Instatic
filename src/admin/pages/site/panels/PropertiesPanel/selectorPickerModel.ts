@@ -34,7 +34,6 @@ interface SelectorPickerModel {
 export function deriveSelectorPickerModel(input: SelectorPickerModelInput): SelectorPickerModel {
   const { rules, node, selectedElement, activeRuleId } = input
   const assignedIds = node?.classIds ?? []
-  const assignedIdSet = new Set(assignedIds)
   const selectorSubject = authorSelectorSubject(selectedElement)
   const pills: SelectorPillItem[] = []
   const suggestions: SelectorSuggestionItem[] = []
@@ -50,34 +49,25 @@ export function deriveSelectorPickerModel(input: SelectorPickerModelInput): Sele
     })
   }
 
-  for (const rule of sortedRules(rules)) {
-    if (rule.kind === 'ambient') {
-      const { match, pillMatch } = evaluateAmbientRule(rule, selectorSubject)
-      if (pillMatch) {
-        pills.push({
-          rule,
-          match: pillMatch,
-          active: activeRuleId === rule.id,
-          removable: false,
-        })
-      }
-      suggestions.push({
+  // Class suggestions are derived directly from the registry by
+  // useClassPickerSuggestions. Only ambient rules need DOM selector matching
+  // here; filtering before sorting keeps a 40k-class Tailwind registry cheap.
+  for (const rule of sortedAmbientRules(rules)) {
+    const { match, pillMatch } = evaluateAmbientRule(rule, selectorSubject)
+    if (pillMatch) {
+      pills.push({
         rule,
-        match,
-        disabled: match === null,
-        disabledReason: match === null ? "Doesn't match this element" : null,
-      })
-      continue
-    }
-
-    if (!assignedIdSet.has(rule.id)) {
-      suggestions.push({
-        rule,
-        match: null,
-        disabled: false,
-        disabledReason: null,
+        match: pillMatch,
+        active: activeRuleId === rule.id,
+        removable: false,
       })
     }
+    suggestions.push({
+      rule,
+      match,
+      disabled: match === null,
+      disabledReason: match === null ? "Doesn't match this element" : null,
+    })
   }
 
   return { pills: sortPillsBySpecificity(pills), suggestions }
@@ -133,8 +123,8 @@ function stripCanvasEditorAttributes(root: Element): void {
   }
 }
 
-function sortedRules(rules: Record<string, StyleRule>): StyleRule[] {
-  return Object.values(rules).slice().sort((a, b) => {
+function sortedAmbientRules(rules: Record<string, StyleRule>): StyleRule[] {
+  return Object.values(rules).filter((rule) => rule.kind === 'ambient').sort((a, b) => {
     const byOrder = normaliseOrder(a) - normaliseOrder(b)
     return byOrder !== 0 ? byOrder : a.name.localeCompare(b.name)
   })

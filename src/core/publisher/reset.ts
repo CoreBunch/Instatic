@@ -46,11 +46,14 @@ export const PUBLISHER_RESET_CSS = [
   // canvas reset so the design view and the published page agree on spacing.
   ':where(*) { margin: 0; padding: 0; }',
 
-  // Sensible body baseline. font-family pinned to system-ui so the published
-  // page picks the OS native font (matches what most modern stacks ship). Users
-  // who want a custom default can set it on `body` via a class or framework
-  // typography settings.
-  ':where(html, body) { height: 100%; }',
+  // Keep the document's natural height. Constraining both roots to 100% makes
+  // an authored `overflow-x: hidden` turn <body> into a viewport-height scroll
+  // container, so window-level scroll listeners never observe page scrolling.
+  //
+  // font-family is pinned to system-ui so the published page picks the OS
+  // native font (matches what most modern stacks ship). Users who want a
+  // custom default can set it on `body` via a class or framework typography
+  // settings.
   ':where(body) {' +
     ' line-height: 1.5;' +
     ' font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;' +

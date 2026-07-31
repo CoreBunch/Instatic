@@ -126,6 +126,16 @@ function mapLoopProps(el: Element): Record<string, unknown> {
   }
 }
 
+function mapOutletProps(el: Element): Record<string, unknown> {
+  const customTag = attr(el, 'data-custom-tag')
+  const tag = attr(el, 'data-tag')
+  return customTag
+    ? { tag: 'custom', customTag }
+    : tag
+      ? { tag }
+      : {}
+}
+
 export const HTML_TO_MODULE_RULES: ImportRule[] = [
   // CMS content outlet → base.outlet (LEAF). The agent (and any hand-authored
   // template HTML) writes `<instatic-outlet>` to mark where matched content —
@@ -133,7 +143,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
   // so we never recurse; any inner markup is ignored (the composer fills it).
   {
     match: 'instatic-outlet',
-    map: () => ({ moduleId: 'base.outlet', props: {} }),
+    map: (el) => ({ moduleId: 'base.outlet', props: mapOutletProps(el) }),
   },
 
   // CMS loop → base.loop (RECURSE). The agent writes this custom element when
@@ -265,7 +275,12 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
     map: (el) => ({
       moduleId: 'base.option',
       props: {
-        value: attr(el, 'value') || normalizeImportedText(el.textContent ?? ''),
+        // `value=""` is the conventional "no choice" option and is meaningful,
+        // so presence decides here — falling back on emptiness would turn the
+        // placeholder into a real filter value named after its own label.
+        value: el.hasAttribute('value')
+          ? attr(el, 'value')
+          : normalizeImportedText(el.textContent ?? ''),
         label: attr(el, 'label') || normalizeImportedText(el.textContent ?? ''),
         selected: el.hasAttribute('selected'),
         disabled: el.hasAttribute('disabled'),
@@ -314,6 +329,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
           props: {
             label: submitLabel(el),
             disabled: el.hasAttribute('disabled'),
+            buttonType: type,
           },
         }
       }
@@ -411,7 +427,11 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
       }
       return {
         moduleId: 'base.button',
-        props: { label: normalizeImportedText(el.textContent ?? ''), disabled: el.hasAttribute('disabled') },
+        props: {
+          label: normalizeImportedText(el.textContent ?? ''),
+          disabled: el.hasAttribute('disabled'),
+          buttonType: type === 'reset' ? 'reset' : 'button',
+        },
       }
     },
   },

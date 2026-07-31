@@ -40,6 +40,7 @@
  */
 
 import { isEmittableProperty } from '@core/publisher'
+import type { CSSDeclarationPriorityBag } from '@core/page-tree'
 /** Prefix for encoded substitution declarations. */
 export const SUBSTITUTION_PROP_MARKER = '--instatic-sub-'
 
@@ -219,9 +220,14 @@ function scanUntil(css: string, start: number, stops: string): number {
  * names like `-webkit-foo` DO camelCase to `WebkitFoo`, matching the DOM
  * style API.)
  */
-function kebabToCamel(prop: string): string {
+export function cssPropertyNameToStorageKey(prop: string): string {
   if (prop.startsWith('--')) return prop
   return prop.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())
+}
+
+export interface CssDeclarationBlock {
+  styles: Record<string, string>
+  priorities: CSSDeclarationPriorityBag
 }
 
 /**
@@ -240,22 +246,34 @@ function kebabToCamel(prop: string): string {
  * Uses `.length` + index access (not `for...of`) since CSSStyleDeclaration
  * does not enumerate properties via Symbol.iterator.
  */
-export function readCssDeclarationBag(
+export function readCssDeclarationBlock(
   style: CSSStyleDeclaration,
   onBlockedProperty?: (camel: string, kebab: string) => void,
-): Record<string, string> {
-  const out: Record<string, string> = {}
+): CssDeclarationBlock {
+  const styles: Record<string, string> = {}
+  const priorities: CSSDeclarationPriorityBag = {}
   for (let i = 0; i < style.length; i++) {
     const rawKebab = style[i]
     const value = style.getPropertyValue(rawKebab).trim()
     if (!value) continue
     const kebab = decodeSubstitutionProperty(rawKebab) ?? rawKebab
-    const camel = kebabToCamel(kebab)
+    const camel = cssPropertyNameToStorageKey(kebab)
     if (!isEmittableProperty(camel)) {
       onBlockedProperty?.(camel, kebab)
       continue
     }
-    out[camel] = value
+    styles[camel] = value
+    if (style.getPropertyPriority(rawKebab).toLowerCase() === 'important') {
+      priorities[camel] = 'important'
+    }
   }
-  return out
+  return { styles, priorities }
+}
+
+/** Value-only view used by node inline styles, whose shape stays unchanged. */
+export function readCssDeclarationBag(
+  style: CSSStyleDeclaration,
+  onBlockedProperty?: (camel: string, kebab: string) => void,
+): Record<string, string> {
+  return readCssDeclarationBlock(style, onBlockedProperty).styles
 }

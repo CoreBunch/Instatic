@@ -2,11 +2,12 @@
  * Shared helpers for text modules that support hard line breaks (`base.text`,
  * `base.button`, `base.link`).
  *
- * The stored value keeps newlines as `\n`. Both render surfaces turn each `\n`
- * into a `<br>` so a hard break shows live in the canvas AND survives publish
- * (the publisher's DOMPurify pass allows `<br>`). This is what makes inline
- * editing's Enter-key behaviour faithful: a break the author types is a break
- * everywhere.
+ * The stored value keeps newlines as `\n`. Text elements that own a semantic
+ * tag turn each `\n` into a `<br>` so a hard break shows live in the canvas AND
+ * survives publish (the publisher's DOMPurify pass allows `<br>`). No-wrapper
+ * mixed-content text bypasses these helpers and preserves literal whitespace.
+ * This is what makes inline editing's Enter-key behaviour faithful: a break the
+ * author types in an editable text element is a break everywhere.
  *
  * Two entry points because the two surfaces escape differently:
  *   - `textToBreakHtml` — for the publisher, whose `escapeProps` has ALREADY

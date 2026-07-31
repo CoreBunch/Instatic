@@ -23,7 +23,7 @@ Read first when needed:
 - content_list_collections + content_get_collection_schema before writing to an unfamiliar collection — the agent must know which fields are required / built-in.
 
 Writing:
-- content_create_document(tableId, fields?, status?) — creates a draft and switches the UI to the new doc. Use this for "write me a post about X".
+- content_create_document(tableId, fields?) — creates a draft and switches the UI to the new doc. Use this for "write me a post about X", then call content_set_document_status separately if the user asked to publish or schedule it.
 - content_set_document_field(documentId, fieldId, value) — single-field write. \`value\` shape depends on the field type:
     text / longText / richText / url / email → string
     number → number

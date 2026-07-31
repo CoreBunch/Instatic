@@ -1,6 +1,7 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { Type } from '@core/utils/typeboxHelpers'
 import { anthropicDriver } from '../../../server/ai/drivers/anthropic'
+import { PROVIDER_RETRY_IMAGE_OMITTED } from '../../../server/ai/drivers/http/toolLoop'
 import type { AiStreamRequest } from '../../../server/ai/drivers/types'
 import type { AiBrowserBridge, AiStreamEvent, AiTool, AiToolOutput } from '../../../server/ai/runtime/types'
 
@@ -79,7 +80,7 @@ function makeRequest(bridge: AiBrowserBridge, serverCalls: unknown[]): AiStreamR
     messages: [{ role: 'user', content: [{ kind: 'text', text: 'go' }] }],
     tools: [echoTool, paintTool],
     modelId: 'claude-sonnet-4-6',
-    modelCapabilities: { toolCalling: true, visionInput: true, promptCache: true, streaming: true },
+    modelCapabilities: { toolCalling: true, visionInput: true, toolResultImages: true, promptCache: true, streaming: true },
     credentials: { id: 'cr', providerId: 'anthropic', authMode: 'apiKey', apiKey: 'sk-test', baseUrl: null },
     signal: new AbortController().signal,
     bridge,
@@ -152,6 +153,92 @@ describe('runToolLoop via anthropicDriver', () => {
     expect(contextEvents.map((e) => e.promptTokens)).toEqual([20, 30])
   })
 
+  test('keeps a resolved browser-tool domain failure recoverable', async () => {
+    const requestBodies: Array<Record<string, unknown>> = []
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      requestBodies.push(JSON.parse(init.body as string))
+      return sseResponse(requestBodies.length === 1 ? TURN1 : TURN2)
+    }) as typeof fetch
+    const req = makeRequest({
+      async callBrowser() {
+        return { ok: false, error: 'Canvas node no longer exists.' }
+      },
+    }, [])
+
+    const events: AiStreamEvent[] = []
+    for await (const event of anthropicDriver.stream(req)) events.push(event)
+
+    expect(requestBodies).toHaveLength(2)
+    expect(events.filter((event) => event.type === 'toolResult')).toEqual([
+      {
+        type: 'toolResult',
+        toolCallId: 't_echo',
+        toolName: 'echo',
+        ok: true,
+        error: undefined,
+      },
+      {
+        type: 'toolResult',
+        toolCallId: 't_paint',
+        toolName: 'paint',
+        ok: false,
+        error: 'Canvas node no longer exists.',
+      },
+    ])
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+    expect(JSON.stringify(requestBodies[1])).toContain('Canvas node no longer exists.')
+  })
+
+  test('terminates after one failed result when an active browser bridge rejects with AbortError', async () => {
+    const requestBodies: Array<Record<string, unknown>> = []
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      requestBodies.push(JSON.parse(init.body as string))
+      return sseResponse(TURN1)
+    }) as typeof fetch
+    const req = makeRequest({
+      async callBrowser() {
+        const error = new Error('Browser tool "paint" result timed out.')
+        error.name = 'AbortError'
+        throw error
+      },
+    }, [])
+
+    const events: AiStreamEvent[] = []
+    for await (const event of anthropicDriver.stream(req)) events.push(event)
+
+    // The provider is never called for a second round against the same dead
+    // bridge. The successful server tool still records its own result first.
+    expect(requestBodies).toHaveLength(1)
+    expect(events.filter((event) => event.type === 'toolResult')).toEqual([
+      {
+        type: 'toolResult',
+        toolCallId: 't_echo',
+        toolName: 'echo',
+        ok: true,
+        error: undefined,
+      },
+      {
+        type: 'toolResult',
+        toolCallId: 't_paint',
+        toolName: 'paint',
+        ok: false,
+        error: 'Browser tool "paint" result timed out.',
+      },
+    ])
+    expect(events.at(-1)).toEqual({
+      type: 'error',
+      message: 'Browser tool transport failed: Browser tool "paint" result timed out.',
+    })
+    expect(events.filter((event) => event.type === 'usage')).toEqual([{
+      type: 'usage',
+      promptTokens: 20,
+      completionTokens: 15,
+      costUsd: undefined,
+      cacheReadTokens: undefined,
+      cacheCreationTokens: undefined,
+    }])
+  })
+
   test('returns an error event (not a throw) on a non-OK HTTP status', async () => {
     globalThis.fetch = (async () => new Response('{"error":{"message":"bad key"}}', { status: 401 })) as typeof fetch
     const req = makeRequest({ async callBrowser() { return { ok: true } } }, [])
@@ -162,5 +249,57 @@ describe('runToolLoop via anthropicDriver', () => {
     expect(events).toHaveLength(1)
     expect(events[0]!.type).toBe('error')
     expect((events[0] as { message: string }).message).toContain('authentication failed')
+  })
+
+  test('retries a provider overflow once with only historical images elided', async () => {
+    const requestBodies: Array<Record<string, unknown>> = []
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      requestBodies.push(JSON.parse(init.body as string))
+      if (requestBodies.length === 1) {
+        return new Response(JSON.stringify({
+          error: { type: 'request_too_large', message: 'Request exceeds the context limit' },
+        }), { status: 413 })
+      }
+      return sseResponse(TURN2)
+    }) as typeof fetch
+
+    const req = makeRequest({ async callBrowser() { return { ok: true } } }, [])
+    const image = { kind: 'image' as const, mimeType: 'image/jpeg', data: '/9j/' }
+    req.messages.splice(0, req.messages.length,
+      { role: 'user', content: [{ kind: 'text', text: 'Earlier turn' }, image] },
+      { role: 'assistant', content: [{ kind: 'text', text: 'Earlier reply' }] },
+      { role: 'user', content: [{ kind: 'text', text: 'Current turn' }, image] },
+    )
+
+    const events: AiStreamEvent[] = []
+    for await (const event of anthropicDriver.stream(req)) events.push(event)
+
+    expect(requestBodies).toHaveLength(2)
+    expect(JSON.stringify(requestBodies[0]).match(/"type":"image"/g)).toHaveLength(2)
+    expect(JSON.stringify(requestBodies[1]).match(/"type":"image"/g)).toHaveLength(1)
+    expect(JSON.stringify(requestBodies[1])).toContain(PROVIDER_RETRY_IMAGE_OMITTED)
+    expect(req.messages[0]?.content.some((block) => block.kind === 'image')).toBe(true)
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+  })
+
+  test('does not retry when only the current user turn contains images', async () => {
+    let requests = 0
+    globalThis.fetch = (async () => {
+      requests += 1
+      return new Response('', { status: 413 })
+    }) as typeof fetch
+    const req = makeRequest({ async callBrowser() { return { ok: true } } }, [])
+    req.messages[0] = {
+      role: 'user',
+      content: [{ kind: 'image', mimeType: 'image/jpeg', data: '/9j/' }],
+    }
+
+    const events: AiStreamEvent[] = []
+    for await (const event of anthropicDriver.stream(req)) events.push(event)
+
+    expect(requests).toBe(1)
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'error' })
+    expect((events[0] as { message: string }).message).toContain('Your history is still saved')
   })
 })

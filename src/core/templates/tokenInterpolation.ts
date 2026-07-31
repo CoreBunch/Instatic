@@ -276,14 +276,18 @@ export function interpolateTokens(input: string, context: TemplateRenderDataCont
     } else if (typeof rawValue === 'number' || typeof rawValue === 'boolean') {
       out += String(rawValue)
     } else {
-      // Objects / arrays — fall back to JSON for visibility. Real-world
-      // bindings should target leaf fields; surfacing the JSON keeps
-      // mistakes visible instead of silent.
-      try {
-        out += JSON.stringify(rawValue)
-      } catch {
-        // ignore
-      }
+      // Objects / arrays resolve to NOTHING, deliberately.
+      //
+      // This branch used to JSON.stringify the value "so mistakes stay
+      // visible". That is an author-facing debug affordance running in the
+      // public publish path: `{currentEntry.author}` against a reference
+      // object published the account's display name, role slug and role name
+      // into live HTML. A binding that misses is a blank, never a dump of
+      // whatever internal shape happened to sit behind the key — the frame
+      // cannot know which of its values are safe to print.
+      //
+      // Treated as missing, so an author-supplied fallback still applies.
+      if (seg.fallback !== undefined) out += seg.fallback
     }
   }
   return out

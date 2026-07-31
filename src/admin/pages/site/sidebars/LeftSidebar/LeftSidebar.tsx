@@ -1,7 +1,6 @@
-import { useRef, type CSSProperties } from 'react'
+import { lazy, Suspense, useRef, type CSSProperties } from 'react'
 import { useEditorStore } from '@site/store/store'
 import type { LeftSidebarPanelId } from '@site/store/slices/uiSlice'
-import { AgentPanel } from '@site/panels/AgentPanel'
 import { AgentStoreProvider } from '@admin/ai/AgentStoreContext'
 import { FrameworkPanel } from '@site/panels/FrameworkPanel'
 import { ExplorerPanel } from '@site/panels/ExplorerPanel'
@@ -12,9 +11,27 @@ import { SelectorsPanel } from '@site/panels/SelectorsPanel'
 import { FrameworkChangeConfirmProvider } from '@admin/shared/dialogs/FrameworkChangeConfirmDialog'
 import { VCDeletionConfirmProvider } from '@admin/shared/dialogs/VCDeletionConfirmDialog'
 import { SidebarResizeHandle } from '@admin/shared/SidebarResizeHandle'
+import {
+  PanelResizeHandle,
+  useDraggablePanel,
+  useResizablePanel,
+} from '@admin/shared/FloatingWindow'
+import { cn } from '@ui/cn'
 import styles from './LeftSidebar.module.css'
 
-function selectActiveLeftSidebarPanel(state: ReturnType<typeof useEditorStore.getState>): LeftSidebarPanelId | null {
+// Image preparation and provider catalogue code belong to the AI surface, not
+// the editor startup path. A nested boundary lets the sidebar/canvas render as
+// soon as their parent chunk is ready, then loads the always-mounted AgentPanel
+// independently so its local draft survives panel switches after first load.
+const AgentPanel = lazy(() =>
+  import('@site/panels/AgentPanel').then((module) => ({ default: module.AgentPanel })),
+)
+
+type HostedLeftPanelId = Exclude<LeftSidebarPanelId, 'agent'>
+
+function selectActiveLeftSidebarPanel(
+  state: ReturnType<typeof useEditorStore.getState>,
+): HostedLeftPanelId | null {
   // A plugin panel takes precedence over the built-in `*PanelOpen` flags;
   // the LeftSidebar reads `activePluginPanelId` separately and shows the
   // plugin mount when set.
@@ -23,7 +40,6 @@ function selectActiveLeftSidebarPanel(state: ReturnType<typeof useEditorStore.ge
   if (state.selectorsPanelOpen) return 'selectors'
   if (state.frameworkPanelOpen) return 'framework'
   if (state.dependenciesPanelOpen) return 'dependencies'
-  if (state.isAgentOpen) return 'agent'
   return null
 }
 
@@ -53,6 +69,12 @@ interface LeftSidebarProps {
  * and is dropped from the rail (and its panel mount) when `editable=false`.
  */
 const READ_ONLY_RAIL_IDS: ReadonlySet<LeftSidebarPanelId> = new Set(['explorer'])
+const PANEL_RESIZE_LABELS: Record<HostedLeftPanelId, string> = {
+  explorer: 'Explorer',
+  selectors: 'Selectors',
+  framework: 'Framework',
+  dependencies: 'Dependencies',
+}
 
 export function LeftSidebar({
   workspace = 'site',
@@ -64,7 +86,9 @@ export function LeftSidebar({
   const activePanel = useEditorStore(selectActiveLeftSidebarPanel)
   const activePluginPanelId = useEditorStore((s) => s.activePluginPanelId)
   const leftSidebarWidth = useEditorStore((s) => s.leftSidebarWidth)
+  const leftSidebarMode = useEditorStore((s) => s.leftSidebarMode)
   const setLeftSidebarWidth = useEditorStore((s) => s.setLeftSidebarWidth)
+  const setLeftSidebarMode = useEditorStore((s) => s.setLeftSidebarMode)
   // When the user can't edit structure, drop them onto Layers if they had a
   // hidden-for-them panel active (selectors, colors, …). Plugin panels are
   // editing-only by definition.
@@ -77,8 +101,38 @@ export function LeftSidebar({
   const effectivePluginPanelId = editable ? activePluginPanelId : null
   // Sidebar is "expanded" whenever a built-in OR plugin panel is showing.
   const sidebarOpen = Boolean(effectiveActivePanel) || effectivePluginPanelId !== null
-  const panelExpanded = sidebarOpen && !railOnly
+  const panelFloating = sidebarOpen && leftSidebarMode === 'floating'
+  const panelExpanded = sidebarOpen && leftSidebarMode === 'docked' && !railOnly
+  const panelVisible = panelExpanded || panelFloating
   const panelWidth = panelExpanded ? leftSidebarWidth : 0
+  const panelResizeLabel = effectivePluginPanelId !== null
+    ? 'plugin'
+    : effectiveActivePanel
+      ? PANEL_RESIZE_LABELS[effectiveActivePanel]
+      : 'left sidebar'
+  const {
+    panelRef,
+    setPanelRef,
+    headerDragProps,
+    panelPositionStyle,
+  } = useDraggablePanel('site', () => ({ x: 58, y: 64 }))
+  const {
+    panelSizeStyle,
+    resizeHandleProps,
+  } = useResizablePanel(
+    'site',
+    panelRef,
+    () => ({ width: leftSidebarWidth, height: 520 }),
+  )
+
+  const togglePanelMode = () => {
+    setLeftSidebarMode(leftSidebarMode === 'docked' ? 'floating' : 'docked')
+  }
+  const dockablePanelProps = {
+    mode: leftSidebarMode,
+    dragHandleProps: panelFloating ? headerDragProps : undefined,
+    onToggleMode: togglePanelMode,
+  } as const
 
   const style = {
     '--left-sidebar-panel-width': `${panelWidth}px`,
@@ -107,16 +161,19 @@ export function LeftSidebar({
       <FrameworkChangeConfirmProvider>
       <VCDeletionConfirmProvider>
         <div
-          className={styles.panelSlot}
+          ref={panelFloating ? setPanelRef : undefined}
+          className={cn(styles.panelSlot, panelFloating && styles.panelSlotFloating)}
           data-testid="left-sidebar-panel-slot"
-          inert={panelExpanded ? undefined : true}
+          data-mode={leftSidebarMode}
+          inert={panelVisible ? undefined : true}
+          style={panelFloating ? { ...panelPositionStyle, ...panelSizeStyle } : undefined}
         >
           {/* Read-only-safe panels — always rendered for any role with
               `site.read`. These are navigation/inspection surfaces, not
               editing tools; each respects its own read-only state internally
               (e.g. TreeNode disables drag + context menu via `editable`). */}
           <div className={styles.panelMount} hidden={effectiveActivePanel !== 'explorer'}>
-            <ExplorerPanel editable={editable} />
+            <ExplorerPanel editable={editable} {...dockablePanelProps} />
           </div>
           {/* Editor-only panels — only mounted when the caller can perform
               structural edits. Mounting them for non-editors would expose
@@ -125,43 +182,45 @@ export function LeftSidebar({
           {editable && (
             <>
               <div className={styles.panelMount} hidden={effectiveActivePanel !== 'selectors'}>
-                <SelectorsPanel variant="docked" />
+                <SelectorsPanel {...dockablePanelProps} />
               </div>
               <div className={styles.panelMount} hidden={effectiveActivePanel !== 'framework'}>
-                <FrameworkPanel />
+                <FrameworkPanel {...dockablePanelProps} />
               </div>
               <div className={styles.panelMount} hidden={effectiveActivePanel !== 'dependencies'}>
-                <DependenciesPanel variant="docked" />
+                <DependenciesPanel {...dockablePanelProps} />
               </div>
               {effectivePluginPanelId !== null && (
                 <div
                   className={styles.panelMount}
                   data-testid="left-sidebar-plugin-panel-mount"
                 >
-                  <PluginEditorPanel panelId={effectivePluginPanelId} />
+                  <PluginEditorPanel
+                    panelId={effectivePluginPanelId}
+                    {...dockablePanelProps}
+                  />
                 </div>
               )}
             </>
           )}
-          {canUseAiChat && (
-            <div className={styles.panelMount} hidden={effectiveActivePanel !== 'agent'}>
-              {/* Inject the site editor's store API so AgentPanel +
-                  ModelPicker + ConversationHistory read agent state
-                  from useEditorStore. The same components are mounted
-                  in ContentPage with a different store.
-
-                  The eslint-disable below covers a known Zustand idiom:
-                  `useEditorStore` is the store API AND a hook — we pass
-                  the store API here, never call it as a hook in this
-                  file. The React-Compiler rule keys on the identifier
-                  prefix and can't see through the dual API. */}
-              {/* eslint-disable-next-line react-compiler/react-compiler */}
-              <AgentStoreProvider store={useEditorStore}>
-                <AgentPanel variant="docked" />
-              </AgentStoreProvider>
-            </div>
+          {panelFloating && (
+            <PanelResizeHandle
+              panelLabel={panelResizeLabel}
+              resizeHandleProps={resizeHandleProps}
+            />
           )}
         </div>
+        {canUseAiChat && (
+          /* The AI assistant stays independent from the hosted left panel so
+             users can keep Layers visible while following a conversation.
+             Keeping it mounted also preserves the current draft. */
+          // eslint-disable-next-line react-compiler/react-compiler
+          <AgentStoreProvider store={useEditorStore}>
+            <Suspense fallback={null}>
+              <AgentPanel />
+            </Suspense>
+          </AgentStoreProvider>
+        )}
       </VCDeletionConfirmProvider>
       </FrameworkChangeConfirmProvider>
 

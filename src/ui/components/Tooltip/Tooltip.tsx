@@ -1,18 +1,15 @@
 /**
- * Tooltip — lightweight hover-only tooltip primitive.
+ * Tooltip — lightweight hover/focus tooltip primitive.
  *
  * Renders content through a shared portal (#tooltip-root on document.body).
  * Position is computed by an inline helper — no @floating-ui dependency.
  *
- * Hover only: shows on mouseenter, hides on mouseleave, Escape, scroll, or
- * pointerdown outside the trigger.
+ * Shows while the trigger is hovered, and optionally while focused. Hides after
+ * both interactions leave, or on Escape, scroll, or pointerdown outside.
  *
- * Trigger element: captured from e.currentTarget on mouseenter and stored in
- * state (not a useRef) so that closures passed to cloneElement don't close
- * over a ref value — which is flagged by the react-hooks/refs rule in v7 of
- * eslint-plugin-react-hooks.  bubbleRef (for measuring the portal bubble) is
- * the only useRef; it is read only inside useLayoutEffect (an effect), which
- * is the pattern the rule requires.
+ * Trigger element: captured from e.currentTarget on mouseenter/focus. It is
+ * state because its presence participates in whether the portal renders and
+ * its identity drives position/dismiss effects.
  *
  * Accessibility: the tooltip element carries role="tooltip" and a stable id
  * (from useId). The trigger child receives aria-describedby while the tooltip
@@ -21,8 +18,8 @@
 
 import {
   cloneElement,
-  useCallback,
   useEffect,
+  useEffectEvent,
   useId,
   useLayoutEffect,
   useRef,
@@ -55,6 +52,10 @@ interface TooltipProps {
   align?: TooltipAlign
   /** Gap between trigger and tooltip bubble in px. Default: 8. */
   offset?: number
+  /** Wider bubble for graphical status cards. Default: `default`. */
+  size?: 'default' | 'wide'
+  /** Also show on keyboard focus. Use for status/details not repeated elsewhere. */
+  openOnFocus?: boolean
   /** If true, render children as-is without any tooltip wrapping. */
   disabled?: boolean
   /** Single trigger element. Must accept mouse event handlers. */
@@ -87,6 +88,8 @@ const TOOLTIP_AUTO_PRIORITY = ['top', 'bottom', 'right', 'left'] as const
 interface TriggerChildProps {
   onMouseEnter?: React.MouseEventHandler<HTMLElement>
   onMouseLeave?: React.MouseEventHandler<HTMLElement>
+  onFocus?: React.FocusEventHandler<HTMLElement>
+  onBlur?: React.FocusEventHandler<HTMLElement>
   'aria-describedby'?: string
 }
 
@@ -95,28 +98,28 @@ function TooltipInner({
   side,
   align,
   offset,
+  size,
+  openOnFocus,
   children,
 }: Required<Omit<TooltipProps, 'disabled'>>) {
   const id = useId()
-  const [shown, setShown] = useState(false)
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const [triggerEl, setTriggerEl] = useState<HTMLElement | null>(null)
+  const shown = (hovered || (openOnFocus && focused)) && triggerEl !== null
   const [position, setPosition] = useState<{
     x: number
     y: number
     arrowOffset: number
     side: ResolvedFloatingSide
   } | null>(null)
-  // State (not useRef) so closures passed to cloneElement never close over a
-  // ref value — which is disallowed during render by react-hooks/refs.
-  const [triggerEl, setTriggerEl] = useState<HTMLElement | null>(null)
-  // bubbleRef is only ever read inside useLayoutEffect (an effect), which is
-  // the safe pattern the react-hooks/refs rule requires.
   const bubbleRef = useRef<HTMLDivElement>(null)
 
-  // useCallback kept: stable identity for the [hide] useEffect dep array (exhaustive-deps).
-  const hide = useCallback(() => {
-    setShown(false)
+  const hide = useEffectEvent(() => {
+    setHovered(false)
+    setFocused(false)
     setPosition(null)
-  }, [])
+  })
 
   // Measure bubble and compute position after it enters the DOM.
   useLayoutEffect(() => {
@@ -142,40 +145,64 @@ function TooltipInner({
 
     const onScroll = () => hide()
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') hide()
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
+      hide()
     }
     const onPointerDown = (e: PointerEvent) => {
       if (!triggerEl.contains(e.target as Node)) hide()
     }
 
     window.addEventListener('scroll', onScroll, { capture: true, passive: true })
-    window.addEventListener('keydown', onKeyDown)
+    // Capture lets the tooltip consume Escape before a parent panel's document
+    // handler sees it and closes the whole surface.
+    window.addEventListener('keydown', onKeyDown, { capture: true })
     window.addEventListener('pointerdown', onPointerDown)
 
     return () => {
       window.removeEventListener('scroll', onScroll, { capture: true })
-      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keydown', onKeyDown, { capture: true })
       window.removeEventListener('pointerdown', onPointerDown)
     }
-  }, [shown, triggerEl, hide])
+  }, [shown, triggerEl])
 
   // Compose with the child's existing handlers; inject aria-describedby.
   // Closures here capture only state setters and callbacks — no useRef values.
   const childTyped = children as ReactElement<TriggerChildProps>
   const existingMouseEnter = childTyped.props.onMouseEnter
   const existingMouseLeave = childTyped.props.onMouseLeave
+  const existingFocus = childTyped.props.onFocus
+  const existingBlur = childTyped.props.onBlur
+  const existingDescribedBy = childTyped.props['aria-describedby']
+  const describedBy = [existingDescribedBy, shown ? id : null]
+    .filter(Boolean)
+    .join(' ') || undefined
 
   const cloned = cloneElement(childTyped, {
-    'aria-describedby': shown ? id : undefined,
+    'aria-describedby': describedBy,
     onMouseEnter(e: React.MouseEvent<HTMLElement>) {
       existingMouseEnter?.(e)
       // Capture the trigger element from the event (event handler, not render).
       setTriggerEl(e.currentTarget)
-      setShown(true)
+      setHovered(true)
     },
     onMouseLeave(e: React.MouseEvent<HTMLElement>) {
       existingMouseLeave?.(e)
-      hide()
+      setHovered(false)
+      if (!focused) setPosition(null)
+    },
+    onFocus(e: React.FocusEvent<HTMLElement>) {
+      existingFocus?.(e)
+      if (!openOnFocus) return
+      setTriggerEl(e.currentTarget)
+      setFocused(true)
+    },
+    onBlur(e: React.FocusEvent<HTMLElement>) {
+      existingBlur?.(e)
+      if (!openOnFocus) return
+      setFocused(false)
+      if (!hovered) setPosition(null)
     },
   })
 
@@ -194,7 +221,11 @@ function TooltipInner({
             ref={bubbleRef}
             id={id}
             role="tooltip"
-            className={cn(styles.bubble, position !== null && styles.visible)}
+            className={cn(
+              styles.bubble,
+              size === 'wide' && styles.bubbleWide,
+              position !== null && styles.visible,
+            )}
             data-side={position?.side ?? 'top'}
             style={bubbleStyle}
           >
@@ -211,6 +242,7 @@ function TooltipInner({
 
 /**
  * Tooltip wraps a single trigger element and shows a floating label on hover.
+ * Set `openOnFocus` when the detail must also be available to keyboard users.
  *
  * When `disabled` is true the children are returned untouched — no portal,
  * no event handlers, no aria injection.
@@ -220,6 +252,8 @@ export function Tooltip({
   side = 'auto',
   align = 'center',
   offset = 8,
+  size = 'default',
+  openOnFocus = false,
   content,
   children,
 }: TooltipProps) {
@@ -227,7 +261,14 @@ export function Tooltip({
   if (disabled) return children
 
   return (
-    <TooltipInner content={content} side={side} align={align} offset={offset}>
+    <TooltipInner
+      content={content}
+      side={side}
+      align={align}
+      offset={offset}
+      size={size}
+      openOnFocus={openOnFocus}
+    >
       {children}
     </TooltipInner>
   )

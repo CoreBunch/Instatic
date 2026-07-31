@@ -13,7 +13,7 @@ Schemas are the **source of truth**. Domain types come from `Static<typeof Schem
 - **Helpers live in `src/core/utils/typeboxHelpers.ts`** — `Type`, `Value`, `Static`, `withFallback`, `parseValue`, `safeParseValue`, `filterArray`, `formatValueErrors`.
 - **Compiled validators live in `src/core/utils/typeboxCompiler.ts`** — `compiled`, `compiledCheck`, `compiledDecode`, `compiledSafeParseValue`, `compiledFormatValueErrors`. Hot repeated `Check` / `Decode` / `Errors` paths should use these or helpers that already call them.
 - **JSON boundary helpers live in `src/core/utils/jsonValidate.ts`** — `safeParseJson`, `parseJsonWithFallback`, `parseJsonResponse`.
-- **Canonical client HTTP layer:** `@core/http` — `apiRequest(path, { schema, … })` (the default for browser→server calls), plus `ApiError`, `isAbortError`, `readEnvelope`, `responseErrorMessage`, `ErrorEnvelopeSchema`. All defined in `src/core/http/apiClient.ts`.
+- **Canonical client HTTP layer:** `@core/http` — `apiRequest(path, { schema, … })` (the default for JSON browser→server calls), `apiBlobRequest(path, …)` for binary responses, plus `ApiError`, `isAbortError`, `readEnvelope`, `responseErrorMessage`, `ErrorEnvelopeSchema`. All defined in `src/core/http/apiClient.ts`.
 - **Schemas are source of truth.** `type Foo = Static<typeof FooSchema>` — never a hand-rolled interface beside the schema.
 - **Soft fallbacks** for corrupted local storage / optional config use `withFallback(schema, default)` + `parseJsonWithFallback`.
 - **Hard fallbacks** for required documents throw and bubble to an error boundary.
@@ -94,10 +94,11 @@ const prefs = parseJsonWithFallback(
 | Helper                                          | Purpose                                                          |
 |-------------------------------------------------|------------------------------------------------------------------|
 | `apiRequest(path, { method, body, schema, query, signal, … })` | **The default for browser→server calls.** Sets `credentials`, JSON-serializes `body`, validates the success body against `schema` (returns `Static<schema>`; `void` without one), and throws `ApiError` on a non-OK status. |
+| `apiBlobRequest(path, { signal, … })`           | Binary-response counterpart for authenticated image/file reads. Uses the same transport and `ApiError` envelope handling, then returns a `Blob`; the caller validates the MIME type before use. |
 | `readEnvelope(res, schema, fallbackMessage)`    | For code that already holds a `Response` (the persistence layer, which injects its own `fetch`): check `res.ok` (throw `ApiError` with `responseErrorMessage(res, fallback)` if not), then validate body against `schema` |
 | `assertOk(res, fallbackMessage)`                | No-body counterpart to `readEnvelope`: throw `ApiError` if the `Response` is not OK, otherwise return (for void mutations / bodies parsed separately) |
 | `responseErrorMessage(res, fallback)`           | Extract a useful error message from a failed `Response` (reads `{ error: string }` envelope if present, then raw text, otherwise the fallback) |
-| `ApiError`                                      | The single error type thrown by `apiRequest`/`readEnvelope`; carries `.status` so UI can branch (403, 404, …) |
+| `ApiError`                                      | The single error type thrown by `apiRequest`/`apiBlobRequest`/`readEnvelope`; carries `.status` so UI can branch (403, 404, …) |
 | `isAbortError(err)`                             | True for an aborted fetch (user cancellation / superseded request) — the uniform replacement for `(err as Error).name === 'AbortError'` |
 
 ---
@@ -286,7 +287,8 @@ Common boundaries already wrapped — extend the same pattern when you add a new
 
 | Boundary                                   | Helper                                              | Lives in                                |
 |--------------------------------------------|-----------------------------------------------------|-----------------------------------------|
-| HTTP request (client, canonical)           | `apiRequest(path, { schema, … })`                   | `src/core/http/apiClient.ts`            |
+| HTTP request (client, canonical JSON)      | `apiRequest(path, { schema, … })`                   | `src/core/http/apiClient.ts`            |
+| HTTP request (client, binary body)         | `apiBlobRequest(path, { signal, … })`               | `src/core/http/apiClient.ts`            |
 | HTTP response from a held `Response`        | `readEnvelope(res, Schema, fallback)`               | `src/core/http/apiClient.ts`            |
 | HTTP body-validation primitive (no status semantics; `@core/http` internals, XHR, server-side external APIs) | `parseJsonResponse(res, Schema)` | `src/core/utils/jsonValidate.ts` |
 | Request body (server handler)              | `readValidatedBody(req, Schema)` → typed value or `null` (return `badRequest` on null) | `server/http.ts` + per-handler |
@@ -333,7 +335,7 @@ Common boundaries already wrapped — extend the same pattern when you add a new
   - `src/core/utils/typeboxHelpers.ts` — helper layer (`parseValue`, `withFallback`, `filterArray`, etc.)
   - `src/core/utils/typeboxCompiler.ts` — cached TypeCompiler layer for hot validation execution
   - `src/core/utils/jsonValidate.ts` — JSON boundary helpers
-  - `src/core/http/apiClient.ts` — `apiRequest`, `ApiError`, `isAbortError`, `readEnvelope`, `assertOk`, `responseErrorMessage`, `ErrorEnvelopeSchema`
+  - `src/core/http/apiClient.ts` — `apiRequest`, `apiBlobRequest`, `ApiError`, `isAbortError`, `readEnvelope`, `assertOk`, `responseErrorMessage`, `ErrorEnvelopeSchema`
   - `src/core/persistence/responseSchemas.ts` — shared CMS HTTP response schemas
   - `src/core/persistence/validate.ts` — `validateSite`, `validatePages`, `ValidatePagesOptions`, `SiteValidationError`
   - `src/core/plugins/manifest.ts` — `parsePluginManifest`
@@ -341,4 +343,4 @@ Common boundaries already wrapped — extend the same pattern when you add a new
   - `server/ai/drivers/` — direct provider HTTP drivers; tools are declared with their TypeBox `inputSchema` passed through as JSON Schema (no Zod)
 - Gate tests:
   - `src/__tests__/architecture/boundary-validation.test.ts` — enforces five boundary rules: (1) no `res.json() as` in persistence or admin; (2) no `JSON.parse as` in persistence; (3) no raw `fetch(` in admin; (4) no raw `req.json(` in server handlers; (5) no `body.field as DeepType` after `readEnvelope`/`parseJsonResponse` in persistence — embed the field's TypeBox schema in the envelope instead; allowlist interface-only deep types with `§5.x`
-  - `src/__tests__/architecture/ai-driver-isolation.test.ts` — enforces provider-SDK and `zod` isolation: `@anthropic-ai/sdk`, `@anthropic-ai/claude-agent-sdk`, `@openai/agents`, `@openrouter/agent`, and `zod` are banned repo-wide; `@modelcontextprotocol/sdk` is scoped to `server/ai/mcp/` only
+  - `src/__tests__/architecture/ai-driver-isolation.test.ts` — enforces provider-SDK and `zod` isolation: `@anthropic-ai/sdk`, `@anthropic-ai/claude-agent-sdk`, `@openai/agents`, `@openrouter/agent`, and `zod` are banned repo-wide; the split `@modelcontextprotocol/*` v2 packages are scoped to `server/ai/mcp/` only

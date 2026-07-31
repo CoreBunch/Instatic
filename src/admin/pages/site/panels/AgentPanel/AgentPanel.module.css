@@ -2,15 +2,21 @@
 
 /* ── Floating panel outer shell ──────────────────────────────────────────── */
 .floatPanel {
-  position: absolute;
-  /* Position driven by --panel-x / --panel-y CSS vars (useDraggablePanel) */
+  position: fixed;
+  /* Position and size are driven by the shared floating-panel hooks. */
   --panel-x: calc(100% - 336px);
   --panel-y: 200px;
+  --panel-w: 320px;
+  --panel-h: 480px;
   left: var(--panel-x);
   top: var(--panel-y);
   z-index: 50;
-  width: 320px;
-  height: 480px;
+  width: var(--panel-w);
+  height: var(--panel-h);
+  min-width: 280px;
+  min-height: 240px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
   display: flex;
   flex-direction: column;
   background: var(--bg-surface);
@@ -31,6 +37,10 @@
   z-index: auto;
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-width: none;
+  max-height: none;
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -113,6 +123,94 @@
   gap: var(--space-xs);
 }
 
+.attachmentGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2xs);
+}
+
+.attachmentGrid[data-count="1"] {
+  grid-template-columns: minmax(0, 96px);
+}
+
+.attachmentGrid[data-count="2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.attachmentCard {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  box-shadow: inset 0 0 0 1px var(--overlay-10);
+}
+
+.attachmentPreviewButton {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.attachmentPreview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.attachmentPreviewPlaceholder {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+
+.attachmentStatus {
+  position: absolute;
+  inset: auto var(--space-3xs) var(--space-3xs);
+  z-index: 1;
+  width: fit-content;
+  max-width: calc(100% - var(--space-s));
+  padding: var(--space-px) var(--space-3xs);
+  border-radius: var(--radius-sm);
+  background: var(--scrim-60);
+  color: var(--text-bright);
+  font-size: var(--text-3xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachmentRemove {
+  position: absolute;
+  top: var(--space-3xs);
+  right: var(--space-3xs);
+  z-index: 2;
+  background: var(--scrim-60);
+  color: var(--text-bright);
+}
+
+.attachmentNotice,
+.attachmentWarning {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.attachmentNotice {
+  color: var(--text-muted);
+}
+
+.attachmentWarning {
+  color: var(--warning-text);
+}
+
 /* Controls row under the textarea: model picker on the left, minimal
    icon-only send/stop button on the right. Keeps both on one line so the
    input bar stays compact. */
@@ -121,12 +219,20 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-s);
+  min-width: 0;
 }
 
 /* The picker takes the leftover width but never crowds out the button. */
 .inputControlsPicker {
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
+}
+
+.inputControlActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  flex: 0 0 auto;
 }
 
 /* ── Message turn — role label + full-width text, no bubble ───────────────── */
@@ -393,21 +499,6 @@
   border-radius: var(--input-radius);
   background-color: var(--bg-surface);
   background-image: linear-gradient(var(--swatch), var(--swatch));
-  box-shadow: inset 0 0 0 1px var(--overlay-10);
-}
-
-/* Preview screenshot a browser tool captured (render_snapshot). Full panel
-   width, anchored to the top so tall page captures still read, capped so a
-   long page doesn't dominate the thread. Session-only. */
-.toolCallScreenshot {
-  display: block;
-  width: 100%;
-  max-height: 280px;
-  object-fit: contain;
-  object-position: top;
-  margin: var(--space-4xs) 0;
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
   box-shadow: inset 0 0 0 1px var(--overlay-10);
 }
 

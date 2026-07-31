@@ -1,71 +1,159 @@
-/**
- * ContextMeter — a compact "context used / window" indicator for the chat
- * composer.
- *
- * Two halves from two sources:
- *   - `windowTokens` (prop) — the active model's max context window, resolved
- *     by AgentPanel from the model catalogue. Known as soon as a model is
- *     selected, so the meter appears *before* the first turn.
- *   - "used" — `agentContextTokens` from the store: the provider-normalised
- *     total input the model processed on the latest turn. Hydrated from the
- *     persisted conversation on reload, updated live from each `usage` event,
- *     and 0 for a fresh conversation.
- *
- * Renders nothing when the window is unknown (Ollama / uncatalogued model).
- * Display only (no compaction yet): it surfaces how full the window is so the
- * user can see a long thread approaching the model's limit.
- */
-
-import { type CSSProperties } from 'react'
 import { useAgentStore } from '@admin/ai/useAgentStore'
+import { formatCost, formatNumber } from '@admin/ai/usageFormat'
+import { Button } from '@ui/components/Button'
+import { Tooltip } from '@ui/components/Tooltip'
+import {
+  CONTEXT_METER_SEGMENT_COUNT,
+  getContextMeterMetrics,
+  type ContextMeterTone,
+} from './contextMeterMetrics'
 import styles from './ContextMeter.module.css'
 
-/** Token count → compact label. `840`, `12K`, `1.5M`. */
-function formatTokens(tokens: number): string {
-  if (tokens >= 1_000_000) return `${Math.round((tokens / 1_000_000) * 10) / 10}M`
+interface ContextMeterProps {
+  /** Active selection, used to reject a snapshot measured by another provider/model. */
+  credentialId: string | null
+  modelId: string | null
+  /** Active model's max context window, or null when unknown (hides the meter). */
+  windowTokens: number | null
+  pricing: {
+    inputPerMTok: number
+    outputPerMTok: number
+  } | null
+}
+
+function compactTokens(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    return `${Math.round((tokens / 1_000_000) * 10) / 10}M`
+  }
   if (tokens >= 1000) return `${Math.round(tokens / 1000)}K`
   return String(tokens)
 }
 
-interface ContextMeterProps {
-  /** Active model's max context window, or null when unknown (hides the meter). */
-  windowTokens: number | null
+function formatRate(value: number): string {
+  if (value === 0) return '$0'
+  const amount = value < 1 ? value.toFixed(2) : String(Math.round(value * 100) / 100)
+  return `$${amount}`
 }
 
-export function ContextMeter({ windowTokens }: ContextMeterProps) {
-  const storedUsed = useAgentStore((s) => s.agentContextTokens)
+function toneLabel(tone: ContextMeterTone): string {
+  if (tone === 'healthy') return 'Comfortable'
+  if (tone === 'warning') return 'Getting full'
+  if (tone === 'danger') return 'Nearly full'
+  return 'Not measured'
+}
 
-  // No window (Ollama / uncatalogued / model not yet resolved) → hide.
+function Segments({ filled }: { filled: number }) {
+  return Array.from({ length: CONTEXT_METER_SEGMENT_COUNT }, (_, index) => (
+    <span
+      key={index}
+      data-context-segment=""
+      data-filled={index < filled ? 'true' : 'false'}
+    />
+  ))
+}
+
+export function ContextMeter({ credentialId, modelId, windowTokens, pricing }: ContextMeterProps) {
+  const usage = useAgentStore((state) => state.agentUsage)
+
   if (windowTokens === null || windowTokens <= 0) return null
 
-  // Pre-turn / fresh conversation → 0 used against the known window.
-  const used = storedUsed ?? 0
-  const ratio = Math.min(1, Math.max(0, used / windowTokens))
-  const pct = Math.round(ratio * 100)
-  // Color is state: amber as the window fills, red when nearly full.
-  const tone = ratio >= 0.9 ? 'danger' : ratio >= 0.75 ? 'warning' : 'normal'
+  const selectionOwnsContext = usage.contextCredentialId === credentialId
+    && usage.contextModelId === modelId
+  const conversationIsEmpty = usage.promptTokens === 0
+    && usage.completionTokens === 0
+    && usage.cacheReadTokens === 0
+    && usage.cacheCreationTokens === 0
+    && usage.costUsd === 0
+  const currentContext = selectionOwnsContext && usage.contextTokens !== null
+    ? usage.contextTokens
+    : conversationIsEmpty
+      ? 0
+      : null
+  const metrics = getContextMeterMetrics(currentContext, windowTokens)
+  const valueText = metrics.measured
+    ? `${formatNumber(metrics.remainingTokens)} of ${formatNumber(windowTokens)} context tokens available (${metrics.remainingPercentage}%)`
+    : `Context has not been measured for this model yet; ${formatNumber(windowTokens)} token window`
+
+  const details = (
+    <div className={styles.details}>
+      <div className={styles.detailsHeader}>
+        <div>
+          <span className={styles.eyebrow}>Context remaining</span>
+          <strong className={styles.contextHeadline}>
+            {metrics.measured ? `${metrics.remainingPercentage}% available` : 'Waiting for a response'}
+          </strong>
+        </div>
+        <span className={styles.status} data-tone={metrics.tone}>
+          {toneLabel(metrics.tone)}
+        </span>
+      </div>
+
+      <div className={styles.detailsGauge} data-tone={metrics.tone} aria-hidden="true">
+        <Segments filled={metrics.filledSegments} />
+      </div>
+
+      <div className={styles.contextNumbers}>
+        {metrics.measured ? (
+          <>
+            <span>{compactTokens(metrics.usedTokens)} used</span>
+            <span>{compactTokens(metrics.remainingTokens)} available</span>
+          </>
+        ) : (
+          <>
+            <span>Updates after the next response</span>
+            <span>{compactTokens(windowTokens)} window</span>
+          </>
+        )}
+      </div>
+
+      <div className={styles.billingHeader}>
+        <span className={styles.eyebrow}>Conversation billing</span>
+        <strong>{formatCost(usage.costUsd)}</strong>
+      </div>
+      <dl className={styles.usageGrid}>
+        <div>
+          <dt>Input</dt>
+          <dd>{formatNumber(usage.promptTokens)}</dd>
+        </div>
+        <div>
+          <dt>Output</dt>
+          <dd>{formatNumber(usage.completionTokens)}</dd>
+        </div>
+        <div>
+          <dt>Cache read</dt>
+          <dd>{formatNumber(usage.cacheReadTokens)}</dd>
+        </div>
+        <div>
+          <dt>Cache write</dt>
+          <dd>{formatNumber(usage.cacheCreationTokens)}</dd>
+        </div>
+      </dl>
+
+      {pricing && (
+        <div className={styles.pricing}>
+          <span>Current model · per 1M tokens</span>
+          <strong>
+            {formatRate(pricing.inputPerMTok)} in · {formatRate(pricing.outputPerMTok)} out
+          </strong>
+        </div>
+      )}
+    </div>
+  )
 
   return (
-    <div
-      className={styles.meter}
-      role="progressbar"
-      aria-valuemin={0}
-      aria-valuemax={windowTokens}
-      aria-valuenow={used}
-      aria-label={`Context used: ${formatTokens(used)} of ${formatTokens(windowTokens)} tokens (${pct}%)`}
-    >
-      <span className={styles.label}>Context</span>
-      <span
-        className={styles.track}
-        data-tone={tone}
-        // Dynamic fill width — module reads it back via var(--ctx-fill).
-        style={{ '--ctx-fill': `${pct}%` } as CSSProperties}
+    <Tooltip content={details} side="top" align="end" size="wide" openOnFocus>
+      <Button
+        variant="ghost"
+        size="xs"
+        className={styles.meter}
+        data-tone={metrics.tone}
+        data-filled-segments={metrics.filledSegments}
+        aria-label={`AI context remaining: ${valueText}`}
       >
-        <span className={styles.fill} />
-      </span>
-      <span className={styles.count}>
-        {formatTokens(used)} / {formatTokens(windowTokens)}
-      </span>
-    </div>
+        <span className={styles.battery} aria-hidden="true">
+          <Segments filled={metrics.filledSegments} />
+        </span>
+      </Button>
+    </Tooltip>
   )
 }

@@ -56,6 +56,10 @@ export function createConditionActions({ get, mutateSite }: SiteSliceHelpers): C
         for (const cls of Object.values(site.styleRules)) {
           if (condId in cls.contextStyles) {
             delete cls.contextStyles[condId]
+            delete cls.contextStylePriorities?.[condId]
+            if (cls.contextStylePriorities && Object.keys(cls.contextStylePriorities).length === 0) {
+              delete cls.contextStylePriorities
+            }
             cls.updatedAt = Date.now()
           }
         }
@@ -129,6 +133,13 @@ export function createConditionActions({ get, mutateSite }: SiteSliceHelpers): C
         const draftClass = site.styleRules[classId]
         if (!draftClass || !(contextId in draftClass.contextStyles)) return false
         delete draftClass.contextStyles[contextId]
+        delete draftClass.contextStylePriorities?.[contextId]
+        if (
+          draftClass.contextStylePriorities
+          && Object.keys(draftClass.contextStylePriorities).length === 0
+        ) {
+          delete draftClass.contextStylePriorities
+        }
         draftClass.updatedAt = Date.now()
         return true
       })

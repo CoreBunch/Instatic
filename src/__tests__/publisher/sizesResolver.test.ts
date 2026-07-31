@@ -443,6 +443,25 @@ describe('resolveAutoSizes — cascade fidelity', () => {
     expect(resolveAutoSizes('img', page, site)).toBe('min(100vw, 600px)')
   })
 
+  it('an earlier important class declaration beats a later normal class declaration', () => {
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['img'] },
+      img: { moduleId: 'base.image', classIds: ['narrow', 'wide'] },
+    })
+    const site = makeSite({
+      breakpoints: DESKTOP,
+      styleRules: {
+        narrow: makeClass('narrow', {
+          order: 0,
+          styles: { width: '200px' },
+          stylePriorities: { width: 'important' },
+        }),
+        wide: makeClass('wide', { order: 1, styles: { width: '600px' } }),
+      },
+    })
+    expect(resolveAutoSizes('img', page, site)).toBe('200px')
+  })
+
   it('node inlineStyles outrank class rules', () => {
     // The publisher injects node.inlineStyles as a literal style="…"
     // attribute, which beats every class — the resolver must agree or it
@@ -460,6 +479,27 @@ describe('resolveAutoSizes — cascade fidelity', () => {
       },
     })
     expect(resolveAutoSizes('img', page, site)).toBe('min(100vw, 1200px)')
+  })
+
+  it('an important class declaration outranks a normal inline declaration', () => {
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['img'] },
+      img: {
+        moduleId: 'base.image',
+        classIds: ['thumb'],
+        inlineStyles: { width: '100%' },
+      },
+    })
+    const site = makeSite({
+      breakpoints: DESKTOP,
+      styleRules: {
+        thumb: makeClass('thumb', {
+          styles: { width: '240px' },
+          stylePriorities: { width: 'important' },
+        }),
+      },
+    })
+    expect(resolveAutoSizes('img', page, site)).toBe('240px')
   })
 })
 

@@ -71,8 +71,11 @@ marked.use({
 })
 
 function safeMarkdownUrl(value: string): string {
-  const trimmed = (value ?? '').trim()
-  return isSafeUrl(trimmed) ? escapeHtml(trimmed) : '#'
+  // No pre-trim: `isSafeUrl` performs the full WHATWG leading/trailing strip
+  // itself. A `.trim()` here would look protective while leaving exactly the
+  // control characters that mattered (GHSA-pqcp-872g-gmp8).
+  const raw = value ?? ''
+  return isSafeUrl(raw) ? escapeHtml(raw) : '#'
 }
 
 export function renderMarkdownToHtml(markdown: string): string {

@@ -4,12 +4,14 @@
  * The site write-tool input schemas (`site_insert_html`, `site_update_node_props`,
  * `site_set_color_tokens`, …) live ONCE in the dependency-free leaf
  * `src/core/ai/toolSchemas.ts` (re-exported from `@core/ai`). They are
- * consumed by BOTH sides of the browser bridge:
+ * consumed across BOTH sides of the browser bridge:
  *
  *   - the server tool registry (`server/ai/tools/site/writeTools.ts`) advertises
  *     each schema as the tool's `inputSchema`;
  *   - the browser executor (`src/admin/pages/site/agent/executor.ts`) and token
- *     runners (`tokenRunners.ts`) validate each `toolRequest` payload against it.
+ *     runners (`tokenRunners.ts`) validate each `toolRequest` payload from the
+ *     same leaf. `site_apply_css` uses the leaf's exact execution union because
+ *     Anthropic requires its advertised schema to stay a flat object.
  *
  * Before this leaf existed the schemas were declared three times and silently
  * drifted, so a server-side constraint never reached the browser validator.
@@ -21,8 +23,8 @@
  *   2. NO RE-DECLARATION — the consumer modules import the schemas and do not
  *      define their own `const xxxSchema = Type.Object(...)` tool-input copies.
  *
- * Type-level drift is additionally caught by the compiler: both consumers use
- * the leaf's `Static` types, so adding a required field breaks both at build.
+ * Type-level drift is additionally caught by the compiler: consumers use the
+ * leaf's schema-derived types, including the exact CSS execution-input type.
  */
 
 import { describe, it, expect } from 'bun:test'

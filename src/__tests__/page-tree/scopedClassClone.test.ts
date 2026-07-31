@@ -60,6 +60,11 @@ describe('cloneScopedClassesForNodeMap', () => {
     const classes: Record<string, StyleRule> = {
       'c-scoped': makeScopedClass('c-scoped', 'n1'),
     }
+    classes['c-scoped'].stylePriorities = { backgroundColor: 'important' }
+    classes['c-scoped'].contextStyles.mobile = { color: 'red' }
+    classes['c-scoped'].contextStylePriorities = {
+      mobile: { color: 'important' },
+    }
 
     const { added, classIdRemap } = cloneScopedClassesForNodeMap(idMap, classes)
 
@@ -70,6 +75,14 @@ describe('cloneScopedClassesForNodeMap', () => {
     expect(added[0].styles).toEqual({ backgroundColor: 'red' })
     // The cloned class is a fresh object, not a reference share.
     expect(added[0].styles).not.toBe(classes['c-scoped'].styles)
+    expect(added[0].stylePriorities).toEqual({ backgroundColor: 'important' })
+    expect(added[0].stylePriorities).not.toBe(classes['c-scoped'].stylePriorities)
+    expect(added[0].contextStylePriorities).toEqual({
+      mobile: { color: 'important' },
+    })
+    expect(added[0].contextStylePriorities?.mobile).not.toBe(
+      classes['c-scoped'].contextStylePriorities?.mobile,
+    )
     // classIdRemap maps old → new id.
     expect(classIdRemap.get('c-scoped')).toBe(added[0].id)
   })

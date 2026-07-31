@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'bun:test'
 import { Type } from '@core/utils/typeboxHelpers'
-import { apiRequest, ApiError, assertOk, isAbortError, readEnvelope, responseErrorMessage } from '@core/http'
+import {
+  apiBlobRequest,
+  apiRequest,
+  ApiError,
+  assertOk,
+  isAbortError,
+  readEnvelope,
+  responseErrorMessage,
+} from '@core/http'
 
 const BodySchema = Type.Object({ value: Type.Number() })
 
@@ -91,6 +99,34 @@ describe('apiRequest', () => {
       },
     }).catch((e) => e)
     expect(isAbortError(err)).toBe(true)
+  })
+})
+
+describe('apiBlobRequest', () => {
+  it('returns binary bodies through the shared authenticated transport', async () => {
+    let seen: RequestInit | undefined
+    const blob = await apiBlobRequest('/image', {
+      fetchImpl: async (_input, init) => {
+        seen = init
+        return new Response(new Uint8Array([1, 2, 3]), {
+          headers: { 'content-type': 'image/png' },
+        })
+      },
+    })
+
+    expect(blob.type).toBe('image/png')
+    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]))
+    expect(seen?.credentials).toBe('include')
+  })
+
+  it('throws the same ApiError envelope as JSON requests', async () => {
+    const err = await apiBlobRequest('/image', {
+      fetchImpl: async () => jsonResponse({ error: 'image unavailable' }, 404),
+    }).catch((error) => error)
+
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).status).toBe(404)
+    expect((err as ApiError).message).toBe('image unavailable')
   })
 })
 

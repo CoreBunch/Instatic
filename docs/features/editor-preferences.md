@@ -1,6 +1,8 @@
 # Editor Preferences
 
-Local UI preferences for the editor — auto-save behaviour, hover-preview gating, admin theme, UI text size, density, layers panel options, etc. Stored in `localStorage`, scoped to the device, never written to the site file.
+Local UI preferences for the editor — hover-preview gating, admin theme, UI text size, density, layers panel options, etc. Stored in `localStorage`, scoped to the device, never written to the site file.
+
+There are no auto-save preferences: the collab relay persists continuously (see [docs/features/site-shell.md](site-shell.md) → "Real-time co-editing"), so there is nothing to schedule.
 
 The feature is **catalog-driven**: one declarative array drives the schema, the runtime defaults, and the Settings → Preferences UI. Adding a preference is two lines.
 
@@ -9,8 +11,8 @@ The feature is **catalog-driven**: one declarative array drives the schema, the 
 ## TL;DR
 
 - Source of truth: `PREFERENCE_CATALOG` in `src/admin/pages/site/preferences/catalog.ts`.
-- Read from React: `useEditorPreference('autoSave')` / `useEditorSelectPreference('density')` / `useEditorAppearancePreferences()`.
-- Read from non-React: `readEditorPreference('autoSave')` + `subscribeToEditorPrefsChanged(listener)`.
+- Read from React: `useEditorPreference('hoverPreview')` / `useEditorSelectPreference('density')` / `useEditorAppearancePreferences()`.
+- Read from non-React: `readEditorPreferenceBool('hoverPreview')` + `subscribeToEditorPrefsChanged(listener)`.
 - Settings UI renders automatically from the catalog — no per-preference wiring.
 - Storage: `localStorage["instatic-editor-prefs"]` (`EDITOR_PREFS_KEY`). `additionalProperties: true` on the schema keeps forward / backward compatibility silent.
 
@@ -58,11 +60,11 @@ A single `PREFERENCE_CATALOG` array lists every preference. Each entry declares 
 ```ts
 export const PREFERENCE_CATALOG = [
   {
-    id: 'autoSave',
+    id: 'hoverPreview',
     type: 'boolean',
     category: 'editor',
-    label: 'Auto-save',
-    description: 'Automatically save the site every 30 seconds.',
+    label: 'Hover preview',
+    description: 'Preview classes and tokens on the canvas while hovering them.',
     default: true,
   },
   // …
@@ -120,7 +122,7 @@ Both go through `parseJsonWithFallback(EditorPrefsSchema, …)` so corrupt or pa
 **3. Event bus + React hooks**
 
 ```ts
-// Event bus — for non-React consumers (e.g. usePersistence's auto-save scheduler)
+// Event bus — for non-React consumers
 export function subscribeToEditorPrefsChanged(listener: () => void): () => void
 export function notifyEditorPrefsChanged(): void
 
@@ -197,35 +199,30 @@ Because the effect keys on the document id, it also re-centers when the active d
 
 ## Reading preferences from non-React code
 
-Some call sites are not React components — `usePersistence.ts`'s auto-save scheduler is one example. They use the imperative API:
+Some call sites are not React components. They use the imperative API:
 
 ```ts
 import {
-  readAutoSavePreference,
-  readAutoSaveDelayMs,
+  readEditorPreferenceBool,
   readEditorSelectPreference,
   subscribeToEditorPrefsChanged,
 } from '@site/preferences/editorPreferences'
 
 // Read once at setup time
-const enabled = readAutoSavePreference()
-const delayMs = readAutoSaveDelayMs()
+const hoverPreview = readEditorPreferenceBool('hoverPreview')
+const breakpoint = readEditorSelectPreference('defaultBreakpoint')
 
 // React to changes
 const unsub = subscribeToEditorPrefsChanged(() => {
-  scheduleAutoSave()
+  reapplyPreferences()
 })
 ```
 
-Named convenience wrappers (`readAutoSavePreference`, `readHoverPreviewPreference`, `readAutoSaveDelayMs`) sit on top of the generic getters for one reason:
-
-They self-document at the call site — `readAutoSavePreference()` reads better than `readEditorPreference('autoSave')`.
-
-When a new preference needs an imperative reader, add a similarly-named wrapper in `editorPreferences.ts`. They're one-liners.
+Two generic getters cover every preference — `readEditorPreferenceBool(id)` for booleans and `readEditorSelectPreference(id)` for select / select-dynamic. Both are typed against the catalog, so a typo'd id is a compile error. There are no per-preference convenience wrappers: a wrapper per preference is a second place to keep in sync for no gain.
 
 ### Imperative settings via `setEditorPreference` / `setEditorSelectPreference`
 
-Both setters dispatch the change event so all hook consumers re-render and the bus listeners (`usePersistence.ts`) re-evaluate. They're available outside React for migration scripts, plugin defaults, or one-shot programmatic toggles, but the typical setter path is the Settings UI.
+Both setters dispatch the change event so all hook consumers re-render and bus listeners re-evaluate. They're available outside React for migration scripts, plugin defaults, or one-shot programmatic toggles, but the typical setter path is the Settings UI.
 
 ---
 
@@ -234,7 +231,6 @@ Both setters dispatch the change event so all hook consumers re-render and the b
 ```jsonc
 // localStorage["instatic-editor-prefs"]
 {
-  "autoSave": true,
   "hoverPreview": false,
   "theme": "light",
   "density": "comfortable",
@@ -266,8 +262,6 @@ The Settings → Preferences screen renders this list automatically from the cat
 
 | Category         | Id                          | Type                 | Default     | Wired in                                       |
 |------------------|-----------------------------|----------------------|-------------|------------------------------------------------|
-| Editor           | `autoSave`                  | boolean              | `true`      | `usePersistence.ts`                            |
-| Editor           | `autoSaveDelay`             | select (5s/15s/30s/60s/5min) | `'30'` | `usePersistence.ts` (`readAutoSaveDelayMs`) |
 | Editor           | `hoverPreview`              | boolean              | `true`      | `ClassPicker.tsx`, `SpacingBoxControl.tsx`     |
 | Editor           | `confirmBeforeDelete`       | boolean              | `false`     | `ConfirmDeleteProvider`                        |
 | Editor           | `theme`                     | select (dark / light) | `'dark'`   | `data-editor-theme` on the document + layout roots |

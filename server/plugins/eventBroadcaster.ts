@@ -56,3 +56,6 @@ export function broadcastPluginEvent(event: PluginEvent): void {
   }
 }
 
+export function __pluginEventSubscriberCountForTesting(): number {
+  return listeners.size
+}

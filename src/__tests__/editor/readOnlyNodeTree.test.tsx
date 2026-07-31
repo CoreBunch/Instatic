@@ -16,7 +16,8 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import React from 'react'
 import { cleanup, render } from '@testing-library/react'
 import type { BaseNode } from '@core/page-tree'
-import { bagToReactStyle } from '@core/publisher'
+import { bagToReactStyle, type RenderResolvedMedia } from '@core/publisher'
+import { responsiveBackgroundReactStyle } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { ReadOnlyNodeTree } from '@modules/base/utils/ReadOnlyNodeTree'
 // Self-registering module imports — ReadOnlyNodeTree resolves components via
 // the global registry.
@@ -33,6 +34,23 @@ function textNode(id: string, overrides: Partial<BaseNode> = {}): BaseNode {
     children: [],
     classIds: [],
     ...overrides,
+  }
+}
+
+function resolvedMedia(path = '/uploads/hero.png'): RenderResolvedMedia {
+  return {
+    publicPath: path,
+    mimeType: 'image/png',
+    width: 2400,
+    height: 1200,
+    altText: '',
+    blurHash: null,
+    variants: [
+      { width: 320, height: 160, format: 'webp', path: '/uploads/hero-w320.webp', sizeBytes: 12_000 },
+      { width: 1024, height: 512, format: 'webp', path: '/uploads/hero-w1024.webp', sizeBytes: 82_000 },
+      { width: 2048, height: 1024, format: 'webp', path: '/uploads/hero-w2048.webp', sizeBytes: 190_000 },
+    ],
+    posterPath: null,
   }
 }
 
@@ -133,5 +151,22 @@ describe('bagToReactStyle', () => {
     expect(bagToReactStyle({ color: 'expression(alert(1))', width: '' })).toBeUndefined()
     expect(bagToReactStyle(undefined)).toBeUndefined()
     expect(bagToReactStyle({})).toBeUndefined()
+  })
+})
+
+describe('responsiveBackgroundReactStyle', () => {
+  it('uses optimized image-set candidates for editor inline background styles', () => {
+    const style = responsiveBackgroundReactStyle(
+      {
+        backgroundImage: 'linear-gradient(red, blue), url("/uploads/hero.png")',
+        color: 'red',
+      },
+      new Map([['/uploads/hero.png', resolvedMedia()]]),
+    )
+
+    expect(style?.color).toBe('red')
+    expect(style?.backgroundImage).toContain('linear-gradient(red, blue), image-set(')
+    expect(style?.backgroundImage).toContain('url("/uploads/hero-w1024.webp") 1x')
+    expect(style?.backgroundImage).not.toContain('/uploads/hero.png')
   })
 })

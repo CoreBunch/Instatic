@@ -90,6 +90,30 @@ export async function openLayersPanel(page: Page): Promise<void> {
   await expect(tree).toBeVisible()
 }
 
+type ExplorerTab = 'Site' | 'Code' | 'Media'
+
+/** Open one of the consolidated Explorer tabs and wait for it to become active. */
+export async function openExplorerTab(page: Page, tab: ExplorerTab): Promise<void> {
+  const explorer = page.getByRole('complementary', { name: 'Explorer' })
+  if (!(await explorer.isVisible().catch(() => false))) {
+    await page.getByRole('button', { name: 'Open Explorer panel' }).click()
+  }
+
+  const tabButton = explorer.getByRole('button', { name: tab, exact: true })
+  if ((await tabButton.getAttribute('aria-pressed')) !== 'true') {
+    await tabButton.click()
+  }
+  await expect(tabButton).toHaveAttribute('aria-pressed', 'true')
+}
+
+/** Open the Code Explorer tab (stylesheets + scripts). */
+export async function openCodePanel(page: Page): Promise<void> {
+  await openExplorerTab(page, 'Code')
+  await expect(
+    page.getByRole('button', { name: 'New stylesheet', exact: true }),
+  ).toBeVisible()
+}
+
 /** Select a layer in the DOM/layers tree by its display name. */
 export async function selectTreeLayer(page: Page, name: string): Promise<void> {
   await page.getByRole('treeitem', { name }).first().click()
@@ -116,13 +140,7 @@ export async function setPropValue(
  */
 export async function openSitePanel(page: Page): Promise<void> {
   const newPageButton = page.getByRole('button', { name: 'New page', exact: true })
-  if (!(await newPageButton.isVisible().catch(() => false))) {
-    const explorer = page.getByRole('complementary', { name: 'Explorer' })
-    if (!(await explorer.isVisible().catch(() => false))) {
-      await page.getByRole('button', { name: 'Open Explorer panel' }).click()
-    }
-    await explorer.getByRole('button', { name: 'Site', exact: true }).click()
-  }
+  await openExplorerTab(page, 'Site')
   await expect(newPageButton).toBeVisible()
 }
 
@@ -146,23 +164,6 @@ export async function createPage(
   await expect(
     page.getByRole('treeitem', { name: `Open page ${name}` }),
   ).toBeVisible()
-}
-
-/** Save the current draft and wait for the "Draft saved" status. */
-export async function saveDraft(page: Page): Promise<void> {
-  const trigger = page.getByTestId('toolbar-publish-actions-trigger')
-  const saveAction = page.getByTestId('toolbar-save-draft-action')
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await trigger.click()
-    const opened = await saveAction.isVisible({ timeout: 1_000 }).catch(() => false)
-    if (opened) break
-    await page.keyboard.press('Escape')
-  }
-  await expect(saveAction).toBeVisible()
-  await saveAction.click()
-  await expect(page.getByRole('status', { name: 'Draft saved' })).toBeVisible({
-    timeout: 20_000,
-  })
 }
 
 /**

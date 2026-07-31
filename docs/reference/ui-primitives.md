@@ -492,7 +492,7 @@ import { Widget } from '@ui/components/Widget'
 
 ## `Tabs`
 
-ARIA-correct, keyboard-navigable tab compound component. Implements WAI-ARIA "tabs with automatic activation" — arrow keys move focus AND change the active value simultaneously. Each trigger renders the shared `Button` primitive (`primary` when active, `secondary` otherwise) — the section-tab pattern used by the AI, Users, and Account pages. Distinct from `SegmentedControl` (compact editor-panel view switching) and `RangeTabs` (pill segmented control in widget headers). Panels lazy-mount by default; pass `keepMounted` to a `TabPanel` whose children hold state that must survive tab switches.
+ARIA-correct, keyboard-navigable tab compound component. Implements WAI-ARIA "tabs with automatic activation" — arrow keys move focus AND change the active value simultaneously. Each trigger renders the shared `Button` primitive (`primary` when active, `secondary` otherwise) — the section-tab pattern used by the Users and Account pages. Distinct from `SegmentedControl` (compact editor-panel view switching) and `RangeTabs` (pill segmented control in widget headers). Panels lazy-mount by default; pass `keepMounted` to a `TabPanel` whose children hold state that must survive tab switches.
 
 `TabList` and `TabPanel`s may live in different subtrees of the same `<Tabs>` provider — e.g. the tab row passed to `AdminPageLayout`'s `tabs` slot while the panels render as page children.
 

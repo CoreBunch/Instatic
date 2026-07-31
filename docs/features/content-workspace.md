@@ -14,7 +14,7 @@ The Content workspace renders a three-pane shell — explorer sidebar, document 
 - **Canvas modes:** `write` (bare editor surface) and `live` (entry rendered inside its template with real site styles).
 - **Settings panel:** `ContentSettingsPanel` — entry-specific; hidden when no entry is selected. Reopened via the top-right notch when collapsed.
 - **Hooks:** `useContentWorkspace` (CRUD + selection), `useContentEntryDraft` (field state + save/publish), `useContentMediaPicker` (media modal + featured media).
-- **AI assistant:** `ContentAgentMount` docks the shared Agent Panel in the content rail. It exposes the live workspace through a content-specific bridge so agent writes mutate the open draft/editor state, not stale database rows.
+- **AI assistant:** `ContentAgentMount` docks the shared Agent Panel in the content rail. `useContentToolBridge`, mounted by `ContentPage`, exposes the live workspace to both the built-in agent and scoped MCP relay even when the panel is closed, so writes mutate the open draft/editor state rather than stale database rows.
 
 ---
 
@@ -119,7 +119,7 @@ Collections are `data_tables` with `kind: 'postType'`. The four system tables (`
 `AdminWorkspaceCanvasLayout` treats an absent `contentRightPanel` as "no right panel available",
 so a persisted open state never reserves an empty right rail on a fresh install or after the last entry is cleared.
 
-The panel exposes: status selector, slug, author (if the user has `canEditAnyContent`), collection (move entry), SEO title, SEO description, featured media.
+The panel exposes: status selector, slug, author (if the user has `canEditAnyContent`), collection (move entry), SEO title, SEO description, featured media — followed by the collection's **custom (non-built-in) fields**, rendered generically through the Data workspace's `CellEditorRenderer` (`context="detail"`). Relation fields open the shared `RelationPickerDialog` (target-table rows resolved for display by `useRelationTargetRows`); media fields carry their own picker. `pageTree` / `fieldSchema` fields are excluded — their cells hold whole documents, not values. Custom values live in `useContentEntryDraft`'s `customCells` and save through the same Save / Publish lifecycle as the built-ins.
 
 When the panel is collapsed and an entry is selected, `AdminWorkspaceCanvasLayout` renders a compact notch in the top-right corner of the canvas (`data-testid="content-settings-notch"`) with a button labelled "Open settings panel". Clicking it reopens the panel without changing the selected entry. See [docs/editor.md](../editor.md) — "Admin shell layout" for the notch's implementation context.
 
@@ -140,7 +140,7 @@ The mode switch is client-only. The markdown body is the source of truth in both
 | Hook | Source | Owns |
 |------|--------|------|
 | `useContentWorkspace` | `hooks/useContentWorkspace.ts` | Collection list, entry list, selection, CRUD operations, error state |
-| `useContentEntryDraft` | `hooks/useContentEntryDraft.ts` | In-memory field state (`title`, `body`, `slug`, `featuredMediaId`, `seoTitle`, `seoDescription`), save / publish / status-change handlers |
+| `useContentEntryDraft` | `hooks/useContentEntryDraft.ts` | In-memory field state (`title`, `body`, `slug`, `featuredMediaId`, `seoTitle`, `seoDescription`, plus `customCells` for the collection's non-built-in fields), save / publish / status-change handlers |
 | `useContentMediaPicker` | `hooks/useContentMediaPicker.ts` | Media picker modal open/close, featured media asset hydration, body media insert |
 
 ---
@@ -149,7 +149,7 @@ The mode switch is client-only. The markdown body is the source of truth in both
 
 The Content workspace has its own `content` chat scope, mounted as the `agent` panel in `ContentSidebar` when the current user has `ai.chat`.
 
-`ContentAgentMount` creates a fresh per-page `AgentSlice` store (`contentAgentStore.ts`) and registers a `ContentBridgeHandle` for the mounted `ContentPage`. The handle reads the current collections, selected entry, draft fields, schema, and current user via refs so the agent sees the same state the user sees. Tool writes go through that handle and then through `useContentWorkspace` / `useContentEntryDraft`, which keeps unsaved body/title/SEO/media changes and sidebar selection in sync.
+`ContentAgentMount` creates a fresh per-page `AgentSlice` store (`contentAgentStore.ts`) for the visible chat panel. Independently, `ContentPage` always mounts `useContentToolBridge`, which registers a `ContentBridgeHandle` and the `content` MCP stream for as long as the workspace is open. The handle reads the current collections, selected entry, draft fields, schema, and current user via refs so either caller sees the same state the user sees. Tool writes go through that handle and then through `useContentWorkspace` / `useContentEntryDraft`, which keeps unsaved body/title/SEO/media changes and sidebar selection in sync. `content_set_active_document` loads an uncached row by id, switches across post-type collections without waiting for the target sidebar list, and commits the workspace and draft focus before it returns so an immediately following write targets the selected document.
 
 The server registers 15 content-scope tools:
 
@@ -159,6 +159,8 @@ The server registers 15 content-scope tools:
 | Browser writes/navigation | `content_create_document`, `content_delete_document`, `content_set_document_status`, `content_set_document_field`, `content_set_document_fields`, `content_set_document_author`, `content_set_active_document`, `content_set_active_collection` |
 
 Body content is exchanged with the model as markdown. The browser bridge converts it to/from the Tiptap document when applying field writes, so the persisted `body` cell remains the same markdown source of truth used by the manual editor.
+
+`content_create_document` always creates a draft. Publishing or scheduling is deliberately a follow-up `content_set_document_status` call so the dedicated `content.publish.own` / `content.publish.any` capability gate cannot be bypassed through creation.
 
 ---
 
@@ -184,7 +186,8 @@ Body content is exchanged with the model as markdown. The browser bridge convert
 - [docs/features/agent.md](agent.md) — shared AI runtime, content-scope tools, and browser bridge
 - Source-of-truth files:
   - `src/admin/pages/content/ContentPage.tsx` — workspace mount point
-  - `src/admin/pages/content/agent/ContentAgentMount.tsx` — content Agent Panel mount and bridge registration
+  - `src/admin/pages/content/agent/ContentAgentMount.tsx` — content Agent Panel mount
+  - `src/admin/pages/content/agent/useContentToolBridge.ts` — always-mounted live handle + scoped MCP bridge registration
   - `src/admin/pages/content/agent/contentBridge.ts` — content agent browser-tool dispatcher
   - `src/admin/pages/content/agent/contentBridgeHandle.ts` — live content workspace bridge handle
   - `src/admin/pages/content/TiptapBodyEditor.tsx` — body editor

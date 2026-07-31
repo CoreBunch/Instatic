@@ -6,10 +6,9 @@ import {
   PUBLIC_BASE_URL,
   createPage,
   login,
+  openCodePanel,
   openSiteEditor,
-  openSitePanel,
   publishDraft,
-  saveDraft,
 } from './helpers'
 
 const ImportmapSchema = Type.Object({
@@ -69,7 +68,6 @@ document.body.append(marker)
     await expect(dependenciesPanel.getByTestId('dep-row-canvas-confetti')).toBeVisible()
     await expect(dependenciesPanel.getByText('1 locked')).toBeVisible({ timeout: 75_000 })
 
-    await saveDraft(page)
     await publishDraft(page)
 
     await verifyPublishedRuntimeDependency({
@@ -120,7 +118,7 @@ async function createRuntimeScript(
   source: string,
   expectedImport = 'canvas-confetti',
 ): Promise<void> {
-  await openSitePanel(page)
+  await openCodePanel(page)
   const newScript = page.getByRole('button', { name: 'New script', exact: true })
   await newScript.scrollIntoViewIfNeeded()
   await newScript.click()

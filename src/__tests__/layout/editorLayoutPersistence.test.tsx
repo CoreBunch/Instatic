@@ -102,6 +102,7 @@ function resetStore() {
     propertiesPanel: { collapsed: false, x: 0, y: 0, width: 360 },
     propertiesPanelMode: 'docked',
     leftSidebarWidth: 320,
+    leftSidebarMode: 'docked',
     focusedPanel: 'canvas',
     explorerPanelOpen: true,
     explorerPanelTab: 'layers',
@@ -338,7 +339,9 @@ describe('AdminCanvasLayout — persisted panel layout', () => {
             rightWidth: 390,
             rightOpen: true,
             propertiesPanelMode: 'floating',
+            leftSidebarMode: 'floating',
             activeLeftPanel: 'explorer',
+            agentPanelOpen: true,
             explorerPanelTab: 'code',
             codeEditorPanelOpen: true,
             activeEditorFileId: 'file-1',
@@ -356,6 +359,7 @@ describe('AdminCanvasLayout — persisted panel layout', () => {
       expect(state.explorerPanelTab).toBe('code')
       expect(state.propertiesPanel.collapsed).toBe(false)
       expect(state.propertiesPanelMode).toBe('floating')
+      expect(state.leftSidebarMode).toBe('floating')
       expect(state.propertiesPanel.width).toBe(390)
       expect(state.leftSidebarWidth).toBe(410)
       expect(state.codeEditorPanelOpen).toBe(true)
@@ -363,7 +367,7 @@ describe('AdminCanvasLayout — persisted panel layout', () => {
       expect(state.selectorsPanelOpen).toBe(false)
       expect(state.frameworkPanelOpen).toBe(false)
       expect(state.dependenciesPanelOpen).toBe(false)
-      expect(state.isAgentOpen).toBe(false)
+      expect(state.isAgentOpen).toBe(true)
     }, { timeout: 150 })
   })
 })
@@ -531,11 +535,33 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
     fireEvent.click(within(rail).getByRole('button', { name: /open ai assistant panel/i }))
 
     expect(sidebar.getAttribute('data-expanded')).toBe('true')
-    expect(sidebar.getAttribute('data-active-panel')).toBe('agent')
+    expect(sidebar.getAttribute('data-active-panel')).toBe('dependencies')
     expect(sidebar.getAttribute('style')).toContain('--left-sidebar-panel-width: 320px')
     expect(useEditorStore.getState().isAgentOpen).toBe(true)
-    expect(useEditorStore.getState().dependenciesPanelOpen).toBe(false)
+    expect(useEditorStore.getState().dependenciesPanelOpen).toBe(true)
     expect(useEditorStore.getState().explorerPanelOpen).toBe(false)
+    const agentPanel = within(sidebar).getByTestId('agent-panel').closest('[data-panel]')
+    expect(agentPanel).not.toBeNull()
+
+    const agentResizeHandle = within(agentPanel as HTMLElement).getByRole('separator', {
+      name: /resize ai assistant panel/i,
+    })
+    fireEvent.keyDown(agentResizeHandle, { key: 'ArrowRight' })
+    fireEvent.keyDown(agentResizeHandle, { key: 'ArrowDown' })
+
+    await waitFor(() => {
+      expect((agentPanel as HTMLElement).style.getPropertyValue('--panel-w')).toBe('330px')
+      expect((agentPanel as HTMLElement).style.getPropertyValue('--panel-h')).toBe('490px')
+      const stored = JSON.parse(localStorage.getItem(LAYOUT_STORAGE_KEY) ?? '{}')
+      expect(stored.panelSizes?.agent).toEqual({ width: 330, height: 490 })
+    }, { timeout: 150 })
+
+    fireEvent.click(within(rail).getByRole('button', { name: /open explorer panel/i }))
+
+    expect(sidebar.getAttribute('data-active-panel')).toBe('explorer')
+    expect(useEditorStore.getState().explorerPanelOpen).toBe(true)
+    expect(useEditorStore.getState().isAgentOpen).toBe(true)
+    expect(within(sidebar).getByTestId('explorer-panel')).toBeDefined()
     expect(within(sidebar).getByTestId('agent-panel')).toBeDefined()
   })
 
@@ -564,6 +590,18 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
 
     const floatingPanel = screen.getByTestId('properties-panel')
     expect(floatingPanel.getAttribute('data-variant')).toBe('floating')
+    const propertiesResizeHandle = within(floatingPanel).getByRole('separator', {
+      name: /resize properties panel/i,
+    })
+    fireEvent.keyDown(propertiesResizeHandle, { key: 'ArrowRight' })
+    fireEvent.keyDown(propertiesResizeHandle, { key: 'ArrowDown', shiftKey: true })
+
+    await waitFor(() => {
+      expect(floatingPanel.style.getPropertyValue('--panel-w')).toBe('370px')
+      expect(floatingPanel.style.getPropertyValue('--panel-h')).toBe('720px')
+      const stored = JSON.parse(localStorage.getItem(LAYOUT_STORAGE_KEY) ?? '{}')
+      expect(stored.panelSizes?.properties).toEqual({ width: 370, height: 720 })
+    }, { timeout: 150 })
 
     fireEvent.click(within(floatingPanel).getByRole('button', { name: /dock properties panel/i }))
 
@@ -571,6 +609,56 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
       expect(useEditorStore.getState().propertiesPanelMode).toBe('docked')
       expect(rightSidebar.getAttribute('data-expanded')).toBe('true')
       expect(within(rightSidebar).getByTestId('properties-panel').getAttribute('data-variant')).toBe('docked')
+    }, { timeout: 150 })
+  })
+
+  it('can unpin hosted left-rail panels and keeps switching in the floating host', async () => {
+    renderEditorLayout()
+
+    const sidebar = await screen.findByTestId('left-sidebar')
+    const rail = within(sidebar).getByRole('navigation', { name: /panel dock/i })
+    const panelSlot = within(sidebar).getByTestId('left-sidebar-panel-slot')
+
+    fireEvent.click(within(sidebar).getByRole('button', { name: /unpin explorer panel/i }))
+
+    await waitFor(() => {
+      expect(useEditorStore.getState().leftSidebarMode).toBe('floating')
+      expect(sidebar.getAttribute('data-expanded')).toBe('false')
+      expect(panelSlot.getAttribute('data-mode')).toBe('floating')
+    }, { timeout: 150 })
+
+    const explorerResizeHandle = within(panelSlot).getByRole('separator', {
+      name: /resize explorer panel/i,
+    })
+    fireEvent.keyDown(explorerResizeHandle, { key: 'ArrowRight' })
+    fireEvent.keyDown(explorerResizeHandle, { key: 'ArrowUp' })
+
+    await waitFor(() => {
+      expect(panelSlot.style.getPropertyValue('--panel-w')).toBe('330px')
+      expect(panelSlot.style.getPropertyValue('--panel-h')).toBe('510px')
+      const stored = JSON.parse(localStorage.getItem(LAYOUT_STORAGE_KEY) ?? '{}')
+      expect(stored.panelSizes?.site).toEqual({ width: 330, height: 510 })
+    }, { timeout: 150 })
+
+    const railTargets = [
+      ['selectors', 'selectors-panel'],
+      ['framework', 'framework-panel'],
+      ['dependencies', 'dependencies-panel'],
+    ] as const
+
+    for (const [label, testId] of railTargets) {
+      fireEvent.click(within(rail).getByRole('button', { name: new RegExp(`open ${label} panel`, 'i') }))
+      expect(within(panelSlot).getByTestId(testId)).toBeDefined()
+      expect(within(panelSlot).getByRole('button', { name: new RegExp(`dock ${label} panel`, 'i') })).toBeDefined()
+      expect(sidebar.getAttribute('data-expanded')).toBe('false')
+    }
+
+    fireEvent.click(within(panelSlot).getByRole('button', { name: /dock dependencies panel/i }))
+
+    await waitFor(() => {
+      expect(useEditorStore.getState().leftSidebarMode).toBe('docked')
+      expect(sidebar.getAttribute('data-expanded')).toBe('true')
+      expect(panelSlot.getAttribute('data-mode')).toBe('docked')
     }, { timeout: 150 })
   })
 

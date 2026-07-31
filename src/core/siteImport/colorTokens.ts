@@ -100,18 +100,27 @@ export function extractRootColorTokens(
     }
 
     const remaining: Record<string, unknown> = {}
+    const remainingPriorities: Record<string, 'important'> = {}
     for (const [prop, value] of Object.entries(rule.styles)) {
-      if (prop.startsWith('--') && typeof value === 'string' && isCssColorValue(value)) {
+      const important = rule.stylePriorities?.[prop] === 'important'
+      if (!important && prop.startsWith('--') && typeof value === 'string' && isCssColorValue(value)) {
         colorTokens.push({ slug: prop.slice(2), value: value.trim() })
       } else {
         remaining[prop] = value
+        if (important) remainingPriorities[prop] = 'important'
       }
     }
 
     const hasContext = Object.keys(rule.contextStyles ?? {}).length > 0
     // Keep the rule only if it still carries declarations (base or contextual).
     if (Object.keys(remaining).length > 0 || hasContext) {
-      out.push({ ...rule, styles: remaining })
+      const rewritten = { ...rule, styles: remaining }
+      if (Object.keys(remainingPriorities).length > 0) {
+        rewritten.stylePriorities = remainingPriorities
+      } else {
+        delete rewritten.stylePriorities
+      }
+      out.push(rewritten)
     }
   }
 

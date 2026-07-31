@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { Value } from '@sinclair/typebox/value'
+import sharp from 'sharp'
 import { createTestDb, type TestDb } from '../helpers/createTestDb'
 import {
   appendMessage,
   createConversationForUser,
   listMessagesForConversation,
   readConversationForUser,
+  replaceDefaultConversationTitle,
   toConversationDetailView,
+  updateConversationForUser,
 } from '../../../server/ai/conversations/store'
 import { ConversationDetailViewSchema } from '../../admin/ai/api'
 
@@ -55,7 +58,7 @@ describe('conversation detail round-trip', () => {
     expect(record).not.toBeNull()
 
     const messages = await listMessagesForConversation(testDb.db, conv.id)
-    const detail = toConversationDetailView(record!, messages)
+    const detail = toConversationDetailView(record!, messages, () => '/unused-image')
 
     // The exact validator that threw "Expected union value" on reopen.
     expect(Value.Check(ConversationDetailViewSchema, detail)).toBe(true)
@@ -63,5 +66,82 @@ describe('conversation detail round-trip', () => {
     expect(detail.messages[0]!.content).toEqual([{ kind: 'text', text: 'hello' }])
     // The dead context field must not reappear on the wire shape.
     expect('contextJson' in detail).toBe(false)
+  })
+
+  it('preserves mixed and image-only user content through SQLite and the wire schema', async () => {
+    const conv = await createConversationForUser(testDb.db, 'user_1', {
+      scope: 'site',
+      credentialId: 'cred_1',
+      modelId: 'model_1',
+    })
+    const imageData = (await sharp({
+      create: {
+        width: 8,
+        height: 8,
+        channels: 3,
+        background: { r: 20, g: 40, b: 60 },
+      },
+    }).jpeg().toBuffer()).toString('base64')
+    const image = { kind: 'image' as const, mimeType: 'image/jpeg', data: imageData }
+
+    await appendMessage(testDb.db, conv.id, {
+      role: 'user',
+      content: [{ kind: 'text', text: 'What is this?' }, image],
+    })
+    await appendMessage(testDb.db, conv.id, {
+      role: 'user',
+      content: [image],
+    })
+
+    const record = await readConversationForUser(testDb.db, 'user_1', conv.id)
+    expect(record).not.toBeNull()
+    const messages = await listMessagesForConversation(testDb.db, conv.id)
+    const detail = toConversationDetailView(
+      record!,
+      messages,
+      (messageId, blockIndex) => `/images/${messageId}/${blockIndex}`,
+    )
+
+    expect(Value.Check(ConversationDetailViewSchema, detail)).toBe(true)
+    expect(messages.map((message) => message.content)).toEqual([
+      [{ kind: 'text', text: 'What is this?' }, image],
+      [image],
+    ])
+    expect(detail.messages.map((message) => message.content)).toEqual([
+      [
+        { kind: 'text', text: 'What is this?' },
+        {
+          kind: 'image',
+          mimeType: 'image/jpeg',
+          url: `/images/${messages[0]!.id}/1`,
+        },
+      ],
+      [{
+        kind: 'image',
+        mimeType: 'image/jpeg',
+        url: `/images/${messages[1]!.id}/0`,
+      }],
+    ])
+    expect(JSON.stringify(detail)).not.toContain(imageData)
+  })
+
+  it('does not let an automatic first-turn title overwrite a user rename', async () => {
+    const conv = await createConversationForUser(testDb.db, 'user_1', {
+      scope: 'site',
+      credentialId: 'cred_1',
+      modelId: 'model_1',
+    })
+    await updateConversationForUser(testDb.db, 'user_1', conv.id, {
+      title: 'My reference review',
+    })
+
+    expect(await replaceDefaultConversationTitle(
+      testDb.db,
+      'user_1',
+      conv.id,
+      'Image',
+    )).toBe(false)
+    expect((await readConversationForUser(testDb.db, 'user_1', conv.id))?.title)
+      .toBe('My reference review')
   })
 })

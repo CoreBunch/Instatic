@@ -19,8 +19,9 @@
  */
 
 import type { SiteDocument } from '@core/page-tree'
-import { isGeneratedClass } from '@core/page-tree'
 import { generateClassCSS } from './classCss'
+import type { ResponsiveCssOptions } from './responsiveBackground'
+import { collectUsedStyleRuleIds, treeShakeStyleRules } from './styleRuleTreeShake'
 
 /**
  * Collect all user-authored CSS class declarations for the classes referenced
@@ -35,67 +36,18 @@ import { generateClassCSS } from './classCss'
  * @param site The site containing the class registry, page nodes, and VCs.
  * @returns A CSS string of all used class-name rules, or empty string if none.
  */
-export function collectClassCSS(site: SiteDocument): string {
+export function collectClassCSS(site: SiteDocument, options: ResponsiveCssOptions = {}): string {
   // Defensive guard: corrupted/partial snapshots may have classes undefined
   if (!site.styleRules) return ''
 
-  // Collect the set of used classIds across all pages
-  const usedClassIds = new Set<string>()
-  for (const page of site.pages) {
-    for (const node of Object.values(page.nodes)) {
-      if (node.classIds) {
-        for (const id of node.classIds) {
-          usedClassIds.add(id)
-        }
-      }
-    }
-  }
-
-  // Also collect classIds from all VisualComponent trees. VC nodes are rendered
-  // inline by the publisher (renderVisualComponentRef) but live outside page.nodes —
-  // their classIds must be collected separately so the CSS rules are included.
-  if (site.visualComponents) {
-    for (const vc of site.visualComponents) {
-      // VC-level classIds (the component container)
-      if (vc.classIds) {
-        for (const id of vc.classIds) {
-          usedClassIds.add(id)
-        }
-      }
-      // Collect from the VC's flat node tree
-      for (const node of Object.values(vc.tree.nodes)) {
-        if (node.classIds) {
-          for (const id of node.classIds) {
-            usedClassIds.add(id)
-          }
-        }
-      }
-    }
-  }
-
-  // Build the filtered set of style rules to emit. Two contributions:
-  //   1. class-kind rules referenced by any node's classIds (tree-shaken).
-  //   2. EVERY ambient-kind rule (e.g. `h1`, `.hero .title`, `a:hover`) —
-  //      ambient rules attach by CSS matching, not by node assignment, so
-  //      tree-shaking by classIds would silently drop them.
-  // Framework-generated utility classes are excluded here; they ride through
-  // `framework.css` via `generateFrameworkCss()`.
-  const usedClasses: SiteDocument['styleRules'] = {}
-  for (const id of usedClassIds) {
-    const cls = site.styleRules[id]
-    if (!cls || isGeneratedClass(cls)) continue
-    if (cls.kind && cls.kind !== 'class') continue // ambient ids never land here
-    usedClasses[id] = cls
-  }
-  for (const cls of Object.values(site.styleRules)) {
-    if (cls.kind !== 'ambient') continue
-    if (isGeneratedClass(cls)) continue
-    usedClasses[cls.id] = cls
-  }
+  const usedClasses = treeShakeStyleRules(
+    site.styleRules,
+    collectUsedStyleRuleIds(site),
+  )
 
   if (Object.keys(usedClasses).length === 0) return ''
 
-  const css = generateClassCSS(usedClasses, site.breakpoints, site.conditions ?? [])
+  const css = generateClassCSS(usedClasses, site.breakpoints, site.conditions ?? [], options)
   return sanitizeModuleCSS(css)
 }
 

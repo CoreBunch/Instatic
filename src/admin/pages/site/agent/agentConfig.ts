@@ -3,23 +3,13 @@
  *
  * As of Phase 3 the site editor talks to the new AI runtime at
  * `/admin/api/ai/chat/site` (provider-agnostic, multi-driver). The browser
- * still POSTs tool results to `/admin/api/ai/tool-result`.
+ * tool results are posted through the shared admin AI bridge API.
  *
  * Endpoints live under `/admin/api/` so the session cookie scoped to
  * `Path=/admin` is sent by the browser. Outside `/admin/`, the cookie
  * wouldn't be carried and the `requireCapability('ai.chat' /
  * 'ai.tools.write')` gates would 401 every request.
  */
-
-/**
- * Browser-bridge response endpoint. POSTed by the browser after applying a
- * write tool against the editor store; resolves the in-flight pending tool
- * waiter in `server/ai/runtime/transport.ts` so the driver loop continues.
- *
- * Body: `{ bridgeId, requestId, result: AiToolOutput }` where AiToolOutput
- * is `{ ok: boolean, data?: unknown, error?: string }`.
- */
-export const AGENT_TOOL_RESULT_PATH = '/admin/api/ai/tool-result' as const
 
 /** Per-scope defaults endpoint — read at panel open to discover the active
     credential + model for new conversations. */

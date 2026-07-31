@@ -29,18 +29,61 @@ export function classifyHttpError(
   status: number,
   bodyText: string,
 ): string {
+  return classifyHttpFailure(providerLabel, status, bodyText).message
+}
+
+export interface ProviderHttpFailure {
+  kind: 'replayOverflow' | 'generic'
+  message: string
+}
+
+/** Structured classification lets the tool loop retry only replay overflows. */
+export function classifyHttpFailure(
+  providerLabel: string,
+  status: number,
+  bodyText: string,
+): ProviderHttpFailure {
   const detail = extractErrorMessage(bodyText)
 
   if (status === 401 || status === 403) {
-    return `${providerLabel} authentication failed. Check your API key in /admin/ai/providers.`
+    return {
+      kind: 'generic',
+      message: `${providerLabel} authentication failed. Check your API key in /admin/ai/providers.`,
+    }
   }
   if (status === 402 || status === 429) {
-    return `${providerLabel} quota or rate limit reached${detail ? `: ${detail}` : ''}. Check your account balance.`
+    return {
+      kind: 'generic',
+      message: `${providerLabel} quota or rate limit reached${detail ? `: ${detail}` : ''}. Check your account balance.`,
+    }
+  }
+  if (requestExceedsProviderContext(status, bodyText, detail)) {
+    return {
+      kind: 'replayOverflow',
+      message: `${providerLabel} could not accept this conversation because it exceeds the provider's request or context limit${detail ? `: ${detail}` : ''}. Your history is still saved; start a new conversation or choose a model with a larger context window.`,
+    }
   }
   if (status >= 500) {
-    return `${providerLabel} service error (${status})${detail ? `: ${detail}` : ''}. Please try again.`
+    return {
+      kind: 'generic',
+      message: `${providerLabel} service error (${status})${detail ? `: ${detail}` : ''}. Please try again.`,
+    }
   }
-  return `${providerLabel} error (${status})${detail ? `: ${detail}` : ''}.`
+  return {
+    kind: 'generic',
+    message: `${providerLabel} error (${status})${detail ? `: ${detail}` : ''}.`,
+  }
+}
+
+function requestExceedsProviderContext(
+  status: number,
+  bodyText: string,
+  detail: string | null,
+): boolean {
+  if (status === 413) return true
+  if (status !== 400) return false
+  const providerSignal = `${detail ?? ''} ${bodyText}`
+  return /(?:context.{0,24}(?:length|limit|window|exceed)|maximum.{0,16}tokens|too[_ ]many[_ ]tokens|request[_ ].{0,16}(?:too[_ ]large|exceed)|input[_ ]too[_ ]long|too[_ ]many[_ ]images|image.{0,16}(?:count|limit|maximum))/i.test(providerSignal)
 }
 
 /**

@@ -15,6 +15,7 @@ type RenderSnapshotToolInput = Static<typeof RenderSnapshotInputSchema> & {
 
 export async function runRenderSnapshot(
   input: RenderSnapshotToolInput,
+  frame?: HTMLElement,
 ): Promise<AiToolOutput> {
   // Default true so a direct (non-server) invocation still works; the AI loop
   // always sets this explicitly from the model's vision capability.
@@ -25,6 +26,7 @@ export async function runRenderSnapshot(
       breakpointId: input.breakpointId,
       nodeId: input.nodeId,
       captureScreenshot,
+      frame,
     })
   } catch (err) {
     if (err instanceof SnapshotNodeNotFoundError) return aiToolError(err.message)

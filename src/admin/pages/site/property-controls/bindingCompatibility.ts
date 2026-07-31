@@ -29,8 +29,8 @@ type DynamicBindingMode = 'token' | 'structured'
  *   TypeBox validation will coerce unknown dynamic values back to defaults.
  * - `color` has no binding mode until data has a first-class color field type.
  * - `group` has no meaningful scalar binding target.
- * - `pageTree` and `fieldSchema` are structural cell types that hold whole
- *   documents (a page-node tree and a DataField[] array). They are not
+ * - `repeater`, `pageTree`, and `fieldSchema` are structural cell types that
+ *   hold collections or whole documents. They are not
  *   bindable to any property control — page authors cannot wire a page tree
  *   or a field-schema array directly to a node prop. They appear in `group`
  *   solely to satisfy the binding-compatibility-coverage architecture test,
@@ -58,7 +58,7 @@ export const BINDING_COMPATIBILITY: Record<PropertyControlKind, readonly DataFie
   // Structural (document-level) types: not scalar-bindable, listed here for
   // coverage-test completeness only — the picker excludes them from the
   // binding catalog via buildMetaFields in src/core/data/fields.ts.
-  group:    ['pageTree', 'fieldSchema'],
+  group:    ['repeater', 'pageTree', 'fieldSchema'],
 }
 
 /**

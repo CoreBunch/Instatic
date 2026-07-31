@@ -4,10 +4,9 @@ import {
   PUBLIC_BASE_URL,
   createPage,
   login,
+  openCodePanel,
   openSiteEditor,
-  openSitePanel,
   publishDraft,
-  saveDraft,
 } from './helpers'
 
 test.describe('site files and code editor', () => {
@@ -33,7 +32,6 @@ html body {
 }
 `)
 
-    await saveDraft(page)
     await publishDraft(page)
 
     const context = await browser.newContext()
@@ -53,7 +51,7 @@ html body {
 })
 
 async function createStylesheet(page: Page, name: string, css: string): Promise<void> {
-  await openSitePanel(page)
+  await openCodePanel(page)
   const newStylesheet = page.getByRole('button', { name: 'New stylesheet', exact: true })
   await newStylesheet.scrollIntoViewIfNeeded()
   await newStylesheet.click()
@@ -74,4 +72,5 @@ async function createStylesheet(page: Page, name: string, css: string): Promise<
 
   // CodeMirror syncs into the editor store through a short debounce.
   await expect(editor).toContainText('background-color')
+  await page.waitForTimeout(300)
 }

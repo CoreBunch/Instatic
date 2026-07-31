@@ -13,12 +13,12 @@ The agent runs on a provider-agnostic AI runtime (`server/ai/`) that can drive a
 ## TL;DR
 
 - **Structure via HTML.** `site_insert_html` and `site_replace_node_html` accept semantic HTML strings; the browser executor calls `importHtml` (the same pipeline as the paste-HTML UI) to convert them into first-class, editable `PageNode`s.
-- **Styling via CSS.** The agent emits CSS the same way a human pastes it: a `<style>` block and/or `class=` attributes inside the `site_insert_html`/`site_replace_node_html` payload, or the standalone `site_apply_css` tool. The importer (`cssToStyleRules`) classifies every selector — a bare `.foo {}` rule becomes a reusable Selectors-panel class bound to `class="foo"`; any other selector (`.hero a`, `a:hover`, `nav > li`) becomes an ambient rule; `style=` attributes land on the node's inline styles. There is no structured `classes` parameter — the agent never hand-builds classes node-by-node at insert time. `site_apply_css` is the single tool for authoring/editing CSS on its own; it **upserts**, so re-applying a selector edits the existing rule (the way descendant/pseudo rules get restyled).
+- **Styling via CSS.** The agent emits CSS the same way a human pastes it: a `<style>` block and/or `class=` attributes inside the `site_insert_html`/`site_replace_node_html` payload, or the standalone `site_apply_css` tool. The importer (`cssToStyleRules`) classifies every selector — class-bearing selectors become reusable Selectors-panel classes while preserving the full selector and decoded class token; class-free selectors (`a:hover`, `nav > li`) become ambient rules; `style=` attributes land on the node's inline styles. There is no structured `classes` parameter — the agent never hand-builds classes node-by-node at insert time. `site_apply_css` is the single tool for CSS on its own, with explicit merge, replace, rule-delete, and property-removal operations; exact selector identity and `!important` priority survive the round trip.
 - **Site scope: 35 tools total.** 6 server-side catalog read tools (resolved server-side from the posted snapshot / DB) + 29 browser-bridged tools.
 - **Content scope: 15 tools total.** 7 server-side content/catalog/media/user read tools + 8 browser-bridged document mutation/navigation tools.
 - **Two-endpoint bridge.** `POST /admin/api/ai/chat/:scope` opens an NDJSON stream. When the model calls a browser-bridged tool, the server emits `toolRequest`; the browser executor reads or mutates the live workspace and POSTs the `AiToolOutput` result to `POST /admin/api/ai/tool-result`.
 - **Provider-agnostic.** The runtime selects a driver (Anthropic, OpenAI, OpenRouter, Ollama, Custom Provider) from the conversation's configured credential.
-- **Site tool input schemas are a single source of truth** in `@core/ai` (`src/core/ai/toolSchemas.ts`). The server tool registry (`server/ai/tools/site/writeTools.ts`) and the browser executor (`executor.ts` + `tokenRunners.ts`) import the exact same schema objects — a constraint added once is enforced on both sides at build time. Gated by `ai-tool-schema-ssot.test.ts` and `ai-tools-typebox-only.test.ts`.
+- **Site tool input schemas are a single source of truth** in `@core/ai` (`src/core/ai/toolSchemas.ts`). The server registry and browser executor import from that shared leaf. Most tools reuse the exact same schema object; `site_apply_css` deliberately advertises a flat provider object because Anthropic rejects root-level schema composition, then the executor validates the payload against the leaf's exact operation union. Gated by `ai-tool-input-object.test.ts`, `ai-tool-schema-ssot.test.ts`, and `ai-tools-typebox-only.test.ts`.
 - **Capabilities.** `ai.chat` required to stream; `ai.tools.write` required for write tools. Gated by `ai-handlers-capability-gated.test.ts`.
 
 ---
@@ -28,7 +28,7 @@ The agent runs on a provider-agnostic AI runtime (`server/ai/`) that can drive a
 ```text
 src/core/ai/
 ├── toolOutput.ts           — AiToolOutput type + AiToolOutputSchema + aiToolOk / aiToolError
-├── toolSchemas.ts          — all site write-tool input schemas (single source of truth for both server and browser)
+├── toolSchemas.ts          — all site write-tool schemas; provider/execution layers for site_apply_css share field definitions here
 └── index.ts                — barrel re-export (canonical @core/ai import path)
 
 server/ai/
@@ -79,16 +79,23 @@ server/ai/
     ├── types.ts            — canonical AiStreamEvent / AiMessage / AiTool / ToolContext
     └── transport.ts        — createBridge() / resolveBridgeToolResult()
 
+src/admin/ai/
+├── ndjsonStream.ts         — shared validated NDJSON reader
+├── toolResultApi.ts        — shared browser-tool result POST
+└── useMcpWorkspaceBridge.ts— scope-aware external MCP stream + browser dispatcher
+
 src/admin/pages/site/agent/
 ├── index.ts                — public barrel (all external imports go through here)
 ├── agentSlice.ts           — scope-agnostic Zustand slice factory (createAgentSlice(config))
+├── agentProviderUpdate.ts  — timed provider/model persistence and fail-closed reconciliation
 ├── agentSliceConfig.site.ts— site-editor config: scope, snapshot builder, executor wiring
-├── agentConfig.ts          — API path constants (AGENT_TOOL_RESULT_PATH, AI_CONVERSATIONS_PATH, …)
-├── agentApi.ts             — HTTP layer: tool-result POST, conversation bootstrap, message rehydration
+├── agentConfig.ts          — conversation/default API path constants
+├── agentApi.ts             — conversation bootstrap and message rehydration
 ├── streamEvents.ts         — NDJSON schema (ServerStreamEventSchema) + processStreamEvent reducer
 ├── siteAgentSnapshot.ts    — `SiteAgentSnapshotSchema` (TypeBox) + derived `SiteAgentSnapshot` type + `buildSiteAgentSnapshot` serializer
 ├── pageContext.ts          — editor adapter: reads active page + store scalars, calls `buildSiteAgentSnapshot`
 ├── executor.ts             — browser-side dispatcher: validates + runs write tools; auto-navigates canvas to node's owning document before each write
+├── cssTools.ts             — site_apply_css parser + exact-selector merge/replace/delete runners
 ├── documentTools.ts        — list/read/open document helpers for pages, templates, and visual components
 ├── tokenRunners.ts         — site_set_color_tokens / site_set_font_tokens / site_set_type_scale / site_set_spacing_scale runners (split from executor.ts)
 ├── renderEvidence.ts       — captureAgentRenderSnapshot (site_render_snapshot tool)
@@ -98,14 +105,26 @@ src/admin/pages/site/agent/
 src/admin/pages/content/agent/
 ├── agentSliceConfig.content.ts — content-workspace config: scope, snapshot builder, executor wiring
 ├── contentAgentStore.ts        — standalone per-mount Zustand store (AgentSlice only)
-└── contentBridge.ts            — content workspace write-tool executor
+├── contentBridge.ts            — content workspace write-tool executor
+├── contentBridgeHandle.ts      — live ContentPage operation handle
+└── useContentToolBridge.ts     — always-mounted handle + content-scope MCP relay
 
 src/admin/pages/site/panels/AgentPanel/
-├── AgentPanel.tsx          — main panel; resolves active model's contextWindow from the models endpoint
+├── AgentPanel.tsx          — panel shell, persisted message thread, and image-gallery orchestration
+├── AgentComposer.tsx       — controlled draft, paste/send lifecycle, active-model capability check
+├── AgentImageGallery.tsx   — compact shared thumbnails for user and agent-tool images
+├── AgentImagePreview.tsx   — modeless draggable full-image preview
+├── AgentImageContextMenu.tsx — shared copy/download/Media actions for every image surface
+├── PendingImageAttachmentGrid.tsx — compact pending tiles and per-image actions
+├── agentImageActions.ts    — authenticated blob reads, clipboard/download, and Media upload
+├── agentImageTypes.ts      — shared preview/menu image contracts and keyboard positioning
+├── agentImageAttachment.ts — browser decode, resize, JPEG normalisation, and base64 encoding
+├── usePendingImageAttachments.ts — ref-backed sequential image queue and per-item cancellation
 ├── ModelPicker.tsx         — credential + model selector used in the input bar
 ├── ConversationHistory.tsx — history popover (browse, restore, delete past threads)
-├── ContextMeter.tsx        — "context used / window" progress indicator (display only)
+├── ContextMeter.tsx        — compact five-segment context + conversation-usage tooltip
 ├── ContextMeter.module.css
+├── contextMeterMetrics.ts  — five-band fill/tone calculation
 ├── AgentPanel.module.css
 └── index.ts                — barrel export
 
@@ -116,9 +135,11 @@ src/admin/pages/ai/
     ├── ProvidersTab.tsx    — CRUD for ai_credentials rows (provider-derived API key or endpoint credential shape)
     ├── DefaultsTab.tsx     — per-scope model defaults editor
     ├── AuditTab.tsx        — usage audit view: totals strip, by-model/user/scope tables, daily bar chart
-    ├── UsageTablePanel.tsx — shared table scaffolding (title + hint header, numeric-aligned columns, empty row)
-    └── usageFormat.ts      — formatNumber / formatCost helpers (plain .ts leaf; importable by tests and components alike)
+    └── UsageTablePanel.tsx — shared table scaffolding (title + hint header, numeric-aligned columns, empty row)
 ```
+
+Shared AI number and spend formatting lives in `src/admin/ai/usageFormat.ts`, so
+the Audit workspace and compact composer usage detail use identical labels.
 
 The Agent Panel owns the credential list load for its header, lock-state empty states, and model picker. The header always contains a `ConversationHistory` popover (browse and restore past threads), a "New chat" button (`startNewAgentConversation`), a conditional "Clear conversation" button (visible when `agentMessages.length > 0`), a streaming badge, and an "AI settings" shortcut that routes to `/admin/ai`. The AI settings button is always visible in the header, independent of credential state.
 
@@ -132,7 +153,27 @@ While credentials are still loading, `lockReason` stays `null` so the panel does
 
 When the panel opens, `AgentPanel` calls `loadScopeDefault()` so the model picker immediately shows the configured scope default — no "Default" placeholder, no send-time no-provider surprise. `composerLocked` is gated by `hasActiveProvider` (`Boolean(activeCredentialId && activeModelId)`), meaning a stale "No AI provider configured" error string never locks out the UI once a credential + model is staged; picking a model via `setAgentProvider` clears `agentError` immediately, re-enabling the composer.
 
-The composer area includes a `<ContextMeter>` that shows "context used / window" as a progress bar. `AgentPanel` resolves the active model's `contextWindow` from `GET /admin/api/ai/providers/:id/models?credentialId=…` (the same catalogue-enriched response the picker uses), so the meter appears as soon as a model is selected — before the first turn. The "used" half comes from `agentContextTokens` in the store (see slice state below). The meter is hidden when no context window is known (Ollama, uncatalogued models).
+The composer action row includes a compact five-segment `<ContextMeter>` immediately before Attach images and Send. `AgentComposer` resolves the full active-model descriptor from `GET /admin/api/ai/providers/:id/models?credentialId=…` (the same catalogue-enriched response the picker uses), then uses its `contextWindow`, pricing, `capabilities.visionInput`, and `capabilities.toolCalling`. A model known not to support tools is blocked with an inline "choose an agent-capable model" message; the server repeats that gate authoritatively. The meter appears as soon as a model with a known window is selected. It represents **context remaining**: a fresh conversation is five green segments and the battery drains toward amber/red as context is consumed. Hover or keyboard focus opens a wide graphical tooltip with exact context used/available, cumulative conversation input/output/cache tokens, authoritative USD spend, and current-model list rates. A context snapshot belongs to the credential/model selection that measured it, so switching models renders the meter indeterminate until the next provider response rather than comparing stale usage to a new window. The meter stays hidden when no context window is known (Ollama, uncatalogued models).
+
+### Attaching user images
+
+The composer accepts up to eight local or clipboard images alongside optional text. The icon button beside Send uses the shared `FileUpload` primitive and supports multi-selection; picking the same file again works after removal. Pasting or picking reserves every accepted attachment slot synchronously, then normalises the files sequentially so one selection cannot fan out into eight large browser decoders. Send stays disabled while any image is processing, while model support is being checked, after a processing failure, when the selected model is not vision-capable, or when it is known not to support agent tools. Pending attachments use compact thumbnails in a responsive grid. They never point an `<img>` at the potentially huge source file: a placeholder is shown during decoding, then replaced with the bounded normalised JPEG. Each primitive `Button` removes only its image. Removing an attachment or replacing the composer aborts its queued preparation and stops all downstream resize/encode work after the browser's current decode returns (`createImageBitmap` itself has no cancellation API). A message may contain only images: the server persists the turn normally and titles a new conversation `Image` or `Images`.
+
+Prepared attachments, persisted user images, and session-only images returned by agent tools use the same compact 2/3-column gallery. Each thumbnail is a keyboard-accessible button that opens the original fitted inside a modeless draggable preview window. The window uses the shared admin `FloatingWindow` shell, has only a title and close action, closes on Escape without also closing the Agent Panel, and restores focus to the thumbnail that opened it.
+
+Right-clicking an image in a pending tile, conversation gallery, or preview opens the same point-anchored `ContextMenu`; keyboard users can use the Context Menu key or Shift+F10. Actions copy the image bytes as PNG, start a MIME-correct browser download, or explicitly upload the bytes to Media. The latter uses the canonical `uploadCmsMediaAsset` pipeline (magic-byte validation, storage adapter selection, variants), requires `media.write`, primes the editor media cache, and upserts an already-mounted Media explorer. Escape closes the menu before the preview, and the preview before the Agent Panel.
+
+The provider-neutral v1 policy is defined once in `src/core/ai/userImage.ts` and enforced on both sides of the boundary:
+
+- accepted clipboard sources: PNG, JPEG, or WebP;
+- maximum source file: 12 MiB;
+- source-header guard: at most 16,384 px on either edge and 40,000,000 encoded pixels; PNG/JPEG/WebP dimensions (including JPEG EXIF orientation) are read before allocating a decoder, and `createImageBitmap` is asked for the bounded output size;
+- at most eight images per message; there is no per-conversation image-count quota;
+- browser output: metadata-stripped `image/jpeg`, transparent pixels composited over white;
+- maximum output: 1,500,000 bytes, 1568 px on either edge, and 1,500,000 total pixels;
+- complete chat-request envelope: eight maximum base64 images plus a further 16 MiB reserve for JSON framing and the scope snapshot (about 32.8 MB total).
+
+`agentImageAttachment.ts` fits both the edge and pixel budgets, tries progressively lower JPEG qualities, then reduces dimensions when necessary. The server never trusts that browser work: `server/ai/inputImages.ts` checks canonical base64, decoded byte length, JPEG magic bytes and dimensions, then fully decodes and re-encodes the JPEG through Sharp before appending the message. That second canonicalisation rejects truncated pixel data and strips EXIF/XMP/ICC metadata even when a direct authenticated client bypasses the browser. Unsupported, malformed, or oversized content is rejected before it can enter conversation history. The conversation single-writer lease is acquired before Sharp work, and the request signal is checked around every sequential decode: a competing request returns 409 without decoding, while a disconnected request finishes only its active Sharp pipeline and never starts the remaining images.
 
 ---
 
@@ -145,24 +186,26 @@ Each entry in **Settings → AI → Providers** stores one credential. The provi
 | `anthropic` | Anthropic (Claude) | `apiKey` | API key (`sk-ant-…`) | — | Static `claude-*` catalogue enriched with OpenRouter prices + context windows |
 | `openai` | OpenAI | `apiKey` | API key (`sk-…`) | — | Static `gpt-*` / `o*` catalogue enriched with OpenRouter prices + context windows |
 | `openrouter` | OpenRouter | `apiKey` | API key (`sk-or-…`) | — | Live `GET /api/v1/models` (cross-provider; native cost reporting) |
-| `ollama` | Ollama (local) | `baseUrl` | Base URL (e.g. `http://localhost:11434`) | API key (bearer, for proxied deployments) | Live `GET {baseUrl}/api/tags`; static fallback list when unreachable |
+| `ollama` | Ollama (local) | `baseUrl` | Base URL (e.g. `http://localhost:11434`) | API key (bearer, for proxied deployments) | Live `GET {baseUrl}/api/tags`, with `POST {baseUrl}/api/show` capability lookup per model; static fallback list when unreachable |
 | `openai-compatible` | Custom Provider | `baseUrl` | Base URL — any host serving the OpenAI `/v1/chat/completions` wire protocol | API key (bearer; cloud services need one, local servers often don't) | Live `GET {baseUrl}/v1/models` (standard OpenAI list shape); model `id` used as label |
 
-**Custom Provider** (id `openai-compatible`) is the generic adapter for any endpoint that speaks the OpenAI chat/completions wire protocol — Groq (`https://api.groq.com/openai`), Together, DeepSeek, Mistral, Fireworks, self-hosted vLLM, LM Studio, and others. Capabilities default to `{ toolCalling: true, visionInput: false, promptCache: false, streaming: true }`; the operator is responsible for selecting a model that actually supports tool calling. Because arbitrary endpoints are not in the OpenRouter catalogue, no context-window enrichment is available and the context meter stays hidden for these models.
+**Custom Provider** (id `openai-compatible`) is the generic adapter for any endpoint that speaks the OpenAI chat/completions wire protocol — Groq (`https://api.groq.com/openai`), Together, DeepSeek, Mistral, Fireworks, self-hosted vLLM, LM Studio, and others. Capabilities default to `{ toolCalling: true, visionInput: false, toolResultImages: false, promptCache: false, streaming: true }`; the operator is responsible for selecting a model that actually supports tool calling. Because arbitrary endpoints are not in the OpenRouter catalogue, no context-window enrichment is available and the context meter stays hidden for these models.
+
+**The server is the model-capability authority.** The composer catalogue flags are early UX gates, but they are not trusted for persistence, provider calls, or tool screenshots. `chat.ts` resolves the selected model on every turn through `resolveModelCapabilities`. Providers with stable capabilities (Anthropic, OpenAI, Custom Provider) use their driver default. Model-specific providers own a selected-model lookup: OpenRouter resolves the exact entry's `architecture.input_modalities`, while Ollama sends an authenticated `POST /api/show` for only the selected model. The shared resolver de-duplicates concurrent lookups, applies a ten-second provider timeout, includes credential/backend revisions in its cache key, and caches successful results for five minutes. Missing or unavailable model-specific metadata fails closed for vision input; Custom Provider also remains fail-closed in v1. An image targeting a non-vision model, or an editor-agent turn targeting a model known not to support tools, receives 422 before the user message is stored.
 
 ---
 
 ## Flow
 
 ```text
-User types prompt → Agent Panel
+User types text and/or pastes images → Agent Panel
     │
     ▼
-agentSlice.sendAgentMessage(content)
+agentSlice.sendAgentMessage(contentBlocks)
     │
     ├─→ buildSnapshot()  →  SiteAgentSnapshot or ContentSnapshot
     ├─→ ensure conversation row  (lazily created from AI defaults on first call)
-    ├─→ POST /admin/api/ai/chat/<scope>  { conversationId, prompt, snapshot }
+    ├─→ POST /admin/api/ai/chat/<scope>  { conversationId, content, snapshot }
     │
     ▼
 Server: chat.ts
@@ -170,13 +213,19 @@ Server: chat.ts
     ├─→ CSRF + requireCapability('ai.chat')
     ├─→ load conversation row  (credentialId, modelId) + full message history
     ├─→ decrypt credential; resolveDriver(credential.providerId)
+    ├─→ preflight text/image blocks + encoded bytes; enforce the per-message bound
+    ├─→ resolve/cache the selected model's capabilities (also gates tool screenshots)
+    ├─→ acquire the conversation's single-writer stream lease
+    ├─→ fully decode/canonicalise images sequentially (request-cancellable)
+    ├─→ project persisted images for the selected model
     ├─→ selectToolsForScope(scope, capabilities)
     │     — write tools excluded unless caller has ai.tools.write
     ├─→ build scope system prompt  →  [staticPrefix, BOUNDARY, dynamicSuffix]
     ├─→ createBridge(emit)  →  { bridgeId, bridge, destroy }
     ├─→ emit { type: 'bridgeReady', bridgeId }
     └─→ runChat({ driver, request, persister, emit })  — streaming begins
-          │  request carries the FULL conversation history as req.messages.
+          │  request carries the conversation history as req.messages; user
+          │  images use the provider replay policy described below.
           │  Direct HTTP drivers have no server-side session — every turn
           │  replays the whole log, mapped into the provider's message array.
           │
@@ -199,7 +248,7 @@ NDJSON stream events (one JSON object + \n per line):
     { type: 'toolCall', toolCallId, toolName, input, status: 'pending' }
     { type: 'toolRequest', requestId, toolName, input }    ← browser-bridged tools only
     { type: 'toolResult', toolCallId, toolName, ok, error? }
-    { type: 'usage', promptTokens, completionTokens, costUsd?, cacheReadTokens?, cacheCreationTokens? }
+    { type: 'usage', promptTokens, completionTokens, costUsd, cacheReadTokens?, cacheCreationTokens? }
     { type: 'context', contextTokens }                     ← per-round meter update
     { type: 'done' }
     { type: 'error', message }                             ← on server error
@@ -291,7 +340,7 @@ tz?:    string   // IANA timezone (e.g. "Europe/Bratislava"); defaults to UTC
 
 `byDay` is the time-series chart data — each `day` field is `YYYY-MM-DD` in the viewer's local timezone (not UTC). The daily rollup pulls raw message rows and bins them in JS via `localDayKeyFactory(timeZone)` (`server/time.ts`) rather than SQL date-truncation, because the day boundary depends on the viewer's timezone which the database doesn't know. The client (see `AuditTab.tsx` → `listAiAudit`) reads `Intl.DateTimeFormat().resolvedOptions().timeZone` and passes it as `?tz=`.
 
-The Audit tab (`src/admin/pages/ai/tabs/AuditTab.tsx`) consumes this endpoint. The daily rollup there also aligns its "Today" range window to local midnight (`setHours(0, 0, 0, 0)`) so the day boundary is consistent both in the filter and in the bar chart. The by-model, by-user, and by-scope rollups all render through `UsageTablePanel` (`tabs/UsageTablePanel.tsx`) — a shared table component that takes a `columns` config and handles the empty-state row. Number and cost formatting (`formatNumber`, `formatCost`) live in `tabs/usageFormat.ts`, a plain `.ts` leaf that both the tab components and their tests can import without triggering React Fast Refresh's components-only export rule on the component file.
+The Audit tab (`src/admin/pages/ai/tabs/AuditTab.tsx`) consumes this endpoint. The daily rollup there also aligns its "Today" range window to local midnight (`setHours(0, 0, 0, 0)`) so the day boundary is consistent both in the filter and in the bar chart. The by-model, by-user, and by-scope rollups all render through `UsageTablePanel` (`tabs/UsageTablePanel.tsx`) — a shared table component that takes a `columns` config and handles the empty-state row. Number and cost formatting (`formatNumber`, `formatCost`) live in `src/admin/ai/usageFormat.ts`, a plain shared leaf used by both Audit and the composer context tooltip.
 
 ### `POST /admin/api/ai/tool-result`
 
@@ -348,15 +397,21 @@ All 29 tools carry `execution: 'browser'` in their `AiTool` definition. The serv
 Styling rides on the `html` payload — there is no separate `classes` parameter. The executor runs `importHtml(html)`, which harvests any `<style>` block's CSS, then hands it to `cssToStyleRules`. That classifier routes each selector:
 
 - a bare `.foo {}` rule → a reusable Selectors-panel **class**, bound to every `class="foo"` node in the fragment;
-- any other selector (`.hero a`, `a:hover`, `nav > li`, `@media …`) → an **ambient** rule (media queries fold into the matching breakpoint's `contextStyles`);
+- class-bearing selectors (`.hero a`, `.group:hover .group-hover\:block`) → a **class** rule whose decoded binding name is the rightmost class token and whose full selector is preserved;
+- class-free selectors (`a:hover`, `nav > li`) → an **ambient** rule (media queries fold into the matching breakpoint's `contextStyles`);
 - supported stylesheet-level rules such as `@keyframes` → ambient raw CSS rules emitted by the publisher;
 - inline `style="…"` attributes → the node's inline styles.
 
 `insertImportedNodes` then links every `class=` token on the imported nodes to its registry class id in the same undo step, so `class="hero-section"` renders and is styleable whether its styles came from a `<style>` rule or an automatically-created bare class. See [html-import.md → Class linking](html-import.md#class-linking-name--id).
 
-**Authoring CSS with `site_apply_css`.** `site_apply_css({ css })` is the single tool for CSS that isn't attached to inserted structure. The agent passes real CSS text (e.g. `".hero a:hover { color: var(--primary) }"`); it runs through the same `cssToStyleRules` classifier and is **upserted** into the registry by `upsertCssRules`: a bare `.foo {}` selector creates or edits a reusable class, any other selector (`.hero a`, `a:hover`, `nav > li`, `::before`, `h1`) creates or edits an ambient rule, `@media` folds into per-breakpoint/condition overrides, and supported `@keyframes` become ambient raw CSS rules. Re-applying a selector **merges** onto the existing rule — so the same tool both creates new styles and restyles existing descendant/pseudo rules (the case the retired `updateClassStyles` could not express). Returns `{ cssRulesCreated, cssRulesUpdated }`. Framework-generated token/utility classes are never overwritten. `site_insert_html`/`site_replace_node_html` also accept a `<style>`-only payload and route it through the same upsert as a forgiving fallback, but `site_apply_css` is the canonical path.
+**Authoring CSS with `site_apply_css`.** The required `operation` discriminator makes destructive intent explicit:
 
-Note the deliberate split: `site_apply_css` and `<style>`-only payloads **upsert** (the agent's intent is to author/edit CSS), whereas a `<style>` block that accompanies *elements* in an insert is **additive** (`mergeImportedStyleRules` — it never clobbers a shared class as a side effect of dropping in structure).
+- `{ operation: "merge", css }` creates missing selectors and patches only the supplied declarations/contexts. Touched declarations move to the end of the stored rule in authored order, so longhand/shorthand cascade order stays truthful.
+- `{ operation: "replace", css }` makes every supplied selector's complete CSS payload authoritative: omitted base declarations and contexts are removed, while stable rule id, cascade order, metadata, and class assignments survive. An empty `.foo {}` therefore clears its CSS without detaching the class.
+- `{ operation: "remove-properties", selectors, properties }` removes CSS-native property names from base plus every viewport/custom-condition bag without rebuilding unrelated CSS. Vendor names and custom properties are accepted; emitted `padding`/`margin` shorthands also clear their stored side longhands.
+- `{ operation: "delete", selectors }` removes every exact matching rule; class-kind rules are detached from page and Visual Component nodes in the same undo step.
+
+Selectors are matched by their exact emitted text across rule kinds. `.grad`, `.hero .grad`, and `.grad, .hero .grad` are separate rules—there is no unsafe attempt at semantic selector equivalence. Destructive batches preflight missing/locked targets and fail without partial mutation. Merge/replace accept real CSS through `cssToStyleRules`, including conditions, vendor/custom properties, raw keyframes, and structurally preserved `!important`. Framework-generated locked utilities are never changed. `<style>`-only `site_insert_html`/`site_replace_node_html` payloads keep merge behavior as a forgiving fallback; a `<style>` block accompanying inserted elements remains additive (`mergeImportedStyleRules`) so dropping in structure cannot clobber a shared rule.
 
 **Loops through HTML.** A repeated list is authored with the custom importer marker:
 
@@ -387,7 +442,7 @@ The agent calls `site_list_loop_sources` first to get the valid source id, data 
 
 | Tool          | Input                 | Success `data`                          | What it does                                          |
 |---------------|-----------------------|-----------------------------------------|-------------------------------------------------------|
-| `site_apply_css`    | `{ css }`             | `{ cssRulesCreated, cssRulesUpdated }`  | Parse CSS text and upsert every rule — classes (bare `.foo`) and ambient rules (any other selector); re-applying a selector edits it |
+| `site_apply_css`    | `{ operation:'merge'\|'replace', css }` or `{ operation:'delete', selectors }` or `{ operation:'remove-properties', selectors, properties }` | `{ cssRulesCreated?, cssRulesUpdated?, cssRulesDeleted?, cssPropertiesRemoved? }` | Merge/replace authored CSS, delete exact rules, or remove selected properties across all contexts |
 | `site_assign_class` | `{ nodeId, classId }` | none                                    | Attach an existing class to a node; `classId` accepts id or name|
 | `site_remove_class` | `{ nodeId, classId }` | none                                    | Detach a class from a node (the class itself remains) |
 
@@ -452,7 +507,7 @@ The agent works **design-system-first**: it establishes or reuses tokens, then r
 
 | Tool              | Input                 | Success `data` | What it does                                                     |
 |-------------------|-----------------------|----------------|------------------------------------------------------------------|
-| `site_render_snapshot` | `{ breakpointId?, nodeId? }`   | `{ breakpointId, nodeId?, label, width, capturedAt, layout, screenshot }` + optional `images[]` | Inspect the rendered canvas: always returns a layout report (viewport, per-node bounding boxes, overflow / broken-image / invisible warnings); on a vision-capable model a PNG is attached via the tool-output **image channel**. `breakpointId` picks the frame (defaults to active); `nodeId` scopes the capture to that node's subtree — image and report cover only that section, with coordinates relative to its box, and the report carries the same `nodeId`. Omit `nodeId` for the whole page; an unknown `nodeId` returns an `aiToolError` |
+| `site_render_snapshot` | `{ breakpointId?, nodeId? }`   | `{ breakpointId, nodeId?, label, width, capturedAt, layout, screenshot }` + optional `images[]` | Inspect the rendered canvas: always returns geometry, warnings, and per-node computed styles including background image/clip and WebKit text-mask values; capable providers also receive a PNG. `breakpointId` renders any configured viewport through a deterministic one-shot frame at its exact width, independent of Live mode or collapsed/disabled frames. `nodeId` crops to one subtree while preserving ancestor paint. Unknown ids error. Pair computed evidence with `site_read_document` source CSS when debugging the cascade |
 
 ### Auto-navigation
 
@@ -464,7 +519,7 @@ When a node-targeting write tool (`site_insert_html`, `site_get_node_html`, `sit
 
 Content-scope tools are registered under `server/ai/tools/content/`. They use the same `POST /admin/api/ai/chat/content` stream and `POST /admin/api/ai/tool-result` bridge as the Site editor, but the snapshot and browser executor are content-specific:
 
-- `ContentAgentMount` builds a `ContentSnapshot` from the live Content workspace: visible `postType` / `page` collections, active collection id, active document fields/schema, and current user identity.
+- `ContentAgentMount` builds a `ContentSnapshot` from the live Content workspace: visible `postType` collections, active collection id, active document fields/schema, and current user identity.
 - `contentAgentStore.ts` mounts a standalone `AgentSlice` instance per `ContentPage` mount. The Content workspace is hook-based rather than a global Zustand store, so the bridge is exposed through `contentBridgeHandle.ts`.
 - Server read tools hit the data, media, and user repositories through `ctx.db`; write tools are browser-bridged so unsaved draft state in `useContentEntryDraft` and the Tiptap body editor stay authoritative.
 
@@ -490,7 +545,7 @@ Content-scope tools are registered under `server/ai/tools/content/`. They use th
 | `content_set_document_field` | Writes one field; body values are markdown and are converted by the browser bridge |
 | `content_set_document_fields` | Batch-writes multiple fields in one save |
 | `content_set_document_author` | Reassigns author; gated by the same author-management capability path as the HTTP UI |
-| `content_set_active_document` | Opens a document in the content editor before editing it visibly |
+| `content_set_active_document` | Loads a document by id across post-type collections and commits the live editor focus before subsequent writes |
 | `content_set_active_collection` | Switches the sidebar focus to a collection |
 
 The content system prompt is markdown-native: it tells the model to exchange body content as standard markdown, to read schemas before writing unfamiliar fields, and to prefer `content_set_document_fields` for whole-post generation. The prompt is built with the same `[staticPrefix, SYSTEM_PROMPT_DYNAMIC_BOUNDARY, dynamicSuffix]` shape as the Site prompt so provider prompt caching works the same way.
@@ -500,10 +555,14 @@ The content system prompt is markdown-native: it tells the model to exchange bod
 `site_render_snapshot` (and `site_read_document` / `site_get_node_html`) return large payloads. Five rules keep them from exploding context (a screenshot inlined as base64 JSON text once pushed a single turn past 1M tokens):
 
 1. **Image channel, not text.** `AiToolOutput` carries an optional `images: { mimeType, data }[]` (`src/core/ai/toolOutput.ts`). `site_render_snapshot` puts the PNG there — never in `data`. The Anthropic driver forwards it as a **native `image` block** inside the `tool_result` (billed at the rendered image's token cost). Text-only tool channels (Ollama / OpenAI-compatible `function_call_output`) **drop** the image and append a one-line `[N screenshot(s) omitted…]` note. The capture caps the screenshot's long edge at `MAX_IMAGE_EDGE` (1568px in `renderEvidence.ts`) — a tall landing page would otherwise exceed Anthropic's hard 8000px-per-dimension limit (400 error), and the model downsizes the long edge to ~1568px anyway.
-2. **Capture is vision-gated.** The chat handler resolves `driver.capabilities(modelId)` into `AiStreamRequest.modelCapabilities`. The shared tool loop injects `captureScreenshot: visionInput` into every `site_render_snapshot` call, so a non-vision model never pays the html-to-image cost — it gets the layout report only. (The model never sets `captureScreenshot` itself.)
+2. **Capture is provider-channel-gated.** The chat handler resolves the selected model on every turn and places the result in `AiStreamRequest.modelCapabilities`. `visionInput` means pasted user images are accepted; the separate `toolResultImages` flag means that provider's tool-result wire shape can actually carry a native image. The shared tool loop injects `captureScreenshot: visionInput && toolResultImages` into `site_render_snapshot`. Today Anthropic supports both; Responses and chat/completions providers accept user images but have text-only function/tool results, so they get the layout report without paying for a screenshot that would be discarded. (The model never sets `captureScreenshot` itself.)
 3. **`site_read_document` CSS is document-relevant, not the public full-site CSS bundle.** Public pages can share page-invariant CSS files, but `site_read_document` inlines CSS into model context. It keeps framework variables/utilities, font token variables, target-document module CSS, used class rules, ambient selectors whose class tokens all exist on the target document, classless/global ambient selectors, and document-targeted user stylesheets. It omits browser-only `@font-face` file declarations and ambient selectors from unrelated imported pages.
 4. **`site_read_document` is cleaned and paged before it reaches the model.** `renderAgentDocument` strips pathological strings from the broad read surface: long base64/data URLs become `data:<mime>;base64,[omitted N chars]`, and very long URLs are middle-truncated. The returned object always includes `pageInfo` with `part`, `totalParts`, `nextPart`, `ranges`, `serializedChars`, and cleanup counts. The hard budget is measured against `JSON.stringify({ html, css, pageInfo }).length`, because that is the text providers receive as the tool result. If `nextPart` is not `null`, the agent calls `site_read_document({ document, part: nextPart })` to continue. For exact node-level markup, use the `uid` with `site_get_node_html`.
 5. **Stale evidence is elided.** Within one tool loop, only the **most recent** heavy result per tool name (`site_render_snapshot`, `site_read_document`, `site_get_node_html`, or anything with an image) is replayed at full fidelity; earlier ones are rewritten to a one-line breadcrumb (`"Earlier <tool> output removed… Call <tool> again…"`). Older snapshots describe page state the model has since mutated, so they carry no value. See `applyHeavyElision` in `server/ai/drivers/http/toolLoop.ts`.
+
+Snapshot pixels come from the iframe document's authored rendering. Full-page captures rasterise `<html>` at the exact iframe viewport width and full document height, so a narrow/transformed body cannot shrink the reported viewport or omit document gutters. Node-scoped captures rasterise that same document painting context and crop to the node rectangle, so transparent sections retain HTML/body/ancestor colors, gradients, and background images. A white browser-default fallback is composited only behind pixels the authored page leaves transparent — it is never written onto the cloned document.
+
+Every request uses `AgentSnapshotFrame`, an offscreen one-shot `IframeFrameSurface` at the configured width. Before it becomes capturable, a revisioned barrier waits for template preview rows, nested loop data, media metadata, web fonts, the resulting React commit, and a quiet DOM window. Readiness lives on the host iframe, never on authored `<html>`/`<body>`, so user attribute selectors cannot distinguish Agent evidence from the published page. Lazy `<img>` resources are left authored as-is; `html-to-image` makes its private clones eager and embeds image/background resources before `toCanvas()` resolves. The frame deliberately does not execute authored runtime scripts, and it is released after capture without changing `activeBreakpointId`, `canvasView`, or collapsed-frame state. Parallel requests are serialized so they cannot replace the single transient frame mid-capture.
 
 ---
 
@@ -520,12 +579,13 @@ Drivers that support explicit prompt-cache controls (Anthropic) apply `cache_con
 **Static prefix key rules** (full text lives in `server/ai/tools/site/systemPrompt.ts`):
 - **Design system first.** Establish or reuse tokens before/while building (`site_set_color_tokens`, `site_set_type_scale`, `site_set_spacing_scale`, `site_set_font_tokens`), then reference them in CSS (`var(--<slug>)`, `var(--text-l)`, `var(--space-m)`, `var(--<font-var>)`) instead of raw hex/px/font-family. The dynamic suffix's `Tokens —` line shows what already exists; `(none …)` means no design system yet.
 - Structure as HTML (`site_insert_html` / `site_replace_node_html`); style with CSS in the same payload — a `<style>` block and/or `class=` attributes referencing the design tokens. The importer classifies selectors, so the agent never hand-builds classes at insert time.
-- `<style>` blocks inside imported HTML are parsed: a bare `.foo {}` rule becomes a Selectors-panel class bound to `class="foo"`; any other selector (`.hero a`, `a:hover`, `@media …`) becomes an ambient rule, and supported `@keyframes` publish as raw keyframes CSS. `style=` attributes land on the node's inline styles. These are applied — not stripped.
+- `<style>` blocks inside imported HTML are parsed: class-bearing selectors become Selectors-panel classes while preserving complex selector text, class-free selectors (`a:hover`) become ambient rules, and supported `@keyframes` publish as raw keyframes CSS. `style=` attributes land on the node's inline styles. These are applied — not stripped.
+- CSS-only edits use an explicit `site_apply_css` operation: merge for additive patches, remove-properties for stale declarations, replace only with the selector's complete desired CSS, and delete for whole exact rules. Read the document first before destructive operations; grouped and ungrouped selectors are different identities.
 - One `site_insert_html` call per logical section (nav, hero, pricing, footer = 4–6 calls); smaller chunks recover better if one fails.
 - Per-breakpoint variation: `@media` queries — in the `<style>` block of an insert or inside `site_apply_css` — with min/max-width queries that line up with the breakpoint widths in the dynamic suffix. Never invent ids like `"mobile"` or `"desktop"`.
 - Document refs come from the dynamic suffix or `site_list_documents`; never invent them. Shared chrome/layout/theme/navigation/footer requests should inspect template documents first.
 - Page ids for page operations come from the dynamic suffix; never invent them.
-- Write-tool success data uses explicit keys: `cssRulesCreated`/`cssRulesUpdated` for `site_apply_css`, `pageId` for `site_add_page`/`site_duplicate_page`, `nodeId`/`nodeIds` for `site_duplicate_node`, `nodeIds` for HTML inserts.
+- Write-tool success data uses explicit keys: `cssRulesCreated`/`cssRulesUpdated`/`cssRulesDeleted`/`cssPropertiesRemoved` for `site_apply_css`, `pageId` for `site_add_page`/`site_duplicate_page`, `nodeId`/`nodeIds` for `site_duplicate_node`, `nodeIds` for HTML inserts.
 - Editing existing content: call `site_read_document` first — it returns annotated document HTML where every element carries `uid="<nodeId>"` plus `pageInfo`; follow `pageInfo.nextPart` when more of the document is needed. Pass `uid` verbatim to write tools (`site_update_node_props`, `site_replace_node_html`, etc.). For a single subtree, `site_get_node_html` is sufficient.
 - Reply rule: 1–2 narrating sentences only. No raw HTML/CSS/JSON in the reply.
 
@@ -576,6 +636,8 @@ export const siteAgentSliceConfig: AgentSliceConfig = {
 
 The content workspace uses the same factory with `contentAgentSliceConfig` mounted in a standalone per-page store (`contentAgentStore.ts`).
 
+`agentProviderUpdate.ts` owns the existing-conversation provider/model PUT and its failure reconciliation. A definite 4xx can roll the picker back to the re-read row; a timeout, network failure, or 5xx stays fail-closed unless the re-read already proves that the requested selection committed. `agentSlice.ts` keeps the ordering queue and Send lock because those coordinate store actions rather than HTTP persistence.
+
 Key slice state and actions:
 
 ```ts
@@ -592,19 +654,29 @@ interface AgentSlice {
   agentActiveModelId:        string | null
   /** Conversation summaries for the history popover. */
   agentConversations:        ConversationView[]
-  /**
-   * Provider-normalised total input the model processed on the latest turn,
-   * for the ContextMeter. Null for a fresh conversation (no turns yet); the
-   * meter then shows 0 against the window. Hydrated from `ConversationView.contextTokens`
-   * on loadAgentConversation; updated live from each turn's `usage` event.
-   */
-  agentContextTokens:        number | null
+  /** Current-context snapshot plus cumulative conversation billing totals. */
+  agentUsage: {
+    contextTokens:           number | null
+    contextCredentialId:     string | null
+    contextModelId:          string | null
+    promptTokens:            number
+    completionTokens:        number
+    cacheReadTokens:         number
+    cacheCreationTokens:     number
+    costUsd:                 number
+  }
+  /** Blocks Send/navigation while a history load or delete may replace the active chat. */
+  isAgentConversationPending: boolean
+  /** Blocks Send/navigation while an existing chat's model PUT is pending. */
+  isAgentProviderPending:     boolean
+  /** Incremented when a conversation is replaced so local text/image drafts remount cleanly. */
+  agentComposerEpoch:        number
 
   // ── Actions ───────────────────────────────────────────────────────────
   openAgent():                                         void
   closeAgent():                                        void
   toggleAgent():                                       void
-  sendAgentMessage(content: string):                   Promise<void>
+  sendAgentMessage(content: AiUserContentBlock[]):     Promise<{ accepted: boolean }>
   abortAgent():                                        void
   clearAgentMessages():                                void
   startNewAgentConversation():                         void
@@ -620,9 +692,37 @@ interface AgentSlice {
 
 Conversations and their message history are persisted server-side in `ai_conversations` + `ai_messages`. `loadAgentConversation(id)` rehydrates a past thread into `agentMessages` without re-running the conversation.
 
-**Content blocks are one schema.** Every message body is an `AiContentBlock[]` — a discriminated union of `text` / `image` / `toolCall` / `toolResult` kinds defined once as a TypeBox schema in `@core/ai` (`src/core/ai/contentBlock.ts`). The server runtime type (`AiContentBlock`), the read boundary (`ContentBlocksSchema` in `conversations/store.ts`, which validates every block out of `content_json`), and the client wire schema (`MessageViewSchema` in `src/admin/ai/api.ts`) all derive from it. Add a kind there and every reader/writer sees it.
+**Content blocks have one persisted vocabulary and one safe browser projection.** Every stored/provider message body is an `AiContentBlock[]` — a discriminated union of `text` / base64 `image` / `toolCall` / `toolResult` kinds defined once as a TypeBox schema in `@core/ai` (`src/core/ai/contentBlock.ts`). The server runtime type and the `content_json` read boundary derive from it. Conversation-detail responses derive from the sibling `AiContentViewBlockSchema`: non-image blocks keep the same schemas, while an image carries an authenticated lazy `url` instead of inline `data`. The client validates that view schema before rehydrating its render model.
 
-**Tool outcomes are first-class.** A `role:'tool'` row records its result as a `{ kind: 'toolResult', ok, error? }` block — `ok` is an explicit boolean, never inferred from the emptiness of a text block. The persister writes it (`appendToolResult`), `buildMessageHistory` reads `ok`/`error` straight off the block to reconstruct the replay `AiToolOutput`, and the client folds it back into the matching tool-call badge (`rehydrateMessages`). The heavy successful `data` an `AiToolOutput` may carry is intentionally **not** persisted: the model already consumed it in the round that produced the result, so replay only needs `{ ok, error }` — re-feeding large tool payloads every turn would bloat the context for no benefit.
+**User turns use the same canonical blocks at the HTTP boundary.** `AiChatRequestBodySchema` in `src/core/ai/chatRequest.ts` accepts `{ conversationId, content, snapshot? }`, where `content` contains at most one trimmed text block plus up to eight canonical JPEG blocks. The server canonicalises a mixed turn as text followed by the images in paste order and removes whitespace-only text. It does not accept `toolCall` or `toolResult` blocks from the browser.
+
+```ts
+{
+  conversationId,
+  content: [
+    { kind: 'text', text: 'Use this mockup as the reference.' },
+    { kind: 'image', mimeType: 'image/jpeg', data: '<canonical base64>' },
+    { kind: 'image', mimeType: 'image/jpeg', data: '<canonical base64>' },
+  ],
+  snapshot,
+}
+```
+
+**Persisted images, browser history, and provider replay are deliberately different views.** Every accepted user JPEG is stored inline in `ai_messages.content_json`; conversations have no image-count quota. A conversation-detail response replaces each base64 block with `GET /admin/api/ai/conversations/:conversationId/messages/:messageId/images/:blockIndex`. The ownership-guarded endpoint returns only a canonical JPEG with `private, no-store`; native lazy image loading means reopening a large collection does not embed all bytes in one JSON response. Before a provider call, `projectUserImagesForModel` creates a non-mutating outbound projection:
+
+- a vision model first receives every persisted image in conversation order; there is no Instatic replay count cap;
+- a non-vision model receives no image bytes at all; every persisted image becomes a text breadcrumb, so switching models cannot poison the conversation;
+- the database rows are never rewritten by projection, so the UI history remains intact and switching back to a vision model restores the complete persisted image history.
+
+Providers may enforce a physical request, context, or routed image limit before accepting that full replay. The shared HTTP tool loop classifies only those explicit overflow responses (`413`, or a matching provider `400`) and retries once before any SSE or tool side effect: images on older user turns become one breadcrumb per turn, while every image on the newest/current user turn remains. Generic 400s, authentication, quota, rate-limit, and service failures are never retried. If the reduced request still fails—or only the current turn has images—the error explains that history remains saved and suggests a new conversation or a larger-context model. This is provider-triggered fallback, not a stored-image quota or an arbitrary app-side count.
+
+User attachments are private chat data by default, not media-library assets: the normalised base64 bytes live in the database until the conversation is deleted and purged, are exposed to the owning authorised user only through the lazy conversation-image endpoint, and are sent to the configured AI provider whenever they survive the outbound replay projection. They enter public Media storage only when a user with `media.write` explicitly chooses **Save to Media** from the image context menu; saving creates a separate media asset and does not change or delete the private conversation copy.
+
+The server admits only one active writer per conversation. A concurrent tab receives a retryable 409 before appending, which keeps message positions ordered. In the browser, model changes for an existing conversation are serialized; Send waits for the provider/model update to reach the server, and conversation/model controls stay disabled while a turn streams. If a model PUT times out after an ambiguous commit, the browser re-reads the conversation before re-enabling Send, so the picker cannot disagree with server routing. Stop owns the whole first-send lifecycle, including default lookup and lazy conversation creation, so an aborted bootstrap cannot leave the composer locked.
+
+**User attachments are not tool screenshots.** A pasted image is a persisted `kind:'image'` block on a user message. Conversation-detail responses, authenticated image responses, and chat streams use `Cache-Control: private, no-store`; the database remains the intentional durable copy. Images returned by `site_render_snapshot` or another browser tool instead travel transiently on the plural `AiToolOutput.images` channel, are subject to the heavy-evidence rules above, and remain session-only even though the panel exposes every returned image through the same gallery and draggable preview. The two paths share provider-native image mapping but have different storage and replay lifecycles.
+
+**Tool outcomes are first-class.** A `role:'tool'` row records its result as a `{ kind: 'toolResult', ok, error? }` block — `ok` is an explicit boolean, never inferred from the emptiness of a text block. The persister writes it (`appendToolResult`), `buildMessageHistory` reads `ok`/`error` straight off the block to reconstruct the replay `AiToolOutput`, and the client folds it back into the matching tool-call badge (`rehydrateMessages`). A loaded conversation never owns a live bridge from its previous process: any persisted call without a matching valid result is finalized as `INTERRUPTED_TOOL_RESULT_ERROR`, never restored as pending. The heavy successful `data` an `AiToolOutput` may carry is intentionally **not** persisted: the model already consumed it in the round that produced the result, so replay only needs `{ ok, error }` — re-feeding large tool payloads every turn would bloat the context for no benefit.
 
 ---
 
@@ -630,16 +730,20 @@ Conversations and their message history are persisted server-side in `ai_convers
 
 ### Context meter
 
-The `<ContextMeter>` shows how much of the active model's context window the current conversation has consumed. Two data sources drive it:
+The `<ContextMeter>` is a five-segment battery-style status beside the image action. Its hover/focus tooltip deliberately separates current context from cumulative billing:
 
-- **Window** (`windowTokens` prop from `AgentPanel`): the model's max total tokens, resolved once from `GET /admin/api/ai/providers/:id/models?credentialId=…`. The models endpoint enriches Anthropic and OpenAI models with `contextWindow` from the live OpenRouter catalogue (`server/ai/pricing/`); OpenRouter populates it from its own native fetch. Ollama models and uncatalogued models have no window — the meter hides.
-- **Used** (`agentContextTokens` in the store): the provider-normalised "context used" — the CURRENT context size, computed by `normalizeContextTokens(providerId, buckets)` in `server/ai/contextTokens.ts`:
+- **Window** (`windowTokens` prop from `AgentComposer`): the model's max total tokens, resolved once from `GET /admin/api/ai/providers/:id/models?credentialId=…`. The models endpoint enriches Anthropic and OpenAI models with `contextWindow` from the live OpenRouter catalogue (`server/ai/pricing/`); OpenRouter populates it from its own native fetch. Ollama models and uncatalogued models have no window — the meter hides.
+- **Current context** (`agentUsage.contextTokens`): the provider-normalised input held by the LATEST provider round, tagged with the credential/model selection that produced it. `normalizeContextTokens(providerId, buckets)` in `server/ai/contextTokens.ts` computes it:
   - Anthropic reports `input_tokens` excluding cache buckets, so the true total is `promptTokens + cacheReadTokens + cacheCreationTokens`.
   - OpenAI / OpenRouter / Ollama / Custom Provider report `input_tokens` as the full input; `promptTokens` alone is the total.
 
-**Live, per-round, not summed.** A turn makes one provider round-trip per tool batch. The toolLoop emits a `context` event **each round** carrying THAT round's input buckets; the chat handler injects the normalised `contextTokens` and the browser updates the meter on every round — so it climbs *during* a long tool loop instead of only at the end. The meter is the LATEST round's input (the current window fill), never the sum across rounds (which would over-count, since each round re-sends the growing context). The terminal `usage` event is **billing only** — its `promptTokens` stays summed across rounds (you pay input per round). The persister keeps the latest `context` value in memory (`recordContext`) and writes it once to `ai_conversations.context_tokens` with the final `usage` (overwritten per turn), so `loadAgentConversation` restores the true context on reload.
+**Live context, cumulative billing.** A turn makes one provider round-trip per tool batch. The tool loop emits a `context` event **each round** carrying THAT round's input buckets; the chat handler injects the normalised `contextTokens` and the browser updates the meter on every round — so the remaining-capacity battery drains *during* a long tool loop instead of only at the end. The measurement is the LATEST round's input, never the sum across rounds (which would over-count, since each round re-sends the growing context). The terminal `usage` event is **billing only**: prompt/completion/cache counts are summed across rounds. Before forwarding that terminal event, the persister resolves authoritative cache-aware spend (or accepts OpenRouter's native cost), writes the usage, then includes the resolved `costUsd` on the wire. The browser accumulates those totals in `agentUsage`; `loadAgentConversation` hydrates the same totals from `ConversationView`. The tooltip labels the sections “Context remaining” and “Conversation billing” so the two token meanings cannot be confused.
+
+Five equal bands approximate remaining capacity: an empty conversation has all five filled, then the display drains by fifths until no capacity remains. More than 40% remaining is healthy, 20–40% warns, and below 20% is danger. An unmeasured model switch uses five neutral segments until its first response. The keyboard-focusable details button exposes the exact remaining/window counts and percentage in its accessible name; segment count is only the compact visual approximation.
 
 ### Live model catalogue
+
+The browser de-duplicates concurrent requests for the same credential, applies a ten-second timeout, and retains successful catalogues for five minutes so the composer capability check and model picker share one result across conversation switches. Credential deletion invalidates its cached catalogue. The server independently applies the same ten-second deadline and forwards request cancellation into provider fetches; Ollama resolves `/api/show` metadata in batches of six rather than launching an unbounded fan-out.
 
 `server/ai/pricing/` is the single source for per-model prices **and context windows**. It sources from OpenRouter's public `/api/v1/models` endpoint (no key required), which publishes list prices and `context_length` for Anthropic and OpenAI models. The module lifecycle:
 
@@ -664,16 +768,13 @@ unblocks deletion of the credential that had been protected by the default FK.
 
 ## Abort + crash recovery
 
-- **Abort.** "Stop" calls `agentSlice.abortAgent()` → `AbortController.abort()` → the fetch stream closes. When the abort signal fires on the server:
-  - `req.signal` is passed straight to every `fetch()` call in the driver loop (`fetch(endpoint, { signal })`). The in-flight HTTP request to the provider is cancelled immediately — no further tokens are generated or billed. On `AbortError` the loop returns cleanly with no `error` event.
-  - Any `callBrowser` promise still waiting for a browser tool-result rejects via the `onAbort` listener registered per pending call (in `server/ai/runtime/transport.ts`). The listener fires, clears the timeout, and removes the pending entry.
-  - The stream's `destroy()` hook fires, rejects any remaining pending entries, and removes the bridge from the registry.
-- **Interrupted tool calls.** If a stream aborts mid-turn — between the assistant's `tool_use` row write and the matching `tool_result` row write (e.g. `ERR_INCOMPLETE_CHUNKED_ENCODING`, server restart) — the persisted history has an unanswered `tool_use` block. `buildMessageHistory` in `server/ai/conversations/history.ts` heals the gap: every tool-call id that has no persisted `tool` result row gets a synthetic error result (`INTERRUPTED_TOOL_RESULT_ERROR`) injected before the next user turn. The model reads the error and can retry; the conversation is never permanently un-sendable. Adjacent synthetic results plus the following real user prompt are merged into one user turn by `pushUserContent` in `server/ai/drivers/anthropic.ts`, satisfying Anthropic's strict user/assistant alternation requirement.
-- **Browser tool timeout.** If the browser never POSTs a tool-result, `callBrowser` rejects after 90 seconds (`BROWSER_TOOL_TIMEOUT_MS` in `server/ai/runtime/transport.ts`). The driver sees a rejection, emits an error, and the stream closes. This prevents a closed or unresponsive tab from hanging the tool loop indefinitely.
+- **Abort owns the whole response.** "Stop" calls `agentSlice.abortAgent()` and aborts the chat fetch. The server also owns a response-lifecycle controller: `ReadableStream.cancel()` or a failed `controller.enqueue()` aborts the same turn even when the original request signal does not observe a disappearing response consumer. `AbortSignal.any()` threads that combined signal into the provider request and browser bridge, and the handler's `finally` destroys the bridge and releases the per-conversation writer lock.
+- **Pending calls become terminal.** `runChat` persists `INTERRUPTED_TOOL_RESULT_ERROR` for every declared tool call still unresolved on a graceful abort or terminal driver event. A hard process stop can still land between those two writes, so both recovery projections enforce the same invariant: `buildMessageHistory` injects a synthetic error for provider replay, while `rehydrateMessages` renders an unmatched or malformed call as a failed historical badge. `pending` therefore means only work owned by the current live stream; a reload never shows an old spinner. Adjacent synthetic results plus the following real user prompt are merged into one user turn by `pushUserContent` in `server/ai/drivers/anthropic.ts`, satisfying Anthropic's strict user/assistant alternation requirement.
+- **Browser bridge failures are terminal once.** A browser executor resolving `{ ok: false }` remains an ordinary model-correctable tool outcome. A rejected `callBrowser` is transport failure instead: the loop emits exactly one failed `toolResult`, then one terminal `error`, and does not spend another provider round retrying against the same dead bridge. A missing result still has a 90-second upper bound (`BROWSER_TOOL_TIMEOUT_MS`), but it now ends the turn rather than starting a chain of 90-second retries.
 - **Crash on server.** If `runChat` throws, the stream emits `{ type: 'error', message }`. The browser surfaces the message verbatim in the Agent Panel (admin-only surface, so info-disclosure is not a concern).
 - **Tool failure.** Browser executors wrap every call in try/catch. Failures return `{ ok: false, error }`. The model reads the error message in the next turn and retries with corrected input.
-- **Bridge-result POST after abort.** If the browser POSTs a tool-result after the stream has closed, the server returns 404 and drops the result silently.
-- **Page reload mid-stream.** The stream dies. The conversation row and its persisted messages survive. The user can reload the past thread via `loadAgentConversation` and re-send.
+- **Tool-result delivery failure.** A 404 means the browser completed work for a bridge the active runtime no longer owns (commonly a server restart). While the chat signal is active, `postToolResult` propagates that failure, the client aborts the stale response, finalizes its pending badge, and asks the user to send again. Only a POST already being torn down by an aborted signal is ignored quietly. A clean NDJSON EOF without `done` or `error` is handled the same way instead of being mistaken for success.
+- **Page reload mid-stream.** The response cancel hook aborts the provider and releases the writer lock. Conversation rows survive; loading the thread shows any unmatched call once as interrupted, with no reconstructed session-only screenshot and no live timeout/spinner.
 
 ---
 
@@ -682,7 +783,7 @@ unblocks deletion of the credential that had been protected by the default FK.
 | Pattern | Use instead |
 |---|---|
 | Importing any provider SDK (`@anthropic-ai/sdk`, `@anthropic-ai/claude-agent-sdk`, `@openai/agents`, `@openrouter/agent`) | Banned repo-wide — no exceptions, including inside `server/ai/drivers/`. Drivers talk directly to the REST API. Gated by `ai-driver-isolation.test.ts`. |
-| Importing `@modelcontextprotocol/sdk` outside `server/ai/mcp/` | The MCP SDK is scoped to Instatic's MCP server implementation only. Drivers and browser code must not import it. Gated by `ai-driver-isolation.test.ts`. |
+| Importing the split `@modelcontextprotocol/*` v2 packages outside `server/ai/mcp/` | The MCP SDK packages are scoped to Instatic's MCP server implementation only. Drivers and browser code must not import them. Gated by `ai-driver-isolation.test.ts`. |
 | Importing `zod` anywhere | Banned repo-wide — TypeBox schemas pass directly as JSON Schema to every provider. Gated by `ai-driver-isolation.test.ts`. |
 | Writing a private `parseToolArguments` / `parseJsonOrEmpty` copy inside a driver | Import `parseToolArguments` from `./http/toolArgs`. Private copies diverge silently — the same malformed model output produces different outcomes per provider. Gated by `ai-driver-shared-helpers.test.ts`. |
 | Redefining `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` in a driver or prompt builder | Import it from `server/ai/runtime/types.ts`. One source — if a driver or builder drifts the literal, prompt caching silently breaks for that driver. Gated by `ai-driver-shared-helpers.test.ts`. |
@@ -700,7 +801,10 @@ unblocks deletion of the credential that had been protected by the default FK.
 - `docs/features/content-workspace.md` — content workspace UI and content-scope Agent Panel mount
 - Source-of-truth files:
   - `src/core/ai/toolOutput.ts` — `AiToolOutput` type, `AiToolOutputSchema`, `aiToolOk`, `aiToolError` (canonical bridge result)
-  - `src/core/ai/toolSchemas.ts` — all site browser-tool input schemas (single source of truth; imported by both the server registry and the browser executor)
+  - `src/core/ai/chatRequest.ts` — canonical browser-to-server chat envelope and computed multi-image request ceiling
+  - `src/core/ai/contentBlock.ts` — persisted/provider content blocks plus the lazy-URL conversation-detail view schema
+  - `src/core/ai/userImage.ts` — accepted source formats, normalised JPEG schema, byte/dimension limits, and eight-image per-message bound
+  - `src/core/ai/toolSchemas.ts` — all site browser-tool input schemas (single source of truth); includes the flat provider schema and exact execution union required for `site_apply_css`
   - `src/core/ai/documentRefs.ts` — document refs/descriptors for pages, templates, and visual components
   - `src/core/ai/readSurface.ts` — runtime-agnostic `renderAgentDocument` annotated HTML + compact CSS renderer
   - `src/core/ai/index.ts` — barrel re-exporting the above
@@ -711,12 +815,18 @@ unblocks deletion of the credential that had been protected by the default FK.
   - `server/ai/tools/site/snapshot.ts` — `SiteAgentSnapshotSchema` + `SiteAgentSnapshot` re-export + catalog output types (`ModuleInfo`, `SnapshotTokens`, …)
   - `server/ai/tools/content/readTools.ts` — 7 server-side content read tool definitions
   - `server/ai/tools/content/writeTools.ts` — 8 browser-bridged content write/navigation tool definitions
+  - `server/ai/inputImages.ts` — server-side base64, JPEG, byte, and dimension validation before persistence
+  - `server/ai/drivers/modelCapabilities.ts` — cached, timed, authoritative/fail-closed selected-model capability resolution on every turn
+  - `server/ai/drivers/modelList.ts` — bounded provider catalogue lookup with caller cancellation
+  - `server/ai/drivers/http/toolLoop.ts` — provider loop, heavy tool-result elision, and one provider-triggered historical-image fallback
+  - `server/ai/conversations/history.ts` — interrupted-tool healing plus outbound user-image replay projection
   - `server/ai/tools/content/systemPrompt.ts` — markdown-native content system prompt
   - `server/ai/tools/content/snapshot.ts` — `ContentSnapshot` shape consumed by the content prompt and tool context
   - `src/admin/pages/site/agent/siteAgentSnapshot.ts` — `SiteAgentSnapshotSchema` (TypeBox source of truth) + `SiteAgentSnapshot` (derived type) + `buildSiteAgentSnapshot`
   - `server/ai/handlers/chat.ts` — `POST /admin/api/ai/chat/:scope` endpoint
+  - `server/ai/handlers/conversations.ts` — conversation CRUD plus the ownership-guarded lazy image endpoint
   - `server/ai/handlers/toolResult.ts` — `POST /admin/api/ai/tool-result` endpoint
-  - `server/ai/conversations/history.ts` — `buildMessageHistory()` + `INTERRUPTED_TOOL_RESULT_ERROR` (heals interrupted tool calls)
+  - `src/core/ai/toolOutput.ts` — canonical `AiToolOutput` envelope + shared `INTERRUPTED_TOOL_RESULT_ERROR`
   - `server/ai/conversations/store.ts` — `appendMessage`, `listMessagesForConversation`, `readConversationForUser`
   - `server/ai/runtime/runner.ts` — `runChat()` driver loop
   - `server/ai/contextTokens.ts` — `normalizeContextTokens()` — provider-normalised "context used" for the meter
@@ -726,17 +836,26 @@ unblocks deletion of the credential that had been protected by the default FK.
   - `server/ai/runtime/persister.ts` — `ConversationsPersister` interface + `createConversationsPersister()`
   - `server/ai/runtime/types.ts` — canonical `AiStreamEvent`, `AiMessage`, `AiTool`, `ToolContext` types
   - `server/ai/runtime/transport.ts` — `createBridge()` / `resolveBridgeToolResult()`
+  - `src/admin/ai/toolResultApi.ts` — browser tool-result delivery; active failures terminate the stale chat turn
+  - `src/admin/pages/site/agent/agentApi.ts` — conversation bootstrap + terminal historical tool-call rehydration
+  - `src/admin/pages/site/agent/toolCallLifecycle.ts` — live-stream pending-call finalization
   - `server/ai/audit/store.ts` — `getUsageTotals`, `getUsageByUser`, `getUsageByScope`, `getUsageByModel`, `getUsageByDay` (usage rollup queries)
   - `server/ai/handlers/audit.ts` — `GET /admin/api/ai/audit` handler
   - `server/time.ts` — `resolveTimeZone` + `localDayKeyFactory` (shared timezone day-bucketing utilities)
   - `src/admin/pages/ai/AiPage.tsx` — `/admin/ai` workspace (Providers / Defaults / Audit tabs)
   - `src/admin/pages/ai/tabs/AuditTab.tsx` — usage audit view (totals strip, tables, daily bar chart)
   - `src/admin/pages/ai/tabs/UsageTablePanel.tsx` — shared table scaffolding for audit rollups
-  - `src/admin/pages/ai/tabs/usageFormat.ts` — `formatNumber` / `formatCost` formatting helpers
+  - `src/admin/ai/usageFormat.ts` — shared `formatNumber` / `formatCost` helpers
   - `src/admin/pages/site/agent/agentSlice.ts` — scope-agnostic slice factory (`createAgentSlice`)
+  - `src/admin/pages/site/agent/agentProviderUpdate.ts` — timed provider/model update and ambiguous-commit reconciliation
   - `src/admin/pages/site/agent/agentSliceConfig.site.ts` — site-editor scope config
-  - `src/admin/pages/site/agent/agentApi.ts` — tool-result POST, conversation bootstrap, message rehydration
+  - `src/admin/pages/site/agent/agentApi.ts` — conversation bootstrap and message rehydration
   - `src/admin/pages/site/agent/streamEvents.ts` — `ServerStreamEventSchema` + `processStreamEvent`
+  - `src/admin/pages/site/panels/AgentPanel/AgentImageGallery.tsx` — shared compact gallery for persisted and session-only images
+  - `src/admin/pages/site/panels/AgentPanel/AgentImagePreview.tsx` — draggable modeless image preview
+  - `src/admin/pages/site/panels/AgentPanel/AgentImageContextMenu.tsx` — shared image actions menu
+  - `src/admin/pages/site/panels/AgentPanel/agentImageActions.ts` — clipboard, download, and Media-save pipeline
+  - `src/admin/shared/FloatingWindow/` — shared portal, panel header, and persisted drag behavior for admin floating windows
   - `src/admin/pages/site/agent/pageContext.ts` — `buildCurrentPageContext`
   - `src/admin/pages/site/agent/executor.ts` — write-tool browser dispatcher + auto-navigation
   - `src/admin/pages/site/agent/tokenRunners.ts` — design-system token tool runners (`site_set_color_tokens`, `site_set_font_tokens`, `site_set_type_scale`, `site_set_spacing_scale`)
@@ -748,9 +867,11 @@ unblocks deletion of the credential that had been protected by the default FK.
   - `src/admin/pages/content/agent/contentAgentStore.ts` — standalone content-workspace agent store
   - `src/admin/pages/content/agent/contentBridge.ts` — content write-tool browser dispatcher
   - `src/admin/pages/content/agent/contentBridgeHandle.ts` — imperative bridge handle registered by ContentPage
-  - `src/admin/pages/site/panels/AgentPanel/AgentPanel.tsx` — Agent Panel; resolves `contextWindow` for the meter
-  - `src/admin/pages/site/panels/AgentPanel/ContextMeter.tsx` — context used / window progress bar
+  - `src/admin/pages/site/panels/AgentPanel/AgentComposer.tsx` — resolves model window/pricing/capabilities and places the meter in the action row
+  - `src/admin/pages/site/panels/AgentPanel/ContextMeter.tsx` — five-segment context status and rich usage tooltip
+  - `src/admin/pages/site/panels/AgentPanel/contextMeterMetrics.ts` — exact five-band fill/tone calculation
 - Gate tests:
+  - `src/__tests__/architecture/ai-tool-input-object.test.ts`
   - `src/__tests__/architecture/ai-tool-schema-ssot.test.ts`
   - `src/__tests__/architecture/ai-driver-isolation.test.ts`
   - `src/__tests__/architecture/ai-tools-typebox-only.test.ts`

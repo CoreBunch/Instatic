@@ -9,8 +9,8 @@ import { useEditorStore } from '@site/store/store'
 import '@modules/base/index'
 
 function freshStore() {
+  useEditorStore.getState().clearSite()
   useEditorStore.setState({
-    site: null,
     activePageId: null,
     selectedNodeId: null,
     selectedNodeIds: [],
@@ -20,11 +20,6 @@ function freshStore() {
     activeClassId: null,
     previewClassAssignment: null,
     propertiesPanel: { collapsed: false, x: 0, y: 0, width: 280 },
-    _historyPast: [],
-    _historyFuture: [],
-    canUndo: false,
-    canRedo: false,
-    hasUnsavedChanges: false,
   } as Parameters<typeof useEditorStore.setState>[0])
 }
 
@@ -72,25 +67,28 @@ describe('setNodeInlineStyles', () => {
   it('clearNodeInlineStyles removes the whole inlineStyles field in one step', () => {
     const id = setup()
     useEditorStore.getState().setNodeInlineStyles(id, { color: 'red', display: 'flex' })
-    const historyBefore = useEditorStore.getState()._historyPast.length
 
     useEditorStore.getState().clearNodeInlineStyles(id)
     expect(nodeInline(id)).toBeUndefined()
-    expect(useEditorStore.getState()._historyPast.length).toBe(historyBefore + 1)
+    // ONE undo restores the full style bag — the clear was a single step.
+    useEditorStore.getState().undo()
+    expect(nodeInline(id)).toEqual({ color: 'red', display: 'flex' })
   })
 
   it('clearNodeInlineStyles is a no-op (no history) when there are no inline styles', () => {
     const id = setup()
-    const historyBefore = useEditorStore.getState()._historyPast.length
     useEditorStore.getState().clearNodeInlineStyles(id)
-    expect(useEditorStore.getState()._historyPast.length).toBe(historyBefore)
+    // No entry was pushed: the next undo reverts the node INSERT itself.
+    useEditorStore.getState().undo()
+    expect(useEditorStore.getState().site!.pages[0].nodes[id]).toBeUndefined()
   })
 
   it('a no-op patch (removing an absent key) records no change', () => {
     const id = setup()
-    const historyBefore = useEditorStore.getState()._historyPast.length
     useEditorStore.getState().removeNodeInlineStyleProperty(id, 'color')
-    expect(useEditorStore.getState()._historyPast.length).toBe(historyBefore)
+    // No entry was pushed: the next undo reverts the node INSERT itself.
+    useEditorStore.getState().undo()
+    expect(useEditorStore.getState().site!.pages[0].nodes[id]).toBeUndefined()
   })
 
   it('setInlineStyleEditing(true) clears the active class (mutually exclusive)', () => {
@@ -129,7 +127,6 @@ describe('setNodeInlineStyles', () => {
     const id = setup()
     // Simulate "display: flex" then setting a flex sub-property.
     useEditorStore.getState().setNodeInlineStyles(id, { display: 'flex', alignItems: 'center' })
-    const historyBefore = useEditorStore.getState()._historyPast.length
 
     // Clearing display must prune the now-orphaned flex property too — one step.
     useEditorStore.getState().setNodeInlineStyles(id, {
@@ -140,6 +137,8 @@ describe('setNodeInlineStyles', () => {
     })
 
     expect(nodeInline(id)).toBeUndefined()
-    expect(useEditorStore.getState()._historyPast.length).toBe(historyBefore + 1)
+    // ONE undo restores both pruned properties — the clear was a single step.
+    useEditorStore.getState().undo()
+    expect(nodeInline(id)).toEqual({ display: 'flex', alignItems: 'center' })
   })
 })

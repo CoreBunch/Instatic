@@ -92,12 +92,13 @@ async function renderMergedTemplate(
   ctx: RenderPublishedSnapshotContext,
 ): Promise<{ html: string; jsModuleIds: string[]; publishVersion: number; cssBundle: SiteCssBundle }> {
   const publishVersion = ctx.publishVersion ?? getPublishVersion()
-  const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged, publishVersion)
   const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
-  const [loopData, mediaAssets] = await Promise.all([
-    prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url),
-    prefetchMediaAssets(merged, snapshot.site, registry, ctx.db),
-  ])
+  const loopData = await prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url)
+  const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, ctx.db, {
+    templateContext,
+    loopData,
+  })
+  const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged, publishVersion, { mediaAssets })
   const published = publishPage(merged, snapshot.site, registry, {
     templateContext,
     runtimeAssets: snapshot.runtimeAssets,
@@ -176,6 +177,9 @@ export async function renderPublishedDataRowTemplate(
   const chain = resolveTemplateChain(snapshot.site, { kind: 'entry', tableSlug: row.tableSlug })
   if (chain.length === 0) return null // no entry template → 404 (unchanged behaviour)
   const merged = composeTemplateChain(chain, { kind: 'entry' })
+  // The template chain has no Page for the entry, so composeTemplateChain
+  // can't know its title — the entry's own title is the real document title.
+  if (typeof row.cells.title === 'string') merged.title = row.cells.title
 
   // Seed the entry stack with the published row + route frame from the request
   // URL. Loop interceptors push/pop iteration items on top of this stack;

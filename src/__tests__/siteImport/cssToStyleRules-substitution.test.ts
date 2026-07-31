@@ -58,6 +58,12 @@ describe('cssToStyleRules — substitution declarations survive verbatim', () =>
     expect(rules[0].styles['--own']).toBe('12px')
   })
 
+  it('preserves priority on an encoded substitution declaration', () => {
+    const { rules } = cssToStyleRules(`.x { color: var(--ink) !important; }`)
+    expect(rules[0].styles.color).toBe('var(--ink)')
+    expect(rules[0].stylePriorities).toEqual({ color: 'important' })
+  })
+
   it('preserves var() declarations inside @media overrides', () => {
     const { rules } = cssToStyleRules(`
       .plan { color: red; }

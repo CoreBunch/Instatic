@@ -22,6 +22,7 @@ import { validateSite } from '@core/persistence/validate'
 import { normalizeSitePackageJson } from '@core/site-dependencies/manifest'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import type { DbClient } from '../db/client'
+import { notifyShellWrite } from './rowWriteEvents'
 import type { SiteRow } from '../types'
 
 const CMS_SITE_SCHEMA_VERSION = 1
@@ -85,6 +86,7 @@ export async function saveDraftSite(
   db: DbClient,
   shell: SiteShell,
   _actorUserId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
 ): Promise<void> {
   await db`
     insert into site (id, name, settings_json)
@@ -94,13 +96,35 @@ export async function saveDraftSite(
           settings_json = excluded.settings_json,
           updated_at = current_timestamp
   `
+  // Out-of-relay shell writes invalidate the site collab doc — see
+  // rowWriteEvents. The relay's own persistence (and the transactional save,
+  // which notifies post-commit) opt out.
+  if (!opts.collabInternal) notifyShellWrite()
+}
+
+/**
+ * The shell's current sync seq — 0 before setup (no site row) and for
+ * installs that predate the sync-sequence migration. The transactional save
+ * reads this inside the transaction for the shell conflict check; the GET
+ * shell endpoint returns it so clients can seed their base seq.
+ */
+export async function getDraftSiteSeq(db: DbClient): Promise<number> {
+  const { rows } = await db<{ seq: number }>`
+    select seq from site
+    where id = 'default'
+    limit 1
+  `
+  return rows[0] ? Number(rows[0].seq) : 0
 }
 
 /**
  * Stamp the site-global sync seq on the draft-site row. The transactional
  * site-document save calls this right after `saveDraftSite` inside the same
- * transaction, so shell changes participate in delta reconciliation exactly
- * like row changes (see repositories/syncSequence.ts).
+ * transaction — but ONLY when the shell content actually changed. An
+ * unconditional stamp would advance the shell seq on every row-only save and
+ * make the shell conflict check fire on every concurrent save pair; a
+ * conditional stamp keeps the shell seq an honest "shell content changed"
+ * signal (see repositories/syncSequence.ts).
  */
 export async function stampDraftSiteSeq(db: DbClient, seq: number): Promise<void> {
   await db`

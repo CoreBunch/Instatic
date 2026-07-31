@@ -20,6 +20,7 @@
 import type { ConversationsPersister } from './persister'
 import type { AiProvider, AiStreamRequest } from '../drivers/types'
 import type { AiStreamEvent } from './types'
+import { INTERRUPTED_TOOL_RESULT_ERROR } from '@core/ai'
 
 interface RunChatArgs {
   driver: AiProvider
@@ -52,12 +53,40 @@ export async function runChat(args: RunChatArgs): Promise<void> {
     await persister.appendAssistantText(text)
   }
 
+  /**
+   * A graceful abort/terminal driver event can arrive after the assistant's
+   * tool-call row was persisted but before its result. Close every such pair
+   * explicitly so normal cancellation never leaves history dangling. A hard
+   * process crash can still interrupt this write; replay/rehydration heals that
+   * unavoidable case separately.
+   */
+  async function finalizePendingToolCalls(): Promise<void> {
+    const pendingCalls = [...pendingToolCallsByCallId]
+    for (const [toolCallId, pending] of pendingCalls) {
+      const event: AiStreamEvent = {
+        type: 'toolResult',
+        toolCallId,
+        toolName: pending.name,
+        ok: false,
+        error: INTERRUPTED_TOOL_RESULT_ERROR,
+      }
+      await persister.appendToolResult({
+        toolCallId,
+        toolName: pending.name,
+        ok: false,
+        error: INTERRUPTED_TOOL_RESULT_ERROR,
+      })
+      pendingToolCallsByCallId.delete(toolCallId)
+      emit(event)
+    }
+  }
+
   try {
     for await (const event of driver.stream(request)) {
-      // Always forward to the wire first so the browser sees the event
-      // even if persistence fails (we never want to silently lose a UI
-      // update because the DB is slow).
-      emit(event)
+      // Forward live events immediately. Usage is the one exception: its USD
+      // value may need cache-aware server pricing, so that terminal event is
+      // emitted after persistence resolves the authoritative cost below.
+      if (event.type !== 'usage' && event.type !== 'error') emit(event)
 
       switch (event.type) {
         case 'text': {
@@ -66,13 +95,16 @@ export async function runChat(args: RunChatArgs): Promise<void> {
         }
         case 'toolCall': {
           await flushPendingAssistantText()
-          pendingToolCallsByCallId.set(event.toolCallId, {
-            name: event.toolName,
-            input: event.input,
-          })
           await persister.appendToolCall({
             toolCallId: event.toolCallId,
             toolName: event.toolName,
+            input: event.input,
+          })
+          // Track only after the declaration row exists. If that write fails,
+          // finalization must not append an orphan result for a call the
+          // persisted history never declared.
+          pendingToolCallsByCallId.set(event.toolCallId, {
+            name: event.toolName,
             input: event.input,
           })
           break
@@ -112,20 +144,24 @@ export async function runChat(args: RunChatArgs): Promise<void> {
         }
         case 'usage': {
           await flushPendingAssistantText()
-          await persister.recordUsage({
+          const costUsd = await persister.recordUsage({
             promptTokens: event.promptTokens,
             completionTokens: event.completionTokens,
             costUsd: event.costUsd,
             cacheReadTokens: event.cacheReadTokens,
             cacheCreationTokens: event.cacheCreationTokens,
           })
+          emit({ ...event, costUsd })
           break
         }
         case 'error': {
           // Driver reported a terminal error. Flush whatever text accumulated
           // before bailing — the user still sees the partial assistant
-          // message in their history.
+          // message in their history. Pending tool outcomes must precede the
+          // terminal wire error so the client can finalize its status rows.
           await flushPendingAssistantText()
+          await finalizePendingToolCalls()
+          emit(event)
           return
         }
         // `bridgeReady`, `toolRequest`, `done`: nothing to persist.
@@ -136,6 +172,7 @@ export async function runChat(args: RunChatArgs): Promise<void> {
 
     // Stream ended without explicit error or done — flush trailing text.
     await flushPendingAssistantText()
+    await finalizePendingToolCalls()
     emit({ type: 'done' })
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
@@ -145,6 +182,9 @@ export async function runChat(args: RunChatArgs): Promise<void> {
     // admins, not end users.
     console.error('[ai/runner] driver.stream() threw:', err)
     await flushPendingAssistantText().catch(() => { /* noop */ })
+    await finalizePendingToolCalls().catch((finalizeErr) => {
+      console.error('[ai/runner] pending tool finalization failed:', finalizeErr)
+    })
     emit({ type: 'error', message: `AI runtime error: ${detail}` })
   }
 }

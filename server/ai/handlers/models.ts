@@ -11,6 +11,7 @@ import { jsonResponse } from '../../http'
 import { requireCapability } from '../../auth/authz'
 import type { DbClient } from '../../db/client'
 import { resolveDriver } from '../drivers'
+import { listProviderModels } from '../drivers/modelList'
 import {
   readCredentialForUser,
   resolveCredentialForDriver,
@@ -84,7 +85,7 @@ async function handleModels(
     }
   }
 
-  const models = await driver.listModels(resolved)
+  const models = await listProviderModels(driver, resolved, req.signal)
   // Anthropic + OpenAI list models without prices or context windows (their
   // APIs omit both). Enrich from the live OpenRouter catalogue — the same
   // source the cost path uses. OpenRouter self-populates from its own fetch

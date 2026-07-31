@@ -65,20 +65,21 @@ export const openaiDriver: AiProvider = {
 
   capabilities(_modelId: string) {
     // OpenAI's catalogue reports no capability flags, so we can't key off the
-    // model id. Current GPT/o-series chat models tool-call and accept images;
-    // the tool loop only reads `visionInput` here, so a permissive default is
-    // correct. (Prompt caching is automatic on OpenAI, not the Anthropic-style
+    // model id. Current GPT/o-series chat models tool-call and accept user
+    // images, so a permissive input default is correct; Responses tool outputs
+    // remain text-only. (Prompt caching is automatic on OpenAI, not the Anthropic-style
     // cache_control prefix this flag controls, so it stays false.)
     return {
       toolCalling: true,
       visionInput: true,
+      toolResultImages: false,
       promptCache: false,
       streaming: true,
     }
   },
 
-  async listModels(creds: AiResolvedCredential) {
-    return fetchOpenAiModels(creds)
+  async listModels(creds: AiResolvedCredential, signal?: AbortSignal) {
+    return fetchOpenAiModels(creds, signal)
   },
 
   async *stream(req: AiStreamRequest): AsyncIterable<AiStreamEvent> {
@@ -136,11 +137,15 @@ function stableHash(value: string): string {
  * moderation, …) with no metadata, so we filter to the chat/reasoning families
  * and derive the label + tier from the id — heuristic, not authoritative.
  */
-async function fetchOpenAiModels(creds: AiResolvedCredential): Promise<AiProviderModel[]> {
+async function fetchOpenAiModels(
+  creds: AiResolvedCredential,
+  signal?: AbortSignal,
+): Promise<AiProviderModel[]> {
   if (creds.authMode !== 'apiKey' || !creds.apiKey) return []
 
   const res = await fetch(OPENAI_MODELS_ENDPOINT, {
     headers: { Authorization: `Bearer ${creds.apiKey}` },
+    signal,
   })
   if (!res.ok) {
     throw new Error(`[ai/openai] models request failed: ${res.status} ${res.statusText}`)
@@ -157,6 +162,7 @@ async function fetchOpenAiModels(creds: AiResolvedCredential): Promise<AiProvide
       capabilities: {
         toolCalling: true,
         visionInput: true,
+        toolResultImages: false,
         promptCache: false,
         streaming: true,
       },

@@ -15,6 +15,7 @@
  */
 import { Type } from '@core/utils/typeboxHelpers'
 import { isGeneratedClass, styleRuleSelector, type SiteDocument, type StyleRule } from '@core/page-tree'
+import { generateFontTokenVariablesCss } from '@core/fonts'
 import { generateClassCSS, generateFrameworkCss } from '@core/publisher'
 import type { CoreCapability } from '@core/capabilities'
 import type { AiTool, ToolContext } from '../../runtime/types'
@@ -96,7 +97,10 @@ export const styleMcpTools: AiTool[] = [
         // are irrelevant to token emission, so complete the SiteDocument shape
         // with empties.
         const doc: SiteDocument = { ...site, pages: [], visualComponents: [], layouts: [] }
-        const tokenCss = generateFrameworkCss(doc).trim()
+        const tokenCss = [
+          generateFontTokenVariablesCss(site.settings.fonts),
+          generateFrameworkCss(doc),
+        ].filter(Boolean).join('\n').trim()
         if (tokenCss) parts.push(`/* === Design tokens === */\n${tokenCss}`)
       }
       const classCss = generateClassCSS(rules, site.breakpoints, site.conditions ?? []).trim()

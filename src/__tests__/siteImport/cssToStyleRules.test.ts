@@ -60,9 +60,10 @@ describe('cssToStyleRules — selector classification', () => {
     expect(rules[0].kind).toBe('ambient')
   })
 
-  it('.hero .title → ambient (descendant)', () => {
+  it('.hero .title binds the rightmost class while preserving the selector', () => {
     const { rules } = cssToStyleRules('.hero .title { color: red }')
-    expect(rules[0].kind).toBe('ambient')
+    expect(rules[0].kind).toBe('class')
+    expect(rules[0].name).toBe('title')
     expect(rules[0].selector).toBe('.hero .title')
   })
 
@@ -86,9 +87,41 @@ describe('cssToStyleRules — selector classification', () => {
     expect(rules[0].selector).toContain('data-state')
   })
 
-  it('.foo.bar → ambient (compound — two classes, no space)', () => {
+  it('.foo.bar binds the rightmost compound class', () => {
     const { rules } = cssToStyleRules('.foo.bar { color: red }')
-    expect(rules[0].kind).toBe('ambient')
+    expect(rules[0].kind).toBe('class')
+    expect(rules[0].name).toBe('bar')
+  })
+
+  it('decodes and binds escaped Tailwind variant class names', () => {
+    const { rules } = cssToStyleRules(
+      '.group:hover .group-hover\\:block { display: block }',
+    )
+    expect(rules).toHaveLength(1)
+    expect(rules[0]).toMatchObject({
+      kind: 'class',
+      name: 'group-hover:block',
+      selector: '.group:hover .group-hover\\:block',
+    })
+  })
+
+  it('keeps selector-list alternatives with one binding in one rule', () => {
+    const { rules } = cssToStyleRules(
+      '.placeholder\\:text-gray-400::-moz-placeholder, .placeholder\\:text-gray-400::placeholder { color: gray }',
+    )
+    expect(rules).toHaveLength(1)
+    expect(rules[0].selector).toBe(
+      '.placeholder\\:text-gray-400::-moz-placeholder, .placeholder\\:text-gray-400::placeholder',
+    )
+    expect(rules[0].name).toBe('placeholder:text-gray-400')
+  })
+
+  it('splits selector-list alternatives owned by different classes', () => {
+    const { rules } = cssToStyleRules('.foo, .bar { color: red }')
+    expect(rules.map((rule) => [rule.name, rule.selector])).toEqual([
+      ['foo', '.foo'],
+      ['bar', '.bar'],
+    ])
   })
 })
 
@@ -138,6 +171,17 @@ describe('cssToStyleRules — @media → contextStyles (matched)', () => {
     expect(rules).toHaveLength(1)
     expect(rules[0].styles).toEqual({})
     expect(rules[0].contextStyles.mobile).toMatchObject({ color: 'blue' })
+  })
+
+  it('preserves declaration priority in a matched context', () => {
+    const { rules } = cssToStyleRules(
+      '@media (max-width: 768px) { .foo { color: blue !important } }',
+      { breakpoints: [{ id: 'mobile', width: 768 }] },
+    )
+    expect(rules[0].contextStyles.mobile.color).toBe('blue')
+    expect(rules[0].contextStylePriorities).toEqual({
+      mobile: { color: 'important' },
+    })
   })
 })
 
@@ -449,6 +493,22 @@ describe('cssToStyleRules — duplicate class names', () => {
     expect(warnings).toHaveLength(1)
     expect(warnings[0].kind).toBe('duplicate-class')
     expect(warnings[0].selector).toBe('.foo')
+  })
+
+  it('an earlier important declaration resists a later normal declaration', () => {
+    const { rules } = cssToStyleRules(
+      '.foo { color: red !important } .foo { color: blue }',
+    )
+    expect(rules[0].styles.color).toBe('red')
+    expect(rules[0].stylePriorities).toEqual({ color: 'important' })
+  })
+
+  it('a later important declaration replaces an earlier normal declaration', () => {
+    const { rules } = cssToStyleRules(
+      '.foo { color: red } .foo { color: blue !important }',
+    )
+    expect(rules[0].styles.color).toBe('blue')
+    expect(rules[0].stylePriorities).toEqual({ color: 'important' })
   })
 
   it('ambient h1 duplicates are allowed (no dedup for ambient)', () => {

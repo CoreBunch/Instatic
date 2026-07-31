@@ -8,8 +8,8 @@ import {
   login,
   loginAs,
   openLayersPanel,
+  openSitePanel,
   openSiteEditor,
-  saveDraft,
   setPropValue,
   canvasFrame,
   insertNotchModule,
@@ -101,7 +101,6 @@ test.describe.serial('capability boundaries', () => {
         personaPage.getByText('Styles are read-only for your role'),
       ).toBeVisible()
 
-      await saveDraft(personaPage)
       await personaPage.reload()
       await openNamedPage(personaPage, pageName)
       await expect(
@@ -131,7 +130,6 @@ test.describe.serial('capability boundaries', () => {
       await fontSizeInput.blur()
       await expect(editableText).toHaveCSS('font-size', '23px')
 
-      await saveDraft(personaPage)
       await personaPage.reload()
       await openNamedPage(personaPage, pageName)
       const reloadedText = canvasFrame(personaPage).getByText(contentText, { exact: true })
@@ -157,7 +155,6 @@ test.describe.serial('capability boundaries', () => {
       await insertNotchModule(personaPage, 'text')
       await expect(tree.getByRole('treeitem', { name: 'Text' })).toHaveCount(3)
 
-      await saveDraft(personaPage)
       await personaPage.reload()
       await openNamedPage(personaPage, pageName)
       await openLayersPanel(personaPage)
@@ -592,7 +589,7 @@ test.describe.serial('site import step-up boundaries', () => {
     const suffix = Date.now().toString(36)
     const bundledTableName = `CAP Imported Bundle ${suffix}`
     const localTableName = `CAP Local Table ${suffix}`
-    let bundle: unknown
+    let bundle: Buffer
 
     const setupContext = await browser.newContext()
     const setupPage = await setupContext.newPage()
@@ -613,16 +610,14 @@ test.describe.serial('site import step-up boundaries', () => {
       await expectDataTableVisible(page, bundledTableName)
       await expectDataTableVisible(page, localTableName)
 
-      await openReplaceImportReview(page, bundle, `cap-replace-${suffix}.json`)
+      await openReplaceImportReview(page, bundle, `cap-replace-${suffix}.zip`)
       await page.getByRole('button', { name: 'Replace site' }).click()
       const stepUpDialog = page.getByTestId('step-up-dialog')
       await expect(stepUpDialog).toBeVisible()
       await stepUpDialog.getByRole('button', { name: 'Cancel' }).click()
       await expect(stepUpDialog).toBeHidden()
-      await closeImportReview(page)
       await expectDataTablePresence(page, localTableName, true)
 
-      await openReplaceImportReview(page, bundle, `cap-replace-retry-${suffix}.json`)
       await page.getByRole('button', { name: 'Replace site' }).click()
       await expect(stepUpDialog).toBeVisible()
       await page.getByTestId('step-up-password').fill('wrong-password-12345')
@@ -633,7 +628,7 @@ test.describe.serial('site import step-up boundaries', () => {
       await page.getByTestId('step-up-password').fill(OWNER.password)
       await page.getByTestId('step-up-confirm').click()
       await expect(stepUpDialog).toBeHidden({ timeout: 20_000 })
-      await expect(siteImportDialog(page, 'Review bundle')).toHaveCount(0)
+      await expect(siteImportDialog(page, 'Review import')).toBeHidden()
       await expectDataTablePresence(page, bundledTableName, true)
       await expectDataTablePresence(page, localTableName, false)
     } finally {
@@ -1065,7 +1060,6 @@ async function seedCapabilityPage(
   await setPropValue(page, 'text', seededText)
   await insertNotchModule(page, 'text')
   await setPropValue(page, 'text', secondText)
-  await saveDraft(page)
   return pageName
 }
 
@@ -1120,10 +1114,8 @@ async function withPersona(
 
 async function openNamedPage(page: Page, name: string): Promise<void> {
   await openReadableSiteEditor(page)
+  await openSitePanel(page)
   const item = page.getByRole('treeitem', { name: `Open page ${name}` })
-  if (!(await item.isVisible().catch(() => false))) {
-    await page.getByRole('button', { name: 'Open Site panel' }).click()
-  }
   await expect(item).toBeVisible()
   await item.click()
   await expect(item).toHaveAttribute('aria-selected', 'true')
@@ -1238,8 +1230,8 @@ async function createCustomDataTable(page: Page, tableName: string): Promise<voi
   await expectDataTableVisible(page, tableName)
 }
 
-async function exportCmsBundle(page: Page): Promise<unknown> {
-  return page.evaluate(async () => {
+async function exportCmsBundle(page: Page): Promise<Buffer> {
+  const bytes = await page.evaluate(async () => {
     const response = await fetch('/admin/api/cms/export', {
       method: 'POST',
       credentials: 'include',
@@ -1254,13 +1246,14 @@ async function exportCmsBundle(page: Page): Promise<unknown> {
     if (!response.ok) {
       throw new Error(`Export failed with HTTP ${response.status}: ${await response.text()}`)
     }
-    return response.json()
+    return Array.from(new Uint8Array(await response.arrayBuffer()))
   })
+  return Buffer.from(bytes)
 }
 
 async function openReplaceImportReview(
   page: Page,
-  bundle: unknown,
+  bundle: Buffer,
   filename: string,
 ): Promise<void> {
   await openDataWorkspace(page)
@@ -1268,23 +1261,18 @@ async function openReplaceImportReview(
   await expect(siteImportDialog(page, 'Import site')).toBeVisible()
   await page.locator('input[type="file"]').first().setInputFiles({
     name: filename,
-    mimeType: 'application/json',
-    buffer: Buffer.from(JSON.stringify(bundle)),
+    mimeType: 'application/zip',
+    buffer: bundle,
   })
 
-  const review = siteImportDialog(page, 'Review bundle')
+  const review = siteImportDialog(page, 'Review import')
   await expect(review).toBeVisible({ timeout: 20_000 })
-  await expect(review.getByText(filename, { exact: true })).toBeVisible()
-  await review.getByText('Replace everything', { exact: true }).click()
+  await expect(review).toContainText(filename)
+  await review.getByRole('radio', { name: 'Replace everything' }).click()
   await expect(page.getByRole('button', { name: 'Replace site' })).toBeEnabled()
 }
 
-async function closeImportReview(page: Page): Promise<void> {
-  await page.keyboard.press('Escape')
-  await expect(siteImportDialog(page, 'Review bundle')).toHaveCount(0)
-}
-
-function siteImportDialog(page: Page, name: 'Import site' | 'Review bundle') {
+function siteImportDialog(page: Page, name: 'Import site' | 'Review import') {
   return page
     .getByRole('dialog', { name })
     .or(page.getByRole('alertdialog', { name }))

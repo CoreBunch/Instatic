@@ -89,9 +89,30 @@ import {
 } from './canvasPanInput'
 import { useEditorStore } from '@site/store/store'
 import { closestReadonlyRegion, isElementLike } from './readonlyRegion'
+import { CanvasDocumentContext, CanvasFrameElementContext } from './CanvasContexts'
 import styles from './IframeFrameSurface.module.css'
 
-const IFRAME_SRC_DOC = '<!doctype html><html><head></head><body></body></html>'
+const IFRAME_DOCUMENT_SENTINEL = 'data-instatic-canvas-document'
+const IFRAME_SRC_DOC = `<!doctype html><html ${IFRAME_DOCUMENT_SENTINEL}><head></head><body></body></html>`
+const IFRAME_DOCUMENT_FLAG = '__instaticCanvasDocument'
+
+type InstaticIframeDocument = Document & { [IFRAME_DOCUMENT_FLAG]?: true }
+
+function claimIframeSrcDocument(doc: Document): boolean {
+  const taggedDocument = doc as InstaticIframeDocument
+  if (taggedDocument[IFRAME_DOCUMENT_FLAG]) return true
+  if (!doc.documentElement.hasAttribute(IFRAME_DOCUMENT_SENTINEL)) return false
+
+  // The sentinel identifies the final srcDoc only during bootstrap. Remove it
+  // before authored CSS/DOM selectors run, then keep the identity off-DOM so
+  // the editor document matches published <html> structure.
+  doc.documentElement.removeAttribute(IFRAME_DOCUMENT_SENTINEL)
+  Object.defineProperty(taggedDocument, IFRAME_DOCUMENT_FLAG, {
+    configurable: true,
+    value: true,
+  })
+  return true
+}
 
 /** Stable empty list so a script-less frame doesn't churn the injector's deps. */
 const EMPTY_RUNTIME_SCRIPTS: InjectableRuntimeScript[] = []
@@ -214,18 +235,33 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
         setIframeDoc(null)
         return
       }
-      const tryCapture = () => {
+      delete iframe.dataset.instaticCanvasDocumentLoaded
+      const captureSrcDoc = () => {
         const doc = iframe.contentDocument
-        if (doc && doc.readyState !== 'loading') setIframeDoc(doc)
+        if (
+          !doc ||
+          doc.readyState === 'loading' ||
+          !claimIframeSrcDocument(doc)
+        ) return
+        // Never portal the canvas tree into the short-lived initial about:blank
+        // document. Module effects, media reads, and authored runtime scripts
+        // must run once against the final srcDoc document only.
+        setIframeDoc(doc)
+        iframe.dataset.instaticCanvasDocumentLoaded = 'true'
       }
-      tryCapture()
-      iframe.addEventListener('load', tryCapture)
+      // srcDoc often parses before the ref commits; otherwise its load event
+      // retries. The bootstrap sentinel, not event timing or URL heuristics,
+      // identifies the document we own; claimIframeSrcDocument removes it from
+      // authored DOM before the portal mounts.
+      captureSrcDoc()
+      iframe.addEventListener('load', captureSrcDoc)
       // Stash the cleanup on the ref so React's ref-callback contract (the
       // function may be called again with null on unmount) doesn't leak
       // listeners.
       const cleanableIframe = iframe as IframeWithCleanup
       cleanableIframe._instaticCleanup = () => {
-        iframe.removeEventListener('load', tryCapture)
+        iframe.removeEventListener('load', captureSrcDoc)
+        delete iframe.dataset.instaticCanvasDocumentLoaded
         cleanableIframe._instaticCleanup = undefined
       }
     }
@@ -616,17 +652,19 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
         />
         {iframeDoc &&
           createPortal(
-            <>
-              {/* Editor-chrome stylesheet — UNLAYERED so it beats @layer user-authored author CSS */}
-              <EditorChromeInjector targetDocument={iframeDoc} parentDocument={document} />
-              {/* Author CSS — both wrapped in @layer user-authored inside the injectors */}
-              <ClassStyleInjector targetDocument={iframeDoc} viewport={viewport} />
-              <UserStylesheetInjector targetDocument={iframeDoc} viewport={viewport} />
-              {children}
-              {/* Runtime scripts (opt-in) run against the node tree mounted
-                  above. Empty list = no-op, so this is safe to always mount. */}
-              <RuntimeScriptInjector targetDocument={iframeDoc} scripts={runtimeScripts ?? EMPTY_RUNTIME_SCRIPTS} />
-            </>,
+            <CanvasFrameElementContext.Provider value={iframeRef.current}>
+              <CanvasDocumentContext.Provider value={iframeDoc}>
+                {/* Editor-chrome stylesheet — UNLAYERED so it beats @layer user-authored author CSS */}
+                <EditorChromeInjector targetDocument={iframeDoc} parentDocument={document} />
+                {/* Author CSS — both wrapped in @layer user-authored inside the injectors */}
+                <ClassStyleInjector targetDocument={iframeDoc} viewport={viewport} />
+                <UserStylesheetInjector targetDocument={iframeDoc} viewport={viewport} />
+                {children}
+                {/* Runtime scripts (opt-in) run against the node tree mounted
+                    above. Empty list = no-op, so this is safe to always mount. */}
+                <RuntimeScriptInjector targetDocument={iframeDoc} scripts={runtimeScripts ?? EMPTY_RUNTIME_SCRIPTS} />
+              </CanvasDocumentContext.Provider>
+            </CanvasFrameElementContext.Provider>,
             iframeDoc.body,
           )}
       </>

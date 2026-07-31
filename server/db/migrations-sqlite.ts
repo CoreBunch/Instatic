@@ -1135,4 +1135,93 @@ export const sqliteMigrations: Migration[] = [
       insert into site_sync_state (id, seq) values (1, 0);
     `,
   },
+  {
+    // OAuth 2.1 authorization-code + PKCE support for hosted MCP clients.
+    // Connector rows remain the user/capability grant; these tables hold the
+    // dynamically registered public client, one-time authorization codes, and
+    // opaque access/refresh credentials for that grant.
+    id: '021_mcp_oauth',
+    sql: `
+      create table if not exists ai_mcp_oauth_clients (
+        client_id text primary key,
+        client_name text not null,
+        redirect_uris_json text not null,
+        client_id_issued_at integer not null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create table if not exists ai_mcp_oauth_codes (
+        code_hash text primary key,
+        connector_id text not null references ai_mcp_connectors(id) on delete cascade,
+        client_id text not null references ai_mcp_oauth_clients(client_id) on delete cascade,
+        redirect_uri text not null,
+        code_challenge text not null,
+        scope text not null,
+        resource text not null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        expires_at text not null,
+        consumed_at text
+      );
+
+      create index if not exists ai_mcp_oauth_codes_connector_idx
+        on ai_mcp_oauth_codes (connector_id);
+
+      create table if not exists ai_mcp_oauth_tokens (
+        id text primary key,
+        connector_id text not null references ai_mcp_connectors(id) on delete cascade,
+        client_id text not null references ai_mcp_oauth_clients(client_id) on delete cascade,
+        kind text not null,
+        token_hash text not null unique,
+        scope text not null,
+        resource text not null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        expires_at text not null,
+        revoked_at text,
+        constraint ai_mcp_oauth_tokens_kind_check check (kind in ('access', 'refresh'))
+      );
+
+      create index if not exists ai_mcp_oauth_tokens_connector_idx
+        on ai_mcp_oauth_tokens (connector_id);
+    `,
+  },
+  {
+    // Real-time co-editing (Yjs): one CRDT state blob per collab document
+    // (site shell, page, component, layout — doc_id is '<kind>:<rowId>').
+    // The blob is the live-editing source of truth; derived JSON keeps
+    // flowing into data_rows/site for the publisher and non-editor reads.
+    // `seq` counts persists (future delta APIs / diagnostics).
+    id: '022_collab_documents',
+    sql: `
+      create table if not exists collab_documents (
+        doc_id text primary key,
+        state_blob blob not null,
+        seq integer not null default 0,
+        updated_at text not null default current_timestamp
+      );
+    `,
+  },
+  {
+    // Per-doc CRDT lineage id. A reset deletes the blob and the doc reseeds at
+    // the fixed SEED_CLIENT_ID, so the new lineage reuses the old one's struct
+    // coordinates and a client that missed the reset would hand back structs
+    // from a dead lineage at live coordinates. Rows written by 022 carry '' and
+    // have a generation minted on their next open (see relay.openDoc).
+    id: '023_collab_document_generation',
+    sql: `
+      alter table collab_documents add column generation text not null default '';
+    `,
+  },
+  {
+    // `display_name` is rendered on PUBLIC pages through author bindings, and
+    // setup used to default it to the account's email address — so every
+    // install created before this has an address sitting in a public field.
+    // Clear it only where it is exactly the address; a name somebody actually
+    // chose is left alone. Admin surfaces already fall back to the email for
+    // their own display, so an empty value costs nothing there.
+    id: '024_clear_email_display_names',
+    sql: `
+      update users set display_name = ''
+       where trim(lower(display_name)) = trim(lower(email));
+    `,
+  },
 ]

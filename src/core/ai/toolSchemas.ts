@@ -19,10 +19,15 @@
  * browser-runtime imports — so both `server/` and `src/admin/` may import it
  * (mirrors `@core/css-sanitize` / `@core/framework-schema`). Keep it that way.
  *
- * `render_snapshot` is the one legitimate divergence: the model-facing schema
- * (`RenderSnapshotInputSchema`) exposes only `breakpointId`/`nodeId`, while the
- * executor adds a server-set `captureScreenshot` flag on top — see that schema
- * and the executor's composed `renderSnapshotInputSchema`.
+ * Two provider-boundary constraints intentionally add a second validation
+ * layer in the browser executor:
+ *
+ *   - `render_snapshot` adds the server-set `captureScreenshot` flag on top of
+ *     the model-facing `RenderSnapshotInputSchema`.
+ *   - `site_apply_css` advertises one flat object because Anthropic rejects
+ *     `anyOf`/`oneOf`/`allOf` at a tool schema's root. The executor validates
+ *     that object against `ApplyCssExecutionInputSchema`, the exact
+ *     discriminated union. Both schemas reuse the field definitions below.
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
@@ -119,10 +124,84 @@ export type DuplicateNodeInput = Static<typeof DuplicateNodeInputSchema>
 // CSS + class-assignment write tools
 // ---------------------------------------------------------------------------
 
-export const ApplyCssInputSchema = Type.Object({
-  css: Type.String({ minLength: 1 }),
+const CssTextInputSchema = Type.String({
+  minLength: 1,
+  description: 'Required for merge and replace. Contains complete CSS rules, including their selectors.',
 })
+const CssSelectorListInputSchema = Type.Array(
+  Type.String({ minLength: 1 }),
+  {
+    minItems: 1,
+    maxItems: 100,
+    uniqueItems: true,
+    description: 'Required for delete and remove-properties. Each entry is one exact emitted selector.',
+  },
+)
+const CssPropertyNameInputSchema = Type.String({
+  minLength: 1,
+  pattern: '^-{0,2}[a-zA-Z][a-zA-Z0-9-]*$',
+})
+const CssPropertyListInputSchema = Type.Array(
+  CssPropertyNameInputSchema,
+  {
+    minItems: 1,
+    maxItems: 100,
+    uniqueItems: true,
+    description: 'Required only for remove-properties. Names use CSS kebab-case, including vendor/custom properties.',
+  },
+)
+const CssMergeOperationSchema = Type.Literal('merge')
+const CssReplaceOperationSchema = Type.Literal('replace')
+const CssDeleteOperationSchema = Type.Literal('delete')
+const CssRemovePropertiesOperationSchema = Type.Literal('remove-properties')
+const CssOperationSchema = Type.Union([
+  CssMergeOperationSchema,
+  CssReplaceOperationSchema,
+  CssDeleteOperationSchema,
+  CssRemovePropertiesOperationSchema,
+], {
+  description: 'The CSS mutation to perform. Its required companion fields are documented on css, selectors, and properties.',
+})
+
+/**
+ * Provider-facing tool schema. Tool providers require an ordinary object at
+ * the root, and Anthropic explicitly rejects root-level schema composition.
+ * The descriptions state each operation's required fields; the browser then
+ * enforces the exact discriminated shape with ApplyCssExecutionInputSchema.
+ */
+export const ApplyCssInputSchema = Type.Object({
+  operation: CssOperationSchema,
+  css: Type.Optional(CssTextInputSchema),
+  selectors: Type.Optional(CssSelectorListInputSchema),
+  properties: Type.Optional(CssPropertyListInputSchema),
+}, { additionalProperties: false })
+
+/**
+ * Exact CSS-registry mutation accepted at the editor-store boundary. The
+ * discriminator keeps destructive replacement/deletion impossible to trigger
+ * accidentally by omitting an optional field from a normal merge.
+ */
+export const ApplyCssExecutionInputSchema = Type.Union([
+  Type.Object({
+    operation: CssMergeOperationSchema,
+    css: CssTextInputSchema,
+  }),
+  Type.Object({
+    operation: CssReplaceOperationSchema,
+    css: CssTextInputSchema,
+  }),
+  Type.Object({
+    operation: CssDeleteOperationSchema,
+    selectors: CssSelectorListInputSchema,
+  }),
+  Type.Object({
+    operation: CssRemovePropertiesOperationSchema,
+    selectors: CssSelectorListInputSchema,
+    properties: CssPropertyListInputSchema,
+  }),
+])
 export type ApplyCssInput = Static<typeof ApplyCssInputSchema>
+export type ApplyCssExecutionInput = Static<typeof ApplyCssExecutionInputSchema>
 
 export const AssignClassInputSchema = Type.Object({
   nodeId: Type.String({ minLength: 1 }),

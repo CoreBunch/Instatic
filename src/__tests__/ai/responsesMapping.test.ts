@@ -122,7 +122,14 @@ describe('Responses mapHistory', () => {
 
   test('maps base64 image blocks to a Responses input_image data URL', () => {
     const history: AiMessage[] = [
-      { role: 'user', content: [{ kind: 'image', mimeType: 'image/png', data: 'BASE64' }, { kind: 'text', text: 'look' }] },
+      {
+        role: 'user',
+        content: [
+          { kind: 'image', mimeType: 'image/png', data: 'BASE64-1' },
+          { kind: 'image', mimeType: 'image/jpeg', data: 'BASE64-2' },
+          { kind: 'text', text: 'compare' },
+        ],
+      },
     ]
     const mapped = mapResponsesHistory(history).flat()
     expect(mapped).toEqual([
@@ -130,8 +137,9 @@ describe('Responses mapHistory', () => {
         type: 'message',
         role: 'user',
         content: [
-          { type: 'input_image', image_url: 'data:image/png;base64,BASE64' },
-          { type: 'input_text', text: 'look' },
+          { type: 'input_image', image_url: 'data:image/png;base64,BASE64-1' },
+          { type: 'input_image', image_url: 'data:image/jpeg;base64,BASE64-2' },
+          { type: 'input_text', text: 'compare' },
         ],
       },
     ])
@@ -209,7 +217,7 @@ describe('runToolLoop via openaiDriver (Responses)', () => {
       messages: [{ role: 'user', content: [{ kind: 'text', text: 'go' }] }],
       tools: [echoTool],
       modelId: 'gpt-5.4',
-      modelCapabilities: { toolCalling: true, visionInput: true, promptCache: false, streaming: true },
+      modelCapabilities: { toolCalling: true, visionInput: true, toolResultImages: false, promptCache: false, streaming: true },
       credentials: { id: 'cr', providerId: 'openai', authMode: 'apiKey', apiKey: 'sk-test', baseUrl: null },
       signal: new AbortController().signal,
       bridge,
@@ -264,7 +272,7 @@ describe('openrouterDriver', () => {
       messages: [{ role: 'user', content: [{ kind: 'text', text: 'go' }] }],
       tools: [],
       modelId: 'openai/gpt-5.4',
-      modelCapabilities: { toolCalling: true, visionInput: true, promptCache: false, streaming: true },
+      modelCapabilities: { toolCalling: true, visionInput: true, toolResultImages: false, promptCache: false, streaming: true },
       credentials: { id: 'cr', providerId: 'openrouter', authMode: 'apiKey', apiKey: 'sk-or-test', baseUrl: null },
       signal: new AbortController().signal,
       bridge,
@@ -338,14 +346,14 @@ describe('openrouterDriver', () => {
       {
         id: 'openai/gpt-5.4',
         label: 'GPT 5.4',
-        capabilities: { toolCalling: true, visionInput: true, promptCache: false, streaming: true },
+        capabilities: { toolCalling: true, visionInput: true, toolResultImages: false, promptCache: false, streaming: true },
         pricing: { inputPerMTok: 5, outputPerMTok: 25 },
         contextWindow: 128_000,
       },
       {
         id: 'anthropic/claude-opus-4.8',
         label: 'Claude Opus 4.8',
-        capabilities: { toolCalling: false, visionInput: false, promptCache: false, streaming: true },
+        capabilities: { toolCalling: false, visionInput: false, toolResultImages: false, promptCache: false, streaming: true },
         pricing: { inputPerMTok: 10, outputPerMTok: 50 },
         contextWindow: 200_000,
       },

@@ -32,6 +32,7 @@ import {
   RenameNodeInputSchema,
   DuplicateNodeInputSchema,
   ApplyCssInputSchema,
+  ApplyCssExecutionInputSchema,
   AssignClassInputSchema,
   RemoveClassInputSchema,
   ListCodeAssetsInputSchema,
@@ -56,7 +57,6 @@ import {
   type MoveNodeInput,
   type RenameNodeInput,
   type DuplicateNodeInput,
-  type ApplyCssInput,
   type AssignClassInput,
   type RemoveClassInput,
   type AddPageInput,
@@ -70,11 +70,11 @@ import type { EditorStore } from '@site/store/types'
 import { registry } from '@core/module-engine'
 import { sanitizeRichtext, isRichtextPropKey } from '@core/sanitize'
 import { importHtml } from '@core/htmlImport'
-import { cssToStyleRules } from '@core/siteImport'
-import type { NewStyleRule } from '@core/siteImport'
-import type { BaseNode, ConditionDef, PageTemplateConfig } from '@core/page-tree'
+import type { BaseNode, PageTemplateConfig } from '@core/page-tree'
 import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/publisher'
 import { getAgentStoreApi } from './storeRef'
+import { whenCollabWritable } from '@site/store/slices/site/collabWriteGate'
+import { AUTO_NAVIGATE_TOOLS, SITE_MUTATION_TOOLS } from './toolClassification'
 import {
   runSetColorTokens,
   runSetFontTokens,
@@ -88,7 +88,8 @@ import {
   runReadCodeAsset,
   runWriteCodeAsset,
 } from './codeAssetTools'
-import { runRenderSnapshot } from './renderSnapshotTool'
+import { runRenderSnapshotAtBreakpoint } from './renderSnapshotAtBreakpoint'
+import { parseImportedStyleCss, runApplyCss } from './cssTools'
 import {
   activeDocumentNodes,
   activeRenderPage,
@@ -104,39 +105,19 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 // has no static import edge back into `editor-store/store.ts`.
 const getStoreState = (): EditorStore => getAgentStoreApi<EditorStore>().getState()
 
-/**
- * Parse the CSS harvested from `<style>` blocks in an agent-supplied HTML
- * snippet into registry rules. Uses the live site's viewport contexts so any
- * matching `@media` folds into that viewport's contextStyles;
- * unmatched conditions round-trip as reusable site conditions. Returns empty
- * arrays for an empty/whitespace-only snippet.
- */
-function parseImportedStyleCss(styleCss: string): {
-  rules: NewStyleRule[]
-  conditions: ConditionDef[]
-} {
-  if (!styleCss.trim()) return { rules: [], conditions: [] }
-  const site = getStoreState().site
-  const breakpoints = site
-    ? site.breakpoints.map((b) => ({ id: b.id, width: b.width, mediaQuery: b.mediaQuery }))
-    : []
-  const { rules, conditions } = cssToStyleRules(styleCss, { breakpoints })
-  return { rules, conditions }
-}
-
 // ---------------------------------------------------------------------------
 // Tool input validation
 //
-// The per-tool input schemas are the single source of truth in `@core/ai`
-// (`src/core/ai/toolSchemas.ts`) — the SAME schemas the server advertises as
-// each tool's `inputSchema` in `server/ai/tools/site/writeTools.ts`. The
-// executor imports them and re-validates each `toolRequest` payload here with
-// `parseValue` — defence-in-depth at the store boundary (Constraint #272).
+// The provider-facing and execution input schemas have one source in `@core/ai`
+// (`src/core/ai/toolSchemas.ts`). The executor imports them and validates each
+// `toolRequest` payload here with `parseValue` — defence-in-depth at the store
+// boundary (Constraint #272). Most tools use one schema for both layers.
 //
-// `site_render_snapshot` is the one divergence: the model-facing schema carries only
-// `breakpointId`/`nodeId`, so we compose the server-set `captureScreenshot`
-// flag (chosen from the model's vision capability — non-vision models skip the
-// expensive html-to-image capture) on top of the shared shape here.
+// Two deliberate provider-boundary layers live here:
+// - `site_render_snapshot` composes the server-set `captureScreenshot` flag
+//   onto its model-facing schema.
+// - `site_apply_css` advertises a flat provider-compatible object, then uses
+//   `ApplyCssExecutionInputSchema` here for exact operation-specific fields.
 // ---------------------------------------------------------------------------
 
 const renderSnapshotSchema = Type.Composite([
@@ -209,24 +190,6 @@ function nodeNotInActiveDocError(store: EditorStore, nodeId: string): AiToolOutp
   )
 }
 
-/**
- * Tools that target an existing node (by `nodeId`/`parentId`) and should pull
- * the canvas to that node's document before running. Excludes catalog/page/
- * token tools (no node target) and `site_render_snapshot` (captures the live DOM, so
- * a node outside the mounted canvas is genuinely uncapturable, not navigable).
- */
-const AUTO_NAVIGATE_TOOLS = new Set<string>([
-  'site_insert_html',
-  'site_get_node_html',
-  'site_replace_node_html',
-  'site_delete_node',
-  'site_update_node_props',
-  'site_move_node',
-  'site_rename_node',
-  'site_duplicate_node',
-  'site_assign_class',
-  'site_remove_class',
-])
 
 /** Pull the node/parent id a write tool targets out of its raw input bag. */
 function targetNodeIdFromInput(raw: unknown): string | undefined {
@@ -264,8 +227,13 @@ function runInsertHtml(input: InsertHtmlInput): AiToolOutput {
     // `site_apply_css` tool is the canonical path for this; insertHtml stays forgiving
     // when a CSS-only payload arrives here.)
     if (rules.length > 0 || conditions.length > 0) {
-      const { created, updated } = getStoreState().upsertCssRules(rules, conditions)
-      return aiToolOk({ cssRulesCreated: created, cssRulesUpdated: updated })
+      const result = getStoreState().applyCssRules(rules, conditions, 'merge')
+      if (result.blockedSelectors.length > 0) {
+        return aiToolError(
+          `Framework-generated CSS selectors are locked: ${result.blockedSelectors.join(', ')}`,
+        )
+      }
+      return aiToolOk({ cssRulesCreated: result.created, cssRulesUpdated: result.updated })
     }
     const scriptHint = stripped.scripts > 0 || stripped.inlineHandlers > 0
       ? ' Scripts and inline event handlers are stripped from HTML imports; create runtime behavior with site_write_code_asset({ type:"script", ... }) instead.'
@@ -305,6 +273,17 @@ function runInsertHtml(input: InsertHtmlInput): AiToolOutput {
     for (const childId of node.children) visit(childId)
   }
   for (const rootId of insertedRootIds) visit(rootId)
+
+  // `insertedRootIds` are the ids the insert INTENDED to create. If none of
+  // them is in the store afterwards the mutation was refused (collab gate,
+  // offline transport), and reporting those ids would claim a subtree that
+  // does not exist — the caller then builds on nodes the server never saw.
+  if (created.length === 0) {
+    return aiToolError(
+      'Insert was refused before it reached the store, so nothing was created. '
+      + 'The editor is usually still syncing; retry shortly.',
+    )
+  }
 
   return aiToolOk({ nodeIds: insertedRootIds, created })
 }
@@ -380,8 +359,13 @@ function runReplaceNodeHtml(input: ReplaceNodeHtmlInput): AiToolOutput {
     // the subtree intact and just upsert its rules — same forgiving behaviour
     // as insertHtml. Wiping children to insert nothing would be surprising.
     if (rules.length > 0 || conditions.length > 0) {
-      const { created, updated } = getStoreState().upsertCssRules(rules, conditions)
-      return aiToolOk({ cssRulesCreated: created, cssRulesUpdated: updated })
+      const result = getStoreState().applyCssRules(rules, conditions, 'merge')
+      if (result.blockedSelectors.length > 0) {
+        return aiToolError(
+          `Framework-generated CSS selectors are locked: ${result.blockedSelectors.join(', ')}`,
+        )
+      }
+      return aiToolOk({ cssRulesCreated: result.created, cssRulesUpdated: result.updated })
     }
     const scriptHint = stripped.scripts > 0 || stripped.inlineHandlers > 0
       ? ' Scripts and inline event handlers are stripped from HTML imports; create runtime behavior with site_write_code_asset({ type:"script", ... }) instead.'
@@ -464,29 +448,6 @@ function runMoveNode(input: MoveNodeInput): AiToolOutput {
 function runRenameNode(input: RenameNodeInput): AiToolOutput {
   getStoreState().renameNode(input.nodeId, input.label)
   return aiToolOk()
-}
-
-/**
- * Apply authored CSS text to the site's style registry.
- *
- * The single styling-by-CSS tool: parse the CSS with the SAME engine the HTML
- * importer uses (`cssToStyleRules` via `parseImportedStyleCss`), then UPSERT
- * every rule — a bare `.foo {}` selector creates/edits a reusable class, any
- * other selector (`.hero a`, `a:hover`, `nav > li`, `::before`) creates/edits
- * an ambient rule, and `@media` folds into per-breakpoint/condition overrides.
- * Re-applying an existing selector EDITS it; this is what `updateClassStyles`
- * could not do for descendant/pseudo selectors.
- */
-function runApplyCss(input: ApplyCssInput): AiToolOutput {
-  const { rules, conditions } = parseImportedStyleCss(input.css)
-  if (rules.length === 0 && conditions.length === 0) {
-    return aiToolError(
-      'No CSS rules parsed. Provide CSS like ".hero { color: var(--primary) }" or ' +
-        '"nav a:hover { text-decoration: underline }".',
-    )
-  }
-  const { created, updated } = getStoreState().upsertCssRules(rules, conditions)
-  return aiToolOk({ cssRulesCreated: created, cssRulesUpdated: updated })
 }
 
 function runAssignClass(input: AssignClassInput): AiToolOutput {
@@ -615,6 +576,16 @@ export async function executeAgentTool(
   rawInput: unknown,
 ): Promise<AiToolOutput> {
   try {
+    // A write refused by the collab sync gate never reaches the relay, so wait
+    // for the gate to open rather than reporting a success the server will
+    // never see. Sub-second in practice; the deadline exists so a genuinely
+    // stuck socket surfaces as an error instead of hanging the tool call.
+    if (SITE_MUTATION_TOOLS.has(toolName) && !(await whenCollabWritable())) {
+      return aiToolError(
+        'Editor is still syncing with the collaboration relay; the write was not applied. Retry shortly.',
+      )
+    }
+
     // Auto-navigate: if a node-targeting tool references a node that lives in a
     // different document, switch the canvas to that document BEFORE running, so
     // the mutation lands in the right tree and stays visible to the user.
@@ -642,8 +613,10 @@ export async function executeAgentTool(
         return runMoveNode(parseValue(MoveNodeInputSchema, rawInput))
       case 'site_rename_node':
         return runRenameNode(parseValue(RenameNodeInputSchema, rawInput))
-      case 'site_apply_css':
-        return runApplyCss(parseValue(ApplyCssInputSchema, rawInput))
+      case 'site_apply_css': {
+        const providerInput = parseValue(ApplyCssInputSchema, rawInput)
+        return runApplyCss(parseValue(ApplyCssExecutionInputSchema, providerInput))
+      }
       case 'site_list_code_assets':
         return await runListCodeAssets(parseValue(ListCodeAssetsInputSchema, rawInput))
       case 'site_read_code_asset':
@@ -685,7 +658,7 @@ export async function executeAgentTool(
         // Default to the breakpoint the user is actually viewing, not the first
         // frame in the DOM (which is mobile in a mobile-first canvas layout).
         const breakpointId = parsed.breakpointId ?? getStoreState().activeBreakpointId
-        return await runRenderSnapshot({ ...parsed, breakpointId })
+        return await runRenderSnapshotAtBreakpoint({ ...parsed, breakpointId })
       }
       default:
         return aiToolError(`Unknown instatic tool: ${toolName}`)

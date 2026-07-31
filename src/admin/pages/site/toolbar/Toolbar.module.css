@@ -235,11 +235,6 @@
     background: var(--danger-light);
 }
 
-.publishActionWrapper {
-    position: relative;
-    height: 28px;
-}
-
 /* Publish-specific overrides on the shared SplitButton halves: a stable min
  * width so the label can swap (Publish → Publishing → Published) without the
  * control reflowing, a slightly slimmer chevron trigger, and a softened
@@ -257,26 +252,6 @@
     width: 26px;
 }
 
-.publishToast {
-    position: absolute;
-    top: calc(100% + 6px);
-    right: 0;
-    background: var(--bg-surface);
-    border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
-    border-radius: 6px;
-    padding: var(--space-xs) var(--space-m);
-    font-size: var(--text-xs);
-    color: var(--danger-lighter);
-    white-space: nowrap;
-    z-index: 201;
-    box-shadow: 0 4px 12px var(--scrim-40);
-}
-
-.publishToastStatus {
-    border-color: color-mix(in srgb, var(--success) 35%, transparent);
-    color: var(--success);
-}
-
 @media (max-width: 760px) {
     .header {
         height: 68px;
@@ -284,13 +259,6 @@
         align-content: center;
         row-gap: var(--space-4xs);
         padding: var(--space-4xs) var(--space-s);
-    }
-
-    .siteName,
-    .siteNameSkeleton,
-    .siteFavicon,
-    .workspaceToolbarItems {
-        order: 1;
     }
 
     .siteName {
@@ -320,7 +288,6 @@
 
     .adminLink,
     .activeSection {
-        order: 2;
         justify-content: center;
         width: 30px;
         min-width: 30px;

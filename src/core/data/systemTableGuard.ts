@@ -12,9 +12,8 @@
  *     which the update path can't change anyway);
  *   - its built-in fields — they cannot be edited, removed, or newly created.
  *
- * Separately, built-in field *values* (row cells) are read-only on the
- * STRUCTURAL system tables (everything except `posts`, whose built-ins —
- * title/slug/body/SEO — are editorial content). See `isBuiltInValueLocked`.
+ * Built-in field values remain editable on existing records through both the
+ * Data workspace and their purpose-built authoring surfaces.
  */
 
 import type { DataField, DataTable, UpdateDataTableInput } from './schemas'
@@ -29,13 +28,10 @@ const FROZEN_IDENTITY_KEYS = [
 ] as const satisfies readonly (keyof UpdateDataTableInput)[]
 
 /**
- * Whether a field's stored VALUE is read-only in the grid / row writes.
- *
- * True only for built-in fields on STRUCTURAL system tables (system tables that
- * are not editorial post types). A `posts` row's built-ins stay editable, and
- * custom fields added to any table are always editable.
+ * Whether a built-in field is protected while creating a structural system
+ * record through the generic row endpoint. Existing records remain editable.
  */
-export function isBuiltInValueLocked(
+function isBuiltInValueCreateLocked(
   table: Pick<DataTable, 'system' | 'kind'>,
   field: Pick<DataField, 'builtIn'>,
 ): boolean {
@@ -43,17 +39,15 @@ export function isBuiltInValueLocked(
 }
 
 /**
- * First cell key in `cells` that targets a value-locked built-in field on the
- * given table, or `null` when none do. Lets a row-write handler reject attempts
- * to hand-edit editor-managed built-in values (a page's tree, a layout's
- * classes) while allowing custom-field and `posts` built-in writes.
+ * First cell key in `cells` that targets a protected built-in field while
+ * creating a structural system record, or `null` when none do.
  */
-export function lockedBuiltInCellKey(
+export function protectedBuiltInCreateCellKey(
   table: Pick<DataTable, 'system' | 'kind' | 'fields'>,
   cells: Record<string, unknown>,
 ): string | null {
   const lockedIds = new Set(
-    table.fields.filter((field) => isBuiltInValueLocked(table, field)).map((field) => field.id),
+    table.fields.filter((field) => isBuiltInValueCreateLocked(table, field)).map((field) => field.id),
   )
   if (lockedIds.size === 0) return null
   for (const key of Object.keys(cells)) {

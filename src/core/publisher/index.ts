@@ -36,14 +36,34 @@ export { escapeHtml, isSafeUrl, safeUrl, sanitiseCssValue } from './utils'
 
 export {
   bagToCSS,
+  bagToInlineStyle,
   bagToReactStyle,
   createStyleRuleCssEmitter,
   generateClassCSS,
   isEmittableProperty,
 } from './classCss'
-export type { StyleRuleCssEmitter, ViewportContext } from './classCss'
+export type {
+  StyleRuleCssEmitter,
+  StyleRuleDeclarationLayers,
+  ViewportContext,
+} from './classCss'
+
+export {
+  collectBackgroundImagePaths,
+  collectBackgroundImagePathsFromStyleBag,
+  collectNodeBackgroundImagePaths,
+  collectSiteStyleBackgroundImagePaths,
+  responsiveBackgroundImage,
+} from './responsiveBackground'
+export type { ResponsiveCssOptions } from './responsiveBackground'
 
 export { collectClassCSS, CssCollector, sanitizeModuleCSS } from './cssCollector'
+export {
+  collectUsedStyleRuleIds,
+  treeShakeStyleRules,
+  treeShakeStyleRulesBySignature,
+  usedStyleRuleIdSignature,
+} from './styleRuleTreeShake'
 
 export { buildSiteFrameworkCss, generateFrameworkCss } from './frameworkCss'
 

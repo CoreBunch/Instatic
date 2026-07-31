@@ -14,9 +14,10 @@
  * Body ownership mirrors the publisher: the published `<body>` is the OUTERMOST
  * wrapper's body element (the inner document's `base.body` is dropped and its
  * children spliced in — inner body classes are not preserved). So in the wrapped
- * case we apply the outermost wrapper body's classes to the iframe `<body>` and
- * render the active document as its body CHILDREN, rather than letting the inner
- * body claim the iframe body with classes the published page would not carry.
+ * case we apply the outermost wrapper body's classes, inline styles, and safe
+ * HTML attributes to the iframe `<body>` and render the active document as its
+ * body CHILDREN, rather than letting the inner body claim presentation the
+ * published page would not carry.
  *
  * When nothing wraps the document (editing the `everywhere` layout itself, or a
  * site with no matching template), it renders exactly as before — a plain
@@ -25,14 +26,17 @@
  * `OutletEditor`.
  */
 
-import { use, useEffect, useRef, type ReactNode } from 'react'
+import { use, useEffect, type ReactNode } from 'react'
 import type { BaseNode, Page } from '@core/page-tree'
 import { classNamesForClassIds } from '@core/page-tree'
 import { useEditorStore } from '@site/store/store'
 import { ReadOnlyNodeTree } from '@modules/base/utils/ReadOnlyNodeTree'
+import { htmlAttributesForReact } from '@modules/base/shared/htmlAttributes'
+import { useResponsiveBackgroundStyle } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { NodeRenderer } from './NodeRenderer'
 import { resolveEditorWrapperTemplates } from './canvasComposition'
-import { CanvasTemplateContext } from './CanvasContexts'
+import { CanvasDocumentContext, CanvasTemplateContext } from './CanvasContexts'
+import { applyIframeBodyPresentation } from './iframeBodyPresentation'
 
 const NO_WRAPPERS: Page[] = []
 
@@ -50,6 +54,7 @@ export function CanvasComposedTree({ page }: CanvasComposedTreeProps) {
   // Templates wrapping the active document (outermost-first). A Visual
   // Component edit surface is never a published route, so it is never wrapped.
   const wrappers = !isVcMode && site ? resolveEditorWrapperTemplates(site, page) : NO_WRAPPERS
+  const outerBody = wrappers[0]?.nodes[wrappers[0].rootNodeId]
 
   // No wrapping templates → render the document exactly as before; its own
   // base.body claims the iframe <body>.
@@ -82,45 +87,49 @@ export function CanvasComposedTree({ page }: CanvasComposedTreeProps) {
     )
   }
 
-  // Mirror the outermost wrapper body's classes onto the iframe <body>, exactly
-  // as the published document would carry them.
-  const outerBody = wrappers[0]?.nodes[wrappers[0].rootNodeId]
+  // Mirror the outermost wrapper body's classes + inline styles onto the
+  // iframe <body>, exactly as the published document would carry them.
   const bodyClassName = outerBody
     ? classNamesForClassIds(styleRules, outerBody.classIds).join(' ')
     : ''
 
   return (
     <>
-      <IframeBodyClassName className={bodyClassName} />
+      <IframeBodyPresentationOwner
+        className={bodyClassName}
+        inlineStyles={outerBody?.inlineStyles}
+        htmlAttributes={outerBody?.props.htmlAttributes}
+      />
       {composed}
     </>
   )
 }
 
 /**
- * Apply `className` to the host iframe's `<body>` element while mounted (and
- * restore it on unmount). A `display: contents` probe gives the effect a ref
- * into the iframe document without contributing any layout — the same technique
- * `base.body`'s editor uses. Only used in the wrapped case, where no `base.body`
- * editor runs to own the iframe body.
+ * Apply the outer body's presentation to the host iframe's `<body>` while
+ * mounted (and restore it on unmount). The frame supplies its final srcDoc
+ * through context, so this owner contributes no editor-only body child. Only
+ * used in the wrapped case, where no `base.body` editor runs to own the body.
  */
-function IframeBodyClassName({ className }: { className: string }) {
-  const probeRef = useRef<HTMLSpanElement | null>(null)
+function IframeBodyPresentationOwner({
+  className,
+  inlineStyles,
+  htmlAttributes,
+}: {
+  className: string
+  inlineStyles?: BaseNode['inlineStyles']
+  htmlAttributes?: unknown
+}) {
+  const iframeDocument = use(CanvasDocumentContext)
+  const style = useResponsiveBackgroundStyle(inlineStyles)
   useEffect(() => {
-    const body = probeRef.current?.ownerDocument?.body
+    const body = iframeDocument?.body
     if (!body) return
-    const previous = body.className
-    body.className = className
-    return () => {
-      body.className = previous
-    }
-  }, [className])
-  return (
-    <span
-      ref={probeRef}
-      aria-hidden="true"
-      style={{ display: 'contents' }}
-      data-instatic-wrapper-body-probe=""
-    />
-  )
+    return applyIframeBodyPresentation(body, {
+      className,
+      style,
+      attributes: htmlAttributesForReact(htmlAttributes),
+    })
+  }, [className, htmlAttributes, iframeDocument, style])
+  return null
 }

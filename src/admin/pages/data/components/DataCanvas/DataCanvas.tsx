@@ -112,6 +112,11 @@ export function DataCanvas({
     )
   }
 
+  // System-table records belong to the Site and Content authoring workflows,
+  // where their required structure and rich content can be created correctly.
+  // The Data workspace remains an inspection/editing surface for those records.
+  const rowCreationSupported = !table.system && table.fields.length > 0
+
   return (
     <section className={`${canvasStyles.canvas} ${styles.canvas}`} aria-label={`${table.pluralLabel} data grid`}>
       <DataGrid
@@ -123,9 +128,9 @@ export function DataCanvas({
         error={error}
         readOnly={!canEdit}
         onSelectRow={onSelectRow}
-        onAddRow={onAddRow}
+        onAddRow={rowCreationSupported ? onAddRow : undefined}
         onEditInContent={onEditInContent}
-        onDuplicateRow={canCreate ? onDuplicateRow : undefined}
+        onDuplicateRow={canCreate && rowCreationSupported ? onDuplicateRow : undefined}
         onOpenInSiteEditor={onOpenInSiteEditor}
         onOpenRow={onOpenRow}
         onDeleteRow={canDelete ? onDeleteRow : undefined}

@@ -11,7 +11,7 @@
 
 import { nanoid } from 'nanoid'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
-import { AiContentBlockSchema } from '@core/ai'
+import { AiContentBlockSchema, type AiContentViewBlock } from '@core/ai'
 import type { DbClient } from '../../db/client'
 import { isoDateOrNull } from '@core/utils/isoDate'
 import type { AiContentBlock, ToolScope } from '../runtime/types'
@@ -147,12 +147,27 @@ export function toConversationView(record: ConversationRecord): ConversationView
   }
 }
 
-function toMessageView(record: MessageRecord): MessageView {
+type ImageUrlFor = (messageId: string, blockIndex: number) => string
+
+const UNSUPPORTED_STORED_IMAGE =
+  '[Stored image omitted because its format is not supported by conversation preview.]'
+
+function toMessageView(record: MessageRecord, imageUrlFor: ImageUrlFor): MessageView {
   return {
     id: record.id,
     position: record.position,
     role: record.role,
-    content: record.content,
+    content: record.content.map((block, blockIndex): AiContentViewBlock => {
+      if (block.kind !== 'image') return block
+      if (block.mimeType !== 'image/jpeg') {
+        return { kind: 'text', text: UNSUPPORTED_STORED_IMAGE }
+      }
+      return {
+        kind: 'image',
+        mimeType: 'image/jpeg',
+        url: imageUrlFor(record.id, blockIndex),
+      }
+    }),
     toolCallId: record.toolCallId,
     toolName: record.toolName,
     createdAt: record.createdAt,
@@ -162,10 +177,11 @@ function toMessageView(record: MessageRecord): MessageView {
 export function toConversationDetailView(
   conversation: ConversationRecord,
   messages: MessageRecord[],
+  imageUrlFor: ImageUrlFor,
 ): ConversationDetailView {
   return {
     ...toConversationView(conversation),
-    messages: messages.map(toMessageView),
+    messages: messages.map((message) => toMessageView(message, imageUrlFor)),
   }
 }
 
@@ -237,6 +253,29 @@ export async function listMessagesForConversation(
     order by position asc
   `
   return rows.map(messageRowToRecord)
+}
+
+/** Read one message through its owning, non-deleted user conversation. */
+export async function readMessageForUser(
+  db: DbClient,
+  userId: string,
+  conversationId: string,
+  messageId: string,
+): Promise<MessageRecord | null> {
+  const { rows } = await db<MessageRow>`
+    select m.id, m.conversation_id, m.position, m.role, m.content_json,
+           m.tool_call_id, m.tool_name,
+           m.prompt_tokens, m.completion_tokens, m.cost_usd,
+           m.cache_read_tokens, m.cache_creation_tokens, m.created_at
+    from ai_messages m
+    join ai_conversations c on c.id = m.conversation_id
+    where m.id = ${messageId}
+      and m.conversation_id = ${conversationId}
+      and c.user_id = ${userId}
+      and c.deleted_at is null
+    limit 1
+  `
+  return rows[0] ? messageRowToRecord(rows[0]) : null
 }
 
 // ---------------------------------------------------------------------------
@@ -318,6 +357,31 @@ export async function updateConversationForUser(
            context_tokens, created_at, updated_at, deleted_at
   `
   return rows[0] ? conversationRowToRecord(rows[0]) : null
+}
+
+/**
+ * Give a first turn its derived title without overwriting a rename that won
+ * the race in another tab. The placeholder predicate belongs in the UPDATE,
+ * not in a preceding read.
+ */
+export async function replaceDefaultConversationTitle(
+  db: DbClient,
+  userId: string,
+  conversationId: string,
+  title: string,
+): Promise<boolean> {
+  const nextTitle = title.trim()
+  if (!nextTitle) return false
+  const result = await db`
+    update ai_conversations
+    set title = ${nextTitle},
+        updated_at = current_timestamp
+    where id = ${conversationId}
+      and user_id = ${userId}
+      and deleted_at is null
+      and title = ${DEFAULT_CONVERSATION_TITLE}
+  `
+  return result.rowCount > 0
 }
 
 /**

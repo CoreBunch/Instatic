@@ -16,6 +16,21 @@ afterEach(() => __destroyAllBridgesForTesting())
  * must settle on abort and on timeout.
  */
 describe('bridge tool-call settlement', () => {
+  test('rejects calls made after destroy without creating an orphan waiter', async () => {
+    let emitted = false
+    const { bridgeId, bridge, destroy } = createBridge(() => {
+      emitted = true
+    })
+
+    destroy()
+
+    await expect(bridge.callBrowser('cms.write', { x: 1 })).rejects.toThrow(
+      'AI chat stream ended before tool result arrived.',
+    )
+    expect(emitted).toBe(false)
+    expect(__listActiveBridgesForTesting()).not.toContain(bridgeId)
+  })
+
   test('rejects a pending tool call when the abort signal fires', async () => {
     const controller = new AbortController()
     const { bridge, destroy } = createBridge(() => {}, controller.signal)

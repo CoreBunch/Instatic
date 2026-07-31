@@ -1071,4 +1071,89 @@ export const pgMigrations: Migration[] = [
       insert into site_sync_state (id, seq) values (1, 0);
     `,
   },
+  {
+    // OAuth 2.1 authorization-code + PKCE support for hosted MCP clients.
+    // Connector rows remain the user/capability grant; these tables hold the
+    // dynamically registered public client, one-time authorization codes, and
+    // opaque access/refresh credentials for that grant.
+    id: '021_mcp_oauth',
+    sql: `
+      create table if not exists ai_mcp_oauth_clients (
+        client_id text primary key,
+        client_name text not null,
+        redirect_uris_json jsonb not null,
+        client_id_issued_at bigint not null,
+        created_at timestamptz not null default current_timestamp
+      );
+
+      create table if not exists ai_mcp_oauth_codes (
+        code_hash text primary key,
+        connector_id text not null references ai_mcp_connectors(id) on delete cascade,
+        client_id text not null references ai_mcp_oauth_clients(client_id) on delete cascade,
+        redirect_uri text not null,
+        code_challenge text not null,
+        scope text not null,
+        resource text not null,
+        created_at timestamptz not null default current_timestamp,
+        expires_at timestamptz not null,
+        consumed_at timestamptz
+      );
+
+      create index if not exists ai_mcp_oauth_codes_connector_idx
+        on ai_mcp_oauth_codes (connector_id);
+
+      create table if not exists ai_mcp_oauth_tokens (
+        id text primary key,
+        connector_id text not null references ai_mcp_connectors(id) on delete cascade,
+        client_id text not null references ai_mcp_oauth_clients(client_id) on delete cascade,
+        kind text not null,
+        token_hash text not null unique,
+        scope text not null,
+        resource text not null,
+        created_at timestamptz not null default current_timestamp,
+        expires_at timestamptz not null,
+        revoked_at timestamptz,
+        constraint ai_mcp_oauth_tokens_kind_check check (kind in ('access', 'refresh'))
+      );
+
+      create index if not exists ai_mcp_oauth_tokens_connector_idx
+        on ai_mcp_oauth_tokens (connector_id);
+    `,
+  },
+  {
+    // Real-time co-editing (Yjs): one CRDT state blob per collab document
+    // (site shell, page, component, layout — doc_id is '<kind>:<rowId>').
+    // The blob is the live-editing source of truth; derived JSON keeps
+    // flowing into data_rows/site for the publisher and non-editor reads.
+    // `seq` counts persists (future delta APIs / diagnostics).
+    id: '022_collab_documents',
+    sql: `
+      create table if not exists collab_documents (
+        doc_id text primary key,
+        state_blob bytea not null,
+        seq bigint not null default 0,
+        updated_at timestamptz not null default now()
+      );
+    `,
+  },
+  {
+    // Per-doc CRDT lineage id. A reset deletes the blob and the doc reseeds at
+    // the fixed SEED_CLIENT_ID, so the new lineage reuses the old one's struct
+    // coordinates and a client that missed the reset would hand back structs
+    // from a dead lineage at live coordinates. Rows written by 022 carry '' and
+    // have a generation minted on their next open (see relay.openDoc).
+    id: '023_collab_document_generation',
+    sql: `
+      alter table collab_documents add column generation text not null default '';
+    `,
+  },
+  {
+    // See migrations-sqlite.ts:024 — clears display names that are just the
+    // account's email address, because author bindings render them publicly.
+    id: '024_clear_email_display_names',
+    sql: `
+      update users set display_name = ''
+       where trim(lower(display_name)) = trim(lower(email));
+    `,
+  },
 ]

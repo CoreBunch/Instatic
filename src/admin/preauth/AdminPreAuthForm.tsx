@@ -68,6 +68,7 @@ export function AdminPreAuthForm({
   onAuthenticated,
 }: AdminPreAuthFormProps) {
   const [siteName, setSiteName] = useState('My Site')
+  const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [mfaCode, setMfaCode] = useState('')
@@ -75,6 +76,7 @@ export function AdminPreAuthForm({
   const [error, setError] = useState<string | null>(initialError)
 
   const siteNameId = useId()
+  const displayNameId = useId()
   const emailId = useId()
   const passwordId = useId()
   const mfaCodeId = useId()
@@ -86,7 +88,7 @@ export function AdminPreAuthForm({
       return
     }
     await runAuthAction(async () => {
-      await setupCms({ siteName, email, password })
+      await setupCms({ siteName, email, password, displayName })
       await loginCms({ email, password })
       onAuthenticated(await getCurrentCmsUser())
     }, 'Setup failed', setSubmitting, setError)
@@ -167,16 +169,32 @@ export function AdminPreAuthForm({
               />
             </label>
           ) : phase === 'setup' && (
-            <label className={styles.field} htmlFor={siteNameId}>
-              <span>Site name</span>
-              <Input
-                id={siteNameId}
-                value={siteName}
-                onChange={(event) => setSiteName(event.target.value)}
-                required
-                autoComplete="organization"
-              />
-            </label>
+            <>
+              <label className={styles.field} htmlFor={siteNameId}>
+                <span>Site name</span>
+                <Input
+                  id={siteNameId}
+                  value={siteName}
+                  onChange={(event) => setSiteName(event.target.value)}
+                  required
+                  autoComplete="organization"
+                />
+              </label>
+
+              {/* Optional, and public: this is what author bindings render on
+                  published pages. Left blank they render nothing — which is
+                  why it is offered here rather than only on the account page. */}
+              <label className={styles.field} htmlFor={displayNameId}>
+                <span>Your name <span className={styles.hint}>optional, shown on published pages</span></span>
+                <Input
+                  id={displayNameId}
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                  autoComplete="name"
+                  data-testid="admin-setup-display-name"
+                />
+              </label>
+            </>
           )}
 
           {phase !== 'mfa' && (

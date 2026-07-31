@@ -1,10 +1,8 @@
 /**
  * Agent HTTP layer — the network plumbing behind the agent slice.
  *
- * Two responsibilities:
- *   1. Tool-result bridge: POST the executor's canonical `AiToolOutput` to the
- *      server so the in-flight tool waiter resolves and the driver continues.
- *   2. Conversation bootstrap: discover the per-scope default credential,
+ * Responsibilities:
+ *   1. Conversation bootstrap: discover the per-scope default credential,
  *      create the conversation row lazily on first send, and rehydrate
  *      persisted message records back into the in-memory `AgentMessage` shape.
  *
@@ -13,11 +11,10 @@
  */
 
 import { nanoid } from 'nanoid'
+import { INTERRUPTED_TOOL_RESULT_ERROR, aiToolError } from '@core/ai'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
-import { ApiError, apiRequest, isAbortError } from '@core/http'
-import type { AiToolOutput } from '@core/ai'
+import { apiRequest, isAbortError } from '@core/http'
 import {
-  AGENT_TOOL_RESULT_PATH,
   AI_CONVERSATIONS_PATH,
   AI_DEFAULTS_PATH,
 } from './agentConfig'
@@ -27,46 +24,6 @@ import type {
   AgentToolCall,
   AgentToolScope,
 } from './types'
-
-// ---------------------------------------------------------------------------
-// Tool-result bridge
-// ---------------------------------------------------------------------------
-
-const ToolResultAckSchema = Type.Object({ ok: Type.Boolean() })
-
-export async function postToolResult(
-  bridgeId: string,
-  requestId: string,
-  result: AiToolOutput,
-  signal: AbortSignal | null,
-  snapshot?: unknown,
-): Promise<void> {
-  try {
-    await apiRequest(AGENT_TOOL_RESULT_PATH, {
-      method: 'POST',
-      body: {
-        bridgeId,
-        requestId,
-        result,
-        // Post the fresh post-mutation snapshot so the server can refresh the
-        // turn context — server read tools later in the same turn then see the
-        // state this tool just produced. Omit when no snapshot was captured.
-        ...(snapshot !== undefined ? { snapshot } : {}),
-      },
-      signal,
-      schema: ToolResultAckSchema,
-      fallbackMessage: 'Tool-result POST failed.',
-    })
-  } catch (err) {
-    // 404 means the bridge is gone (stream closed before our POST landed) —
-    // expected race during abort. AbortError is the same lifecycle from the
-    // fetch side. Anything else is a routing/config issue that would silently
-    // leave the agent loop hung server-side.
-    if (isAbortError(err)) return
-    if (err instanceof ApiError && err.status === 404) return
-    console.error('[AgentSlice] Failed to post tool-result:', err)
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Conversation bootstrap
@@ -90,26 +47,53 @@ export function rehydrateMessages(
   records: ConversationDetail['messages'],
 ): AgentMessage[] {
   const out: AgentMessage[] = []
-  const toolCallIndex = new Map<string, AgentToolCall>() // toolCallId → block
+  // Only calls still awaiting a persisted role:tool row remain here. Loading a
+  // conversation never resumes its old browser bridge, so anything left after
+  // the complete scan is historical interruption, not live work.
+  const unanswered = new Map<string, AgentToolCall>()
+
+  const markInterrupted = (toolCall: AgentToolCall): void => {
+    toolCall.status = 'error'
+    toolCall.result = aiToolError(INTERRUPTED_TOOL_RESULT_ERROR)
+    // Tool-result images are session-only and cannot be reconstructed after a
+    // reload. Be explicit so malformed future wire data cannot revive one.
+    delete toolCall.previewImages
+  }
+  const finalizeUnanswered = (): void => {
+    for (const toolCall of unanswered.values()) markInterrupted(toolCall)
+    unanswered.clear()
+  }
 
   for (const rec of records) {
-    if (rec.role === 'tool' && rec.toolCallId) {
+    if (rec.role === 'tool') {
       // Fold the first-class `toolResult` block into the matching tool-call
       // block. `ok` is read directly off the block — never inferred from the
-      // emptiness of a text block.
-      const existing = toolCallIndex.get(rec.toolCallId)
-      if (existing) {
-        const resultBlock = rec.content.find((b) => b.kind === 'toolResult')
-        if (resultBlock?.kind === 'toolResult') {
-          existing.status = resultBlock.ok ? 'success' : 'error'
-          existing.result = {
-            ok: resultBlock.ok,
-            error: resultBlock.ok ? undefined : resultBlock.error,
+      // emptiness of a text block. Orphan rows are ignored; malformed matching
+      // rows terminate the call as interrupted instead of leaving a spinner.
+      const toolCallId = rec.toolCallId
+      if (toolCallId) {
+        const existing = unanswered.get(toolCallId)
+        if (existing) {
+          const resultBlock = rec.content.find((b) => b.kind === 'toolResult')
+          if (resultBlock?.kind === 'toolResult') {
+            existing.status = resultBlock.ok ? 'success' : 'error'
+            existing.result = {
+              ok: resultBlock.ok,
+              error: resultBlock.ok ? undefined : resultBlock.error,
+            }
+          } else {
+            markInterrupted(existing)
           }
+          unanswered.delete(toolCallId)
         }
       }
       continue
     }
+
+    // A real user turn closes the preceding assistant run. Any result that
+    // appears later is stale/orphaned and must not resurrect the historical
+    // call as successful; this mirrors provider-history healing on the server.
+    if (rec.role === 'user') finalizeUnanswered()
 
     const msg: AgentMessage = {
       id: rec.id,
@@ -122,23 +106,32 @@ export function rehydrateMessages(
       if (block.kind === 'text') {
         msg.blocks.push({ kind: 'text', text: block.text })
       } else if (block.kind === 'toolCall') {
+        const duplicate = unanswered.get(block.toolCallId)
+        if (duplicate) markInterrupted(duplicate)
         const toolCall: AgentToolCall = {
           id: nanoid(),
           externalId: block.toolCallId,
           actionType: block.toolName,
-          params: (block.input && typeof block.input === 'object'
+          params: (block.input && typeof block.input === 'object' && !Array.isArray(block.input)
             ? (block.input as Record<string, unknown>)
             : {}),
           result: null,
           status: 'pending',
         }
         msg.blocks.push({ kind: 'toolCall', toolCall })
-        toolCallIndex.set(block.toolCallId, toolCall)
+        unanswered.set(block.toolCallId, toolCall)
+      } else if (rec.role === 'user' && block.kind === 'image') {
+        msg.blocks.push({
+          kind: 'image',
+          mimeType: block.mimeType,
+          src: block.url,
+        })
       }
-      // image blocks — skip in v1; could render via <img> later.
     }
     out.push(msg)
   }
+
+  finalizeUnanswered()
 
   return out
 }
@@ -154,13 +147,20 @@ const ScopeDefaultsResponseSchema = Type.Object(
   { additionalProperties: true },
 )
 
-export async function fetchScopeDefault(scope: AgentToolScope): Promise<ScopeDefaultEntry | null> {
+export async function fetchScopeDefault(
+  scope: AgentToolScope,
+  signal?: AbortSignal,
+): Promise<ScopeDefaultEntry | null> {
   // Soft fetch: any failure (no default set, network, bad shape) just means
   // "no preselected credential/model" — the caller falls back to the picker.
   try {
-    const body = await apiRequest(AI_DEFAULTS_PATH, { schema: ScopeDefaultsResponseSchema })
+    const body = await apiRequest(AI_DEFAULTS_PATH, {
+      schema: ScopeDefaultsResponseSchema,
+      signal,
+    })
     return body.defaults?.[scope] ?? null
   } catch (err) {
+    if (signal?.aborted || isAbortError(err)) throw err
     console.error(`[AgentSlice] Failed to fetch ${scope} default:`, err)
     return null
   }
@@ -176,12 +176,14 @@ export async function createConversationForScope(
   scope: AgentToolScope,
   credentialId: string,
   modelId: string,
+  signal?: AbortSignal,
 ): Promise<CreatedConversation> {
   const body = await apiRequest(AI_CONVERSATIONS_PATH, {
     method: 'POST',
     body: { scope, credentialId, modelId },
     schema: CreatedConversationEnvelopeSchema,
     fallbackMessage: 'Conversation create failed',
+    signal,
   })
   return body.conversation
 }

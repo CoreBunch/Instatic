@@ -11,7 +11,11 @@
  * threading more state through a 250-line body.
  */
 
-import type { SiteDocument } from '@core/page-tree'
+import {
+  classKindSelector,
+  extractCssSelectorClasses,
+  type SiteDocument,
+} from '@core/page-tree'
 import { compareVariants } from '@core/fonts'
 import { expandLinkedCssImports } from './cssImports'
 import { extractGoogleFontImports } from './fontImports'
@@ -19,7 +23,7 @@ import { classifyFiles } from './classifyFiles'
 import { makeHtmlPagePlan } from './htmlPagePlan'
 import { buildAssetPlan, type CssFileResult } from './assetPlan'
 import { partitionLinkedStylesheets } from './stylesheetPlan'
-import { detectCrossSheetClassConflicts, isSharedUtilityClassName } from './classCascades'
+import { detectCrossSheetClassConflicts } from './classCascades'
 import { detectConflicts } from './conflicts'
 import { createCssPlanState, parseCssSourceIntoPlan } from './planCss'
 import { rewriteNpmCdnModuleImports } from './scriptDependencies'
@@ -150,9 +154,9 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
     cssPlan.cssFileResults,
     existingClassNames,
   )
-  const publishableCssFileResults = preserveGloballyMatchedClassRules(
-    rawPagePlans,
+  const publishableCssFileResults = addSelectorDependencyClasses(
     cssPlan.cssFileResults,
+    currentSite,
   )
 
   // 5. Build asset plan — normalises URLs in node props, CSS values, and kept
@@ -309,45 +313,83 @@ function expandConvertedCssSources(
 }
 
 // ---------------------------------------------------------------------------
-// Phase 4b helper — keep runtime-only / shared-utility class rules ambient
+// Phase 4b helper — make every selector class available to the class picker
 // ---------------------------------------------------------------------------
 
-function preserveGloballyMatchedClassRules(
-  pagePlans: PagePlan[],
-  cssFileResults: CssFileResult[],
-): CssFileResult[] {
-  // Class-kind rules are tree-shaken by the publisher unless a node owns their
-  // class id. Runtime-only classes and shared utility fragments must instead
-  // remain ambient selectors: scripts may add the former later, and utilities
-  // like `.row` need every source rule even though nodes only link one token.
-  const usedClassNames = collectImportedNodeClassNames(pagePlans)
-  return cssFileResults.map((file) => {
-    let changed = false
-    const rules = file.rules.map((rule) => {
-      if (rule.kind !== 'class') return rule
-      if (isSharedUtilityClassName(rule.name) || !usedClassNames.has(rule.name)) {
-        changed = true
-        return {
-          ...rule,
-          kind: 'ambient' as const,
-          name: rule.selector,
-        }
-      }
-      return rule
-    })
-    return changed ? { ...file, rules } : file
-  })
-}
+const INVALID_CLASS_ATTRIBUTE_TOKEN_RE = /[\s\u007f]/u
 
-function collectImportedNodeClassNames(pagePlans: PagePlan[]): Set<string> {
-  const names = new Set<string>()
-  for (const page of pagePlans) {
-    for (const className of page.nodeFragment.body?.classIds ?? []) names.add(className)
-    for (const node of Object.values(page.nodeFragment.nodes)) {
-      for (const className of node.classIds ?? []) names.add(className)
+/**
+ * Complex selectors expose their rightmost class as their bindable class rule
+ * (`.group:hover .group-hover\:block` binds `group-hover:block`). Ancestor and
+ * dependency classes such as `group`, `peer`, or `dark` may never own a
+ * declaration block of their own, but users still need to pick and assign
+ * them. Add one bare registry class for every selector class name that has no
+ * bindable rule in the incoming CSS or existing site.
+ *
+ * Bare entries add no CSS. They are assignment/index records; the publisher's
+ * selector-dependency tree-shaker emits ambient fragments when their known
+ * class dependencies are in use.
+ */
+function addSelectorDependencyClasses(
+  cssFileResults: CssFileResult[],
+  currentSite: SiteDocument,
+): CssFileResult[] {
+  const bindableNames = new Set(
+    Object.values(currentSite.styleRules)
+      .filter((rule) => rule.kind === 'class')
+      .map((rule) => rule.name),
+  )
+  for (const file of cssFileResults) {
+    for (const rule of file.rules) {
+      if (rule.kind === 'class') bindableNames.add(rule.name)
     }
   }
-  return names
+
+  const firstSourceByMissingName = new Map<string, number>()
+  for (let fileIndex = 0; fileIndex < cssFileResults.length; fileIndex += 1) {
+    for (const rule of cssFileResults[fileIndex].rules) {
+      if (rule.rawCss) continue
+      for (const token of extractCssSelectorClasses(rule.selector)) {
+        if (
+          bindableNames.has(token.name)
+          || firstSourceByMissingName.has(token.name)
+          || INVALID_CLASS_ATTRIBUTE_TOKEN_RE.test(token.name)
+        ) {
+          continue
+        }
+        firstSourceByMissingName.set(token.name, fileIndex)
+      }
+    }
+  }
+
+  if (firstSourceByMissingName.size === 0) return cssFileResults
+
+  const additionsByFile = new Map<number, string[]>()
+  for (const [name, fileIndex] of firstSourceByMissingName) {
+    const names = additionsByFile.get(fileIndex) ?? []
+    names.push(name)
+    additionsByFile.set(fileIndex, names)
+  }
+
+  return cssFileResults.map((file, fileIndex) => {
+    const additions = additionsByFile.get(fileIndex)
+    if (!additions?.length) return file
+    const baseOrder = file.rules.length
+    return {
+      ...file,
+      rules: [
+        ...file.rules,
+        ...additions.map((name, index) => ({
+          name,
+          kind: 'class' as const,
+          selector: classKindSelector(name),
+          order: baseOrder + index,
+          styles: {},
+          contextStyles: {},
+        })),
+      ],
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------

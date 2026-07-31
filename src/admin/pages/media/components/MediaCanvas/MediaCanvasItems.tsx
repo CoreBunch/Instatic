@@ -1,4 +1,10 @@
-import type { CSSProperties, DragEvent, KeyboardEvent, MouseEvent } from 'react'
+import type {
+  CSSProperties,
+  DragEvent,
+  KeyboardEvent,
+  MouseEvent,
+  ReactNode,
+} from 'react'
 import { Button } from '@ui/components/Button'
 import { cn } from '@ui/cn'
 import { ArrowUpIcon } from 'pixel-art-icons/icons/arrow-up'
@@ -22,11 +28,14 @@ interface AssetItemProps {
   asset: CmsMediaAsset
   selected: boolean
   canDrag: boolean
+  disabled?: boolean
+  ariaLabel?: string
+  actions?: ReactNode
   onSelect: (event: MouseEvent<HTMLButtonElement>) => void
-  onDragStart: (asset: CmsMediaAsset, event: DragEvent<HTMLButtonElement>) => void
-  onDragEnd: () => void
-  onContextMenu: (asset: CmsMediaAsset, event: MouseEvent<HTMLButtonElement>) => void
-  onKeyboardMenu: (asset: CmsMediaAsset, event: KeyboardEvent<HTMLButtonElement>) => void
+  onDragStart?: (asset: CmsMediaAsset, event: DragEvent<HTMLButtonElement>) => void
+  onDragEnd?: () => void
+  onContextMenu?: (asset: CmsMediaAsset, event: MouseEvent<HTMLButtonElement>) => void
+  onKeyboardMenu?: (asset: CmsMediaAsset, event: KeyboardEvent<HTMLButtonElement>) => void
 }
 
 // Target widths (CSS px) for the two view modes. Picked so a 1x display
@@ -39,6 +48,9 @@ export function AssetTile({
   asset,
   selected,
   canDrag,
+  disabled = false,
+  ariaLabel,
+  actions,
   onSelect,
   onDragStart,
   onDragEnd,
@@ -52,19 +64,20 @@ export function AssetTile({
     ? ({ backgroundImage: `url(${blurUrl})`, backgroundSize: 'cover' } as CSSProperties)
     : undefined
   return (
-    <li className={styles.tileItem}>
+    <li className={styles.tileItem} data-has-actions={actions ? 'true' : undefined}>
       <Button
         variant="ghost"
         size="sm"
         pressed={selected}
         draggable={canDrag}
-        aria-label={`Open ${asset.filename}`}
+        disabled={disabled}
+        aria-label={ariaLabel ?? `Open ${asset.filename}`}
         className={cn(styles.tile, selected && styles.tileSelected)}
         onClick={(event) => onSelect(event)}
-        onDragStart={(event) => onDragStart(asset, event)}
+        onDragStart={onDragStart ? (event) => onDragStart(asset, event) : undefined}
         onDragEnd={onDragEnd}
-        onContextMenu={(event) => onContextMenu(asset, event)}
-        onKeyDown={(event) => onKeyboardMenu(asset, event)}
+        onContextMenu={onContextMenu ? (event) => onContextMenu(asset, event) : undefined}
+        onKeyDown={onKeyboardMenu ? (event) => onKeyboardMenu(asset, event) : undefined}
       >
         <span className={styles.tilePreview} aria-hidden="true" style={previewStyle}>
           {bucket === 'image' && thumbUrl ? (
@@ -80,6 +93,7 @@ export function AssetTile({
           <span className={styles.tileMeta}>{formatBytes(asset.sizeBytes)}</span>
         </span>
       </Button>
+      {actions && <span className={styles.itemActions}>{actions}</span>}
     </li>
   )
 }
@@ -88,6 +102,9 @@ export function AssetRow({
   asset,
   selected,
   canDrag,
+  disabled = false,
+  ariaLabel,
+  actions,
   onSelect,
   onDragStart,
   onDragEnd,
@@ -101,19 +118,20 @@ export function AssetRow({
     ? ({ backgroundImage: `url(${blurUrl})`, backgroundSize: 'cover' } as CSSProperties)
     : undefined
   return (
-    <li className={styles.rowItem}>
+    <li className={styles.rowItem} data-has-actions={actions ? 'true' : undefined}>
       <Button
         variant="ghost"
         size="sm"
         pressed={selected}
         draggable={canDrag}
-        aria-label={`Open ${asset.filename}`}
+        disabled={disabled}
+        aria-label={ariaLabel ?? `Open ${asset.filename}`}
         className={cn(styles.row, selected && styles.rowSelected)}
         onClick={(event) => onSelect(event)}
-        onDragStart={(event) => onDragStart(asset, event)}
+        onDragStart={onDragStart ? (event) => onDragStart(asset, event) : undefined}
         onDragEnd={onDragEnd}
-        onContextMenu={(event) => onContextMenu(asset, event)}
-        onKeyDown={(event) => onKeyboardMenu(asset, event)}
+        onContextMenu={onContextMenu ? (event) => onContextMenu(asset, event) : undefined}
+        onKeyDown={onKeyboardMenu ? (event) => onKeyboardMenu(asset, event) : undefined}
       >
         <span className={styles.rowPreview} aria-hidden="true" style={previewStyle}>
           {bucket === 'image' && thumbUrl ? (
@@ -127,6 +145,7 @@ export function AssetRow({
         <span className={styles.rowLabel}>{asset.filename}</span>
         <span className={styles.rowMeta}>{formatBytes(asset.sizeBytes)}</span>
       </Button>
+      {actions && <span className={styles.itemActions}>{actions}</span>}
     </li>
   )
 }

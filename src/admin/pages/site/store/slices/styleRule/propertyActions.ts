@@ -6,6 +6,7 @@
  */
 
 import type { CSSPropertyBag } from '@core/page-tree'
+import type { StyleRule } from '@core/page-tree'
 import { isGeneratedClassLocked } from '@core/page-tree'
 import type { SiteSliceHelpers } from '../site/types'
 import type { StyleRuleSlice } from './types'
@@ -14,6 +15,22 @@ type PropertyActions = Pick<
   StyleRuleSlice,
   'removeClassStyleProperty' | 'clearClassStyleProperties'
 >
+
+function removePriorityKeys(rule: StyleRule, keys: readonly string[]): void {
+  for (const key of keys) delete rule.stylePriorities?.[key]
+  if (rule.stylePriorities && Object.keys(rule.stylePriorities).length === 0) {
+    delete rule.stylePriorities
+  }
+  for (const [contextId, priorities] of Object.entries(rule.contextStylePriorities ?? {})) {
+    for (const key of keys) delete priorities[key]
+    if (Object.keys(priorities).length === 0) {
+      delete rule.contextStylePriorities?.[contextId]
+    }
+  }
+  if (rule.contextStylePriorities && Object.keys(rule.contextStylePriorities).length === 0) {
+    delete rule.contextStylePriorities
+  }
+}
 
 export function createPropertyActions({ get, mutateSite }: SiteSliceHelpers): PropertyActions {
   return {
@@ -42,6 +59,7 @@ export function createPropertyActions({ get, mutateSite }: SiteSliceHelpers): Pr
           const bag = draftClass.contextStyles[contextId]
           if (bag) delete (bag as Record<string, unknown>)[propKey]
         }
+        removePriorityKeys(draftClass, [propKey])
         draftClass.updatedAt = Date.now()
         return true
       })
@@ -70,6 +88,7 @@ export function createPropertyActions({ get, mutateSite }: SiteSliceHelpers): Pr
             if (bag) delete (bag as Record<string, unknown>)[key]
           }
         }
+        removePriorityKeys(draftClass, keys)
         draftClass.updatedAt = Date.now()
         return true
       })

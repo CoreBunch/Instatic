@@ -55,7 +55,7 @@ export function getAiAssistantCommands(): Command[] {
           const { useEditorStore } = await import('@site/store/store')
           const store = useEditorStore.getState()
           store.openAgent()
-          store.sendAgentMessage(prompt)
+          store.sendAgentMessage([{ kind: 'text', text: prompt }])
         } catch (err) {
           console.error('[spotlight] ask AI failed:', err)
         }

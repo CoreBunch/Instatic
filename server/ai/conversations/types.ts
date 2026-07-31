@@ -7,9 +7,11 @@
  * Wire shapes are separate from records:
  *   - `ConversationView` is what /admin/api/ai/conversations returns —
  *     summary fields only; full message history fetched on open.
- *   - `MessageView` is the per-message wire shape, AiContentBlock[] inline.
+ *   - `MessageView` keeps non-image blocks and uses lazy image URLs; base64
+ *     remains only on `MessageRecord` for durable provider replay.
  */
 
+import type { AiContentViewBlock } from '@core/ai'
 import type { AiContentBlock, ToolScope } from '../runtime/types'
 
 // ---------------------------------------------------------------------------
@@ -84,7 +86,7 @@ export interface MessageView {
   readonly id: string
   readonly position: number
   readonly role: MessageRole
-  readonly content: AiContentBlock[]
+  readonly content: AiContentViewBlock[]
   readonly toolCallId: string | null
   readonly toolName: string | null
   readonly createdAt: string
