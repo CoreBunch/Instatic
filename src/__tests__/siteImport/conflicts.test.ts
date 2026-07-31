@@ -285,6 +285,30 @@ describe('applyConflictResolutions', () => {
     expect(result.styleRules[2].selector).toBe('.card .btn-2')
   })
 
+  it('auto-rename preserves an escaped imported variant selector', () => {
+    const variant: NewStyleRule = {
+      ...makeClassRule('group-hover:block'),
+      selector: '.group:hover .group-hover\\:block',
+    }
+    const plan = makePlan([], [variant])
+    const res: RuleConflict = {
+      source: '',
+      desiredName: 'group-hover:block',
+      existingRuleId: 'preexisting-variant',
+      defaultResolution: {
+        action: 'auto-rename',
+        resolvedName: 'group-hover:block-2',
+      },
+    }
+
+    const result = applyConflictResolutions(plan, [], [res])
+
+    expect(result.styleRules[0]).toMatchObject({
+      name: 'group-hover:block-2',
+      selector: '.group:hover .group-hover\\:block-2',
+    })
+  })
+
   it('skip rule: node classIds keep the original name (binds to pre-existing rule)', () => {
     const page: PagePlan = {
       source: 'index.html',

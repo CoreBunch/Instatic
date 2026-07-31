@@ -28,6 +28,13 @@ export {
   classifySelectorCreateInput,
   parseStyleRule,
 } from './styleRule'
+export {
+  extractCssSelectorClasses,
+  replaceCssSelectorClassName,
+  selectorBindingClassName,
+  splitCssSelectorList,
+} from './cssSelectorClasses'
+export type { CssSelectorClassToken } from './cssSelectorClasses'
 export { SiteShellSchema } from './siteDocument'
 export {   parsePageTemplate } from './pageTemplate'
 

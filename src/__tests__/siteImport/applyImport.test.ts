@@ -332,7 +332,7 @@ describe('buildImportPlan — structure', () => {
     ])
   })
 
-  it('keeps script-created CSS classes publishable as ambient rules when no imported node uses them', () => {
+  it('keeps unused CSS classes picker-addressable for explicit assignment', () => {
     const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body>
       <div class="used-class">Visible content</div>
     </body></html>`
@@ -346,11 +346,32 @@ describe('buildImportPlan — structure', () => {
     })
 
     expect(p.styleRules.find((rule) => rule.selector === '.used-class')?.kind).toBe('class')
-    expect(p.styleRules.find((rule) => rule.selector === '.runtime-created')?.kind).toBe('ambient')
+    expect(p.styleRules.find((rule) => rule.selector === '.runtime-created')?.kind).toBe('class')
     expect(p.conflicts.rules.some((conflict) => conflict.desiredName === 'runtime-created')).toBe(false)
   })
 
-  it('preserves Bootstrap utility fragments as ambient rules even when nodes use them', () => {
+  it('adds picker entries for complex-selector dependency classes', () => {
+    const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body>
+      <div>Tailwind catalogue</div>
+    </body></html>`
+    const css = `.group:hover .group-hover\\:block { display: block; }`
+    const p = buildImportPlan({
+      fileMap: makeSinglePageFileMap(html, css),
+      currentSite,
+    })
+
+    expect(p.styleRules.find((rule) => rule.name === 'group-hover:block')).toMatchObject({
+      kind: 'class',
+      selector: '.group:hover .group-hover\\:block',
+    })
+    expect(p.styleRules.find((rule) => rule.name === 'group')).toMatchObject({
+      kind: 'class',
+      selector: '.group',
+      styles: {},
+    })
+  })
+
+  it('keeps one bindable Bootstrap utility and preserves its cascade fragments', () => {
     const html = `<!doctype html><html><head>
       <link rel="stylesheet" href="css/bootstrap.css">
       <link rel="stylesheet" href="css/main.css">
@@ -381,15 +402,23 @@ describe('buildImportPlan — structure', () => {
       currentSite,
     })
 
-    const rowRules = p.styleRules.filter((rule) => rule.selector === '.row')
+    const resolved = applyConflictResolutions(
+      p,
+      p.conflicts.pages,
+      p.conflicts.rules,
+      p.conflicts.tokens,
+      p.conflicts.crossSheetClasses,
+    )
+    const rowRules = resolved.styleRules.filter((rule) => rule.selector === '.row')
     expect(rowRules).toHaveLength(2)
-    expect(rowRules.every((rule) => rule.kind === 'ambient')).toBe(true)
-    expect(p.styleRules.find((rule) => rule.selector === '.row > *')?.kind).toBe('ambient')
-    expect(p.styleRules.find((rule) => rule.selector === '.col-xl-3')?.kind).toBe('ambient')
-    expect(p.styleRules.find((rule) => rule.selector === '.align-items-stretch')?.kind).toBe('ambient')
-    expect(p.styleRules.find((rule) => rule.selector === '.custom-row')?.kind).toBe('class')
+    expect(rowRules.filter((rule) => rule.kind === 'class')).toHaveLength(1)
+    expect(rowRules.filter((rule) => rule.kind === 'ambient')).toHaveLength(1)
+    expect(resolved.styleRules.find((rule) => rule.selector === '.row > *')?.kind).toBe('ambient')
+    expect(resolved.styleRules.find((rule) => rule.selector === '.col-xl-3')?.kind).toBe('class')
+    expect(resolved.styleRules.find((rule) => rule.selector === '.align-items-stretch')?.kind).toBe('class')
+    expect(resolved.styleRules.find((rule) => rule.selector === '.custom-row')?.kind).toBe('class')
 
-    const rowNode = Object.values(p.pages[0].nodeFragment.nodes).find((node) =>
+    const rowNode = Object.values(resolved.pages[0].nodeFragment.nodes).find((node) =>
       node.classIds?.includes('row'),
     )
     expect(rowNode?.classIds).toEqual(['row', 'align-items-stretch', 'custom-row'])

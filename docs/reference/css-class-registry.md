@@ -4,8 +4,8 @@ The site's style rule registry — `Record<string, StyleRule>` stored on the sit
 
 Three forms of rules:
 
-1. **Author-facing class rules** (`kind: 'class'`) — the user picks a name (`hero-button`, `card-meta`) and the editor applies them via `node.classIds`. Selector is `.<name>`.
-2. **Ambient rules** (`kind: 'ambient'`) — attach by CSS selector matching, not by node assignment (e.g. `h1`, `.hero .title`, `a:hover`). The publisher emits the rule but never writes to `class=` attributes. Supported stylesheet-level imports such as `@keyframes` are stored as ambient rules with `rawCss`.
+1. **Author-facing class rules** (`kind: 'class'`) — the user picks a name (`hero-button`, `card-meta`) and the editor applies it via `node.classIds`. User-created selectors are `.<name>`; imported utility rules can retain complex selectors such as `.group:hover .group-hover\:block` while exposing the decoded binding name `group-hover:block`.
+2. **Ambient rules** (`kind: 'ambient'`) — attach by CSS selector matching, not by node assignment (e.g. `h1`, `a:hover`). The publisher emits the rule but never writes it to `class=` attributes. Supported stylesheet-level imports such as `@keyframes` are stored as ambient rules with `rawCss`.
 3. **Scoped classes** — generated class-kind rules owned by a single node (for "set this property only on this element"). The scope object pins the rule to its node.
 
 ---
@@ -16,7 +16,7 @@ Three forms of rules:
 - Source-of-truth schema: `StyleRuleSchema` in `src/core/page-tree/styleRule.ts`.
 - Compiled to CSS by `classCss.ts` in the publisher; collected via `collectClassCSS(site)`.
 - Each node references class-kind rules by id (`node.classIds: string[]`). Later ids in the array win in cascade order.
-- Selector UI surfaces display the rule's CSS selector (`styleRuleSelector(rule)`): class-kind rules appear as `.<name>`, ambient rules appear as their verbatim `selector` text.
+- Selector UI surfaces display the rule's CSS selector (`styleRuleSelector(rule)`): canonical classes appear as `.<name>`, imported class rules retain their verbatim selector, and ambient rules also use their verbatim `selector` text.
 - Rule **name** is the class token for class-kind rules. For ambient rules, `selector` is the source of truth; user edits keep `name` aligned to the selector so old class-name-only UI paths cannot add an extra dot.
 - Rule **id** is the stable internal identifier (`<nanoid>`).
 - Scoped rules (`scope: { type: 'node', nodeId, role: 'module-style' }`) are pinned to one node.
@@ -75,7 +75,7 @@ Class-kind rule **name** is the public class token. It is stored without the lea
 - No leading, trailing, or embedded ASCII whitespace
 - No control characters
 
-The selector itself is produced by `classKindSelector(name)`, which escapes the token for CSS when needed. Ambient rule **name** mirrors the ambient selector after user edits so older class-name-only surfaces cannot accidentally render an extra leading dot.
+New class selectors are produced by `classKindSelector(name)`, which escapes the token for CSS when needed. Imported class-bearing selectors preserve their original escaped selector; renaming rewrites the decoded class token in place. Ambient rule **name** mirrors the ambient selector after user edits so older class-name-only surfaces cannot accidentally render an extra leading dot.
 
 Rule **id** is internal (a nanoid). Refs from nodes (`classIds`) and from internal data structures use the id, not the name. This means renaming a rule doesn't break anything that references it.
 

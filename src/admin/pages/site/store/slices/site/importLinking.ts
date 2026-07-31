@@ -11,6 +11,25 @@ import { classKindSelector } from '@core/page-tree'
 import type { StyleRule } from '@core/page-tree'
 import type { NewStyleRule } from '@core/siteImport'
 
+export type StyleRuleOrderAllocator = () => number
+
+/**
+ * Allocate monotonically increasing cascade positions for one import
+ * transaction. The existing registry is scanned once; every subsequent rule
+ * append is O(1), even when a stylesheet contains tens of thousands of rules.
+ */
+export function createStyleRuleOrderAllocator(
+  rules: Record<string, StyleRule>,
+): StyleRuleOrderAllocator {
+  let nextOrder = 0
+  for (const rule of Object.values(rules)) {
+    if (typeof rule.order === 'number' && rule.order >= nextOrder) {
+      nextOrder = rule.order + 1
+    }
+  }
+  return () => nextOrder++
+}
+
 /**
  * Index a StyleRule registry by name → id.
  * First id wins on duplicates (createClass enforces name uniqueness, so
@@ -39,6 +58,7 @@ export function linkImportedClassNames(
   classNames: readonly string[] | undefined,
   rules: Record<string, StyleRule>,
   byName: Map<string, string>,
+  allocateOrder: StyleRuleOrderAllocator,
 ): string[] {
   if (!classNames?.length) return []
   const ids: string[] = []
@@ -48,19 +68,15 @@ export function linkImportedClassNames(
     if (!id) {
       const now = Date.now()
       // Auto-created classes are always kind:'class' — they exist to back the
-      // class-attribute tokens stamped onto imported nodes. Append at the
-      // end of the cascade (`order` strictly greater than every existing
-      // rule) so they don't accidentally outrank prior user-authored rules.
-      let maxOrder = -1
-      for (const c of Object.values(rules)) {
-        if (typeof c.order === 'number' && c.order > maxOrder) maxOrder = c.order
-      }
+      // class-attribute tokens stamped onto imported nodes. The shared
+      // transaction allocator keeps appends ordered without rescanning the
+      // growing registry for every unknown token.
       const cls: StyleRule = {
         id: nanoid(),
         name,
         kind: 'class',
         selector: classKindSelector(name),
-        order: maxOrder + 1,
+        order: allocateOrder(),
         styles: {},
         contextStyles: {},
         createdAt: now,
@@ -97,13 +113,12 @@ export function mergeImportedStyleRules(
   rules: readonly NewStyleRule[],
   siteRules: Record<string, StyleRule>,
   byName: Map<string, string>,
+  allocateOrder: StyleRuleOrderAllocator,
 ): void {
   if (rules.length === 0) return
 
-  let maxOrder = -1
   const ambientSelectors = new Set<string>()
   for (const r of Object.values(siteRules)) {
-    if (typeof r.order === 'number' && r.order > maxOrder) maxOrder = r.order
     if (r.kind === 'ambient') ambientSelectors.add(r.selector)
   }
 
@@ -119,7 +134,7 @@ export function mergeImportedStyleRules(
     const newRule: StyleRule = {
       ...rule,
       id,
-      order: (maxOrder += 1),
+      order: allocateOrder(),
       createdAt: now,
       updatedAt: now,
     }

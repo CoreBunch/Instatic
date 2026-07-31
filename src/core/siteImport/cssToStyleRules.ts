@@ -38,8 +38,13 @@
  */
 
 import type { StyleRuleKind, Condition, ConditionDef } from '@core/page-tree'
-import { conditionId, makeConditionDef } from '@core/page-tree'
-import { formatVariant } from '@core/fonts'
+import {
+  classKindSelector,
+  conditionId,
+  makeConditionDef,
+  selectorBindingClassName,
+  splitCssSelectorList,
+} from '@core/page-tree'
 import { processKeyframesRule } from './keyframesToStyleRule'
 import { encodeSubstitutionDeclarations } from '@core/css-substitution'
 import { matchMediaQueryToViewport } from './mediaQueryMatch'
@@ -49,6 +54,7 @@ import {
   sparsePriorities,
 } from './declarationCascade'
 import { parseStyleDeclarations } from './cssDeclarationReader'
+import { extractUrlPayloads, parseFontFaceRule } from './fontFaceParser'
 import type {
   ImportWarning,
   BreakpointHint,
@@ -125,20 +131,9 @@ function truncate(text: string, maxLen = 120): string {
   return `${text.slice(0, maxLen)}…`
 }
 
-/**
- * A single `.class-name` selector with no compound selectors, no combinators,
- * and no pseudo-classes/elements.
- *
- * Matches: `.foo`, `.btn-primary`, `.my_class`
- * Doesn't match: `.foo.bar`, `.foo .bar`, `h1`, `a:hover`, `[data-x]`, `.foo::after`
- */
-const SINGLE_CLASS_RE = /^\.[a-zA-Z_][\w-]*$/
-
 function classifySelector(selector: string): { kind: StyleRuleKind; name: string } {
-  if (SINGLE_CLASS_RE.test(selector)) {
-    // kind:'class' — selector is `.<name>`, name is the part after the dot
-    return { kind: 'class', name: selector.slice(1) }
-  }
+  const bindingClassName = selectorBindingClassName(selector)
+  if (bindingClassName) return { kind: 'class', name: bindingClassName }
   // kind:'ambient' — the selector text IS the display name
   return { kind: 'ambient', name: selector }
 }
@@ -156,23 +151,6 @@ function getSheetConstructor(): typeof CSSStyleSheet | null {
       : null
   if (w?.CSSStyleSheet) return w.CSSStyleSheet as typeof CSSStyleSheet
   return null
-}
-
-/**
- * Read all `url(...)` payloads from a CSS declaration value.
- * Handles single-quoted, double-quoted, and unquoted forms.
- * Handles multiple urls per value (e.g. `background: url(a) url(b)`).
- */
-function extractUrlPayloads(value: string): string[] {
-  const result: string[] = []
-  // Captures: group 1 = optional quote char, group 2 = url content (excl. quotes/parens)
-  const re = /url\(\s*(['"]?)([^'")\n]*)\1\s*\)/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(value)) !== null) {
-    const rawUrl = m[2].trim()
-    if (rawUrl) result.push(rawUrl)
-  }
-  return result
 }
 
 /**
@@ -310,7 +288,65 @@ export function cssToStyleRules(
     }
   }
 
+  normalizeParsedBindableClassRules(rules)
   return { rules, warnings, assetRefs, conditions: [...conditionsById.values()], fontFaces }
+}
+
+/**
+ * Keep one assignable registry rule per decoded class name within a source
+ * file. Prefer its canonical bare selector when present; preserve every other
+ * selector fragment as ambient CSS so state/vendor/structural variants retain
+ * source order and become dependency-tree-shakeable with that class.
+ */
+function normalizeParsedBindableClassRules(rules: NewStyleRule[]): void {
+  const primaryIndexByName = new Map<string, number>()
+  for (let index = 0; index < rules.length; index += 1) {
+    const rule = rules[index]
+    if (rule.kind !== 'class') continue
+    const primaryIndex = primaryIndexByName.get(rule.name)
+    if (primaryIndex === undefined) {
+      primaryIndexByName.set(rule.name, index)
+      continue
+    }
+
+    const primary = rules[primaryIndex]
+    const canonicalSelector = classKindSelector(rule.name)
+    if (
+      rule.selector === canonicalSelector
+      && primary.selector !== canonicalSelector
+    ) {
+      rules[primaryIndex] = {
+        ...primary,
+        kind: 'ambient',
+        name: primary.selector,
+      }
+      primaryIndexByName.set(rule.name, index)
+      continue
+    }
+
+    rules[index] = {
+      ...rule,
+      kind: 'ambient',
+      name: rule.selector,
+    }
+  }
+}
+
+/**
+ * Preserve class-free lists and lists sharing one binding as one CSS rule.
+ * Split only when alternatives have different binding ownership; that gives
+ * each picker class an independent registry entry without fragmenting resets.
+ */
+function selectorsForStorage(selectorList: string): string[] {
+  const parts = splitCssSelectorList(selectorList)
+  if (parts.length <= 1) return parts
+  const bindings = parts.map(selectorBindingClassName)
+  if (bindings.every((binding) => binding === null)) return [selectorList]
+  const first = bindings[0]
+  if (first !== null && bindings.every((binding) => binding === first)) {
+    return [selectorList]
+  }
+  return parts
 }
 
 // ---------------------------------------------------------------------------
@@ -437,45 +473,6 @@ function processTopLevelRule(
 }
 
 /**
- * Strip surrounding quotes from a parsed `font-family` descriptor value.
- * `"Acme Sans"` → `Acme Sans`; `Acme Sans` → `Acme Sans`.
- */
-function unquoteFamily(value: string): string {
-  const trimmed = value.trim()
-  if (
-    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-    (trimmed.startsWith("'") && trimmed.endsWith("'"))
-  ) {
-    return trimmed.slice(1, -1).trim()
-  }
-  return trimmed
-}
-
-/**
- * Map an `@font-face` `font-weight` + `font-style` descriptor pair to a
- * canonical variant tag ("400", "700italic", …).
- *
- * `font-weight` may be a keyword (`normal`/`bold`), a number, or a variable-font
- * range (`100 900`) — we take the first numeric token, defaulting to 400.
- * `font-style` counts as italic when it's `italic` or `oblique`.
- */
-function fontFaceVariant(decl: CSSStyleDeclaration): string {
-  const weightRaw = (decl.getPropertyValue('font-weight') || '').trim().toLowerCase()
-  const styleRaw = (decl.getPropertyValue('font-style') || '').trim().toLowerCase()
-
-  let weight = 400
-  if (weightRaw === 'bold') weight = 700
-  else if (weightRaw === 'normal' || weightRaw === '') weight = 400
-  else {
-    const firstNumber = weightRaw.match(/\d{2,3}/)
-    if (firstNumber) weight = Number(firstNumber[0])
-  }
-
-  const italic = styleRaw.startsWith('italic') || styleRaw.startsWith('oblique')
-  return formatVariant({ weight, italic })
-}
-
-/**
  * Capture one `@font-face` block:
  *   - record every `src: url(...)` payload as an assetRef so the binaries
  *     upload to the media library (synthetic ruleIndex, same as before), and
@@ -491,31 +488,19 @@ function collectFontFace(
   syntheticRuleIndex: number,
   fontFaces: ParsedFontFace[],
 ): void {
-  const decl = rule.style
-  if (!decl) return
-  const srcValue = decl.getPropertyValue('src')
-  if (!srcValue) return
+  const parsed = parseFontFaceRule(rule)
+  if (!parsed) return
 
   // Upload every referenced binary (existing behavior) so even an unmodellable
   // face leaves its files in the media library.
   collectAssetRefsFromDecls(
-    { src: srcValue } as unknown as Record<string, string>,
+    { src: parsed.srcValue },
     syntheticRuleIndex,
     undefined,
     assetRefs,
   )
 
-  const family = unquoteFamily(decl.getPropertyValue('font-family') || '')
-  const srcUrls = extractUrlPayloads(srcValue)
-  if (!family || srcUrls.length === 0) return
-
-  const unicodeRange = (decl.getPropertyValue('unicode-range') || '').trim()
-  fontFaces.push({
-    family,
-    variant: fontFaceVariant(decl),
-    srcUrls,
-    ...(unicodeRange ? { unicodeRange } : {}),
-  })
+  if (parsed.fontFace) fontFaces.push(parsed.fontFace)
 }
 
 // ---------------------------------------------------------------------------
@@ -530,10 +515,31 @@ function processBaseStyleRule(
   selectorToLastIndex: Map<string, number>,
   seenClassSelectors: Set<string>,
 ): void {
-  const selector = rule.selectorText.trim()
-  const classified = classifySelector(selector)
-  const declarations = parseStyleDeclarations(rule.style, selector, warnings)
+  const selectorList = rule.selectorText.trim()
+  const declarations = parseStyleDeclarations(rule.style, selectorList, warnings)
+  for (const selector of selectorsForStorage(selectorList)) {
+    processBaseSelector(
+      selector,
+      declarations,
+      rules,
+      warnings,
+      assetRefs,
+      selectorToLastIndex,
+      seenClassSelectors,
+    )
+  }
+}
 
+function processBaseSelector(
+  selector: string,
+  declarations: ReturnType<typeof parseStyleDeclarations>,
+  rules: NewStyleRule[],
+  warnings: ImportWarning[],
+  assetRefs: AssetRef[],
+  selectorToLastIndex: Map<string, number>,
+  seenClassSelectors: Set<string>,
+): void {
+  const classified = classifySelector(selector)
   if (classified.kind === 'class') {
     if (seenClassSelectors.has(selector)) {
       // Duplicate class: later-in-source wins. Update existing rule's styles.
@@ -660,29 +666,31 @@ function processConditionInner(
     if (inner.type !== STYLE_RULE_TYPE) continue
 
     const innerStyle = inner as CSSStyleRule
-    const selector = innerStyle.selectorText.trim()
-    const declarations = parseStyleDeclarations(innerStyle.style, selector, warnings)
+    const selectorList = innerStyle.selectorText.trim()
+    const declarations = parseStyleDeclarations(innerStyle.style, selectorList, warnings)
 
-    // Find or create the rule for this selector
-    let idx: number
-    if (selectorToLastIndex.has(selector)) {
-      idx = selectorToLastIndex.get(selector)!
-    } else {
-      const classified = classifySelector(selector)
-      idx = rules.length
-      rules.push({
-        name: classified.name,
-        kind: classified.kind,
-        selector,
-        order: idx,
-        styles: {},
-        contextStyles: {},
-      })
-      selectorToLastIndex.set(selector, idx)
-      if (classified.kind === 'class') seenClassSelectors.add(selector)
+    for (const selector of selectorsForStorage(selectorList)) {
+      // Find or create the rule for this selector
+      let idx: number
+      if (selectorToLastIndex.has(selector)) {
+        idx = selectorToLastIndex.get(selector)!
+      } else {
+        const classified = classifySelector(selector)
+        idx = rules.length
+        rules.push({
+          name: classified.name,
+          kind: classified.kind,
+          selector,
+          order: idx,
+          styles: {},
+          contextStyles: {},
+        })
+        selectorToLastIndex.set(selector, idx)
+        if (classified.kind === 'class') seenClassSelectors.add(selector)
+      }
+
+      mergeRuleContextDeclarations(rules[idx], contextId, declarations)
+      collectAssetRefsFromDecls(declarations.styles, idx, contextId, assetRefs)
     }
-
-    mergeRuleContextDeclarations(rules[idx], contextId, declarations)
-    collectAssetRefsFromDecls(declarations.styles, idx, contextId, assetRefs)
   }
 }
