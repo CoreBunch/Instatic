@@ -195,6 +195,39 @@ describe('SiteExplorerPanel', () => {
     expect(rows[0].getAttribute('draggable')).not.toBe('true')
   })
 
+  it('shows a server-built desktop preview when a page row is hovered', async () => {
+    const originalFetch = globalThis.fetch
+    const previewRequests: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+    globalThis.fetch = async (input, init) => {
+      previewRequests.push({ input, init })
+      return new Response(JSON.stringify({
+        html: '<!doctype html><html><body><main>Hover preview</main></body></html>',
+        assets: [],
+        runtimeAssets: { scripts: [] },
+        diagnostics: [],
+      }), { status: 200 })
+    }
+
+    try {
+      loadSite()
+      render(<SiteExplorerPanel sectionGroup="site" />)
+
+      fireEvent.mouseEnter(rowForButton(/open page home/i))
+      const preview = await screen.findByTestId('site-explorer-hover-preview')
+      const iframe = await screen.findByTestId('site-explorer-hover-preview-iframe')
+
+      expect(preview.textContent).not.toContain('Desktop · 1440 px')
+      expect(iframe.getAttribute('srcdoc')).toContain('Hover preview')
+      expect(previewRequests).toHaveLength(1)
+      expect(previewRequests[0]?.input).toBe('/admin/api/cms/runtime/preview')
+      expect(JSON.parse(String(previewRequests[0]?.init?.body))).toMatchObject({
+        pageId: 'page-home',
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   it('renders nested page and script paths as recursive folders', () => {
     loadSite()
     useEditorStore.setState((state) => {

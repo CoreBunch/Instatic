@@ -4,6 +4,7 @@ import type { SiteFile } from '@core/files/schemas'
 import type { ExplorerPathChangePlan, Page, SiteExplorerSectionId, StructuralSiteExplorerSectionId } from '@core/page-tree'
 import { createUniquePageSlug, pagePublicPath, isHomePage } from '@core/page-tree'
 import { templateTargetLabel } from '@core/templates'
+import { flattenVCToVirtualPage } from '@core/visualComponents'
 import { SkeletonBlock } from '@ui/components/Skeleton'
 import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
 import { FolderGlyphIcon } from 'pixel-art-icons/icons/folder-glyph'
@@ -536,6 +537,7 @@ export function SiteExplorerPanel({
         pinned: isHomePage(page),
         ariaLabel: `Open page ${page.title}`,
         target: { kind: 'page', id: page.id, title: page.title, slug: page.slug },
+        preview: { page, kindLabel: 'Page' },
       })),
     )
     : null
@@ -552,6 +554,7 @@ export function SiteExplorerPanel({
         active: page.id === activePageId && activeDocument?.kind !== 'visualComponent',
         ariaLabel: `Open template ${page.title}`,
         target: { kind: 'page', id: page.id, title: page.title, slug: page.slug },
+        preview: { page, kindLabel: 'Template' },
       })),
     )
     : null
@@ -568,6 +571,7 @@ export function SiteExplorerPanel({
         active: activeDocument?.kind === 'visualComponent' && activeDocument.vcId === component.id,
         ariaLabel: `Open component ${component.name}`,
         target: { kind: 'component', id: component.id, name: component.name },
+        preview: { page: flattenVCToVirtualPage(component), kindLabel: 'Component' },
       })),
     )
     : null
