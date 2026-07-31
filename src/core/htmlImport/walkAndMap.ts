@@ -34,6 +34,7 @@
  */
 
 import type { PageNode } from '@core/page-tree'
+import { warningsForNode, type ImportWarning } from './importWarnings'
 import { createNode } from '@core/page-tree'
 import { registry } from '@core/module-engine'
 import {
@@ -64,6 +65,16 @@ export interface ImportFragment {
   body?: ImportBodyAttributes
 }
 
+/**
+ * What the walk produces: the fragment plus any references it accepted
+ * structurally but could not resolve. Separate from `ImportFragment` because
+ * that is the shape callers hand BACK to the store (`insertImportedNodes`),
+ * and a diagnostic has no place in a structural contract.
+ */
+export interface WalkResult extends ImportFragment {
+  warnings: ImportWarning[]
+}
+
 interface ImportBodyAttributes {
   classIds?: string[]
   inlineStyles?: Record<string, string>
@@ -71,7 +82,7 @@ interface ImportBodyAttributes {
 }
 
 /** The result returned by the convenience entry point importHtml(). */
-export interface ImportResult extends ImportFragment {
+export interface ImportResult extends WalkResult {
   /** Counts of constructs stripped by stripUnsafe(). */
   stripped: StripReport
   /**
@@ -146,6 +157,12 @@ interface WalkContext {
    * collapsed the way normal HTML flow renders it.
    */
   preserveWs: boolean
+  /**
+   * Authored references the importer accepted structurally but cannot resolve
+   * — an unregistered loop source, say. Shared by reference across the whole
+   * walk so nested subtrees report into one list.
+   */
+  warnings: ImportWarning[]
 }
 
 /**
@@ -305,6 +322,7 @@ function processElement(el: Element, ctx: WalkContext): string {
   // from a well-formed baseline.
   const def = registry.getOrThrow(moduleId)
   const node = createNode(moduleId, { ...def.defaults, ...props })
+  ctx.warnings.push(...warningsForNode(node.id, moduleId, node.props))
 
   // Preserve element class *names* verbatim. This layer is registry-agnostic
   // (it has no SiteDocument), so it cannot mint real class ids here. The store
@@ -362,15 +380,15 @@ function processElement(el: Element, ctx: WalkContext): string {
 export function walkAndMap(
   doc: Document,
   inlineStyles: Map<Element, Record<string, string>> = new Map(),
-): ImportFragment {
-  const ctx: WalkContext = { nodes: {}, inlineStyles, preserveWs: false }
+): WalkResult {
+  const ctx: WalkContext = { nodes: {}, inlineStyles, preserveWs: false, warnings: [] }
 
-  if (!doc.body) return { nodes: ctx.nodes, rootIds: [] }
+  if (!doc.body) return { nodes: ctx.nodes, rootIds: [], warnings: [] }
 
   const rootIds = mapChildNodes(doc.body, ctx)
   const body = collectBodyAttributes(doc.body, inlineStyles)
 
-  return { nodes: ctx.nodes, rootIds, ...(body ? { body } : {}) }
+  return { nodes: ctx.nodes, rootIds, warnings: ctx.warnings, ...(body ? { body } : {}) }
 }
 
 /**
