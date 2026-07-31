@@ -154,6 +154,29 @@ describe('data CMS repository', () => {
   it('updates table identity, route, labels, and field settings', async () => {
     const nextFields = defaultFields.slice(0, 2)
     const db = makeDataFakeDb([
+      // updateDataTable reads the table first, so a patch cannot drop the
+      // mandatory `title`/`slug` of a post type by omitting them.
+      (sql) => {
+        if (!sql.startsWith('select id, name, slug, kind')) return undefined
+        return {
+          rows: [{
+            id: 'products',
+            name: 'Products',
+            slug: 'products',
+            kind: 'postType',
+            route_base: '/products',
+            singular_label: 'Product',
+            plural_label: 'Products',
+            primary_field_id: 'title',
+            fields_json: defaultFields,
+            created_by_user_id: null,
+            updated_by_user_id: null,
+            created_at: rowDate('2026-05-01T10:00:00Z'),
+            updated_at: rowDate('2026-05-01T10:00:00Z'),
+          }],
+          rowCount: 1,
+        }
+      },
       (sql, params) => {
         if (!sql.startsWith('update data_tables')) return undefined
         expect(params).toContain('Catalog')

@@ -17,6 +17,7 @@ import type { DbClient } from '../../db/client'
 import { countDataRows } from './rows/read'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { buildPostTypeDefaultFields, normalizeDataTableFields } from '@core/data/fields'
+import { POST_TYPE_MANDATORY_FIELD_IDS } from '@core/data/schemas'
 import type {
   DataField,
   DataTable,
@@ -201,6 +202,41 @@ function withPostTypeBuiltIns(kind: DataTableKind | undefined, fields: DataField
   return [...missing, ...fields]
 }
 
+/**
+ * The same invariant, held across a PATCH.
+ *
+ * `fields` is a whole-list replacement, and the natural way to add one custom
+ * field is to send the custom field list — which is exactly the payload that
+ * drops every built-in. Nothing downstream complains: the table saves, the
+ * rows keep their `slug` CELL, and then the next save of any row recomputes
+ * the routable slug through `slugForTable`, which returns '' for a table with
+ * no `slug` field. Every entry in the post type quietly loses its public route.
+ *
+ * Only `title` and `slug` are held. The other built-ins (body, featured media,
+ * the two SEO fields) are deliberately removable — the Data inspector offers
+ * them back under "missing optional built-ins" — and the field editor already
+ * marks the mandatory two undeletable client-side. This is the same rule
+ * enforced where it cannot be bypassed.
+ *
+ * A patch may still relabel or retype `title`/`slug`, and may reorder
+ * anything; it just cannot drop them by omission. The existing definition is
+ * preserved rather than reseeded from the defaults, so a legitimately
+ * customised `title` (relabelled "Recipe name") survives.
+ *
+ * Membership is decided by field ID, not by the `builtIn` flag: on create,
+ * "caller-supplied fields win on id collision" stores an overridden `title`
+ * WITHOUT the flag, and that title is still the one routing depends on.
+ */
+function keepPostTypeBuiltIns(existing: DataTable, next: DataField[]): DataField[] {
+  if (existing.kind !== 'postType') return next
+  const supplied = new Set(next.map((field) => field.id))
+  const dropped = existing.fields.filter(
+    (field) => (POST_TYPE_MANDATORY_FIELD_IDS as readonly string[]).includes(field.id)
+      && !supplied.has(field.id),
+  )
+  return dropped.length === 0 ? next : [...dropped, ...next]
+}
+
 export async function createDataTable(
   db: DbClient,
   input: CreateDataTableInput,
@@ -247,7 +283,12 @@ export async function updateDataTable(
   tableId: string,
   input: UpdateDataTableInput,
 ): Promise<DataTable | null> {
-  const fields = input.fields === undefined ? null : normalizeDataTableFields(input.fields)
+  let fields: DataField[] | null = null
+  if (input.fields !== undefined) {
+    const existing = await getDataTable(db, tableId)
+    if (!existing) return null
+    fields = keepPostTypeBuiltIns(existing, normalizeDataTableFields(input.fields))
+  }
   const routeBase = input.routeBase === undefined ? null : normalizeRouteBase(input.routeBase)
   const { rows } = await db<DataTableRow>`
     update data_tables
@@ -280,7 +321,9 @@ export async function insertDataTableIfAbsent(
   db: DbClient,
   input: CreateDataTableInput,
 ): Promise<boolean> {
-  const fields = normalizeDataTableFields(input.fields ?? [])
+  // Same seeding as createDataTable: `merge-add` / `merge-overwrite` is an
+  // import, and an imported post type has to be routable too.
+  const fields = withPostTypeBuiltIns(input.kind, normalizeDataTableFields(input.fields ?? []))
   const { rows } = await db<{ id: string }>`
     insert into data_tables (
       id,

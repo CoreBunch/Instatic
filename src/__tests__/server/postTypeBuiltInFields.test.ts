@@ -6,6 +6,13 @@
  * data API, an MCP connector, or an import used to arrive without them, and
  * `slugForTable` returns an empty slug for a table with no `slug` field — so
  * every entry in that post type was published with no public route.
+ *
+ * The same hole existed on UPDATE, where it is worse: `fields` is a
+ * whole-list replacement, so adding one custom field by PATCHing the custom
+ * field list silently deleted every built-in. The table saved, the rows kept
+ * their `slug` cell, and the next save of any row recomputed the routable
+ * slug as '' — turning live entry routes into redirects with no error
+ * anywhere.
  */
 import { describe, expect, it } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -15,9 +22,13 @@ import { createSqliteClient } from '../../../server/db/sqlite'
 import { runMigrations } from '../../../server/db/runMigrations'
 import { sqliteMigrations } from '../../../server/db/migrations-sqlite'
 import type { DbClient } from '../../../server/db/client'
-import { createDataTable } from '../../../server/repositories/data'
+import { createDataTable, getDataTable, updateDataTable } from '../../../server/repositories/data'
+import { insertDataTableIfAbsent } from '../../../server/repositories/data/tables'
 import { slugForTable } from '@core/data/cells'
-import { POST_TYPE_MANDATORY_FIELD_IDS } from '@core/data/schemas'
+import {
+  POST_TYPE_MANDATORY_FIELD_IDS,
+  POST_TYPE_OPTIONAL_BUILTIN_FIELD_IDS,
+} from '@core/data/schemas'
 
 async function setupDb(): Promise<{ db: DbClient; cleanup: () => Promise<void> }> {
   const dir = await mkdtemp(join(tmpdir(), 'instatic-posttype-'))
@@ -91,6 +102,28 @@ describe('createDataTable — post-type built-in fields', () => {
     }
   })
 
+  it('seeds the built-in fields on the import path too', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      const inserted = await insertDataTableIfAbsent(db, {
+        id: 'tbl-imported',
+        name: 'Recipes',
+        slug: 'recipes',
+        kind: 'postType',
+        routeBase: '/recipes',
+        singularLabel: 'Recipe',
+        pluralLabel: 'Recipes',
+        fields: [{ type: 'text', id: 'crop', label: 'Crop' }],
+      })
+      expect(inserted).toBe(true)
+      const table = await getDataTable(db, 'tbl-imported')
+      expect(table!.fields.map((field) => field.id)).toContain('slug')
+      expect(slugForTable(table!, { slug: 'tomato' })).toBe('tomato')
+    } finally {
+      await cleanup()
+    }
+  })
+
   it('leaves ordinary data tables untouched', async () => {
     const { db, cleanup } = await setupDb()
     try {
@@ -105,6 +138,148 @@ describe('createDataTable — post-type built-in fields', () => {
       expect(table.fields.map((field) => field.id)).toEqual(['chamberCode'])
       // A reusable table is deliberately non-routable.
       expect(slugForTable(table, { chamberCode: 'K1' })).toBe('')
+    } finally {
+      await cleanup()
+    }
+  })
+})
+
+describe('updateDataTable — post-type built-in fields survive a PATCH', () => {
+  /** Create the shape the bug needs: a post type with built-ins plus customs. */
+  async function seedRecipes(db: DbClient) {
+    return createDataTable(db, {
+      name: 'Recipes',
+      slug: 'recipes',
+      kind: 'postType',
+      routeBase: '/recipes',
+      singularLabel: 'Recipe',
+      pluralLabel: 'Recipes',
+      fields: [{ type: 'text', id: 'crop', label: 'Crop' }],
+    })
+  }
+
+  it('keeps the built-ins when a patch sends only the custom fields', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      const table = await seedRecipes(db)
+      // Adding one custom field. This is the natural payload, and it used to
+      // delete every built-in, `slug` included.
+      const updated = await updateDataTable(db, table.id, {
+        fields: [
+          { type: 'text', id: 'crop', label: 'Crop' },
+          { type: 'text', id: 'yield', label: 'Yield' },
+        ],
+      })
+
+      const ids = updated!.fields.map((field) => field.id)
+      for (const required of POST_TYPE_MANDATORY_FIELD_IDS) {
+        expect(ids).toContain(required)
+      }
+      expect(ids).toContain('crop')
+      expect(ids).toContain('yield')
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('leaves entries routable after such a patch', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      const table = await seedRecipes(db)
+      const updated = await updateDataTable(db, table.id, {
+        fields: [{ type: 'text', id: 'crop', label: 'Crop' }],
+      })
+      // The actual damage: with no `slug` field this returns '', and every
+      // published entry in the post type loses its public route on next save.
+      expect(slugForTable(updated!, { title: 'Tomato', slug: 'tomato' })).toBe('tomato')
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('preserves a customised built-in rather than reseeding the default', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      const table = await createDataTable(db, {
+        name: 'Recipes',
+        slug: 'recipes',
+        kind: 'postType',
+        singularLabel: 'Recipe',
+        pluralLabel: 'Recipes',
+        fields: [{ type: 'text', id: 'title', label: 'Recipe name' }],
+      })
+      const updated = await updateDataTable(db, table.id, {
+        fields: [{ type: 'text', id: 'crop', label: 'Crop' }],
+      })
+      const title = updated!.fields.filter((field) => field.id === 'title')
+      expect(title).toHaveLength(1)
+      expect(title[0]!.label).toBe('Recipe name')
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('still lets a patch relabel a built-in it does send', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      const table = await seedRecipes(db)
+      const updated = await updateDataTable(db, table.id, {
+        fields: [
+          { type: 'text', id: 'slug', label: 'Web address', required: true, builtIn: true },
+          { type: 'text', id: 'crop', label: 'Crop' },
+        ],
+      })
+      const slug = updated!.fields.filter((field) => field.id === 'slug')
+      expect(slug).toHaveLength(1)
+      expect(slug[0]!.label).toBe('Web address')
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('lets a patch drop an OPTIONAL built-in, which the Data inspector offers back', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      const table = await seedRecipes(db)
+      const updated = await updateDataTable(db, table.id, {
+        fields: [{ type: 'text', id: 'crop', label: 'Crop' }],
+      })
+      const ids = updated!.fields.map((field) => field.id)
+      for (const optional of POST_TYPE_OPTIONAL_BUILTIN_FIELD_IDS) {
+        expect(ids).not.toContain(optional)
+      }
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('lets a patch drop a CUSTOM field', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      const table = await seedRecipes(db)
+      const updated = await updateDataTable(db, table.id, { fields: [] })
+      expect(updated!.fields.map((field) => field.id)).not.toContain('crop')
+      expect(updated!.fields.map((field) => field.id)).toContain('slug')
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('does not touch the fields of an ordinary data table', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      const table = await createDataTable(db, {
+        name: 'Chambers',
+        slug: 'chambers',
+        kind: 'data',
+        singularLabel: 'Chamber',
+        pluralLabel: 'Chambers',
+        fields: [{ type: 'text', id: 'chamberCode', label: 'Chamber' }],
+      })
+      const updated = await updateDataTable(db, table.id, {
+        fields: [{ type: 'text', id: 'rack', label: 'Rack' }],
+      })
+      expect(updated!.fields.map((field) => field.id)).toEqual(['rack'])
     } finally {
       await cleanup()
     }
