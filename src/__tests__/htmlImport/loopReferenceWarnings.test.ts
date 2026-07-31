@@ -63,3 +63,56 @@ describe('loop reference warnings', () => {
     expect(result.warnings).toHaveLength(2)
   })
 })
+
+/**
+ * A loop authored inside a table is destroyed by HTML parsing, not by us.
+ *
+ * `<tbody>` may only contain `<tr>`; a custom element there is foster-parented
+ * out to before the `<table>` AND stripped of its children, which stay behind
+ * in the tbody. Both halves survive as valid nodes — an empty loop that can
+ * never render, and an orphan row whose bindings resolve to blank cells — so
+ * `site_insert_html` reported success and the published table carried exactly
+ * one empty row. Found building template pack 023, where six data tables
+ * published as six blank rows and passed every other gate.
+ */
+describe('a loop the HTML parser moved out of a table', () => {
+  const IN_TBODY = `<table><thead><tr><th>Week</th></tr></thead><tbody>
+    <instatic-loop data-source-id="data.rows" data-table-id="waste">
+      <tr><td>{currentEntry.week}</td></tr>
+    </instatic-loop>
+  </tbody></table>`
+
+  it('warns that the loop has no rows to render', () => {
+    const result = importHtml(IN_TBODY)
+
+    const empty = result.warnings.filter((w) => w.kind === 'loop-empty')
+    expect(empty).toHaveLength(1)
+    expect(empty[0]?.message).toContain('<tbody>')
+  })
+
+  it('warns even though the source id and table id are both perfectly valid', () => {
+    // This is the whole point: every existing check passes on this markup.
+    const result = importHtml(IN_TBODY)
+
+    expect(result.warnings.some((w) => w.kind === 'unknown-loop-source')).toBe(false)
+    expect(result.warnings.some((w) => w.kind === 'loop-missing-filter')).toBe(false)
+    expect(result.warnings.some((w) => w.kind === 'loop-empty')).toBe(true)
+  })
+
+  it('warns on any childless loop, whatever emptied it', () => {
+    expect(
+      importHtml('<instatic-loop data-source-id="data.rows" data-table-id="posts"></instatic-loop>')
+        .warnings.some((w) => w.kind === 'loop-empty'),
+    ).toBe(true)
+  })
+
+  it('stays silent when the loop wraps the whole table instead', () => {
+    const result = importHtml(
+      '<instatic-loop data-source-id="data.rows" data-table-id="waste">'
+      + '<table><tbody><tr><td>{currentEntry.week}</td></tr></tbody></table>'
+      + '</instatic-loop>',
+    )
+
+    expect(result.warnings).toEqual([])
+  })
+})

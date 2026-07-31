@@ -19,24 +19,50 @@
 import { loopSourceRegistry } from '@core/loops/registry'
 
 export interface ImportWarning {
-  kind: 'unknown-loop-source' | 'loop-missing-filter'
+  kind: 'unknown-loop-source' | 'loop-missing-filter' | 'loop-empty'
   /** Node the warning is about, so a caller can point at it. */
   nodeId: string
   message: string
 }
 
 /**
- * Warnings for one produced node. Returns an empty array for anything that is
- * not a loop, or when no sources are registered at all — an empty registry
- * means the host simply has not imported them, and warning on every loop then
- * would be noise, not signal.
+ * Warnings for one produced node, checked after its children are mapped so the
+ * child count is known. Returns an empty array for anything that is not a
+ * loop, or when no sources are registered at all — an empty registry means the
+ * host simply has not imported them, and warning on every loop then would be
+ * noise, not signal.
  */
 export function warningsForNode(
   nodeId: string,
   moduleId: string,
   props: Record<string, unknown>,
+  childCount: number,
 ): ImportWarning[] {
   if (moduleId !== 'base.loop') return []
+
+  // A loop with nothing inside it has no row template and can never render,
+  // whatever its source says. The overwhelmingly common cause is authoring the
+  // loop inside a table: HTML parsing does not allow a custom element between
+  // <tbody> and <tr>, so it foster-parents the loop out to before the table
+  // AND leaves its <tr> children behind. Both halves survive as valid nodes —
+  // an empty loop that renders nothing, and an orphan row whose bindings
+  // resolve to blank cells — so the insert succeeds, the document persists,
+  // and the published table carries exactly one empty row.
+  //
+  // Checked before the registry guard: this one holds regardless of whether
+  // any loop sources are registered.
+  if (childCount === 0) {
+    return [{
+      kind: 'loop-empty',
+      nodeId,
+      message:
+        'Loop has no children, so it will render nothing — a loop needs the markup for '
+        + 'one row inside it. If you authored this loop inside a <table>, <tbody> or '
+        + '<tr>, HTML parsing moved it out of the table and left its rows behind. Put '
+        + 'the loop around the whole <table>, or render the rows as a list instead.',
+    }]
+  }
+
   if (loopSourceRegistry.size === 0) return []
 
   const sourceId = typeof props.sourceId === 'string' ? props.sourceId.trim() : ''
