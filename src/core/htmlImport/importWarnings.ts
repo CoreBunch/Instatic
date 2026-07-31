@@ -19,7 +19,7 @@
 import { loopSourceRegistry } from '@core/loops/registry'
 
 export interface ImportWarning {
-  kind: 'unknown-loop-source' | 'loop-missing-filter' | 'loop-empty'
+  kind: 'unknown-loop-source' | 'loop-missing-filter' | 'loop-empty' | 'loop-unknown-order-by'
   /** Node the warning is about, so a caller can point at it. */
   nodeId: string
   message: string
@@ -104,6 +104,24 @@ export function warningsForNode(
       message:
         `Loop source "${sourceId}" needs ${missing.map((k) => `data-${kebab(k)}`).join(', ')} `
         + 'and will render nothing without it.',
+    }]
+  }
+
+  // A sort key is a column, not a cell. `data-order-by` accepts any string,
+  // silently falls back to the source default when it is not one of the
+  // declared options, and publishes a plausible-looking order that is not the
+  // one asked for — which reads as a content mistake rather than a wiring one.
+  const orderBy = typeof props.orderBy === 'string' ? props.orderBy.trim() : ''
+  const allowed = source.orderByOptions.map((option) => option.id)
+  if (orderBy && !allowed.includes(orderBy)) {
+    return [{
+      kind: 'loop-unknown-order-by',
+      nodeId,
+      message:
+        `Loop data-order-by "${orderBy}" is not a sort key for source "${sourceId}", so the `
+        + `rows will fall back to the source default. Valid values: ${allowed.join(', ')}. `
+        + 'A field you defined on the table is not one of them — to control the order, '
+        + 'create the rows in the order they should read.',
     }]
   }
 

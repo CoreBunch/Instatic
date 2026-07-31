@@ -116,3 +116,41 @@ describe('a loop the HTML parser moved out of a table', () => {
     expect(result.warnings).toEqual([])
   })
 })
+
+/**
+ * A sort key is a column, not a cell.
+ *
+ * `data-order-by` accepts any string and `fetchPublishedDataRowItems` narrows
+ * it against a four-value whitelist, falling back to the source default on a
+ * miss. So `data-order-by="sortHour"` — a real, populated field on the table —
+ * imports cleanly, publishes, and produces an order that is not the one asked
+ * for. Found in pack 023, where a night published as 22:00, 00:30, 23:00 and
+ * looked like a typo in the content rather than a loop that never sorted.
+ */
+describe('a loop ordered by something that is not a sort key', () => {
+  it('warns and lists the values that do work', () => {
+    const result = importHtml(
+      '<instatic-loop data-source-id="data.rows" data-table-id="breads" data-order-by="sortHour">'
+      + '<p>x</p></instatic-loop>',
+    )
+
+    const bad = result.warnings.filter((w) => w.kind === 'loop-unknown-order-by')
+    expect(bad).toHaveLength(1)
+    expect(bad[0]?.message).toContain('"sortHour"')
+    expect(bad[0]?.message).toContain('publishedAt')
+  })
+
+  it('stays silent on every value the source declares', () => {
+    for (const key of ['publishedAt', 'createdAt', 'updatedAt', 'slug']) {
+      const result = importHtml(
+        `<instatic-loop data-source-id="data.rows" data-table-id="breads" data-order-by="${key}">`
+        + '<p>x</p></instatic-loop>',
+      )
+      expect(result.warnings).toEqual([])
+    }
+  })
+
+  it('stays silent when no order is asked for', () => {
+    expect(importHtml(VALID).warnings).toEqual([])
+  })
+})
