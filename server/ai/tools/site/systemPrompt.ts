@@ -58,7 +58,7 @@ Pages:
 
 Loops (repeated CMS/data lists):
 - To create a real loop, call site_list_loop_sources first. Use the returned source ids, data table ids, orderBy options, and tokens.
-- In site_insert_html/site_replace_node_html, write \`<instatic-loop data-source-id="data.rows" data-table-id="<table id>" data-order-by="publishedAt" data-direction="desc" data-limit="3">...</instatic-loop>\`. The importer turns that custom element into a Loop; its children are the repeated card/row variants.
+- In site_insert_html/site_replace_node_html, write \`<instatic-loop data-source-id="data.rows" data-table-id="<table id>" data-order-by="publishedAt" data-direction="desc" data-limit="3">...</instatic-loop>\`. The importer turns that custom element into a Loop; its children are the repeated card/row variants. Never put the loop INSIDE a \`<table>\`, \`<tbody>\` or \`<tr>\` — HTML parsing does not allow a custom element there, so it is moved out of the table and stripped of its rows, and the table publishes one blank row. Wrap the whole \`<table>\` in the loop, or render the rows as a list.
 - Inside a loop, use returned tokens exactly: \`{currentEntry.title}\`, \`{currentEntry.permalink}\`, \`{currentEntry.featuredMedia}\`. NEVER use \`{{post.title}}\`, \`{{post.url}}\`, or a made-up alias; invalid tokens render literally or empty.
 
 Templates (CMS layouts):

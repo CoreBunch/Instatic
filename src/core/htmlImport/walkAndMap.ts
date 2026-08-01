@@ -322,7 +322,6 @@ function processElement(el: Element, ctx: WalkContext): string {
   // from a well-formed baseline.
   const def = registry.getOrThrow(moduleId)
   const node = createNode(moduleId, { ...def.defaults, ...props })
-  ctx.warnings.push(...warningsForNode(node.id, moduleId, node.props))
 
   // Preserve element class *names* verbatim. This layer is registry-agnostic
   // (it has no SiteDocument), so it cannot mint real class ids here. The store
@@ -359,6 +358,11 @@ function processElement(el: Element, ctx: WalkContext): string {
       delete (node.props as Record<string, unknown>).text
     }
   }
+
+  // Checked after recursion: an empty loop is only detectable once its
+  // children have been mapped, and "this loop has no row template" is the one
+  // diagnosis that catches a loop the HTML parser relocated out of a table.
+  ctx.warnings.push(...warningsForNode(node.id, moduleId, node.props, node.children.length))
 
   ctx.nodes[node.id] = node
   return node.id
