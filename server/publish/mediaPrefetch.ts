@@ -86,10 +86,10 @@ export async function prefetchMediaAssets(
 ): Promise<MediaAssetMap> {
   const map = new Map<string, MediaAsset>()
   const paths = collectMediaPaths(page, site, registry)
-  const entryReferences = collectEntryArrayReferences(options)
+  const entryReferences = collectEntryMediaReferences(options)
   if (paths.size === 0 && entryReferences.size === 0) return map
 
-  // `collectMediaPaths` and `collectEntryArrayReferences` both return Sets,
+  // `collectMediaPaths` and `collectEntryMediaReferences` both return Sets,
   // so the lookup values are unique. Entry references are queried against
   // both `id` and `public_path`: multi-media cells store ids, while plugin or
   // imported entry arrays may already carry public paths.
@@ -147,11 +147,37 @@ export async function prefetchMediaAssets(
   return materializeAssetMapForClient(map)
 }
 
-function collectEntryArrayReferences(options: MediaPrefetchOptions): Set<string> {
+/**
+ * Media references carried by the ENTRY data rather than by a node prop.
+ *
+ * A bound image (`<img src="{currentEntry.featuredMedia}">`) stores the
+ * binding token in its prop, so `collectMediaPaths` — which only recognises a
+ * literal `/uploads/...` — never sees it. The path lives in the entry's
+ * fields, and it has to be collected from there or the asset is never
+ * fetched.
+ *
+ * Two shapes qualify, and nothing else:
+ *
+ *   - any string inside an ARRAY — a multi-media cell, every element of which
+ *     is a reference (an id, or already a public path);
+ *   - a SCALAR string that is an upload path — `featuredMedia` and
+ *     `featuredMediaPath` carry the resolved `/uploads/...` URL.
+ *
+ * The scalar case is deliberately narrow. Collecting every scalar string
+ * would drag an entry's whole prose surface into the IN-list; requiring the
+ * `/uploads/` prefix picks out exactly the resolved media cells.
+ *
+ * Missing this case is not cosmetic. Without the asset the image module has
+ * no library record to read, and since alt text comes exclusively from the
+ * library, every bound image published with an EMPTY alt — plus no srcset and
+ * no intrinsic width/height. That is the ordinary CMS pattern: one image per
+ * entry, on every entry route and in every loop row.
+ */
+function collectEntryMediaReferences(options: MediaPrefetchOptions): Set<string> {
   const references = new Set<string>()
   const visit = (value: unknown, insideArray: boolean): void => {
     if (typeof value === 'string') {
-      if (insideArray && value) references.add(value)
+      if (value && (insideArray || value.startsWith('/uploads/'))) references.add(value)
       return
     }
     if (Array.isArray(value)) {
