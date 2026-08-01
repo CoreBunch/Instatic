@@ -44,7 +44,10 @@ export function loopFieldMatchesControl(
     case 'textarea':
       return field.format !== 'media' && field.format !== 'html'
     case 'url':
-      return field.format === 'url' || field.format === 'media'
+      // Same reasoning as BINDING_COMPATIBILITY.url: token insertion builds the
+      // href as a string, so plain-text synthetics (`slug`, `publishedAt`, …)
+      // are valid path segments. Only html is excluded.
+      return field.format !== 'html'
     case 'number':
     case 'toggle':
     case 'color':

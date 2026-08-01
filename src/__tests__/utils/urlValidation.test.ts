@@ -60,17 +60,48 @@ describe('isValidUrl', () => {
     })
   })
 
+  describe('relative references', () => {
+    it('accepts a root-relative path', () => {
+      expect(isValidUrl('/relative/path')).toBe(true)
+    })
+
+    it('accepts document-relative paths', () => {
+      expect(isValidUrl('./sibling.html')).toBe(true)
+      expect(isValidUrl('../parent/page')).toBe(true)
+      expect(isValidUrl('page.html')).toBe(true)
+    })
+
+    it('accepts in-page anchors and query-only references', () => {
+      expect(isValidUrl('#section')).toBe(true)
+      expect(isValidUrl('?q=1')).toBe(true)
+    })
+
+    it('accepts protocol-relative URLs', () => {
+      expect(isValidUrl('//example.com')).toBe(true)
+    })
+  })
+
+  describe('data tokens', () => {
+    it('accepts a bare token', () => {
+      expect(isValidUrl('{currentEntry.permalink}')).toBe(true)
+    })
+
+    it('accepts a token composed into a relative path', () => {
+      expect(isValidUrl('/blog/{currentEntry.slug}')).toBe(true)
+    })
+
+    it('accepts a token composed into an absolute URL', () => {
+      expect(isValidUrl('https://example.com/{currentEntry.slug}')).toBe(true)
+    })
+  })
+
   describe('malformed input', () => {
-    it('rejects plain text without protocol', () => {
+    it('rejects plain text containing spaces', () => {
       expect(isValidUrl('not a url')).toBe(false)
     })
 
-    it('rejects relative paths', () => {
-      expect(isValidUrl('/relative/path')).toBe(false)
-    })
-
-    it('rejects protocol-relative URLs', () => {
-      expect(isValidUrl('//example.com')).toBe(false)
+    it('rejects a relative path containing whitespace', () => {
+      expect(isValidUrl('/relative/pa th')).toBe(false)
     })
   })
 })
@@ -175,6 +206,12 @@ describe('isValidImageUrl', () => {
       const url = 'data:image/png;base64,abc='
       expect(isValidUrl(url)).toBe(false)
       expect(isValidImageUrl(url)).toBe(true)
+    })
+
+    it('relative references are valid for isValidUrl but not isValidImageUrl', () => {
+      const url = '/images/photo.png'
+      expect(isValidUrl(url)).toBe(true)
+      expect(isValidImageUrl(url)).toBe(false)
     })
   })
 })
