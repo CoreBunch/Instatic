@@ -237,6 +237,27 @@ describe('updateDataTable — post-type built-in fields survive a PATCH', () => 
     }
   })
 
+  it('restores title/slug on a table an earlier patch already stripped', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      const table = await seedRecipes(db)
+      // Simulate the damage this bug shipped: a table already missing them.
+      await db`update data_tables set fields_json = ${[{ type: 'text', id: 'crop', label: 'Crop' }]} where id = ${table.id}`
+      const damaged = await getDataTable(db, table.id)
+      expect(damaged!.fields.map((field) => field.id)).not.toContain('slug')
+
+      const repaired = await updateDataTable(db, table.id, {
+        fields: [{ type: 'text', id: 'crop', label: 'Crop' }],
+      })
+      for (const required of POST_TYPE_MANDATORY_FIELD_IDS) {
+        expect(repaired!.fields.map((field) => field.id)).toContain(required)
+      }
+      expect(slugForTable(repaired!, { slug: 'tomato' })).toBe('tomato')
+    } finally {
+      await cleanup()
+    }
+  })
+
   it('lets a patch drop an OPTIONAL built-in, which the Data inspector offers back', async () => {
     const { db, cleanup } = await setupDb()
     try {

@@ -230,11 +230,21 @@ function withPostTypeBuiltIns(kind: DataTableKind | undefined, fields: DataField
 function keepPostTypeBuiltIns(existing: DataTable, next: DataField[]): DataField[] {
   if (existing.kind !== 'postType') return next
   const supplied = new Set(next.map((field) => field.id))
-  const dropped = existing.fields.filter(
-    (field) => (POST_TYPE_MANDATORY_FIELD_IDS as readonly string[]).includes(field.id)
-      && !supplied.has(field.id),
-  )
-  return dropped.length === 0 ? next : [...dropped, ...next]
+  const current = new Map(existing.fields.map((field) => [field.id, field]))
+  const canonical = new Map(buildPostTypeDefaultFields().map((field) => [field.id, field]))
+
+  const held: DataField[] = []
+  for (const id of POST_TYPE_MANDATORY_FIELD_IDS) {
+    if (supplied.has(id)) continue
+    // Prefer the stored definition; fall back to the canonical default when
+    // the field is absent altogether. That second case REPAIRS a table an
+    // earlier patch already stripped — a post type with no `slug` field is
+    // never a state anyone chose, so the next patch puts it back rather than
+    // faithfully preserving the damage.
+    const field = current.get(id) ?? canonical.get(id)
+    if (field) held.push(field)
+  }
+  return held.length === 0 ? next : [...held, ...next]
 }
 
 export async function createDataTable(
