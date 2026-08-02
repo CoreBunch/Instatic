@@ -3,7 +3,13 @@ import { createSqliteClient } from '../../../db/sqlite'
 import { sqliteMigrations } from '../../../db/migrations-sqlite'
 import { runMigrations } from '../../../db/runMigrations'
 import type { DbClient } from '../../../db/client'
-import { createDataTable, getDataTable, listDataTables } from '../tables'
+import {
+  createDataTable,
+  getDataTable,
+  insertDataTableIfAbsent,
+  listDataTables,
+  updateDataTable,
+} from '../tables'
 
 async function freshDb(): Promise<DbClient> {
   const db = createSqliteClient(':memory:')
@@ -55,5 +61,84 @@ describe('data_tables.system column', () => {
     const tables = await listDataTables(db)
     const systemSlugs = tables.filter((t) => t.system).map((t) => t.slug).sort()
     expect(systemSlugs).toEqual(['components', 'layouts', 'pages', 'posts'])
+  })
+})
+
+describe('data_tables.route_base persistence', () => {
+  let db: DbClient
+
+  beforeEach(async () => {
+    db = await freshDb()
+  })
+
+  it('preserves an explicitly blank route base on create and read', async () => {
+    const table = await createDataTable(db, {
+      name: 'Fee lines',
+      slug: 'fee-lines',
+      kind: 'data',
+      routeBase: '',
+      singularLabel: 'Fee line',
+      pluralLabel: 'Fee lines',
+    })
+
+    expect(table.routeBase).toBe('')
+    expect((await getDataTable(db, table.id))?.routeBase).toBe('')
+
+    const { rows } = await db<{ route_base: string }>`
+      select route_base from data_tables where id = ${table.id}
+    `
+    expect(rows[0]?.route_base).toBe('')
+  })
+
+  it('uses the slug fallback only when routeBase is omitted', async () => {
+    const fallback = await createDataTable(db, {
+      name: 'Work orders',
+      slug: 'work-orders',
+      kind: 'data',
+      singularLabel: 'Work order',
+      pluralLabel: 'Work orders',
+    })
+    const explicit = await createDataTable(db, {
+      name: 'Bench notes',
+      slug: 'bench-notes',
+      kind: 'data',
+      routeBase: '  /notes/  ',
+      singularLabel: 'Bench note',
+      pluralLabel: 'Bench notes',
+    })
+
+    expect(fallback.routeBase).toBe('/work-orders')
+    expect(explicit.routeBase).toBe('/notes')
+  })
+
+  it('preserves an explicitly blank route base on update', async () => {
+    const table = await createDataTable(db, {
+      name: 'Questions',
+      slug: 'questions',
+      kind: 'data',
+      routeBase: '/questions',
+      singularLabel: 'Question',
+      pluralLabel: 'Questions',
+    })
+
+    const updated = await updateDataTable(db, table.id, { routeBase: '   ' })
+
+    expect(updated?.routeBase).toBe('')
+    expect((await getDataTable(db, table.id))?.routeBase).toBe('')
+  })
+
+  it('preserves an explicitly blank route base on the import insertion path', async () => {
+    const inserted = await insertDataTableIfAbsent(db, {
+      id: 'imported-custody-stages',
+      name: 'Custody stages',
+      slug: 'custody-stages',
+      kind: 'data',
+      routeBase: '',
+      singularLabel: 'Custody stage',
+      pluralLabel: 'Custody stages',
+    })
+
+    expect(inserted).toBe(true)
+    expect((await getDataTable(db, 'imported-custody-stages'))?.routeBase).toBe('')
   })
 })

@@ -39,7 +39,6 @@ import {
 import { normalizeDataTableFields } from '@core/data/fields'
 import { slugForTable } from '@core/data/cells'
 import { slugFromTitle } from '@core/utils/slug'
-import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { fetchPublishedDataRowItems } from '@core/loops/sources/dataRows'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../../http'
 import { CMS_API_PREFIX, requestAuditContext } from '../shared'
@@ -86,7 +85,7 @@ function buildTablePatch(
     update.slug = slug
   }
   if (body.routeBase !== undefined) {
-    update.routeBase = normalizeRouteBase(body.routeBase.trim())
+    update.routeBase = body.routeBase
   }
   if (body.singularLabel !== undefined) {
     if (!body.singularLabel.trim()) return { error: 'Singular label is required' }
@@ -210,13 +209,12 @@ async function handleTablesCollection(req: Request, db: DbClient): Promise<Respo
     const singularLabel = body.singularLabel?.trim() || name.replace(/s$/i, '') || name
     const pluralLabel = body.pluralLabel?.trim() || name
     const slug = slugFromTitle(body.slug?.trim() || pluralLabel)
-    const routeBase = normalizeRouteBase(body.routeBase?.trim() || slug)
 
     const table = await createDataTable(db, {
       name,
       slug,
       kind: body.kind === 'postType' ? 'postType' : 'data',
-      routeBase,
+      routeBase: body.routeBase,
       singularLabel,
       pluralLabel,
       primaryFieldId: body.primaryFieldId?.trim() || undefined,
