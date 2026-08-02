@@ -45,7 +45,8 @@ export type ModelCatalogue = Map<string, ModelCatalogueEntry>
  * OpenRouter slug (prefixed and dotted, e.g. `anthropic/claude-opus-4.8`)
  * collapse to the same key (`claude-opus-4-8`).
  *
- *   - drop a leading `anthropic/` | `openai/` | `openrouter/` provider prefix
+ *   - drop a leading `anthropic/` | `openai/` | `openrouter/` | `orcarouter/`
+ *     provider prefix
  *   - strip a trailing date suffix (`-YYYY-MM-DD` or `-YYYYMMDD`)
  *   - fold dots to dashes (OpenRouter writes `4.8`, providers write `4-8`)
  *
@@ -56,7 +57,7 @@ export type ModelCatalogue = Map<string, ModelCatalogueEntry>
 export function pricingKey(modelId: string): string {
   return modelId
     .toLowerCase()
-    .replace(/^(anthropic|openai|openrouter)\//, '')
+    .replace(/^(anthropic|openai|openrouter|orcarouter)\//, '')
     .replace(/-\d{4}-\d{2}-\d{2}$/, '')
     .replace(/-\d{8}$/, '')
     .replace(/\./g, '-')

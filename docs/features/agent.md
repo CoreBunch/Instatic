@@ -6,7 +6,7 @@ In the Site editor, the agent reads the current page snapshot, plans a sequence 
 
 In the Content workspace, the agent works against content collections and entries. It reads collection schemas and document state server-side, then mutates the live content editor through a browser bridge so the open draft, Tiptap body editor, and sidebar selection stay authoritative.
 
-The agent runs on a provider-agnostic AI runtime (`server/ai/`) that can drive any supported model (Anthropic Claude, OpenAI, OpenRouter, Ollama, or any OpenAI-compatible endpoint). Every driver talks directly to its provider's REST API over HTTP/SSE — no provider SDKs. All drivers share one multi-turn tool loop (`drivers/http/toolLoop.ts`); each supplies only a small `ProviderAdapter` of pure mapping functions. The plain `@anthropic-ai/sdk` (and any provider SDK) is banned repo-wide. Gated by `ai-driver-isolation.test.ts`.
+The agent runs on a provider-agnostic AI runtime (`server/ai/`) that can drive any supported model (Anthropic Claude, OpenAI, OpenRouter, Ollama, OrcaRouter, or any OpenAI-compatible endpoint). Every driver talks directly to its provider's REST API over HTTP/SSE — no provider SDKs. All drivers share one multi-turn tool loop (`drivers/http/toolLoop.ts`); each supplies only a small `ProviderAdapter` of pure mapping functions. The plain `@anthropic-ai/sdk` (and any provider SDK) is banned repo-wide. Gated by `ai-driver-isolation.test.ts`.
 
 ---
 
@@ -17,7 +17,7 @@ The agent runs on a provider-agnostic AI runtime (`server/ai/`) that can drive a
 - **Site scope: 35 tools total.** 6 server-side catalog read tools (resolved server-side from the posted snapshot / DB) + 29 browser-bridged tools.
 - **Content scope: 15 tools total.** 7 server-side content/catalog/media/user read tools + 8 browser-bridged document mutation/navigation tools.
 - **Two-endpoint bridge.** `POST /admin/api/ai/chat/:scope` opens an NDJSON stream. When the model calls a browser-bridged tool, the server emits `toolRequest`; the browser executor reads or mutates the live workspace and POSTs the `AiToolOutput` result to `POST /admin/api/ai/tool-result`.
-- **Provider-agnostic.** The runtime selects a driver (Anthropic, OpenAI, OpenRouter, Ollama, Custom Provider) from the conversation's configured credential.
+- **Provider-agnostic.** The runtime selects a driver (Anthropic, OpenAI, OpenRouter, Ollama, OrcaRouter, Custom Provider) from the conversation's configured credential.
 - **Site tool input schemas are a single source of truth** in `@core/ai` (`src/core/ai/toolSchemas.ts`). The server registry and browser executor import from that shared leaf. Most tools reuse the exact same schema object; `site_apply_css` deliberately advertises a flat provider object because Anthropic rejects root-level schema composition, then the executor validates the payload against the leaf's exact operation union. Gated by `ai-tool-input-object.test.ts`, `ai-tool-schema-ssot.test.ts`, and `ai-tools-typebox-only.test.ts`.
 - **Capabilities.** `ai.chat` required to stream; `ai.tools.write` required for write tools. Gated by `ai-handlers-capability-gated.test.ts`.
 
@@ -72,7 +72,8 @@ server/ai/
 │   ├── openai.ts              — OpenAI driver: direct POST /v1/responses (no SDK)
 │   ├── openrouter.ts          — OpenRouter driver: direct POST /v1/responses (shared Responses path; live /models; native cost)
 │   ├── ollama.ts              — Ollama driver: POST /v1/chat/completions via shared chatCompletions adapter; live /api/tags catalogue
-│   └── openaiCompatible.ts    — Custom Provider driver: any /v1/chat/completions endpoint; live GET /v1/models catalogue
+│   ├── openaiCompatible.ts    — Custom Provider driver: any /v1/chat/completions endpoint; live GET /v1/models catalogue
+│   └── orcarouter.ts          — OrcaRouter driver: OpenAI-compatible gateway; apiKey auth; live GET /v1/models catalogue
 └── runtime/
     ├── runner.ts           — runChat(): drives a driver, emits stream events
     ├── persister.ts        — ConversationsPersister: messages + usage to DB; writes contextTokens snapshot
@@ -188,6 +189,9 @@ Each entry in **Settings → AI → Providers** stores one credential. The provi
 | `openrouter` | OpenRouter | `apiKey` | API key (`sk-or-…`) | — | Live `GET /api/v1/models` (cross-provider; native cost reporting) |
 | `ollama` | Ollama (local) | `baseUrl` | Base URL (e.g. `http://localhost:11434`) | API key (bearer, for proxied deployments) | Live `GET {baseUrl}/api/tags`, with `POST {baseUrl}/api/show` capability lookup per model; static fallback list when unreachable |
 | `openai-compatible` | Custom Provider | `baseUrl` | Base URL — any host serving the OpenAI `/v1/chat/completions` wire protocol | API key (bearer; cloud services need one, local servers often don't) | Live `GET {baseUrl}/v1/models` (standard OpenAI list shape); model `id` used as label |
+| `orcarouter` | OrcaRouter | `apiKey` | API key (`sk-orca-…`) | — | Live `GET /v1/models` (standard OpenAI list shape); models enriched with OpenRouter prices + context windows |
+
+**OrcaRouter** (id `orcarouter`) is a named OpenAI-compatible gateway at `https://api.orcarouter.ai/v1` that fronts frontier models from many providers behind one key. It reuses the shared chat/completions adapter, so capabilities default to `{ toolCalling: true, visionInput: false, toolResultImages: false, promptCache: false, streaming: true }`, and model ids are the gateway's OpenRouter-style slugs (`openai/gpt-5.6-sol`, `anthropic/claude-sonnet-5`, …). The live `/v1/models` catalogue is enriched from the OpenRouter price catalogue the same way as Anthropic/OpenAI, since the models are the same upstream rows.
 
 **Custom Provider** (id `openai-compatible`) is the generic adapter for any endpoint that speaks the OpenAI chat/completions wire protocol — Groq (`https://api.groq.com/openai`), Together, DeepSeek, Mistral, Fireworks, self-hosted vLLM, LM Studio, and others. Capabilities default to `{ toolCalling: true, visionInput: false, toolResultImages: false, promptCache: false, streaming: true }`; the operator is responsible for selecting a model that actually supports tool calling. Because arbitrary endpoints are not in the OpenRouter catalogue, no context-window enrichment is available and the context meter stays hidden for these models.
 

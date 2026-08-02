@@ -20,7 +20,7 @@ import { getModelCatalogue, pricingKey } from '../pricing'
 import type { AiProviderModel } from '../drivers/types'
 import type { AiProviderId } from '../runtime/types'
 
-const VALID_PROVIDERS: AiProviderId[] = ['anthropic', 'openai', 'ollama', 'openrouter', 'openai-compatible']
+const VALID_PROVIDERS: AiProviderId[] = ['anthropic', 'openai', 'ollama', 'openrouter', 'openai-compatible', 'orcarouter']
 
 export function tryHandleAiModels(
   req: Request,
@@ -89,9 +89,11 @@ async function handleModels(
   // Anthropic + OpenAI list models without prices or context windows (their
   // APIs omit both). Enrich from the live OpenRouter catalogue — the same
   // source the cost path uses. OpenRouter self-populates from its own fetch
-  // and Ollama is free/self-hosted, so neither is enriched here.
+  // and Ollama is free/self-hosted, so neither is enriched here. OrcaRouter
+  // models carry the same ids as their OpenRouter catalogue rows, so they
+  // enrich the same way.
   const enriched =
-    providerId === 'anthropic' || providerId === 'openai'
+    providerId === 'anthropic' || providerId === 'openai' || providerId === 'orcarouter'
       ? await enrichFromCatalogue(db, models)
       : models
   return jsonResponse({ models: enriched })
