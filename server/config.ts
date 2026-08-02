@@ -59,17 +59,24 @@ function normalizeOrigins(raw: readonly string[]): string[] {
  *
  * Precedence:
  *   1. `PUBLIC_ORIGIN` — comma-separated list (platform domain + custom domain
- *      can coexist). Invalid entries are dropped.
+ *      can coexist). Invalid entries are dropped; a list that survives
+ *      normalization with at least one entry wins outright.
  *   2. Platform auto-detection — `RENDER_EXTERNAL_URL` (full URL) and/or
  *      `https://${RAILWAY_PUBLIC_DOMAIN}` (host only). Both are included when
  *      both env vars are present, keeping one-click deploys config-free.
+ *      Reached when `PUBLIC_ORIGIN` is unset *or* every entry in it is
+ *      unparseable, so a malformed value degrades to auto-detection rather
+ *      than suppressing it.
  *   3. `[]` — no public origin configured; the CSRF check falls back to the
  *      inbound `Host` header.
  */
 export function resolvePublicOrigins(env: Record<string, string | undefined>): string[] {
-  const explicit = readCsvList(env.PUBLIC_ORIGIN)
+  // Normalize before the precedence test, not after: gating on the raw CSV
+  // length lets an all-invalid PUBLIC_ORIGIN return [] while still claiming
+  // precedence, which suppresses platform auto-detection entirely.
+  const explicit = normalizeOrigins(readCsvList(env.PUBLIC_ORIGIN))
   if (explicit.length > 0) {
-    return normalizeOrigins(explicit)
+    return explicit
   }
 
   const derived: string[] = []
