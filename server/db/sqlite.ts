@@ -158,5 +158,12 @@ export function createSqliteClient(filename: string): DbClient {
     return result
   }
 
+  fn.close = async (): Promise<void> => {
+    // Releases the file handle plus the -wal and -shm siblings created by
+    // `PRAGMA journal_mode = WAL` above, so the database file can be deleted
+    // on every platform.
+    db.close()
+  }
+
   return Object.assign(fn, { dialect: 'sqlite' as const })
 }
