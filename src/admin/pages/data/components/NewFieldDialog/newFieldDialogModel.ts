@@ -1,3 +1,4 @@
+import { nanoid } from 'nanoid'
 import type { DataFieldType } from '@core/data/schemas'
 
 export interface DraftOption {
@@ -59,7 +60,7 @@ export function fieldIdFromLabel(label: string): string {
 }
 
 export function makeOption(label: string): DraftOption {
-  return { id: crypto.randomUUID(), label, value: slugifyOptionValue(label) }
+  return { id: nanoid(), label, value: slugifyOptionValue(label) }
 }
 
 export function fieldIdError(id: string, existingIds: string[]): string | null {
