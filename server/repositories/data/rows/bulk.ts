@@ -11,6 +11,7 @@ import type { DbClient } from '../../../db/client'
 import type { DataRow } from '@core/data/schemas'
 import type { InsertDataRowInput, UpdateDataRowDraftInput } from './mapper'
 import { createDataRow, saveDataRowDraft, softDeleteDataRow } from './mutations'
+import { notifyRowWrite, serializeCollabAwareWrite } from '../../rowWriteEvents'
 
 /**
  * Bulk-insert N draft rows in a single transaction. Used by
@@ -24,10 +25,22 @@ export async function createDataRowMany(
   actorUserId: string | null = null,
   pluginActorId: string | null = null,
 ): Promise<DataRow[]> {
-  return db.transaction(async (tx) => {
-    const created: DataRow[] = []
-    for (const input of inputs) {
-      created.push(await createDataRow(tx, input, actorUserId, pluginActorId))
+  return serializeCollabAwareWrite(async () => {
+    const created = await db.transaction(async (tx) => {
+      const rows: DataRow[] = []
+      for (const input of inputs) {
+        rows.push(await createDataRow(
+          tx,
+          input,
+          actorUserId,
+          pluginActorId,
+          { collabInternal: true },
+        ))
+      }
+      return rows
+    })
+    for (const row of created) {
+      notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'create' })
     }
     return created
   })
@@ -44,11 +57,24 @@ export async function saveDataRowDraftMany(
   actorUserId: string | null = null,
   pluginActorId: string | null = null,
 ): Promise<DataRow[]> {
-  return db.transaction(async (tx) => {
-    const updated: DataRow[] = []
-    for (const { id, input } of updates) {
-      const result = await saveDataRowDraft(tx, id, input, actorUserId, pluginActorId)
-      if (result) updated.push(result)
+  return serializeCollabAwareWrite(async () => {
+    const updated = await db.transaction(async (tx) => {
+      const rows: DataRow[] = []
+      for (const { id, input } of updates) {
+        const result = await saveDataRowDraft(
+          tx,
+          id,
+          input,
+          actorUserId,
+          pluginActorId,
+          { collabInternal: true },
+        )
+        if (result) rows.push(result)
+      }
+      return rows
+    })
+    for (const row of updated) {
+      notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'update' })
     }
     return updated
   })
@@ -67,16 +93,26 @@ export async function softDeleteDataRowMany(
   rowIds: ReadonlyArray<string>,
   actorUserId: string | null = null,
 ): Promise<{ deleted: number; publishedDeleted: number }> {
-  return db.transaction(async (tx) => {
-    let deleted = 0
-    let publishedDeleted = 0
-    for (const id of rowIds) {
-      const result = await softDeleteDataRow(tx, id, actorUserId)
-      if (result) {
-        deleted++
-        if (result.status === 'published') publishedDeleted++
+  return serializeCollabAwareWrite(async () => {
+    const deletedRows = await db.transaction(async (tx) => {
+      const rows: NonNullable<Awaited<ReturnType<typeof softDeleteDataRow>>>[] = []
+      for (const id of rowIds) {
+        const result = await softDeleteDataRow(
+          tx,
+          id,
+          actorUserId,
+          { collabInternal: true },
+        )
+        if (result) rows.push(result)
       }
+      return rows
+    })
+    for (const row of deletedRows) {
+      notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'delete' })
     }
-    return { deleted, publishedDeleted }
+    return {
+      deleted: deletedRows.length,
+      publishedDeleted: deletedRows.filter((row) => row.status === 'published').length,
+    }
   })
 }
