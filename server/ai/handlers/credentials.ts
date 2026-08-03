@@ -35,6 +35,7 @@ const ALL_SCOPES: ToolScope[] = ['site', 'content', 'data', 'plugin']
 const ProviderId = Type.Union([
   Type.Literal('anthropic'),
   Type.Literal('openai'),
+  Type.Literal('minimax'),
   Type.Literal('ollama'),
   Type.Literal('openrouter'),
   Type.Literal('openai-compatible'),

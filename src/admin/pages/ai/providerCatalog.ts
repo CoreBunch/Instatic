@@ -1,4 +1,4 @@
-export type ProviderId = 'anthropic' | 'openai' | 'openrouter' | 'ollama' | 'openai-compatible'
+export type ProviderId = 'anthropic' | 'openai' | 'minimax' | 'openrouter' | 'ollama' | 'openai-compatible'
 export type ProviderAuthMode = 'apiKey' | 'baseUrl'
 
 export interface ProviderSpec {
@@ -26,6 +26,14 @@ export const PROVIDER_SPECS: ProviderSpec[] = [
     description: 'General-purpose language and multimodal models from OpenAI.',
     authMode: 'apiKey',
     endpointLabel: 'api.openai.com',
+  },
+  {
+    id: 'minimax',
+    label: 'MiniMax',
+    shortLabel: 'M3 / M2.7',
+    description: 'MiniMax text models with the documented API endpoint.',
+    authMode: 'baseUrl',
+    endpointLabel: 'api.minimax.io/v1',
   },
   {
     id: 'openrouter',

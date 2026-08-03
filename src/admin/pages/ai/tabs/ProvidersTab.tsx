@@ -38,6 +38,7 @@ type Selection =
 const API_KEY_PLACEHOLDER: Partial<Record<ProviderId, string>> = {
   anthropic: 'sk-ant-...',
   openai: 'sk-...',
+  minimax: 'sk-... (optional)',
   openrouter: 'sk-or-...',
   'openai-compatible': 'sk-... (optional)',
 }
@@ -519,6 +520,8 @@ function AddCredentialForm({
   const [busy, setBusy] = useState(false)
   const baseUrlPlaceholder = provider.id === 'ollama'
     ? 'http://localhost:11434'
+    : provider.id === 'minimax'
+      ? 'https://api.minimax.io/v1'
     : 'https://api.example.com/v1'
 
   async function handleSubmit(event: React.FormEvent) {
