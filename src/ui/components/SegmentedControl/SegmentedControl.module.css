@@ -61,13 +61,21 @@
     width: 26px;
 }
 
+.segmentContent {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: inherit;
+    min-width: 0;
+    transition: opacity 100ms ease;
+}
+
 /* ── Clearable overlay ─────────────────────────────────────────────────────
  * Rendered only inside active segments when the parent group is marked
- * `data-clearable="true"`. The overlay sits over the icon+label with
- * opacity 0 until the user hovers / focuses the active segment, at which
- * point it fades in to communicate "click here to clear". The actual
- * clear behavior is wired to the segment's onClick — this is purely the
- * visual affordance. */
+ * `data-clearable="true"`. The normal segment content fades out while the
+ * overlay fades in so translucent overlay tokens never let the label bleed
+ * through the close glyph. The actual clear behavior is wired to the
+ * segment's onClick — this is purely the visual affordance. */
 .group .segment .clearOverlay {
     position: absolute;
     inset: 0;
@@ -80,6 +88,13 @@
     opacity: 0;
     pointer-events: none;
     transition: opacity 100ms ease;
+}
+
+.group[data-clearable="true"] .segment[aria-pressed="true"]:hover .segmentContent,
+.group[data-clearable="true"]
+    .segment[aria-pressed="true"]:focus-visible
+    .segmentContent {
+    opacity: 0;
 }
 
 .group[data-clearable="true"] .segment[aria-pressed="true"]:hover .clearOverlay,

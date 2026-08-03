@@ -158,6 +158,8 @@ export function CanvasContextSelector() {
 
           {conditions.map((def) => {
             const isActive = activeConditionValid && def.id === activeConditionId
+            const detail = conditionLabel(def.condition)
+            const showDetail = def.label.trim() !== detail.trim()
             return (
               <div key={def.id} className={styles.menuRow}>
                 <ContextMenuItem
@@ -167,7 +169,7 @@ export function CanvasContextSelector() {
                 >
                   <SlidersHorizontalIcon size={12} aria-hidden="true" />
                   <span className={styles.rowLabel}>{def.label}</span>
-                  <span className={styles.rowDetail}>{conditionLabel(def.condition)}</span>
+                  {showDetail && <span className={styles.rowDetail}>{detail}</span>}
                 </ContextMenuItem>
                 <Button
                   variant="ghost"
@@ -203,27 +205,6 @@ export function CanvasContextSelector() {
             <span className={styles.rowLabel}>Add context…</span>
           </ContextMenuItem>
         </ContextMenu>
-      )}
-
-      {/* When editing under a custom condition the canvas frame can't reflect it
-          (a @container / @supports / non-width @media isn't a viewport), so a
-          badge makes the active context explicit with a one-click exit back to
-          the viewport. */}
-      {activeConditionValid && (
-        <div className={styles.badge} role="status">
-          <SlidersHorizontalIcon size={11} aria-hidden="true" />
-          <span className={styles.badgeLabel}>{activeCondition?.label ?? 'Condition'}</span>
-          <Button
-            variant="ghost"
-            size="micro"
-            className={styles.badgeExit}
-            aria-label="Stop editing this condition"
-            tooltip="Back to viewport"
-            onClick={() => setActiveConditionId(null)}
-          >
-            <CloseIcon size={11} aria-hidden="true" />
-          </Button>
-        </div>
       )}
 
       {dialog !== null && (
