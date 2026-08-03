@@ -16,6 +16,9 @@
  *   • Bundled outputs in `dist/server/index.js` and `dist/modules/index.js`
  *     pass the same scan (catches authors that bypass `instatic-plugin build`)
  *   • If `network.outbound` is requested, `networkAllowedHosts` is non-empty
+ *   • Every requested `cms.content.*` permission is consumed by a
+ *     `contentAccess` entry declaring the matching mode (the missing-
+ *     allowlist case is already a manifest error from `parsePluginManifest`)
  *
  * The intent: catch every common authoring mistake BEFORE the developer
  * uploads a zip, so they get a precise error in their terminal instead of
@@ -28,6 +31,8 @@ import { findSandboxLiterals } from '@core/plugins/sandboxScan'
 import { parsePluginManifest } from '@core/plugins/manifest'
 import { readPluginDefinition } from './build'
 import type { PluginDefinition } from '../builders/definePlugin'
+import type { PluginPermission } from '../types'
+import type { ContentAccessMode } from '../contentSchemas'
 
 export type LintSeverity = 'error' | 'warning'
 
@@ -47,6 +52,14 @@ export interface LintResult {
 }
 
 const SANDBOXED_ENTRYPOINTS: ReadonlyArray<'server' | 'modules'> = ['server', 'modules']
+
+/** Which `contentAccess` mode consumes each `cms.content.*` permission. */
+const CONTENT_PERMISSION_MODES: ReadonlyArray<{ permission: PluginPermission; mode: ContentAccessMode }> = [
+  { permission: 'cms.content.read', mode: 'read' },
+  { permission: 'cms.content.write', mode: 'write' },
+  { permission: 'cms.content.publish', mode: 'publish' },
+  { permission: 'cms.content.delete', mode: 'delete' },
+]
 
 /**
  * Run all lint checks for a plugin source directory. Throws on a corrupt
@@ -125,6 +138,32 @@ export async function lintPlugin(sourceDir: string): Promise<LintResult> {
           '`networkAllowedHosts` is set but neither `network.outbound` (server) ' +
           'nor `frontend.assets` (browser CSP) is requested. ' +
           'The allowlist will be ignored at install time.',
+      })
+    }
+  }
+
+  // ---- cms.content.* + contentAccess coherence ---------------------------
+  //
+  // `parsePluginManifest` above already fails hard when any `cms.content.*`
+  // permission is declared with no `contentAccess` at all, and when an
+  // entry mode lacks its matching permission. The remaining gap: a
+  // permission whose mode appears in no entry. The host enforces access
+  // per table+mode and fails closed, so every call under that permission
+  // is rejected at runtime — and the install consent screen advertises
+  // capability the plugin can never use. (Skipped when `contentAccess` is
+  // empty so the parser's error isn't double-reported as warnings.)
+  const contentAccess = manifest.contentAccess ?? []
+  if (contentAccess.length > 0) {
+    for (const { permission, mode } of CONTENT_PERMISSION_MODES) {
+      if (!manifest.permissions.includes(permission)) continue
+      if (contentAccess.some((entry) => entry.modes.includes(mode))) continue
+      findings.push({
+        severity: 'warning',
+        scope: 'manifest',
+        message:
+          `\`${permission}\` permission is requested but no \`contentAccess\` entry declares mode "${mode}". ` +
+          `The host fails closed per table+mode, so every ${mode} call will be rejected at runtime — ` +
+          `add the mode to a table entry or drop the permission.`,
       })
     }
   }
@@ -258,7 +297,8 @@ export async function lintPlugin(sourceDir: string): Promise<LintResult> {
           severity: 'error',
           scope: `source:${kind}`,
           message: `references forbidden sandbox literal \`${offender.literal}\` — plugin code can't reach Node/Bun runtime APIs. Use the SDK instead.`,
-          file: file.slice(absoluteSource.length + 1),
+          // Findings report POSIX-style relative paths on every platform.
+          file: file.slice(absoluteSource.length + 1).replaceAll('\\', '/'),
         })
       }
     }
