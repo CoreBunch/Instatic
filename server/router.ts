@@ -102,13 +102,38 @@ export async function handleServerRequest(
 ): Promise<Response> {
   const url = new URL(req.url)
   const { pathname } = url
+  const request = asGetForHead(req)
 
   for (const route of routes) {
-    const response = await route(req, runtime, url, pathname)
+    const response = await route(request, runtime, url, pathname)
     if (response) return response
   }
 
   return jsonResponse({ error: 'Not found' }, { status: 404 })
+}
+
+/**
+ * RFC 9110 §9.3.2: HEAD is identical to GET except that the server must not
+ * send content. Normalising it once here — rather than asking every
+ * method-gated handler in the tree to remember — is what makes that guarantee
+ * hold for every route, including ones added later.
+ *
+ * Without it, a HEAD matched no GET-gated route and fell all the way to the
+ * dispatcher's terminal 404, so uptime monitors and link checkers (which probe
+ * with HEAD by convention) reported a healthy published site as permanently
+ * missing. See issue #306.
+ *
+ * Dropping the body is `Bun.serve`'s job and it already does it: a HEAD
+ * response goes out with the headers a GET would have produced, `content-length`
+ * included, and no content. Handlers stay body-agnostic.
+ *
+ * Cloning is safe here — the copy keeps the URL, the cookies, and the synthetic
+ * `x-bun-socket-ip` header that `stampSocketIp` writes at the `Bun.serve`
+ * boundary, so `clientIp()` attribution is unaffected. HEAD carries no body,
+ * so there is nothing to re-stream.
+ */
+function asGetForHead(req: Request): Request {
+  return req.method === 'HEAD' ? new Request(req, { method: 'GET' }) : req
 }
 
 // ---------------------------------------------------------------------------
@@ -323,7 +348,7 @@ async function tryServeMediaRedirect(
   pathname: string,
 ): Promise<Response | null> {
   if (!pathname.startsWith('/_instatic/media/')) return null
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
+  if (req.method !== 'GET') {
     return new Response('Method not allowed', { status: 405 })
   }
   const match = pathname.match(/^\/_instatic\/media\/([^/]+)\/(.+)$/)
