@@ -231,6 +231,25 @@ export interface CssDeclarationBlock {
 }
 
 /**
+ * Repair a longhand expanded from a shorthand.
+ *
+ * `background: none` and `border: none` are everyday CSS, but expansion can
+ * put `none` into colour longhands such as `background-color` and
+ * `border-top-color`. No colour property accepts `none`, so the browser drops
+ * that declaration and the reset stops resetting.
+ *
+ * `initial` supplies the intended initial value in both cases: `transparent`
+ * for a background and `currentcolor` for a border.
+ * This intentionally also repairs an author-typed invalid colour longhand;
+ * otherwise the browser would drop it and could preserve an earlier value.
+ */
+function repairExpandedShorthandValue(camel: string, value: string): string {
+  if (camel.startsWith('--')) return value
+  if (!camel.endsWith('Color')) return value
+  return value.trim().toLowerCase() === 'none' ? 'initial' : value
+}
+
+/**
  * Walk a parsed `CSSStyleDeclaration` into a camelCase property bag:
  * decodes substitution markers back to their real property
  * (`decodeSubstitutionProperty`), converts kebab-case names to the camelCase
@@ -262,7 +281,7 @@ export function readCssDeclarationBlock(
       onBlockedProperty?.(camel, kebab)
       continue
     }
-    styles[camel] = value
+    styles[camel] = repairExpandedShorthandValue(camel, value)
     if (style.getPropertyPriority(rawKebab).toLowerCase() === 'important') {
       priorities[camel] = 'important'
     }
