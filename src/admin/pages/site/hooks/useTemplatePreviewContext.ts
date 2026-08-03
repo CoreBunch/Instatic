@@ -1,5 +1,4 @@
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
-import { useCmsMediaAssetLookup } from '@admin/pages/media/hooks/useCmsMediaAssetByPath'
 import type { Page } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
@@ -30,10 +29,6 @@ interface TemplatePreviewContextState {
 export function useTemplatePreviewContext(page: Page | null): TemplatePreviewContextState {
   // Read site once; the page argument is already reactive via the caller.
   const site = useEditorStore((s) => s.site)
-
-  // Canvas-side media lookup (id + path keyed) so `format: 'media'` bindings
-  // resolve bare asset references exactly like the publisher does.
-  const media = useCmsMediaAssetLookup()
 
   // ── Template-page entry-stack seed ───────────────────────────────────
   // A `postTypes` template previews against the FIRST REAL published row of
@@ -103,7 +98,9 @@ export function useTemplatePreviewContext(page: Page | null): TemplatePreviewCon
       // doesn't have the real request URL, so we derive from the page's
       // permalink — same shape, same fields.
       route: buildRouteFrame(pageFrame.permalink),
-      media,
+      // No `media` here: this context is also serialized to the runtime-preview
+      // endpoint (hover preview, preview overlay), where a live Map is dead
+      // weight. CanvasRoot attaches the media lookup for client-side rendering.
     },
   }
 }
