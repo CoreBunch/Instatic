@@ -11,8 +11,9 @@
  */
 
 import type { DbClient } from '../../db/client'
+import type { DataTable } from '@core/data/schemas'
 import type { PluginManifest, PluginPermission } from '@core/plugin-sdk'
-import type { ContentAccessMode } from '@core/plugin-sdk/contentSchemas'
+import { OWN_CREATED_TABLES_MARKER, type ContentAccessEntry, type ContentAccessMode } from '@core/plugin-sdk/contentSchemas'
 import type { HostPluginRecord } from './types'
 
 export const hostPlugins = new Map<string, HostPluginRecord>()
@@ -34,26 +35,64 @@ export function assertHostPluginPermission(
 }
 
 /**
+ * Every manifest `contentAccess[]` entry that covers `table`. Two match forms:
+ *
+ *   - a slug entry (`{ table: 'posts' }`) matches by exact slug;
+ *   - the `@own-created` marker matches any table whose `createdByPluginId`
+ *     is this plugin — the durable creator record written by
+ *     `cms.content.tables.create` — so importer/migration plugins can reach
+ *     tables whose names only exist at runtime.
+ *
+ * Marker entries never match by slug, so even a table literally slugged
+ * `@own-created` is only ever reachable by its creator (and no static entry
+ * can name it — the manifest slug pattern requires a leading letter).
+ */
+function matchingContentAccessEntries(
+  manifest: PluginManifest,
+  table: DataTable,
+): ContentAccessEntry[] {
+  return (manifest.contentAccess ?? []).filter((row) =>
+    row.table === OWN_CREATED_TABLES_MARKER
+      ? table.createdByPluginId === manifest.id
+      : row.table === table.slug,
+  )
+}
+
+/**
+ * Whether `table` is covered by any `contentAccess[]` entry, regardless of
+ * mode. Drives result filtering in `tables.list` / `search`, which show
+ * every declared table (same as always — mode narrowing applies to the
+ * per-table operations, not to list membership).
+ */
+export function hasContentTableAccess(
+  manifest: PluginManifest,
+  table: DataTable,
+): boolean {
+  return matchingContentAccessEntries(manifest, table).length > 0
+}
+
+/**
  * Authoritative check for `api.cms.content.*` table access. Each handler
- * runs this BEFORE any repository call so a plugin that holds the
- * permission but didn't list the table (or list the right mode) in its
- * manifest's `contentAccess[]` fails closed.
+ * runs this on the RESOLVED table before any repository read/write, so a
+ * plugin that holds the permission but didn't cover the table (or the
+ * mode) in its manifest's `contentAccess[]` fails closed. Entries combine
+ * as a union: the operation is allowed when ANY matching entry declares
+ * the mode.
  */
 export function assertContentTableAccess(
   entry: HostPluginRecord,
-  tableSlug: string,
+  table: DataTable,
   mode: ContentAccessMode,
 ): void {
-  const access = entry.manifest.contentAccess ?? []
-  const found = access.find((row) => row.table === tableSlug)
-  if (!found) {
+  const matches = matchingContentAccessEntries(entry.manifest, table)
+  if (matches.length === 0) {
     throw new Error(
-      `Plugin "${entry.manifest.id}" does not have contentAccess declared for table "${tableSlug}"`,
+      `Plugin "${entry.manifest.id}" does not have contentAccess declared for table "${table.slug}"`,
     )
   }
-  if (!found.modes.includes(mode)) {
+  if (!matches.some((row) => row.modes.includes(mode))) {
     throw new Error(
-      `Plugin "${entry.manifest.id}" has contentAccess for table "${tableSlug}" but not for mode "${mode}"`,
+      `Plugin "${entry.manifest.id}" has contentAccess for table "${table.slug}" but not for mode "${mode}"`,
     )
   }
 }

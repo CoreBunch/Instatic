@@ -10,6 +10,7 @@ import type {
 import {
   isCompatiblePluginApiVersion,
   MIN_SUPPORTED_PLUGIN_API_VERSION,
+  OWN_CREATED_TABLES_MARKER,
   PLUGIN_API_VERSION,
   PLUGIN_PERMISSION_VALUES,
   permissionLabel as sdkPermissionLabel,
@@ -272,12 +273,16 @@ const manifestSchema = Type.Object({
     Type.String({ pattern: NETWORK_HOST_PATTERN.source, maxLength: 253 }),
     { maxItems: 50 },
   )),
-  // Per-table allowlist for the `api.cms.content.*` surface. The host
-  // additionally enforces that each `mode` matches a granted permission
-  // at install time (`assertContentAccessCoherent` below).
+  // Per-table allowlist for the `api.cms.content.*` surface; each mode must
+  // match a granted permission (`assertContentAccessCoherent` below). `table`
+  // is a slug or the `@own-created` marker (see OWN_CREATED_TABLES_MARKER) —
+  // the slug pattern's leading-letter rule reserves the `@` namespace.
   contentAccess: Type.Optional(Type.Array(
     Type.Object({
-      table: Type.String({ pattern: MANIFEST_SLUG_PATTERN.source, maxLength: 80 }),
+      table: Type.Union([
+        Type.Literal(OWN_CREATED_TABLES_MARKER),
+        Type.String({ pattern: MANIFEST_SLUG_PATTERN.source, maxLength: 80 }),
+      ]),
       modes: Type.Array(
         Type.Union([
           Type.Literal('read'),
@@ -567,7 +572,8 @@ export function parsePluginManifest(input: unknown): PluginManifest {
   if (contentPerms.length > 0 && contentAccess.length === 0) {
     throw new Error(
       `Invalid plugin manifest: \`contentAccess\` is required when any \`cms.content.*\` ` +
-      `permission is granted. List the tables the plugin can touch.`,
+      `permission is granted. List the tables the plugin can touch, or declare ` +
+      `\`{ "table": "${OWN_CREATED_TABLES_MARKER}" }\` for tables the plugin creates at runtime.`,
     )
   }
   if (contentAccess.length > 0) {

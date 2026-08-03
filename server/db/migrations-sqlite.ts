@@ -1224,4 +1224,15 @@ export const sqliteMigrations: Migration[] = [
        where trim(lower(display_name)) = trim(lower(email));
     `,
   },
+  {
+    // Which plugin created this table via `cms.content.tables.create` (null
+    // for user/import-created tables). The plugin host's `@own-created`
+    // contentAccess marker resolves against this column, so a plugin keeps
+    // access to tables it created at runtime — durable across restarts and
+    // admin-side slug renames. Nullable, no default: purely additive.
+    id: '025_data_tables_created_by_plugin',
+    sql: `
+      alter table data_tables add column created_by_plugin_id text;
+    `,
+  },
 ]

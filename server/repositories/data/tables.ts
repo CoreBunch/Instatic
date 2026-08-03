@@ -37,6 +37,8 @@ interface CreateDataTableInput {
   primaryFieldId?: string
   fields?: DataField[]
   createdByUserId?: string | null
+  /** Plugin id when created through `cms.content.tables.create`; null otherwise. */
+  createdByPluginId?: string | null
   updatedByUserId?: string | null
 }
 
@@ -68,6 +70,7 @@ interface DataTableRow {
    */
   system: number | boolean
   created_by_user_id: string | null
+  created_by_plugin_id: string | null
   updated_by_user_id: string | null
   /**
    * Adapters normalize: PG returns Date, SQLite returns ISO string, test fakes
@@ -107,6 +110,7 @@ function mapTable(row: DataTableRow): DataTable {
     fields: normalizeDataTableFields(row.fields_json),
     system: Boolean(row.system),
     createdByUserId: row.created_by_user_id ?? null,
+    createdByPluginId: row.created_by_plugin_id ?? null,
     updatedByUserId: row.updated_by_user_id ?? null,
     createdAt: isoDate(row.created_at),
     updatedAt: isoDate(row.updated_at),
@@ -117,7 +121,7 @@ export async function listDataTables(db: DbClient): Promise<DataTable[]> {
   const { rows } = await db<DataTableRow>`
     select id, name, slug, kind, route_base, singular_label, plural_label,
            primary_field_id, fields_json, system,
-           created_by_user_id, updated_by_user_id, created_at, updated_at
+           created_by_user_id, created_by_plugin_id, updated_by_user_id, created_at, updated_at
     from data_tables
     where deleted_at is null
     order by
@@ -145,7 +149,7 @@ export async function listDataTablesWithCounts(db: DbClient): Promise<DataTableL
   const { rows } = await db<DataTableRow & { row_count: number | string }>`
     select t.id, t.name, t.slug, t.kind, t.route_base, t.singular_label, t.plural_label,
            t.primary_field_id, t.fields_json, t.system,
-           t.created_by_user_id, t.updated_by_user_id, t.created_at, t.updated_at,
+           t.created_by_user_id, t.created_by_plugin_id, t.updated_by_user_id, t.created_at, t.updated_at,
            coalesce(
              (select count(*) from data_rows r where r.table_id = t.id and r.deleted_at is null),
              0
@@ -172,7 +176,7 @@ export async function getDataTable(db: DbClient, tableId: string): Promise<DataT
   const { rows } = await db<DataTableRow>`
     select id, name, slug, kind, route_base, singular_label, plural_label,
            primary_field_id, fields_json, system,
-           created_by_user_id, updated_by_user_id, created_at, updated_at
+           created_by_user_id, created_by_plugin_id, updated_by_user_id, created_at, updated_at
     from data_tables
     where id = ${tableId}
       and deleted_at is null
@@ -191,7 +195,7 @@ export async function getDataTableBySlug(db: DbClient, slug: string): Promise<Da
   const { rows } = await db<DataTableRow>`
     select id, name, slug, kind, route_base, singular_label, plural_label,
            primary_field_id, fields_json, system,
-           created_by_user_id, updated_by_user_id, created_at, updated_at
+           created_by_user_id, created_by_plugin_id, updated_by_user_id, created_at, updated_at
     from data_tables
     where slug = ${slug}
       and deleted_at is null
@@ -281,6 +285,7 @@ export async function createDataTable(
       primary_field_id,
       fields_json,
       created_by_user_id,
+      created_by_plugin_id,
       updated_by_user_id
     )
     values (
@@ -294,11 +299,12 @@ export async function createDataTable(
       ${input.primaryFieldId ?? 'title'},
       ${fields},
       ${input.createdByUserId ?? null},
+      ${input.createdByPluginId ?? null},
       ${input.updatedByUserId ?? input.createdByUserId ?? null}
     )
     returning id, name, slug, kind, route_base, singular_label, plural_label,
               primary_field_id, fields_json, system,
-              created_by_user_id, updated_by_user_id, created_at, updated_at
+              created_by_user_id, created_by_plugin_id, updated_by_user_id, created_at, updated_at
   `
   // NOTE: table creation is pure data access. Entry templates are ordinary
   // page rows and are created explicitly through the site editor.
@@ -332,7 +338,7 @@ export async function updateDataTable(
       and deleted_at is null
     returning id, name, slug, kind, route_base, singular_label, plural_label,
               primary_field_id, fields_json, system,
-              created_by_user_id, updated_by_user_id, created_at, updated_at
+              created_by_user_id, created_by_plugin_id, updated_by_user_id, created_at, updated_at
   `
   return rows[0] ? mapTable(rows[0]) : null
 }
@@ -363,6 +369,7 @@ export async function insertDataTableIfAbsent(
       primary_field_id,
       fields_json,
       created_by_user_id,
+      created_by_plugin_id,
       updated_by_user_id
     )
     values (
@@ -376,6 +383,7 @@ export async function insertDataTableIfAbsent(
       ${input.primaryFieldId ?? 'title'},
       ${fields},
       ${input.createdByUserId ?? null},
+      ${input.createdByPluginId ?? null},
       ${input.updatedByUserId ?? input.createdByUserId ?? null}
     )
     on conflict (id) do nothing
@@ -412,7 +420,7 @@ export async function softDeleteDataTable(
       and deleted_at is null
     returning id, name, slug, kind, route_base, singular_label, plural_label,
               primary_field_id, fields_json, system,
-              created_by_user_id, updated_by_user_id, created_at, updated_at
+              created_by_user_id, created_by_plugin_id, updated_by_user_id, created_at, updated_at
   `
   return rows[0] ? mapTable(rows[0]) : null
 }
