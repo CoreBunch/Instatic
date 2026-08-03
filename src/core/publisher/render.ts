@@ -24,6 +24,7 @@ import type { Page, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { buildPageFrame, buildSiteFrame, buildRouteFrame } from '@core/templates/contextFrames'
+import { interpolateTokens } from '@core/templates/tokenInterpolation'
 import { classNamesForClassIds } from '@core/page-tree'
 import {
   normalizeHtmlAttributeName,
@@ -300,6 +301,14 @@ function bodyHtmlAttributes(value: unknown): string {
  * `<head>` metadata tags derived from site settings + page.
  *
  * - `title` falls back through metaTitle → page.title → site.name.
+ * - Title and description are token-interpolated against the render
+ *   context before escaping, so `{currentEntry.*}` / `{page.*}` /
+ *   `{site.*}` resolve per-entry on entry routes (SEO titles like
+ *   `{currentEntry.name} | Acme`) instead of publishing the template
+ *   page's static text. The `??` chain picks the raw value first;
+ *   a token that resolves empty does NOT re-trigger the fallback —
+ *   authors opt into fallbacks with the token's own `{...|fallback}`
+ *   syntax.
  * - URL-typed settings (faviconUrl) are validated by
  *   isSafeUrl() (blocks `javascript:` / `vbscript:` schemes) and then
  *   escapeHtml()'d for safe attribute interpolation.
@@ -313,17 +322,23 @@ interface DocumentMetaTags {
   langAttr: string
 }
 
-function buildDocumentMetaTags(site: SiteDocument, page: Page): DocumentMetaTags {
+function buildDocumentMetaTags(
+  site: SiteDocument,
+  page: Page,
+  context: TemplateRenderDataContext,
+): DocumentMetaTags {
   const { settings } = site
   const metaDesc = settings.metaDescription
-    ? `\n  <meta name="description" content="${escapeHtml(settings.metaDescription)}">`
+    ? `\n  <meta name="description" content="${escapeHtml(interpolateTokens(settings.metaDescription, context))}">`
     : ''
   const favicon =
     settings.faviconUrl && isSafeUrl(settings.faviconUrl)
       ? `\n  <link rel="icon" href="${escapeHtml(settings.faviconUrl)}">`
       : ''
   return {
-    pageTitle: escapeHtml(settings.metaTitle ?? page.title ?? site.name),
+    pageTitle: escapeHtml(
+      interpolateTokens(settings.metaTitle ?? page.title ?? site.name, context),
+    ),
     metaDesc,
     favicon,
     langAttr: escapeHtml(settings.language ?? 'en'),
@@ -499,6 +514,11 @@ export function publishPage(
   // emit <instatic-hole> placeholders instead of recursing.
   const dynamicNodeIds = findDynamicNodeIds(page, site, registry)
 
+  // Composed once per page render: the walker reads it through the config,
+  // and the <head> builder interpolates {source.field} tokens in the
+  // title/description against the same frames.
+  const templateContext = composeTemplateContext(page, site, options.templateContext)
+
   // Read-only inputs of this render pass. A renderer that needs a different
   // page (VC ref) or template frame (loop iteration) derives a child config —
   // it never mutates this one.
@@ -507,7 +527,7 @@ export function publishPage(
     site,
     registry,
     breakpointId: options.breakpointId,
-    templateContext: composeTemplateContext(page, site, options.templateContext),
+    templateContext,
     loopData: options.loopData,
     mediaAssets: options.mediaAssets,
     dynamicNodeIds: dynamicNodeIds.size > 0 ? dynamicNodeIds : undefined,
@@ -555,7 +575,7 @@ export function publishPage(
     acc.cssMap,
   )
 
-  const meta = buildDocumentMetaTags(site, page)
+  const meta = buildDocumentMetaTags(site, page, templateContext)
   const runtime = buildRuntimeAssetsBlock(options, acc)
   const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap, acc.cspSources)
 

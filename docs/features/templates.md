@@ -230,6 +230,8 @@ Text props mix literal text + tokens:
 
 `parseTokenString(input)` returns `TokenSegmentNode[]`; `interpolateTokens(input, ctx)` evaluates and concatenates. Tokens that resolve to `undefined` render as the empty string.
 
+Interpolation applies to string-typed props during the tree walk **and** to the document `<title>` + `<meta name="description">` (`buildDocumentMetaTags` in `src/core/publisher/render.ts`), so a site-wide `metaTitle` like `{currentEntry.name} | Acme` publishes per-entry SEO titles on entry routes.
+
 Source: `src/core/templates/tokenInterpolation.ts`.
 
 ---
