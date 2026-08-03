@@ -154,7 +154,11 @@ export async function handleRuntimeRoutes(req: Request, db: DbClient): Promise<R
     const breakpointId = body.breakpointId?.trim() || undefined
     // TemplateRenderDataContext has deep-nested types that can't be modelled in
     // TypeBox without mirroring the full interface — pass through as-is.
-    const templateContext = body.templateContext as TemplateRenderDataContext | undefined
+    // EXCEPT `media`: it is a live in-memory Map on the canvas side, so
+    // whatever survived JSON here is garbage — drop it and let the preview's
+    // own `prefetchMediaAssets` supply the lookup via `publishPage`.
+    const wireContext = body.templateContext as TemplateRenderDataContext | undefined
+    const templateContext = wireContext ? { ...wireContext, media: undefined } : undefined
     if (!pageId) return badRequest('Missing pageId')
 
     try {

@@ -236,11 +236,16 @@ function slugToFilename(slug: string, title: string): string {
  * populated so dynamic bindings against those sources resolve — even on
  * plain (non-template, non-loop) pages. Caller-provided values always
  * win; missing slots fall back to defaults derived from the page/site.
+ *
+ * The media lookup defaults to the pre-fetched asset map so `format: 'media'`
+ * bindings can translate bare asset references (custom media cells store the
+ * id) into served URLs during the render walk.
  */
 function composeTemplateContext(
   page: Page,
   site: SiteDocument,
   incoming: TemplateRenderDataContext | undefined,
+  mediaAssets: Map<string, RenderResolvedMedia> | undefined,
 ): TemplateRenderDataContext {
   const provided = incoming ?? { entryStack: [] }
   const pageFrame = provided.page ?? buildPageFrame(page)
@@ -249,6 +254,7 @@ function composeTemplateContext(
     page: pageFrame,
     site: provided.site ?? buildSiteFrame(site),
     route: provided.route ?? buildRouteFrame(pageFrame.permalink),
+    media: provided.media ?? mediaAssets,
   }
 }
 
@@ -507,7 +513,7 @@ export function publishPage(
     site,
     registry,
     breakpointId: options.breakpointId,
-    templateContext: composeTemplateContext(page, site, options.templateContext),
+    templateContext: composeTemplateContext(page, site, options.templateContext, options.mediaAssets),
     loopData: options.loopData,
     mediaAssets: options.mediaAssets,
     dynamicNodeIds: dynamicNodeIds.size > 0 ? dynamicNodeIds : undefined,
