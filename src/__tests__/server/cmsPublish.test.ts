@@ -75,8 +75,19 @@ function createPublishFakeDb() {
     }
     // listDataRows for pages — select from data_rows where table_id = 'pages'
     if (sql.includes('from data_rows') && sql.includes('left join users')) {
-      const rows = state.dataRows
-        .filter((r) => r.deleted_at == null)
+      const matchingRows = state.dataRows.filter((r) => {
+        if (r.deleted_at != null) return false
+        if (sql.includes('data_rows.table_id =')) return r.table_id === params[0]
+        if (sql.includes('data_rows.id =')) return r.id === params[0]
+        return true
+      })
+      const rows = (sql.includes('order by data_rows.updated_at desc')
+        ? matchingRows.sort((a, b) =>
+            String(b.updated_at).localeCompare(String(a.updated_at)) ||
+            String(b.created_at).localeCompare(String(a.created_at))
+          )
+        : matchingRows
+      )
         .map((r) => ({
           ...r,
           author_email: null,
@@ -157,6 +168,8 @@ function createPublishFakeDb() {
         row.status = 'published'
         row.published_by_user_id = publishedBy
         row.published_at = new Date('2026-01-03').toISOString()
+        row.updated_by_user_id = publishedBy
+        row.updated_at = new Date('2026-01-03').toISOString()
       }
       return { rows: [], rowCount: row ? 1 : 0 }
     }
@@ -306,6 +319,51 @@ describe('CMS publishing', () => {
       publishedPages: 1,
     })
     expect(status.lastPublishedAt).toBeTruthy()
+  })
+
+  it('keeps publish status matched when publishing changes the rows recency order', async () => {
+    const { state, db } = createPublishFakeDb()
+    const shell = makeSiteShell()
+    await saveDraftSite(db, shell)
+
+    const home = makeHomePage('Home')
+    const layout = {
+      ...makeHomePage('Layout'),
+      id: 'page_layout',
+      title: 'Main layout',
+      slug: 'main-layout',
+      template: {
+        enabled: true as const,
+        target: { kind: 'everywhere' as const },
+        priority: 0,
+      },
+    }
+    for (const page of [home, layout]) {
+      await createDataRow(db, {
+        id: page.id,
+        tableId: 'pages',
+        cells: pageToCells(page),
+        slug: page.slug,
+      }, 'admin_1')
+    }
+
+    const homeRow = state.dataRows.find((row) => row.id === home.id)
+    const layoutRow = state.dataRows.find((row) => row.id === layout.id)
+    if (!homeRow || !layoutRow) throw new Error('test pages were not seeded')
+    homeRow.created_at = new Date('2026-01-01').toISOString()
+    homeRow.updated_at = new Date('2026-01-02').toISOString()
+    layoutRow.created_at = new Date('2026-01-02').toISOString()
+    layoutRow.updated_at = new Date('2026-01-01').toISOString()
+
+    await publishDraftSite(db, 'admin_1')
+    const status = await getDraftPublishStatus(db)
+
+    expect(status).toMatchObject({
+      hasPublishedVersion: true,
+      draftMatchesPublished: true,
+      draftPages: 2,
+      publishedPages: 2,
+    })
   })
 
   it('reports that the current draft no longer matches after a later draft save', async () => {

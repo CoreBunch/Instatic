@@ -32,7 +32,7 @@ The schema for a collection. One row per collection.
 | `kind`            | text      | `'postType' \| 'data' \| 'page' \| 'component' \| 'layout'`      |
 | `singular_label`  | text      | "Post"                                                           |
 | `plural_label`    | text      | "Posts"                                                          |
-| `route_base`      | text      | Empty = not publicly routable. Post-types default to `/<slug>`. |
+| `route_base`      | text      | Empty = not publicly routable. An omitted create value defaults to `/<slug>`; an explicitly empty value stays empty through create, update, and import. |
 | `primary_field_id`| text      | Field id used as the row's display name in grids / pickers      |
 | `fields_json`     | jsonb     | `DataField[]` — the schema                                       |
 | `system`          | boolean   | `true` for seeded tables (`posts`, `pages`, `components`, `layouts`) |

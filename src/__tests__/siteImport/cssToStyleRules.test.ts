@@ -485,6 +485,21 @@ describe('cssToStyleRules — ambient name defaults to selector', () => {
 // ---------------------------------------------------------------------------
 
 describe('cssToStyleRules — duplicate class names', () => {
+  it('does not leak a later duplicate into sibling selectors split from one list', () => {
+    const { rules } = cssToStyleRules(
+      '.register, .source-rule { color: red } .source-rule { display: grid }',
+    )
+
+    expect(rules).toHaveLength(2)
+    expect(rules.find((rule) => rule.name === 'register')?.styles).toEqual({
+      color: 'red',
+    })
+    expect(rules.find((rule) => rule.name === 'source-rule')?.styles).toEqual({
+      color: 'red',
+      display: 'grid',
+    })
+  })
+
   it('duplicate .foo → 1 rule with later value + 1 duplicate-class warning', () => {
     const { rules, warnings } = cssToStyleRules('.foo { color: red } .foo { color: blue }')
     expect(rules).toHaveLength(1)

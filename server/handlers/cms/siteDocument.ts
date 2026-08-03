@@ -81,6 +81,7 @@ import { shellsEqual } from '@core/persistence/shellsEqual'
 import {
   notifyRowWrite,
   notifyShellWrite,
+  serializeCollabAwareWrite,
   type RowWriteKind,
 } from '../../repositories/rowWriteEvents'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
@@ -349,7 +350,8 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
 
     let seq = 0
     let deletedPublishedPage = false
-    await db.transaction(async (tx) => {
+    await serializeCollabAwareWrite(async () => {
+      await db.transaction(async (tx) => {
       // Allocate FIRST: the counter-row UPDATE takes a row lock, so two
       // concurrent save transactions serialize here (on Postgres as well as
       // SQLite's fully-serialized chain) — which makes the conflict reads
@@ -415,30 +417,30 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
         })
         deletedPublishedPage = pagesResult.deletedPublished
       }
+      })
+
+      // Collab invalidation — this save wrote rows/shell OUTSIDE the relay, so
+      // affected CRDT documents must reset while this ordered write still owns
+      // the lane (post-commit; see rowWriteEvents).
+      if (shellChanged) notifyShellWrite()
+      const writtenGroups: Array<[string, Iterable<string>, RowWriteKind]> = [
+        ['pages', changedPageIdsRaw, 'update'],
+        ['pages', pageDeleteIds, 'delete'],
+        ['components', changedComponentIds, 'update'],
+        ['components', componentDeleteIds, 'delete'],
+        ['layouts', changedLayoutIds, 'update'],
+        ['layouts', layoutDeleteIds, 'delete'],
+      ]
+      for (const [tableId, ids, kind] of writtenGroups) {
+        const rowIds = [...ids]
+        if (rowIds.length > 0) notifyRowWrite({ tableId, rowIds, kind })
+      }
     })
 
-    // ─── Phase 3: post-commit effects ────────────────────────────────────────
-    // Deleting a published page retracts its public route — invalidate the
-    // render cache AFTER the transaction commits (never inside it: the bump
-    // serializes against the publish lock, which itself waits on the
-    // transaction chain).
+    // Publish-lock work stays outside the collab-aware lane: publish flushes
+    // need that lane, so acquiring the locks in the opposite order could
+    // deadlock. The database transaction and sync invalidations are complete.
     if (deletedPublishedPage) await bumpPublishVersionSerialized()
-
-    // Collab invalidation — this save wrote rows/shell OUTSIDE the relay, so
-    // affected CRDT documents must reset (post-commit; see rowWriteEvents).
-    if (shellChanged) notifyShellWrite()
-    const writtenGroups: Array<[string, Iterable<string>, RowWriteKind]> = [
-      ['pages', changedPageIdsRaw, 'update'],
-      ['pages', pageDeleteIds, 'delete'],
-      ['components', changedComponentIds, 'update'],
-      ['components', componentDeleteIds, 'delete'],
-      ['layouts', changedLayoutIds, 'update'],
-      ['layouts', layoutDeleteIds, 'delete'],
-    ]
-    for (const [tableId, ids, kind] of writtenGroups) {
-      const rowIds = [...ids]
-      if (rowIds.length > 0) notifyRowWrite({ tableId, rowIds, kind })
-    }
 
     return jsonResponse({ ok: true, seq })
   } catch (err) {
