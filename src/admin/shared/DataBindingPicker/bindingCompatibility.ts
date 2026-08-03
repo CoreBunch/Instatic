@@ -1,5 +1,5 @@
 /**
- * Binding compatibility map — defines which DataFieldTypes each
+ * Shared binding compatibility map — defines which DataFieldTypes each
  * PropertyControlKind can accept as a binding source.
  *
  * Single source of truth for the picker's field eligibility and for whether

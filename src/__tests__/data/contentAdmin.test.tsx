@@ -18,6 +18,7 @@ import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import type { CmsCurrentUser } from '@core/persistence'
 import { CORE_CAPABILITIES } from '@core/capabilities'
 import { executeContentTool } from '@content/agent/contentBridge'
+import { clearDataMetaCache } from '@admin/shared/DataBindingPicker/cache'
 
 const originalFetch = globalThis.fetch
 
@@ -283,6 +284,7 @@ function clickToolbarPublish() {
 }
 
 beforeEach(() => {
+  clearDataMetaCache()
   const site = makeSite({ name: 'Content Shell Site' })
   localStorage.clear()
   // The workspaces now mirror their selection into the URL (`?table=&row=`).
@@ -354,6 +356,29 @@ beforeEach(() => {
     if (url === '/admin/api/cms/data/tables') {
       return json({
         tables: [makeTable('posts', 'Posts', 'posts', '/posts', 'Post', 'Posts')],
+      })
+    }
+
+    if (url === '/admin/api/cms/data/_meta') {
+      return json({
+        meta: {
+          tables: [{
+            id: 'posts',
+            slug: 'posts',
+            name: 'Posts',
+            kind: 'postType',
+            singularLabel: 'Post',
+            pluralLabel: 'Posts',
+            primaryFieldId: 'title',
+            routable: true,
+            versioned: true,
+            fields: [
+              { id: 'title', label: 'Title', type: 'text' },
+              { id: 'body', label: 'Body', type: 'richText' },
+              { id: 'seoTitle', label: 'SEO title', type: 'text' },
+            ],
+          }],
+        },
       })
     }
 
@@ -429,6 +454,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  clearDataMetaCache()
   globalThis.fetch = originalFetch
   useAdminUi.getState().setSiteSummary({ name: null, faviconUrl: null })
   cleanup()
@@ -672,9 +698,132 @@ describe('ContentPage', () => {
     expect(within(notch).getByRole('button', { name: 'Add Heading' })).toBeDefined()
     expect(within(notch).getByRole('button', { name: 'Add Text' })).toBeDefined()
     expect(within(notch).getByRole('button', { name: 'Add Media' })).toBeDefined()
-    expect(within(notch).getByRole('button', { name: 'Add Insert data token' })).toBeDefined()
+    const tokenButton = within(notch).getByRole('button', { name: 'Add Insert data token' })
+    expect(tokenButton).toBeDefined()
     expect(within(notch).queryByRole('button', { name: 'Add to canvas' })).toBeNull()
     expect(screen.queryByTestId('canvas-notch-add-btn')).toBeNull()
+
+    fireEvent.click(tokenButton)
+
+    expect(await screen.findByRole('menu', { name: 'Insert binding for Post body' })).toBeDefined()
+    expect(await screen.findByText('Current entry — Posts')).toBeDefined()
+    expect(screen.getByText('Title')).toBeDefined()
+  })
+
+  it('suppresses the token tooltip while open and inserts populated media and repeater fields', async () => {
+    const defaultFetch = globalThis.fetch
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/admin/api/cms/data/_meta') {
+        return json({
+          meta: {
+            tables: [{
+              id: 'posts',
+              slug: 'posts',
+              name: 'Posts',
+              kind: 'postType',
+              singularLabel: 'Post',
+              pluralLabel: 'Posts',
+              primaryFieldId: 'title',
+              routable: true,
+              versioned: true,
+              fields: [
+                { id: 'title', label: 'Title', type: 'text' },
+                {
+                  id: 'heroImage',
+                  label: 'Hero image',
+                  type: 'media',
+                  mediaKind: 'image',
+                },
+                {
+                  id: 'featureRows',
+                  label: 'Feature rows',
+                  type: 'repeater',
+                  itemLabelFieldId: 'heading',
+                  fields: [
+                    { id: 'heading', label: 'Heading', type: 'text' },
+                    {
+                      id: 'image',
+                      label: 'Image',
+                      type: 'media',
+                      mediaKind: 'image',
+                    },
+                  ],
+                },
+              ],
+            }],
+          },
+        })
+      }
+      if (url === '/admin/api/cms/data/tables/posts/rows' && init?.method === 'POST') {
+        return json({
+          row: makeRow('entry_1', 'posts', {
+            title: 'Untitled',
+            slug: 'untitled',
+            heroImage: imageAsset.id,
+            featureRows: [
+              {
+                id: 'feature_1',
+                cells: { heading: 'Fast', image: imageAsset.id },
+              },
+              {
+                id: 'feature_2',
+                cells: { heading: 'Flexible', image: imageAsset.id },
+              },
+            ],
+          }),
+        }, 201)
+      }
+      return defaultFetch(input, init)
+    }
+
+    render(
+      <AdminTestProviders>
+        <ContentPage />
+      </AdminTestProviders>,
+    )
+
+    await screen.findByRole('region', { name: 'Posts' })
+    fireEvent.click(
+      within(screen.getByRole('region', { name: 'Posts' }))
+        .getByRole('button', { name: /new post/i }),
+    )
+    const bodyEditor = await screen.findByTestId('content-body-editor')
+    const tokenButton = screen.getByRole('button', {
+      name: 'Add Insert data token',
+    })
+
+    fireEvent.mouseEnter(tokenButton)
+    expect(await screen.findByRole('tooltip')).toBeDefined()
+    fireEvent.click(tokenButton)
+
+    const picker = await screen.findByRole('menu', {
+      name: 'Insert binding for Post body',
+    })
+    expect(screen.getByRole('button', {
+      name: 'Add Insert data token',
+    }).getAttribute('aria-expanded')).toBe('true')
+    expect(screen.queryByRole('tooltip')).toBeNull()
+
+    const imageField = within(picker).getByRole('button', {
+      name: /Hero image 1 image/i,
+    })
+    const repeaterField = within(picker).getByRole('button', {
+      name: /Feature rows 2 items/i,
+    })
+    expect(imageField).toBeDefined()
+    expect(repeaterField).toBeDefined()
+
+    fireEvent.click(imageField)
+    fireEvent.click(repeaterField)
+
+    await waitFor(() => {
+      expect(bodyEditor.textContent).toContain('{currentEntry.heroImage}')
+      expect(bodyEditor.textContent).toContain('{currentEntry.featureRows}')
+    })
+    expect(screen.getByRole('menu', {
+      name: 'Insert binding for Post body',
+    })).toBeDefined()
   })
 
   it('hides the right settings panel until an entry is selected, then shows it', async () => {
@@ -1775,6 +1924,28 @@ describe('ContentPage', () => {
     // model to match the proposal.
     expect(src).toContain('BodyBubbleMenu')
     expect(src).toContain('BodySlashMenu')
+  })
+
+  it('uses the shared context-menu primitive for slash commands', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/admin/pages/content/components/BodySlashMenu/BodySlashMenu.tsx'),
+      'utf8',
+    )
+
+    expect(src).toContain("from '@ui/components/ContextMenu'")
+    expect(src).toContain('<ContextMenu')
+    expect(src).toContain('<ContextMenuItem')
+    expect(src).not.toContain('createPortal')
+    expect(src).not.toContain('BodySlashMenu.module.css')
+  })
+
+  it('uses the shared data-binding picker instead of inserting a fixed token', () => {
+    const src = readFileSync(join(process.cwd(), 'src/admin/pages/content/ContentPage.tsx'), 'utf8')
+
+    expect(src).toContain("from '@admin/shared/DataBindingPicker'")
+    expect(src).toContain('<DataBindingPicker')
+    expect(src).toContain('bindingToToken(binding.source, binding.field)')
+    expect(src).not.toContain("insertText('{currentEntry.title}')")
   })
 
   it('uses the content publish button as the single published-state indicator', () => {
