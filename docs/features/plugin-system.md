@@ -684,6 +684,8 @@ Plugins read and write CMS content (pages, posts, custom tables) through `api.cm
 
 The manifest's `contentAccess[]` lists every table whose entries the plugin can touch, with per-table modes. The host fails closed without both the permission and the allowlist entry for entry reads/writes/publishes/deletes. `content.tables.create(...)` is different: it requires `cms.content.tables.manage`, creates a new user-managed table, and does not require a pre-existing `contentAccess[]` row for that table.
 
+The install/upgrade consent screen renders `contentAccess[]` in its own "Content tables" section, mirroring the "External hosts" section: every entry is listed with its modes (an `@own-created` entry renders as "Tables this plugin creates"), and on upgrade entries are diffed against the previously-installed manifest — a new table, or a new mode on an already-approved table, is badged as new; entries the update no longer requests show as dropped.
+
 ```jsonc
 {
   "permissions": ["cms.content.read", "cms.content.write"],
@@ -883,7 +885,7 @@ The DNS SSRF guard in `performGatedFetch` remains the load-bearing defense; the 
 
 Permissions are requested in `plugin.json` and approved by the site owner at install time. Granted permissions are stored on the plugin row. Every SDK call checks the **granted** permission set, not just the request.
 
-The install endpoints enforce **grants = declared**, in both directions: every declared permission must be granted (install is all-or-nothing — there is no optional-permissions concept), and every granted permission must be declared (`assertPluginPermissionGrants` in `server/handlers/cms/plugins/shared.ts` rejects a tampered client that grants capabilities the manifest never disclosed). The install review dialog is shown for **every** install and upgrade — a zero-permission plugin renders "No permissions requested" rather than installing silently.
+The install endpoints enforce **grants = declared**, in both directions: every declared permission must be granted (install is all-or-nothing — there is no optional-permissions concept), and every granted permission must be declared (`assertPluginPermissionGrants` in `server/handlers/cms/plugins/shared.ts` rejects a tampered client that grants capabilities the manifest never disclosed). The install review dialog is shown for **every** install and upgrade — a zero-permission plugin renders "No permissions requested" rather than installing silently. Alongside the requested permissions, the dialog renders the manifest's `contentAccess[]` (per-table content allowlist, with modes) and `networkAllowedHosts` (outbound-host allowlist), and on upgrade diffs all three against the prior install so new access is impossible to miss.
 
 **One authority, three checkpoints.** The declared `permissions` array (what the
 plugin *asked for*) is used only by the install/consent UI. Enforcement always
