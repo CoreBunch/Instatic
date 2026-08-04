@@ -335,7 +335,7 @@ const listMediaTool: AiTool = {
   execution: 'server',
   requiredCapabilities: ['media.read'],
   description:
-    "List existing media assets so you can pick one for a media-typed field. Returns id, filename, publicPath, mimeType, altText, width, height. Optional `query` substring-matches filename + altText (case-insensitive); `mimeType` substring-matches the mime (e.g. 'image' to filter to images). `limit` default 25, max 100. To add a new image, use content_upload_media.",
+    "List existing media assets so you can pick one for a media-typed field. Returns id, filename, publicPath, mimeType, altText, width, height. Optional `query` substring-matches filename + altText (case-insensitive); `mimeType` substring-matches the mime (e.g. 'image' to filter to images). `limit` default 25, max 100. To add a new image, use media_upload.",
   inputSchema: ListMediaInput,
   handler: async (input, ctx) => {
     const args = input as Static<typeof ListMediaInput>

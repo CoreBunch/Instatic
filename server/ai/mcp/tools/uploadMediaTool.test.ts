@@ -17,7 +17,7 @@ function upload(input: Record<string, unknown>): Promise<unknown> {
   return uploadMediaMcpTool.handler!(input, ctx)
 }
 
-describe('content_upload_media', () => {
+describe('media_upload', () => {
   it('requires exactly one of data / sourceUrl', async () => {
     await expect(upload({ filename: 'x.png' })).rejects.toThrow(/exactly one/i)
     await expect(

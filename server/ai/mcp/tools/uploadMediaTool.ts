@@ -109,7 +109,7 @@ async function assertPublicHttpsTarget(urlString: string): Promise<URL> {
 async function readBounded(
   stream: ReadableStream<Uint8Array>,
   maxBytes: number,
-): Promise<Uint8Array> {
+): Promise<Uint8Array<ArrayBuffer>> {
   const reader = stream.getReader()
   const chunks: Uint8Array[] = []
   let total = 0
@@ -133,7 +133,9 @@ async function readBounded(
   return out
 }
 
-async function downloadRemoteImage(sourceUrl: string): Promise<Uint8Array> {
+async function downloadRemoteImage(
+  sourceUrl: string,
+): Promise<Uint8Array<ArrayBuffer>> {
   let current = sourceUrl
   for (let hop = 0; ; hop++) {
     const target = await assertPublicHttpsTarget(current)
@@ -157,14 +159,17 @@ async function downloadRemoteImage(sourceUrl: string): Promise<Uint8Array> {
 }
 
 /** Decode inline image bytes, tolerating a leading `data:<mime>;base64,` prefix. */
-function decodeInlineImage(data: string): Uint8Array {
+function decodeInlineImage(data: string): Uint8Array<ArrayBuffer> {
   const comma = data.startsWith('data:') ? data.indexOf(',') : -1
   const base64 = comma >= 0 ? data.slice(comma + 1) : data
-  return new Uint8Array(Buffer.from(base64, 'base64'))
+  const buf = Buffer.from(base64, 'base64')
+  const out = new Uint8Array(buf.length)
+  out.set(buf)
+  return out
 }
 
 export const uploadMediaMcpTool: AiTool = {
-  name: 'content_upload_media',
+  name: 'media_upload',
   description:
     'Upload a new image into the Media library and return its id + publicPath so you can reference or assign it. Provide the bytes as base64 in `data`, OR an https `sourceUrl` the server downloads. Accepts JPEG, PNG, GIF, WebP, and SVG (SVG is sanitised); the file type is sniffed from the bytes, not the filename. Requires the connector to have media.write.',
   scope: 'content',
