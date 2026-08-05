@@ -19,10 +19,12 @@
  *   getPublishedPageBySlug    — look up a published page snapshot by slug
  *   getPublishedPageSnapshotById — same, by page row id
  *   getLatestPublishedSiteSnapshot — first published page snapshot (for 404s etc.)
+ *   listPublishedPageRoutes   — every published page's slug + lastmod (for the sitemap)
  *   getDraftPublishStatus     — compare draft vs published state for the UI
  */
 import { createHash } from 'node:crypto'
 import type { DataRow } from '@core/data/schemas'
+import { isoDate } from '@core/utils/isoDate'
 import type { SiteDocument } from '@core/page-tree'
 import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
 import type { PublishedRuntimePackageImportmap } from '@core/publisher'
@@ -369,4 +371,36 @@ export async function getLatestPublishedSiteSnapshot(
   `
   const row = rows[0]
   return row ? snapshotFromQueryRow({ ...row, runtime_assets_json: null }) : null
+}
+
+export interface PublishedPageRoute {
+  /** id of the `data_rows` row — used to locate the page in the site snapshot. */
+  pageId: string
+  /** Public URL slug (`data_rows.slug` — what the public router matches). */
+  slug: string
+  /** ISO timestamp of the row's last change — becomes the sitemap `<lastmod>`. */
+  updatedAt: string
+}
+
+/**
+ * Every published, non-deleted page row (`table_id = 'pages'`) with its public
+ * slug and last-updated timestamp. Lightweight — it does NOT pull `cells_json`
+ * or the site snapshot, so template-page filtering is left to the caller (which
+ * already holds the published `SiteDocument` and checks `isTemplatePage`). Used
+ * to enumerate routes for the sitemap.
+ */
+export async function listPublishedPageRoutes(db: DbClient): Promise<PublishedPageRoute[]> {
+  const { rows } = await db<{ page_id: string; slug: string; updated_at: string | Date }>`
+    select id as page_id, slug, updated_at
+    from data_rows
+    where table_id = 'pages'
+      and status = 'published'
+      and deleted_at is null
+    order by created_at asc
+  `
+  return rows.map((row) => ({
+    pageId: row.page_id,
+    slug: row.slug,
+    updatedAt: isoDate(row.updated_at),
+  }))
 }

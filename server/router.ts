@@ -4,6 +4,7 @@ import { tryHandleMcpOAuth } from './ai/mcp/oauth/handler'
 import { handleCmsRequest } from './handlers/cms'
 import type { DbClient } from './db/client'
 import { renderNotFoundResponse, renderPublicResolution } from './publish/publicRouter'
+import { handleSitemapRequest } from './publish/sitemap'
 import { readStaticAsset } from './publish/staticArtefact'
 import { getLatestSnapshotForVersion } from './publish/publishedSnapshotCache'
 import { getPublishVersion, registerVersionedCacheReset } from './publish/publishState'
@@ -91,6 +92,7 @@ const routes: readonly RouteHandler[] = [
   tryServeStaticAsset,
   tryServeUpload,
   tryServeAdminApp,
+  tryServeSitemap,
   tryServePublicRoute,
   trySetupRedirect,
   tryServeNotFoundPage,
@@ -482,6 +484,17 @@ async function tryServeAdminApp(
 async function tryServePublicRoute(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response | null> {
   if (req.method !== 'GET') return null
   return await renderPublicResolution(runtime.db, url, runtime.uploadsDir)
+}
+
+/**
+ * Reserved SEO routes — `/sitemap.xml` and `/robots.txt`. Placed before
+ * `tryServePublicRoute` so these paths are always the generated documents and
+ * can't be shadowed by a published page that happens to use the same slug.
+ * Both are derived from the published DB on each request, anchored to the
+ * request's own origin. Resolution lives in `server/publish/sitemap.ts`.
+ */
+async function tryServeSitemap(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response | null> {
+  return await handleSitemapRequest(req, url, { db: runtime.db })
 }
 
 /**

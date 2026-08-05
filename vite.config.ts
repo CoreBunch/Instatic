@@ -41,6 +41,10 @@ function shouldProxyPublicSiteRequest(req: IncomingMessage): boolean {
   //   /_instatic/css/     → per-site published CSS bundle (reset / framework / style)
   if (pathname.startsWith('/_instatic/assets/')) return true
   if (pathname.startsWith('/_instatic/css/')) return true
+  // Generated SEO documents live on the Bun server; opt them in past the
+  // file-extension rejection below (same reason as the `/_instatic/` routes).
+  if (pathname === '/sitemap.xml') return true
+  if (pathname === '/robots.txt') return true
 
   return pathname === '/' || !FILE_EXTENSION_RE.test(pathname)
 }
