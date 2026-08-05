@@ -10,7 +10,10 @@
   --panel-h: 480px;
   left: var(--panel-x);
   top: var(--panel-y);
-  z-index: 50;
+  /* Matches the shared FloatingWindow layer (90), which is the floating tier
+     above the sidebars (85). At 50 this sat *below* a docked sidebar panel and
+     became unreachable. The docked variant resets to auto below. */
+  z-index: 90;
   width: var(--panel-w);
   height: var(--panel-h);
   min-width: 280px;
