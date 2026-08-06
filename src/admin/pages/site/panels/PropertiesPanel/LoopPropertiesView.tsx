@@ -65,7 +65,13 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
     if (source.id === 'data.rows' && tables) {
       const tableField = source.filterSchema.tableId
       if (tableField && tableField.type === 'select') {
-        return {
+        const selectedTable = tables.find((t) => t.id === filters.tableId)
+        const cellFieldControl = source.filterSchema.cellField
+        const operator = typeof filters.cellOperator === 'string' ? filters.cellOperator : 'is'
+        // The value box is meaningless for the checkbox / emptiness operators,
+        // and a stale value in it would read as a live condition.
+        const valuelessOperator = ['isTrue', 'isFalse', 'isSet', 'isEmpty'].includes(operator)
+        const schema: PropertySchema = {
           ...source.filterSchema,
           tableId: {
             ...tableField,
@@ -75,6 +81,23 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
             ],
           },
         }
+        if (cellFieldControl?.type === 'select') {
+          schema.cellField = {
+            ...cellFieldControl,
+            options: [
+              { label: '— every row —', value: '' },
+              ...(selectedTable?.fields ?? []).map((f) => ({ label: f.label || f.id, value: f.id })),
+            ],
+          }
+        }
+        // Condition + value only matter once a field is picked.
+        if (!filters.cellField) {
+          delete schema.cellOperator
+          delete schema.cellValue
+        } else if (valuelessOperator) {
+          delete schema.cellValue
+        }
+        return schema
       }
     }
     if (source.id === ENTRY_FIELD_SOURCE_ID && tables) {

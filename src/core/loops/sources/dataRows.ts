@@ -20,6 +20,7 @@
  */
 
 import type { LoopEntitySource, LoopFetchResult, LoopItem, LoopSourceDb } from '@core/loops/types'
+import { cellFilterSql, parseCellFilter, type CellFilter } from '../cellFilter'
 import { isoDate } from '../../utils/isoDate'
 import { firstImagePathFromMarkdown } from '@core/markdown/renderMarkdown'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
@@ -218,8 +219,18 @@ async function fetchPage(
   direction: 'asc' | 'desc',
   limit: number,
   offset: number,
+  filter: CellFilter | null,
 ): Promise<PublishedDataRowSqlRow[]> {
   const orderColumn = POST_TYPE_ORDER_COLUMN[orderBy]
+  // SQLite binds `?` by POSITION IN THE TEXT, so the parameter list must follow
+  // the clause order: tableId, then the cell condition (WHERE), then
+  // limit/offset. Postgres indices are numbered to match.
+  const cell = filter
+    ? cellFilterSql({ filter, dialect: db.dialect, column: 'data_row_versions.cells_json', nextParamIndex: 2 })
+    : null
+  const cellParams = cell?.params ?? []
+  const limitParam = positionalParam(db, 2 + cellParams.length)
+  const offsetParam = positionalParam(db, 3 + cellParams.length)
   const { rows } = await db.unsafe<PublishedDataRowSqlRow>(
     `select data_row_versions.id as version_id,
             data_rows.id as row_id,
@@ -252,9 +263,10 @@ async function fetchPage(
        and data_rows.status = 'published'
        and data_rows.deleted_at is null
        and data_tables.deleted_at is null
+       ${cell ? `and ${cell.sql}` : ''}
      order by ${orderColumn} ${direction}, data_row_versions.id ${direction}
-     limit ${positionalParam(db, 2)} offset ${positionalParam(db, 3)}`,
-    [tableId, limit, offset],
+     limit ${limitParam} offset ${offsetParam}`,
+    [tableId, ...cellParams, limit, offset],
   )
   return rows
 }
@@ -357,10 +369,18 @@ async function fetchDataKindPage(
   direction: 'asc' | 'desc',
   limit: number,
   offset: number,
+  filter: CellFilter | null,
 ): Promise<DataKindRowSqlRow[]> {
   const sortKey: 'createdAt' | 'updatedAt' | 'slug' =
     orderBy === 'updatedAt' ? 'updatedAt' : orderBy === 'slug' ? 'slug' : 'createdAt'
   const orderColumn = DATA_KIND_ORDER_COLUMN[sortKey]
+  // Parameter order follows the clause order — see `fetchPage`.
+  const cell = filter
+    ? cellFilterSql({ filter, dialect: db.dialect, column: 'data_rows.cells_json', nextParamIndex: 2 })
+    : null
+  const cellParams = cell?.params ?? []
+  const limitParam = positionalParam(db, 2 + cellParams.length)
+  const offsetParam = positionalParam(db, 3 + cellParams.length)
 
   // Same safety contract as `fetchPage`: the ORDER BY text comes only from
   // the closed map above; every runtime value is a positional parameter.
@@ -384,9 +404,10 @@ async function fetchDataKindPage(
      where data_rows.table_id = ${positionalParam(db, 1)}
        and data_rows.deleted_at is null
        and data_tables.deleted_at is null
+       ${cell ? `and ${cell.sql}` : ''}
      order by ${orderColumn} ${direction}, data_rows.id ${direction}
-     limit ${positionalParam(db, 2)} offset ${positionalParam(db, 3)}`,
-    [tableId, limit, offset],
+     limit ${limitParam} offset ${offsetParam}`,
+    [tableId, ...cellParams, limit, offset],
   )
   return rows
 }
@@ -413,9 +434,12 @@ export async function fetchPublishedDataRowItems(
     direction: 'asc' | 'desc'
     limit: number
     offset: number
+    /** Optional condition on one of the row's own cells. */
+    cellFilter?: CellFilter | null
   },
 ): Promise<LoopFetchResult> {
   if (!opts.tableId) return { items: [], totalItems: 0 }
+  const cellFilter = opts.cellFilter ?? null
 
   const { rows: kindRows } = await db<{ kind: string }>`
     select kind
@@ -433,17 +457,24 @@ export async function fetchPublishedDataRowItems(
   const direction: 'asc' | 'desc' = opts.direction === 'asc' ? 'asc' : 'desc'
 
   if (tableKind === 'data') {
-    const { rows: countRows } = await db<{ total: number }>`
-      select count(*) as total
-      from data_rows
-      where table_id = ${opts.tableId}
-        and deleted_at is null
-    `
+    // The count must apply the same condition, or pagination advertises rows
+    // the page query filters out.
+    const dataCountCell = cellFilter
+      ? cellFilterSql({ filter: cellFilter, dialect: db.dialect, column: 'data_rows.cells_json', nextParamIndex: 2 })
+      : null
+    const { rows: countRows } = await db.unsafe<{ total: number }>(
+      `select count(*) as total
+       from data_rows
+       where data_rows.table_id = ${positionalParam(db, 1)}
+         and data_rows.deleted_at is null
+         ${dataCountCell ? `and ${dataCountCell.sql}` : ''}`,
+      [opts.tableId, ...(dataCountCell?.params ?? [])],
+    )
     const totalItems = Number(countRows[0]?.total ?? 0)
     if (totalItems === 0) return { items: [], totalItems: 0 }
 
     const sqlRows = await fetchDataKindPage(
-      db, opts.tableId, orderBy, direction, opts.limit, opts.offset,
+      db, opts.tableId, orderBy, direction, opts.limit, opts.offset, cellFilter,
     )
     const mediaPathMap = await resolveMediaIdsToPaths(db, extractFeaturedMediaIds(sqlRows))
     return {
@@ -453,18 +484,23 @@ export async function fetchPublishedDataRowItems(
   }
 
   // Post-type path (default): only published rows, joined to active version.
-  const { rows: countRows } = await db<{ total: number }>`
-    select count(*) as total
-    from data_rows
-    join data_row_versions on data_row_versions.id = data_rows.active_version_id
-    where data_rows.table_id = ${opts.tableId}
-      and data_rows.status = 'published'
-      and data_rows.deleted_at is null
-  `
+  const postCountCell = cellFilter
+    ? cellFilterSql({ filter: cellFilter, dialect: db.dialect, column: 'data_row_versions.cells_json', nextParamIndex: 2 })
+    : null
+  const { rows: countRows } = await db.unsafe<{ total: number }>(
+    `select count(*) as total
+     from data_rows
+     join data_row_versions on data_row_versions.id = data_rows.active_version_id
+     where data_rows.table_id = ${positionalParam(db, 1)}
+       and data_rows.status = 'published'
+       and data_rows.deleted_at is null
+       ${postCountCell ? `and ${postCountCell.sql}` : ''}`,
+    [opts.tableId, ...(postCountCell?.params ?? [])],
+  )
   const totalItems = Number(countRows[0]?.total ?? 0)
   if (totalItems === 0) return { items: [], totalItems: 0 }
 
-  const sqlRows = await fetchPage(db, opts.tableId, orderBy, direction, opts.limit, opts.offset)
+  const sqlRows = await fetchPage(db, opts.tableId, orderBy, direction, opts.limit, opts.offset, cellFilter)
   const mediaPathMap = await resolveMediaIdsToPaths(db, extractFeaturedMediaIds(sqlRows))
 
   return {
@@ -490,6 +526,30 @@ export const DataRowsSource: LoopEntitySource = {
       // available data tables — passing an empty list here keeps the schema
       // valid when the source is registered before the table list is loaded.
       options: [],
+    },
+    // Optional condition on one of the row's own cells: the difference
+    // between "the newest three" and "the three marked featured". Field
+    // options are populated per selected table by the Properties Panel.
+    cellField: {
+      type: 'select',
+      label: 'Only rows where',
+      options: [],
+    },
+    cellOperator: {
+      type: 'select',
+      label: 'Condition',
+      options: [
+        { label: 'is', value: 'is' },
+        { label: 'is not', value: 'isNot' },
+        { label: 'is checked', value: 'isTrue' },
+        { label: 'is unchecked', value: 'isFalse' },
+        { label: 'has any value', value: 'isSet' },
+        { label: 'is empty', value: 'isEmpty' },
+      ],
+    },
+    cellValue: {
+      type: 'text',
+      label: 'Value',
     },
   },
 
@@ -526,6 +586,7 @@ export const DataRowsSource: LoopEntitySource = {
       direction: ctx.direction,
       limit: ctx.limit,
       offset: ctx.offset,
+      cellFilter: parseCellFilter(ctx.filters),
     })
   },
 

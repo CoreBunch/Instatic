@@ -40,6 +40,7 @@ import { normalizeDataTableFields } from '@core/data/fields'
 import { slugForTable } from '@core/data/cells'
 import { slugFromTitle } from '@core/utils/slug'
 import { fetchPublishedDataRowItems } from '@core/loops/sources/dataRows'
+import { parseCellFilter } from '@core/loops/cellFilter'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../../http'
 import { CMS_API_PREFIX, requestAuditContext } from '../shared'
 import {
@@ -382,12 +383,21 @@ async function handleTableLoopPreview(
   const rawOffset = Number.parseInt(url.searchParams.get('offset') ?? '0', 10)
   const offset = Math.max(Number.isFinite(rawOffset) ? rawOffset : 0, 0)
 
+  // The canvas preview must apply the loop's cell condition too, or the
+  // editor shows rows the published page will not.
+  const cellFilter = parseCellFilter({
+    cellField: url.searchParams.get('cellField') ?? '',
+    cellOperator: url.searchParams.get('cellOperator') ?? '',
+    cellValue: url.searchParams.get('cellValue') ?? '',
+  })
+
   const result = await fetchPublishedDataRowItems(db, {
     tableId,
     orderBy,
     direction,
     limit,
     offset,
+    cellFilter,
   })
   return jsonResponse(result)
 }
