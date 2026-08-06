@@ -15,6 +15,7 @@ import {
 import panelStyles from '../AdminEntry.module.css'
 import styles from './AdminPreAuthForm.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { LanguageSwitcher, useI18n, type MessageKey } from '../i18n'
 
 // Phase the unauthenticated form can be in. 'mfa' is a sub-state reached
 // only after a login submit returns `mfaRequired: true` — never set by the
@@ -30,15 +31,27 @@ interface AdminPreAuthFormProps {
 }
 
 interface PhaseCopy {
-  title: string
-  submit: string
-  submitPending: string
+  title: MessageKey
+  submit: MessageKey
+  submitPending: MessageKey
 }
 
 const PHASE_COPY: Record<PreAuthPhase, PhaseCopy> = {
-  setup: { title: 'Set Up CMS', submit: 'Create Admin', submitPending: 'Setting up' },
-  login: { title: 'Admin Login', submit: 'Sign In', submitPending: 'Signing in' },
-  mfa: { title: 'Two-Factor Authentication', submit: 'Verify', submitPending: 'Verifying' },
+  setup: {
+    title: 'preauth.setup.title',
+    submit: 'preauth.setup.submit',
+    submitPending: 'preauth.setup.submitPending',
+  },
+  login: {
+    title: 'preauth.login.title',
+    submit: 'preauth.login.submit',
+    submitPending: 'preauth.login.submitPending',
+  },
+  mfa: {
+    title: 'preauth.mfa.title',
+    submit: 'preauth.mfa.submit',
+    submitPending: 'preauth.mfa.submitPending',
+  },
 }
 
 const MIN_PASSWORD_LENGTH = 12
@@ -67,7 +80,8 @@ export function AdminPreAuthForm({
   onPhaseChange,
   onAuthenticated,
 }: AdminPreAuthFormProps) {
-  const [siteName, setSiteName] = useState('My Site')
+  const { t } = useI18n()
+  const [siteName, setSiteName] = useState(() => t('preauth.setup.defaultSiteName'))
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -84,14 +98,14 @@ export function AdminPreAuthForm({
   async function handleSetup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
+      setError(t('preauth.error.passwordTooShort', { min: MIN_PASSWORD_LENGTH }))
       return
     }
     await runAuthAction(async () => {
       await setupCms({ siteName, email, password, displayName })
       await loginCms({ email, password })
       onAuthenticated(await getCurrentCmsUser())
-    }, 'Setup failed', setSubmitting, setError)
+    }, t('preauth.error.setupFailed'), setSubmitting, setError)
   }
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
@@ -105,7 +119,7 @@ export function AdminPreAuthForm({
         return
       }
       onAuthenticated(await getCurrentCmsUser())
-    }, 'Login failed', setSubmitting, setError)
+    }, t('preauth.error.loginFailed'), setSubmitting, setError)
   }
 
   async function handleMfaVerify(event: FormEvent<HTMLFormElement>) {
@@ -115,11 +129,11 @@ export function AdminPreAuthForm({
       const user = await getCurrentCmsUser()
       setMfaCode('')
       onAuthenticated(user)
-    }, 'MFA verification failed', setSubmitting, setError)
+    }, t('preauth.error.mfaVerificationFailed'), setSubmitting, setError)
   }
 
   const copy = PHASE_COPY[phase]
-  const submitLabel = submitting ? copy.submitPending : copy.submit
+  const submitLabel = t(submitting ? copy.submitPending : copy.submit)
 
   // Pre-auth brand row: when the install has picked a favicon, render it
   // in place of the default icon AND swap the "Instatic" label for
@@ -135,29 +149,32 @@ export function AdminPreAuthForm({
   return (
     <main className={panelStyles.page}>
       <section className={panelStyles.panel} aria-labelledby="admin-entry-title">
-        <div className={styles.brandRow}>
-          {publicSite.faviconUrl ? (
-            <img
-              className={styles.brandFavicon}
-              src={publicSite.faviconUrl}
-              alt=""
-              aria-hidden="true"
-              draggable={false}
-            />
-          ) : (
-            <div className={styles.brandIcon} aria-hidden="true">
-              <DatabaseSolidIcon size={16} />
-            </div>
-          )}
-          <span>{brandLabel}</span>
+        <div className={styles.headerRow}>
+          <div className={styles.brandRow}>
+            {publicSite.faviconUrl ? (
+              <img
+                className={styles.brandFavicon}
+                src={publicSite.faviconUrl}
+                alt=""
+                aria-hidden="true"
+                draggable={false}
+              />
+            ) : (
+              <div className={styles.brandIcon} aria-hidden="true">
+                <DatabaseSolidIcon size={16} />
+              </div>
+            )}
+            <span>{brandLabel}</span>
+          </div>
+          <LanguageSwitcher className={styles.languageSwitcher} />
         </div>
 
-        <h1 id="admin-entry-title" className={panelStyles.title}>{copy.title}</h1>
+        <h1 id="admin-entry-title" className={panelStyles.title}>{t(copy.title)}</h1>
 
         <form className={styles.form} onSubmit={onSubmit}>
           {phase === 'mfa' ? (
             <label className={styles.field} htmlFor={mfaCodeId}>
-              <span>Authentication code</span>
+              <span>{t('preauth.field.authenticationCode')}</span>
               <Input
                 id={mfaCodeId}
                 value={mfaCode}
@@ -171,7 +188,7 @@ export function AdminPreAuthForm({
           ) : phase === 'setup' && (
             <>
               <label className={styles.field} htmlFor={siteNameId}>
-                <span>Site name</span>
+                <span>{t('preauth.field.siteName')}</span>
                 <Input
                   id={siteNameId}
                   value={siteName}
@@ -185,7 +202,10 @@ export function AdminPreAuthForm({
                   published pages. Left blank they render nothing — which is
                   why it is offered here rather than only on the account page. */}
               <label className={styles.field} htmlFor={displayNameId}>
-                <span>Your name <span className={styles.hint}>optional, shown on published pages</span></span>
+                <span>
+                  {t('preauth.field.displayName')}{' '}
+                  <span className={styles.hint}>{t('preauth.field.displayNameHint')}</span>
+                </span>
                 <Input
                   id={displayNameId}
                   value={displayName}
@@ -200,7 +220,7 @@ export function AdminPreAuthForm({
           {phase !== 'mfa' && (
             <>
               <label className={styles.field} htmlFor={emailId}>
-                <span>Email</span>
+                <span>{t('preauth.field.email')}</span>
                 <Input
                   id={emailId}
                   value={email}
@@ -212,7 +232,7 @@ export function AdminPreAuthForm({
               </label>
 
               <label className={styles.field} htmlFor={passwordId}>
-                <span>Password</span>
+                <span>{t('preauth.field.password')}</span>
                 <Input
                   id={passwordId}
                   value={password}

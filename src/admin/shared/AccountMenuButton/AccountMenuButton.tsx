@@ -35,6 +35,8 @@ import {
 import { SettingsCogSolidIcon } from 'pixel-art-icons/icons/settings-cog-solid'
 import { PowerOffIcon } from 'pixel-art-icons/icons/power-off'
 import { MonitorSolidIcon } from 'pixel-art-icons/icons/monitor-solid'
+import { GlobeSolidIcon } from 'pixel-art-icons/icons/globe-solid'
+import { LOCALE_NATIVE_NAMES, useI18n } from '@admin/i18n'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import { useAdminNavigate } from '@admin/lib/useAdminNavigate'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
@@ -49,6 +51,7 @@ export function AccountMenuButton(): ReactNode {
   const user = useAuthenticatedAdminUser()
   const navigate = useAdminNavigate()
   const { runStepUp } = useStepUp()
+  const { locale, setLocale, t } = useI18n()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState<null | 'logout' | 'logout-all'>(null)
   const [status, setStatus] = useState<{ tone: 'info' | 'error'; message: string } | null>(null)
@@ -155,6 +158,18 @@ export function AccountMenuButton(): ReactNode {
             <span>Account &amp; security</span>
           </ContextMenuItem>
           <ContextMenuItem
+            onClick={() => {
+              const nextLocale = locale === 'zh-CN' ? 'en' : 'zh-CN'
+              setLocale(nextLocale)
+              close()
+            }}
+            data-testid="account-menu-switch-language"
+          >
+            <GlobeSolidIcon size={12} aria-hidden="true" />
+            <span>{t('language.switchTo', { language: LOCALE_NATIVE_NAMES[locale === 'zh-CN' ? 'en' : 'zh-CN'] })}</span>
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
             onClick={() => void handleSignOut()}
             disabled={busy !== null}
             data-testid="account-menu-sign-out"
@@ -184,4 +199,3 @@ export function AccountMenuButton(): ReactNode {
     </>
   )
 }
-

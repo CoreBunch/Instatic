@@ -132,6 +132,7 @@
     "jscpd": "^4.0.9",
     "knip": "^6.11.0",
     "madge": "^8.0.0",
+    "magic-string": "0.30.21",
     "playwright-core": "^1.60.0",
     "react-doctor": "^0.2.14",
     "secretlint": "^12.3.1",

@@ -7,6 +7,8 @@ import {
   proxyLargeDevRequest,
   shouldBufferLargeDevProxyRequest,
 } from './scripts/lib/largeBodyDevProxy'
+import { adminI18nPlugin } from './scripts/lib/adminI18n'
+import { adminLiteralZhCN } from './src/admin/i18n/literalCatalog'
 
 const CMS_DEV_SERVER_ORIGIN = `http://localhost:${process.env.PORT ?? '3001'}`
 const FILE_EXTENSION_RE = /\.[a-zA-Z0-9]+$/
@@ -198,6 +200,7 @@ export default defineConfig({
   plugins: [
     largeBodyDevProxyPlugin(),
     publicSiteDevProxyPlugin(),
+    adminI18nPlugin(adminLiteralZhCN),
     react(),
     babel({ presets: [reactCompilerPreset()] }),
   ],

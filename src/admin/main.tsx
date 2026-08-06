@@ -7,6 +7,7 @@ import { AdminContextMenuGuard } from './shared/AdminContextMenuGuard'
 import { AdminZoomGuard } from './shared/AdminZoomGuard'
 import { ErrorBoundary, flattenErrorChain, logErrorChain } from '@ui/components/ErrorBoundary'
 import { ToastProvider, pushToast } from '@ui/components/Toast'
+import { I18nProvider } from './i18n'
 import '../styles/globals.css'
 
 // `installPluginRuntime()` used to be called here, eagerly. That dragged
@@ -110,14 +111,16 @@ await Promise.resolve()
 flushSync(() => {
   root.render(
     <StrictMode>
-      <ErrorBoundary location="admin-shell">
-        <Router>
-          <AdminRoutes />
-        </Router>
-        <AdminZoomGuard />
-        <AdminContextMenuGuard />
-      </ErrorBoundary>
-      <ToastProvider />
+      <I18nProvider>
+        <ErrorBoundary location="admin-shell">
+          <Router>
+            <AdminRoutes />
+          </Router>
+          <AdminZoomGuard />
+          <AdminContextMenuGuard />
+        </ErrorBoundary>
+        <ToastProvider />
+      </I18nProvider>
     </StrictMode>,
   )
 })

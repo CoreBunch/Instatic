@@ -19,6 +19,7 @@ Catalog of every `localStorage` / `sessionStorage` key the admin app writes, and
 
 | Key                                       | Owner                                                                 | Source-of-truth file                                            |
 |-------------------------------------------|-----------------------------------------------------------------------|-----------------------------------------------------------------|
+| `instatic-admin-locale-v1`                      | Explicit admin UI locale selected with the language switcher; absent means Simplified Chinese | `src/admin/i18n/localePreference.ts` → `ADMIN_LOCALE_STORAGE_KEY` |
 | `instatic-editor-prefs`                         | All editor preferences (auto-save, hover-preview, admin theme, UI text size, density, layers options) — see [docs/features/editor-preferences.md](../features/editor-preferences.md) | `src/admin/pages/site/preferences/editorPreferences.ts` → `EDITOR_PREFS_KEY` |
 | `instatic-editor-layout-v2`                     | Per-workspace sidebar widths + open states (site / content / data / media) and floating panel positions | `src/admin/state/workspaceLayoutStorage.ts` → `EDITOR_LAYOUT_STORAGE_KEY` |
 | `instatic-clipboard-v1`                         | The editor clipboard (copy / cut / paste of layer subtrees)            | `src/admin/pages/site/store/clipboard/clipboardStorage.ts` → `CLIPBOARD_STORAGE_KEY` |

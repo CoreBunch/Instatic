@@ -6,7 +6,7 @@ Catalog of every test in `src/__tests__/architecture/`. These are structural gat
 
 ## TL;DR
 
-- 95 gate files across structural domains: SQL, JSON columns, migrations, CSS, icons, primitives, page tree, sandbox, agent, router, content storage, boundary validation, module size, AI, auth, error handling, etc.
+- 96 gate files across structural domains: SQL, JSON columns, migrations, CSS, icons, primitives, page tree, sandbox, agent, router, admin localization, content storage, boundary validation, module size, AI, auth, error handling, etc.
 - Naming convention: `<topic>.test.ts` (kebab-case) or `<group>-<topic>.test.ts`. A few legacy `task<N>-*` ids remain for live invariants; new gates should use topic names.
 - Run them all: `bun test src/__tests__/architecture/`.
 - Most are **import / source scans** — they parse the files in scope and assert / reject patterns. Some are unit-style (a small in-test database, a synthesized page tree).
@@ -121,6 +121,7 @@ See [docs/reference/ui-primitives.md](ui-primitives.md).
 | `no-circular-dependencies.test.ts`            | `madge` finds zero tsconfig-aware circular dependencies across `src` and `server`. |
 | `canvas-aware-selectors.test.ts`              | Canvas-related store selectors are subscribed correctly to canvas-state slices.  |
 | `admin-router-usage.test.ts`                  | Internal admin navigation uses `@admin/lib/routing`; raw `/admin` anchors and `react-router-dom` are banned. |
+| `admin-i18n-coverage.test.ts`                 | Every extracted user-facing admin literal has a Simplified Chinese translation, and the compile-time transform preserves intentionally empty translations used for suffix removal. |
 | `framework-typography-spacing.test.ts`        | The site framework's typography / spacing tokens compile correctly.              |
 | `component-system-placement.test.ts`          | Every VC insertion flow (toolbar picker, context menu) routes through `insertComponentRef`; Site Explorer must not expose a component-to-canvas drag source, and direct `insertNode`/`addNodeToVc` with `'base.visual-component-ref'` is forbidden in placement files. |
 | `task414-wrap-to-container.test.ts`           | Wrap-to-container action creates defaulted wrappers and preserves tree structure. |

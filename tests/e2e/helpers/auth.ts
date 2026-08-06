@@ -1,5 +1,6 @@
 import { expect, type Page } from '@playwright/test'
 import { OWNER } from './constants'
+import { ADMIN_LOCALE_STORAGE_KEY } from '../../../src/admin/i18n/constants'
 
 /**
  * Authentication + first-run setup helpers, written to mirror what a real owner
@@ -13,6 +14,7 @@ import { OWNER } from './constants'
  * path the owner is authenticated and the admin shell is reachable.
  */
 export async function completeSetupOrLogin(page: Page): Promise<void> {
+  await preferEnglishAdmin(page)
   await page.goto('/admin')
   const setupHeading = page.getByRole('heading', { name: 'Set Up CMS' })
   const onSetup = await setupHeading
@@ -41,12 +43,19 @@ export async function loginAs(
   email: string,
   password: string,
 ): Promise<void> {
+  await preferEnglishAdmin(page)
   await page.goto('/admin')
   await expect(page.getByRole('heading', { name: 'Admin Login' })).toBeVisible()
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Password').fill(password)
   await page.getByRole('button', { name: 'Sign In' }).click()
   await expectLoggedIn(page)
+}
+
+async function preferEnglishAdmin(page: Page): Promise<void> {
+  await page.addInitScript((storageKey) => {
+    localStorage.setItem(storageKey, JSON.stringify({ locale: 'en' }))
+  }, ADMIN_LOCALE_STORAGE_KEY)
 }
 
 /**
