@@ -73,6 +73,11 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  *   (or `local(...)` only) — nothing to upload, so the face is skipped rather
  *   than imported. The user can re-add the font by hand. Self-hosted faces
  *   (a bundled `.woff2`/`.woff`/`.ttf`/`.otf`) ARE imported as custom fonts.
+ * - `unresolved-asset`: an HTML/CSS reference to a media file (image, font,
+ *   video, …) that the archive does not contain under that path — not even
+ *   after the punctuation-insensitive fallback match. The reference is left
+ *   pointing at its original path, so the page imports with a broken image
+ *   rather than losing the element. One warning per distinct missing path.
  */
 type ImportWarningKind =
   | 'dropped-at-rule'
@@ -87,6 +92,7 @@ type ImportWarningKind =
   | 'asset-upload-failed'
   | 'font-install-failed'
   | 'external-font'
+  | 'unresolved-asset'
 
 export interface ImportWarning {
   kind: ImportWarningKind

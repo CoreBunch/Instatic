@@ -79,6 +79,7 @@ export type {
   CrossSheetClassConflict,
   ImportPlan,
   ImportResult,
+  ImportWarning,
   StylesheetImportMode,
   ImportStylesheet,
   // @font-face import

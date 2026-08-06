@@ -359,3 +359,98 @@ describe('buildAssetPlan — anchor hrefs to HTML pages do not produce assets', 
     expect(assets.every((a) => a.sourcePath !== 'about.html')).toBe(true)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Unresolved references
+// ---------------------------------------------------------------------------
+
+describe('buildAssetPlan — references the archive cannot satisfy', () => {
+  it('matches a file whose stored name differs only in punctuation', () => {
+    // Real Webflow export: the file keeps `&`, `+`, and a space; the HTML
+    // written against it does not. Without the fallback the page imports with
+    // a broken image and nothing says why.
+    const stored = 'images/101-&Berlin-Office-Us+ Coworking.webp'
+    const referenced = 'images/101-Berlin-Office-Us-Coworking.webp'
+    const fileMap = makeFileMap({
+      'index.html': { bytes: txt(`<html><body><img src="${referenced}"></body></html>`), mimeType: 'text/html' },
+      [stored]: { bytes: MINIMAL_PNG, mimeType: 'image/webp' },
+    })
+    const src = new TextDecoder().decode(fileMap.files['index.html']!.bytes)
+    const { pagePlan } = makeHtmlPagePlan('index.html', src, fileMap)
+    const { normalizedPagePlans, assets, warnings } = buildAssetPlan([pagePlan], [], fileMap)
+
+    const nodes = Object.values(normalizedPagePlans[0].nodeFragment.nodes)
+    const imageNode = nodes.find((n) => typeof n.props['src'] === 'string')
+    expect(imageNode?.props['src']).toBe(stored)
+    expect(assets.map((a) => a.sourcePath)).toEqual([stored])
+    expect(warnings).toHaveLength(0)
+  })
+
+  it('refuses to guess when two files differ only in punctuation', () => {
+    // Picking one would silently put the wrong image on the page.
+    const fileMap = makeFileMap({
+      'index.html': { bytes: txt('<html><body><img src="images/a-b.png"></body></html>'), mimeType: 'text/html' },
+      'images/a&b.png': { bytes: MINIMAL_PNG, mimeType: 'image/png' },
+      'images/a+b.png': { bytes: MINIMAL_PNG, mimeType: 'image/png' },
+    })
+    const src = new TextDecoder().decode(fileMap.files['index.html']!.bytes)
+    const { pagePlan } = makeHtmlPagePlan('index.html', src, fileMap)
+    const { normalizedPagePlans, warnings } = buildAssetPlan([pagePlan], [], fileMap)
+
+    const nodes = Object.values(normalizedPagePlans[0].nodeFragment.nodes)
+    const imageNode = nodes.find((n) => typeof n.props['src'] === 'string')
+    expect(imageNode?.props['src']).toBe('images/a-b.png')
+    expect(warnings.map((w) => w.kind)).toEqual(['unresolved-asset'])
+  })
+
+  it('warns once per missing image, however many pages reference it', () => {
+    const html = '<html><body><img src="images/gone.png"></body></html>'
+    const fileMap = makeFileMap({
+      'index.html': { bytes: txt(html), mimeType: 'text/html' },
+      'about.html': { bytes: txt(html), mimeType: 'text/html' },
+    })
+    const plans = ['index.html', 'about.html'].map(
+      (path) => makeHtmlPagePlan(path, new TextDecoder().decode(fileMap.files[path]!.bytes), fileMap).pagePlan,
+    )
+    const { warnings } = buildAssetPlan(plans, [], fileMap)
+
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]?.kind).toBe('unresolved-asset')
+    expect(warnings[0]?.path).toBe('images/gone.png')
+    expect(warnings[0]?.message).toContain('images/gone.png')
+  })
+
+  it('reports a missing CSS background image too', () => {
+    const css = '.hero{background-image:url("../images/missing.jpg")}'
+    const fileMap = makeFileMap({
+      'styles/site.css': { bytes: txt(css), mimeType: 'text/css' },
+    })
+    const parsed = cssToStyleRules(css)
+    const cssFileResults: CssFileResult[] = [
+      { cssPath: 'styles/site.css', rules: parsed.rules, assetRefs: parsed.assetRefs },
+    ]
+    const { warnings } = buildAssetPlan([], cssFileResults, fileMap)
+
+    expect(warnings.map((w) => w.path)).toEqual(['images/missing.jpg'])
+  })
+
+  it('stays quiet about links, routes, and scripts that are not in the archive', () => {
+    // An anchor to an extensionless route, a page that lives elsewhere, and a
+    // CDN script are all normal. Warning about them would bury the real
+    // missing images.
+    const fileMap = makeFileMap({
+      'index.html': {
+        bytes: txt(
+          '<html><body><a href="/contact">Contact</a><a href="missing-page.html">Gone</a><img src="logo.png"></body></html>',
+        ),
+        mimeType: 'text/html',
+      },
+      'logo.png': { bytes: MINIMAL_PNG, mimeType: 'image/png' },
+    })
+    const src = new TextDecoder().decode(fileMap.files['index.html']!.bytes)
+    const { pagePlan } = makeHtmlPagePlan('index.html', src, fileMap)
+    const { warnings } = buildAssetPlan([pagePlan], [], fileMap)
+
+    expect(warnings.filter((w) => w.kind === 'unresolved-asset')).toHaveLength(0)
+  })
+})
