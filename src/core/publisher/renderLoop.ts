@@ -21,6 +21,7 @@ import {
 } from '@core/loops'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { resolveHtmlTag } from '@modules/base/utils/htmlTag'
+import { htmlAttributesAttr } from '@modules/base/shared/htmlAttributes'
 import { injectNodeClassIds, injectNodeId, injectNodeInlineStyles } from './classInjection'
 import { escapeHtml } from './utils'
 import type { RenderConfig, RenderAccumulators, RenderNodeFn } from './renderConfig'
@@ -116,6 +117,11 @@ export function renderLoop(
     attrs += ` data-instatic-loop-page-size="${typeof props.pageSize === 'number' ? Math.floor(props.pageSize) : 10}"`
     acc.infiniteLoopIds.add(loopId)
   }
+
+  // Author attributes — normalised, escaped, and filtered by the shared
+  // sanitiser, which reserves the `data-instatic-*` prefix so the loop's own
+  // bookkeeping above can't be redirected from the attributes panel.
+  attrs += htmlAttributesAttr(props.htmlAttributes)
 
   // Wrapper element — author-selectable via the shared htmlTag helper
   // (defaults to 'div'). `resolveHtmlTag` always returns a safe lowercase

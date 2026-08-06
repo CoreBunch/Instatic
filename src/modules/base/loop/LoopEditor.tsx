@@ -24,6 +24,7 @@ import type { ModuleComponentProps } from '@core/module-engine'
 import { CanvasModulePlaceholder } from '@ui/components/CanvasModulePlaceholder'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
 import { resolveHtmlTag } from '@modules/base/utils/htmlTag'
+import { htmlAttributesForReact } from '@modules/base/shared/htmlAttributes'
 
 export const LoopEditor: React.FC<ModuleComponentProps> = ({ props, children, mcClassName, nodeWrapperProps, nodeId }) => {
   const hasChildren = React.Children.count(children) > 0
@@ -44,11 +45,15 @@ export const LoopEditor: React.FC<ModuleComponentProps> = ({ props, children, mc
   // diverges from the published DOM and user CSS targeting
   // `[data-instatic-loop] > article` (a common grid-of-cards pattern) doesn't
   // match in the editor preview.
+  // Author attributes are spread first, mirroring the published order. The
+  // shared sanitiser reserves `data-instatic-*` / `data-canvas-*`, so the
+  // wrapper's own attributes below cannot be overwritten either way.
   const Tag = resolveHtmlTag(props.tag, props.customTag)
   return React.createElement(
     Tag,
     {
       ...nodeWrapperProps,
+      ...htmlAttributesForReact(props.htmlAttributes),
       className: mcClassName,
       'data-instatic-loop': nodeId,
       'data-instatic-loop-page': '1',
