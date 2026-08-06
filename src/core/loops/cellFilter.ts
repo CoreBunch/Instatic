@@ -1,5 +1,6 @@
 /**
- * Cell filtering for data-row loops.
+ * Cell access for data-row loops — filtering and ordering by a row's own
+ * cell rather than only by the table's SQL columns.
  *
  * A loop could pick a table and an order, but not *which* rows — so a page
  * that should list three featured articles listed the three most recent
@@ -16,6 +17,50 @@
  * without inventing an AND/OR grammar the editor cannot express and future
  * maintainers would have to keep sound.
  */
+
+// ---------------------------------------------------------------------------
+// Ordering by a cell
+// ---------------------------------------------------------------------------
+
+/** `orderBy` values of this shape sort by a cell instead of a column. */
+export const CELL_ORDER_PREFIX = 'cell:'
+
+/**
+ * Read a cell-ordering request out of a loop's `orderBy`.
+ *
+ * Riding on `orderBy` (rather than a second prop) keeps ordering in one
+ * place: callers that already thread `orderBy` — the publisher, the canvas
+ * preview endpoint, imported `data-order-by` attributes — get this for free.
+ */
+export function parseCellOrder(orderBy: string): { field: string } | null {
+  if (!orderBy.startsWith(CELL_ORDER_PREFIX)) return null
+  const field = orderBy.slice(CELL_ORDER_PREFIX.length).trim()
+  return field ? { field } : null
+}
+
+/**
+ * `ORDER BY` expression for a cell, with the field name bound as a parameter.
+ *
+ * Values are compared as TEXT in both dialects. ISO dates — the reason this
+ * exists — sort chronologically that way, and text sorts naturally. Numbers
+ * sort lexicographically (`'10' < '9'`), which is the price of one predictable
+ * rule across Postgres and SQLite instead of two subtly different ones.
+ */
+export function cellOrderSql(input: {
+  field: string
+  dialect: 'postgres' | 'sqlite'
+  column: string
+  paramIndex: number
+}): { sql: string; params: unknown[] } {
+  const { field, dialect, column, paramIndex } = input
+  const placeholder = dialect === 'postgres' ? `$${paramIndex}` : '?'
+  const raw = dialect === 'postgres'
+    ? `(${column} #>> array[${placeholder}])`
+    : `cast(json_extract(${column}, '$.' || ${placeholder}) as text)`
+  // `coalesce` keeps rows that lack the field in one predictable place instead
+  // of relying on NULL ordering, which differs between the engines.
+  return { sql: `coalesce(${raw}, '')`, params: [field] }
+}
 
 /** Operators a loop filter can use. Closed set — never interpolated raw. */
 export const CELL_FILTER_OPERATORS = ['is', 'isNot', 'isTrue', 'isFalse', 'isSet', 'isEmpty'] as const

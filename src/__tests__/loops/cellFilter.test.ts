@@ -14,7 +14,9 @@ import { describe, expect, test } from 'bun:test'
 import {
   cellFilterMatches,
   cellFilterSql,
+  cellOrderSql,
   parseCellFilter,
+  parseCellOrder,
   CELL_FILTER_OPERATORS,
   type CellFilter,
 } from '@core/loops/cellFilter'
@@ -126,6 +128,39 @@ describe('cellFilterSql', () => {
     // Without the cast, json_extract returns INTEGER 1 and `1 = '1'` is false.
     expect(sql).toContain('cast(')
     expect(sql).toContain("'1'")
+  })
+})
+
+describe('parseCellOrder', () => {
+  test('only `cell:` values mean a cell sort', () => {
+    expect(parseCellOrder('publishedAt')).toBeNull()
+    expect(parseCellOrder('')).toBeNull()
+    expect(parseCellOrder('cell:published-on')).toEqual({ field: 'published-on' })
+  })
+
+  test('a prefix with no field is not a sort', () => {
+    expect(parseCellOrder('cell:')).toBeNull()
+    expect(parseCellOrder('cell:   ')).toBeNull()
+  })
+})
+
+describe('cellOrderSql', () => {
+  test('binds the field name and never writes it into the SQL', () => {
+    for (const dialect of ['postgres', 'sqlite'] as const) {
+      const { sql, params } = cellOrderSql({ field: 'published-on', dialect, column: 'c', paramIndex: 2 })
+      expect(sql).not.toContain('published-on')
+      expect(params).toEqual(['published-on'])
+    }
+  })
+
+  test('rows without the field get a defined sort position', () => {
+    const { sql } = cellOrderSql({ field: 'f', dialect: 'sqlite', column: 'c', paramIndex: 1 })
+    expect(sql).toContain('coalesce')
+  })
+
+  test('placeholder style follows the dialect', () => {
+    expect(cellOrderSql({ field: 'f', dialect: 'postgres', column: 'c', paramIndex: 3 }).sql).toContain('$3')
+    expect(cellOrderSql({ field: 'f', dialect: 'sqlite', column: 'c', paramIndex: 3 }).sql).toContain('?')
   })
 })
 

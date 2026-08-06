@@ -66,10 +66,12 @@ beforeAll(async () => {
 
   // Post-type rows: two featured, one not, one missing the field entirely —
   // the exact shape that made a real migration list the wrong three items.
-  await seedPost('p-a', 'alpha', { title: 'Alpha', featured: true, tag: 'news' }, '2024-01-01T00:00:00Z')
-  await seedPost('p-b', 'bravo', { title: 'Bravo', featured: false, tag: 'news' }, '2024-01-02T00:00:00Z')
-  await seedPost('p-c', 'charlie', { title: 'Charlie', featured: true, tag: 'guide' }, '2024-01-03T00:00:00Z')
-  await seedPost('p-d', 'delta', { title: 'Delta' }, '2024-01-04T00:00:00Z')
+  // `published-on` deliberately disagrees with the row's own publish column,
+  // so a cell sort cannot be mistaken for a column sort.
+  await seedPost('p-a', 'alpha', { title: 'Alpha', featured: true, tag: 'news', 'published-on': '2023-05-02' }, '2024-01-01T00:00:00Z')
+  await seedPost('p-b', 'bravo', { title: 'Bravo', featured: false, tag: 'news', 'published-on': '2023-09-30' }, '2024-01-02T00:00:00Z')
+  await seedPost('p-c', 'charlie', { title: 'Charlie', featured: true, tag: 'guide', 'published-on': '2023-01-15' }, '2024-01-03T00:00:00Z')
+  await seedPost('p-d', 'delta', { title: 'Delta', 'published-on': '2023-07-11' }, '2024-01-04T00:00:00Z')
 
   await db`
     insert into data_tables (id, name, slug, kind, route_base, singular_label, plural_label, fields_json, system)
@@ -143,6 +145,67 @@ describe('data.rows cell filter — post-type tables', () => {
 
   it('an unknown field matches nothing rather than everything', async () => {
     expect(await slugsWith('posts', { field: 'nope', operator: 'isTrue', value: '' })).toEqual([])
+  })
+})
+
+describe('data.rows ordering by a cell', () => {
+  it('sorts by the cell, not by the row columns', async () => {
+    // Seed order is alpha, bravo, charlie, delta; the dates deliberately
+    // disagree with it so a column sort cannot produce this result.
+    const { items } = await fetchPublishedDataRowItems(db, {
+      tableId: 'posts',
+      orderBy: 'cell:published-on',
+      direction: 'desc',
+      limit: 10,
+      offset: 0,
+    })
+    expect(items.map((i) => String(i.fields['slug']))).toEqual(['bravo', 'delta', 'alpha', 'charlie'])
+  })
+
+  it('reverses cleanly', async () => {
+    const { items } = await fetchPublishedDataRowItems(db, {
+      tableId: 'posts',
+      orderBy: 'cell:published-on',
+      direction: 'asc',
+      limit: 10,
+      offset: 0,
+    })
+    expect(items.map((i) => String(i.fields['slug']))).toEqual(['charlie', 'alpha', 'delta', 'bravo'])
+  })
+
+  it('combines with a filter and keeps the filtered count', async () => {
+    const { items, totalItems } = await fetchPublishedDataRowItems(db, {
+      tableId: 'posts',
+      orderBy: 'cell:published-on',
+      direction: 'desc',
+      limit: 10,
+      offset: 0,
+      cellFilter: { field: 'featured', operator: 'isTrue', value: '' },
+    })
+    expect(items.map((i) => String(i.fields['slug']))).toEqual(['alpha', 'charlie'])
+    expect(totalItems).toBe(2)
+  })
+
+  it('works on the data-kind path too', async () => {
+    const { items } = await fetchPublishedDataRowItems(db, {
+      tableId: 'logos',
+      orderBy: 'cell:name',
+      direction: 'desc',
+      limit: 10,
+      offset: 0,
+    })
+    expect(items.map((i) => String(i.fields['slug']))).toEqual(['initech', 'globex', 'acme'])
+  })
+
+  it('an unknown sort field leaves every row present', async () => {
+    const { items } = await fetchPublishedDataRowItems(db, {
+      tableId: 'posts',
+      orderBy: 'cell:does-not-exist',
+      direction: 'desc',
+      limit: 10,
+      offset: 0,
+    })
+    expect(items).toHaveLength(4)
   })
 })
 

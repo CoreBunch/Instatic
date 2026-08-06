@@ -17,6 +17,7 @@ import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useEditorStore } from '@site/store/store'
 import { loopSourceRegistry } from '@core/loops/registry'
 import { ENTRY_FIELD_FILTER_KEY, ENTRY_FIELD_SOURCE_ID } from '@core/loops'
+import { CELL_ORDER_PREFIX } from '@core/loops/cellFilter'
 import type { LoopEntitySource } from '@core/loops/types'
 import type { DataTableListItem } from '@core/data/schemas'
 import type { PropertyControl, PropertySchema } from '@core/module-engine'
@@ -119,14 +120,21 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
   }
   const filterSchema = buildFilterSchema()
 
-  // Order options reactive to source change.
+  // Order options reactive to source change. For data rows the selected
+  // table's own fields are offered too (`cell:<id>`), so a list can sort by a
+  // real date or title instead of only by the row's SQL columns.
   const orderOptions: PropertyControl = {
     type: 'select',
     label: 'Order by',
-    options:
-      source?.orderByOptions.map((o) => ({ label: o.label, value: o.id })) ?? [
-        { label: 'Default', value: '' },
-      ],
+    options: source
+      ? [
+        ...source.orderByOptions.map((o) => ({ label: o.label, value: o.id })),
+        ...(source.id === 'data.rows'
+          ? (tables?.find((t) => t.id === filters.tableId)?.fields ?? [])
+            .map((f) => ({ label: `${f.label || f.id} (field)`, value: `${CELL_ORDER_PREFIX}${f.id}` }))
+          : []),
+      ]
+      : [{ label: 'Default', value: '' }],
   }
 
   function handleSourceChange(_key: string, value: unknown) {
