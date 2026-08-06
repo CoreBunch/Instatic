@@ -566,7 +566,7 @@ export const DataRowsSource: LoopEntitySource = {
         { label: 'is not', value: 'isNot' },
         { label: 'is checked', value: 'isTrue' },
         { label: 'is unchecked', value: 'isFalse' },
-        { label: 'has any value', value: 'isSet' },
+        { label: 'is set', value: 'isSet' },
         { label: 'is empty', value: 'isEmpty' },
       ],
     },
