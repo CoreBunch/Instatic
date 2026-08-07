@@ -74,6 +74,93 @@
   overflow: hidden;
 }
 
+.problems {
+  flex: 0 0 auto;
+  max-height: 132px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-muted);
+  background: var(--bg-surface-2);
+}
+
+.problemsHeader {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-s);
+  padding: 0 var(--space-m);
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.problemsTitle,
+.problemsStatus {
+  font-size: var(--text-xs);
+  line-height: 1.2;
+}
+
+.problemsTitle {
+  color: var(--text-subtle);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.problemsStatus {
+  color: var(--text-muted);
+}
+
+.problemsStatusError {
+  color: var(--danger-text);
+}
+
+.problemsList {
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-xs) 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.problem {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.36fr) minmax(0, 1fr);
+  gap: var(--space-m);
+  padding: var(--space-2xs) var(--space-m);
+  border-left: 2px solid transparent;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.problem[data-severity='error'] {
+  border-left-color: var(--danger);
+}
+
+.problem[data-severity='warning'] {
+  border-left-color: var(--warning);
+}
+
+.problemLocation {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.problemMessage {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.problemsEmpty {
+  margin: 0;
+  padding: var(--space-s) var(--space-m);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
 @media (max-width: 760px) {
   .editorWorkspace {
     flex-direction: column;
