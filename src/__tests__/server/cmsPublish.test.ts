@@ -426,4 +426,42 @@ describe('CMS publishing', () => {
     expect(published?.runtimeAssets?.scripts).toHaveLength(1)
     expect(published?.runtimeAssets?.scripts[0].src).toBe(state.runtimeAssets[0].public_path)
   })
+
+  it('rejects invalid authored runtime scripts with their file and location before writing a publish', async () => {
+    const { state, db } = createPublishFakeDb()
+    const shell = makeSiteShell({
+      files: [
+        {
+          id: 'forgotten-test-script',
+          path: 'src/scripts/forgotten-test.ts',
+          type: 'script',
+          content: `const value from 'broken'`,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      runtime: normalizeSiteRuntimeConfig({
+        scripts: {
+          'forgotten-test-script': {
+            placement: 'body-end',
+            priority: 10,
+          },
+        },
+      }),
+    })
+    await saveDraftSite(db, shell)
+    const page = makeHomePage('Runtime page')
+    await createDataRow(db, {
+      id: page.id,
+      tableId: 'pages',
+      cells: pageToCells(page),
+      slug: page.slug,
+    }, 'admin_1')
+
+    await expect(publishDraftSite(db, 'admin_1')).rejects.toThrow(
+      'Runtime script build failed for page "Home": src/scripts/forgotten-test.ts:1:',
+    )
+    expect(state.siteSnapshots).toEqual([])
+    expect(state.dataRowVersions).toEqual([])
+  })
 })
