@@ -12,9 +12,8 @@
     left: var(--panel-x);
     top: var(--panel-y);
     bottom: auto;
-    /* Matches the shared FloatingWindow layer (90), which is the floating tier
-       above the sidebars (85). At 50 this sat *below* a docked sidebar panel.
-       The docked variant resets to auto below. */
+    /* Shared floating tier above docked panel slots (85). The docked variant
+       resets to auto below. */
     z-index: 90;
     display: flex;
     flex-direction: column;
