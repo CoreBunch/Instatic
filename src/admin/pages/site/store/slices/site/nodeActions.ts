@@ -24,6 +24,7 @@ import {
   renameNode,
   toggleNodeLocked,
   toggleNodeHidden,
+  setNodeVisibleWhen,
   moveNode,
   moveNodes,
   duplicateNode,
@@ -68,6 +69,7 @@ type NodeActions = Pick<
   | 'wrapNode'
   | 'wrapNodes'
   | 'setNodeDynamicBinding'
+  | 'setNodeVisibleWhen'
   | 'clearNodeDynamicBinding'
 >
 
@@ -560,6 +562,25 @@ export function createNodeActions(helpers: SiteSliceHelpers): NodeActions {
         return true
       })
       return wrapperId
+    },
+
+    setNodeVisibleWhen: (nodeId, condition) => {
+      mutateActiveTree((tree) => {
+        const node = tree.nodes[nodeId]
+        if (!node) return false
+        const current = node.visibleWhen
+        // No-op guard, as the sibling binding action does: an unchanged write
+        // still costs a collab op and an undo entry.
+        if (
+          current?.source === condition?.source
+          && current?.field === condition?.field
+          && current?.test === condition?.test
+        ) {
+          return false
+        }
+        setNodeVisibleWhen(tree, nodeId, condition)
+        return true
+      })
     },
 
     setNodeDynamicBinding: (nodeId, propKey, binding) => {

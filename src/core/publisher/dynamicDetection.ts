@@ -34,7 +34,7 @@
  * Keeping both behind one walker means the rules cannot drift between layers.
  */
 
-import type { Page, SiteDocument, DynamicPropBinding } from '@core/page-tree'
+import type { Page, SiteDocument, DynamicPropBinding, VisibilityCondition } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
 import { selectVisualComponentById } from '@core/page-tree'
 import { loopSourceRegistry } from '@core/loops/registry'
@@ -95,6 +95,7 @@ interface AnalysisNode {
   props: Record<string, unknown>
   children: string[]
   dynamicBindings?: Record<string, DynamicPropBinding>
+  visibleWhen?: VisibilityCondition
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +199,17 @@ function classifyNode(
   // Rule 2b: inline {source.field} tokens.
   const tokenReason = checkInlineTokens(node)
   if (tokenReason) return { dynamic: true, reason: tokenReason }
+
+  // Rule 2c: a visibility condition reading a request-dependent source.
+  // Whether the node renders AT ALL now depends on that source, which is a
+  // stronger dependency than any prop binding — baking it would freeze one
+  // request's answer into the static artefact for every visitor.
+  if (node.visibleWhen && isBindingSourceRequestDependent(node.visibleWhen.source, node.visibleWhen.field)) {
+    return {
+      dynamic: true,
+      reason: `node "${node.id}": visibility depends on request-dependent "${node.visibleWhen.source}.${node.visibleWhen.field}"`,
+    }
+  }
 
   // Rule 3: base.loop with a request-dependent source.
   const loopReason = checkLoopSource(node)

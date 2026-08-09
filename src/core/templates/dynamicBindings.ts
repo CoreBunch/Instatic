@@ -25,7 +25,7 @@
  * the source needing to pre-render every variant.
  */
 
-import type { DynamicPropBinding } from '@core/page-tree'
+import { isValueSet, type DynamicPropBinding, type VisibilityCondition } from '@core/page-tree'
 import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
 import { isRichtextPropKey } from '@core/sanitize'
 import type { TemplateRenderDataContext } from './renderDataContext'
@@ -85,6 +85,32 @@ function resolveBindingValue(
   }
 
   return value
+}
+
+/**
+ * Should this node render, given the data it is rendered against?
+ *
+ * Asked by the publisher, deliberately NOT by the editor canvas. Everywhere
+ * else the two surfaces are kept identical, and this is the one place they
+ * must differ: the canvas is where the node gets edited, and a node hidden
+ * because the preview row happens to have no video is a node the author cannot
+ * click. It stays on the canvas and the Properties panel shows its condition.
+ *
+ * Without a context the answer is always yes — a template rendered outside any
+ * entry route has nothing to test against, and disappearing would be a strange
+ * reading of "show this when the row has a video" on a page that has no row.
+ */
+export function isNodeVisible(
+  node: { visibleWhen?: VisibilityCondition },
+  context: TemplateRenderDataContext | undefined,
+): boolean {
+  const condition = node.visibleWhen
+  if (!condition || !context) return true
+  const frame = readFrame(condition.source, context)
+  // An absent frame is an unset field, not an error: `currentEntry` outside a
+  // loop has nothing to read, and "is not set" is then true.
+  const isSet = frame ? isValueSet(walkFieldPath(frame, condition.field)) : false
+  return condition.test === 'isSet' ? isSet : !isSet
 }
 
 /**

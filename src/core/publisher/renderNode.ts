@@ -26,7 +26,7 @@ import { isPageRef, resolvePageRef } from '@core/page-tree'
 import type { AnyModuleDefinition } from '@core/module-engine'
 import { validateNodeProps } from '@core/module-engine'
 import { resolveProps } from '@core/page-tree'
-import { resolveDynamicProps, effectiveNodeBindings } from '@core/templates/dynamicBindings'
+import { resolveDynamicProps, effectiveNodeBindings, isNodeVisible } from '@core/templates/dynamicBindings'
 import { sanitizeModuleCSS } from './cssCollector'
 import { escapeHtml } from './utils'
 import { escapeProps } from './escapeProps'
@@ -302,6 +302,10 @@ export function renderNode(
   const node = config.page.nodes[nodeId]
   if (!node) return ''
   if (node.hidden) return ''
+  // Per-render visibility, evaluated against the row this pass is rendering.
+  // Checked beside `hidden` because the effect is identical — the node and its
+  // subtree leave the output — and only the reason differs.
+  if (!isNodeVisible(node, config.templateContext)) return ''
 
   const def = config.registry.get(node.moduleId)
   if (!def) {
