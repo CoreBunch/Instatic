@@ -51,6 +51,7 @@ import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
 import { runPublishFlush } from './publishFlush'
+import { PublishRuntimeBuildError } from './publishBuildError'
 
 interface PublishResult {
   publishedPages: number
@@ -150,7 +151,12 @@ async function publishDraftSiteLocked(
     })
     const runtimeErrors = runtimeBuild.diagnostics.filter((d) => d.severity === 'error')
     if (runtimeErrors.length > 0) {
-      throw new Error(`runtime build failed: ${runtimeErrors.map((d) => d.message).join('; ')}`)
+      // Typed, carrying the diagnostics as data: the handler turns them into a
+      // response the author can act on. A plain Error would reach the router's
+      // generic catch, which refuses to echo messages, and the publish button
+      // would say "Internal server error" while the real reason — package,
+      // file, remedy — stayed in the server log.
+      throw new PublishRuntimeBuildError(page.slug, runtimeErrors)
     }
 
     const snapshot = createSnapshot(
