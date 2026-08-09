@@ -51,6 +51,7 @@ import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
 import { runPublishFlush } from './publishFlush'
+import { sweepStalePluginVersionAssets } from './stalePluginAssets'
 
 interface PublishResult {
   publishedPages: number
@@ -297,6 +298,18 @@ async function publishDraftSiteLocked(
       await swapSlot(uploadsDir, slot)
     } catch (err) {
       console.error('[publish:site] static artefact write failed (live renderer remains active):', err)
+    }
+
+    // The artefacts just written link the CURRENTLY installed plugin versions,
+    // so any older version's files are now referenced by nothing. This is the
+    // only moment that is true — which is why an upgrade must not delete them
+    // itself. Leftovers are wasted disk, never a broken page, so a failure
+    // here is logged and the publish still succeeds.
+    try {
+      const { removed } = await sweepStalePluginVersionAssets(db, uploadsDir)
+      if (removed > 0) console.error(`[publish:site] retired ${removed} stale plugin version dir(s)`)
+    } catch (err) {
+      console.error('[publish:site] stale plugin asset sweep failed (harmless, retries next publish):', err)
     }
   }
 

@@ -352,12 +352,16 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
     )
   }
 
-  // 6. Drop the old version's assets. With worker isolation, plugin server
-  //    files no longer live in the host process's `bun --watch` graph
-  //    (they're imported inside the worker), so deleting them here doesn't
-  //    race the response write — straightforward `await rm` is safe in
-  //    both dev and production.
-  await removePluginVersionAssets(options.uploadsDir, pluginId, fromVersion)
+  // 6. The old version's files STAY. Published pages link plugin frontend
+  //    assets by version (`/uploads/plugins/<id>/<version>/frontend/…`), and
+  //    those artefacts are only rewritten by a publish — so deleting here
+  //    404'd every page already on disk. On a real site an upgrade took out
+  //    jQuery, GSAP, Lenis, Splide and the boot script across every page at
+  //    once, with no warning and no prompt to re-publish.
+  //
+  //    The next publish retires them, because that is the moment the URLs
+  //    stop pointing at this version: `sweepStalePluginVersionAssets` in
+  //    `server/publish/stalePluginAssets.ts`.
 
   // Re-fetch so the response carries the post-activation row (settings,
   // lifecycle = 'active', etc.).
