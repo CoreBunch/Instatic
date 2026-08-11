@@ -403,11 +403,12 @@ describe('fetchPublishedDataRowItems — data-kind ordering', () => {
 // ---------------------------------------------------------------------------
 // Custom media fields — id → public URL resolution in loops
 //
-// Built-in `featuredMedia` is resolved above; these lock in that a
-// user-defined `media` field (single) and a multi-value one both resolve to
-// public URLs, and that an unresolved id becomes null rather than leaking the
-// raw media id into an `img src`. Covers both projections: a custom post-type
-// table (rowToLoopItem) and a data-kind table (dataKindRowToLoopItem).
+// Built-in `featuredMedia` is resolved above; these lock in that custom media
+// fields resolve to public URLs without losing their authored shape. Scalar
+// media becomes a URL or null, multi-media stays an ordered array, and media
+// nested in repeater item cells resolves recursively. Covers both projections:
+// a custom post-type table (rowToLoopItem) and a data-kind table
+// (dataKindRowToLoopItem).
 // ---------------------------------------------------------------------------
 
 describe('fetchPublishedDataRowItems — custom media field resolution', () => {
@@ -434,11 +435,31 @@ describe('fetchPublishedDataRowItems — custom media field resolution', () => {
         { id: 'title', label: 'Title', type: 'text' },
         { id: 'logo', label: 'Logo', type: 'media' },
         { id: 'gallery', label: 'Gallery', type: 'media', allowMultiple: true },
+        {
+          id: 'showcase', label: 'Showcase', type: 'repeater',
+          fields: [
+            { id: 'caption', label: 'Caption', type: 'text' },
+            { id: 'cover', label: 'Cover', type: 'media' },
+            { id: 'images', label: 'Images', type: 'media', allowMultiple: true },
+          ],
+        },
       ])})
     `
     await seedDataRow(db, 'clients', {
       rowId: 'client-a', slug: 'a',
-      cells: { title: 'Acme', logo: 'm-logo', gallery: ['m-g1', 'm-g2'] },
+      cells: {
+        title: 'Acme',
+        logo: 'm-logo',
+        gallery: ['m-g1', 'm-g2'],
+        showcase: [{
+          id: 'showcase-1',
+          cells: {
+            caption: 'Launch set',
+            cover: 'm-g2',
+            images: ['m-g1', 'missing-media', 'm-g2'],
+          },
+        }],
+      },
       createdAt: '2026-03-01T00:00:00.000Z', updatedAt: '2026-03-01T00:00:00.000Z',
     })
     await seedDataRow(db, 'clients', {
@@ -486,14 +507,28 @@ describe('fetchPublishedDataRowItems — custom media field resolution', () => {
     expect((await clientFields('client-a'))['logo']).toBe('/uploads/logo.png')
   })
 
-  it('flattens a multi-value media cell to the first element URL', async () => {
-    expect((await clientFields('client-a'))['gallery']).toBe('/uploads/g1.png')
+  it('preserves a multi-value media cell as an ordered URL array', async () => {
+    expect((await clientFields('client-a'))['gallery']).toEqual([
+      '/uploads/g1.png',
+      '/uploads/g2.png',
+    ])
   })
 
-  it('resolves empty / null media cells to null', async () => {
+  it('keeps empty multi-media as an array and resolves empty scalar media to null', async () => {
     const b = await clientFields('client-b')
     expect(b['logo']).toBeNull()
-    expect(b['gallery']).toBeNull()
+    expect(b['gallery']).toEqual([])
+  })
+
+  it('resolves scalar and multi-media recursively inside repeater item cells', async () => {
+    expect((await clientFields('client-a'))['showcase']).toEqual([{
+      id: 'showcase-1',
+      cells: {
+        caption: 'Launch set',
+        cover: '/uploads/g2.png',
+        images: ['/uploads/g1.png', '/uploads/g2.png'],
+      },
+    }])
   })
 
   it('resolves a dangling media id to null, never the raw id', async () => {

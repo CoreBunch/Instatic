@@ -24,8 +24,9 @@ import { isoDate } from '../../utils/isoDate'
 import { firstImagePathFromMarkdown } from '@core/markdown/renderMarkdown'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { publicDataUserFromParts } from '@core/data/publicDataUser'
-import { readFeaturedMediaCell, readMediaCellIds } from '@core/data/cells'
-import type { DataRowCells } from '@core/data/schemas'
+import { normalizeDataTableFields } from '@core/data/fields'
+import { readFeaturedMediaCell, readMediaCellIds, readRepeaterCell } from '@core/data/cells'
+import type { DataField, DataRowCells, RepeaterItemField } from '@core/data/schemas'
 
 // ---------------------------------------------------------------------------
 // Internal SQL row shape
@@ -38,7 +39,6 @@ interface PublishedDataRowSqlRow {
   table_slug: string
   table_kind: string
   table_route_base: string
-  table_fields_json: unknown
   version_number: number
   cells_json: Record<string, unknown>
   slug: string
@@ -58,6 +58,11 @@ interface PublishedDataRowSqlRow {
 interface MediaAssetRow {
   id: string
   public_path: string
+}
+
+interface DataTableProjectionRow {
+  kind: string
+  fields_json: unknown
 }
 
 type OrderColumn = 'publishedAt' | 'createdAt' | 'updatedAt' | 'slug'
@@ -106,65 +111,88 @@ export async function resolveMediaIdsToPaths(
   if (idList.length === 0) return pathMap
   const placeholders = idList.map((_, i) => positionalParam(db, i + 1)).join(', ')
   const { rows } = await db.unsafe<MediaAssetRow>(
-    `select id, public_path from media_assets where id in (${placeholders})`,
+    `select id, public_path
+     from media_assets
+     where id in (${placeholders}) and deleted_at is null`,
     idList,
   )
   for (const row of rows) pathMap.set(row.id, row.public_path)
   return pathMap
 }
 
-/**
- * Field ids of every media-typed field on the table, read from the parsed
- * `fields_json`. Deliberately tolerant — it reads only `type`/`id` so an
- * unrelated or newer field shape never throws inside a loop fetch.
- */
-function mediaFieldIdsFromJson(fieldsJson: unknown): string[] {
-  if (!Array.isArray(fieldsJson)) return []
-  const ids: string[] = []
-  for (const field of fieldsJson) {
-    if (field === null || typeof field !== 'object') continue
-    const record = field as Record<string, unknown>
-    if (record.type === 'media' && typeof record.id === 'string') ids.push(record.id)
+type MediaProjectionField = DataField | RepeaterItemField
+
+function collectFieldMediaIds(
+  cells: DataRowCells,
+  fields: readonly MediaProjectionField[],
+  ids: string[],
+): void {
+  for (const field of fields) {
+    if (field.type === 'media') {
+      ids.push(...readMediaCellIds(cells, field.id))
+      continue
+    }
+    if (field.type !== 'repeater') continue
+    for (const item of readRepeaterCell(cells, field.id)) {
+      collectFieldMediaIds(item.cells, field.fields, ids)
+    }
   }
-  return ids
 }
 
 /**
  * Collect every media id referenced by a page of rows: the built-in
- * `featuredMedia` cell plus every user-defined `media` field (`mediaFieldIds`).
- * Multi-value media cells contribute all their ids so the batch resolve covers
- * them, even though the projection later flattens to the first.
+ * `featuredMedia` cell plus every schema-declared media field. Repeater media
+ * is traversed recursively, and multi-value cells contribute every id while
+ * still resolving through one batched query.
  */
 function collectMediaIds(
   rows: Array<{ cells_json: Record<string, unknown> }>,
-  mediaFieldIds: string[],
+  fields: readonly DataField[],
 ): string[] {
   const ids: string[] = []
   for (const row of rows) {
     const cells = row.cells_json as DataRowCells
     const featured = readFeaturedMediaCell(cells)
     if (featured) ids.push(featured)
-    for (const fieldId of mediaFieldIds) ids.push(...readMediaCellIds(cells, fieldId))
+    collectFieldMediaIds(cells, fields, ids)
   }
   return ids
 }
 
 /**
- * Resolve each user-defined media field to its public path, flattening a
- * multi-value cell to its first element (a scalar `img src` binding renders
- * one image; iterating all elements is a nested-loop concern, not this one).
- * Returns an overlay to spread over the raw cells so `{currentEntry.<field>}`
- * yields a URL instead of the stored media id.
+ * Resolve schema-declared media ids without changing collection cardinality:
+ * scalar media becomes a public path (or null), multi-media stays an ordered
+ * array of resolvable public paths, and repeater items keep their `{ id, cells }`
+ * shape while media inside `cells` is projected recursively.
  */
 function resolvedMediaOverlay(
   cells: DataRowCells,
-  mediaFieldIds: string[],
+  fields: readonly MediaProjectionField[],
   mediaPathMap: Map<string, string>,
-): Record<string, string | null> {
-  const overlay: Record<string, string | null> = {}
-  for (const fieldId of mediaFieldIds) {
-    const firstId = readMediaCellIds(cells, fieldId)[0] ?? null
-    overlay[fieldId] = firstId ? (mediaPathMap.get(firstId) ?? null) : null
+): DataRowCells {
+  const overlay: DataRowCells = {}
+  for (const field of fields) {
+    if (field.type === 'media') {
+      const ids = readMediaCellIds(cells, field.id)
+      if (field.allowMultiple === true) {
+        overlay[field.id] = ids.flatMap((id) => {
+          const path = mediaPathMap.get(id)
+          return path ? [path] : []
+        })
+      } else {
+        const id = ids[0]
+        overlay[field.id] = id ? (mediaPathMap.get(id) ?? null) : null
+      }
+      continue
+    }
+    if (field.type !== 'repeater') continue
+    overlay[field.id] = readRepeaterCell(cells, field.id).map((item) => ({
+      ...item,
+      cells: {
+        ...item.cells,
+        ...resolvedMediaOverlay(item.cells, field.fields, mediaPathMap),
+      },
+    }))
   }
   return overlay
 }
@@ -176,7 +204,7 @@ function resolvedMediaOverlay(
 function rowToLoopItem(
   row: PublishedDataRowSqlRow,
   mediaPathMap: Map<string, string>,
-  mediaFieldIds: string[],
+  fields: readonly DataField[],
 ): LoopItem {
   const cells = row.cells_json as DataRowCells
   const tableRouteBase = normalizeRouteBase(row.table_route_base || `/${row.table_slug}`)
@@ -209,7 +237,7 @@ function rowToLoopItem(
       ...cells,
       // Media fields: replace stored ids with resolved public paths so a
       // `{currentEntry.<field>}` binding renders a URL, not the raw id.
-      ...resolvedMediaOverlay(cells, mediaFieldIds, mediaPathMap),
+      ...resolvedMediaOverlay(cells, fields, mediaPathMap),
       // System identity (overlay after cells so these are never shadowed)
       id: row.row_id,
       rowId: row.row_id,
@@ -280,7 +308,6 @@ async function fetchPage(
             data_tables.slug as table_slug,
             data_tables.kind as table_kind,
             data_tables.route_base as table_route_base,
-            data_tables.fields_json as table_fields_json,
             data_row_versions.version_number,
             data_row_versions.cells_json,
             data_row_versions.slug,
@@ -330,7 +357,6 @@ interface DataKindRowSqlRow {
   table_id: string
   table_slug: string
   table_route_base: string
-  table_fields_json: unknown
   cells_json: Record<string, unknown>
   slug: string
   author_user_id: string | null
@@ -345,7 +371,7 @@ interface DataKindRowSqlRow {
 function dataKindRowToLoopItem(
   row: DataKindRowSqlRow,
   mediaPathMap: Map<string, string>,
-  mediaFieldIds: string[],
+  fields: readonly DataField[],
 ): LoopItem {
   const cells = row.cells_json as DataRowCells
   const tableRouteBase = normalizeRouteBase(row.table_route_base || `/${row.table_slug}`)
@@ -366,7 +392,7 @@ function dataKindRowToLoopItem(
       ...cells,
       // Media fields: replace stored ids with resolved public paths (see
       // `rowToLoopItem`).
-      ...resolvedMediaOverlay(cells, mediaFieldIds, mediaPathMap),
+      ...resolvedMediaOverlay(cells, fields, mediaPathMap),
       id: row.row_id,
       rowId: row.row_id,
       tableId: row.table_id,
@@ -428,7 +454,6 @@ async function fetchDataKindPage(
             data_rows.table_id,
             data_tables.slug as table_slug,
             data_tables.route_base as table_route_base,
-            data_tables.fields_json as table_fields_json,
             data_rows.cells_json,
             data_rows.slug,
             data_rows.author_user_id,
@@ -477,22 +502,23 @@ export async function fetchPublishedDataRowItems(
 ): Promise<LoopFetchResult> {
   if (!opts.tableId) return { items: [], totalItems: 0 }
 
-  const { rows: kindRows } = await db<{ kind: string }>`
-    select kind
+  const { rows: tableRows } = await db<DataTableProjectionRow>`
+    select kind, fields_json
     from data_tables
     where id = ${opts.tableId}
       and deleted_at is null
     limit 1
   `
-  const tableKind = kindRows[0]?.kind
-  if (!tableKind) return { items: [], totalItems: 0 }
+  const table = tableRows[0]
+  if (!table) return { items: [], totalItems: 0 }
+  const fields = normalizeDataTableFields(table.fields_json)
 
   const orderBy: OrderColumn = ALLOWED_ORDER_BY.has(opts.orderBy as OrderColumn)
     ? (opts.orderBy as OrderColumn)
     : 'publishedAt'
   const direction: 'asc' | 'desc' = opts.direction === 'asc' ? 'asc' : 'desc'
 
-  if (tableKind === 'data') {
+  if (table.kind === 'data') {
     const { rows: countRows } = await db<{ total: number }>`
       select count(*) as total
       from data_rows
@@ -505,10 +531,9 @@ export async function fetchPublishedDataRowItems(
     const sqlRows = await fetchDataKindPage(
       db, opts.tableId, orderBy, direction, opts.limit, opts.offset,
     )
-    const mediaFieldIds = mediaFieldIdsFromJson(sqlRows[0]?.table_fields_json)
-    const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(sqlRows, mediaFieldIds))
+    const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(sqlRows, fields))
     return {
-      items: sqlRows.map((row) => dataKindRowToLoopItem(row, mediaPathMap, mediaFieldIds)),
+      items: sqlRows.map((row) => dataKindRowToLoopItem(row, mediaPathMap, fields)),
       totalItems,
     }
   }
@@ -526,11 +551,10 @@ export async function fetchPublishedDataRowItems(
   if (totalItems === 0) return { items: [], totalItems: 0 }
 
   const sqlRows = await fetchPage(db, opts.tableId, orderBy, direction, opts.limit, opts.offset)
-  const mediaFieldIds = mediaFieldIdsFromJson(sqlRows[0]?.table_fields_json)
-  const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(sqlRows, mediaFieldIds))
+  const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(sqlRows, fields))
 
   return {
-    items: sqlRows.map((row) => rowToLoopItem(row, mediaPathMap, mediaFieldIds)),
+    items: sqlRows.map((row) => rowToLoopItem(row, mediaPathMap, fields)),
     totalItems,
   }
 }
