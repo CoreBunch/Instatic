@@ -87,6 +87,7 @@ const ModelSchema = Type.Object({
   capabilities: Type.Object({
     toolCalling: Type.Boolean(),
     visionInput: Type.Boolean(),
+    videoInput: Type.Optional(Type.Boolean()),
     toolResultImages: Type.Boolean(),
     promptCache: Type.Boolean(),
     streaming: Type.Boolean(),

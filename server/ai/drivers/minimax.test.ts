@@ -32,7 +32,13 @@ describe('minimax driver', () => {
     expect(models.map((model) => model.id)).toEqual(['MiniMax-M3', 'MiniMax-M2.7'])
     expect(models[0]).toMatchObject({
       label: 'MiniMax M3',
-      capabilities: { toolCalling: true, visionInput: true, promptCache: false, streaming: true },
+      capabilities: {
+        toolCalling: true,
+        visionInput: true,
+        videoInput: true,
+        promptCache: false,
+        streaming: true,
+      },
       contextWindow: 1000000,
     })
   })
@@ -41,13 +47,18 @@ describe('minimax driver', () => {
     expect(await minimaxDriver.listModels(creds(null))).toEqual([])
   })
 
-  it('reports the MiniMax M3 vision capability without enabling prompt cache', () => {
+  it('reports the MiniMax M3 media input capabilities without enabling prompt cache', () => {
     expect(minimaxDriver.capabilities('MiniMax-M3')).toMatchObject({
       toolCalling: true,
       visionInput: true,
+      videoInput: true,
       toolResultImages: false,
       promptCache: false,
       streaming: true,
+    })
+    expect(minimaxDriver.capabilities('MiniMax-M2.7')).toMatchObject({
+      visionInput: false,
+      videoInput: false,
     })
   })
 })

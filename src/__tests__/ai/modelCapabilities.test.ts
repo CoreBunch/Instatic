@@ -10,6 +10,7 @@ import type {
 const TEXT_ONLY: AiProviderCapabilities = {
   toolCalling: true,
   visionInput: false,
+  videoInput: false,
   toolResultImages: false,
   promptCache: false,
   streaming: true,
@@ -18,6 +19,7 @@ const TEXT_ONLY: AiProviderCapabilities = {
 const VISION: AiProviderCapabilities = {
   toolCalling: true,
   visionInput: true,
+  videoInput: false,
   toolResultImages: false,
   promptCache: false,
   streaming: true,

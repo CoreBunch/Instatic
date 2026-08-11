@@ -31,6 +31,7 @@ const MINIMAX_MODELS: AiProviderModel[] = [
     capabilities: {
       toolCalling: true,
       visionInput: true,
+      videoInput: true,
       toolResultImages: false,
       promptCache: false,
       streaming: true,
@@ -45,6 +46,7 @@ const MINIMAX_MODELS: AiProviderModel[] = [
     capabilities: {
       toolCalling: true,
       visionInput: false,
+      videoInput: false,
       toolResultImages: false,
       promptCache: false,
       streaming: true,
@@ -58,6 +60,7 @@ const MINIMAX_MODELS: AiProviderModel[] = [
 const DEFAULT_CAPABILITIES: AiProviderCapabilities = {
   toolCalling: true,
   visionInput: false,
+  videoInput: false,
   toolResultImages: false,
   promptCache: false,
   streaming: true,
@@ -65,7 +68,7 @@ const DEFAULT_CAPABILITIES: AiProviderCapabilities = {
 
 function staticCapabilities(modelId: string): AiProviderCapabilities {
   if (modelId === 'MiniMax-M3') {
-    return { ...DEFAULT_CAPABILITIES, visionInput: true }
+    return { ...DEFAULT_CAPABILITIES, visionInput: true, videoInput: true }
   }
   return { ...DEFAULT_CAPABILITIES }
 }
