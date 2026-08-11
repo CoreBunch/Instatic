@@ -272,6 +272,13 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
         return
       }
     }
+    // Locked nodes are excluded from canvas click-to-select — that's the
+    // whole point of locking (protect against accidental selection while
+    // clicking around nearby elements). They're still reachable via the
+    // Layers panel or the canvas right-click menu (which offers Unlock).
+    if (canvasPage?.nodes[nodeId]?.locked) {
+      return
+    }
     // Modifier-aware selection (multi-select): Cmd/Ctrl-click toggles, Shift-
     // click extends a range from the anchor. Plain clicks replace the
     // selection (default mode in `selectNode`).
