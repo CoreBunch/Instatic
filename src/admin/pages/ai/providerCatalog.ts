@@ -8,6 +8,8 @@ export interface ProviderSpec {
   description: string
   authMode: ProviderAuthMode
   endpointLabel: string
+  requiresApiKey?: boolean
+  baseUrlOptions?: readonly { value: string; label: string }[]
 }
 
 export const PROVIDER_SPECS: ProviderSpec[] = [
@@ -33,7 +35,14 @@ export const PROVIDER_SPECS: ProviderSpec[] = [
     shortLabel: 'M3 / M2.7',
     description: 'MiniMax text models with the documented API endpoint.',
     authMode: 'baseUrl',
-    endpointLabel: 'api.minimax.io/v1',
+    endpointLabel: 'Global / China endpoints',
+    requiresApiKey: true,
+    baseUrlOptions: [
+      { value: 'https://api.minimax.io/v1', label: 'Global - OpenAI-compatible' },
+      { value: 'https://api.minimax.io/anthropic', label: 'Global - Anthropic-compatible' },
+      { value: 'https://api.minimaxi.com/v1', label: 'China - OpenAI-compatible' },
+      { value: 'https://api.minimaxi.com/anthropic', label: 'China - Anthropic-compatible' },
+    ],
   },
   {
     id: 'openrouter',

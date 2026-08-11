@@ -81,6 +81,8 @@ export interface AiProviderModel {
   readonly pricing?: {
     readonly inputPerMTok: number
     readonly outputPerMTok: number
+    readonly cacheReadPerMTok?: number | null
+    readonly cacheWritePerMTok?: number | null
   }
   /**
    * Max context window (total input+output tokens) for the model, from the same

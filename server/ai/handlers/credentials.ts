@@ -110,6 +110,12 @@ async function handleCreate(req: Request, db: DbClient): Promise<Response> {
 
   const body = await readValidatedBody(req, CreateBodySchema)
   if (!body) return badRequest('Invalid request body.')
+  if (
+    body.providerId === 'minimax'
+    && (body.authMode !== 'baseUrl' || !body.apiKey?.trim())
+  ) {
+    return badRequest('MiniMax requires a base URL and API key.')
+  }
 
   try {
     const record = await createCredentialForUser(db, userOrResponse.id, body)

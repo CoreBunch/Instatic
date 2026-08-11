@@ -54,7 +54,7 @@ describe('ProvidersTab', () => {
     expect(screen.queryByLabelText('API key')).toBeNull()
   })
 
-  it('shows MiniMax as a base-url provider with the documented endpoint placeholder', async () => {
+  it('shows MiniMax with the documented regional protocol endpoints and a required API key', async () => {
     mockEmptyCredentials()
 
     render(<ProvidersTab onNavigateToDefaults={() => {}} />)
@@ -63,9 +63,14 @@ describe('ProvidersTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'MiniMax M3 / M2.7' }))
 
     expect(screen.getByRole('heading', { name: 'Connect MiniMax' })).toBeDefined()
-    expect(screen.getByLabelText('Base URL')).toBeDefined()
-    expect(screen.getByLabelText('Base URL').getAttribute('placeholder')).toBe('https://api.minimax.io/v1')
-    expect(screen.getByLabelText(/API key/)).toBeDefined()
+    const endpoint = screen.getByRole('combobox', { name: 'Base URL' }) as HTMLInputElement
+    expect(endpoint.value).toBe('Global - OpenAI-compatible')
+    fireEvent.click(endpoint)
+    fireEvent.click(screen.getByRole('option', { name: 'China - Anthropic-compatible' }))
+    expect(endpoint.value).toBe('China - Anthropic-compatible')
+    const nativeEndpoint = document.querySelector('select[aria-hidden="true"]') as HTMLSelectElement
+    expect(nativeEndpoint.value).toBe('https://api.minimaxi.com/anthropic')
+    expect((screen.getByLabelText('API key') as HTMLInputElement).required).toBe(true)
     expect(screen.queryByLabelText('Authentication')).toBeNull()
   })
 

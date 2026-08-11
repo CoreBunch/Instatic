@@ -97,6 +97,8 @@ const ModelSchema = Type.Object({
   pricing: Type.Optional(Type.Object({
     inputPerMTok: Type.Number(),
     outputPerMTok: Type.Number(),
+    cacheReadPerMTok: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+    cacheWritePerMTok: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   })),
   /** Max context window (total tokens) — feeds the composer context meter. */
   contextWindow: Type.Optional(Type.Number()),
