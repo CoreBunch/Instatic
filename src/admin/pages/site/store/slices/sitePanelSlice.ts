@@ -185,12 +185,9 @@ export const createSitePanelSlice: EditorStoreSliceCreator<SitePanelSlice> = (se
     })
   }
 
-  function commitSiteRuntime(nextRuntime: SiteRuntimeConfig, markUnsavedWithoutSite = false): void {
+  function commitSiteRuntime(nextRuntime: SiteRuntimeConfig): void {
     if (!get().site) {
-      set({
-        siteRuntime: nextRuntime,
-        ...(markUnsavedWithoutSite ? { hasUnsavedChanges: true } : {}),
-      })
+      set({ siteRuntime: nextRuntime })
       return
     }
     mutateSiteState((state, site) => {
@@ -252,7 +249,7 @@ export const createSitePanelSlice: EditorStoreSliceCreator<SitePanelSlice> = (se
         [fileId]: nextConfig,
       },
     }
-    commitSiteRuntime(nextRuntime, true)
+    commitSiteRuntime(nextRuntime)
   },
 
   patchScriptRuntimeConfig: (fileId, patch) => {
@@ -269,7 +266,7 @@ export const createSitePanelSlice: EditorStoreSliceCreator<SitePanelSlice> = (se
 
     const scripts = { ...currentRuntime.scripts }
     delete scripts[fileId]
-    commitSiteRuntime({ ...currentRuntime, scripts }, true)
+    commitSiteRuntime({ ...currentRuntime, scripts })
   },
 
   setStyleRuntimeConfig: (fileId, config) => {
@@ -288,7 +285,7 @@ export const createSitePanelSlice: EditorStoreSliceCreator<SitePanelSlice> = (se
         [fileId]: nextConfig,
       },
     }
-    commitSiteRuntime(nextRuntime, true)
+    commitSiteRuntime(nextRuntime)
   },
 
   patchStyleRuntimeConfig: (fileId, patch) => {
@@ -305,7 +302,7 @@ export const createSitePanelSlice: EditorStoreSliceCreator<SitePanelSlice> = (se
 
     const styles = { ...currentRuntime.styles }
     delete styles[fileId]
-    commitSiteRuntime({ ...currentRuntime, styles }, true)
+    commitSiteRuntime({ ...currentRuntime, styles })
   },
 
   setSiteDependencyLock: (lock, packageImportmap) => {

@@ -54,8 +54,12 @@ export function ContentCustomFields({
     <>
       {fields.map((field) => (
         <div key={field.id} className={styles.customField} data-testid={`content-custom-field-${field.id}`}>
-          <span>{field.label}</span>
-          {field.description && <small>{field.description}</small>}
+          {field.type !== 'repeater' && (
+            <>
+              <span>{field.label}</span>
+              {field.description && <small>{field.description}</small>}
+            </>
+          )}
           <CellEditorRenderer
             field={field}
             value={customCells[field.id] ?? emptyCellValue(field)}
@@ -63,6 +67,7 @@ export function ContentCustomFields({
             context="detail"
             readOnly={readOnly}
             rowId={entryId}
+            tables={tables}
             resolveRelationTarget={resolveRelationRow}
             onOpenPicker={
               field.type === 'relation'

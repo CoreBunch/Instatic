@@ -64,6 +64,12 @@ import {
   type ImportStrategy,
 } from '@core/data/bundleSchema'
 import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
+import {
+  notifyRowWrite,
+  notifyShellWrite,
+  serializeCollabAwareWrite,
+  type RowWriteKind,
+} from '../../repositories/rowWriteEvents'
 
 // The four system table ids that are always seeded and never deleted.
 const SYSTEM_TABLE_IDS = new Set(['posts', 'pages', 'components', 'layouts'])
@@ -91,6 +97,13 @@ function orderFoldersParentFirst<T extends { id: string; parentId: string | null
 
   for (const folder of folders) visit(folder)
   return ordered
+}
+
+/** ZIP local-file-header magic (`PK\x03\x04`) — enough to tell an archive from JSON. */
+function looksLikeZipArchive(body: ArrayBuffer): boolean {
+  if (body.byteLength < 4) return false
+  const head = new Uint8Array(body, 0, 4)
+  return head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04
 }
 
 export async function handleImportRoute(
@@ -130,7 +143,22 @@ export async function handleImportRoute(
     if (stepUp) return stepUp
   }
 
-  // Parse and validate the bundle body
+  // Parse and validate the bundle body. This endpoint takes the JSON bundle;
+  // the ZIP archive the export UI downloads belongs to /import/archive. Sent
+  // here it fails schema validation, and a bare schema error sends the caller
+  // hunting a bug in their bundle instead of at the wrong door — so name the
+  // mistake when the body is recognisably an archive.
+  const rawBody = await req.clone().arrayBuffer()
+  if (looksLikeZipArchive(rawBody)) {
+    return jsonResponse(
+      {
+        error:
+          'This endpoint accepts a JSON site bundle. The exported .zip archive goes to '
+          + `${CMS_API_PREFIX}/import/archive (same strategy query parameter).`,
+      },
+      { status: 400 },
+    )
+  }
   const bundle = await readValidatedBody(req, SiteBundleSchema)
   if (!bundle) {
     return jsonResponse({ error: 'Invalid bundle: body does not conform to SiteBundleSchema' }, { status: 400 })
@@ -164,6 +192,25 @@ export async function handleImportRoute(
   // ---------------------------------------------------------------------------
   // DB transaction
   // ---------------------------------------------------------------------------
+
+  await serializeCollabAwareWrite(async () => {
+    const affectedCollabRows = new Map(
+      ['pages', 'components', 'layouts'].map((tableId) => [tableId, new Set<string>()]),
+    )
+    const removedCollabRows = new Map(
+      ['pages', 'components', 'layouts'].map((tableId) => [tableId, new Set<string>()]),
+    )
+    const createdCollabRows = new Map(
+      ['pages', 'components', 'layouts'].map((tableId) => [tableId, new Set<string>()]),
+    )
+    let shellWasWritten = false
+    if (strategy === 'replace') {
+      for (const tableId of affectedCollabRows.keys()) {
+        for (const row of await listDataRows(db, tableId)) {
+          affectedCollabRows.get(tableId)?.add(row.id)
+        }
+      }
+    }
 
   if (strategy === 'replace') {
     // Wipe-and-replace: delete all rows + custom tables, then reimport.
@@ -225,12 +272,14 @@ export async function handleImportRoute(
           updatedAt: row.updatedAt,
         }
         await replaceDataRow(tx, input)
+        affectedCollabRows.get(row.tableId)?.add(row.id)
         rowsInserted++
       }
 
       // 6. Replace the site shell (only when the bundle carries one)
       if (bundle.site) {
-        await saveDraftSite(tx, bundle.site)
+        await saveDraftSite(tx, bundle.site, null, { collabInternal: true })
+        shellWasWritten = true
       }
 
       // 7. Media folder tree. `delete from data_rows` above does NOT touch
@@ -289,6 +338,7 @@ export async function handleImportRoute(
         }
         const inserted = await insertDataRowIfAbsent(tx, input)
         if (inserted) {
+          affectedCollabRows.get(row.tableId)?.add(row.id)
           rowsInserted++
         } else {
           rowsSkipped++
@@ -301,12 +351,13 @@ export async function handleImportRoute(
   } else {
     // merge-overwrite: upsert rows/tables; update existing with bundle values.
     await db.transaction(async (tx) => {
-      // Pre-fetch all existing row ids for tables referenced in the bundle so
-      // we can classify each row as inserted vs replaced without per-row SELECTs.
-      const existingRowIds = new Set<string>()
-      for (const table of bundle.tables) {
+      // Pre-fetch all existing rows. An upsert can move an id from a table the
+      // bundle does not mention, and both its old and new collab docs/rosters
+      // must be invalidated after commit.
+      const existingRowTables = new Map<string, string>()
+      for (const table of await listDataTables(tx)) {
         const existing = await listDataRows(tx, table.id)
-        for (const r of existing) existingRowIds.add(r.id)
+        for (const row of existing) existingRowTables.set(row.id, row.tableId)
       }
 
       // Tables: insert if absent, update if already present
@@ -349,7 +400,16 @@ export async function handleImportRoute(
           updatedAt: row.updatedAt,
         }
         await upsertDataRow(tx, input)
-        if (existingRowIds.has(row.id)) {
+        const previousTableId = existingRowTables.get(row.id)
+        if (previousTableId === undefined) {
+          createdCollabRows.get(row.tableId)?.add(row.id)
+        } else if (previousTableId !== row.tableId) {
+          removedCollabRows.get(previousTableId)?.add(row.id)
+          createdCollabRows.get(row.tableId)?.add(row.id)
+        } else {
+          affectedCollabRows.get(row.tableId)?.add(row.id)
+        }
+        if (previousTableId !== undefined) {
           rowsReplaced++
         } else {
           rowsInserted++
@@ -358,10 +418,30 @@ export async function handleImportRoute(
 
       // Site shell: overwrite if the bundle carries one
       if (bundle.site) {
-        await saveDraftSite(tx, bundle.site)
+        await saveDraftSite(tx, bundle.site, null, { collabInternal: true })
+        shellWasWritten = true
       }
     })
   }
+
+    if (shellWasWritten) notifyShellWrite()
+    if (strategy === 'merge-overwrite') {
+      for (const [tableId, ids] of affectedCollabRows) {
+        if (ids.size > 0) notifyRowWrite({ tableId, rowIds: [...ids], kind: 'update' })
+      }
+      for (const [tableId, ids] of removedCollabRows) {
+        if (ids.size > 0) notifyRowWrite({ tableId, rowIds: [...ids], kind: 'delete' })
+      }
+      for (const [tableId, ids] of createdCollabRows) {
+        if (ids.size > 0) notifyRowWrite({ tableId, rowIds: [...ids], kind: 'create' })
+      }
+    } else {
+      const eventKind: RowWriteKind = strategy === 'replace' ? 'delete' : 'create'
+      for (const [tableId, ids] of affectedCollabRows) {
+        if (ids.size > 0) notifyRowWrite({ tableId, rowIds: [...ids], kind: eventKind })
+      }
+    }
+  })
 
   // ---------------------------------------------------------------------------
   // Media — outside the DB transaction (filesystem writes)

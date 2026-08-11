@@ -32,7 +32,7 @@ The schema for a collection. One row per collection.
 | `kind`            | text      | `'postType' \| 'data' \| 'page' \| 'component' \| 'layout'`      |
 | `singular_label`  | text      | "Post"                                                           |
 | `plural_label`    | text      | "Posts"                                                          |
-| `route_base`      | text      | Empty = not publicly routable. Post-types default to `/<slug>`. |
+| `route_base`      | text      | Empty = not publicly routable. An omitted create value defaults to `/<slug>`; an explicitly empty value stays empty through create, update, and import. |
 | `primary_field_id`| text      | Field id used as the row's display name in grids / pickers      |
 | `fields_json`     | jsonb     | `DataField[]` — the schema                                       |
 | `system`          | boolean   | `true` for seeded tables (`posts`, `pages`, `components`, `layouts`) |
@@ -116,6 +116,7 @@ Users can add their own custom fields to system tables.
 | `email`        | `string \| null`                          |                                             |
 | `media`        | single: `mediaId \| null`; multi: `string[]` | References `media_assets`                |
 | `relation`     | single: `rowId \| null`; multi: `string[]`| Relates to rows in another `data_table`     |
+| `repeater`     | ordered `{ id, cells }[]`                  | One-level structured item collection        |
 | `pageTree`     | `NodeTree<PageNode>` JSON                 | The visual tree (pages, VC trees)           |
 | `fieldSchema`  | JSON describing fields                    | Used by VCs to declare `params`             |
 
@@ -130,6 +131,7 @@ readStringCell(cells, 'title')                  // → string ('' fallback)
 readNumberCell(cells, 'price')                  // → number | null
 readBooleanCell(cells, 'featured')              // → boolean
 readStringArrayCell(cells, 'tags')              // → string[]
+readRepeaterCell(cells, 'gallery')              // → { id, cells }[]
 readTitleCell(cells)                            // → string  (reads 'title')
 readSlugCell(cells)                             // → string  (reads 'slug')
 readBodyCell(cells)                             // → string  (reads 'body')
@@ -138,6 +140,11 @@ readSeoTitleCell(cells), readSeoDescriptionCell(cells)
 readNodeTreeCell(cells, 'body')                 // → NodeTree<PageNode> | null
 readFieldSchemaCell(cells, 'params')            // → DataField[] | null
 ```
+
+Repeater definitions store their item schema in `field.fields`.
+`RepeaterItemFieldSchema` excludes `repeater`, `pageTree`, and `fieldSchema`,
+so v1 repeaters are one level deep. Stable item ids make reorder and duplicate
+operations deterministic; nested values remain keyed by their item field ids.
 
 These do the boundary validation — handlers and modules read through them rather than typing `cells.foo as string`.
 

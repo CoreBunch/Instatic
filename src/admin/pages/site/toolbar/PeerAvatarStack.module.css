@@ -1,0 +1,17 @@
+/*
+ * Toolbar presence stack — layout only; the avatar itself (identity ring,
+ * Gravatar precedence) is the shared PeerAvatar from @site/collab.
+ */
+
+.stack {
+  display: flex;
+  align-items: center;
+}
+
+.stack > * + * {
+  margin-left: calc(-1 * var(--space-3xs));
+}
+
+.stackItem[data-elsewhere='true'] {
+  opacity: 0.45;
+}

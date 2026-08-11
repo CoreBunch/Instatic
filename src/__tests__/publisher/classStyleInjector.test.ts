@@ -84,6 +84,24 @@ describe('bagToCSS', () => {
     expect(css).not.toContain('display: block !important')
   })
 
+  it('emits nothing for a non-object bag instead of throwing (corrupt rule resilience)', () => {
+    // A malformed persisted rule can carry a non-object `styles` (bad import,
+    // plugin write, older data). `Object.entries(null)` would throw and blank
+    // the whole canvas — one bad rule must degrade to empty, not crash.
+    expect(bagToCSS(undefined as never)).toBe('')
+    expect(bagToCSS(null as never)).toBe('')
+    expect(bagToCSS(42 as never)).toBe('')
+  })
+
+  it('one malformed rule does not stop the rest of the stylesheet emitting', () => {
+    const good = makeClass('good', { color: 'red' })
+    // A packageJson-shaped object wrongly stored as a style rule: no `styles`.
+    const corrupt = { dependencies: {}, devDependencies: {} } as unknown as StyleRule
+    const css = generateClassCSS({ corrupt, good }, [], [])
+    expect(css).toContain('color: red')
+    expect(css).not.toContain('dependencies')
+  })
+
   it('converts camelCase to kebab-case', () => {
     const css = bagToCSS({ backgroundColor: '#fff', borderTopLeftRadius: '4px' })
     expect(css).toContain('background-color: #fff;')
@@ -756,6 +774,59 @@ describe('collectClassCSS', () => {
     const css = collectClassCSS(site)
     expect(css).toContain('.used {')
     expect(css).not.toContain('.unused')
+  })
+
+  it('emits a complex utility variant only when its selector dependencies are used', () => {
+    const group = makeClass('group', {})
+    const variant: StyleRule = {
+      ...makeClass('variant', { display: 'block' }, {}, 'group-hover:block'),
+      selector: '.group:hover .group-hover\\:block',
+    }
+    const withDependency = makeSite(
+      { group, variant },
+      { parent: ['group'], child: ['variant'] },
+    )
+    const withoutDependency = makeSite(
+      { group, variant },
+      { child: ['variant'] },
+    )
+
+    expect(collectClassCSS(withDependency)).toContain(
+      '.group:hover .group-hover\\:block',
+    )
+    expect(collectClassCSS(withoutDependency)).not.toContain('group-hover')
+  })
+
+  it('tree-shakes ambient fragments by known class dependencies', () => {
+    const used = makeClass('used', {})
+    const unused = makeClass('unused', {})
+    const usedFragment: StyleRule = {
+      ...makeClass('used-fragment', { color: 'green' }),
+      name: '.used:hover',
+      kind: 'ambient',
+      selector: '.used:hover',
+    }
+    const unusedFragment: StyleRule = {
+      ...makeClass('unused-fragment', { color: 'red' }),
+      name: '.unused:hover',
+      kind: 'ambient',
+      selector: '.unused:hover',
+    }
+    const body: StyleRule = {
+      ...makeClass('body-rule', { margin: '0' }),
+      name: 'body',
+      kind: 'ambient',
+      selector: 'body',
+    }
+    const site = makeSite(
+      { used, unused, usedFragment, unusedFragment, body },
+      { child: ['used'] },
+    )
+
+    const css = collectClassCSS(site)
+    expect(css).toContain('.used:hover')
+    expect(css).not.toContain('.unused:hover')
+    expect(css).toContain('body {')
   })
 
   it('emits CSS for all used classes across all nodes', () => {

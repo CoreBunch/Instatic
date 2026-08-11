@@ -4,14 +4,22 @@
  * Implements the WAI-ARIA "tabs with automatic activation" pattern:
  * arrow keys move focus AND change the active value simultaneously.
  *
- * Underline-indicator style — visually distinct from RangeTabs (pill
- * segmented control). Tabs is for page-level chrome; RangeTabs is for
- * compact inline widget-header toggles.
+ * Visuals: each tab renders the shared `Button` primitive
+ * (`primary` when active, `secondary` otherwise, size `sm`) — the exact
+ * pattern the admin pages use for section tabs. This is deliberately
+ * distinct from `SegmentedControl` (compact editor-panel view switching)
+ * and `RangeTabs` (pill segmented control in widget headers): `Tabs` is
+ * for page-level section chrome.
  *
- * All four components compose a single React Context so the value type
- * is generic at the Tabs boundary and the inner components only see strings.
- * Tab panel DOM nodes stay mounted (just hidden) — consistent with Search's
- * pattern and correct for any consumer that holds component state in panels.
+ * All four components compose a single React Context, so `TabList` and
+ * `TabPanel`s may live in different subtrees (e.g. the tab row passed to
+ * `AdminPageLayout`'s `tabs` slot while the panels render as children).
+ * The value type is generic at the Tabs boundary; the inner components
+ * only see strings.
+ *
+ * Panels unmount when inactive by default (matching how the admin pages
+ * lazy-mount tab content); pass `keepMounted` to a `TabPanel` whose
+ * children hold state that must survive tab switches.
  *
  * Lives under src/ui/components/ so plugins can import it via
  * @instatic/host-ui.
@@ -24,7 +32,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from 'react'
-import { cn } from '@ui/cn'
+import { Button } from '@ui/components/Button'
 import styles from './Tabs.module.css'
 
 // ---------------------------------------------------------------------------
@@ -69,12 +77,20 @@ export interface TabListProps {
 export interface TabProps<TValue extends string> {
   /** The value this tab represents. Must match a TabPanel value. */
   value: TValue
+  /** Optional data-testid forwarded to the underlying button. */
+  testId?: string
   children?: ReactNode
 }
 
 export interface TabPanelProps<TValue extends string> {
   /** The value this panel represents. Must match a Tab value. */
   value: TValue
+  /**
+   * Keep the panel's children mounted (hidden) while inactive. Off by
+   * default: inactive panels render an empty placeholder so tab content
+   * lazy-mounts on first activation, matching the admin pages' behavior.
+   */
+  keepMounted?: boolean
   children?: ReactNode
 }
 
@@ -176,16 +192,18 @@ export function TabList({ ariaLabel, children }: TabListProps) {
 // Tab — individual tab trigger
 // ---------------------------------------------------------------------------
 
-export function Tab<TValue extends string>({ value, children }: TabProps<TValue>) {
+export function Tab<TValue extends string>({ value, testId, children }: TabProps<TValue>) {
   const { activeValue, onChange, idPrefix } = useTabsContext('Tab')
   const isActive = value === activeValue
   const tabId = `${idPrefix}-tab-${value}`
   const panelId = `${idPrefix}-panel-${value}`
 
   return (
-    <button
+    <Button
       id={tabId}
       type="button"
+      variant={isActive ? 'primary' : 'secondary'}
+      size="sm"
       role="tab"
       aria-selected={isActive}
       aria-controls={panelId}
@@ -195,11 +213,11 @@ export function Tab<TValue extends string>({ value, children }: TabProps<TValue>
       // data-value lets the TabList keyboard handler read the value without
       // a separate context subscription per tab.
       data-value={value}
-      className={cn(styles.tab, isActive && styles.tabActive)}
+      data-testid={testId}
       onClick={() => onChange(value)}
     >
       {children}
-    </button>
+    </Button>
   )
 }
 
@@ -209,6 +227,7 @@ export function Tab<TValue extends string>({ value, children }: TabProps<TValue>
 
 export function TabPanel<TValue extends string>({
   value,
+  keepMounted = false,
   children,
 }: TabPanelProps<TValue>) {
   const { activeValue, idPrefix } = useTabsContext('TabPanel')
@@ -221,12 +240,13 @@ export function TabPanel<TValue extends string>({
       id={panelId}
       role="tabpanel"
       aria-labelledby={tabId}
-      // hidden keeps inactive panels out of the accessibility tree and layout
-      // while leaving their DOM nodes (and component state) mounted.
+      // The panel element itself stays in the DOM (hidden) so the active
+      // tab's aria-controls always resolves; only the CHILDREN unmount
+      // when the panel is inactive and keepMounted is off.
       hidden={!isActive}
       className={styles.tabPanel}
     >
-      {children}
+      {(isActive || keepMounted) && children}
     </div>
   )
 }

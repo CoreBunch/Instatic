@@ -6,6 +6,32 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 
 ## Unreleased
 
+## 0.0.15 - 2026-08-11
+
+### Collaboration, AI, and integrations
+
+- Added real-time collaborative editing with continuous CRDT persistence, per-document undo, reconnect recovery, generation-aware resets, transport health checks, and clear user feedback when an edit cannot reach the relay.
+- Adopted the stateless MCP protocol and hardened authoring so connector writes wait for a writable editor, preserve authored structure, and cannot report changes that were never persisted.
+- Made AI colour-palette installation atomic so complete token batches land together or fail visibly.
+
+### Editor and data
+
+- Added hover previews to Site explorer rows and a **Used** filter to the Selectors panel.
+- Let every floating editor panel clear docked sidebars, polished context menus and data-binding controls, and rebuilt shared tabs with consistent keyboard and ARIA behavior.
+- Protected mandatory post-type title and slug fields from destructive table updates and repaired those fields when an earlier update removed them.
+
+### Publishing and runtime
+
+- Surfaced runtime-script build diagnostics in the Code editor and publish flow so authored script failures identify the affected file and source location.
+- Made collaborative persistence and publishing deterministic across resets, imports, route rosters, selector styles, and site-document ordering.
+- Scoped entry-route runtime assets to the template that renders them and stopped author bindings from exposing internal user objects or account email addresses.
+- Prefetched resolved media metadata for bound images so published output includes accessibility text, responsive variants, and intrinsic dimensions.
+- Made published routes answer `HEAD` like `GET`, allowing uptime monitors and link checkers to recognize healthy pages.
+
+### Import reliability
+
+- Scaled large CSS catalogue imports and reported invalid, unresolved, empty, or unsortable loop definitions instead of silently publishing missing or incorrectly ordered content.
+
 ## 0.0.14 - 2026-07-25
 
 ### Security

@@ -118,6 +118,40 @@ export function useContentWorkspace({
     setEntries((current) => updateRowList(current, entry))
   }
 
+  /**
+   * Refresh a row in the list, making it the active document ONLY if it
+   * already was. Use this for any update that is not itself a navigation —
+   * `updateSelectedEntry` retargets the workspace, which silently discards
+   * whatever the author had open and unsaved.
+   */
+  const applyEntryUpdate = (entry: DataRow) => {
+    if (selectedEntryRef.current?.id === entry.id) {
+      updateSelectedEntry(entry)
+      return
+    }
+    setEntries((current) => updateRowList(current, entry))
+  }
+
+  /**
+   * Re-read the collection roster from the server and return it.
+   *
+   * The mount-time load is a snapshot: a collection created after it — by an
+   * import, another admin, or an MCP connector — is invisible to this
+   * workspace until a reload, and every write against it fails with
+   * "Collection not found". Callers that hit an unknown id refresh through
+   * here and retry rather than making the operator reload the page.
+   *
+   * Returns the fresh post-type list directly, so a caller can act on it in
+   * the same tick instead of waiting for a re-render.
+   */
+  const refreshCollections = useCallback(async (): Promise<DataTable[]> => {
+    const allTables = await listCmsDataTables()
+    const nextCollections = allTables.filter((table) => table.kind === 'postType')
+    setTables(allTables)
+    setCollections(nextCollections)
+    return nextCollections
+  }, [])
+
   useEffect(() => {
     let cancelled = false
 
@@ -488,6 +522,7 @@ export function useContentWorkspace({
   return {
     tables,
     collections,
+    refreshCollections,
     entries,
     authors,
     authorsLoading,
@@ -501,6 +536,7 @@ export function useContentWorkspace({
     openEntry,
     selectEntry,
     updateSelectedEntry,
+    applyEntryUpdate,
     createUntitledEntry,
     duplicateEntry,
     createCollection,

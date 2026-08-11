@@ -36,7 +36,9 @@ import { StyleSettingsPane } from './StyleSettingsPane'
 import { EmptyState } from '@ui/components/EmptyState'
 import { cn } from '@ui/cn'
 import type { SiteFile } from '@core/files/schemas'
+import type { SiteRuntimeDiagnostic } from '@core/site-runtime'
 import type { CodeLanguage } from './CodeMirrorEditor'
+import type { RuntimeScriptValidationState } from '@site/hooks/useRuntimeScriptDiagnostics'
 import styles from './CodeEditorPanel.module.css'
 
 /** Map a SiteFile to the editor's highlighting language (no CM6 imports here). */
@@ -75,7 +77,13 @@ const PANEL_WIDTH = 800
  * bundle (~600 kB) sits behind a single `React.lazy` boundary further down,
  * so we only pay for it the first time the user opens a text file.
  */
-export function CodeEditorPanel() {
+interface CodeEditorPanelProps {
+  runtimeValidation?: RuntimeScriptValidationState
+}
+
+const EMPTY_DIAGNOSTICS: SiteRuntimeDiagnostic[] = []
+
+export function CodeEditorPanel({ runtimeValidation }: CodeEditorPanelProps) {
   // ── Store subscriptions ──────────────────────────────────────────────────
   const activeEditorFileId = useEditorStore((s) => s.activeEditorFileId)
   const activeCodeBuffer = useEditorStore((s) => s.activeCodeBuffer)
@@ -153,6 +161,13 @@ export function CodeEditorPanel() {
   const isTextFile = activeFile && !isAsset
   const isScriptFile = activeFile?.type === 'script'
   const isStyleFile = activeFile?.type === 'style'
+  const runtimeDiagnostics = runtimeValidation?.diagnostics ?? EMPTY_DIAGNOSTICS
+  const activeFileDiagnostics = activeFile
+    ? runtimeDiagnostics.filter((diagnostic) => (
+        diagnostic.fileId === activeFile.id ||
+        (!diagnostic.fileId && diagnostic.path === activeFile.path)
+      ))
+    : EMPTY_DIAGNOSTICS
 
   // Editor props for the active document — either a node-prop buffer or a file.
   const editorDoc = activeCodeBuffer
@@ -183,7 +198,6 @@ export function CodeEditorPanel() {
   return (
     <aside
       ref={setPanelRef}
-      role="complementary"
       aria-label="Code Editor"
       data-panel="code-editor"
       tabIndex={-1}
@@ -227,8 +241,15 @@ export function CodeEditorPanel() {
                     value={editorDoc.value}
                     language={editorDoc.language}
                     onChange={editorDoc.onChange}
+                    diagnostics={isScriptFile ? activeFileDiagnostics : EMPTY_DIAGNOSTICS}
                   />
                 </Suspense>
+                {isScriptFile && (
+                  <RuntimeProblems
+                    diagnostics={runtimeDiagnostics}
+                    validation={runtimeValidation}
+                  />
+                )}
               </div>
             </div>
 
@@ -236,6 +257,65 @@ export function CodeEditorPanel() {
         </div>
       </div>
     </aside>
+  )
+}
+
+function diagnosticLocation(diagnostic: SiteRuntimeDiagnostic): string {
+  const path = diagnostic.path ?? 'Runtime script'
+  if (diagnostic.line === undefined) return path
+  const column = diagnostic.column === undefined ? '' : `:${diagnostic.column + 1}`
+  return `${path}:${diagnostic.line}${column}`
+}
+
+function RuntimeProblems({
+  diagnostics,
+  validation,
+}: {
+  diagnostics: SiteRuntimeDiagnostic[]
+  validation?: RuntimeScriptValidationState
+}) {
+  const errorCount = diagnostics.filter((diagnostic) => diagnostic.severity === 'error').length
+  const statusLabel = validation?.status === 'validating'
+    ? 'Checking…'
+    : errorCount > 0
+      ? `${errorCount} error${errorCount === 1 ? '' : 's'}`
+      : 'No errors'
+
+  return (
+    <section className={styles.problems} aria-label="Script problems">
+      <header className={styles.problemsHeader}>
+        <span className={styles.problemsTitle}>Problems</span>
+        <span
+          className={cn(styles.problemsStatus, errorCount > 0 && styles.problemsStatusError)}
+          role="status"
+          aria-live="polite"
+        >
+          {statusLabel}
+        </span>
+      </header>
+      {validation?.status === 'unavailable' ? (
+        <p className={styles.problemsEmpty}>
+          {validation.errorMessage ?? 'Code check unavailable. Publish will still validate the scripts.'}
+        </p>
+      ) : diagnostics.length > 0 ? (
+        <ul className={styles.problemsList}>
+          {diagnostics.map((diagnostic) => (
+            <li
+              key={`${diagnostic.code}:${diagnostic.fileId ?? diagnostic.path ?? ''}:${diagnostic.line ?? ''}:${diagnostic.column ?? ''}:${diagnostic.message}`}
+              className={styles.problem}
+              data-severity={diagnostic.severity}
+            >
+              <span className={styles.problemLocation}>{diagnosticLocation(diagnostic)}</span>
+              <span className={styles.problemMessage}>{diagnostic.message}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className={styles.problemsEmpty}>
+          {validation?.status === 'validating' ? 'Running the publisher compiler…' : 'No script problems found.'}
+        </p>
+      )}
+    </section>
   )
 }
 

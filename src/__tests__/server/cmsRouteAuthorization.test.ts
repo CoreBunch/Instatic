@@ -109,7 +109,12 @@ async function currentSiteDocument(db: DbClient, cookie: string): Promise<SiteDo
   return { ...shellPayload.site, pages }
 }
 
-/** Shell-only incremental body for PUT /admin/api/cms/site-document. */
+/**
+ * Shell-only incremental body for PUT /admin/api/cms/site-document.
+ * `shellBaseSeq: 0` matches every scenario here: the freshly-seeded shell has
+ * seq 0, and the later stale-base saves are rejected by the capability diff
+ * gate (403, phase 1) before the conflict check would run.
+ */
 function shellPutBody(site: SiteDocument | SiteShell): string {
   const { pages: _pages, ...shell } = site as SiteDocument
   return JSON.stringify({
@@ -121,6 +126,8 @@ function shellPutBody(site: SiteDocument | SiteShell): string {
     deletedComponentIds: [],
     changedLayouts: [],
     deletedLayoutIds: [],
+    baseSeqs: {},
+    shellBaseSeq: 0,
   })
 }
 

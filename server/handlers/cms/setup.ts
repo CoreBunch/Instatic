@@ -29,6 +29,11 @@ import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '.
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 import type { SiteRow } from '../../types'
 import { CMS_API_PREFIX, requestAuditContext } from './shared'
+import {
+  notifyRowWrite,
+  notifyShellWrite,
+  serializeCollabAwareWrite,
+} from '../../repositories/rowWriteEvents'
 
 export async function handleSetupRoutes(req: Request, db: DbClient): Promise<Response | null> {
   const url = new URL(req.url)
@@ -54,50 +59,63 @@ export async function handleSetupRoutes(req: Request, db: DbClient): Promise<Res
       siteName: Type.String(),
       email: Type.String(),
       password: Type.String(),
+      // Optional: the owner's public name. Left empty, author bindings render
+      // nothing rather than the email address.
+      displayName: Type.Optional(Type.String()),
     })
     const body = await readValidatedBody(req, SetupBodySchema)
     if (!body) return badRequest('Invalid request body')
     const siteName = body.siteName.trim()
     const email = body.email.trim().toLowerCase()
     const password = body.password.trim()
+    const displayName = body.displayName?.trim() ?? ''
 
     if (!siteName) return badRequest('Missing siteName')
     if (!email.includes('@')) return badRequest('Invalid email')
     if (password.length < 12) return badRequest('Password must be at least 12 characters')
 
-    return await db.transaction(async (tx) => {
-      await createSite(tx, siteName, {})
-      const owner = await createUser(tx, {
-        id: nanoid(),
-        email,
-        displayName: email,
-        passwordHash: await hashPassword(password),
-        roleId: 'owner',
-        allowOwnerRole: true,
+    return serializeCollabAwareWrite(async () => {
+      let homePageId = ''
+      const response = await db.transaction(async (tx) => {
+        await createSite(tx, siteName, {})
+        const owner = await createUser(tx, {
+          id: nanoid(),
+          email,
+          displayName,
+          passwordHash: await hashPassword(password),
+          roleId: 'owner',
+          allowOwnerRole: true,
+        })
+        await createAuditEvent(tx, {
+          actorUserId: null,
+          action: 'user.create',
+          targetType: 'user',
+          targetId: owner.id,
+          metadata: { roleId: 'owner', source: 'setup' },
+          ...requestAuditContext(req),
+        })
+        // Seed a starter homepage as a data_row in the 'pages' system table.
+        const rootNode = createNode('base.body')
+        const homePage: Page = {
+          id: nanoid(),
+          title: 'Home',
+          slug: 'index',
+          nodes: { [rootNode.id]: rootNode },
+          rootNodeId: rootNode.id,
+        }
+        homePageId = homePage.id
+        await createDataRow(
+          tx,
+          { id: homePage.id, tableId: 'pages', cells: pageToCells(homePage), slug: homePage.slug },
+          owner.id,
+          null,
+          { collabInternal: true },
+        )
+        return jsonResponse({ ok: true }, { status: 201 })
       })
-      await createAuditEvent(tx, {
-        actorUserId: null,
-        action: 'user.create',
-        targetType: 'user',
-        targetId: owner.id,
-        metadata: { roleId: 'owner', source: 'setup' },
-        ...requestAuditContext(req),
-      })
-      // Seed a starter homepage as a data_row in the 'pages' system table.
-      const rootNode = createNode('base.body')
-      const homePage: Page = {
-        id: nanoid(),
-        title: 'Home',
-        slug: 'index',
-        nodes: { [rootNode.id]: rootNode },
-        rootNodeId: rootNode.id,
-      }
-      await createDataRow(
-        tx,
-        { id: homePage.id, tableId: 'pages', cells: pageToCells(homePage), slug: homePage.slug },
-        owner.id,
-      )
-      return jsonResponse({ ok: true }, { status: 201 })
+      notifyShellWrite()
+      notifyRowWrite({ tableId: 'pages', rowIds: [homePageId], kind: 'create' })
+      return response
     })
   }
 

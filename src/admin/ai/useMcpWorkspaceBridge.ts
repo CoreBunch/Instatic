@@ -110,8 +110,17 @@ export function useMcpWorkspaceBridge(
   scope: McpWorkspaceScope,
   dispatchTool: McpToolDispatcher,
   afterSuccessfulTool?: McpAfterSuccessfulTool,
+  enabled = true,
 ): void {
   useEffect(() => {
+    // A mounted route is not necessarily a usable workspace yet. In
+    // particular, SitePage paints its shell before usePersistence has loaded
+    // the SiteDocument into the editor store. Registering during that window
+    // makes get_context report siteConnected=true even though every browser
+    // runner sees store.site === null. Keep the server-side presence signal
+    // aligned with actual dispatcher readiness.
+    if (!enabled) return undefined
+
     const lifecycleController = new AbortController()
     let stopped = false
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -152,5 +161,5 @@ export function useMcpWorkspaceBridge(
       if (reconnectTimer) clearTimeout(reconnectTimer)
       lifecycleController.abort()
     }
-  }, [scope, dispatchTool, afterSuccessfulTool])
+  }, [scope, dispatchTool, afterSuccessfulTool, enabled])
 }

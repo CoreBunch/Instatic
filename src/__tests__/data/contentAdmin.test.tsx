@@ -18,6 +18,7 @@ import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import type { CmsCurrentUser } from '@core/persistence'
 import { CORE_CAPABILITIES } from '@core/capabilities'
 import { executeContentTool } from '@content/agent/contentBridge'
+import { clearDataMetaCache } from '@admin/shared/DataBindingPicker/cache'
 
 const originalFetch = globalThis.fetch
 
@@ -283,6 +284,7 @@ function clickToolbarPublish() {
 }
 
 beforeEach(() => {
+  clearDataMetaCache()
   const site = makeSite({ name: 'Content Shell Site' })
   localStorage.clear()
   // The workspaces now mirror their selection into the URL (`?table=&row=`).
@@ -326,6 +328,27 @@ beforeEach(() => {
 
   const calls: FetchCall[] = []
   ;(globalThis as typeof globalThis & { __contentFetchCalls?: FetchCall[] }).__contentFetchCalls = calls
+
+  // The posts-rows endpoint is STATEFUL, like the real server: a row created by
+  // POST is visible to every later GET, and a deleted row is gone from it.
+  //
+  // A stateless `rows: []` made this mock lie about the one ordering the app is
+  // allowed to produce. The workspace treats a list response as authoritative
+  // unless the selected row changed *during* that request (see
+  // useContentWorkspace.loadEntries) — correct, because a real GET issued after
+  // a POST returns the new row. But the mock returned an empty list forever, so
+  // whenever the initial list GET happened to be issued after the create, its
+  // (bogus) empty response wiped the new row and the test failed. Which request
+  // won that race was pure scheduling luck, making every create-then-assert test
+  // in this file order-dependent.
+  let postsRows: ReturnType<typeof makeRow>[] = []
+  const putRow = (row: ReturnType<typeof makeRow>) => {
+    const i = postsRows.findIndex((r) => r.id === row.id)
+    if (i === -1) postsRows.push(row)
+    else postsRows[i] = row
+    return row
+  }
+
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     calls.push({ input, init })
     const url = String(input)
@@ -336,8 +359,31 @@ beforeEach(() => {
       })
     }
 
+    if (url === '/admin/api/cms/data/_meta') {
+      return json({
+        meta: {
+          tables: [{
+            id: 'posts',
+            slug: 'posts',
+            name: 'Posts',
+            kind: 'postType',
+            singularLabel: 'Post',
+            pluralLabel: 'Posts',
+            primaryFieldId: 'title',
+            routable: true,
+            versioned: true,
+            fields: [
+              { id: 'title', label: 'Title', type: 'text' },
+              { id: 'body', label: 'Body', type: 'richText' },
+              { id: 'seoTitle', label: 'SEO title', type: 'text' },
+            ],
+          }],
+        },
+      })
+    }
+
     if (url === '/admin/api/cms/data/tables/posts/rows' && init?.method === 'GET') {
-      return json({ rows: [] })
+      return json({ rows: postsRows })
     }
 
     if (url === '/admin/api/cms/data/authors' && init?.method === 'GET') {
@@ -346,24 +392,25 @@ beforeEach(() => {
 
     if (url === '/admin/api/cms/data/tables/posts/rows' && init?.method === 'POST') {
       return json({
-        row: makeRow('entry_1', 'posts', { title: 'Untitled', slug: 'untitled' }, {
+        row: putRow(makeRow('entry_1', 'posts', { title: 'Untitled', slug: 'untitled' }, {
           authorUserId: ownerAuthor.id,
           author: ownerAuthor,
-        }),
+        })),
       }, 201)
     }
 
     if (url === '/admin/api/cms/data/rows/entry_1' && init?.method === 'PATCH') {
       const draft = JSON.parse(String(init.body))
       return json({
-        row: {
+        row: putRow({
           ...makeRow('entry_1', 'posts', draft.cells ?? {}),
           updatedAt: '2026-05-01T10:01:00.000Z',
-        },
+        }),
       })
     }
 
     if (url === '/admin/api/cms/data/rows/entry_1' && init?.method === 'DELETE') {
+      postsRows = postsRows.filter((r) => r.id !== 'entry_1')
       return json({
         row: makeRow('entry_1', 'posts', { title: 'Untitled', slug: 'untitled' }, {
           authorUserId: ownerAuthor.id,
@@ -375,23 +422,23 @@ beforeEach(() => {
 
     if (url === '/admin/api/cms/data/rows/entry_1/publish' && init?.method === 'POST') {
       return json({
-        row: {
+        row: putRow({
           ...makeRow('entry_1', 'posts', { title: 'My first post', slug: 'untitled', body: '## Intro', featuredMedia: null, seoTitle: '', seoDescription: '' }),
           status: 'published',
           updatedAt: '2026-05-01T10:02:00.000Z',
           publishedAt: '2026-05-01T10:02:00.000Z',
-        },
+        }),
       })
     }
 
     if (url === '/admin/api/cms/data/rows/entry_1/status' && init?.method === 'PATCH') {
       const body = JSON.parse(String(init.body))
       return json({
-        row: {
+        row: putRow({
           ...makeRow('entry_1', 'posts', { title: 'My first post', slug: 'updated-slug', body: '', featuredMedia: imageAsset.id, seoTitle: '', seoDescription: '' }),
           status: body.status,
           updatedAt: '2026-05-01T10:03:00.000Z',
-        },
+        }),
       })
     }
 
@@ -407,6 +454,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  clearDataMetaCache()
   globalThis.fetch = originalFetch
   useAdminUi.getState().setSiteSummary({ name: null, faviconUrl: null })
   cleanup()
@@ -650,9 +698,132 @@ describe('ContentPage', () => {
     expect(within(notch).getByRole('button', { name: 'Add Heading' })).toBeDefined()
     expect(within(notch).getByRole('button', { name: 'Add Text' })).toBeDefined()
     expect(within(notch).getByRole('button', { name: 'Add Media' })).toBeDefined()
-    expect(within(notch).getByRole('button', { name: 'Add Insert data token' })).toBeDefined()
+    const tokenButton = within(notch).getByRole('button', { name: 'Add Insert data token' })
+    expect(tokenButton).toBeDefined()
     expect(within(notch).queryByRole('button', { name: 'Add to canvas' })).toBeNull()
     expect(screen.queryByTestId('canvas-notch-add-btn')).toBeNull()
+
+    fireEvent.click(tokenButton)
+
+    expect(await screen.findByRole('menu', { name: 'Insert binding for Post body' })).toBeDefined()
+    expect(await screen.findByText('Current entry — Posts')).toBeDefined()
+    expect(screen.getByText('Title')).toBeDefined()
+  })
+
+  it('suppresses the token tooltip while open and inserts populated media and repeater fields', async () => {
+    const defaultFetch = globalThis.fetch
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/admin/api/cms/data/_meta') {
+        return json({
+          meta: {
+            tables: [{
+              id: 'posts',
+              slug: 'posts',
+              name: 'Posts',
+              kind: 'postType',
+              singularLabel: 'Post',
+              pluralLabel: 'Posts',
+              primaryFieldId: 'title',
+              routable: true,
+              versioned: true,
+              fields: [
+                { id: 'title', label: 'Title', type: 'text' },
+                {
+                  id: 'heroImage',
+                  label: 'Hero image',
+                  type: 'media',
+                  mediaKind: 'image',
+                },
+                {
+                  id: 'featureRows',
+                  label: 'Feature rows',
+                  type: 'repeater',
+                  itemLabelFieldId: 'heading',
+                  fields: [
+                    { id: 'heading', label: 'Heading', type: 'text' },
+                    {
+                      id: 'image',
+                      label: 'Image',
+                      type: 'media',
+                      mediaKind: 'image',
+                    },
+                  ],
+                },
+              ],
+            }],
+          },
+        })
+      }
+      if (url === '/admin/api/cms/data/tables/posts/rows' && init?.method === 'POST') {
+        return json({
+          row: makeRow('entry_1', 'posts', {
+            title: 'Untitled',
+            slug: 'untitled',
+            heroImage: imageAsset.id,
+            featureRows: [
+              {
+                id: 'feature_1',
+                cells: { heading: 'Fast', image: imageAsset.id },
+              },
+              {
+                id: 'feature_2',
+                cells: { heading: 'Flexible', image: imageAsset.id },
+              },
+            ],
+          }),
+        }, 201)
+      }
+      return defaultFetch(input, init)
+    }
+
+    render(
+      <AdminTestProviders>
+        <ContentPage />
+      </AdminTestProviders>,
+    )
+
+    await screen.findByRole('region', { name: 'Posts' })
+    fireEvent.click(
+      within(screen.getByRole('region', { name: 'Posts' }))
+        .getByRole('button', { name: /new post/i }),
+    )
+    const bodyEditor = await screen.findByTestId('content-body-editor')
+    const tokenButton = screen.getByRole('button', {
+      name: 'Add Insert data token',
+    })
+
+    fireEvent.mouseEnter(tokenButton)
+    expect(await screen.findByRole('tooltip')).toBeDefined()
+    fireEvent.click(tokenButton)
+
+    const picker = await screen.findByRole('menu', {
+      name: 'Insert binding for Post body',
+    })
+    expect(screen.getByRole('button', {
+      name: 'Add Insert data token',
+    }).getAttribute('aria-expanded')).toBe('true')
+    expect(screen.queryByRole('tooltip')).toBeNull()
+
+    const imageField = within(picker).getByRole('button', {
+      name: /Hero image 1 image/i,
+    })
+    const repeaterField = within(picker).getByRole('button', {
+      name: /Feature rows 2 items/i,
+    })
+    expect(imageField).toBeDefined()
+    expect(repeaterField).toBeDefined()
+
+    fireEvent.click(imageField)
+    fireEvent.click(repeaterField)
+
+    await waitFor(() => {
+      expect(bodyEditor.textContent).toContain('{currentEntry.heroImage}')
+      expect(bodyEditor.textContent).toContain('{currentEntry.featureRows}')
+    })
+    expect(screen.getByRole('menu', {
+      name: 'Insert binding for Post body',
+    })).toBeDefined()
   })
 
   it('hides the right settings panel until an entry is selected, then shows it', async () => {
@@ -946,6 +1117,78 @@ describe('ContentPage', () => {
     const params = new URLSearchParams(window.location.search)
     expect(params.get('table')).toBe('articles')
     expect(params.get('row')).toBe('article_2')
+  })
+
+  it('publishing another document does not steal the active document', async () => {
+    // `applyStatus` used to call `updateSelectedEntry` for whatever row it
+    // published, active or not. That retargeted the workspace — discarding the
+    // author's unsaved draft — and left a tool loop of
+    // `set_document_fields → set_document_status` writing one document behind
+    // itself, so every field write after the first was refused.
+    const postA = makeRow('post_a', 'posts', { title: 'Open post', slug: 'open-post', seoTitle: '' })
+    const postB = makeRow('post_b', 'posts', { title: 'Other post', slug: 'other-post', seoTitle: '' })
+
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+
+      if (url === '/admin/api/cms/data/tables' && method === 'GET') {
+        return json({ tables: [makeTable('posts', 'Posts', 'posts', '/posts', 'Post', 'Posts')] })
+      }
+      if (url === '/admin/api/cms/data/tables/posts/rows' && method === 'GET') {
+        return json({ rows: [postA, postB] })
+      }
+      if (url === '/admin/api/cms/data/rows/post_a' && method === 'GET') return json({ row: postA })
+      if (url === '/admin/api/cms/data/rows/post_b' && method === 'GET') return json({ row: postB })
+      if (url === '/admin/api/cms/data/rows/post_a' && method === 'PATCH') {
+        const body = JSON.parse(String(init?.body))
+        return json({ row: makeRow('post_a', 'posts', body.cells) })
+      }
+      if (url === '/admin/api/cms/data/rows/post_b/publish' && method === 'POST') {
+        return json({ row: { ...postB, status: 'published', publishedAt: '2026-05-01T10:02:00.000Z' } })
+      }
+      if (url === '/admin/api/cms/data/authors' && method === 'GET') return json({ authors: [] })
+      if (url === '/admin/api/cms/media' && method === 'GET') return json({ assets: [] })
+
+      const ambient = ambientFetchFallback(url)
+      if (ambient) return ambient
+      return json({ error: `Unhandled ${method} ${url}` }, 500)
+    }
+
+    render(
+      <AdminTestProviders>
+        <ContentPage />
+      </AdminTestProviders>,
+    )
+    expect(await screen.findByRole('region', { name: 'Posts' })).toBeDefined()
+
+    // Each call gets its own act() so React commits in between and the bridge's
+    // workspace ref refreshes. Batching them hides the bug: the ref would still
+    // hold the pre-publish workspace and the last write would pass either way.
+    let statusResult: Awaited<ReturnType<typeof executeContentTool>> | null = null
+    let writeResult: Awaited<ReturnType<typeof executeContentTool>> | null = null
+    await act(async () => {
+      await executeContentTool('content_set_active_document', { documentId: 'post_a' })
+    })
+    await act(async () => {
+      // Publish the OTHER document…
+      statusResult = await executeContentTool('content_set_document_status', {
+        documentId: 'post_b',
+        status: 'published',
+      })
+    })
+    await act(async () => {
+      // …post_a must still be the active document, so this write must land.
+      writeResult = await executeContentTool('content_set_document_field', {
+        documentId: 'post_a',
+        fieldId: 'seoTitle',
+        value: 'Still mine',
+      })
+    })
+
+    expect(statusResult?.ok).toBe(true)
+    expect(writeResult?.ok).toBe(true)
+    expect(String(writeResult?.error ?? '')).not.toContain('not the active doc')
   })
 
   it('uses content-specific rail panels instead of editor-only panels', async () => {
@@ -1681,6 +1924,28 @@ describe('ContentPage', () => {
     // model to match the proposal.
     expect(src).toContain('BodyBubbleMenu')
     expect(src).toContain('BodySlashMenu')
+  })
+
+  it('uses the shared context-menu primitive for slash commands', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/admin/pages/content/components/BodySlashMenu/BodySlashMenu.tsx'),
+      'utf8',
+    )
+
+    expect(src).toContain("from '@ui/components/ContextMenu'")
+    expect(src).toContain('<ContextMenu')
+    expect(src).toContain('<ContextMenuItem')
+    expect(src).not.toContain('createPortal')
+    expect(src).not.toContain('BodySlashMenu.module.css')
+  })
+
+  it('uses the shared data-binding picker instead of inserting a fixed token', () => {
+    const src = readFileSync(join(process.cwd(), 'src/admin/pages/content/ContentPage.tsx'), 'utf8')
+
+    expect(src).toContain("from '@admin/shared/DataBindingPicker'")
+    expect(src).toContain('<DataBindingPicker')
+    expect(src).toContain('bindingToToken(binding.source, binding.field)')
+    expect(src).not.toContain("insertText('{currentEntry.title}')")
   })
 
   it('uses the content publish button as the single published-state indicator', () => {

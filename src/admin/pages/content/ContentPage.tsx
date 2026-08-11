@@ -15,11 +15,9 @@ import { HeadingIcon } from 'pixel-art-icons/icons/heading'
 import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
 import { TextPlusIcon } from 'pixel-art-icons/icons/text-plus'
 import { BracesIcon } from 'pixel-art-icons/icons/braces'
-// Token-picker dialog is awaiting re-integration with the popover-based
-// DynamicBindingControl that a parallel session is rolling out. Until then
-// the slash-menu "Data token" action inserts a placeholder token string at
-// the caret and the author can hand-edit it.
 import { AdminWorkspaceCanvasLayout } from '@admin/layouts/AdminWorkspaceCanvasLayout'
+import { DataBindingPicker } from '@admin/shared/DataBindingPicker'
+import { bindingToToken } from '@core/templates/tokenInterpolation'
 import { MediaExplorerPanel } from '@site/panels/MediaExplorerPanel'
 import type { CanvasNotchAction } from '@site/canvas/CanvasNotch'
 import { ContentDocumentCanvas } from './components/ContentDocumentCanvas/ContentDocumentCanvas'
@@ -89,10 +87,7 @@ export function ContentPage() {
   // bumping them re-runs the focus effect inside the canvas / body editor.
   const [focusTitleSignal, setFocusTitleSignal] = useState(0)
   const [focusBodySignal, setFocusBodySignal] = useState(0)
-  // Token binding picker — temporarily stubbed (see comment near
-  // `BindingPickerPopover` placeholder below). Slash-menu / notch actions
-  // insert a placeholder token directly until the popover is wired up to
-  // the body editor's caret.
+  const [tokenPickerOpen, setTokenPickerOpen] = useState(false)
   // Canvas display mode: 'write' is the bare editor surface, 'live' is
   // the entry rendered inside its template (real site styles, inline
   // editing). Switching is purely client-side — the body markdown is the
@@ -106,6 +101,7 @@ export function ContentPage() {
   // (data tokens), insert media nodes, or append heading/paragraph blocks
   // from outside the editor in response to notch / picker actions.
   const bodyEditorRef = useRef<TiptapBodyEditorHandle | null>(null)
+  const tokenPickerTriggerRef = useRef<HTMLButtonElement | null>(null)
 
   // Strict accessor — ContentPage only renders inside `AuthenticatedAdmin`,
   // which gates the entire tree on a non-null session user. A null here
@@ -452,7 +448,9 @@ export function ContentPage() {
       id: 'bind',
       label: 'Insert data token',
       icon: BracesIcon,
-      onClick: () => bodyEditorRef.current?.insertText('{currentEntry.title}'),
+      buttonRef: tokenPickerTriggerRef,
+      expanded: tokenPickerOpen,
+      onClick: () => setTokenPickerOpen((open) => !open),
     },
   ]
 
@@ -551,7 +549,7 @@ export function ContentPage() {
             onTitleEnter={() => setFocusBodySignal((n) => n + 1)}
             onBodyChange={draft.setBody}
             onPickMedia={() => mediaPicker.openMediaPicker('media')}
-            onInsertDataToken={() => bodyEditorRef.current?.insertText('{currentEntry.title}')}
+            onInsertDataToken={() => setTokenPickerOpen(true)}
             onCreateEntry={() => void handleCreateEntry()}
           />
         )}
@@ -635,12 +633,34 @@ export function ContentPage() {
         />
       )}
 
-      {/*
-        Token binding picker — temporarily stubbed. When the popover-based
-        BindingPickerPopover wires up to the body editor's caret rect,
-        mount it here anchored to a stable wrapper element and forward the
-        chosen token to `bodyEditorRef.current?.insertText`.
-      */}
+      {tokenPickerOpen && workspace.selectedCollection && (
+        <DataBindingPicker
+          label="Post body"
+          control={{ type: 'text', label: 'Post body' }}
+          insertMode
+          fieldSelectionMode="token"
+          anchorRef={tokenPickerTriggerRef}
+          triggerRef={tokenPickerTriggerRef}
+          scopedTableId={workspace.selectedCollection.id}
+          scopeLabel="Current entry"
+          previewFields={{
+            ...workspace.selectedEntry?.cells,
+            ...draft.customCells,
+            title: draft.title,
+            slug: draft.slug,
+            body: draft.body,
+            featuredMedia: draft.featuredMediaId,
+            seoTitle: draft.seoTitle,
+            seoDescription: draft.seoDescription,
+          }}
+          onClose={() => setTokenPickerOpen(false)}
+          onPick={(binding) => {
+            bodyEditorRef.current?.insertText(
+              bindingToToken(binding.source, binding.field),
+            )
+          }}
+        />
+      )}
     </>
   )
 }

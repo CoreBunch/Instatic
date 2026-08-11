@@ -9,7 +9,6 @@ import {
   openCodePanel,
   openSiteEditor,
   publishDraft,
-  saveDraft,
 } from './helpers'
 
 const ImportmapSchema = Type.Object({
@@ -69,7 +68,6 @@ document.body.append(marker)
     await expect(dependenciesPanel.getByTestId('dep-row-canvas-confetti')).toBeVisible()
     await expect(dependenciesPanel.getByText('1 locked')).toBeVisible({ timeout: 75_000 })
 
-    await saveDraft(page)
     await publishDraft(page)
 
     await verifyPublishedRuntimeDependency({

@@ -157,10 +157,10 @@ const BUDGETS: ChunkBudget[] = [
 
   {
     prefix: 'ContentPage-',
-    maxBytes: 90_000,
+    maxBytes: 100_000,
     rationale:
-      'content workspace route after Tiptap/LiveCanvas lazy split. Current ' +
-      '~81 KB raw / ~27 KB gzipped.',
+      'content workspace route after Tiptap/LiveCanvas lazy split and shared ' +
+      'data-binding picker adoption. Current ~91 KB raw / ~31 KB gzipped.',
   },
 
   {

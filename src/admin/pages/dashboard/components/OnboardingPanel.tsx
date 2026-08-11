@@ -135,8 +135,9 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
   const onboardingApplier: FrameworkManagerApplier = {
     capabilities: { canRemove: true },
     apply: async (target) => {
-      const site = await cmsAdapter.loadSite('default')
-      if (!site) throw new Error('Site is not ready yet — finish setup first.')
+      const loaded = await cmsAdapter.loadSite('default')
+      if (!loaded) throw new Error('Site is not ready yet — finish setup first.')
+      const { site, shellSeq } = loaded
       site.settings.framework = applyFrameworkPreset(site.settings.framework, target)
       // Regenerate / prune the generated `framework:` utility classes (and strip
       // stale classIds off nodes) to match the new settings — the same reconcile
@@ -145,7 +146,9 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
       // styleRules, so the Site editor keeps showing them until a hard refresh.
       reconcileFrameworkClasses(site)
       // Shell-only incremental save: framework settings live on the shell,
-      // no rows changed and nothing was deleted.
+      // no rows changed and nothing was deleted. The shell base seq comes
+      // from the load above — a concurrent shell change 409s instead of
+      // being silently overwritten.
       await cmsAdapter.saveSite(site, {
         dirty: {
           all: false,
@@ -156,6 +159,8 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
           deletedComponentIds: new Set(),
           deletedLayoutIds: new Set(),
         },
+        baseSeqs: {},
+        shellBaseSeq: shellSeq,
       })
       // The framework settings were written to storage outside the editor. If
       // the Site editor's store was hydrated earlier this session, its in-memory

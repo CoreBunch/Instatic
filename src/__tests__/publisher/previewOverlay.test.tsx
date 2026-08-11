@@ -305,7 +305,11 @@ describe('PreviewOverlay — source enforcement', () => {
   })
 
   it('uses the CMS runtime preview boundary instead of bypassing server prefetch', () => {
-    expect(overlaySrc).toContain('buildCmsRuntimePreview(')
+    const previewHookSrc = readFileSync(
+      new URL('../../admin/pages/site/preview/useRuntimePreviewDocument.ts', import.meta.url),
+      'utf-8',
+    )
+    expect(previewHookSrc).toContain('buildCmsRuntimePreview(')
     expect(overlaySrc).not.toContain('publishPage(')
   })
 })

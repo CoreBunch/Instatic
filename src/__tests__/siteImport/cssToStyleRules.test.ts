@@ -60,9 +60,10 @@ describe('cssToStyleRules — selector classification', () => {
     expect(rules[0].kind).toBe('ambient')
   })
 
-  it('.hero .title → ambient (descendant)', () => {
+  it('.hero .title binds the rightmost class while preserving the selector', () => {
     const { rules } = cssToStyleRules('.hero .title { color: red }')
-    expect(rules[0].kind).toBe('ambient')
+    expect(rules[0].kind).toBe('class')
+    expect(rules[0].name).toBe('title')
     expect(rules[0].selector).toBe('.hero .title')
   })
 
@@ -86,9 +87,41 @@ describe('cssToStyleRules — selector classification', () => {
     expect(rules[0].selector).toContain('data-state')
   })
 
-  it('.foo.bar → ambient (compound — two classes, no space)', () => {
+  it('.foo.bar binds the rightmost compound class', () => {
     const { rules } = cssToStyleRules('.foo.bar { color: red }')
-    expect(rules[0].kind).toBe('ambient')
+    expect(rules[0].kind).toBe('class')
+    expect(rules[0].name).toBe('bar')
+  })
+
+  it('decodes and binds escaped Tailwind variant class names', () => {
+    const { rules } = cssToStyleRules(
+      '.group:hover .group-hover\\:block { display: block }',
+    )
+    expect(rules).toHaveLength(1)
+    expect(rules[0]).toMatchObject({
+      kind: 'class',
+      name: 'group-hover:block',
+      selector: '.group:hover .group-hover\\:block',
+    })
+  })
+
+  it('keeps selector-list alternatives with one binding in one rule', () => {
+    const { rules } = cssToStyleRules(
+      '.placeholder\\:text-gray-400::-moz-placeholder, .placeholder\\:text-gray-400::placeholder { color: gray }',
+    )
+    expect(rules).toHaveLength(1)
+    expect(rules[0].selector).toBe(
+      '.placeholder\\:text-gray-400::-moz-placeholder, .placeholder\\:text-gray-400::placeholder',
+    )
+    expect(rules[0].name).toBe('placeholder:text-gray-400')
+  })
+
+  it('splits selector-list alternatives owned by different classes', () => {
+    const { rules } = cssToStyleRules('.foo, .bar { color: red }')
+    expect(rules.map((rule) => [rule.name, rule.selector])).toEqual([
+      ['foo', '.foo'],
+      ['bar', '.bar'],
+    ])
   })
 })
 
@@ -452,6 +485,21 @@ describe('cssToStyleRules — ambient name defaults to selector', () => {
 // ---------------------------------------------------------------------------
 
 describe('cssToStyleRules — duplicate class names', () => {
+  it('does not leak a later duplicate into sibling selectors split from one list', () => {
+    const { rules } = cssToStyleRules(
+      '.register, .source-rule { color: red } .source-rule { display: grid }',
+    )
+
+    expect(rules).toHaveLength(2)
+    expect(rules.find((rule) => rule.name === 'register')?.styles).toEqual({
+      color: 'red',
+    })
+    expect(rules.find((rule) => rule.name === 'source-rule')?.styles).toEqual({
+      color: 'red',
+      display: 'grid',
+    })
+  })
+
   it('duplicate .foo → 1 rule with later value + 1 duplicate-class warning', () => {
     const { rules, warnings } = cssToStyleRules('.foo { color: red } .foo { color: blue }')
     expect(rules).toHaveLength(1)

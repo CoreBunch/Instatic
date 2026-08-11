@@ -492,7 +492,9 @@ import { Widget } from '@ui/components/Widget'
 
 ## `Tabs`
 
-ARIA-correct, keyboard-navigable tab compound component. Implements WAI-ARIA "tabs with automatic activation" — arrow keys move focus AND change the active value simultaneously. Underline-indicator style, distinct from `RangeTabs` (pill segmented control). Panel DOM nodes stay mounted (just hidden) so each panel can hold React state.
+ARIA-correct, keyboard-navigable tab compound component. Implements WAI-ARIA "tabs with automatic activation" — arrow keys move focus AND change the active value simultaneously. Each trigger renders the shared `Button` primitive (`primary` when active, `secondary` otherwise) — the section-tab pattern used by the Users and Account pages. Distinct from `SegmentedControl` (compact editor-panel view switching) and `RangeTabs` (pill segmented control in widget headers). Panels lazy-mount by default; pass `keepMounted` to a `TabPanel` whose children hold state that must survive tab switches.
+
+`TabList` and `TabPanel`s may live in different subtrees of the same `<Tabs>` provider — e.g. the tab row passed to `AdminPageLayout`'s `tabs` slot while the panels render as page children.
 
 ```tsx
 import { Tabs, TabList, Tab, TabPanel } from '@ui/components/Tabs'
@@ -517,8 +519,8 @@ const [activeTab, setActiveTab] = useState<'overview' | 'settings'>('overview')
 |-----------|---------------|-------|
 | `Tabs`    | `value`, `onChange` | Context provider. Generic on `TValue extends string`. |
 | `TabList` | `ariaLabel` | Renders `role="tablist"`, owns arrow-key navigation. |
-| `Tab`     | `value` | Renders a `<button role="tab">`. Active tab is in the natural focus order; inactive tabs use `tabIndex={-1}`. |
-| `TabPanel`| `value` | Renders `role="tabpanel"`, `hidden={!isActive}`. DOM stays mounted. |
+| `Tab`     | `value` | Renders a `Button` with `role="tab"` (`primary` when active, `secondary` otherwise). Active tab is in the natural focus order; inactive tabs use `tabIndex={-1}`. Optional `testId` forwards `data-testid`. |
+| `TabPanel`| `value` | Renders `role="tabpanel"`, `hidden={!isActive}`. Children unmount while inactive unless `keepMounted` is set; the panel element itself stays in the DOM so `aria-controls` always resolves. |
 
 **Do not** hand-roll a `role="tablist"` div — this is gated by `no-plugin-tab-shells.test.ts`. Use `<Tabs>` / `<TabList>` from `@ui/components/Tabs` instead.
 

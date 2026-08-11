@@ -29,7 +29,12 @@ import type {
   ImportColorToken,
   ImportFontToken,
 } from './types'
-import type { SiteDocument, PageNode } from '@core/page-tree'
+import {
+  classKindSelector,
+  replaceCssSelectorClassName,
+  type SiteDocument,
+  type PageNode,
+} from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
 import { normalizeFrameworkColorSlug } from '@core/framework'
 import { normalizeFontTokenVariable } from '@core/fonts'
@@ -420,8 +425,17 @@ function resolveStyleRules(
       // `skip` keeps the original name (binds to the pre-existing rule).
       if (res && res.action !== 'skip') {
         const resolvedName = res.resolvedName ?? rule.name
-        // The selector must stay in sync with the name for class-kind rules.
-        next = { ...next, name: resolvedName, selector: `.${resolvedName}` }
+        // Preserve imported selector structure while moving its decoded
+        // binding token to the resolved class name.
+        next = {
+          ...next,
+          name: resolvedName,
+          selector: replaceCssSelectorClassName(
+            rule.selector,
+            rule.name,
+            classKindSelector(resolvedName).slice(1),
+          ),
+        }
       }
     } else if (classRenames.size > 0) {
       next = rewriteAmbientRuleClassRefs(rule, classRenames)
@@ -532,13 +546,17 @@ function rewriteAmbientRuleClassRefs(
   }
 }
 
-const SELECTOR_CLASS_TOKEN_RE = /\.(-?[A-Za-z_][\w-]*)/g
-
 function rewriteSelectorClasses(selector: string, classRenames: Map<string, string>): string {
-  return selector.replace(SELECTOR_CLASS_TOKEN_RE, (whole, token: string) => {
-    const renamed = classRenames.get(token)
-    return renamed && renamed !== token ? `.${renamed}` : whole
-  })
+  let rewritten = selector
+  for (const [fromName, toName] of classRenames) {
+    if (fromName === toName) continue
+    rewritten = replaceCssSelectorClassName(
+      rewritten,
+      fromName,
+      classKindSelector(toName).slice(1),
+    )
+  }
+  return rewritten
 }
 
 /**

@@ -27,7 +27,6 @@ import {
 } from '@core/ai'
 import { apiRequest } from '@core/http'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { normalizeFrameworkColorSlug } from '@core/framework'
 import { FontEntrySchema, normalizeFontTokenVariable } from '@core/fonts'
 import type { EditorStore } from '@site/store/types'
 import { getAgentStoreApi } from './storeRef'
@@ -46,6 +45,9 @@ const FontInstallResponseSchema = Type.Object({ font: FontEntrySchema })
 // Runners
 // ---------------------------------------------------------------------------
 
+const SCALE_NOT_SAVED =
+  'The scale was not saved: the editor could not reach the collaboration server. Try again in a moment.'
+
 /** Build the `--<prefix>-<step>` variable list a scale group generates. */
 function generatedScaleVars(namingConvention: string, steps: string): string[] {
   return steps
@@ -59,29 +61,29 @@ export function runSetColorTokens(rawInput: unknown): AiToolOutput {
   const input = parseValue(SetColorTokensInputSchema, rawInput)
   const store = getStoreState()
   if (!store.site) return aiToolError('No active site.')
-  const results: Array<{ slug: string; ref: string; action: 'created' | 'updated' }> = []
 
-  for (const t of input.tokens) {
-    // Create-or-update by normalized slug so re-runs patch the existing token
-    // instead of minting `primary-2`.
-    const norm = normalizeFrameworkColorSlug(t.slug)
-    const existing = getStoreState().site?.settings.framework?.colors.tokens ?? []
-    const match = existing.find((e) => normalizeFrameworkColorSlug(e.slug) === norm)
-    const patch = {
+  // One mutation for the whole palette, not one per token. Create-or-update is
+  // keyed by normalized slug inside the batch, so re-runs patch the existing
+  // token instead of minting `primary-2`. Batching is a correctness
+  // requirement, not an optimization: a per-token loop lets the collab write
+  // gate close midway and silently drop every remaining token.
+  const { tokens, accepted } = store.upsertFrameworkColorTokens(
+    input.tokens.map((t) => ({
+      slug: t.slug,
       lightValue: t.lightValue,
       ...(t.category !== undefined ? { category: t.category } : {}),
       ...(t.darkValue !== undefined ? { darkValue: t.darkValue } : {}),
       ...(t.darkModeEnabled !== undefined ? { darkModeEnabled: t.darkModeEnabled } : {}),
-    }
-    if (match) {
-      store.updateFrameworkColorToken(match.id, patch)
-      results.push({ slug: match.slug, ref: `var(--${match.slug})`, action: 'updated' })
-    } else {
-      const created = store.createFrameworkColorToken({ slug: t.slug, ...patch })
-      results.push({ slug: created.slug, ref: `var(--${created.slug})`, action: 'created' })
-    }
+    })),
+  )
+  if (!accepted) {
+    return aiToolError(
+      'Color tokens were not saved: the editor could not reach the collaboration server. Try again in a moment.',
+    )
   }
-  return aiToolOk({ tokens: results })
+  return aiToolOk({
+    tokens: tokens.map((t) => ({ ...t, ref: `var(--${t.slug})` })),
+  })
 }
 
 export async function runSetFontTokens(rawInput: unknown): Promise<AiToolOutput> {
@@ -158,6 +160,19 @@ export async function runSetFontTokens(rawInput: unknown): Promise<AiToolOutput>
       })
     }
   }
+
+  // Read back rather than trusting the writes: a refused mutation leaves the
+  // token absent while the loop above still recorded it as created, which is
+  // how a site ends up referencing `var(--font-x)` that was never installed.
+  const saved = new Set(
+    (getStoreState().site?.settings.fonts?.tokens ?? []).map((token) => token.variable),
+  )
+  const lost = results.filter((r) => !saved.has(r.variable)).map((r) => r.variable)
+  if (lost.length > 0) {
+    return aiToolError(
+      `Font tokens were not saved (${lost.join(', ')}): the editor could not reach the collaboration server. Try again in a moment.`,
+    )
+  }
   return aiToolOk({ tokens: results })
 }
 
@@ -197,6 +212,10 @@ export function runSetTypeScale(rawInput: unknown): AiToolOutput {
   const group = getStoreState().site?.settings.framework?.typography?.groups.find(
     (g) => g.id === groupId,
   )
+  // Read back rather than trusting the write: a mutation the collab path
+  // refused leaves no group behind, and answering with the requested steps
+  // would report a scale the site does not have.
+  if (!group) return aiToolError(SCALE_NOT_SAVED)
   const namingConvention = group?.namingConvention ?? input.namingConvention ?? 'text'
   const steps = group?.steps ?? input.steps ?? ''
   return aiToolOk({
@@ -243,6 +262,8 @@ export function runSetSpacingScale(rawInput: unknown): AiToolOutput {
   const group = getStoreState().site?.settings.framework?.spacing?.groups.find(
     (g) => g.id === groupId,
   )
+  // See the matching read-back in `runSetTypeScale`.
+  if (!group) return aiToolError(SCALE_NOT_SAVED)
   const namingConvention = group?.namingConvention ?? input.namingConvention ?? 'space'
   const steps = group?.steps ?? input.steps ?? ''
   return aiToolOk({

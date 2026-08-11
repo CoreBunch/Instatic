@@ -12,7 +12,10 @@
  * tooltip priority order.
  */
 import { describe, expect, it } from 'bun:test'
-import { useClassPickerSuggestions } from '@site/panels/PropertiesPanel/useClassPickerSuggestions'
+import {
+  CLASS_PICKER_RESULT_LIMIT,
+  useClassPickerSuggestions,
+} from '@site/panels/PropertiesPanel/useClassPickerSuggestions'
 import { classKindSelector, type StyleRule } from '@core/page-tree'
 import type { SelectorSuggestionItem } from '@site/panels/PropertiesPanel/selectorPickerModel'
 
@@ -124,6 +127,23 @@ describe('useClassPickerSuggestions — empty query', () => {
     expect(result.flatNavIds).toEqual([...result.recentIds, ...result.frequentIds])
   })
 
+  it('bounds mounted rows for a full utility registry', () => {
+    const allClasses = Array.from({ length: 40_000 }, (_, index) =>
+      makeClass(`utility-${index}`),
+    )
+    const result = useClassPickerSuggestions({
+      allClasses,
+      assignedIds: [],
+      query: '',
+      highlightedIndex: -1,
+      readUsage: NO_USAGE,
+    })
+
+    expect(result.candidates).toHaveLength(40_000)
+    expect(result.remainingCandidates).toHaveLength(CLASS_PICKER_RESULT_LIMIT)
+    expect(result.flatNavIds).toHaveLength(CLASS_PICKER_RESULT_LIMIT)
+  })
+
 })
 
 // ---------------------------------------------------------------------------
@@ -162,6 +182,23 @@ describe('useClassPickerSuggestions — typed query', () => {
     expect(result.canCreateNew).toBe(false)
     expect(result.hasSubmittableQuery).toBe(true)
     expect(result.submitTooltip).toBe('Add class “.header”')
+  })
+
+  it('finds an exact utility beyond the mounted result window', () => {
+    const allClasses = Array.from({ length: 10_000 }, (_, index) =>
+      makeClass(`utility-${index}`),
+    )
+    const result = useClassPickerSuggestions({
+      allClasses,
+      assignedIds: [],
+      query: 'utility-9999',
+      highlightedIndex: -1,
+      readUsage: NO_USAGE,
+    })
+
+    expect(result.filteredSuggestions.length).toBeLessThanOrEqual(CLASS_PICKER_RESULT_LIMIT)
+    expect(result.exactMatchedClass?.name).toBe('utility-9999')
+    expect(result.hasSubmittableQuery).toBe(true)
   })
 
   it('flags an exact match that is already assigned as non-submittable', () => {

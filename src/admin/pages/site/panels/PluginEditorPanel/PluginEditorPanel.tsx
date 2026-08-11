@@ -18,7 +18,7 @@
  */
 import { useEffect, useState } from 'react'
 import { ErrorBoundary } from '@ui/components/ErrorBoundary'
-import { Panel } from '@admin/shared/Panel'
+import { Panel, type DockablePanelProps } from '@admin/shared/Panel'
 import { useEditorStore } from '@site/store/store'
 import { pluginRuntime } from '@core/plugins/runtime'
 import { buildPluginRoutesHelper } from '@core/plugins/adminRuntime'
@@ -28,21 +28,27 @@ import {
 } from '@admin/plugin-host-hooks'
 import styles from './PluginEditorPanel.module.css'
 
-interface PluginEditorPanelProps {
+interface PluginEditorPanelProps extends DockablePanelProps {
   panelId: string
 }
 
-export function PluginEditorPanel({ panelId }: PluginEditorPanelProps) {
+export function PluginEditorPanel(props: PluginEditorPanelProps) {
+  const { panelId } = props
   // ErrorBoundary reset key includes the panel id so navigating away then
   // back clears stuck errors automatically.
   return (
     <ErrorBoundary location="plugin-editor-panel" resetKeys={[panelId]}>
-      <PluginEditorPanelContent panelId={panelId} />
+      <PluginEditorPanelContent {...props} />
     </ErrorBoundary>
   )
 }
 
-function PluginEditorPanelContent({ panelId }: PluginEditorPanelProps) {
+function PluginEditorPanelContent({
+  panelId,
+  mode,
+  dragHandleProps,
+  onToggleMode,
+}: PluginEditorPanelProps) {
   // Subscribe to the runtime so the panel re-renders if the plugin is
   // re-activated (e.g. after a hot reload from `instatic-plugin dev`).
   const [tick, setTick] = useState(0)
@@ -67,6 +73,10 @@ function PluginEditorPanelContent({ panelId }: PluginEditorPanelProps) {
         title="Plugin panel"
         testId={`panel-plugin-${panelId}`}
         onClose={handleClose}
+        mode={mode}
+        dragHandleProps={dragHandleProps}
+        onToggleMode={onToggleMode}
+        dockLocation="left sidebar"
       >
         <div className={styles.unavailable}>
           Panel <code>{panelId}</code> is not currently registered.
@@ -84,6 +94,10 @@ function PluginEditorPanelContent({ panelId }: PluginEditorPanelProps) {
       title={panel.label}
       testId={`panel-plugin-${panel.id}`}
       onClose={handleClose}
+      mode={mode}
+      dragHandleProps={dragHandleProps}
+      onToggleMode={onToggleMode}
+      dockLocation="left sidebar"
     >
       <PluginPanelSubtree
         panelId={panel.id}

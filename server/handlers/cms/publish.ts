@@ -23,6 +23,7 @@ import { requireCapability, requireStepUp } from '../../auth/authz'
 import { createAuditEvent } from '../../repositories/audit'
 import { getDraftPublishStatus } from '../../repositories/publish'
 import { publishDraftSite } from '../../publish/publishSite'
+import { RuntimeScriptBuildError } from '../../publish/runtime/buildError'
 import { jsonResponse, methodNotAllowed } from '../../http'
 import type { CmsHandlerOptions } from './shared'
 import { requestAuditContext } from './shared'
@@ -41,7 +42,17 @@ export async function handlePublishRoutes(
     const stepUp = await requireStepUp(req, db, user)
     if (stepUp) return stepUp
 
-    const result = await publishDraftSite(db, user.id, options.uploadsDir)
+    // publishDraftSite flushes the collab relay itself (see publishFlush.ts),
+    // so the snapshot includes edits still inside the debounce window.
+    let result: Awaited<ReturnType<typeof publishDraftSite>>
+    try {
+      result = await publishDraftSite(db, user.id, options.uploadsDir)
+    } catch (err) {
+      if (err instanceof RuntimeScriptBuildError) {
+        return jsonResponse({ error: err.message }, { status: 422 })
+      }
+      throw err
+    }
     await createAuditEvent(db, {
       actorUserId: user.id,
       action: 'publish',

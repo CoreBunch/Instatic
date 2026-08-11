@@ -87,7 +87,7 @@ type RouteResolutionContext =
 | `page`     | matched if exists      | never matched          |
 | `entry`    | matched if exists      | matched if `tableSlugs.includes(tableSlug)` |
 
-Within a level, the template with the highest `priority` wins; document order breaks ties.
+Within a level, the template with the highest `priority` wins; document order breaks ties. When the server assembles a persisted draft for publishing, that order is the rows' immutable creation order (then id), not the authoring list's mutable recently-updated order.
 
 **Adding a new breadth level** (e.g. path-prefix sections) means inserting a new entry into the `LEVELS` constant in `templateMatching.ts` — the resolver loop is level-agnostic.
 

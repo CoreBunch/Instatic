@@ -20,14 +20,18 @@ import type { Draft, Patches } from 'mutative'
 import type { ImportFragment } from '@core/htmlImport'
 import type { NewStyleRule } from '@core/siteImport'
 import { addImportedScriptDependencies, addImportedScripts, addImportedStylesheets } from './importedSiteFiles'
-import { collectDirtyFromSitePatches, mergeDirtyMarks } from './dirtyTracking'
+import { applyLocalSitePatches, notifyCollabBlocked } from './collabBinding'
 import type { EditorStore } from '@site/store/types'
-import { MAX_HISTORY } from './defaults'
 import { reconcileFrameworkClasses } from './framework/reconcile'
-import { indexStyleRulesByName, linkImportedClassNames } from './importLinking'
+import {
+  createStyleRuleOrderAllocator,
+  indexStyleRulesByName,
+  linkImportedClassNames,
+  type StyleRuleOrderAllocator,
+} from './importLinking'
 import { addImportedColorTokens, overwriteImportedColorTokens } from './importedColorTokens'
 import { addImportedFonts, addImportedFontTokens, addInstalledFontEntries, overwriteImportedFontTokens } from './importedFonts'
-import type { HistoryEntry, SiteMutationResult, SiteSliceHelpers, SiteSliceRecipe } from './types'
+import type { SiteMutationResult, SiteSliceHelpers, SiteSliceRecipe } from './types'
 import type { SiteImportTransaction } from '@core/siteImport'
 
 /**
@@ -100,68 +104,12 @@ function stringArraysEqual(a: string[], b: string[]): boolean {
   return true
 }
 
-/** Serialize a patch path so fold dedup can key on it. */
-function patchPathKey(path: Patches[number]['path']): string {
-  return JSON.stringify(path)
-}
-
-/**
- * Fold one coalesced keystroke's patch pair into the in-progress burst entry,
- * deduplicating by patch path: the entry holds AT MOST one inverse and one
- * forward patch per touched path, instead of accumulating 2K pairs (each
- * carrying the full prop value at that instant) over a K-keystroke burst.
- *
- *  - inverse (undo): the OLDEST patch per path wins — it restores the
- *    pre-burst value. Patches for newly-touched paths are prepended, keeping
- *    the previous newest-first replay order for hierarchically-overlapping
- *    paths.
- *  - forward (redo): the NEWEST value per path wins, but the stored patch
- *    keeps the op of the OLDEST forward patch: if the burst CREATED the prop,
- *    the folded patch stays 'add'-shaped so redo replays from the post-undo
- *    state where the prop is absent. Mutative's `apply` treats 'add' and
- *    'replace' identically for plain-object keys (verified against
- *    mutative@1.3.0 `src/apply.ts`, pinned by `historyCoalescingFold.test.ts`)
- *    — they differ only for array indices, which coalescing recipes never
- *    patch — so preserving the op is exactness, not necessity. When a
- *    'remove' op is involved on either side, the incoming patch replaces the
- *    stored one wholesale: deleting an absent object key is a no-op, so the
- *    newest patch already describes the burst's net effect for that path.
- *
- * Undo/redo results are bit-identical to the previous concat behavior —
- * replaying [newest…oldest] inverses leaves the oldest value per path, and
- * replaying [oldest…newest] forwards leaves the newest.
- */
-function foldIntoCoalescedEntry(top: Draft<HistoryEntry>, entry: HistoryEntry): void {
-  const knownInverse = new Set<string>()
-  for (const p of top.inverse) knownInverse.add(patchPathKey(p.path))
-  const freshInverse = entry.inverse.filter((p) => !knownInverse.has(patchPathKey(p.path)))
-  if (freshInverse.length > 0) top.inverse = [...freshInverse, ...top.inverse]
-
-  const forward = [...top.forward]
-  const forwardIndexByPath = new Map<string, number>()
-  forward.forEach((p, i) => forwardIndexByPath.set(patchPathKey(p.path), i))
-  for (const incoming of entry.forward) {
-    const key = patchPathKey(incoming.path)
-    const i = forwardIndexByPath.get(key)
-    if (i === undefined) {
-      forwardIndexByPath.set(key, forward.length)
-      forward.push(incoming)
-      continue
-    }
-    const oldest = forward[i]!
-    forward[i] =
-      oldest.op === 'remove' || incoming.op === 'remove'
-        ? incoming
-        : { op: oldest.op, path: incoming.path, value: incoming.value }
-  }
-  top.forward = forward
-}
-
 function applyImportedBodyAttributes(
   rootNode: PageNode,
   fragment: ImportFragment,
   site: SiteDocument,
   byName: Map<string, string>,
+  allocateOrder: StyleRuleOrderAllocator,
 ): void {
   const body = fragment.body
   if (!body) return
@@ -170,7 +118,7 @@ function applyImportedBodyAttributes(
     rootNode.props = { ...rootNode.props, ...body.props }
   }
   if (body.classIds?.length) {
-    rootNode.classIds = linkImportedClassNames(body.classIds, site.styleRules, byName)
+    rootNode.classIds = linkImportedClassNames(body.classIds, site.styleRules, byName, allocateOrder)
   }
   if (body.inlineStyles && Object.keys(body.inlineStyles).length > 0) {
     rootNode.inlineStyles = body.inlineStyles
@@ -203,37 +151,6 @@ export function buildSiteHelpers(
     return result !== false
   }
 
-  /**
-   * Commit one transaction's site-scoped patch pair to undo history.
-   *
-   * Coalescing: when the incoming key matches the in-progress burst, the entry
-   * folds into the existing top entry instead of pushing a new one — deduped
-   * by patch path via `foldIntoCoalescedEntry` (oldest inverse wins, newest
-   * forward value wins), so a whole typing burst is one undo step holding at
-   * most one patch pair per touched path.
-   */
-  function commitHistory(state: Draft<EditorStore>, entry: HistoryEntry): void {
-    const coalescing =
-      entry.coalesceKey !== null &&
-      entry.coalesceKey === state._historyCoalesceKey &&
-      state._historyPast.length > 0
-    if (coalescing) {
-      foldIntoCoalescedEntry(state._historyPast[state._historyPast.length - 1]!, entry)
-      state._historyFuture = []
-      state.canRedo = false
-      return
-    }
-
-    state._historyPast.push(entry)
-    if (state._historyPast.length > MAX_HISTORY) {
-      state._historyPast.shift() // evict oldest
-    }
-    state._historyFuture = []
-    // Open a new burst (coalesceKey set) or end any prior one (null).
-    state._historyCoalesceKey = entry.coalesceKey
-    state.canUndo = true
-    state.canRedo = false
-  }
 
   /**
    * Core of every undoable mutation. Runs `recipe` against a Mutative draft of
@@ -258,7 +175,7 @@ export function buildSiteHelpers(
     if (!cur.site) return false
 
     let result: SiteMutationResult = false
-    const [next, patches, inverse] = create(
+    const [next, patches] = create(
       cur,
       (draft) => {
         result = recipe(draft as Draft<EditorStore>)
@@ -274,14 +191,23 @@ export function buildSiteHelpers(
     for (const p of patches) touched.add(String(p.path[0]))
     if (touched.size === 0) return true // non-false result but no actual change
 
-    // History stores patches relative to `site` (strip the leading `'site'`
-    // segment) so undo/redo can `apply(site, …)` directly.
+    // Site-relative patches feed the collab write path: they translate into
+    // Y operations (per-doc undo + wire sync). See collabBinding.ts.
     const siteForward: Patches = patches
       .filter((p) => p.path[0] === 'site')
       .map((p) => ({ ...p, path: p.path.slice(1) }))
-    const siteInverse: Patches = inverse
-      .filter((p) => p.path[0] === 'site')
-      .map((p) => ({ ...p, path: p.path.slice(1) }))
+
+    if (siteForward.length > 0) {
+      const outcome = applyLocalSitePatches(siteForward, cur.site, next.site!, coalesceKey)
+      if (!outcome.accepted) {
+        // The edit cannot reach the relay, and there is no save path behind
+        // it — so it is refused wholesale rather than applied to a store the
+        // server will never agree with. The user is told; silence here is how
+        // work disappeared.
+        notifyCollabBlocked(outcome.reason)
+        return false
+      }
+    }
 
     set((state) => {
       // Apply every changed top-level field (site + any editor fields) from the
@@ -290,15 +216,6 @@ export function buildSiteHelpers(
       const live = state as unknown as Record<string, unknown>
       const produced = next as unknown as Record<string, unknown>
       for (const key of touched) live[key] = produced[key]
-
-      if (siteForward.length > 0) {
-        commitHistory(state, { inverse: siteInverse, forward: siteForward, coalesceKey })
-        // The same patches drive save-dirty attribution: autosave ships only
-        // the pages/VCs these paths name, plus explicit deleted-row ids
-        // derived from the pre/post membership diff (see dirtyTracking.ts).
-        mergeDirtyMarks(state._dirtySave, collectDirtyFromSitePatches(siteForward, cur.site!, next.site!))
-      }
-      state.hasUnsavedChanges = true
     })
     return true
   }
@@ -435,6 +352,7 @@ export function buildSiteHelpers(
       // a `addStyleRule(kind:'class', name:'btn')` followed by
       // `addPage(fragment with node.classIds:['btn'])` resolves to the same id.
       const byName = indexStyleRulesByName(site.styleRules)
+      const allocateStyleRuleOrder = createStyleRuleOrderAllocator(site.styleRules)
 
       const helpers: SiteImportTransaction = {
         addPage({ id: pageId, title, slug, nodeFragment }: { id?: string; title: string; slug: string; nodeFragment: ImportFragment }): string {
@@ -445,12 +363,23 @@ export function buildSiteHelpers(
           // Honour a caller-supplied id so the importer can pre-mint page ids
           // and rewrite internal links to `cms:page:<id>` before committing.
           if (pageId) page.id = pageId
-          applyImportedBodyAttributes(page.nodes[page.rootNodeId]!, nodeFragment, site, byName)
+          applyImportedBodyAttributes(
+            page.nodes[page.rootNodeId]!,
+            nodeFragment,
+            site,
+            byName,
+            allocateStyleRuleOrder,
+          )
           for (const [id, node] of Object.entries(nodeFragment.nodes)) {
             // `node.inlineStyles` rides along on the spread — first-class field.
             page.nodes[id] = {
               ...node,
-              classIds: linkImportedClassNames(node.classIds, site.styleRules, byName),
+              classIds: linkImportedClassNames(
+                node.classIds,
+                site.styleRules,
+                byName,
+                allocateStyleRuleOrder,
+              ),
             }
           }
           page.nodes[page.rootNodeId]!.children = [...nodeFragment.rootIds]
@@ -462,18 +391,12 @@ export function buildSiteHelpers(
         addStyleRule(rule: NewStyleRule): string {
           const id = nanoid()
           const now = Date.now()
-          // Append after every existing rule so imports don't disrupt the
-          // established cascade order.
-          let maxOrder = -1
-          for (const r of Object.values(site.styleRules)) {
-            if (typeof r.order === 'number' && r.order > maxOrder) maxOrder = r.order
-          }
           const newRule: StyleRule = {
             ...rule,
             id,
             createdAt: now,
             updatedAt: now,
-            order: maxOrder + 1,
+            order: allocateStyleRuleOrder(),
           }
           site.styleRules[id] = newRule
           // Register in byName so subsequent addPage calls referencing this
@@ -490,13 +413,18 @@ export function buildSiteHelpers(
           // Mint a fresh body root; wire fragment roots as its children.
           const rootNode = createNode('base.body')
           rootNode.children = [...nodeFragment.rootIds]
-          applyImportedBodyAttributes(rootNode, nodeFragment, site, byName)
+          applyImportedBodyAttributes(rootNode, nodeFragment, site, byName, allocateStyleRuleOrder)
 
           const newNodes: Record<string, PageNode> = { [rootNode.id]: rootNode }
           for (const [id, node] of Object.entries(nodeFragment.nodes)) {
             newNodes[id] = {
               ...node,
-              classIds: linkImportedClassNames(node.classIds, site.styleRules, byName),
+              classIds: linkImportedClassNames(
+                node.classIds,
+                site.styleRules,
+                byName,
+                allocateStyleRuleOrder,
+              ),
             }
           }
 

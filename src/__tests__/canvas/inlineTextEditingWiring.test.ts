@@ -59,6 +59,15 @@ describe('inline text editing wiring (in-place contentEditable)', () => {
     expect(src).toContain('el.focus()')
   })
 
+  it('NodeRenderer keeps the session surface live under co-editing (remote Y.Text merge)', () => {
+    // Without this attach, a peer's characters never reach the frozen
+    // contentEditable and the next local keystroke's whole-string snapshot
+    // commit DELETES them from the CRDT. Behavior gated end-to-end by
+    // src/__tests__/collab/inlineEditRemoteMerge.test.tsx.
+    const src = readFileSync(NODE_RENDERER, 'utf-8')
+    expect(src).toContain('attachInlineEditRemoteMerge')
+  })
+
   it('the canvas keyboard handler bails while an inline edit is active', () => {
     const src = readFileSync(KEYBOARD_SHORTCUTS, 'utf-8')
     expect(src).toContain('if (useEditorStore.getState().activeInlineEdit) return')

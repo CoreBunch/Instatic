@@ -245,6 +245,7 @@ function reorderFrameworkColorTokenInGroup(
 type FrameworkColorActions = Pick<
   SiteSlice,
   | 'createFrameworkColorToken'
+  | 'upsertFrameworkColorTokens'
   | 'updateFrameworkColorToken'
   | 'duplicateFrameworkColorToken'
   | 'reorderFrameworkColorToken'
@@ -273,6 +274,57 @@ export function createFrameworkColorActions({
       })
 
       return token
+    },
+
+    /**
+     * Create-or-update a whole token list in ONE site mutation.
+     *
+     * A loop of single-token actions is not equivalent: each one is its own
+     * mutation, and a mutation that ensures a not-yet-bound collab doc
+     * registers an unsynced write gate, so every LATER write in the same tick
+     * is refused with `syncing`. Callers that install a palette in one go
+     * (`site_set_color_tokens`, theme presets) then keep only the prefix that
+     * ran before the gate closed — with each individual action still returning
+     * a token, so the loss is silent. One mutation means one gate check, and
+     * the boolean below reports the outcome honestly.
+     */
+    upsertFrameworkColorTokens: (inputs) => {
+      const { site } = get()
+      if (!site) throw new Error('[siteSlice] Site document is not initialized')
+      const results: Array<{ slug: string; action: 'created' | 'updated' }> = []
+      // Plan against a growing copy so slug uniqueness and category
+      // canonicalization see the tokens earlier entries in THIS batch added —
+      // the same view a sequence of single-token calls would have had.
+      const planned = [...(site.settings.framework?.colors?.tokens ?? [])]
+      const creations: Array<{ token: FrameworkColorToken }> = []
+      const updates: Array<{ id: string; patch: UpdateFrameworkColorTokenPatch }> = []
+
+      for (const input of inputs) {
+        const norm = normalizeFrameworkColorSlug(input.slug)
+        const match = planned.find((t) => normalizeFrameworkColorSlug(t.slug) === norm)
+        if (match) {
+          updates.push({ id: match.id, patch: input })
+          results.push({ slug: match.slug, action: 'updated' })
+          continue
+        }
+        const token = createFrameworkColorTokenFromInput(input, { tokens: planned })
+        planned.push(token)
+        creations.push({ token })
+        results.push({ slug: token.slug, action: 'created' })
+      }
+
+      const accepted = mutateSite((draftSite) => {
+        const draftColors = ensureFrameworkColors(draftSite)
+        for (const { id, patch } of updates) {
+          const token = draftColors.tokens.find((candidate) => candidate.id === id)
+          if (token) applyFrameworkColorTokenPatch(token, patch, draftColors)
+        }
+        for (const { token } of creations) draftColors.tokens.push(token)
+        reconcileFrameworkClasses(draftSite)
+        return true
+      })
+
+      return { tokens: results, accepted }
     },
 
     updateFrameworkColorToken: (tokenId, patch) => {

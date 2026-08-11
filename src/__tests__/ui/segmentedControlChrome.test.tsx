@@ -25,12 +25,37 @@ describe('SegmentedControl editor chrome variants', () => {
     expect(screen.getByRole('button', { name: 'Layers' }).getAttribute('aria-pressed')).toBe('true')
   })
 
+  it('renders clearable segment content separately from its close overlay', () => {
+    render(
+      <SegmentedControl
+        value="2"
+        options={[{ value: '2', label: '2', ariaLabel: '2 tracks' }]}
+        onChange={() => {}}
+        onClear={() => {}}
+      />,
+    )
+
+    const button = screen.getByRole('button', { name: '2 tracks' })
+    const content = screen.getByText('2')
+    const clearOverlay = button.querySelector('[aria-hidden="true"]')
+
+    expect(content.parentElement).toBe(button)
+    expect(clearOverlay?.parentElement).toBe(button)
+    expect(content).not.toBe(clearOverlay)
+  })
+
   it('uses the recessed tab surface and top fade in Explorer Layers chrome', () => {
     const explorerSource = readFileSync('src/admin/pages/site/panels/ExplorerPanel/ExplorerPanel.tsx', 'utf8')
     const domPanelCss = readFileSync('src/admin/pages/site/panels/DomPanel/DomPanel.module.css', 'utf8')
+    const leftSidebarCss = readFileSync(
+      'src/admin/pages/site/sidebars/LeftSidebar/LeftSidebar.module.css',
+      'utf8',
+    )
 
     expect(explorerSource).toContain('activeSurface="recessed"')
     expect(domPanelCss).toContain('.searchRow::after')
-    expect(domPanelCss).toContain('linear-gradient(180deg, var(--bg-body) 0%, transparent)')
+    expect(domPanelCss).toContain('linear-gradient(180deg, var(--panel-fade-bg) 0%, transparent)')
+    expect(leftSidebarCss).toContain('--panel-fade-bg: var(--bg-body)')
+    expect(leftSidebarCss).toContain('--panel-fade-bg: var(--bg-surface)')
   })
 })

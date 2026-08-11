@@ -26,10 +26,12 @@ import {
   type PreviousPublishedRoute,
 } from '../repositories/data/publish'
 import { getLatestPublishedSiteSnapshot } from '../repositories/publish'
+import { snapshotForEntryRoute } from './entryTemplateSnapshot'
 import { renderPublishedDataRowTemplate } from './publicRenderer'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import { removeArtefactInPlace, updateArtefactInPlace } from './staticArtefact'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
+import { runPublishFlush } from './publishFlush'
 
 export interface PublishDataRowResult {
   row: DataRow
@@ -47,6 +49,10 @@ export async function publishDataRow(
   publisherUserId: string | null,
   uploadsDir?: string,
 ): Promise<PublishDataRowResult> {
+  // Flush the collab relay before reading the row — a page/component/row doc
+  // edited live may still hold un-persisted changes inside the debounce
+  // window, and per-row publish must bake exactly what the admins see.
+  await runPublishFlush()
   // Serialize against every other publish so the version read→bake→bump window
   // can't interleave and mis-stamp baked hole shells (ISS-038).
   return withPublishLock(() => publishDataRowLocked(db, rowId, publisherUserId, uploadsDir))
@@ -127,7 +133,10 @@ async function writeDataRowArtefact(
 
   const newPath = publicDataPath(tableInfo.tableRouteBase, publishedRow.slug)
   const syntheticUrl = new URL(`http://localhost${newPath}`)
-  const rendered = await renderPublishedDataRowTemplate(siteSnapshot, publishedDataRow, {
+  // Runtime assets come from this table's entry template, not from the
+  // arbitrary page the site-wide snapshot happens to name.
+  const snapshot = await snapshotForEntryRoute(db, siteSnapshot, tableInfo.tableSlug)
+  const rendered = await renderPublishedDataRowTemplate(snapshot, publishedDataRow, {
     db,
     url: syntheticUrl,
     publishVersion,

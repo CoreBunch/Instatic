@@ -49,6 +49,7 @@ import {
   softDeleteDataRow,
 } from './mutations'
 import { listDataRowIdSlugs, listSoftDeletedDataRowIds } from './read'
+import { notifyRowWrite, serializeCollabAwareWrite } from '../../rowWriteEvents'
 
 export interface DataRowWrite {
   id: string
@@ -103,7 +104,7 @@ export async function applyDataRowChangesInTx(
   //    Already-deleted / unknown ids no-op for the same reason (idempotent).
   for (const rowId of deleteIds) {
     if (!existingSlugById.has(rowId)) continue
-    const deleted = await softDeleteDataRow(tx, rowId, actorUserId)
+    const deleted = await softDeleteDataRow(tx, rowId, actorUserId, { collabInternal: true })
     if (!deleted) continue
     await stampDataRowSeq(tx, rowId, seq)
     if (deleted.status === 'published') deletedPublished = true
@@ -132,7 +133,15 @@ export async function applyDataRowChangesInTx(
       await resurrectDataRow(tx, write.id, { cells: write.cells, slug: '' }, actorUserId)
       parked.push(write)
     } else {
-      await createDataRow(tx, { id: write.id, tableId, cells: write.cells, slug: write.slug }, actorUserId)
+      await createDataRow(
+        tx,
+        { id: write.id, tableId, cells: write.cells, slug: write.slug },
+        actorUserId,
+        null,
+        // In-transaction: the caller notifies row-write listeners post-commit
+        // (a mid-transaction notification would fire even on rollback).
+        { collabInternal: true },
+      )
     }
     await stampDataRowSeq(tx, write.id, seq)
   }
@@ -154,9 +163,25 @@ export async function applyDataRowChanges(
   db: DbClient,
   input: ApplyDataRowChangesInput,
 ): Promise<ApplyDataRowChangesResult> {
-  let result: ApplyDataRowChangesResult = { deletedPublished: false }
-  await db.transaction(async (tx) => {
-    result = await applyDataRowChangesInTx(tx, input)
+  return serializeCollabAwareWrite(async () => {
+    let result: ApplyDataRowChangesResult = { deletedPublished: false }
+    await db.transaction(async (tx) => {
+      result = await applyDataRowChangesInTx(tx, input)
+    })
+    if (input.writes.length > 0) {
+      notifyRowWrite({
+        tableId: input.tableId,
+        rowIds: input.writes.map((write) => write.id),
+        kind: 'update',
+      })
+    }
+    if (input.deleteIds.size > 0) {
+      notifyRowWrite({
+        tableId: input.tableId,
+        rowIds: [...input.deleteIds],
+        kind: 'delete',
+      })
+    }
+    return result
   })
-  return result
 }

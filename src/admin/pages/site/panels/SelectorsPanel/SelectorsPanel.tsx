@@ -18,7 +18,7 @@ import { FilterBar, type FilterBarItem } from '@ui/components/FilterBar'
 import { Skeleton } from '@ui/components/Skeleton'
 import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
-import { Panel } from '@admin/shared/Panel'
+import { Panel, type DockablePanelProps } from '@admin/shared/Panel'
 import { cn } from '@ui/cn'
 import { DeleteSelectorDialog, SelectorNameDialog } from '../SelectorDialogs'
 import { SelectorContextMenu } from './SelectorContextMenu'
@@ -33,11 +33,9 @@ import {
 } from '../selectorUsage'
 import styles from './SelectorsPanel.module.css'
 
-interface SelectorsPanelProps {
-  variant?: 'docked'
-}
+type SelectorsPanelProps = DockablePanelProps
 
-type SelectorFilter = 'all' | 'user' | 'utility' | 'unused'
+type SelectorFilter = 'all' | 'user' | 'utility' | 'used' | 'unused'
 
 /**
  * How many selector rows to mount per batch. A generated framework (e.g. the
@@ -55,6 +53,7 @@ const SELECTOR_FILTER_ITEMS: FilterBarItem<SelectorFilter>[] = [
   { value: 'all', label: 'All' },
   { value: 'user', label: 'User' },
   { value: 'utility', label: 'Utility' },
+  { value: 'used', label: 'Used' },
   { value: 'unused', label: 'Unused' },
 ]
 
@@ -77,11 +76,16 @@ function getEmptyFilterMessage(filter: SelectorFilter, query: string): string {
   if (normalized) return `No selectors match “${normalized}”.`
   if (filter === 'user') return 'No user selectors yet.'
   if (filter === 'utility') return 'No utility selectors yet.'
+  if (filter === 'used') return 'No used selectors yet.'
   if (filter === 'unused') return 'No unused selectors — every selector is in use.'
   return 'No selectors match the current filters.'
 }
 
-export function SelectorsPanel({ variant = 'docked' }: SelectorsPanelProps) {
+export function SelectorsPanel({
+  mode = 'docked',
+  dragHandleProps,
+  onToggleMode,
+}: SelectorsPanelProps) {
   const site = useEditorStore((s) => s.site)
   const isOpen = useEditorStore((s) => s.selectorsPanelOpen)
   const selectedSelectorClassId = useEditorStore((s) => s.selectedSelectorClassId)
@@ -136,6 +140,8 @@ export function SelectorsPanel({ variant = 'docked' }: SelectorsPanelProps) {
   const filteredClasses = reusableClasses.filter((cls) => {
     if (filter === 'user' && isGeneratedClass(cls)) return false
     if (filter === 'utility' && !isGeneratedClass(cls)) return false
+    if (filter === 'used' && resolveSelectorUsage(cls, usageMap, classTokenUsage).unused)
+      return false
     if (filter === 'unused' && !resolveSelectorUsage(cls, usageMap, classTokenUsage).unused)
       return false
     // Search matches the selector name AND its declared CSS (property names and
@@ -201,7 +207,7 @@ export function SelectorsPanel({ variant = 'docked' }: SelectorsPanelProps) {
     return () => observer.disconnect()
   }, [hasMore, showSkeleton, visibleCount])
 
-  if (!isOpen || variant !== 'docked') return null
+  if (!isOpen) return null
 
   function openContextMenu(classId: string, event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault()
@@ -306,6 +312,10 @@ export function SelectorsPanel({ variant = 'docked' }: SelectorsPanelProps) {
         testId="selectors-panel"
         bodyRef={scrollRef}
         onClose={() => setSelectorsPanelOpen(false)}
+        mode={mode}
+        dragHandleProps={dragHandleProps}
+        onToggleMode={onToggleMode}
+        dockLocation="left sidebar"
       >
         <FilterBar<SelectorFilter>
             items={SELECTOR_FILTER_ITEMS}

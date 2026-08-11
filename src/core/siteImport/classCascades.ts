@@ -37,6 +37,10 @@ import type {
 } from './types'
 import type { CssFileResult } from './assetPlan'
 import {
+  classKindSelector,
+  replaceCssSelectorClassName,
+} from '@core/page-tree'
+import {
   createCascadedStyleRuleLayers,
   mergeStyleRuleCascade,
   sparseContextPriorities,
@@ -335,7 +339,7 @@ function materialiseRenamedClass(
     styleRules.push({
       kind: 'class',
       name: newName,
-      selector: `.${newName}`,
+      selector: classKindSelector(newName),
       order: 0,
       styles: merged.styles as NewStyleRule['styles'],
       ...(sparsePriorities(merged.stylePriorities)
@@ -483,14 +487,17 @@ function renamePageClassTokens(page: PagePlan, from: string, to: string): PagePl
   return { ...page, nodeFragment: { ...page.nodeFragment, nodes, ...(body ? { body } : {}) } }
 }
 
-/** A class token in a selector: a `.` followed by a CSS identifier. */
-const SELECTOR_CLASS_TOKEN_RE = /\.(-?[A-Za-z_][\w-]*)/g
-
 function rewriteSelectorClassTokens(selector: string, renames: Map<string, string>): string {
-  return selector.replace(SELECTOR_CLASS_TOKEN_RE, (whole, token: string) => {
-    const next = renames.get(token)
-    return next && next !== token ? `.${next}` : whole
-  })
+  let rewritten = selector
+  for (const [fromName, toName] of renames) {
+    if (fromName === toName) continue
+    rewritten = replaceCssSelectorClassName(
+      rewritten,
+      fromName,
+      classKindSelector(toName).slice(1),
+    )
+  }
+  return rewritten
 }
 
 /** Deterministic JSON with sorted object keys (arrays keep their order). */

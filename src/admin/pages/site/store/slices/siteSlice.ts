@@ -8,9 +8,10 @@
  *
  * Domain layout:
  *   - `./site/types`            — SiteSlice interface + patch types + helpers contract
- *   - `./site/defaults`         — createDefaultSiteDocument + MAX_HISTORY
- *   - `./site/helpers`          — buildSiteHelpers (mutate* + patch-based history) + depthInTree
- *   - `./site/undoRedoActions`  — undo / redo
+ *   - `./site/defaults`         — createDefaultSiteDocument
+ *   - `./site/helpers`          — buildSiteHelpers (mutate* + collab write path) + depthInTree
+ *   - `./site/collabBinding`    — CRDT docs, per-doc undo, remote projection
+ *   - `./site/undoRedoActions`  — undo / redo (delegates to the collab binding)
  *   - `./site/lifecycleActions` — createSite / loadSite / clearSite / updateSiteName
  *   - `./site/pageActions`      — page CRUD + template conversions
  *   - `./site/explorerActions`  — Site Explorer folder/order organization
@@ -58,19 +59,17 @@ export const createSiteSlice: EditorStoreSliceCreator<SiteSlice> = (set, get) =>
     // ─── Owned state ─────────────────────────────────────────────────────────
     site: null,
 
-    // Undo / redo history — Mutative patch-pair stacks (see HistoryEntry).
-    _historyPast: [],
-    _historyFuture: [],
+    // Undo / redo availability — mirrored from the collab binding's per-doc
+    // Y.UndoManagers (see ./site/collabBinding.ts).
     canUndo: false,
     canRedo: false,
-    _historyCoalesceKey: null,
 
     // mutateAllPagesAndSite is the public entry point for the Super Import
     // wizard — one Cmd+Z reverts the entire import.
     mutateAllPagesAndSite: helpers.mutateAllPagesAndSite,
 
     // ─── Action surface ──────────────────────────────────────────────────────
-    ...createUndoRedoActions(helpers),
+    ...createUndoRedoActions(),
     ...createLifecycleActions(helpers),
     ...createPageActions(helpers),
     ...createExplorerActions(helpers),

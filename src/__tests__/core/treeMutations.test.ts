@@ -226,6 +226,33 @@ describe('moveNode within NodeTree', () => {
     })
     expect(() => moveNode(tree, 'parent', 'child', 0)).toThrow()
   })
+
+  it('rejects a missing source without mutating a valid target parent', () => {
+    const tree = makeTree({
+      root: makeNode('root', 'base.body', ['target']),
+      target: makeNode('target', 'base.div', ['existing']),
+      existing: makeNode('existing'),
+    })
+    const before = JSON.stringify(tree)
+
+    expect(() => moveNode(tree, 'missing', 'target', 0)).toThrow(
+      '[PageTree] Node "missing" not found',
+    )
+    expect(JSON.stringify(tree)).toBe(before)
+  })
+
+  it('rejects a missing target without detaching the source', () => {
+    const tree = makeTree({
+      root: makeNode('root', 'base.body', ['source']),
+      source: makeNode('source'),
+    })
+    const before = JSON.stringify(tree)
+
+    expect(() => moveNode(tree, 'source', 'missing', 0)).toThrow(
+      '[PageTree] New parent "missing" not found',
+    )
+    expect(JSON.stringify(tree)).toBe(before)
+  })
 })
 
 // ---------------------------------------------------------------------------

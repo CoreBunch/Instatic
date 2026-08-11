@@ -4,11 +4,6 @@ import { consumePendingAction } from '@admin/spotlight/pendingAction'
 import { useEditorStore } from '@site/store/store'
 import { useMcpWorkspaceBridge } from '@admin/ai/useMcpWorkspaceBridge'
 import { executeAgentTool } from './agent'
-import { flushEditorSave } from './hooks/editorSaveRef'
-
-async function flushPendingSiteDraft(): Promise<void> {
-  if (useEditorStore.getState().hasUnsavedChanges) await flushEditorSave()
-}
 
 /**
  * SitePage — visual editor route.
@@ -18,8 +13,16 @@ async function flushPendingSiteDraft(): Promise<void> {
  * lazy-loaded one level down by AdminCanvasLayout after the shell has painted.
  */
 export function SitePage() {
-  // Relay MCP browser-tool calls to this open editor while it's mounted.
-  useMcpWorkspaceBridge('site', executeAgentTool, flushPendingSiteDraft)
+  const siteHydrated = useEditorStore((state) => state.site !== null)
+
+  // Relay MCP browser-tool calls to this open editor while it's mounted. No
+  // post-tool persistence step: store mutations stream to the relay through the
+  // collab socket the moment they land, and every headless MCP read flushes the
+  // relay server-side first (see server/ai/mcp/server.ts), so a follow-up read
+  // always observes the edit. Delay registration until the editor store is
+  // hydrated so get_context's siteConnected flag means browser tools can
+  // actually see an active site.
+  useMcpWorkspaceBridge('site', executeAgentTool, undefined, siteHydrated)
 
   // Consume cross-workspace pending actions queued by the spotlight. Each
   // action waits for the editor store to hydrate (site !== null) — we

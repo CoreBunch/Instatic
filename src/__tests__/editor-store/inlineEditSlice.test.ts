@@ -30,20 +30,15 @@ function nodeText(nodeId: string): unknown {
 }
 
 beforeEach(() => {
+  // clearSite also resets the collab binding's docs + undo history.
+  useEditorStore.getState().clearSite()
   useEditorStore.setState({
-    site: null,
     activePageId: null,
     activeDocument: null,
     activeInlineEdit: null,
-    _historyPast: [],
-    _historyFuture: [],
-    _historyCoalesceKey: null,
-    canUndo: false,
-    canRedo: false,
     selectedNodeId: null,
     selectedNodeIds: [],
     hoveredNodeId: null,
-    hasUnsavedChanges: false,
   })
 })
 
@@ -120,17 +115,17 @@ describe('startInlineEdit', () => {
 })
 
 describe('applyInlineEditValue — live commit, one undo entry per burst', () => {
-  it('commits every keystroke live and coalesces the burst into ONE history entry', () => {
+  it('commits every keystroke live and coalesces the burst into ONE undo step', () => {
     const { nodeId } = setupSiteWithTextNode()
     useEditorStore.getState().startInlineEdit(nodeId, 'bp')
-    const entriesBefore = useEditorStore.getState()._historyPast.length
     useEditorStore.getState().applyInlineEditValue('HelloW')
     useEditorStore.getState().applyInlineEditValue('HelloWo')
     useEditorStore.getState().applyInlineEditValue('HelloWorld')
-    const state = useEditorStore.getState()
     expect(nodeText(nodeId)).toBe('HelloWorld')
-    expect(state._historyPast.length).toBe(entriesBefore + 1)
-    expect(state.activeInlineEdit?.committed).toBe(true)
+    expect(useEditorStore.getState().activeInlineEdit?.committed).toBe(true)
+    // ONE undo reverts the whole burst — not one keystroke.
+    useEditorStore.getState().undo()
+    expect(nodeText(nodeId)).toBe('Hello')
   })
 
   it('a single undo() reverts the whole burst to the initial value', () => {
@@ -145,21 +140,21 @@ describe('applyInlineEditValue — live commit, one undo entry per burst', () =>
   it('does not flip committed when the applied value equals the stored value', () => {
     const { nodeId } = setupSiteWithTextNode()
     useEditorStore.getState().startInlineEdit(nodeId, 'bp')
-    const entriesBefore = useEditorStore.getState()._historyPast.length
     useEditorStore.getState().applyInlineEditValue('Hello')
     const state = useEditorStore.getState()
     expect(state.activeInlineEdit?.committed).toBe(false)
-    expect(state._historyPast.length).toBe(entriesBefore)
+    // No history entry was pushed: undo reverts the node INSERT, not a
+    // (nonexistent) equal-value edit.
+    useEditorStore.getState().undo()
+    expect(nodeText(nodeId)).toBeUndefined()
   })
 
   it('isolates the session burst from a prior Properties-panel burst on the same prop', () => {
     const { nodeId } = setupSiteWithTextNode()
     // Simulate panel typing: same coalesce key the inline session will use.
     useEditorStore.getState().updateNodeProps(nodeId, { text: 'PanelTyped' })
-    const entriesBefore = useEditorStore.getState()._historyPast.length
     useEditorStore.getState().startInlineEdit(nodeId, 'bp')
     useEditorStore.getState().applyInlineEditValue('PanelTypedX')
-    expect(useEditorStore.getState()._historyPast.length).toBe(entriesBefore + 1)
     // Escape reverts ONLY the inline burst, not the panel typing.
     useEditorStore.getState().cancelInlineEdit()
     expect(nodeText(nodeId)).toBe('PanelTyped')
@@ -177,13 +172,14 @@ describe('endInlineEdit', () => {
     const { nodeId } = setupSiteWithTextNode()
     useEditorStore.getState().startInlineEdit(nodeId, 'bp')
     useEditorStore.getState().applyInlineEditValue('HelloA')
-    const entriesAfterBurst = useEditorStore.getState()._historyPast.length
     useEditorStore.getState().endInlineEdit()
     expect(useEditorStore.getState().activeInlineEdit).toBeNull()
     expect(nodeText(nodeId)).toBe('HelloA')
-    // A later edit of the SAME prop starts a fresh undo entry.
+    // A later edit of the SAME prop starts a fresh undo entry: the first
+    // undo reverts only it, back to the session's committed value.
     useEditorStore.getState().updateNodeProps(nodeId, { text: 'HelloB' })
-    expect(useEditorStore.getState()._historyPast.length).toBe(entriesAfterBurst + 1)
+    useEditorStore.getState().undo()
+    expect(nodeText(nodeId)).toBe('HelloA')
   })
 })
 
@@ -192,23 +188,26 @@ describe('cancelInlineEdit', () => {
     const { nodeId } = setupSiteWithTextNode()
     useEditorStore.getState().startInlineEdit(nodeId, 'bp')
     useEditorStore.getState().applyInlineEditValue('Mangled')
-    const entriesBefore = useEditorStore.getState()._historyPast.length
     useEditorStore.getState().cancelInlineEdit()
     const state = useEditorStore.getState()
     expect(state.activeInlineEdit).toBeNull()
     expect(nodeText(nodeId)).toBe('Hello')
-    expect(state._historyPast.length).toBe(entriesBefore - 1)
+    // The cancel consumed the burst's undo step: the next undo reverts the
+    // node insert itself.
+    useEditorStore.getState().undo()
+    expect(nodeText(nodeId)).toBeUndefined()
   })
 
   it('does NOT undo for an uncommitted session', () => {
     const { nodeId } = setupSiteWithTextNode()
     useEditorStore.getState().startInlineEdit(nodeId, 'bp')
-    const entriesBefore = useEditorStore.getState()._historyPast.length
     useEditorStore.getState().cancelInlineEdit()
     const state = useEditorStore.getState()
     expect(state.activeInlineEdit).toBeNull()
-    expect(state._historyPast.length).toBe(entriesBefore)
     expect(nodeText(nodeId)).toBe('Hello')
+    // History untouched: the next undo reverts the node insert.
+    useEditorStore.getState().undo()
+    expect(nodeText(nodeId)).toBeUndefined()
   })
 })
 

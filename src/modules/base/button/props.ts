@@ -7,6 +7,12 @@ export const ButtonPropsSchema = Type.Object({
   href: Type.String({ default: '' }),
   target: AnchorTargetSchema,
   disabled: Type.Boolean({ default: false }),
+  /**
+   * `reset` is a real native affordance a form can carry, and it is the only
+   * one a button can express without script. Submit lives in `base.submit`,
+   * so this stays a two-value choice. Ignored when `href` makes an anchor.
+   */
+  buttonType: Type.Union([Type.Literal('button'), Type.Literal('reset')], { default: 'button' }),
   htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 

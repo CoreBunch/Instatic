@@ -34,6 +34,7 @@
  */
 
 import type { PageNode } from '@core/page-tree'
+import { warningsForNode, type ImportWarning } from './importWarnings'
 import { createNode } from '@core/page-tree'
 import { registry } from '@core/module-engine'
 import {
@@ -64,6 +65,16 @@ export interface ImportFragment {
   body?: ImportBodyAttributes
 }
 
+/**
+ * What the walk produces: the fragment plus any references it accepted
+ * structurally but could not resolve. Separate from `ImportFragment` because
+ * that is the shape callers hand BACK to the store (`insertImportedNodes`),
+ * and a diagnostic has no place in a structural contract.
+ */
+export interface WalkResult extends ImportFragment {
+  warnings: ImportWarning[]
+}
+
 interface ImportBodyAttributes {
   classIds?: string[]
   inlineStyles?: Record<string, string>
@@ -71,7 +82,7 @@ interface ImportBodyAttributes {
 }
 
 /** The result returned by the convenience entry point importHtml(). */
-export interface ImportResult extends ImportFragment {
+export interface ImportResult extends WalkResult {
   /** Counts of constructs stripped by stripUnsafe(). */
   stripped: StripReport
   /**
@@ -97,10 +108,23 @@ const HTML_ATTRIBUTE_MODULES = new Set([
   'base.link',
   'base.button',
   'base.image',
+  // A form is the anchor an authored progressive-enhancement script binds to,
+  // so its safe data-* / ARIA attributes have to survive import like any other
+  // element's. Without this the hooks silently vanish and the script no-ops.
+  'base.form',
 ])
 
 const MODULE_GENERATED_ATTRIBUTE_NAMES: Record<string, readonly string[]> = {
   'base.button': ['aria-disabled', 'disabled', 'href', 'rel', 'target', 'type'],
+  'base.form': [
+    'action',
+    'data-instatic-form-id',
+    'data-instatic-form-mode',
+    'data-instatic-success-message',
+    'data-instatic-success-redirect',
+    'data-instatic-target-table',
+    'method',
+  ],
   'base.image': [
     'alt',
     'decoding',
@@ -133,6 +157,12 @@ interface WalkContext {
    * collapsed the way normal HTML flow renders it.
    */
   preserveWs: boolean
+  /**
+   * Authored references the importer accepted structurally but cannot resolve
+   * — an unregistered loop source, say. Shared by reference across the whole
+   * walk so nested subtrees report into one list.
+   */
+  warnings: ImportWarning[]
 }
 
 /**
@@ -329,6 +359,11 @@ function processElement(el: Element, ctx: WalkContext): string {
     }
   }
 
+  // Checked after recursion: an empty loop is only detectable once its
+  // children have been mapped, and "this loop has no row template" is the one
+  // diagnosis that catches a loop the HTML parser relocated out of a table.
+  ctx.warnings.push(...warningsForNode(node.id, moduleId, node.props, node.children.length))
+
   ctx.nodes[node.id] = node
   return node.id
 }
@@ -349,15 +384,15 @@ function processElement(el: Element, ctx: WalkContext): string {
 export function walkAndMap(
   doc: Document,
   inlineStyles: Map<Element, Record<string, string>> = new Map(),
-): ImportFragment {
-  const ctx: WalkContext = { nodes: {}, inlineStyles, preserveWs: false }
+): WalkResult {
+  const ctx: WalkContext = { nodes: {}, inlineStyles, preserveWs: false, warnings: [] }
 
-  if (!doc.body) return { nodes: ctx.nodes, rootIds: [] }
+  if (!doc.body) return { nodes: ctx.nodes, rootIds: [], warnings: [] }
 
   const rootIds = mapChildNodes(doc.body, ctx)
   const body = collectBodyAttributes(doc.body, inlineStyles)
 
-  return { nodes: ctx.nodes, rootIds, ...(body ? { body } : {}) }
+  return { nodes: ctx.nodes, rootIds, warnings: ctx.warnings, ...(body ? { body } : {}) }
 }
 
 /**

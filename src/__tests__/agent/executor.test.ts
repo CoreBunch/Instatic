@@ -178,7 +178,7 @@ describe('executeAgentTool — insertHtml', () => {
     expect(classNamesForClassIds(site.styleRules, sectionNode.classIds)).toContain('hero-section')
   })
 
-  it('a descendant selector in a <style> block becomes an ambient rule (not a malformed class)', async () => {
+  it('a descendant selector in a <style> block binds through its top-level class', async () => {
     const { rootId } = freshStore()
     const result = await executeAgentTool('site_insert_html', {
       parentId: rootId,
@@ -189,13 +189,15 @@ describe('executeAgentTool — insertHtml', () => {
     expectNodeIds(result)
 
     const site = useEditorStore.getState().site!
-    // The whitespace selector must NOT have been forced through createClass
-    // (which rejects whitespace) — it round-trips as an ambient rule instead.
-    const ambient = Object.values(site.styleRules).find(
-      (c) => c.kind === 'ambient' && c.selector === '.hero-nav a',
+    // The complete selector remains intact, but the top-level class makes the
+    // rule assignable and lets the publisher drop it when hero-nav is unused.
+    const heroNav = Object.values(site.styleRules).find(
+      (c) => c.kind === 'class' && c.name === 'hero-nav' && c.selector === '.hero-nav a',
     )
-    expect(ambient).toBeDefined()
-    expect(ambient!.styles.color).toBe('tomato')
+    expect(heroNav).toBeDefined()
+    expect(heroNav!.styles.color).toBe('tomato')
+    const navNode = site.pages[0].nodes[expectNodeIds(result)[0]]
+    expect(navNode.classIds).toContain(heroNav!.id)
   })
 
   it('bare class= attribute (no <style> declaration) auto-creates a registry class and links it', async () => {
@@ -305,7 +307,7 @@ describe('executeAgentTool — insertHtml', () => {
 // ---------------------------------------------------------------------------
 
 describe('executeAgentTool — style-only payloads', () => {
-  it('insertHtml registers an ambient rule from a <style>-only payload (no nodes added)', async () => {
+  it('insertHtml registers an assignable class rule from a <style>-only payload (no nodes added)', async () => {
     const { rootId } = freshStore()
     const rootChildrenBefore = useEditorStore.getState().site!.pages[0].nodes[rootId].children.length
 
@@ -315,16 +317,16 @@ describe('executeAgentTool — style-only payloads', () => {
     })
 
     // Previously this returned "HTML contained no importable elements" and threw
-    // the ambient CSS away. Now it succeeds and upserts the rule.
+    // the CSS away. Now it succeeds and makes the binding class picker-visible.
     const data = expectToolData<{ cssRulesCreated: number; cssRulesUpdated: number }>(result)
     expect(data.cssRulesCreated + data.cssRulesUpdated).toBeGreaterThan(0)
 
     const site = useEditorStore.getState().site!
-    const ambient = Object.values(site.styleRules).find(
-      (c) => c.kind === 'ambient' && c.selector === '.hero a:hover',
+    const hero = Object.values(site.styleRules).find(
+      (c) => c.kind === 'class' && c.name === 'hero' && c.selector === '.hero a:hover',
     )
-    expect(ambient).toBeDefined()
-    expect(ambient!.styles.color).toBe('tomato')
+    expect(hero).toBeDefined()
+    expect(hero!.styles.color).toBe('tomato')
 
     // No element nodes were added under the parent.
     expect(site.pages[0].nodes[rootId].children).toHaveLength(rootChildrenBefore)
@@ -1050,18 +1052,20 @@ describe('executeAgentTool — applyCss', () => {
     expect(cards[0].styles.fontSize).toBe('20px') // added
   })
 
-  it('creates an ambient rule from a descendant selector', async () => {
+  it('creates an assignable class rule from a descendant selector', async () => {
     freshStore()
     await executeAgentTool('site_apply_css', {
       operation: 'merge',
       css: '.hero a { color: tomato; }',
     })
-    const ambient = findRule((c) => c.kind === 'ambient' && c.selector === '.hero a')!
-    expect(ambient).toBeDefined()
-    expect(ambient.styles.color).toBe('tomato')
+    const hero = findRule(
+      (c) => c.kind === 'class' && c.name === 'hero' && c.selector === '.hero a',
+    )!
+    expect(hero).toBeDefined()
+    expect(hero.styles.color).toBe('tomato')
   })
 
-  it('EDITS an existing ambient descendant/pseudo rule — the case updateClassStyles could not express', async () => {
+  it('edits an existing class-bound descendant/pseudo rule without duplicating it', async () => {
     freshStore()
     await executeAgentTool('site_apply_css', {
       operation: 'merge',
@@ -1075,7 +1079,7 @@ describe('executeAgentTool — applyCss', () => {
     expect(data.cssRulesUpdated).toBe(1)
 
     const matches = Object.values(useEditorStore.getState().site!.styleRules).filter(
-      (c) => c.kind === 'ambient' && c.selector === '.hero a:hover',
+      (c) => c.kind === 'class' && c.name === 'hero' && c.selector === '.hero a:hover',
     )
     expect(matches).toHaveLength(1) // upserted, not piled up as a duplicate
     expect(matches[0].styles.color).toBe('var(--primary)')

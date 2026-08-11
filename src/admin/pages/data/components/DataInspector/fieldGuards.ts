@@ -1,6 +1,6 @@
 /**
  * fieldGuards — PostType field classification + the human-readable field-type
- * label map. Pure logic shared by FieldsSection, FieldRow, and FieldEditForm.
+ * label map. Pure logic shared by FieldsSection and FieldSchemaComposer.
  *
  * PostType field guards:
  *   - Mandatory built-ins (title, slug): locked — no edit/delete.
@@ -30,6 +30,7 @@ export const FIELD_TYPE_LABELS: Record<DataFieldType, string> = {
   email: 'Email',
   media: 'Media',
   relation: 'Relation',
+  repeater: 'Repeater',
   pageTree: 'Page tree',
   fieldSchema: 'Field schema',
 }

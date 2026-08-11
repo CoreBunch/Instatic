@@ -14,6 +14,7 @@
 import { describe, it, expect, beforeEach } from 'bun:test'
 import { useEditorStore } from '@site/store/store'
 import type { NewStyleRule } from '@core/siteImport'
+import { classKindSelector } from '@core/page-tree'
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -157,17 +158,20 @@ describe('styleRuleSlice.clearClassStyleProperties', () => {
     getStore().updateClassStyles(cls.id, { display: 'flex', alignItems: 'center', color: 'red' })
     getStore().setClassContextStyles(cls.id, 'mobile', { gap: '8px' })
 
-    const historyBefore = historyLength()
     getStore().clearClassStyleProperties(cls.id, ['display', 'alignItems', 'gap'])
 
-    const rule = useEditorStore.getState().site!.styleRules[cls.id]
+    let rule = useEditorStore.getState().site!.styleRules[cls.id]
     // Pruned everywhere; the unrelated `color` survives.
     expect('display' in rule.styles).toBe(false)
     expect('alignItems' in rule.styles).toBe(false)
     expect(rule.styles.color).toBe('red')
     expect('gap' in (rule.contextStyles.mobile ?? {})).toBe(false)
-    // Single undo step.
-    expect(historyLength()).toBe(historyBefore + 1)
+    // Single undo step: ONE undo restores base + context properties together.
+    getStore().undo()
+    rule = useEditorStore.getState().site!.styleRules[cls.id]
+    expect(rule.styles.display).toBe('flex')
+    expect(rule.styles.alignItems).toBe('center')
+    expect(rule.contextStyles.mobile?.gap).toBe('8px')
   })
 
   it('is a no-op (no history) when none of the properties are set', () => {
@@ -342,6 +346,29 @@ describe('styleRuleSlice.renameClass', () => {
     const cls = getStore().createClass('btn')
     getStore().renameClass(cls.id, 'button')
     expect(useEditorStore.getState().site!.styleRules[cls.id].selector).toBe('.button')
+  })
+
+  it('renames the binding token inside a preserved imported selector', () => {
+    setupSite()
+    const cls = getStore().createClass('group-hover:block')
+    useEditorStore.setState((state) => ({
+      site: {
+        ...state.site!,
+        styleRules: {
+          ...state.site!.styleRules,
+          [cls.id]: {
+            ...state.site!.styleRules[cls.id],
+            selector: `.group:hover ${classKindSelector('group-hover:block')}`,
+          },
+        },
+      },
+    }))
+
+    getStore().renameClass(cls.id, 'group-focus:block')
+
+    expect(useEditorStore.getState().site!.styleRules[cls.id].selector).toBe(
+      `.group:hover ${classKindSelector('group-focus:block')}`,
+    )
   })
 
   it('allows renaming to the same name (no-op, no throw)', () => {

@@ -8,7 +8,6 @@ import {
   login,
   openSiteEditor,
   publishDraft,
-  saveDraft,
   selectTreeLayer,
   setPropValue,
   visitPublicPage,
@@ -36,7 +35,6 @@ test.describe('preview overlay and live page opening', () => {
       await insertNotchModule(page, 'text')
       await setPropValue(page, 'text', liveText)
       await expect(canvasFrame(page).getByText(liveText)).toBeVisible()
-      await saveDraft(page)
       await publishDraft(page)
       await visitPublicPage(browser, {
         path: publicPath,
@@ -45,12 +43,11 @@ test.describe('preview overlay and live page opening', () => {
       })
     })
 
-    await test.step('save a later draft without publishing it', async () => {
+    await test.step('make a later draft edit without publishing it', async () => {
       await openLayersPanel(page)
       await selectTreeLayer(page, 'Text')
       await setPropValue(page, 'text', draftText)
       await expect(canvasFrame(page).getByText(draftText)).toBeVisible()
-      await saveDraft(page)
     })
 
     await test.step('preview shows the current draft', async () => {

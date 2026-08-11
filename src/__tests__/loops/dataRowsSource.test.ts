@@ -3,9 +3,15 @@ import { DataRowsSource } from '@core/loops/sources/dataRows'
 
 describe('data.rows loop source', () => {
   it('offers author display fields without exposing user ids as binding fields', () => {
+    // `author` is declared, because it is the name an author reaches for and
+    // an undeclared key is exactly how a binding to a non-field goes unnoticed.
+    expect(DataRowsSource.fields).toContainEqual({
+      id: 'author',
+      label: 'Author name',
+    })
     expect(DataRowsSource.fields).toContainEqual({
       id: 'authorName',
-      label: 'Author name',
+      label: 'Author name (alias)',
     })
     expect(DataRowsSource.fields).toContainEqual({
       id: 'authorRoleName',

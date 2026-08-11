@@ -1,6 +1,9 @@
 .sidebar {
     position: relative;
-    z-index: 85;
+    /* Keep the layout shell out of the stacking ladder. Floating descendants
+       (the Agent panel and an undocked panel slot) must participate in the
+       editor's shared z-index context instead of being trapped below the
+       later right sidebar. The docked panel owns layer 85 below. */
     display: flex;
     --left-sidebar-rail-width: 42px;
     --left-sidebar-panel-width: 0px;
@@ -17,20 +20,45 @@
     width: calc(var(--left-sidebar-rail-width) + var(--left-sidebar-panel-render-width));
     min-width: var(--left-sidebar-rail-width);
     min-height: 0;
-    overflow: hidden;
+    overflow: visible;
     transition:
         flex-basis 180ms ease,
         width 180ms ease;
 }
 
 .panelSlot {
+    --panel-fade-bg: var(--bg-body);
     position: absolute;
+    z-index: 85;
     top: 0;
     bottom: 0;
     left: var(--left-sidebar-rail-width);
     width: var(--left-sidebar-panel-render-layout-width);
     min-height: 0;
     overflow: hidden;
+}
+
+.panelSlotFloating {
+    --panel-fade-bg: var(--bg-surface);
+    --panel-w: 320px;
+    --panel-h: 520px;
+    position: fixed;
+    top: var(--panel-y);
+    bottom: auto;
+    left: var(--panel-x);
+    z-index: 90;
+    width: var(--panel-w);
+    height: var(--panel-h);
+    min-width: 280px;
+    min-height: 240px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 80px);
+    overflow: hidden;
+    border: 1px solid var(--overlay-10);
+    border-radius: var(--panel-radius);
+    background: var(--bg-surface);
+    backdrop-filter: blur(var(--panel-blur));
+    box-shadow: var(--shadow-panel);
 }
 
 .panelMount {

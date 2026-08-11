@@ -14,6 +14,7 @@ The server is a single `Bun.serve` process that boots the DB, runs migrations, a
 - **Auth:** session cookie (`SESSION_COOKIE_NAME`) → `findUserBySessionHash` → `requireCapability(req, db, 'site.read')`. Every state-changing handler starts with one of these guards.
 - **DB:** one `DbClient` interface (`server/db/client.ts`) — tagged-template callable returning `{ rows, rowCount }`. Two adapters: `postgres.ts` (via `Bun.sql`) and `sqlite.ts` (via `bun:sqlite`). Selected by `DATABASE_URL`.
 - **Repositories** (`server/repositories/`) hold all SQL. Handlers never write SQL directly.
+- **Write policy** (`server/writePolicy/`) — pure per-capability diff validators (`validateSiteWriteDiff`, `validatePageWriteDiff`) shared by BOTH write transports: the HTTP save handler (`server/handlers/cms/siteDocument.ts`) and the collab relay's CRDT update guard (`server/collab/updateGuard.ts`). No DB, no HTTP — plain data in, verdict out.
 - **Plugins:** `server/plugins/runtime.ts` activates installed plugins at boot. Server entrypoints run in per-plugin Bun workers that host QuickJS-WASM (`server/plugins/pluginWorker.ts`, `server/plugins/host/workerPool.ts`, `server/plugins/quickjs/vm.ts`); module packs use `server/plugins/modulePackVm.ts` for server-side evaluation.
 - **Published pages and content rows** are served by `tryServePublicRoute`, which delegates resolution + render to `server/publish/publicRouter.ts`. A warm Layer B cache entry is served before any DB work; on a miss the live render reads the published `SiteDocument` from `site_snapshots` (stored once per publish, referenced by `data_row_versions.site_snapshot_id`, memoised per publish version). Uploads + admin SPA assets are served from disk by `tryServeUpload` and `tryServeStaticAsset`.
 
@@ -38,7 +39,17 @@ server/index.ts
     ├─→ mediaStorageRegistry.configureLocalDisk({ uploadsDir })   ← register local-disk media adapter
     ├─→ activateInstalledServerPlugins(db, uploadsDir)            ← run plugin lifecycle: activate
     │
-    └─→ Bun.serve({ fetch: req => handleServerRequest(req, runtime) })
+    ├─→ createCollabRelay(db)                ← server/collab/relay.ts: live Y docs,
+    │                                           debounced persistence, reset protocol
+    ├─→ createCollabSocketLayer(relay)       ← server/collab/socket.ts: multiplexed
+    │                                           y-protocols wire + awareness
+    ├─→ Bun.serve({ fetch: req => handleServerRequest(req, runtime),
+    │               websocket: collabSocket.handlers })
+    │     (the co-editing socket `/admin/api/cms/site-socket` upgrades at this
+    │      boundary — see server/collab/socket.ts; everything else goes
+    │      through the router)
+    │
+    └─→ collabSocket.setPublisher(server)    ← wire the collab fan-out to Bun pub/sub
 ```
 
 Boot is sequential and fail-fast. If migrations fail, the process exits. If a plugin's `activate` throws, the host logs `[plugin:<id>]` and continues — one bad plugin doesn't bring the server down.
@@ -54,6 +65,14 @@ export async function handleServerRequest(req: Request, runtime: ServerRuntime):
 ```
 
 It walks an ordered `routes` array of `RouteHandler` functions. Each handler returns `Response` (it owns the request) or `null` (try the next handler). The first non-null wins. Unknown paths fall through to a `404`.
+
+**`HEAD` is normalised to `GET` before dispatch.** RFC 9110 §9.3.2 defines `HEAD` as identical to `GET` except that the server must not send content, so `handleServerRequest` rewrites the method once and hands the same request to the table. That means:
+
+- Route handlers gate on `GET` only — never write `req.method !== 'GET' && req.method !== 'HEAD'`. The dispatcher already guarantees a `HEAD` arrives as a `GET`.
+- Dropping the body is `Bun.serve`'s job. A `HEAD` response ships the headers a `GET` would have produced, `content-length` included, with no content — handlers stay body-agnostic.
+- A method a route genuinely doesn't support still gets its `405`; only `HEAD` is folded into `GET`.
+
+Before this normalisation existed, `HEAD` matched no `GET`-gated route and fell through to the terminal JSON `404`, so uptime monitors and link checkers — which probe with `HEAD` by convention — reported healthy published pages as missing ([#306](https://github.com/CoreBunch/Instatic/issues/306)).
 
 ### The route table
 
@@ -170,6 +189,8 @@ export async function handlePagesRoutes(req: Request, db: DbClient): Promise<Res
 
 - Path matches some route, but no route has the right method → **405 Method Not Allowed**
 - No route's pattern matches the path → **`null`**, so the CMS entry point tries the next group and ultimately 404s.
+
+A `HEAD` never reaches this rule as `HEAD` — `handleServerRequest` has already normalised it to `GET` — so a `GET` route answers it and only genuinely unsupported methods get the `405`. Route tables therefore declare `GET` and never a parallel `HEAD` entry.
 
 Parameterised routes use a `RegExp` with **named capture groups** (`(?<id>[^/]+)`). The dispatcher decodes each captured value once via `decodeURIComponent`, so handlers receive already-decoded params and never call `decodeURIComponent` themselves.
 
@@ -347,6 +368,7 @@ All SQL lives in `server/repositories/`. Each file owns one resource:
 | File                       | Owns                                              |
 |----------------------------|---------------------------------------------------|
 | `audit.ts`                 | Audit log writes and queries                      |
+| `collabDocuments.ts`       | Persisted CRDT document blobs (`collab_documents`) — the co-editing relay's durable state |
 | `data/`                    | `data_tables` + `data_rows` (the universal store) |
 | `fonts.ts`                 | Font assets                                       |
 | `loginAttempts.ts`         | Failed-login records for lockout                  |
@@ -358,11 +380,12 @@ All SQL lives in `server/repositories/`. Each file owns one resource:
 | `plugins.ts`               | Installed plugins + lifecycle state               |
 | `publish.ts`               | Published-page roster: snapshot getters + the transactional publish write (orchestration lives in `server/publish/publishSite.ts`) |
 | `roles.ts`                 | System and custom roles                           |
+| `rowWriteEvents.ts`        | In-process out-of-relay write notifications (repositories notify; the collab relay resets affected docs) |
 | `runtimeAsset.ts`          | Published runtime assets (JS, CSS, fonts)         |
 | `sessions.ts`              | User sessions                                     |
 | `setup.ts`                 | Setup wizard state (`isSetup`, first-run owner)   |
 | `site.ts`                  | The single site shell row                         |
-| `syncSequence.ts`          | Site-global sync sequence counter (multi-admin sync substrate — stamped on every row the site-document save writes or deletes) |
+| `syncSequence.ts`          | Site-global sync sequence counter (multi-admin sync substrate — stamped on every row the site-document save writes or deletes, and on the shell only when its content changed; the save's conflict check compares client base seqs against these inside the transaction) |
 | `userPreferences.ts`       | Per-user editor preferences                       |
 | `users.ts`                 | Users + auth fields                               |
 

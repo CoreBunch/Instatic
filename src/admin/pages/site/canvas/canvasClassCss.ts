@@ -138,9 +138,23 @@ export const generateCanvasClassCSS: CanvasClassCssGenerator = createCanvasClass
 
 const EMPTY_CONTAINER_PLACEHOLDER_SELECTOR = '[data-canvas-module-placeholder]'
 
+/**
+ * A style bag is the wide persistence type: a corrupt or legacy rule (bad
+ * import, plugin write, older data) can carry a non-object `styles` or
+ * `contextStyles`, and `Object.keys(null)` throws. This check runs BEFORE the
+ * shared serializer that already guards this (`bagToDeclarations` in
+ * `@core/publisher/classCss`), so reading a bag unguarded here would blank the
+ * entire canvas on one malformed rule. Treat it as unauthored instead.
+ */
+function bagHasEntries(bag: unknown): boolean {
+  if (bag === null || typeof bag !== 'object') return false
+  return Object.keys(bag).length > 0
+}
+
 function ruleHasAuthoredDeclarations(rule: StyleRule): boolean {
-  if (Object.keys(rule.styles).length > 0) return true
-  return Object.values(rule.contextStyles).some((styles) => Object.keys(styles).length > 0)
+  if (bagHasEntries(rule.styles)) return true
+  if (rule.contextStyles === null || typeof rule.contextStyles !== 'object') return false
+  return Object.values(rule.contextStyles).some(bagHasEntries)
 }
 
 /**

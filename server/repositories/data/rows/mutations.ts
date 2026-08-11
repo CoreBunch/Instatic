@@ -23,6 +23,7 @@ import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import { type InsertDataRowInput, type UpdateDataRowDraftInput } from './mapper'
 import { isoDateOrNull } from '@core/utils/isoDate'
 import { getDataRow } from './read'
+import { notifyRowWrite, serializeCollabAwareWrite } from '../../rowWriteEvents'
 
 type UpdateDataRowTableResult =
   | { ok: true; row: DataRow }
@@ -33,7 +34,21 @@ export async function createDataRow(
   input: InsertDataRowInput,
   actorUserId: string | null = null,
   pluginActorId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
 ): Promise<DataRow> {
+  if (!opts.collabInternal) {
+    return serializeCollabAwareWrite(async () => {
+      const created = await createDataRow(
+        db,
+        input,
+        actorUserId,
+        pluginActorId,
+        { collabInternal: true },
+      )
+      notifyRowWrite({ tableId: created.tableId, rowIds: [created.id], kind: 'create' })
+      return created
+    })
+  }
   const { rows } = await db<{ id: string }>`
     insert into data_rows (
       id,
@@ -70,7 +85,22 @@ export async function saveDataRowDraft(
   input: UpdateDataRowDraftInput,
   actorUserId: string | null = null,
   pluginActorId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
 ): Promise<DataRow | null> {
+  if (!opts.collabInternal) {
+    return serializeCollabAwareWrite(async () => {
+      const row = await saveDataRowDraft(
+        db,
+        rowId,
+        input,
+        actorUserId,
+        pluginActorId,
+        { collabInternal: true },
+      )
+      if (row) notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'update' })
+      return row
+    })
+  }
   const updated = await updateDataRowDraftCells(db, rowId, input, actorUserId, pluginActorId)
   return updated ? getDataRow(db, rowId) : null
 }
@@ -127,6 +157,38 @@ export async function resurrectDataRow(
 }
 
 /**
+ * Idempotent draft write by id — update a live row, RESURRECT a soft-deleted
+ * one, or create it fresh. The three-way decision the collab relay needs: a
+ * row the roster sweep soft-deleted and a peer then restored (undo of a page
+ * delete) still occupies its primary key, so a plain insert would conflict —
+ * exactly the flow `apply.ts` handles for HTTP batches, here for one row.
+ */
+export async function upsertDataRowDraft(
+  db: DbClient,
+  input: InsertDataRowInput & { id: string },
+  actorUserId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
+): Promise<void> {
+  if (!opts.collabInternal) {
+    return serializeCollabAwareWrite(async () => {
+      await upsertDataRowDraft(db, input, actorUserId, { collabInternal: true })
+      notifyRowWrite({ tableId: input.tableId, rowIds: [input.id], kind: 'update' })
+    })
+  }
+  const draft = { cells: input.cells, slug: input.slug }
+  const updated = await updateDataRowDraftCells(db, input.id, draft, actorUserId)
+  if (updated) return
+  const { rows } = await db<{ id: string }>`
+    select id from data_rows where id = ${input.id} and deleted_at is not null
+  `
+  if (rows.length > 0) {
+    await resurrectDataRow(db, input.id, draft, actorUserId)
+  } else {
+    await createDataRow(db, input, actorUserId, null, { collabInternal: true })
+  }
+}
+
+/**
  * Slug-only write — the second phase of the roster reconcile's two-phase
  * slug update (see rows/reconcile.ts). The row's cells and audit columns were
  * already written by `updateDataRowDraftCells` in the same transaction; this
@@ -158,7 +220,15 @@ export async function softDeleteDataRow(
   db: DbClient,
   rowId: string,
   actorUserId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
 ): Promise<DeletedRowSummary | null> {
+  if (!opts.collabInternal) {
+    return serializeCollabAwareWrite(async () => {
+      const row = await softDeleteDataRow(db, rowId, actorUserId, { collabInternal: true })
+      if (row) notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'delete' })
+      return row
+    })
+  }
   const { rows } = await db<{
     id: string
     table_id: string
@@ -196,7 +266,35 @@ export async function updateDataRowTable(
   rowId: string,
   tableId: string,
   actorUserId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
 ): Promise<UpdateDataRowTableResult> {
+  if (!opts.collabInternal) {
+    const moved = await serializeCollabAwareWrite(async () => {
+      const before = await getDataRow(db, rowId)
+      const result = await updateDataRowTable(
+        db,
+        rowId,
+        tableId,
+        actorUserId,
+        { collabInternal: true },
+      )
+      let bumpPublishVersion = false
+      if (before && result.ok && before.tableId !== result.row.tableId) {
+        // A table move changes both collection rosters. Emit the pair while
+        // still holding the collab-aware write lane so a dirty old row doc
+        // cannot land between the move and its synchronous invalidation.
+        notifyRowWrite({ tableId: before.tableId, rowIds: [rowId], kind: 'delete' })
+        notifyRowWrite({ tableId: result.row.tableId, rowIds: [rowId], kind: 'create' })
+        bumpPublishVersion = before.status === 'published'
+      }
+      return { result, bumpPublishVersion }
+    })
+    // The publish lock may itself wait on persistence work. Never hold the
+    // non-reentrant collab-aware lane while awaiting that independent lock.
+    if (moved.bumpPublishVersion) await bumpPublishVersionSerialized()
+    return moved.result
+  }
+
   const row = await getDataRow(db, rowId)
   if (!row) return { ok: false, reason: 'row_not_found' }
   if (row.tableId === tableId) return { ok: true, row }
@@ -234,10 +332,6 @@ export async function updateDataRowTable(
   if (!rows[0]) return { ok: false, reason: 'row_not_found' }
   const updated = await getDataRow(db, rows[0].id)
   if (!updated) return { ok: false, reason: 'row_not_found' }
-  // Moving a published row changes its public route (the route base comes
-  // from the table) — invalidate the render cache so the old URL stops
-  // being served.
-  if (row.status === 'published') await bumpPublishVersionSerialized()
   return { ok: true, row: updated }
 }
 

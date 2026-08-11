@@ -12,7 +12,6 @@ import {
   openSitePanel,
   openSiteEditor,
   publishDraft,
-  saveDraft,
   selectTreeLayer,
   setPropValue,
   visitPublicPage,
@@ -171,7 +170,6 @@ test.describe('visual builder', () => {
     page,
   }) => {
     const { name } = await openBlankPage(page, 'Builder history')
-    await saveDraft(page)
     await page.reload()
     await openSiteEditor(page)
     await openSitePanel(page)
@@ -214,7 +212,6 @@ test.describe('visual builder', () => {
     await expect(textNode).toHaveCount(0)
     await expect(redoButton).toHaveAttribute('aria-disabled', 'true')
 
-    await saveDraft(page)
     await page.reload()
     await openSiteEditor(page)
     await openSitePanel(page)
@@ -358,7 +355,6 @@ test.describe('visual builder', () => {
     await dragTreeRowBefore(page, textRows.nth(2), textRows.nth(0))
     await expectCanvasTextOrder(page, [gamma, alpha, beta])
 
-    await saveDraft(page)
     await page.reload()
     await openSiteEditor(page)
     await openSitePanel(page)
@@ -423,7 +419,6 @@ test.describe('visual builder', () => {
       await setPropValue(page, 'label', 'Visit Example')
       await setPropValue(page, 'href', 'https://example.com')
 
-      await saveDraft(page)
       await publishDraft(page)
 
       // The published button renders as a semantic anchor with the intended
@@ -485,7 +480,6 @@ test.describe('visual builder', () => {
       await expect(canvasFrame(page).getByText(componentText, { exact: true })).toBeVisible()
       await expect(canvasFrame(page).getByText(slotText, { exact: true })).toBeVisible()
 
-      await saveDraft(page)
       await publishDraft(page)
       await visitPublicPage(browser, {
         path: `/${slug}`,
@@ -559,8 +553,7 @@ test.describe('visual builder', () => {
         await expect(canvasFrame(page).getByText(bodyText, { exact: true })).toBeVisible()
       })
 
-      await test.step('save and publish the template snapshot', async () => {
-        await saveDraft(page)
+      await test.step('publish the template snapshot', async () => {
         await publishDraft(page)
       })
 
@@ -640,7 +633,6 @@ test.describe('visual builder', () => {
       })
 
       await test.step('insert the layout from the module inserter on another page', async () => {
-        await saveDraft(page)
         const nextPage = await openBlankPage(page, 'Builder layout target')
         target.name = nextPage.name
         target.slug = nextPage.slug
@@ -690,7 +682,6 @@ test.describe('visual builder', () => {
         await expect(inserterDialog).toBeHidden()
 
         await expect(canvasFrame(page).getByText(layoutText, { exact: true })).toBeVisible()
-        await saveDraft(page)
         await page.reload()
         await openSiteEditor(page)
         await openSitePanel(page)
@@ -747,7 +738,6 @@ test.describe('visual builder', () => {
       await fontSizeInput.blur()
       await expect(canvasHeadline).toHaveCSS('font-size', '28px')
 
-      await saveDraft(page)
       await page.reload()
       await openSiteEditor(page)
       await openSitePanel(page)
@@ -807,7 +797,6 @@ test.describe('visual builder', () => {
       await fontSizeInput.blur()
       await expect(canvasHeadline).toHaveCSS('font-size', '30px')
 
-      await saveDraft(page)
       await page.reload()
       await openSiteEditor(page)
       await openSitePanel(page)
@@ -870,7 +859,6 @@ test.describe('visual builder', () => {
         'Event handler attributes are not allowed.',
       )
 
-      await saveDraft(page)
       await page.reload()
       await openSiteEditor(page)
       await openSitePanel(page)
@@ -927,7 +915,6 @@ test.describe('visual builder', () => {
       await fontSizeInput.fill('31px')
       await fontSizeInput.blur()
 
-      await saveDraft(page)
       await publishDraft(page)
       await visitPublicPage(browser, {
         path: `/${slug}`,
@@ -984,7 +971,6 @@ test.describe('visual builder', () => {
       await expect(mobileButton).toHaveCSS('font-size', '33px')
       await expect(desktopButton).toHaveCSS('font-size', '20px')
 
-      await saveDraft(page)
       await publishDraft(page)
       await visitPublicPage(browser, {
         path: `/${slug}`,
@@ -1066,7 +1052,6 @@ test.describe('visual builder', () => {
       await expect(desktopButton).toHaveClass(new RegExp(`\\b${classA}\\b`))
       await expect(desktopButton).toHaveClass(new RegExp(`\\b${classB}\\b`))
 
-      await saveDraft(page)
       await page.reload()
       await openSiteEditor(page)
       await openSitePanel(page)
@@ -1130,7 +1115,6 @@ test.describe('visual builder', () => {
       ).toBeVisible()
       await expectComputedCustomProperty(desktopButton, customProperty, customValue)
 
-      await saveDraft(page)
       await page.reload()
       await openSiteEditor(page)
       await openSitePanel(page)
@@ -1198,7 +1182,6 @@ test.describe('visual builder', () => {
       await paddingTopInput.blur()
       await expect(desktopButton).toHaveCSS('padding-top', '12px')
 
-      await saveDraft(page)
       await page.reload()
       await openSiteEditor(page)
       await openSitePanel(page)

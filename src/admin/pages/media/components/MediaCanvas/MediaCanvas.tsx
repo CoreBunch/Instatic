@@ -38,6 +38,11 @@ import canvasStyles from '@site/canvas/CanvasRoot.module.css'
 import type { CmsMediaAsset, CmsMediaFolder } from '@core/persistence/cmsMedia'
 import type { MediaSort, MediaType } from '../../utils/filters'
 import {
+  readStoredMediaViewMode,
+  writeStoredMediaViewMode,
+  type MediaViewMode,
+} from '../../utils/viewMode'
+import {
   FOLDER_ALL,
   FOLDER_TRASH,
   type UseMediaWorkspaceResult,
@@ -61,27 +66,8 @@ import {
 
 interface MediaCanvasProps {
   workspace: UseMediaWorkspaceResult
-}
-
-type ViewMode = 'list' | 'grid'
-
-const VIEW_MODE_STORAGE_KEY = 'instatic-media-page-view-mode'
-
-function readStoredViewMode(): ViewMode {
-  try {
-    const raw = globalThis.localStorage?.getItem(VIEW_MODE_STORAGE_KEY)
-    return raw === 'list' ? 'list' : 'grid'
-  } catch {
-    return 'grid'
-  }
-}
-
-function writeStoredViewMode(mode: ViewMode) {
-  try {
-    globalThis.localStorage?.setItem(VIEW_MODE_STORAGE_KEY, mode)
-  } catch {
-    // best-effort UI persistence
-  }
+  /** Picker mode: plain click toggles assets instead of replacing selection. */
+  selectionMode?: 'standard' | 'multiple'
 }
 
 const TYPE_FILTERS: FilterBarItem<MediaType>[] = [
@@ -134,9 +120,9 @@ function folderMatchesQuery(folder: CmsMediaFolder, query: string): boolean {
   return folder.name.toLowerCase().includes(normalized)
 }
 
-export function MediaCanvas({ workspace }: MediaCanvasProps) {
+export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanvasProps) {
   const currentUser = useCurrentAdminUser()
-  const [viewMode, setViewModeState] = useState<ViewMode>(readStoredViewMode)
+  const [viewMode, setViewModeState] = useState<MediaViewMode>(readStoredMediaViewMode)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [renameTarget, setRenameTarget] = useState<CmsMediaAsset | null>(null)
   const [dragActive, setDragActive] = useState(false)
@@ -144,9 +130,9 @@ export function MediaCanvas({ workspace }: MediaCanvasProps) {
   const canDelete = canDeleteMedia(currentUser)
   const dnd = useMediaDnd(workspace, canWrite)
 
-  function setViewMode(mode: ViewMode) {
+  function setViewMode(mode: MediaViewMode) {
     setViewModeState(mode)
-    writeStoredViewMode(mode)
+    writeStoredMediaViewMode(mode)
   }
 
   const trashView = workspace.folderSelection === FOLDER_TRASH
@@ -179,6 +165,11 @@ export function MediaCanvas({ workspace }: MediaCanvasProps) {
   // Mirrors the convention every grid-style file manager (Finder, Explorer,
   // Photos, Drive, …) uses, so the muscle memory is free.
   function handleAssetClick(asset: CmsMediaAsset, event: MouseEvent<HTMLButtonElement>) {
+    if (selectionMode === 'multiple' && !event.shiftKey) {
+      event.preventDefault()
+      workspace.toggleAssetInSelection(asset.id)
+      return
+    }
     const meta = isMacLike() ? event.metaKey : event.ctrlKey
     if (event.shiftKey && workspace.selectedAssetId) {
       event.preventDefault()

@@ -216,7 +216,7 @@ The result: imported markup renders its `class` attribute, the classes show up i
 The importer preserves CSS across two layers, both gated by `isEmittableProperty`:
 
 - **Inline `style="…"`** → the node's `inlineStyles` bag (per-node `style=""` layer). Full declarations, not just backgrounds.
-- **`<style>` blocks** → parsed by the consumer (`cssToStyleRules`) into registry `StyleRule`s shown in the Selectors panel. A `.foo {}` rule binds to nodes carrying `class="foo"`; ambient selectors (`body`, `a:hover`, `.a .b`) register globally. First-wins on name/selector collisions with existing rules.
+- **`<style>` blocks** → parsed by the consumer (`cssToStyleRules`) into registry `StyleRule`s shown in the Selectors panel. A `.foo {}` rule binds to nodes carrying `class="foo"`; complex class-bearing selectors preserve their selector and expose a decoded picker class (for example `.group:hover .group-hover\:block` exposes `group-hover:block`); class-free selectors (`body`, `a:hover`) register as ambient. First-wins on name/selector collisions with existing rules.
 - **Class names without a matching `<style>` rule** still survive — `insertImportedNodes` auto-creates a bare (style-less) class for the name (see [Class linking](#class-linking-name--id)), styleable afterwards in the editor or by the agent.
 
 `importHtml` itself stays CSS-agnostic: it returns raw `styleCss` and the consumer (which has the site's breakpoints and may import `@core/siteImport`) does the parsing. This avoids an `htmlImport → siteImport` import cycle and lets `@media` fold into the site's real breakpoints.

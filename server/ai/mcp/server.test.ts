@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'bun:test'
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/server'
+import { Client } from '@modelcontextprotocol/client'
 import { createSqliteClient } from '../../db/sqlite'
 import { sqliteMigrations } from '../../db/migrations-sqlite'
 import { runMigrations } from '../../db/runMigrations'
@@ -78,7 +78,8 @@ describe('mcp server', () => {
     const result = await client.callTool({ name: 'content_list_collections', arguments: {} })
     expect(result.isError).toBeFalsy()
     const text = (result.content as Array<{ type: string; text: string }>)[0].text
-    expect(text).toContain('pages') // the seeded system table
+    expect(text).toContain('posts') // the seeded Content-workspace post type
+    expect(text).not.toContain('"id":"pages"')
     await client.close()
   })
 

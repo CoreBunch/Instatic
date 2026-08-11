@@ -39,6 +39,8 @@ import { useRuntimeScriptBuild } from './useRuntimeScriptBuild'
 import { CanvasNotch } from './CanvasNotch'
 import { CanvasModeToggle } from './CanvasModeToggle'
 import { CanvasContextSelector } from './CanvasContextSelector'
+import { useCurrentAdminUser } from '@admin/sessionContext'
+import { usePublishEditorPresence } from '@site/collab/awarenessState'
 import { CanvasSelectionContext, CanvasViewportActionsContext } from './CanvasContexts'
 // Class / user-stylesheet injectors are now mounted per breakpoint frame
 // (inside each iframe's document) by `IframeFrameSurface`. CanvasRoot no
@@ -82,6 +84,20 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   const transformLayerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
   const spotlight = useContext(SpotlightContext)
+
+  // Live co-editing: broadcast this editor's identity + active doc +
+  // selection into awareness. Peers render it via PeerPresenceOverlay.
+  const currentUser = useCurrentAdminUser()
+  usePublishEditorPresence(
+    currentUser
+      ? {
+          id: currentUser.id,
+          name: currentUser.displayName,
+          avatarUrl: currentUser.avatarUrl,
+          gravatarHash: currentUser.gravatarHash,
+        }
+      : null,
+  )
 
   // Store subscriptions
   const canvasPage = useEditorStore(selectActiveCanvasPage)

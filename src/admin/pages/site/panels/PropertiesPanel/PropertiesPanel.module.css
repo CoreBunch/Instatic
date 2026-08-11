@@ -1,9 +1,9 @@
 /* PropertiesPanel - inspector shell. */
 
 .panel {
-    position: absolute;
+    position: fixed;
     --panel-x: calc(100% - 376px);
-    --panel-y: 16px;
+    --panel-y: 64px;
     /* Background the inner fade gradients (ClassPicker fade, search-bar fade,
        locked-preview teaser) blend into. Floating panel surface is --bg-surface;
        the docked variant is transparent over the --bg-body sidebar, so it
@@ -11,12 +11,18 @@
     --panel-fade-bg: var(--bg-surface);
     left: var(--panel-x);
     top: var(--panel-y);
-    bottom: 12px;
-    z-index: 50;
+    bottom: auto;
+    /* Shared floating tier above docked panel slots (85). The docked variant
+       resets to auto below. */
+    z-index: 90;
     display: flex;
     flex-direction: column;
     width: var(--panel-w);
-    max-height: calc(100vh - 28px);
+    height: var(--panel-h);
+    min-width: 280px;
+    min-height: 240px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 80px);
     overflow: hidden;
     border: 1px solid var(--overlay-10);
     border-radius: var(--panel-radius);
@@ -24,7 +30,6 @@
     backdrop-filter: blur(var(--panel-blur));
     box-shadow: var(--shadow-panel);
     outline: none;
-    transition: width 150ms ease-in-out;
     transform: translateZ(0);
     will-change: transform;
 }
@@ -40,6 +45,9 @@
     z-index: auto;
     width: 100%;
     height: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-width: none;
     max-height: none;
     border: 0;
     border-radius: 0;

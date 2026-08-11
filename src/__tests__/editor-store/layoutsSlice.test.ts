@@ -3,7 +3,7 @@
  *
  * Covers:
  *   1. saveNodeAsLayout: captures the subtree + referenced classes onto
- *      site.layouts (and marks the layout dirty for save).
+ *      site.layouts.
  *   2. Guards: page root refused; duplicate names throw SavedLayoutNameError.
  *   3. insertLayout: exact structure restoration with fresh node ids
  *      (paste semantics — props, classIds, child order survive).
@@ -66,8 +66,6 @@ describe('layoutsSlice.saveNodeAsLayout', () => {
     expect(layout.nodes[textId].props.text).toBe('Saved copy')
     expect(layout.classes[classId]?.name).toBe('layout-style')
 
-    // Dirty tracking: the new layout ships on the next incremental save.
-    expect([...useEditorStore.getState()._dirtySave.layoutIds]).toContain(layoutId!)
   })
 
   it('refuses to capture the page root', () => {

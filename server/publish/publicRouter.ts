@@ -76,6 +76,7 @@ import {
 import { NOT_FOUND_ARTEFACT_URL_PATH, readArtefact } from './staticArtefact'
 import { getOrRender, peek } from './renderCache'
 import { getLatestSnapshotForVersion } from './publishedSnapshotCache'
+import { snapshotForEntryRoute, snapshotForNotFoundRoute } from './entryTemplateSnapshot'
 import { getPublishVersion } from './publishState'
 import { canonicalRenderQuery } from './loopPrefetch'
 
@@ -173,7 +174,10 @@ async function resolvePublicRoute(
     // full-site parse.
     const siteSnapshot = await getLatestSnapshotForVersion(db, getPublishVersion())
     if (!siteSnapshot) return { kind: 'not-found' }
-    return { kind: 'row', snapshot: siteSnapshot, row }
+    // That snapshot carries no runtime manifest — an entry route takes the one
+    // belonging to the template that actually renders it.
+    const snapshot = await snapshotForEntryRoute(db, siteSnapshot, row.tableSlug)
+    return { kind: 'row', snapshot, row }
   }
 
   const redirect = await getDataRowRedirectByRoute(db, route.tableRouteBase, route.rowSlug)
@@ -320,8 +324,10 @@ export async function renderNotFoundResponse(
     return new Response(warm.body, { headers: warm.headers, status: 404 })
   }
 
-  const snapshot = await getLatestSnapshotForVersion(db, getPublishVersion())
-  if (!snapshot || !resolveNotFoundTemplate(snapshot.site)) return null
+  const siteSnapshot = await getLatestSnapshotForVersion(db, getPublishVersion())
+  if (!siteSnapshot || !resolveNotFoundTemplate(siteSnapshot.site)) return null
+  // Same as entry routes: the 404 template supplies its own runtime manifest.
+  const snapshot = await snapshotForNotFoundRoute(db, siteSnapshot)
 
   const syntheticUrl = new URL(NOT_FOUND_ARTEFACT_URL_PATH, url.origin)
   const cached = await getOrRender(cacheKey, async () => {

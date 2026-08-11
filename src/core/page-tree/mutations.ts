@@ -2,7 +2,7 @@ import { nanoid } from 'nanoid'
 import type { PageNode } from './pageNode'
 import type { NodeTree } from './treeSchema'
 import type { TreeOperation } from './operationSchema'
-import { getParent, isAncestor, collectSubtreeIds } from './selectors'
+import { getParent, getNodeOrThrow, isAncestor, collectSubtreeIds } from './selectors'
 import { deleteSubtree } from './subtreeRemoval'
 import { cloneNodeWithRemap } from './cloneNode'
 
@@ -185,6 +185,7 @@ export function moveNode(
   newParentId: string,
   newIndex: number
 ): void {
+  const moved = getNodeOrThrow(tree, nodeId)
   if (nodeId === tree.rootNodeId) {
     throw new Error(`[PageTree] Cannot move the root node.`)
   }
@@ -207,8 +208,7 @@ export function moveNode(
   newParent.children.splice(clampedIndex, 0, nodeId)
 
   // Re-point the moved node at its new parent.
-  const moved = tree.nodes[nodeId]
-  if (moved) moved.parentId = newParentId
+  moved.parentId = newParentId
 }
 
 // ---------------------------------------------------------------------------

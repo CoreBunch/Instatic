@@ -341,7 +341,14 @@ describe('base.text — unified text module', () => {
 
 describe('base.button — render() specifics', () => {
   it('has only content and behavior module settings', () => {
-    expect(Object.keys(ButtonModule.schema).sort()).toEqual(['disabled', 'href', 'htmlAttributes', 'label', 'target'])
+    expect(Object.keys(ButtonModule.schema).sort()).toEqual([
+      'buttonType',
+      'disabled',
+      'href',
+      'htmlAttributes',
+      'label',
+      'target',
+    ])
   })
 
   it('renders an <a> element when href is set', () => {

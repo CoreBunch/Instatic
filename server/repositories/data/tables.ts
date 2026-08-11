@@ -16,7 +16,8 @@ import { nanoid } from 'nanoid'
 import type { DbClient } from '../../db/client'
 import { countDataRows } from './rows/read'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
-import { normalizeDataTableFields } from '@core/data/fields'
+import { buildPostTypeDefaultFields, normalizeDataTableFields } from '@core/data/fields'
+import { POST_TYPE_MANDATORY_FIELD_IDS } from '@core/data/schemas'
 import type {
   DataField,
   DataTable,
@@ -76,13 +77,30 @@ interface DataTableRow {
   updated_at: string | Date
 }
 
+/**
+ * An empty route base is the persisted sentinel for a non-routable table.
+ * Only an omitted value gets the conventional slug-derived route on create;
+ * callers that explicitly send an empty (or whitespace-only) value are opting
+ * out of public routing and that choice must survive every repository path.
+ */
+function normalizeExplicitRouteBase(routeBase: string): string {
+  const trimmed = routeBase.trim()
+  return trimmed === '' ? '' : normalizeRouteBase(trimmed)
+}
+
+function routeBaseForCreate(routeBase: string | undefined, slug: string): string {
+  return routeBase === undefined
+    ? normalizeRouteBase(slug)
+    : normalizeExplicitRouteBase(routeBase)
+}
+
 function mapTable(row: DataTableRow): DataTable {
   return {
     id: row.id,
     name: row.name,
     slug: row.slug,
     kind: row.kind,
-    routeBase: row.route_base ? normalizeRouteBase(row.route_base) : normalizeRouteBase(row.slug),
+    routeBase: normalizeExplicitRouteBase(row.route_base),
     singularLabel: row.singular_label,
     pluralLabel: row.plural_label,
     primaryFieldId: row.primary_field_id,
@@ -182,11 +200,75 @@ export async function getDataTableBySlug(db: DbClient, slug: string): Promise<Da
   return rows[0] ? mapTable(rows[0]) : null
 }
 
+/**
+ * A post type is routable only if it carries the built-in `title`/`slug`
+ * fields: `slugForTable` returns an empty slug for a table without a `slug`
+ * field, and an entry with an empty slug has no public route. The Content UI
+ * seeds those fields client-side, so a table created through any other caller
+ * (the data API, an MCP connector, an import) used to arrive unroutable.
+ * Seeding here makes the invariant hold for every caller instead.
+ *
+ * Caller-supplied fields win on id collision, so an explicit `title` override
+ * (a different label, say) survives; omitted built-ins are prepended in their
+ * canonical order.
+ */
+function withPostTypeBuiltIns(kind: DataTableKind | undefined, fields: DataField[]): DataField[] {
+  if (kind !== 'postType') return fields
+  const supplied = new Set(fields.map((field) => field.id))
+  const missing = buildPostTypeDefaultFields().filter((field) => !supplied.has(field.id))
+  return [...missing, ...fields]
+}
+
+/**
+ * The same invariant, held across a PATCH.
+ *
+ * `fields` is a whole-list replacement, and the natural way to add one custom
+ * field is to send the custom field list — which is exactly the payload that
+ * drops every built-in. Nothing downstream complains: the table saves, the
+ * rows keep their `slug` CELL, and then the next save of any row recomputes
+ * the routable slug through `slugForTable`, which returns '' for a table with
+ * no `slug` field. Every entry in the post type quietly loses its public route.
+ *
+ * Only `title` and `slug` are held. The other built-ins (body, featured media,
+ * the two SEO fields) are deliberately removable — the Data inspector offers
+ * them back under "missing optional built-ins" — and the field editor already
+ * marks the mandatory two undeletable client-side. This is the same rule
+ * enforced where it cannot be bypassed.
+ *
+ * A patch may still relabel or retype `title`/`slug`, and may reorder
+ * anything; it just cannot drop them by omission. The existing definition is
+ * preserved rather than reseeded from the defaults, so a legitimately
+ * customised `title` (relabelled "Recipe name") survives.
+ *
+ * Membership is decided by field ID, not by the `builtIn` flag: on create,
+ * "caller-supplied fields win on id collision" stores an overridden `title`
+ * WITHOUT the flag, and that title is still the one routing depends on.
+ */
+function keepPostTypeBuiltIns(existing: DataTable, next: DataField[]): DataField[] {
+  if (existing.kind !== 'postType') return next
+  const supplied = new Set(next.map((field) => field.id))
+  const current = new Map(existing.fields.map((field) => [field.id, field]))
+  const canonical = new Map(buildPostTypeDefaultFields().map((field) => [field.id, field]))
+
+  const held: DataField[] = []
+  for (const id of POST_TYPE_MANDATORY_FIELD_IDS) {
+    if (supplied.has(id)) continue
+    // Prefer the stored definition; fall back to the canonical default when
+    // the field is absent altogether. That second case REPAIRS a table an
+    // earlier patch already stripped — a post type with no `slug` field is
+    // never a state anyone chose, so the next patch puts it back rather than
+    // faithfully preserving the damage.
+    const field = current.get(id) ?? canonical.get(id)
+    if (field) held.push(field)
+  }
+  return held.length === 0 ? next : [...held, ...next]
+}
+
 export async function createDataTable(
   db: DbClient,
   input: CreateDataTableInput,
 ): Promise<DataTable> {
-  const fields = normalizeDataTableFields(input.fields ?? [])
+  const fields = withPostTypeBuiltIns(input.kind, normalizeDataTableFields(input.fields ?? []))
   const { rows } = await db<DataTableRow>`
     insert into data_tables (
       id,
@@ -206,7 +288,7 @@ export async function createDataTable(
       ${input.name},
       ${input.slug},
       ${input.kind ?? 'data'},
-      ${normalizeRouteBase(input.routeBase ?? input.slug)},
+      ${routeBaseForCreate(input.routeBase, input.slug)},
       ${input.singularLabel},
       ${input.pluralLabel},
       ${input.primaryFieldId ?? 'title'},
@@ -228,8 +310,13 @@ export async function updateDataTable(
   tableId: string,
   input: UpdateDataTableInput,
 ): Promise<DataTable | null> {
-  const fields = input.fields === undefined ? null : normalizeDataTableFields(input.fields)
-  const routeBase = input.routeBase === undefined ? null : normalizeRouteBase(input.routeBase)
+  let fields: DataField[] | null = null
+  if (input.fields !== undefined) {
+    const existing = await getDataTable(db, tableId)
+    if (!existing) return null
+    fields = keepPostTypeBuiltIns(existing, normalizeDataTableFields(input.fields))
+  }
+  const routeBase = input.routeBase === undefined ? null : normalizeExplicitRouteBase(input.routeBase)
   const { rows } = await db<DataTableRow>`
     update data_tables
     set name = coalesce(${input.name ?? null}, name),
@@ -261,7 +348,9 @@ export async function insertDataTableIfAbsent(
   db: DbClient,
   input: CreateDataTableInput,
 ): Promise<boolean> {
-  const fields = normalizeDataTableFields(input.fields ?? [])
+  // Same seeding as createDataTable: `merge-add` / `merge-overwrite` is an
+  // import, and an imported post type has to be routable too.
+  const fields = withPostTypeBuiltIns(input.kind, normalizeDataTableFields(input.fields ?? []))
   const { rows } = await db<{ id: string }>`
     insert into data_tables (
       id,
@@ -281,7 +370,7 @@ export async function insertDataTableIfAbsent(
       ${input.name},
       ${input.slug},
       ${input.kind ?? 'data'},
-      ${normalizeRouteBase(input.routeBase ?? input.slug)},
+      ${routeBaseForCreate(input.routeBase, input.slug)},
       ${input.singularLabel},
       ${input.pluralLabel},
       ${input.primaryFieldId ?? 'title'},

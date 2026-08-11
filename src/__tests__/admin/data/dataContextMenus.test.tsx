@@ -257,6 +257,8 @@ describe('Data table context menu', () => {
       />,
     )
 
+    expect(screen.getByText('data').closest('[data-accent]')?.getAttribute('data-accent')).toBe('d')
+
     fireEvent.contextMenu(screen.getByRole('option', { name: /products/i }), {
       clientX: 60,
       clientY: 140,
@@ -271,6 +273,38 @@ describe('Data table context menu', () => {
     })
     fireEvent.click(screen.getByRole('menuitem', { name: /delete table/i }))
     expect(onDeleteTable).toHaveBeenCalledWith(customTable)
+  })
+
+  it('assigns a distinct stable accent to every table kind', () => {
+    render(
+      <DataSidebar
+        tables={[
+          makeListItem({ id: 'table-pages', kind: 'page', pluralLabel: 'Pages' }),
+          makeListItem({ id: 'table-posts', kind: 'postType', pluralLabel: 'Posts' }),
+          makeListItem({ id: 'table-components', kind: 'component', pluralLabel: 'Components' }),
+          makeListItem({ id: 'table-data', kind: 'data', pluralLabel: 'Products', system: false }),
+        ]}
+        loading={false}
+        error={null}
+        selectedTableId={null}
+        onSelectTable={() => {}}
+        onCreateTable={() => {}}
+        onOpenExport={() => {}}
+        onOpenImport={() => {}}
+        onOpenTableSettings={() => {}}
+        onDeleteTable={() => {}}
+        canCreateTable
+        canManage
+        canExport
+        canImport
+      />,
+    )
+
+    const badgeAccents = ['page', 'post-type', 'component', 'data'].map(
+      (label) => screen.getByText(label).closest('[data-accent]')?.getAttribute('data-accent'),
+    )
+    expect(badgeAccents).toEqual(['a', 'b', 'c', 'd'])
+    expect(new Set(badgeAccents).size).toBe(badgeAccents.length)
   })
 
   it('disables deleting protected system tables', () => {

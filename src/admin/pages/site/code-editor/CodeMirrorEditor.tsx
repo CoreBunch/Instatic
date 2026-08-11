@@ -39,6 +39,8 @@ import { markdown } from '@codemirror/lang-markdown'
 import { html } from '@codemirror/lang-html'
 import { tags as t } from '@lezer/highlight'
 import type { Extension } from '@codemirror/state'
+import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint'
+import type { SiteRuntimeDiagnostic } from '@core/site-runtime'
 
 // ---------------------------------------------------------------------------
 // GitHub Dark-inspired CM6 theme — CSS custom properties only.
@@ -95,6 +97,12 @@ const achromatic = EditorView.theme({
     backgroundColor: 'var(--bg-surface-2)',
     border: '1px solid var(--overlay-10)',
     color: 'var(--text)',
+  },
+  '.cm-lintRange-error': {
+    textDecorationColor: 'var(--danger)',
+  },
+  '.cm-lint-marker-error': {
+    color: 'var(--danger)',
   },
 }, { dark: true })
 
@@ -280,6 +288,32 @@ interface CodeMirrorEditorProps {
    * command surfaces can pass 0 so their primary action never reads stale text.
    */
   changeDelayMs?: number
+  /** Authoritative publisher-compiler diagnostics for this document. */
+  diagnostics?: SiteRuntimeDiagnostic[]
+}
+
+const EMPTY_DIAGNOSTICS: SiteRuntimeDiagnostic[] = []
+
+function codeMirrorDiagnostics(
+  document: EditorState['doc'],
+  diagnostics: SiteRuntimeDiagnostic[],
+): Diagnostic[] {
+  return diagnostics.map((diagnostic) => {
+    const requestedLine = diagnostic.line ?? 1
+    const lineNumber = Math.max(1, Math.min(requestedLine, document.lines))
+    const line = document.line(lineNumber)
+    // esbuild columns are zero-based; CodeMirror positions are absolute
+    // offsets into the document.
+    const column = Math.max(0, diagnostic.column ?? 0)
+    const from = Math.min(line.to, line.from + column)
+    return {
+      from,
+      to: Math.min(line.to, from + 1),
+      severity: diagnostic.severity,
+      message: diagnostic.message,
+      source: 'Instatic compiler',
+    }
+  })
 }
 
 export default function CodeMirrorEditor({
@@ -288,8 +322,10 @@ export default function CodeMirrorEditor({
   language,
   onChange,
   changeDelayMs = 250,
+  diagnostics = EMPTY_DIAGNOSTICS,
 }: CodeMirrorEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const viewRef = useRef<EditorView | null>(null)
 
   // Refs to hold pending debounce state. Using refs (not state) so that reads
   // inside the CM6 update listener always see the current values without
@@ -333,6 +369,7 @@ export default function CodeMirrorEditor({
           ...getLanguageExtensions(language),
           readableSyntaxHighlighting,
           achromatic,
+          lintGutter(),
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) return
             const content = update.state.doc.toString()
@@ -367,15 +404,26 @@ export default function CodeMirrorEditor({
     if (!container) return
 
     const view = mountView(container)
+    viewRef.current = view
 
     return () => {
       // Flush-on-switch: persist any pending edit before destroying this view.
       // This guarantees unsaved edits survive doc switches even if the
       // debounce timer has not fired yet.
       flush()
+      viewRef.current = null
       view.destroy()
     }
   }, [docKey, flush])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch(setDiagnostics(
+      view.state,
+      codeMirrorDiagnostics(view.state.doc, diagnostics),
+    ))
+  }, [diagnostics, docKey])
 
   return (
     <div

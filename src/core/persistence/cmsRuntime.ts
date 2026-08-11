@@ -10,6 +10,7 @@ import { apiRequest, type FetchLike } from '@core/http'
 import {
   CmsRuntimeDependencyEnvelopeSchema,
   CmsRuntimePreviewResponseSchema,
+  CmsRuntimeValidationResponseSchema,
   type CmsRuntimePreviewAsset,
 } from './responseSchemas'
 
@@ -93,4 +94,24 @@ export async function buildCmsRuntimePreview(
     runtimeAssets: body.runtimeAssets,
     diagnostics: body.diagnostics,
   }
+}
+
+export async function validateCmsRuntimeScripts(
+  site: unknown,
+  options: CmsRuntimePreviewRequestOptions = {},
+): Promise<SiteRuntimeDiagnostic[]> {
+  const {
+    signal,
+    fetchImpl = globalThis.fetch.bind(globalThis),
+    basePath = '/admin/api/cms',
+  } = options
+  const body = await apiRequest(`${basePath}/runtime/validate`, {
+    method: 'POST',
+    body: { site },
+    schema: CmsRuntimeValidationResponseSchema,
+    signal,
+    fetchImpl,
+    fallbackMessage: 'Runtime script validation failed',
+  })
+  return body.diagnostics
 }

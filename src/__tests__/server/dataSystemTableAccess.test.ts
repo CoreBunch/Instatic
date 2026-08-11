@@ -5,6 +5,51 @@ import type { DataTable } from '@core/data/schemas'
 const TABLES = '/admin/api/cms/data/tables'
 
 describe('data system-table visibility + lockdown', () => {
+  it('preserves explicitly blank route bases through API create and PATCH', async () => {
+    const harness = await createCapabilityTestHarness()
+    try {
+      const ownerCookie = await harness.setupOwner()
+      const createdResponse = await harness.cms(TABLES, {
+        method: 'POST',
+        cookie: ownerCookie,
+        json: {
+          name: 'Fee lines',
+          slug: 'fee-lines',
+          kind: 'data',
+          routeBase: '',
+          singularLabel: 'Fee line',
+          pluralLabel: 'Fee lines',
+        },
+      })
+      expect(createdResponse.status).toBe(201)
+      const created = (await readJson<{ table: DataTable }>(createdResponse)).table
+      expect(created.routeBase).toBe('')
+
+      const routedResponse = await harness.cms(`${TABLES}/${created.id}`, {
+        method: 'PATCH',
+        cookie: ownerCookie,
+        json: { routeBase: '  /fees/  ' },
+      })
+      expect(routedResponse.status).toBe(200)
+      expect((await readJson<{ table: DataTable }>(routedResponse)).table.routeBase).toBe('/fees')
+
+      const blankResponse = await harness.cms(`${TABLES}/${created.id}`, {
+        method: 'PATCH',
+        cookie: ownerCookie,
+        json: { routeBase: '   ' },
+      })
+      expect(blankResponse.status).toBe(200)
+      expect((await readJson<{ table: DataTable }>(blankResponse)).table.routeBase).toBe('')
+
+      const { rows } = await harness.db<{ route_base: string }>`
+        select route_base from data_tables where id = ${created.id}
+      `
+      expect(rows[0]?.route_base).toBe('')
+    } finally {
+      await harness.cleanup()
+    }
+  })
+
   it('does not create a template page when creating a post-type table', async () => {
     const harness = await createCapabilityTestHarness()
     try {

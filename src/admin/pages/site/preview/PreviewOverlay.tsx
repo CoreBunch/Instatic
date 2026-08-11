@@ -20,10 +20,7 @@
 
 import { useEffect, useRef } from 'react'
 import type { Page, SiteDocument } from '@core/page-tree'
-import { isAbortError } from '@core/http'
-import { buildCmsRuntimePreview } from '@core/persistence'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
-import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useEditorStore, selectActivePage } from '@site/store/store'
 import { useTemplatePreviewContext } from '@site/hooks/useTemplatePreviewContext'
 import { EyeSolidIcon } from 'pixel-art-icons/icons/eye-solid'
@@ -31,6 +28,7 @@ import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
 import { pushToast } from '@ui/components/Toast'
+import { useRuntimePreviewDocument } from './useRuntimePreviewDocument'
 import styles from './PreviewOverlay.module.css'
 
 interface PreviewDocumentProps {
@@ -39,42 +37,12 @@ interface PreviewDocumentProps {
   templatePreviewContext: TemplateRenderDataContext | undefined
 }
 
-interface LoadedPreviewDocument {
-  site: SiteDocument
-  pageId: string
-  contextKey: string
-  html: string
-}
-
 function PreviewDocument({ site, page, templatePreviewContext }: PreviewDocumentProps) {
-  const contextKey = JSON.stringify(templatePreviewContext ?? null)
   const reportedErrorRef = useRef<string | null>(null)
-  const { data, loading, error, refresh } = useAsyncResource<LoadedPreviewDocument>(
-    async (signal) => {
-      try {
-        const preview = await buildCmsRuntimePreview(
-          {
-            site,
-            pageId: page.id,
-            templateContext: templatePreviewContext,
-          },
-          { signal },
-        )
-        return {
-          site,
-          pageId: page.id,
-          contextKey,
-          html: preview.html,
-        }
-      } catch (err) {
-        if (!signal.aborted && !isAbortError(err)) {
-          console.error('[PreviewOverlay] Failed to build preview:', err)
-        }
-        throw err
-      }
-    },
-    [site, page.id, contextKey],
-    { fallbackError: 'Preview build failed' },
+  const { html, loading, error, refresh } = useRuntimePreviewDocument(
+    site,
+    page,
+    templatePreviewContext,
   )
 
   useEffect(() => {
@@ -92,11 +60,6 @@ function PreviewDocument({ site, page, templatePreviewContext }: PreviewDocument
     })
   }, [error])
 
-  const currentHtml =
-    data?.site === site && data.pageId === page.id && data.contextKey === contextKey
-      ? data.html
-      : null
-
   if (error) {
     return (
       <EmptyState
@@ -110,7 +73,7 @@ function PreviewDocument({ site, page, templatePreviewContext }: PreviewDocument
     )
   }
 
-  if (loading || !currentHtml) {
+  if (loading || !html) {
     return (
       <EmptyState
         variant="centered"
@@ -123,7 +86,7 @@ function PreviewDocument({ site, page, templatePreviewContext }: PreviewDocument
 
   return (
     <iframe
-      srcDoc={currentHtml}
+      srcDoc={html}
       sandbox=""
       title={`Preview: ${page.title}`}
       data-testid="preview-iframe"

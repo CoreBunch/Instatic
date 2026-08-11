@@ -41,7 +41,12 @@
 import { useEffect } from 'react'
 import { useEditorStore } from '@site/store/store'
 import { styleRuleSelector, type ConditionDef, type StyleRule } from '@core/page-tree'
-import { collectBackgroundImagePaths, collectSiteStyleBackgroundImagePaths } from '@core/publisher'
+import {
+  collectBackgroundImagePaths,
+  collectSiteStyleBackgroundImagePaths,
+  treeShakeStyleRulesBySignature,
+  usedStyleRuleIdSignature,
+} from '@core/publisher'
 import { useResponsiveEditorMediaAssets } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { selectorStatePseudo } from '@site/cssStatePseudo'
 import {
@@ -98,6 +103,9 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
   // Subscribe to class registry — shallow equality so we only re-run when
   // the classes object reference changes (Mutative always creates a new ref on mutation)
   const classes = useEditorStore((s) => s.site?.styleRules ?? null)
+  const usedClassIdSignature = useEditorStore((s) =>
+    s.site ? usedStyleRuleIdSignature(s.site) : '',
+  )
   const breakpoints = useEditorStore((s) => s.site?.breakpoints ?? EMPTY_BREAKPOINTS)
   const conditions = useEditorStore((s) => s.site?.conditions ?? EMPTY_CONDITIONS)
   const frameworkColors = useEditorStore((s) => s.site?.settings.framework?.colors ?? null)
@@ -108,8 +116,12 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
   const previewClassStyles = useEditorStore((s) => s.previewClassStyles)
   const activeClassId = useEditorStore((s) => s.activeClassId)
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId)
+  const canvasClasses = treeShakeStyleRulesBySignature(
+    classes ?? EMPTY_STYLE_RULES,
+    usedClassIdSignature,
+  )
   const backgroundPaths = [
-    ...collectSiteStyleBackgroundImagePaths({ styleRules: classes ?? EMPTY_STYLE_RULES }),
+    ...collectSiteStyleBackgroundImagePaths({ styleRules: canvasClasses }),
     ...collectBackgroundImagePaths(previewClassStyles?.styles.backgroundImage),
   ]
   const {
@@ -133,7 +145,7 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
     const forCanvas = (css: string) => (viewport ? resolveViewportUnitsForCanvas(css, viewport) : css)
 
     const generated = generateCanvasClassCSS(
-      classes ?? EMPTY_STYLE_RULES,
+      canvasClasses,
       breakpoints,
       conditions,
       frameworkColors,
@@ -154,7 +166,7 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
       ? `@layer user-authored {\n${css}\n}`
       : '/* no classes */'
     const placeholderSuppressionCss = generateAmbientPlaceholderSuppressionCSS(
-      classes ?? EMPTY_STYLE_RULES,
+      canvasClasses,
     )
     styleEl.textContent = placeholderSuppressionCss
       ? `${authoredCss}\n${placeholderSuppressionCss}`
@@ -162,7 +174,7 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
   }, [
     targetDocument,
     viewport,
-    classes,
+    canvasClasses,
     breakpoints,
     conditions,
     frameworkColors,

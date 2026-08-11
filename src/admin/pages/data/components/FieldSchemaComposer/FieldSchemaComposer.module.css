@@ -1,0 +1,81 @@
+.composer {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    gap: var(--space-l);
+}
+
+.heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-l);
+}
+
+.headingText {
+    flex: 1;
+    min-width: 0;
+}
+
+.titleRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.titleRow h3 {
+    margin: 0;
+    color: var(--text-bright);
+    font-size: var(--text-l);
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.headingText p {
+    max-width: 58ch;
+    margin: var(--space-xs) 0 0;
+    color: var(--text);
+    font-size: var(--text-s);
+    line-height: 1.5;
+}
+
+.count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 var(--space-3xs);
+    border-radius: var(--input-radius);
+    background: var(--overlay-10);
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--panel-radius);
+}
+
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-s);
+    padding: var(--space-4xl) var(--space-xl);
+    border-radius: var(--card-radius);
+    background: var(--bg-surface-3);
+    color: var(--text-muted);
+    font-size: var(--text-s);
+    line-height: 1.5;
+    text-align: center;
+}
+
+.emptyTitle {
+    color: var(--text-bright);
+    font-size: var(--text-m);
+    font-weight: 700;
+}

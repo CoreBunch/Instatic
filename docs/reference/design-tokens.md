@@ -416,10 +416,10 @@ The visual editor uses additional raw z-index values that are **not** tokenised.
 |-------|-----------------|
 | 0     | `CanvasRoot` — an isolation root; all canvas-internal values are confined here |
 | 30    | Main toolbar |
-| 50    | Floating panels: PropertiesPanel, AgentPanel, DomPanel |
-| 55    | LeftSidebar, RightSidebar, PanelRail |
-| 90    | Shared admin floating windows (`FloatingWindow`, `MediaViewerWindow`, agent image preview) |
-| 80    | CodeEditorPanel |
+| 55    | PanelRail |
+| 85    | Docked left-panel host, RightSidebar |
+| 90    | PropertiesPanel, AgentPanel, undocked left-panel host, shared admin floating windows |
+| 95    | CodeEditorPanel |
 | 201   | Toolbar popovers / dropdowns |
 | 400–401 | PreviewOverlay |
 
@@ -433,7 +433,11 @@ The visual editor uses additional raw z-index values that are **not** tokenised.
 | 60          | CanvasContextSelector |
 | 2147483647  | Drop-indicator layer inside iframe (must beat arbitrary module stacking contexts) |
 
-`CanvasRoot` declares `z-index: 0; position: relative` to establish the isolation. Without it, the canvas-internal z-index 51 would escape into the layout context and paint over floating panels at z-index 50. See [`docs/editor.md`](../editor.md) → "Canvas stacking context isolation" for the full explanation.
+`CanvasRoot` declares `z-index: 0; position: relative` to establish the isolation. Without it, canvas-internal values would escape into the shared layout context instead of remaining one canvas layer beneath the floating-panel tier at 90. See [`docs/editor.md`](../editor.md) → "Canvas stacking context isolation" for the full explanation.
+
+The left-sidebar layout shell deliberately does not create a stacking context.
+Its docked panel slot owns layer 85, which lets the Agent panel and the shared
+undocked panel host participate directly in the editor-wide layer 90.
 
 Raw canvas-internal values are intentional exceptions — they cannot be tokens because they are relative to an isolated stacking context, not the global one. Do not add new raw z-index values outside this established ladder.
 

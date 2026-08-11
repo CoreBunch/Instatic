@@ -26,8 +26,9 @@ export function assertValidCssClassName(name: string): void {
 /**
  * Return the CSS selector to emit for a style rule.
  *
- *   - kind:'class':   `rule.selector` (always pre-built as `.<escaped-name>`).
- *   - kind:'ambient': `rule.selector` verbatim (`h1 > span`, `.hero .title`, ...).
+ *   - kind:'class':   `rule.selector` (a canonical `.<escaped-name>` or a
+ *                     preserved imported selector containing that class).
+ *   - kind:'ambient': `rule.selector` verbatim (`h1 > span`, `a:hover`, ...).
  */
 export function styleRuleSelector(cls: Pick<StyleRule, 'selector'>): string {
   return cls.selector

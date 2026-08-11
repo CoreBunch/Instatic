@@ -54,7 +54,7 @@ describe('PreferencesSection — catalog-driven rendering', () => {
     render(<PreferencesSection />)
 
     // Boolean preferences currently declared in `admin/pages/site/preferences/catalog.ts`:
-    //   autoSave, hoverPreview, confirmBeforeDelete,
+    //   hoverPreview, confirmBeforeDelete,
     //   layersShowIcon, layersShowTag, layersShowClasses,
     //   layersAutoExpandSelected, layersSmoothScroll,
     //   dimInactiveBreakpoints, propertiesSmoothScroll,
@@ -62,8 +62,7 @@ describe('PreferencesSection — catalog-driven rendering', () => {
     //   spotlightTelemetryEnabled  ← Phase 6: opt-in command-usage telemetry
     // Adding/removing a boolean preference is one catalog edit and this
     // assertion updates with it.
-    expect(screen.getAllByRole('switch')).toHaveLength(12)
-    expect(screen.getByRole('switch', { name: /auto-save/i })).toBeDefined()
+    expect(screen.getAllByRole('switch')).toHaveLength(11)
     expect(screen.getByRole('switch', { name: /preview suggestions on hover/i })).toBeDefined()
     expect(screen.getByRole('switch', { name: /confirm before deleting/i })).toBeDefined()
     expect(screen.getByRole('switch', { name: /show module icon/i })).toBeDefined()
@@ -81,10 +80,10 @@ describe('PreferencesSection — catalog-driven rendering', () => {
 
   it('auto-renders one combobox per select catalog entry', () => {
     render(<PreferencesSection />)
-    // Select preferences: autoSaveDelay, theme, density, textScale, defaultBreakpoint
+    // Select preferences: theme, density, textScale, defaultBreakpoint
+    // (auto-save delay is gone — the collab relay persists continuously)
     const selects = screen.getAllByRole('combobox')
-    expect(selects.length).toBe(5)
-    expect(screen.getByRole('combobox', { name: /auto-save delay/i })).toBeDefined()
+    expect(selects.length).toBe(4)
     expect(screen.getByRole('combobox', { name: /theme/i })).toBeDefined()
     expect(screen.getByRole('combobox', { name: /ui density/i })).toBeDefined()
     expect(screen.getByRole('combobox', { name: /ui text size/i })).toBeDefined()

@@ -75,8 +75,19 @@ function createPublishFakeDb() {
     }
     // listDataRows for pages — select from data_rows where table_id = 'pages'
     if (sql.includes('from data_rows') && sql.includes('left join users')) {
-      const rows = state.dataRows
-        .filter((r) => r.deleted_at == null)
+      const matchingRows = state.dataRows.filter((r) => {
+        if (r.deleted_at != null) return false
+        if (sql.includes('data_rows.table_id =')) return r.table_id === params[0]
+        if (sql.includes('data_rows.id =')) return r.id === params[0]
+        return true
+      })
+      const rows = (sql.includes('order by data_rows.updated_at desc')
+        ? matchingRows.sort((a, b) =>
+            String(b.updated_at).localeCompare(String(a.updated_at)) ||
+            String(b.created_at).localeCompare(String(a.created_at))
+          )
+        : matchingRows
+      )
         .map((r) => ({
           ...r,
           author_email: null,
@@ -157,6 +168,8 @@ function createPublishFakeDb() {
         row.status = 'published'
         row.published_by_user_id = publishedBy
         row.published_at = new Date('2026-01-03').toISOString()
+        row.updated_by_user_id = publishedBy
+        row.updated_at = new Date('2026-01-03').toISOString()
       }
       return { rows: [], rowCount: row ? 1 : 0 }
     }
@@ -308,6 +321,51 @@ describe('CMS publishing', () => {
     expect(status.lastPublishedAt).toBeTruthy()
   })
 
+  it('keeps publish status matched when publishing changes the rows recency order', async () => {
+    const { state, db } = createPublishFakeDb()
+    const shell = makeSiteShell()
+    await saveDraftSite(db, shell)
+
+    const home = makeHomePage('Home')
+    const layout = {
+      ...makeHomePage('Layout'),
+      id: 'page_layout',
+      title: 'Main layout',
+      slug: 'main-layout',
+      template: {
+        enabled: true as const,
+        target: { kind: 'everywhere' as const },
+        priority: 0,
+      },
+    }
+    for (const page of [home, layout]) {
+      await createDataRow(db, {
+        id: page.id,
+        tableId: 'pages',
+        cells: pageToCells(page),
+        slug: page.slug,
+      }, 'admin_1')
+    }
+
+    const homeRow = state.dataRows.find((row) => row.id === home.id)
+    const layoutRow = state.dataRows.find((row) => row.id === layout.id)
+    if (!homeRow || !layoutRow) throw new Error('test pages were not seeded')
+    homeRow.created_at = new Date('2026-01-01').toISOString()
+    homeRow.updated_at = new Date('2026-01-02').toISOString()
+    layoutRow.created_at = new Date('2026-01-02').toISOString()
+    layoutRow.updated_at = new Date('2026-01-01').toISOString()
+
+    await publishDraftSite(db, 'admin_1')
+    const status = await getDraftPublishStatus(db)
+
+    expect(status).toMatchObject({
+      hasPublishedVersion: true,
+      draftMatchesPublished: true,
+      draftPages: 2,
+      publishedPages: 2,
+    })
+  })
+
   it('reports that the current draft no longer matches after a later draft save', async () => {
     const { db } = createPublishFakeDb()
     await seedSiteAndPage(db, 'Public version')
@@ -367,5 +425,43 @@ describe('CMS publishing', () => {
     expect(String(state.runtimeAssets[0].public_path)).toContain('/_instatic/assets/')
     expect(published?.runtimeAssets?.scripts).toHaveLength(1)
     expect(published?.runtimeAssets?.scripts[0].src).toBe(state.runtimeAssets[0].public_path)
+  })
+
+  it('rejects invalid authored runtime scripts with their file and location before writing a publish', async () => {
+    const { state, db } = createPublishFakeDb()
+    const shell = makeSiteShell({
+      files: [
+        {
+          id: 'forgotten-test-script',
+          path: 'src/scripts/forgotten-test.ts',
+          type: 'script',
+          content: `const value from 'broken'`,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      runtime: normalizeSiteRuntimeConfig({
+        scripts: {
+          'forgotten-test-script': {
+            placement: 'body-end',
+            priority: 10,
+          },
+        },
+      }),
+    })
+    await saveDraftSite(db, shell)
+    const page = makeHomePage('Runtime page')
+    await createDataRow(db, {
+      id: page.id,
+      tableId: 'pages',
+      cells: pageToCells(page),
+      slug: page.slug,
+    }, 'admin_1')
+
+    await expect(publishDraftSite(db, 'admin_1')).rejects.toThrow(
+      'Runtime script build failed for page "Home": src/scripts/forgotten-test.ts:1:',
+    )
+    expect(state.siteSnapshots).toEqual([])
+    expect(state.dataRowVersions).toEqual([])
   })
 })
