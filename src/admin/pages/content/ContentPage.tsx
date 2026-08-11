@@ -21,7 +21,7 @@ import { bindingToToken } from '@core/templates/tokenInterpolation'
 import { MediaExplorerPanel } from '@site/panels/MediaExplorerPanel'
 import type { CanvasNotchAction } from '@site/canvas/CanvasNotch'
 import { ContentDocumentCanvas } from './components/ContentDocumentCanvas/ContentDocumentCanvas'
-import { ContentCollectionCreateDialog } from './components/ContentCollectionCreateDialog/ContentCollectionCreateDialog'
+import { NewTableDialog } from '@admin/pages/data/components/NewTableDialog/NewTableDialog'
 import { ContentExplorerPanel } from './components/ContentExplorerPanel/ContentExplorerPanel'
 import { ContentSettingsPanel } from './components/ContentSettingsPanel/ContentSettingsPanel'
 import { MediaViewerWindow } from '@admin/pages/media/components/MediaViewerWindow/MediaViewerWindow'
@@ -617,8 +617,11 @@ export function ContentPage() {
 
 
       {collectionDialogOpen && (
-        <ContentCollectionCreateDialog
-          onCancel={() => setCollectionDialogOpen(false)}
+        <NewTableDialog
+          open={collectionDialogOpen}
+          onClose={() => setCollectionDialogOpen(false)}
+          tables={workspace.tables}
+          variant="collection"
           onCreate={async (input) => {
             if (!canManageCollections) {
               workspace.setError('Your role cannot manage content collections')

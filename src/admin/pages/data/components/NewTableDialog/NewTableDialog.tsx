@@ -35,8 +35,8 @@ function singularFromPlural(value: string): string {
   return value.replace(/s$/i, '') || value
 }
 
-function errorMessage(err: unknown): string {
-  return getErrorMessage(err, 'Could not create table').replace(/^\[[^\]]+\]\s*/, '')
+function errorMessage(err: unknown, noun: 'table' | 'collection'): string {
+  return getErrorMessage(err, `Could not create ${noun}`).replace(/^\[[^\]]+\]\s*/, '')
 }
 
 // ---------------------------------------------------------------------------
@@ -48,6 +48,7 @@ interface NewTableDialogProps {
   onClose: () => void
   onCreate: (input: CreateDataTableInput) => Promise<void>
   tables: DataTable[]
+  variant?: 'table' | 'collection'
 }
 
 const KIND_OPTIONS: ReadonlyArray<{ value: DataTableKind; label: string }> = [
@@ -75,11 +76,14 @@ export function NewTableDialog({
   onClose,
   onCreate,
   tables,
+  variant = 'table',
 }: NewTableDialogProps) {
+  const isCollection = variant === 'collection'
+  const initialKind: DataTableKind = isCollection ? 'postType' : 'data'
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [slugTouched, setSlugTouched] = useState(false)
-  const [kind, setKind] = useState<DataTableKind>('data')
+  const [kind, setKind] = useState<DataTableKind>(initialKind)
   const [singularLabel, setSingularLabel] = useState('')
   const [singularTouched, setSingularTouched] = useState(false)
   const [pluralLabel, setPluralLabel] = useState('')
@@ -122,7 +126,7 @@ export function NewTableDialog({
     setName('')
     setSlug('')
     setSlugTouched(false)
-    setKind('data')
+    setKind(initialKind)
     setSingularLabel('')
     setSingularTouched(false)
     setPluralLabel('')
@@ -166,13 +170,14 @@ export function NewTableDialog({
         setSaving(false)
         return
       }
-      const message = errorMessage(err)
-      console.error('[NewTableDialog] Table creation failed:', err)
+      const noun = isCollection ? 'collection' : 'table'
+      const message = errorMessage(err, noun)
+      console.error(`[NewTableDialog] ${isCollection ? 'Collection' : 'Table'} creation failed:`, err)
       pushToast({
         kind: 'error',
-        title: 'Table creation failed',
+        title: isCollection ? 'Collection creation failed' : 'Table creation failed',
         body: message,
-        location: 'data-workspace',
+        location: isCollection ? 'content-workspace' : 'data-workspace',
       })
       setSaving(false)
     }
@@ -182,7 +187,7 @@ export function NewTableDialog({
     <Dialog
       open={open}
       onClose={handleClose}
-      title="New table"
+      title={isCollection ? 'New collection' : 'New table'}
       eyebrow="Data model"
       size="2xl"
       initialFocusRef={inputRef}
@@ -209,16 +214,18 @@ export function NewTableDialog({
         <div className={styles.setupPane}>
           <div className={styles.setupSections}>
             <section className={styles.setupSection}>
-              <div className={styles.kindPicker}>
-                <SegmentedControl
-                  value={kind}
-                  options={KIND_OPTIONS}
-                  onChange={setKind}
-                  fullWidth
-                  aria-label="Table kind"
-                />
-                <span className={styles.caption}>{KIND_DESCRIPTIONS[kind]}</span>
-              </div>
+              {!isCollection && (
+                <div className={styles.kindPicker}>
+                  <SegmentedControl
+                    value={kind}
+                    options={KIND_OPTIONS}
+                    onChange={setKind}
+                    fullWidth
+                    aria-label="Table kind"
+                  />
+                  <span className={styles.caption}>{KIND_DESCRIPTIONS[kind]}</span>
+                </div>
+              )}
 
               <div className={styles.field}>
                 <label htmlFor={nameId} className={styles.label}>Name</label>
