@@ -5,7 +5,7 @@ The site's style rule registry — `Record<string, StyleRule>` stored on the sit
 Three forms of rules:
 
 1. **Author-facing class rules** (`kind: 'class'`) — the user picks a name (`hero-button`, `card-meta`) and the editor applies it via `node.classIds`. User-created selectors are `.<name>`; imported utility rules can retain complex selectors such as `.group:hover .group-hover\:block` while exposing the decoded binding name `group-hover:block`.
-2. **Ambient rules** (`kind: 'ambient'`) — attach by CSS selector matching, not by node assignment (e.g. `h1`, `a:hover`). The publisher emits the rule but never writes it to `class=` attributes. Supported stylesheet-level imports such as `@keyframes` are stored as ambient rules with `rawCss`.
+2. **Ambient rules** (`kind: 'ambient'`) — attach by CSS selector matching, not by node assignment (e.g. `h1`, `a:hover`, `.drawer.is-open`). The publisher emits the rule but never writes it to `class=` attributes. Supported stylesheet-level imports such as `@keyframes` are stored as ambient rules with `rawCss`.
 3. **Scoped classes** — generated class-kind rules owned by a single node (for "set this property only on this element"). The scope object pins the rule to its node.
 
 ---
@@ -210,6 +210,31 @@ Translates the property bag (`{ color: '#fff', padding: { top: 16, right: 8 } }`
 - Multi-value props (transforms, transitions): joined per CSS rules
 
 Invalid entries are silently dropped — the bag is tolerant. Four stored padding or margin sides collapse to a shorthand only when all four priorities match; mixed priorities remain longhands so the cascade is preserved.
+
+---
+
+## Tree-shaking (what actually reaches published CSS)
+
+Not every registry rule is emitted. `treeShakeStyleRules` (`src/core/publisher/styleRuleTreeShake.ts`) is the single gate for **both** the publish bundle and the editor canvas, so a rule that survives in one survives in the other. It exists so a 40k-rule imported utility registry does not ship whole.
+
+The gate, per rule:
+
+- **`kind: 'class'`** — kept only when its **id is in `node.classIds`** somewhere (`collectUsedStyleRuleIds`) *and* no known-but-unused class appears in its selector.
+- **`kind: 'ambient'`** — kept when at least one selector-list alternative can match: a class token vetoes the rule only when the registry defines that class *and* no node uses it. Tokens the registry has never heard of (a class a script adds at runtime) do **not** veto.
+- **`rawCss`** rules (`@keyframes`) and generated framework utilities bypass this path entirely.
+
+### Runtime state classes
+
+A class that only ever exists because a script calls `classList.add(...)` is invisible to `collectUsedStyleRuleIds` — no node carries it. Such a rule must therefore be **ambient**, never class-kind, or it is silently dropped from published CSS.
+
+This is why `selectorBindingClassName` returns `null` for a subject compound holding two or more classes (`.drawer.is-open`): there is no unambiguous class to bind, and binding the rightmost token would both write a useless `class="is-open"` on assignment and doom the rule at publish. Write state rules as:
+
+```css
+.drawer { opacity: 0; transition: opacity .3s; }   /* class-kind, assigned to the node */
+.drawer.is-open { opacity: 1; }                     /* ambient, survives on `.drawer` */
+```
+
+The base class must be used by a node. If it is not, the state rule is correctly pruned along with it.
 
 ---
 

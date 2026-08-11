@@ -44,6 +44,23 @@ describe('CSS selector class tokens', () => {
     expect(selectorBindingClassName('h1 > span')).toBeNull()
   })
 
+  it('treats a multi-class subject compound as ambient, not bindable', () => {
+    // `.is-open` is toggled by a script at runtime, so no node ever carries it.
+    // Binding the rule to `is-open` would make the publisher tree-shake it away
+    // (its rule id can never appear in any node's classIds).
+    expect(selectorBindingClassName('.drawer.is-open')).toBeNull()
+    expect(selectorBindingClassName('.drawer.is-open .drawer-panel')).toBe(
+      'drawer-panel',
+    )
+    expect(selectorBindingClassName('.a.b, .a.c')).toBeNull()
+    // A single-class subject qualified by an attribute or pseudo still binds.
+    expect(selectorBindingClassName('.drawer[data-open]')).toBe('drawer')
+    expect(selectorBindingClassName('.drawer:hover')).toBe('drawer')
+    // Combinators inside attributes/pseudos must not split the compound.
+    expect(selectorBindingClassName('.drawer[data-x="a > b"].is-open')).toBeNull()
+    expect(selectorBindingClassName('.card:not(.a.b)')).toBe('card')
+  })
+
   it('does not mistake classes inside functional pseudos for the styled subject', () => {
     expect(selectorBindingClassName('.button:not(.disabled)')).toBe('button')
     expect(selectorBindingClassName('.card:has(.badge)')).toBe('card')
