@@ -6,6 +6,18 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 
 ## Unreleased
 
+## 0.0.16 - 2026-08-11
+
+### Media and integrations
+
+- Added an MCP `media_upload` tool so connected agents can upload images through the authenticated media pipeline.
+- Allowed published pages to load media from approved cross-origin sources without being blocked by the generated Content Security Policy.
+
+### Content and publishing
+
+- Resolved custom media fields to usable URLs when rendering collection rows in loops.
+- Reused the full schema composer when creating content collections, bringing collection setup in line with custom data-table creation.
+
 ## 0.0.15 - 2026-08-11
 
 ### Collaboration, AI, and integrations
