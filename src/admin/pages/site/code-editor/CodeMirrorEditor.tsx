@@ -32,6 +32,12 @@ import { useRef, useEffect, useEffectEvent, useCallback } from 'react'
 import { EditorView, basicSetup } from 'codemirror'
 import { EditorState } from '@codemirror/state'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import {
+  autocompletion,
+  type CompletionContext,
+  type CompletionResult,
+} from '@codemirror/autocomplete'
+import { hoverTooltip, tooltips, type Tooltip } from '@codemirror/view'
 import { javascript } from '@codemirror/lang-javascript'
 import { css } from '@codemirror/lang-css'
 import { json } from '@codemirror/lang-json'
@@ -41,6 +47,15 @@ import { tags as t } from '@lezer/highlight'
 import type { Extension } from '@codemirror/state'
 import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint'
 import type { SiteRuntimeDiagnostic } from '@core/site-runtime'
+import {
+  createTypeScriptLanguageClient,
+  type TypeScriptLanguageClient,
+} from './typescriptLanguageClient'
+import type {
+  TypeScriptEditorDiagnostic,
+  TypeScriptProjectFile,
+} from './typescriptProtocol'
+import { renderMarkdownDocumentation } from './markdownDocumentation'
 
 // ---------------------------------------------------------------------------
 // GitHub Dark-inspired CM6 theme — CSS custom properties only.
@@ -97,6 +112,46 @@ const achromatic = EditorView.theme({
     backgroundColor: 'var(--bg-surface-2)',
     border: '1px solid var(--overlay-10)',
     color: 'var(--text)',
+  },
+  '.cm-typescript-hover': {
+    maxWidth: 'min(340px, calc(100vw - 32px))',
+    padding: 'var(--space-s) var(--space-m)',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 'var(--text-xs)',
+    lineHeight: '1.5',
+    overflowWrap: 'anywhere',
+  },
+  '.cm-typescript-hover-signature': {
+    color: 'var(--syntax-entity)',
+    whiteSpace: 'pre-wrap',
+  },
+  '.cm-typescript-hover-documentation': {
+    marginTop: 'var(--space-xs)',
+    color: 'var(--text-muted)',
+    fontFamily: 'var(--font-sans)',
+    whiteSpace: 'pre-wrap',
+  },
+  '.cm-typescript-hover-documentation p': {
+    margin: '0',
+  },
+  '.cm-typescript-hover-documentation p + p': {
+    marginTop: 'var(--space-xs)',
+  },
+  '.cm-typescript-hover-documentation strong': {
+    color: 'var(--text)',
+    fontWeight: '600',
+  },
+  '.cm-typescript-hover-documentation code': {
+    padding: '0 var(--space-3xs)',
+    borderRadius: 'var(--radius-sm)',
+    backgroundColor: 'var(--overlay-10)',
+    color: 'var(--syntax-string)',
+    fontFamily: 'var(--font-mono)',
+  },
+  '.cm-typescript-hover-documentation a': {
+    color: 'var(--syntax-constant)',
+    textDecoration: 'underline',
+    textUnderlineOffset: '2px',
   },
   '.cm-lintRange-error': {
     textDecorationColor: 'var(--danger)',
@@ -238,6 +293,8 @@ const readableSyntaxHighlighting = syntaxHighlighting(readableHighlightStyle)
 export type CodeLanguage =
   | 'tsx'
   | 'ts'
+  | 'jsx'
+  | 'javascript'
   | 'css'
   | 'json'
   | 'markdown'
@@ -251,6 +308,10 @@ function getLanguageExtensions(language: CodeLanguage): Extension[] {
       return [javascript({ jsx: true, typescript: true })]
     case 'ts':
       return [javascript({ typescript: true })]
+    case 'jsx':
+      return [javascript({ jsx: true })]
+    case 'javascript':
+      return [javascript()]
     case 'css':
       return [css()]
     case 'json':
@@ -290,6 +351,12 @@ interface CodeMirrorEditorProps {
   changeDelayMs?: number
   /** Authoritative publisher-compiler diagnostics for this document. */
   diagnostics?: SiteRuntimeDiagnostic[]
+  /** Site-relative path used by the TypeScript language-service project. */
+  filePath?: string
+  /** Other authored files available for relative imports and shared types. */
+  projectFiles?: readonly { path: string; content?: string }[]
+  /** Reports non-blocking semantic TypeScript diagnostics to the Problems panel. */
+  onTypeScriptDiagnosticsChange?: (diagnostics: TypeScriptEditorDiagnostic[]) => void
 }
 
 const EMPTY_DIAGNOSTICS: SiteRuntimeDiagnostic[] = []
@@ -316,6 +383,117 @@ function codeMirrorDiagnostics(
   })
 }
 
+function typeScriptCodeMirrorDiagnostics(
+  document: EditorState['doc'],
+  diagnostics: TypeScriptEditorDiagnostic[],
+): Diagnostic[] {
+  return diagnostics.map((diagnostic) => ({
+    from: Math.max(0, Math.min(diagnostic.from, document.length)),
+    to: Math.max(0, Math.min(diagnostic.to, document.length)),
+    severity: diagnostic.severity,
+    message: `TS${diagnostic.code}: ${diagnostic.message}`,
+    source: 'TypeScript',
+  }))
+}
+
+function dispatchCombinedDiagnostics(
+  view: EditorView,
+  runtimeDiagnostics: SiteRuntimeDiagnostic[],
+  typeScriptDiagnostics: TypeScriptEditorDiagnostic[],
+): void {
+  view.dispatch(setDiagnostics(view.state, [
+    ...codeMirrorDiagnostics(view.state.doc, runtimeDiagnostics),
+    ...typeScriptCodeMirrorDiagnostics(view.state.doc, typeScriptDiagnostics),
+  ]))
+}
+
+function isTypeScriptLanguage(language: CodeLanguage): boolean {
+  return language === 'ts' || language === 'tsx'
+}
+
+/** Keep completion and hover popups inside the visible editor surface. */
+const editorTooltipBoundary = tooltips({
+  tooltipSpace: (view) => view.dom.getBoundingClientRect(),
+})
+
+function typeScriptProject(
+  files: readonly { path: string; content?: string }[],
+  activePath: string,
+  activeContent: string,
+): TypeScriptProjectFile[] {
+  const project = files.flatMap((file) => (
+    typeof file.content === 'string' && /\.(?:[cm]?ts|tsx)$/.test(file.path)
+      ? [{ path: file.path, content: file.path === activePath ? activeContent : file.content }]
+      : []
+  ))
+  if (!project.some((file) => file.path === activePath)) {
+    project.push({ path: activePath, content: activeContent })
+  }
+  return project
+}
+
+function typeScriptCompletionSource(
+  client: TypeScriptLanguageClient,
+  filePath: string,
+) {
+  return async (context: CompletionContext): Promise<CompletionResult | null> => {
+    const word = context.matchBefore(/[\w$]*/)
+    if (!context.explicit && (!word || (word.from === word.to && context.pos === 0))) return null
+    client.updateFile(filePath, context.state.doc.toString())
+    try {
+      const result = await client.completions(filePath, context.pos)
+      if (!result) return null
+      const from = Math.max(0, Math.min(result.from, context.state.doc.length))
+      const to = Math.max(from, Math.min(result.to, context.state.doc.length))
+      return {
+        from,
+        to,
+        options: result.options,
+      }
+    } catch (error) {
+      console.warn('[CodeMirrorEditor] TypeScript completions unavailable:', error)
+      return null
+    }
+  }
+}
+
+function typeScriptHoverSource(
+  client: TypeScriptLanguageClient,
+  filePath: string,
+) {
+  return async (view: EditorView, position: number): Promise<Tooltip | null> => {
+    client.updateFile(filePath, view.state.doc.toString())
+    try {
+      const result = await client.hover(filePath, position)
+      if (!result) return null
+      return {
+        pos: Math.max(0, Math.min(result.from, view.state.doc.length)),
+        end: Math.max(0, Math.min(result.to, view.state.doc.length)),
+        create: () => {
+          const dom = document.createElement('div')
+          dom.className = 'cm-typescript-hover'
+
+          const signature = document.createElement('div')
+          signature.className = 'cm-typescript-hover-signature'
+          signature.textContent = result.signature
+          dom.append(signature)
+
+          if (result.documentation) {
+            const documentation = document.createElement('div')
+            documentation.className = 'cm-typescript-hover-documentation'
+            renderMarkdownDocumentation(documentation, result.documentation)
+            dom.append(documentation)
+          }
+          return { dom }
+        },
+      }
+    } catch (error) {
+      console.warn('[CodeMirrorEditor] TypeScript hover unavailable:', error)
+      return null
+    }
+  }
+}
+
 export default function CodeMirrorEditor({
   docKey,
   value,
@@ -323,9 +501,16 @@ export default function CodeMirrorEditor({
   onChange,
   changeDelayMs = 250,
   diagnostics = EMPTY_DIAGNOSTICS,
+  filePath,
+  projectFiles = EMPTY_PROJECT_FILES,
+  onTypeScriptDiagnosticsChange,
 }: CodeMirrorEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
+  const typeScriptClientRef = useRef<TypeScriptLanguageClient | null>(null)
+  const typeScriptDiagnosticsRef = useRef<TypeScriptEditorDiagnostic[]>([])
+  const runtimeDiagnosticsRef = useRef<SiteRuntimeDiagnostic[]>(diagnostics)
+  const refreshTypeScriptDiagnosticsRef = useRef<(() => void) | null>(null)
 
   // Refs to hold pending debounce state. Using refs (not state) so that reads
   // inside the CM6 update listener always see the current values without
@@ -339,6 +524,10 @@ export default function CodeMirrorEditor({
   useEffect(() => {
     onChangeRef.current = onChange
   }, [onChange])
+  const onTypeScriptDiagnosticsChangeRef = useRef(onTypeScriptDiagnosticsChange)
+  useEffect(() => {
+    onTypeScriptDiagnosticsChangeRef.current = onTypeScriptDiagnosticsChange
+  }, [onTypeScriptDiagnosticsChange])
 
   // useCallback kept: stable identity for the [flush] useEffect dep array (exhaustive-deps).
   // Flush pending content to the store immediately (called on doc switch).
@@ -361,18 +550,42 @@ export default function CodeMirrorEditor({
   // lose cursor position. The effect only re-runs on docKey transitions, and
   // the cleanup's `flush()` persists any pending edit captured at mount time.
   const mountView = useEffectEvent((container: HTMLDivElement) => {
-    return new EditorView({
+    const typeScriptClient = filePath && isTypeScriptLanguage(language)
+      ? createTypeScriptLanguageClient()
+      : null
+    typeScriptClientRef.current = typeScriptClient
+    if (typeScriptClient && filePath) {
+      typeScriptClient.syncProject(typeScriptProject(projectFiles, filePath, value))
+    }
+
+    let typeScriptDiagnosticsTimer: ReturnType<typeof setTimeout> | null = null
+    const view = new EditorView({
       state: EditorState.create({
         doc: value,
         extensions: [
           basicSetup,
           ...getLanguageExtensions(language),
+          ...(typeScriptClient && filePath
+            ? [
+                autocompletion({ override: [typeScriptCompletionSource(typeScriptClient, filePath)] }),
+                hoverTooltip(typeScriptHoverSource(typeScriptClient, filePath)),
+              ]
+            : []),
           readableSyntaxHighlighting,
           achromatic,
+          editorTooltipBoundary,
           lintGutter(),
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) return
             const content = update.state.doc.toString()
+            if (typeScriptClient && filePath) {
+              typeScriptClient.updateFile(filePath, content)
+              if (typeScriptDiagnosticsTimer) clearTimeout(typeScriptDiagnosticsTimer)
+              typeScriptDiagnosticsTimer = setTimeout(() => {
+                refreshTypeScriptDiagnosticsRef.current?.()
+                typeScriptDiagnosticsTimer = null
+              }, 300)
+            }
             if (changeDelayMs <= 0) {
               if (timerRef.current) {
                 clearTimeout(timerRef.current)
@@ -397,14 +610,50 @@ export default function CodeMirrorEditor({
       }),
       parent: container,
     })
+
+    if (typeScriptClient && filePath) {
+      refreshTypeScriptDiagnosticsRef.current = () => {
+        const activeClient = typeScriptClientRef.current
+        const activeView = viewRef.current
+        if (activeClient !== typeScriptClient || activeView !== view) return
+        void typeScriptClient.diagnostics(filePath)
+          .then((nextDiagnostics) => {
+            if (typeScriptClientRef.current !== typeScriptClient || viewRef.current !== view) return
+            typeScriptDiagnosticsRef.current = nextDiagnostics
+            dispatchCombinedDiagnostics(
+              view,
+              runtimeDiagnosticsRef.current,
+              nextDiagnostics,
+            )
+            onTypeScriptDiagnosticsChangeRef.current?.(nextDiagnostics)
+          })
+          .catch((error) => {
+            if (typeScriptClientRef.current !== typeScriptClient) return
+            console.error('[CodeMirrorEditor] TypeScript diagnostics unavailable:', error)
+            typeScriptDiagnosticsRef.current = []
+            dispatchCombinedDiagnostics(view, runtimeDiagnosticsRef.current, [])
+            onTypeScriptDiagnosticsChangeRef.current?.([])
+          })
+      }
+    }
+
+    return {
+      view,
+      dispose: () => {
+        if (typeScriptDiagnosticsTimer) clearTimeout(typeScriptDiagnosticsTimer)
+        typeScriptClient?.dispose()
+      },
+    }
   })
 
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
-    const view = mountView(container)
+    const mounted = mountView(container)
+    const view = mounted.view
     viewRef.current = view
+    refreshTypeScriptDiagnosticsRef.current?.()
 
     return () => {
       // Flush-on-switch: persist any pending edit before destroying this view.
@@ -412,17 +661,32 @@ export default function CodeMirrorEditor({
       // debounce timer has not fired yet.
       flush()
       viewRef.current = null
+      typeScriptClientRef.current = null
+      refreshTypeScriptDiagnosticsRef.current = null
+      typeScriptDiagnosticsRef.current = []
+      onTypeScriptDiagnosticsChangeRef.current?.([])
+      mounted.dispose()
       view.destroy()
     }
   }, [docKey, flush])
 
   useEffect(() => {
+    const client = typeScriptClientRef.current
+    const view = viewRef.current
+    if (!client || !view || !filePath || !isTypeScriptLanguage(language)) return
+    client.syncProject(typeScriptProject(
+      projectFiles,
+      filePath,
+      view.state.doc.toString(),
+    ))
+    refreshTypeScriptDiagnosticsRef.current?.()
+  }, [filePath, language, projectFiles])
+
+  useEffect(() => {
     const view = viewRef.current
     if (!view) return
-    view.dispatch(setDiagnostics(
-      view.state,
-      codeMirrorDiagnostics(view.state.doc, diagnostics),
-    ))
+    runtimeDiagnosticsRef.current = diagnostics
+    dispatchCombinedDiagnostics(view, diagnostics, typeScriptDiagnosticsRef.current)
   }, [diagnostics, docKey])
 
   return (
@@ -432,3 +696,5 @@ export default function CodeMirrorEditor({
     />
   )
 }
+
+const EMPTY_PROJECT_FILES: readonly { path: string; content?: string }[] = []
