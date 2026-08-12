@@ -102,6 +102,7 @@ describe('CodeMirrorEditor', () => {
 
   it('merges semantic TypeScript diagnostics from the lazy worker', async () => {
     const originalWorker = globalThis.Worker
+    const originalWindowWorker = window.Worker
     const reported: number[] = []
 
     class DiagnosticWorker {
@@ -130,6 +131,11 @@ describe('CodeMirrorEditor', () => {
     }
 
     Object.defineProperty(globalThis, 'Worker', {
+      configurable: true,
+      writable: true,
+      value: DiagnosticWorker,
+    })
+    Object.defineProperty(window, 'Worker', {
       configurable: true,
       writable: true,
       value: DiagnosticWorker,
@@ -163,6 +169,11 @@ describe('CodeMirrorEditor', () => {
         configurable: true,
         writable: true,
         value: originalWorker,
+      })
+      Object.defineProperty(window, 'Worker', {
+        configurable: true,
+        writable: true,
+        value: originalWindowWorker,
       })
     }
   })

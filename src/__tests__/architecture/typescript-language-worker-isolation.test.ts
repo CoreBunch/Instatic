@@ -14,6 +14,7 @@ describe('TypeScript language-service worker isolation', () => {
     const editor = editorFile('CodeMirrorEditor.tsx')
 
     expect(client).toContain("new Worker(new URL('./typescriptWorker.ts', import.meta.url)")
+    expect(client).toContain("typeof window.Worker === 'undefined'")
     expect(worker).toContain("from './typescriptLanguageServiceEngine'")
     expect(engine).toContain("from 'typescript'")
     expect(client).not.toContain("from 'typescript'")

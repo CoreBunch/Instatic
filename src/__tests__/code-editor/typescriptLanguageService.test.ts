@@ -3,7 +3,10 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { TypeScriptLanguageServiceEngine } from '@site/code-editor/typescriptLanguageServiceEngine'
-import { TypeScriptLanguageClient } from '@site/code-editor/typescriptLanguageClient'
+import {
+  createTypeScriptLanguageClient,
+  TypeScriptLanguageClient,
+} from '@site/code-editor/typescriptLanguageClient'
 import type {
   TypeScriptWorkerRequest,
   TypeScriptWorkerResponse,
@@ -126,6 +129,26 @@ class FakeWorker {
 }
 
 describe('TypeScriptLanguageClient', () => {
+  it('does not treat Bun\'s process-global Worker as a browser worker', () => {
+    const originalWindowWorker = window.Worker
+    Object.defineProperty(window, 'Worker', {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    })
+
+    try {
+      expect(typeof globalThis.Worker).toBe('function')
+      expect(createTypeScriptLanguageClient()).toBeNull()
+    } finally {
+      Object.defineProperty(window, 'Worker', {
+        configurable: true,
+        writable: true,
+        value: originalWindowWorker,
+      })
+    }
+  })
+
   it('correlates validated worker responses and terminates cleanly', async () => {
     const worker = new FakeWorker()
     const client = new TypeScriptLanguageClient(() => worker)
