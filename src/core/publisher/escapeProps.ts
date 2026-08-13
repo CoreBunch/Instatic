@@ -37,7 +37,7 @@
 
 import type { PropertyControl, PropertySchema } from '@core/module-engine'
 import { escapeHtml, isSafeUrl } from './utils'
-import { sanitizeRichtext, sanitizeSvg } from '@core/sanitize'
+import { sanitizeRichtext, sanitizeSvg, sanitizePostBody } from '@core/sanitize'
 
 /**
  * Resolve the control declared for `key`. Top-level keys are a direct lookup;
@@ -95,6 +95,14 @@ export function escapeProps(
       // sanitizeRichtext falls back to conservative tag stripping only in
       // runtimes that have not installed DOMPurify (for example one-off scripts).
       escaped[key] = sanitizeRichtext(value)
+    } else if (type === 'richtextBody') {
+      // Post/page body content (base.outlet's markdown-rendered `html`):
+      // wider allowlist than plain `richtext` (images, tables, iframe embeds
+      // scoped to a trusted-host allowlist) — see POST_BODY_CONFIG in
+      // @core/sanitize. Kept as its own control type rather than widening
+      // RICHTEXT_CONFIG globally, so short-form richtext fields elsewhere in
+      // the CMS stay on the narrower default.
+      escaped[key] = sanitizePostBody(value)
     } else if (type === 'url' || type === 'image' || type === 'media') {
       // URLs: block javascript: and vbscript: schemes; pass safe URLs through raw
       // so that module render() functions can HTML-escape them via safeUrl() from

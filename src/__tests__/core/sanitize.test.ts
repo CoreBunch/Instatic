@@ -15,7 +15,7 @@
  */
 
 import { describe, it, expect } from 'bun:test'
-import { sanitizeRichtext, isRichtextPropKey, PLAIN_TEXT_CONFIG } from '@core/sanitize'
+import { sanitizeRichtext, sanitizePostBody, isRichtextPropKey, PLAIN_TEXT_CONFIG } from '@core/sanitize'
 
 // ---------------------------------------------------------------------------
 // XSS prevention — the core contract
@@ -227,6 +227,96 @@ describe('sanitizeRichtext() in server runtime', () => {
       const stderr = new TextDecoder().decode(result.stderr)
       throw new Error(stderr)
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// sanitizePostBody() — 2026-08-13 blog round-2 fix. Post/page body content
+// (base.outlet's markdown-rendered html) needs a wider allowlist than
+// sanitizeRichtext(), including iframe embeds scoped to a trusted-host
+// allowlist. See @core/sanitize POST_BODY_CONFIG.
+// ---------------------------------------------------------------------------
+
+describe('sanitizePostBody() — trusted-host iframe embeds', () => {
+  it('keeps an iframe embed from youtube.com', () => {
+    const result = sanitizePostBody(
+      '<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" width="560" height="315" allowfullscreen></iframe>',
+    )
+    expect(result).toContain('<iframe')
+    expect(result).toContain('youtube.com/embed/dQw4w9WgXcQ')
+  })
+
+  it('keeps an iframe embed from youtube-nocookie.com', () => {
+    const result = sanitizePostBody(
+      '<iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"></iframe>',
+    )
+    expect(result).toContain('<iframe')
+    expect(result).toContain('youtube-nocookie.com/embed/dQw4w9WgXcQ')
+  })
+
+  it('keeps a bare (non-www) youtube.com host', () => {
+    const result = sanitizePostBody('<iframe src="https://youtube.com/embed/dQw4w9WgXcQ"></iframe>')
+    expect(result).toContain('<iframe')
+  })
+
+  it('strips an iframe embed from an untrusted host entirely (not just the src)', () => {
+    const result = sanitizePostBody('<iframe src="https://evil.com/phish"></iframe>')
+    expect(result).not.toContain('<iframe')
+    expect(result).not.toContain('evil.com')
+  })
+
+  it('strips an iframe with no src at all', () => {
+    const result = sanitizePostBody('<iframe></iframe>')
+    expect(result).not.toContain('<iframe')
+  })
+
+  it('strips a lookalike host that merely contains "youtube.com" (not a real subdomain)', () => {
+    // e.g. "youtube.com.evil.com" or "evilyoutube.com" must NOT pass a naive
+    // substring check — isTrustedIframeHost requires exact match or a
+    // genuine `.` + trusted-host suffix.
+    const lookalikes = [
+      'https://youtube.com.evil.com/embed/x',
+      'https://evilyoutube.com/embed/x',
+      'https://notyoutube.com/embed/x',
+    ]
+    for (const src of lookalikes) {
+      const result = sanitizePostBody(`<iframe src="${src}"></iframe>`)
+      expect(result).not.toContain('<iframe')
+    }
+  })
+
+  it('strips javascript: and data: iframe src', () => {
+    expect(sanitizePostBody('<iframe src="javascript:alert(1)"></iframe>')).not.toContain('<iframe')
+    expect(sanitizePostBody('<iframe src="data:text/html,<script>alert(1)</script>"></iframe>')).not.toContain('<iframe')
+  })
+
+  it('still strips <script> tags and event-handler attributes (iframe allowlisting is not a blanket HTML-open)', () => {
+    const result = sanitizePostBody('<p onclick="alert(1)">hi</p><script>alert(2)</script>')
+    expect(result).not.toContain('onclick')
+    expect(result).not.toContain('<script')
+    expect(result).not.toContain('alert')
+    expect(result).toContain('hi')
+  })
+
+  it('preserves images, tables, and video — the elements a real post body needs that plain richtext strips', () => {
+    const result = sanitizePostBody(
+      '<img src="https://example.com/a.png" alt="a"><table><tbody><tr><td>x</td></tr></tbody></table><video controls src="https://example.com/v.mp4"></video>',
+    )
+    expect(result).toContain('<img')
+    expect(result).toContain('<table')
+    expect(result).toContain('<video')
+  })
+
+  it('preserves the same safe formatting tags sanitizeRichtext does', () => {
+    const result = sanitizePostBody('<p><strong>Bold</strong> <em>italic</em> <a href="https://example.com">link</a></p>')
+    expect(result).toContain('<strong>Bold</strong>')
+    expect(result).toContain('<em>italic</em>')
+    expect(result).toContain('rel="noopener noreferrer"')
+  })
+
+  it('plain sanitizeRichtext() (used by every OTHER richtext field) still strips iframe — confirms the wider allowlist is scoped to post-body only', () => {
+    const result = sanitizeRichtext('<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"></iframe>')
+    expect(result).not.toContain('<iframe')
   })
 })
 

@@ -44,6 +44,11 @@ export const BINDING_COMPATIBILITY: Record<PropertyControlKind, readonly DataFie
   text:     ['text', 'longText', 'richText', 'url', 'email', 'select', 'multiSelect', 'relation', 'number', 'boolean', 'date', 'dateTime'],
   textarea: ['text', 'longText', 'richText'],
   richtext: ['richText', 'longText', 'text'],
+  // richtextBody is the implicit body-content binding target on base.outlet —
+  // the publisher wires it programmatically (dynamicBindings.ts's
+  // OUTLET_BODY_BINDING), never through this picker, and the control is
+  // `hidden: true` so it never reaches the UI this map serves.
+  richtextBody: [],
   // svg holds raw inline-SVG markup — edited in the code editor, never wired
   // to a data field.
   svg:      [],

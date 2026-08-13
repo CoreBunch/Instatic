@@ -163,6 +163,17 @@ export const PropertyControlSchema = Type.Recursive((Self) => Type.Union([
     { additionalProperties: false },
   ),
   Type.Object(
+    // Distinct from `richtext`: full post/page body content rendered from
+    // markdown (base.outlet's `html` binding target), which needs a wider
+    // safe-tag allowlist than short-form richtext fields — images, tables,
+    // and iframe embeds scoped to a trusted-host allowlist (see
+    // `POST_BODY_CONFIG` in `@core/sanitize`). Kept separate from `richtext`
+    // rather than widening that config globally, so every other richtext
+    // field in the CMS (CTA copy, etc.) stays on the narrower default.
+    { ...PropertyControlBaseSchema, type: Type.Literal('richtextBody') },
+    { additionalProperties: false },
+  ),
+  Type.Object(
     { ...PropertyControlBaseSchema, type: Type.Literal('svg') },
     { additionalProperties: false },
   ),
@@ -208,6 +219,7 @@ const CONTENT_CONTROL_TYPES: ReadonlySet<PropertyControl['type']> = new Set([
   'text',
   'textarea',
   'richtext',
+  'richtextBody',
   'svg',
   'url',
   'image',
