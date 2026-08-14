@@ -13,6 +13,7 @@ import { openaiDriver } from './openai'
 import { ollamaDriver } from './ollama'
 import { openrouterDriver } from './openrouter'
 import { openaiCompatibleDriver } from './openaiCompatible'
+import { orcarouterDriver } from './orcarouter'
 
 const DRIVERS: Record<AiProviderId, AiProvider> = {
   anthropic: anthropicDriver,
@@ -20,6 +21,7 @@ const DRIVERS: Record<AiProviderId, AiProvider> = {
   ollama: ollamaDriver,
   openrouter: openrouterDriver,
   'openai-compatible': openaiCompatibleDriver,
+  orcarouter: orcarouterDriver,
 }
 
 /** Returns the driver for a provider id, or throws if unknown. */

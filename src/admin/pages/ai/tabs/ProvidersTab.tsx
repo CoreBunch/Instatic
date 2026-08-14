@@ -40,6 +40,7 @@ const API_KEY_PLACEHOLDER: Partial<Record<ProviderId, string>> = {
   openai: 'sk-...',
   openrouter: 'sk-or-...',
   'openai-compatible': 'sk-... (optional)',
+  orcarouter: 'sk-orca-...',
 }
 
 export function ProvidersTab({

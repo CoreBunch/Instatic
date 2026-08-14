@@ -329,15 +329,18 @@ export function makeChatCompletionsAdapter(opts: {
   baseUrl: string
   apiKey: string | null
   label: string
+  /** Extra per-request headers, e.g. attribution (`HTTP-Referer` / `X-Title`). */
+  headers?: Record<string, string>
 }): ProviderAdapter<ChatTurn> {
-  const { baseUrl, apiKey, label } = opts
+  const { baseUrl, apiKey, label, headers } = opts
   return {
     label,
     endpoint: `${normalizeOpenAiBaseUrl(baseUrl)}/v1/chat/completions`,
     buildHeaders() {
-      const headers: Record<string, string> = { 'content-type': 'application/json' }
-      if (apiKey) headers.Authorization = `Bearer ${apiKey}`
-      return headers
+      const out: Record<string, string> = { 'content-type': 'application/json' }
+      if (headers) Object.assign(out, headers)
+      if (apiKey) out.Authorization = `Bearer ${apiKey}`
+      return out
     },
     mapHistory(req) {
       return mapChatHistory(req.systemPrompt, req.messages)

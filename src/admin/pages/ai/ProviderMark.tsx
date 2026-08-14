@@ -8,6 +8,7 @@ const LOGO_CLASS: Partial<Record<ProviderId, string>> = {
   openai: styles.logoOpenai,
   openrouter: styles.logoOpenrouter,
   ollama: styles.logoOllama,
+  orcarouter: styles.logoOrcarouter,
 }
 
 export function ProviderMark({

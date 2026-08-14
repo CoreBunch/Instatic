@@ -1,4 +1,4 @@
-export type ProviderId = 'anthropic' | 'openai' | 'openrouter' | 'ollama' | 'openai-compatible'
+export type ProviderId = 'anthropic' | 'openai' | 'openrouter' | 'ollama' | 'openai-compatible' | 'orcarouter'
 export type ProviderAuthMode = 'apiKey' | 'baseUrl'
 
 export interface ProviderSpec {
@@ -50,6 +50,14 @@ export const PROVIDER_SPECS: ProviderSpec[] = [
     description: 'Connect any OpenAI-compatible API endpoint.',
     authMode: 'baseUrl',
     endpointLabel: 'Custom endpoint',
+  },
+  {
+    id: 'orcarouter',
+    label: 'OrcaRouter',
+    shortLabel: 'OpenAI-compatible gateway',
+    description: 'Frontier models through the OrcaRouter gateway with built-in security.',
+    authMode: 'apiKey',
+    endpointLabel: 'api.orcarouter.ai',
   },
 ]
 

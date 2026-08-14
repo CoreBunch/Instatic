@@ -101,6 +101,10 @@
     mask-image: url("./assets/ollama.svg");
 }
 
+.logoOrcarouter {
+    mask-image: url("./assets/orcarouter.svg");
+}
+
 .providerMark[data-provider="anthropic"] {
     --provider-accent: var(--accent-4);
 }
