@@ -47,3 +47,31 @@ describe('user preference schemas', () => {
     })
   })
 })
+
+describe('editor-tour preference', () => {
+  it('whitelists the editor tour preference key', () => {
+    expect(USER_PREFERENCE_KEYS).toContain('editor-tour')
+  })
+
+  it('accepts a completed status', () => {
+    expect(parseValue(USER_PREFERENCE_SCHEMAS['editor-tour'], { status: 'completed' })).toEqual({
+      status: 'completed',
+    })
+  })
+
+  it('accepts a dismissed status', () => {
+    expect(parseValue(USER_PREFERENCE_SCHEMAS['editor-tour'], { status: 'dismissed' })).toEqual({
+      status: 'dismissed',
+    })
+  })
+
+  it('rejects an unknown status', () => {
+    expect(safeParseValue(USER_PREFERENCE_SCHEMAS['editor-tour'], { status: 'seen' }).ok).toBe(
+      false,
+    )
+  })
+
+  it('rejects a missing status', () => {
+    expect(safeParseValue(USER_PREFERENCE_SCHEMAS['editor-tour'], {}).ok).toBe(false)
+  })
+})
