@@ -107,6 +107,21 @@ export function readSeoTitleCell(cells: DataRowCells): string {
   return readStringCell(cells, 'seoTitle')
 }
 
+/**
+ * The document `<title>`/meta-tag source for a post-type entry: the
+ * per-row SEO title override when set, else the entry's own title. Both
+ * `renderPublishedDataRowTemplate` (publish) and `handleRowPreview`
+ * (Content editor Live mode) feed this into `merged.title` so the two
+ * paths stay in parity. The on-page H1 (`{currentEntry.title}` binding)
+ * never goes through this — it reads `cells.title` directly, so this
+ * only ever affects meta-tag output, never the visible headline.
+ */
+export function resolveEntryDocumentTitle(cells: DataRowCells): string | null {
+  const seoTitle = readSeoTitleCell(cells)
+  if (seoTitle) return seoTitle
+  return typeof cells.title === 'string' ? cells.title : null
+}
+
 export function readSeoDescriptionCell(cells: DataRowCells): string {
   return readStringCell(cells, 'seoDescription')
 }

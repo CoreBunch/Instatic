@@ -13,6 +13,7 @@ import { getPublishVersion } from './publishState'
 import type { Page } from '@core/page-tree'
 import type { SiteCssBundle } from '@core/publisher'
 import type { PublishedDataRow } from '@core/data/schemas'
+import { resolveEntryDocumentTitle } from '@core/data/cells'
 import type { DbClient } from '../db/client'
 import type { PublishedPageSnapshot } from '../repositories/publish'
 
@@ -178,8 +179,10 @@ export async function renderPublishedDataRowTemplate(
   if (chain.length === 0) return null // no entry template → 404 (unchanged behaviour)
   const merged = composeTemplateChain(chain, { kind: 'entry' })
   // The template chain has no Page for the entry, so composeTemplateChain
-  // can't know its title — the entry's own title is the real document title.
-  if (typeof row.cells.title === 'string') merged.title = row.cells.title
+  // can't know its title — the entry's own title (SEO-title override, if
+  // set) is the real document title.
+  const documentTitle = resolveEntryDocumentTitle(row.cells)
+  if (documentTitle !== null) merged.title = documentTitle
 
   // Seed the entry stack with the published row + route frame from the request
   // URL. Loop interceptors push/pop iteration items on top of this stack;

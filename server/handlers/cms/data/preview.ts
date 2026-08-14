@@ -20,6 +20,7 @@
 import { Type } from '@sinclair/typebox'
 import type { DbClient } from '../../../db/client'
 import type { DataRow, DataRowCells, PublishedDataRow } from '@core/data/schemas'
+import { resolveEntryDocumentTitle } from '@core/data/cells'
 import { resolveTemplateChain, composeTemplateChain } from '@core/templates'
 import { buildRouteFrame } from '@core/templates/contextFrames'
 import { publishPage } from '@core/publisher'
@@ -95,8 +96,10 @@ export async function handleRowPreview(
   }
   const merged = composeTemplateChain(chain, { kind: 'entry' })
   // The template chain has no Page for the entry, so composeTemplateChain
-  // can't know its title — the entry's own (draft) title is the real document title.
-  if (typeof draftCells.title === 'string') merged.title = draftCells.title
+  // can't know its title — the entry's own (draft) title (SEO-title
+  // override, if set) is the real document title.
+  const documentTitle = resolveEntryDocumentTitle(draftCells)
+  if (documentTitle !== null) merged.title = documentTitle
 
   // Build a synthetic PublishedDataRow with the draft cells merged in.
   // Bindings inside the template (`{currentEntry.body}`, featured-media

@@ -165,6 +165,99 @@ describe('public rendering', () => {
     expect(result).toBeNull()
   })
 
+  // Guards the seoTitle/title split: the document `<title>` prefers the
+  // row's seoTitle override when present, but the H1 (`{currentEntry.title}`
+  // binding) always renders the plain title, never the SEO override.
+  it('prefers seoTitle for the document <title> while the H1 binding keeps the plain title', async () => {
+    const snap: PublishedPageSnapshot = {
+      cmsSnapshotVersion: 1,
+      pageRowId: 'page_home',
+      site: {
+        id: 'project_1',
+        name: 'Public Site',
+        pages: [
+          {
+            id: 'entry_template',
+            title: 'Entry Template',
+            slug: 'entry-template',
+            rootNodeId: 'root',
+            template: { enabled: true, target: { kind: 'postTypes', tableSlugs: ['posts'] }, priority: 0 },
+            nodes: {
+              root: {
+                id: 'root',
+                moduleId: 'base.body',
+                props: {},
+                breakpointOverrides: {},
+                children: ['heading'],
+              },
+              heading: {
+                id: 'heading',
+                moduleId: 'base.text',
+                props: { text: '{currentEntry.title}', tag: 'h1' },
+                breakpointOverrides: {},
+                children: [],
+              },
+            },
+          } as unknown as PublishedPageSnapshot['site']['pages'][number],
+        ],
+        files: [],
+        visualComponents: [],
+        breakpoints: [
+          { id: 'desktop', label: 'Desktop', width: 1440, icon: 'monitor' },
+        ],
+        // No settings.metaTitle — the entry's own title/seoTitle must drive
+        // `<title>`, not a site-level override.
+        settings: {
+          shortcuts: {},
+        },
+        styleRules: {},
+        createdAt: 1000,
+        updatedAt: 2000,
+      },
+    }
+
+    const baseRow: Omit<PublishedDataRow, 'cells'> = {
+      id: 'ver_1',
+      rowId: 'row_1',
+      tableId: 'tbl_posts',
+      tableSlug: 'posts',
+      tableKind: 'posts',
+      tableRouteBase: '/blog',
+      versionNumber: 1,
+      slug: 'hello',
+      featuredMediaId: null,
+      featuredMediaPath: null,
+      authorUserId: null,
+      authorName: null,
+      authorRoleSlug: null,
+      authorRoleName: null,
+      publishedByUserId: null,
+      publishedByName: null,
+      publishedByRoleSlug: null,
+      publishedByRoleName: null,
+      publishedAt: '2024-01-01T00:00:00.000Z',
+      createdAt: '2024-01-01T00:00:00.000Z',
+    }
+
+    const withSeoTitle: PublishedDataRow = {
+      ...baseRow,
+      cells: { title: 'Plain H1 Title', seoTitle: 'SEO Override Title' },
+    }
+    const withSeo = await renderPublishedDataRowTemplate(snap, withSeoTitle, { db: makeFakeDb(snap) })
+    expect(withSeo?.html).toContain('<title>SEO Override Title</title>')
+    expect(withSeo?.html).not.toContain('<title>Plain H1 Title</title>')
+    expect(withSeo?.html).toContain('Plain H1 Title') // H1 binding unaffected
+
+    resetForTests()
+
+    const withoutSeoTitle: PublishedDataRow = {
+      ...baseRow,
+      cells: { title: 'Plain H1 Title' },
+    }
+    const withoutSeo = await renderPublishedDataRowTemplate(snap, withoutSeoTitle, { db: makeFakeDb(snap) })
+    expect(withoutSeo?.html).toContain('<title>Plain H1 Title</title>')
+  })
+
   it('injects stored runtime asset manifests when rendering a published snapshot', async () => {
     const published = snapshot('Runtime page')
     published.runtimeAssets = {
