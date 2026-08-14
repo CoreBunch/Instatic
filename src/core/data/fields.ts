@@ -171,6 +171,7 @@ export function buildDataMeta(tables: DataTable[]): DataMeta {
       primaryFieldId: table.primaryFieldId,
       routable: (table.routeBase ?? '').length > 0,
       versioned: table.kind === 'postType',
+      system: table.system,
       fields: buildMetaFields(table.fields, tableSlugById),
     })),
   }

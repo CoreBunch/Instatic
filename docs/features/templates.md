@@ -200,6 +200,7 @@ interface TemplateRenderDataContext {
   page?:        PageFrame       // page id, slug, title, templateTableSlug
   site?:        SiteFrame       // site name, settings, breakpoints
   route?:       RouteFrame      // URL path, slug, segments, and query params
+  data?:        DataFrame       // custom-data rows keyed by row id, then field id
   entryStack:   LoopItem[]      // pushed by loops + entry route render
 }
 ```
@@ -217,6 +218,7 @@ See the "Dynamic bindings" section below for the full source table.
 | `site`         | `ctx.site`                | Anywhere — site name, primary color                     |
 | `route`        | `ctx.route`               | URL-driven (`route.segments`, `route.slug`, `route.query.*`) |
 | `page`         | `ctx.page`                | Current page metadata                                   |
+| `data`         | `ctx.data[rowId]`         | Custom data values available on every page              |
 
 ---
 
@@ -226,6 +228,7 @@ Text props mix literal text + tokens:
 
 ```text
 "Hello {currentEntry.title} — read more at {site.name}"
+"Star us on GitHub — {data.<rowId>.<fieldId>}"
 ```
 
 `parseTokenString(input)` returns `TokenSegmentNode[]`; `interpolateTokens(input, ctx)` evaluates and concatenates. Tokens that resolve to `undefined` render as the empty string.
@@ -280,7 +283,9 @@ Neither mode has a Confirm step — a single click is the action.
 
 **Auto-scope:** when the active page is a `postTypes` template, the picker auto-scopes to the first targeted table. Field rows appear directly under a `"<TableName> fields"` group header with a chip labelled `"Current row — <TableName>"`. No source-selection step is shown.
 
-**Unscoped state:** when the node is outside a loop or template context, table fields are not offered. A footer hint reads: *"Wrap in a Loop or open a postType template to bind to row fields."*
+**Global custom data:** every non-system table whose `kind` is `data` contributes one picker group per row. Each group is labelled `"<TableName> — <PrimaryFieldValue>"`; choosing a field inserts `{data.<rowId>.<fieldId>}`. `useTemplatePreviewContext` fetches only the custom rows referenced anywhere in the site document, and the publisher does the same before rendering. Plain data rows are non-versioned, so Site publish snapshots their current `cells_json` values into the generated artefacts.
+
+**Unscoped state:** when the node is outside a loop or template context, custom data rows remain available, but post-type row fields are not offered. A footer hint reads: *"Wrap in a Loop or open a postType template to bind to row fields."*
 
 Loop nodes supply `availableFields` / `sourceLabel` props to show loop-specific synthetic fields in a `"<SourceLabel> fields"` group in the same single-pane layout.
 

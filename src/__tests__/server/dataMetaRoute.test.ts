@@ -158,6 +158,7 @@ describe('GET /admin/api/cms/data/_meta', () => {
       pluralLabel: 'Posts',
       routable: true,
       versioned: true,
+      system: false,
     })
   })
 

@@ -28,6 +28,7 @@ import {
   buildRouteFrame,
 } from '@core/templates/contextFrames'
 import type { Page, SiteDocument } from '@core/page-tree'
+import { collectDataBindingRowIds } from '@core/templates'
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -81,6 +82,15 @@ describe('resolveDynamicProps — system sources', () => {
       ctx(),
     )
     expect(props.text).toBe('/about')
+  })
+
+  it('resolves a globally-addressed custom data row field', () => {
+    const props = resolveDynamicProps(
+      { text: 'Static' },
+      { text: { source: 'data', field: 'row-stars.value' } },
+      ctx({ data: { 'row-stars': { name: 'stars', value: '7,000' } } }),
+    )
+    expect(props.text).toBe('7,000')
   })
 
   it('resolves route.query tokens against the route frame', () => {
@@ -259,6 +269,14 @@ describe('interpolateTokens', () => {
     expect(out).toBe('Acme — About Us')
   })
 
+  it('interpolates a custom data token on an ordinary page', () => {
+    const out = interpolateTokens(
+      'Star us on GitHub — {data.row-stars.value}',
+      ctx({ data: { 'row-stars': { value: '7,000' } } }),
+    )
+    expect(out).toBe('Star us on GitHub — 7,000')
+  })
+
   it('omits unknown values silently (empty substitution)', () => {
     const out = interpolateTokens('Before [{site.missing}] After', ctx())
     expect(out).toBe('Before [] After')
@@ -302,6 +320,23 @@ describe('interpolateTokens', () => {
   it('emits empty when the value is missing and there is no fallback', () => {
     const c = ctx({ entryStack: [] })
     expect(interpolateTokens('Welcome, {currentEntry.title}!', c)).toBe('Welcome, !')
+  })
+})
+
+describe('collectDataBindingRowIds', () => {
+  it('deduplicates row ids referenced by tokens and structured bindings', () => {
+    const page = {
+      nodes: {
+        text: {
+          props: { text: '{data.row-stars.value} / {data.row-stars.name}' },
+          dynamicBindings: {
+            alt: { source: 'data', field: 'row-logo.image', format: 'media' },
+          },
+        },
+      },
+    } as unknown as Page
+
+    expect(collectDataBindingRowIds([page])).toEqual(['row-logo', 'row-stars'])
   })
 })
 

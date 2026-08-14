@@ -34,6 +34,7 @@ const postsTable = {
   primaryFieldId: 'title',
   routable: true,
   versioned: true,
+  system: true,
   fields: [
     { id: 'title', label: 'Title', type: 'text' },
     { id: 'slug', label: 'Slug', type: 'text' },
@@ -53,6 +54,7 @@ const productsTable = {
   primaryFieldId: 'name',
   routable: false,
   versioned: false,
+  system: false,
   fields: [
     { id: 'name', label: 'Name', type: 'text' },
     { id: 'price', label: 'Price', type: 'number' },
@@ -62,6 +64,28 @@ const productsTable = {
 
 const mockDataMeta = {
   meta: { tables: [postsTable, productsTable] },
+}
+
+const productRow = {
+  id: 'product-row-1',
+  tableId: 'products-id',
+  cells: { name: 'Featured product', price: 42, thumbnail: null },
+  slug: '',
+  status: 'published',
+  seq: 1,
+  authorUserId: null,
+  createdByUserId: null,
+  updatedByUserId: null,
+  publishedByUserId: null,
+  author: null,
+  createdBy: null,
+  updatedBy: null,
+  publishedBy: null,
+  createdAt: '2026-08-14T00:00:00.000Z',
+  updatedAt: '2026-08-14T00:00:00.000Z',
+  publishedAt: '2026-08-14T00:00:00.000Z',
+  scheduledPublishAt: null,
+  deletedAt: null,
 }
 
 // ---------------------------------------------------------------------------
@@ -91,6 +115,9 @@ beforeEach(() => {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     if (String(input).includes('/data/_meta')) {
       return new Response(JSON.stringify(mockDataMeta), { status: 200 })
+    }
+    if (String(input).includes('/data/tables/products-id/rows')) {
+      return new Response(JSON.stringify({ rows: [productRow] }), { status: 200 })
     }
     return new Response(JSON.stringify({ error: 'not found' }), { status: 404 })
   }) as typeof fetch
@@ -168,24 +195,21 @@ describe('DynamicBindingControl picker', () => {
     })
   })
 
-  it('hides post-type and data-table fields when unscoped and shows a workflow hint', async () => {
-    // Unscoped opening (no template, no loop) — tables in the system exist
-    // (`posts`, `products`) but they're NOT offered as direct bindings.
-    // `currentEntry.*` has no scope outside a loop or template, so any
-    // binding to them would silently resolve to empty. The picker
-    // surfaces a hint pointing the author at the loop / template flow.
+  it('offers custom data rows globally while keeping post-type fields scoped', async () => {
     renderBinding()
     fireEvent.click(screen.getByRole('button', { name: /bind text/i }))
     await waitFor(() => {
       expect(screen.getByRole('menu', { name: /bind text/i })).toBeDefined()
     })
-    // Single-pane layout: no group headers for the unreachable tables.
+    // Post-type fields still need a currentEntry scope.
     expect(screen.queryByText(/Posts fields/i)).toBeNull()
-    expect(screen.queryByText(/Products fields/i)).toBeNull()
-    expect(screen.queryByRole('button', { name: /^Posts$/i })).toBeNull()
-    expect(screen.queryByRole('button', { name: /^Products$/i })).toBeNull()
-    // The subtle footer hint should be visible so authors know how to
-    // make table fields available.
+    // Plain custom data rows are stable global sources on any page.
+    await waitFor(() => {
+      expect(screen.getByText('Products — Featured product')).toBeDefined()
+    })
+    expect(screen.getByText('Name')).toBeDefined()
+    expect(screen.getByText('Price')).toBeDefined()
+    // The footer still explains how to reach the scoped Posts fields.
     await waitFor(() => {
       expect(screen.getByText(/Wrap in a Loop or open a postType template/i)).toBeDefined()
     })

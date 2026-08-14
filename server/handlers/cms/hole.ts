@@ -47,6 +47,7 @@ import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshot
 import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
 import { stampFormPageTokens } from '../../forms/formRuntime'
+import { prefetchGlobalDataBindings } from '../../publish/dataBindingPrefetch'
 
 const HOLE_RUNTIME_PATH = '/_instatic/hole-runtime.js'
 const HOLE_PATH_PREFIX = '/_instatic/hole/'
@@ -125,6 +126,7 @@ async function renderHoleFragment(
   request: SourceRequestContext,
 ): Promise<string> {
   const route = buildRouteFrame(pageUrl.toString())
+  const data = await prefetchGlobalDataBindings([page], db)
   const loopData = await prefetchLoopData(page, site, db, pageUrl, {
     request,
     rootNodeId: nodeId,
@@ -140,6 +142,7 @@ async function renderHoleFragment(
       page: buildPageFrame(page),
       site: buildSiteFrame(site),
       route,
+      data,
     },
     // No dynamicNodeIds: inside a hole endpoint we render the full subtree.
   }

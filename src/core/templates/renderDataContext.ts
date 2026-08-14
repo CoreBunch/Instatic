@@ -22,4 +22,6 @@ export interface TemplateRenderDataContext {
   readonly page?: PageFrame
   readonly site?: SiteFrame
   readonly route?: RouteFrame
+  /** Published custom-data rows keyed by immutable row id. */
+  readonly data?: Readonly<Record<string, Readonly<Record<string, unknown>>>>
 }

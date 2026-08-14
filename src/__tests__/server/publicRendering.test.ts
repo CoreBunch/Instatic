@@ -59,6 +59,7 @@ function snapshot(text: string): PublishedPageSnapshot {
 function makeFakeDb(
   activeSnapshot: PublishedPageSnapshot | null,
   runtimeAssets: Record<string, unknown>[] = [],
+  dataBindingRows: Array<{ row_id: string; cells_json: Record<string, unknown> }> = [],
 ): DbClient {
   const handle = async <Row extends Record<string, unknown> = Record<string, unknown>>(
     strings: TemplateStringsArray,
@@ -102,6 +103,14 @@ function makeFakeDb(
   handle.transaction = async <T>(cb: (tx: DbClient) => Promise<T>): Promise<T> =>
     cb(handle as unknown as DbClient)
 
+  Object.assign(handle, {
+    dialect: 'sqlite',
+    unsafe: async <Row extends Record<string, unknown>>(_sql: string, params: unknown[] = []) => {
+      const matches = dataBindingRows.filter((row) => params.includes(row.row_id))
+      return { rows: matches as unknown as Row[], rowCount: matches.length }
+    },
+  })
+
   return handle as DbClient
 }
 
@@ -120,6 +129,18 @@ describe('public rendering', () => {
     expect(html).toContain('<!DOCTYPE html>')
     expect(html).toContain('Visible to public')
     expect(html).toContain('<title>Public Site</title>')
+  })
+
+  it('renders custom data tokens on ordinary pages', async () => {
+    const snap = snapshot('Star us on GitHub — {data.row-stars.value}')
+    const { html } = await renderPublishedSnapshot(snap, {
+      db: makeFakeDb(snap, [], [
+        { row_id: 'row-stars', cells_json: { name: 'stars', value: '7,000' } },
+      ]),
+    })
+
+    expect(html).toContain('Star us on GitHub — 7,000')
+    expect(html).not.toContain('{data.row-stars.value}')
   })
 
   // Guards the page-wrapper's identity reporting after the shared
