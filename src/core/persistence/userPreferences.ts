@@ -98,6 +98,15 @@ export const DEFAULT_MODULE_INSERTER_PREFERENCE: ModuleInserterPreference = {
   ],
 }
 
+/**
+ * Editor tour outcome. Never-set (null from the server) = the user has not
+ * seen the tour; the site editor auto-starts it in that case.
+ */
+export const EditorTourPreferenceSchema = Type.Object({
+  status: Type.Union([Type.Literal('completed'), Type.Literal('dismissed')]),
+})
+export type EditorTourPreference = Static<typeof EditorTourPreferenceSchema>
+
 // ---------------------------------------------------------------------------
 // Whitelist
 // ---------------------------------------------------------------------------
@@ -117,6 +126,7 @@ export const DEFAULT_MODULE_INSERTER_PREFERENCE: ModuleInserterPreference = {
 export const USER_PREFERENCE_KEYS = [
   'dashboard-layout',
   'module-inserter',
+  'editor-tour',
 ] as const
 
 export type UserPreferenceKey = (typeof USER_PREFERENCE_KEYS)[number]
@@ -130,6 +140,7 @@ export type UserPreferenceKey = (typeof USER_PREFERENCE_KEYS)[number]
 export const USER_PREFERENCE_SCHEMAS = {
   'dashboard-layout': DashboardLayoutSchema,
   'module-inserter': ModuleInserterPreferenceSchema,
+  'editor-tour': EditorTourPreferenceSchema,
 } as const satisfies Record<UserPreferenceKey, TSchema>
 
 type UserPreferenceValue<K extends UserPreferenceKey> = Static<
