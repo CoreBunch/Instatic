@@ -3,6 +3,7 @@ import { AdminCanvasLayout } from '@admin/layouts/AdminCanvasLayout'
 import { consumePendingAction } from '@admin/spotlight/pendingAction'
 import { useEditorStore } from '@site/store/store'
 import { useMcpWorkspaceBridge } from '@admin/ai/useMcpWorkspaceBridge'
+import { startEditorTour } from './tour/useEditorTour'
 import { executeAgentTool } from './agent'
 
 /**
@@ -47,6 +48,12 @@ export function SitePage() {
           const vcId = store.createVisualComponent(name)
           store.setActiveDocument({ kind: 'visualComponent', vcId })
         }
+        return true
+      }
+
+      const startTour = consumePendingAction('site.startTour')
+      if (startTour) {
+        startEditorTour()
         return true
       }
 

@@ -106,6 +106,7 @@ export function SiteExplorerPanelSections({
           count={normalPageCount}
           actionLabel="New page"
           actionIcon={FilePlusSolidIcon}
+          actionTestId="site-explorer-new-page"
           onAction={onCreatePage}
           model={pageTreeModel}
           dropTarget={explorerDnd.target}

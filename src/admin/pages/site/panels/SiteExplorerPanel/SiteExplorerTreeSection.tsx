@@ -37,6 +37,8 @@ interface SiteExplorerTreeSectionProps<TTarget> {
   count: number
   actionLabel: string
   actionIcon: IconComponent
+  /** `data-testid` for the section's primary action button (e.g. tour anchors). */
+  actionTestId?: string
   model: SiteExplorerTreeSectionModel<TTarget> | SiteExplorerStructuralSectionModel<TTarget>
   dropTarget: SiteExplorerDropTarget | null
   inlineRenameTarget: SiteExplorerInlineRenameTarget | null
@@ -60,6 +62,7 @@ export function SiteExplorerTreeSection<TTarget>({
   count,
   actionLabel,
   actionIcon,
+  actionTestId,
   model,
   dropTarget,
   inlineRenameTarget,
@@ -128,6 +131,7 @@ export function SiteExplorerTreeSection<TTarget>({
           aria-label={actionLabel}
           tooltip={actionLabel}
           onClick={onAction}
+          data-testid={actionTestId}
         >
           <ActionIcon size={13} />
         </Button>

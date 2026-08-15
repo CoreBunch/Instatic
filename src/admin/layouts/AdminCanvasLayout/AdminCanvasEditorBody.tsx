@@ -17,6 +17,8 @@ import { RightSidebar } from '@admin/pages/site/sidebars/RightSidebar'
 import { selectRightSidebarExpanded, useEditorStore } from '@admin/pages/site/store/store'
 import { useNarrowEditorChrome } from '@site/layout/responsiveChrome'
 import { ConfirmDeleteProvider } from '@admin/shared/dialogs/ConfirmDeleteDialog'
+import { TourOverlay } from '@admin/shared/tour'
+import { useEditorTour } from '@admin/pages/site/tour/useEditorTour'
 import { Dialog } from '@ui/components/Dialog'
 import { Button } from '@ui/components/Button'
 import { cn } from '@ui/cn'
@@ -56,6 +58,13 @@ export function AdminCanvasEditorBody({
   // their own); lives here, in the lazy body, so the CMS fetch it needs for
   // postTypes templates stays out of the admin-shell bundle.
   useActiveLivePath()
+  // First-run guided tour — auto-starts once (see useEditorTour.ts) and
+  // replays via the `site.startTour` pending action. This component is the
+  // Site editor's own lazy body (AdminCanvasLayout is the Site-editor-only
+  // shell — Content/Data/Media render through AdminWorkspaceCanvasLayout
+  // instead), so mounting the hook here never fires the tour outside the
+  // site editor.
+  useEditorTour()
 
   const propertiesPanelMode = useEditorStore((s) => s.propertiesPanelMode)
   const rightSidebarExpanded = useEditorStore(selectRightSidebarExpanded)
@@ -135,6 +144,10 @@ export function AdminCanvasEditorBody({
       {/* Naming step for "Save as layout" / saved-layout rename. Renders null
           until a layoutNameDialogRequest is set on the ui slice. */}
       <LayoutNameDialog />
+
+      {/* First-run guided tour overlay — renders nothing while idle, portals
+          the coach-mark bubble to document.body once a tour is running. */}
+      <TourOverlay />
 
       {/* Import HTML modal — opens from Spotlight or right-click "Paste HTML here…".
           The modal implementation is rarely used and pulls in the importer,
