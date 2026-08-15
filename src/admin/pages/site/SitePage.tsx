@@ -3,6 +3,7 @@ import { AdminCanvasLayout } from '@admin/layouts/AdminCanvasLayout'
 import { consumePendingAction } from '@admin/spotlight/pendingAction'
 import { useEditorStore } from '@site/store/store'
 import { useMcpWorkspaceBridge } from '@admin/ai/useMcpWorkspaceBridge'
+import { useTourStore } from '@admin/shared/tour'
 import { startEditorTour } from './tour/useEditorTour'
 import { executeAgentTool } from './agent'
 
@@ -53,7 +54,13 @@ export function SitePage() {
 
       const startTour = consumePendingAction('site.startTour')
       if (startTour) {
-        startEditorTour()
+        // Guard against the auto-start race: a fresh user's editor-tour
+        // preference fetch (useEditorTour) can resolve and auto-start the
+        // tour before this pending action fires. Only (re)start here when
+        // no tour is already running, so we don't reset it back to step 1
+        // and drop the running tour's onEnd. The pending action is still
+        // consumed either way — a tour ending up started satisfies it.
+        if (useTourStore.getState().steps === null) startEditorTour()
         return true
       }
 
