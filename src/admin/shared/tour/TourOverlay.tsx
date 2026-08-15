@@ -52,8 +52,8 @@ const BUBBLE_AUTO_PRIORITY = ['bottom', 'top', 'right', 'left'] as const
  * Polls `document.querySelector('[data-testid="<testId>"]')` once per
  * animation frame until the element appears or `timeoutMs` elapses.
  */
-const waitForAnchor = (testId: string, timeoutMs: number): Promise<HTMLElement | null> =>
-  new Promise((resolve) => {
+function waitForAnchor(testId: string, timeoutMs: number): Promise<HTMLElement | null> {
+  return new Promise((resolve) => {
     const deadline = performance.now() + timeoutMs
     const poll = () => {
       const el = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
@@ -69,6 +69,7 @@ const waitForAnchor = (testId: string, timeoutMs: number): Promise<HTMLElement |
     }
     poll()
   })
+}
 
 interface BubblePosition {
   x: number
@@ -76,13 +77,13 @@ interface BubblePosition {
   side: ResolvedFloatingSide
 }
 
-export const TourOverlay = () => {
+export function TourOverlay() {
   const steps = useTourStore((s) => s.steps)
   if (steps === null) return null
   return <TourOverlayInner steps={steps} />
 }
 
-const TourOverlayInner = ({ steps }: { steps: TourStepDef[] }) => {
+function TourOverlayInner({ steps }: { steps: TourStepDef[] }) {
   const stepIndex = useTourStore((s) => s.stepIndex)
   const next = useTourStore((s) => s.next)
   const back = useTourStore((s) => s.back)
@@ -108,8 +109,6 @@ const TourOverlayInner = ({ steps }: { steps: TourStepDef[] }) => {
       step={steps[stepIndex]}
       stepNumber={stepIndex + 1}
       totalSteps={steps.length}
-      isFirstStep={stepIndex === 0}
-      isLastStep={stepIndex === steps.length - 1}
       onNext={next}
       onBack={back}
       onDismiss={dismiss}
@@ -121,23 +120,14 @@ interface TourStepProps {
   step: TourStepDef
   stepNumber: number
   totalSteps: number
-  isFirstStep: boolean
-  isLastStep: boolean
   onNext: () => void
   onBack: () => void
   onDismiss: () => void
 }
 
-const TourStep = ({
-  step,
-  stepNumber,
-  totalSteps,
-  isFirstStep,
-  isLastStep,
-  onNext,
-  onBack,
-  onDismiss,
-}: TourStepProps) => {
+function TourStep({ step, stepNumber, totalSteps, onNext, onBack, onDismiss }: TourStepProps) {
+  const isFirstStep = stepNumber === 1
+  const isLastStep = stepNumber === totalSteps
   const titleId = useId()
   const maskId = `${titleId}-mask`
   const bubbleRef = useRef<HTMLDivElement>(null)
@@ -155,7 +145,14 @@ const TourStep = ({
     let cancelled = false
 
     const run = async () => {
-      await step.prepare?.()
+      try {
+        await step.prepare?.()
+      } catch (err) {
+        console.warn('[tour] prepare failed, skipping step:', step.id, err)
+        if (cancelled) return
+        onNext()
+        return
+      }
       if (cancelled) return
 
       if (step.anchor === null) {

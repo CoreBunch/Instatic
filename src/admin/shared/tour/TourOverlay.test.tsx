@@ -101,4 +101,37 @@ describe('TourOverlay', () => {
 
     warnSpy.mockRestore()
   })
+
+  it('soft-skips a step whose prepare() rejects, warns, and lands on the following step', async () => {
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+    const prepareError = new Error('prepare boom')
+    const steps: TourStepDef[] = [
+      {
+        id: 'broken',
+        anchor: null,
+        title: 'Broken',
+        body: 'Body',
+        prepare: () => Promise.reject(prepareError),
+      },
+      { id: 'centered', anchor: null, title: 'Centered', body: 'Body' },
+    ]
+    const onEnd = mock()
+
+    render(<TourOverlay />)
+    act(() => {
+      useTourStore.getState().start(steps, onEnd)
+    })
+
+    await waitFor(() => {
+      expect(within(screen.getByRole('dialog')).getByText('Centered')).toBeTruthy()
+    })
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[tour] prepare failed, skipping step:',
+      'broken',
+      prepareError,
+    )
+    expect(onEnd).not.toHaveBeenCalled()
+
+    warnSpy.mockRestore()
+  })
 })
