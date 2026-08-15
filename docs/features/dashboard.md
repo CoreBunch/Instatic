@@ -265,11 +265,11 @@ Each CMS hook fetches on mount through `useAsyncResource` + `apiRequest`, valida
 
 - [ ] Set site identity
 - [ ] Choose Core Framework import
+- [ ] Tour the editor
 - [ ] Create your first page
-- [ ] Install a plugin
 - [ ] Invite your team
 
-State lives in `useOnboardingState(...)`. It reads the current site, installed plugins, and users concurrently. The seed Home page does not satisfy "Create your first page"; that step flips done when the site has at least two pages. Framework import defaults to `active` until the user picks a framework mode.
+State lives in `useOnboardingState(...)`. It reads the current site, the user's `editor-tour` preference, and the users list concurrently. The seed Home page does not satisfy "Create your first page"; that step flips done when the site has at least two pages. Framework import defaults to `active` until the user picks a framework mode. The tour step flips done only when the `editor-tour` preference status is `'completed'` — a dismissed tour leaves the step `'todo'` rather than nagging, since dismissing isn't the same as finishing it. Its CTA queues the `site.startTour` pending action (`@admin/spotlight/pendingAction`) and navigates to `/admin/site`, where `SitePage` consumes it and starts the guided tour.
 
 The panel is dismissible per-user and persisted with the dashboard layout preference (`dashboard-layout`). `useDashboardLayout.restoreOnboarding()` flips the same preference flag back to visible.
 

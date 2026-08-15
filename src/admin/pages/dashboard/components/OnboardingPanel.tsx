@@ -31,12 +31,13 @@ import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { ChevronRightIcon } from 'pixel-art-icons/icons/chevron-right'
 import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
 import { ImageSolidIcon } from 'pixel-art-icons/icons/image-solid'
-import { PackageSolidIcon } from 'pixel-art-icons/icons/package-solid'
+import { TargetSolidIcon } from 'pixel-art-icons/icons/target-solid'
 import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { useAdminNavigate } from '@admin/lib/useAdminNavigate'
 import { useAdminUi } from '@admin/state/adminUi'
 import { requestCmsSiteReload } from '@admin/state/adminEvents'
+import { queuePendingAction } from '@admin/spotlight/pendingAction'
 import { Button } from '@ui/components/Button'
 import type { PixelArtIconComponent } from '@core/dashboard'
 import type { OnboardingFacts, OnboardingStepState } from '../hooks/useOnboardingState'
@@ -51,7 +52,7 @@ import { reconcileFrameworkClasses } from '@site/store/slices/site/framework/rec
 import styles from './OnboardingPanel.module.css'
 
 interface StepDef {
-  id: keyof Pick<OnboardingFacts, 'identity' | 'framework' | 'firstPage' | 'plugin' | 'team'>
+  id: keyof Pick<OnboardingFacts, 'identity' | 'framework' | 'tour' | 'firstPage' | 'team'>
   title: string
   desc: string
   cta: string
@@ -60,6 +61,7 @@ interface StepDef {
     | { kind: 'navigate'; to: string }
     | { kind: 'settings-modal' }
     | { kind: 'framework-import' }
+    | { kind: 'start-tour' }
 }
 
 const STEPS: readonly StepDef[] = [
@@ -82,6 +84,15 @@ const STEPS: readonly StepDef[] = [
     action: { kind: 'framework-import' },
   },
   {
+    id: 'tour',
+    title: 'Tour the editor',
+    desc:
+      'A one-minute guided walk through the editor — pages, modules, properties and your design variables.',
+    cta: 'Start tour',
+    icon: TargetSolidIcon,
+    action: { kind: 'start-tour' },
+  },
+  {
     id: 'firstPage',
     title: 'Create your first page',
     desc:
@@ -89,15 +100,6 @@ const STEPS: readonly StepDef[] = [
     cta: 'New page',
     icon: FileTextSolidIcon,
     action: { kind: 'navigate', to: '/admin/site' },
-  },
-  {
-    id: 'plugin',
-    title: 'Install a plugin',
-    desc:
-      'Add SEO, comments, image optimization or workflow extensions from the registry.',
-    cta: 'Browse plugins',
-    icon: PackageSolidIcon,
-    action: { kind: 'navigate', to: '/admin/plugins' },
   },
   {
     id: 'team',
@@ -183,6 +185,9 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
       navigate(step.action.to)
     } else if (step.action.kind === 'framework-import') {
       setFrameworkImportOpen(true)
+    } else if (step.action.kind === 'start-tour') {
+      queuePendingAction('site.startTour')
+      navigate('/admin/site')
     } else {
       openSettings('general')
     }
