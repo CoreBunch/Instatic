@@ -101,7 +101,10 @@ test.describe('editor tour', () => {
     await expect(tourDialog(page)).toBeVisible({ timeout: 20_000 })
     await expect(tourDialog(page)).toContainText('Step 1 of 7')
 
-    // Leave the session tour-free again for whichever spec runs next.
+    // Leave the session tour-free again for whichever spec runs next. Ending
+    // on 'dismissed' rather than 'completed' (account-persona.setup.ts's
+    // steady state for the owner) is fine — auto-start only checks for a
+    // never-set preference, and either non-null outcome blocks it.
     const saved = waitForTourPreferenceSave(page, 'dismissed')
     await tourDialog(page).getByRole('button', { name: 'Skip tour' }).click()
     await saved
