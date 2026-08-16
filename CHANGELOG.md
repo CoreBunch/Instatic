@@ -6,6 +6,11 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 
 ## Unreleased
 
+### Editor and onboarding
+
+- Added a first-run guided tour to the Site editor — a seven-step coach-mark walkthrough of the Explorer, module insertion, Properties panel, Framework panel, and Publish, built on a new reusable tour engine. The tour auto-starts once per user, persists its outcome server-side, and replays anytime from the command palette or the dashboard onboarding checklist.
+- Replaced the dashboard onboarding checklist's plugin step with a "Tour the editor" step.
+
 ## 0.0.16 - 2026-08-11
 
 ### Media and integrations

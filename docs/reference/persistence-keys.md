@@ -55,6 +55,7 @@ Stored in the `user_preferences` table — one row per `(user_id, key)`. Keys ar
 |-------------------------------------------|-----------------------------------------------------------------------|-----------------------------------------------------------------|
 | `dashboard-layout`                        | Dashboard widget positions / sizes                                     | `src/admin/pages/dashboard/hooks/useDashboardLayout.ts`         |
 | `module-inserter`                         | Module inserter notch favorites: ordered `{ kind, id }` refs for modules, layouts, and Visual Components | `src/admin/pages/site/module-picker/useModuleInserterPreference.ts` |
+| `editor-tour`                              | Site editor guided-tour outcome — `{ status: 'completed' \| 'dismissed' }`, unset (`null`) means never seen and auto-starts the tour | `src/admin/pages/site/tour/useEditorTour.ts`                    |
 
 ### Endpoint
 
@@ -208,6 +209,7 @@ for (const key of Object.keys(localStorage)) {
 - [docs/features/editor-preferences.md](../features/editor-preferences.md) — the canonical preference catalog
 - [docs/features/dashboard.md](../features/dashboard.md) — dashboard layout persistence
 - [docs/features/spotlight.md](../features/spotlight.md) — Spotlight recents + telemetry
+- [docs/features/editor-tour.md](../features/editor-tour.md) — the `editor-tour` preference's auto-start/replay lifecycle
 - [docs/reference/typebox-patterns.md](typebox-patterns.md) — `parseJsonWithFallback`, `safeParseJson`
 - Source-of-truth files (selected):
   - `src/admin/pages/site/preferences/editorPreferences.ts` — `EDITOR_PREFS_KEY`

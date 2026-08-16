@@ -165,6 +165,16 @@ SITE-018 note: `visual-builder.e2e.ts` first publishes a disposable post, create
 
 SITE-019 note: `visual-builder.e2e.ts` saves a styled Container subtree as a layout, verifies blank and duplicate-name validation, confirms the Layouts category remains reachable at 390px, inserts the saved layout into another page with its captured class styling, renames and deletes the saved layout from the inserter manage menu, saves/reloads, publishes, and verifies anonymous public output. DEF-20260623-SITE019-001 fixed stale node selection on `addPage`; DEF-20260623-SITE019-002 fixed count-only mobile category buttons; DEF-20260623-SITE019-003 fixed the saved-layout manage menu z-index under the spotlight inserter.
 
+## Editor Onboarding Tour
+
+| ID | Priority | Auto | Area | User Goal | Setup | Path | Expected Outcome | Watch For |
+|---|---:|:---:|---|---|---|---|---|---|
+| TOUR-001 | P2 | ✅ | First run | Auto-start the guided tour on a first visit and complete it | Fresh user, `editor-tour` preference cleared | Open `/admin/site`, step through all 7 steps to Finish | Tour auto-starts at step 1, advances through all 7 steps, and persists a `completed` outcome that survives reload | tour reappears after reload, stuck step, anchor never resolves |
+| TOUR-002 | P2 | ✅ | Skip | Skip the tour early | Fresh user, `editor-tour` preference cleared | Open `/admin/site`, click Skip tour | Tour closes immediately and persists a `dismissed` outcome that survives reload | tour reappears after reload, skip not persisted |
+| TOUR-003 | P2 | ✅ | Replay | Replay the tour from the command palette regardless of a persisted outcome | `editor-tour` preference already `completed` | `/admin/dashboard`, ⌘K → "Take the editor tour" | Palette navigates to `/admin/site` and restarts the tour at step 1 even though the outcome was already `completed` | replay blocked by persisted outcome, wrong starting step, no cross-workspace navigation |
+
+Editor tour note: `editor-tour.e2e.ts` covers the Site editor's first-run guided tour (see [docs/features/editor-tour.md](../features/editor-tour.md)). TOUR-001 clears the `editor-tour` preference, opens `/admin/site`, verifies the tour auto-starts on step 1 of 7, steps through Next on every step to Finish on step 7, and confirms the `PUT /admin/api/cms/me/preferences/editor-tour` save reports `completed` and the tour stays gone after reload. TOUR-002 clears the preference, opens the editor, clicks "Skip tour", confirms the save reports `dismissed`, and confirms the tour stays gone after reload. TOUR-003 seeds a `completed` preference first (proving the palette command starts the tour on its own, not just observing an auto-start), opens the palette from the Dashboard, runs "Take the editor tour", and verifies the cross-workspace navigate to `/admin/site` and the tour restarting at step 1; it ends by skipping again so the shared E2E identity is left tour-free for the next spec. Preference seeding/clearing helpers live in `tests/e2e/helpers/preferences.ts`; the shared owner persona's steady state and ad-hoc capability/AI persona seeding are handled in `account-persona.setup.ts`.
+
 ## Site Runtime And Code
 
 | ID | Priority | Auto | Area | User Goal | Setup | Path | Expected Outcome | Watch For |

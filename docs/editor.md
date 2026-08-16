@@ -653,6 +653,12 @@ Saved layouts persist as rows in the `layouts` system table (`savedLayoutFromRow
 
 ---
 
+## Guided tour
+
+The Site editor auto-starts a seven-step coach-mark tour the first time a user opens `/admin/site` (Explorer → new page → modules → Properties → Framework → Publish). It's built on a generic, reusable tour engine (`src/admin/shared/tour/`) with the Site-specific steps and auto-start/persistence logic layered on top (`src/admin/pages/site/tour/`), mounted in `AdminCanvasEditorBody`. Outcome (`completed`/`dismissed`) persists as the `editor-tour` server preference so it never reappears uninvited, and it replays anytime via the Spotlight command "Take the editor tour" or the Dashboard onboarding checklist. Full design: [docs/features/editor-tour.md](features/editor-tour.md).
+
+---
+
 ## Spotlight (Cmd+K palette)
 
 `src/admin/spotlight/` is the command palette. Mounted by `<SpotlightRoot>` in `AuthenticatedAdmin`, so it's available from every workspace.
@@ -730,6 +736,7 @@ See [docs/features/plugin-system.md](features/plugin-system.md) for the plugin S
 - [docs/server.md](server.md) — what the server does
 - [docs/design.md](design.md) — visual design system
 - [docs/features/plugin-system.md](features/plugin-system.md) — plugin SDK and lifecycle
+- [docs/features/editor-tour.md](features/editor-tour.md) — the first-run guided tour engine + Site editor steps
 - [docs/reference/page-tree.md](reference/page-tree.md) — the `NodeTree` primitive
 - [docs/reference/ui-primitives.md](reference/ui-primitives.md) — UI primitive usage
 - Source-of-truth files:

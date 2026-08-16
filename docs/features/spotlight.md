@@ -159,6 +159,7 @@ The subscription is **dropped on close** to avoid spurious re-renders.
 | `settings`         | Open framework scale, Open site settings                             |
 | `ai`               | Open / focus AI assistant                                            |
 | `account` / `users`| Account security, session revocation, user management                |
+| `help`             | Take the editor tour (`help.editorTour`, see [docs/features/editor-tour.md](editor-tour.md)) |
 
 Each command's `when(ctx)` / `workspaces` / `capability` fields filter by user capability + workspace context. `filterCommands(commands, ctx)` runs once per palette open.
 

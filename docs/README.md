@@ -31,6 +31,7 @@ docs/
 │   ├── data-workspace.md           ← Data workspace: table schema + field management UI
 │   ├── dashboard.md                ← Dashboard workspace + widget registry
 │   ├── spotlight.md                ← Cmd+K command palette
+│   ├── editor-tour.md              ← first-run guided tour engine + Site editor steps
 │   ├── agent.md                    ← AI agent integration
 │   ├── templates.md                ← entry templates + dynamic bindings
 │   ├── loops.md                    ← base.loop + loop sources
@@ -147,6 +148,7 @@ Three categories, three voices:
 | [features/modules.md](features/modules.md)                       | Module engine, defining first-party blocks                          |
 | [features/dashboard.md](features/dashboard.md)                   | Dashboard workspace, widgets, grid, customize mode                  |
 | [features/spotlight.md](features/spotlight.md)                   | Cmd+K command palette                                                |
+| [features/editor-tour.md](features/editor-tour.md)               | First-run guided tour engine + the Site editor's 7-step tour        |
 | [features/agent.md](features/agent.md)                           | AI agent integration and provider-agnostic runtime                   |
 | [features/mcp-connectors.md](features/mcp-connectors.md)         | Instatic as an MCP server — external AI clients drive the CMS over MCP |
 | [features/templates.md](features/templates.md)                   | Entry templates + dynamic bindings + token interpolation             |
