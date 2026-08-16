@@ -8,7 +8,7 @@ import {
 } from './helpers'
 
 /**
- * TOUR-001 through TOUR-004 — the Site editor's first-run guided tour.
+ * TOUR-001 through TOUR-003 — the Site editor's first-run guided tour.
  *
  * A fresh user (no `editor-tour` preference set) auto-starts the tour on
  * opening `/admin/site`; stepping through all seven steps or skipping early
