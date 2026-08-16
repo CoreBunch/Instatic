@@ -212,8 +212,8 @@ test.describe('dashboard', () => {
 
     await expectOnboardingStep(panel, 'Set site identity', 'Completed', 'Open settings')
     await expectOnboardingStep(panel, 'Choose Core Framework import', 'In progress', 'Import')
+    await expectOnboardingStep(panel, 'Tour the editor', 'Not started', 'Start tour')
     await expectOnboardingStep(panel, 'Create your first page', 'Not started', 'New page')
-    await expectOnboardingStep(panel, 'Install a plugin', 'Not started', 'Browse plugins')
     await expectOnboardingStep(panel, 'Invite your team', 'Not started', 'Add members')
 
     await test.step('step actions route to the expected workspaces', async () => {
@@ -227,8 +227,14 @@ test.describe('dashboard', () => {
       await page.goto('/admin/dashboard')
       await expect(panel).toBeVisible({ timeout: 20_000 })
 
-      await panel.getByRole('button', { name: 'Browse plugins' }).click()
-      await expect(page).toHaveURL(/\/admin\/plugins$/)
+      // "Start tour" both navigates to the Site editor AND starts the tour
+      // there (queued as a pending action the editor consumes on mount) —
+      // unlike the other steps' CTAs, which only navigate.
+      await panel.getByRole('button', { name: 'Start tour' }).click()
+      await expect(page).toHaveURL(/\/admin\/site$/)
+      await expect(
+        page.getByRole('dialog').filter({ hasText: /Step \d+ of 7/ }),
+      ).toBeVisible({ timeout: 20_000 })
       await page.goto('/admin/dashboard')
       await expect(panel).toBeVisible({ timeout: 20_000 })
 
