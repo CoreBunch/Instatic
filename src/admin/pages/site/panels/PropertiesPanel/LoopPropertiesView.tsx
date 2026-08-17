@@ -19,9 +19,9 @@ import { loopSourceRegistry } from '@core/loops/registry'
 import { ENTRY_FIELD_FILTER_KEY, ENTRY_FIELD_SOURCE_ID } from '@core/loops'
 import { CELL_ORDER_PREFIX } from '@core/loops/cellFilter'
 import type { LoopEntitySource } from '@core/loops/types'
-import type { DataTableListItem } from '@core/data/schemas'
+import type { DataRow, DataTableListItem } from '@core/data/schemas'
 import type { PropertyControl, PropertySchema } from '@core/module-engine'
-import { listCmsDataTables } from '@core/persistence/cmsData'
+import { listCmsDataRows, listCmsDataTables } from '@core/persistence/cmsData'
 import { getAncestors, type Page } from '@core/page-tree'
 import { PropertyControlRenderer } from '@site/property-controls/PropertyControlRenderer'
 import {
@@ -58,6 +58,27 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
         : Promise.resolve(null)
     ),
     [sourceId],
+  )
+
+  // A relation cell stores the referenced row's ID, so a free-text value box
+  // would ask the author to type an opaque string the editor never shows them
+  // and they have no way to look up. When the chosen field is a relation, load
+  // the referenced table's rows so the value can be picked by name instead.
+  // Every other field type keeps the text box.
+  const relationTargetTableId = (() => {
+    if (sourceId !== 'data.rows' || typeof filters.cellField !== 'string') return null
+    const table = tables?.find((t) => t.id === filters.tableId)
+    const field = table?.fields.find((f) => f.id === filters.cellField)
+    return field?.type === 'relation' ? field.targetTableId : null
+  })()
+
+  const { data: relationRows } = useAsyncResource<DataRow[] | null>(
+    () => (
+      relationTargetTableId
+        ? listCmsDataRows(relationTargetTableId).catch(() => [])
+        : Promise.resolve(null)
+    ),
+    [relationTargetTableId],
   )
 
   // Build the per-source filter schema with dynamic options patched in.
@@ -97,6 +118,20 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
           delete schema.cellValue
         } else if (valuelessOperator) {
           delete schema.cellValue
+        } else if (relationRows) {
+          // Rows are labelled by their `name` cell, falling back to the slug —
+          // the same identity the Data workspace shows in its own row list.
+          schema.cellValue = {
+            type: 'select',
+            label: 'Value',
+            options: [
+              { label: '— Choose a row —', value: '' },
+              ...relationRows.map((row) => ({
+                label: typeof row.cells.name === 'string' && row.cells.name ? row.cells.name : row.slug,
+                value: row.id,
+              })),
+            ],
+          }
         }
         return schema
       }
