@@ -132,6 +132,20 @@ describe('resolveMediaIdsToPaths (Finding 1)', () => {
       await cleanup()
     }
   })
+
+  it('omits soft-deleted assets', async () => {
+    const { db, cleanup } = await createTestDb()
+    try {
+      await insertMediaAsset(db, 'deleted-media', '/uploads/deleted.png')
+      await db`update media_assets set deleted_at = '2026-08-11T00:00:00.000Z' where id = 'deleted-media'`
+
+      const map = await resolveMediaIdsToPaths(db, ['deleted-media'])
+
+      expect(map.has('deleted-media')).toBe(false)
+    } finally {
+      await cleanup()
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------

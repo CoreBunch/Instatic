@@ -1374,11 +1374,10 @@ describe('ContentPage', () => {
     const dialog = await screen.findByRole('dialog', { name: /new collection/i })
     fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Product Catalog' } })
     fireEvent.change(within(dialog).getByLabelText('Slug'), { target: { value: 'catalog-items' } })
-    fireEvent.change(within(dialog).getByLabelText('URL path'), { target: { value: '/catalog' } })
     fireEvent.change(within(dialog).getByLabelText('Singular label'), { target: { value: 'Product' } })
     fireEvent.change(within(dialog).getByLabelText('Plural label'), { target: { value: 'Catalog' } })
-    fireEvent.click(within(dialog).getByLabelText('Featured media'))
-    fireEvent.click(within(dialog).getByLabelText('SEO fields'))
+    expect(within(dialog).queryByRole('group', { name: 'Table kind' })).toBeNull()
+    expect(within(dialog).getByText('Record structure')).toBeTruthy()
     fireEvent.click(within(dialog).getByRole('button', { name: /^create$/i }))
 
     const catalogRegion = await screen.findByRole('region', { name: 'Catalog' })
@@ -1393,15 +1392,19 @@ describe('ContentPage', () => {
     expect(createCollectionCall?.init?.body).toBe(JSON.stringify({
       name: 'Product Catalog',
       slug: 'catalog-items',
-      routeBase: '/catalog',
+      kind: 'postType',
+      routeBase: '/catalog-items',
       singularLabel: 'Product',
       pluralLabel: 'Catalog',
+      primaryFieldId: 'title',
       fields: [
         { type: 'text', id: 'title', label: 'Title', required: true, builtIn: true },
         { type: 'text', id: 'slug', label: 'Slug', required: true, builtIn: true },
         { type: 'richText', id: 'body', label: 'Body', format: 'markdown', builtIn: true },
+        { type: 'media', id: 'featuredMedia', label: 'Featured media', mediaKind: 'image', builtIn: true },
+        { type: 'text', id: 'seoTitle', label: 'SEO title', builtIn: true },
+        { type: 'longText', id: 'seoDescription', label: 'SEO description', builtIn: true },
       ],
-      kind: 'postType',
     }))
     expect(calls.some((call) =>
       String(call.input) === '/admin/api/cms/data/tables/products/rows' &&
