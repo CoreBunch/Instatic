@@ -1,7 +1,7 @@
 /**
  * Focused tests for the batched media-resolution helpers.
  *
- * Finding 1 — resolveMediaIdsToPaths (src/core/loops/sources/dataRows.ts):
+ * Finding 1 — resolveMediaIdsToPaths (src/core/loops/sources/dataRowsMedia.ts):
  *   Verifies that N media-id lookups collapse into ONE query (not N), that
  *   repeated ids are deduplicated before the query, and that ids absent from
  *   the database are absent from the returned map.
@@ -18,7 +18,7 @@
 import { describe, expect, it } from 'bun:test'
 import { createTestDb } from '../helpers/createTestDb'
 import { createFakeDb } from './dbTestFake'
-import { resolveMediaIdsToPaths } from '../../../src/core/loops/sources/dataRows'
+import { resolveMediaIdsToPaths } from '../../../src/core/loops/sources/dataRowsMedia'
 import { prefetchMediaAssets } from '../../../server/publish/mediaPrefetch'
 import type { IModuleRegistry } from '../../../src/core/module-engine'
 

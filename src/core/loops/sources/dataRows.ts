@@ -26,8 +26,9 @@ import { firstImagePathFromMarkdown } from '@core/markdown/renderMarkdown'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { publicDataUserFromParts } from '@core/data/publicDataUser'
 import { normalizeDataTableFields } from '@core/data/fields'
-import { readFeaturedMediaCell, readMediaCellIds, readRepeaterCell } from '@core/data/cells'
-import type { DataField, DataRowCells, RepeaterItemField } from '@core/data/schemas'
+import { readFeaturedMediaCell } from '@core/data/cells'
+import type { DataField, DataRowCells } from '@core/data/schemas'
+import { collectMediaIds, resolveMediaIdsToPaths, resolvedMediaOverlay } from './dataRowsMedia'
 
 // ---------------------------------------------------------------------------
 // Internal SQL row shape
@@ -56,11 +57,6 @@ interface PublishedDataRowSqlRow {
   updated_at: Date | string
 }
 
-interface MediaAssetRow {
-  id: string
-  public_path: string
-}
-
 interface DataTableProjectionRow {
   kind: string
   fields_json: unknown
@@ -85,117 +81,6 @@ const ALLOWED_ORDER_BY: ReadonlySet<OrderColumn> = new Set([
  */
 function positionalParam(db: LoopSourceDb, index: number): string {
   return db.dialect === 'postgres' ? `$${index}` : '?'
-}
-
-// ---------------------------------------------------------------------------
-// Media path resolution
-//
-// Media ids live inside cells_json, not as SQL columns — the built-in
-// `featuredMedia` cell plus every user-defined `media` field. We extract the
-// ids from each row's cells in TypeScript, deduplicate the set, and resolve
-// all unique ids with a SINGLE batched IN-query. One round trip regardless of
-// how many rows (or media fields) the page slice returned.
-// ---------------------------------------------------------------------------
-
-/**
- * Resolve a set of media asset ids to their public_path values in one query.
- * Uses db.unsafe with dialect-appropriate positional placeholders so the
- * same code works on both Postgres ($1, $2, …) and SQLite (?, ?, …).
- * Ids absent from the database are absent from the returned map.
- */
-export async function resolveMediaIdsToPaths(
-  db: LoopSourceDb,
-  ids: Iterable<string>,
-): Promise<Map<string, string>> {
-  const idList = [...new Set(ids)]
-  const pathMap = new Map<string, string>()
-  if (idList.length === 0) return pathMap
-  const placeholders = idList.map((_, i) => positionalParam(db, i + 1)).join(', ')
-  const { rows } = await db.unsafe<MediaAssetRow>(
-    `select id, public_path
-     from media_assets
-     where id in (${placeholders}) and deleted_at is null`,
-    idList,
-  )
-  for (const row of rows) pathMap.set(row.id, row.public_path)
-  return pathMap
-}
-
-type MediaProjectionField = DataField | RepeaterItemField
-
-function collectFieldMediaIds(
-  cells: DataRowCells,
-  fields: readonly MediaProjectionField[],
-  ids: string[],
-): void {
-  for (const field of fields) {
-    if (field.type === 'media') {
-      ids.push(...readMediaCellIds(cells, field.id))
-      continue
-    }
-    if (field.type !== 'repeater') continue
-    for (const item of readRepeaterCell(cells, field.id)) {
-      collectFieldMediaIds(item.cells, field.fields, ids)
-    }
-  }
-}
-
-/**
- * Collect every media id referenced by a page of rows: the built-in
- * `featuredMedia` cell plus every schema-declared media field. Repeater media
- * is traversed recursively, and multi-value cells contribute every id while
- * still resolving through one batched query.
- */
-function collectMediaIds(
-  rows: Array<{ cells_json: Record<string, unknown> }>,
-  fields: readonly DataField[],
-): string[] {
-  const ids: string[] = []
-  for (const row of rows) {
-    const cells = row.cells_json as DataRowCells
-    const featured = readFeaturedMediaCell(cells)
-    if (featured) ids.push(featured)
-    collectFieldMediaIds(cells, fields, ids)
-  }
-  return ids
-}
-
-/**
- * Resolve schema-declared media ids without changing collection cardinality:
- * scalar media becomes a public path (or null), multi-media stays an ordered
- * array of resolvable public paths, and repeater items keep their `{ id, cells }`
- * shape while media inside `cells` is projected recursively.
- */
-function resolvedMediaOverlay(
-  cells: DataRowCells,
-  fields: readonly MediaProjectionField[],
-  mediaPathMap: Map<string, string>,
-): DataRowCells {
-  const overlay: DataRowCells = {}
-  for (const field of fields) {
-    if (field.type === 'media') {
-      const ids = readMediaCellIds(cells, field.id)
-      if (field.allowMultiple === true) {
-        overlay[field.id] = ids.flatMap((id) => {
-          const path = mediaPathMap.get(id)
-          return path ? [path] : []
-        })
-      } else {
-        const id = ids[0]
-        overlay[field.id] = id ? (mediaPathMap.get(id) ?? null) : null
-      }
-      continue
-    }
-    if (field.type !== 'repeater') continue
-    overlay[field.id] = readRepeaterCell(cells, field.id).map((item) => ({
-      ...item,
-      cells: {
-        ...item.cells,
-        ...resolvedMediaOverlay(item.cells, field.fields, mediaPathMap),
-      },
-    }))
-  }
-  return overlay
 }
 
 // ---------------------------------------------------------------------------
