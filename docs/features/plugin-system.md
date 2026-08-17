@@ -1016,6 +1016,8 @@ bun instatic-plugin dev --uploads ../instatic/uploads
 
 First install still goes through the admin UI (`/admin/plugins` → Upload Plugin) so the owner approves permissions. Every `instatic-plugin dev` rebuild after that flows in without another upload.
 
+**The SDK import specifier is monorepo-only today.** `@instatic/plugin-sdk` is not a published package, and `@core/plugin-sdk` (what `instatic-plugin init` scaffolds) resolves through this repo's `tsconfig.json` `paths`, so neither works from a plugin repo that does not sit inside an Instatic checkout. Until the SDK ships to a registry, an out-of-tree plugin has to point at the SDK itself — for example a single indirection module re-exporting `<instatic>/src/core/plugin-sdk/index.ts`, with the path written from an env var at build time so it lives in exactly one place. The CLI, the lint pass and the sandbox scan all work fine that way; only the bare specifier does not resolve.
+
 ---
 
 ## Adding a new plugin
