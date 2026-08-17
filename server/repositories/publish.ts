@@ -94,7 +94,8 @@ export interface PersistSitePublishInput {
   site: SiteDocument
   serializedImportmap: { body: string; sha256: string } | null
   pages: PublishedPageVersionWrite[]
-  publishedByUserId: string
+  /** `null` for a system publish nobody initiated — see `publishDraftSite`. */
+  publishedByUserId: string | null
 }
 
 // ---------------------------------------------------------------------------

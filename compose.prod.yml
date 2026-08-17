@@ -31,6 +31,8 @@ services:
       STATIC_DIR: /app/dist
       INSTATIC_SECRET_KEY: ${INSTATIC_SECRET_KEY:-}
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+      # Empty means unset, which is the default: on.
+      AUTO_SITE_PUBLISH_ON_ENTRY_CHANGE: ${AUTO_SITE_PUBLISH_ON_ENTRY_CHANGE:-}
     volumes:
       - uploads:/app/uploads
     depends_on:

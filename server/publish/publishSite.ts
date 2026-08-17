@@ -80,7 +80,12 @@ function createSnapshot(
 
 export async function publishDraftSite(
   db: DbClient,
-  adminUserId: string,
+  /**
+   * The user attributed as the publisher. `null` is the system actor, for
+   * publishes no person asked for — the automatic post-entry-change republish
+   * (`autoSitePublish.ts`), mirroring `publishDataRow`'s scheduled-publish path.
+   */
+  adminUserId: string | null,
   uploadsDir?: string,
 ): Promise<PublishResult> {
   // Flush the collab relay so the published snapshot includes edits still
@@ -94,7 +99,7 @@ export async function publishDraftSite(
 
 async function publishDraftSiteLocked(
   db: DbClient,
-  adminUserId: string,
+  adminUserId: string | null,
   uploadsDir?: string,
 ): Promise<PublishResult> {
   // ── Phase 1: read inputs + run every expensive non-DB build ──────────────
