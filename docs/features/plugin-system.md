@@ -315,6 +315,7 @@ Inside the admin window, plugin React surfaces (panels, app pages, canvas overla
 - **`console.{log, info, warn, error, debug, trace}`** — routes to `api.plugin.log`.
 - **`fetch(url, init)`** — opt-in: requires `network.outbound` permission AND the URL host on the `networkAllowedHosts` allowlist. Byte-safe: `arrayBuffer()` returns exact bytes; request bodies accept `string | ArrayBuffer | TypedArray/DataView`.
 - **`crypto.subtle`** — pure computation bridge: `digest(...)`, `importKey('raw', ..., { name: 'HMAC', hash })`, and `sign('HMAC', ...)`. These map to ungated `crypto.digest` / `crypto.signHmac` RPC targets because they do no I/O.
+- **`crypto.getRandomValues(view)` / `crypto.randomUUID()`** — CSPRNG entropy from the host, for tokens, nonces, invitation codes and one-time links. Unlike the digest/HMAC pair these do **not** use the `__hostCall` RPC bridge, because that returns a Promise and `getRandomValues` is synchronous by spec; they call the dedicated synchronous `__hostRandomBytes` host function instead. Also ungated (no I/O, nothing to escalate). `getRandomValues` accepts integer-typed views only, throwing `TypeMismatchError` for float or non-view arguments, and caps a single call at 65536 bytes with `QuotaExceededError` above it — the WebCrypto quota, enforced in both the shim and the host function. `randomUUID` returns an RFC 9562 version-4 UUID.
 
 ### What's denied
 
@@ -364,7 +365,7 @@ VM budgets live in `server/plugins/quickjs/limits.ts`; the host-side RPC timeout
 
 Before any plugin code runs, the host evaluates a **bootstrap** program inside the
 VM: Web-Platform polyfills (URL, TextEncoder, console, AbortController, timers,
-crypto.subtle, fetch) plus the SDK factory `__buildApi()` and the `__run*`
+crypto.subtle, crypto.getRandomValues, fetch) plus the SDK factory `__buildApi()` and the `__run*`
 dispatchers the host calls to drive plugin code. QuickJS has no module loader, so
 this bootstrap must reach the VM as a single source **string** — but that string
 is a build artifact, not the authoring surface.
