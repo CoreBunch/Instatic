@@ -39,6 +39,7 @@
     "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-dir=.coverage && bun run scripts/lcov-to-istanbul.ts",
     "fallow:health": "bun run test:coverage && npx fallow health --coverage .coverage/coverage-final.json",
     "icons:sync": "bun run scripts/sync-icons.ts",
+    "icons:manifest": "bun run scripts/build-icon-manifest.ts",
     "icons:check": "bun run scripts/sync-icons.ts --check",
     "bootstrap:sync": "bun run scripts/sync-plugin-bootstrap.ts",
     "bootstrap:check": "bun run scripts/sync-plugin-bootstrap.ts --check",
