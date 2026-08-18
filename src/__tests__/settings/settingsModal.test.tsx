@@ -400,6 +400,26 @@ describe('SettingsModal — focus trap keyboard logic', () => {
     expect(useEditorStore.getState().isSettingsOpen).toBe(false)
   })
 
+  // `Dialog` renders role="alertdialog" instead of role="dialog" whenever
+  // `tone === 'danger'`, which is what a destructive confirm opened from here
+  // would be. A guard matching only [role="dialog"] cannot see it, so one
+  // Escape closed the confirm and the settings modal underneath it at once.
+  it('ignores Escape while a danger-toned alertdialog is stacked above it', () => {
+    openModal()
+    render(<SettingsModal />)
+
+    const nested = document.createElement('div')
+    nested.setAttribute('role', 'alertdialog')
+    document.body.appendChild(nested)
+
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(useEditorStore.getState().isSettingsOpen).toBe(true)
+
+    nested.remove()
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(useEditorStore.getState().isSettingsOpen).toBe(false)
+  })
+
   it('keeps the panel focusable so a click on dead space cannot blur to body', () => {
     openModal()
     const { container } = render(<SettingsModal />)

@@ -95,7 +95,14 @@ export function SettingsModal() {
       // Without this, one Escape would collapse the whole stack at once.
       const self = dialogRef.current
       if (!self) return
-      const stackedAbove = Array.from(document.querySelectorAll('[role="dialog"]')).some(
+      // `alertdialog` counts too: `Dialog` renders that role instead of
+      // `dialog` when `tone === 'danger'`, which is exactly what a destructive
+      // confirm opened from here would be. Matching only `[role="dialog"]`
+      // would leave the confirm invisible to this check and let one Escape
+      // close it and the settings modal underneath it together.
+      const stackedAbove = Array.from(
+        document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
+      ).some(
         (el) =>
           el !== self &&
           Boolean(self.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING),
