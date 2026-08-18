@@ -92,12 +92,14 @@ Anchored steps render an SVG mask cutting a rounded-rect "spotlight" hole around
 | 3 | `new-page` | `site-explorer-new-page` | opens the Explorer's Site tab |
 | 4 | `modules` | `canvas-notch` | — |
 | 5 | `properties` | `properties-panel` | docks the Properties panel; selects the active page's root node if nothing is selected (the panel only renders docked + expanded + with a selection) |
-| 6 | `framework` | `framework-panel` | opens the Framework left-sidebar panel |
+| 6 | `framework` | `panel-rail-framework` | opens the Framework left-sidebar panel (anchor is the rail icon that opens it, not the panel itself — see below) |
 | 7 | `publish` | `toolbar-publish-btn` | *(centered — finish)* |
 
 Step 5 (`properties`) is the one step whose anchor needs more than a panel-mode flip: `[data-testid="properties-panel"]` only renders when the panel is docked, not collapsed, **and** something is selected (a node, a selector class, or a selector multi-select — see `selectRightSidebarExpanded` in `@site/store/store` and the early-return in `PropertiesPanel.tsx`). A fresh session usually has no selection, so `dockPropertiesPanelWithSelection()` also selects the active page's root node when the selection is empty — `applySelection` (`selectionSlice.ts`) clears `propertiesPanel.collapsed` as a side effect, so the panel renders for free.
 
 The `site-explorer-new-page` testid is wired through `SiteExplorerTreeSection`'s `actionTestId` prop (`src/admin/pages/site/panels/SiteExplorerPanel/SiteExplorerPanelSections.tsx`).
+
+Step 6 (`framework`) anchors on `panel-rail-framework` — the left-rail icon (`PanelRail.tsx`) — rather than `framework-panel`, so the spotlight sits on the button that *opens* the panel, and the copy leads with "click this icon" rather than describing the panel as if it were already in front of the user. `prepare()` still opens the panel (`openFrameworkPanel`) so it's visibly docked next to the spotlit icon for context. The icon's rail accent is assigned deterministically by identity hash (`assignRailAccents` in `src/ui/railAccent.ts`) and currently resolves to `'violet'` (`var(--accent-9)`, a magenta/fuchsia hue, not a true purple/violet) — the copy names the color it actually renders as. If the rail's accent assignment or item order ever changes, re-check this against the copy.
 
 ---
 
