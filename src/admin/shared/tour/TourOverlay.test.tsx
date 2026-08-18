@@ -59,6 +59,40 @@ describe('TourOverlay', () => {
     expect(onEnd).not.toHaveBeenCalled()
   })
 
+  it('keeps the same bubble element across a step transition — no remount, no blank gap', async () => {
+    createAnchor('target-a')
+    createAnchor('target-b')
+    const steps: TourStepDef[] = [
+      { id: 'a', anchor: 'target-a', title: 'First step', body: 'Body A' },
+      { id: 'b', anchor: 'target-b', title: 'Second step', body: 'Body B' },
+    ]
+    const onEnd = mock()
+
+    render(<TourOverlay />)
+    act(() => {
+      useTourStore.getState().start(steps, onEnd)
+    })
+
+    const firstDialog = await screen.findByRole('dialog')
+    expect(within(firstDialog).getByText('First step')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+
+    // Immediately after the click — before step 2 has finished resolving
+    // its anchor — the bubble is still in the document showing step 1's
+    // content: no unmount, no blank gap while the next step resolves.
+    expect(screen.getByRole('dialog')).toBe(firstDialog)
+    expect(within(screen.getByRole('dialog')).getByText('First step')).toBeTruthy()
+
+    await waitFor(() => {
+      expect(within(screen.getByRole('dialog')).getByText('Second step')).toBeTruthy()
+    })
+
+    // Same DOM node throughout the transition — content swapped in place
+    // rather than a fresh bubble popping in for step 2.
+    expect(screen.getByRole('dialog')).toBe(firstDialog)
+  })
+
   it('Escape dismisses the tour and onEnd receives "dismissed"', async () => {
     createAnchor('target-esc')
     const steps: TourStepDef[] = [{ id: 'a', anchor: 'target-esc', title: 'Step', body: 'Body' }]

@@ -5,10 +5,13 @@
  *
  * Bubble position is applied via CSS custom properties injected through
  * inline style (the one sanctioned use of inline `style`):
- *   --tour-x / --tour-y   translate offset from top-left, for anchored steps
+ *   --tour-x / --tour-y   translate offset from top-left
  *
- * Centered steps (no anchor) ignore --tour-x/--tour-y entirely and are
- * placed by the `[data-position="centered"]` override below instead.
+ * Centered steps (no anchor) compute a pixel --tour-x/--tour-y too (see
+ * computeCenteredPosition in TourOverlay.tsx), so every step — anchored or
+ * centered — moves through the same `transform` transition: the bubble is
+ * one persistent element for the whole tour, and this is what lets it glide
+ * from the previous step's position to the next instead of popping in.
  *
  * No !important, no hardcoded colours, no Tailwind utilities.
  */
@@ -77,12 +80,20 @@
     color: var(--text);
 
     transition: transform 160ms ease, opacity 120ms ease;
+    /* Plays once, when the bubble first mounts for a tour run (it's a
+       single persistent element after that — see module doc above) — so a
+       brand-new bubble fades in already at its computed position instead
+       of flashing at (0, 0). */
+    animation: tourBubbleIn 160ms ease-out;
 }
 
-.bubble[data-position='centered'] {
-    top: 50%;
-    left: 50%;
-    transform: translate3d(-50%, -50%, 0);
+@keyframes tourBubbleIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }
 
 .progress {
@@ -125,11 +136,12 @@
 
 /* ── Reduced motion ─────────────────────────────────────────────────────── */
 /* Durations are already clamped globally (see src/styles/globals.css), this
-   just drops the backdrop's entrance animation entirely rather than let it
-   play at 0.01ms. */
+   just drops the entrance animations entirely rather than let them play at
+   0.01ms. */
 
 @media (prefers-reduced-motion: reduce) {
-    .backdrop {
+    .backdrop,
+    .bubble {
         animation: none;
     }
 }
