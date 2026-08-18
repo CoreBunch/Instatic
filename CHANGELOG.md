@@ -4,7 +4,7 @@ All notable changes to Instatic will be documented here.
 
 This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
 
-## Unreleased
+## 0.0.17
 
 ## 0.0.16 - 2026-08-11
 
