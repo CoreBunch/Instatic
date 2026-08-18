@@ -253,6 +253,7 @@ MEDIA-007 note: unsafe SVG upload sanitization and public `/uploads` serving are
 | CONTENT-006 | P2 | partial | Collections | Create/update collection field settings | Logged in | Content collections/settings | Field changes are reflected in the entry editor | destructive schema changes, step-up friction |
 | CONTENT-007 | P2 | partial | AI | Use the content AI assistant panel | AI chat permission | Content AI panel | No-provider guidance or chat flow is understandable | provider failure, write-tool permission leaks |
 | CONTENT-008 | P1 | ✅ | Custom fields | Edit custom post fields and use them in Site templates | Logged in | Data Posts fields → Content settings → Site binding picker → publish post route | Custom field appears in the Content entry settings panel, persists after reload, is offered as a scoped currentEntry binding, resolves in canvas preview, and renders on the public post route | stale table metadata, unresolved custom tokens, save/publish ordering |
+| CONTENT-009 | P1 | ✅ | Entries | Keep the stored title in the sidebar when an entries list load resolves after a create | Logged in | Content page → New post while the entries list request is still in flight | Sidebar row shows the stored "Untitled" while the editor keeps its blank title field | request ordering, editor-only row views leaking into the list |
 
 CONTENT-003 note: slash-menu Heading 2 and Data token placeholder insertion with save/reload persistence are automated in `content.e2e.ts`; media picker insertion and sanitization edge cases remain lower-level or future browser coverage.
 
@@ -263,6 +264,8 @@ CONTENT-006 note: content built-in field toggles are automated in `content.e2e.t
 CONTENT-007 note: no-provider setup guidance in the content AI assistant is automated in `content.e2e.ts`; provider-backed conversation, streaming, and write-tool flows remain future browser coverage.
 
 CONTENT-008 note: `content.e2e.ts` adds a custom text field to the system Posts table through the Data inspector, edits that field in the Content settings sidebar, saves and reloads the entry, publishes the post, inserts the custom field from the Site builder binding picker into a Posts template, verifies the canvas preview resolves the value, publishes the template, and verifies an anonymous `/posts/<slug>` route renders the custom value without unresolved tokens. Non-text custom field editor variants remain lower-level or future matrix expansion.
+
+CONTENT-009 note: `content-create-race.e2e.ts` holds the first entries-list GET until the create POST has landed, forcing the ordering that previously merged the editor's blank-title view into the sidebar and rendered a nameless row. Verified to fail without the fix and pass with it; `contentAdmin.test.tsx` pins the same path at unit level.
 
 ## AI Workspace
 

@@ -319,6 +319,8 @@ import { Dialog } from '@ui/components/Dialog'
 
 `Dialog` traps focus, restores it on close, escape-closes, click-outside-closes (configurable). Modal by default. Replaces native `alert()` / `confirm()` (which are banned by `no-native-browser-dialogs.test.ts`).
 
+**Modal shells must bind Escape on `document`, not as a React `onKeyDown` on the dialog element.** React's delegated handler only fires while focus sits inside the dialog subtree, and a click on any non-focusable spot in a panel blurs to `<body>` — outside that subtree — leaving Escape silently dead while backdrop click still works. Pair it with `tabIndex={-1}` on the panel so such clicks land on the panel instead of `<body>` and the Tab trap holds.
+
 ---
 
 ## `Tooltip`
@@ -332,6 +334,8 @@ import { Tooltip } from '@ui/components/Tooltip'
 ```
 
 Replaces native `title="..."` (gated by `no-native-title-tooltips.test.ts`). Works on disabled buttons because `mouseenter` fires on disabled `<button>` elements.
+
+Escape hides the tooltip but is **never consumed** — it keeps propagating to whatever surface owns the keystroke. Tooltips open on plain hover, so swallowing the key would kill Escape app-wide whenever the pointer happened to rest on a trigger.
 
 `Button` accepts a `tooltip` prop and wraps itself — prefer that over composing `<Tooltip><Button .../></Tooltip>` for buttons.
 

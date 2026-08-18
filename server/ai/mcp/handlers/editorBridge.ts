@@ -1,11 +1,13 @@
 /**
  * Workspace bridge stream — `GET /admin/api/ai/editor-bridge?scope=…`.
  *
- * The Site editor and Content workspace each open their own NDJSON stream so
- * MCP browser tools are relayed to the workspace that owns the tool (see
- * `../editorBridge.ts`). Authenticated by the admin session; each bridge is
- * registered under the session user + scope, so it can only serve that user's
- * own MCP connectors. Results flow back through the existing
+ * The Site editor and Content workspace each open their own newline-delimited
+ * JSON stream so MCP browser tools are relayed to the workspace that owns the
+ * tool (see `../editorBridge.ts`). The response uses the event-stream media type
+ * so reverse proxies flush each record instead of buffering this long-lived
+ * connection. Authenticated by the admin session; each bridge is registered
+ * under the session user + scope, so it can only serve that user's own MCP
+ * connectors. Results flow back through the existing
  * `POST /admin/api/ai/tool-result` endpoint.
  */
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
@@ -81,8 +83,11 @@ async function handle(req: Request, db: DbClient): Promise<Response> {
   return new Response(stream, {
     status: 200,
     headers: {
-      'Content-Type': 'application/x-ndjson',
-      'Cache-Control': 'no-cache',
+      // Kamal Proxy flushes event streams incrementally, while generic NDJSON
+      // responses may be buffered until this long-lived bridge closes. The
+      // browser deliberately parses the payload as newline-delimited JSON.
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
       'X-Accel-Buffering': 'no',
     },
   })
