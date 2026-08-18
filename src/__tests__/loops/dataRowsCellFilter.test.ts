@@ -2,6 +2,10 @@
  * Behavior tests for the `data.rows` loop cell filter against a real
  * migrated SQLite database.
  *
+ * Runs on either dialect: `bun test` uses SQLite, `DB=postgres
+ * TEST_POSTGRES_URL=… bun test` runs the same assertions against a real
+ * Postgres, which is the only way the `#>> array[$n]` half gets executed.
+ *
  * The pure half (parsing, SQL assembly) is covered in `cellFilter.test.ts`;
  * what matters here is that the condition actually reaches the query on
  * BOTH table kinds, that `totalItems` counts the filtered set (otherwise
@@ -27,11 +31,11 @@ async function seedPost(
 ): Promise<void> {
   await db`
     insert into data_rows (id, table_id, cells_json, slug, status, updated_at)
-    values (${rowId}, ${'posts'}, ${JSON.stringify(cells)}, ${slug}, ${'published'}, ${publishedAt})
+    values (${rowId}, ${'posts'}, ${cells}, ${slug}, ${'published'}, ${publishedAt})
   `
   await db`
     insert into data_row_versions (id, row_id, version_number, cells_json, slug, published_at, created_at)
-    values (${`${rowId}-v1`}, ${rowId}, ${1}, ${JSON.stringify(cells)}, ${slug}, ${publishedAt}, ${publishedAt})
+    values (${`${rowId}-v1`}, ${rowId}, ${1}, ${cells}, ${slug}, ${publishedAt}, ${publishedAt})
   `
   await db`update data_rows set active_version_id = ${`${rowId}-v1`} where id = ${rowId}`
 }
@@ -44,7 +48,7 @@ async function seedDataRow(
 ): Promise<void> {
   await db`
     insert into data_rows (id, table_id, cells_json, slug, status, created_at, updated_at)
-    values (${rowId}, ${tableId}, ${JSON.stringify(cells)}, ${slug}, ${'draft'}, ${'2024-01-01T00:00:00Z'}, ${'2024-01-01T00:00:00Z'})
+    values (${rowId}, ${tableId}, ${cells}, ${slug}, ${'draft'}, ${'2024-01-01T00:00:00Z'}, ${'2024-01-01T00:00:00Z'})
   `
 }
 
@@ -75,7 +79,7 @@ beforeAll(async () => {
 
   await db`
     insert into data_tables (id, name, slug, kind, route_base, singular_label, plural_label, fields_json, system)
-    values ('logos', 'Logos', 'logos', 'data', '/logos', 'Logo', 'Logos', ${JSON.stringify([])}, 0)
+    values ('logos', 'Logos', 'logos', 'data', '/logos', 'Logo', 'Logos', ${JSON.stringify([])}, ${false})
   `
   await seedDataRow('logos', 'l-a', 'acme', { name: 'Acme', member: true })
   await seedDataRow('logos', 'l-b', 'globex', { name: 'Globex', member: false })
