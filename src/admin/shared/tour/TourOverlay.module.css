@@ -50,18 +50,18 @@
 
 /* Traces the cutout edge so the target reads as "the one we mean" even when
    the dim scrim over an already-dark UI doesn't create much contrast on its
-   own. Reuses --canvas-selection-ring-color, the canvas's own "this element
-   is the one" affordance — same colour vocabulary, new context. */
+   own. Achromatic --text (near-white on dark, dark grey on light) keeps the
+   ring neutral against the scrim in both themes. */
 .spotlightRing {
-    stroke: var(--canvas-selection-ring-color);
+    stroke: var(--text);
     stroke-width: 1.5px;
     transition: x 160ms ease, y 160ms ease, width 160ms ease, height 160ms ease;
 }
 
-/* Wider, low-opacity stroke of the same token sitting behind .spotlightRing
+/* Wider, low-opacity stroke of the same achromatic token sitting behind .spotlightRing
    for a soft glow — stroke-opacity only, no second colour. */
 .spotlightRingGlow {
-    stroke: var(--canvas-selection-ring-color);
+    stroke: var(--text);
     stroke-width: 4px;
     stroke-opacity: 0.25;
     transition: x 160ms ease, y 160ms ease, width 160ms ease, height 160ms ease;
