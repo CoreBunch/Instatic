@@ -86,6 +86,29 @@ export type CmsPublicSite = Static<typeof CmsPublicSiteSchema>
  * exported `CmsMediaAsset` type that consumers see is always fully
  * populated.
  */
+/**
+ * Non-destructive crop rectangle in 0–1 fractions of the original image.
+ * Absent/null means the asset shows its full frame.
+ */
+const CmsMediaCropSchema = Type.Object({
+  x: Type.Number(),
+  y: Type.Number(),
+  width: Type.Number(),
+  height: Type.Number(),
+})
+
+/**
+ * Editorial focus ellipse in 0–1 fractions of the original image: `x`/`y` are
+ * its centre, `width`/`height` its full extent. The server fills the extent for
+ * rows that predate it, so every response carries all four.
+ */
+const CmsMediaFocusSchema = Type.Object({
+  x: Type.Number(),
+  y: Type.Number(),
+  width: Type.Number(),
+  height: Type.Number(),
+})
+
 const CmsMediaVariantSchema = Type.Object({
   width: Type.Number(),
   height: Type.Number(),
@@ -120,6 +143,8 @@ const CmsMediaAssetSchema = Type.Object({
   folderIds: Type.Optional(Type.Array(Type.String())),
   blurHash: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   variants: Type.Optional(Type.Array(CmsMediaVariantSchema)),
+  crop: Type.Optional(Type.Union([CmsMediaCropSchema, Type.Null()])),
+  focus: Type.Optional(Type.Union([CmsMediaFocusSchema, Type.Null()])),
   posterPath: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 })
 
@@ -130,6 +155,8 @@ const CmsMediaAssetSchema = Type.Object({
  * never has to guard against `undefined`.
  */
 export type CmsMediaAssetWire = Static<typeof CmsMediaAssetSchema>
+export type CmsMediaCropWire = Static<typeof CmsMediaCropSchema>
+export type CmsMediaFocusWire = Static<typeof CmsMediaFocusSchema>
 
 export const CmsMediaListResponseSchema = Type.Object(
   { assets: Type.Optional(Type.Array(CmsMediaAssetSchema)) },
@@ -385,3 +412,40 @@ export const CmsPluginScheduleRunOutcomeEnvelopeSchema = Type.Object(
   },
   { additionalProperties: true },
 )
+
+/**
+ * One Unsplash photo as the admin picker consumes it — a projection the
+ * server builds, never Unsplash's own JSON. Attribution URLs arrive
+ * pre-tagged with the UTM parameters their licence requires, so no client
+ * code has to remember to add them.
+ */
+export const CmsUnsplashPhotoSchema = Type.Object({
+  id: Type.String(),
+  description: Type.String(),
+  thumbUrl: Type.String(),
+  width: Type.Number(),
+  height: Type.Number(),
+  color: Type.Union([Type.String(), Type.Null()]),
+  blurHash: Type.Union([Type.String(), Type.Null()]),
+  photographerName: Type.String(),
+  photographerUrl: Type.String(),
+  unsplashUrl: Type.String(),
+})
+
+/** Envelope for GET /admin/api/cms/media/unsplash/photos. */
+export const CmsUnsplashPageEnvelopeSchema = Type.Object(
+  {
+    photos: Type.Array(CmsUnsplashPhotoSchema),
+    /** False stops the picker asking for another page. */
+    hasMore: Type.Boolean(),
+  },
+  { additionalProperties: true },
+)
+
+/** Envelope for GET /admin/api/cms/media/unsplash. */
+export const CmsUnsplashStatusEnvelopeSchema = Type.Object(
+  { configured: Type.Boolean() },
+  { additionalProperties: true },
+)
+
+export type CmsUnsplashPhotoWire = Static<typeof CmsUnsplashPhotoSchema>

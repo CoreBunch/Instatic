@@ -1,0 +1,96 @@
+.body {
+    display: grid;
+    gap: var(--space-xl);
+    /* The dialog is the scroll container for the infinite feed; without a
+       bounded height the sentinel would sit permanently in view and page
+       forever on open. */
+    max-height: 62vh;
+    overflow-y: auto;
+}
+
+/*
+ * Masonry-ish fixed rows rather than true masonry: photos arrive in wildly
+ * different aspect ratios, and a uniform tile height keeps the grid legible
+ * while scanning. The image itself covers its tile, so nothing is letterboxed.
+ */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: var(--space-m);
+}
+
+.tile {
+    display: grid;
+    gap: var(--space-4xs);
+    margin: 0;
+    min-width: 0;
+}
+
+.tileButton {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 140px;
+    padding: 0;
+    overflow: hidden;
+    border-radius: var(--radius);
+    background: var(--bg-surface-2);
+    cursor: pointer;
+}
+
+.thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.importing {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: var(--scrim-50);
+    color: var(--text);
+    font-size: var(--text-xs);
+}
+
+.skeletonTile {
+    height: 140px;
+    border-radius: var(--radius);
+}
+
+.credit {
+    font-size: var(--text-2xs);
+    color: var(--text-subtle);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.credit a {
+    color: var(--text-subtle);
+}
+
+.credit a:hover {
+    color: var(--text);
+}
+
+/* Zero-height marker the IntersectionObserver watches. */
+.sentinel {
+    height: 1px;
+}
+
+.loadingMore {
+    margin: 0;
+    text-align: center;
+    font-size: var(--text-xs);
+    color: var(--text-subtle);
+}
+
+
+.error {
+    margin: 0;
+    font-size: var(--text-m);
+    color: var(--danger-text);
+}

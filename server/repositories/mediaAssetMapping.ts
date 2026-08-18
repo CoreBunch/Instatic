@@ -18,7 +18,7 @@
  */
 
 import { isoDate, isoDateOrNull } from '@core/utils/isoDate'
-import type { MediaAsset, MediaVariant } from './mediaTypes'
+import type { MediaAsset, MediaCrop, MediaFocus, MediaVariant } from './mediaTypes'
 
 /**
  * Single source of truth for the hydrated media-asset projection. Spliced into
@@ -30,7 +30,7 @@ import type { MediaAsset, MediaVariant } from './mediaTypes'
 export const MEDIA_ASSET_COLUMNS = `id, filename, mime_type, size_bytes, public_path, uploaded_by_user_id, created_at,
        alt_text, caption, title, tags_json, width, height, duration_ms,
        dominant_color, deleted_at, replaced_at,
-       blur_hash, variants_json, poster_path,
+       blur_hash, variants_json, crop_json, focus_json, poster_path,
        storage_adapter_id, externally_hosted`
 
 /**
@@ -72,6 +72,8 @@ export interface MediaAssetRow {
   replaced_at: Date | string | null
   blur_hash: string | null
   variants_json: unknown
+  crop_json: unknown
+  focus_json: unknown
   poster_path: string | null
   storage_adapter_id: string
   /** PG: boolean; SQLite: integer 0/1. Read via Boolean(row.externally_hosted). */
@@ -133,6 +135,64 @@ export function parseVariants(value: unknown): MediaVariant[] {
   return result
 }
 
+/**
+ * Parse the stored crop rectangle. Anything that isn't four finite fractions
+ * describing a rectangle inside the frame is treated as "no crop" — a bad row
+ * costs the asset its crop, never its bytes.
+ */
+export function parseCrop(value: unknown): MediaCrop | null {
+  const raw: unknown = typeof value === 'string'
+    ? (() => { try { return JSON.parse(value) } catch { return null } })()
+    : value
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const { x, y, width, height } = r
+  if (typeof x !== 'number' || typeof y !== 'number') return null
+  if (typeof width !== 'number' || typeof height !== 'number') return null
+  if (![x, y, width, height].every(Number.isFinite)) return null
+  if (width <= 0 || height <= 0) return null
+  if (x < 0 || y < 0 || x + width > 1.0001 || y + height > 1.0001) return null
+  return { x, y, width, height }
+}
+
+/**
+ * Default focus extent, as a fraction of the frame, for rows that stored a
+ * bare point. Matches the crop dialog's untouched default so a legacy row and
+ * a fresh one look the same the first time either is opened.
+ */
+const DEFAULT_FOCUS_EXTENT = 0.6
+
+/**
+ * Parse the stored focus area. Out-of-range or malformed values fall back to
+ * null (centre) rather than throwing — a bad row costs the asset its focus
+ * hint, never its bytes.
+ *
+ * Rows written before the focus grew from a point to an ellipse hold only
+ * `{ x, y }`. They are read as a centred default-sized ellipse rather than
+ * rejected: the point they recorded is still the right answer for
+ * `object-position`, and that is the field the published page actually uses.
+ * This is the one boundary that tolerates the older shape, because it is the
+ * one place rows written by an older build arrive.
+ */
+export function parseFocus(value: unknown): MediaFocus | null {
+  const raw: unknown = typeof value === 'string'
+    ? (() => { try { return JSON.parse(value) } catch { return null } })()
+    : value
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const { x, y, width, height } = r
+  if (typeof x !== 'number' || typeof y !== 'number') return null
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+  if (x < 0 || x > 1 || y < 0 || y > 1) return null
+
+  const extent = (value: unknown): number =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= 1
+      ? value
+      : DEFAULT_FOCUS_EXTENT
+
+  return { x, y, width: extent(width), height: extent(height) }
+}
+
 function numberOrNull(value: number | string | null | undefined): number | null {
   if (value == null) return null
   const n = typeof value === 'number' ? value : Number(value)
@@ -168,6 +228,8 @@ export function mapMediaAssetRow(row: MediaAssetRow, folderIds: string[] = []): 
     folderIds,
     blurHash: row.blur_hash ?? null,
     variants: parseVariants(row.variants_json),
+    crop: parseCrop(row.crop_json),
+    focus: parseFocus(row.focus_json),
     posterPath: row.poster_path ?? null,
     storageAdapterId: row.storage_adapter_id ?? '',
     externallyHosted: Boolean(row.externally_hosted),

@@ -97,6 +97,14 @@ export function useStandaloneMediaEditor({
     }
   }
 
+  // A crop rebuilds the variant ladder, so the by-path cache MUST be
+  // invalidated too — otherwise the canvas keeps rendering the previous
+  // ladder's URLs, which the server has just swept off disk.
+  const onAssetCropped = (next: CmsMediaAsset) => {
+    onAssetChanged(next)
+    refreshCmsMediaAssetCache()
+  }
+
   const restoreAsset = async (id: string) => {
     try {
       const next = await restoreCmsMediaAsset(id)
@@ -133,6 +141,7 @@ export function useStandaloneMediaEditor({
     updateAsset,
     renameAsset,
     replaceAssetFile,
+    onAssetCropped,
     restoreAsset,
     purgeAsset,
   }

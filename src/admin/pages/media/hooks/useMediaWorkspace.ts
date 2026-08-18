@@ -104,6 +104,8 @@ export interface UseMediaWorkspaceResult extends WorkspaceLoadState {
   renameAsset: (assetId: string, filename: string) => Promise<CmsMediaAsset | null>
   updateAsset: (assetId: string, input: UpdateCmsMediaAssetInput) => Promise<CmsMediaAsset | null>
   replaceAssetFile: (assetId: string, file: File) => Promise<CmsMediaAsset | null>
+  /** Adopt an asset the crop dialog just re-cropped (it issues the request). */
+  onAssetCropped: (asset: CmsMediaAsset) => void
   trashAsset: (assetId: string) => Promise<void>
   restoreAsset: (assetId: string) => Promise<CmsMediaAsset | null>
   purgeAsset: (assetId: string) => Promise<void>
@@ -328,6 +330,16 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
     setAssets((current) => current.map((asset) => asset.id === next.id ? next : asset))
   }
 
+  /**
+   * Adopt a re-cropped asset. Same shape as any other asset update, but the
+   * by-path cache has to go too: a crop rewrites the variant ladder, so a
+   * cached entry would point at files the server just swept.
+   */
+  const onAssetCropped = (next: CmsMediaAsset) => {
+    replaceAsset(next)
+    refreshCmsMediaAssetCache()
+  }
+
   const removeAsset = (assetId: string) => {
     setAssets((current) => current.filter((asset) => asset.id !== assetId))
     setSelectedAssetIdState((current) => current === assetId ? null : current)
@@ -546,6 +558,7 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
     renameAsset,
     updateAsset,
     replaceAssetFile,
+    onAssetCropped,
     trashAsset,
     restoreAsset,
     purgeAsset,

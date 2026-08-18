@@ -31,6 +31,22 @@ import { dispatchDelete, dispatchUpload } from './mediaUploadDispatch'
 import { getElectedVariantDelegate, type ElectedVariantDelegate } from '../../repositories/mediaStorageAdapters'
 import { runImageVariantJob, isImageVariantOk } from './imageVariantWorkerHost'
 import { toArrayBuffer } from '../../binary'
+import type { MediaCrop } from '../../repositories/mediaTypes'
+
+export interface ProcessImageVariantsOptions {
+  /**
+   * Non-destructive crop applied before the ladder is generated. The returned
+   * `width` / `height` / `blurHash` then describe the cropped frame, and the
+   * variant filenames carry a crop-derived tag so a re-crop never overwrites
+   * the files an already-published page points at.
+   */
+  crop?: MediaCrop | null
+  /**
+   * Store the cropped frame as the asset's served file too. Only meaningful
+   * together with `crop`.
+   */
+  emitCroppedDisplay?: boolean
+}
 
 /**
  * Target widths for the responsive variant ladder. Chosen to cover the
@@ -81,6 +97,19 @@ interface ImageProcessingResult {
   height: number
   blurHash: string
   variants: MediaVariantRecord[]
+  /**
+   * The stored cropped frame, when one was requested. The caller points the
+   * asset's `public_path` at this so every consumer that reads the served file
+   * directly — plain `src`, OG tags, admin thumbnails — sees the crop, not just
+   * the ones that evaluate `srcset`.
+   */
+  croppedDisplay?: {
+    publicPath: string
+    storagePath: string
+    storageAdapterId: string
+    sizeBytes: number
+    mimeType: string
+  }
 }
 
 /**
@@ -88,6 +117,24 @@ interface ImageProcessingResult {
  * variant filenames stay readable (e.g. `abc-hero.png` →
  * `abc-hero-w320.webp`, not `abc-hero.png-w320.webp`).
  */
+/**
+ * Short, stable tag derived from the crop rectangle, appended to the variant
+ * filename base. Empty for an uncropped asset so existing paths are unchanged.
+ */
+function cropTag(crop: MediaCrop | null): string {
+  if (!crop) return ''
+  // Rounded to 4 decimals: finer than any drag the UI can express, and keeps
+  // the tag short. FNV-1a over the rounded tuple — a filename discriminator,
+  // not a security primitive.
+  const key = [crop.x, crop.y, crop.width, crop.height].map((n) => n.toFixed(4)).join(',')
+  let hash = 0x811c9dc5
+  for (let i = 0; i < key.length; i += 1) {
+    hash ^= key.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return `-c${hash.toString(36)}`
+}
+
 function variantStorageBase(storagePath: string): string {
   const dot = storagePath.lastIndexOf('.')
   return dot >= 0 ? storagePath.slice(0, dot) : storagePath
@@ -116,6 +163,7 @@ export async function processImageVariants(
   bytes: Uint8Array,
   /** storagePath of the parent original — used to derive variant filenames. */
   parentStoragePath: string,
+  options: ProcessImageVariantsOptions = {},
 ): Promise<ImageProcessingResult | null> {
   try {
     // Decide whether to spend CPU on a local ladder. A Tier-3 variant
@@ -132,6 +180,8 @@ export async function processImageVariants(
     const response = await runImageVariantJob({
       bytes: sourceBuffer,
       generateLadder: !delegate,
+      crop: options.crop ?? undefined,
+      emitCropped: Boolean(options.crop && options.emitCroppedDisplay),
       targetWidths: TARGET_WIDTHS,
       webpQuality: WEBP_QUALITY,
       blurhashConfig: {
@@ -163,7 +213,36 @@ export async function processImageVariants(
     // Local-ladder path: stream each WebP returned by the worker through
     // `dispatchUpload(role: 'variant')` so plugin storage adapters get
     // bytes for variants the same way they do for originals.
-    const base = variantStorageBase(parentStoragePath)
+    // A re-crop rewrites the ladder for an unchanged original, so the variant
+    // filenames must change with it — otherwise new bytes would land on the
+    // paths already baked into published HTML and sitting in browser caches,
+    // and readers would keep seeing the previous crop. The crop tag makes the
+    // path a function of the crop, so each crop gets its own set of files and
+    // the caller sweeps the previous ones.
+    const base = variantStorageBase(parentStoragePath) + cropTag(options.crop ?? null)
+
+    // The cropped served file goes through the same `'original'` role as an
+    // upload — it IS what the asset serves from now on. The pristine original
+    // stays untouched under the row's `storage_path`, which is what a re-crop
+    // and "reset to full frame" read from.
+    let croppedDisplay: ImageProcessingResult['croppedDisplay']
+    if (response.cropped) {
+      const displayBytes = new Uint8Array(response.cropped.bytes)
+      const dispatchedDisplay = await dispatchUpload(db, {
+        bytes: displayBytes,
+        mimeType: response.cropped.mimeType,
+        suggestedStoragePath: `${base}.${response.cropped.extension}`,
+        role: 'original',
+      })
+      croppedDisplay = {
+        publicPath: dispatchedDisplay.publicUrl,
+        storagePath: dispatchedDisplay.storagePath,
+        storageAdapterId: dispatchedDisplay.storageAdapterId,
+        sizeBytes: displayBytes.byteLength,
+        mimeType: response.cropped.mimeType,
+      }
+    }
+
     const variants: MediaVariantRecord[] = []
     for (const v of response.variants) {
       const suggested = `${base}-w${v.width}.webp`
@@ -191,6 +270,7 @@ export async function processImageVariants(
       height: response.height,
       blurHash: response.blurHash,
       variants,
+      ...(croppedDisplay ? { croppedDisplay } : {}),
     }
   } catch (err) {
     console.error('[mediaVariants] image processing failed:', err)

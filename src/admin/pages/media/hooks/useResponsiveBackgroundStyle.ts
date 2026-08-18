@@ -22,6 +22,11 @@ function renderResolvedMediaFromCms(asset: CmsMediaAsset): RenderResolvedMedia {
     blurHash: asset.blurHash,
     variants: asset.variants,
     posterPath: asset.posterPath,
+    // Carried through so the editor preview frames an image exactly like the
+    // published page does — a focal point that only applied after publishing
+    // would make the canvas lie.
+    focus: asset.focus,
+    crop: asset.crop,
   }
 }
 

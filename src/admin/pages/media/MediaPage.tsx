@@ -20,10 +20,13 @@ import {
 } from '@admin/state/workspaceLayoutStorage'
 import { Button } from '@ui/components/Button'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
+import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
 import { MediaSidebar, type MediaSidebarPanelId } from './components/MediaSidebar/MediaSidebar'
 import { MediaCanvas } from './components/MediaCanvas/MediaCanvas'
 import { MediaViewerWindow } from './components/MediaViewerWindow/MediaViewerWindow'
 import { UploadQueueWindow } from './components/UploadQueueWindow/UploadQueueWindow'
+import { UnsplashPicker } from './components/UnsplashPicker'
+import { useUnsplashConfigured } from './hooks/useUnsplashConfigured'
 import { BulkEditWindow } from './components/BulkEditWindow/BulkEditWindow'
 import { useMediaWorkspace } from './hooks/useMediaWorkspace'
 
@@ -51,6 +54,8 @@ export function MediaPage() {
     writeWorkspaceLayout('media', { activeLeftPanel: activePanel })
   }, [activePanel])
   const [uploadQueueOpen, setUploadQueueOpen] = useState(false)
+  const [unsplashOpen, setUnsplashOpen] = useState(false)
+  const unsplashConfigured = useUnsplashConfigured()
 
   // Build the thin viewer-editor handle from the workspace. Same contract the
   // standalone MediaExplorerPanel-driven viewer uses, so the viewer doesn't
@@ -63,6 +68,7 @@ export function MediaPage() {
         updateAsset: workspace.updateAsset,
         renameAsset: workspace.renameAsset,
         replaceAssetFile: workspace.replaceAssetFile,
+        onAssetCropped: workspace.onAssetCropped,
         restoreAsset: workspace.restoreAsset,
         purgeAsset: workspace.purgeAsset,
       }
@@ -93,6 +99,19 @@ export function MediaPage() {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const toolbarRightSlot = (
+    <>
+      {unsplashConfigured && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setUnsplashOpen(true)}
+          aria-label="Add a photo from Unsplash"
+          tooltip="Browse Unsplash and import a photo into this library"
+        >
+          <ImagesSolidIcon size={13} />
+          <span>Unsplash</span>
+        </Button>
+      )}
     <Button
       variant="ghost"
       size="sm"
@@ -106,6 +125,7 @@ export function MediaPage() {
         <span aria-hidden="true" style={{ marginLeft: 4 }}>·</span>
       )}
     </Button>
+    </>
   )
 
   return (
@@ -128,6 +148,12 @@ export function MediaPage() {
         editor={viewerEditor}
         open={viewerOpen}
         onClose={() => workspace.clearSelection()}
+      />
+
+      <UnsplashPicker
+        open={unsplashOpen}
+        onClose={() => setUnsplashOpen(false)}
+        onImported={() => void workspace.refresh()}
       />
 
       <UploadQueueWindow

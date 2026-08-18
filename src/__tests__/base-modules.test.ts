@@ -694,8 +694,12 @@ describe('base.image — render() specifics', () => {
     // the publisher derives it from the layout (sizesResolver.ts). Alt text
     // is sourced from the library asset row (single source of truth) — no
     // per-instance `alt` prop exists on the module.
+    //
+    // `objectFit` is the one framing knob: it is per-INSTANCE, unlike the crop
+    // and focus area, which live on the shared asset. The same photo can be a
+    // cover-cropped hero on one page and a contained thumbnail on another.
     expect(Object.keys(ImageModule.schema).sort()).toEqual(
-      ['decoding', 'fetchPriority', 'htmlAttributes', 'loading', 'src'],
+      ['decoding', 'fetchPriority', 'htmlAttributes', 'loading', 'objectFit', 'src'],
     )
   })
 

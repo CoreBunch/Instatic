@@ -21,6 +21,7 @@ import type { ModuleDefinition } from '@core/module-engine'
 import type { RenderResolvedMedia } from '@core/publisher'
 import { Value } from '@core/utils/typeboxHelpers'
 import { registry } from '@core/module-engine'
+import { focusObjectPosition } from './focusPosition'
 import { ImageSolidIcon } from 'pixel-art-icons/icons/image-solid'
 import { escapeHtml, safeUrl } from '@modules/base/utils/escape'
 import {
@@ -126,7 +127,7 @@ export const ImageModule: ModuleDefinition<ImageProps> = {
   name: 'Image',
   description: 'A responsive image.',
   category: 'Media',
-  version: '4.0.0',
+  version: '4.1.0',
   icon: ImageSolidIcon,
   trusted: true,
   canHaveChildren: false,
@@ -159,6 +160,15 @@ export const ImageModule: ModuleDefinition<ImageProps> = {
         { label: 'Async', value: 'async' },
         { label: 'Sync', value: 'sync' },
         { label: 'Auto', value: 'auto' },
+      ],
+    },
+    objectFit: {
+      type: 'select',
+      label: 'Fit',
+      options: [
+        { label: 'Default (stretch to box)', value: 'default' },
+        { label: 'Cover (fill, crop overflow)', value: 'cover' },
+        { label: 'Contain (fit whole image)', value: 'contain' },
       ],
     },
     htmlAttributes: htmlAttributesControl(),
@@ -222,8 +232,24 @@ export const ImageModule: ModuleDefinition<ImageProps> = {
     // loading="eager" — those are above-the-fold images where the user
     // wants the real pixels ASAP, and the blur-then-flash effect is more
     // distracting than helpful at the top of the page.
+    // One `style` attribute, built from every part that wants one — a second
+    // `style=` on the same element would be dropped by the parser.
+    const styleParts: string[] = []
     if (blurBg && loading === 'lazy') {
-      attrs.push(`style="background-image:${blurBg};background-size:cover;background-position:center"`)
+      styleParts.push(`background-image:${blurBg}`, 'background-size:cover', 'background-position:center')
+    }
+    // How the image fills its box. `default` emits nothing and lets the
+    // browser's initial `fill` stretch it, which is what an image with no
+    // opinion has always done.
+    if (props.objectFit !== 'default') styleParts.push(`object-fit:${props.objectFit}`)
+    // Editorial focal point — which part survives when something crops the
+    // image. Emitted whenever the asset has one, even at `objectFit: default`,
+    // because the crop can equally come from a framework class or the site's
+    // own stylesheet; suppressing it here would silently break those.
+    const objectPosition = media ? focusObjectPosition(media.focus, media.crop) : null
+    if (objectPosition) styleParts.push(`object-position:${objectPosition}`)
+    if (styleParts.length > 0) {
+      attrs.push(`style="${styleParts.join(';')}"`)
     }
 
     return { html: `<img${htmlAttrs} ${attrs.join(' ')}>` }

@@ -166,3 +166,76 @@ describe('image-variant worker pool', () => {
     expect(response.error.length).toBeGreaterThan(0)
   })
 })
+
+describe('image-variant worker — non-destructive crop', () => {
+  it('extracts the crop before probing, blurring, and laddering', async () => {
+    const bytes = await fixturePng(800, 400)
+    const response = await runImageVariantJob({
+      bytes,
+      generateLadder: true,
+      // Middle half horizontally, top half vertically → 400x200.
+      crop: { x: 0.25, y: 0, width: 0.5, height: 0.5 },
+      targetWidths: [64, 320, 640, 1024],
+      webpQuality: 80,
+      blurhashConfig: { x: 4, y: 3, sampleWidth: 32, sampleHeight: 32 },
+    })
+
+    expect(isImageVariantOk(response)).toBe(true)
+    if (!isImageVariantOk(response)) return
+
+    // Reported dimensions describe the CROPPED frame — this is what the asset
+    // row stores, so `width`/`height` on the published <img> stay honest.
+    expect(response.width).toBe(400)
+    expect(response.height).toBe(200)
+    // The ladder is built from the cropped frame too: 640/1024 now exceed the
+    // source width and drop out, leaving the intrinsic rung at 400.
+    expect(response.variants.map((v) => v.width)).toEqual([64, 320, 400])
+    expect(response.variants[response.variants.length - 1].height).toBe(200)
+  })
+
+  it('returns a cropped served file in the source format when asked', async () => {
+    const bytes = await fixturePng(800, 400)
+    const response = await runImageVariantJob({
+      bytes,
+      generateLadder: false,
+      crop: { x: 0, y: 0, width: 0.5, height: 1 },
+      emitCropped: true,
+      targetWidths: [],
+      webpQuality: 80,
+      blurhashConfig: { x: 4, y: 3, sampleWidth: 32, sampleHeight: 32 },
+    })
+
+    expect(isImageVariantOk(response)).toBe(true)
+    if (!isImageVariantOk(response)) return
+
+    // Without this file the crop would live only inside the srcset ladder, and
+    // any consumer reading the served file directly (plain `src`, OG tags, the
+    // admin grid) would show uncropped pixels.
+    expect(response.cropped).toBeDefined()
+    expect(response.cropped!.width).toBe(400)
+    expect(response.cropped!.height).toBe(400)
+    // Source was a PNG, so the served copy stays a PNG — the asset row's
+    // mime_type must keep describing its own bytes.
+    expect(response.cropped!.mimeType).toBe('image/png')
+    expect(response.cropped!.extension).toBe('png')
+    const probed = await sharp(Buffer.from(response.cropped!.bytes)).metadata()
+    expect(probed.width).toBe(400)
+    expect(probed.height).toBe(400)
+  })
+
+  it('omits the served copy when no crop is applied', async () => {
+    const bytes = await fixturePng(400, 200)
+    const response = await runImageVariantJob({
+      bytes,
+      generateLadder: false,
+      emitCropped: true,
+      targetWidths: [],
+      webpQuality: 80,
+      blurhashConfig: { x: 4, y: 3, sampleWidth: 32, sampleHeight: 32 },
+    })
+
+    expect(isImageVariantOk(response)).toBe(true)
+    if (!isImageVariantOk(response)) return
+    expect(response.cropped).toBeUndefined()
+  })
+})

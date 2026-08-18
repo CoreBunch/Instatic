@@ -66,6 +66,21 @@ export interface RenderResolvedMedia {
     sizeBytes: number
   }>
   posterPath: string | null
+  /**
+   * Editorial focus area and applied crop, both in fractions of the ORIGINAL
+   * upload — exactly as stored. `base.image` converts the pair into
+   * `object-position` so a container that crops with `object-fit: cover` keeps
+   * the subject in view instead of the geometric centre.
+   *
+   * The focus is an ellipse: `x`/`y` its centre, `width`/`height` its extent.
+   * Only the centre reaches the published style today.
+   *
+   * Kept in original space rather than pre-converted because that is what the
+   * asset row holds; converting here would mean two conversion sites (this one
+   * and the crop dialog's previews) that could drift apart.
+   */
+  focus: { x: number; y: number; width: number; height: number } | null
+  crop: { x: number; y: number; width: number; height: number } | null
 }
 
 /**

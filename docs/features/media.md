@@ -17,6 +17,10 @@ The workspace is canvas-style: it uses `AdminWorkspaceCanvasLayout`, the lighter
 - **Auto-open behavior:** upload queue opens when uploads start; bulk-edit opens at 2+ selected; viewer opens on primary selection.
 - **Server side:** `media_assets`, `media_folders`, `media_asset_folders` tables. Handlers under `/admin/api/cms/media`, `/admin/api/cms/media/folders`, `/admin/api/cms/media/storage`. Repositories at `server/repositories/media*.ts`.
 - **Storage adapters:** built-in local-disk plus plugin-registered adapters. Non-public-url adapters route through `/_instatic/media/<adapterId>/<storagePath>` for signed redirects.
+- **Crop:** non-destructive, stored on the asset as a 0–1 rectangle. `PUT /admin/api/cms/media/:id/crop` rebuilds the served file + variant ladder from the untouched original; `crop: null` restores the full frame. The same request carries the editorial focus ellipse.
+- **Asset actions overlay:** in the viewer, actions on the asset float over the top-right of the image itself — crop as a standing icon, the rest behind a `…` menu. `MediaPickerField` deliberately carries none of them: it offers only Change and Clear, and its tile opens the viewer for everything else.
+- **Image fit:** `base.image` has an `objectFit` control (`Default` / `Cover` / `Contain`) — the per-instance knob that makes the asset's focus area do anything.
+- **Unsplash:** optional, enabled by setting `UNSPLASH_ACCESS_KEY`. Browse or search Unsplash from the Media toolbar and import a photo into the library, or replace an existing asset's file from the viewer. See "Unsplash import".
 
 ---
 
@@ -187,6 +191,8 @@ Media data lives in dedicated tables (not in `data_tables` — they predate the 
 | `dominant_color`      | `text`        | `text`          | Nullable, `#rrggbb`. Computed server-side on upload                                             |
 | `blur_hash`           | `text`        | `text`          | Nullable. Used for skeleton placeholders                                                        |
 | `variants_json`       | `jsonb`       | `text`          | `MediaVariant[]` — each entry carries `width`, `height`, `format`, `path`, `sizeBytes`, `storagePath`, `storageAdapterId` |
+| `crop_json`           | `jsonb`       | `text`          | Nullable `{ x, y, width, height }` in 0–1 fractions of the ORIGINAL. Non-null = the asset serves a cropped derivative; see "Non-destructive crop" |
+| `focus_json`          | `jsonb`       | `text`          | Nullable `{ x, y, width, height }` in 0–1 fractions of the ORIGINAL — ellipse CENTRE plus extent. Null = dead centre; see "Editorial focus area" |
 | `poster_path`         | `text`        | `text`          | Nullable. URL for video poster frame                                                            |
 | `deleted_at`          | `timestamptz` | `text`          | Nullable. Non-null = soft-deleted (in Trash)                                                    |
 | `replaced_at`         | `timestamptz` | `text`          | Nullable. Set when binary is swapped via "Replace file"                                         |
@@ -232,7 +238,7 @@ JSON columns end in `_json` per the convention — see [docs/reference/database-
 
 | Handler                          | Routes                                                     |
 |----------------------------------|------------------------------------------------------------|
-| `server/handlers/cms/media.ts`   | `GET/POST/PATCH/DELETE /admin/api/cms/media[/:id]`         |
+| `server/handlers/cms/media.ts`   | `GET/POST/PATCH/DELETE /admin/api/cms/media[/:id]`, `PUT /admin/api/cms/media/:id/crop` |
 | `server/handlers/cms/mediaFolders.ts` | `GET/POST/PATCH/DELETE /admin/api/cms/media/folders[/:id]` |
 | `server/handlers/cms/mediaUpload.ts`, `mediaUploadDispatch.ts`, `mediaUploadExecutor.ts` | `POST /admin/api/cms/media/upload` + dispatcher / executor pipeline |
 | `server/handlers/cms/mediaStorageAdmin.ts`, `mediaStorageMigration.ts`, `mediaStorageReader.ts` | `/admin/api/cms/media/storage[/...]` — manage adapters, kick off migrations |
@@ -297,6 +303,77 @@ Ladder edge rules: the intrinsic rung is clamped so neither output dimension exc
 The image-variant worker pool is sized by `IMAGE_VARIANT_WORKER_POOL_SIZE` (default 2, hard cap 8). Workers are spawned lazily on first use and reused for the life of the process; a crashed worker is dropped from the pool and a replacement spawns on the next submission.
 
 Defense in depth on the static path: `hardenUploadResponse` in `server/static.ts` adds `X-Content-Type-Options: nosniff` and `Content-Disposition: attachment` for non-inert MIME types so a stray non-allowlisted upload can't be top-level navigated and rendered as HTML on the admin origin.
+
+### Non-destructive crop
+
+`PUT /admin/api/cms/media/:id/crop` with `{ crop: { x, y, width, height } | null }`, in 0–1 fractions of the original. Gated by `media.write` — NOT `media.replace`, because the upload's bytes are never touched and the operation is reversible.
+
+The crop is stored on the **asset**, not on the node that references it, so cropping from the site editor's image panel and from the Media viewer are the same operation and the result is consistent everywhere the asset appears. Same rule alt text already follows.
+
+What one request does:
+
+1. Reads the pristine original from `storage_path` (never `public_path` — that may already be a previous crop).
+2. Hands the bytes to the image-variant worker with the rectangle. The worker `extract()`s the crop **before** probing dimensions, encoding the BlurHash, and building the ladder, so every derived artefact describes the cropped frame.
+3. Stores the cropped frame as a new served file, re-encoded in the source's own format (a PNG stays a PNG, so `mime_type` keeps describing its own bytes).
+4. Points `public_path`, `size_bytes`, and `mime_type` at that file and writes `crop_json`. **`storage_path` is left alone** — that is what makes the crop re-croppable and reversible.
+5. Sweeps the previous ladder and the previous cropped file.
+
+Why a served file and not just the ladder: `base.image` emits `public_path` as plain `src`, and OG tags, the admin grid, and any consumer that doesn't evaluate `srcset` read it directly. A crop that lived only in the variants would show uncropped pixels in all of those — and a crop small enough to fall below every target width gets no variants at all.
+
+`crop: null` reverses everything: the served file goes back to `/uploads/<storage_path>` with the original's size and MIME, and the ladder is rebuilt from the full frame.
+
+Variant filenames carry a short crop-derived tag (`…-c<hash>-w640.webp`), so a re-crop writes to fresh paths instead of overwriting the files already baked into published HTML and sitting in browser caches.
+
+Not supported: externally-hosted assets (`externally_hosted = true`) return 409 — the pipeline reads the original off local disk. SVG and GIF are rejected — SVG has no raster ladder to rebuild, and re-encoding a GIF would collapse an animation into a still frame (the same reason the upload pipeline skips its ladder).
+
+UI: `src/admin/pages/media/components/CropDialog/`. The geometry (clamping, ratio snapping, cover-fill preview math) is a pure module, `cropGeometry.ts`, tested in `src/__tests__/admin/cropGeometry.test.ts`.
+
+The selection is dragged from anywhere inside it and resized from eight handles — four corners plus four edge midpoints, so a single edge can be pulled without dragging its neighbours. Arrow keys nudge it; Shift coarsens the step.
+
+### Editorial focus area
+
+The crop decides which pixels survive. The focus area decides what a **container** keeps when it crops the image again at render time — a 16:9 hero, a square avatar, a portrait card. Both are stored on the asset, both in 0–1 fractions of the original, and the crop dialog edits them on one stage.
+
+`focus_json` holds an ellipse: `x`/`y` are its **centre** (unlike `crop_json`, whose `x`/`y` are a corner), `width`/`height` its full extent. It rides along on the same `PUT …/crop` request — `{ crop, focus }` — so dragging both in one dialog is one round trip. Sending `focus` alone (with an unchanged `crop`) skips the re-encode entirely, because a focus change touches no pixels.
+
+Both spaces are the ORIGINAL, never the crop, so re-cropping does not silently re-aim the focus at a different part of the subject.
+
+**What the extent does today: nothing at publish time.** `base.image` converts the focus into `object-position` via `src/modules/base/image/focusPosition.ts`, and `object-position` names a *point* — no value of it can promise a region of a given size survives an arbitrary container aspect. The extent is recorded editorial intent ("the subject is this big"), drawn in the dialog and available to an aspect-aware variant ladder if one is ever built. `imageFocusPosition.test.ts` pins this limit deliberately.
+
+**The focus only bites once something crops the image**, which is what the `base.image` **Fit** control (`objectFit`) is for: `Default` emits nothing and lets the browser stretch the image to its box, `Cover` fills and crops the overflow, `Contain` fits the whole image. Crop and focus live on the shared *asset*; `objectFit` is per *instance*, because the same photo is legitimately a cover-cropped hero on one page and a contained thumbnail on another. `object-position` is emitted whenever the asset carries a focus, even at `Default` — the crop can equally come from a framework class or the site's own stylesheet. `ImageEditor.tsx` applies both on the canvas through the same helper the publisher uses, so the preview cannot disagree with the published page.
+
+Rows written before the focus grew from a point to an ellipse hold only `{ x, y }`. `parseFocus` in `server/repositories/mediaAssetMapping.ts` reads them as a centred default-sized ellipse — the single boundary that tolerates the older shape, because it is the only place older rows arrive.
+
+The four previews under the stage (3:4, Square, 16:9, Panorama) **cover** their slot using that same conversion, so each one shows what the published page shows, cuts included. They deliberately do not letterbox the crop: a contained preview hides exactly the edges the user is choosing between.
+
+### Unsplash import
+
+Optional and off by default. Set `UNSPLASH_ACCESS_KEY` (a free Unsplash *access key*, not the secret key) and restart; leave it unset and the feature never appears. `GET /admin/api/cms/media/unsplash` answers `{ configured }`, and `useUnsplashConfigured()` caches that answer module-wide so no surface renders a button that can only fail.
+
+One environment variable rather than a settings row: the key is a single installation-wide credential on a self-hosted CMS, so it belongs beside `DATABASE_URL`. There is nothing per-user to encrypt.
+
+| Route | Capability | Purpose |
+|---|---|---|
+| `GET /admin/api/cms/media/unsplash` | `media.read` | Is the feature configured? |
+| `GET /admin/api/cms/media/unsplash/photos` | `media.read` | Editorial feed, or search when `query` is set. `page` is 1-based |
+| `POST /admin/api/cms/media/unsplash/import` | `media.write` (+ `media.replace` when `replaceAssetId` is present) | Pull one photo in |
+
+**The key never reaches the browser.** `unsplashClient.ts` is the only module that reads it; the admin talks exclusively to the routes above.
+
+**Import takes a photo ID, never a URL.** The server re-fetches the photo from Unsplash and uses the download URL from *their* response, so no client-nominated host is ever downloaded. The bytes then go through `acceptUploadedMedia` — the same MIME sniffing, size ceiling, storage dispatch, and variant ladder as a hand-dragged file. An Unsplash photo is not more trusted than a user upload. With `replaceAssetId` the bytes land on an existing asset via `acceptReplacementMedia`, so its id and public path survive and every page using it swaps over.
+
+The download itself goes through `remoteImageFetch.ts` — https-only, every redirect hop re-validated against the private/loopback/link-local blocklist, body read under a hard byte ceiling. That module was extracted from the MCP `upload_media` tool so both outbound-image paths share one set of guards rather than two drifting copies.
+
+**Two licence obligations are implemented, not optional:**
+
+1. *Attribution.* Every photo carries UTM-tagged links to the photographer and to Unsplash. The picker renders them on each tile, and the importer additionally writes a credit line into the asset's `caption` — the on-tile credit is what makes it visible while choosing, the stored caption is what makes it survive.
+2. *Download tracking.* On import (not on browsing) the server hits the photo's `download_location`. A failure there is logged and swallowed so it cannot cost the user their import, but it is attempted every time.
+
+`unsplashClient.test.ts` pins both, because breaking either leaves the app working perfectly and silently out of compliance.
+
+UI: `src/admin/pages/media/components/UnsplashPicker/`. One component, three entry points — the Media page toolbar (imports a new asset), the `MediaPickerModal` header (imports and immediately picks it, so "I need a photo" does not mean leaving the picker), and the viewer's `…` menu (opens it with a replace target). The grid opens on the editorial feed rather than an empty prompt, pages by `IntersectionObserver` sentinel, and debounces the search box at 350 ms.
+
+Imports request a 2400px-wide JPEG from Unsplash's dynamic resizer rather than the untouched original, which is routinely 6000px+ and tens of megabytes — more than any page needs and enough to make the variant ladder slow.
 
 ### Storage adapters
 

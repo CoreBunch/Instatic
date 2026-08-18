@@ -18,6 +18,10 @@
  *   §8.4 Toggle switch hit areas — ToggleControl, PreferencesSection
  *         (role="switch", custom 44×44 WCAG 2.5.5 hit area not achievable via
  *         Button's fixed size tokens)
+ *   §8.8 Crop and focus drag handles — CropDialog (12–14px affordances pinned
+ *         to the selection's eight corners/edges and to the focus ellipse's
+ *         centre and rim; Button's 26px min-height and 44px touch target would
+ *         each cover the very region they adjust)
  *
  * @see Contribution #667 — Button Design System Phase 2 spec (parent: this task)
  * @see Task #462 — Button Design System Phase 2 (37-file migration)
@@ -25,7 +29,7 @@
 
 import { describe, it, expect } from 'bun:test'
 import { readdirSync, readFileSync, statSync, existsSync } from 'fs'
-import { join, extname, relative } from 'path'
+import { join, extname, relative, sep } from 'path'
 
 const SRC_ROOT = join(import.meta.dir, '../..')
 const ADMIN_ROOT = join(SRC_ROOT, 'admin')
@@ -83,6 +87,15 @@ const ALLOWLIST = new Set([
   // not fit Button's token-driven size system.
   'admin/pages/site/property-controls/ToggleControl.tsx',
   'admin/modals/Settings/sections/PreferencesSection.tsx',
+
+  // ── §8.8 Crop and focus drag handles ────────────────────────────────────
+  // Eight 14px handles anchored to the selection's corners and edge midpoints,
+  // plus a 14px puck at the focus ellipse's centre and a 12px one on its rim.
+  // They stay <button so they are focusable and announce what they adjust, but
+  // Button's min-height and touch-target padding would make every one of them
+  // larger than the region it moves — the rim puck would swallow its own
+  // ellipse on a small image, and the edge handles would overlap each other.
+  'admin/pages/media/components/CropDialog/CropDialog.tsx',
 
   // ── §8.5 Content workspace structured rows and editor canvas controls ───
   // Content explorer rows reuse full-surface row patterns that Button's
@@ -223,7 +236,10 @@ describe('BTN-3 — Button primitive usage gate', () => {
     const violations: string[] = []
 
     for (const file of files) {
-      const rel = relative(SRC_ROOT, file)
+      // `relative` yields backslashes on Windows while ALLOWLIST is written
+      // with forward slashes, so every allowlisted file would read as a
+      // violation when the suite runs natively on Windows. Normalise here.
+      const rel = relative(SRC_ROOT, file).split(sep).join('/')
 
       // Skip allowlisted files
       if (ALLOWLIST.has(rel)) continue

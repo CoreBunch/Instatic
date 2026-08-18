@@ -1156,4 +1156,20 @@ export const pgMigrations: Migration[] = [
        where trim(lower(display_name)) = trim(lower(email));
     `,
   },
+  {
+    // See migrations-sqlite.ts:025 — non-destructive crop rectangle stored
+    // alongside the asset. NULL means "no crop"; the original bytes are never
+    // rewritten, so a crop is always reversible.
+    id: '025_media_asset_crop',
+    sql: `
+      alter table media_assets add column crop_json jsonb;
+    `,
+  },
+  {
+    // See migrations-sqlite.ts:026 — editorial focal point for cropped images.
+    id: '026_media_asset_focus',
+    sql: `
+      alter table media_assets add column focus_json jsonb;
+    `,
+  },
 ]
