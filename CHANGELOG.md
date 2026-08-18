@@ -10,6 +10,8 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 
 - Added a first-run guided tour to the Site editor — a seven-step coach-mark walkthrough of the Explorer, module insertion, Properties panel, Framework panel, and Publish, built on a new reusable tour engine. The tour auto-starts once per user, persists its outcome server-side, and replays anytime from the command palette or the dashboard onboarding checklist.
 - Replaced the dashboard onboarding checklist's plugin step with a "Tour the editor" step.
+- Made the checklist's "Create your first page" CTA land in the editor with the Explorer's Site tab open and a short attention pulse on the New page button, instead of a bare navigation.
+- Reworked the checklist's "Invite your team" step into "View your team & roles": its CTA opens the Users page on the Roles tab, and visiting that tab is what completes the step.
 
 ## 0.0.16 - 2026-08-11
 

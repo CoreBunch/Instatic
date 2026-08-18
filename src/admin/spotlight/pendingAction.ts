@@ -44,6 +44,8 @@ const PENDING_ACTION_TYPES = [
   'media.newFolder',
   'plugins.install',
   'site.startTour',
+  'site.revealNewPage',
+  'users.viewRoles',
 ] as const
 
 type PendingActionType = (typeof PENDING_ACTION_TYPES)[number]

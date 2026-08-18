@@ -267,9 +267,14 @@ Each CMS hook fetches on mount through `useAsyncResource` + `apiRequest`, valida
 - [ ] Choose Core Framework import
 - [ ] Tour the editor
 - [ ] Create your first page
-- [ ] Invite your team
+- [ ] View your team & roles
 
-State lives in `useOnboardingState(...)`. It reads the current site, the user's `editor-tour` preference, and the users list concurrently. The seed Home page does not satisfy "Create your first page"; that step flips done when the site has at least two pages. Framework import defaults to `active` until the user picks a framework mode. The tour step flips done only when the `editor-tour` preference status is `'completed'` — a dismissed tour leaves the step `'todo'` rather than nagging, since dismissing isn't the same as finishing it. Its CTA queues the `site.startTour` pending action (`@admin/spotlight/pendingAction`) and navigates to `/admin/site`, where `SitePage` consumes it and starts the guided tour.
+State lives in `useOnboardingState(...)`. It reads the current site plus the user's `editor-tour` and `team-roles-viewed` preferences concurrently. The seed Home page does not satisfy "Create your first page"; that step flips done when the site has at least two pages. Framework import defaults to `active` until the user picks a framework mode. The tour step flips done only when the `editor-tour` preference status is `'completed'` — a dismissed tour leaves the step `'todo'` rather than nagging, since dismissing isn't the same as finishing it. Its CTA queues the `site.startTour` pending action (`@admin/spotlight/pendingAction`) and navigates to `/admin/site`, where `SitePage` consumes it and starts the guided tour.
+
+Two more steps route through the same pending-action mechanism:
+
+- **Create your first page** queues `site.revealNewPage` and navigates to `/admin/site`; `SitePage` consumes it via the editor store's `revealNewPageButton()`, which opens the Explorer's Site tab and plays a short attention pulse on the New page button — showing the user *where* pages are created rather than silently creating one.
+- **View your team & roles** queues `users.viewRoles` and navigates to `/admin/users`, where `UsersPage` consumes it and pre-selects the Roles tab. Opening that tab writes the `team-roles-viewed` preference (`RolesTab`'s mount effect), which is what flips the step done — viewing the team is the step; inviting members is optional and headcount deliberately doesn't matter.
 
 The panel is dismissible per-user and persisted with the dashboard layout preference (`dashboard-layout`). `useDashboardLayout.restoreOnboarding()` flips the same preference flag back to visible.
 

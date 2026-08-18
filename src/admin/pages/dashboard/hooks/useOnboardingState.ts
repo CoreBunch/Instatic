@@ -14,7 +14,10 @@
  *     unchecked until the user actually finishes it.
  *   • First page — done when ≥ 2 pages exist (the seed Home page
  *     doesn't count).
- *   • Team — done when more than the owner is in the users table.
+ *   • Team — done when the `team-roles-viewed` user preference is set,
+ *     i.e. the user has opened the Roles tab of the Users page (see
+ *     RolesTab's mount effect). Viewing the team is the step — inviting
+ *     members is optional, so headcount deliberately doesn't matter.
  *
  * Reads concurrently in `Promise.all` so the dashboard renders the
  * first paint of the panel after a single round trip's worth of
@@ -23,7 +26,6 @@
  */
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { cmsAdapter } from '@core/persistence/cms'
-import { listCmsUsers } from '@core/persistence/cmsUsers'
 import { getUserPreference } from '@core/persistence/userPreferences'
 
 export type OnboardingStepState = 'done' | 'active' | 'todo'
@@ -56,15 +58,16 @@ export function useOnboardingState(): OnboardingStateResult {
   // `Promise.allSettled` never rejects — each individual failure soft-fails to
   // an empty/undefined value so a broken endpoint doesn't brick the dashboard.
   const { data, refresh } = useAsyncResource<OnboardingFacts>(async () => {
-    const [siteResult, usersResult, tourResult] = await Promise.allSettled([
+    const [siteResult, tourResult, rolesViewedResult] = await Promise.allSettled([
       cmsAdapter.loadSite('default'),
-      listCmsUsers(),
       getUserPreference('editor-tour'),
+      getUserPreference('team-roles-viewed'),
     ])
 
     const site = siteResult.status === 'fulfilled' ? siteResult.value?.site : undefined
-    const users = usersResult.status === 'fulfilled' ? usersResult.value : []
     const tourPref = tourResult.status === 'fulfilled' ? tourResult.value : null
+    const rolesViewed =
+      rolesViewedResult.status === 'fulfilled' && rolesViewedResult.value !== null
 
     const hasIdentity = Boolean(site && site.name && site.name !== 'Untitled Site')
     const hasFavicon = Boolean(site?.settings?.faviconUrl)
@@ -77,7 +80,7 @@ export function useOnboardingState(): OnboardingStateResult {
       framework: hasFramework ? 'done' : 'active',
       tour: tourPref?.status === 'completed' ? 'done' : 'todo',
       firstPage: pageCount >= 2 ? 'done' : 'todo',
-      team: users.length > 1 ? 'done' : 'todo',
+      team: rolesViewed ? 'done' : 'todo',
     }
   }, [])
 

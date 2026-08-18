@@ -97,7 +97,7 @@ DASH-001 note: `dashboard.e2e.ts` verifies the default owner dashboard route, Ov
 
 DASH-002 note: `dashboard.e2e.ts` verifies customize mode, the Block library, adding the built-in AI usage widget, server-backed `dashboard-layout` preference persistence, reload restoration, grid drag move, right-edge resize, drag-to-library removal, final reload absence, and 390px customize/library containment. DEF-20260623-DASH002-01 fixed invalid nested buttons in Block library live previews by rendering preview widget chrome in edit mode.
 
-DASH-003 note: `dashboard.e2e.ts` runs in a dedicated post-setup, pre-persona project and verifies onboarding progress from genuinely clean E2E state (1/5: identity complete; framework in progress; tour, first page, and team not started), all five step labels/actions, the Settings modal action, workspace routes for New page/Add members and the tour step's `site.startTour` pending-action route to `/admin/site`, 390px mobile containment, and server-backed dismiss persistence through `dashboard-layout`.
+DASH-003 note: `dashboard.e2e.ts` runs in a dedicated post-setup, pre-persona project and verifies onboarding progress from genuinely clean E2E state (1/5: identity complete; framework in progress; tour, first page, and team not started), all five step labels/actions, the Settings modal action, the three pending-action routes (the tour step's `site.startTour`, New page's `site.revealNewPage` revealing the Explorer's New page button, and View roles' `users.viewRoles` pre-selecting the Users Roles tab — whose visit flips the team step to Completed), 390px mobile containment, and server-backed dismiss persistence through `dashboard-layout`.
 
 ## Capabilities And Access Control
 

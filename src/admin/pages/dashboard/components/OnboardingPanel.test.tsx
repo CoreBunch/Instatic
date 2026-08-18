@@ -130,3 +130,55 @@ describe('OnboardingPanel tour step', () => {
     expect(screen.getByTestId('location-probe').textContent).toBe('/admin/site')
   })
 })
+
+describe('OnboardingPanel first-page step', () => {
+  afterEach(() => {
+    globalThis.sessionStorage?.clear()
+  })
+
+  it('queues site.revealNewPage and navigates to the Site workspace', () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/dashboard']}>
+        <OnboardingPanel facts={FACTS} onDismiss={() => {}} onFrameworkImported={() => {}} />
+        <LocationProbe />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /^new page$/i }))
+
+    expect(peekPendingAction('site.revealNewPage')).not.toBeNull()
+    expect(screen.getByTestId('location-probe').textContent).toBe('/admin/site')
+  })
+})
+
+describe('OnboardingPanel team step', () => {
+  afterEach(() => {
+    globalThis.sessionStorage?.clear()
+  })
+
+  it('is titled "View your team & roles" and no longer asks for invites', () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/dashboard']}>
+        <OnboardingPanel facts={FACTS} onDismiss={() => {}} onFrameworkImported={() => {}} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('View your team & roles')).toBeTruthy()
+    expect(screen.queryByText('Invite your team')).toBeNull()
+    expect(screen.queryByRole('button', { name: /add members/i })).toBeNull()
+  })
+
+  it('queues users.viewRoles and navigates to the Users workspace', () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/dashboard']}>
+        <OnboardingPanel facts={FACTS} onDismiss={() => {}} onFrameworkImported={() => {}} />
+        <LocationProbe />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /^view roles$/i }))
+
+    expect(peekPendingAction('users.viewRoles')).not.toBeNull()
+    expect(screen.getByTestId('location-probe').textContent).toBe('/admin/users')
+  })
+})

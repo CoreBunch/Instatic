@@ -58,10 +58,11 @@ interface StepDef {
   cta: string
   icon: PixelArtIconComponent
   action:
-    | { kind: 'navigate'; to: string }
     | { kind: 'settings-modal' }
     | { kind: 'framework-import' }
     | { kind: 'start-tour' }
+    | { kind: 'reveal-new-page' }
+    | { kind: 'view-roles' }
 }
 
 const STEPS: readonly StepDef[] = [
@@ -99,16 +100,16 @@ const STEPS: readonly StepDef[] = [
       'Start from a blank canvas, a starter layout, or import HTML and we will scaffold a tree.',
     cta: 'New page',
     icon: FileTextSolidIcon,
-    action: { kind: 'navigate', to: '/admin/site' },
+    action: { kind: 'reveal-new-page' },
   },
   {
     id: 'team',
-    title: 'Invite your team',
+    title: 'View your team & roles',
     desc:
-      'Editors, designers and developers — each role gets a tuned set of editor permissions.',
-    cta: 'Add members',
+      'See who has access and what each role can do — editors, designers and developers each get a tuned set of permissions.',
+    cta: 'View roles',
     icon: UsersSolidIcon,
-    action: { kind: 'navigate', to: '/admin/users' },
+    action: { kind: 'view-roles' },
   },
 ]
 
@@ -181,13 +182,22 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
   const total = STEPS.length
 
   function runStep(step: StepDef) {
-    if (step.action.kind === 'navigate') {
-      navigate(step.action.to)
-    } else if (step.action.kind === 'framework-import') {
+    if (step.action.kind === 'framework-import') {
       setFrameworkImportOpen(true)
     } else if (step.action.kind === 'start-tour') {
       queuePendingAction('site.startTour')
       navigate('/admin/site')
+    } else if (step.action.kind === 'reveal-new-page') {
+      // Land in the editor pointing at WHERE pages are created: SitePage
+      // consumes this action, opens the Explorer's Site tab and pulses the
+      // New page button.
+      queuePendingAction('site.revealNewPage')
+      navigate('/admin/site')
+    } else if (step.action.kind === 'view-roles') {
+      // UsersPage consumes this action and pre-selects the Roles tab, which
+      // is also what checks this step off (see RolesTab's mount effect).
+      queuePendingAction('users.viewRoles')
+      navigate('/admin/users')
     } else {
       openSettings('general')
     }

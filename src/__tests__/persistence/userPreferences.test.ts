@@ -75,3 +75,25 @@ describe('editor-tour preference', () => {
     expect(safeParseValue(USER_PREFERENCE_SCHEMAS['editor-tour'], {}).ok).toBe(false)
   })
 })
+
+describe('team-roles-viewed preference', () => {
+  it('whitelists the team-roles-viewed preference key', () => {
+    expect(USER_PREFERENCE_KEYS).toContain('team-roles-viewed')
+  })
+
+  it('accepts the viewed marker', () => {
+    expect(parseValue(USER_PREFERENCE_SCHEMAS['team-roles-viewed'], { viewed: true })).toEqual({
+      viewed: true,
+    })
+  })
+
+  it('rejects viewed: false — the preference is set-once, never unset', () => {
+    expect(safeParseValue(USER_PREFERENCE_SCHEMAS['team-roles-viewed'], { viewed: false }).ok).toBe(
+      false,
+    )
+  })
+
+  it('rejects a missing viewed marker', () => {
+    expect(safeParseValue(USER_PREFERENCE_SCHEMAS['team-roles-viewed'], {}).ok).toBe(false)
+  })
+})

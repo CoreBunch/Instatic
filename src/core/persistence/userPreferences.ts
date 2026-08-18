@@ -107,6 +107,16 @@ export const EditorTourPreferenceSchema = Type.Object({
 })
 export type EditorTourPreference = Static<typeof EditorTourPreferenceSchema>
 
+/**
+ * Set (once, never unset) when the user opens the Roles tab of the Users
+ * page. Drives the dashboard onboarding "View your team & roles" step —
+ * never-set (null from the server) = the step is still to-do.
+ */
+export const TeamRolesViewedPreferenceSchema = Type.Object({
+  viewed: Type.Literal(true),
+})
+export type TeamRolesViewedPreference = Static<typeof TeamRolesViewedPreferenceSchema>
+
 // ---------------------------------------------------------------------------
 // Whitelist
 // ---------------------------------------------------------------------------
@@ -127,6 +137,7 @@ export const USER_PREFERENCE_KEYS = [
   'dashboard-layout',
   'module-inserter',
   'editor-tour',
+  'team-roles-viewed',
 ] as const
 
 export type UserPreferenceKey = (typeof USER_PREFERENCE_KEYS)[number]
@@ -141,6 +152,7 @@ export const USER_PREFERENCE_SCHEMAS = {
   'dashboard-layout': DashboardLayoutSchema,
   'module-inserter': ModuleInserterPreferenceSchema,
   'editor-tour': EditorTourPreferenceSchema,
+  'team-roles-viewed': TeamRolesViewedPreferenceSchema,
 } as const satisfies Record<UserPreferenceKey, TSchema>
 
 type UserPreferenceValue<K extends UserPreferenceKey> = Static<

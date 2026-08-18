@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { Type, type Static } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
+import { clearTeamRolesViewedPreference } from './helpers/preferences'
 
 const DashboardLayoutSaveItemSchema = Type.Object({
   id: Type.String(),
@@ -203,6 +204,10 @@ test.describe('dashboard', () => {
   test('shows onboarding tasks, routes actions, and persists dismiss (DASH-003)', async ({
     page,
   }) => {
+    // The "View roles" step below persists team-roles-viewed for this
+    // session's user — reset it so the fresh-state assertions hold on retries.
+    await clearTeamRolesViewedPreference(page)
+
     await page.goto('/admin/dashboard')
     await expect(page).toHaveURL(/\/admin\/dashboard$/)
 
@@ -214,7 +219,7 @@ test.describe('dashboard', () => {
     await expectOnboardingStep(panel, 'Choose Core Framework import', 'In progress', 'Import')
     await expectOnboardingStep(panel, 'Tour the editor', 'Not started', 'Start tour')
     await expectOnboardingStep(panel, 'Create your first page', 'Not started', 'New page')
-    await expectOnboardingStep(panel, 'Invite your team', 'Not started', 'Add members')
+    await expectOnboardingStep(panel, 'View your team & roles', 'Not started', 'View roles')
 
     await test.step('step actions route to the expected workspaces', async () => {
       await panel.getByRole('button', { name: 'Open settings' }).click()
@@ -222,8 +227,12 @@ test.describe('dashboard', () => {
       await page.keyboard.press('Escape')
       await expect(page.getByRole('dialog', { name: 'Settings' })).toBeHidden()
 
+      // "New page" doesn't just navigate — the editor consumes the queued
+      // site.revealNewPage action, opens the Explorer's Site tab and pulses
+      // the New page button, so the button must be on screen.
       await panel.getByRole('button', { name: 'New page' }).click()
       await expect(page).toHaveURL(/\/admin\/site$/)
+      await expect(page.getByTestId('site-explorer-new-page')).toBeVisible({ timeout: 20_000 })
       await page.goto('/admin/dashboard')
       await expect(panel).toBeVisible({ timeout: 20_000 })
 
@@ -238,10 +247,18 @@ test.describe('dashboard', () => {
       await page.goto('/admin/dashboard')
       await expect(panel).toBeVisible({ timeout: 20_000 })
 
-      await panel.getByRole('button', { name: 'Add members' }).click()
+      // "View roles" pre-selects the Roles tab via the queued users.viewRoles
+      // action, and visiting that tab is what completes the step — assert the
+      // round trip flips it to Completed.
+      await panel.getByRole('button', { name: 'View roles' }).click()
       await expect(page).toHaveURL(/\/admin\/users$/)
+      await expect(page.getByRole('tab', { name: 'Roles' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      )
       await page.goto('/admin/dashboard')
       await expect(panel).toBeVisible({ timeout: 20_000 })
+      await expectOnboardingStep(panel, 'View your team & roles', 'Completed', 'View roles')
     })
 
     await test.step('mobile task layout stays contained', async () => {
@@ -252,8 +269,8 @@ test.describe('dashboard', () => {
       await expectControlContained(page, panel, 'mobile onboarding panel')
       await expectControlContained(
         page,
-        onboardingStep(panel, 'Invite your team').getByRole('button', { name: 'Add members' }),
-        'mobile add members action',
+        onboardingStep(panel, 'View your team & roles').getByRole('button', { name: 'View roles' }),
+        'mobile view roles action',
       )
     })
 

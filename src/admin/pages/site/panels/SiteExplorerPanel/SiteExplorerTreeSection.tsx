@@ -39,6 +39,8 @@ interface SiteExplorerTreeSectionProps<TTarget> {
   actionIcon: IconComponent
   /** `data-testid` for the section's primary action button (e.g. tour anchors). */
   actionTestId?: string
+  /** Play a transient attention pulse on the section's primary action button. */
+  actionAttention?: boolean
   model: SiteExplorerTreeSectionModel<TTarget> | SiteExplorerStructuralSectionModel<TTarget>
   dropTarget: SiteExplorerDropTarget | null
   inlineRenameTarget: SiteExplorerInlineRenameTarget | null
@@ -63,6 +65,7 @@ export function SiteExplorerTreeSection<TTarget>({
   actionLabel,
   actionIcon,
   actionTestId,
+  actionAttention = false,
   model,
   dropTarget,
   inlineRenameTarget,
@@ -132,6 +135,7 @@ export function SiteExplorerTreeSection<TTarget>({
           tooltip={actionLabel}
           onClick={onAction}
           data-testid={actionTestId}
+          className={cn(actionAttention && styles.actionAttention)}
         >
           <ActionIcon size={13} />
         </Button>

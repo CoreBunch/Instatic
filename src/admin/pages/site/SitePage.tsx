@@ -52,6 +52,15 @@ export function SitePage() {
         return true
       }
 
+      const revealNewPage = consumePendingAction('site.revealNewPage')
+      if (revealNewPage) {
+        // Dashboard onboarding "Create your first page" — show the user WHERE
+        // pages are created rather than silently creating one: open the
+        // Explorer's Site tab and pulse the New page button.
+        store.revealNewPageButton()
+        return true
+      }
+
       const startTour = consumePendingAction('site.startTour')
       if (startTour) {
         // Guard against the auto-start race: a fresh user's editor-tour

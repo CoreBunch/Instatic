@@ -166,6 +166,10 @@ function ambientFetchFallback(url: string): Response | undefined {
   if (url.endsWith('/admin/api/cms/site/publish-status')) {
     return json({ ok: false }, 404)
   }
+  if (url.endsWith('/admin/api/cms/me/preferences/team-roles-viewed')) {
+    // RolesTab persists this marker on mount (dashboard onboarding step).
+    return json({ value: { viewed: true } })
+  }
   return undefined
 }
 

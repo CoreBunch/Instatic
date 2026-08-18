@@ -56,6 +56,7 @@ Stored in the `user_preferences` table — one row per `(user_id, key)`. Keys ar
 | `dashboard-layout`                        | Dashboard widget positions / sizes                                     | `src/admin/pages/dashboard/hooks/useDashboardLayout.ts`         |
 | `module-inserter`                         | Module inserter notch favorites: ordered `{ kind, id }` refs for modules, layouts, and Visual Components | `src/admin/pages/site/module-picker/useModuleInserterPreference.ts` |
 | `editor-tour`                              | Site editor guided-tour outcome — `{ status: 'completed' \| 'dismissed' }`, unset (`null`) means never seen and auto-starts the tour | `src/admin/pages/site/tour/useEditorTour.ts`                    |
+| `team-roles-viewed`                        | Set once (`{ viewed: true }`) when the user opens the Users page's Roles tab; completes the dashboard onboarding "View your team & roles" step | `src/admin/pages/users/tabs/RolesTab.tsx`                       |
 
 ### Endpoint
 

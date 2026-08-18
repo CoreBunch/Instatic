@@ -473,3 +473,48 @@
 .sectionEmpty {
     grid-column: 1 / -1;
 }
+
+/* Attention pulse on a section's primary action button — armed by the store's
+ * `newPageAttention` flag when the dashboard onboarding "Create your first
+ * page" CTA lands the user here. An expanding achromatic ring (same neutral
+ * --text the tour's spotlight ring uses) that pulses three times and clears;
+ * SiteExplorerPanelSections drops the class again after ~3.2s. */
+.actionAttention {
+    position: relative;
+}
+
+.actionAttention::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border: 1.5px solid var(--text);
+    border-radius: var(--radius);
+    opacity: 0;
+    pointer-events: none;
+    animation: sectionActionPulse 1000ms ease-out 3;
+}
+
+@keyframes sectionActionPulse {
+    0% {
+        opacity: 0.9;
+        transform: scale(0.75);
+    }
+    70% {
+        opacity: 0;
+        transform: scale(1.5);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(1.5);
+    }
+}
+
+/* Global duration clamping would end the pulse instantly (final frame is
+ * opacity 0 — i.e. no cue at all), so show a steady ring for the armed window
+ * instead of an animation. */
+@media (prefers-reduced-motion: reduce) {
+    .actionAttention::after {
+        animation: none;
+        opacity: 0.8;
+    }
+}

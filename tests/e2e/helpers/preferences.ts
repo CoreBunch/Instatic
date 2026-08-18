@@ -40,6 +40,17 @@ export async function clearEditorTourPreference(page: Page): Promise<void> {
   expect(response.ok(), `clear editor-tour preference: ${response.status()}`).toBe(true)
 }
 
+/**
+ * Reset the current session's `team-roles-viewed` preference to "never set".
+ * Visiting the Users page's Roles tab writes it (completing the dashboard
+ * onboarding "View your team & roles" step) — clearing keeps specs that
+ * assert the step's fresh state retry-safe.
+ */
+export async function clearTeamRolesViewedPreference(page: Page): Promise<void> {
+  const response = await page.request.delete('/admin/api/cms/me/preferences/team-roles-viewed')
+  expect(response.ok(), `clear team-roles-viewed preference: ${response.status()}`).toBe(true)
+}
+
 /** Read the current session's persisted `editor-tour` status, or `null` if never set. */
 export async function getEditorTourPreferenceStatus(
   page: Page,
