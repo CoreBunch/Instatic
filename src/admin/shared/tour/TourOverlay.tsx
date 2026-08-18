@@ -56,9 +56,11 @@ import styles from './TourOverlay.module.css'
 
 /** How long a step waits for its anchor before soft-skipping. */
 const ANCHOR_WAIT_TIMEOUT_MS = 2000
-/** Outward inflation of the spotlight cutout past the anchor's own rect. */
-const SPOTLIGHT_INFLATE = 6
-const SPOTLIGHT_RADIUS = 8
+/** Outward inflation of the spotlight cutout past the anchor's own rect. Kept
+ * tight so the hole hugs the target instead of leaving visible slack around
+ * it. */
+const SPOTLIGHT_INFLATE = 4
+const SPOTLIGHT_RADIUS = 6
 const BUBBLE_OFFSET = 12
 const BUBBLE_EDGE_PADDING = 16
 const BUBBLE_AUTO_PRIORITY = ['bottom', 'top', 'right', 'left'] as const
@@ -91,6 +93,9 @@ interface BubblePosition {
   y: number
   /** `null` for centered steps — no anchor side to report. */
   side: ResolvedFloatingSide | null
+  /** Cross-axis offset for the bubble's arrow tip. Unused (no arrow renders)
+   * for centered steps. */
+  arrowOffset: number
 }
 
 /** Centers the bubble in the viewport — the pixel-position equivalent of a
@@ -101,6 +106,7 @@ function computeCenteredPosition(width: number, height: number): BubblePosition 
     x: Math.max(0, (window.innerWidth - width) / 2),
     y: Math.max(0, (window.innerHeight - height) / 2),
     side: null,
+    arrowOffset: 0,
   }
 }
 
@@ -173,7 +179,12 @@ function TourOverlayInner({ steps }: { steps: TourStepDef[] }) {
           edgePadding: BUBBLE_EDGE_PADDING,
           autoPriority: BUBBLE_AUTO_PRIORITY,
         })
-        setPosition({ x: computed.x, y: computed.y, side: computed.side })
+        setPosition({
+          x: computed.x,
+          y: computed.y,
+          side: computed.side,
+          arrowOffset: computed.arrowOffset,
+        })
       } else {
         setPosition(computeCenteredPosition(width, height))
       }
@@ -217,9 +228,23 @@ function TourOverlayInner({ steps }: { steps: TourStepDef[] }) {
   const isFirstStep = displayed !== null && displayed.stepNumber === 1
   const isLastStep = displayed !== null && displayed.stepNumber === steps.length
 
+  // Shared geometry for the mask cutout AND the visible ring traced around
+  // it — both need to move/resize in lockstep with the anchor, so it's
+  // computed once here rather than duplicated per `<rect>`.
+  const holeGeometry = anchorRect
+    ? {
+        x: anchorRect.left - SPOTLIGHT_INFLATE,
+        y: anchorRect.top - SPOTLIGHT_INFLATE,
+        width: anchorRect.width + SPOTLIGHT_INFLATE * 2,
+        height: anchorRect.height + SPOTLIGHT_INFLATE * 2,
+        rx: SPOTLIGHT_RADIUS,
+      }
+    : null
+
   const bubbleStyle = {
     '--tour-x': position ? `${position.x}px` : '0px',
     '--tour-y': position ? `${position.y}px` : '0px',
+    '--tour-arrow-offset': position ? `${position.arrowOffset}px` : '0px',
   } as CSSProperties
 
   return (
@@ -235,21 +260,22 @@ function TourOverlayInner({ steps }: { steps: TourStepDef[] }) {
         createPortal(
           <>
             <div className={styles.backdrop} data-anchored={anchored || undefined}>
-              {anchored && anchorRect && (
+              {anchored && holeGeometry && (
                 <svg className={styles.spotlightSvg} aria-hidden="true">
                   <mask id={maskId}>
                     <rect width="100%" height="100%" fill="white" />
-                    <rect
-                      className={styles.spotlightHole}
-                      x={anchorRect.left - SPOTLIGHT_INFLATE}
-                      y={anchorRect.top - SPOTLIGHT_INFLATE}
-                      width={anchorRect.width + SPOTLIGHT_INFLATE * 2}
-                      height={anchorRect.height + SPOTLIGHT_INFLATE * 2}
-                      rx={SPOTLIGHT_RADIUS}
-                      fill="black"
-                    />
+                    <rect className={styles.spotlightHole} {...holeGeometry} fill="black" />
                   </mask>
-                  <rect className={styles.spotlightDim} width="100%" height="100%" mask={`url(#${maskId})`} />
+                  <rect
+                    className={styles.spotlightDim}
+                    width="100%"
+                    height="100%"
+                    mask={`url(#${maskId})`}
+                  />
+                  {/* Subtle glow behind the crisp ring — same token, lower
+                      opacity via stroke-opacity, no new colour. */}
+                  <rect className={styles.spotlightRingGlow} {...holeGeometry} fill="none" />
+                  <rect className={styles.spotlightRing} {...holeGeometry} fill="none" />
                 </svg>
               )}
             </div>
@@ -264,6 +290,12 @@ function TourOverlayInner({ steps }: { steps: TourStepDef[] }) {
               data-side={position?.side ?? undefined}
               style={bubbleStyle}
             >
+              {/* Points the bubble at its anchor — omitted entirely for
+                  centered steps (no anchor side to point along). Moves with
+                  the bubble for free: it's a plain child riding the parent's
+                  own transform/transition, positioned per-side by the CSS
+                  keyed off the bubble's own `data-side`. */}
+              {anchored && <div className={styles.arrow} aria-hidden="true" />}
               <p className={styles.progress}>
                 Step {displayed.stepNumber} of {steps.length}
               </p>

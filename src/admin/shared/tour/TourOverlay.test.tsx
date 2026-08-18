@@ -48,6 +48,9 @@ describe('TourOverlay', () => {
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Step 1 of 2')).toBeTruthy()
     expect(within(dialog).getByText('First step')).toBeTruthy()
+    // Anchored step: bubble resolves a side (drives which edge the arrow
+    // points from).
+    expect(dialog.getAttribute('data-side')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
 
@@ -57,6 +60,8 @@ describe('TourOverlay', () => {
     expect(within(screen.getByRole('dialog')).getByText('Last step')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Finish' })).toBeTruthy()
     expect(onEnd).not.toHaveBeenCalled()
+    // Centered step: no anchor side, so no arrow renders either.
+    expect(screen.getByRole('dialog').getAttribute('data-side')).toBeNull()
   })
 
   it('keeps the same bubble element across a step transition — no remount, no blank gap', async () => {
