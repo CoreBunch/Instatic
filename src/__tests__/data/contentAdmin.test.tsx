@@ -922,6 +922,46 @@ describe('ContentPage', () => {
     expect(useWorkspaceLayout.getState().rightPanel.collapsed).toBe(true)
   })
 
+  it('keeps the stored title in the list when a list load resolves after a create', async () => {
+    // `createUntitledEntry` stores "Untitled" on the server but hands the editor
+    // a copy whose title is blank, so the title field shows its placeholder. If
+    // the in-flight list load resolves *after* that create, the workspace used
+    // to merge the editor's blank copy back into the list and the sidebar
+    // rendered an empty row. Which request won was scheduling luck, so this
+    // test pins the losing order down instead of waiting for it to reappear.
+    const baseFetch = globalThis.fetch
+    let releaseInitialList: () => void = () => {}
+    const initialListHeld = new Promise<void>((resolve) => { releaseInitialList = resolve })
+    let heldTheListGet = false
+
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (
+        !heldTheListGet &&
+        String(input) === '/admin/api/cms/data/tables/posts/rows' &&
+        init?.method === 'GET'
+      ) {
+        heldTheListGet = true
+        await initialListHeld
+      }
+      return baseFetch(input, init)
+    }
+
+    render(
+      <AdminTestProviders>
+        <ContentPage />
+      </AdminTestProviders>,
+    )
+
+    const postsRegion = await screen.findByRole('region', { name: 'Posts' })
+    fireEvent.click(within(postsRegion).getByRole('button', { name: /new post/i }))
+    expect(await screen.findByTestId('content-settings-panel')).toBeDefined()
+
+    // The create has landed; now let the older list response arrive.
+    releaseInitialList()
+
+    expect(await within(postsRegion).findByText('Untitled')).toBeDefined()
+  })
+
   it('shows entry authors in the content list and reassigns the selected entry author', async () => {
     const user = userEvent.setup()
     const calls: FetchCall[] = []
