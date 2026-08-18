@@ -17,7 +17,12 @@ import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useEditorStore } from '@site/store/store'
 import { loopSourceRegistry } from '@core/loops/registry'
 import { ENTRY_FIELD_FILTER_KEY, ENTRY_FIELD_SOURCE_ID } from '@core/loops'
-import { CELL_ORDER_PREFIX } from '@core/loops/cellFilter'
+import {
+  CELL_ORDER_PREFIX,
+  isCellComparableField,
+  parseCellOrder,
+  withoutCellFilter,
+} from '@core/loops/cellFilter'
 import type { LoopEntitySource } from '@core/loops/types'
 import type { DataRow, DataTableListItem } from '@core/data/schemas'
 import type { PropertyControl, PropertySchema } from '@core/module-engine'
@@ -88,6 +93,7 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
       const tableField = source.filterSchema.tableId
       if (tableField && tableField.type === 'select') {
         const selectedTable = tables.find((t) => t.id === filters.tableId)
+        const comparableFields = (selectedTable?.fields ?? []).filter(isCellComparableField)
         const cellFieldControl = source.filterSchema.cellField
         const operator = typeof filters.cellOperator === 'string' ? filters.cellOperator : 'is'
         // The value box is meaningless for the checkbox / emptiness operators,
@@ -107,8 +113,8 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
           schema.cellField = {
             ...cellFieldControl,
             options: [
-              { label: '— every row —', value: '' },
-              ...(selectedTable?.fields ?? []).map((f) => ({ label: f.label || f.id, value: f.id })),
+              { label: '— No filter —', value: '' },
+              ...comparableFields.map((f) => ({ label: f.label || f.id, value: f.id })),
             ],
           }
         }
@@ -157,7 +163,11 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
 
   // Order options reactive to source change. For data rows the selected
   // table's own fields are offered too (`cell:<id>`), so a list can sort by a
-  // real date or title instead of only by the row's SQL columns.
+  // real date or title instead of only by the row's SQL columns. The `Field:`
+  // prefix separates them from the row's built-in columns above, which can
+  // carry the same names. Only fields a cell condition can address are
+  // offered — sorting by a repeater or a multi-value relation compares JSON
+  // array text, which orders nothing an author would recognise.
   const orderOptions: PropertyControl = {
     type: 'select',
     label: 'Order by',
@@ -166,7 +176,8 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
         ...source.orderByOptions.map((o) => ({ label: o.label, value: o.id })),
         ...(source.id === 'data.rows'
           ? (tables?.find((t) => t.id === filters.tableId)?.fields ?? [])
-            .map((f) => ({ label: `${f.label || f.id} (field)`, value: `${CELL_ORDER_PREFIX}${f.id}` }))
+            .filter(isCellComparableField)
+            .map((f) => ({ label: `Field: ${f.label || f.id}`, value: `${CELL_ORDER_PREFIX}${f.id}` }))
           : []),
       ]
       : [{ label: 'Default', value: '' }],
@@ -187,6 +198,24 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
 
   function handleFilterChange(key: string, value: unknown) {
     const nextFilters = { ...filters, [key]: value }
+
+    // Pointing the loop at a different table invalidates any cell filter or
+    // cell sort: those field ids name columns the new table does not have. A
+    // stale one silently empties the list while the pickers — which fall back
+    // to their first option when the stored value is not among them — read as
+    // "No filter" and the default order. Clear both instead of leaving the
+    // panel disagreeing with the query.
+    if (key === 'tableId' && value !== filters.tableId) {
+      const orderBy = typeof props.orderBy === 'string' ? props.orderBy : ''
+      updateNodeProps(nodeId, {
+        filters: withoutCellFilter(nextFilters),
+        ...(parseCellOrder(orderBy)
+          ? { orderBy: source?.orderByOptions[0]?.id ?? '' }
+          : {}),
+      })
+      return
+    }
+
     updateNodeProps(nodeId, { filters: nextFilters })
   }
 

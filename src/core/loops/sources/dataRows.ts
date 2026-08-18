@@ -526,7 +526,7 @@ export const DataRowsSource: LoopEntitySource = {
     // options are populated per selected table by the Properties Panel.
     cellField: {
       type: 'select',
-      label: 'Only rows where',
+      label: 'Filter by',
       options: [],
     },
     cellOperator: {
@@ -537,8 +537,8 @@ export const DataRowsSource: LoopEntitySource = {
         { label: 'is not', value: 'isNot' },
         { label: 'is checked', value: 'isTrue' },
         { label: 'is unchecked', value: 'isFalse' },
-        { label: 'is set', value: 'isSet' },
-        { label: 'is empty', value: 'isEmpty' },
+        { label: 'has any value', value: 'isSet' },
+        { label: 'has no value', value: 'isEmpty' },
       ],
     },
     cellValue: {

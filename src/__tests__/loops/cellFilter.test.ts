@@ -6,18 +6,19 @@
  *   - the SQL must bind BOTH the field name and the value, so a field id
  *     can never reach the statement text.
  *
- * The SQL/TypeScript predicates are also checked against each other: they
- * are two spellings of one rule, and the canvas uses one while the
- * publisher uses the other.
+ * Which fields a condition may address is checked here too: the SQL reads a
+ * cell as text, so a field holding a collection can never match a single
+ * value and must not reach the picker at all.
  */
 import { describe, expect, test } from 'bun:test'
 import {
-  cellFilterMatches,
   cellFilterSql,
   cellOrderSql,
   parseCellFilter,
   parseCellOrder,
   CELL_FILTER_OPERATORS,
+  isCellComparableField,
+  withoutCellFilter,
   type CellFilter,
 } from '@core/loops/cellFilter'
 
@@ -164,37 +165,42 @@ describe('cellOrderSql', () => {
   })
 })
 
-describe('cellFilterMatches mirrors the SQL semantics', () => {
-  const rows = {
-    featuredTrue: { featured: true, name: 'A' },
-    featuredFalse: { featured: false, name: 'B' },
-    missing: { name: 'C' },
-    empty: { featured: '', name: 'D' },
-  }
-
-  test('isTrue only matches a true value', () => {
-    const f: CellFilter = { field: 'featured', operator: 'isTrue', value: '' }
-    expect(cellFilterMatches(f, rows.featuredTrue)).toBe(true)
-    expect(cellFilterMatches(f, rows.featuredFalse)).toBe(false)
-    expect(cellFilterMatches(f, rows.missing)).toBe(false)
+describe('isCellComparableField', () => {
+  test('scalar fields can be filtered and sorted', () => {
+    for (const type of ['text', 'longText', 'number', 'boolean', 'date', 'select', 'url', 'email'] as const) {
+      expect(isCellComparableField({ type, id: 'f', label: 'F' } as never)).toBe(true)
+    }
   })
 
-  test('isFalse matches false AND a missing field', () => {
-    const f: CellFilter = { field: 'featured', operator: 'isFalse', value: '' }
-    expect(cellFilterMatches(f, rows.featuredFalse)).toBe(true)
-    expect(cellFilterMatches(f, rows.missing)).toBe(true)
-    expect(cellFilterMatches(f, rows.featuredTrue)).toBe(false)
+  test('collection-valued fields are excluded', () => {
+    // Their cell reads back as JSON array text, which no single picked value
+    // can equal — the control would look live and return nothing.
+    for (const type of ['multiSelect', 'media', 'repeater', 'pageTree', 'fieldSchema'] as const) {
+      expect(isCellComparableField({ type, id: 'f', label: 'F' } as never)).toBe(false)
+    }
   })
 
-  test('is / isNot compare as text', () => {
-    expect(cellFilterMatches({ field: 'name', operator: 'is', value: 'A' }, rows.featuredTrue)).toBe(true)
-    expect(cellFilterMatches({ field: 'name', operator: 'isNot', value: 'A' }, rows.featuredTrue)).toBe(false)
-    expect(cellFilterMatches({ field: 'name', operator: 'isNot', value: 'A' }, rows.featuredFalse)).toBe(true)
+  test('a relation splits on cardinality, not on type', () => {
+    const single = { type: 'relation', id: 'cat', label: 'Category', targetTableId: 'cats' }
+    expect(isCellComparableField(single as never)).toBe(true)
+    expect(isCellComparableField({ ...single, allowMultiple: true } as never)).toBe(false)
+    expect(isCellComparableField({ ...single, allowMultiple: false } as never)).toBe(true)
+  })
+})
+
+describe('withoutCellFilter', () => {
+  test('drops every cell key and keeps the rest', () => {
+    expect(withoutCellFilter({
+      tableId: 'logos',
+      cellField: 'featured',
+      cellOperator: 'isTrue',
+      cellValue: 'x',
+    })).toEqual({ tableId: 'logos' })
   })
 
-  test('isSet / isEmpty treat an empty string as empty', () => {
-    expect(cellFilterMatches({ field: 'featured', operator: 'isSet', value: '' }, rows.empty)).toBe(false)
-    expect(cellFilterMatches({ field: 'featured', operator: 'isEmpty', value: '' }, rows.empty)).toBe(true)
-    expect(cellFilterMatches({ field: 'featured', operator: 'isEmpty', value: '' }, rows.missing)).toBe(true)
+  test('does not mutate the bag it was given', () => {
+    const filters = { tableId: 'team', cellField: 'featured' }
+    withoutCellFilter(filters)
+    expect(filters.cellField).toBe('featured')
   })
 })

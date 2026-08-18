@@ -18,6 +18,8 @@
  * maintainers would have to keep sound.
  */
 
+import type { DataField } from '@core/data/schemas'
+
 // ---------------------------------------------------------------------------
 // Ordering by a cell
 // ---------------------------------------------------------------------------
@@ -168,26 +170,53 @@ export function cellFilterSql(input: {
   }
 }
 
-/**
- * The same predicate in TypeScript, for callers holding rows rather than a
- * query — the canvas preview and any future in-memory path. Keeping it beside
- * the SQL keeps the two definitions honest about each other.
- */
-export function cellFilterMatches(filter: CellFilter, cells: Record<string, unknown>): boolean {
-  const raw = cells[filter.field]
-  const text = raw === null || raw === undefined
-    ? null
-    : typeof raw === 'string' ? raw : typeof raw === 'number' || typeof raw === 'boolean' ? String(raw) : JSON.stringify(raw)
+// ---------------------------------------------------------------------------
+// Which fields a cell condition can address
+// ---------------------------------------------------------------------------
 
-  // Mirrors the SQL exactly: a missing cell reads as the empty string, and
-  // the checked/unchecked operators accept both boolean spellings.
-  const value = text ?? ''
-  switch (filter.operator) {
-    case 'is': return value === filter.value
-    case 'isNot': return value !== filter.value
-    case 'isTrue': return value === 'true' || value === '1'
-    case 'isFalse': return value === 'false' || value === '0' || value === ''
-    case 'isSet': return value !== ''
-    case 'isEmpty': return value === ''
-  }
+/**
+ * Field types whose cell holds a COLLECTION rather than a single value, plus
+ * the ones whose stored value is an id the editor never shows.
+ *
+ * Both are unusable here for the same reason: the SQL reads one cell as text.
+ * A collection reads back as its JSON array (`["cat_impact"]`), so it can never
+ * equal the single value an author picks; an opaque id gives them nothing to
+ * type or recognise. Offering either would put a control in front of the author
+ * that looks like it works and silently returns nothing.
+ */
+const UNCOMPARABLE_FIELD_TYPES: ReadonlySet<string> = new Set([
+  'multiSelect',
+  'media',
+  'repeater',
+  'pageTree',
+  'fieldSchema',
+])
+
+/**
+ * Can a single cell condition — filter or sort — address this field?
+ *
+ * A multi-value `relation` is excluded for the collection reason above even
+ * though a single-value one is fine: the same field TYPE goes both ways, so the
+ * cardinality has to be read off the field, not the type.
+ */
+export function isCellComparableField(field: DataField): boolean {
+  if (UNCOMPARABLE_FIELD_TYPES.has(field.type)) return false
+  if (field.type === 'relation' && field.allowMultiple === true) return false
+  return true
+}
+
+/**
+ * Strip the cell filter out of a loop's `filters` bag.
+ *
+ * Used when the loop's table changes: the field id names a column the new table
+ * does not have, and leaving it silently empties the list while the field picker
+ * — which falls back to its first option when the stored value is not among them
+ * — tells the author no filter is set.
+ */
+export function withoutCellFilter(filters: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...filters }
+  delete next.cellField
+  delete next.cellOperator
+  delete next.cellValue
+  return next
 }
