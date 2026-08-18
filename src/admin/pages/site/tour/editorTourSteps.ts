@@ -88,7 +88,7 @@ export const editorTourSteps: TourStepDef[] = [
     id: 'framework',
     anchor: 'panel-rail-framework',
     title: 'Your design variables',
-    body: 'Click this magenta Framework icon in the left rail to open your design variables — site-wide Colors, Type and Space tokens. Change them once, they update everywhere.',
+    body: 'Click this purple Framework icon in the left rail to open your design variables — site-wide Colors, Type and Space tokens. Change them once, they update everywhere.',
     side: 'right',
     prepare: openFrameworkPanel,
   },
