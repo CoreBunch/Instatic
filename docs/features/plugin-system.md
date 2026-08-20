@@ -536,12 +536,17 @@ Plugin storage is per-plugin, per-collection. The collection name must match a `
 
 ```js
 api.cms.hooks.on('publish.after', async (event) => { /* … */ })
-api.cms.hooks.filter('publish.html', async (html) => html + '<!-- plugin -->')
+api.cms.hooks.filter('publish.html', async (html, { path }) => {
+  const canonical = new URL(path, 'https://example.com').href
+  return html.replace('</head>', `<link rel="canonical" href="${canonical}"></head>`)
+})
 const name = await api.cms.hooks.emit('sync.done', { /* … */ })
 // name === 'plugin.<your-plugin-id>.sync.done'
 ```
 
 **Host-emitted events** (the reserved core list, `CORE_HOOK_EVENTS` in `src/core/plugins/hookBus.ts`): `publish.before`, `publish.after`, `content.entry.created`, `content.entry.updated`, `content.entry.deleted`, `settings.changed`. **Filters**: `publish.html`, `publish.headers`, `content.entry.cells`.
+
+`publish.html` handlers receive `{ pluginId, siteId, pageId, slug, path }`. `slug` identifies the rendered page or template document; for an entry route it remains the entry template's slug. `path` is the emitted page's public URL pathname, so it differs per entry (for example `/posts/hello-world`) and is `/` for the home page.
 
 **Plugin emits are namespaced.** The host rewrites every `emit('<name>', …)` to `plugin.<your-plugin-id>.<name>` (a name already in your own namespace passes through unchanged), so event provenance is unforgeable — a plugin cannot fire `content.entry.created` or any other core event at other listeners, and emitting a name in *another* plugin's namespace (`plugin.<other-id>.*`) is rejected with an error. `emit` resolves to the canonical namespaced name. Cross-plugin eventing still works: subscribing is unrestricted, so a plugin listens to another plugin's events by their full namespaced name, e.g. `api.cms.hooks.on('plugin.acme.analytics.page-view', …)`.
 
@@ -746,7 +751,7 @@ const { count } = await api.cms.content.republishAll()
 
 `tables.create(input)` accepts the plugin-facing field projection, then maps it to the host's canonical `DataField` schema before storage. `richText` fields default to Markdown format, `select` / `multiSelect` option `value`s become stable option IDs, and `relation.targetTableSlug` must resolve to an existing table slug. `repeater` accepts a one-level `fields` schema made from ordinary authorable fields; nested relation slugs are resolved through the same gate, while recursive repeaters, `pageTree`, and `fieldSchema` item fields are rejected by the boundary schema.
 
-`republishAll` fires the full publish pipeline (`publish.before` → `publish.html` → `publish.after`), so other plugins' filters and listeners participate.
+`republishAll` fires the full publish pipeline (`publish.before` → `publish.html` → `publish.after`) for directly routable published pages, so other plugins' filters and listeners participate. Template documents are skipped because they have no standalone public path.
 
 Tree mutation and replacement payloads are validated against the canonical `@core/page-tree` TypeBox schemas before host dispatch. `insertNode.node` must be a complete `PageNode`, and `replace(tree)` must receive a complete `NodeTree` with a valid `rootNodeId`, matching node-map keys, resolvable child IDs, and no reachable cycles.
 

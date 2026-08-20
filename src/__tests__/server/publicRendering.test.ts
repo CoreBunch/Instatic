@@ -7,6 +7,7 @@ import {
   renderPublishedDataRowTemplate,
 } from '../../../server/publish/publicRenderer'
 import type { PublishedDataRow } from '@core/data/schemas'
+import { hookBus } from '@core/plugins/hookBus'
 import { handleServerRequest } from '../../../server/router'
 
 function snapshot(text: string): PublishedPageSnapshot {
@@ -111,11 +112,15 @@ describe('public rendering', () => {
   // without a reset, one test's cached `/` render would be served to the next.
   beforeEach(() => {
     resetForTests()
+    hookBus.reset()
   })
 
   it('renders complete HTML from a published snapshot', async () => {
     const snap = snapshot('Visible to public')
-    const { html } = await renderPublishedSnapshot(snap, { db: makeFakeDb(snap) })
+    const { html } = await renderPublishedSnapshot(snap, {
+      db: makeFakeDb(snap),
+      url: new URL('http://localhost/'),
+    })
 
     expect(html).toContain('<!DOCTYPE html>')
     expect(html).toContain('Visible to public')
@@ -125,11 +130,15 @@ describe('public rendering', () => {
   // Guards the page-wrapper's identity reporting after the shared
   // `renderMergedTemplate` extraction: pageId/slug come from the page row,
   // not the merged tree.
-  it('reports pageId and slug from the page row for the snapshot path', async () => {
+  it('reports page identity and the public path for the snapshot path', async () => {
     const snap = snapshot('Identity')
-    const out = await renderPublishedSnapshot(snap, { db: makeFakeDb(snap) })
+    const out = await renderPublishedSnapshot(snap, {
+      db: makeFakeDb(snap),
+      url: new URL('http://localhost/'),
+    })
     expect(out.pageId).toBe('page_home')
     expect(out.slug).toBe('index')
+    expect(out.path).toBe('/')
     expect(out.siteId).toBe('project_1')
   })
 
@@ -161,7 +170,10 @@ describe('public rendering', () => {
       publishedAt: '2024-01-01T00:00:00.000Z',
       createdAt: '2024-01-01T00:00:00.000Z',
     }
-    const result = await renderPublishedDataRowTemplate(snap, row, { db: makeFakeDb(snap) })
+    const result = await renderPublishedDataRowTemplate(snap, row, {
+      db: makeFakeDb(snap),
+      url: new URL('http://localhost/blog/hello'),
+    })
     expect(result).toBeNull()
   })
 
@@ -179,20 +191,30 @@ describe('public rendering', () => {
       ],
     }
 
-    const { html } = await renderPublishedSnapshot(published, { db: makeFakeDb(published) })
+    const { html } = await renderPublishedSnapshot(published, {
+      db: makeFakeDb(published),
+      url: new URL('http://localhost/'),
+    })
 
     expect(html).toContain("script-src 'self'")
     expect(html).toContain('/_instatic/assets/version_1/entries/entry.js')
   })
 
   it('serves / from the active published index snapshot', async () => {
+    hookBus.filter('home-path-test', 'publish.html', (html, context) => {
+      const { path, slug } = context as { path?: string; slug?: string }
+      return `${html}<meta name="publish-context" content="${path ?? ''}|${slug ?? ''}">`
+    })
+
     const res = await handleServerRequest(new Request('http://localhost/'), {
       db: makeFakeDb(snapshot('Homepage')),
     })
 
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('text/html')
-    expect(await res.text()).toContain('Homepage')
+    const html = await res.text()
+    expect(html).toContain('Homepage')
+    expect(html).toContain('<meta name="publish-context" content="/|index">')
   })
 
   it('serves immutable published runtime assets by public path', async () => {
@@ -222,7 +244,10 @@ describe('public rendering', () => {
 
   it('emits external CSS <link> tags pointing at the per-site bundle', async () => {
     const snap = snapshot('Hello')
-    const { html } = await renderPublishedSnapshot(snap, { db: makeFakeDb(snap) })
+    const { html } = await renderPublishedSnapshot(snap, {
+      db: makeFakeDb(snap),
+      url: new URL('http://localhost/'),
+    })
     expect(html).toMatch(/<link rel="stylesheet" href="\/_instatic\/css\/reset-[a-f0-9]{12}\.css">/)
     // No inline reset block — site-wide CSS lives in the external bundle.
     expect(html).not.toContain(':where(*, *::before, *::after)')

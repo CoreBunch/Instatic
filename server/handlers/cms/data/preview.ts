@@ -134,6 +134,7 @@ export async function handleRowPreview(
       html: published.html,
       pageId: merged.id,
       slug: merged.slug,
+      path: publicPath,
       siteId: snapshot.site.id,
       cssBundle,
       jsModuleIds: published.jsModuleIds.filter((id) => moduleJsMap.has(id)),

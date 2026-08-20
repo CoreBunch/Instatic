@@ -8,6 +8,7 @@ import { resetForTests } from '../../../server/publish/renderCache'
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
 import { makePage, makeSite } from '../publisher/helpers'
 import { createFakeDb } from './dbTestFake'
+import { hookBus } from '../../core/plugins/hookBus'
 import {
   prepareInactiveSlot,
   writeArtefact,
@@ -37,6 +38,7 @@ describe('CMS dynamic template routes', () => {
   // published site can't leak into the next (or in from another test file).
   beforeEach(() => {
     resetForTests()
+    hookBus.reset()
   })
 
   it('renders a published data row through the highest priority page template', async () => {
@@ -131,6 +133,11 @@ describe('CMS dynamic template routes', () => {
       },
     ])
 
+    hookBus.filter('issue-225-regression', 'publish.html', (html, context) => {
+      const { path, slug } = context as { path?: string; slug?: string }
+      return `${html}<meta name="publish-context-path" content="${path ?? ''}"><meta name="publish-context-slug" content="${slug ?? ''}">`
+    })
+
     const res = await handleServerRequest(new Request('http://localhost/posts/dynamic-post'), { db })
     const html = await res.text()
 
@@ -138,6 +145,8 @@ describe('CMS dynamic template routes', () => {
     expect(res.headers.get('content-type')).toContain('text/html')
     expect(html).toContain('<h1>Dynamic Post</h1>')
     expect(html).not.toContain('Static title')
+    expect(html).toContain('<meta name="publish-context-path" content="/posts/dynamic-post">')
+    expect(html).toContain('<meta name="publish-context-slug" content="post-template">')
   })
 
   it('serves a template route from disk when a baked artefact exists', async () => {
