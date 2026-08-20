@@ -78,7 +78,7 @@ The two arrays must have **identical IDs in the same order**. Each migration has
 | `jsonb`                  | `text`              | JSON payloads                           |
 | `timestamptz`            | `text`              | Timestamps (stored as ISO 8601 in SQLite) |
 | `bytea`                  | `blob`              | Binary blobs                            |
-| `bigint`                 | `integer`           | Large integers                          |
+| `bigint`                 | `integer`           | Large integers — **reads back as a `string` on Postgres**, see below |
 | `boolean`                | `integer`           | Booleans (`0` / `1` in SQLite)          |
 | `distinct on (...)`      | `row_number() over (...)` subquery | "Latest per group" queries |
 
@@ -149,6 +149,20 @@ For SQLite, the parent directory of the DB file is created automatically.
 4. **Transaction serialization.** `bun:sqlite` uses one shared synchronous connection, but a transaction callback can `await` async work while its `BEGIN` is still open. Two concurrent `db.transaction()` calls would cause the second `BEGIN` to throw "cannot start a transaction within a transaction", and the implied `ROLLBACK` would silently abort the first transaction's writes. The adapter prevents this with a promise chain (`txChain`): each `.transaction()` call queues behind the previous one and only issues `BEGIN` after the prior transaction has fully settled. Callers don't need to do anything — it's automatic.
 
 The Postgres adapter relies on `Bun.sql`'s native handling of `jsonb` columns and parameter binding — JS objects sent to `jsonb` columns are stored as JSONB and read back as `Record<string, unknown>` automatically.
+
+**`bigint` columns read back as strings on Postgres.** `Bun.sql` returns `int8` as a JS string so values above `Number.MAX_SAFE_INTEGER` don't lose precision, while SQLite's `integer` affinity hands back a real number. The adapter deliberately does not coerce — that would throw the precision guarantee away for every caller. **A repository reading a `bigint` column therefore types the row field `number | string` and coerces in its mapper:**
+
+```ts
+interface MediaAssetRow {
+  size_bytes: number | string   // `bigint` — Postgres returns int8 as a string
+}
+
+function rowToAsset(row: MediaAssetRow): MediaAsset {
+  return { sizeBytes: Number(row.size_bytes) }
+}
+```
+
+Skipping the coercion is invisible in the default SQLite install and only breaks Postgres deployments, so it will not show up in `bun test` (the harness is in-memory SQLite). Existing examples: `repositories/mediaAssetMapping.ts`, `repositories/mediaMigration.ts`, `ai/conversations/store.ts`, `ai/mcp/oauth/store.ts`, `repositories/syncSequence.ts`. Aggregates need it too — `sum()` over a `bigint` returns `numeric`, which also arrives as a string (`handlers/cms/dashboard/storage.ts`).
 
 **`server/db/postgres.ts`** normalizes returned rows by converting `Date` instances to ISO strings and parsing string-valued `_json` columns. It also resolves `rowCount` from `result.count` (Bun's per-command row count from PostgreSQL's CommandComplete tag) rather than `result.length`. For non-RETURNING writes (UPDATE / DELETE / INSERT), Postgres streams the affected-row count in its CommandComplete tag rather than returning data rows, so `result.length` is always 0 for those statements. `result.count` captures the CommandComplete count, giving `rowCount` the same semantics as the SQLite adapter's `info.changes`. Falls back to `result.length` if the property is absent.
 
