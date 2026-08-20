@@ -4,7 +4,12 @@ All notable changes to Instatic will be documented here.
 
 This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
 
-## Unreleased
+## 0.0.17
+
+### Editor, import, and publishing
+
+- Added a condition to data-row loops so a list can show a subset of a table rather than always its newest rows — pick one of the table's own fields and require it to be checked, unchecked, equal to a value, or to have any value at all. A relation field offers its rows by name instead of asking for an id. The condition applies on the canvas, on published pages, and in the "load more" endpoint, and the item count follows it so pagination never advertises rows the page drops.
+- Added the table's own fields to a data-row loop's "Order by" list, so a list can follow a real date, title, or rank stored in the row instead of only the row's built-in columns. Values compare as text, which sorts ISO dates chronologically.
 
 ## 0.0.16 - 2026-08-11
 
