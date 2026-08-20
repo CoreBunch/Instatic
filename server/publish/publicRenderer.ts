@@ -5,7 +5,11 @@ import { publishPage } from '@core/publisher'
 import { buildRouteFrame } from '@core/templates/contextFrames'
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
-import { resolveTemplateChain, resolveNotFoundTemplate, composeTemplateChain } from '@core/templates'
+import {
+  composeTemplateChain,
+  resolveNotFoundTemplate,
+  resolveTemplateChain,
+} from '@core/templates'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { prefetchLoopData, publishedDataRowToLoopItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
@@ -15,6 +19,7 @@ import type { SiteCssBundle } from '@core/publisher'
 import type { PublishedDataRow } from '@core/data/schemas'
 import type { DbClient } from '../db/client'
 import type { PublishedPageSnapshot } from '../repositories/publish'
+import { prefetchGlobalDataBindings } from './dataBindingPrefetch'
 
 /**
  * URL prefix where the Bun server exposes the per-site CSS bundle. Mirrors
@@ -92,15 +97,22 @@ async function renderMergedTemplate(
   ctx: RenderPublishedSnapshotContext,
 ): Promise<{ html: string; jsModuleIds: string[]; publishVersion: number; cssBundle: SiteCssBundle }> {
   const publishVersion = ctx.publishVersion ?? getPublishVersion()
+  const data = await prefetchGlobalDataBindings([merged], ctx.db)
+  const resolvedTemplateContext = Object.keys(data).length > 0
+    ? {
+        ...(templateContext ?? { entryStack: [] }),
+        data,
+      }
+    : templateContext
   const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
   const loopData = await prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url)
   const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, ctx.db, {
-    templateContext,
+    templateContext: resolvedTemplateContext,
     loopData,
   })
   const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged, publishVersion, { mediaAssets })
   const published = publishPage(merged, snapshot.site, registry, {
-    templateContext,
+    templateContext: resolvedTemplateContext,
     runtimeAssets: snapshot.runtimeAssets,
     runtimePackageImportmap: snapshot.runtimePackageImportmap,
     cssEmission: 'external',

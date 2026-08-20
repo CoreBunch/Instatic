@@ -9,6 +9,7 @@ import {
   listDataAuthorOptions,
   updateDataRowAuthor,
   saveDataRowDraft,
+  getGlobalDataBindingRows,
   getPublishedDataRowByRoute,
   getDataRowRedirectByRoute,
 } from '../../../server/repositories/data'
@@ -56,6 +57,27 @@ describe('data CMS migrations', () => {
 })
 
 describe('data CMS repository', () => {
+  it('reads live custom-data cells for global bindings without requiring a published version', async () => {
+    const db = makeDataFakeDb([
+      (sql, params) => {
+        if (!sql.startsWith('select data_rows.id as row_id')) return undefined
+        expect(sql).toContain("data_tables.kind = 'data'")
+        expect(sql).toContain('data_tables.system = false')
+        expect(sql).not.toContain('active_version_id')
+        expect(sql).not.toContain('data_row_versions')
+        expect(params).toEqual(['global-config-row'])
+        return {
+          rows: [{ row_id: 'global-config-row', cells_json: { stars: '7,000' } }],
+          rowCount: 1,
+        }
+      },
+    ])
+
+    await expect(getGlobalDataBindingRows(db, ['global-config-row'])).resolves.toEqual([
+      { rowId: 'global-config-row', cells: { stars: '7,000' } },
+    ])
+  })
+
   it('lists data tables with frontend field names', async () => {
     const db = makeDataFakeDb([
       (sql) => {

@@ -5,7 +5,7 @@
  * for the sibling `.tsx` component files.
  */
 
-import type { DataMeta, DataMetaField } from '@core/data/schemas'
+import type { DataMeta, DataMetaField, DataMetaTable, DataRow } from '@core/data/schemas'
 import type { DynamicPropBinding } from '@core/page-tree'
 import type { LoopSourceField } from '@core/loops/types'
 import { SYSTEM_SOURCES, type SystemSourceId } from './systemSources'
@@ -17,6 +17,7 @@ import type { PropertyControlKind } from './bindingCompatibility'
 
 export type FieldEntry =
   | { kind: 'meta'; field: DataMetaField }
+  | { kind: 'data'; table: DataMetaTable; row: DataRow; field: DataMetaField }
   | { kind: 'loop'; field: LoopSourceField }
   | { kind: 'system'; source: SystemSourceId; field: LoopSourceField }
 

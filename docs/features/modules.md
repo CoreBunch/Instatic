@@ -444,7 +444,7 @@ Modules don't need to know — they just receive resolved props.
 
 ### Bind a prop to dynamic data
 
-`PageNode.dynamicBindings` lets a prop be filled from `currentEntry` / `parentEntry` / `page` / `site` / `route` at render time:
+`PageNode.dynamicBindings` lets a prop be filled from `currentEntry` / `parentEntry` / `page` / `site` / `route` / `data` at render time. The `data` source addresses a custom-data value as `<rowId>.<fieldId>` and is available outside loops and templates:
 
 ```jsonc
 {
@@ -452,6 +452,16 @@ Modules don't need to know — they just receive resolved props.
   "props": { "text": "Default heading", "level": 2 },
   "dynamicBindings": {
     "text": { "source": "currentEntry", "field": "title" }
+  }
+}
+```
+
+```jsonc
+{
+  "moduleId": "base.text",
+  "props": { "text": "Star us on GitHub" },
+  "dynamicBindings": {
+    "text": { "source": "data", "field": "<rowId>.<fieldId>" }
   }
 }
 ```

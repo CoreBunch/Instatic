@@ -34,6 +34,7 @@ import { readLoopProps } from '../../publish/loopPrefetch'
 import { getPublishedLoopIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { LOOP_RUNTIME_JS } from '../../publish/loopRuntime'
+import { prefetchGlobalDataBindings } from '../../publish/dataBindingPrefetch'
 
 const LOOP_RUNTIME_PATH = '/_instatic/assets/loop-runtime.js'
 
@@ -130,12 +131,13 @@ export async function handleLoopRequest(
   if (variants.length === 0) {
     return jsonResponse({ html: '', hasMore, pageNumber })
   }
+  const data = await prefetchGlobalDataBindings([containingPage], ctx.db)
   const baseConfig: RenderConfig = {
     page: containingPage,
     site,
     registry,
     breakpointId: undefined,
-    templateContext: { entryStack: [] },
+    templateContext: { entryStack: [], data },
     loopData: new Map<string, ResolvedLoopRenderData>([
       [loopId, { items: result.items, totalItems: result.totalItems, pageNumber, hasMore }],
     ]),

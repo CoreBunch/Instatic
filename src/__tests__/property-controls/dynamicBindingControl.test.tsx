@@ -31,6 +31,7 @@ const postsTable = {
   primaryFieldId: 'title',
   routable: true,
   versioned: true,
+  system: true,
   fields: [
     { id: 'title', label: 'Title', type: 'text' },
     { id: 'authorName', label: 'Author name', type: 'text' },

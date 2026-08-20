@@ -44,7 +44,7 @@ import {
  * Dispatch by source:
  *   - `currentEntry` / `parentEntry` — read from the entry stack
  *     (top / second-from-top).
- *   - `page` / `site` / `route` — read from the corresponding
+ *   - `page` / `site` / `route` / `data` — read from the corresponding
  *     named frame on the context.
  *
  * Returns `undefined` for fields that don't exist on the resolved frame

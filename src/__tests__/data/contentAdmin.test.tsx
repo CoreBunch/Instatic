@@ -372,6 +372,7 @@ beforeEach(() => {
             primaryFieldId: 'title',
             routable: true,
             versioned: true,
+            system: true,
             fields: [
               { id: 'title', label: 'Title', type: 'text' },
               { id: 'body', label: 'Body', type: 'richText' },
@@ -727,6 +728,7 @@ describe('ContentPage', () => {
               primaryFieldId: 'title',
               routable: true,
               versioned: true,
+              system: true,
               fields: [
                 { id: 'title', label: 'Title', type: 'text' },
                 {

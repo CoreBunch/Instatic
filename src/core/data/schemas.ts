@@ -657,6 +657,7 @@ const DataMetaTableSchema = Type.Object({
   primaryFieldId: Type.String(),
   routable: Type.Boolean(),
   versioned: Type.Boolean(),
+  system: Type.Boolean(),
   fields: Type.Array(DataMetaFieldSchema),
 })
 

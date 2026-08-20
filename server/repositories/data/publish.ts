@@ -102,6 +102,11 @@ export interface RowTableRouteInfo {
   tableSlug: string
 }
 
+export interface GlobalDataBindingRow {
+  rowId: string
+  cells: Record<string, unknown>
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -329,6 +334,31 @@ export async function listPublishedRowRoutes(db: DbClient): Promise<PublishedRow
     tableSlug: row.table_slug,
     tableRouteBase: normalizeRouteBase(row.table_route_base),
   }))
+}
+
+/**
+ * Read the live cells for exact rows referenced by global page bindings.
+ * Plain custom data tables are deliberately non-versioned; publishing a site
+ * snapshots their current values into the generated page artefacts.
+ */
+export async function getGlobalDataBindingRows(
+  db: DbClient,
+  rowIds: readonly string[],
+): Promise<GlobalDataBindingRow[]> {
+  if (rowIds.length === 0) return []
+  const ids = rowIds.map((_, index) => placeholder(db.dialect, index + 1)).join(', ')
+  const { rows } = await db.unsafe<{ row_id: string; cells_json: Record<string, unknown> }>(
+    `select data_rows.id as row_id, data_rows.cells_json
+     from data_rows
+     join data_tables on data_tables.id = data_rows.table_id
+     where data_rows.id in (${ids})
+       and data_tables.kind = 'data'
+       and data_tables.system = false
+       and data_rows.deleted_at is null
+       and data_tables.deleted_at is null`,
+    [...rowIds],
+  )
+  return rows.map((row) => ({ rowId: row.row_id, cells: row.cells_json }))
 }
 
 /**

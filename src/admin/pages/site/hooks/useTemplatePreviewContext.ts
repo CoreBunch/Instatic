@@ -2,9 +2,9 @@ import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import type { Page } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
-import { getCmsDataTableBySlug, previewCmsDataLoopItems } from '@core/persistence/cmsData'
+import { getCmsDataRow, getCmsDataTableBySlug, previewCmsDataLoopItems } from '@core/persistence/cmsData'
 import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
-import { primaryTemplateTableSlug } from '@core/templates'
+import { collectDataBindingRowIds, primaryTemplateTableSlug } from '@core/templates'
 import { useEditorStore } from '@site/store/store'
 
 /**
@@ -71,13 +71,28 @@ export function useTemplatePreviewContext(page: Page | null): TemplatePreviewCon
     [tableSlug],
   )
 
+  const dataRowIds = site ? collectDataBindingRowIds(site.pages) : []
+  const dataRowKey = dataRowIds.join('\u0000')
+  const { data: dataRowsState, loading: dataRowsLoading } = useAsyncResource<{
+    key: string
+    rows: NonNullable<Awaited<ReturnType<typeof getCmsDataRow>>>[]
+  }>(
+    async () => {
+      const rows = await Promise.all(dataRowIds.map((rowId) => getCmsDataRow(rowId)))
+      return { key: dataRowKey, rows: rows.filter((row) => row !== null) }
+    },
+    [dataRowKey],
+  )
+
   // ── Compose the full context ─────────────────────────────────────────
   // The template entry stack is only valid for the currently-loaded
   // tableSlug; outside that, the stack stays empty so bindings against
   // currentEntry stay empty until the loop interceptor pushes a real
   // iteration on top.
   const previewEntryLoading = Boolean(tableSlug) && loading
-  if (!page || !site) return { context: undefined, loading: previewEntryLoading }
+  if (!page || !site) {
+    return { context: undefined, loading: previewEntryLoading || dataRowsLoading }
+  }
   let entryStack: TemplateRenderDataContext['entryStack'] = []
   if (tableSlug && previewState?.tableSlug === tableSlug) {
     // Selected row → first published row → synthetic sample (empty table).
@@ -88,10 +103,14 @@ export function useTemplatePreviewContext(page: Page | null): TemplatePreviewCon
     entryStack = chosen ? [chosen] : []
   }
   const pageFrame = buildPageFrame(page)
+  const data = dataRowsState?.key === dataRowKey
+    ? Object.fromEntries(dataRowsState.rows.map((row) => [row.id, row.cells]))
+    : {}
   return {
-    loading: previewEntryLoading,
+    loading: previewEntryLoading || dataRowsLoading,
     context: {
       entryStack,
+      data,
       page: pageFrame,
       site: buildSiteFrame(site),
       // Route frame mirrors what the published page will see. Editor

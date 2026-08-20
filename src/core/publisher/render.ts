@@ -249,6 +249,7 @@ function composeTemplateContext(
     page: pageFrame,
     site: provided.site ?? buildSiteFrame(site),
     route: provided.route ?? buildRouteFrame(pageFrame.permalink),
+    data: provided.data,
   }
 }
 

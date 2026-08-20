@@ -62,6 +62,7 @@ export type { ApplyDataRowChangesInput, DataRowWrite } from './rows'
 
 export {
   getPublishedDataRowByRoute,
+  getGlobalDataBindingRows,
   getDataRowRedirectByRoute,
 } from './publish'
 

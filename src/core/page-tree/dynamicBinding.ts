@@ -12,6 +12,8 @@
  *   Always present on every render — no loop or template needed.
  * - `site` — site-level fields (name, baseUrl, settings.*). Always present.
  * - `route` — URL frame (path, slug, segments). Always present.
+ * - `data` — a specific custom-data row, addressed by immutable
+ *   row id and field id (`<rowId>.<fieldId>`). Available on every page.
  *
  * Format tag controls how the resolved value is rendered (plain text, raw
  * HTML, URL, media path). Fallback strategy controls behaviour when the
@@ -36,6 +38,7 @@ const DynamicBindingSourceSchema = Type.Union([
   Type.Literal('page'),
   Type.Literal('site'),
   Type.Literal('route'),
+  Type.Literal('data'),
 ])
 type DynamicBindingSource = Static<typeof DynamicBindingSourceSchema>
 
@@ -72,6 +75,7 @@ function parseDynamicPropBinding(raw: unknown): DynamicPropBinding | null {
     'page',
     'site',
     'route',
+    'data',
   ]
   if (!VALID_SOURCES.includes(r.source as DynamicBindingSource)) return null
   if (typeof r.field !== 'string' || r.field.length === 0) return null

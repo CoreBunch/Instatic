@@ -25,7 +25,7 @@ import { useEffect, useState, type RefObject } from 'react'
 import type { PropertyControl } from '@core/module-engine'
 import type { DynamicPropBinding } from '@core/page-tree'
 import type { LoopItem, LoopSourceField } from '@core/loops/types'
-import type { DataMeta, DataMetaField, DataMetaTable } from '@core/data/schemas'
+import type { DataMeta, DataMetaField, DataMetaTable, DataRow } from '@core/data/schemas'
 import { Button } from '@ui/components/Button'
 import { ContextMenu } from '@ui/components/ContextMenu'
 import { EmptyState } from '@ui/components/EmptyState'
@@ -47,6 +47,7 @@ import {
   type FieldEntry,
   type FieldGroup,
 } from './helpers'
+import { useGlobalDataRows } from './useGlobalDataRows'
 import styles from './DataBindingPicker.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
@@ -186,6 +187,8 @@ export function DataBindingPicker({
     }
   }, [])
 
+  const globalRowsByTable = useGlobalDataRows(meta)
+
   // Table id is the strongest scope signal. Site templates can instead
   // provide a slug; Content supplies its selected collection id.
   const scopedTable: DataMetaTable | null = (() => {
@@ -275,7 +278,9 @@ export function DataBindingPicker({
 
   function entryMatchesControl(entry: FieldEntry): boolean {
     if (fieldSelectionMode === 'token') return true
-    if (entry.kind === 'meta') return isFieldBindable(controlKind, entry.field)
+    if (entry.kind === 'meta' || entry.kind === 'data') {
+      return isFieldBindable(controlKind, entry.field)
+    }
     return loopFieldMatchesControl(entry.field, controlKind)
   }
 
@@ -319,7 +324,25 @@ export function DataBindingPicker({
       })
     }
 
-    // 3. System sources — Page / Site / Route. Always visible (and always
+    // 3. Custom data rows — globally addressable by immutable row id, so
+    // ordinary pages can reuse singleton/config values without a loop.
+    if (!scopedTable && !hasLoopOnlyScope && meta) {
+      for (const table of meta.tables) {
+        if (table.kind !== 'data' || table.system) continue
+        for (const row of globalRowsByTable[table.id] ?? []) {
+          const rowLabel = formatPreviewValue(row.cells[table.primaryFieldId]) || 'Untitled row'
+          const entries: FieldEntry[] = table.fields.map((field) => ({
+            kind: 'data' as const,
+            table,
+            row,
+            field,
+          }))
+          result.push({ label: `${table.name} — ${rowLabel}`, entries })
+        }
+      }
+    }
+
+    // 4. System sources — Page / Site / Route. Always visible (and always
     // reachable) since the publisher seeds these frames on every render.
     for (const source of SYSTEM_SOURCES) {
       const entries: FieldEntry[] = source.fields.map((f) => ({
@@ -358,6 +381,15 @@ export function DataBindingPicker({
     })
   }
 
+  function pickDataField(row: DataRow, field: DataMetaField) {
+    const format = deriveFormat(controlKind, field.type)
+    onPick({
+      source: 'data',
+      field: `${row.id}.${field.id}`,
+      ...(format !== undefined ? { format } : {}),
+    })
+  }
+
   function pickLoopField(field: LoopSourceField) {
     const format = loopFieldFormat(field.format)
     onPick({
@@ -383,6 +415,7 @@ export function DataBindingPicker({
       if (!frame) return undefined
       return (frame as Record<string, unknown>)[entry.field.id]
     }
+    if (entry.kind === 'data') return entry.row.cells[entry.field.id]
     return currentEntryFields?.[entry.field.id]
   }
 
@@ -394,7 +427,7 @@ export function DataBindingPicker({
 
   // ─── Render: single field row ──────────────────────────────────────────
   function renderFieldRow(entry: FieldEntry): React.ReactNode {
-    if (entry.kind === 'meta') {
+    if (entry.kind === 'meta' || entry.kind === 'data') {
       const { field } = entry
       const FieldIcon = getFieldIcon(field.type)
       const bindable =
@@ -407,7 +440,7 @@ export function DataBindingPicker({
 
       return (
         <Button
-          key={field.id}
+          key={entry.kind === 'data' ? `${entry.row.id}.${field.id}` : field.id}
           variant="ghost"
           size="md"
           fullWidth
@@ -415,7 +448,9 @@ export function DataBindingPicker({
           disabled={!bindable}
           tooltip={tooltip}
           onClick={() => {
-            if (bindable) pickMetaField(field)
+            if (!bindable) return
+            if (entry.kind === 'data') pickDataField(entry.row, field)
+            else pickMetaField(field)
           }}
           type="button"
         >

@@ -91,6 +91,7 @@ describe('buildDataMeta', () => {
       primaryFieldId: 'title',
       routable: true,    // routeBase: '/posts' → non-empty
       versioned: true,   // kind: 'postType'
+      system: false,
     })
   })
 
