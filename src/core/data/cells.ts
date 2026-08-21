@@ -112,6 +112,31 @@ export function readSeoDescriptionCell(cells: DataRowCells): string {
 }
 
 /**
+ * The author-set `<head>` overrides for a post-type entry — its `seoTitle`
+ * and `seoDescription` built-in fields. Both entry render paths
+ * (`renderPublishedDataRowTemplate` for publish, `handleRowPreview` for the
+ * Content editor's Live mode) hand the result to `publishPage` as
+ * `documentMeta`, so publish and preview stay in parity.
+ *
+ * A blank field is omitted rather than returned empty, so it falls through
+ * to the site-level `metaTitle` / `metaDescription` exactly as before.
+ *
+ * This deliberately never writes to `page.title`: that also feeds the
+ * `{page.title}` binding, which must keep rendering the entry's real title.
+ */
+export function readEntrySeoOverride(cells: DataRowCells): {
+  title?: string
+  description?: string
+} {
+  const title = readSeoTitleCell(cells).trim()
+  const description = readSeoDescriptionCell(cells).trim()
+  return {
+    ...(title ? { title } : {}),
+    ...(description ? { description } : {}),
+  }
+}
+
+/**
  * The subset of a row's cells that belongs to CUSTOM (non-built-in) fields.
  * The Content authoring UI edits the post-type built-ins through dedicated
  * inputs (title, slug, body, featured media, SEO); everything else is a
