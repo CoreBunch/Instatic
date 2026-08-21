@@ -147,6 +147,26 @@ interface PublishPageOptions {
    * HTML representation the agent targets nodes through.
    */
   annotateNodeIds?: boolean
+  /**
+   * Per-render `<head>` overrides that outrank the site-level settings.
+   *
+   * Post-type entries carry their own authored SEO title / description
+   * (`seoTitle` / `seoDescription`). Those belong to the row, not to the
+   * composed template `Page`, and they must not be written onto
+   * `page.title` — that value also feeds the `{page.title}` binding and has
+   * to keep rendering the entry's real title. The entry render paths pass
+   * them here instead.
+   */
+  documentMeta?: DocumentMetaOverride
+}
+
+/**
+ * `<head>` values supplied by the caller for this render only. An omitted
+ * (or blank) key falls through to the site settings.
+ */
+export interface DocumentMetaOverride {
+  title?: string
+  description?: string
 }
 
 /**
@@ -297,9 +317,14 @@ function bodyHtmlAttributes(value: unknown): string {
 }
 
 /**
- * `<head>` metadata tags derived from site settings + page.
+ * `<head>` metadata tags derived from the caller's overrides + site
+ * settings + page.
  *
- * - `title` falls back through metaTitle → page.title → site.name.
+ * - `title` falls back through the caller's `documentMeta.title` (a
+ *   post-type entry's authored SEO title) → metaTitle → page.title →
+ *   site.name.
+ * - `description` falls back through `documentMeta.description` → the
+ *   site-level metaDescription.
  * - URL-typed settings (faviconUrl) are validated by
  *   isSafeUrl() (blocks `javascript:` / `vbscript:` schemes) and then
  *   escapeHtml()'d for safe attribute interpolation.
@@ -313,17 +338,22 @@ interface DocumentMetaTags {
   langAttr: string
 }
 
-function buildDocumentMetaTags(site: SiteDocument, page: Page): DocumentMetaTags {
+function buildDocumentMetaTags(
+  site: SiteDocument,
+  page: Page,
+  override: DocumentMetaOverride = {},
+): DocumentMetaTags {
   const { settings } = site
-  const metaDesc = settings.metaDescription
-    ? `\n  <meta name="description" content="${escapeHtml(settings.metaDescription)}">`
+  const description = override.description || settings.metaDescription
+  const metaDesc = description
+    ? `\n  <meta name="description" content="${escapeHtml(description)}">`
     : ''
   const favicon =
     settings.faviconUrl && isSafeUrl(settings.faviconUrl)
       ? `\n  <link rel="icon" href="${escapeHtml(settings.faviconUrl)}">`
       : ''
   return {
-    pageTitle: escapeHtml(settings.metaTitle ?? page.title ?? site.name),
+    pageTitle: escapeHtml(override.title || (settings.metaTitle ?? page.title ?? site.name)),
     metaDesc,
     favicon,
     langAttr: escapeHtml(settings.language ?? 'en'),
@@ -555,7 +585,7 @@ export function publishPage(
     acc.cssMap,
   )
 
-  const meta = buildDocumentMetaTags(site, page)
+  const meta = buildDocumentMetaTags(site, page, options.documentMeta)
   const runtime = buildRuntimeAssetsBlock(options, acc)
   const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap, acc.cspSources)
 
