@@ -204,6 +204,19 @@ Schema source of truth: `src/core/files/schemas.ts`.
 
 Generated files (e.g. `package.json`, `vite.config.ts`) are hidden in the Site Explorer until the user ejects them. Files are created and renamed through the Site Explorer panel and edited with the CodeMirror-backed code editor.
 
+TypeScript site scripts get semantic authoring support in that editor, not
+just grammar highlighting. Opening a `.ts`/`.tsx` script lazily starts a
+dedicated browser Worker containing TypeScript's language service and the
+ES2020 + DOM standard-library declarations. The worker keeps an in-memory
+project of authored TypeScript script files so CodeMirror can show strict type
+diagnostics, DOM-aware completions, cross-file relative-import types, and hover
+signatures without running the compiler on the UI thread. Bare npm imports stay
+under the existing runtime dependency analyzer—the browser language service
+does not pretend an installed package has declarations when none were loaded.
+The worker is editor assistance only: esbuild remains the authoritative canvas
+and publish compiler, and semantic type errors do not replace the publish-time
+runtime validation gate.
+
 ### Site Explorer organization — `SiteExplorerOrganization`
 
 Site Explorer organization is split by whether a section owns URL/file paths.

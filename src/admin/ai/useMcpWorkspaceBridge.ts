@@ -78,7 +78,9 @@ export async function runMcpWorkspaceBridgeConnection(
     const res = await fetch(`${MCP_BRIDGE_PATH}?scope=${scope}`, {
       method: 'GET',
       credentials: 'same-origin',
-      headers: { Accept: 'application/x-ndjson' },
+      // The bridge body stays newline-delimited JSON, but the event-stream
+      // media type prevents reverse proxies from buffering the open response.
+      headers: { Accept: 'text/event-stream' },
       signal,
     })
     if (res.status === 401 || res.status === 403) return 'auth'
@@ -110,8 +112,17 @@ export function useMcpWorkspaceBridge(
   scope: McpWorkspaceScope,
   dispatchTool: McpToolDispatcher,
   afterSuccessfulTool?: McpAfterSuccessfulTool,
+  enabled = true,
 ): void {
   useEffect(() => {
+    // A mounted route is not necessarily a usable workspace yet. In
+    // particular, SitePage paints its shell before usePersistence has loaded
+    // the SiteDocument into the editor store. Registering during that window
+    // makes get_context report siteConnected=true even though every browser
+    // runner sees store.site === null. Keep the server-side presence signal
+    // aligned with actual dispatcher readiness.
+    if (!enabled) return undefined
+
     const lifecycleController = new AbortController()
     let stopped = false
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -152,5 +163,5 @@ export function useMcpWorkspaceBridge(
       if (reconnectTimer) clearTimeout(reconnectTimer)
       lifecycleController.abort()
     }
-  }, [scope, dispatchTool, afterSuccessfulTool])
+  }, [scope, dispatchTool, afterSuccessfulTool, enabled])
 }

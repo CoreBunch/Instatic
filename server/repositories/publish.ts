@@ -22,6 +22,7 @@
  *   getDraftPublishStatus     — compare draft vs published state for the UI
  */
 import { createHash } from 'node:crypto'
+import type { DataRow } from '@core/data/schemas'
 import type { SiteDocument } from '@core/page-tree'
 import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
 import type { PublishedRuntimePackageImportmap } from '@core/publisher'
@@ -123,6 +124,18 @@ function siteContentHash(site: SiteDocument): string {
   return createHash('sha256').update(canonicalJson(site)).digest('hex')
 }
 
+/**
+ * `listDataRows` is intentionally recency-ordered for authoring surfaces, but
+ * that order is not a stable site-document order: a full publish updates every
+ * page's `updated_at`, which can reshuffle an otherwise unchanged collection.
+ * Creation order is immutable, with id as the deterministic tie-breaker.
+ */
+function orderSiteDocumentRows(rows: readonly DataRow[]): DataRow[] {
+  return rows.toSorted((a, b) =>
+    a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)
+  )
+}
+
 /** Reassemble the `PublishedPageSnapshot` shape from the getter join. */
 function snapshotFromQueryRow(row: SnapshotQueryRow): PublishedPageSnapshot {
   return {
@@ -156,11 +169,12 @@ export async function getDraftSiteDocument(db: DbClient): Promise<SiteDocument |
     listDataRows(db, 'components'),
   ])
   const visualComponents = validateVisualComponents(
-    vcRows.flatMap((r) => { const vc = visualComponentFromRow(r); return vc ? [vc] : [] })
+    orderSiteDocumentRows(vcRows)
+      .flatMap((r) => { const vc = visualComponentFromRow(r); return vc ? [vc] : [] })
   )
   return {
     ...shell,
-    pages: pageRows.map(pageFromRow),
+    pages: orderSiteDocumentRows(pageRows).map(pageFromRow),
     visualComponents,
     layouts: [],
   }

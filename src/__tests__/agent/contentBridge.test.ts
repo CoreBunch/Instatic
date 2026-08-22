@@ -190,6 +190,7 @@ describe('runMcpWorkspaceBridgeConnection', () => {
     globalThis.fetch = (async (_input, init) => {
       requestCount += 1
       if (requestCount === 1) {
+        expect(init?.headers).toEqual({ Accept: 'text/event-stream' })
         const signal = init?.signal as AbortSignal
         expect(signal.aborted).toBe(false)
         connectionSignals.push(signal)
@@ -212,6 +213,7 @@ describe('runMcpWorkspaceBridgeConnection', () => {
       }
 
       const signal = init?.signal as AbortSignal
+      expect(init?.headers).toEqual({ Accept: 'text/event-stream' })
       expect(signal.aborted).toBe(false)
       connectionSignals.push(signal)
       return new Response(null, { status: 401 })

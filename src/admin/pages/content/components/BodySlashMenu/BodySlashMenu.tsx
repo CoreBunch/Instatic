@@ -13,11 +13,9 @@
  */
 
 import { useImperativeHandle, useState, type RefObject } from 'react'
-import { createPortal } from 'react-dom'
 import type { Editor, Range } from '@tiptap/core'
-import { Button } from '@ui/components/Button'
+import { ContextMenu, ContextMenuItem } from '@ui/components/ContextMenu'
 import type { SlashCommandItem } from './SlashCommand'
-import styles from './BodySlashMenu.module.css'
 
 interface MenuPosition {
   x: number
@@ -108,63 +106,39 @@ export function BodySlashMenu({ handleRef }: BodySlashMenuProps) {
 
   if (!state || typeof document === 'undefined') return null
 
-  return createPortal(
-    <div
-      className={styles.menu}
-      role="listbox"
-      aria-label="Insert block"
+  return (
+    <ContextMenu
+      ariaLabel="Insert block"
+      onClose={() => setState(null)}
+      x={state.position.x}
+      y={state.position.y}
+      width={240}
+      maxWidth={320}
+      maxHeight={360}
       data-testid="content-slash-menu"
-      style={{ top: state.position.y, left: state.position.x }}
     >
       {state.items.length === 0 ? (
-        <div className={styles.empty}>No matches</div>
+        <ContextMenuItem disabled>No matches</ContextMenuItem>
       ) : (
         state.items.map((item, index) => (
-          <SlashMenuRow
+          <ContextMenuItem
             key={item.id}
-            label={item.label}
-            description={item.description}
             active={index === clampedActiveIndex}
             onPointerEnter={() => setActiveIndex(index)}
+            // The Suggestion plugin clears the menu when the editor loses
+            // focus. Preventing the mouse-down focus shift lets the click
+            // select the command before that lifecycle runs.
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               item.command({ editor: state.editor, range: state.range })
               setState(null)
             }}
-          />
+          >
+            {item.label}
+          </ContextMenuItem>
         ))
       )}
-    </div>,
-    document.body,
-  )
-}
-
-interface SlashMenuRowProps {
-  label: string
-  description: string
-  active: boolean
-  onPointerEnter: () => void
-  onClick: () => void
-}
-
-function SlashMenuRow({ label, description, active, onPointerEnter, onClick }: SlashMenuRowProps) {
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      role="option"
-      aria-selected={active}
-      data-active={active ? 'true' : undefined}
-      className={styles.row}
-      onPointerEnter={onPointerEnter}
-      // The Suggestion plugin clears the menu when the editor loses focus.
-      // Mouse-down on the menu would steal that focus before the click
-      // fires, so we have to prevent the default focus shift explicitly.
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
-    >
-      <span className={styles.label}>{label}</span>
-      <span className={styles.description}>{description}</span>
-    </Button>
+    </ContextMenu>
   )
 }
 
@@ -175,7 +149,3 @@ function rectToPosition(rect: DOMRect | null): MenuPosition {
   // text.
   return { x: Math.round(rect.left), y: Math.round(rect.bottom + 6) }
 }
-
-// `ReactNode` isn't imported here — the SlashMenuRow used to accept an
-// optional `icon` ReactNode, but it isn't part of the v1 slash menu's
-// row shape; keep this surface minimal.

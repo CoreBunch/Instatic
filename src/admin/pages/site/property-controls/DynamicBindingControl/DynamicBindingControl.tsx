@@ -4,15 +4,14 @@
  * Wraps any property control child in two modes:
  *
  *  Unbound: renders children with a BracesIcon affordance button (visible on
- *    hover/focus-within) that opens the BindingPickerPopover.
+ *    hover/focus-within) that opens the shared DataBindingPicker.
  *
  *  Bound: replaces the child with a striped badge showing the resolved field
  *    label, plus a clear button.
  *
- * The picker popover itself lives in `./BindingPickerPopover.tsx`. Pure
- * helpers (label resolution, format derivation, compat checks) live in
- * `./helpers.ts`. The DataMeta cache lives in `./cache.ts` — import
- * `clearDataMetaCache` from there directly (e.g. in tests).
+ * The picker itself is shared with the Content workspace through
+ * `@admin/shared/DataBindingPicker`; this wrapper supplies Site-specific
+ * template, loop, and page-frame context.
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
@@ -20,13 +19,20 @@ import type { PropertyControl } from '@core/module-engine'
 import type { DynamicPropBinding } from '@core/page-tree'
 import type { LoopSourceField } from '@core/loops/types'
 import type { DataMeta } from '@core/data/schemas'
+import {
+  buildPageFrame,
+  buildRouteFrame,
+  buildSiteFrame,
+} from '@core/templates/contextFrames'
+import { primaryTemplateTableSlug } from '@core/templates'
+import { selectActivePage, useEditorStore } from '@site/store/store'
 import { Button } from '@ui/components/Button'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { BracesIcon } from 'pixel-art-icons/icons/braces'
-import { _cachedMeta, loadDataMeta } from './cache'
+import { DataBindingPicker } from '@admin/shared/DataBindingPicker'
+import { _cachedMeta, loadDataMeta } from '@admin/shared/DataBindingPicker/cache'
 import { bindingToToken } from '@core/templates/tokenInterpolation'
-import { resolveBindingLabel } from './helpers'
-import { BindingPickerPopover } from './BindingPickerPopover'
+import { resolveBindingLabel } from '@admin/shared/DataBindingPicker/helpers'
 import { cn } from '@ui/cn'
 import styles from './DynamicBindingControl.module.css'
 import controlStyles from '@ui/components/ControlRow/ControlRow.module.css'
@@ -116,6 +122,15 @@ export function DynamicBindingControl({
       .catch(() => { /* ignore — label falls back to field id */ })
   }, [])
 
+  const activePage = useEditorStore(selectActivePage)
+  const activeSite = useEditorStore((s) => s.site)
+  const activePageTableSlug = activePage
+    ? primaryTemplateTableSlug(activePage)
+    : null
+  const pageFrame = activePage ? buildPageFrame(activePage) : null
+  const siteFrame = activeSite ? buildSiteFrame(activeSite) : null
+  const routeFrame = pageFrame ? buildRouteFrame(pageFrame.permalink) : null
+
   // ── Bound state (structured whole-prop binding) ─────────────────────────
   // In insert mode the binding lives inline in the prop value as a token,
   // so we never enter this branch — the children render normally and
@@ -185,12 +200,20 @@ export function DynamicBindingControl({
       </div>
 
       {pickerOpen && (
-        <BindingPickerPopover
+        <DataBindingPicker
           label={label}
           control={control}
           availableFields={availableFields}
           sourceLabel={sourceLabel}
-          loopTableId={loopTableId}
+          scopedTableId={loopTableId}
+          scopedTableSlug={activePageTableSlug}
+          scopeLabel={loopTableId ? 'Loop row' : 'Current row'}
+          loadPublishedPreview={Boolean(loopTableId)}
+          systemPreviewValues={{
+            page: pageFrame,
+            site: siteFrame,
+            route: routeFrame,
+          }}
           insertMode={insertMode}
           anchorRef={wrapperRef}
           triggerRef={triggerRef}

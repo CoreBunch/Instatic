@@ -54,6 +54,7 @@ import { CMS_API_PREFIX } from './shared'
 import { runRouteTable, type Route, type RouteParams } from './routeTable'
 import {
   EXTENSION_FOR_MIME,
+  MAX_MEDIA_BYTES,
   acceptReplacementMedia,
   acceptUploadedMedia,
   readUploadedFile,
@@ -61,8 +62,6 @@ import {
 import { removeVariantFiles } from './mediaVariants'
 import { dispatchDelete } from './mediaUploadDispatch'
 import { materializeAssetListForClient } from '../../publish/mediaPresentation'
-
-const MAX_MEDIA_BYTES = 50 * 1024 * 1024
 
 const MEDIA_LIBRARY_MIMES = Object.keys(EXTENSION_FOR_MIME) as Array<
   keyof typeof EXTENSION_FOR_MIME

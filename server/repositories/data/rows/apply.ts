@@ -49,6 +49,7 @@ import {
   softDeleteDataRow,
 } from './mutations'
 import { listDataRowIdSlugs, listSoftDeletedDataRowIds } from './read'
+import { notifyRowWrite, serializeCollabAwareWrite } from '../../rowWriteEvents'
 
 export interface DataRowWrite {
   id: string
@@ -162,9 +163,25 @@ export async function applyDataRowChanges(
   db: DbClient,
   input: ApplyDataRowChangesInput,
 ): Promise<ApplyDataRowChangesResult> {
-  let result: ApplyDataRowChangesResult = { deletedPublished: false }
-  await db.transaction(async (tx) => {
-    result = await applyDataRowChangesInTx(tx, input)
+  return serializeCollabAwareWrite(async () => {
+    let result: ApplyDataRowChangesResult = { deletedPublished: false }
+    await db.transaction(async (tx) => {
+      result = await applyDataRowChangesInTx(tx, input)
+    })
+    if (input.writes.length > 0) {
+      notifyRowWrite({
+        tableId: input.tableId,
+        rowIds: input.writes.map((write) => write.id),
+        kind: 'update',
+      })
+    }
+    if (input.deleteIds.size > 0) {
+      notifyRowWrite({
+        tableId: input.tableId,
+        rowIds: [...input.deleteIds],
+        kind: 'delete',
+      })
+    }
+    return result
   })
-  return result
 }

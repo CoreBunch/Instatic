@@ -148,6 +148,26 @@ interface PublishPageOptions {
    * HTML representation the agent targets nodes through.
    */
   annotateNodeIds?: boolean
+  /**
+   * Per-render `<head>` overrides that outrank the site-level settings.
+   *
+   * Post-type entries carry their own authored SEO title / description
+   * (`seoTitle` / `seoDescription`). Those belong to the row, not to the
+   * composed template `Page`, and they must not be written onto
+   * `page.title` — that value also feeds the `{page.title}` binding and has
+   * to keep rendering the entry's real title. The entry render paths pass
+   * them here instead.
+   */
+  documentMeta?: DocumentMetaOverride
+}
+
+/**
+ * `<head>` values supplied by the caller for this render only. An omitted
+ * (or blank) key falls through to the site settings.
+ */
+export interface DocumentMetaOverride {
+  title?: string
+  description?: string
 }
 
 /**
@@ -298,17 +318,22 @@ function bodyHtmlAttributes(value: unknown): string {
 }
 
 /**
- * `<head>` metadata tags derived from site settings + page.
+ * `<head>` metadata tags derived from the caller's overrides + site
+ * settings + page.
  *
- * - `title` falls back through metaTitle → page.title → site.name.
- * - Title and description are token-interpolated against the render
+ * - `title` falls back through the caller's `documentMeta.title` (a
+ *   post-type entry's authored SEO title) → metaTitle → page.title →
+ *   site.name.
+ * - `description` falls back through `documentMeta.description` → the
+ *   site-level metaDescription.
+ * - Whichever value wins is then token-interpolated against the render
  *   context before escaping, so `{currentEntry.*}` / `{page.*}` /
- *   `{site.*}` resolve per-entry on entry routes (SEO titles like
- *   `{currentEntry.name} | Acme`) instead of publishing the template
- *   page's static text. The `??` chain picks the raw value first;
- *   a token that resolves empty does NOT re-trigger the fallback —
- *   authors opt into fallbacks with the token's own `{...|fallback}`
- *   syntax.
+ *   `{site.*}` resolve per-entry on entry routes. That serves both ways
+ *   of authoring a title: fill each row's SEO field by hand, or write one
+ *   pattern like `{currentEntry.name} | Acme` on the template page. The
+ *   fallback chain picks the raw value first; a token that resolves empty
+ *   does NOT re-trigger the fallback — authors opt into fallbacks with the
+ *   token's own `{...|fallback}` syntax.
  * - URL-typed settings (faviconUrl) are validated by
  *   isSafeUrl() (blocks `javascript:` / `vbscript:` schemes) and then
  *   escapeHtml()'d for safe attribute interpolation.
@@ -326,10 +351,13 @@ function buildDocumentMetaTags(
   site: SiteDocument,
   page: Page,
   context: TemplateRenderDataContext,
+  override: DocumentMetaOverride = {},
 ): DocumentMetaTags {
   const { settings } = site
-  const metaDesc = settings.metaDescription
-    ? `\n  <meta name="description" content="${escapeHtml(interpolateTokens(settings.metaDescription, context))}">`
+  const description = override.description || settings.metaDescription
+  const metaDesc = description
+    ? `
+  <meta name="description" content="${escapeHtml(interpolateTokens(description, context))}">`
     : ''
   const favicon =
     settings.faviconUrl && isSafeUrl(settings.faviconUrl)
@@ -337,7 +365,7 @@ function buildDocumentMetaTags(
       : ''
   return {
     pageTitle: escapeHtml(
-      interpolateTokens(settings.metaTitle ?? page.title ?? site.name, context),
+      interpolateTokens(override.title || (settings.metaTitle ?? page.title ?? site.name), context),
     ),
     metaDesc,
     favicon,
@@ -575,7 +603,7 @@ export function publishPage(
     acc.cssMap,
   )
 
-  const meta = buildDocumentMetaTags(site, page, templateContext)
+  const meta = buildDocumentMetaTags(site, page, templateContext, options.documentMeta)
   const runtime = buildRuntimeAssetsBlock(options, acc)
   const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap, acc.cspSources)
 

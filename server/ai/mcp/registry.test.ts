@@ -69,6 +69,19 @@ describe('mcp registry', () => {
     expect(tools.some((t) => t.name === 'site_insert_html')).toBe(false)
   })
 
+  it('exposes media_upload only with both write and media.write capabilities', () => {
+    const upload = mcpToolsForCapabilities(FULL).find((t) => t.name === 'media_upload')
+    expect(upload).toBeTruthy()
+    expect(upload!.execution).toBe('server') // in-process, no editor needed
+    expect(upload!.mutates).toBe(true)
+    // Gated by media.write…
+    expect(mcpToolsForCapabilities(FULL.filter((c) => c !== 'media.write')).map((t) => t.name))
+      .not.toContain('media_upload')
+    // …and by ai.tools.write (it mutates).
+    expect(mcpToolsForCapabilities(FULL.filter((c) => c !== 'ai.tools.write')).map((t) => t.name))
+      .not.toContain('media_upload')
+  })
+
   it('only exposes full-site publish when both write and publish capabilities are granted', () => {
     expect(mcpToolsForCapabilities(FULL).map((t) => t.name)).toContain('site_publish')
     expect(mcpToolsForCapabilities(FULL.filter((c) => c !== 'pages.publish')).map((t) => t.name))
