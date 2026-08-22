@@ -182,6 +182,15 @@ function isTrustedIframeHost(hostname: string): boolean {
  * is removed entirely, not just stripped of the offending attribute, since
  * a same-tag-different-src replacement is exactly what an attacker would
  * try first.
+ *
+ * `source`, `figure`, and `figcaption` are included because that's the
+ * markup real rich-text editors and importers (Webflow, etc.) actually
+ * emit — a `<video>` wraps its playable file in `<source src=… type=…>`
+ * rather than using `<video src=…>` directly, and images get wrapped in
+ * `<figure>`/`<figcaption>` for captions. Without `source` the tag was
+ * previously dropped, so a `<video controls poster="…"><source src="…"
+ * type="video/mp4"></video>` published as a bare, unplayable `<video
+ * controls>`.
  */
 const POST_BODY_CONFIG: Config = {
   ALLOWED_TAGS: [
@@ -191,7 +200,7 @@ const POST_BODY_CONFIG: Config = {
     'a', 'ul', 'ol', 'li',
     'blockquote', 'code', 'pre',
     'span', 'div',
-    'img', 'video',
+    'img', 'video', 'source', 'figure', 'figcaption',
     'table', 'thead', 'tbody', 'tr', 'th', 'td',
     'iframe',
   ],
@@ -199,6 +208,7 @@ const POST_BODY_CONFIG: Config = {
     'href', 'target', 'rel', 'class', 'id',
     'src', 'alt', 'title', 'loading', 'controls',
     'width', 'height', 'frameborder', 'allow', 'allowfullscreen', 'referrerpolicy',
+    'poster', 'type', 'playsinline', 'loop', 'muted', 'preload',
   ],
   ADD_ATTR: ['target'],
   ALLOW_DATA_ATTR: false,

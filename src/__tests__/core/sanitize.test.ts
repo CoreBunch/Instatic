@@ -307,6 +307,41 @@ describe('sanitizePostBody() — trusted-host iframe embeds', () => {
     expect(result).toContain('<video')
   })
 
+  it('preserves a <video poster> with a <source> child — the form real editors/importers emit', () => {
+    // A bare `<video src=…>` is the exception, not the rule: most editors
+    // (Webflow among them) emit `<video controls poster=…><source src=…
+    // type=…></video>` and rely on <source> to carry the actual playable
+    // file. Before `source`/`poster`/`type` were allowlisted this published
+    // as an empty, unplayable `<video controls>`.
+    const result = sanitizePostBody(
+      '<video controls poster="https://example.com/thumb.avif"><source src="https://example.com/clip.mp4" type="video/mp4"></video>',
+    )
+    expect(result).toContain('<video')
+    expect(result).toContain('poster="https://example.com/thumb.avif"')
+    expect(result).toContain('<source')
+    expect(result).toContain('src="https://example.com/clip.mp4"')
+    expect(result).toContain('type="video/mp4"')
+  })
+
+  it('preserves playsinline, loop, muted, and preload on <video>', () => {
+    const result = sanitizePostBody(
+      '<video controls playsinline loop muted preload="auto" src="https://example.com/v.mp4"></video>',
+    )
+    expect(result).toContain('playsinline')
+    expect(result).toContain('loop')
+    expect(result).toContain('muted')
+    expect(result).toContain('preload="auto"')
+  })
+
+  it('preserves figure/figcaption — the wrapper rich-text editors put around images', () => {
+    const result = sanitizePostBody(
+      '<figure><img src="https://example.com/a.png" alt="a"><figcaption>A caption</figcaption></figure>',
+    )
+    expect(result).toContain('<figure')
+    expect(result).toContain('<figcaption')
+    expect(result).toContain('A caption')
+  })
+
   it('preserves the same safe formatting tags sanitizeRichtext does', () => {
     const result = sanitizePostBody('<p><strong>Bold</strong> <em>italic</em> <a href="https://example.com">link</a></p>')
     expect(result).toContain('<strong>Bold</strong>')
