@@ -50,15 +50,19 @@ const SCRIPT_CLOSE_RE = new RegExp(scriptClose, 'gi')
 const FOREIGN_OBJECT_RE = new RegExp(String.raw`<foreignObject\b[\s\S]*?${foreignObjectClose}`, 'gi')
 const FOREIGN_OBJECT_OPEN_RE = /<foreignObject\b[^>]*\/?>/gi
 /** `<a …>` / `</a>` is allowed, but href values are scrubbed below. */
-/** `on*="…"` / `on*='…'` / `on*=value` event-handler attributes. */
-const EVENT_HANDLER_RE = /\son[a-z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi
+/**
+ * `on*="…"` / `on*='…'` / `on*=value` event-handler attributes. Browsers treat
+ * `/` as an attribute separator equivalent to whitespace (`<svg/onload=…>`),
+ * so the leading separator accepts both.
+ */
+const EVENT_HANDLER_RE = /[\s/]on[a-z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi
 /**
  * `href` / `xlink:href` / `src` whose value (after optional whitespace and
  * entity-encoding tricks) resolves to a `javascript:` scheme. We blank the
  * whole attribute rather than try to rewrite it.
  */
 const JS_URL_ATTR_RE =
-  /\s(?:xlink:href|href|src)\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*'|javascript:[^\s>]*)/gi
+  /[\s/](?:xlink:href|href|src)\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*'|javascript:[^\s>]*)/gi
 /** `<style>…</style>` blocks — CSS can carry `@import url(javascript:…)`. */
 const STYLE_BLOCK_RE = new RegExp(String.raw`<style\b[\s\S]*?${styleClose}`, 'gi')
 

@@ -59,6 +59,15 @@ describe('sanitizeSvgBytes', () => {
     expect(out).not.toContain('javascript:')
   })
 
+  // Browsers accept `/` as an attribute separator, so `<svg/onload=…>` is a
+  // classic whitespace-bypass of `\s`-anchored attribute filters.
+  it('strips on* handlers and javascript: URLs separated by `/` instead of whitespace', () => {
+    const out = clean('<svg/onload=alert(1)><a/href=javascript:alert(1)><rect/></a></svg>').toLowerCase()
+    expect(out).not.toContain('onload')
+    expect(out).not.toContain('javascript:')
+    expect(out).toContain('<rect')
+  })
+
   it('returns empty bytes for empty / whitespace input', () => {
     expect(sanitizeSvgBytes(enc.encode('   ')).length).toBe(0)
     expect(sanitizeSvgBytes(new Uint8Array(0)).length).toBe(0)

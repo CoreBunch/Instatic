@@ -23,21 +23,25 @@ export function ImageViewer({ asset }: ImageViewerProps) {
   const src = pickVariantUrl(asset, VIEWER_CSS_WIDTH)
   const srcset = buildVariantSrcset(asset)
   const blurHashUrl = blurHashToDataUrl(asset.blurHash)
-  const surfaceStyle = blurHashUrl
-    ? ({
-        backgroundImage: `url(${blurHashUrl})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-      } as React.CSSProperties)
-    : undefined
+  // The placeholder rides on the <img> itself, not the surrounding surface:
+  // the image is letterboxed inside the viewer, and a background on the
+  // container paints the BlurHash into the empty bands around it, which reads
+  // as a broken grey strip above/below the photo. `--asset-ratio` sizes the
+  // element to the asset's own aspect ratio so the element box *is* the
+  // photo's box and the letterbox stays plain surface.
+  const imageStyle = {
+    ...(asset.width && asset.height ? { '--asset-ratio': `${asset.width} / ${asset.height}` } : null),
+    ...(blurHashUrl ? { '--asset-blurhash': `url(${blurHashUrl})` } : null),
+  } as React.CSSProperties
   return (
-    <div className={styles.root} style={surfaceStyle}>
+    <div className={styles.root}>
       <img
         src={src}
         srcSet={srcset}
         sizes="(min-width: 1024px) 640px, 100vw"
         alt={asset.altText || asset.filename}
         className={styles.image}
+        style={imageStyle}
         draggable={false}
         loading="lazy"
         decoding="async"

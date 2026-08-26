@@ -403,6 +403,50 @@ const { refNode, slotInstances } = instantiateVCAtRef(vc, { /* instanceProps */ 
 
 `instantiateVCAtRef` is what the editor uses internally when a ref is dropped. Plugins shipping a VC pack use it during install to materialize starter refs.
 
+### Drive the whole flow from an agent or MCP client
+
+Four browser-bridged tools mirror the UI, so a component can be authored end to end without clicking (see [`mcp-connectors.md`](mcp-connectors.md) → "Visual Components over MCP"):
+
+```
+site_create_component        { name, fromNodeId? }   → componentId, rootNodeId
+site_insert_component        { parentId, componentId, index? }
+site_set_component_params    { componentId, params[], removeMissing? }
+site_bind_component_prop     { nodeId, propKey, paramId? }
+site_bind_component_variant  { nodeId, paramId, classByValue }
+```
+
+`site_create_component` with `fromNodeId` is the tool-side equivalent of the **Componentize** button — same `convertNodeToComponent` action, so the subtree moves into the definition and a ref replaces it in place. Without `fromNodeId` it creates an empty VC to fill via `site_insert_html` under the returned `rootNodeId`.
+
+`site_set_component_params` is declarative rather than one-call-per-mutation: each entry matches an existing param by `id` when supplied, otherwise by `name`, so re-sending the same list is idempotent and supplying `id` with a new `name` renames in place. It validates the entire list before touching anything — a half-applied param surface reads as success and the caller cannot tell which entries landed. Two limits fall out of the store's action set: a param's **type cannot change** after creation (there is no retype action — remove and re-add), and each param mutation is its own undo entry.
+
+`site_list_documents` is the only place param **ids** are discoverable, so it reports them for every VC.
+
+`site_bind_component_variant` is the fifth tool and covers styling — see "Variants" below.
+
+### Variants — one param, many styles
+
+A **variant** is a param whose value picks a CSS class instead of a prop value. It exists because `propBindings` writes into `node.props`, and `class` is not a prop — so without a second channel a param could never change appearance.
+
+That channel is `classBindings` on the node: `paramId → (param value → classId)`. At instantiation the effective value of each bound param selects one classId, appended **after** the node's own classes so the variant wins the cascade over the base class it modifies. An unmapped value adds nothing, which is how a "default"/"none" option works.
+
+Authoring a button with three looks:
+
+1. Create the classes once — `.btn` plus `.btn-primary` / `.btn-ghost` / `.btn-dark` (Selectors panel, or `site_apply_css`).
+2. Put `.btn` on the component's root node.
+3. Declare an enum param: `variant`, options `primary | ghost | dark`.
+4. Bind: `site_bind_component_variant { nodeId: <root>, paramId, classByValue: { primary: 'btn-primary', ghost: 'btn-ghost', dark: 'btn-dark' } }`.
+
+The same authoring is available in the editor: with a node selected in VC edit mode, the Properties Panel shows a **Variants** section (`VariantBindingsSection`) listing every enum param with a per-value class dropdown. It can also add enum options and create a new variant param in place — all backed by the same store actions (`setNodeClassBinding`, `addParam`, `updateParamMeta`). `findParamOrigin` reports the class channel too (propKey `'class'`), so variant params in the params overview jump to their bound node like prop-bound ones.
+
+Every instance now shows a **dropdown** for `variant` in its Properties Panel — the existing enum control — and restyling every ghost button on the site is one edit to `.btn-ghost`.
+
+Two design points worth keeping:
+
+- **The map stores classIds, not class names.** Ids are stable across renames, and the resolver needs no access to the class registry, so `instantiateVCAtRef` stays pure. `site_bind_component_variant` accepts names for ergonomics and resolves them before writing.
+- **A real classId is also what keeps the CSS alive.** The publisher collects rules from the classIds it walks, so a variant reachable only through a param would otherwise be tree-shaken out of the published stylesheet.
+
+Because a param can now be referenced by either channel, `clearNodePropBinding`'s orphan-param GC counts **both** — a param that no longer feeds any prop may still be driving a variant.
+
 ### Delete a VC safely
 
 1. Call `previewVCDeletion(site, vcId)` to enumerate references.
@@ -426,6 +470,10 @@ const { refNode, slotInstances } = instantiateVCAtRef(vc, { /* instanceProps */ 
 | Running slot sync against page trees only when a slot shape changes    | Use `allTreeNodeMaps(site)` from `vcSlotReconcile.ts` (covers pages + all VC trees) so refs nested inside other VCs are also reconciled |
 | Allowing recursive VC refs                                             | Call `wouldCreateCycle(...)` before insert / rebind           |
 | Branching on `kind === 'visualComponent'` inside a tree mutation       | Mutations operate on `NodeTree<TNode>` — `mutateActiveTree` is the only branch (gated). |
+| Driving a variant through `propBindings`                               | `class` is not a prop — use `classBindings` (paramId → value → classId) |
+| Emitting a variant's class by NAME at render time                      | Store the classId: names change on rename, and only a real classId keeps the rule out of the CSS tree-shake |
+| Writing an `<instatic-component>` marker into imported HTML            | The importer knows only `instatic-outlet` / `instatic-loop` — place refs with `site_insert_component` |
+| Letting an agent-facing component runner rely on a store no-op         | The store actions are forgiving by design; re-check and return an error naming what exists |
 
 ---
 

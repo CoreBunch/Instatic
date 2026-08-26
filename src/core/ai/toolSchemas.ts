@@ -400,6 +400,76 @@ export const SetSpacingScaleInputSchema = Type.Object({
 })
 
 // ---------------------------------------------------------------------------
+// Visual Component tools
+//
+// The param type list mirrors `VCParamTypeSchema` in
+// `@core/visualComponents`. It is restated here rather than imported because
+// this module is a dependency-free leaf that `server/` also loads — see the
+// header. `visual-component-params.test.ts` fails if the two lists drift.
+// ---------------------------------------------------------------------------
+
+export const ComponentParamTypeSchema = Type.Union([
+  Type.Literal('string'),
+  Type.Literal('number'),
+  Type.Literal('boolean'),
+  Type.Literal('url'),
+  Type.Literal('enum'),
+  Type.Literal('color'),
+  Type.Literal('image'),
+  Type.Literal('richText'),
+  Type.Literal('slot'),
+])
+
+export const CreateComponentInputSchema = Type.Object({
+  name: Type.String({ minLength: 1 }),
+  fromNodeId: Type.Optional(Type.String({ minLength: 1 })),
+})
+export type CreateComponentInput = Static<typeof CreateComponentInputSchema>
+
+export const InsertComponentInputSchema = Type.Object({
+  parentId: Type.String({ minLength: 1 }),
+  componentId: Type.String({ minLength: 1 }),
+  index: Type.Optional(Type.Integer({ minimum: 0 })),
+})
+export type InsertComponentInput = Static<typeof InsertComponentInputSchema>
+
+export const ComponentParamInputSchema = Type.Object({
+  id: Type.Optional(Type.String({ minLength: 1 })),
+  name: Type.String({ minLength: 1 }),
+  type: Type.Optional(ComponentParamTypeSchema),
+  defaultValue: Type.Optional(Type.Unknown()),
+  required: Type.Optional(Type.Boolean()),
+  description: Type.Optional(Type.String()),
+  enumOptions: Type.Optional(Type.Array(Type.String())),
+})
+
+export const SetComponentParamsInputSchema = Type.Object({
+  componentId: Type.String({ minLength: 1 }),
+  params: Type.Array(ComponentParamInputSchema),
+  removeMissing: Type.Optional(Type.Boolean()),
+})
+export type SetComponentParamsInput = Static<typeof SetComponentParamsInputSchema>
+
+export const BindComponentPropInputSchema = Type.Object({
+  nodeId: Type.String({ minLength: 1 }),
+  propKey: Type.String({ minLength: 1 }),
+  paramId: Type.Optional(Type.String({ minLength: 1 })),
+})
+export type BindComponentPropInput = Static<typeof BindComponentPropInputSchema>
+
+export const BindComponentVariantInputSchema = Type.Object({
+  nodeId: Type.String({ minLength: 1 }),
+  paramId: Type.String({ minLength: 1 }),
+  /**
+   * Param value → class. Values name classes by their SELECTOR (`nw-btn-ghost`
+   * or `.nw-btn-ghost`); the executor resolves each to a stable class id. An
+   * empty object clears the binding.
+   */
+  classByValue: Type.Record(Type.String(), Type.String()),
+})
+export type BindComponentVariantInput = Static<typeof BindComponentVariantInputSchema>
+
+// ---------------------------------------------------------------------------
 // render_snapshot
 //
 // MODEL-FACING shape only — `breakpointId`/`nodeId`. The browser executor

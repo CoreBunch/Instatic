@@ -90,7 +90,23 @@ describe('agent-tool-surface gate', () => {
     expect(toolNames).toContain('site_clear_page_template')
   })
 
-  it('total tool count is 29 (document, HTML, node, CSS, code asset, page, template, token, and snapshot tools)', () => {
-    expect(toolNames).toHaveLength(29)
+  it('visual component tools are present', () => {
+    expect(toolNames).toContain('site_create_component')
+    expect(toolNames).toContain('site_insert_component')
+    expect(toolNames).toContain('site_set_component_params')
+    expect(toolNames).toContain('site_bind_component_prop')
+    expect(toolNames).toContain('site_bind_component_variant')
+  })
+
+  it('visual component tools are stamped as mutating', () => {
+    expect(stampedToolByName.get('site_create_component')?.mutates).toBe(true)
+    expect(stampedToolByName.get('site_insert_component')?.mutates).toBe(true)
+    expect(stampedToolByName.get('site_set_component_params')?.mutates).toBe(true)
+    expect(stampedToolByName.get('site_bind_component_prop')?.mutates).toBe(true)
+    expect(stampedToolByName.get('site_bind_component_variant')?.mutates).toBe(true)
+  })
+
+  it('total tool count is 34 (document, HTML, node, CSS, code asset, page, template, component, token, and snapshot tools)', () => {
+    expect(toolNames).toHaveLength(34)
   })
 })

@@ -1,0 +1,51 @@
+.body {
+    display: grid;
+    gap: var(--space-l);
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.packs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+}
+
+.count {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--text-subtle);
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+    gap: var(--space-xs);
+}
+
+.tile {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 56px;
+    padding: 0;
+    border-radius: var(--radius);
+    background: var(--bg-surface-2);
+    color: var(--text);
+    cursor: pointer;
+}
+
+.tile:hover,
+.tile:focus-visible {
+    background: var(--bg-surface-3);
+}
+
+.glyph {
+    display: grid;
+    place-items: center;
+}
+
+.glyph svg {
+    width: 24px;
+    height: 24px;
+}

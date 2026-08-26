@@ -1,4 +1,5 @@
 import type { Page, PageTemplateConfig, SiteDocument } from '@core/page-tree'
+import type { VCParam, VisualComponent } from '@core/visualComponents'
 import type { AgentDocumentRef } from './toolSchemas'
 
 export interface AgentDocumentDescriptor {
@@ -14,6 +15,19 @@ export interface AgentDocumentDescriptor {
     target: PageTemplateConfig['target']
     priority: number
   }
+  /**
+   * Visual components only — the param surface each instance can override.
+   * Listed here because it is the only place a tool caller can discover param
+   * ids, and every param-facing tool (`site_set_component_params`,
+   * `site_bind_component_prop`, `propOverrides` on a ref) is keyed by id.
+   */
+  params?: {
+    id: string
+    name: string
+    type: VCParam['type']
+    required: boolean
+    enumOptions?: string[]
+  }[]
 }
 
 export function documentRefForPage(page: Pick<Page, 'id' | 'template'>): AgentDocumentRef {
@@ -56,11 +70,26 @@ export function describeAgentDocuments(
       rootNodeId: vc.tree.rootNodeId,
       active: false,
       current: documentRefEquals(currentDocument, document),
-      summary: 'Visual component definition',
+      params: vc.params.map((param) => ({
+        id: param.id,
+        name: param.name,
+        type: param.type,
+        required: param.required,
+        ...(param.enumOptions ? { enumOptions: param.enumOptions } : {}),
+      })),
+      summary: summarizeVisualComponent(vc),
     })
   }
 
   return descriptors
+}
+
+function summarizeVisualComponent(vc: Pick<VisualComponent, 'params'>): string {
+  if (vc.params.length === 0) {
+    return 'Visual component definition — no params, every instance renders identically'
+  }
+  const names = vc.params.map((param) => `${param.name}: ${param.type}`)
+  return `Visual component definition — params: ${names.join(', ')}`
 }
 
 function summarizePageDocument(page: Pick<Page, 'slug' | 'template'>): string {

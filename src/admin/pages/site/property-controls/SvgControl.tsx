@@ -11,6 +11,9 @@
  *     SVG file fetches its contents, sanitises them, and INLINES the markup
  *     into the prop (so it gains currentColor tinting / CSS styling / editing
  *     that a plain `<img src>` can't). Non-SVG picks are rejected.
+ *   - "Icons": opens the icon picker and inlines the chosen glyph. Same
+ *     destination as the other two — an icon on a page IS inline SVG, so it
+ *     needs no module of its own.
  *   - "Clear": empties the markup.
  *
  * Editing happens in the real code editor rather than a cramped textarea so a
@@ -25,6 +28,8 @@ import { ControlRow } from '@ui/components/ControlRow'
 import { Button } from '@ui/components/Button'
 import { ImageSolidIcon } from 'pixel-art-icons/icons/image-solid'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
+import { SparklesSolidIcon } from 'pixel-art-icons/icons/sparkles-solid'
+import { IconPicker } from '@ui/components/IconPicker'
 import styles from './controls.module.css'
 
 // Lazy so the media-picker stack only loads when the user opens it.
@@ -48,6 +53,7 @@ export function SvgControl({
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId)
   const openPropInEditor = useEditorStore((s) => s.openPropInEditor)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [iconPickerOpen, setIconPickerOpen] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -126,6 +132,15 @@ export function SvgControl({
             <ImageSolidIcon size={14} color="currentColor" />
             {loading ? 'Loading…' : 'From library'}
           </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={disabled}
+            onClick={() => { setError(''); setIconPickerOpen(true) }}
+          >
+            <SparklesSolidIcon size={14} color="currentColor" />
+            Icons
+          </Button>
           {markup ? (
             <Button
               variant="ghost"
@@ -142,6 +157,12 @@ export function SvgControl({
           <span className={styles.svgError} role="alert">{error}</span>
         ) : null}
       </div>
+
+      <IconPicker
+        open={iconPickerOpen}
+        onClose={() => setIconPickerOpen(false)}
+        onPick={(svgMarkup) => onChange(propKey, svgMarkup)}
+      />
 
       {pickerOpen ? (
         <Suspense fallback={null}>

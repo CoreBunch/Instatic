@@ -73,6 +73,12 @@ export {
   SetTypeScaleInputSchema,
   SetSpacingScaleInputSchema,
   RenderSnapshotInputSchema,
+  ComponentParamTypeSchema,
+  CreateComponentInputSchema,
+  InsertComponentInputSchema,
+  SetComponentParamsInputSchema,
+  BindComponentPropInputSchema,
+  BindComponentVariantInputSchema,
 } from './toolSchemas'
 export type {
   InsertHtmlInput,
@@ -101,6 +107,11 @@ export type {
   DuplicatePageInput,
   SetPageTemplateInput,
   ClearPageTemplateInput,
+  CreateComponentInput,
+  InsertComponentInput,
+  SetComponentParamsInput,
+  BindComponentPropInput,
+  BindComponentVariantInput,
 } from './toolSchemas'
 export {
   describeAgentDocuments,

@@ -2,16 +2,25 @@
   position: relative;
   display: flex;
   flex: 1 1 auto;
-  align-items: stretch;
-  justify-content: stretch;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
   min-height: 0;
   padding: var(--space-l);
   background: var(--bg-surface-2);
 }
 
 .image {
-  width: 100%;
-  height: 100%;
+  /* Defaults for the properties ImageViewer sets inline; an asset with no
+     stored dimensions falls back to plain contain-fitting. */
+  --asset-ratio: auto;
+  --asset-blurhash: none;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: var(--asset-ratio);
   object-fit: contain;
   object-position: center;
+  background-image: var(--asset-blurhash);
+  background-size: cover;
+  background-position: center;
 }

@@ -14,9 +14,7 @@ export interface TestDb {
  * with all migrations applied. Each call produces a unique, independent DB.
  *
  * Set `DB=postgres TEST_POSTGRES_URL=postgres://...` to run against a real
- * Postgres instance instead. The helper supports that mode at the type level;
- * connection-pool teardown is left to process exit until DbClient grows a
- * close() method.
+ * Postgres instance instead; `cleanup()` closes that pool too.
  *
  * @example
  * const { db, cleanup } = await createTestDb()
@@ -26,6 +24,24 @@ export interface TestDb {
  *   await cleanup()
  * }
  */
+/**
+ * Delete a test's temp directory, tolerating a Windows quirk: the OS releases
+ * the SQLite (and WAL/SHM) handles a beat after `close()` returns, so an
+ * immediate `rm` can still hit EBUSY. Retry briefly, then give up quietly —
+ * a leftover directory under the OS temp dir is housekeeping, and failing a
+ * teardown would report a PASSING test as broken, which is strictly worse.
+ */
+async function removeTempDir(dir: string): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await fs.rm(dir, { recursive: true, force: true })
+      return
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 20 * (attempt + 1)))
+    }
+  }
+}
+
 export async function createTestDb(): Promise<TestDb> {
   if (process.env['DB'] === 'postgres') {
     const url = process.env['TEST_POSTGRES_URL']
@@ -35,9 +51,7 @@ export async function createTestDb(): Promise<TestDb> {
     return {
       db,
       cleanup: async () => {
-        // TODO: extend DbClient with a close() method to properly terminate the
-        // Postgres connection pool. For now the process-level teardown is enough
-        // for the opt-in PG test mode.
+        await db.close()
       },
     }
   }
@@ -51,11 +65,11 @@ export async function createTestDb(): Promise<TestDb> {
   return {
     db,
     cleanup: async () => {
-      // Remove the entire temp directory. bun:sqlite doesn't expose a close()
-      // method on our DbClient interface; on macOS/Linux the file can still be
-      // deleted while the handle is open, and the handle goes out of scope once
-      // the test function returns.
-      await fs.rm(path.dirname(tmpFile), { recursive: true, force: true })
+      // Close BEFORE removing. Unlinking an open file is fine on macOS/Linux
+      // but fails with EBUSY on Windows, which made every temp-DB teardown
+      // throw there even though the test itself had passed.
+      await db.close()
+      await removeTempDir(path.dirname(tmpFile))
     },
   }
 }

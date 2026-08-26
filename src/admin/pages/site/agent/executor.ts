@@ -47,6 +47,11 @@ import {
   SetPageTemplateInputSchema,
   ClearPageTemplateInputSchema,
   RenderSnapshotInputSchema,
+  CreateComponentInputSchema,
+  InsertComponentInputSchema,
+  SetComponentParamsInputSchema,
+  BindComponentPropInputSchema,
+  BindComponentVariantInputSchema,
   type InsertHtmlInput,
   type GetNodeHtmlInput,
   type ReadDocumentInput,
@@ -59,18 +64,12 @@ import {
   type DuplicateNodeInput,
   type AssignClassInput,
   type RemoveClassInput,
-  type AddPageInput,
-  type DeletePageInput,
-  type RenamePageInput,
-  type DuplicatePageInput,
-  type SetPageTemplateInput,
-  type ClearPageTemplateInput,
 } from '@core/ai'
 import type { EditorStore } from '@site/store/types'
 import { registry } from '@core/module-engine'
 import { sanitizeRichtext, isRichtextPropKey } from '@core/sanitize'
 import { importHtml } from '@core/htmlImport'
-import type { BaseNode, PageTemplateConfig } from '@core/page-tree'
+import type { BaseNode } from '@core/page-tree'
 import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/publisher'
 import { getAgentStoreApi } from './storeRef'
 import { whenCollabWritable } from '@site/store/slices/site/collabWriteGate'
@@ -90,6 +89,21 @@ import {
 } from './codeAssetTools'
 import { runRenderSnapshotAtBreakpoint } from './renderSnapshotAtBreakpoint'
 import { parseImportedStyleCss, runApplyCss } from './cssTools'
+import {
+  runBindComponentProp,
+  runBindComponentVariant,
+  runCreateComponent,
+  runInsertComponent,
+  runSetComponentParams,
+} from './componentTools'
+import {
+  runAddPage,
+  runClearPageTemplate,
+  runDeletePage,
+  runDuplicatePage,
+  runRenamePage,
+  runSetPageTemplate,
+} from './pageTools'
 import {
   activeDocumentNodes,
   activeRenderPage,
@@ -195,7 +209,9 @@ function nodeNotInActiveDocError(store: EditorStore, nodeId: string): AiToolOutp
 function targetNodeIdFromInput(raw: unknown): string | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const bag = raw as Record<string, unknown>
-  const id = bag.nodeId ?? bag.parentId
+  // `fromNodeId` is site_create_component's componentize source — it must be
+  // on the active page for the conversion to find it.
+  const id = bag.nodeId ?? bag.parentId ?? bag.fromNodeId
   return typeof id === 'string' && id.length > 0 ? id : undefined
 }
 
@@ -478,78 +494,6 @@ function runRemoveClass(input: RemoveClassInput): AiToolOutput {
   return aiToolOk()
 }
 
-function runAddPage(input: AddPageInput): AiToolOutput {
-  const page = getStoreState().addPage(input.title, input.slug)
-  // rootNodeId is the parent to pass to insertHtml — a pageId is NOT a node id.
-  // addPage also makes the new page active, so the insert targets it.
-  return aiToolOk({ pageId: page.id, rootNodeId: page.rootNodeId })
-}
-
-function runDeletePage(input: DeletePageInput): AiToolOutput {
-  const store = getStoreState()
-  const site = store.site
-  if (!site) return aiToolError('No active site.')
-  if (!site.pages.some((p) => p.id === input.pageId)) {
-    return aiToolError(`Page not found: ${input.pageId}`)
-  }
-  if (site.pages.length <= 1) {
-    return aiToolError('Cannot delete the last page in a site.')
-  }
-  store.deletePage(input.pageId)
-  return aiToolOk()
-}
-
-function runRenamePage(input: RenamePageInput): AiToolOutput {
-  const store = getStoreState()
-  const site = store.site
-  if (!site) return aiToolError('No active site.')
-  if (!site.pages.some((p) => p.id === input.pageId)) {
-    return aiToolError(`Page not found: ${input.pageId}`)
-  }
-  store.renamePage(input.pageId, input.title, input.slug)
-  return aiToolOk()
-}
-
-function runDuplicatePage(input: DuplicatePageInput): AiToolOutput {
-  const store = getStoreState()
-  const site = store.site
-  if (!site) return aiToolError('No active site.')
-  if (!site.pages.some((p) => p.id === input.pageId)) {
-    return aiToolError(`Page not found: ${input.pageId}`)
-  }
-  const newPage = store.duplicatePage(input.pageId, input.title, input.slug)
-  return aiToolOk({ pageId: newPage.id })
-}
-
-function runSetPageTemplate(input: SetPageTemplateInput): AiToolOutput {
-  const store = getStoreState()
-  const site = store.site
-  if (!site) return aiToolError('No active site.')
-  if (!site.pages.some((p) => p.id === input.pageId)) {
-    return aiToolError(`Page not found: ${input.pageId}`)
-  }
-  const config: PageTemplateConfig = {
-    enabled: true,
-    target: input.target,
-    priority: input.priority ?? 100,
-  }
-  store.convertPageToTemplate(input.pageId, config)
-  return aiToolOk()
-}
-
-function runClearPageTemplate(input: ClearPageTemplateInput): AiToolOutput {
-  const store = getStoreState()
-  const site = store.site
-  if (!site) return aiToolError('No active site.')
-  const page = site.pages.find((p) => p.id === input.pageId)
-  if (!page) return aiToolError(`Page not found: ${input.pageId}`)
-  if (!page.template) {
-    return aiToolError(`Page is not a template: ${input.pageId}`)
-  }
-  store.convertTemplateToPage(input.pageId)
-  return aiToolOk()
-}
-
 function runDuplicateNode(input: DuplicateNodeInput): AiToolOutput {
   const store = getStoreState()
   const count = input.count ?? 1
@@ -657,6 +601,23 @@ export async function executeAgentTool(
         return runClearPageTemplate(parseValue(ClearPageTemplateInputSchema, rawInput))
       case 'site_duplicate_node':
         return runDuplicateNode(parseValue(DuplicateNodeInputSchema, rawInput))
+      case 'site_create_component':
+        return runCreateComponent(parseValue(CreateComponentInputSchema, rawInput))
+      case 'site_insert_component':
+        return runInsertComponent(parseValue(InsertComponentInputSchema, rawInput))
+      case 'site_set_component_params':
+        return runSetComponentParams(parseValue(SetComponentParamsInputSchema, rawInput))
+      case 'site_bind_component_prop': {
+        const parsed = parseValue(BindComponentPropInputSchema, rawInput)
+        return runBindComponentProp(parsed, findNodeInActiveDoc(getStoreState(), parsed.nodeId) ?? null)
+      }
+      case 'site_bind_component_variant': {
+        const parsed = parseValue(BindComponentVariantInputSchema, rawInput)
+        return runBindComponentVariant(
+          parsed,
+          findNodeInActiveDoc(getStoreState(), parsed.nodeId) ?? null,
+        )
+      }
       case 'site_set_color_tokens':
         return runSetColorTokens(rawInput)
       case 'site_set_font_tokens':

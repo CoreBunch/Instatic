@@ -71,5 +71,10 @@ function wrapSql(sql: SQL): DbClient {
     return await sql.begin(async (txSql) => cb(wrapSql(txSql as unknown as SQL)))
   }
 
-  return Object.assign(fn, { dialect: 'postgres' as const })
+  return Object.assign(fn, {
+    dialect: 'postgres' as const,
+    close: async () => {
+      await sql.end()
+    },
+  })
 }

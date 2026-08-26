@@ -50,6 +50,11 @@ import {
   SetTypeScaleInputSchema,
   SetSpacingScaleInputSchema,
   RenderSnapshotInputSchema,
+  CreateComponentInputSchema,
+  InsertComponentInputSchema,
+  SetComponentParamsInputSchema,
+  BindComponentPropInputSchema,
+  BindComponentVariantInputSchema,
 } from '@core/ai'
 import type { CoreCapability } from '@core/capabilities'
 import type { AiTool } from '../types'
@@ -406,10 +411,75 @@ const renderSnapshotTool: AiTool = {
 }
 
 // ---------------------------------------------------------------------------
+// Visual Component tools
+//
+// A Visual Component is the reusable-structure primitive: one definition, many
+// `base.visual-component-ref` instances. Styling is NOT parameterisable —
+// params feed module props (text, href, image, colour VALUE), never classes or
+// inline styles. For a base+variant look, put the base class inside the
+// definition and add the variant class to each ref node with site_assign_class.
+// ---------------------------------------------------------------------------
+
+const createComponentTool: AiTool = {
+  name: 'site_create_component',
+  scope: 'site',
+  execution: 'browser',
+  requiredCapabilities: SITE_STRUCTURE_CAPS,
+  description:
+    'Create a Visual Component — the reusable-structure primitive. Pass `fromNodeId` to componentize an EXISTING node: its whole subtree moves into the new component and the node is replaced in place by a reference to it (the same thing the editor\'s "Componentize" button does), so the page keeps rendering identically. Omit `fromNodeId` for an empty component you then fill with site_insert_html. `name` must be non-empty and unique across the site. The cloned content is always wrapped in a container root, so you can add siblings later even when componentizing a single Text or Button. Returns `componentId` and `rootNodeId` — pass that rootNodeId as site_insert_html\'s parentId to build inside the definition. Reuse it elsewhere with site_insert_component. Note that params are NOT created automatically: add them with site_set_component_params, then point node props at them with site_bind_component_prop.',
+  inputSchema: CreateComponentInputSchema,
+}
+
+const insertComponentTool: AiTool = {
+  name: 'site_insert_component',
+  scope: 'site',
+  execution: 'browser',
+  requiredCapabilities: SITE_STRUCTURE_CAPS,
+  description:
+    'Place an instance of an existing Visual Component under `parentId` in the active document, creating a `base.visual-component-ref` node. This is the only way to reuse a component — there is no HTML marker for it, so never try to write one into site_insert_html. `componentId` comes from site_create_component or site_list_documents (documents of type "visualComponent"). Slot params materialize their `base.slot-instance` children automatically, ready to receive content. Per-instance values go on the ref node: content via `propOverrides` (site_update_node_props), appearance via classes (site_assign_class) — a variant is a class on the instance, not a param. Errors instead of silently doing nothing when the parent is missing or the insertion would make a component contain itself.',
+  inputSchema: InsertComponentInputSchema,
+}
+
+const setComponentParamsTool: AiTool = {
+  name: 'site_set_component_params',
+  scope: 'site',
+  execution: 'browser',
+  requiredCapabilities: SITE_STRUCTURE_CAPS,
+  description:
+    'Declare a Visual Component\'s params — the typed inputs each instance can override. Send the params you want; each entry is matched to an existing param by `id` when given, otherwise by `name`, so repeat calls update rather than duplicate. Supplying `id` with a different `name` renames in place and keeps existing bindings and overrides intact. Types: string, number, boolean, url, enum, color, image, richText, slot (`slot` accepts nested content on each instance; `enum` renders as a dropdown and needs `enumOptions`). A param\'s type is FIXED after creation — to change it, drop the param and add it again. Omitted fields are left untouched; pass `removeMissing: true` to delete every param absent from the call, which also cleans up its bindings and per-instance overrides. Params carry VALUES into module props; they cannot switch classes or styles, so do not model visual variants as a param.',
+  inputSchema: SetComponentParamsInputSchema,
+}
+
+const bindComponentPropTool: AiTool = {
+  name: 'site_bind_component_prop',
+  scope: 'site',
+  execution: 'browser',
+  requiredCapabilities: SITE_STRUCTURE_CAPS,
+  description:
+    "Point a node's prop at a Visual Component param, so every instance renders its own value there — e.g. bind a Text node's `text` to a `label` param, or a Link's `href` to a `url` param. The node must live INSIDE the component definition; the canvas switches to its component automatically. Omit `paramId` to clear the binding (the prop keeps whatever value it last rendered, and a param nothing else references is garbage-collected). Bind content props only: `class` and `style` are not props, so appearance still comes from classes on the instance. Add the params first with site_set_component_params.",
+  inputSchema: BindComponentPropInputSchema,
+}
+
+const bindComponentVariantTool: AiTool = {
+  name: 'site_bind_component_variant',
+  scope: 'site',
+  execution: 'browser',
+  requiredCapabilities: SITE_STRUCTURE_CAPS,
+  description:
+    'Make an enum param drive STYLING — the one thing a prop binding cannot do, because `class` is not a prop. Maps each value of `paramId` to a CSS class via `classByValue` (e.g. { primary: "btn-primary", ghost: "btn-ghost" }); at render the selected class is appended to this node\'s own classes, so the base class stays and the variant wins the cascade. The node must live INSIDE the component definition — usually its root. Editors then pick the variant from the param\'s dropdown on each instance, and restyling every button of that variant is one edit to the class. Classes are named by selector (`btn-ghost` or `.btn-ghost`) and must already exist — create them with site_apply_css first. A value you leave out of the map adds no class, which is how a "default"/"none" option works. Pass an empty `classByValue` to clear the binding. Declare the param with site_set_component_params (type "enum", one enumOption per key here) before calling this.',
+  inputSchema: BindComponentVariantInputSchema,
+}
+
+// ---------------------------------------------------------------------------
 // All write tools — convenient barrel for the registry
 // ---------------------------------------------------------------------------
 
 export const siteWriteTools: AiTool[] = [
+  createComponentTool,
+  insertComponentTool,
+  setComponentParamsTool,
+  bindComponentPropTool,
+  bindComponentVariantTool,
   insertHtmlTool,
   getNodeHtmlTool,
   readDocumentTool,
