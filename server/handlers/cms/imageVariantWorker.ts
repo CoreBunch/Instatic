@@ -17,10 +17,41 @@
  * `imageVariantProtocol.ts` for the wire shape.
  */
 
-import sharp from 'sharp'
+import sharp, { type Sharp } from 'sharp'
 import { encode as encodeBlurHash } from 'blurhash'
-import type { ImageVariantJobRequest, ImageVariantJobResponse, ImageVariantPayload } from './imageVariantProtocol'
+import type {
+  CroppedOriginalPayload,
+  ImageVariantJobRequest,
+  ImageVariantJobResponse,
+  ImageVariantPayload,
+} from './imageVariantProtocol'
 import { toArrayBuffer } from '../../binary'
+
+/**
+ * Re-encoders for the cropped served file, keyed by sharp's detected input
+ * format. Each carries the extension + MIME the host must store, so the
+ * asset row keeps describing its own bytes. Anything not listed (AVIF, TIFF,
+ * …) falls back to WebP, which every target browser reads.
+ */
+type CropEncoder = ((pipeline: Sharp, quality: number) => Sharp) & {
+  extension: string
+  mimeType: string
+}
+
+function encoder(
+  extension: string,
+  mimeType: string,
+  apply: (pipeline: Sharp, quality: number) => Sharp,
+): CropEncoder {
+  return Object.assign(apply, { extension, mimeType })
+}
+
+const ENCODERS: Record<string, CropEncoder> = {
+  jpeg: encoder('jpg', 'image/jpeg', (p, q) => p.jpeg({ quality: q })),
+  jpg: encoder('jpg', 'image/jpeg', (p, q) => p.jpeg({ quality: q })),
+  png: encoder('png', 'image/png', (p) => p.png()),
+  webp: encoder('webp', 'image/webp', (p, q) => p.webp({ quality: q })),
+}
 
 /** libwebp's hard cap on either output dimension. */
 const MAX_WEBP_DIMENSION = 16383
@@ -38,9 +69,9 @@ async function handleJob(req: ImageVariantJobRequest): Promise<void> {
     // (corrupt files, non-images that somehow slipped past the magic-byte
     // check, etc.).
     const metadata = await sharp(bytes).metadata()
-    const originalWidth = metadata.width
-    const originalHeight = metadata.height
-    if (!originalWidth || !originalHeight) {
+    const sourceWidth = metadata.width
+    const sourceHeight = metadata.height
+    if (!sourceWidth || !sourceHeight) {
       send({
         kind: 'image-variant-result',
         correlationId: req.correlationId,
@@ -50,6 +81,28 @@ async function handleJob(req: ImageVariantJobRequest): Promise<void> {
       return
     }
 
+    // Non-destructive crop. Extracting once here — before the BlurHash and
+    // before the ladder — is what makes every downstream artefact describe
+    // the cropped frame, so consumers need no crop awareness at all: they
+    // read `width`/`height` and the variant paths exactly as before.
+    //
+    // Fractions are converted against the source dimensions and clamped to
+    // the frame, because a rectangle one pixel outside it makes libvips
+    // throw and would cost the asset its whole ladder.
+    let source = bytes
+    let originalWidth = sourceWidth
+    let originalHeight = sourceHeight
+    if (req.crop) {
+      const left = Math.max(0, Math.min(sourceWidth - 1, Math.round(req.crop.x * sourceWidth)))
+      const top = Math.max(0, Math.min(sourceHeight - 1, Math.round(req.crop.y * sourceHeight)))
+      const width = Math.max(1, Math.min(sourceWidth - left, Math.round(req.crop.width * sourceWidth)))
+      const height = Math.max(1, Math.min(sourceHeight - top, Math.round(req.crop.height * sourceHeight)))
+      const extracted = await sharp(bytes).extract({ left, top, width, height }).toBuffer()
+      source = new Uint8Array(extracted)
+      originalWidth = width
+      originalHeight = height
+    }
+
     // BlurHash sample buffer. `fit: 'fill'` is intentional — BlurHash is
     // rendered into a container whose aspect ratio matches the FULL image
     // (because the consumer also knows `width` / `height`), so we don't
@@ -57,7 +110,7 @@ async function handleJob(req: ImageVariantJobRequest): Promise<void> {
     // encoder requires `width * height * 4` bytes; `fit: 'inside'` would
     // silently shrink one dimension and produce a smaller buffer the
     // encoder then rejects.
-    const { data: blurBytes } = await sharp(bytes)
+    const { data: blurBytes } = await sharp(source)
       .resize(req.blurhashConfig.sampleWidth, req.blurhashConfig.sampleHeight, { fit: 'fill' })
       .ensureAlpha()
       .raw()
@@ -99,7 +152,7 @@ async function handleJob(req: ImageVariantJobRequest): Promise<void> {
       const subRungs = req.targetWidths.filter((w) => w < intrinsicRung)
       const widths = subRungs.length ? [...subRungs, intrinsicRung] : []
       for (const width of widths) {
-        const v = await sharp(bytes)
+        const v = await sharp(source)
           .resize({ width, withoutEnlargement: true })
           .webp({ quality: req.webpQuality })
           .toBuffer({ resolveWithObject: true })
@@ -113,6 +166,24 @@ async function handleJob(req: ImageVariantJobRequest): Promise<void> {
       }
     }
 
+    // Cropped served file. Re-encoded in the SOURCE's own format so the
+    // asset's mime type stays truthful — swapping a PNG to WebP here would
+    // desync `media_assets.mime_type` from the bytes actually served.
+    let cropped: CroppedOriginalPayload | undefined
+    if (req.crop && req.emitCropped) {
+      const encode = ENCODERS[metadata.format ?? ''] ?? ENCODERS.webp
+      const out = await encode(sharp(source), req.webpQuality).toBuffer({ resolveWithObject: true })
+      const ab = toArrayBuffer(out.data)
+      cropped = {
+        bytes: ab,
+        width: out.info.width,
+        height: out.info.height,
+        extension: encode.extension,
+        mimeType: encode.mimeType,
+      }
+      transfer.push(ab)
+    }
+
     send(
       {
         kind: 'image-variant-result',
@@ -122,6 +193,7 @@ async function handleJob(req: ImageVariantJobRequest): Promise<void> {
         height: originalHeight,
         blurHash,
         variants,
+        ...(cropped ? { cropped } : {}),
       },
       transfer,
     )

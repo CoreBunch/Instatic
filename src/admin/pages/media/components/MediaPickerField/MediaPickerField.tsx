@@ -12,13 +12,20 @@
  * shifts when the user picks/clears the asset. Previous design used a dashed
  * border for the empty state and a solid one when populated — inconsistent.
  *
+ * The field deliberately carries only the two actions that CANNOT be reached
+ * anywhere else: change the value, and clear it. Everything that acts on the
+ * asset itself — crop, replace, copy URL — lives in the viewer, which the tile
+ * opens on click. This tile is 44px tall and sits in a narrow property panel;
+ * stacking per-asset actions on top of it crowded the filename and put an
+ * image-editing control somewhere too small to show the image being edited.
+ *
  * The component is pure UI: callers own the picker modal and (optional)
  * MediaViewerWindow state. The component only emits `onBrowse` / `onEdit` /
  * `onClear` events.
  */
 import { Button } from '@ui/components/Button'
 import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
-import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
+import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import type { CmsMediaAsset } from '@core/persistence/cmsMedia'
 import { blurHashToDataUrl, pickVariantUrl } from '@admin/pages/media/utils/variants'
@@ -40,6 +47,13 @@ interface MediaPickerFieldProps {
    * value but no resolved asset (e.g. a saved publicPath or a media ID).
    */
   fallbackLabel?: string
+  /**
+   * Image URL to preview when there is a value but no resolved asset row.
+   * The saved path IS the image, so showing it beats a grey placeholder —
+   * an unresolved asset is usually just a list that has not loaded yet, and
+   * the author still needs to see WHICH picture is bound.
+   */
+  fallbackPreviewUrl?: string
   /** Optional fallback secondary line, defaults to "Saved reference". */
   fallbackHint?: string
   /** Media kind — drives the empty-state icon and labels. */
@@ -77,6 +91,7 @@ export function MediaPickerField({
   hasValue,
   fallbackLabel,
   fallbackHint = 'Saved reference',
+  fallbackPreviewUrl,
   mediaKind,
   subjectLabel,
   onBrowse,
@@ -88,7 +103,6 @@ export function MediaPickerField({
 }: MediaPickerFieldProps) {
   const subject = subjectLabel ?? mediaKind
   const populated = asset !== null || hasValue
-  const showEdit = populated && Boolean(asset) && Boolean(onEdit)
   const showClear = populated && Boolean(onClear)
 
   // Visible text + aria-label for the browse button. When a label override
@@ -121,17 +135,38 @@ export function MediaPickerField({
 
   return (
     <div className={styles.field}>
-      <PickedTile
-        asset={asset}
-        hasValue={hasValue}
-        fallbackLabel={fallbackLabel}
-        fallbackHint={fallbackHint}
-        mediaKind={mediaKind}
-        subjectLabel={subject}
-        onClick={disabled ? null : onTileClick}
-        ariaLabel={tileAria}
-        tooltip={tileTooltip}
-      />
+      <div className={showClear && onClear ? `${styles.tileRow} ${styles.tileRowClearable}` : styles.tileRow}>
+        <PickedTile
+          asset={asset}
+          hasValue={hasValue}
+          fallbackLabel={fallbackLabel}
+          fallbackHint={fallbackHint}
+          fallbackPreviewUrl={fallbackPreviewUrl}
+          mediaKind={mediaKind}
+          subjectLabel={subject}
+          onClick={disabled ? null : onTileClick}
+          ariaLabel={tileAria}
+          tooltip={tileTooltip}
+        />
+        {/*
+          Clearing sits ON the row rather than in the button strip below: it
+          is the one action that applies even when the asset row never
+          resolved, which is exactly when the strip is least useful.
+        */}
+        {showClear && onClear && (
+          <Button
+            variant="ghost"
+            size="xs"
+            className={styles.clearButton}
+            disabled={disabled}
+            onClick={onClear}
+            aria-label={`Clear ${subject}`}
+            tooltip={`Clear ${subject}`}
+          >
+            <CloseIcon size={13} />
+          </Button>
+        )}
+      </div>
       <div className={styles.actions}>
         <Button
           variant="secondary"
@@ -143,30 +178,6 @@ export function MediaPickerField({
           <ImagesSolidIcon size={13} />
           <span>{browseVisible}</span>
         </Button>
-        {showEdit && onEdit && (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={disabled}
-            onClick={onEdit}
-            aria-label={`Edit ${subject} in viewer`}
-            tooltip="Edit asset (alt text, caption, tags…)"
-          >
-            <EditSolidIcon size={13} />
-            <span>Edit</span>
-          </Button>
-        )}
-        {showClear && onClear && (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={disabled}
-            onClick={onClear}
-            aria-label={`Clear ${subject}`}
-          >
-            Clear
-          </Button>
-        )}
       </div>
     </div>
   )
@@ -177,6 +188,7 @@ interface PickedTileProps {
   hasValue: boolean
   fallbackLabel?: string
   fallbackHint: string
+  fallbackPreviewUrl?: string
   mediaKind: MediaPickerFieldKind
   subjectLabel: string
   /**
@@ -196,6 +208,7 @@ function PickedTile({
   hasValue,
   fallbackLabel,
   fallbackHint,
+  fallbackPreviewUrl,
   mediaKind,
   subjectLabel,
   onClick,
@@ -223,10 +236,16 @@ function PickedTile({
     )
   } else if (!asset) {
     // Fallback: value saved but asset not yet resolved (loading or deleted).
+    // The saved path is still a usable image URL, so prefer it over the
+    // generic glyph — a broken path degrades to the browser's own missing-
+    // image state, which is itself the useful signal.
+    const showFallbackImage = mediaKind === 'image' && Boolean(fallbackPreviewUrl)
     body = (
       <>
         <span className={styles.thumb} aria-hidden="true">
-          {mediaKind === 'image' ? <ImagesSolidIcon size={18} /> : <VideoSolidIcon size={18} />}
+          {showFallbackImage
+            ? <img src={fallbackPreviewUrl} alt="" loading="lazy" decoding="async" />
+            : mediaKind === 'image' ? <ImagesSolidIcon size={18} /> : <VideoSolidIcon size={18} />}
         </span>
         <span className={styles.meta}>
           <span className={styles.name}>{fallbackLabel ?? `Unresolved ${subjectLabel}`}</span>

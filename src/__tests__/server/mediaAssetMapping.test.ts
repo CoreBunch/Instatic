@@ -59,7 +59,7 @@ const MEDIA_ASSET_FIELD_KEYS = [
   'id', 'filename', 'mimeType', 'sizeBytes', 'publicPath', 'uploadedByUserId',
   'createdAt', 'altText', 'caption', 'title', 'tags', 'width', 'height',
   'durationMs', 'dominantColor', 'deletedAt', 'replacedAt', 'folderIds',
-  'blurHash', 'variants', 'posterPath', 'storageAdapterId', 'externallyHosted',
+  'blurHash', 'variants', 'crop', 'focus', 'posterPath', 'storageAdapterId', 'externallyHosted',
 ].sort()
 
 // ---------------------------------------------------------------------------

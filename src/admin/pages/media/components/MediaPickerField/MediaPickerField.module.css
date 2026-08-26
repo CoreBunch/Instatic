@@ -15,6 +15,40 @@
     min-width: 0;
 }
 
+/*
+ * Tile plus its clear button. The button is positioned OVER the tile's right
+ * edge rather than beside it, so the clear affordance reads as part of the
+ * box instead of floating next to it.
+ *
+ * It stays a DOM sibling, never a child: the tile is itself a <button>, and
+ * nesting one inside another is invalid HTML. Being a sibling also means its
+ * clicks never bubble into the tile, so clearing cannot also open the viewer.
+ */
+.tileRow {
+    position: relative;
+    display: flex;
+    min-width: 0;
+}
+
+.tileRow > *:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.clearButton {
+    position: absolute;
+    right: var(--space-2xs);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 1;
+}
+
+/* Reserve the button's width so a long filename truncates before it rather
+   than sliding underneath. Only applied when a clear button is present. */
+.tileRowClearable > *:first-child {
+    padding-right: calc(var(--space-s) + 26px);
+}
+
 /* Non-interactive tile (rare — used only when the caller wires no
  * `onBrowse`/`onEdit`, which isn't part of the current callers). Kept for
  * shape parity with .tileClickable. */

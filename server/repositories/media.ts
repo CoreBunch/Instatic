@@ -6,7 +6,7 @@ import {
   parseVariants,
   type MediaAssetRow,
 } from './mediaAssetMapping'
-import type { MediaAsset, MediaVariant } from './mediaTypes'
+import type { MediaAsset, MediaCrop, MediaFocus, MediaVariant } from './mediaTypes'
 
 // The row ↔ asset mapping unit (column constants, `MediaAssetRow`,
 // `mapMediaAssetRow`, and the JSON parsers) lives in `./mediaAssetMapping` so it
@@ -14,7 +14,7 @@ import type { MediaAsset, MediaVariant } from './mediaTypes'
 // duplication. This module owns the asset domain types (`MediaAsset`,
 // `MediaVariant`) and every CRUD query.
 
-export type { MediaAsset, MediaVariant } from './mediaTypes'
+export type { MediaAsset, MediaCrop, MediaFocus, MediaVariant } from './mediaTypes'
 
 interface CreateMediaAssetInput {
   id: string
@@ -248,6 +248,67 @@ export async function setMediaAssetVariants(
      where id = ${p(5)}
      returning ${MEDIA_ASSET_COLUMNS}`,
     [input.width, input.height, input.blurHash, input.variants, id],
+  )
+  if (rows.length === 0) return null
+  const assets = await hydrateAssets(db, rows)
+  return assets[0] ?? null
+}
+
+/**
+ * Persist (or clear, with `null`) the asset's crop rectangle.
+ *
+ * Written together with the freshly cropped ladder by the crop handler, never
+ * on its own — a stored crop that the variants don't reflect would render the
+ * full frame while the UI claims it is cropped.
+ */
+export async function setMediaAssetCrop(
+  db: DbClient,
+  id: string,
+  crop: MediaCrop | null,
+  /**
+   * The file the asset serves from now on. For a crop this is the cropped
+   * derivative; for a reset it is the pristine original again. `storage_path`
+   * is deliberately NOT touched — it keeps pointing at the untouched upload,
+   * which is what makes every crop reversible and re-croppable.
+   */
+  display: { publicPath: string; sizeBytes: number; mimeType: string },
+  focus: MediaFocus | null,
+): Promise<MediaAsset | null> {
+  const p = (n: number) => placeholder(db.dialect, n)
+  const { rows } = await db.unsafe<MediaAssetRow>(
+    `update media_assets set
+       crop_json = ${p(1)},
+       focus_json = ${p(2)},
+       public_path = ${p(3)},
+       size_bytes = ${p(4)},
+       mime_type = ${p(5)}
+     where id = ${p(6)}
+     returning ${MEDIA_ASSET_COLUMNS}`,
+    [crop, focus, display.publicPath, display.sizeBytes, display.mimeType, id],
+  )
+  if (rows.length === 0) return null
+  const assets = await hydrateAssets(db, rows)
+  return assets[0] ?? null
+}
+
+/**
+ * Move the focal point without touching pixels.
+ *
+ * Split from `setMediaAssetCrop` because a focus change needs no re-encode:
+ * the served file and the whole variant ladder stay exactly as they are, so
+ * dragging the hotspot is a single cheap UPDATE instead of a full rebuild.
+ */
+export async function setMediaAssetFocus(
+  db: DbClient,
+  id: string,
+  focus: MediaFocus | null,
+): Promise<MediaAsset | null> {
+  const p = (n: number) => placeholder(db.dialect, n)
+  const { rows } = await db.unsafe<MediaAssetRow>(
+    `update media_assets set focus_json = ${p(1)}
+     where id = ${p(2)}
+     returning ${MEDIA_ASSET_COLUMNS}`,
+    [focus, id],
   )
   if (rows.length === 0) return null
   const assets = await hydrateAssets(db, rows)

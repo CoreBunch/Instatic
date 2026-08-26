@@ -24,15 +24,19 @@
  * panel id (we keep the existing storage key so saved positions migrate
  * across the rename).
  */
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@ui/components/Button'
+import { ContextMenu, ContextMenuItem } from '@ui/components/ContextMenu'
 import { Input, Textarea } from '@ui/components/Input'
 import { canDeleteMedia, canReplaceMedia, canWriteMedia } from '@admin/access'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import { Copy2SolidIcon } from 'pixel-art-icons/icons/copy-2-solid'
 import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
 import { ReloadIcon } from 'pixel-art-icons/icons/reload'
+import { CropIcon } from 'pixel-art-icons/icons/crop'
+import { MoreHorizontalSolidIcon } from 'pixel-art-icons/icons/more-horizontal-solid'
+import { UnsplashIcon } from 'pixel-art-icons/icons/unsplash'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import { PanelHeader } from '@admin/shared/PanelHeader'
@@ -42,6 +46,9 @@ import { bucketForMime } from '../../utils/filters'
 import { useDebouncedSave } from '../../hooks/useDebouncedSave'
 import { TagEditor } from '../TagEditor/TagEditor'
 import { ReplaceFileDialog } from '../ReplaceFileDialog/ReplaceFileDialog'
+import { CropDialog } from '../CropDialog'
+import { UnsplashPicker } from '../UnsplashPicker'
+import { useUnsplashConfigured } from '../../hooks/useUnsplashConfigured'
 import { ViewerBody } from '../viewers/ViewerBody'
 import { formatBytes } from '../../utils/formatBytes'
 import styles from './MediaViewerWindow.module.css'
@@ -61,6 +68,14 @@ export interface MediaAssetEditor {
   updateAsset: (id: string, input: UpdateCmsMediaAssetInput) => Promise<CmsMediaAsset | null>
   renameAsset: (id: string, filename: string) => Promise<CmsMediaAsset | null>
   replaceAssetFile: (id: string, file: File) => Promise<CmsMediaAsset | null>
+  /**
+   * Called with the re-cropped asset so the caller can swap its cached copy.
+   * The crop request itself is issued by `CropDialog` — the handle only needs
+   * to learn the result, because a crop rebuilds `variants` / `width` /
+   * `height` and a patched-field update would leave the grid pointing at
+   * variant files that no longer exist.
+   */
+  onAssetCropped: (asset: CmsMediaAsset) => void
   restoreAsset: (id: string) => Promise<unknown>
   purgeAsset: (id: string) => Promise<void>
 }
@@ -101,9 +116,28 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
   const currentUser = useCurrentAdminUser()
   const { asset } = editor
   const [replaceOpen, setReplaceOpen] = useState(false)
+  const [cropOpen, setCropOpen] = useState(false)
+  const [actionsOpen, setActionsOpen] = useState(false)
+  const [unsplashOpen, setUnsplashOpen] = useState(false)
+  const unsplashConfigured = useUnsplashConfigured()
+  const actionsTriggerRef = useRef<HTMLButtonElement>(null)
   const bucket = bucketForMime(asset.mimeType)
   const canWrite = canWriteMedia(currentUser)
   const canReplace = canReplaceMedia(currentUser)
+
+  // SVG has no raster ladder to rebuild and re-encoding a GIF would flatten
+  // the animation, so neither is croppable — hidden rather than offered and
+  // then refused by the server.
+  const showCrop = canWrite
+    && bucket === 'image'
+    && asset.mimeType !== 'image/svg+xml'
+    && asset.mimeType !== 'image/gif'
+
+  /** Menu items act and dismiss — a menu left open over a changed asset lies. */
+  function runFromMenu(action: () => void) {
+    setActionsOpen(false)
+    action()
+  }
   const canDelete = canDeleteMedia(currentUser)
 
   // Persistent window position — same key the old detached inspector used,
@@ -180,6 +214,82 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
       <div className={styles.body}>
         <div className={styles.viewer}>
           <ViewerBody asset={asset} />
+          {/*
+            Actions sit over the asset itself rather than in a row down in the
+            sidebar: they act on what you are looking at, and the overflow menu
+            means a sixth action costs no layout. Crop stays out of the menu —
+            it is the one action reached often enough to earn a permanent icon.
+          */}
+          <div className={styles.viewerOverlay}>
+            {showCrop && (
+              <Button
+                variant="ghost"
+                size="xs"
+                aria-label={asset.crop ? 'Edit crop' : 'Crop image'}
+                tooltip={asset.crop ? 'Edit the crop (non-destructive)' : 'Crop this image (non-destructive)'}
+                onClick={() => setCropOpen(true)}
+                disabled={asset.deletedAt !== null}
+              >
+                <CropIcon size={13} />
+              </Button>
+            )}
+            <Button
+              ref={actionsTriggerRef}
+              variant="ghost"
+              size="xs"
+              aria-label="Asset actions"
+              aria-haspopup="menu"
+              aria-expanded={actionsOpen}
+              tooltip="More actions"
+              onClick={() => setActionsOpen((open) => !open)}
+            >
+              <MoreHorizontalSolidIcon size={13} />
+            </Button>
+          </div>
+
+          {actionsOpen && (
+            <ContextMenu
+              anchorRef={actionsTriggerRef}
+              align="end"
+              ariaLabel="Asset actions"
+              onClose={() => setActionsOpen(false)}
+            >
+              <ContextMenuItem onClick={() => runFromMenu(() => void copyUrl())}>
+                <Copy2SolidIcon size={13} />
+                Copy public URL
+              </ContextMenuItem>
+              <ContextMenuItem
+                onClick={() => runFromMenu(() => window.open(asset.publicPath, '_blank', 'noopener,noreferrer'))}
+              >
+                <ExternalLinkSolidIcon size={13} />
+                Open in new tab
+              </ContextMenuItem>
+              {showCrop && (
+                <ContextMenuItem onClick={() => runFromMenu(() => setCropOpen(true))}>
+                  <CropIcon size={13} />
+                  {asset.crop ? 'Edit crop…' : 'Crop…'}
+                </ContextMenuItem>
+              )}
+              {canReplace && (
+                <ContextMenuItem
+                  disabled={asset.deletedAt !== null}
+                  onClick={() => runFromMenu(() => setReplaceOpen(true))}
+                >
+                  <ReloadIcon size={13} />
+                  Replace file…
+                </ContextMenuItem>
+              )}
+              {canReplace && unsplashConfigured && bucket === 'image' && (
+                <ContextMenuItem
+                  disabled={asset.deletedAt !== null}
+                  onClick={() => runFromMenu(() => setUnsplashOpen(true))}
+                >
+                  <UnsplashIcon size={13} />
+                  Unsplash…
+                </ContextMenuItem>
+              )}
+            </ContextMenu>
+          )}
         </div>
 
         <aside className={styles.sidebar} aria-label="Asset metadata">
@@ -203,41 +313,6 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
                 disabled={!canWrite}
               />
             </Field>
-          </Section>
-
-          <Section>
-            <div className={styles.actionsRow}>
-              <Button
-                variant="ghost"
-                size="xs"
-                aria-label="Copy public URL"
-                onClick={() => void copyUrl()}
-              >
-                <Copy2SolidIcon size={13} />
-                <span>Copy URL</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="xs"
-                aria-label="Open in new tab"
-                onClick={() => window.open(asset.publicPath, '_blank', 'noopener,noreferrer')}
-              >
-                <ExternalLinkSolidIcon size={13} />
-                <span>Open</span>
-              </Button>
-              {canReplace && (
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  aria-label="Replace file"
-                  onClick={() => setReplaceOpen(true)}
-                  disabled={asset.deletedAt !== null}
-                >
-                  <ReloadIcon size={13} />
-                  <span>Replace</span>
-                </Button>
-              )}
-            </div>
           </Section>
 
           {bucket === 'image' && (
@@ -339,6 +414,25 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
           )}
         </aside>
       </div>
+
+      {/* Crop is `media.write`, not `media.replace` — it never touches the
+          original bytes, so it must not ride the replace permission. */}
+      {canWrite && (
+        <CropDialog
+          asset={asset}
+          open={cropOpen}
+          onClose={() => setCropOpen(false)}
+          onCropped={editor.onAssetCropped}
+        />
+      )}
+      {canReplace && unsplashConfigured && (
+        <UnsplashPicker
+          open={unsplashOpen}
+          onClose={() => setUnsplashOpen(false)}
+          replaceAsset={asset}
+          onImported={editor.onAssetCropped}
+        />
+      )}
 
       {canReplace && (
         <ReplaceFileDialog

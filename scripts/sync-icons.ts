@@ -60,13 +60,16 @@ const UPSTREAM_TYPES_FILE = join(UPSTREAM, 'types.ts')
  * Icons authored in-house, NOT sourced from the upstream catalog.
  *
  * The upstream pixel-art set ships an `underline` glyph but no strikethrough,
- * so `strike` is hand-drawn and committed directly to `vendor/`. In-house
- * icons are never copied from (nor reported as missing in) upstream — but they
- * must still exist as a vendored `.tsx` source, get built into `dist/` like any
- * other icon, and stay imported (an unused in-house icon is an orphan, same as
- * any other). The sync therefore leaves these vendored sources untouched.
+ * so `strike` is hand-drawn. It has no crop glyph either — `proportions-solid`
+ * reads as "aspect ratio", not "cut this image down" — so `crop` is hand-drawn
+ * too, and `unsplash` is a brand mark the catalogue would never carry. All
+ * three are committed directly to `vendor/`. In-house icons are never
+ * copied from (nor reported as missing in) upstream — but they must still
+ * exist as a vendored `.tsx` source, get built into `dist/` like any other
+ * icon, and stay imported (an unused in-house icon is an orphan, same as any
+ * other). The sync therefore leaves these vendored sources untouched.
  */
-const IN_HOUSE_ICONS = new Set(['strike'])
+const IN_HOUSE_ICONS = new Set(['strike', 'crop', 'unsplash'])
 
 const SCANNED_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mts', '.mjs'])
 const IMPORT_RE = /from\s+["']pixel-art-icons\/icons\/([a-z0-9-]+)["']/g

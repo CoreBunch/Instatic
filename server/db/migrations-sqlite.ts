@@ -1224,4 +1224,25 @@ export const sqliteMigrations: Migration[] = [
        where trim(lower(display_name)) = trim(lower(email));
     `,
   },
+  {
+    // Non-destructive crop rectangle, stored as normalized 0–1 fractions of the
+    // ORIGINAL image so it survives any future change to the variant ladder.
+    // NULL = uncropped. The original bytes on disk are never rewritten: the
+    // crop is applied when the responsive variants are (re)generated, so
+    // clearing the column and regenerating restores the full frame.
+    id: '025_media_asset_crop',
+    sql: `
+      alter table media_assets add column crop_json text;
+    `,
+  },
+  {
+    // Editorial focal point: the part of the picture that must stay visible
+    // when a container crops the image at render time. Stored as { x, y } in
+    // 0–1 fractions of the ORIGINAL (same space as crop_json), NULL = centre.
+    // Published images turn it into `object-position`.
+    id: '026_media_asset_focus',
+    sql: `
+      alter table media_assets add column focus_json text;
+    `,
+  },
 ]

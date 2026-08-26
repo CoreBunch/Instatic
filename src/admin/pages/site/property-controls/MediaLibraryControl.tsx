@@ -221,6 +221,7 @@ export function MediaLibraryControl({
               hasValue={Boolean(currentValue)}
               fallbackLabel={fallbackFilename}
               fallbackHint="Saved path"
+              fallbackPreviewUrl={currentValue}
               mediaKind={mediaKind}
               subjectLabel={modeLabel}
               disabled={disabled}

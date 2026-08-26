@@ -1,0 +1,242 @@
+.body {
+  display: grid;
+  gap: var(--space-4xl);
+}
+
+.stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 260px;
+  max-height: 46vh;
+  background:
+    repeating-conic-gradient(var(--bg-surface) 0% 25%, var(--bg-surface-2) 0% 50%)
+      50% / 16px 16px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.stageInner {
+  position: relative;
+  max-width: 100%;
+  max-height: 46vh;
+  line-height: 0;
+}
+
+.stageImage {
+  display: block;
+  max-width: 100%;
+  max-height: 46vh;
+  width: auto;
+  height: auto;
+}
+
+.selection {
+  position: absolute;
+  left: calc(var(--crop-x) * 100%);
+  top: calc(var(--crop-y) * 100%);
+  width: calc(var(--crop-w) * 100%);
+  height: calc(var(--crop-h) * 100%);
+  border: 1px solid var(--overlay);
+  cursor: move;
+  /* Dim everything outside the selection with one huge spread shadow instead
+     of four positioned panes — same result, no extra elements to keep in sync
+     with the rectangle, and the stage clips the overflow. */
+  box-shadow: 0 0 0 9999px var(--scrim-50);
+}
+
+.selection:focus-visible {
+  outline: 2px solid var(--overlay);
+  outline-offset: 2px;
+}
+
+/* Rule-of-thirds guides — pure affordance, no interaction. */
+.selection::before,
+.selection::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.selection::before {
+  background-image:
+    linear-gradient(to right, transparent 33.33%, var(--overlay) 33.33%, var(--overlay) calc(33.33% + 1px), transparent calc(33.33% + 1px)),
+    linear-gradient(to right, transparent 66.66%, var(--overlay) 66.66%, var(--overlay) calc(66.66% + 1px), transparent calc(66.66% + 1px));
+}
+
+.selection::after {
+  background-image:
+    linear-gradient(to bottom, transparent 33.33%, var(--overlay) 33.33%, var(--overlay) calc(33.33% + 1px), transparent calc(33.33% + 1px)),
+    linear-gradient(to bottom, transparent 66.66%, var(--overlay) 66.66%, var(--overlay) calc(66.66% + 1px), transparent calc(66.66% + 1px));
+}
+
+/*
+ * Eight drag handles: four corners plus four edge midpoints. The edge handles
+ * are what make "pull just the top down" possible — with corners alone every
+ * resize moves two edges at once.
+ */
+.handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--scrim-40);
+  background: var(--overlay);
+  border-radius: var(--radius-sm);
+  touch-action: none;
+}
+
+.handleNw { top: -7px; left: -7px; cursor: nwse-resize; }
+.handleN  { top: -7px; left: calc(50% - 7px); cursor: ns-resize; }
+.handleNe { top: -7px; right: -7px; cursor: nesw-resize; }
+.handleE  { right: -7px; top: calc(50% - 7px); cursor: ew-resize; }
+.handleSe { bottom: -7px; right: -7px; cursor: nwse-resize; }
+.handleS  { bottom: -7px; left: calc(50% - 7px); cursor: ns-resize; }
+.handleSw { bottom: -7px; left: -7px; cursor: nesw-resize; }
+.handleW  { left: -7px; top: calc(50% - 7px); cursor: ew-resize; }
+
+/*
+ * Focus ellipse. Positioned in IMAGE space — a sibling of the selection rather
+ * than a child — so it paints above the selection's dimming shadow and needs
+ * no conversion out of the coordinates it is stored in.
+ *
+ * `pointer-events: none` is load-bearing, not tidiness: the ellipse covers
+ * most of the selection, and while it accepted clicks the crop underneath
+ * could only be grabbed by its edges. Only the two pucks below opt back in.
+ */
+.focusArea {
+  position: absolute;
+  left: calc(var(--focus-left) * 100%);
+  top: calc(var(--focus-top) * 100%);
+  width: calc(var(--focus-w) * 100%);
+  height: calc(var(--focus-h) * 100%);
+  border: 1.5px solid var(--overlay-70);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.focusPuck,
+.focusHandle {
+  position: absolute;
+  padding: 0;
+  border: 1px solid var(--scrim-40);
+  background: var(--overlay);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.focusPuck {
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  cursor: grab;
+}
+
+.focusPuck:active {
+  cursor: grabbing;
+}
+
+/* On the rim at 45°: half an axis times cos 45° is 35.36% of the box from the
+   centre, which is where an ellipse actually passes through that diagonal. */
+.focusHandle {
+  left: 85.36%;
+  top: 85.36%;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+}
+
+.focusPuck:focus-visible,
+.focusHandle:focus-visible,
+.handle:focus-visible {
+  outline: 2px solid var(--overlay);
+  outline-offset: 2px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3xl);
+  flex-wrap: wrap;
+}
+
+.ratios {
+  display: flex;
+  gap: var(--space-m);
+  flex-wrap: wrap;
+}
+
+.previews {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-xl);
+}
+
+.preview {
+  display: grid;
+  gap: var(--space-s);
+}
+
+/*
+ * Each preview COVERS its slot, the way the published page does. No
+ * checkerboard here: nothing is letterboxed, and a filled box is the honest
+ * answer to "what would this look like in a 16:9 slot".
+ */
+.previewBox {
+  position: relative;
+  aspect-ratio: var(--preview-aspect);
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--bg-surface-2);
+}
+
+/*
+ * The crop, scaled to cover the box and slid so the focal point stays in view.
+ * The offsets are negative percentages of the BOX, which is exactly what an
+ * absolutely-positioned child resolves them against.
+ */
+.previewInner {
+  position: absolute;
+  left: var(--preview-offset-x);
+  top: var(--preview-offset-y);
+  width: var(--preview-inner-w);
+  height: var(--preview-inner-h);
+  background-image: var(--preview-image);
+  background-size: var(--preview-size);
+  background-position: var(--preview-position);
+  background-repeat: no-repeat;
+}
+
+/* Marker echoing the focal point inside each preview slot. */
+.previewFocus {
+  position: absolute;
+  left: calc(var(--focus-x) * 100%);
+  top: calc(var(--focus-y) * 100%);
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--overlay);
+  box-shadow: 0 0 0 1px var(--scrim-40);
+  pointer-events: none;
+}
+
+.previewLabel {
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+  text-align: center;
+}
+
+.hint {
+  font-size: var(--text-m);
+  color: var(--text-subtle);
+  margin: 0;
+}

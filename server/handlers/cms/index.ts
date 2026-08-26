@@ -46,6 +46,7 @@ import { handleRuntimeRoutes } from './runtime'
 import { handleMediaRoutes } from './media'
 import { handleMediaFolderRoutes } from './mediaFolders'
 import { handleMediaStorageAdminRoutes } from './mediaStorageAdmin'
+import { handleUnsplashRoutes } from './mediaUnsplash'
 import { handlePluginsRoutes } from './plugins'
 import { handleDataRoutes } from './data'
 import { handleDashboardRoutes } from './dashboard'
@@ -102,7 +103,10 @@ export async function handleCmsRequest(
     // the same rule — `/media/:id` would otherwise consume "storage".
     ?? (await handleMediaFolderRoutes(req, db))
     ?? (await handleMediaStorageAdminRoutes(req, db, options))
-    ?? (await handleMediaRoutes(req, db))
+    // Same rule as folders/storage: `/media/unsplash/...` must be matched
+    // before `/media/:id` gets to treat "unsplash" as an asset id.
+    ?? (await handleUnsplashRoutes(req, db))
+    ?? (await handleMediaRoutes(req, db, options))
     ?? (await handlePluginsRoutes(req, db, options))
     ?? (await handleDataRoutes(req, db, options))
     // Dashboard stats — read-only aggregate counts used by the admin

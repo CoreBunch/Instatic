@@ -25,6 +25,7 @@ import { CanvasModulePlaceholder } from '@ui/components/CanvasModulePlaceholder'
 import { ImageSolidIcon } from 'pixel-art-icons/icons/image-solid'
 import { htmlAttributesForReact } from '@modules/base/shared/htmlAttributes'
 import type { ImageStoredProps } from './props'
+import { focusObjectPosition } from './focusPosition'
 import { shouldUseBlurPlaceholder } from './placeholder'
 
 // Best-guess CSS width for the canvas preview tile. Triggers DPR-aware
@@ -71,6 +72,16 @@ export const ImageEditor: React.FC<ModuleComponentProps<ImageStoredProps>> = ({ 
   const alt = responsive?.libraryAlt ?? ''
   const htmlAttrs = htmlAttributesForReact(props.htmlAttributes)
 
+  // Framing, mirrored from the published render. Without these two the canvas
+  // would show a stretched, centre-framed image while the live page cropped to
+  // the focal point — the exact disagreement this component exists to prevent.
+  // Both are computed from the same inputs and the same helper the publisher
+  // uses, so they cannot drift.
+  const frameStyle: React.CSSProperties = {}
+  if (props.objectFit !== 'default') frameStyle.objectFit = props.objectFit
+  const objectPosition = asset ? focusObjectPosition(asset.focus, asset.crop) : null
+  if (objectPosition) frameStyle.objectPosition = objectPosition
+
   // No resolved asset yet (cache loading, external URL, or row missing).
   // Render the raw src so the user never sees a flash of blank.
   if (!responsive) {
@@ -83,6 +94,7 @@ export const ImageEditor: React.FC<ModuleComponentProps<ImageStoredProps>> = ({ 
         className={mcClassName}
         loading={props.loading}
         decoding="async"
+        style={{ ...nodeWrapperProps?.style, ...frameStyle }}
       />
     )
   }
@@ -97,8 +109,9 @@ export const ImageEditor: React.FC<ModuleComponentProps<ImageStoredProps>> = ({ 
         backgroundImage: `url(${responsive.blurUrl})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
+        ...frameStyle,
       } as React.CSSProperties)
-    : nodeWrapperProps?.style
+    : ({ ...nodeWrapperProps?.style, ...frameStyle } as React.CSSProperties)
 
   return (
     <img

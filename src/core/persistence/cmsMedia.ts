@@ -2,10 +2,15 @@ import { safeParseJson } from '@core/utils/jsonValidate'
 import { readEnvelope, assertOk } from '@core/http'
 import {
   CmsMediaAssetEnvelopeSchema,
+  CmsUnsplashPageEnvelopeSchema,
+  CmsUnsplashStatusEnvelopeSchema,
   CmsMediaFolderEnvelopeSchema,
   CmsMediaFolderListResponseSchema,
   CmsMediaListResponseSchema,
   type CmsMediaAssetWire,
+  type CmsMediaCropWire,
+  type CmsUnsplashPhotoWire,
+  type CmsMediaFocusWire,
   type CmsMediaFolder,
 } from './responseSchemas'
 
@@ -16,6 +21,11 @@ import {
  * client boundary to fill defaults so consumer code can `asset.altText`
  * freely.
  */
+/** Crop rectangle in 0–1 fractions of the original image. */
+export type CmsMediaCrop = CmsMediaCropWire
+/** Focal point in 0–1 fractions of the original image. */
+export type CmsMediaFocus = CmsMediaFocusWire
+
 export interface CmsMediaVariant {
   width: number
   height: number
@@ -59,6 +69,10 @@ export interface CmsMediaAsset {
   folderIds: string[]
   blurHash: string | null
   variants: CmsMediaVariant[]
+  /** Applied non-destructive crop (0–1 fractions), or null for the full frame. */
+  crop: CmsMediaCrop | null
+  /** Editorial focal point (0–1 fractions of the original), or null for centre. */
+  focus: CmsMediaFocus | null
   posterPath: string | null
 }
 
@@ -86,6 +100,8 @@ export function normalizeCmsMediaAsset(wire: CmsMediaAssetWire): CmsMediaAsset {
     folderIds: wire.folderIds ?? [],
     blurHash: wire.blurHash ?? null,
     variants: wire.variants ?? [],
+    crop: wire.crop ?? null,
+    focus: wire.focus ?? null,
     posterPath: wire.posterPath ?? null,
   }
 }
@@ -174,6 +190,36 @@ export async function updateCmsMediaAsset(
     body: JSON.stringify(input),
   })
   const payload = await readEnvelope(res, CmsMediaAssetEnvelopeSchema, `CMS media update failed with ${res.status}`)
+  return normalizeCmsMediaAsset(payload.asset)
+}
+
+/**
+ * Set or clear (`crop: null`) the asset's non-destructive crop.
+ *
+ * The server rebuilds the responsive ladder from the untouched original, so
+ * the returned asset carries new `width` / `height` / `variants` — callers
+ * must replace their cached copy with it rather than patching fields, or the
+ * grid keeps pointing at the swept-away variant files.
+ */
+export async function setCmsMediaAssetCrop(
+  assetId: string,
+  crop: CmsMediaCrop | null,
+  /**
+   * `undefined` leaves the focal point untouched; `null` clears it. When the
+   * rectangle is unchanged the server treats this as a focus-only move and
+   * skips the re-encode entirely.
+   */
+  focus: CmsMediaFocus | null | undefined = undefined,
+  options: ClientBase = {},
+): Promise<CmsMediaAsset> {
+  const { fetchImpl, basePath } = resolveClient(options)
+  const res = await fetchImpl(`${basePath}/media/${encodeURIComponent(assetId)}/crop`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(focus === undefined ? { crop } : { crop, focus }),
+  })
+  const payload = await readEnvelope(res, CmsMediaAssetEnvelopeSchema, `CMS media crop failed with ${res.status}`)
   return normalizeCmsMediaAsset(payload.asset)
 }
 
@@ -325,4 +371,86 @@ export async function deleteCmsMediaFolder(
     credentials: 'include',
   })
   await assertOk(res, `CMS folder delete failed with ${res.status}`)
+}
+
+// ---------------------------------------------------------------------------
+// Unsplash
+// ---------------------------------------------------------------------------
+
+/** One Unsplash photo, exactly as the server projects it. */
+export type CmsUnsplashPhoto = CmsUnsplashPhotoWire
+
+export interface CmsUnsplashPage {
+  photos: CmsUnsplashPhoto[]
+  hasMore: boolean
+}
+
+/**
+ * Whether this installation has an Unsplash access key. The admin asks once
+ * and hides the whole feature when the answer is no — an install without a
+ * key should never show a button that can only fail.
+ */
+export async function getCmsUnsplashStatus(options: ClientBase = {}): Promise<boolean> {
+  const { fetchImpl, basePath } = resolveClient(options)
+  const res = await fetchImpl(`${basePath}/media/unsplash`, { credentials: 'include' })
+  const payload = await readEnvelope(
+    res,
+    CmsUnsplashStatusEnvelopeSchema,
+    `Unsplash status failed with ${res.status}`,
+  )
+  return payload.configured
+}
+
+/**
+ * One page of photos: the editorial feed when `query` is empty, search
+ * results otherwise. `signal` matters here — the picker fires a request per
+ * keystroke-debounce and must be able to drop the stale one.
+ */
+export async function listCmsUnsplashPhotos(
+  query: string,
+  page: number,
+  signal?: AbortSignal,
+  options: ClientBase = {},
+): Promise<CmsUnsplashPage> {
+  const { fetchImpl, basePath } = resolveClient(options)
+  const params = new URLSearchParams({ page: String(page) })
+  if (query) params.set('query', query)
+  const res = await fetchImpl(`${basePath}/media/unsplash/photos?${params.toString()}`, {
+    credentials: 'include',
+    signal,
+  })
+  const payload = await readEnvelope(
+    res,
+    CmsUnsplashPageEnvelopeSchema,
+    `Unsplash photos failed with ${res.status}`,
+  )
+  return { photos: payload.photos, hasMore: payload.hasMore }
+}
+
+/**
+ * Pull one photo into the library. With `replaceAssetId` the bytes land on
+ * that existing asset instead, keeping its id and public path so every page
+ * already pointing at it swaps over.
+ *
+ * Only the photo ID crosses the wire: the server resolves the download URL
+ * from Unsplash itself, so the browser never nominates what gets fetched.
+ */
+export async function importCmsUnsplashPhoto(
+  photoId: string,
+  replaceAssetId: string | null,
+  options: ClientBase = {},
+): Promise<CmsMediaAsset> {
+  const { fetchImpl, basePath } = resolveClient(options)
+  const res = await fetchImpl(`${basePath}/media/unsplash/import`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(replaceAssetId ? { photoId, replaceAssetId } : { photoId }),
+  })
+  const payload = await readEnvelope(
+    res,
+    CmsMediaAssetEnvelopeSchema,
+    `Unsplash import failed with ${res.status}`,
+  )
+  return normalizeCmsMediaAsset(payload.asset)
 }

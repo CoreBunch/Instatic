@@ -18,9 +18,12 @@
 import { useEffect, useEffectEvent, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@ui/components/Button'
+import { UnsplashIcon } from 'pixel-art-icons/icons/unsplash'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import type { CmsMediaAsset } from '@core/persistence/cmsMedia'
 import { MediaSidebar, type MediaSidebarPanelId } from '../MediaSidebar/MediaSidebar'
+import { UnsplashPicker } from '../UnsplashPicker'
+import { useUnsplashConfigured } from '../../hooks/useUnsplashConfigured'
 import { MediaCanvas } from '../MediaCanvas/MediaCanvas'
 import { useMediaWorkspace } from '../../hooks/useMediaWorkspace'
 import { bucketForMime, isSvgMime } from '../../utils/filters'
@@ -98,6 +101,8 @@ function MediaPickerModalBody({
 }: Omit<MediaPickerModalProps, 'open'>) {
   const workspace = useMediaWorkspace()
   const [activePanel, setActivePanel] = useState<MediaSidebarPanelId | null>('folders')
+  const [unsplashOpen, setUnsplashOpen] = useState(false)
+  const unsplashConfigured = useUnsplashConfigured()
 
   // Constrain the canvas to the requested media kind so an image control
   // can't accidentally pick a video. useEffectEvent reads the latest
@@ -193,6 +198,23 @@ function MediaPickerModalBody({
       >
         <header className={styles.header}>
           <h2 className={styles.title}>{pickerTitle(mediaKind)}</h2>
+          {/*
+            Unsplash sits in the picker itself so "I need a photo" does not
+            mean closing this, going to Media, importing, and coming back.
+            An import lands in the library, so this grid picks it up too.
+          */}
+          {unsplashConfigured && mediaKind === 'image' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setUnsplashOpen(true)}
+              aria-label="Browse Unsplash"
+              tooltip="Browse Unsplash and import a photo into this library"
+            >
+              <UnsplashIcon size={13} />
+              <span>Unsplash</span>
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -238,6 +260,17 @@ function MediaPickerModalBody({
             </Button>
           </div>
         </footer>
+
+        <UnsplashPicker
+          open={unsplashOpen}
+          onClose={() => setUnsplashOpen(false)}
+          onImported={(asset) => {
+            // Straight through to the caller: the author asked for THIS
+            // photo, so making them hunt for it in the grid is busywork.
+            void workspace.refresh()
+            onPick(asset)
+          }}
+        />
       </div>
     </div>,
     document.body,

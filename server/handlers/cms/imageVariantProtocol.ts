@@ -46,10 +46,29 @@ export interface ImageVariantJobRequest {
    * host has no reason to spend CPU on a local ladder.
    */
   readonly generateLadder: boolean
+  /**
+   * Optional non-destructive crop, as fractions of the source image (0–1).
+   * When present the worker extracts that rectangle FIRST, so every downstream
+   * step — intrinsic dimensions, BlurHash, and the whole ladder — describes
+   * the cropped frame. The source bytes on disk are untouched, which is what
+   * makes the crop reversible: regenerate without this field to get the full
+   * frame back.
+   */
+  readonly crop?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
   /** Sorted ascending. Widths >= the source width are skipped by the worker. */
   readonly targetWidths: readonly number[]
   /** WebP encoder quality (0..100). */
   readonly webpQuality: number
+  /**
+   * When true (and `crop` is set), the worker also returns the cropped frame
+   * re-encoded in the SOURCE's own format as `cropped`. The host stores that
+   * as the asset's served file, so `public_path` — which the publisher emits
+   * as plain `src`, and which social/OG consumers and the admin grid read
+   * directly — shows the crop rather than the full frame. Without it the crop
+   * would only exist inside the srcset ladder, and any consumer that doesn't
+   * evaluate srcset would show uncropped pixels.
+   */
+  readonly emitCropped?: boolean
   readonly blurhashConfig: ImageVariantBlurHashConfig
 }
 
@@ -65,6 +84,16 @@ export interface ImageVariantPayload {
   readonly bytes: ArrayBuffer
 }
 
+/** The cropped frame, re-encoded in the source's own format. */
+export interface CroppedOriginalPayload {
+  readonly bytes: ArrayBuffer
+  readonly width: number
+  readonly height: number
+  /** Extension WITHOUT the dot, matching the encoder used (`jpg`, `png`, `webp`). */
+  readonly extension: string
+  readonly mimeType: string
+}
+
 export interface ImageVariantJobOk {
   readonly kind: 'image-variant-result'
   readonly correlationId: string
@@ -73,6 +102,8 @@ export interface ImageVariantJobOk {
   readonly height: number
   readonly blurHash: string
   readonly variants: readonly ImageVariantPayload[]
+  /** Present only when the request asked for it and a crop was applied. */
+  readonly cropped?: CroppedOriginalPayload
 }
 
 interface ImageVariantJobErr {
