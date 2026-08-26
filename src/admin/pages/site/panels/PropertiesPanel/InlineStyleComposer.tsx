@@ -35,6 +35,13 @@ export function InlineStyleComposer({ nodeId, inlineStyles, styleQuery }: Inline
   const handleChange = (key: keyof CSSPropertyBag, value: string | number | undefined) => {
     setNodeInlineStyles(nodeId, { [String(key)]: value ?? null })
   }
+  // Several properties in one commit — see StyleRuleComposer.handleChangeMany.
+  const handleChangeMany = (patch: Partial<CSSPropertyBag>) => {
+    setNodeInlineStyles(
+      nodeId,
+      Object.fromEntries(Object.entries(patch).map(([key, value]) => [key, value ?? null])),
+    )
+  }
   const handleRemove = (key: keyof CSSPropertyBag) => {
     removeNodeInlineStyleProperty(nodeId, String(key))
   }
@@ -51,6 +58,7 @@ export function InlineStyleComposer({ nodeId, inlineStyles, styleQuery }: Inline
       sectionKey="base"
       styleQuery={styleQuery}
       onChange={handleChange}
+      onChangeMany={handleChangeMany}
       onRemove={handleRemove}
       onClearProperty={handleRemove}
       onClearProperties={handleClearProperties}

@@ -220,17 +220,18 @@
 }
 
 .valueInput,
-.alphaInput {
+.unitInput {
     min-width: 0;
 }
 
-/* Opacity field: a TEXT input whose value carries the % glyph ("100%"),
-   with a hover-revealed stepper column on the trailing edge. */
-.alphaInput input {
+/* Numeric fields (opacity, angle): a TEXT input whose value carries its unit
+   ("100%", "180deg"), with a hover-revealed stepper on the trailing edge.
+   Shared by every numeric field in the picker — see UnitStepperInput. */
+.unitInput input {
     padding-right: 0;
 }
 
-.alphaStepper {
+.unitStepper {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -241,7 +242,7 @@
 
 /* Bare glyph buttons — no hover pill; colour alone carries the state.
    Doubled class outguns the Button primitive's own :hover rules. */
-.alphaStepper.alphaStepper > * {
+.unitStepper.unitStepper > * {
     width: 16px;
     height: 10px;
     min-height: 0;
@@ -250,14 +251,14 @@
     color: var(--text-subtle);
 }
 
-.alphaStepper.alphaStepper > *:hover,
-.alphaStepper.alphaStepper > *:active {
+.unitStepper.unitStepper > *:hover,
+.unitStepper.unitStepper > *:active {
     background: transparent;
     color: var(--text);
 }
 
-.alphaInput:hover .alphaStepper,
-.alphaInput:focus-within .alphaStepper {
+.unitInput:hover .unitStepper,
+.unitInput:focus-within .unitStepper {
     opacity: 1;
 }
 
@@ -273,10 +274,6 @@
 .angleLabel {
     color: var(--text-muted);
     font-size: var(--text-2xs);
-}
-
-.angleInput {
-    min-width: 0;
 }
 
 /* --- Token list ---------------------------------------------------------- */

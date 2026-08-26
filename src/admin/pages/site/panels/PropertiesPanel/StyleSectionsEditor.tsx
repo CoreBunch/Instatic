@@ -50,6 +50,8 @@ interface StyleSectionsEditorProps {
   /** Search query — filters visible properties across all categories. */
   styleQuery: string
   onChange: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
+  /** Applies several properties in one store commit (one undo entry). */
+  onChangeMany: (patch: Partial<CSSPropertyBag>) => void
   onRemove: (property: keyof CSSPropertyBag) => void
   onClearProperty: (property: keyof CSSPropertyBag) => void
   /** Clear several properties in one undo step (e.g. display + its flex/grid deps). */
@@ -68,6 +70,7 @@ export function StyleSectionsEditor({
   sectionKey,
   styleQuery,
   onChange,
+  onChangeMany,
   onRemove,
   onClearProperty,
   onClearProperties,
@@ -90,6 +93,7 @@ export function StyleSectionsEditor({
             activeTab={sectionKey}
             defaultOpen={sectionsExpanded}
             onChange={onChange}
+            onChangeMany={onChangeMany}
             onRemove={onRemove}
             onClearProperty={onClearProperty}
             onClearProperties={onClearProperties}
@@ -130,6 +134,8 @@ interface StyleSectionGroupProps {
   /** Initial open/closed state, from the `propertiesSectionsExpanded` preference. */
   defaultOpen: boolean
   onChange: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
+  /** Applies several properties in one store commit (one undo entry). */
+  onChangeMany: (patch: Partial<CSSPropertyBag>) => void
   onRemove: (property: keyof CSSPropertyBag) => void
   onClearProperty: (property: keyof CSSPropertyBag) => void
   onClearProperties: (properties: ReadonlyArray<keyof CSSPropertyBag>) => void
@@ -144,6 +150,7 @@ function StyleSectionGroup({
   activeTab,
   defaultOpen,
   onChange,
+  onChangeMany,
   onRemove,
   onClearProperty,
   onClearProperties,
@@ -242,8 +249,10 @@ function StyleSectionGroup({
                 value={isSet ? (storedValue as string | number) : undefined}
                 placeholder={!isSet ? fallbackValue : undefined}
                 fontFamilyValue={currentStyles.fontFamily}
+                backgroundImageValue={currentStyles.backgroundImage}
                 isSet={isSet}
                 onChange={onChange}
+                onChangeMany={onChangeMany}
                 onRemove={onRemove}
                 onPreview={previewProperty}
                 onClearPreview={onClearPreview}

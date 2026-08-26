@@ -22,6 +22,8 @@ interface TokenizedColorFieldProps {
   excludeTokenId?: string
   monospace?: boolean
   fieldSize?: 'xs' | 'sm' | 'md'
+  /** Offer the picker's Solid / Linear / Radial / Conic fill tabs. */
+  gradients?: boolean
   onTextChange: (value: string) => void
   onTextBlur: () => void
   onSwatchChange: (value: string) => void
@@ -47,6 +49,7 @@ export function TokenizedColorField({
   excludeTokenId,
   monospace = false,
   fieldSize = 'sm',
+  gradients = false,
   onTextChange,
   onTextBlur,
   onSwatchChange,
@@ -172,6 +175,7 @@ export function TokenizedColorField({
           value={swatchValue}
           swatchValue={swatchValue}
           disabled={disabled}
+          gradients={gradients}
           onValueChange={handleSwatchChange}
           tokens={pickerTokens}
           onSelectToken={handleTokenReference}

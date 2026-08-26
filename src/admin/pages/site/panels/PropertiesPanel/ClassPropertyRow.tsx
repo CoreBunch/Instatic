@@ -18,6 +18,7 @@ import { TextControl } from '@site/property-controls/TextControl'
 import { ColorControl } from '@site/property-controls/ColorControl'
 import { SelectControl } from '@site/property-controls/SelectControl'
 import { BackgroundImageControl } from '@site/property-controls/BackgroundImageControl'
+import { BackgroundFillControl } from '@site/property-controls/BackgroundFillControl'
 import { FontFamilyControl } from '@site/property-controls/FontFamilyControl'
 import { useEditorStore } from '@site/store/store'
 import { ControlRow } from '@ui/components/ControlRow'
@@ -28,6 +29,7 @@ import {
   type Token,
 } from '@site/property-controls/tokenUtils'
 import { Button } from '@ui/components/Button'
+import { isGradient } from '@ui/components/ColorPicker'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { cn } from '@ui/cn'
 import {
@@ -49,8 +51,16 @@ interface ClassPropertyRowProps {
   value: string | number | undefined
   placeholder?: string | number
   fontFamilyValue?: unknown
+  /**
+   * Current `background-image`. Sibling value, like `fontFamilyValue`: the
+   * `backgroundColor` row renders the unified fill control, which needs to
+   * know whether a gradient is currently painting over the colour.
+   */
+  backgroundImageValue?: unknown
   isSet?: boolean
   onChange: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
+  /** Applies several properties in one store commit (one undo entry). */
+  onChangeMany?: (patch: Partial<CSSPropertyBag>) => void
   onRemove: (property: keyof CSSPropertyBag) => void
   /**
    * Optional hover-preview hooks. When provided, the row forwards them to
@@ -69,8 +79,10 @@ export function ClassPropertyRow({
   value,
   placeholder,
   fontFamilyValue,
+  backgroundImageValue,
   isSet = true,
   onChange,
+  onChangeMany,
   onRemove,
   onPreview,
   onClearPreview,
@@ -228,6 +240,22 @@ export function ClassPropertyRow({
         label={label}
       />
     )
+  } else if (property === 'backgroundColor' && onChangeMany) {
+    // The background swatch is a FILL, not just a colour: it also offers the
+    // picker's gradient tabs, and routes a gradient to `background-image`
+    // because `background-color` cannot hold one. See BackgroundFillControl.
+    control = (
+      <BackgroundFillControl
+        propKey={String(property)}
+        colorValue={String(value ?? '')}
+        imageValue={String(backgroundImageValue ?? '')}
+        placeholder={placeholderText}
+        onChangeMany={onChangeMany}
+        label={label}
+        onPreview={onPreview ? (v) => handleControlPreview(String(property), v) : undefined}
+        onClearPreview={onClearPreview}
+      />
+    )
   } else switch (type) {
     case 'color':
       control = (
@@ -285,10 +313,25 @@ export function ClassPropertyRow({
       break
   }
 
+  // The background fill row stands for TWO properties, so a gradient living
+  // on `background-image` makes the row "set" even with no colour — and
+  // clearing it has to retire both keys, in one undo step.
+  const fillGradient =
+    property === 'backgroundColor' && isGradient(String(backgroundImageValue ?? ''))
+  const rowIsSet = isSet || fillGradient
+
+  function handleRemove() {
+    if (fillGradient && onChangeMany) {
+      onChangeMany({ backgroundColor: undefined, backgroundImage: undefined })
+      return
+    }
+    onRemove(property)
+  }
+
   return (
     <div
-      className={cn(styles.propertyRowWrap, !isSet && styles.propertyRowUnset)}
-      data-state={isSet ? 'set' : 'unset'}
+      className={cn(styles.propertyRowWrap, !rowIsSet && styles.propertyRowUnset)}
+      data-state={rowIsSet ? 'set' : 'unset'}
       data-testid={`css-property-row-${String(property)}`}
     >
       {/* Control renders with its own .controlWrapper — identical to module rows (PP-18) */}
@@ -297,12 +340,12 @@ export function ClassPropertyRow({
       {/* Remove button: overlaid on the row's right end; revealed on hover/focus-within.
           backgroundImage brings its own clear affordance (clicking the active
           Image/Custom segment), and the overlay × would collide with that row. */}
-      {isSet && property !== 'backgroundImage' && (
+      {rowIsSet && property !== 'backgroundImage' && (
         <Button
           variant="ghost"
           size="micro"
           iconOnly
-          onClick={() => onRemove(property)}
+          onClick={handleRemove}
           aria-label={`Remove ${label} property`}
           tooltip={`Remove ${label}`}
           className={styles.removeBtn}

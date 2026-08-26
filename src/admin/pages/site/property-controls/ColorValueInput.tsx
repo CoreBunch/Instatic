@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { isGradient } from '@ui/components/ColorPicker'
 import { useEditorPreference } from '@site/preferences/editorPreferences'
 import { TokenizedColorField } from './TokenizedColorField'
 
@@ -15,6 +16,13 @@ interface ColorValueInputProps {
   disabled?: boolean
   /** Token to hide from the picker (e.g. the token currently being edited). */
   excludeTokenId?: string
+  /**
+   * Offer the picker's gradient fill tabs and accept gradient strings as
+   * valid input. Only pass this where the value actually lands on a property
+   * that can hold a gradient (`background-image`) — `background-color` and
+   * friends cannot, and offering it there would produce dead CSS.
+   */
+  gradients?: boolean
   /** Fires with the validated, committed value (on blur, swatch, or token pick). */
   onChange: (value: string) => void
   /**
@@ -48,6 +56,7 @@ export function ColorValueInput({
   placeholder,
   disabled,
   excludeTokenId,
+  gradients = false,
   onChange,
   onPreview,
   onClearPreview,
@@ -80,7 +89,10 @@ export function ColorValueInput({
       typeof CSS !== 'undefined' && typeof CSS.supports === 'function'
         ? CSS.supports('color', s)
         : true
-    if (s === '' || isTokenReference || cssSupportsColor) {
+    // A gradient is not a <color>, so the colour check above rejects it —
+    // accept it explicitly wherever gradients are a legal value for this
+    // field, otherwise a typed gradient would silently revert on blur.
+    if (s === '' || isTokenReference || cssSupportsColor || (gradients && isGradient(s))) {
       onChange(s)
     } else {
       // Revert to last known-good value
@@ -102,6 +114,7 @@ export function ColorValueInput({
       swatchLabel={swatchLabel}
       placeholder={placeholder ?? '#000000 or rgb(...)'}
       excludeTokenId={excludeTokenId}
+      gradients={gradients}
       fieldSize="sm"
       monospace
       onTextChange={setText}

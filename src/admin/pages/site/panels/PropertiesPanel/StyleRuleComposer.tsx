@@ -79,6 +79,22 @@ export function StyleRuleComposer({
     }
   }
 
+  /**
+   * Apply several properties at once. The store actions already take a patch,
+   * so a multi-key write is one commit — which is what makes the background
+   * fill's colour↔gradient swap a single undo step instead of two.
+   */
+  const handleChangeMany = (patch: Partial<CSSPropertyBag>) => {
+    const normalised = Object.fromEntries(
+      Object.entries(patch).map(([key, value]) => [key, value ?? null]),
+    ) as Partial<CSSPropertyBag>
+    if (activeContextId) {
+      setClassContextStyles(classId, activeContextId, normalised)
+    } else {
+      updateClassStyles(classId, normalised)
+    }
+  }
+
   const handleRemoveProperty = (key: keyof CSSPropertyBag) => {
     handleChange(key, undefined)
   }
@@ -142,6 +158,7 @@ export function StyleRuleComposer({
       sectionKey={sectionKey}
       styleQuery={styleQuery}
       onChange={handleChange}
+      onChangeMany={handleChangeMany}
       onRemove={handleRemoveProperty}
       onClearProperty={handleClearProperty}
       onClearProperties={handleClearProperties}

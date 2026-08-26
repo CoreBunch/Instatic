@@ -33,8 +33,6 @@ import {
 } from 'react'
 import { cn } from '@ui/cn'
 import { TargetSolidIcon } from 'pixel-art-icons/icons/target-solid'
-import { ChevronUpIcon } from 'pixel-art-icons/icons/chevron-up'
-import { ChevronDownIcon } from 'pixel-art-icons/icons/chevron-down'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
@@ -62,6 +60,7 @@ import {
   type FillState,
 } from './fillState'
 import { TokenStylesSection } from './TokenStylesSection'
+import { UnitStepperInput } from './UnitStepperInput'
 import { beginDrag, frameThrottle, handleGridKeys, handleTrackKeys } from './interaction'
 import styles from './ColorPicker.module.css'
 
@@ -152,10 +151,6 @@ export function ColorPicker({
   const [fill, setFill] = useState<FillState>(() => initialFill(value, gradients))
   const [selectedStop, setSelectedStop] = useState(0)
   const [draft, setDraft] = useState<string | null>(null)
-  // The opacity field is a TEXT input whose value carries the `%` glyph
-  // ("100%"), with its own hover-revealed stepper — a number input cannot
-  // render the unit inside the value.
-  const [alphaDraft, setAlphaDraft] = useState<string | null>(null)
 
   // The picker is OPTIMISTIC: local state (the handles, the strip, the text
   // fields) updates on every frame, while `onChange` — which drives the
@@ -196,7 +191,6 @@ export function ColorPicker({
       setFill(initialFill(value, gradients))
       setSelectedStop(0)
       setDraft(null)
-      setAlphaDraft(null)
     }
   }
 
@@ -295,24 +289,8 @@ export function ColorPicker({
     if (parsed) commit(rgbaToHsva(parsed))
   }
 
-  function commitAlphaDraft() {
-    if (alphaDraft === null) return
-    const percent = Number.parseFloat(alphaDraft)
-    setAlphaDraft(null)
-    if (Number.isFinite(percent)) commit({ ...hsva, a: clamp(percent / 100, 0, 1) })
-  }
 
-  function stepAlpha(delta: number) {
-    setAlphaDraft(null)
-    const next = clamp(Math.round(hsva.a * 100) + delta, 0, 100)
-    commit({ ...hsva, a: next / 100 })
-  }
 
-  function handleAngleText(raw: string) {
-    const degrees = Number.parseFloat(raw)
-    if (!Number.isFinite(degrees)) return
-    emit({ ...fill, angle: clamp(degrees, 0, 360) })
-  }
 
   async function pickFromScreen() {
     const EyeDropperCtor = window.EyeDropper
@@ -582,67 +560,26 @@ export function ColorPicker({
             }
           }}
         />
-        <Input
-          fieldSize="xs"
-          spellCheck={false}
-          value={alphaDraft ?? `${Math.round(hsva.a * 100)}%`}
-          aria-label="Opacity percentage"
-          className={styles.alphaInput}
-          onChange={(event) => setAlphaDraft(event.target.value)}
-          onBlur={commitAlphaDraft}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              commitAlphaDraft()
-            } else if (event.key === 'ArrowUp') {
-              event.preventDefault()
-              stepAlpha(event.shiftKey ? 10 : 1)
-            } else if (event.key === 'ArrowDown') {
-              event.preventDefault()
-              stepAlpha(event.shiftKey ? -10 : -1)
-            }
-          }}
-          trailingSlot={
-            <span className={styles.alphaStepper}>
-              <Button
-                variant="ghost"
-                size="micro"
-                iconOnly
-                tabIndex={-1}
-                aria-label="Increase opacity"
-                onClick={() => stepAlpha(1)}
-              >
-                <ChevronUpIcon size={8} aria-hidden="true" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="micro"
-                iconOnly
-                tabIndex={-1}
-                aria-label="Decrease opacity"
-                onClick={() => stepAlpha(-1)}
-              >
-                <ChevronDownIcon size={8} aria-hidden="true" />
-              </Button>
-            </span>
-          }
+        <UnitStepperInput
+          value={hsva.a * 100}
+          unit="%"
+          min={0}
+          max={100}
+          ariaLabel="Opacity percentage"
+          onCommit={(percent) => commit({ ...hsva, a: percent / 100 })}
         />
       </div>
 
       {(fill.mode === 'linear' || fill.mode === 'conic') && (
         <div className={styles.angleRow}>
           <span className={styles.angleLabel}>Angle</span>
-          <Input
-            fieldSize="xs"
-            type="number"
+          <UnitStepperInput
+            value={fill.angle}
+            unit="deg"
             min={0}
             max={360}
-            step={1}
-            unit="deg"
-            value={Math.round(fill.angle)}
-            aria-label="Gradient angle in degrees"
-            className={styles.angleInput}
-            onChange={(event) => handleAngleText(event.target.value)}
+            ariaLabel="Gradient angle in degrees"
+            onCommit={(degrees) => emit({ ...fill, angle: degrees })}
           />
         </div>
       )}
