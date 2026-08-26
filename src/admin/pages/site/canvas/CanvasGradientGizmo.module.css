@@ -1,0 +1,91 @@
+/* On-canvas gradient gizmo — the axis line + stop handles drawn over the
+   selected element. Portaled next to the selection rings, so it is positioned
+   in canvas-overlay coordinates and NOT scaled by the canvas zoom: handles
+   keep a constant grab size however far the user is zoomed out. */
+
+.gizmo {
+    position: absolute;
+    inset: 0;
+    z-index: 53;
+    /* The layer itself is click-through — only the handles below opt back in,
+       so the gizmo never steals a click meant for the canvas. */
+    pointer-events: none;
+}
+
+.gizmo[data-mode="fixed"] {
+    position: fixed;
+}
+
+/* JS-driven positions. Defaults keep every rule valid before the first
+   inline write. */
+.axis,
+.endCap,
+.stopHandle {
+    --gizmo-x: 0px;
+    --gizmo-y: 0px;
+}
+
+/* The gradient line. Rotated about its left edge so the element's start point
+   is the transform origin — the same anchor the geometry computes. */
+.axis {
+    --gizmo-length: 0px;
+    --gizmo-angle: 0deg;
+    position: absolute;
+    left: var(--gizmo-x);
+    top: var(--gizmo-y);
+    width: var(--gizmo-length);
+    height: 1px;
+    transform: rotate(var(--gizmo-angle));
+    transform-origin: 0 50%;
+    background: var(--overlay-70);
+    box-shadow: 0 0 0 1px var(--scrim-40);
+}
+
+.endCap,
+.stopHandle {
+    position: absolute;
+    left: var(--gizmo-x);
+    top: var(--gizmo-y);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: auto;
+    touch-action: none;
+}
+
+/* Angle handle — hollow, so it reads as "direction", not "a colour". */
+.endCap {
+    width: 13px;
+    height: 13px;
+    border: 2px solid var(--picker-white);
+    background: var(--scrim-40);
+    box-shadow: 0 0 0 1px var(--scrim-50);
+    cursor: grab;
+}
+
+.endCap:active {
+    cursor: grabbing;
+}
+
+/* Stop handle — filled with the stop's own colour over a checkerboard, so a
+   transparent stop still reads as a handle rather than a hole. */
+.stopHandle {
+    --gizmo-stop: transparent;
+    width: 15px;
+    height: 15px;
+    border: 2px solid var(--picker-white);
+    background:
+        linear-gradient(var(--gizmo-stop), var(--gizmo-stop)),
+        var(--picker-checkerboard);
+    background-size: auto, var(--picker-checkerboard-size) var(--picker-checkerboard-size);
+    box-shadow: 0 0 0 1px var(--scrim-50);
+    cursor: ew-resize;
+}
+
+.endCap:hover,
+.stopHandle:hover,
+.gizmo[data-dragging="true"] .endCap:active,
+.gizmo[data-dragging="true"] .stopHandle:active {
+    box-shadow:
+        0 0 0 1px var(--scrim-50),
+        0 0 0 4px var(--overlay-30);
+}

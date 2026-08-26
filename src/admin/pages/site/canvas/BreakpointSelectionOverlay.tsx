@@ -84,6 +84,7 @@ import { CanvasViewportActionsContext } from './CanvasContexts'
 import { CanvasInsertModuleButton } from './CanvasInsertModuleButton'
 import { useCanvasReorderDrag } from './useCanvasReorderDrag'
 import { useCanvasTreeLadderOverlay } from './CanvasTreeLadderOverlay'
+import { useCanvasGradientGizmo } from './CanvasGradientGizmo'
 import { CanvasNodeElementCache } from './canvasNodeLookup'
 import {
   createCanvasOverlayMeasureSession,
@@ -236,6 +237,17 @@ export function BreakpointSelectionOverlay({
     hoveredNodeId,
     hoveredBreakpointOrigin,
   })
+  // Direct-manipulation gradient editing: when the selected element's fill is
+  // a gradient, its CSS gradient line + stop handles are drawn over it.
+  const gradientGizmo = useCanvasGradientGizmo({
+    breakpointId,
+    iframeElement,
+    canvasRoot: portalCanvasRoot,
+    portalTarget,
+    portalMode: toolbarMode,
+    active: showRings,
+  })
+
   // Hover only renders when the hovered node isn't already part of the
   // selection — otherwise the two rings would stack and the hover ring
   // would mask the selection ring. In Alt/Option inspect mode, the ladder
@@ -481,6 +493,7 @@ export function BreakpointSelectionOverlay({
       {rings && createPortal(rings, portalTarget)}
       {toolbar && createPortal(toolbar, portalTarget)}
       {treeLadder.portal}
+      {gradientGizmo}
     </>
   )
 }
