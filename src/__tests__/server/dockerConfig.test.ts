@@ -31,6 +31,18 @@ describe('self-host docker config', () => {
     expect(dockerfile).not.toContain('vite build && bun run server/index.ts')
   })
 
+  it('publishes amd64 and arm64 images on native release runners', () => {
+    const workflow = readFileSync('.github/workflows/release.yml', 'utf8')
+
+    expect(workflow).toContain('runner: ubuntu-latest')
+    expect(workflow).toContain('runner: ubuntu-24.04-arm')
+    expect(workflow).toContain('platform: linux/amd64')
+    expect(workflow).toContain('platform: linux/arm64')
+    expect(workflow).toContain('push-by-digest=true')
+    expect(workflow).toContain('docker buildx imagetools create')
+    expect(workflow).not.toContain('docker/setup-qemu-action')
+  })
+
   it('keeps TypeScript path aliases available in the runtime image', () => {
     const dockerfile = readFileSync('Dockerfile', 'utf8')
 

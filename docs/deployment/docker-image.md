@@ -39,7 +39,7 @@ docker pull ghcr.io/corebunch/instatic:latest
 docker pull ghcr.io/corebunch/instatic:0.0.16
 ```
 
-The v0.0.16 published image is built for `linux/amd64`. Use it on Railway and x86_64 VPS/container hosts. ARM64 hosts should build from source for now, or wait for the native arm64 release job before pulling GHCR images directly.
+The release workflow publishes new images for `linux/amd64` and `linux/arm64`. Docker selects the correct image for compatible hosts. Tags created before multi-architecture publishing was enabled, including `0.0.16`, remain `linux/amd64` only.
 
 ## Run With SQLite
 

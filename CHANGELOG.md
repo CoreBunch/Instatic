@@ -6,6 +6,10 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 
 ## 0.0.17
 
+### Deployment
+
+- Added native `linux/arm64` GHCR images alongside `linux/amd64` releases, so Apple Silicon, AWS Graviton, Oracle Ampere, and other ARM64 hosts can pull the published image directly. Tags through `0.0.16` remain AMD64-only.
+
 ### AI and integrations
 
 - Fixed adding the Instatic MCP connector on Postgres installations. The dynamic client registration response returned `client_id_issued_at` as a quoted string, because Postgres declares the column `bigint` and returns it as a string to protect precision, so clients that validate the response against RFC 7591 rejected the connector with `expected number, received string`. SQLite installations were unaffected.
