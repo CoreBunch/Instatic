@@ -112,10 +112,15 @@ describe('ColorsPanel', () => {
 
     render(<ColorsPanel />)
 
-    fireEvent.change(screen.getByLabelText('Default color swatch primary'), {
-      target: { value: '#ff0000' },
-    })
-    expect(useEditorStore.getState().site!.settings.framework!.colors.tokens[0].lightValue).toBe('#ff0000')
+    // The swatch is a trigger for the rich picker popover; commit through the
+    // picker's value field, which keeps the incoming HSL notation.
+    fireEvent.click(screen.getByLabelText('Default color swatch primary'))
+    const pickerValue = screen.getByLabelText('Colour value (HSL)')
+    fireEvent.change(pickerValue, { target: { value: '#ff0000' } })
+    fireEvent.keyDown(pickerValue, { key: 'Enter' })
+    expect(useEditorStore.getState().site!.settings.framework!.colors.tokens[0].lightValue).toBe(
+      'hsl(0, 100%, 50%)',
+    )
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit color primary' }))
     const panel = screen.getByTestId('colors-panel')

@@ -196,13 +196,13 @@ describe('PropertyControlRenderer — type dispatch', () => {
     )
 
     const wrapper = screen.getByTestId('property-control-bgColor')
-    const colorInput = wrapper.querySelector('input[type="color"]')
+    const swatch = wrapper.querySelector('button[aria-haspopup="dialog"]')
     const textInput = screen.getByLabelText('Background')
     const field = wrapper.querySelector('[data-color-field="true"]')
 
-    expect(colorInput).not.toBeNull()
+    expect(swatch).not.toBeNull()
     expect(field).not.toBeNull()
-    expect(field?.contains(colorInput)).toBe(true)
+    expect(field?.contains(swatch)).toBe(true)
     expect(field?.contains(textInput)).toBe(true)
   })
 

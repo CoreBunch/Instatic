@@ -1,9 +1,10 @@
-/* Shared native color input wrapper. */
+/* Colour swatch trigger for the rich picker popover. */
 
 .colorInput {
     position: relative;
     display: inline-flex;
     flex: 0 0 auto;
+    padding: 0;
     border: 1px solid var(--overlay-20);
     background:
         linear-gradient(
@@ -24,21 +25,23 @@
         transform 140ms ease;
 }
 
-.colorInput:hover {
+.colorInput:hover:not(:disabled) {
     border-color: var(--overlay-50);
     box-shadow:
         inset 0 1px 0 var(--overlay-10),
         0 3px 10px var(--scrim-30);
 }
 
-.colorInput:focus-within {
+.colorInput:focus-visible,
+.colorInput[aria-expanded="true"] {
+    outline: none;
     border-color: var(--overlay-50);
     box-shadow:
         var(--shadow-input-focus),
         0 0 0 3px var(--overlay-10);
 }
 
-.colorInput:active {
+.colorInput:active:not(:disabled) {
     transform: translateY(1px);
 }
 
@@ -71,15 +74,21 @@
     height: 100%;
     background:
         linear-gradient(135deg, var(--overlay-20), transparent 34%),
-        var(--color-input-value);
+        linear-gradient(var(--color-input-value), var(--color-input-value)),
+        var(--picker-checkerboard);
+    background-size:
+        auto,
+        auto,
+        var(--picker-checkerboard-size) var(--picker-checkerboard-size);
 }
 
-.nativeInput {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    border: 0;
-    opacity: 0;
-    cursor: inherit;
+/* Portalled picker popover, positioned from the trigger's clamped rect. */
+.popover {
+    position: fixed;
+    left: var(--color-picker-anchor-x);
+    top: var(--color-picker-anchor-y);
+    z-index: var(--color-picker-z-index);
+    border-radius: var(--panel-radius);
+    background: var(--bg-surface-3);
+    box-shadow: var(--shadow-panel);
 }

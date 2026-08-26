@@ -31,7 +31,7 @@ export function ColorTokenCard({
             swatchValue={token.lightValue}
             fieldSize="xs"
             aria-label={`Default color swatch ${token.slug}`}
-            onChange={(event) => onPatch({ lightValue: event.target.value })}
+            onValueChange={(next) => onPatch({ lightValue: next })}
           />
           {token.darkModeEnabled && (
             <ColorInput
@@ -39,11 +39,8 @@ export function ColorTokenCard({
               swatchValue={token.darkValue}
               fieldSize="xs"
               aria-label={`Alternate color swatch ${token.slug}`}
-              onChange={(event) =>
-                onPatch({
-                  darkValue: event.target.value,
-                  darkModeEnabled: true,
-                })
+              onValueChange={(next) =>
+                onPatch({ darkValue: next, darkModeEnabled: true })
               }
             />
           )}

@@ -38,7 +38,8 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 | `Textarea`         | Multi-line text input (exported from same module as `Input`)         | `value`, `onChange`, `rows`                                |
 | `FormField`        | Label + description shell around a form control                      | `label`, `description`, `layout: 'stacked' \| 'inline-end' \| 'inline-start'`, `htmlFor` |
 | `Select`           | Dropdown selection of fixed options                                  | `options`, `value`, `onChange`                             |
-| `ColorInput`       | Color picker — swatch + hex input                                    | `value`, `onChange`                                        |
+| `ColorInput`       | Colour swatch trigger; opens the `ColorPicker` popover                | `value`, `swatchValue?`, `onValueChange`, `tokens?`, `onSelectToken?`, `onCreateToken?` |
+| `ColorPicker`      | Rich colour surface: saturation/brightness square, hue + alpha sliders, HEX/RGB/HSL field + opacity %, native `EyeDropper` (feature-detected), searchable token list, "New Style" | `value`, `onChange`, `tokens?`, `onSelectToken?`, `onCreateToken?` |
 | `DateTimePicker`   | Date / time inputs                                                   | `value`, `onChange`, `mode: 'date' \| 'datetime'`          |
 | `FileUpload`       | Drop-zone + browse                                                   | `onSelect`, `accept`, `multiple`                           |
 | `SearchBar`        | Search input with magnifier icon + clear affordance                  | `value`, `onChange`, `placeholder`                         |

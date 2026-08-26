@@ -1,0 +1,184 @@
+/* Rich colour picker surface. Every static colour is a globals.css token;
+   the gradients read the dynamic `--color-picker-*` properties set inline. */
+
+.picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    width: 244px;
+    padding: var(--space-s);
+    box-sizing: border-box;
+}
+
+/* --- Saturation / brightness square ------------------------------------- */
+
+.saturation {
+    position: relative;
+    height: 148px;
+    border-radius: var(--radius);
+    background:
+        linear-gradient(to top, var(--picker-black), transparent),
+        linear-gradient(to right, var(--picker-white), transparent),
+        var(--color-picker-hue);
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.saturation:focus-visible,
+.hue:focus-visible,
+.alpha:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-input-focus);
+}
+
+.saturationHandle {
+    position: absolute;
+    left: var(--color-picker-x);
+    top: var(--color-picker-y);
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--picker-white);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px var(--scrim-50);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+/* --- Hue + alpha tracks -------------------------------------------------- */
+
+.sliderRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+}
+
+.tracks {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--space-s);
+    min-width: 0;
+}
+
+.hue,
+.alpha {
+    position: relative;
+    height: 10px;
+    border-radius: var(--input-radius);
+    cursor: pointer;
+    touch-action: none;
+}
+
+.hue {
+    background: var(--picker-hue-track);
+}
+
+.alpha {
+    background: var(--picker-checkerboard);
+    background-size: var(--picker-checkerboard-size) var(--picker-checkerboard-size);
+}
+
+.alphaFill {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(to right, transparent, var(--color-picker-solid));
+    pointer-events: none;
+}
+
+.trackHandle {
+    position: absolute;
+    left: var(--color-picker-x);
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--picker-white);
+    border-radius: 50%;
+    background: var(--color-picker-solid);
+    box-shadow: 0 0 0 1px var(--scrim-50);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+/* --- Text fields --------------------------------------------------------- */
+
+.fields {
+    display: grid;
+    grid-template-columns: 1fr 68px;
+    gap: var(--space-2xs);
+    align-items: center;
+}
+
+.valueInput,
+.alphaInput {
+    min-width: 0;
+}
+
+/* --- Token list ---------------------------------------------------------- */
+
+.tokens {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    padding-top: var(--space-2xs);
+    border-top: 1px solid var(--border-muted);
+}
+
+.tokenList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-px);
+    max-height: 148px;
+    overflow-y: auto;
+}
+
+.tokenRow {
+    gap: var(--space-xs);
+}
+
+.tokenSwatch {
+    flex: 0 0 auto;
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--overlay-20);
+    border-radius: var(--radius-sm);
+    background:
+        linear-gradient(var(--color-picker-swatch), var(--color-picker-swatch)),
+        var(--picker-checkerboard);
+    background-size: auto, var(--picker-checkerboard-size) var(--picker-checkerboard-size);
+}
+
+.tokenName {
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tokenMeta {
+    flex: 0 0 auto;
+    margin-left: auto;
+    color: var(--text-subtle);
+    font-size: var(--text-3xs);
+}
+
+.tokenEmpty {
+    margin: 0;
+    padding: var(--space-xs) var(--space-s);
+    color: var(--text-subtle);
+    font-size: var(--text-2xs);
+}
+
+/* --- New style ----------------------------------------------------------- */
+
+.newStyle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+}
+
+.newStyle > :first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+}

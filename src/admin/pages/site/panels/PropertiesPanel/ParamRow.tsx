@@ -196,7 +196,7 @@ export function ParamRow({
           <ColorInput
             id={inputId}
             value={strVal || '#000000'}
-            onChange={(e) => onValueChange(e.target.value)}
+            onValueChange={onValueChange}
             fieldSize="xs"
           />
         )

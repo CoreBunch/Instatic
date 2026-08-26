@@ -1,8 +1,11 @@
-import { useState, type CSSProperties, type ChangeEvent, type FocusEvent, type KeyboardEvent } from 'react'
+import { useState, type CSSProperties, type ChangeEvent, type KeyboardEvent } from 'react'
 import { generateFrameworkColorVariableSets } from '@core/framework'
 import { useEditorStore } from '@site/store/store'
 import { ColorInput } from '@ui/components/ColorInput'
+import type { ColorPickerToken } from '@ui/components/ColorPicker'
 import { Input } from '@ui/components/Input'
+import { pushToast } from '@ui/components/Toast'
+import { getErrorMessage } from '@core/utils/errorMessage'
 import { cn } from '@ui/cn'
 import styles from './controls.module.css'
 
@@ -52,12 +55,19 @@ export function TokenizedColorField({
   onTokenPreviewClear,
 }: TokenizedColorFieldProps) {
   const colorSettings = useEditorStore((state) => state.site?.settings.framework?.colors)
+  const createFrameworkColorToken = useEditorStore((state) => state.createFrameworkColorToken)
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const variables = generateFrameworkColorVariableSets(colorSettings).light
     .filter((variable) => variable.tokenId !== excludeTokenId)
   const filteredVariables = computeFilteredVariables(value, variables)
   const swatchValue = resolveTokenReferenceValue(value, variables) ?? value
+  const pickerTokens: ColorPickerToken[] = variables.map((variable) => ({
+    name: variable.name,
+    value: variable.value,
+    meta: variable.variantName,
+    key: `${variable.tokenId}-${variable.variantId}`,
+  }))
   const menuId = id ? `${id}-token-menu` : undefined
   const showMenu = open && !disabled && filteredVariables.length > 0
 
@@ -75,12 +85,12 @@ export function TokenizedColorField({
     if (!disabled) setOpen(true)
   }
 
-  function handleTextBlur(event: FocusEvent<HTMLInputElement>) {
+  function handleTextBlur() {
     onTextBlur()
-    if (event.relatedTarget instanceof HTMLElement && event.currentTarget.parentElement?.contains(event.relatedTarget)) {
-      return
-    }
     onTokenPreviewClear?.()
+    // Options prevent default on mousedown, so blur here always means focus
+    // left the field — including onto the swatch, which now opens its own
+    // picker popover and must not sit under a stale suggestion menu.
     window.setTimeout(() => setOpen(false), 0)
   }
 
@@ -89,9 +99,38 @@ export function TokenizedColorField({
     setOpen(true)
   }
 
-  function handleSwatchChange(event: ChangeEvent<HTMLInputElement>) {
-    onSwatchChange(event.target.value)
+  function handleSwatchChange(nextValue: string) {
+    onSwatchChange(nextValue)
     setOpen(false)
+  }
+
+  function handleTokenReference(reference: string) {
+    onTokenPreviewClear?.()
+    onTokenSelect(reference)
+    setOpen(false)
+  }
+
+  /**
+   * "New Style" in the picker mints a framework colour token from the current
+   * colour and immediately binds the field to it, so the user never has to
+   * detour through the Colors panel to promote a one-off colour.
+   */
+  function handleCreateToken(name: string, cssValue: string) {
+    try {
+      const token = createFrameworkColorToken({
+        slug: name,
+        lightValue: cssValue,
+        darkModeEnabled: false,
+      })
+      handleTokenReference(`var(--${token.slug})`)
+    } catch (err) {
+      console.error('[TokenizedColorField] failed to create colour token:', err)
+      pushToast({
+        kind: 'error',
+        title: 'Could not create style',
+        body: getErrorMessage(err, 'Unknown colour token error'),
+      })
+    }
   }
 
   function commitToken(variable: ColorVariable) {
@@ -133,7 +172,10 @@ export function TokenizedColorField({
           value={swatchValue}
           swatchValue={swatchValue}
           disabled={disabled}
-          onChange={handleSwatchChange}
+          onValueChange={handleSwatchChange}
+          tokens={pickerTokens}
+          onSelectToken={handleTokenReference}
+          onCreateToken={handleCreateToken}
           aria-label={swatchLabel}
           fieldSize="xs"
           className={styles.colorInlineSwatch}

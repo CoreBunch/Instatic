@@ -272,6 +272,11 @@
     /* Z-index layers */
     --z-dropdown: 20;
 
+    /* Dialogs must sit above the fullscreen media picker (spotlight + 50) so a
+     * dialog opened from inside it — Unsplash import, replace — is visible.
+     * Below the colour picker (9500), toasts and tooltips. */
+    --dialog-z-index: 9100;
+
     /* Tooltips are transient hover hints that must sit above every modal layer,
      * including the spotlight-style dialogs (--spotlight-z-index: 9000, used by
      * the module inserter) and the body slash menu (10000). Keep this the
@@ -295,6 +300,29 @@
     --plugins-hero-tint-a: rgba(35, 92, 72, 0.32);
     --plugins-hero-tint-b: rgba(49, 64, 94, 0.24);
     --canvas-live-scrim: rgba(24, 24, 27, 0.82);
+
+    /* Colour picker. These are absolute sRGB references, not theme surfaces:
+     * the saturation square's white/black ramps, the full hue wheel, and the
+     * transparency checkerboard must read identically in both themes, so they
+     * are intentionally not re-declared in the light block below. */
+    --picker-white: #ffffff;
+    --picker-black: #000000;
+    --picker-hue-track: linear-gradient(
+        to right,
+        #ff0000 0%,
+        #ffff00 17%,
+        #00ff00 33%,
+        #00ffff 50%,
+        #0000ff 67%,
+        #ff00ff 83%,
+        #ff0000 100%
+    );
+    --picker-checkerboard-size: 8px;
+    --picker-checkerboard: repeating-conic-gradient(
+        #ffffff 0% 25%,
+        #c9c9c9 0% 50%
+    );
+    --color-picker-z-index: 9500;
 }
 
 :root[data-editor-text-scale='small'],

@@ -389,7 +389,8 @@ Every interactive control in the admin and editor goes through a primitive from 
 | `Checkbox`           | Boolean within a list / form.                                               |
 | `Select`             | Dropdown selection of fixed options.                                        |
 | `SearchBar`          | Search input with magnifier icon and clear affordance.                      |
-| `ColorInput`         | Color picker with swatch + hex.                                             |
+| `ColorInput`         | Colour swatch trigger; opens the `ColorPicker` popover.                     |
+| `ColorPicker`        | Rich picker: SV square, hue + alpha sliders, HEX/RGB/HSL field, eyedropper, token list. |
 | `FileUpload`         | Drop-zone + browse for file inputs.                                         |
 | `DateTimePicker`     | Date / time inputs.                                                         |
 | `RangeTabs`          | Tabbed numeric range selectors (e.g. spacing scales).                       |
