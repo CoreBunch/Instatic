@@ -116,7 +116,10 @@ export function Input({
         styles[`size-${fieldSize}`],
         monospace && styles.monospace,
         invalid && styles.invalid,
-        showSpinner && styles.numberNoSpinner,
+        // Native arrows are ALWAYS suppressed on number inputs — the custom
+        // spinner is the only set of controls ever shown; numberSpinner={false}
+        // means no arrows at all, not the browser's.
+        isNumber && styles.numberNoSpinner,
         hasAffix && styles.inputWithAffix,
         !hasAffix && className,
       )}

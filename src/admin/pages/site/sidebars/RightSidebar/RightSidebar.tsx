@@ -54,6 +54,9 @@ export function RightSidebar({ mode }: RightSidebarProps) {
       data-testid="right-sidebar"
       data-expanded={isExpanded ? 'true' : 'false'}
       data-mode={propertiesPanelMode}
+      // Floating pickers (ColorInput's panel) must not cover the editing
+      // chrome — they read this marker and snap back to the canvas.
+      data-floating-obstacle=""
       style={style}
     >
       {isExpanded && (

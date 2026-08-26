@@ -231,8 +231,10 @@ export function ClassPropertyRow({
   } else switch (type) {
     case 'color':
       control = (
+        // NO value-derived key here: remounting on every colour commit would
+        // close the picker panel mid-drag. ColorValueInput adopts external
+        // value changes on its own (render-time previous-value comparison).
         <ColorControl
-          key={`${String(property)}-${String(value ?? '')}`}
           propKey={String(property)}
           value={String(value ?? '')}
           placeholder={placeholderText}
@@ -292,8 +294,10 @@ export function ClassPropertyRow({
       {/* Control renders with its own .controlWrapper — identical to module rows (PP-18) */}
       {control}
 
-      {/* Remove button: overlaid on the label column; revealed on hover/focus-within */}
-      {isSet && (
+      {/* Remove button: overlaid on the row's right end; revealed on hover/focus-within.
+          backgroundImage brings its own clear affordance (clicking the active
+          Image/Custom segment), and the overlay × would collide with that row. */}
+      {isSet && property !== 'backgroundImage' && (
         <Button
           variant="ghost"
           size="micro"

@@ -6,11 +6,8 @@
 .propertyRowWrap {
     position: relative;
     color: var(--text);
-    --class-remove-label-column: 100px;
     --class-remove-row-center: 14px;
     --class-remove-button-size: 22px;
-    --class-remove-fade-width: 36px;
-    --class-remove-row-bg: var(--bg-body);
 }
 .propertyRowWrap label {
     color: var(--text);
@@ -18,29 +15,6 @@
 
 .propertyRowWrap[data-state="set"] {
     box-sizing: border-box;
-}
-
-.propertyRowWrap[data-state="set"]::after {
-    position: absolute;
-    top: calc(
-        var(--class-remove-row-center) - (var(--class-remove-button-size) / 2)
-    );
-    left: calc(
-        var(--class-remove-label-column) - var(--class-remove-fade-width)
-    );
-    z-index: 1;
-    width: var(--class-remove-fade-width);
-    height: var(--class-remove-button-size);
-    background: linear-gradient(
-        90deg,
-        transparent 0%,
-        var(--class-remove-row-bg) 48%,
-        var(--class-remove-row-bg) 100%
-    );
-    content: "";
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 100ms ease;
 }
 
 .propertyRowUnset {
@@ -51,16 +25,16 @@
     color: var(--class-row-label-color);
 }
 
-/* ── Remove button — overlays the fixed label column, leaving controls full-width ───── */
+/* ── Remove button — overlays the right end of the row ───── */
 /* Hidden by default; revealed on row hover or keyboard focus-within (WCAG 2.1.1) */
 .removeBtn {
     position: absolute;
     top: calc(
         var(--class-remove-row-center) - (var(--class-remove-button-size) / 2)
     );
-    left: calc(
-        var(--class-remove-label-column) - var(--class-remove-button-size) - 4px
-    );
+    /* Right end of the row (over the input's tail), revealed on hover —
+       matches the "hover the row, × appears on the right" pattern. */
+    right: var(--space-2xs);
     z-index: 2;
     opacity: 0;
     pointer-events: none;
@@ -70,18 +44,19 @@
         color 100ms ease;
 }
 
+/* Bare × glyph — no pill, ring, or surface behind it (matches the media
+   asset card's dismiss ×). Colour alone carries the hover state. */
 .removeBtn.removeBtn {
     width: var(--class-remove-button-size);
     height: var(--class-remove-button-size);
-    border-radius: 10px;
     background: transparent;
-    color: var(--text-muted);
-    background: var(--bg-body);
-    border: 1px solid var(--border-muted);
+    border: none;
+    color: var(--text-subtle);
 }
 
 .removeBtn.removeBtn:hover,
 .removeBtn.removeBtn:focus-visible {
+    background: transparent;
     color: var(--text);
 }
 
@@ -89,9 +64,4 @@
 .propertyRowWrap:focus-within .removeBtn {
     opacity: 1;
     pointer-events: auto;
-}
-
-.propertyRowWrap:hover::after,
-.propertyRowWrap:focus-within::after {
-    opacity: 1;
 }
