@@ -145,6 +145,9 @@ export function LeftSidebar({
       className={styles.sidebar}
       data-testid="left-sidebar"
       data-expanded={panelExpanded ? 'true' : 'false'}
+      // Floating pickers (ColorInput's panel) must not cover the editing
+      // chrome — they read this marker and snap back to the canvas.
+      data-floating-obstacle=""
       data-rail-only={railOnly ? 'true' : undefined}
       data-active-panel={effectivePluginPanelId !== null
         ? `plugin:${effectivePluginPanelId}`

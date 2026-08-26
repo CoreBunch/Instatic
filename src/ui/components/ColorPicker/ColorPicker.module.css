@@ -10,6 +10,116 @@
     box-sizing: border-box;
 }
 
+/* --- Fill-type tabs ------------------------------------------------------ */
+/* Icon pills (solid / linear / radial / conic), separated by hairlines, the
+   active one on a lifted pill — the reference row's anatomy. Glyphs are pure
+   CSS circles whose fill previews each gradient kind. */
+
+.fillTabs {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3xs);
+    padding: var(--space-3xs);
+    border-radius: var(--radius);
+    background: var(--overlay-5);
+}
+
+.fillTab.fillTab {
+    flex: 1 1 auto;
+    background: transparent;
+}
+
+.fillTabActive.fillTabActive {
+    background: var(--overlay-10);
+}
+
+.fillTabSeparator {
+    flex: 0 0 auto;
+    width: 1px;
+    height: 12px;
+    background: var(--overlay-10);
+}
+
+.fillGlyph {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--overlay-40);
+}
+
+.fillGlyph-solid {
+    background: var(--overlay-80);
+}
+
+.fillGlyph-linear {
+    background: linear-gradient(180deg, var(--overlay-80) 20%, transparent);
+}
+
+.fillGlyph-radial {
+    background: radial-gradient(
+        circle at 50% 45%,
+        var(--overlay-80) 0%,
+        transparent 75%
+    );
+}
+
+.fillGlyph-conic {
+    background: conic-gradient(
+        from 0deg,
+        var(--overlay-80),
+        transparent 70%
+    );
+}
+
+/* --- Gradient stops strip ------------------------------------------------ */
+
+.stops {
+    position: relative;
+    height: 16px;
+    border-radius: var(--input-radius);
+    /* JS-driven property; the default keeps the rule valid before the first
+       inline write. */
+    --color-picker-gradient: none;
+    background: var(--picker-checkerboard);
+    background-size: var(--picker-checkerboard-size) var(--picker-checkerboard-size);
+    cursor: copy;
+    touch-action: none;
+}
+
+.stopsFill {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--color-picker-gradient);
+    pointer-events: none;
+}
+
+.stopHandle {
+    position: absolute;
+    left: var(--color-picker-x);
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--picker-white);
+    border-radius: 50%;
+    background:
+        linear-gradient(var(--color-picker-swatch), var(--color-picker-swatch)),
+        var(--picker-checkerboard);
+    background-size: auto, var(--picker-checkerboard-size) var(--picker-checkerboard-size);
+    box-shadow: 0 0 0 1px var(--scrim-50);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.stopHandleSelected {
+    width: 15px;
+    height: 15px;
+    box-shadow:
+        0 0 0 1px var(--scrim-50),
+        0 0 0 3px var(--overlay-30);
+}
+
 /* --- Saturation / brightness square ------------------------------------- */
 
 .saturation {
@@ -111,6 +221,61 @@
 
 .valueInput,
 .alphaInput {
+    min-width: 0;
+}
+
+/* Opacity field: a TEXT input whose value carries the % glyph ("100%"),
+   with a hover-revealed stepper column on the trailing edge. */
+.alphaInput input {
+    padding-right: 0;
+}
+
+.alphaStepper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 100ms ease;
+}
+
+/* Bare glyph buttons — no hover pill; colour alone carries the state.
+   Doubled class outguns the Button primitive's own :hover rules. */
+.alphaStepper.alphaStepper > * {
+    width: 16px;
+    height: 10px;
+    min-height: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-subtle);
+}
+
+.alphaStepper.alphaStepper > *:hover,
+.alphaStepper.alphaStepper > *:active {
+    background: transparent;
+    color: var(--text);
+}
+
+.alphaInput:hover .alphaStepper,
+.alphaInput:focus-within .alphaStepper {
+    opacity: 1;
+}
+
+/* --- Gradient angle ------------------------------------------------------ */
+
+.angleRow {
+    display: grid;
+    grid-template-columns: 1fr 84px;
+    gap: var(--space-2xs);
+    align-items: center;
+}
+
+.angleLabel {
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+}
+
+.angleInput {
     min-width: 0;
 }
 

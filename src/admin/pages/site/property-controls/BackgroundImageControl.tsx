@@ -19,8 +19,10 @@
  *                  and the plain URL the library control expects.
  *   - **Custom**   stored value: any valid CSS `background-image` expression
  *                  (gradients, `image-set(...)`, ... — any string that isn't
- *                  `none`/`url(...)`). A plain text input; the placeholder
- *                  shows a gradient example as the most common case.
+ *                  `none`/`url(...)`). A gradient swatch (opens the rich
+ *                  picker's Solid / Linear / Radial fill tabs) next to a raw
+ *                  text input; the placeholder shows a gradient example as
+ *                  the most common case.
  *
  * Mode detection on read (so an externally-set value lands on the right tab):
  *   - `''`  / `'none'`               → undefined (no segment pressed)
@@ -44,6 +46,7 @@ import type { ControlProps } from './shared'
 import { ControlRow } from '@ui/components/ControlRow'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { Input } from '@ui/components/Input'
+import { ColorInput } from '@ui/components/ColorInput'
 import { MediaLibraryControl } from './MediaLibraryControl'
 import styles from './BackgroundImageControl.module.css'
 
@@ -139,6 +142,10 @@ export function BackgroundImageControl({
     onChange(propKey, event.target.value)
   }
 
+  function handleGradientChange(next: string) {
+    onChange(propKey, next)
+  }
+
   // For the image picker we hand it the bare URL extracted from `url('...')`.
   // If the current cssValue isn't a url() (e.g. user is still in custom
   // mode visually but already switched tab), the picker sees empty.
@@ -190,18 +197,36 @@ export function BackgroundImageControl({
 
       {mode === 'custom' && (
         <div className={styles.modeBody}>
-          <Input
-            id={`ctrl-${propKey}-custom`}
-            type="text"
-            value={cssValue}
-            // Always show a useful gradient example — the upstream placeholder
-            // for `background-image` is `none`, which isn't a hint here.
-            placeholder="linear-gradient(135deg, #f9fafb, #e5e7eb)"
-            disabled={disabled}
-            fieldSize="sm"
-            onChange={handleCustomChange}
-            aria-label={`${label ?? propKey} custom CSS`}
-          />
+          <div className={styles.customRow}>
+            {/*
+              The swatch opens the rich picker WITH its fill tabs, so a
+              gradient can be built visually (stops, angle, per-stop colour)
+              instead of hand-typing the CSS. The text input stays as the raw
+              escape hatch — image-set(...) and other expressions the picker
+              cannot edit remain typeable, and the picker simply starts from
+              its defaults for values it cannot parse.
+            */}
+            <ColorInput
+              value={cssValue}
+              gradients
+              disabled={disabled}
+              onValueChange={handleGradientChange}
+              aria-label={`${label ?? propKey} gradient`}
+              fieldSize="xs"
+            />
+            <Input
+              id={`ctrl-${propKey}-custom`}
+              type="text"
+              value={cssValue}
+              // Always show a useful gradient example — the upstream placeholder
+              // for `background-image` is `none`, which isn't a hint here.
+              placeholder="linear-gradient(135deg, #f9fafb, #e5e7eb)"
+              disabled={disabled}
+              fieldSize="sm"
+              onChange={handleCustomChange}
+              aria-label={`${label ?? propKey} custom CSS`}
+            />
+          </div>
         </div>
       )}
     </>

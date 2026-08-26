@@ -2,6 +2,15 @@
 
 .colorInput {
     position: relative;
+    /* JS-driven properties, defaulted HERE (not on .preview): the inline
+       style lands on this element, and a default declared on the child
+       would shadow the inherited value. Solid values arrive via
+       --color-input-value; a gradient replaces --color-input-image. */
+    --color-input-value: transparent;
+    --color-input-image: linear-gradient(
+        var(--color-input-value),
+        var(--color-input-value)
+    );
     display: inline-flex;
     flex: 0 0 auto;
     padding: 0;
@@ -74,7 +83,7 @@
     height: 100%;
     background:
         linear-gradient(135deg, var(--overlay-20), transparent 34%),
-        linear-gradient(var(--color-input-value), var(--color-input-value)),
+        var(--color-input-image),
         var(--picker-checkerboard);
     background-size:
         auto,
@@ -82,13 +91,52 @@
         var(--picker-checkerboard-size) var(--picker-checkerboard-size);
 }
 
-/* Portalled picker popover, positioned from the trigger's clamped rect. */
+/* Portalled, draggable picker panel. Position is JS-driven (opens beside the
+   trigger, then follows the header drag). */
 .popover {
     position: fixed;
     left: var(--color-picker-anchor-x);
     top: var(--color-picker-anchor-y);
     z-index: var(--color-picker-z-index);
+    max-height: calc(100vh - 16px);
+    overflow-y: auto;
+    border: 1px solid var(--border-muted);
     border-radius: var(--panel-radius);
-    background: var(--bg-surface-3);
+    /* Same surface as the properties panel the trigger lives in — the panel
+       reads as a detached piece of that panel, not a lighter foreign box. */
+    background: var(--bg-surface);
     box-shadow: var(--shadow-panel);
+    /* Glide on programmatic re-placement (obstacle snap-back after a drop);
+       .dragging suppresses this so pointer-following stays 1:1. */
+    transition:
+        left 240ms cubic-bezier(0.22, 1, 0.36, 1),
+        top 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.popover.dragging {
+    transition: none;
+}
+
+.popoverHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-s);
+    padding: var(--space-xs) var(--space-xs) 0 var(--space-s);
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+}
+
+.popoverHeader:active {
+    cursor: grabbing;
+}
+
+.popoverTitle {
+    overflow: hidden;
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
