@@ -178,6 +178,31 @@ export function instantiateVCAtRef(
       props = patched
     }
 
+    // ── Class binding substitution (variants) ─────────────────────────────
+    // The styling counterpart of prop bindings: each bound param's effective
+    // value selects one classId, appended after the node's own classes so a
+    // variant wins the cascade over the base class it modifies.
+    //
+    // Appending a real classId (rather than emitting a class name) is what
+    // keeps the variant's CSS alive: the publisher collects rules from the
+    // classIds it walks, so a variant used ONLY through a param would
+    // otherwise be tree-shaken out of the published stylesheet.
+    let classIds = node.classIds
+    if (node.classBindings) {
+      const added: string[] = []
+      for (const [paramId, byValue] of Object.entries(node.classBindings)) {
+        const value = paramValues.get(paramId)
+        if (typeof value !== 'string') continue
+        const classId = byValue[value]
+        // An unmapped value is a deliberate no-op: it lets a variant param
+        // carry a "none"/default option that adds no class at all.
+        if (!classId) continue
+        if (classIds.includes(classId) || added.includes(classId)) continue
+        added.push(classId)
+      }
+      if (added.length > 0) classIds = [...classIds, ...added]
+    }
+
     // ── Recurse into children (flat-map IDs) ──────────────────────────────
     const effectiveChildren: string[] = []
     for (const childId of node.children) {
@@ -185,10 +210,11 @@ export function instantiateVCAtRef(
       effectiveChildren.push(...childIds)
     }
 
-    // Register this node with resolved props and effective children.
+    // Register this node with resolved props, classes and effective children.
     nodes[node.id] = {
       ...node,
       props,
+      classIds,
       children: effectiveChildren,
       _owningRefId: refId,
       _fromSlotContent: false,

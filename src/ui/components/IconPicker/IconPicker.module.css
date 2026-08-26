@@ -5,6 +5,12 @@
     overflow-y: auto;
 }
 
+.packs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+}
+
 .count {
     margin: 0;
     font-size: var(--text-xs);
@@ -35,6 +41,11 @@
 }
 
 .glyph {
+    display: grid;
+    place-items: center;
+}
+
+.glyph svg {
     width: 24px;
     height: 24px;
 }

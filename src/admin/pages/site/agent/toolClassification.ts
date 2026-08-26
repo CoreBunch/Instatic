@@ -25,6 +25,14 @@ export const AUTO_NAVIGATE_TOOLS: ReadonlySet<string> = new Set([
   'site_duplicate_node',
   'site_assign_class',
   'site_remove_class',
+  // Component tools target a node too: `site_create_component` componentizes
+  // `fromNodeId` (which must be on the active PAGE), `site_insert_component`
+  // places a ref under `parentId`, and `site_bind_component_prop` binds a node
+  // inside the component definition.
+  'site_create_component',
+  'site_insert_component',
+  'site_bind_component_prop',
+  'site_bind_component_variant',
 ])
 
 /**
@@ -60,4 +68,9 @@ export const SITE_MUTATION_TOOLS: ReadonlySet<string> = new Set([
   'site_set_spacing_scale',
   'site_write_code_asset',
   'site_patch_code_asset',
+  'site_create_component',
+  'site_insert_component',
+  'site_set_component_params',
+  'site_bind_component_prop',
+  'site_bind_component_variant',
 ])

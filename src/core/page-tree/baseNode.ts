@@ -115,6 +115,26 @@ export const BaseNodeSchema = Type.Object({
   // it filters invalid entries rather than failing the whole field. The
   // schema here reflects the validated type; the helper does the filtering.
   propBindings: Type.Optional(Type.Record(Type.String(), PropBindingSchema)),
+
+  // Class bindings for render-time VARIANT substitution — the styling
+  // counterpart of `propBindings`.
+  //
+  // Maps paramId → (param value → classId). At instantiation the effective
+  // value of each referenced param selects one classId, which is appended to
+  // this node's `classIds`. That is what makes a typed `variant` param able to
+  // change appearance: `propBindings` writes into `props`, and `class` is not
+  // a prop, so without this channel a variant could only ever be a class
+  // hand-assigned to each instance.
+  //
+  // The value→classId map lives on the node rather than being resolved by
+  // class NAME at render time for two reasons: renames stay safe (ids are
+  // stable, names are not), and the resolver needs no access to the site's
+  // class registry — so the single instantiation choke point stays pure.
+  //
+  // Absent on every ordinary node. Only meaningful inside a VC definition.
+  classBindings: Type.Optional(
+    Type.Record(Type.String(), Type.Record(Type.String(), Type.String())),
+  ),
 })
 
 export type BaseNode = Static<typeof BaseNodeSchema>
@@ -148,6 +168,28 @@ function parsePropBindings(
   return Object.keys(out).length > 0 ? out : undefined
 }
 
+/**
+ * Parse and filter a raw classBindings map (paramId → value → classId).
+ * Per-entry lenient like `parsePropBindings`: a malformed param entry or a
+ * non-string classId is dropped rather than failing the node, and an empty
+ * result collapses to `undefined` so unbound nodes stay lean.
+ */
+function parseClassBindings(
+  raw: unknown,
+): Record<string, Record<string, string>> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out: Record<string, Record<string, string>> = {}
+  for (const [paramId, byValue] of Object.entries(raw as Record<string, unknown>)) {
+    if (!byValue || typeof byValue !== 'object' || Array.isArray(byValue)) continue
+    const map: Record<string, string> = {}
+    for (const [value, classId] of Object.entries(byValue as Record<string, unknown>)) {
+      if (typeof classId === 'string' && classId.length > 0) map[value] = classId
+    }
+    if (Object.keys(map).length > 0) out[paramId] = map
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
 // ---------------------------------------------------------------------------
 // parseBaseNodeFields — the single tolerant parser for the shared BaseNode shape
 //
@@ -176,6 +218,7 @@ export function parseBaseNodeFields(r: Record<string, unknown>, path: string): B
   const rawChildren = requireArrayField(r, 'children', path)
 
   const propBindings = parsePropBindings(r.propBindings)
+  const classBindings = parseClassBindings(r.classBindings)
   // Inline styles — same tolerant bag parser as props/class styles. Dropped
   // when missing or empty so nodes without inline styles stay lean.
   const inlineStyles = parseStylesBag(r.inlineStyles)
@@ -191,6 +234,7 @@ export function parseBaseNodeFields(r: Record<string, unknown>, path: string): B
     ...(typeof r.locked === 'boolean' ? { locked: r.locked } : {}),
     ...(typeof r.hidden === 'boolean' ? { hidden: r.hidden } : {}),
     ...(propBindings !== undefined ? { propBindings } : {}),
+    ...(classBindings !== undefined ? { classBindings } : {}),
     ...(Object.keys(inlineStyles).length > 0 ? { inlineStyles } : {}),
   }
 }

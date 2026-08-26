@@ -31,5 +31,15 @@ export interface DbClient {
   ): Promise<DbResult<Row>>
   unsafe<Row = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<DbResult<Row>>
   transaction<T>(fn: (tx: DbClient) => Promise<T>): Promise<T>
+  /**
+   * Release the underlying handle (SQLite file / Postgres pool).
+   *
+   * The server itself never calls this — it holds one client for the process
+   * lifetime — but anything that creates a SHORT-LIVED client must, or the
+   * handle outlives its owner. On Windows that is not merely untidy: an open
+   * SQLite handle makes the file undeletable (`EBUSY`), which is what broke
+   * every temp-DB test teardown there.
+   */
+  close(): Promise<void>
   readonly dialect: Dialect
 }

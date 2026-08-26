@@ -83,6 +83,7 @@
         "madge": "^8.0.0",
         "playwright-core": "^1.60.0",
         "react-doctor": "^0.2.14",
+        "react-icons": "^5.7.0",
         "secretlint": "^12.3.1",
         "typescript": "~6.0.3",
         "typescript-eslint": "^8.59.1",
@@ -1396,6 +1397,8 @@
     "react-doctor": ["react-doctor@0.2.14", "", { "dependencies": { "@effect/platform-node-shared": "4.0.0-beta.70", "agent-install": "0.0.5", "conf": "^15.1.0", "deslop-js": "^0.0.13", "effect": "4.0.0-beta.70", "eslint-plugin-react-hooks": "^7.1.1", "oxlint": "^1.66.0", "oxlint-plugin-react-doctor": "0.2.14", "prompts": "^2.4.2", "typescript": ">=5.0.4 <7" }, "bin": { "react-doctor": "bin/react-doctor.js" } }, "sha512-IsdCwvd9SFCnsvcS5mKzhEA2FauW0xc2yZlrHCjfRzUEleXeDzKXRhhLXXxg9cZHzjBQl49Rkqo/+t3XwPDR4A=="],
 
     "react-dom": ["react-dom@19.2.5", "", { "dependencies": { "scheduler": "^0.27.0" }, "peerDependencies": { "react": "^19.2.5" } }, "sha512-J5bAZz+DXMMwW/wV3xzKke59Af6CHY7G4uYLN1OvBcKEsWOs4pQExj86BBKamxl/Ik5bx9whOrvBlSDfWzgSag=="],
+
+    "react-icons": ["react-icons@5.7.0", "", { "peerDependencies": { "react": "*" } }, "sha512-LBLy340Rzqy6+/yVhZKT3B/QpP1BZaesGqasf09HPOBzRarcDIFH0WwXlXQfE7q7ipxK4MSiC5DIBWURCny6fw=="],
 
     "react-is": ["react-is@17.0.2", "", {}, "sha512-w2GsyukL62IJnlaff/nRegPQR94C/XXamvMWmSHRJ4y7Ts/4ocGRmTHvOs8PSE6pB3dWOrD/nueuU5sduBsQ4w=="],
 

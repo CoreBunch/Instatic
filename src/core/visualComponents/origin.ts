@@ -3,7 +3,10 @@
  *
  * "Origin" means the node in the VC tree that carries the binding which exposes
  * the param to callers:
- *   - Non-slot params:   the node whose propBindings[propKey].paramId matches.
+ *   - Non-slot params:   the node whose propBindings[propKey].paramId matches,
+ *                        or — for variant params bound through the class
+ *                        channel — the node whose classBindings carry the
+ *                        param. propKey is 'class' for those.
  *   - Slot params:       the base.slot-outlet node whose props.slotName matches
  *                        param.name. propKey is always 'slotName' for those.
  *
@@ -63,6 +66,10 @@ export function findParamOrigin(
             return { nodeId: node.id, propKey }
           }
         }
+      }
+      // Variant params: bound through the class channel instead of a prop.
+      if (node.classBindings?.[paramId]) {
+        return { nodeId: node.id, propKey: 'class' }
       }
     }
   }

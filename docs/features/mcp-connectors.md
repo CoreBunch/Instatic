@@ -153,7 +153,30 @@ Server-resolved tools work without an editor open. They include content reads, `
 
 `media_upload` is the one server-resolved write that mutates outside the live editor draft: it adds an image to the Media library through the same `acceptUploadedMedia` core the HTTP route uses (magic-byte sniffing, SVG sanitisation, storage dispatch, responsive variants). Bytes arrive inline (base64) or via an https `sourceUrl` the host downloads under the plugin network layer's SSRF blocklist — https-only, DNS-resolved, per-redirect-hop re-validation, size-capped. It requires `ai.tools.write` plus `media.write`.
 
-Browser tools run against the connection owner's live workspace. Site structure, HTML/CSS, page lifecycle, design-token, content mutation, code-asset, and live-DOM tools route to the matching open Site or Content workspace. If that workspace is not open, the tool returns a scope-specific error while headless tools remain available. `tools/list` states that requirement in each browser tool's description, so a client learns the precondition when it picks the tool rather than from a failed call.
+Browser tools run against the connection owner's live workspace. Site structure, HTML/CSS, page lifecycle, design-token, Visual Component, content mutation, code-asset, and live-DOM tools route to the matching open Site or Content workspace. If that workspace is not open, the tool returns a scope-specific error while headless tools remain available. `tools/list` states that requirement in each browser tool's description, so a client learns the precondition when it picks the tool rather than from a failed call.
+
+### Visual Components over MCP
+
+Five browser tools cover the component lifecycle, all gated on `site.structure.edit`:
+
+| Tool | Does |
+|---|---|
+| `site_create_component` | Creates a component, empty or by componentizing an existing node (subtree moves into the definition, a ref replaces it in place). |
+| `site_insert_component` | Places a `base.visual-component-ref` instance under a parent. |
+| `site_set_component_params` | Declares the param surface — matched by `id` when given, else by `name`, so repeat calls update rather than duplicate. |
+| `site_bind_component_prop` | Points a node prop inside the definition at a param. |
+| `site_bind_component_variant` | Maps an enum param's values to CSS classes, so the param drives styling. |
+
+`site_list_documents` reports each component's params (id, name, type, required, enum options) — the only place a caller can discover the param ids every other component tool is keyed by.
+
+Two constraints shape these tools, and both are stated in their descriptions because a caller cannot infer them:
+
+- **Content and styling use different channels.** A prop binding writes into a node's `props`, and `class` is not a prop — so styling goes through `site_bind_component_variant`, which maps param values to classes (`classBindings`). Calling `site_bind_component_prop` for a variant silently renders nothing.
+- **A param's type is fixed after creation.** The store exposes rename, default, and metadata updates but no retype, so changing a type means removing the param and adding it again.
+
+There is no HTML marker for a component instance. The importer recognizes only `instatic-outlet` and `instatic-loop`, so a component must be placed with `site_insert_component`.
+
+The underlying store actions are deliberately forgiving — a missing component or param is a no-op, and a prevented reference cycle returns null. That suits a UI where the affordance cannot be reached, but would read to a tool caller as success, so each runner re-checks its precondition and returns an error naming what does exist. `visual-component-tool-parity.test.ts` keeps the four tools wired end to end and guards the one unavoidable duplication: `ComponentParamTypeSchema` in the dependency-free `@core/ai` leaf restates the engine's `VCParamTypeSchema` because the leaf cannot import the engine.
 
 There is intentionally no headless page-tree mutation path. The open editor store is the single source of truth for draft edits; a second DB mutation path would desynchronize node state and overwrite the live document. Relayed edits need no post-tool save step: store mutations stream to the collab relay the moment they land, and every headless read (plus `site_publish`) flushes the relay server-side before it touches the DB — so a following read or publish always observes the edit. There is no client-side save flush, and no window in which the MCP caller can see stale data.
 

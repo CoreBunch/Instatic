@@ -33,6 +33,7 @@ import { ComponentRefView } from './ComponentRefView'
 import { ComponentParamsOverview } from './ComponentParamsOverview'
 import { ConvertToComponentButton } from './ConvertToComponentButton'
 import { MultiSelectionInspector } from './MultiSelectionInspector'
+import { VariantBindingsSection } from './VariantBindingsSection'
 import { MultiSelectorInspector } from './MultiSelectorInspector'
 import { SelectorInspector } from './SelectorInspector'
 import { canComponentizeNode } from '@site/componentization'
@@ -180,6 +181,16 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
           )}
         </div>
       )}
+
+      {/* Variant (class) bindings — VC edit mode only. Sits with the class
+          picker because a variant is appearance: an enum param whose value
+          appends a class to this node on every instance. */}
+      {activeNodeView === 'styles' &&
+        permissions.canEditStyle &&
+        activeDocument?.kind === 'visualComponent' &&
+        activeVc && (
+          <VariantBindingsSection nodeId={selectedNodeId!} node={selectedNode} vc={activeVc} />
+        )}
 
       {/* Unified StyleSurface: Module section + CSS sections (scroll-anchor) */}
       {activeNodeView === 'styles' ? (

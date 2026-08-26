@@ -91,7 +91,10 @@ const EXEMPT = new Set<string>([
  * shorter; the goal is an empty object.
  */
 const GRANDFATHERED: Record<string, number> = {
-  'src/admin/pages/site/store/slices/visualComponentsSlice.ts': 715,
+  // src/admin/pages/site/store/slices/visualComponentsSlice.ts graduated: the
+  // param↔node binding actions (prop channel + the class/variant channel added
+  // with them) moved to slices/vcBindingActions.ts, dropping the slice to 656
+  // lines — under CEILING, so the normal ceiling rule now holds it.
   // server/repositories/media.ts graduated: the row ↔ asset mapping unit was
   // extracted into server/repositories/mediaAssetMapping.ts, dropping media.ts
   // to 583 lines — under CEILING, so it's now held by the normal ceiling rule.
@@ -129,6 +132,9 @@ function collectModules(absRoot: string): string[] {
         // Test code is exercised by other gates and is allowed to be long
         // (large fixture-heavy suites); this gate targets shipped modules.
         if (entry === '__tests__' || entry === 'node_modules') continue
+        // Generated icon-pack DATA (`bun run icons:manifest`) — thousands of
+        // one-tuple-per-icon lines by construction, not god-files.
+        if (abs.split(sep).join('/').endsWith('src/ui/icons/packs')) continue
         walk(abs)
         continue
       }

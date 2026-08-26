@@ -1,0 +1,52 @@
+/* VariantBindingsSection — variant (class) bindings editor for a VC node. */
+
+.body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+}
+
+.hint {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+}
+
+.param {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.paramName {
+    margin: 0;
+    font-size: var(--text-xs);
+    font-weight: 600;
+}
+
+.valueRow {
+    display: grid;
+    grid-template-columns: 78px 1fr;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.valueLabel {
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.addRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.error {
+    margin: 0;
+    color: var(--danger-light);
+    font-size: var(--text-2xs);
+}

@@ -111,9 +111,9 @@
   },
   "devDependencies": {
     "@codemirror/view": "^6.41.1",
-    "@modelcontextprotocol/client": "^2.0.0",
     "@eslint/js": "^10.0.1",
     "@floating-ui/dom": "^1.7.6",
+    "@modelcontextprotocol/client": "^2.0.0",
     "@playwright/test": "^1.60.0",
     "@rolldown/plugin-babel": "^0.2.3",
     "@secretlint/secretlint-rule-preset-recommend": "^12.3.1",
@@ -137,6 +137,7 @@
     "madge": "^8.0.0",
     "playwright-core": "^1.60.0",
     "react-doctor": "^0.2.14",
+    "react-icons": "^5.7.0",
     "secretlint": "^12.3.1",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.59.1",

@@ -27,6 +27,7 @@ import {
 } from '@core/visualComponents'
 import { buildSiteHelpers } from './site/helpers'
 import { syncAllVCRefSlotInstances, allTreeNodeMaps } from './vcSlotReconcile'
+import { createVcBindingActions } from './vcBindingActions'
 import {
   VisualComponentNameError,
   VisualComponentParamNameError,
@@ -92,6 +93,17 @@ interface VisualComponentsSlice {
    * No-op if the VC or parent node does not exist.
    */
   addNodeToVc(vcId: string, parentNodeId: string, newNode: VCNode, index?: number): void
+
+  /**
+   * Bind a node's CLASS list to a VC param — the variant channel.
+   *
+   * `classByValue` maps each param value to a classId; at instantiation the
+   * selected class is appended to the node's own classIds. Requires a visual
+   * component to be the active document (a page node has no params to bind).
+   * Passing an empty map clears the binding for that param.
+   * No-op if the VC or node is not found.
+   */
+  setNodeClassBinding(nodeId: string, paramId: string, classByValue: Record<string, string>): void
 
   /**
    * Bind a node's prop to a VC param.
@@ -170,6 +182,9 @@ export const createVisualComponentsSlice: EditorStoreSliceCreator<VisualComponen
   const { mutateSite, mutateSiteState, mutateSiteWithExplorerReconcile } = buildSiteHelpers(set, get)
 
   return {
+  // Param↔node bindings (prop channel + class/variant channel) live in their
+  // own module — see `./vcBindingActions`.
+  ...createVcBindingActions(mutateSite, get),
 
   createVisualComponent(name) {
     const { site } = get()
@@ -387,80 +402,6 @@ export const createVisualComponentsSlice: EditorStoreSliceCreator<VisualComponen
         const insertAt = Math.max(0, index)
         parent.children.splice(insertAt, 0, newNode.id)
       }
-      return true
-    })
-  },
-
-  setNodePropBinding(nodeId, propKey, paramId) {
-    const { activeDocument, activePageId } = get()
-    const pageId = activeDocument?.kind === 'page' ? activeDocument.pageId : activePageId
-    if (activeDocument?.kind !== 'visualComponent' && pageId == null) {
-      throw new Error('setNodePropBinding: no page is active in the editor')
-    }
-
-    mutateSite((site) => {
-      if (activeDocument?.kind === 'visualComponent') {
-        const vc = (site.visualComponents ?? []).find((v) => v.id === activeDocument.vcId)
-        if (!vc) return false
-        const node = vc.tree.nodes[nodeId]
-        if (!node) return false
-        if (node.propBindings?.[propKey]?.paramId === paramId) return false
-        if (!node.propBindings) node.propBindings = {}
-        node.propBindings[propKey] = { paramId }
-        return true
-      }
-
-      const page = (site.pages ?? []).find((p) => p.id === pageId)
-      if (!page) return false
-      const node = page.nodes[nodeId]
-      if (!node) return false
-      if (node.propBindings?.[propKey]?.paramId === paramId) return false
-      if (!node.propBindings) node.propBindings = {}
-      node.propBindings[propKey] = { paramId }
-      return true
-    })
-  },
-
-  clearNodePropBinding(nodeId, propKey) {
-    const { activeDocument, activePageId } = get()
-    const pageId = activeDocument?.kind === 'page' ? activeDocument.pageId : activePageId
-    if (activeDocument?.kind !== 'visualComponent' && pageId == null) {
-      throw new Error('clearNodePropBinding: no page is active in the editor')
-    }
-
-    mutateSite((site) => {
-      if (activeDocument?.kind === 'visualComponent') {
-        const vc = (site.visualComponents ?? []).find((v) => v.id === activeDocument.vcId)
-        if (!vc) return false
-        const node = vc.tree.nodes[nodeId]
-        if (!node?.propBindings?.[propKey]) return false
-
-        const removedParamId = node.propBindings[propKey]?.paramId
-        delete node.propBindings[propKey]
-
-        // GC: remove orphan param if no other node references it
-        if (removedParamId) {
-          const stillBound = new Set<string>()
-          for (const n of Object.values(vc.tree.nodes)) {
-            if (n.propBindings) {
-              for (const binding of Object.values(n.propBindings)) {
-                stillBound.add(binding.paramId)
-              }
-            }
-          }
-          if (!stillBound.has(removedParamId)) {
-            const idx = vc.params.findIndex((p) => p.id === removedParamId)
-            if (idx !== -1) vc.params.splice(idx, 1)
-          }
-        }
-        return true
-      }
-
-      const page = (site.pages ?? []).find((p) => p.id === pageId)
-      if (!page) return false
-      const node = page.nodes[nodeId]
-      if (!node?.propBindings?.[propKey]) return false
-      delete node.propBindings[propKey]
       return true
     })
   },
