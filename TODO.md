@@ -22,8 +22,8 @@ Aktualizacja z oryginału: `git fetch upstream`, potem `git rebase upstream/main
 
 ## Do zrobienia
 
-### 1. Nowy color picker
-Zlecone subagentowi. Zakres: kwadrat nasycenia, suwak barwy, suwak alfy,
+### 1. ~~Nowy color picker~~ — ZROBIONE (`8664a24a`)
+Zrealizowane. Zakres: kwadrat nasycenia, suwak barwy, suwak alfy,
 pole hex + procent, przełącznik HEX/RGB/HSL, eyedropper (natywne
 `EyeDropper` API), wyszukiwarka tokenów, akcja "New Style".
 
@@ -32,24 +32,31 @@ pole hex + procent, przełącznik HEX/RGB/HSL, eyedropper (natywne
 sanityzacja SVG, baza). Trzeba rozdzielić na tematyczne commity — konieczne,
 jeśli cokolwiek ma iść jako PR do oryginału.
 
-### 3. Triage 88 failujących testów
-Build i lint są zielone, ale `bun test` daje 88 porażek na 6743 testy.
-**Baseline nieustalony** — porównanie z czystym upstreamem nie dokończyło
-się w limicie czasu, więc nie wiadomo jeszcze, które z tych porażek są nasze,
-a które były w oryginale.
+### 3. ~~Triage failujacych testow~~ — ROZSTRZYGNIETE
 
-Podejrzenia do potwierdzenia:
+Porownanie `src/__tests__/server` miedzy scalonym `main` a czystym upstreamem
+(`a0b1e4e5`), wykonane w izolowanym worktree, zeby nie ruszac drzewa roboczego:
 
-| Grupa | Ile | Hipoteza |
-|---|---|---|
-| symlink swap, artefakty na dysku, Layer A | ~25 | **POTWIERDZONE** — ograniczenie Windows, nie nasze scalenie |
-| plugin scheduler — DB | 9 | konfiguracja Postgresa w testach |
-| post-type built-in fields | 13 | do zbadania |
-| generated plugin bootstrap | 1 | wymaga `bun run bootstrap:sync` |
-| panele, a11y, Toolbar | ~10 | do zbadania |
+| | porazek |
+|---|---|
+| czysty upstream `a0b1e4e5` | **261** |
+| nasz scalony `main` | **62** |
 
-Metoda: uruchomić wyłącznie te pliki testowe na commicie `a0b1e4e5`
-(czysty upstream) i porównać listy — pełny przebieg trwa za długo.
+- **Regresji z naszego scalenia: 0.** Kazda porazka wystepujaca u nas
+  wystepuje tez na czystym oryginale.
+- **Naprawionych przez scalona prace: 199.** Glownie collab relay, step-up
+  auth, account security, zapis site-document, autoryzacja danych CMS.
+
+Przyczyna naprawy: `DbClient.close()` dodane w `server/db/client.ts`.
+Bez niego otwarty uchwyt SQLite czynil plik nieusuwalnym (`EBUSY`), co
+psulo teardown kazdego testu z tymczasowa baza na Windows.
+
+Pozostale 62 porazki to zastane problemy oryginalu na tej maszynie —
+w wiekszosci opisany nizej problem z symlinkami.
+
+**Uwaga o powtarzalnosci:** dwa przebiegi tego samego kodu daly 62 i 63
+porazki, wiec czesc testow jest niestabilna. Przy kolejnych porownaniach
+patrz na liste nazw, nie na sama liczbe.
 
 ### 4. Rozmiar repo — paczki ikon
 `src/ui/icons/packs/` to 16 MB wygenerowanego kodu, teraz na stałe w historii
@@ -105,7 +112,7 @@ i zawsze lokalny. To dobry kandydat na PR z powrotem do oryginalu.
 **Obejscie natychmiastowe:** wlaczyc tryb dewelopera w Windows
 (Ustawienia → Prywatnosc i zabezpieczenia → Dla deweloperow).
 
-### Czego jeszcze nie wiadomo
+### Czego jeszcze nie wiadomo (nieaktualne — patrz punkt 3)
 
 Baseline dla pozostalych ~63 porazek nadal nieustalony. Warstwa DB **byla**
 ruszana przez scalenie (`server/db/client.ts` dostal `close()`, doszly dwie
