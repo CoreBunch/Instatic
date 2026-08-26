@@ -1,0 +1,64 @@
+# docker-compose.coolify.sqlite.yml
+# Instatic on Coolify — single container, SQLite.
+#
+# The simplest Coolify deployment: one service, two volumes, no database server.
+# Pick this for a single-site install with one or two admins. For multiple
+# simultaneous editors or scheduled database backups, use the Postgres stack in
+# docker-compose.coolify.yml instead. Full trade-offs and the setup walkthrough:
+# docs/deployment/coolify.md.
+#
+# Coolify setup:
+#   Resource:      Docker Compose (Git repository, or Empty + paste this file)
+#   Compose file:  docker-compose.coolify.sqlite.yml   (extension must match exactly)
+#   Base directory: /
+#   Domain:        set it on the `instatic` service. Coolify issues the TLS
+#                  certificate and routes :443 to container port 3001.
+#
+# The header comments in docker-compose.coolify.yml explain why this file has no
+# `networks:`, `ports:`, `container_name:`, or `restart:` keys.
+
+services:
+  instatic:
+    image: ${INSTATIC_IMAGE:-ghcr.io/corebunch/instatic:latest}
+    environment:
+      # Declares the public route. Coolify assigns this service a domain and
+      # points Traefik at container port 3001.
+      - SERVICE_URL_INSTATIC_3001
+      - PORT=3001
+      - DATABASE_URL=sqlite:/app/data/cms.db
+      - UPLOADS_DIR=/app/uploads
+      - STATIC_DIR=/app/dist
+      # See docker-compose.coolify.yml for why this is mandatory: without it the
+      # session cookie loses Secure, the CSRF check compares the wrong origin,
+      # real-time co-editing is rejected, and MCP connectors read local-only.
+      - PUBLIC_ORIGIN=${SERVICE_URL_INSTATIC}
+      # Required — the image runs NODE_ENV=production, where boot fails if this
+      # is unset. Coolify generates it once and keeps it stable across
+      # redeploys; changing it strands every already-encrypted secret.
+      - INSTATIC_SECRET_KEY=${SERVICE_REALBASE64_32_INSTATIC}
+      # Audit-log and rate-limit client-IP attribution only, not CSRF.
+      - TRUSTED_PROXY_CIDRS=${TRUSTED_PROXY_CIDRS:-172.16.0.0/12}
+    volumes:
+      # Two volumes rather than one shared root, and specifically at these two
+      # paths: the Dockerfile creates /app/uploads and /app/data and chowns them
+      # to `bun` before dropping to USER bun. A volume mounted at a path the
+      # image does NOT contain (e.g. the /app/storage layout the Railway and
+      # Render templates use) is created root-owned, and every write from the
+      # non-root container fails with EACCES. Railway works around that with
+      # RAILWAY_RUN_UID=0; Docker named volumes need no such workaround as long
+      # as they mount where the image already prepared the directory.
+      - instatic-uploads:/app/uploads
+      - instatic-data:/app/data
+    healthcheck:
+      # The oven/bun base image ships neither curl nor wget — see
+      # server/healthcheck.ts. Shorter start_period than the Postgres stack:
+      # there is no database server to wait on, only migrations.
+      test: ['CMD', 'bun', 'run', 'server/healthcheck.ts']
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+volumes:
+  instatic-uploads:
+  instatic-data:
