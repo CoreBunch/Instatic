@@ -9,6 +9,7 @@ import { buildVariantSrcset, pickVariantUrl } from '../variants'
 
 const asset = {
   publicPath: '/uploads/hero.png',
+  replacedAt: null,
   width: 2688,
   variants: [
     { width: 640, height: 362, format: 'webp', path: '/uploads/hero-w640.webp', sizeBytes: 100 },
@@ -41,5 +42,25 @@ describe('pickVariantUrl', () => {
 
   it('returns the original only when the asset has no variants at all', () => {
     expect(pickVariantUrl({ ...asset, variants: [] }, 500)).toBe('/uploads/hero.png')
+  })
+})
+
+describe('replace versioning', () => {
+  // A replace rewrites the bytes at the SAME path, so the URL alone no longer
+  // identifies them — without the stamp the browser keeps painting the
+  // previous binary from cache.
+  const replaced = { ...asset, replacedAt: '2026-08-26T18:30:23.000Z' }
+  const stamp = Date.parse(replaced.replacedAt)
+
+  it('stamps variant, srcset, and original URLs of a replaced asset', () => {
+    expect(pickVariantUrl(replaced, 500)).toBe(`/uploads/hero-w640.webp?v=${stamp}`)
+    expect(buildVariantSrcset(replaced)).toBe(
+      `/uploads/hero-w640.webp?v=${stamp} 640w, /uploads/hero-w2688.webp?v=${stamp} 2688w`,
+    )
+    expect(pickVariantUrl({ ...replaced, variants: [] }, 500)).toBe(`/uploads/hero.png?v=${stamp}`)
+  })
+
+  it('leaves never-replaced assets untouched', () => {
+    expect(pickVariantUrl(asset, 500)).toBe('/uploads/hero-w640.webp')
   })
 })

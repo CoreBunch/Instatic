@@ -285,7 +285,7 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
                   onClick={() => runFromMenu(() => setUnsplashOpen(true))}
                 >
                   <UnsplashIcon size={13} />
-                  Unsplash…
+                  Unsplash
                 </ContextMenuItem>
               )}
             </ContextMenu>

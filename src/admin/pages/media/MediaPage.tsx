@@ -20,7 +20,7 @@ import {
 } from '@admin/state/workspaceLayoutStorage'
 import { Button } from '@ui/components/Button'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
-import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
+import { UnsplashIcon } from 'pixel-art-icons/icons/unsplash'
 import { MediaSidebar, type MediaSidebarPanelId } from './components/MediaSidebar/MediaSidebar'
 import { MediaCanvas } from './components/MediaCanvas/MediaCanvas'
 import { MediaViewerWindow } from './components/MediaViewerWindow/MediaViewerWindow'
@@ -108,7 +108,7 @@ export function MediaPage() {
           aria-label="Add a photo from Unsplash"
           tooltip="Browse Unsplash and import a photo into this library"
         >
-          <ImagesSolidIcon size={13} />
+          <UnsplashIcon size={13} />
           <span>Unsplash</span>
         </Button>
       )}

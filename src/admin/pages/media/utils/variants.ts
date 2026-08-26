@@ -14,16 +14,36 @@
 import { decode as decodeBlurHash } from 'blurhash'
 import type { CmsMediaAsset, CmsMediaVariant } from '@core/persistence/cmsMedia'
 
+/** Asset fields every URL builder here needs. */
+type MediaUrlSource = Pick<CmsMediaAsset, 'publicPath' | 'variants' | 'replacedAt'>
+
+/**
+ * Stamp a media URL with the asset's replace version.
+ *
+ * Replacing an asset rewrites its bytes at the SAME storage path — that URL
+ * stability is the whole point of replace (see `acceptReplacementMedia`), but
+ * it also means the URL alone no longer identifies the bytes, so a browser
+ * that already has the previous binary cached keeps painting it. `replacedAt`
+ * changes exactly when the bytes do, so it is the right version key: assets
+ * that were never replaced (the overwhelming majority) keep their bare URL.
+ */
+export function versionedMediaUrl(path: string, replacedAt: string | null): string {
+  if (!replacedAt) return path
+  const stamp = Date.parse(replacedAt)
+  if (Number.isNaN(stamp)) return path
+  return `${path}${path.includes('?') ? '&' : '?'}v=${stamp}`
+}
+
 /**
  * Choose the smallest variant ≥ targetWidth (in CSS pixels, scaled by DPR).
  * Returns the original `publicPath` when no variant is suitable — guarantees
  * the caller always has SOME url to display.
  */
 export function pickVariantUrl(
-  asset: Pick<CmsMediaAsset, 'publicPath' | 'variants'>,
+  asset: MediaUrlSource,
   targetCssWidth: number,
 ): string {
-  if (!asset.variants.length) return asset.publicPath
+  if (!asset.variants.length) return versionedMediaUrl(asset.publicPath, asset.replacedAt)
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio ?? 1 : 1
   const targetPx = Math.ceil(targetCssWidth * dpr)
   const sorted: CmsMediaVariant[] = [...asset.variants].sort((a, b) => a.width - b.width)
@@ -31,13 +51,13 @@ export function pickVariantUrl(
   // original) when nothing's big enough — handles the "browser wants 4K,
   // we only have 1024" case gracefully.
   for (const v of sorted) {
-    if (v.width >= targetPx) return v.path
+    if (v.width >= targetPx) return versionedMediaUrl(v.path, asset.replacedAt)
   }
   // No variant is large enough → the largest variant still beats the
   // original: new ladders top at the intrinsic-width WebP (same pixels,
   // fraction of the bytes), and even legacy 2048-capped ladders trade a
   // marginal resolution shortfall for not downloading a multi-MB PNG.
-  return sorted[sorted.length - 1].path
+  return versionedMediaUrl(sorted[sorted.length - 1].path, asset.replacedAt)
 }
 
 /**
@@ -47,14 +67,12 @@ export function pickVariantUrl(
  * `buildMediaSrcset`). Returns `undefined` when there are no variants —
  * callers should omit the attribute entirely in that case.
  */
-export function buildVariantSrcset(
-  asset: Pick<CmsMediaAsset, 'publicPath' | 'variants'>,
-): string | undefined {
+export function buildVariantSrcset(asset: MediaUrlSource): string | undefined {
   if (!asset.variants.length) return undefined
   return asset.variants
     .slice()
     .sort((a, b) => a.width - b.width)
-    .map((v) => `${v.path} ${v.width}w`)
+    .map((v) => `${versionedMediaUrl(v.path, asset.replacedAt)} ${v.width}w`)
     .join(', ')
 }
 

@@ -78,14 +78,31 @@ function ensureList(): Promise<CmsMediaAsset[]> {
 }
 
 /**
- * Drop the cache so the next consumer re-fetches. Call after a
- * mutation that may have changed the asset list (upload, replace,
- * delete) if you need stale rows out of the editor preview.
+ * Re-fetch the asset list and swap the cache. Call after a mutation that
+ * may have changed the asset list (upload, replace, delete) so stale rows
+ * leave the editor preview.
+ *
+ * Fetch-then-swap, not clear-then-wait: already-mounted consumers only
+ * re-run `ensureList` when their effect re-fires, so a bare `cache.clear()`
+ * would leave them holding an empty snapshot forever. Keeping the old rows
+ * until the fresh list lands also avoids a flash of unresolved raw urls.
  */
 export function refreshCmsMediaAssetCache(): void {
-  cache.clear()
-  listPromise = null
-  notifySubscribers()
+  listPromise = listCmsMediaAssets()
+    .then((assets) => {
+      cache.clear()
+      cacheAssetList(assets)
+      return assets
+    })
+    .catch((err) => {
+      listPromise = null
+      throw err
+    })
+  // Callers are fire-and-forget; surface the failure without an unhandled
+  // rejection — consumers keep rendering the previous rows.
+  void listPromise.catch((err) => {
+    console.error('[useCmsMediaAssetByPath] refresh failed:', err)
+  })
 }
 
 export function primeCmsMediaAssetCache(asset: CmsMediaAsset): void {

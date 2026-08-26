@@ -19,6 +19,12 @@ Aktualizacja z oryginału: `git fetch upstream`, potem `git rebase upstream/main
       w Properties Panel, media crop z focus area + import z Unsplash
 - [x] `bun run build` przechodzi
 - [x] `bun run lint` przechodzi
+- [x] **Import z Unsplash działa end-to-end** — przeglądanie, import jako nowy
+      asset i podmiana istniejącego. Domknięte trzy błędy w tym przepływie:
+      dialog Unsplasha renderował się pod pełnoekranowym pickerem mediów
+      (z-index), replace generował nowy publiczny URL i zamieniał wszystkie
+      istniejące odwołania w 404, a kanwa nie odświeżała podmienionego zdjęcia
+      bez przeładowania strony.
 
 ## Do zrobienia
 

@@ -379,8 +379,18 @@ export async function acceptReplacementMedia(
   // old files are guaranteed to be orphaned regardless of width overlap.
   const previousVariants = await getMediaAssetVariants(db, assetId)
 
-  const storageName = `${safeStorageStem(input.file.name)}${EXTENSION_FOR_MIME[validated.detectedMime]}`
-  const suggestedStoragePath = buildSuggestedStoragePath(safeStorageStem(input.file.name), EXTENSION_FOR_MIME[validated.detectedMime])
+  const extension = EXTENSION_FOR_MIME[validated.detectedMime]
+  const storageName = `${safeStorageStem(input.file.name)}${extension}`
+  // A stable public URL is the whole point of replace: every page tree,
+  // content entry, avatar, and already-published page points at the old path,
+  // and minting a new one turns all of them into 404s. Handing the adapter the
+  // PREVIOUS storage path makes it overwrite in place — adapters are
+  // contractually idempotent on `suggestedStoragePath`. Only a MIME change
+  // forces a fresh path, because the extension is what fixes the served
+  // Content-Type.
+  const suggestedStoragePath = previousStoragePath.toLowerCase().endsWith(extension)
+    ? previousStoragePath
+    : buildSuggestedStoragePath(safeStorageStem(input.file.name), extension)
 
   let dispatched
   try {
@@ -396,6 +406,12 @@ export async function acceptReplacementMedia(
     }
     throw err
   }
+
+  // The elected adapter may have moved since the previous write, and an
+  // adapter is free to ignore the suggestion — so "did we overwrite in place?"
+  // is decided by what came back, not by what we asked for.
+  const overwroteInPlace = dispatched.storagePath === previousStoragePath
+    && dispatched.storageAdapterId === previous.storageAdapterId
 
   const updated = await replaceMediaAssetBinary(db, assetId, {
     filename: input.file.name || storageName,
@@ -421,9 +437,11 @@ export async function acceptReplacementMedia(
   // so a crash mid-pipeline leaves the asset with the new original but no
   // variants — consumers fall back to the original gracefully.
   let finalAsset = updated
+  let newVariantPaths: ReadonlySet<string> = new Set()
   if (shouldProcessResponsiveVariants(validated.detectedMime)) {
     const processed = await processImageVariants(db, validated.bytes, dispatched.storagePath)
     if (processed) {
+      newVariantPaths = new Set(processed.variants.map((variant) => variant.storagePath))
       const upgraded = await setMediaAssetVariants(db, assetId, {
         width: processed.width,
         height: processed.height,
@@ -457,9 +475,18 @@ export async function acceptReplacementMedia(
   // Sweep the previous bytes via THEIR adapter (not the currently elected
   // one — the asset may have lived on a different backend before this
   // replace). Variant cleanup honours each variant's own adapter id too.
-  await dispatchDelete(previous.storageAdapterId, previousStoragePath).catch((err) => {
-    console.error('[mediaUpload] previous-binary cleanup failed (orphaned bytes):', err)
-  })
-  await removeVariantFiles(previousVariants)
+  //
+  // Both sweeps skip anything the new write already sat on top of: variant
+  // paths are a deterministic function of the parent storage path, so an
+  // in-place replace rewrites the same names, and deleting them here would
+  // delete the ladder we just built.
+  if (!overwroteInPlace) {
+    await dispatchDelete(previous.storageAdapterId, previousStoragePath).catch((err) => {
+      console.error('[mediaUpload] previous-binary cleanup failed (orphaned bytes):', err)
+    })
+  }
+  await removeVariantFiles(
+    previousVariants.filter((variant) => !newVariantPaths.has(variant.storagePath)),
+  )
   return finalAsset
 }

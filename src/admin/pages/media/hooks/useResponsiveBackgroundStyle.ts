@@ -6,6 +6,7 @@ import {
 } from '@core/publisher'
 import type { CmsMediaAsset } from '@core/persistence/cmsMedia'
 import { useCmsMediaAssetsByPath } from './useCmsMediaAssetByPath'
+import { versionedMediaUrl } from '../utils/variants'
 
 export interface ResponsiveEditorMediaAssets {
   mediaAssets: ReadonlyMap<string, RenderResolvedMedia>
@@ -14,13 +15,20 @@ export interface ResponsiveEditorMediaAssets {
 
 function renderResolvedMediaFromCms(asset: CmsMediaAsset): RenderResolvedMedia {
   return {
-    publicPath: asset.publicPath,
+    // Replace rewrites bytes at the SAME urls, so the canvas CSS built from
+    // them would be byte-identical and the browser would keep painting the
+    // previous binary from cache. Stamping with `replacedAt` changes the CSS
+    // exactly when the bytes change, which forces the refetch.
+    publicPath: versionedMediaUrl(asset.publicPath, asset.replacedAt),
     mimeType: asset.mimeType,
     width: asset.width,
     height: asset.height,
     altText: asset.altText,
     blurHash: asset.blurHash,
-    variants: asset.variants,
+    variants: asset.variants.map((variant) => ({
+      ...variant,
+      path: versionedMediaUrl(variant.path, asset.replacedAt),
+    })),
     posterPath: asset.posterPath,
     // Carried through so the editor preview frames an image exactly like the
     // published page does — a focal point that only applied after publishing
@@ -48,9 +56,15 @@ function responsiveMediaAssetsFromCms(
   for (const path of [...paths].sort()) {
     const asset = assets.get(path)
     if (!asset) continue
-    mediaAssets.set(path, renderResolvedMediaFromCms(asset))
-    if (asset.variants.length === 0) continue
-    signatureParts.push(`${path}=${asset.variants.map((v) => `${v.width}:${v.path}`).join('|')}`)
+    const resolved = renderResolvedMediaFromCms(asset)
+    mediaAssets.set(path, resolved)
+    // Signature is built from the RESOLVED (version-stamped) urls so a
+    // replace — which keeps every raw path identical — still busts the memo.
+    if (resolved.variants.length === 0) {
+      signatureParts.push(`${path}=${resolved.publicPath}`)
+      continue
+    }
+    signatureParts.push(`${path}=${resolved.variants.map((v) => `${v.width}:${v.path}`).join('|')}`)
   }
 
   const signature = signatureParts.join(';')
