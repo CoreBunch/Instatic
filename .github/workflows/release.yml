@@ -34,13 +34,21 @@ jobs:
       - name: Lint
         run: bun run lint
 
-  image:
-    name: Publish GHCR Image
-    runs-on: ubuntu-latest
+  image-build:
+    name: Build GHCR Image (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     needs: verify
-    outputs:
-      version: ${{ steps.version.outputs.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            artifact: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            artifact: arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -74,17 +82,92 @@ jobs:
             type=raw,value=latest
 
       - name: Build and push image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=ghcr.io/corebunch/instatic,push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             INSTATIC_VERSION=${{ steps.version.outputs.version }}
             INSTATIC_REVISION=${{ github.sha }}
             INSTATIC_CREATED=${{ steps.version.outputs.created }}
+
+      - name: Export image digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - name: Upload image digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.artifact }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  image:
+    name: Publish GHCR Image
+    runs-on: ubuntu-latest
+    needs: image-build
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Download image digests
+        uses: actions/download-artifact@v5
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/corebunch/instatic
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Create multi-architecture manifest
+        working-directory: /tmp/digests
+        env:
+          DOCKER_METADATA_OUTPUT_JSON: ${{ steps.meta.outputs.json }}
+        shell: bash
+        run: |
+          mapfile -t TAGS < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          ARGS=()
+          for TAG in "${TAGS[@]}"; do
+            ARGS+=(--tag "$TAG")
+          done
+          for DIGEST in *; do
+            ARGS+=("ghcr.io/corebunch/instatic@sha256:$DIGEST")
+          done
+          docker buildx imagetools create "${ARGS[@]}"
+
+      - name: Inspect published image
+        run: docker buildx imagetools inspect "ghcr.io/corebunch/instatic:${{ steps.version.outputs.version }}"
 
   bundle:
     name: Publish Release Bundle

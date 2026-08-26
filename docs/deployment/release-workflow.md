@@ -117,13 +117,13 @@ The release workflow should:
 
 - run tests and build checks
 - log in to GitHub Container Registry with `GITHUB_TOKEN`
-- build `Dockerfile` for `linux/amd64`
+- build `Dockerfile` for `linux/amd64` and `linux/arm64` on separate native GitHub-hosted runners
 - push a semver tag for `v*` tags
 - push `latest` for tagged releases
 - create a release bundle with the Compose files and deployment docs
 - include the Render Blueprint templates in the release bundle
 
-The first release targets `linux/amd64` because QEMU-based arm64 publishing made the tagged workflow too slow to use as a release gate. Add arm64 as a separate native-runner build before advertising multi-arch images.
+The release workflow builds each architecture on a native GitHub-hosted runner, pushes each image by digest, and merges the digests into the published manifest. This avoids the QEMU latency that made the original arm64 release gate too slow.
 
 ## Image Registry
 
