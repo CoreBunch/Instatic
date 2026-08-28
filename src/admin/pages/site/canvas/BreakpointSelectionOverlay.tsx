@@ -80,8 +80,10 @@ import { cn } from '@ui/cn'
 import { CopyPlusSolidIcon } from 'pixel-art-icons/icons/copy-plus-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { HandGrabSolidIcon } from 'pixel-art-icons/icons/hand-grab-solid'
+import { useActiveStyleTarget } from '@site/store/useActiveStyleTarget'
 import { CanvasViewportActionsContext } from './CanvasContexts'
 import { CanvasInsertModuleButton } from './CanvasInsertModuleButton'
+import { useCanvasFreeMoveDrag } from './useCanvasFreeMoveDrag'
 import { useCanvasReorderDrag } from './useCanvasReorderDrag'
 import { useCanvasTreeLadderOverlay } from './CanvasTreeLadderOverlay'
 import { useCanvasGradientGizmo } from './CanvasGradientGizmo'
@@ -262,6 +264,10 @@ export function BreakpointSelectionOverlay({
     panBy: viewportActions?.panBy,
     canvasRootRef: viewportActions?.canvasRootRef,
   })
+  // A positioned element grabs as a free move (writes top/left); anything
+  // else falls through to the tree reorder drag — see useCanvasFreeMoveDrag.
+  const styleTarget = useActiveStyleTarget()
+  const freeMoveDrag = useCanvasFreeMoveDrag({ iframeElement, styleTarget })
 
   // Each RAF tick reads the freshest selection / hover / toolbar inputs from
   // the latest render closure via useEffectEvent. Because the tick always reads
@@ -395,7 +401,9 @@ export function BreakpointSelectionOverlay({
         aria-label="Drag selected layers"
         tooltip="Drag selected layers"
         className={cn(styles.selectionToolbarButton, styles.dragToolbarButton)}
-        onPointerDown={reorderDrag.handlePointerDown}
+        onPointerDown={(event) => {
+          if (!freeMoveDrag.tryBegin(event)) reorderDrag.handlePointerDown(event)
+        }}
       >
         <HandGrabSolidIcon size={13} color="var(--text)" />
       </Button>

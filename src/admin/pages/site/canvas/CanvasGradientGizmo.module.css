@@ -4,12 +4,26 @@
    keep a constant grab size however far the user is zoomed out. */
 
 .gizmo {
+    /* Rotation cursor. CSS has no native "rotate" keyword, so the glyph is an
+       inline SVG: a circular arrow, white over a heavy dark outline so it
+       stays readable on light and dark artwork alike. The colours are written
+       as %23-escaped literals because a data URI is opaque to the design-token
+       scan and cannot reference var() from inside — same absolute-sRGB
+       reasoning as --picker-white. Declared once here because both the end cap
+       and the drag shield paint it. The 12 12 hotspot is the glyph's centre.
+       ponytail: one static glyph. Rendering eight variants rotated in 45°
+       steps so the arrow tracks the current angle is the upgrade, and it needs
+       a cursor swap per frame during the drag to be worth anything. */
+    --cursor-rotate: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><g fill='none' stroke='%23111827' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'><path d='M19.5 12a7.5 7.5 0 1 1-2.2-5.3'/><path d='M17.3 2.5v4.4h-4.4'/></g><g fill='none' stroke='%23ffffff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M19.5 12a7.5 7.5 0 1 1-2.2-5.3'/><path d='M17.3 2.5v4.4h-4.4'/></g></svg>") 12 12, grab;
     position: absolute;
     inset: 0;
     z-index: 53;
     /* The layer itself is click-through — only the handles below opt back in,
        so the gizmo never steals a click meant for the canvas. */
     pointer-events: none;
+    /* Nothing here is text, and a drag that starts on a handle must not paint
+       a selection across whatever it passes over. */
+    user-select: none;
 }
 
 .gizmo[data-mode="fixed"] {
@@ -20,13 +34,18 @@
    inline write. */
 .axis,
 .endCap,
-.stopHandle {
+.stopHandle,
+.badge {
     --gizmo-x: 0px;
     --gizmo-y: 0px;
 }
 
-/* The gradient line. Rotated about its left edge so the element's start point
-   is the transform origin — the same anchor the geometry computes. */
+/* The gradient line. The element is a wide transparent BAND rather than the
+   line itself: a 1px target is unhittable with a mouse, and the band is what
+   makes the axis draggable for rotation and double-clickable to add a stop.
+   Rotated about its left edge so the element's start point is the transform
+   origin — the same anchor the geometry computes; translateY(-50%) first puts
+   that left edge on the axis instead of on the band's top corner. */
 .axis {
     --gizmo-length: 0px;
     --gizmo-angle: 0deg;
@@ -34,11 +53,26 @@
     left: var(--gizmo-x);
     top: var(--gizmo-y);
     width: var(--gizmo-length);
-    height: 1px;
-    transform: rotate(var(--gizmo-angle));
+    height: 12px;
+    transform: translateY(-50%) rotate(var(--gizmo-angle));
     transform-origin: 0 50%;
+    pointer-events: auto;
+    touch-action: none;
+}
+
+.axis::before {
+    content: "";
+    position: absolute;
+    inset: 50% 0 auto 0;
+    height: 1px;
     background: var(--overlay-70);
     box-shadow: 0 0 0 1px var(--scrim-40);
+}
+
+/* Radial gradients have no direction, so their axis is not a rotation grip —
+   only the double-click-to-add-a-stop affordance stays. */
+.gizmo[data-rotatable="true"] .axis {
+    cursor: grab;
 }
 
 .endCap,
@@ -52,6 +86,17 @@
     touch-action: none;
 }
 
+/* The handles read at 13–15px but must be grabbable at mouse precision, so
+   each carries an invisible ring that widens the hit area without touching
+   the painted size. */
+.endCap::before,
+.stopHandle::before {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border-radius: 50%;
+}
+
 /* Angle handle — hollow, so it reads as "direction", not "a colour". */
 .endCap {
     width: 13px;
@@ -59,11 +104,7 @@
     border: 2px solid var(--picker-white);
     background: var(--scrim-40);
     box-shadow: 0 0 0 1px var(--scrim-50);
-    cursor: grab;
-}
-
-.endCap:active {
-    cursor: grabbing;
+    cursor: var(--cursor-rotate);
 }
 
 /* Stop handle — filled with the stop's own colour over a checkerboard, so a
@@ -78,7 +119,11 @@
         var(--picker-checkerboard);
     background-size: auto, var(--picker-checkerboard-size) var(--picker-checkerboard-size);
     box-shadow: 0 0 0 1px var(--scrim-50);
-    cursor: ew-resize;
+    cursor: grab;
+}
+
+.stopHandle:active {
+    cursor: grabbing;
 }
 
 .endCap:hover,
@@ -88,4 +133,47 @@
     box-shadow:
         0 0 0 1px var(--scrim-50),
         0 0 0 4px var(--overlay-30);
+}
+
+/* Drag shield — a viewport-covering sheet, mounted only while a handle is
+   held. Without it the cursor reverts the instant the pointer leaves the
+   handle, because the page underneath is the canvas iframe and the iframe
+   document declares its own `cursor: default`; a :active rule in THIS document
+   stops painting the moment the hot spot is over foreign content. The shield
+   cannot steal the drag: pointer capture is held by the handle, so every move
+   and the final up still route there. It sits first in the gizmo so it paints
+   BELOW the handles and never covers them. */
+.dragShield {
+    position: fixed;
+    inset: 0;
+    pointer-events: auto;
+    user-select: none;
+}
+
+.gizmo[data-drag-kind="stop"] .dragShield {
+    cursor: grabbing;
+}
+
+.gizmo[data-drag-kind="angle"] .dragShield {
+    cursor: var(--cursor-rotate);
+}
+
+/* Live read-out of the value being dragged. Shown only during a drag, because
+   the rest of the time the handle's position IS the read-out. The scrim/white
+   pair is deliberately not theme-swapped: the badge floats over arbitrary user
+   artwork, not over an editor surface. */
+.badge {
+    position: absolute;
+    left: var(--gizmo-x);
+    top: var(--gizmo-y);
+    transform: translate(-50%, calc(-100% - 14px));
+    padding: var(--space-3xs) var(--space-xs);
+    border-radius: var(--tooltip-radius);
+    background: var(--scrim-80);
+    color: var(--picker-white);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.4;
+    white-space: nowrap;
+    pointer-events: none;
 }

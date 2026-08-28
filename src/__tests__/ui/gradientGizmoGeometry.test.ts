@@ -12,7 +12,9 @@ import {
   angleFromPoint,
   gradientAxis,
   gradientDirection,
+  normalizeAngle,
   posFromPoint,
+  rotationCapPoint,
   snapAngle,
   stopPoint,
 } from '@site/canvas/gradientGizmoGeometry'
@@ -94,11 +96,68 @@ describe('angleFromPoint', () => {
   })
 })
 
+describe('rotationCapPoint', () => {
+  it('sits offset px past the axis end, along the axis direction', () => {
+    const axis = gradientAxis(RECT, 90) // horizontal: start left, end right
+    const cap = rotationCapPoint(axis, 18)
+    expect(cap.x).toBeCloseTo(axis.end.x + 18, 4)
+    expect(cap.y).toBeCloseTo(axis.end.y, 4)
+  })
+
+  it('pushes straight up for a degenerate zero-length axis', () => {
+    const axis = gradientAxis({ x: 10, y: 10, width: 0, height: 0 }, 45)
+    const cap = rotationCapPoint(axis, 18)
+    expect(cap).toEqual({ x: axis.end.x, y: axis.end.y - 18 })
+  })
+})
+
 describe('snapAngle', () => {
   it('snaps to the nearest 15deg and wraps', () => {
     expect(snapAngle(97)).toBe(90)
     expect(snapAngle(98)).toBe(105)
     expect(snapAngle(-10)).toBe(345)
     expect(snapAngle(359)).toBe(0)
+  })
+})
+
+/**
+ * The gizmo rotates by OFFSET, not by the absolute centre→pointer angle: the
+ * axis is grabbable along its whole length, and its start half points the
+ * opposite way to the gradient. Reading the angle absolutely flips the fill
+ * 180° the instant such a grab moves, so these pin the offset arithmetic the
+ * component runs (angleOffset in beginDrag + its use in flush).
+ */
+describe('rotation by pointer offset', () => {
+  const ANGLE = 90
+  const axis = gradientAxis(RECT, ANGLE)
+  /** Grab a third of the way along — on the start half, where the naive read flips. */
+  const grab = stopPoint(axis, 1 / 3)
+  const offset = ANGLE - angleFromPoint(axis.center, grab)
+
+  /** Rotate a point `degrees` clockwise on screen about the axis centre. */
+  function rotateAboutCenter(point: { x: number; y: number }, degrees: number) {
+    const radians = (degrees * Math.PI) / 180
+    const dx = point.x - axis.center.x
+    const dy = point.y - axis.center.y
+    return {
+      x: axis.center.x + dx * Math.cos(radians) - dy * Math.sin(radians),
+      y: axis.center.y + dx * Math.sin(radians) + dy * Math.cos(radians),
+    }
+  }
+
+  it('holds the angle still when the axis is grabbed short of its end', () => {
+    // The absolute read would say 270 here — the flip this offset exists to stop.
+    expect(angleFromPoint(axis.center, grab)).toBeCloseTo(270, 6)
+    expect(normalizeAngle(angleFromPoint(axis.center, grab) + offset)).toBeCloseTo(ANGLE, 6)
+  })
+
+  it('turns the gradient by exactly as far as the pointer travels', () => {
+    const moved = rotateAboutCenter(grab, 30)
+    expect(normalizeAngle(angleFromPoint(axis.center, moved) + offset)).toBeCloseTo(120, 6)
+  })
+
+  it('leaves the end cap unaffected, because it already sits on the axis direction', () => {
+    const cap = rotationCapPoint(axis, 18)
+    expect(normalizeAngle(ANGLE - angleFromPoint(axis.center, cap))).toBeCloseTo(0, 6)
   })
 })

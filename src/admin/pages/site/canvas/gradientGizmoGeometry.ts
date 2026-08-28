@@ -101,6 +101,19 @@ export function posFromPoint(axis: GradientAxis, point: GizmoPoint): number {
 }
 
 /**
+ * Where the rotation cap sits: `offset` px PAST the axis end, along the axis
+ * direction. The 100% stop handle lives exactly on the end point, so the cap
+ * must clear it or rotating always grabs the stop instead. A zero-length axis
+ * (degenerate rect) pushes the cap straight up, matching `gradientDirection(0)`.
+ */
+export function rotationCapPoint(axis: GradientAxis, offset: number): GizmoPoint {
+  if (axis.length === 0) return { x: axis.end.x, y: axis.end.y - offset }
+  const ux = (axis.end.x - axis.start.x) / axis.length
+  const uy = (axis.end.y - axis.start.y) / axis.length
+  return { x: axis.end.x + ux * offset, y: axis.end.y + uy * offset }
+}
+
+/**
  * The CSS angle that points from `center` toward `point`. Inverse of
  * `gradientDirection` — dragging an end cap rotates the gradient to follow
  * the pointer.
