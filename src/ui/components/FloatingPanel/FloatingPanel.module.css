@@ -1,0 +1,54 @@
+/* FloatingPanel — the panel's detached piece (inspector-panel.md §9).
+   Position is JS-driven: opens beside the trigger, then follows the header
+   drag. */
+
+.panel {
+    position: fixed;
+    left: var(--floating-panel-x);
+    top: var(--floating-panel-y);
+    z-index: var(--color-picker-z-index);
+    max-height: calc(100vh - 16px);
+    overflow-y: auto;
+    border: 1px solid var(--border-muted);
+    border-radius: var(--panel-radius);
+    /* Same tone as the properties panel the trigger lives in — the panel
+       reads as a detached piece of it, not a lighter foreign box. Height is
+       carried by the border and the shadow. */
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-panel);
+}
+
+/* Armed only for the snap-back after a drop. The panel must NOT animate on
+   open — it is first placed from guessed dimensions and then re-placed from
+   the measured ones, and a standing transition would turn that correction
+   into a visible slide across the screen. Pointer-following stays 1:1 for the
+   same reason. */
+.panel.gliding {
+    transition:
+        left 240ms cubic-bezier(0.22, 1, 0.36, 1),
+        top 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-s);
+    padding: var(--space-xs) var(--space-xs) 0 var(--space-s);
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+}
+
+.header:active {
+    cursor: grabbing;
+}
+
+.title {
+    overflow: hidden;
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

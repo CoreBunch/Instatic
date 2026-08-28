@@ -31,35 +31,27 @@ function expectNoSurfaceBackground(rule: string): void {
 }
 
 describe('neutral interactive chrome', () => {
-  it('uses overlay states for shared segmented controls', () => {
+  it('uses surface-step states for shared segmented controls (inspector redesign)', () => {
+    // The inspector redesign moved segmented controls from overlay tints to
+    // the surface ladder: --bg-surface-2 track, --bg-surface-4 active pill.
+    // Field fills follow the same "borderless fill on --bg-surface" rule.
     const segmentedCss = readFileSync(SEGMENTED_CONTROL_CSS, 'utf8')
     const rangeTabsCss = readFileSync(RANGE_TABS_CSS, 'utf8')
 
     const segmentedTrack = cssRule(segmentedCss, '.group')
-    const segmentedHover = cssRule(segmentedCss, '.group .segment.segment:hover')
     const segmentedActive = cssRule(
       segmentedCss,
       '.group .segment.segment[aria-pressed="true"]',
     )
-    const clearOverlay = cssRule(segmentedCss, '.group .segment .clearOverlay')
     const rangeTrack = cssRule(rangeTabsCss, '.seg')
     const rangeActive = cssRule(rangeTabsCss, '.tab[data-active="true"]')
 
-    expectBackgroundToken(segmentedTrack, '--overlay-5')
-    expectBackgroundToken(segmentedHover, '--overlay-10')
-    expectBackgroundToken(segmentedActive, '--overlay-20')
-    expectBackgroundToken(clearOverlay, '--overlay-20')
+    expectBackgroundToken(segmentedTrack, '--bg-surface-2')
+    expectBackgroundToken(segmentedActive, '--bg-surface-4')
     expectBackgroundToken(rangeTrack, '--overlay-5')
     expectBackgroundToken(rangeActive, '--overlay-20')
 
-    for (const rule of [
-      segmentedTrack,
-      segmentedHover,
-      segmentedActive,
-      clearOverlay,
-      rangeTrack,
-      rangeActive,
-    ]) {
+    for (const rule of [rangeTrack, rangeActive]) {
       expectNoSurfaceBackground(rule)
     }
   })

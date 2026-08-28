@@ -13,15 +13,68 @@
     display: inline-flex;
     align-items: stretch;
     gap: var(--space-4xs);
-    border-radius: 12px;
+    min-height: var(--control-height);
+    border-radius: var(--control-radius);
     padding: var(--space-4xs);
-    border: 1px solid var(--overlay-20);
-    background: var(--overlay-5);
+    background: var(--bg-surface-2);
 }
 
 .fullWidth {
     display: flex;
     width: 100%;
+}
+
+/* ── Tiles look (inspector redesign's ButtonGroup) ──────────────────────────
+ * A run of flat surface tiles split by 1px seams over --border-muted instead
+ * of the padded track. Content-width by default, hugging the right edge of
+ * its column; `fullWidth` stretches the segments. */
+.tiles {
+    padding: 0;
+    gap: var(--space-px);
+    margin-left: auto;
+    background: var(--border-muted);
+    overflow: hidden;
+}
+
+.tiles.fullWidth {
+    margin-left: 0;
+}
+
+.tiles .segment.segment {
+    flex: 0 0 auto;
+    min-width: var(--control-height);
+    border-radius: 0;
+    background: var(--bg-surface-2);
+    color: var(--text-muted);
+}
+
+.tiles.fullWidth .segment.segment {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.tiles .segment.segment:hover {
+    background: var(--bg-surface-3);
+    color: var(--text-bright);
+}
+
+.tiles .segment.segment[aria-pressed="true"] {
+    background: var(--bg-surface-4);
+    color: var(--text-bright);
+    box-shadow: none;
+}
+
+/* The trailing tile keeps only what its icon needs — the fullWidth stretch is
+   re-disabled or the chevron becomes an extra empty segment. */
+.tiles .segment.trailing.trailing {
+    flex: 0 0 22px;
+    width: 22px;
+    color: var(--text-subtle);
+}
+
+.tiles .segment .clearOverlay {
+    border-radius: 0;
+    background: var(--bg-surface-4);
 }
 
 /* Each segment fills available width and uses a smaller radius so it nests
@@ -33,17 +86,21 @@
     position: relative;
     flex: 1 1 0;
     min-width: 0;
-    border-radius: 8px;
+    height: auto;
+    border-radius: calc(var(--control-radius) - 3px);
     background: transparent;
+    color: var(--text-muted);
 }
 
 .group .segment.segment:hover {
-    background: var(--overlay-10);
+    background: transparent;
+    color: var(--text-bright);
 }
 
 .group .segment.segment[aria-pressed="true"] {
-    background: var(--overlay-20);
-    color: var(--text);
+    background: var(--bg-surface-4);
+    color: var(--text-bright);
+    box-shadow: 0 1px 2px var(--scrim-40);
 }
 
 .group[data-active-surface="recessed"] .segment.segment[aria-pressed="true"] {
@@ -57,8 +114,8 @@
  * matches the segment's intrinsic 26px height (size-sm Button) so the
  * trailing tile renders perfectly square. */
 .group .segment.trailing.trailing {
-    flex: 0 0 26px;
-    width: 26px;
+    flex: 0 0 var(--control-height-sm);
+    width: var(--control-height-sm);
 }
 
 .segmentContent {
@@ -82,7 +139,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 8px;
+    border-radius: calc(var(--control-radius) - 3px);
     background: var(--overlay-20);
     color: var(--text);
     opacity: 0;

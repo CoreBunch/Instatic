@@ -72,6 +72,112 @@
     );
 }
 
+.fillGlyph-image {
+    border-radius: 2px;
+    background:
+        linear-gradient(135deg, transparent 45%, var(--overlay-80) 45% 60%, transparent 60%),
+        var(--overlay-40);
+}
+
+/* --- Image fill pane ----------------------------------------------------- */
+
+.imagePane {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+}
+
+/* The source preview doubles as the pick target: the button sits centred on
+   it, so an empty stage reads as "put something here". Checkerboard behind a
+   transparent PNG; the source and its layout arrive as custom properties. */
+.imageStage {
+    --color-picker-image: none;
+    --color-picker-image-size: cover;
+    --color-picker-image-repeat: no-repeat;
+    --color-picker-image-position: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 150px;
+    border-radius: var(--radius);
+    background:
+        var(--color-picker-image) var(--color-picker-image-position) /
+            var(--color-picker-image-size) var(--color-picker-image-repeat),
+        var(--picker-checkerboard);
+    background-size: var(--color-picker-image-size), var(--picker-checkerboard-size)
+        var(--picker-checkerboard-size);
+}
+
+.imageStage[data-empty='true'] {
+    border: 1px dashed var(--overlay-20);
+    background: var(--overlay-5);
+}
+
+.imageRow {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: var(--space-2xs);
+    align-items: center;
+}
+
+.imageLabel {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+/* Anchor grid + the anchor's name, sharing one field-height row. */
+.imagePosition {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    min-width: 0;
+}
+
+.positionGrid {
+    display: grid;
+    grid-template-columns: repeat(3, 10px);
+    grid-template-rows: repeat(3, 10px);
+    gap: var(--space-px);
+    flex: 0 0 auto;
+    padding: var(--space-3xs);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-2);
+}
+
+.positionCell.positionCell {
+    width: 10px;
+    height: 10px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.positionDot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--overlay-40);
+}
+
+.positionCell:hover .positionDot {
+    background: var(--overlay-60);
+}
+
+.positionCell[aria-pressed='true'] .positionDot {
+    width: 5px;
+    height: 5px;
+    background: var(--text-bright);
+}
+
+.positionName {
+    font-size: var(--text-xs);
+    color: var(--text-subtle);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* --- Gradient stops strip ------------------------------------------------ */
 
 .stops {

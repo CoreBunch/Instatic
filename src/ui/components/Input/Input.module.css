@@ -1,25 +1,28 @@
 /* Shared form field primitive. */
 
+/* Borderless field fill (inspector redesign): --bg-surface-2 on --bg-surface,
+   hover lifts the tone, the border only appears on focus. */
 .input {
     width: 100%;
     box-sizing: border-box;
-    background: transparent;
-    border: 1px solid var(--overlay-20);
-    border-radius: var(--input-radius);
+    background: var(--bg-surface-2);
+    border: 1px solid transparent;
+    border-radius: var(--control-radius);
     color: var(--text);
     font-family: var(--font-sans);
     font-weight: 500;
     outline: none;
+    transition: background 120ms ease, border-color 120ms ease;
 }
 
 .input:hover {
-    border-color: var(--overlay-30);
+    background: var(--bg-surface-3);
 }
 
 .input:focus,
 .input:focus-within {
-    background: transparent;
-    border-color: var(--overlay-50);
+    background: var(--bg-surface-2);
+    border-color: var(--overlay-30);
 }
 
 .input:disabled {
@@ -41,19 +44,19 @@
 }
 
 .size-xs {
-    min-height: 24px;
+    min-height: var(--control-height-sm);
     padding: var(--space-4xs) var(--space-xs);
     font-size: var(--text-xs);
 }
 
 .size-sm {
-    min-height: 28px;
+    min-height: var(--control-height);
     padding: var(--space-2xs) var(--space-s);
     font-size: var(--text-xs);
 }
 
 .size-md {
-    min-height: 32px;
+    min-height: var(--control-height-lg);
     padding: var(--space-xs) var(--space-m);
     font-size: var(--text-s);
 }
@@ -87,9 +90,9 @@
     align-items: stretch;
     width: 100%;
     box-sizing: border-box;
-    background: transparent;
-    border: 1px solid var(--overlay-20);
-    border-radius: var(--input-radius);
+    background: var(--bg-surface-2);
+    border: 1px solid transparent;
+    border-radius: var(--control-radius);
     color: var(--text);
     font-family: var(--font-sans);
     overflow: hidden;
@@ -98,16 +101,16 @@
      * Without this the wrapper applies padding *and* the input applies
      * padding — nesting them and bumping the field's effective height. */
     padding: 0;
-    transition: border-color 120ms ease;
+    transition: background 120ms ease, border-color 120ms ease;
 }
 
 .inputWrapper:hover {
-    border-color: var(--overlay-30);
+    background: var(--bg-surface-3);
 }
 
 .inputWrapper:focus-within {
-    background: transparent;
-    border-color: var(--overlay-50);
+    background: var(--bg-surface-2);
+    border-color: var(--overlay-30);
 }
 
 .inputWrapper[data-disabled="true"] {
@@ -195,19 +198,29 @@
     color: var(--text-subtle);
 }
 
-/* Custom number-input spinner — replaces the browser-default ugly arrows
- * with two compact chevron buttons stacked vertically on the trailing
- * edge. Uses our editor tokens so it matches the rest of the chrome. */
+/* Number stepper (inspector redesign's `.numberfield .stepper`): a 16px
+ * column of two thin chevrons, revealed only on hover / focus so a resting
+ * row shows the value, not the controls. No borders, no fill — colour alone
+ * carries the hover state. */
+/* A field carrying the stepper is the prototype's `.numberfield`, which
+   advertises its numeric nature with the horizontal-resize cursor. */
+.inputWrapper:has(> .spinner) {
+    cursor: ew-resize;
+}
+
 .spinner {
     display: flex;
     flex: 0 0 auto;
     flex-direction: column;
-    border-left: 1px solid var(--overlay-20);
-    background: var(--overlay-5);
+    justify-content: center;
+    width: 16px;
+    opacity: 0;
+    transition: opacity 110ms ease;
 }
 
+.inputWrapper:hover .spinner,
 .inputWrapper:focus-within .spinner {
-    border-left-color: var(--overlay-50);
+    opacity: 1;
 }
 
 .spinnerButton {
@@ -215,37 +228,28 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    flex: 1;
-    width: 18px;
+    flex: 0 0 auto;
+    width: 100%;
+    height: 11px;
     min-height: 0;
     padding: 0;
     border: 0;
-    background: transparent;
+    background: none;
     color: var(--text-subtle);
     cursor: pointer;
-    transition: background 120ms ease, color 120ms ease;
-}
-
-/* The increase button reuses the (down) chevron-2 glyph, flipped. */
-.spinnerIconUp {
-    transform: rotate(180deg);
-}
-
-.spinnerButton + .spinnerButton {
-    border-top: 1px solid var(--overlay-20);
-}
-
-.inputWrapper:focus-within .spinnerButton + .spinnerButton {
-    border-top-color: var(--overlay-50);
+    transition: color 110ms ease;
 }
 
 .spinnerButton:hover {
-    background: var(--overlay-5);
-    color: var(--text);
+    color: var(--text-bright);
 }
 
-.spinnerButton:active {
-    background: var(--overlay-10);
+.spinnerButton svg {
+    display: block;
+}
+
+.spinnerButtonDown svg {
+    transform: rotate(180deg);
 }
 
 .spinnerButton:disabled {

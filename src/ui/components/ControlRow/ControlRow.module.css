@@ -3,10 +3,18 @@
 /* ── Control row wrapper ─────────────────────────────────────────────────── */
 .controlWrapper {
     display: grid;
-    grid-template-columns: 100px 1fr;
-    gap: var(--space-3xs);
+    grid-template-columns: var(--control-label-column) 1fr;
+    gap: var(--space-s);
     width: 100%;
-    min-height: 28px;
+    min-height: var(--control-height);
+    /* Panel anatomy: 100px label column. The popout interior overrides to the
+       narrow 52px variant — two widths, zero bespoke grids. */
+    --control-label-column: 100px;
+}
+
+/* Narrow variant — popout interiors (52px labels). */
+.controlWrapperNarrow {
+    --control-label-column: 52px;
 }
 
 /*
@@ -42,7 +50,10 @@
     min-height: 16px;
     color: var(--text-muted);
     font-size: var(--text-xs);
-    font-weight: 620;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .labelOverride {

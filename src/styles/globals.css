@@ -73,12 +73,29 @@
     --space-12xl: clamp(84px, calc(75.086px + 2.286vw), 108px);
 
     /* Surfaces */
-    --bg-body: #000000;
+    /* Inspector redesign: the editor chrome frame (topbar, sidebars, rails)
+       is a near-black #0d0d0e, not pure black — panels (#1b1b1b --bg-surface)
+       read as cards one step above it. */
+    --bg-body: #0d0d0e;
     --bg-surface: #1b1b1b;
     --bg-surface-2: #282828;
     --bg-surface-3: #323232;
     --bg-surface-4: #4a4a4a;
     --bg-surface-5: #605f5f;
+
+    /* Inspector-panel ramp (docs/features/inspector-panel.md §9). The panel is
+       NOT a card — it sits straight on the #0d0d0e chrome, so its fills,
+       hairlines and pressed keys keep the ΔL* they were designed with one step
+       lower than the card ramp above. Scoped to the docked panel, which
+       remaps --bg-surface-* onto these; the rest of the admin still has cards
+       and needs the lighter ramp to keep fields visible on them. */
+    --panel-surface-2: #1b1b1b;
+    --panel-surface-3: #252525;
+    --panel-surface-4: #3c3c3c;
+    --panel-line-subtle: #121212;
+    --panel-line-muted: #212121;
+    /* One accent for every "set / active / picked" signal in the panel. */
+    --panel-accent: #0099ff;
 
     /* Borders */
     --border-subtle: #1f1f1f;
@@ -193,6 +210,19 @@
     --panel-radius: 12px;
     --input-radius: 1em;
     --tooltip-radius: 6px;
+
+    /* Control scale — one height set for every field, select, segment group
+       and popout trigger (inspector redesign, phase A1). Absolute radius:
+       --input-radius's 1em gives different corners at different font sizes. */
+    --control-height-sm: 24px;
+    --control-height: 30px;
+    --control-height-lg: 36px;
+    --control-row-gap: 10px;
+    --control-radius: 8px;
+    /* PropertyRow label column — every inspector row measures its label
+       track from this. ControlRow re-declares it (100px panel / 52px narrow)
+       to scope the narrow variant to its own subtree. */
+    --control-label-column: 100px;
 
     /* Scrollbars */
     --scrollbar-size: 6px;
@@ -387,6 +417,15 @@
     --bg-surface-3: #eceff3;
     --bg-surface-4: #e1e5ea;
     --bg-surface-5: #d3d9e1;
+
+    /* Light theme has no separate panel ramp — the card ladder already reads
+       correctly on #e3e7ed, so the panel tokens alias it. */
+    --panel-surface-2: var(--bg-surface-2);
+    --panel-surface-3: var(--bg-surface-3);
+    --panel-surface-4: var(--bg-surface-4);
+    --panel-line-subtle: var(--border-subtle);
+    --panel-line-muted: var(--border-muted);
+    --panel-accent: #0369a1;
 
     /* Borders */
     --border-subtle: #eef0f3;

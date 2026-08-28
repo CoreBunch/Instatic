@@ -9,8 +9,9 @@ import {
   type Ref,
   type SelectHTMLAttributes,
 } from 'react'
-import { ChevronDown2Icon } from 'pixel-art-icons/icons/chevron-down-2'
 import { cn } from '@ui/cn'
+import type { FieldSize } from '@ui/fieldSize'
+import { CaretGlyph } from '@ui/icons/inspectorGlyphs'
 import styles from './Select.module.css'
 import {
   getInitialActiveIndex,
@@ -25,7 +26,6 @@ import { useSelectValue } from './useSelectValue'
 import { handleSelectKeyDown } from './selectKeyboard'
 import { SelectMenu } from './SelectMenu'
 
-type FieldSize = 'xs' | 'sm' | 'md'
 type TextEmphasis = 'default' | 'strong'
 
 /**
@@ -187,7 +187,7 @@ export function Select({
   //
   // The wider `menuAnchorRef` only contributes to the menu's HORIZONTAL
   // extent (width + x for left edge) via `getAnchorRect()` and the
-  // `menuSizing.width` prop — both used purely for layout.
+  // `menuSizing.minWidth` floor — both used purely for layout.
   const resolvedAnchorRef = useRef<HTMLElement | null>(null)
 
   const { menuSizing, getAnchorRect, updateMenuSizing, clearMenuSizing } = useSelectMenuAnchor({
@@ -381,7 +381,7 @@ export function Select({
       />
 
       <span aria-hidden="true" className={styles.chevron}>
-        <ChevronDown2Icon size={12} />
+        <CaretGlyph />
       </span>
 
       {open && menuSizing && (

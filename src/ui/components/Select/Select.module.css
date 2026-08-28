@@ -1,27 +1,30 @@
 /* Shared select primitive backed by the shared ContextMenu dropdown. */
 
+/* Borderless field fill (inspector redesign): --bg-surface-2 on --bg-surface,
+   hover lifts the tone, the border only appears on focus/open. */
 .select {
     position: relative;
     display: flex;
     align-items: center;
     width: 100%;
     box-sizing: border-box;
-    background: transparent;
-    border: 1px solid var(--overlay-20);
-    border-radius: var(--input-radius);
+    background: var(--bg-surface-2);
+    border: 1px solid transparent;
+    border-radius: var(--control-radius);
     color: var(--text);
     cursor: pointer;
     font-family: var(--font-sans);
+    transition: background 120ms ease, border-color 120ms ease;
 }
 
 .select:hover {
-    border-color: var(--overlay-30);
+    background: var(--bg-surface-3);
 }
 
 .select:focus-within,
 .select[data-open="true"] {
-    background: transparent;
-    border-color: var(--overlay-50);
+    background: var(--bg-surface-2);
+    border-color: var(--overlay-30);
 }
 
 .select[data-open="true"] {
@@ -86,26 +89,34 @@
     width: 16px;
 }
 
+/* 8px, the prototype's `.field.select .chevron` — the same mark the number
+   stepper uses, so every field ends in one glyph size. It flips when the
+   menu is open, so the trigger says which way the list went. */
 .chevron {
-    width: 14px;
+    width: 8px;
+    transition: transform 120ms ease;
+}
+
+[data-open="true"] > .chevron {
+    transform: rotate(180deg);
 }
 
 .size-xs {
-    min-height: 24px;
+    min-height: var(--control-height-sm);
     padding: var(--space-4xs) var(--space-xs);
     gap: var(--space-2xs);
     font-size: var(--text-xs);
 }
 
 .size-sm {
-    min-height: 28px;
+    min-height: var(--control-height);
     padding: var(--space-2xs) var(--space-s);
     gap: var(--space-xs);
     font-size: var(--text-xs);
 }
 
 .size-md {
-    min-height: 32px;
+    min-height: var(--control-height-lg);
     padding: var(--space-xs) var(--space-m);
     gap: var(--space-s);
     font-size: var(--text-s);
@@ -137,6 +148,13 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.optionTick {
+    display: inline-flex;
+    flex: none;
+    margin-left: auto;
+    color: var(--accent-3);
 }
 
 .placeholderOption .optionLabel {

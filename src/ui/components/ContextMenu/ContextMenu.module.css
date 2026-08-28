@@ -8,7 +8,10 @@
     overflow: hidden;
     padding: var(--space-3xs);
     border: 0;
-    border-radius: 16px;
+    /* A dropdown is a field's continuation, not a floating panel: the
+       prototype gives `.propmenu` / `.selectmenu` the same --control-radius
+       as the trigger they drop out of. --panel-radius stays for popouts. */
+    border-radius: var(--control-radius);
     background: var(--bg-surface-3);
     box-shadow: 0 12px 28px var(--scrim-50);
     /* Anchor the subtle scale to the menu's top edge — the menu drops down
@@ -103,7 +106,7 @@
     min-height: 28px;
     padding: 0 var(--space-m);
     gap: var(--space-m);
-    border-radius: 12px;
+    border-radius: var(--radius-sm);
     font-size: var(--text-s);
     font-weight: 560;
     color: var(--text);

@@ -10,7 +10,7 @@ The design is a **two-layer color model**: an achromatic base (surfaces, borders
 
 - **Base is achromatic; color is the layer on top.** Surfaces, borders, and default text are neutral. Color is used to convey **identity** (`--accent-1..10`) and **state** (danger, warning, success, info, canvas selection / hover). Color is never decorative — every colored pixel carries meaning.
 - **Borderless tile cards.** Dashboard widgets and equivalent surfaces sit on a darker parent (`--bg-surface`) with a 1px grid gap, no border, `--card-radius` (16px). The gap reveals the parent and reads as a divider. Hover lifts the surface tone, never the border. Canonical implementation: `src/ui/components/Widget/Widget.module.css`.
-- **Bordered transparent inputs.** Inputs have a 1px white-alpha border, transparent background, and a pill 1em radius. Focus adds an inset achromatic glow.
+- **Borderless field fills.** Inputs, selects, and swatch triggers are filled tiles: `--bg-surface-2` on `--bg-surface`, hover lifts to `--bg-surface-3`, and a 1px `--overlay-30` border appears only on focus. `--control-radius` (8px) corners. Heights come from the shared control scale: `--control-height-sm` (24px) / `--control-height` (30px) / `--control-height-lg` (36px), mapped to the `FieldSize` tiers `xs`/`sm`/`md`.
 - **Floating overlay panels.** Spotlight, popovers, and modals use direct globals: `--bg-surface`, `--overlay-10`, `--panel-radius`, `--panel-blur`, and `--shadow-panel`.
 - **Editor controls** (toolbar buttons, chips) use `--radius` (6px) for default and `--radius-sm` (3px) for tight badges.
 - **Admin appearance is token-scoped.** Settings → Preferences stores `theme`, `density`, and `textScale` in `instatic-editor-prefs`; `useEditorAppearancePreferences()` mirrors them to `data-editor-theme`, `data-editor-density`, and `data-editor-text-scale` on the document and layout roots. Light mode and text scaling are token overrides, not per-component restyles.
@@ -77,11 +77,11 @@ Parent surface  ── --bg-surface
 
 This is implemented by `Widget` (`src/ui/components/Widget/`) and `DashboardGrid` (`src/admin/pages/dashboard/components/DashboardGrid.module.css`). Use the same pattern for any equivalent tile surface.
 
-### 5. Inputs wear their borders. Cards don't.
+### 5. Fields are filled tiles. Borders mean focus.
 
-Inputs are the inverse of cards: transparent background with a 1px white-alpha border. Pill radius (1em ≈ 16px). On focus, an inset achromatic glow appears. The border is what defines the input; no fill.
+Inputs, selects, and swatch triggers are filled tiles one surface step above their panel: `--bg-surface-2` on `--bg-surface`. Hover lifts the fill to `--bg-surface-3`; a 1px `--overlay-30` border appears only on focus — at rest a field wears no border at all. Corners are `--control-radius` (8px), absolute rather than em-based so every control has the same corner regardless of font size.
 
-This split (cards = filled & borderless, inputs = unfilled & bordered) is the load-bearing visual distinction between containers and controls.
+Every field, select, segment group, and popout trigger sits on one shared height scale (`--control-height-sm` 24px / `--control-height` 30px / `--control-height-lg` 36px — the `FieldSize` tiers `xs`/`sm`/`md`), and inspector rows centre on the middle tier with a `--control-row-gap` (10px) rhythm.
 
 ### 6. Identity is a color, not a label
 
@@ -231,7 +231,8 @@ These are admin tokens. The published-site Framework engine also emits short spa
 | `--radius`    | 6px   | Default editor controls, toolbar buttons, ghost menu items   |
 | `--panel-radius`     | 12px  | Floating overlay panels (Spotlight, modals, popovers)        |
 | `--card-radius`      | 16px  | Borderless tile cards (Widget, dashboard cells, module inserter tiles) |
-| `--input-radius`     | 1em   | Pill-shaped inputs, classes / property chips                 |
+| `--input-radius`     | 1em   | Pill-shaped chips (classes / property chips) — no longer the field radius |
+| `--control-radius`   | 8px   | Fields, selects, segment groups, swatch triggers (absolute — 1em gave different corners at different font sizes) |
 | `--tooltip-radius`   | 6px   | Tooltips                                                     |
 
 Do not introduce ad-hoc radius values. Tile-card surfaces use `--card-radius`.

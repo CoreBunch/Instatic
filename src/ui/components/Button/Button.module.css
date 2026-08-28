@@ -55,23 +55,25 @@
     border-radius: 6px;
 }
 
+/* xs/sm/md ride the shared control scale so a Button lines up with an
+   Input/Select of the same tier in one row (inspector redesign, phase A1). */
 .size-xs {
-    height: 22px;
+    height: var(--control-height-sm);
     padding: 0 var(--space-xs);
-    border-radius: 8px;
+    border-radius: var(--control-radius);
     gap: var(--space-3xs);
     font-size: var(--text-2xs);
 }
 
 .size-sm {
-    height: 26px;
+    height: var(--control-height);
     padding: 0 var(--space-s);
     gap: var(--space-3xs);
     font-size: var(--text-xs);
 }
 
 .size-md {
-    height: 32px;
+    height: var(--control-height-lg);
     padding: var(--space-xs) var(--space-xl);
     gap: var(--space-2xs);
     font-size: var(--text-s);
@@ -92,13 +94,13 @@
     width: 18px;
 }
 .size-xs.iconOnly {
-    width: 26px;
+    width: var(--control-height-sm);
 }
 .size-sm.iconOnly {
-    width: 28px;
+    width: var(--control-height);
 }
 .size-md.iconOnly {
-    width: 32px;
+    width: var(--control-height-lg);
 }
 .size-lg.iconOnly {
     width: 44px;

@@ -1,4 +1,5 @@
 export { ColorPicker, type ColorPickerToken } from './ColorPicker'
+export { createEmitThrottle } from './interaction'
 export {
   formatGradient,
   gradientColorAt,

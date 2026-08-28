@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom'
 import { useEffect, useRef, type KeyboardEvent, type RefObject } from 'react'
 import { ContextMenu, ContextMenuItem, MenuSearchHeader } from '@ui/components/ContextMenu'
+import { CheckGlyph } from '@ui/icons/inspectorGlyphs'
 import styles from './Select.module.css'
 import { getOptionId, type NormalizedSelectOption } from './SelectOption'
 import type { MenuPlacement, MenuSizing } from './useSelectMenuAnchor'
@@ -148,6 +149,13 @@ export function SelectMenu({
                 </span>
               )}
               <span className={styles.optionLabel}>{option.label}</span>
+              {/* The chosen option carries a tick — the only thing that tells
+                  a menu of look-alike words which one is currently on. */}
+              {option.value === selectedValue && !option.placeholder && (
+                <span className={styles.optionTick}>
+                  <CheckGlyph />
+                </span>
+              )}
             </ContextMenuItem>
           ),
         )

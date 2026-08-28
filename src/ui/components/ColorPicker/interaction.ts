@@ -77,6 +77,48 @@ export function beginDrag(
 
 export { frameThrottle }
 
+/**
+ * Leading + trailing throttle around a heavy `emit`. The first push in a
+ * burst goes out immediately (single clicks stay instant); during a drag the
+ * downstream update (store commit + CRDT op + live canvas repaint) runs at
+ * most once per window, and `flush` delivers the last value synchronously at
+ * drag end. Local optimistic state is the caller's job — only the emission
+ * is throttled. Shared by the picker's `onChange` and the canvas gradient
+ * gizmo's store writes.
+ */
+export function createEmitThrottle(windowMs: number, emit: (value: string) => void) {
+  let timer: number | null = null
+  let trailing: string | null = null
+
+  const fire = () => {
+    if (trailing === null) {
+      timer = null
+      return
+    }
+    const value = trailing
+    trailing = null
+    emit(value)
+    timer = window.setTimeout(fire, windowMs)
+  }
+
+  return {
+    push(value: string) {
+      if (timer !== null) {
+        trailing = value
+        return
+      }
+      emit(value)
+      timer = window.setTimeout(fire, windowMs)
+    },
+    flush() {
+      if (timer !== null) window.clearTimeout(timer)
+      timer = null
+      if (trailing !== null) emit(trailing)
+      trailing = null
+    },
+  }
+}
+
 export function handleTrackKeys(
   event: KeyboardEvent<HTMLDivElement>,
   current: number,

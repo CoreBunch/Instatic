@@ -59,22 +59,24 @@
     opacity: 0.5;
 }
 
+/* Swatch triggers ride the shared control scale so they line up with a
+   field of the same tier in one row. */
 .size-xs {
-    width: 24px;
-    height: 24px;
-    border-radius: 8px;
+    width: var(--control-height-sm);
+    height: var(--control-height-sm);
+    border-radius: var(--control-radius);
 }
 
 .size-sm {
-    width: 28px;
-    height: 28px;
-    border-radius: 10px;
+    width: var(--control-height);
+    height: var(--control-height);
+    border-radius: var(--control-radius);
 }
 
 .size-md {
-    width: 34px;
-    height: 34px;
-    border-radius: var(--input-radius);
+    width: var(--control-height-lg);
+    height: var(--control-height-lg);
+    border-radius: var(--control-radius);
 }
 
 .preview {
@@ -91,52 +93,3 @@
         var(--picker-checkerboard-size) var(--picker-checkerboard-size);
 }
 
-/* Portalled, draggable picker panel. Position is JS-driven (opens beside the
-   trigger, then follows the header drag). */
-.popover {
-    position: fixed;
-    left: var(--color-picker-anchor-x);
-    top: var(--color-picker-anchor-y);
-    z-index: var(--color-picker-z-index);
-    max-height: calc(100vh - 16px);
-    overflow-y: auto;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--panel-radius);
-    /* Same surface as the properties panel the trigger lives in — the panel
-       reads as a detached piece of that panel, not a lighter foreign box. */
-    background: var(--bg-surface);
-    box-shadow: var(--shadow-panel);
-    /* Glide on programmatic re-placement (obstacle snap-back after a drop);
-       .dragging suppresses this so pointer-following stays 1:1. */
-    transition:
-        left 240ms cubic-bezier(0.22, 1, 0.36, 1),
-        top 240ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.popover.dragging {
-    transition: none;
-}
-
-.popoverHeader {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-s);
-    padding: var(--space-xs) var(--space-xs) 0 var(--space-s);
-    cursor: grab;
-    user-select: none;
-    touch-action: none;
-}
-
-.popoverHeader:active {
-    cursor: grabbing;
-}
-
-.popoverTitle {
-    overflow: hidden;
-    color: var(--text-muted);
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}

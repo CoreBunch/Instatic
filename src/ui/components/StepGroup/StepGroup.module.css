@@ -1,0 +1,37 @@
+/* StepGroup — fused − | + tiles for countable values (inspector redesign).
+ * Two surface tiles split by a 1px seam over --border-muted, on the shared
+ * control height. Doubled `.seg.seg` lifts specificity above Button's
+ * variant pairs so the tile look wins regardless of stylesheet order. */
+
+.group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-px);
+    min-height: var(--control-height);
+    background: var(--border-muted);
+    border-radius: var(--control-radius);
+    overflow: hidden;
+}
+
+.group .seg.seg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: auto;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: var(--bg-surface-2);
+    color: var(--text-muted);
+}
+
+.group .seg.seg:hover {
+    background: var(--bg-surface-3);
+    color: var(--text-bright);
+}
+
+.group .seg.seg:active {
+    background: var(--bg-surface-4);
+}

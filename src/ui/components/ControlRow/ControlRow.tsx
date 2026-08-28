@@ -30,6 +30,8 @@ interface ControlRowProps {
   inputId?: string
   /** Render the row in inline (default) or stacked layout. */
   layout?: ControlRowLayout
+  /** Narrow 52px label column — popout interiors (border/fill/shadow editors). */
+  narrow?: boolean
   /** Highlight the label as a breakpoint override. */
   isOverride?: boolean
   /** Dim the row to indicate the control is disabled. */
@@ -47,6 +49,7 @@ export function ControlRow({
   label,
   inputId,
   layout = 'inline',
+  narrow,
   isOverride,
   disabled,
   labelSuffix,
@@ -66,6 +69,7 @@ export function ControlRow({
       className={cn(
         styles.controlWrapper,
         layout === 'stacked' && styles.controlWrapperStacked,
+        narrow && styles.controlWrapperNarrow,
         !showLabelRow && styles.controlWrapperNoLabel,
         disabled && styles.controlWrapperDisabled,
       )}
