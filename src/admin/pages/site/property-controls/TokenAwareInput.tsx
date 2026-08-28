@@ -74,6 +74,12 @@ interface TokenAwareInputProps {
   onDraftClear?: () => void
   /** Side-effect fired when the input gains focus (e.g. tracking last-focused field). */
   onFocus?: () => void
+  /**
+   * Renders the field's hover-revealed ▲▼ stepper and delegates each click
+   * here. Used by dimension fields (Width / Height), whose value is free-form
+   * text but carries a numeric part worth stepping.
+   */
+  onStep?: (delta: number) => void
   fieldSize?: 'xs' | 'sm' | 'md'
   /** Aria label for the input — required when there's no visible label. */
   'aria-label': string
@@ -88,6 +94,12 @@ interface TokenAwareInputProps {
   spellCheck?: boolean
   autoComplete?: string
   disabled?: boolean
+  /**
+   * Shows the value but refuses edits — the field stays legible and
+   * selectable, unlike `disabled`. Used by a pinned inset edge, where the
+   * point is "this value is held", not "this control is unavailable".
+   */
+  readOnly?: boolean
   'data-testid'?: string
   /**
    * Render the input as a caller-positioned overlay: the wrapper uses
@@ -121,6 +133,7 @@ export function TokenAwareInput({
   onDraftChange,
   onDraftClear,
   onFocus,
+  onStep,
   fieldSize = 'sm',
   'aria-label': ariaLabel,
   className,
@@ -130,6 +143,7 @@ export function TokenAwareInput({
   spellCheck = false,
   autoComplete = 'off',
   disabled,
+  readOnly,
   'data-testid': dataTestId,
   overlay = false,
   tooltipOnOverflow = false,
@@ -252,7 +266,9 @@ export function TokenAwareInput({
         autoComplete={autoComplete}
         aria-label={ariaLabel}
         disabled={disabled}
+        readOnly={readOnly}
         data-testid={dataTestId}
+        onStep={onStep}
         className={cn(styles.input, inputClassName)}
         onFocus={() => {
           setIsEditing(true)

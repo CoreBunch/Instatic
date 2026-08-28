@@ -66,9 +66,12 @@ describe('BackgroundFillControl', () => {
     const onChangeMany = mock((_p: Partial<CSSPropertyBag>) => {})
     renderControl('', "url('/uploads/hero.jpg')", onChangeMany)
 
-    const input = screen.getByLabelText('Background color') as HTMLInputElement
-    fireEvent.change(input, { target: { value: '#00ff00' } })
-    fireEvent.blur(input)
+    // The row is `chip · value name · ×` now — a colour is typed in the
+    // picker the chip opens, not in the row itself.
+    fireEvent.click(screen.getByRole('button', { name: /fill$/i }))
+    const hex = screen.getByLabelText(/^Colour value/i) as HTMLInputElement
+    fireEvent.change(hex, { target: { value: '#00ff00' } })
+    fireEvent.blur(hex)
 
     const patch = onChangeMany.mock.calls.at(-1)?.[0]
     expect(patch?.backgroundColor).toBe('#00ff00')
@@ -79,9 +82,10 @@ describe('BackgroundFillControl', () => {
 
   it('shows the gradient, not the colour, when both are set', () => {
     renderControl('#ff0000', GRADIENT, () => {})
-    const input = screen.getByLabelText('Background color') as HTMLInputElement
-    // background-image paints over background-color, so it is the real fill.
-    expect(input.value).toBe(GRADIENT)
+    // background-image paints over background-color, so it is the real fill —
+    // and the row names the value rather than printing its CSS.
+    expect(screen.getByText('Linear')).toBeDefined()
+    expect(screen.queryByText(/ff0000/i)).toBeNull()
     cleanup()
   })
 })

@@ -1,0 +1,84 @@
+/* SectionAddMenu — the "+" in a style-section header and its property menu
+ * (the redesign's `propmenu`: search row on top, plain item rows below). */
+
+/* The plus is an ACTION, not a header ornament — text-bright, quiet hover. */
+.addButton {
+    color: var(--text-bright);
+}
+
+/* The menu is an EXPANDED TRIGGER, not a card: it takes the tone of the
+   control that opened it (docs/features/inspector-panel.md §7.1, §9). It
+   renders in a portal, outside the panel's token remap, so it names the panel
+   ramp directly. The corner radius comes from ContextMenu itself. */
+.menu {
+    background: var(--panel-surface-2);
+    border: 1px solid var(--panel-line-muted);
+}
+
+/* Search row — inline magnifier + borderless input, hairline below. */
+.searchRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    height: var(--control-height);
+    padding: 0 var(--space-m);
+    border-bottom: 1px solid var(--panel-line-muted);
+}
+
+.searchIcon {
+    display: inline-flex;
+    flex: none;
+    color: var(--text-disabled);
+}
+
+/* Strip the Input primitive's field chrome — the row is the field here. */
+.searchInput.searchInput {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    font-size: var(--text-xs);
+}
+
+.searchInput.searchInput:hover,
+.searchInput.searchInput:focus {
+    background: transparent;
+    border: 0;
+}
+
+.itemRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-s);
+    width: 100%;
+    min-width: 0;
+}
+
+.itemLabel {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.empty {
+    padding: var(--space-m);
+    color: var(--text-disabled);
+    font-size: var(--text-xs);
+    text-align: center;
+}
+
+/* A property already in the section: still listed, but inert and ticked. */
+.itemUsed.itemUsed {
+    color: var(--text-disabled);
+    cursor: default;
+}
+
+.itemTick {
+    display: inline-flex;
+    flex: none;
+    color: var(--panel-accent);
+}

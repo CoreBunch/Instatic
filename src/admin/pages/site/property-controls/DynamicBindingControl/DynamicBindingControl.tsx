@@ -27,7 +27,7 @@ import {
 import { primaryTemplateTableSlug } from '@core/templates'
 import { selectActivePage, useEditorStore } from '@site/store/store'
 import { Button } from '@ui/components/Button'
-import { CloseIcon } from 'pixel-art-icons/icons/close'
+import { RemoveXGlyph } from '@ui/icons/inspectorGlyphs'
 import { BracesIcon } from 'pixel-art-icons/icons/braces'
 import { DataBindingPicker } from '@admin/shared/DataBindingPicker'
 import { _cachedMeta, loadDataMeta } from '@admin/shared/DataBindingPicker/cache'
@@ -167,7 +167,7 @@ export function DynamicBindingControl({
             onClick={onClear}
             type="button"
           >
-            <CloseIcon size={11} aria-hidden="true" />
+            <RemoveXGlyph />
           </Button>
         </div>
       </div>

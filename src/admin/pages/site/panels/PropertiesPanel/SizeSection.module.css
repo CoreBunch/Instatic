@@ -1,0 +1,135 @@
+/* SizeSection — Width / Height rows fused with a sizing-mode select, joined
+   by a ratio-lock bracket that spans both rows (inspector redesign). */
+
+.sizeGroup {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--control-row-gap);
+}
+
+.dimensionRow {
+    display: grid;
+    grid-template-columns: var(--control-label-column) minmax(0, 1fr);
+    gap: var(--space-s);
+    align-items: center;
+    min-height: var(--control-height);
+}
+
+/* Value ⊕ mode: the mode has an 88px CEILING, not a fixed track, so it
+   shrinks in a narrow panel instead of overlapping the value field. */
+.fused {
+    display: grid;
+    grid-template-columns: minmax(76px, 1fr) minmax(0, 88px);
+    gap: var(--space-s);
+    min-width: 0;
+}
+
+.fused > * {
+    min-width: 0;
+}
+
+/* Prototype `.row > .label`: one tone whatever the state — "set" is carried
+   by the accent dot, not by brightening the text. */
+.rowLabel {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    padding-left: var(--space-2xs);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rowDot {
+    flex: none;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent-1);
+}
+
+/* Ratio lock — the bracket IS the button: two elbow arms (::before /
+   ::after) opening LEFT so the arms point at the fields they join, with the
+   padlock centred between them. */
+/* Doubled selector lifts specificity above Button.module.css's variant /
+   size pairs so the bracket keeps its own geometry and bare look. */
+.ratioLock.ratioLock {
+    position: absolute;
+    /* 14px back from the label column's right edge, like the prototype. */
+    left: calc(var(--control-label-column) - 14px);
+    /* Anchored to the SEAM between the two rows, not to 50% of the group.
+       Both coincide while the rows are equal height, but the seam stays
+       right the moment one row grows a second line — a percentage would
+       silently drift off the gap it is supposed to straddle. */
+    top: calc(var(--control-height) + var(--control-row-gap) / 2);
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 42px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: var(--text-disabled);
+    cursor: pointer;
+}
+
+.ratioLock.ratioLock:hover {
+    background: none;
+}
+
+.ratioLock::before,
+.ratioLock::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    width: 7px;
+    height: 12px;
+    border: 1px solid var(--border-strong);
+    border-right: 0;
+}
+
+.ratioLock::before {
+    top: 0;
+    border-bottom: 0;
+    border-radius: 4px 0 0 0;
+}
+
+.ratioLock::after {
+    bottom: 0;
+    border-top: 0;
+    border-radius: 0 0 0 4px;
+}
+
+/* The glyph sits above the arms and carries the panel's own backdrop so the
+   bracket line reads as broken by the padlock, not crossing through it. */
+.ratioLock svg {
+    position: relative;
+    z-index: 1;
+    display: block;
+    background: var(--panel-fade-bg);
+}
+
+.ratioLock.ratioLock:hover {
+    color: var(--text-muted);
+}
+
+.ratioLock.ratioLock[aria-disabled="true"] {
+    cursor: default;
+}
+
+.ratioLock.ratioLock[aria-pressed="true"] {
+    background: none;
+    color: var(--accent-3);
+}
+
+.ratioLock[aria-pressed="true"]::before,
+.ratioLock[aria-pressed="true"]::after {
+    border-color: var(--accent-3);
+}

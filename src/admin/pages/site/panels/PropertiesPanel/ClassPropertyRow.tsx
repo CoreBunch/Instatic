@@ -30,8 +30,7 @@ import {
 } from '@site/property-controls/tokenUtils'
 import { Button } from '@ui/components/Button'
 import { isGradient } from '@ui/components/ColorPicker'
-import { CloseIcon } from 'pixel-art-icons/icons/close'
-import { cn } from '@ui/cn'
+import { RemoveDashGlyph } from '@ui/icons/inspectorGlyphs'
 import {
   getCSSPropertyControlType,
   getCSSPropertyTokenSource,
@@ -40,6 +39,7 @@ import {
   NUMBER_TYPED_PROPS,
 } from './cssControlTypes'
 import { getFontWeightOptions } from './fontWeightOptions'
+import { stepCssLength } from './styleValueUtils'
 import styles from './ClassPropertyRow.module.css'
 
 // ---------------------------------------------------------------------------
@@ -50,6 +50,8 @@ interface ClassPropertyRowProps {
   property: keyof CSSPropertyBag
   value: string | number | undefined
   placeholder?: string | number
+  /** Override the auto-derived label (e.g. "Fill" instead of "Background color"). */
+  labelOverride?: string
   fontFamilyValue?: unknown
   /**
    * Current `background-image`. Sibling value, like `fontFamilyValue`: the
@@ -58,6 +60,17 @@ interface ClassPropertyRowProps {
    */
   backgroundImageValue?: unknown
   isSet?: boolean
+  /**
+   * Does this row have a handle that takes the WHOLE row away?
+   *
+   * Only rows added from a section's "+" do (inspector-panel.md §5, rule 1).
+   * A standing row — Fill, Radius, Overflow — cannot be removed: it belongs to
+   * the section whether or not it holds a value, and its × clears the value
+   * inside the field. Giving it a dash too would put two marks on one row for
+   * two different actions, and the dash would promise something ("remove this
+   * row") the section cannot deliver.
+   */
+  removable?: boolean
   onChange: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
   /** Applies several properties in one store commit (one undo entry). */
   onChangeMany?: (patch: Partial<CSSPropertyBag>) => void
@@ -78,9 +91,11 @@ export function ClassPropertyRow({
   property,
   value,
   placeholder,
+  labelOverride,
   fontFamilyValue,
   backgroundImageValue,
   isSet = true,
+  removable = false,
   onChange,
   onChangeMany,
   onRemove,
@@ -89,7 +104,7 @@ export function ClassPropertyRow({
 }: ClassPropertyRowProps) {
   const type = getCSSPropertyControlType(property)
   const tokenSource = getCSSPropertyTokenSource(property)
-  const label = cssPropertyLabel(String(property))
+  const label = labelOverride ?? cssPropertyLabel(String(property))
   const placeholderText = placeholder !== undefined ? String(placeholder) : undefined
   const fonts = useEditorStore((state) => state.site?.settings.fonts ?? null)
   const isNumberTyped = NUMBER_TYPED_PROPS.has(property)
@@ -220,6 +235,13 @@ export function ClassPropertyRow({
           placeholder={placeholderText}
           tokens={tokens}
           onCommit={handleTokenCommit}
+          onStep={(delta) => {
+            // Every token-source property is a length, so every one of them
+            // is worth stepping and scrubbing.
+            const base = value !== undefined ? String(value) : (placeholderText ?? '0px')
+            const next = stepCssLength(base, delta, { min: Number.NEGATIVE_INFINITY })
+            if (next) onChange(property, next)
+          }}
           onPreview={onPreview ? handleTokenPreview : undefined}
           onClearPreview={onClearPreview}
         />
@@ -328,19 +350,25 @@ export function ClassPropertyRow({
     onRemove(property)
   }
 
+  // An added row only earns its handle once it holds a value — an empty one
+  // is removed by clearing it, not by a second control.
+  const showHandle = removable && rowIsSet && property !== 'backgroundImage'
+
   return (
     <div
-      className={cn(styles.propertyRowWrap, !rowIsSet && styles.propertyRowUnset)}
+      className={styles.propertyRowWrap}
       data-state={rowIsSet ? 'set' : 'unset'}
+      data-removable={showHandle ? 'true' : undefined}
       data-testid={`css-property-row-${String(property)}`}
     >
       {/* Control renders with its own .controlWrapper — identical to module rows (PP-18) */}
       {control}
 
-      {/* Remove button: overlaid on the row's right end; revealed on hover/focus-within.
-          backgroundImage brings its own clear affordance (clicking the active
-          Image/Custom segment), and the overlay × would collide with that row. */}
-      {rowIsSet && property !== 'backgroundImage' && (
+      {/* Row handle (`.rowx`) — always visible, in the row's own trailing
+          column. It wears a DASH, not a cross: the cross clears a value and
+          sits inside the field, this takes the whole row away
+          (docs/features/inspector-panel.md §5). */}
+      {showHandle && (
         <Button
           variant="ghost"
           size="micro"
@@ -350,7 +378,7 @@ export function ClassPropertyRow({
           tooltip={`Remove ${label}`}
           className={styles.removeBtn}
         >
-          <CloseIcon size={16} color="currentColor" aria-hidden="true" />
+          <RemoveDashGlyph />
         </Button>
       )}
     </div>

@@ -1,5 +1,5 @@
-/**
- * AlignmentControl — connected icon buttons for align-items (cross axis) and
+﻿/**
+ * AlignmentControl â€” connected icon buttons for align-items (cross axis) and
  * justify-content (main axis). The icon set rotates with flex-direction so
  * cross-axis vs main-axis stays visually obvious.
  */
@@ -35,8 +35,8 @@ export function AlignmentControl({
   label,
 }: AlignmentControlProps) {
   // The icon set is keyed off the *main-axis* orientation:
-  //   - direction: row | row-reverse        → main is horizontal, cross is vertical
-  //   - direction: column | column-reverse  → main is vertical,   cross is horizontal
+  //   - direction: row | row-reverse        â†’ main is horizontal, cross is vertical
+  //   - direction: column | column-reverse  â†’ main is vertical,   cross is horizontal
   // Both MAIN and CROSS arrays are named after the direction items flow
   // (i.e. the main axis), so we just pick the matching pair.
   const isMainHorizontal =
@@ -53,6 +53,7 @@ export function AlignmentControl({
   return (
     <LabeledControl label={label} isSet={isSet}>
       <SegmentedControl
+        look="tiles"
         fullWidth
         aria-label={axis === 'main' ? 'Justify content' : 'Align items'}
         value={value}

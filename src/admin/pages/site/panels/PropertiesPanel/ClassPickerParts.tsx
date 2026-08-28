@@ -125,6 +125,13 @@ function InlineStylePill({
 
 interface SelectorPillStackProps {
   pills: readonly SelectorPillItem[]
+  /**
+   * Label of the viewport the panel is currently writing to, shown at the
+   * class bar's right edge (the prototype's `.classbar .bp`). Every edit below
+   * lands on THIS breakpoint, and that fact was previously only visible in the
+   * canvas toolbar — far from the fields it governs.
+   */
+  breakpointLabel: string
   showInlinePill: boolean
   inlineStyleEditing: boolean
   onToggleRule: (ruleId: string, active: boolean) => void
@@ -137,6 +144,7 @@ interface SelectorPillStackProps {
 
 export function SelectorPillStack({
   pills,
+  breakpointLabel,
   showInlinePill,
   inlineStyleEditing,
   onToggleRule,
@@ -146,8 +154,6 @@ export function SelectorPillStack({
   onToggleInline,
   onClearInline,
 }: SelectorPillStackProps) {
-  if (pills.length === 0 && !showInlinePill) return null
-
   return (
     <div className={styles.pillsContainer}>
       {pills.map((pill) => (
@@ -178,6 +184,9 @@ export function SelectorPillStack({
           onRemove={onClearInline}
         />
       )}
+      <span className={styles.breakpointMark} title={`Editing the ${breakpointLabel} viewport`}>
+        {breakpointLabel}
+      </span>
     </div>
   )
 }

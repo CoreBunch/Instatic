@@ -24,3 +24,27 @@ export function readString(styles: Record<string, unknown>, key: string): string
 export function hasStyleValue(value: unknown): value is string | number {
   return value !== undefined && value !== null && value !== ''
 }
+
+/**
+ * Bump the numeric part of a CSS length, leaving the unit untouched:
+ * `80%` + 1 → `81%`, `4px` − 1 → `3px`, `1.5rem` + 1 → `2.5rem`.
+ *
+ * Returns undefined for values with no numeric part (`auto`, `fit-content`,
+ * `var(--space-l)`) — a stepper must not turn a keyword into a number. A bare
+ * number gains `px`, the unit a bare CSS length would have meant anyway.
+ *
+ * `delta` is any integer, not just ±1: a Shift-drag steps by ten, and a fast
+ * scrub crosses several steps between two pointer events.
+ */
+const NUMERIC_LENGTH_RE = /^(-?\d*\.?\d+)([a-z%]*)$/i
+
+export function stepCssLength(
+  value: string,
+  delta: number,
+  { min = 0 }: { min?: number } = {},
+): string | undefined {
+  const match = NUMERIC_LENGTH_RE.exec(value.trim())
+  if (!match) return undefined
+  const next = Math.max(min, Math.round((Number(match[1]) + delta) * 100) / 100)
+  return `${next}${match[2] || 'px'}`
+}

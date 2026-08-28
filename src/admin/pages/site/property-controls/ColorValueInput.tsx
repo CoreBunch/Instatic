@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react'
-import { isGradient } from '@ui/components/ColorPicker'
+import { useEffect } from 'react'
 import { useEditorPreference } from '@site/preferences/editorPreferences'
 import { TokenizedColorField } from './TokenizedColorField'
 
@@ -23,6 +22,8 @@ interface ColorValueInputProps {
    * friends cannot, and offering it there would produce dead CSS.
    */
   gradients?: boolean
+  /** Offer the picker's Image fill tab (background fills only). */
+  images?: boolean
   /** Fires with the validated, committed value (on blur, swatch, or token pick). */
   onChange: (value: string) => void
   /**
@@ -36,17 +37,20 @@ interface ColorValueInputProps {
 }
 
 /**
- * ColorValueInput — bare, self-contained colour value editor.
+ * ColorValueInput — the inspector's colour row.
  *
- * Owns the draft-text buffer, blur validation (reverts CSS-invalid input), and
- * swatch/token commit policy around the presentational `TokenizedColorField`.
+ * Renders `TokenizedColorField` in its `swatch` look: a chip, the value's
+ * NAME, and a clear cross. There is no inline text field — typing a value and
+ * searching tokens both happen inside the picker popout the chip opens — so
+ * every colour row in the panel (Fill, Border, Shadow, Typography) reads the
+ * same regardless of what kind of paint it holds.
+ *
  * It renders NO surrounding label row, so each context supplies its own row
  * chrome: `ColorControl` wraps it in a `ControlRow`, while `BorderControl`
- * wraps it in its own `FieldRow` — keeping the colour field structurally
- * identical to its sibling width/style inputs.
+ * wraps it in its own `FieldRow`.
  *
- * (Distinct from `ColorsPanel/ColorValueField`, which wraps `TokenizedColorField`
- * directly with live-edit semantics and no draft/validation buffer.)
+ * (Distinct from `ColorsPanel/ColorValueField`, which uses the `field` look —
+ * authoring a token's value there is a typing job.)
  */
 export function ColorValueInput({
   id,
@@ -57,6 +61,7 @@ export function ColorValueInput({
   disabled,
   excludeTokenId,
   gradients = false,
+  images = false,
   onChange,
   onPreview,
   onClearPreview,
@@ -71,56 +76,24 @@ export function ColorValueInput({
     if (!hoverPreviewEnabled) onClearPreview?.()
   }, [hoverPreviewEnabled, onClearPreview])
 
-  // Track the last upstream value we adopted so we can resync local edit state
-  // when it changes (parent commit, undo, external patch, or — in BorderControl
-  // — switching the active side). React's "store info from previous renders"
-  // pattern, preferred over a useEffect+setState that would add a render pass.
-  const [text, setText] = useState(value)
-  const [lastSyncedValue, setLastSyncedValue] = useState(value)
-  if (lastSyncedValue !== value) {
-    setLastSyncedValue(value)
-    setText(value)
-  }
-
-  function handleTextBlur() {
-    const s = text.trim()
-    const isTokenReference = /^var\(\s*--[a-z0-9_-]+\s*\)$/i.test(s)
-    const cssSupportsColor =
-      typeof CSS !== 'undefined' && typeof CSS.supports === 'function'
-        ? CSS.supports('color', s)
-        : true
-    // A gradient is not a <color>, so the colour check above rejects it —
-    // accept it explicitly wherever gradients are a legal value for this
-    // field, otherwise a typed gradient would silently revert on blur.
-    if (s === '' || isTokenReference || cssSupportsColor || (gradients && isGradient(s))) {
-      onChange(s)
-    } else {
-      // Revert to last known-good value
-      setText(value)
-    }
-  }
-
-  function handleCommit(nextValue: string) {
-    setText(nextValue)
-    onChange(nextValue)
-  }
-
   return (
     <TokenizedColorField
+      look="swatch"
       id={id}
-      value={text}
+      value={value}
       disabled={disabled}
       inputLabel={ariaLabel}
       swatchLabel={swatchLabel}
-      placeholder={placeholder ?? '#000000 or rgb(...)'}
+      placeholder={placeholder}
       excludeTokenId={excludeTokenId}
       gradients={gradients}
+      images={images}
       fieldSize="sm"
       monospace
-      onTextChange={setText}
-      onTextBlur={handleTextBlur}
-      onSwatchChange={handleCommit}
-      onTokenSelect={handleCommit}
+      onTextChange={onChange}
+      onTextBlur={() => {}}
+      onSwatchChange={onChange}
+      onTokenSelect={onChange}
       onTokenPreview={previewActive ? onPreview : undefined}
       onTokenPreviewClear={previewActive ? onClearPreview : undefined}
     />

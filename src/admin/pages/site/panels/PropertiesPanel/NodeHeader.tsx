@@ -18,10 +18,17 @@ interface NodeHeaderProps {
   nodeId: string
   label: string | undefined
   moduleName: string
+  /**
+   * The HTML element this node renders as (`section`, `nav`, …), or null for
+   * modules with no single deterministic root. The prototype's `.panel-head`
+   * closes with it: the name says what the author called this thing, the tag
+   * says what it actually is in the document.
+   */
+  htmlTag: string | null
   onRename: (label: string) => void
 }
 
-export function NodeHeader({ nodeId, label, moduleName, onRename }: NodeHeaderProps) {
+export function NodeHeader({ nodeId, label, moduleName, htmlTag, onRename }: NodeHeaderProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [layerMenuOpen, setLayerMenuOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -108,6 +115,11 @@ export function NodeHeader({ nodeId, label, moduleName, onRename }: NodeHeaderPr
         >
           <EditSolidIcon size={12} aria-hidden="true" />
         </Button>
+      )}
+      {htmlTag && (
+        <span className={styles.headerNodeTag} title={`Renders as <${htmlTag}>`}>
+          {htmlTag}
+        </span>
       )}
       {layerMenuOpen && (
         <CanvasTreeLadderMenu

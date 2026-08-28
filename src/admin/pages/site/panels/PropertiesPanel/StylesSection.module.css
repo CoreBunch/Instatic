@@ -1,0 +1,111 @@
+/* StylesSection — the unified visual-surface section (inspector redesign).
+   Geometry mirrors the prototype's `.row` / `.field` / `.slider` blocks. */
+
+.row {
+    display: grid;
+    grid-template-columns: var(--control-label-column) minmax(0, 1fr);
+    gap: var(--space-s);
+    align-items: center;
+    min-height: var(--control-height);
+}
+
+/* Prototype `.row > .label`: one tone whatever the state — "set" is carried
+   by the accent dot, not by brightening the text. */
+.rowLabel {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    padding-left: var(--space-2xs);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rowDot {
+    flex: none;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent-1);
+}
+
+/* Opacity: the prototype's 88px number field, the slider takes the rest. */
+.opacityPair {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    gap: var(--space-s);
+    align-items: center;
+    min-width: 0;
+}
+
+/* The rail is painted on the track pseudo-element (the prototype's
+   `.slider .track`) rather than on the input background, so the knob centres
+   on the rail with one negative margin instead of a background nudge. */
+.opacitySlider {
+    /* Rail and knob geometry, named once: the knob's centring offset is
+       derived from them below rather than being a magic number. */
+    --opacity-rail: 3px;
+    --opacity-knob: 12px;
+    --opacity-progress: 100%;
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: var(--control-height);
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+.opacitySlider::-webkit-slider-runnable-track {
+    height: var(--opacity-rail);
+    border-radius: 2px;
+    background:
+        linear-gradient(var(--overlay-60), var(--overlay-60))
+            left center / var(--opacity-progress) 100% no-repeat,
+        var(--bg-surface-4);
+}
+
+.opacitySlider::-moz-range-track {
+    height: var(--opacity-rail);
+    border-radius: 2px;
+    background:
+        linear-gradient(var(--overlay-60), var(--overlay-60))
+            left center / var(--opacity-progress) 100% no-repeat,
+        var(--bg-surface-4);
+}
+
+.opacitySlider::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: var(--opacity-knob);
+    height: var(--opacity-knob);
+    /* Webkit top-aligns the thumb in the runnable track; pull it back by
+       half the difference so it centres on the rail. Firefox centres
+       `::-moz-range-thumb` itself, so only webkit needs the nudge. */
+    margin-top: calc((var(--opacity-rail) - var(--opacity-knob)) / 2);
+    border: 0;
+    border-radius: 50%;
+    background: var(--text-bright);
+    box-shadow: 0 1px 3px var(--scrim-40);
+}
+
+.opacitySlider::-moz-range-thumb {
+    width: var(--opacity-knob);
+    height: var(--opacity-knob);
+    border: 0;
+    border-radius: 50%;
+    background: var(--text-bright);
+    box-shadow: 0 1px 3px var(--scrim-40);
+}
+
+.opacitySlider:focus-visible {
+    outline: 1px solid var(--overlay-30);
+    outline-offset: 2px;
+    border-radius: var(--control-radius);
+}
+
+/* Radius: value field ⊕ a 68px scope pair (all corners / per corner). */

@@ -1,45 +1,41 @@
 /**
  * PositionSection — visual editor for the `position` CSS section.
  *
- * Replaces the long stack of generic ClassPropertyRow widgets for
- * position / top / right / bottom / left / zIndex with task-shaped
- * controls:
+ * Three rows, exactly as the redesign prototype draws them:
  *
- *   • PositionSwitcher  — connected `[Relative | Absolute | ▼]` segmented
- *                         control with a dropdown trail. `fixed | sticky |
- *                         static` (and any custom value) fall through to a
- *                         full-width chip + close-button layout, mirroring
- *                         DisplaySwitcher's three-state shape.
- *   • DirectionInput    — compact icon-as-label cell for one offset
- *                         (top/right/bottom/left). Four cells render in
- *                         a 2-column TRBL grid that's only revealed when
- *                         the position value actually honors offsets
- *                         (relative / absolute / fixed / sticky — i.e. not
- *                         static, not unset).
- *   • zIndex row        — always rendered as a generic ClassPropertyRow at
- *                         the bottom of the section. Stays visible even
- *                         when position is unset/static so users can
- *                         still poke at stacking context the rare cases
- *                         it matters outside positioning.
+ *   Type    [ Relative              ▾ ]
+ *   Inset   [ T auto ] [ R auto ]
+ *           [ B auto ] [ L auto ]
+ *   Z Index [ 10 ] [ − | + ]
  *
- * Reuses chip / track styles from LayoutSection.module.css so the visual
- * vocabulary stays in one place — `displayRow`, `displayChipGroup`, etc.
+ *   • Type    — a plain full-width select. The prototype uses `.field select`
+ *               here (not the `.buttongroup` the Layout section's Type row
+ *               gets), so every position keyword sits in one list. The
+ *               leading "Default" entry clears the property.
+ *   • Inset   — the prototype's inset box: the Spacing widget's bands with a
+ *               pinbox in the middle (see InsetBoxControl)
+ *               inside the control column, each with its T / R / B / L tag at
+ *               the field's leading edge. Revealed only when the position
+ *               value actually honours offsets (relative / absolute / fixed /
+ *               sticky — i.e. not static, not unset).
+ *   • Z Index — number field + StepGroup − | + (a countable value, per the
+ *               redesign's stepping rule). Stays visible even when position
+ *               is unset/static: stacking context can matter on flex and grid
+ *               items too.
+ *
+ * Row chrome comes from LayoutSection.module.css so the two sections share
+ * one visual vocabulary.
  */
 
-import type { IconComponent } from 'pixel-art-icons/types'
+import { useState } from 'react'
 import type { CSSPropertyBag } from '@core/page-tree'
-import { Button } from '@ui/components/Button'
-import { CloseIcon } from 'pixel-art-icons/icons/close'
-import { ArrowBarUpIcon } from 'pixel-art-icons/icons/arrow-bar-up'
-import { ArrowBarRightIcon } from 'pixel-art-icons/icons/arrow-bar-right'
-import { ArrowBarDownIcon } from 'pixel-art-icons/icons/arrow-bar-down'
-import { ArrowBarLeftIcon } from 'pixel-art-icons/icons/arrow-bar-left'
-import { ClassPropertyRow } from './ClassPropertyRow'
-import { DropdownSwitcher } from './DropdownSwitcher'
-import { TokenAwareInput } from '@site/property-controls/TokenAwareInput'
-import { useSpacingTokens, type Token } from '@site/property-controls/tokenUtils'
+import { Input } from '@ui/components/Input'
+import { Select } from '@ui/components/Select'
+import { StepGroup } from '@ui/components/StepGroup'
+import { LabeledControl } from './LayoutSection/LabeledControl'
 import { getCSSPropertyDefaultValue } from './cssControlTypes'
 import { hasStyleValue, readString } from './styleValueUtils'
+import { InsetBoxControl } from './SpacingBoxControl/InsetBoxControl'
 import styles from './LayoutSection.module.css'
 
 // ---------------------------------------------------------------------------
@@ -57,17 +53,28 @@ interface PositionSectionProps {
   onClearProperty: (property: keyof CSSPropertyBag) => void
   /**
    * Patch-shaped hover-preview channel (see StyleRuleComposer.handlePreview).
-   * Forwarded to the position dropdown, the offset token inputs, and the
-   * z-index row so hovering a suggestion previews on the canvas.
+   * Forwarded to the offset token inputs so hovering a suggestion previews on
+   * the canvas.
    */
   onPreview?: (patch: Partial<CSSPropertyBag>) => void
   onClearPreview?: () => void
 }
 
-/** Position values that honor top/right/bottom/left and reveal the
- *  directions block. `static` is intentionally excluded because static
- *  elements ignore those offsets. */
+/** Position values that honor top/right/bottom/left and reveal the Inset row.
+ *  `static` is intentionally excluded because static elements ignore those
+ *  offsets. */
 const POSITIONED_VALUES = new Set(['relative', 'absolute', 'fixed', 'sticky'])
+
+const POSITION_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'static', label: 'Static' },
+  { value: 'relative', label: 'Relative' },
+  { value: 'absolute', label: 'Absolute' },
+  { value: 'fixed', label: 'Fixed' },
+  { value: 'sticky', label: 'Sticky' },
+]
+
+/** The four offsets the Inset box edits — read here only for the set-dot. */
+const INSET_SIDES = ['top', 'right', 'bottom', 'left'] as const
 
 // ---------------------------------------------------------------------------
 // PositionSection
@@ -86,13 +93,6 @@ export function PositionSection({
   const position = readString(currentStyles, 'position')
   const positionIsActive = position != null && POSITIONED_VALUES.has(position)
 
-  // Per-property adapter over the patch-shaped preview channel, used by the
-  // offset token inputs and the z-index row (each owns a single property).
-  const previewProperty = onPreview
-    ? (property: keyof CSSPropertyBag, value: string | number | undefined) =>
-        onPreview({ [property]: value ?? null } as Partial<CSSPropertyBag>)
-    : undefined
-
   const zIndexStored = storedStyles.zIndex
   const zIndexIsSet = hasStyleValue(zIndexStored)
   const zIndexCurrent = currentStyles.zIndex
@@ -100,186 +100,131 @@ export function PositionSection({
     ? zIndexCurrent
     : getCSSPropertyDefaultValue('zIndex')
 
-  // Spacing tokens drive the autocomplete dropdown on each offset input —
-  // same vocabulary the SpacingBoxControl side inputs use, surfaced via
-  // the shared TokenAwareInput primitive.
-  const spacingTokens = useSpacingTokens()
+  const insetIsSet = INSET_SIDES.some((property) => hasStyleValue(storedStyles[property]))
 
   return (
     <>
-      <DropdownSwitcher
-        property="position"
-        value={position}
-        primarySegments={POSITION_PRIMARY_SEGMENTS}
-        allOptions={POSITION_OPTIONS}
-        onChange={(v) => onChange('position', v)}
-        onClear={() => onClearProperty('position')}
-        onPreview={onPreview ? (v) => onPreview({ position: v } as Partial<CSSPropertyBag>) : undefined}
-        onClearPreview={onClearPreview}
-      />
+      <div data-testid="css-position-switcher" data-position-value={position ?? ''}>
+        <LabeledControl label="Type" isSet={hasStyleValue(storedStyles.position)}>
+          <Select
+            fieldSize="sm"
+            aria-label="Position"
+            value={position ?? ''}
+            onChange={(event) => {
+              const next = event.target.value
+              if (next === '') onClearProperty('position')
+              else onChange('position', next)
+            }}
+          >
+            <option value="">Default</option>
+            {POSITION_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </LabeledControl>
+      </div>
       {positionIsActive && (
-        <div className={styles.positionDirectionsGrid}>
-          <DirectionInput
-            property="top"
-            icon={ArrowBarUpIcon}
-            ariaLabel="Top offset"
-            storedValue={storedStyles.top}
-            currentValue={currentStyles.top}
-            tokens={spacingTokens}
+        <LabeledControl label="Inset" isSet={insetIsSet}>
+          <InsetBoxControl
+            storedStyles={storedStyles}
+            currentStyles={currentStyles}
             onChange={onChange}
-            onClear={onClearProperty}
-            onPreview={previewProperty}
+            onPreview={onPreview}
             onClearPreview={onClearPreview}
           />
-          <DirectionInput
-            property="right"
-            icon={ArrowBarRightIcon}
-            ariaLabel="Right offset"
-            storedValue={storedStyles.right}
-            currentValue={currentStyles.right}
-            tokens={spacingTokens}
-            onChange={onChange}
-            onClear={onClearProperty}
-            onPreview={previewProperty}
-            onClearPreview={onClearPreview}
-          />
-          <DirectionInput
-            property="bottom"
-            icon={ArrowBarDownIcon}
-            ariaLabel="Bottom offset"
-            storedValue={storedStyles.bottom}
-            currentValue={currentStyles.bottom}
-            tokens={spacingTokens}
-            onChange={onChange}
-            onClear={onClearProperty}
-            onPreview={previewProperty}
-            onClearPreview={onClearPreview}
-          />
-          <DirectionInput
-            property="left"
-            icon={ArrowBarLeftIcon}
-            ariaLabel="Left offset"
-            storedValue={storedStyles.left}
-            currentValue={currentStyles.left}
-            tokens={spacingTokens}
-            onChange={onChange}
-            onClear={onClearProperty}
-            onPreview={previewProperty}
-            onClearPreview={onClearPreview}
-          />
-        </div>
+        </LabeledControl>
       )}
-      {/* z-index row — always visible inside the section. Stacking context
-          can matter even on otherwise non-positioned elements (e.g. flex
-          items, grid items) so the row stays available regardless of the
-          current position keyword. */}
-      <ClassPropertyRow
+      <ZIndexRow
         key={`${activeTab}-zIndex`}
-        property="zIndex"
-        value={zIndexIsSet ? (zIndexStored as string | number) : undefined}
-        placeholder={!zIndexIsSet ? zIndexFallback : undefined}
         isSet={zIndexIsSet}
+        storedValue={zIndexStored}
+        fallback={zIndexFallback}
         onChange={onChange}
         onRemove={onRemove}
-        onPreview={previewProperty}
-        onClearPreview={onClearPreview}
       />
     </>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Position switcher config — Relative | Absolute + dropdown of every value
+// ZIndexRow — number field + StepGroup
 // ---------------------------------------------------------------------------
 
-const POSITION_OPTIONS = ['static', 'relative', 'absolute', 'fixed', 'sticky'] as const
-
-const POSITION_PRIMARY_SEGMENTS = [
-  {
-    value: 'relative',
-    label: 'Relative',
-    ariaLabel: 'Position relative',
-    tooltip: 'position: relative',
-  },
-  {
-    value: 'absolute',
-    label: 'Absolute',
-    ariaLabel: 'Position absolute',
-    tooltip: 'position: absolute',
-  },
-] as const
-
-// ---------------------------------------------------------------------------
-// DirectionInput — icon-as-label numeric/text input for top/right/bottom/left
-// ---------------------------------------------------------------------------
-
-interface DirectionInputProps {
-  property: keyof CSSPropertyBag
-  icon: IconComponent
-  ariaLabel: string
+interface ZIndexRowProps {
+  isSet: boolean
   storedValue: unknown
-  currentValue: unknown
-  /** Spacing tokens to suggest in the autocomplete dropdown. */
-  tokens: ReadonlyArray<Token>
+  fallback: unknown
   onChange: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
-  onClear: (property: keyof CSSPropertyBag) => void
-  /** Per-property hover / as-you-type preview adapter. */
-  onPreview?: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
-  onClearPreview?: () => void
+  onRemove: (property: keyof CSSPropertyBag) => void
 }
 
-function DirectionInput({
-  property,
-  icon: DirectionIcon,
-  ariaLabel,
-  storedValue,
-  currentValue,
-  tokens,
-  onChange,
-  onClear,
-  onPreview,
-  onClearPreview,
-}: DirectionInputProps) {
-  const isSet = hasStyleValue(storedValue)
-  const placeholder = !isSet
-    ? hasStyleValue(currentValue)
-      ? String(currentValue)
-      : 'auto'
-    : undefined
+/** Digits with an optional leading minus — the only draft a z-index accepts. */
+const Z_INDEX_DRAFT_RE = /^-?\d*$/
+
+function ZIndexRow({ isSet, storedValue, fallback, onChange, onRemove }: ZIndexRowProps) {
+  // Lexical drafts (`-`, empty) survive while typing; finite values persist
+  // live as numbers — same contract as the generic number-typed rows.
+  const [draft, setDraft] = useState<string | null>(null)
+  // Imported documents (HTML `style=""`, imported stylesheets) store z-index
+  // as the string CSS gave them — read both shapes; edits re-store a number.
+  const storedNumber = toFiniteNumber(storedValue)
+
+  const commit = (raw: string) => {
+    const trimmed = raw.trim()
+    if (trimmed === '') {
+      if (isSet) onRemove('zIndex')
+      return
+    }
+    const parsed = Number(trimmed)
+    if (Number.isFinite(parsed)) onChange('zIndex', Math.trunc(parsed))
+  }
 
   return (
-    <div
-      className={styles.directionCell}
-      data-state={isSet ? 'set' : 'unset'}
-      data-testid={`css-direction-input-${String(property)}`}
-    >
-      <span className={styles.directionIcon} aria-hidden="true">
-        <DirectionIcon size={14} />
-      </span>
-      <TokenAwareInput
-        aria-label={ariaLabel}
-        value={isSet ? String(storedValue) : undefined}
-        placeholder={placeholder}
-        tokens={tokens}
-        onCommit={(resolved) => onChange(property, resolved)}
-        onPreview={onPreview ? (resolved) => onPreview(property, resolved) : undefined}
-        onClearPreview={onClearPreview}
-        className={styles.directionInput}
-      />
-      {isSet && (
-        <Button
-          variant="ghost"
-          size="micro"
-          iconOnly
-          aria-label={`Clear ${ariaLabel}`}
-          tooltip={`Clear ${ariaLabel.toLowerCase()}`}
-          onClick={() => onClear(property)}
-          className={styles.directionClearBtn}
-        >
-          <CloseIcon size={12} color="currentColor" />
-        </Button>
-      )}
+    <div data-testid="css-property-row-zIndex" data-state={isSet ? 'set' : 'unset'}>
+      <LabeledControl label="Z Index" isSet={isSet}>
+        <div className={styles.trackDuo}>
+          <Input
+            aria-label="Z index"
+            fieldSize="sm"
+            inputMode="numeric"
+            value={draft ?? (storedNumber !== null ? String(storedNumber) : '')}
+            placeholder={!isSet ? String(fallback) : undefined}
+            onFocus={() => setDraft(storedNumber !== null ? String(storedNumber) : '')}
+            onChange={(event) => {
+              // Numeric field: anything but an integer draft is refused, so
+              // stray letters never appear in the value.
+              if (!Z_INDEX_DRAFT_RE.test(event.target.value.trim())) return
+              setDraft(event.target.value)
+              commit(event.target.value)
+            }}
+            onBlur={(event) => {
+              commit(event.target.value)
+              setDraft(null)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') (event.target as HTMLInputElement).blur()
+            }}
+          />
+          <StepGroup
+            decreaseLabel="Lower z-index"
+            increaseLabel="Raise z-index"
+            onStep={(delta) => onChange('zIndex', (storedNumber ?? 0) + delta)}
+          />
+        </div>
+      </LabeledControl>
     </div>
   )
+}
+
+/** Accept a number or a numeric string ("7") — anything else is null. */
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? Math.trunc(parsed) : null
+  }
+  return null
 }
 

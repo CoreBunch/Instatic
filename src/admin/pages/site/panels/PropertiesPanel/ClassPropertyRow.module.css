@@ -1,67 +1,67 @@
 /* ClassPropertyRow — unified CSS property row (Phase 3 / Task #464 / Spec #671).
    Wraps existing PropertyControl components so the row anatomy is byte-identical
-   to module property rows (PP-18). Only adds the remove-button overlay. */
+   to module property rows (PP-18). Only adds the remove affordance. */
 
-/* ── Outer wrapper (position:relative for the remove button overlay) ──────── */
 .propertyRowWrap {
     position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
     color: var(--text);
-    --class-remove-row-center: 14px;
-    --class-remove-button-size: 22px;
+}
+
+/* A row that shows the remove dash opens a trailing column for it — the
+   prototype's `.row[data-added="true"]`. Rows without a dash stay single
+   column and use the section's full width. */
+.propertyRowWrap[data-removable="true"] {
+    grid-template-columns: minmax(0, 1fr) var(--control-height);
+    gap: var(--space-s);
 }
 .propertyRowWrap label {
     color: var(--text);
 }
 
-.propertyRowWrap[data-state="set"] {
-    box-sizing: border-box;
+/* Set-state dot — a 5px accent dot before the label marks properties that
+   hold a value, matching the inspector redesign's row anatomy. */
+.propertyRowWrap[data-state="set"] :global(label)::before {
+    content: "";
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    margin-right: var(--space-2xs);
+    border-radius: 50%;
+    background: var(--accent-1);
+    vertical-align: 1px;
 }
 
-.propertyRowUnset {
-    --class-row-label-color: var(--text-subtle);
-}
+/* No unset tone. The prototype's `.row > .label` is `--text-muted` whatever
+   the state (index.html:376) and the accent dot is the ONLY set-signal — the
+   four visual sections already work that way, so dimming here split the panel
+   into two greys, worst where a generic row sits next to a section's own. */
 
-.propertyRowUnset :global(label) {
-    color: var(--class-row-label-color);
-}
-
-/* ── Remove button — overlays the right end of the row ───── */
-/* Hidden by default; revealed on row hover or keyboard focus-within (WCAG 2.1.1) */
-.removeBtn {
-    position: absolute;
-    top: calc(
-        var(--class-remove-row-center) - (var(--class-remove-button-size) / 2)
-    );
-    /* Right end of the row (over the input's tail), revealed on hover —
-       matches the "hover the row, × appears on the right" pattern. */
-    right: var(--space-2xs);
-    z-index: 2;
-    opacity: 0;
-    pointer-events: none;
-    transition:
-        opacity 100ms ease,
-        background-color 100ms ease,
-        color 100ms ease;
-}
-
-/* Bare × glyph — no pill, ring, or surface behind it (matches the media
-   asset card's dismiss ×). Colour alone carries the hover state. */
+/* ── Remove cross — the redesign's `rowx` ─────────────────────────────────
+   Always visible (removal must not be a secret found by hovering); the
+   square background appears only under the cursor, as target confirmation.
+   It occupies the row's own trailing grid column, so it never overhangs the
+   section and rows without one keep the full width. Top-aligned so a stacked
+   multi-line row anchors the cross to its first line. */
 .removeBtn.removeBtn {
-    width: var(--class-remove-button-size);
-    height: var(--class-remove-button-size);
-    background: transparent;
-    border: none;
-    color: var(--text-subtle);
+    align-self: start;
+    width: var(--control-height);
+    height: var(--control-height);
+    border: 0;
+    border-radius: var(--control-radius);
+    background: none;
+    color: var(--text-bright);
+    transition: background 100ms ease;
 }
 
+/* The handle stands on the bare panel, so hover gives it a box to land in:
+   field fill + hairline, per inspector-panel.md §5. The in-field × gets no
+   box — its field already lightens under the cursor. */
 .removeBtn.removeBtn:hover,
 .removeBtn.removeBtn:focus-visible {
-    background: transparent;
-    color: var(--text);
-}
-
-.propertyRowWrap:hover .removeBtn,
-.propertyRowWrap:focus-within .removeBtn {
-    opacity: 1;
-    pointer-events: auto;
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border-muted);
+    color: var(--text-bright);
 }

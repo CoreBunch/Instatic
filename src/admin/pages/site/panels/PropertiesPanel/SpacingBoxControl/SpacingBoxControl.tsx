@@ -2,29 +2,23 @@
  * SpacingBoxControl — visual box-model editor for padding & margin.
  *
  * Replaces the verbose 10-row stack (padding, paddingTop/Right/Bottom/Left,
- * margin, marginTop/Right/Bottom/Left) with a unified, token-aware widget:
+ * margin, marginTop/Right/Bottom/Left) with the prototype's `.spacebox`:
+ * two nested, borderless bands over a field-like core.
  *
- *   ┌─────────────── Margin ────────────────┐
- *   │  \           [ md ]            /       │
- *   │    \                         /         │
- *   │      ┌─── Padding ────┐                │
- *   │ [sm] │  \   [md]   /  │   [sm]         │
- *   │      │ [m]    \   /   │                │
- *   │      │           X    │                │
- *   │      │ [m]    /  \    │                │
- *   │      │  /  [md]    \  │                │
- *   │      └────────────────┘                │
- *   │    /                         \         │
- *   │  /           [ md ]            \       │
- *   └────────────────────────────────────────┘
+ *   ┌──── MARGIN ──────────────────────────┐
+ *   │                 24                    │
+ *   │    ┌──── PADDING ───────────────┐     │
+ *   │ 24 │ 16  ┌──────────────┐   16  │ 24  │
+ *   │    │     └──────────────┘       │     │
+ *   │    │             16             │     │
+ *   │    └────────────────────────────┘     │
+ *   │                 24                    │
+ *   └───────────────────────────────────────┘
  *
- * Outer dashed rectangle = margin, inner solid rectangle = padding,
- * each crossed by corner-to-corner diagonals (dashed for margin, solid
- * for padding). The widget is locked to a 4:3 aspect ratio with the
- * padding box centred at exactly 50% of the margin box, so the diagonals
- * always pass through the padding's outer corners — classic Chrome
- * DevTools box-model look. Side inputs sit at the 12.5% line of each
- * axis so they're geometrically centred in their respective segments.
+ * Nothing is drawn: the margin band, the padding band and the core are three
+ * steps on the surface scale, and each side's hit zone is a trapezoid whose
+ * bevel is its own fill. Band thickness is absolute, so the widget's height
+ * follows the core and the top and bottom bands always measure the same.
  *
  * Each side input is token-aware: typing `m` (or any step label) auto-
  * completes to the matching framework spacing variable (`var(--space-m)`).
@@ -45,7 +39,7 @@ import { useId, useState } from 'react'
 import type { CSSPropertyBag } from '@core/page-tree'
 import { Button } from '@ui/components/Button'
 import { LinkIcon } from 'pixel-art-icons/icons/link'
-import { CloseIcon } from 'pixel-art-icons/icons/close'
+import { RemoveXGlyph } from '@ui/icons/inspectorGlyphs'
 import { cn } from '@ui/cn'
 import { TokenAwareInput } from '@site/property-controls/TokenAwareInput'
 import { useSpacingTokens, type Token } from '@site/property-controls/tokenUtils'
@@ -342,9 +336,9 @@ function SpacingBox({
             aria-pressed={linked}
             aria-label={linked ? `Unlink ${label} sides` : `Link all ${label} sides`}
             tooltip={linked ? 'Linked — edits all four sides' : 'Split — edit each side separately'}
-            className={cn(styles.linkBtn, linked && styles.linkBtnActive)}
+            className={styles.headerBtn}
           >
-            <LinkIcon size={12} aria-hidden="true" />
+            <LinkIcon size={11} aria-hidden="true" />
           </Button>
           <Button
             type="button"
@@ -355,88 +349,42 @@ function SpacingBox({
             disabled={setCount === 0}
             aria-label={`Clear ${label}`}
             tooltip={`Clear ${label}`}
-            className={styles.clearBtn}
+            className={styles.headerBtn}
           >
-            <CloseIcon size={12} aria-hidden="true" />
+            <RemoveXGlyph />
           </Button>
         </div>
       </div>
 
-      <div className={styles.boxBody}>
-        {/* Corner-to-corner diagonals — dashed for margin (echoes the
-         *  dashed margin border), solid for padding. The padding box's
-         *  opaque-ish background covers the margin diagonals where they
-         *  overlap, producing a continuous "diagonal that turns dashed
-         *  beyond the padding boundary" effect. */}
-        <BoxDiagonals dashed={box === 'margin'} />
+      {SIDES.map((side) => (
+        <SideInput
+          key={side}
+          box={box}
+          side={side}
+          value={linked && linkedDraft !== null ? linkedDraft : state.effective[side]}
+          placeholder={fallback.effective[side]}
+          isSet={state.storedFlags[side]}
+          isLinkedTarget={linked && state.isUniform}
+          isFocusedTarget={focused === side}
+          tokens={tokens}
+          onCommit={(resolved) => onSideValue(side, resolved)}
+          onFocus={() => setFocused(side)}
+          onPreview={(resolved) => onSidePreview(side, resolved)}
+          onDraftChange={onSideDraft}
+          onDraftClear={onClearDraft}
+          onClearPreview={onClearPreview}
+        />
+      ))}
 
-        {SIDES.map((side) => (
-          <SideInput
-            key={side}
-            box={box}
-            side={side}
-            value={linked && linkedDraft !== null ? linkedDraft : state.effective[side]}
-            placeholder={fallback.effective[side]}
-            isSet={state.storedFlags[side]}
-            isLinkedTarget={linked && state.isUniform}
-            isFocusedTarget={focused === side}
-            tokens={tokens}
-            onCommit={(resolved) => onSideValue(side, resolved)}
-            onFocus={() => setFocused(side)}
-            onPreview={(resolved) => onSidePreview(side, resolved)}
-            onDraftChange={onSideDraft}
-            onDraftClear={onClearDraft}
-            onClearPreview={onClearPreview}
-          />
-        ))}
-
-        {/* Centre cell — only rendered when there's a nested box to host
-         *  (margin holds the padding box). Padding has nothing inside its
-         *  centre — the diagonals do the visual work and free the space
-         *  for the side inputs to read clearly. */}
-        {nested && <div className={styles.boxInner}>{nested}</div>}
-      </div>
+      {/* The band's only in-flow child, so the bands measure from it: the
+          margin band holds the padding band, the padding band holds the
+          core. The core is what gives the widget its height. */}
+      {nested ? (
+        <div className={styles.boxInner}>{nested}</div>
+      ) : (
+        <div className={styles.boxCore} />
+      )}
     </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// BoxDiagonals — SVG overlay drawing two corner-to-corner diagonals.
-// preserveAspectRatio="none" stretches the lines to the actual box size so
-// they reach exact corners. Stroke width is held in CSS.
-//
-// allowed: non-icon SVG (geometric overlay)
-// This is a layout overlay — two diagonal lines that scale with the
-// box and switch between solid/dashed for the padding/margin layers.
-// It is not iconography (Constraint #348 is about icons) and there is
-// no equivalent in the pixel-art-icons catalog. CSS gradients can't
-// produce a true 1px non-scaling stroke or scalable dashed diagonals,
-// so SVG is the right primitive here.
-// ---------------------------------------------------------------------------
-
-function BoxDiagonals({ dashed }: { dashed: boolean }) {
-  return (
-    <svg
-      className={styles.boxDiagonals}
-      aria-hidden="true"
-      preserveAspectRatio="none"
-      viewBox="0 0 100 100"
-    >
-      <line
-        x1="0"
-        y1="0"
-        x2="100"
-        y2="100"
-        className={cn(styles.diagonal, dashed && styles.diagonalDashed)}
-      />
-      <line
-        x1="100"
-        y1="0"
-        x2="0"
-        y2="100"
-        className={cn(styles.diagonal, dashed && styles.diagonalDashed)}
-      />
-    </svg>
   )
 }
 

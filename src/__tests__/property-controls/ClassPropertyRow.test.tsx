@@ -11,7 +11,7 @@ describe('ClassPropertyRow remove button layout', () => {
     expect(css).not.toMatch(/\.propertyRowWrap\[data-state="set"\]\s*\{[^}]*padding-right:/s)
   })
 
-  it('overlays the remove button on the left label column with a fade', async () => {
+  it('gives the always-visible remove cross (rowx) its own trailing row column', async () => {
     const { readFileSync } = await import('fs')
     const css = readFileSync(
       new URL('../../admin/pages/site/panels/PropertiesPanel/ClassPropertyRow.module.css', import.meta.url),
@@ -21,22 +21,32 @@ describe('ClassPropertyRow remove button layout', () => {
       new URL('../../ui/components/ControlRow/ControlRow.module.css', import.meta.url),
       'utf-8',
     )
-    const compactCss = css.replace(/\s+/g, '')
-    const controlLabelColumn = controlCss.match(/grid-template-columns:\s*(\d+px)\s+1fr/)?.[1]
-
-    expect(controlLabelColumn).toBe('100px')
-    expect(css).toMatch(/--class-remove-label-column:\s*100px/)
-    expect(css).toMatch(/--class-remove-row-center:\s*14px/)
-    expect(css).toMatch(/--class-remove-button-size:\s*22px/)
-    expect(css).toMatch(/--class-remove-fade-width:\s*36px/)
-    expect(css).toMatch(/\.propertyRowWrap\[data-state="set"\]::after\s*\{[^}]*linear-gradient/s)
-    expect(compactCss).toContain(
-      '.removeBtn{position:absolute;top:calc(var(--class-remove-row-center)-(var(--class-remove-button-size)/2));left:calc(var(--class-remove-label-column)-var(--class-remove-button-size)-4px)',
+    const sectionCss = readFileSync(
+      new URL('../../ui/components/Section/Section.module.css', import.meta.url),
+      'utf-8',
     )
-    expect(css).toMatch(/\.removeBtn\.removeBtn\s*\{[^}]*width:\s*var\(--class-remove-button-size\)/s)
-    expect(css).toMatch(/\.removeBtn\.removeBtn\s*\{[^}]*height:\s*var\(--class-remove-button-size\)/s)
-    expect(css).not.toMatch(/\.removeBtn\s*\{[^}]*right:/s)
-    expect(css).not.toMatch(/\.removeBtn\s*\{[^}]*translateY\(-50%\)/s)
+
+    // Row anatomy comes from ControlRow: a --control-label-column column
+    // (100px in the panel, 52px in the popout narrow variant).
+    expect(controlCss).toMatch(/grid-template-columns:\s*var\(--control-label-column\)\s+1fr/)
+    expect(controlCss).toMatch(/--control-label-column:\s*100px/)
+    expect(controlCss).toMatch(/--control-label-column:\s*52px/)
+
+    // The section body claims its full inner width — it must NOT pay a
+    // standing inset for a dash most rows don't have (prototype `.sec-body`).
+    expect(sectionCss).toMatch(/\.sectionFlush\s+\.sectionContent\s*\{[^}]*padding-right:\s*0/s)
+
+    // Instead, only a removable row opens a trailing column for the cross —
+    // the prototype's `.row[data-added="true"]`.
+    expect(css).toMatch(
+      /\.propertyRowWrap\[data-removable="true"\]\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+var\(--control-height\)/s,
+    )
+    // The cross sits in that column, not overhanging the section.
+    expect(css).not.toMatch(/\.removeBtn\.removeBtn\s*\{[^}]*position:\s*absolute/s)
+    expect(css).toMatch(/\.removeBtn\.removeBtn\s*\{[^}]*width:\s*var\(--control-height\)/s)
+    expect(css).toMatch(/\.removeBtn\.removeBtn\s*\{[^}]*height:\s*var\(--control-height\)/s)
+    // Always visible — no hover-reveal opacity dance.
+    expect(css).not.toMatch(/\.removeBtn[^{]*\{[^}]*opacity:\s*0/s)
   })
 
   it('uses a neutral remove affordance instead of the destructive danger hover style', async () => {
@@ -50,15 +60,16 @@ describe('ClassPropertyRow remove button layout', () => {
       'utf-8',
     )
 
-    // Neutral affordance: no danger hover variant, default color is the
-    // secondary-text token, hover shifts to the primary-text token. The exact
-    // hover background treatment (subtle white tint, transparent + border, …)
-    // is owned by visual design and not pinned here — the contract is just
-    // "no danger tokens, no destructive styling".
+    // Neutral affordance: a thin mark, bright text, and a quiet box on
+    // hover — no danger tokens, no destructive styling.
     expect(rowSource).not.toContain('dangerHover')
-    expect(rowSource).toContain('<CloseIcon size={16}')
-    expect(css).toMatch(/\.removeBtn\.removeBtn\s*\{[^}]*color:\s*var\(--text-muted\)/s)
-    expect(css).toMatch(/\.removeBtn\.removeBtn:hover[\s\S]*color:\s*var\(--text\)/s)
+    // The row handle wears the DASH from the shared glyph set — the × means
+    // "clear this value" and lives inside the field (inspector-panel.md §5).
+    expect(rowSource).toContain('<RemoveDashGlyph />')
+    expect(rowSource).not.toContain('<RemoveXGlyph />')
+    expect(css).toMatch(/\.removeBtn\.removeBtn\s*\{[^}]*color:\s*var\(--text-bright\)/s)
+    expect(css).toMatch(/\.removeBtn\.removeBtn:hover[\s\S]*background:\s*var\(--bg-surface-2\)/s)
+    expect(css).toMatch(/\.removeBtn\.removeBtn:hover[\s\S]*border:\s*1px solid var\(--border-muted\)/s)
     expect(css).not.toContain('editor-danger')
   })
 })

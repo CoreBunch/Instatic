@@ -17,6 +17,7 @@ type UiStateActions = Pick<
   StyleRuleSlice,
   | 'setActiveClass'
   | 'setInlineStyleEditing'
+  | 'setGradientPickerOpen'
   | 'setPreviewNodeClass'
   | 'clearPreviewNodeClass'
   | 'setPreviewClassStyles'
@@ -44,6 +45,13 @@ export function createUiStateActions({ set, get }: SiteSliceHelpers): UiStateAct
       set((s) => {
         s.inlineStyleEditing = active
         if (active) s.activeClassId = null
+      })
+    },
+
+    setGradientPickerOpen(open) {
+      if (get().gradientPickerOpen === open) return
+      set((s) => {
+        s.gradientPickerOpen = open
       })
     },
 

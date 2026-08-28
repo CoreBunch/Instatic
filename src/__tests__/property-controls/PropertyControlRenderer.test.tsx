@@ -105,17 +105,16 @@ describe('PropertyControlRenderer — wrapper (data-testid + minHeight)', () => 
   })
 
   it('wrapper has compact min-height (Guideline #357 — WCAG touch targets waived for editor chrome)', async () => {
-    // Guideline #357: editor chrome controls use compact density (28px)
+    // Guideline #357: editor chrome controls use compact density.
     // Post-Task #399: min-height is in ControlRow.module.css, not an inline style.
-    // Source-scan approach: verify min-height is defined in the CSS module.
+    // Inspector redesign: the value rides the shared --control-height token
+    // (30px) so the row centres on the same scale as every field/select.
     const { readFileSync } = await import('fs')
     const css = readFileSync(
       new URL('../../ui/components/ControlRow/ControlRow.module.css', import.meta.url),
       'utf-8',
     )
-    // Accept: min-height: 28px OR min-height: 44px (OR-pattern for migration)
-    const hasHeight = /min-height:\s*(28|44)px/.test(css)
-    expect(hasHeight).toBe(true)
+    expect(css).toMatch(/\.controlWrapper\s*\{[^}]*min-height:\s*var\(--control-height\)/s)
   })
 
   it('keeps the renderer shell separate from the concrete control layout wrapper', async () => {
@@ -185,7 +184,7 @@ describe('PropertyControlRenderer — type dispatch', () => {
     expect(html).toContain('data-testid="property-control-bgColor"')
   })
 
-  it('color → embeds the swatch inside the text value field', () => {
+  it('color → renders the swatch row: chip trigger, value name, no text field', () => {
     render(
       <PropertyControlRenderer
         propKey="bgColor"
@@ -196,14 +195,14 @@ describe('PropertyControlRenderer — type dispatch', () => {
     )
 
     const wrapper = screen.getByTestId('property-control-bgColor')
-    const swatch = wrapper.querySelector('button[aria-haspopup="dialog"]')
-    const textInput = screen.getByLabelText('Background')
-    const field = wrapper.querySelector('[data-color-field="true"]')
+    const chip = wrapper.querySelector('button[aria-haspopup="dialog"]')
 
-    expect(swatch).not.toBeNull()
-    expect(field).not.toBeNull()
-    expect(field?.contains(swatch)).toBe(true)
-    expect(field?.contains(textInput)).toBe(true)
+    // Contract (2026-08-28, docs/features/inspector-redesign-todo.md § 2.13):
+    // every colour row is `chip · value name · ×` — typing a hex and
+    // searching tokens both moved into the picker popout the chip opens.
+    expect(chip).not.toBeNull()
+    expect(wrapper.querySelector('input')).toBeNull()
+    expect(wrapper.textContent).toContain('FFFFFF')
   })
 
   it('color → autocompletes framework color tokens as CSS variable references', () => {
@@ -227,8 +226,13 @@ describe('PropertyControlRenderer — type dispatch', () => {
       />,
     )
 
-    fireEvent.focus(screen.getByLabelText('Background'))
-    expect(screen.getByRole('listbox', { name: /background color tokens/i })).toBeDefined()
+    // The row no longer carries a token autocomplete — the list lives in the
+    // picker popout, so the guarantee is tested through the chip that opens it.
+    const wrapper = screen.getByTestId('property-control-bgColor')
+    const chip = wrapper.querySelector('button[aria-haspopup="dialog"]') as HTMLElement
+    fireEvent.click(chip)
+
+    expect(screen.getByRole('listbox', { name: /colour styles/i })).toBeDefined()
     fireEvent.click(screen.getByRole('option', { name: /--primary/i }))
 
     expect(changes.at(-1)).toEqual({ key: 'bgColor', value: 'var(--primary)' })

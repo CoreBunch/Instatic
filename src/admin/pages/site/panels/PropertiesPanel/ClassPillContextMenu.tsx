@@ -9,7 +9,7 @@ import {
 } from '@ui/components/ContextMenu'
 import { ChevronUpIcon } from 'pixel-art-icons/icons/chevron-up'
 import { ChevronDownIcon } from 'pixel-art-icons/icons/chevron-down'
-import { CloseIcon } from 'pixel-art-icons/icons/close'
+import { RemoveXGlyph } from '@ui/icons/inspectorGlyphs'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
 import { isGeneratedClassLocked, type StyleRule } from '@core/page-tree'
 import type { ClassContextMenuState } from './classPickerUiState'
@@ -115,7 +115,7 @@ function ClassPillContextMenu({
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem danger onClick={onRemove}>
-        <span aria-hidden="true"><CloseIcon size={13} /></span>
+        <span aria-hidden="true"><RemoveXGlyph /></span>
         Remove from this element
       </ContextMenuItem>
     </ContextMenu>

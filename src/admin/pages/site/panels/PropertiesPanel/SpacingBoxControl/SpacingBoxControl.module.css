@@ -1,313 +1,401 @@
 /**
  * SpacingBoxControl — visual box-model editor for padding & margin.
  *
- * Echoes the classic Chrome DevTools box-model diagram:
- *   - Outer dashed rectangle = margin.
- *   - Inner solid rectangle = padding (50% of margin, centred).
- *   - Two corner-to-corner diagonals through both layers — DASHED while
- *     they cross the margin region, SOLID inside the padding region.
+ * The prototype's `.spacebox`: two nested, BORDERLESS bands. Nothing is
+ * drawn — the margin band, the padding band and the core are three steps on
+ * the surface scale, and each side's hit zone is a trapezoid whose bevel
+ * comes from its own fill. A border would add a third line in the same place
+ * as the tone step and the bevel, which is what made the old dashed-diagram
+ * version read as noise.
  *
- * Each side of each box is a `.segment` element that fills the entire
- * box body but uses a `clip-path` polygon to define the visible /
- * clickable region — a trapezoid for margin (around the inner padding
- * box) and a triangle for padding (formed by the corner-to-corner
- * diagonals). The segment provides a generous hover hit area; the
- * actual <input> sits on top, transparent and centred at the segment's
- * centroid, so clicking anywhere in the segment focuses the input.
- *
- * The whole widget is locked to a 4:3 aspect ratio so the diagonals
- * read as a stable, predictable X regardless of panel width.
+ * Band thickness is absolute (`--band-x` / `--band-y`), so the widget's
+ * height follows its core instead of an aspect-ratio lock, and the top and
+ * bottom bands always measure the same.
  */
 
 .root {
-    width: 100%;
-    max-width: 280px;
-    margin: 0 auto;
-    aspect-ratio: 4 / 3;
-    min-width: 0;
+    position: relative;
+    --band-x: 34px;
+    --band-y: 26px;
+    border-radius: 6px;
+    box-shadow: 0 1px 6px var(--scrim-30);
 }
 
-/* ── Box (margin / padding) ──────────────────────────────────────────────── */
+/* ── Bands ───────────────────────────────────────────────────────────────── */
 
 .box {
     position: relative;
-    display: block;
-    border: 1px dashed var(--overlay-20);
-    background: var(--overlay-5);
-    transition: border-color 120ms ease;
+    border: 0;
+    border-radius: 6px;
 }
 
-.box:hover {
-    border-color: var(--overlay-30);
-}
-
-/* Margin box fills the (4:3) root. */
+/* The lightness step between layers is LARGER than in the light-mode
+   original — the same absolute difference reads far weaker on dark. */
 .box--margin {
-    width: 100%;
-    height: 100%;
+    --band-y: 30px;
+    padding: var(--band-y) var(--band-x);
+    background: var(--bg-surface-3);
+    box-shadow: inset 0 1px 0 var(--overlay-5);
 }
 
-/* Padding box — solid border + opaque background so it visually
- * interrupts the margin's dashed diagonals where the two layers
- * overlap. Sized automatically by its parent .boxInner (inset: 25%
- * per axis → padding box keeps the same 4:3 aspect ratio). */
+/* Padding lifts off the margin with a shadow rather than a line, so the
+   nesting stays legible even where the two bands are close in lightness.
+   No min-height: the height comes from the core, which keeps the top and
+   bottom bands equal. */
 .box--padding {
-    border-style: solid;
-    background: var(--bg-surface);
+    --band-x: 30px;
+    --band-y: 26px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: var(--band-y) var(--band-x);
+    background: var(--bg-surface-4);
+    border-radius: 4px;
+    box-shadow: 0 2px 6px var(--scrim-50), inset 0 1px 0 var(--overlay-10);
 }
 
-/* ── Diagonal overlay (corner-to-corner X) ───────────────────────────────── */
-/*
- * Sits ABOVE the segments (z-index 2) but is pointer-events: none so it
- * doesn't intercept clicks. This way the segment hover background paints
- * underneath the diagonals — the diagonals stay visible while a segment
- * is highlighted.
- */
-.boxDiagonals {
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    overflow: visible;
+.boxInner {
+    position: relative;
 }
 
-.diagonal {
-    stroke: var(--overlay-20);
-    stroke-width: 1;
-    fill: none;
-    /* preserveAspectRatio="none" stretches the line geometry to exactly
-     * cover the box; vector-effect keeps the stroke a constant 1px so
-     * the corner-to-corner line doesn't visually thicken on long boxes. */
-    vector-effect: non-scaling-stroke;
+/* The core reads as a panel field — same fill as `.field` — because in the
+   reference the centre is a control, not a hole. */
+.boxCore {
+    height: 28px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-2);
+    box-shadow: inset 0 1px 2px var(--scrim-40);
 }
 
-.diagonalDashed {
-    stroke: var(--overlay-10);
-    stroke-dasharray: 3 3;
-}
-
-/* ── Box header — tiny label chip overlapping the border (top-left) ──────── */
+/* ── Band header — label + link / clear, inside the band ─────────────────── */
 
 .boxHeader {
     position: absolute;
-    top: -7px;
-    left: 6px;
-    z-index: 4;
-    display: inline-flex;
+    top: 5px;
+    left: 8px;
+    /* Above the segments: without this, a click on link/clear landed in the
+       drag zone and started a value scrub instead of firing the action. */
+    z-index: 2;
+    display: flex;
     align-items: center;
-    gap: var(--space-px);
-    height: 12px;
-    padding: 0 var(--space-4xs);
-    background: var(--bg-body);
+    gap: var(--space-3xs);
+    padding: 0;
 }
 
 .boxLabel {
-    color: var(--text-subtle);
+    color: var(--text-muted);
     font-size: var(--text-3xs);
     font-weight: 700;
+    font-style: italic;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    line-height: 1;
 }
 
 .boxHeaderActions {
-    display: inline-flex;
-    align-items: center;
-    gap: 0;
-}
-
-.linkBtn,
-.clearBtn {
-    color: var(--text-subtle);
-}
-
-.linkBtn:hover,
-.clearBtn:hover {
-    color: var(--text);
-}
-
-.linkBtnActive,
-.linkBtnActive:hover {
-    color: var(--overlay);
-}
-
-/* ── Body ────────────────────────────────────────────────────────────────── */
-
-.boxBody {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    min-width: 0;
-}
-
-/*
- * Inner box wrapper — occupies the central 50% of the margin box so its
- * corner-to-corner diagonals pass through the padding box's outer
- * corners. Only rendered for the margin box (which hosts the nested
- * padding box); the padding box has no inner placeholder.
- */
-.boxInner {
-    position: absolute;
-    inset: 25%;
-    z-index: 0;
     display: flex;
+    align-items: center;
+    gap: var(--space-px);
 }
 
-.boxInner > * {
-    flex: 1;
-    width: 100%;
-    height: 100%;
-    min-width: 0;
+/* Doubled selector lifts specificity above Button.module.css's variant/size
+   pairs so the 14px header buttons keep their own geometry. */
+.headerBtn.headerBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 2px;
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 110ms ease, color 110ms ease;
 }
 
-/* ── Segments — clickable hit areas with hover background ───────────────── */
+.box:hover > .boxHeader .headerBtn.headerBtn,
+.headerBtn.headerBtn:focus-visible {
+    opacity: 1;
+}
+
+.headerBtn.headerBtn:hover {
+    color: var(--text-bright);
+    background: var(--overlay-10);
+}
+
+.headerBtn.headerBtn[aria-pressed="true"] {
+    color: var(--accent-3);
+    opacity: 1;
+}
+
+.headerBtn.headerBtn:disabled {
+    cursor: default;
+}
+
+.headerBtn.headerBtn:disabled:hover {
+    color: var(--text-disabled);
+    background: none;
+}
+
+/* ── Side hit zones ──────────────────────────────────────────────────────── */
 /*
- * Each segment is a position:absolute element that fills the entire box
- * body. clip-path defines both its visible region AND its hit-test
- * region: trapezoid for margin (around the inner padding box), triangle
- * for padding (one of the four wedges formed by the diagonals). The
- * segments don't overlap each other's hit areas because their clip-paths
- * tile the box exactly.
+ * The hit zones are TRAPEZOIDS, not triangles — their bevels line up to the
+ * pixel with the fills that separate the bands, so the highlight follows
+ * exactly the shape the eye already reads. `::before` carries the fill so a
+ * hover tone can animate without touching the clip geometry.
  */
+
 .segment {
     position: absolute;
     inset: 0;
-    z-index: 1;
-    cursor: text;
-    background-color: transparent;
-    transition: background-color 100ms ease;
+    display: block;
 }
 
-.segment:hover {
-    background-color: var(--overlay-5);
+.segment::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: transparent;
+    transition: background 110ms ease;
 }
 
-.segment:focus-within,
-.segmentFocused {
-    background-color: var(--overlay-10);
+/* Top/bottom carry a resting tone; left/right stay clear, so the four zones
+   separate by fill alone and no line has to cross a rounded corner. */
+.segment--top::before,
+.segment--bottom::before {
+    background: var(--overlay-5);
 }
 
-/* Margin trapezoids — hug the gutter between margin and padding (50% nesting). */
-.box--margin .segment--top {
-    clip-path: polygon(0 0, 100% 0, 75% 25%, 25% 25%);
-}
-.box--margin .segment--right {
-    clip-path: polygon(100% 0, 100% 100%, 75% 75%, 75% 25%);
-}
-.box--margin .segment--bottom {
-    clip-path: polygon(25% 75%, 75% 75%, 100% 100%, 0 100%);
-}
-.box--margin .segment--left {
-    clip-path: polygon(0 0, 25% 25%, 25% 75%, 0 100%);
+.segment--top:hover::before,
+.segment--bottom:hover::before,
+.segment--top:focus-within::before,
+.segment--bottom:focus-within::before {
+    background: var(--overlay-10);
 }
 
-/* Padding triangles — quadrants formed by the corner-to-corner diagonals. */
-.box--padding .segment--top {
-    clip-path: polygon(0 0, 100% 0, 50% 50%);
-}
-.box--padding .segment--right {
-    clip-path: polygon(100% 0, 100% 100%, 50% 50%);
-}
-.box--padding .segment--bottom {
-    clip-path: polygon(0 100%, 100% 100%, 50% 50%);
-}
-.box--padding .segment--left {
-    clip-path: polygon(0 0, 0 100%, 50% 50%);
+.segment--left:hover::before,
+.segment--right:hover::before,
+.segment--left:focus-within::before,
+.segment--right:focus-within::before {
+    background: var(--overlay-5);
 }
 
-/* ── Side input — transparent text-style input centred in segment ────────── */
-/*
- * Each input sits at its segment's geometric centroid:
- *   - Margin trapezoid centroid → 12.5% from the outer edge.
- *   - Padding triangle centroid → 1/6 (≈ 16.67%) from the outer edge.
- *
- * The input itself is borderless / transparent so it reads as the value
- * label inside the segment; the segment's hover background provides the
- * visual feedback. Click anywhere in the segment focuses the input.
- */
+.segment--top,
+.segment--top::before {
+    clip-path: polygon(0 0, 100% 0, calc(100% - var(--band-x)) var(--band-y), var(--band-x) var(--band-y));
+}
+
+.segment--right,
+.segment--right::before {
+    clip-path: polygon(100% 0, 100% 100%, calc(100% - var(--band-x)) calc(100% - var(--band-y)), calc(100% - var(--band-x)) var(--band-y));
+}
+
+.segment--bottom,
+.segment--bottom::before {
+    clip-path: polygon(100% 100%, 0 100%, var(--band-x) calc(100% - var(--band-y)), calc(100% - var(--band-x)) calc(100% - var(--band-y)));
+}
+
+.segment--left,
+.segment--left::before {
+    clip-path: polygon(0 0, var(--band-x) var(--band-y), var(--band-x) calc(100% - var(--band-y)), 0 100%);
+}
+
+.segment--top { cursor: n-resize; }
+.segment--right { cursor: e-resize; }
+.segment--bottom { cursor: s-resize; }
+.segment--left { cursor: w-resize; }
+
+/* Focused / linked target reads through the value, not an extra outline. */
+.segmentFocused::before {
+    background: var(--overlay-10);
+}
+
+/* ── Side value ──────────────────────────────────────────────────────────── */
+
 .sideInput.sideInput {
     position: absolute;
-    z-index: 3;
-    width: 38px;
-    min-width: 38px;
-    min-height: 20px;
-    padding: 0 var(--space-4xs);
+    width: 30px;
+    min-width: 30px;
+    height: 18px;
+    min-height: 0;
+    padding: 0;
     border: 0;
-    border-radius: 0;
-    background: transparent;
+    border-radius: var(--radius-sm);
+    background: none;
     box-shadow: none;
     color: var(--text);
     font-size: var(--text-xs);
-    font-weight: 600;
-    line-height: 1;
+    font-variant-numeric: tabular-nums;
     text-align: center;
-}
-
-.segment[data-state="unset"] .sideInput.sideInput {
-    color: var(--text-subtle);
+    /* Inherit the band's resize cursor until the field is actually focused. */
+    cursor: inherit;
 }
 
 .sideInput.sideInput::placeholder {
-    color: var(--text-disabled);
-    font-weight: 500;
+    color: var(--text-subtle);
 }
 
-.sideInput.sideInput:hover,
+.sideInput.sideInput:hover {
+    background: var(--overlay-10);
+    color: var(--text-bright);
+    border: 0;
+}
+
 .sideInput.sideInput:focus,
 .sideInput.sideInput:focus-visible {
-    border: 0;
-    background: transparent;
-    box-shadow: none;
     outline: none;
+    border: 0;
+    background: var(--overlay-10);
+    color: var(--text-bright);
+    cursor: text;
 }
 
-/* Margin centroids — half-way through the gutter (12.5%). */
-.box--margin .segment--top .sideInput {
-    top: 12.5%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-}
-.box--margin .segment--bottom .sideInput {
-    bottom: 12.5%;
-    left: 50%;
-    transform: translate(-50%, 50%);
-}
-.box--margin .segment--left .sideInput {
-    left: 12.5%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-}
-.box--margin .segment--right .sideInput {
-    right: 12.5%;
-    top: 50%;
-    transform: translate(50%, -50%);
-}
-
-/* Padding centroids — 1/6 from the box edge (centroid of the wedge). */
-.box--padding .segment--top .sideInput {
-    top: 16.6667%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-}
-.box--padding .segment--bottom .sideInput {
-    bottom: 16.6667%;
-    left: 50%;
-    transform: translate(-50%, 50%);
-}
-.box--padding .segment--left .sideInput {
-    left: 16.6667%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-}
-.box--padding .segment--right .sideInput {
-    right: 16.6667%;
-    top: 50%;
-    transform: translate(50%, -50%);
-}
-
-/* When linked + uniform, all four sides read as one unit. */
 .segmentLinked .sideInput.sideInput {
     color: var(--text-bright);
+}
+
+/* Centred with a transform rather than a negative margin sized to the
+   field — the offset then survives any change to the field's own width. */
+.segment--top .sideInput.sideInput {
+    top: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.segment--bottom .sideInput.sideInput {
+    bottom: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.segment--left .sideInput.sideInput {
+    left: 2px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.segment--right .sideInput.sideInput {
+    right: 2px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+/* ── Inset variant ───────────────────────────────────────────────────────────
+   The same box, different content: four inset offsets instead of margins, and
+   in place of the core a PINBOX with four bars to lock an edge
+   (docs/features/inspector-panel.md §6.2). Sharing this file is deliberate —
+   the facets, bands and side inputs must not drift into two versions. */
+
+.box--inset {
+    /* Wider side bands than the spacing box: inset offsets carry a sign and
+       a unit ("-70px"), which a 30px field built for token steps clips. */
+    --band-x: 48px;
+    --band-y: 30px;
+    padding: var(--band-y) var(--band-x);
+    background: var(--bg-surface-3);
+    box-shadow: inset 0 1px 0 var(--overlay-5);
+}
+
+.box--inset .sideInput.sideInput {
+    width: 44px;
+    min-width: 44px;
+}
+
+/* Replaces `.boxCore`: same role — the middle that stands for the element
+   itself — only with four edges you can pin. */
+.pinbox {
+    position: relative;
+    height: 56px;
+    border-radius: 4px;
+    background: var(--bg-surface-2);
+    box-shadow: inset 0 1px 2px var(--scrim-40);
+}
+
+/* Pure visualisation: it does not drag and does not follow the values. Where
+   the element actually sits is the canvas's job to show, not a thumbnail's. */
+.pinCore {
+    position: absolute;
+    inset: 30%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-4);
+}
+
+.pinCore::after {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-3);
+}
+
+/* Pins sit ABOVE the bands — underneath, a click would land in the band's
+   value-drag zone instead of on the pin. */
+.pin.pin {
+    position: absolute;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: var(--border-strong);
+    transition: color 120ms ease;
+}
+
+.pin.pin:hover {
+    background: none;
+    color: var(--text-bright);
+}
+
+.pin.pin[aria-pressed="true"] {
+    color: var(--accent-3);
+}
+
+.pin--top,
+.pin--bottom {
+    left: 50%;
+    margin-left: -7px;
+}
+
+.pin--top { top: 3px; }
+.pin--bottom { bottom: 3px; }
+
+.pin--left,
+.pin--right {
+    top: 50%;
+    margin-top: -7px;
+}
+
+.pin--left { left: 3px; }
+.pin--right { right: 3px; }
+
+/* Input renders a 16px stepper column inside any field given `onStep` —
+   in a 30px side field that leaves 14px for the value, clipping "-70px"
+   down to one glyph. Hide the column here: scrub-drag on the field still
+   steps, only the chevrons go. (The spinner is the only aria-hidden span
+   these side inputs ever contain — they carry no prefix/unit affixes.) */
+.sideInput.sideInput > span[aria-hidden="true"] {
+    display: none;
+}
+
+/* A locked edge shows its value but takes neither a caret nor a drag — that
+   is what "pinned" means. */
+.segment[data-locked="true"] {
+    cursor: default;
+}
+
+.segment[data-locked="true"] .sideInput {
+    color: var(--text-disabled);
+    cursor: default;
 }

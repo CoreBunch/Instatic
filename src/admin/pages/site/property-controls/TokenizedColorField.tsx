@@ -2,7 +2,8 @@ import { useState, type CSSProperties, type ChangeEvent, type KeyboardEvent } fr
 import { generateFrameworkColorVariableSets } from '@core/framework'
 import { useEditorStore } from '@site/store/store'
 import { ColorInput } from '@ui/components/ColorInput'
-import type { ColorPickerToken } from '@ui/components/ColorPicker'
+import { SwatchRow } from '@ui/components/SwatchRow'
+import { parseGradient, type ColorPickerToken } from '@ui/components/ColorPicker'
 import { Input } from '@ui/components/Input'
 import { pushToast } from '@ui/components/Toast'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -24,6 +25,16 @@ interface TokenizedColorFieldProps {
   fieldSize?: 'xs' | 'sm' | 'md'
   /** Offer the picker's Solid / Linear / Radial / Conic fill tabs. */
   gradients?: boolean
+  /** Offer the picker's Image fill tab (background fills only). */
+  images?: boolean
+  /**
+   * Row presentation. `field` (default) is the swatch + typed value + token
+   * suggestion menu — what the Colors panel needs to author token values.
+   * `swatch` is the inspector's popout-trigger row: chip, the value's NAME,
+   * and a clear cross; typing and the token list live inside the picker
+   * popout instead, so every colour row in the panel reads identically.
+   */
+  look?: 'field' | 'swatch'
   onTextChange: (value: string) => void
   onTextBlur: () => void
   onSwatchChange: (value: string) => void
@@ -50,6 +61,8 @@ export function TokenizedColorField({
   monospace = false,
   fieldSize = 'sm',
   gradients = false,
+  images = false,
+  look = 'field',
   onTextChange,
   onTextBlur,
   onSwatchChange,
@@ -59,6 +72,7 @@ export function TokenizedColorField({
 }: TokenizedColorFieldProps) {
   const colorSettings = useEditorStore((state) => state.site?.settings.framework?.colors)
   const createFrameworkColorToken = useEditorStore((state) => state.createFrameworkColorToken)
+  const setGradientPickerOpen = useEditorStore((state) => state.setGradientPickerOpen)
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const variables = generateFrameworkColorVariableSets(colorSettings).light
@@ -167,23 +181,43 @@ export function TokenizedColorField({
     }
   }
 
+  const swatch = (
+    <ColorInput
+      id={id ? `${id}-swatch` : undefined}
+      value={swatchValue}
+      swatchValue={swatchValue}
+      disabled={disabled}
+      gradients={gradients}
+      images={images}
+      // Only gradient-capable pickers drive the canvas gradient gizmo.
+      onOpenChange={gradients ? setGradientPickerOpen : undefined}
+      onValueChange={handleSwatchChange}
+      tokens={pickerTokens}
+      onSelectToken={handleTokenReference}
+      onCreateToken={handleCreateToken}
+      aria-label={swatchLabel}
+      fieldSize="xs"
+      className={styles.colorInlineSwatch}
+    />
+  )
+
+  if (look === 'swatch') {
+    const isSet = value.trim() !== ''
+    return (
+      <SwatchRow
+        chip={swatch}
+        name={colorValueName(value, variables)}
+        isSet={isSet}
+        onClear={isSet ? () => handleSwatchChange('') : undefined}
+        clearLabel={`Remove ${inputLabel}`}
+      />
+    )
+  }
+
   return (
     <div className={styles.colorRow}>
       <div className={styles.colorField} data-color-field="true">
-        <ColorInput
-          id={id ? `${id}-swatch` : undefined}
-          value={swatchValue}
-          swatchValue={swatchValue}
-          disabled={disabled}
-          gradients={gradients}
-          onValueChange={handleSwatchChange}
-          tokens={pickerTokens}
-          onSelectToken={handleTokenReference}
-          onCreateToken={handleCreateToken}
-          aria-label={swatchLabel}
-          fieldSize="xs"
-          className={styles.colorInlineSwatch}
-        />
+        {swatch}
         <Input
           id={id}
           type="text"
@@ -267,6 +301,31 @@ function tokenVariableMatches(variable: ColorVariable, query: string): boolean {
   return name.includes(query) ||
     variable.slug.toLowerCase().includes(query) ||
     (variable.variantName?.toLowerCase().includes(query) ?? false)
+}
+
+/**
+ * What the swatch row shows next to the chip — the value's NAME, never its
+ * raw CSS: a token's slug, the gradient kind, "Image" for a `url(…)` source,
+ * and a bare uppercase hex for a one-off colour.
+ */
+function colorValueName(value: string, variables: ColorVariable[]): string {
+  const trimmed = value.trim()
+  if (trimmed === '') return 'Add…'
+
+  const variableName = /^var\(\s*(--[a-z0-9_-]+)\s*\)$/i.exec(trimmed)?.[1]
+  if (variableName) {
+    const slug = variables.find((variable) => variable.name === variableName)?.slug
+    if (slug) return slug.charAt(0).toUpperCase() + slug.slice(1)
+    return variableName
+  }
+
+  if (/^\s*url\(/i.test(trimmed)) return 'Image'
+
+  const gradient = parseGradient(trimmed)
+  if (gradient) return gradient.kind.charAt(0).toUpperCase() + gradient.kind.slice(1)
+
+  const hex = /^#([0-9a-f]{3,8})$/i.exec(trimmed)
+  return hex ? hex[1].toUpperCase() : trimmed
 }
 
 function resolveTokenReferenceValue(value: string, variables: ColorVariable[]): string | null {

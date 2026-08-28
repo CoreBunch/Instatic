@@ -49,6 +49,10 @@ export type FloatingPanelId =
   | 'mediaUploadQueue'
   | 'mediaDetachedInspector'
   | 'mediaBulkEdit'
+  // Inspector popouts: the prototype pulls the multi-row editors out of the
+  // panel into the same floating shell the colour picker rides in, leaving a
+  // single trigger row behind.
+  | 'border'
 
 /**
  * Editor workspaces tracked by the layout persistence layer. These are the

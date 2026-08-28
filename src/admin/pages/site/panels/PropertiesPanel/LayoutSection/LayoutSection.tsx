@@ -30,11 +30,10 @@
  */
 
 import type { CSSPropertyBag } from '@core/page-tree'
-import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
-import { Grid2x22SolidIcon } from 'pixel-art-icons/icons/grid-2x2-2-solid'
+import { DisplayFlexGlyph, DisplayGridGlyph } from '@ui/icons/inspectorGlyphs'
 import { ClassPropertyRow } from '../ClassPropertyRow'
 import { DropdownSwitcher } from '../DropdownSwitcher'
-import { getEnumOptions, getCSSPropertyDefaultValue } from '../cssControlTypes'
+import { getEnumOptions } from '../cssControlTypes'
 import { hasStyleValue, readString } from '../styleValueUtils'
 import { FlexDirectionControl } from './FlexDirectionControl'
 import { FlexWrapControl } from './FlexWrapControl'
@@ -42,6 +41,8 @@ import { AlignmentControl } from './AlignmentControl'
 import { GapInput } from './GapInput'
 import { GridTrackControl } from './GridTrackControl'
 import { GridAxisControl } from './GridAxisControl'
+import { LabeledControl } from './LabeledControl'
+import { PaddingRow } from './PaddingRow'
 import styles from '../LayoutSection.module.css'
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,9 @@ interface LayoutSectionProps {
   /** Active breakpoint tab id — used to key sub-controls so they re-mount on tab change. */
   activeTab: string
   onChange: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
+  /** Applies several properties in one store commit (one undo entry) — the
+   *  Padding row writes four sides at once. */
+  onChangeMany: (patch: Partial<CSSPropertyBag>) => void
   onRemove: (property: keyof CSSPropertyBag) => void
   /**
    * Fully clear a property — removes it from base styles AND from every
@@ -120,30 +124,7 @@ const FALLBACK_PROPS: ReadonlyArray<keyof CSSPropertyBag> = [
   'columnGap',
   'gridColumn',
   'gridRow',
-  'overflow',
-  'overflowX',
-  'overflowY',
 ]
-
-/**
- * Properties that only have any effect when *this* element is a flex or
- * grid container. Hidden from the fallback rows when display is anything
- * else (block, inline, none, unset, …) so users aren't tempted to fiddle
- * with knobs that do nothing.
- *
- * `gap` itself is owned by the visual flex / grid blocks (via GapInput),
- * so it never reaches the fallback list — it's not in FALLBACK_PROPS at all.
- *
- * Item-level properties like `alignSelf`, `justifySelf`, `flex`,
- * `gridColumn`, `gridRow` are NOT in this set because they depend on the
- * *parent's* display, which we can't observe from a class-style editor.
- * Showing them unconditionally lets users style children of flex/grid
- * parents without flipping this element's display first.
- */
-const CONTAINER_ONLY_PROPS = new Set<keyof CSSPropertyBag>([
-  'rowGap',
-  'columnGap',
-])
 
 // ---------------------------------------------------------------------------
 // Display switcher config — Flex | Grid + dropdown of every other value
@@ -155,14 +136,14 @@ const DISPLAY_PRIMARY_SEGMENTS = [
   {
     value: 'flex',
     label: 'Flex',
-    icon: <LayoutSolidIcon size={14} />,
+    icon: <DisplayFlexGlyph />,
     ariaLabel: 'Flex layout',
     tooltip: 'display: flex',
   },
   {
     value: 'grid',
     label: 'Grid',
-    icon: <Grid2x22SolidIcon size={14} />,
+    icon: <DisplayGridGlyph />,
     ariaLabel: 'Grid layout',
     tooltip: 'display: grid',
   },
@@ -177,6 +158,7 @@ export function LayoutSection({
   storedStyles,
   activeTab,
   onChange,
+  onChangeMany,
   onRemove,
   onClearProperty,
   onClearProperties,
@@ -202,17 +184,19 @@ export function LayoutSection({
 
   return (
     <div className={styles.layoutSection}>
-      {/* Display switcher — unlabeled, full width */}
-      <DropdownSwitcher
-        property="display"
-        value={display}
-        primarySegments={DISPLAY_PRIMARY_SEGMENTS}
-        allOptions={DISPLAY_OPTIONS}
-        onChange={(v) => onChange('display', v)}
-        onClear={clearDisplayAndDeps}
-        onPreview={onPreview ? (v) => onPreview({ display: v } as Partial<CSSPropertyBag>) : undefined}
-        onClearPreview={onClearPreview}
-      />
+      {/* Display switcher — labeled "Type" like the redesign's Layout row */}
+      <LabeledControl label="Type" isSet={hasStyleValue(storedStyles.display)}>
+        <DropdownSwitcher
+          property="display"
+          value={display}
+          primarySegments={DISPLAY_PRIMARY_SEGMENTS}
+          allOptions={DISPLAY_OPTIONS}
+          onChange={(v) => onChange('display', v)}
+          onClear={clearDisplayAndDeps}
+          onPreview={onPreview ? (v) => onPreview({ display: v } as Partial<CSSPropertyBag>) : undefined}
+          onClearPreview={onClearPreview}
+        />
+      </LabeledControl>
 
       {/* Flex-only fields, revealed when display === 'flex' */}
       {display === 'flex' && (
@@ -252,6 +236,14 @@ export function LayoutSection({
             isSet={hasStyleValue(storedStyles.gap)}
             onChange={(v) => onChange('gap', v)}
             onPreview={onPreview ? (v) => onPreview({ gap: v ?? null } as Partial<CSSPropertyBag>) : undefined}
+            onClearPreview={onClearPreview}
+          />
+          <PaddingRow
+            currentStyles={currentStyles}
+            storedStyles={storedStyles}
+            onChange={onChange}
+            onChangeMany={onChangeMany}
+            onPreview={onPreview}
             onClearPreview={onClearPreview}
           />
         </div>
@@ -299,46 +291,34 @@ export function LayoutSection({
             onPreview={onPreview ? (v) => onPreview({ gap: v ?? null } as Partial<CSSPropertyBag>) : undefined}
             onClearPreview={onClearPreview}
           />
+          <PaddingRow
+            currentStyles={currentStyles}
+            storedStyles={storedStyles}
+            onChange={onChange}
+            onChangeMany={onChangeMany}
+            onPreview={onPreview}
+            onClearPreview={onClearPreview}
+          />
         </div>
       )}
 
-      {/* Fallback rows — every property in the layout section that isn't
-          already handled by a visual block. The grid block owns
-          gridTemplateColumns / gridTemplateRows / justifyItems (so those
-          never appear as fallback rows) and the flex block owns
-          flexDirection / flexWrap / alignItems / justifyContent (likewise
-          absent from FALLBACK_PROPS). Container-only properties (gap,
-          rowGap, columnGap) are skipped when this element isn't a flex
-          or grid container — they have no effect on `display: block` etc. */}
-      {FALLBACK_PROPS.map((prop) => {
-        if (
-          CONTAINER_ONLY_PROPS.has(prop) &&
-          display !== 'flex' &&
-          display !== 'grid'
-        ) {
-          return null
-        }
-        const storedValue = storedStyles[prop]
-        const isSet = hasStyleValue(storedValue)
-        const currentValue = currentStyles[prop]
-        const fallbackValue = hasStyleValue(currentValue)
-          ? currentValue
-          : getCSSPropertyDefaultValue(prop)
-
-        return (
-          <ClassPropertyRow
-            key={`${activeTab}-${String(prop)}`}
-            property={prop}
-            value={isSet ? (storedValue as string | number) : undefined}
-            placeholder={!isSet ? fallbackValue : undefined}
-            isSet={isSet}
-            onChange={onChange}
-            onRemove={onRemove}
-            onPreview={previewProperty}
-            onClearPreview={onClearPreview}
-          />
-        )
-      })}
+      {/* Long-tail item-level properties (align-self / flex / grid placement,
+          per-axis gaps) appear only once SET — the section header's "+" is
+          how they get added. A set value renders regardless of display so
+          nothing stored ever hides without a row to clear it. */}
+      {FALLBACK_PROPS.filter((prop) => hasStyleValue(storedStyles[prop])).map((prop) => (
+        <ClassPropertyRow
+          key={`${activeTab}-${String(prop)}`}
+          property={prop}
+          value={storedStyles[prop] as string | number}
+          isSet
+          removable
+          onChange={onChange}
+          onRemove={onRemove}
+          onPreview={previewProperty}
+          onClearPreview={onClearPreview}
+        />
+      ))}
     </div>
   )
 }

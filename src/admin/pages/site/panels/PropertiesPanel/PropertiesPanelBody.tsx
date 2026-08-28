@@ -25,7 +25,7 @@ import type { AnyModuleDefinition } from '@core/module-engine'
 import type { StyleRule, PageNode } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import type { ActiveDocument } from '../../store/slices/uiSlice'
-import { Button } from '@ui/components/Button'
+import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { ClassPicker, type ClassPickerHandle } from './ClassPicker'
 import { StyleSurface } from './StyleSurface'
 import { HtmlAttributesPanel } from './HtmlAttributesPanel'
@@ -60,6 +60,11 @@ interface PropertiesPanelBodyProps {
 }
 
 type NodeInspectorView = 'styles' | 'attributes'
+
+const NODE_VIEW_OPTIONS: ReadonlyArray<{ value: NodeInspectorView; label: string }> = [
+  { value: 'styles', label: 'Styles' },
+  { value: 'attributes', label: 'Attributes' },
+]
 
 export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.ReactNode {
   const {
@@ -141,25 +146,17 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
 
   return (
     <div className={styles.nodeArea}>
+      {/* Styles / Attributes is a two-value choice over the same element —
+          the prototype's `.tabs > .segmented`, one full-width rail with the
+          chosen half lifted, not two loose text buttons
+          (docs/features/inspector-panel.md §1). */}
       <nav className={styles.nodeViewSwitcher} aria-label="Element options">
-        <Button
-          variant="ghost"
-          size="xs"
-          className={styles.nodeViewButton}
-          active={activeNodeView === 'styles'}
-          onClick={() => setActiveNodeView('styles')}
-        >
-          Styles
-        </Button>
-        <Button
-          variant="ghost"
-          size="xs"
-          className={styles.nodeViewButton}
-          active={activeNodeView === 'attributes'}
-          onClick={() => setActiveNodeView('attributes')}
-        >
-          Attributes
-        </Button>
+        <SegmentedControl
+          value={activeNodeView}
+          options={NODE_VIEW_OPTIONS}
+          onChange={setActiveNodeView}
+          fullWidth
+        />
       </nav>
 
       {/* ClassPicker — always visible to style-edit-capable callers. Hidden

@@ -1,5 +1,5 @@
-/**
- * FlexWrapControl — 3 segments (Nowrap / Wrap / Wrap-reverse) for `flex-wrap`.
+﻿/**
+ * FlexWrapControl â€” 3 segments (Nowrap / Wrap / Wrap-reverse) for `flex-wrap`.
  */
 
 import { SegmentedControl } from '@ui/components/SegmentedControl'
@@ -17,6 +17,7 @@ export function FlexWrapControl({ value, isSet, onChange, onClear }: FlexWrapCon
   return (
     <LabeledControl label="Wrap" isSet={isSet}>
       <SegmentedControl
+        look="tiles"
         fullWidth
         aria-label="Flex wrap"
         value={value}

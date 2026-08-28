@@ -22,7 +22,7 @@ import { Section } from '@ui/components/Section'
 import { Input } from '@ui/components/Input'
 import { Button } from '@ui/components/Button'
 import { ControlRow } from '@ui/components/ControlRow'
-import { CloseIcon } from 'pixel-art-icons/icons/close'
+import { RemoveXGlyph } from '@ui/icons/inspectorGlyphs'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { SlidersHorizontalIcon } from 'pixel-art-icons/icons/sliders-horizontal'
 import { getCustomProperties, isCuratedProperty } from './cssControlTypes'
@@ -136,7 +136,7 @@ export function CustomPropertiesSection({
                 className={styles.removeBtn}
                 onClick={() => onRemove(key as keyof CSSPropertyBag)}
               >
-                <CloseIcon size={16} color="currentColor" aria-hidden="true" />
+                <RemoveXGlyph />
               </Button>
             </div>
           )

@@ -16,7 +16,7 @@ import { registry } from '@core/module-engine'
 import type { VisualComponent, VCParam } from '@core/visualComponents'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
-import { CloseIcon } from 'pixel-art-icons/icons/close'
+import { RemoveXGlyph } from '@ui/icons/inspectorGlyphs'
 import styles from './ComponentParamsOverview.module.css'
 
 // ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@ export function ComponentParamsOverview({ vc }: ComponentParamsOverviewProps) {
                     removeParamWithCleanup(vc.id, param.id)
                   }}
                 >
-                  <CloseIcon size={10} color="currentColor" aria-hidden="true" />
+                  <RemoveXGlyph />
                 </Button>
               </li>
             )

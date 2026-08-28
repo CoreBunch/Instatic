@@ -2,87 +2,36 @@
  *
  * Hosts the DisplaySwitcher, FlexDirection / FlexWrap controls, alignment
  * controls, and the leftover ClassPropertyRow rows. Reuses the same
- * vertical rhythm as Section.module.css's .sectionBody (8px gap).
+ * vertical rhythm as Section.module.css's .sectionBody (--control-row-gap).
  */
 
 .layoutSection {
     display: grid;
-    gap: var(--space-s);
+    gap: var(--control-row-gap);
 }
 
-/* Display row holds either the SegmentedControl (unset / flex / grid) or
- * the full-width chip + close-button group (other values). Both layouts
- * occupy the same row height so toggling between them doesn't shift the
- * surrounding rows. */
+/* Display row wraps the DropdownSwitcher track. One layout in every state —
+ * segments or value button, always the same height — so toggling between
+ * them never shifts the surrounding rows. */
 .displayRow {
     display: flex;
     align-items: stretch;
     gap: 0;
 }
 
-/* "Other value" layout — a full-width chip + a square close button,
- * fused into a single track that mirrors the SegmentedControl's chrome
- * (same 2px-padded background, same internal radius). Lets users see
- * the current display value at a glance and clear it without opening
- * the dropdown. */
-.displayChipGroup {
-    display: flex;
-    width: 100%;
-    align-items: stretch;
-    gap: var(--space-4xs);
-    padding: var(--space-4xs);
-    border-radius: 10px;
-    background: var(--bg-surface-2);
-}
-
-/* Doubled `.displayChipGroup .displayChip.displayChip` selector lifts
- * specificity above Button.module.css's `.btn.variant-secondary` (0,2,0)
- * so this rule wins regardless of stylesheet load order. */
-.displayChipGroup .displayChip.displayChip {
+/* "Other value" state — the two primary segments give way to a single
+ * full-width value button inside the same track (the prototype's
+ * `.buttongroup[data-chip="true"] .chipvalue`). The tile chrome comes from
+ * SegmentedControl's segment class; this rule only makes it stretch and
+ * left-align. Doubled selector lifts specificity above Button.module.css's
+ * `.btn.variant-secondary` (0,2,0) so it wins regardless of load order. */
+.displayChip.displayChip {
     flex: 1 1 auto;
     min-width: 0;
-    padding: 0 var(--space-s);
-    border-radius: 8px;
-    background: var(--bg-surface);
-    color: var(--text);
-    text-align: left;
-    overflow: hidden;
-}
-
-.displayChipGroup .displayChip.displayChip:hover {
-    background: var(--bg-surface-3);
-}
-
-.displayChipKicker {
-    color: var(--text-muted);
-    font-size: var(--text-xs);
-    font-weight: 500;
-    text-transform: capitalize;
-}
-
-.displayChipValue {
-    color: var(--text);
-    font-size: var(--text-xs);
-    font-weight: 600;
+    justify-content: flex-start;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    min-width: 0;
-}
-
-/* Close button — square, fixed-width to match SegmentedControl's
- * trailing slot (26px = sm Button intrinsic height). */
-.displayChipGroup .displayChipClear.displayChipClear {
-    flex: 0 0 26px;
-    width: 26px;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-muted);
-}
-
-.displayChipGroup .displayChipClear.displayChipClear:hover {
-    background: var(--bg-surface-3);
-    color: var(--text);
 }
 
 /* Sub-field block for flex-only / grid-only controls. Just a vertical
@@ -91,120 +40,48 @@
  * without painting a frame around the rows. */
 .flexBlock {
     display: grid;
-    gap: var(--space-s);
+    gap: var(--control-row-gap);
 }
 
-/* Mini label + control row used by the flex / grid sub-fields. Matches the
- * 100px label column + 4px gap from controls.module.css's .controlWrapper
- * so the labels align vertically with the fallback ClassPropertyRow rows
- * rendered below the visual block. */
+/* Property row — the prototype's `.row`: a fixed label column and a control
+ * column, 8px apart, on the shared control height. Same track as
+ * SizeSection.module.css's `.dimensionRow` so labels line up across every
+ * section of the panel. */
 .labeledRow {
     display: grid;
-    grid-template-columns: 100px 1fr;
+    grid-template-columns: var(--control-label-column) minmax(0, 1fr);
     align-items: center;
-    gap: var(--space-3xs);
-    min-height: 28px;
+    gap: var(--space-s);
+    min-height: var(--control-height);
 }
 
-/* Default (no state hint) keeps the secondary-text colour used by
- * controls.module.css's .labelRow. The data-state attribute toggles
- * between brighter (set) and muted (unset) tones, mirroring the
- * ClassPropertyRow.module.css `.propertyRowUnset` treatment so visual
- * switchers and generic property rows share a single language for
- * "this property is/isn't set". */
+/* One tone whatever the state — "set" is carried by the accent dot, not by
+ * brightening the text (prototype `.row > .label`). */
 .labeledLabel {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    padding-left: var(--space-2xs);
     color: var(--text-muted);
     font-size: var(--text-xs);
-    font-weight: 620;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.labeledRow[data-state="set"] .labeledLabel {
-    color: var(--text);
-}
-
-.labeledRow[data-state="unset"] .labeledLabel {
-    color: var(--text-subtle);
+.labeledDot {
+    flex: none;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent-1);
 }
 
 .labeledControl {
     min-width: 0;
 }
 
-/* ─── Position block — TRBL offsets ──────────────────────────────────────
- * Two-column grid showing the four direction inputs in clockwise order
- * (top, right, bottom, left). Each cell uses a small leading icon as the
- * label so two cells fit comfortably on one row of the panel. */
-.positionDirectionsGrid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-xs);
-}
-
-/* Single direction cell: icon · input · (clear button on hover when set).
- * Mirrors ClassPropertyRow's set/unset language via data-state so the
- * leading icon dims for unset values just like the labels in the rest of
- * the inspector. */
-.directionCell {
-    position: relative;
-    display: grid;
-    grid-template-columns: 18px 1fr;
-    align-items: center;
-    gap: var(--space-3xs);
-    color: var(--text);
-}
-
-.directionCell[data-state="unset"] .directionIcon {
-    color: var(--text-subtle);
-}
-
-.directionCell[data-state="set"] .directionIcon {
-    color: var(--text);
-}
-
-.directionIcon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    color: var(--text-muted);
-}
-
-.directionInput {
-    min-width: 0;
-}
-
-/* Clear button overlays the trailing edge of the input on hover/focus,
- * fading in/out so the cell stays compact when idle. Mirrors the
- * ClassPropertyRow.module.css `.removeBtn` pattern. */
-.directionClearBtn.directionClearBtn {
-    position: absolute;
-    top: 50%;
-    right: 4px;
-    width: 18px;
-    height: 18px;
-    border-radius: 6px;
-    background: var(--bg-surface-2);
-    border: 1px solid var(--border-muted);
-    color: var(--text-muted);
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-50%);
-    transition:
-        opacity 100ms ease,
-        background-color 100ms ease,
-        color 100ms ease;
-}
-
-.directionCell:hover .directionClearBtn,
-.directionCell:focus-within .directionClearBtn {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.directionClearBtn.directionClearBtn:hover {
-    color: var(--text);
-}
 
 /* Grid-specific edit row — wraps a full-width text input that replaces
  * the segmented control while the user types a custom track template.
@@ -220,4 +97,93 @@
     width: 100%;
     align-items: stretch;
     min-height: 30px;
+}
+
+/* Gap x / y duo — two token-aware fields with tiny axis tags (inspector
+ * redesign's "Gap [x] [y]" row). */
+.gapDuo {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-s);
+    min-width: 0;
+}
+
+.gapCell {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+.gapCell > :first-child {
+    flex: 1;
+    min-width: 0;
+}
+
+.gapAxis {
+    position: absolute;
+    right: var(--space-s);
+    color: var(--text-disabled);
+    font-size: var(--text-2xs);
+    text-transform: lowercase;
+    pointer-events: none;
+}
+
+/* Field + StepGroup duo (Columns / Rows / Z Index — inspector redesign). */
+.trackDuo {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-s);
+    align-items: center;
+    min-width: 0;
+}
+
+.trackDuo > * {
+    min-width: 0;
+}
+
+/* Per-side sub-row (Padding T R B L) — the prototype's `.sides`
+   (index.html:824): four tight cells, each ONE field tall, with the letter
+   riding inside the field at its trailing edge. Same idiom as the Gap row's
+   x/y tags, so the panel has one way of tagging a field, not two. */
+.sidesRow {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-3xs);
+    min-width: 0;
+}
+
+.sideCell {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+.sideCell > :first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Reserve the tag's column so a long value never runs under the letter. */
+.sideCell input {
+    padding-right: var(--space-xl);
+}
+
+.sideTag {
+    position: absolute;
+    right: var(--space-2xs);
+    color: var(--text-disabled);
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Tick on the value a dropdown is currently on (inspector-panel.md §7.4). */
+.menuTick {
+    display: inline-flex;
+    flex: none;
+    margin-left: auto;
+    color: var(--panel-accent);
 }

@@ -1,0 +1,74 @@
+/* ScopeGroup — "one value for all" ⊕ "one per part" (inspector-panel.md §6.1) */
+
+.row {
+    display: grid;
+    grid-template-columns: var(--control-label-column) minmax(0, 1fr);
+    gap: var(--space-s);
+    /* Two-line rows anchor the label to the FIRST control, not to the middle
+       of the whole stack. */
+    align-items: start;
+    min-height: var(--control-height);
+}
+
+.control {
+    display: grid;
+    gap: var(--space-3xs);
+    min-width: 0;
+}
+
+/* Line 1 is identical in both modes: value ⊕ scope toggle. */
+.head {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-s);
+    align-items: center;
+    min-width: 0;
+}
+
+.head > * {
+    min-width: 0;
+}
+
+.linked {
+    min-width: 0;
+}
+
+/* Parts mode: the linked field stays put and goes quiet. `disabled` on the
+   input does the real work (no click, no tab, no scrub) — this only paints
+   it, and hides the stepper that would advertise an edit it won't accept. */
+.row[data-mode='parts'] .linked input {
+    background: var(--overlay-5);
+    color: var(--text-disabled);
+}
+
+.row[data-mode='parts'] .linked button {
+    display: none;
+}
+
+/* The parts block spans the whole control column — including the space under
+   the toggle, which is why it is a sibling of `.head` and not a third column. */
+.parts {
+    display: grid;
+    grid-template-columns: repeat(var(--scope-parts), minmax(0, 1fr));
+    gap: var(--space-3xs);
+    min-width: 0;
+}
+
+.part {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-4xs);
+    min-width: 0;
+}
+
+/* Letters sit UNDER the fields: inside, they would compete with the value
+   for the same 30px. (Inset keeps its letters in the field — there they are
+   the box's own facets, not a caption.) */
+.partTag {
+    color: var(--text-disabled);
+    font-size: var(--text-2xs);
+    text-align: center;
+    text-transform: uppercase;
+    user-select: none;
+}

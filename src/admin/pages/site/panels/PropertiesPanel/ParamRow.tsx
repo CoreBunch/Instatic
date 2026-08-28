@@ -20,7 +20,7 @@ import { Switch } from '@ui/components/Switch'
 import { Select } from '@ui/components/Select'
 import { ColorInput } from '@ui/components/ColorInput'
 import { Button } from '@ui/components/Button'
-import { CloseIcon } from 'pixel-art-icons/icons/close'
+import { RemoveXGlyph } from '@ui/icons/inspectorGlyphs'
 import { ChevronDownIcon } from 'pixel-art-icons/icons/chevron-down'
 import { ChevronUpIcon } from 'pixel-art-icons/icons/chevron-up'
 import { UndoIcon } from 'pixel-art-icons/icons/undo'
@@ -293,7 +293,7 @@ export function ParamRow({
                 tooltip="Stop exposing this property"
                 onClick={() => onUnbind?.()}
               >
-                <CloseIcon size={10} color="currentColor" aria-hidden="true" />
+                <RemoveXGlyph />
               </Button>
             </div>
           </div>
@@ -420,7 +420,7 @@ export function ParamRow({
                           })
                         }
                       >
-                        <CloseIcon size={8} color="currentColor" aria-hidden="true" />
+                        <RemoveXGlyph />
                       </Button>
                     </span>
                   ))}

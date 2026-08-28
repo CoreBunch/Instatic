@@ -1,39 +1,19 @@
 /**
- * GridTrackControl — quick column / row count picker for `grid-template-*`.
+ * GridTrackControl — column / row count for `grid-template-*` as the
+ * inspector redesign's "field + StepGroup − | +" row.
  *
- * Three visual states — same shape as DisplaySwitcher so the language is
- * consistent across the section:
- *
- *   1. unset / preset-count — segmented `[2 | 3 | 4 | 5 | 6 | ⋯]` with the
- *      matching count pressed (or none). Hovering a pressed segment shows the
- *      X overlay; clicking it clears the property entirely.
- *   2. custom value — full-width chip showing the raw template (e.g.
- *      `200px 1fr 200px`) with a square close button. Clicking the chip enters
- *      edit mode.
- *   3. edit mode — text input replacing the row. Enter / blur applies, Escape
- *      cancels. Toggleable via the trailing chevron in state #1 or by clicking
- *      the chip body in state #2.
+ * The field accepts either a bare count (`3` → `repeat(3, 1fr)`) or any raw
+ * track template (`200px 1fr`, `subgrid`, …) which passes through untouched.
+ * The − | + tiles step the count when the current value IS a plain
+ * `repeat(N, 1fr)` (or unset — stepping up from unset starts at 1); a custom
+ * template has no count to step, so the tiles disable themselves.
  */
 
-import { useRef, useState } from 'react'
-import { Button } from '@ui/components/Button'
+import { useState } from 'react'
 import { Input } from '@ui/components/Input'
-import { SegmentedControl } from '@ui/components/SegmentedControl'
-import { ChevronDownIcon } from 'pixel-art-icons/icons/chevron-down'
-import { CloseIcon } from 'pixel-art-icons/icons/close'
+import { StepGroup } from '@ui/components/StepGroup'
 import { LabeledControl } from './LabeledControl'
 import styles from '../LayoutSection.module.css'
-
-/**
- * Common track counts surfaced as primary segments. Picking N writes
- * `repeat(N, 1fr)` to the property — covering 95% of real-world layouts
- * without touching the underlying CSS shorthand. 1 is intentionally
- * omitted because a single full-width track is just the default block
- * flow and doesn't need a dedicated grid control. Custom track templates
- * (named tracks, mixed sizing, subgrid, single tracks, …) fall back to
- * the inline text input revealed via the trailing chevron.
- */
-const GRID_PRESETS = [2, 3, 4, 5, 6] as const
 
 interface GridTrackControlProps {
   label: string
@@ -52,135 +32,69 @@ export function GridTrackControl({
   onChange,
   onClear,
 }: GridTrackControlProps) {
-  const presetN = parseGridRepeat(value)
-  const isPreset =
-    presetN != null && (GRID_PRESETS as ReadonlyArray<number>).includes(presetN)
-  const isCustomValue = value != null && value !== '' && !isPreset
+  const count = parseGridRepeat(value)
+  const isCustom = value != null && value !== '' && count == null
 
-  // Local state for the inline text-input edit mode.
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value ?? '')
-  const inputRef = useRef<HTMLInputElement>(null)
+  // The field shows the COUNT for repeat templates, the raw template
+  // otherwise. A focused draft keeps what the user is typing.
+  const shown = count != null ? String(count) : (value ?? '')
+  const [draft, setDraft] = useState<string | null>(null)
 
-  // Whenever the canonical value changes externally (e.g. a different node
-  // selected, undo, or a sibling control), drop any stale draft so the next
-  // entry into edit mode starts from the current value.
-  if (!editing && draft !== (value ?? '')) {
-    setDraft(value ?? '')
-  }
-
-  function enterEditMode() {
-    setDraft(value ?? '')
-    setEditing(true)
-    requestAnimationFrame(() => inputRef.current?.focus())
-  }
-
-  function commitDraft() {
-    const trimmed = draft.trim()
-    setEditing(false)
+  const commit = (raw: string) => {
+    const trimmed = raw.trim()
     if (trimmed === '') {
-      if (value != null && value !== '') onClear()
+      if (isSet) onClear()
       return
     }
-    if (trimmed === value) return
-    onChange(trimmed)
+    if (/^\d+$/.test(trimmed)) {
+      const n = Math.min(99, Math.max(1, parseInt(trimmed, 10)))
+      onChange(`repeat(${n}, 1fr)`)
+      return
+    }
+    if (trimmed !== value) onChange(trimmed)
   }
 
-  function cancelDraft() {
-    setEditing(false)
-    setDraft(value ?? '')
+  const step = (delta: 1 | -1) => {
+    // Unset steps up from zero; `repeat(N, 1fr)` steps N. Custom templates
+    // have no count — the tiles are disabled below.
+    const current = count ?? 0
+    const next = Math.min(99, Math.max(1, current + delta))
+    if (next === current) return
+    onChange(`repeat(${next}, 1fr)`)
   }
 
-  // ── Edit mode — inline text input ─────────────────────────────────────────
-  if (editing) {
-    return (
-      <LabeledControl label={label} isSet={isSet}>
-        <div className={styles.gridEditRow}>
-          <Input
-            ref={inputRef}
-            fieldSize="sm"
-            aria-label={`${ariaLabel} (custom)`}
-            placeholder="repeat(3, 1fr) · 200px 1fr · …"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commitDraft}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                commitDraft()
-              } else if (e.key === 'Escape') {
-                e.preventDefault()
-                cancelDraft()
-              }
-            }}
-          />
-        </div>
-      </LabeledControl>
-    )
-  }
-
-  // ── Custom-value state — chip + close ─────────────────────────────────────
-  if (isCustomValue) {
-    return (
-      <LabeledControl label={label} isSet={isSet}>
-        <div className={styles.displayChipGroup}>
-          <Button
-            variant="secondary"
-            size="sm"
-            fullWidth
-            align="start"
-            aria-label={`${ariaLabel}: ${value}`}
-            tooltip="Edit track template"
-            className={styles.displayChip}
-            onClick={enterEditMode}
-          >
-            <span className={styles.displayChipValue}>{value}</span>
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            iconOnly
-            aria-label={`Clear ${ariaLabel}`}
-            tooltip={`Clear ${label.toLowerCase()}`}
-            className={styles.displayChipClear}
-            onClick={onClear}
-          >
-            <CloseIcon size={14} color="currentColor" />
-          </Button>
-        </div>
-      </LabeledControl>
-    )
-  }
-
-  // ── Preset-count state — segmented [2 | 3 | 4 | 5 | 6 | ⋯] ─────────────
   return (
     <LabeledControl label={label} isSet={isSet}>
-      <SegmentedControl
-        fullWidth
-        aria-label={ariaLabel}
-        value={isPreset ? String(presetN) : undefined}
-        onChange={(s) => onChange(`repeat(${s}, 1fr)`)}
-        onClear={onClear}
-        options={GRID_PRESETS.map((n) => ({
-          value: String(n),
-          label: String(n),
-          ariaLabel: `${n} tracks`,
-          tooltip: `repeat(${n}, 1fr)`,
-        }))}
-        trailing={({ trailingClassName }) => (
-          <Button
-            variant="secondary"
-            size="sm"
-            iconOnly
-            aria-label="Custom track template"
-            tooltip="Custom track template"
-            className={trailingClassName}
-            onClick={enterEditMode}
-          >
-            <ChevronDownIcon size={14} color="currentColor" />
-          </Button>
-        )}
-      />
+      <div className={styles.trackDuo}>
+        <Input
+          fieldSize="sm"
+          aria-label={ariaLabel}
+          placeholder="auto"
+          value={draft ?? shown}
+          onFocus={() => setDraft(shown)}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={(e) => {
+            commit(e.target.value)
+            setDraft(null)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              ;(e.target as HTMLInputElement).blur()
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              setDraft(null)
+              ;(e.target as HTMLInputElement).blur()
+            }
+          }}
+        />
+        <StepGroup
+          decreaseLabel={`Fewer ${label.toLowerCase()}`}
+          increaseLabel={`More ${label.toLowerCase()}`}
+          disabled={isCustom}
+          onStep={step}
+        />
+      </div>
     </LabeledControl>
   )
 }
@@ -188,8 +102,7 @@ export function GridTrackControl({
 /**
  * Parse a `repeat(N, 1fr)` template into its track count `N`. Returns null
  * for any other shape (custom templates, named tracks, mixed sizing,
- * subgrid, etc.) so GridTrackControl can fall back to its custom-value
- * states. Whitespace tolerant — `repeat( 3 , 1fr )` still parses.
+ * subgrid, etc.). Whitespace tolerant — `repeat( 3 , 1fr )` still parses.
  */
 function parseGridRepeat(value: string | undefined): number | null {
   if (!value) return null

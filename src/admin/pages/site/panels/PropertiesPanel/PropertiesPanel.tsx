@@ -42,6 +42,7 @@ import { MultiSelectionHeader } from './MultiSelectionInspector'
 import { MultiSelectorHeader } from './MultiSelectorInspector'
 import { type ClassPickerHandle } from './ClassPicker'
 import { useEditorStore } from '@site/store/store'
+import { getNodeHtmlTag } from '@core/page-tree'
 import { PanelHeader, PanelModeButton } from '@admin/shared/PanelHeader'
 import {
   PanelResizeHandle,
@@ -292,6 +293,7 @@ function HeaderTitleContent({
         nodeId={selectedNodeId}
         label={selectedNode.label}
         moduleName={definition.name}
+        htmlTag={getNodeHtmlTag(selectedNode, definition)}
         onRename={(label) => renameNode(selectedNodeId, label)}
       />
     )

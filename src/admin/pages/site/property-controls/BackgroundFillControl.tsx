@@ -96,6 +96,7 @@ export function BackgroundFillControl({
         value={fillValue}
         disabled={disabled}
         gradients
+        images
         ariaLabel={label ?? propKey}
         swatchLabel={`${label ?? propKey} fill`}
         placeholder={placeholder}

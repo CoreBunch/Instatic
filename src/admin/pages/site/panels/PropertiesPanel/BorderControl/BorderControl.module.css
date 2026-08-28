@@ -1,238 +1,165 @@
 /*
- * BorderControl — visual per-side border editor + radius corner editor.
- *
- * Two stacked groups (Sides, Radius) each pairing a clickable visual picker
- * with the value inputs, plus a trailing Outline pair. The pickers echo the
- * SpacingBoxControl visual language (achromatic box, accent highlight on the
- * active edge) but are simpler — borders only need edge/corner selection, not
- * the full box-model diagram.
+ * BorderControl — the prototype's Border editor: an edge box, a scope chip,
+ * then narrow (52px-label) rows for Color / Width / Style.
  */
 
 .root {
     display: flex;
     flex-direction: column;
-    gap: var(--space-xl);
     width: 100%;
 }
 
-/* ── Group (Sides / Radius) ──────────────────────────────────────────────── */
+/* ── Edge box (prototype `.edgebox`) ─────────────────────────────────────── */
 
-.group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-s);
+.edgeBox {
+    display: grid;
+    place-items: center;
+    height: 76px;
+    margin-bottom: var(--control-row-gap);
+    background: var(--bg-surface-2);
+    border-radius: var(--control-radius);
 }
 
-.groupHeader {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    min-height: 18px;
+.edgeBoxInner {
+    position: relative;
+    width: 74px;
+    height: 46px;
+    border-radius: var(--radius-sm);
 }
 
-.groupTitle {
-    color: var(--text-muted);
-    font-size: var(--text-xs);
-    font-weight: 620;
+.edge {
+    position: absolute;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    background: var(--bg-surface-4);
+    cursor: pointer;
+    transition: background-color 110ms ease;
 }
 
-.groupActions {
+.edge:hover {
+    background: var(--overlay-60);
+}
+
+.edge[data-active="true"] {
+    background: var(--accent-3);
+}
+
+.edgeTop {
+    top: 0;
+    left: 3px;
+    right: 3px;
+    height: 3px;
+}
+
+.edgeBottom {
+    bottom: 0;
+    left: 3px;
+    right: 3px;
+    height: 3px;
+}
+
+.edgeLeft {
+    left: 0;
+    top: 3px;
+    bottom: 3px;
+    width: 3px;
+}
+
+.edgeRight {
+    right: 0;
+    top: 3px;
+    bottom: 3px;
+    width: 3px;
+}
+
+/* ── Scope chip (prototype `.sidechip`) ──────────────────────────────────── */
+
+.scopeRow {
     display: flex;
     align-items: center;
     gap: var(--space-4xs);
+    margin-bottom: var(--control-row-gap);
 }
 
-.borderBody,
-.radiusBody {
+/* Doubled selector lifts specificity above Button.module.css's variant / size
+   pairs so the chip keeps the prototype's full-width bar geometry. */
+.sideChip.sideChip {
+    flex: 1 1 auto;
     display: flex;
-    align-items: flex-start;
-    gap: var(--space-xl);
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-s);
+    width: 100%;
+    height: var(--control-height);
+    padding: 0 var(--space-m);
+    border: 0;
+    border-radius: var(--control-radius);
+    background: var(--bg-surface-2);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    font-weight: 500;
 }
 
-.fields {
+.sideChip.sideChip:hover {
+    background: var(--bg-surface-3);
+    color: var(--text-bright);
+}
+
+.sideChip.sideChip[aria-pressed="true"] {
+    background: var(--bg-surface-2);
+    color: var(--text-bright);
+}
+
+.sideChip.sideChip[aria-pressed="true"] svg {
+    color: var(--accent-3);
+}
+
+.sideChipLabel {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Rows (prototype `.popout-row-stack` + `.row.narrow`) ────────────────── */
+
+.rowStack {
     display: flex;
     flex-direction: column;
-    gap: var(--space-xs);
-    flex: 1;
-    min-width: 0;
+    gap: var(--control-row-gap);
 }
-
-/* ── Field row (label + control) ─────────────────────────────────────────── */
 
 .fieldRow {
     display: grid;
-    grid-template-columns: 52px 1fr;
+    grid-template-columns: 52px minmax(0, 1fr);
     align-items: center;
-    gap: var(--space-xs);
-    min-height: 28px;
+    gap: var(--space-s);
+    min-height: var(--control-height);
 }
 
 .fieldLabel {
-    color: var(--text-disabled);
+    padding-left: var(--space-2xs);
+    color: var(--text-muted);
     font-size: var(--text-xs);
-    font-weight: 600;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .fieldControl {
     min-width: 0;
 }
 
-/* ── Side picker (4 clickable edges) ─────────────────────────────────────── */
-
-.sidePicker {
-    flex: 0 0 auto;
+/* Width ⊕ scope pair — the prototype's 68px trailing track. */
+.widthPair {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 68px;
+    gap: var(--space-s);
+    align-items: center;
+    min-width: 0;
 }
 
-.sideBox {
-    position: relative;
-    width: 72px;
-    height: 72px;
-    border-radius: var(--radius);
-    background: var(--bg-surface);
-}
-
-.sideBoxCore {
-    position: absolute;
-    inset: 18px;
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface-2);
-    pointer-events: none;
-}
-
-.sideEdge {
-    position: absolute;
-    border: none;
-    padding: 0;
-    margin: 0;
-    background: var(--overlay-20);
-    border-radius: 2px;
-    cursor: pointer;
-    transition: background-color 120ms ease;
-}
-
-.sideEdge:hover {
-    background: var(--overlay-30);
-}
-
-.sideEdgeSet {
-    background: var(--text-subtle);
-}
-
-.sideEdgeActive {
-    background: var(--overlay);
-}
-
-.sideEdgeActive:hover {
-    background: var(--text-muted);
-}
-
-/* Edge geometry — each edge is a thin bar inset from the box corners. */
-.sideTop {
-    top: 6px;
-    left: 14px;
-    right: 14px;
-    height: 6px;
-}
-
-.sideBottom {
-    bottom: 6px;
-    left: 14px;
-    right: 14px;
-    height: 6px;
-}
-
-.sideLeft {
-    left: 6px;
-    top: 14px;
-    bottom: 14px;
-    width: 6px;
-}
-
-.sideRight {
-    right: 6px;
-    top: 14px;
-    bottom: 14px;
-    width: 6px;
-}
-
-/* ── Corner picker (4 clickable dots) ────────────────────────────────────── */
-
-.cornerPicker {
-    flex: 0 0 auto;
-}
-
-.cornerBox {
-    position: relative;
-    width: 72px;
-    height: 72px;
-    border-radius: var(--radius);
-    background: var(--bg-surface);
-}
-
-.cornerDot {
-    position: absolute;
-    width: 14px;
-    height: 14px;
-    border: 2px solid var(--overlay-20);
-    background: transparent;
-    padding: 0;
-    margin: 0;
-    cursor: pointer;
-    transition: border-color 120ms ease;
-}
-
-.cornerDot:hover {
-    border-color: var(--overlay-30);
-}
-
-.cornerDotActive {
-    border-color: var(--overlay);
-}
-
-.cornerDotActive:hover {
-    border-color: var(--text-muted);
-}
-
-/* Each dot sits at its corner and rounds the OUTER corner so the curve
- * direction reads which corner it controls. */
-.cornerTopLeft {
-    top: 10px;
-    left: 10px;
-    border-right: none;
-    border-bottom: none;
-    border-top-left-radius: 8px;
-}
-
-.cornerTopRight {
-    top: 10px;
-    right: 10px;
-    border-left: none;
-    border-bottom: none;
-    border-top-right-radius: 8px;
-}
-
-.cornerBottomRight {
-    bottom: 10px;
-    right: 10px;
-    border-left: none;
-    border-top: none;
-    border-bottom-right-radius: 8px;
-}
-
-.cornerBottomLeft {
-    bottom: 10px;
-    left: 10px;
-    border-right: none;
-    border-top: none;
-    border-bottom-left-radius: 8px;
-}
-
-/* ── Outline pair ────────────────────────────────────────────────────────── */
-
-.outlineRows {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-xs);
-    padding-top: var(--space-s);
-    border-top: 1px solid var(--overlay-20);
+.widthPair > * {
+    min-width: 0;
 }

@@ -54,7 +54,7 @@ import { FilesStack2SolidIcon } from 'pixel-art-icons/icons/files-stack-2-solid'
 import { CheckboxSolidIcon } from 'pixel-art-icons/icons/checkbox-solid'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
-import { CloseIcon } from 'pixel-art-icons/icons/close'
+import { RemoveXGlyph } from '@ui/icons/inspectorGlyphs'
 import {
   ContextMenu,
   ContextMenuItem,
@@ -252,7 +252,7 @@ export function MultiSelectionInspector({
               aria-label={`Remove ${layer.label} from selection`}
               tooltip="Remove from selection"
             >
-              <CloseIcon size={11} aria-hidden="true" />
+              <RemoveXGlyph />
             </Button>
           </TreeRow>
         ))}

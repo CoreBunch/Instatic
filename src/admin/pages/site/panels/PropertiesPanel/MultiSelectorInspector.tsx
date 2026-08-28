@@ -29,7 +29,7 @@ import {
 import { CopySolidIcon } from 'pixel-art-icons/icons/copy-solid'
 import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
-import { CloseIcon } from 'pixel-art-icons/icons/close'
+import { RemoveXGlyph } from '@ui/icons/inspectorGlyphs'
 import styles from './MultiSelectorInspector.module.css'
 
 interface MultiSelectorInspectorProps {
@@ -176,7 +176,7 @@ export function MultiSelectorInspector({
               aria-label={`Remove ${row.label} from selection`}
               tooltip="Remove from selection"
             >
-              <CloseIcon size={11} aria-hidden="true" />
+              <RemoveXGlyph />
             </Button>
           </TreeRow>
         ))}

@@ -7,6 +7,7 @@
 
 .pillsContainer {
     display: flex;
+    align-items: center;
     flex-wrap: wrap;
     gap: var(--space-3xs);
 }
@@ -131,4 +132,15 @@
 .suggestionHighlighted {
     background: var(--bg-surface-2);
     color: var(--text);
+}
+
+/* The prototype's `.classbar .bp`: the viewport every edit below lands on,
+   monospace and quiet, hugging the right edge of the class bar. */
+.breakpointMark {
+    margin-left: auto;
+    padding-left: var(--space-s);
+    color: var(--text-subtle);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    white-space: nowrap;
 }

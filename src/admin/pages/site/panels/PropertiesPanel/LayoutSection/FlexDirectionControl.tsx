@@ -1,5 +1,5 @@
-/**
- * FlexDirectionControl — 4 connected icon buttons (row, column, and reverses)
+﻿/**
+ * FlexDirectionControl â€” 4 connected icon buttons (row, column, and reverses)
  * for `flex-direction`.
  */
 
@@ -21,6 +21,7 @@ export function FlexDirectionControl({ value, isSet, onChange, onClear }: FlexDi
   return (
     <LabeledControl label="Direction" isSet={isSet}>
       <SegmentedControl
+        look="tiles"
         fullWidth
         aria-label="Flex direction"
         value={value}

@@ -87,6 +87,14 @@ export interface StyleRuleSlice {
   inlineStyleEditing: boolean
   setInlineStyleEditing(active: boolean): void
 
+  /**
+   * True while a gradient-capable colour picker popover is open. The canvas
+   * gradient gizmo draws only during that window — the picker being open IS
+   * the "editing a gradient" signal.
+   */
+  gradientPickerOpen: boolean
+  setGradientPickerOpen(open: boolean): void
+
   /** Transient class assignment previewed on the canvas while hovering a suggestion. */
   previewClassAssignment: ClassPreviewAssignment | null
   setPreviewNodeClass(nodeId: string, classId: string): void

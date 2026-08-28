@@ -63,6 +63,7 @@ export const createStyleRuleSlice: EditorStoreSliceCreator<StyleRuleSlice> = (se
     // ─── Owned UI state ────────────────────────────────────────────────────
     activeClassId: null,
     inlineStyleEditing: false,
+    gradientPickerOpen: false,
     previewClassAssignment: null,
     previewClassStyles: null,
 

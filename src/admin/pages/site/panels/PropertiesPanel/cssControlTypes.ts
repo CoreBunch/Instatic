@@ -14,10 +14,10 @@ import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { MoveIcon } from 'pixel-art-icons/icons/move'
 import { ProportionsSolidIcon } from 'pixel-art-icons/icons/proportions-solid'
 import { RulerDimensionSolidIcon } from 'pixel-art-icons/icons/ruler-dimension-solid'
-import { TextStartTIcon } from 'pixel-art-icons/icons/text-start-t'
 import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
-import { BoxSolidIcon } from 'pixel-art-icons/icons/box-solid'
+import { TextStartTIcon } from 'pixel-art-icons/icons/text-start-t'
 import { SparklesSolidIcon } from 'pixel-art-icons/icons/sparkles-solid'
+import { ArrowsScaleIcon } from 'pixel-art-icons/icons/arrows-scale'
 import { PointerSolidIcon } from 'pixel-art-icons/icons/pointer-solid'
 import { hasStyleValue } from './styleValueUtils'
 
@@ -98,6 +98,7 @@ const ENUM_OPTIONS = new Map<keyof CSSPropertyBag, string[]>([
   ['textDecoration',   ['none', 'underline', 'line-through', 'overline']],
   ['boxSizing',        ['border-box', 'content-box']],
   ['position',         ['static', 'relative', 'absolute', 'fixed', 'sticky']],
+  ['visibility',       ['visible', 'hidden', 'collapse']],
   ['overflow',         ['visible', 'hidden', 'scroll', 'auto']],
   ['overflowX',        ['visible', 'hidden', 'scroll', 'auto']],
   ['overflowY',        ['visible', 'hidden', 'scroll', 'auto']],
@@ -241,6 +242,7 @@ const DEFAULT_CSS_VALUES: Partial<Record<keyof CSSPropertyBag, string | number>>
   objectFit:         'cover',
   objectPosition:    'center center',
   opacity:           1,              // number (CSSPropertyBag.opacity?: number); 1 = fully opaque
+  visibility:        'visible',
   overflow:          'visible',
   overflowX:         'visible',
   overflowY:         'visible',
@@ -340,33 +342,6 @@ export interface ClassStyleSectionDefinition {
 
 export const CLASS_STYLE_SECTIONS: ReadonlyArray<ClassStyleSectionDefinition> = [
   {
-    id: 'layout',
-    title: 'Layout',
-    icon: LayoutSolidIcon,
-    defaultOpen: true,
-    properties: [
-      'display',
-      'flexDirection',
-      'flexWrap',
-      'alignItems',
-      'justifyContent',
-      'justifyItems',
-      'alignSelf',
-      'justifySelf',
-      'flex',
-      'gap',
-      'rowGap',
-      'columnGap',
-      'gridTemplateColumns',
-      'gridTemplateRows',
-      'gridColumn',
-      'gridRow',
-      'overflow',
-      'overflowX',
-      'overflowY',
-    ],
-  },
-  {
     id: 'position',
     title: 'Position',
     icon: MoveIcon,
@@ -396,6 +371,30 @@ export const CLASS_STYLE_SECTIONS: ReadonlyArray<ClassStyleSectionDefinition> = 
     ],
   },
   {
+    id: 'layout',
+    title: 'Layout',
+    icon: LayoutSolidIcon,
+    defaultOpen: true,
+    properties: [
+      'display',
+      'flexDirection',
+      'flexWrap',
+      'alignItems',
+      'justifyContent',
+      'justifyItems',
+      'alignSelf',
+      'justifySelf',
+      'flex',
+      'gap',
+      'rowGap',
+      'columnGap',
+      'gridTemplateColumns',
+      'gridTemplateRows',
+      'gridColumn',
+      'gridRow',
+    ],
+  },
+  {
     id: 'spacing',
     title: 'Spacing',
     icon: RulerDimensionSolidIcon,
@@ -409,6 +408,56 @@ export const CLASS_STYLE_SECTIONS: ReadonlyArray<ClassStyleSectionDefinition> = 
       'marginRight',
       'marginBottom',
       'marginLeft',
+    ],
+  },
+  {
+    // Inspector redesign: one "Styles" section owns the visual surface —
+    // opacity / visibility / fill / overflow / radius / border / shadows —
+    // replacing the old separate Background and Border sections. The visual
+    // StylesSection renders the curated rows; the long tail (background
+    // longhands, border shorthands, object-fit, outline) lives behind its
+    // Advanced disclosure. Every property is listed here so the section
+    // badge counts and search filtering keep covering all of them.
+    id: 'styles',
+    title: 'Styles',
+    icon: PaintBucketSolidIcon,
+    defaultOpen: true,
+    properties: [
+      'opacity',
+      'visibility',
+      'backgroundColor',
+      'background',
+      'backgroundImage',
+      'backgroundSize',
+      'backgroundPosition',
+      'backgroundRepeat',
+      'objectFit',
+      'objectPosition',
+      'overflow',
+      'overflowX',
+      'overflowY',
+      'borderRadius',
+      'borderTopLeftRadius',
+      'borderTopRightRadius',
+      'borderBottomLeftRadius',
+      'borderBottomRightRadius',
+      // Per-side longhands (canonical, edited by BorderControl)
+      'borderTopWidth', 'borderTopStyle', 'borderTopColor',
+      'borderRightWidth', 'borderRightStyle', 'borderRightColor',
+      'borderBottomWidth', 'borderBottomStyle', 'borderBottomColor',
+      'borderLeftWidth', 'borderLeftStyle', 'borderLeftColor',
+      'outline',
+      'outlineOffset',
+      // Shorthands (Advanced disclosure)
+      'border',
+      'borderTop',
+      'borderRight',
+      'borderBottom',
+      'borderLeft',
+      'borderWidth',
+      'borderStyle',
+      'borderColor',
+      'appearance',
     ],
   },
   {
@@ -431,69 +480,27 @@ export const CLASS_STYLE_SECTIONS: ReadonlyArray<ClassStyleSectionDefinition> = 
     ],
   },
   {
-    id: 'background',
-    title: 'Background',
-    icon: PaintBucketSolidIcon,
-    properties: [
-      'backgroundColor',
-      'background',
-      'backgroundImage',
-      'backgroundSize',
-      'backgroundPosition',
-      'backgroundRepeat',
-      'objectFit',
-      'objectPosition',
-    ],
-  },
-  {
-    id: 'border',
-    title: 'Border',
-    icon: BoxSolidIcon,
-    // Drives the section "N set" dot + search filtering. The visual
-    // BorderControl edits the per-side longhands + per-corner radius +
-    // outline; the shorthand props (border / borderTop / …) live in the
-    // section's Advanced disclosure and are listed here too so a search for
-    // "border" still surfaces the section.
-    properties: [
-      // Per-side longhands (canonical, edited by BorderControl)
-      'borderTopWidth', 'borderTopStyle', 'borderTopColor',
-      'borderRightWidth', 'borderRightStyle', 'borderRightColor',
-      'borderBottomWidth', 'borderBottomStyle', 'borderBottomColor',
-      'borderLeftWidth', 'borderLeftStyle', 'borderLeftColor',
-      // Per-corner radius
-      'borderTopLeftRadius',
-      'borderTopRightRadius',
-      'borderBottomLeftRadius',
-      'borderBottomRightRadius',
-      // Outline
-      'outline',
-      'outlineOffset',
-      // Shorthands (Advanced disclosure)
-      'border',
-      'borderTop',
-      'borderRight',
-      'borderBottom',
-      'borderLeft',
-      'borderWidth',
-      'borderStyle',
-      'borderColor',
-      'borderRadius',
-      'appearance',
-    ],
-  },
-  {
     id: 'effects',
     title: 'Effects',
     icon: SparklesSolidIcon,
     properties: [
-      'opacity',
+      // Shadows and blurs are shown as NAMED EFFECTS, not as declarations —
+      // EffectsSection renders them (inspector-panel.md §6.5). They stay in
+      // this list so search and the rail's dot still find them here.
       'boxShadow',
       'filter',
       'backdropFilter',
-      'transform',
-      'transformOrigin',
       'transition',
       'animation',
+    ],
+  },
+  {
+    id: 'transforms',
+    title: 'Transforms',
+    icon: ArrowsScaleIcon,
+    properties: [
+      'transform',
+      'transformOrigin',
     ],
   },
   {
@@ -508,6 +515,46 @@ export const CLASS_STYLE_SECTIONS: ReadonlyArray<ClassStyleSectionDefinition> = 
     ],
   },
 ]
+
+/**
+ * Per-section ADDABLE catalogs for the header "+" menu (inspector redesign):
+ * the long-tail properties that have NO always-visible curated row in the
+ * section's visual editor. Sections absent from this map render every
+ * property as a standing row already (Position, Spacing, Effects, …) — they
+ * get no "+" because there is nothing left to add.
+ *
+ * Keep in sync with the curated rows in LayoutSection / SizeSection /
+ * StylesSection / TypographySection.
+ */
+export const SECTION_ADDABLE_PROPERTIES: ReadonlyMap<
+  string,
+  ReadonlyArray<keyof CSSPropertyBag>
+> = new Map([
+  ['layout', ['alignSelf', 'justifySelf', 'flex', 'rowGap', 'columnGap', 'gridColumn', 'gridRow']],
+  ['size', ['minWidth', 'maxWidth', 'minHeight', 'maxHeight', 'aspectRatio', 'boxSizing']],
+  [
+    'styles',
+    [
+      'backgroundSize',
+      'backgroundPosition',
+      'backgroundRepeat',
+      'objectFit',
+      'objectPosition',
+      'overflowX',
+      'overflowY',
+      'border',
+      'borderTop',
+      'borderRight',
+      'borderBottom',
+      'borderLeft',
+      'borderWidth',
+      'borderStyle',
+      'borderColor',
+      'appearance',
+    ],
+  ],
+  ['typography', ['fontStyle', 'textDecoration', 'textTransform', 'whiteSpace', 'textShadow']],
+])
 
 // ---------------------------------------------------------------------------
 // Style tab utilities

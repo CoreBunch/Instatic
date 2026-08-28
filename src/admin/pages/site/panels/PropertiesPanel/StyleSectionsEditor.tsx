@@ -16,12 +16,18 @@ import type { CSSPropertyBag } from '@core/page-tree'
 import { ClassPropertyRow } from './ClassPropertyRow'
 import { Section } from '@ui/components/Section'
 import { SpacingBoxControl } from './SpacingBoxControl/SpacingBoxControl'
-import { BorderControl } from './BorderControl/BorderControl'
 import { CustomPropertiesSection } from './CustomPropertiesSection'
 import { LayoutSection } from './LayoutSection'
 import { PositionSection } from './PositionSection'
+import { SectionAddMenu } from './SectionAddMenu'
+import { EffectsSection } from './EffectsSection'
+import { EffectAddMenu } from './EffectAddMenu'
+import { SizeSection } from './SizeSection'
+import { StylesSection } from './StylesSection'
+import { TypographySection } from './TypographySection'
 import {
   CLASS_STYLE_SECTIONS,
+  SECTION_ADDABLE_PROPERTIES,
   cssPropertyLabel,
   getCSSPropertyDefaultValue,
   type ClassStyleSectionDefinition,
@@ -34,7 +40,10 @@ import sectionStyles from '@ui/components/Section/Section.module.css'
 const SPACING_SECTION_ID = 'spacing'
 const LAYOUT_SECTION_ID = 'layout'
 const POSITION_SECTION_ID = 'position'
-const BORDER_SECTION_ID = 'border'
+const STYLES_SECTION_ID = 'styles'
+const TYPOGRAPHY_SECTION_ID = 'typography'
+const EFFECTS_SECTION_ID = 'effects'
+const SIZE_SECTION_ID = 'size'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -157,7 +166,11 @@ function StyleSectionGroup({
   onPreview,
   onClearPreview,
 }: StyleSectionGroupProps) {
-  const setCount = section.properties.filter((prop) => hasStyleValue(storedStyles[prop])).length
+
+  // The add-menu lists only what can still be ADDED: the section's long tail
+  // (no standing curated row), from the full catalog — never the search-
+  // narrowed list, and never properties that already hold a value.
+  const addableProperties = SECTION_ADDABLE_PROPERTIES.get(section.id)
 
   // Per-property adapter over the patch-shaped section preview channel.
   const previewProperty = (
@@ -168,12 +181,25 @@ function StyleSectionGroup({
   return (
     <Section
       title={section.title}
-      icon={section.icon}
       defaultOpen={defaultOpen}
       flush
-      indicator={setCount > 0}
-      indicatorTestId={`class-style-section-dot-${section.id}`}
-      meta={setCount > 0 ? `${setCount} set` : undefined}
+      /* `.sec-head` is caret · name · "+" and nothing else
+         (docs/features/inspector-panel.md §3). The set-signal lives where it
+         is actionable: a dot on each set row, and one on the rail category. */
+      headerAction={
+        /* Effects adds an EFFECT, not a CSS property — its "+" opens its own
+           catalogue (docs/features/inspector-panel.md §7.6). */
+        section.id === EFFECTS_SECTION_ID ? (
+          <EffectAddMenu storedStyles={storedStyles} onChange={onChange} />
+        ) : addableProperties ? (
+          <SectionAddMenu
+            sectionTitle={section.title}
+            properties={addableProperties}
+            storedStyles={storedStyles}
+            onChange={onChange}
+          />
+        ) : null
+      }
     >
       <div className={sectionStyles.sectionBody}>
         {section.id === SPACING_SECTION_ID ? (
@@ -193,9 +219,22 @@ function StyleSectionGroup({
             currentStyles={currentStyles}
             activeTab={activeTab}
             onChange={onChange}
+            onChangeMany={onChangeMany}
             onRemove={onRemove}
             onClearProperty={onClearProperty}
             onClearProperties={onClearProperties}
+            onPreview={onPreview}
+            onClearPreview={onClearPreview}
+          />
+        ) : section.id === SIZE_SECTION_ID ? (
+          <SizeSection
+            key={activeTab}
+            storedStyles={storedStyles}
+            currentStyles={currentStyles}
+            activeTab={activeTab}
+            onChange={onChange}
+            onChangeMany={onChangeMany}
+            onRemove={onRemove}
             onPreview={onPreview}
             onClearPreview={onClearPreview}
           />
@@ -211,28 +250,43 @@ function StyleSectionGroup({
             onPreview={onPreview}
             onClearPreview={onClearPreview}
           />
-        ) : section.id === BORDER_SECTION_ID ? (
-          <>
-            <BorderControl
-              key={activeTab}
-              storedStyles={storedStyles}
-              currentStyles={currentStyles}
-              onChange={onChange}
-              onClearProperty={onClearProperty}
-              onPreview={onPreview}
-              onClearPreview={onClearPreview}
-            />
-            <AdvancedRows
-              activeTab={activeTab}
-              properties={BORDER_ADVANCED_PROPERTIES}
-              storedStyles={storedStyles}
-              currentStyles={currentStyles}
-              onChange={onChange}
-              onRemove={onRemove}
-              onPreview={previewProperty}
-              onClearPreview={onClearPreview}
-            />
-          </>
+        ) : section.id === STYLES_SECTION_ID ? (
+          <StylesSection
+            key={activeTab}
+            storedStyles={storedStyles}
+            currentStyles={currentStyles}
+            activeTab={activeTab}
+            visibleProperties={section.properties}
+            onChange={onChange}
+            onChangeMany={onChangeMany}
+            onRemove={onRemove}
+            onClearProperty={onClearProperty}
+            onPreview={onPreview}
+            onClearPreview={onClearPreview}
+          />
+        ) : section.id === EFFECTS_SECTION_ID ? (
+          <EffectsSection
+            key={activeTab}
+            storedStyles={storedStyles}
+            activeTab={activeTab}
+            visibleProperties={section.properties}
+            onChange={onChange}
+            onRemove={onRemove}
+            onPreview={onPreview}
+            onClearPreview={onClearPreview}
+          />
+        ) : section.id === TYPOGRAPHY_SECTION_ID ? (
+          <TypographySection
+            key={activeTab}
+            storedStyles={storedStyles}
+            currentStyles={currentStyles}
+            activeTab={activeTab}
+            visibleProperties={section.properties}
+            onChange={onChange}
+            onRemove={onRemove}
+            onPreview={onPreview}
+            onClearPreview={onClearPreview}
+          />
         ) : (
           section.properties.map((prop) => {
             const storedValue = storedStyles[prop]
@@ -262,78 +316,6 @@ function StyleSectionGroup({
         )}
       </div>
     </Section>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Border advanced rows — raw CSS shorthand props the visual BorderControl
-// deliberately doesn't surface, kept available behind a disclosure.
-// ---------------------------------------------------------------------------
-
-const BORDER_ADVANCED_PROPERTIES: ReadonlyArray<keyof CSSPropertyBag> = [
-  'border',
-  'borderTop',
-  'borderRight',
-  'borderBottom',
-  'borderLeft',
-  'borderWidth',
-  'borderStyle',
-  'borderColor',
-  'borderRadius',
-  'appearance',
-]
-
-interface AdvancedRowsProps {
-  activeTab: string
-  properties: ReadonlyArray<keyof CSSPropertyBag>
-  storedStyles: Record<string, unknown>
-  currentStyles: Record<string, unknown>
-  onChange: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
-  onRemove: (property: keyof CSSPropertyBag) => void
-  onPreview?: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
-  onClearPreview?: () => void
-}
-
-function AdvancedRows({
-  activeTab,
-  properties,
-  storedStyles,
-  currentStyles,
-  onChange,
-  onRemove,
-  onPreview,
-  onClearPreview,
-}: AdvancedRowsProps) {
-  const anySet = properties.some((prop) => hasStyleValue(storedStyles[prop]))
-
-  return (
-    <details className={styles.advanced} open={anySet}>
-      <summary className={styles.advancedSummary}>Advanced</summary>
-      <div className={styles.advancedBody}>
-        {properties.map((prop) => {
-          const storedValue = storedStyles[prop]
-          const isSet = hasStyleValue(storedValue)
-          const currentValue = currentStyles[prop]
-          const fallbackValue = hasStyleValue(currentValue)
-            ? currentValue
-            : getCSSPropertyDefaultValue(prop)
-          return (
-            <ClassPropertyRow
-              key={`${activeTab}-${String(prop)}`}
-              property={prop}
-              value={isSet ? (storedValue as string | number) : undefined}
-              placeholder={!isSet ? fallbackValue : undefined}
-              fontFamilyValue={currentStyles.fontFamily}
-              isSet={isSet}
-              onChange={onChange}
-              onRemove={onRemove}
-              onPreview={onPreview}
-              onClearPreview={onClearPreview}
-            />
-          )
-        })}
-      </div>
-    </details>
   )
 }
 

@@ -1,0 +1,120 @@
+/* EffectsSection — effect rows and their popout body (inspector-panel.md §6.5) */
+
+/* The row is an ordinary panel row plus the handle column. */
+.row {
+    display: grid;
+    grid-template-columns: var(--control-label-column) minmax(0, 1fr) var(--control-height);
+    gap: var(--space-s);
+    align-items: center;
+    min-height: var(--control-height);
+}
+
+.label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    min-width: 0;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dot {
+    flex: none;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent-1);
+}
+
+/* The trigger IS a field — same fill, height and radius as any input in the
+   panel, so the row does not read as a button bolted into a form. */
+.trigger.trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    min-width: 0;
+    height: var(--control-height);
+    padding: 0 var(--space-m);
+    border: 1px solid transparent;
+    border-radius: var(--control-radius);
+    background: var(--bg-surface-2);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--text-xs);
+    text-align: left;
+    cursor: pointer;
+    transition: background 110ms ease, border-color 110ms ease;
+}
+
+.trigger.trigger:hover {
+    background: var(--bg-surface-3);
+}
+
+/* An open popout marks its row: the field's border and the type glyph take
+   the accent, so a floating panel is never orphaned from what it edits. */
+.trigger.trigger[aria-expanded='true'] {
+    border-color: var(--accent-3);
+    color: var(--text-bright);
+}
+
+.glyph {
+    display: inline-flex;
+    flex: none;
+    color: var(--text-muted);
+}
+
+.trigger[aria-expanded='true'] .glyph {
+    color: var(--accent-3);
+}
+
+.value {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.remove.remove {
+    width: var(--control-height);
+    height: var(--control-height);
+    border: 0;
+    border-radius: var(--control-radius);
+    background: none;
+    color: var(--text-bright);
+    transition: background 100ms ease;
+}
+
+.remove.remove:hover,
+.remove.remove:focus-visible {
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border-muted);
+    color: var(--text-bright);
+}
+
+/* ── Popout body ─────────────────────────────────────────────────────────── */
+
+.params {
+    display: flex;
+    flex-direction: column;
+    gap: var(--control-row-gap);
+    padding: var(--space-m);
+}
+
+.pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3xs);
+    min-width: 0;
+}
+
+.colorRow {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-s);
+    align-items: center;
+    min-width: 0;
+}

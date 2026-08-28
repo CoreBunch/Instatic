@@ -36,9 +36,25 @@
 
 .panelDocked {
     position: relative;
-    /* Docked surface is transparent over the --bg-body sidebar, so the inner
-       fades must blend into --bg-body rather than the floating --bg-surface. */
+    /* Docked panel blends with the editor chrome: transparent over the
+       --bg-body (#0d0d0e) sidebar, one uniform tone with the toolbar and
+       rails. The inner fades must blend into --bg-body accordingly. */
     --panel-fade-bg: var(--bg-body);
+    /* The panel stands on the chrome, not on a card, so every control inside
+       it drops one step down the ladder (docs/features/inspector-panel.md §9).
+       Remapping the surface/border tokens here — instead of restyling each
+       primitive — means Input, Select, Button, SegmentedControl and everything
+       else picks up the panel ramp with no per-component override.
+       Colour is one signal in this panel, so the three accents collapse into
+       --panel-accent: set-property dot, active tick, pressed toggle. */
+    --bg-surface-2: var(--panel-surface-2);
+    --bg-surface-3: var(--panel-surface-3);
+    --bg-surface-4: var(--panel-surface-4);
+    --border-subtle: var(--panel-line-subtle);
+    --border-muted: var(--panel-line-muted);
+    --accent-1: var(--panel-accent);
+    --accent-2: var(--panel-accent);
+    --accent-3: var(--panel-accent);
     left: auto;
     top: auto;
     bottom: auto;
@@ -85,31 +101,11 @@
     overflow: hidden;
 }
 
+/* Prototype `.tabs`: the segmented rail spans the panel, inset by the same
+   gutter as the class bar and the sections below it. */
 .nodeViewSwitcher {
-    display: flex;
-    align-items: center;
-    gap: var(--space-l);
-    padding: var(--space-m) var(--space-xl) 0;
-}
-
-.nodeViewSwitcher .nodeViewButton {
-    height: auto;
-    padding: 0;
-    border-radius: var(--radius-sm);
-    color: var(--text-disabled);
-    font-size: var(--text-2xs);
-    font-weight: 800;
-    line-height: 1.4;
-}
-
-.nodeViewSwitcher .nodeViewButton:hover {
-    background: transparent;
-    color: var(--text-muted);
-}
-
-.nodeViewSwitcher .nodeViewButton[data-active="true"] {
-    color: var(--text);
-    font-weight: 800;
+    display: block;
+    padding: var(--space-m) var(--space-l) 0;
 }
 
 /*  `position: relative` + `z-index: 1` make this the containing block AND
@@ -136,9 +132,12 @@
     background: linear-gradient(180deg, var(--panel-fade-bg) 0%, transparent);
 }
 
+/* Spans the header so the tag can hug the right edge (prototype `.panel-head`:
+   name left, tag right, nothing in between). */
 .headerNodeTitle {
     display: flex;
     align-items: center;
+    flex: 1 1 auto;
     min-width: 0;
     gap: var(--space-3xs);
 }
@@ -149,6 +148,19 @@
     overflow: hidden;
     text-overflow: ellipsis;
     font: inherit;
+    white-space: nowrap;
+}
+
+/* The prototype's `.panel-head .tag`: what the node actually is in the
+   document, monospace and quiet, hugging the right edge. It is a fact about
+   the element, not an action — no button chrome. */
+.headerNodeTag {
+    flex: none;
+    margin-left: auto;
+    padding-left: var(--space-s);
+    color: var(--text-subtle);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
     white-space: nowrap;
 }
 
@@ -174,8 +186,8 @@
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 32px;
-    gap: var(--space-3xs);
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-s);
     min-width: 0;
     overflow: hidden;
 }

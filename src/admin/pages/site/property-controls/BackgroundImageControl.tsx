@@ -47,6 +47,7 @@ import { ControlRow } from '@ui/components/ControlRow'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { Input } from '@ui/components/Input'
 import { ColorInput } from '@ui/components/ColorInput'
+import { useEditorStore } from '@site/store/store'
 import { MediaLibraryControl } from './MediaLibraryControl'
 import styles from './BackgroundImageControl.module.css'
 
@@ -106,6 +107,7 @@ export function BackgroundImageControl({
   disabled,
 }: BackgroundImageControlProps) {
   const cssValue = String(value ?? '')
+  const setGradientPickerOpen = useEditorStore((s) => s.setGradientPickerOpen)
   const [mode, setMode] = useState<BgImageMode | undefined>(() => detectMode(cssValue))
 
   // Resync with the external value when it changes from elsewhere (preset
@@ -210,6 +212,7 @@ export function BackgroundImageControl({
               value={cssValue}
               gradients
               disabled={disabled}
+              onOpenChange={setGradientPickerOpen}
               onValueChange={handleGradientChange}
               aria-label={`${label ?? propKey} gradient`}
               fieldSize="xs"

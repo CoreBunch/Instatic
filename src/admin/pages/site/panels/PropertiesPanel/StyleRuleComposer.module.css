@@ -8,6 +8,26 @@
     padding-bottom: var(--space-2xl);
 }
 
+/* Prototype's section rule: a line closes each section, and one opens the
+   first (so Layout is separated from the module block above it). The last
+   section ends the panel without a line. --border-muted, not --border-subtle:
+   on the #0d0d0e chrome the subtle tone is invisible. The 12px horizontal
+   `.sec` inset lives on the flush Section itself (Section.module.css), so
+   every panel section — including the module block outside this wrapper —
+   shares it from one place. */
+.styleSections > [data-style-section] {
+    padding-block: var(--space-s);
+    border-bottom: 1px solid var(--border-muted);
+}
+
+.styleSections > [data-style-section]:first-child {
+    border-top: 1px solid var(--border-muted);
+}
+
+.styleSections > [data-style-section]:last-child {
+    border-bottom: 0;
+}
+
 .noStyleMatches {
     padding: var(--space-l) var(--space-xl);
     color: var(--text-subtle);
@@ -15,42 +35,10 @@
     line-height: 1.4;
 }
 
-/* ── Advanced disclosure (border shorthand rows) ─────────────────────────── */
+/* ── Advanced block (ParamRow's Required / Description / Options rows) ───── */
 
 .advanced {
     margin-top: var(--space-s);
     padding-top: var(--space-s);
     border-top: 1px solid var(--overlay-20);
-}
-
-.advancedSummary {
-    cursor: pointer;
-    list-style: none;
-    color: var(--text-disabled);
-    font-size: var(--text-xs);
-    font-weight: 620;
-    padding: var(--space-4xs) 0;
-    user-select: none;
-}
-
-.advancedSummary::-webkit-details-marker {
-    display: none;
-}
-
-.advancedSummary::before {
-    content: "▸";
-    display: inline-block;
-    margin-right: var(--space-xs);
-    font-size: var(--text-3xs);
-    transition: transform 120ms ease;
-}
-
-.advanced[open] > .advancedSummary::before {
-    transform: rotate(90deg);
-}
-
-.advancedBody {
-    display: grid;
-    gap: var(--space-3xs);
-    padding-top: var(--space-xs);
 }

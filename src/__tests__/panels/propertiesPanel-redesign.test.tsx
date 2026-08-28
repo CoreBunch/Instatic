@@ -626,6 +626,25 @@ describe('StyleRuleComposer unset CSS property placeholders', () => {
     expect(useEditorStore.getState().site!.styleRules[useEditorStore.getState().activeClassId!].styles.display).toBeUndefined()
   })
 
+  it('swaps the segments for a value button — chevron kept, no close button — on a non-primary display', () => {
+    const { nodeId, classIds } = loadSiteWithClasses(1)
+    useEditorStore.getState().updateClassStyles(classIds[0], { display: 'block' })
+    selectNode(nodeId)
+    render(<PropertiesPanel />)
+
+    fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
+
+    const displaySwitcher = document.querySelector('[data-testid="css-display-switcher"]')
+    expect(displaySwitcher?.getAttribute('data-display-value')).toBe('block')
+
+    // The prototype's `.chipvalue` state: the bare value beside the untouched
+    // chevron. No kicker, no square close button — clearing moved into the menu.
+    expect(screen.getByRole('button', { name: /^display: block$/i })).toBeDefined()
+    expect(screen.getByRole('button', { name: /more display values/i })).toBeDefined()
+    expect(screen.queryByRole('button', { name: /^flex layout$/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^clear display/i })).toBeNull()
+  })
+
   it('renders unset text defaults as placeholders, not input values', () => {
     const { nodeId, classIds } = loadSiteWithClasses(1)
     const clsId = classIds[0]
@@ -638,9 +657,12 @@ describe('StyleRuleComposer unset CSS property placeholders', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
 
-    const gapInput = screen.getByLabelText('Gap') as HTMLInputElement
-    expect(gapInput.value).toBe('')
-    expect(gapInput.placeholder).toBe('0px')
+    // Gap renders as the x / y pair (inspector redesign) — both cells unset.
+    const gapX = screen.getByLabelText('Column gap (x)') as HTMLInputElement
+    const gapY = screen.getByLabelText('Row gap (y)') as HTMLInputElement
+    expect(gapX.value).toBe('')
+    expect(gapX.placeholder).toBe('0px')
+    expect(gapY.value).toBe('')
     expect(useEditorStore.getState().site!.styleRules[clsId].styles.gap).toBeUndefined()
   })
 
@@ -658,9 +680,52 @@ describe('StyleRuleComposer unset CSS property placeholders', () => {
     const flexSegment = screen.getByRole('button', { name: /^flex layout$/i })
     expect(flexSegment.getAttribute('aria-pressed')).toBe('true')
 
-    // Gap renders inside the flex block via the GapInput primitive (token-aware).
-    const gapInput = screen.getByLabelText('Gap') as HTMLInputElement
-    expect(gapInput.value).toBe('32px')
+    // Gap renders inside the flex block as the x / y pair — a single-value
+    // shorthand shows in both cells.
+    expect((screen.getByLabelText('Column gap (x)') as HTMLInputElement).value).toBe('32px')
+    expect((screen.getByLabelText('Row gap (y)') as HTMLInputElement).value).toBe('32px')
+  })
+})
+
+describe('ScopeGroup — one value for all, or one per part', () => {
+  // inspector-panel.md §6.1: the first line never changes shape, and in
+  // "parts" mode the linked field stays put and is REALLY disabled — not
+  // merely greyed, and never swapped out for the parts grid.
+  it('keeps the linked padding field mounted and disables it in per-side mode', () => {
+    const { nodeId, classIds } = loadSiteWithClasses(1)
+    const clsId = classIds[0]
+    useEditorStore.getState().updateClassStyles(clsId, { display: 'flex', paddingTop: '8px' })
+    selectNode(nodeId)
+    render(<PropertiesPanel />)
+
+    fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
+
+    const linked = screen.getByLabelText('Padding (all sides)') as HTMLInputElement
+    expect(linked.disabled).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: /each side separately/i }))
+
+    // Same field, still there, now inert — and the four side fields joined it.
+    const afterSwitch = screen.getByLabelText('Padding (all sides)') as HTMLInputElement
+    expect(afterSwitch.disabled).toBe(true)
+    expect(screen.getByLabelText('Padding top')).toBeTruthy()
+    expect(screen.getByLabelText('Padding left')).toBeTruthy()
+  })
+
+  it('keeps the linked radius field mounted and disables it in per-corner mode', () => {
+    const { nodeId, classIds } = loadSiteWithClasses(1)
+    const clsId = classIds[0]
+    useEditorStore.getState().updateClassStyles(clsId, { borderTopLeftRadius: '4px' })
+    selectNode(nodeId)
+    render(<PropertiesPanel />)
+
+    fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
+
+    fireEvent.click(screen.getByRole('button', { name: /corner separately/i }))
+
+    const linked = screen.getByLabelText('Radius') as HTMLInputElement
+    expect(linked.disabled).toBe(true)
+    expect(screen.getByLabelText(/Radius top left/i)).toBeTruthy()
   })
 })
 
@@ -735,10 +800,11 @@ describe('LayoutSection — grid block', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
 
-    // Grid template column / row track pickers and the alignment switchers
-    // are present.
-    expect(screen.getByRole('group', { name: /grid template columns/i })).toBeDefined()
-    expect(screen.getByRole('group', { name: /grid template rows/i })).toBeDefined()
+    // Grid track count fields (field + StepGroup, inspector redesign) and
+    // the alignment switchers are present.
+    expect(screen.getByLabelText('Grid template columns')).toBeDefined()
+    expect(screen.getByLabelText('Grid template rows')).toBeDefined()
+    expect(screen.getByRole('button', { name: /more columns/i })).toBeDefined()
     expect(screen.getByRole('group', { name: /^align items$/i })).toBeDefined()
     expect(screen.getByRole('group', { name: /^justify items$/i })).toBeDefined()
   })
@@ -752,10 +818,10 @@ describe('LayoutSection — grid block', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
 
-    expect(screen.queryByRole('group', { name: /grid template columns/i })).toBeNull()
+    expect(screen.queryByLabelText('Grid template columns')).toBeNull()
   })
 
-  it('clicking a column count segment writes repeat(N, 1fr) to gridTemplateColumns', () => {
+  it('typing a count writes repeat(N, 1fr) to gridTemplateColumns', () => {
     const { nodeId, classIds } = loadSiteWithClasses(1)
     const clsId = classIds[0]
     useEditorStore.getState().updateClassStyles(clsId, { display: 'grid' })
@@ -764,44 +830,15 @@ describe('LayoutSection — grid block', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
 
-    // Column track group renders [1, 2, 3, 4, 5, 6] count segments. Click "3".
-    const columnGroup = screen.getByRole('group', { name: /grid template columns/i })
-    const threeColsSegment = columnGroup.querySelector('button[aria-label="3 tracks"]') as HTMLButtonElement
-    expect(threeColsSegment).not.toBeNull()
-    fireEvent.click(threeColsSegment)
+    const field = screen.getByLabelText('Grid template columns') as HTMLInputElement
+    fireEvent.focus(field)
+    fireEvent.change(field, { target: { value: '3' } })
+    fireEvent.blur(field)
 
     expect(useEditorStore.getState().site!.styleRules[clsId].styles.gridTemplateColumns).toBe('repeat(3, 1fr)')
   })
 
-  it('reflects an existing repeat(N, 1fr) value as a pressed segment', () => {
-    const { nodeId, classIds } = loadSiteWithClasses(1)
-    const clsId = classIds[0]
-    useEditorStore.getState().updateClassStyles(clsId, { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' })
-    selectNode(nodeId)
-    render(<PropertiesPanel />)
-
-    fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
-
-    const columnGroup = screen.getByRole('group', { name: /grid template columns/i })
-    const fourColsSegment = columnGroup.querySelector('button[aria-label="4 tracks"]') as HTMLButtonElement
-    expect(fourColsSegment.getAttribute('aria-pressed')).toBe('true')
-  })
-
-  it('falls back to a custom-value chip when gridTemplateColumns is a non-preset template', () => {
-    const { nodeId, classIds } = loadSiteWithClasses(1)
-    const clsId = classIds[0]
-    useEditorStore.getState().updateClassStyles(clsId, { display: 'grid', gridTemplateColumns: '200px 1fr 200px' })
-    selectNode(nodeId)
-    render(<PropertiesPanel />)
-
-    fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
-
-    // The chip exposes the raw value as the button's accessible name.
-    const chip = screen.getByRole('button', { name: /grid template columns: 200px 1fr 200px/i })
-    expect(chip).toBeDefined()
-  })
-
-  it('clicking the active grid column segment clears gridTemplateColumns', () => {
+  it('the StepGroup + tile increments the track count', () => {
     const { nodeId, classIds } = loadSiteWithClasses(1)
     const clsId = classIds[0]
     useEditorStore.getState().updateClassStyles(clsId, { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)' })
@@ -810,11 +847,54 @@ describe('LayoutSection — grid block', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
 
-    const columnGroup = screen.getByRole('group', { name: /grid template columns/i })
-    const twoColsSegment = columnGroup.querySelector('button[aria-label="2 tracks"]') as HTMLButtonElement
-    expect(twoColsSegment.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: /more columns/i }))
+    expect(useEditorStore.getState().site!.styleRules[clsId].styles.gridTemplateColumns).toBe('repeat(3, 1fr)')
 
-    fireEvent.click(twoColsSegment)
+    fireEvent.click(screen.getByRole('button', { name: /fewer columns/i }))
+    expect(useEditorStore.getState().site!.styleRules[clsId].styles.gridTemplateColumns).toBe('repeat(2, 1fr)')
+  })
+
+  it('reflects an existing repeat(N, 1fr) value as the field count', () => {
+    const { nodeId, classIds } = loadSiteWithClasses(1)
+    const clsId = classIds[0]
+    useEditorStore.getState().updateClassStyles(clsId, { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' })
+    selectNode(nodeId)
+    render(<PropertiesPanel />)
+
+    fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
+
+    expect((screen.getByLabelText('Grid template columns') as HTMLInputElement).value).toBe('4')
+  })
+
+  it('shows a custom template raw in the field and disables the step tiles', () => {
+    const { nodeId, classIds } = loadSiteWithClasses(1)
+    const clsId = classIds[0]
+    useEditorStore.getState().updateClassStyles(clsId, { display: 'grid', gridTemplateColumns: '200px 1fr 200px' })
+    selectNode(nodeId)
+    render(<PropertiesPanel />)
+
+    fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
+
+    expect((screen.getByLabelText('Grid template columns') as HTMLInputElement).value).toBe('200px 1fr 200px')
+    // A custom template has no count to step — the tiles disable themselves
+    // (Button renders disabled+tooltip as aria-disabled).
+    const more = screen.getByRole('button', { name: /more columns/i })
+    expect(more.getAttribute('aria-disabled') ?? String((more as HTMLButtonElement).disabled)).not.toBe('false')
+  })
+
+  it('clearing the field clears gridTemplateColumns', () => {
+    const { nodeId, classIds } = loadSiteWithClasses(1)
+    const clsId = classIds[0]
+    useEditorStore.getState().updateClassStyles(clsId, { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)' })
+    selectNode(nodeId)
+    render(<PropertiesPanel />)
+
+    fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
+
+    const field = screen.getByLabelText('Grid template columns') as HTMLInputElement
+    fireEvent.focus(field)
+    fireEvent.change(field, { target: { value: '' } })
+    fireEvent.blur(field)
 
     expect(useEditorStore.getState().site!.styleRules[clsId].styles.gridTemplateColumns).toBeUndefined()
   })
@@ -833,9 +913,9 @@ describe('LayoutSection — grid block', () => {
     expect(document.querySelector('[data-testid="css-property-row-gridTemplateColumns"]')).toBeNull()
     expect(document.querySelector('[data-testid="css-property-row-gridTemplateRows"]')).toBeNull()
     expect(document.querySelector('[data-testid="css-property-row-justifyItems"]')).toBeNull()
-    // Gap is owned by the GridBlock's GapInput (TokenAwareInput) and lives
+    // Gap is owned by the GridBlock's GapInput (x / y pair) and lives
     // inside the visual block, not as a fallback row.
-    expect(screen.getByLabelText('Gap')).toBeDefined()
+    expect(screen.getByLabelText('Column gap (x)')).toBeDefined()
   })
 
   it('hides gap / rowGap / columnGap rows when display is not flex or grid', () => {
@@ -844,16 +924,28 @@ describe('LayoutSection — grid block', () => {
     render(<PropertiesPanel />)
     fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
 
-    // Default display (unset) → no gap controls at all (fallback is gone,
-    // visual block isn't rendered yet).
+    // Default display (unset) → no gap controls at all (the visual block
+    // isn't rendered yet).
     expect(screen.queryByLabelText('Gap')).toBeNull()
     expect(document.querySelector('[data-testid="css-property-row-rowGap"]')).toBeNull()
     expect(document.querySelector('[data-testid="css-property-row-columnGap"]')).toBeNull()
-    // Item-level properties (gridColumn / gridRow / alignSelf / flex)
-    // still render — they depend on the parent's display, which we don't
-    // observe from a class-style editor.
+    // Long-tail item-level properties (alignSelf / gridColumn / …) no longer
+    // render unset placeholder rows — they get added via the section header's
+    // "+" and appear only once set.
+    expect(document.querySelector('[data-testid="css-property-row-alignSelf"]')).toBeNull()
+    expect(document.querySelector('[data-testid="css-property-row-gridColumn"]')).toBeNull()
+  })
+
+  it('long-tail rows appear once set (added via the section "+")', () => {
+    const { nodeId, classIds } = loadSiteWithClasses(1)
+    const clsId = classIds[0]
+    useEditorStore.getState().updateClassStyles(clsId, { alignSelf: 'center' })
+    selectNode(nodeId)
+    render(<PropertiesPanel />)
+    fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
+
     expect(document.querySelector('[data-testid="css-property-row-alignSelf"]')).not.toBeNull()
-    expect(document.querySelector('[data-testid="css-property-row-gridColumn"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="css-property-row-gridColumn"]')).toBeNull()
   })
 
   it('reveals the GapInput once display becomes flex', () => {
@@ -864,10 +956,11 @@ describe('LayoutSection — grid block', () => {
     render(<PropertiesPanel />)
     fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
 
-    // Gap is now inside the flex block (token-aware input), not a fallback row.
-    expect(screen.getByLabelText('Gap')).toBeDefined()
-    expect(document.querySelector('[data-testid="css-property-row-rowGap"]')).not.toBeNull()
-    expect(document.querySelector('[data-testid="css-property-row-columnGap"]')).not.toBeNull()
+    // Gap is inside the flex block (x / y pair); the per-axis long-tail rows
+    // stay hidden until set via the "+".
+    expect(screen.getByLabelText('Column gap (x)')).toBeDefined()
+    expect(document.querySelector('[data-testid="css-property-row-rowGap"]')).toBeNull()
+    expect(document.querySelector('[data-testid="css-property-row-columnGap"]')).toBeNull()
   })
 })
 
@@ -897,7 +990,7 @@ describe('LayoutSection — position block', () => {
     expect(document.querySelector('[data-testid="css-direction-input-top"]')).toBeNull()
   })
 
-  it('reveals the 4-direction grid when position is relative / absolute / fixed / sticky', () => {
+  it('reveals the inset box when position is relative / absolute / fixed / sticky', () => {
     const { nodeId, classIds } = loadSiteWithClasses(1)
     const clsId = classIds[0]
     useEditorStore.getState().updateClassStyles(clsId, { position: 'relative' })
@@ -905,13 +998,18 @@ describe('LayoutSection — position block', () => {
     render(<PropertiesPanel />)
     fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
 
-    expect(document.querySelector('[data-testid="css-direction-input-top"]')).not.toBeNull()
-    expect(document.querySelector('[data-testid="css-direction-input-right"]')).not.toBeNull()
-    expect(document.querySelector('[data-testid="css-direction-input-bottom"]')).not.toBeNull()
-    expect(document.querySelector('[data-testid="css-direction-input-left"]')).not.toBeNull()
+    // The four offsets live on the edges of the inset box (inspector-panel.md
+    // §6.2), each with a pin that locks it.
+    for (const side of ['top', 'right', 'bottom', 'left']) {
+      expect(screen.getByLabelText(`Inset ${side}`)).toBeTruthy()
+      expect(screen.getByLabelText(`Pin ${side} edge`)).toBeTruthy()
+    }
   })
 
-  it('marks the relative segment as pressed when position: relative is stored', () => {
+  // The prototype's Position "Type" row is a plain `.field select`, not the
+  // Layout section's `.buttongroup` — every keyword lives in one list, so
+  // there is no promoted-segment / chip fallback split any more.
+  it('shows the stored position keyword in the Type select', () => {
     const { nodeId, classIds } = loadSiteWithClasses(1)
     const clsId = classIds[0]
     useEditorStore.getState().updateClassStyles(clsId, { position: 'relative' })
@@ -919,11 +1017,12 @@ describe('LayoutSection — position block', () => {
     render(<PropertiesPanel />)
     fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
 
-    const relSegment = screen.getByRole('button', { name: /^position relative$/i })
-    expect(relSegment.getAttribute('aria-pressed')).toBe('true')
+    // The Select's visible trigger carries the option LABEL.
+    const trigger = screen.getByLabelText('Position') as HTMLInputElement
+    expect(trigger.value).toBe('Relative')
   })
 
-  it('falls back to a chip + close when position is fixed / sticky', () => {
+  it('shows fixed / sticky in the same select — no separate chip state', () => {
     const { nodeId, classIds } = loadSiteWithClasses(1)
     const clsId = classIds[0]
     useEditorStore.getState().updateClassStyles(clsId, { position: 'sticky' })
@@ -931,8 +1030,8 @@ describe('LayoutSection — position block', () => {
     render(<PropertiesPanel />)
     fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
 
-    const chip = screen.getByRole('button', { name: /position: sticky/i })
-    expect(chip).toBeDefined()
+    const trigger = screen.getByLabelText('Position') as HTMLInputElement
+    expect(trigger.value).toBe('Sticky')
   })
 
   it('typing into a direction input writes the value to the matching property on blur', () => {
@@ -943,8 +1042,7 @@ describe('LayoutSection — position block', () => {
     render(<PropertiesPanel />)
     fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
 
-    const topCell = document.querySelector('[data-testid="css-direction-input-top"]')
-    const topInput = topCell?.querySelector('input') as HTMLInputElement
+    const topInput = screen.getByLabelText('Inset top') as HTMLInputElement
 
     // TokenAwareInput defers commit to blur (so token resolution and
     // store writes don't fire on every keystroke). Simulate the full
@@ -1105,9 +1203,10 @@ describe('StyleRuleComposer set style indicators', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
 
-    expect(screen.getByTestId('class-style-section-dot-layout')).toBeDefined()
-    expect(screen.getByTestId('class-style-section-dot-typography')).toBeDefined()
-    expect(screen.queryByTestId('class-style-section-dot-size')).toBeNull()
+    // `.sec-head` carries no count and no dot (inspector-panel.md §3) — the
+    // section's set-signal is the rail category dot plus the per-row dots.
+    expect(screen.queryByTestId('class-style-section-count-layout')).toBeNull()
+    expect(screen.queryByTestId('class-style-section-count-typography')).toBeNull()
 
     expect(screen.getByTestId('class-style-category-dot-layout')).toBeDefined()
     expect(screen.getByTestId('class-style-category-dot-typography')).toBeDefined()
@@ -1124,7 +1223,7 @@ describe('StyleRuleComposer set style indicators', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
 
-    expect(screen.queryByTestId('class-style-section-dot-layout')).toBeNull()
+    expect(screen.queryByTestId('class-style-section-count-layout')).toBeNull()
     expect(screen.queryByTestId('class-style-category-dot-layout')).toBeNull()
 
     // Inherited base style (display: flex) is reflected on the SegmentedControl
@@ -1132,6 +1231,33 @@ describe('StyleRuleComposer set style indicators', () => {
     // flex on this breakpoint, even though nothing is stored at the mobile tab.
     const flexSegment = screen.getByRole('button', { name: /^flex layout$/i })
     expect(flexSegment.getAttribute('aria-pressed')).toBe('true')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The row handle belongs to ADDED rows only (inspector-panel.md §5)
+// ---------------------------------------------------------------------------
+
+describe('row handle — only rows that can actually be removed carry one', () => {
+  it('a standing row has no handle, an added row does', () => {
+    const { nodeId } = loadSiteWithHeading()
+    const state = useEditorStore.getState()
+    const cls = state.createClass('handle-class')
+    state.addNodeClass(nodeId, cls.id)
+    // Fill is a STANDING row of the Styles section: it belongs there whether
+    // or not it holds a value, so "remove the row" is not on offer — its ×
+    // clears the value inside the field. textTransform arrived from the "+".
+    state.updateClassStyles(cls.id, {
+      backgroundColor: '#e50b0b',
+      textTransform: 'uppercase',
+    })
+    selectNode(nodeId)
+    render(<PropertiesPanel />)
+
+    fireEvent.click(screen.getByRole('button', { name: /edit class \.handle-class/i }))
+
+    expect(screen.queryByRole('button', { name: /remove fill property/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /remove text transform property/i })).toBeTruthy()
   })
 })
 
@@ -1145,19 +1271,21 @@ describe('PP-12 — Removing a class CSS property removes it from class styles',
     const state = useEditorStore.getState()
     const cls = state.createClass('remove-class')
     state.addNodeClass(nodeId, cls.id)
-    state.updateClassStyles(cls.id, { fontFamily: 'serif' })
+    // An ADDED row (one that arrived from the section's "+") is what carries
+    // the row handle — a standing row like Font cannot be removed, only
+    // cleared (inspector-panel.md §5).
+    state.updateClassStyles(cls.id, { textTransform: 'uppercase' })
     selectNode(nodeId)
     render(<PropertiesPanel />)
 
     const pill = screen.getByRole('button', { name: /edit class \.remove-class/i })
     fireEvent.click(pill)
 
-    const removeBtn = screen.getByRole('button', { name: /remove font family property/i })
+    const removeBtn = screen.getByRole('button', { name: /remove text transform property/i })
     fireEvent.click(removeBtn)
 
     const updatedCls = useEditorStore.getState().site!.styleRules[cls.id]
-    // fontFamily should be cleared (null or undefined or '')
-    expect(updatedCls.styles.fontFamily).toBeFalsy()
+    expect(updatedCls.styles.textTransform).toBeFalsy()
   })
 })
 
@@ -1563,7 +1691,8 @@ describe('PP-25 — Keyboard navigation reaches ClassPropertyRow controls and re
     const state = useEditorStore.getState()
     const cls = state.createClass('kb-test-class')
     state.addNodeClass(nodeId, cls.id)
-    state.updateClassStyles(cls.id, { fontFamily: 'serif' })
+    // Only an added row has a handle to reach — see PP-12.
+    state.updateClassStyles(cls.id, { textTransform: 'uppercase' })
     selectNode(nodeId)
     render(<PropertiesPanel />)
 
@@ -1572,15 +1701,17 @@ describe('PP-25 — Keyboard navigation reaches ClassPropertyRow controls and re
 
     const user = userEvent.setup()
 
-    // Tab through the panel until we reach the remove button
-    const maxTabs = 120
+    // Tab through the panel until we reach the remove button. The Styles
+    // section (inspector redesign) sits before Typography and carries many
+    // tabbable controls, so the walk is long — hence the raised cap/timeout.
+    const maxTabs = 250
     let foundRemoveBtn = false
     for (let i = 0; i < maxTabs; i++) {
       await user.tab()
       const focused = document.activeElement
       if (
         focused instanceof HTMLButtonElement &&
-        /remove font family/i.test(focused.getAttribute('aria-label') ?? '')
+        /remove text transform property/i.test(focused.getAttribute('aria-label') ?? '')
       ) {
         foundRemoveBtn = true
         break
@@ -1588,7 +1719,7 @@ describe('PP-25 — Keyboard navigation reaches ClassPropertyRow controls and re
     }
 
     expect(foundRemoveBtn).toBe(true)
-  })
+  }, 30000)
 })
 
 // ---------------------------------------------------------------------------

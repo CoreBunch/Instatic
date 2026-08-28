@@ -84,6 +84,11 @@ export function ClassPicker({ nodeId, trailingAction, ref }: ClassPickerProps) {
   const activeClassId = useEditorStore((s) => s.activeClassId)
   const setActiveClass = useEditorStore((s) => s.setActiveClass)
   const inlineStyleEditing = useEditorStore((s) => s.inlineStyleEditing)
+  // Which viewport the edits below land on. 'desktop' is the base context and
+  // has no breakpoint entry, so it names itself.
+  const activeBreakpointLabel = useEditorStore(
+    (s) => s.site?.breakpoints.find((bp) => bp.id === s.activeBreakpointId)?.label ?? 'Base',
+  )
   const setInlineStyleEditing = useEditorStore((s) => s.setInlineStyleEditing)
   const clearNodeInlineStyles = useEditorStore((s) => s.clearNodeInlineStyles)
   const addNodeClass = useEditorStore((s) => s.addNodeClass)
@@ -410,6 +415,7 @@ export function ClassPicker({ nodeId, trailingAction, ref }: ClassPickerProps) {
 
       <SelectorPillStack
         pills={selectorModel.pills}
+        breakpointLabel={activeBreakpointLabel}
         showInlinePill={showInlinePill}
         inlineStyleEditing={inlineStyleEditing}
         onToggleRule={(ruleId, active) => setActiveClass(active ? null : ruleId)}

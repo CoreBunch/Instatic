@@ -116,6 +116,9 @@ const CSSPropertyBagSchema = Type.Object({
   ])),
   objectPosition: Type.Optional(Type.String()),
   opacity: Type.Optional(Type.Number()),
+  visibility: Type.Optional(Type.Union([
+    Type.Literal('visible'), Type.Literal('hidden'), Type.Literal('collapse'),
+  ])),
   overflow: Type.Optional(Type.String()),
   overflowX: Type.Optional(Type.String()),
   overflowY: Type.Optional(Type.String()),
