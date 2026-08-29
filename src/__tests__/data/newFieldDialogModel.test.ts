@@ -10,7 +10,12 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { Value } from '@sinclair/typebox/value'
 import { DataFieldSchema } from '@core/data/schemas'
-import { makeOption, slugifyOptionValue } from '@admin/pages/data/components/NewFieldDialog/newFieldDialogModel'
+import { fieldIdError, makeOption, slugifyOptionValue } from '@admin/pages/data/components/NewFieldDialog/newFieldDialogModel'
+import {
+  POST_TYPE_FIELD_FEATURED_MEDIA,
+  POST_TYPE_FIELD_SEO_DESCRIPTION,
+  POST_TYPE_FIELD_SEO_TITLE,
+} from '@core/data/schemas'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -74,5 +79,52 @@ describe('makeOption', () => {
     )
     const field = { type: 'select', id: 'status', label: 'Status', options }
     expect(Value.Check(DataFieldSchema, field)).toBe(true)
+  })
+})
+
+describe('fieldIdError', () => {
+  it('accepts camelCase, the convention the built-in fields already use', () => {
+    for (const id of ['firmaUrl', 'interviewUrl', 'aufStartseite', 'seoTitle']) {
+      expect(fieldIdError(id, [])).toBeNull()
+    }
+  })
+
+  it("accepts Instatic's own built-in post-type field ids", () => {
+    // The regression in #434: the dialog rejected ids that the product itself
+    // ships, so one table could end up holding two naming conventions.
+    for (const id of [
+      POST_TYPE_FIELD_FEATURED_MEDIA,
+      POST_TYPE_FIELD_SEO_TITLE,
+      POST_TYPE_FIELD_SEO_DESCRIPTION,
+    ]) {
+      expect(id).toMatch(/[A-Z]/)
+      expect(fieldIdError(id, [])).toBeNull()
+    }
+  })
+
+  it('still accepts snake_case, so nothing that validated before stops', () => {
+    for (const id of ['firma_url', 'title', 'field_1', 'a']) {
+      expect(fieldIdError(id, [])).toBeNull()
+    }
+  })
+
+  it('still requires a lowercase first character', () => {
+    for (const id of ['FirmaUrl', '_leading', '1st', 'Ärger']) {
+      expect(fieldIdError(id, [])).not.toBeNull()
+    }
+  })
+
+  it('still rejects characters that are unsafe as a token key', () => {
+    for (const id of ['firma-url', 'firma url', 'firma.url', 'firma$url']) {
+      expect(fieldIdError(id, [])).not.toBeNull()
+    }
+  })
+
+  it('reports an empty id as no error, leaving the submit gate to handle it', () => {
+    expect(fieldIdError('', [])).toBeNull()
+  })
+
+  it('still flags a duplicate id ahead of the pattern message', () => {
+    expect(fieldIdError('firmaUrl', ['firmaUrl'])).toBe('This ID is already in use.')
   })
 })
