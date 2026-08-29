@@ -393,7 +393,7 @@ function buildRuntimeAssetsBlock(
   const hasInfiniteLoops = acc.infiniteLoopIds.size > 0
   const loopEndpointBaseUrl = options.loopEndpointBaseUrl ?? '/_instatic/loop/'
   const loopRuntimeScript = hasInfiniteLoops
-    ? `  <script type="module" src="/_instatic/assets/loop-runtime.js" data-instatic-loop-endpoint="${escapeHtml(loopEndpointBaseUrl)}" defer></script>`
+    ? `  <script type="module" src="/_instatic/assets/loop-runtime.js" data-instatic-loop-endpoint="${escapeHtml(loopEndpointBaseUrl)}"></script>`
     : ''
 
   // Hole runtime — injected into <head> (not body-end) so IntersectionObserver
