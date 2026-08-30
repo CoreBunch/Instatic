@@ -106,10 +106,13 @@ export interface DbClient {
 
   unsafe<Row>(sql: string, params?: unknown[]): Promise<DbResult<Row>>
   transaction<T>(fn: (tx: DbClient) => Promise<T>): Promise<T>
+  close(): Promise<void>
 
   readonly dialect: Dialect
 }
 ```
+
+`close()` releases the backing resource: the SQLite file handle plus its WAL and SHM siblings, or the Postgres connection pool. Queries issued after it reject. The long-lived server client never calls it — it exists for callers with a bounded lifetime, chiefly test teardown, which must release the handle before deleting the database file. Windows refuses to unlink an open file, so relying on garbage collection is not portable. On the transaction-scoped client passed to a `.transaction()` callback it is a no-op, since the enclosing client owns the pool.
 
 `DbClient` is callable as a **tagged template**:
 
