@@ -141,7 +141,7 @@ export default definePlugin({
 }
 
 function serverEntryTemplate({ pluginName }: InitTemplate): string {
-  return `import type { ServerPluginModule } from '@instatic/plugin-sdk'
+  return `import type { ServerPluginModule } from '@core/plugin-sdk'
 
 /**
  * Server entrypoint for ${pluginName}.
