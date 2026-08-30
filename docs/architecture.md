@@ -117,6 +117,8 @@ The repo is organized by responsibility, not by feature. Every file has one reas
 | Design tokens                | `src/styles/globals.css`              | All CSS custom properties                                            |
 | Architecture gates           | `src/__tests__/architecture/*.test.ts`| Structural rules executed as part of `bun test`                      |
 
+**Dependency direction:** `src/core/` is the bottom of the frontend stack — modules, admin, and the server all import it, and it imports none of them. In particular `src/core/` never imports `src/modules/`: shared logic a module and the engine both need (e.g. `resolveHtmlTag` in `@core/htmlAttributes`) lives core-side, and only the module-specific `PropertyControl` builders stay in `src/modules/`. The one exception is `src/core/plugin-sdk/cli/` — the `instatic-plugin` CLI is an executable entry point that populates the module registry the same way `server/` does. Gated by `core-never-imports-modules.test.ts`.
+
 ---
 
 ## Request lifecycle

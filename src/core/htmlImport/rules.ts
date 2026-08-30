@@ -13,9 +13,9 @@
  *   base.container — `tag` (builtin name | 'custom'), `customTag` (free text)
  *   base.form + form controls — semantic form primitives.
  *
- * BUILTIN_HTML_TAGS in base.container: div, section, article, main, header,
- * footer, nav, aside, ul, ol. Tags outside that set MUST use tag:'custom' +
- * customTag so resolveHtmlTag emits the real element name.
+ * BUILTIN_HTML_TAGS (`@core/htmlAttributes`): div, section, article, main,
+ * header, footer, nav, aside, ul, ol. Tags outside that set MUST use
+ * tag:'custom' + customTag so resolveHtmlTag emits the real element name.
  */
 
 import { normalizeImportedText } from './text'

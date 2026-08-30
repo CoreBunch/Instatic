@@ -4,19 +4,16 @@
  * Emits the chosen semantic tag with no default class or default CSS.
  * Visual styling is opt-in via user classes (mcClassName / multi-class system).
  *
- * Tag selection is shared with `base.loop` via `@modules/base/utils/htmlTag`:
- * built-in layout/list tags plus a 'custom' escape hatch (free-form `customTag`
- * text input) so authors can render any valid HTML element name.
+ * Tag selection is shared with `base.loop`: built-in layout/list tags plus a
+ * 'custom' escape hatch (free-form `customTag` text input) so authors can
+ * render any valid HTML element name. Resolution lives in
+ * `@core/htmlAttributes`; the panel controls in `@modules/base/utils/htmlTag`.
  */
 import type { ModuleDefinition } from '@core/module-engine'
 import { registry } from '@core/module-engine'
+import { resolveHtmlTag, VOID_HTML_ELEMENTS } from '@core/htmlAttributes'
 import { SquareSolidIcon } from 'pixel-art-icons/icons/square-solid'
-import {
-  customHtmlTagControl,
-  htmlTagControl,
-  resolveHtmlTag,
-  VOID_HTML_ELEMENTS,
-} from '@modules/base/utils/htmlTag'
+import { customHtmlTagControl, htmlTagControl } from '@modules/base/utils/htmlTag'
 import {
   htmlAttributesAttr,
   htmlAttributesControl,
