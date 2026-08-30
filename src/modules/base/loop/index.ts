@@ -26,12 +26,17 @@
  * shared `htmlTag` helper (same controls as `base.container`): authors
  * can pick a built-in tag (div, ul, nav, …) or supply a custom name.
  * Default is 'div' so existing loops keep their current published HTML.
+ * It also carries `htmlAttributes` like the other structural modules —
+ * a repeated list is exactly the element third-party scripts and
+ * assistive technology need to address (`role`, `aria-label`, a `data-*`
+ * hook for a carousel or filter script).
  */
 import type { ModuleDefinition } from '@core/module-engine'
 import { registry } from '@core/module-engine'
 import { Type, Value, type Static } from '@core/utils/typeboxHelpers'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
 import { resolveHtmlTag } from '@modules/base/utils/htmlTag'
+import { HtmlAttributesPropSchemaOptions } from '@modules/base/shared/htmlAttributes'
 import { LoopEditor } from './LoopEditor'
 
 const LoopPropsSchema = Type.Object({
@@ -48,6 +53,7 @@ const LoopPropsSchema = Type.Object({
   pageSize: Type.Number({ default: 10 }),
   tag: Type.String({ default: 'div' }),
   customTag: Type.String({ default: '' }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type LoopProps = Static<typeof LoopPropsSchema>

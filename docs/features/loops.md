@@ -273,6 +273,25 @@ The `renderNode` callback is the publisher's normal walker — so a variant's su
 
 See [docs/features/publisher.md](publisher.md) → "renderLoop" for the broader pipeline.
 
+### The wrapper element
+
+`renderLoop` emits one wrapper around the iterations, and the canvas
+(`LoopEditor.tsx`) mirrors it attribute for attribute so user CSS targeting
+`[data-instatic-loop] > article` matches in both places.
+
+| Source | Attributes |
+|---|---|
+| Runtime | `data-instatic-loop`, `data-instatic-loop-page`, plus `data-instatic-loop-mode` / `-has-more` / `-page-size` in infinite mode |
+| Author | `tag` / `customTag` choose the element; `htmlAttributes` adds arbitrary attributes, same control as `base.container` |
+| Node | `classIds` → class names, `inlineStyles` → `style` |
+
+The `htmlAttributes` bag is what lets a repeated list be *addressed*: `role="list"`
+and `aria-label` for assistive technology, or a `data-*` hook for a carousel,
+filter, or marquee script that has to find the collection wrapper. Values pass
+through the shared sanitiser (`src/core/htmlAttributes/`), which reserves the
+`data-instatic-*` and `data-canvas-*` prefixes — so the loop's own bookkeeping
+cannot be redirected from the attributes panel.
+
 ---
 
 ## Prefetch

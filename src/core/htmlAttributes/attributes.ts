@@ -70,3 +70,30 @@ export function sanitizeRenderableHtmlAttribute(name: string, value: string): st
   if (hasDangerousUrlScheme(value)) return null
   return value
 }
+
+/**
+ * Normalise a raw `htmlAttributes` prop bag into render-safe attributes:
+ * non-string values are dropped, names run through
+ * `normalizeHtmlAttributeName`, and every value through
+ * `sanitizeRenderableHtmlAttribute`. Both emit paths — the publisher string
+ * emit (`htmlAttributesAttr` in `@core/publisher`) and the admin-canvas
+ * React props (`htmlAttributesForReact`) — build on this.
+ */
+export function normalizeHtmlAttributes(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+
+  const attrs: Record<string, string> = {}
+  for (const [rawName, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof rawValue !== 'string') continue
+    const name = normalizeHtmlAttributeName(rawName)
+    const safeValue = sanitizeRenderableHtmlAttribute(name, rawValue)
+    if (safeValue === null) continue
+    attrs[name] = safeValue
+  }
+  return attrs
+}
+
+/** Author `htmlAttributes` as React-spreadable props for canvas editors. */
+export function htmlAttributesForReact(value: unknown): Record<string, string> {
+  return normalizeHtmlAttributes(value)
+}
