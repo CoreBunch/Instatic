@@ -6,6 +6,10 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 
 ## 0.0.18
 
+### Editor, import, and publishing
+
+- Fixed Cancel during a static site import's upload phase closing the wizard while the import kept running and could still commit. Cancelling (or closing the dialog mid-upload) now aborts the remaining uploads, prevents the site commit and draft save, and reports how many files had already reached the Media Library.
+
 ## 0.0.17 - 2026-08-30
 
 ### AI and integrations
