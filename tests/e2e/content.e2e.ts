@@ -51,7 +51,7 @@ test.describe('content', () => {
       const bodyEditor = page.getByTestId('content-body-editor')
       await bodyEditor.click()
       await page.keyboard.type('/h2')
-      await page.getByTestId('content-slash-menu').getByRole('option', {
+      await page.getByTestId('content-slash-menu').getByRole('menuitem', {
         name: /Heading 2/,
       }).click()
       await page.keyboard.type('Release notes')
@@ -59,9 +59,12 @@ test.describe('content', () => {
 
       await page.keyboard.press('Enter')
       await page.keyboard.type('/data')
-      await page.getByTestId('content-slash-menu').getByRole('option', {
+      await page.getByTestId('content-slash-menu').getByRole('menuitem', {
         name: /Data token/,
       }).click()
+      // The command opens the data-binding picker; choosing a field inserts
+      // its token at the caret. Field rows read as label plus value preview.
+      await page.getByRole('button', { name: /^Title\b/ }).first().click()
       await expect(bodyEditor).toContainText('{currentEntry.title}')
     })
 
@@ -309,11 +312,11 @@ test.describe('content', () => {
         await dialog.getByLabel('Name').fill(collectionName)
         await dialog.getByLabel('Singular label').fill('Product')
         await dialog.getByLabel('Plural label').fill(pluralLabel)
+        // `confirmBeforeDelete` is off by default, so removing a field
+        // commits immediately with no confirmation dialog.
         for (const fieldLabel of ['Featured media', 'SEO title', 'SEO description']) {
           await dialog.getByRole('button', { name: `Delete ${fieldLabel}` }).click()
-          const confirmDialog = page.getByRole('dialog', { name: `Delete field "${fieldLabel}"?` })
-          await confirmDialog.getByRole('button', { name: 'Delete' }).click()
-          await expect(confirmDialog).toBeHidden()
+          await expect(dialog.getByRole('button', { name: `Delete ${fieldLabel}` })).toHaveCount(0)
         }
         await dialog.getByRole('button', { name: 'Create' }).click()
         await completeStepUp(page)

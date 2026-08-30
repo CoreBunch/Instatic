@@ -34,7 +34,11 @@ test('keeps the stored title in the sidebar when the list load resolves after a 
     response.request().method() === 'POST',
   )
   await newPost.click()
-  expect((await createResponse).ok()).toBe(true)
+  const response = await createResponse
+  expect(
+    response.ok(),
+    `entry create returned ${response.status()}: ${await response.text().catch(() => '<no body>')}`,
+  ).toBe(true)
 
   // The create has landed; now let the older list response arrive.
   releaseListLoad()
