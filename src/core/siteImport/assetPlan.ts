@@ -95,6 +95,26 @@ interface AssetPlanResult {
   warnings: ImportWarning[]
 }
 
+/**
+ * Everything URL normalisation needs, gathered once per import.
+ *
+ * The four normalisers below (node props, CSS bags, raw CSS text, `@font-face`)
+ * all funnel into `resolveAndRecord`, and all of them need the same four
+ * things — so they take the resolver rather than passing the pieces around
+ * individually. The two caches live here for the same reason: they are per
+ * import, not per call.
+ */
+interface AssetResolver {
+  fileMap: FileMap
+  /** Deduplicated assets to upload, keyed by FileMap key. */
+  assetMap: Map<string, { sourcePath: string; mimeType: string; bytes: Uint8Array }>
+  warnings: ImportWarning[]
+  /** Lazily built by `normalizedIndex` — see the note there. */
+  byNormalizedPath?: ReadonlyMap<string, string | null>
+  /** One `unresolved-asset` warning per path, however many pages reference it. */
+  reportedMissing: Set<string>
+}
+
 /** Format preference when an `@font-face` lists several fallback files. */
 const FONT_FORMAT_RANK: Record<FontFileFormat, number> = {
   woff2: 0,
@@ -133,15 +153,11 @@ export function buildAssetPlan(
   const warnings: ImportWarning[] = []
   /** Deduplicated assets by FileMap key. */
   const assetMap = new Map<string, { sourcePath: string; mimeType: string; bytes: Uint8Array }>()
+  const resolver: AssetResolver = { fileMap, assetMap, warnings, reportedMissing: new Set() }
 
   // --- Normalise node fragments ---
   const normalizedPagePlans: PagePlan[] = pagePlans.map((plan) => {
-    const normalizedFragment = normalizeFragment(
-      plan.nodeFragment,
-      plan.source,
-      fileMap,
-      assetMap,
-    )
+    const normalizedFragment = normalizeFragment(plan.nodeFragment, plan.source, resolver)
     return { ...plan, nodeFragment: normalizedFragment }
   })
 
@@ -149,7 +165,7 @@ export function buildAssetPlan(
   const normalizedStyleRules: NewStyleRule[] = []
   const styleRuleSources: string[] = []
   for (const { cssPath, rules, assetRefs } of cssFileResults) {
-    const normalized = normalizeRules(rules, assetRefs, cssPath, fileMap, assetMap)
+    const normalized = normalizeRules(rules, assetRefs, cssPath, resolver)
     normalizedStyleRules.push(...normalized)
     for (let i = 0; i < normalized.length; i++) styleRuleSources.push(cssPath)
   }
@@ -165,7 +181,7 @@ export function buildAssetPlan(
     priority: sheet.priority,
     content: sheet.parts
       .map((part) => {
-        const normalized = normalizeRawCssUrls(part.cssText, part.cssPath, fileMap, assetMap)
+        const normalized = normalizeRawCssUrls(part.cssText, part.cssPath, resolver)
         return sheet.parts.length > 1
           ? `/* ${part.cssPath.replace(/\*\//g, '*\\/')} */\n${normalized}`
           : normalized
@@ -174,7 +190,7 @@ export function buildAssetPlan(
   }))
 
   // --- Resolve @font-face blocks into custom font families ---
-  const fonts = buildFontFamilies(cssFileResults, fileMap, assetMap, warnings)
+  const fonts = buildFontFamilies(cssFileResults, resolver)
 
   // --- Sweep up unreferenced media/font files ---
   //
@@ -204,16 +220,11 @@ export function buildAssetPlan(
  * `normalizeCssBag` for stylesheets kept as files. External URLs and
  * unresolved paths pass through untouched.
  */
-function normalizeRawCssUrls(
-  cssText: string,
-  basePath: string,
-  fileMap: FileMap,
-  assetMap: Map<string, { sourcePath: string; mimeType: string; bytes: Uint8Array }>,
-): string {
+function normalizeRawCssUrls(cssText: string, basePath: string, resolver: AssetResolver): string {
   return cssText.replace(
     /url\(\s*(['"]?)([^'")\n]+)\1\s*\)/g,
     (match, _quote: string, rawUrl: string) => {
-      const fileMapKey = resolveAndRecord(rawUrl.trim(), basePath, fileMap, assetMap)
+      const fileMapKey = resolveAndRecord(rawUrl.trim(), basePath, resolver)
       return fileMapKey ? `url('${fileMapKey}')` : match
     },
   )
@@ -235,9 +246,7 @@ function normalizeRawCssUrls(
  */
 function buildFontFamilies(
   cssFileResults: CssFileResult[],
-  fileMap: FileMap,
-  assetMap: Map<string, { sourcePath: string; mimeType: string; bytes: Uint8Array }>,
-  warnings: ImportWarning[],
+  resolver: AssetResolver,
 ): ImportFontFamily[] {
   // family-lowercase → { display family, files, seen (variant) }
   const byFamily = new Map<string, { family: string; files: ImportFontFile[]; seenVariants: Set<string> }>()
@@ -249,7 +258,7 @@ function buildFontFamilies(
       // Pick the best resolvable src among the face's fallback urls.
       let best: { src: string; format: FontFileFormat } | null = null
       for (const rawUrl of face.srcUrls) {
-        const fileMapKey = resolveAndRecord(rawUrl, cssPath, fileMap, assetMap)
+        const fileMapKey = resolveAndRecord(rawUrl, cssPath, resolver)
         if (!fileMapKey) continue
         const format = fontFormatForPath(fileMapKey)
         if (!format) continue
@@ -259,7 +268,7 @@ function buildFontFamilies(
       }
 
       if (!best) {
-        warnings.push({
+        resolver.warnings.push({
           kind: 'external-font',
           message: `@font-face "${face.family}" (${face.variant}) has no bundled font file — skipped. Re-add it via Typography → Upload custom font.`,
           selector: face.family,
@@ -297,18 +306,17 @@ function buildFontFamilies(
 function normalizeFragment(
   fragment: ImportFragment,
   htmlFilePath: string,
-  fileMap: FileMap,
-  assetMap: Map<string, { sourcePath: string; mimeType: string; bytes: Uint8Array }>,
+  resolver: AssetResolver,
 ): ImportFragment {
   const normalizedNodes: Record<string, PageNode> = {}
 
   for (const [id, node] of Object.entries(fragment.nodes)) {
-    const newProps = normalizeNodeProps(node.props, htmlFilePath, fileMap, assetMap)
+    const newProps = normalizeNodeProps(node.props, htmlFilePath, resolver)
     // Inline background images live on `node.inlineStyles` as CSS `url(...)`
     // payloads — normalise them to FileMap keys exactly like CSS-rule
     // background values so `applyAssetRewrites` can swap in the media URL.
     const newInlineStyles = node.inlineStyles
-      ? normalizeCssBag(node.inlineStyles as Record<string, string>, htmlFilePath, fileMap, assetMap)
+      ? normalizeCssBag(node.inlineStyles as Record<string, string>, htmlFilePath, resolver)
       : undefined
     normalizedNodes[id] = {
       ...node,
@@ -321,10 +329,10 @@ function normalizeFragment(
     ? {
         ...fragment.body,
         props: fragment.body.props
-          ? normalizeNodeProps(fragment.body.props, htmlFilePath, fileMap, assetMap)
+          ? normalizeNodeProps(fragment.body.props, htmlFilePath, resolver)
           : undefined,
         inlineStyles: fragment.body.inlineStyles
-          ? normalizeCssBag(fragment.body.inlineStyles, htmlFilePath, fileMap, assetMap)
+          ? normalizeCssBag(fragment.body.inlineStyles, htmlFilePath, resolver)
           : undefined,
       }
     : undefined
@@ -340,8 +348,7 @@ function normalizeFragment(
 function normalizeCssBag(
   bag: Record<string, string>,
   basePath: string,
-  fileMap: FileMap,
-  assetMap: Map<string, { sourcePath: string; mimeType: string; bytes: Uint8Array }>,
+  resolver: AssetResolver,
 ): Record<string, string> {
   const out: Record<string, string> = { ...bag }
   for (const [prop, val] of Object.entries(out)) {
@@ -349,7 +356,7 @@ function normalizeCssBag(
     out[prop] = val.replace(
       /url\(\s*(['"]?)([^'")\n]+)\1\s*\)/g,
       (match, _quote: string, rawUrl: string) => {
-        const fileMapKey = resolveAndRecord(rawUrl.trim(), basePath, fileMap, assetMap)
+        const fileMapKey = resolveAndRecord(rawUrl.trim(), basePath, resolver)
         return fileMapKey ? `url('${fileMapKey}')` : match
       },
     )
@@ -360,8 +367,7 @@ function normalizeCssBag(
 function normalizeNodeProps(
   props: Record<string, unknown>,
   htmlFilePath: string,
-  fileMap: FileMap,
-  assetMap: Map<string, { sourcePath: string; mimeType: string; bytes: Uint8Array }>,
+  resolver: AssetResolver,
 ): Record<string, unknown> {
   const result: Record<string, unknown> = { ...props }
 
@@ -370,11 +376,11 @@ function normalizeNodeProps(
     if (typeof val !== 'string' || val.length === 0) continue
 
     if (propKey === 'srcset') {
-      result[propKey] = normalizeSrcset(val, htmlFilePath, fileMap, assetMap)
+      result[propKey] = normalizeSrcset(val, htmlFilePath, resolver)
       continue
     }
 
-    const fileMapKey = resolveAndRecord(val, htmlFilePath, fileMap, assetMap)
+    const fileMapKey = resolveAndRecord(val, htmlFilePath, resolver)
     if (fileMapKey !== null) result[propKey] = fileMapKey
     // If null: external URL or not in FileMap — leave original value
   }
@@ -383,7 +389,7 @@ function normalizeNodeProps(
   if (isStringRecord(htmlAttributes)) {
     const normalizedAttrs: Record<string, string> = { ...htmlAttributes }
     for (const [attrName, attrValue] of Object.entries(normalizedAttrs)) {
-      const fileMapKey = resolveAndRecord(attrValue, htmlFilePath, fileMap, assetMap)
+      const fileMapKey = resolveAndRecord(attrValue, htmlFilePath, resolver)
       if (fileMapKey !== null) normalizedAttrs[attrName] = fileMapKey
     }
     result['htmlAttributes'] = normalizedAttrs
@@ -397,17 +403,12 @@ function normalizeNodeProps(
  * Format: `url1 2x, url2 1x` or `url1 800w, url2 1200w`.
  * Only the URL parts are replaced; the descriptor (2x, 800w) is preserved.
  */
-function normalizeSrcset(
-  srcset: string,
-  htmlFilePath: string,
-  fileMap: FileMap,
-  assetMap: Map<string, { sourcePath: string; mimeType: string; bytes: Uint8Array }>,
-): string {
+function normalizeSrcset(srcset: string, htmlFilePath: string, resolver: AssetResolver): string {
   const parts = srcset.split(',').map((s) => s.trim()).filter(Boolean)
   const normalized = parts.map((part) => {
     const [urlPart, ...descriptors] = part.split(/\s+/)
     if (!urlPart) return part
-    const fileMapKey = resolveAndRecord(urlPart, htmlFilePath, fileMap, assetMap)
+    const fileMapKey = resolveAndRecord(urlPart, htmlFilePath, resolver)
     const url = fileMapKey ?? urlPart
     return descriptors.length > 0 ? `${url} ${descriptors.join(' ')}` : url
   })
@@ -422,8 +423,7 @@ function normalizeRules(
   rules: NewStyleRule[],
   assetRefs: AssetRef[],
   cssFilePath: string,
-  fileMap: FileMap,
-  assetMap: Map<string, { sourcePath: string; mimeType: string; bytes: Uint8Array }>,
+  resolver: AssetResolver,
 ): NewStyleRule[] {
   if (assetRefs.length === 0) return rules
 
@@ -452,7 +452,7 @@ function normalizeRules(
     }
 
     for (const ref of refs) {
-      const fileMapKey = resolveAndRecord(ref.rawUrl, cssFilePath, fileMap, assetMap)
+      const fileMapKey = resolveAndRecord(ref.rawUrl, cssFilePath, resolver)
       if (fileMapKey === null) continue // external or not in FileMap
 
       if (ref.rawCss === true) {
@@ -492,7 +492,7 @@ function normalizeRules(
   for (const [ruleIdx, refs] of refsByRule) {
     if (ruleIdx < normalized.length) continue
     for (const ref of refs) {
-      resolveAndRecord(ref.rawUrl, cssFilePath, fileMap, assetMap)
+      resolveAndRecord(ref.rawUrl, cssFilePath, resolver)
     }
   }
 
@@ -533,24 +533,24 @@ const NON_ASSET_MIME_PREFIXES: readonly string[] = [
  *
  * Returns null when:
  *   - the URL is external / uses a special scheme,
- *   - the resolved path is not in the FileMap, or
+ *   - the resolved path is not in the FileMap (a media reference that lands
+ *     here also emits an `unresolved-asset` warning), or
  *   - the resolved file is a web document / script (HTML, CSS, JS), or any
  *     other MIME the CMS media endpoint cannot store.
  */
-function resolveAndRecord(
-  rawUrl: string,
-  basePath: string,
-  fileMap: FileMap,
-  assetMap: Map<string, { sourcePath: string; mimeType: string; bytes: Uint8Array }>,
-): string | null {
+function resolveAndRecord(rawUrl: string, basePath: string, resolver: AssetResolver): string | null {
   if (!rawUrl || EXTERNAL_URL_RE.test(rawUrl)) return null
 
-  const fileMapKey = resolveRelativePath(rawUrl, basePath)
+  const resolvedPath = resolveRelativePath(rawUrl, basePath)
+  if (!resolvedPath) return null
+
+  const fileMapKey = resolveFileMapKey(resolvedPath, resolver)
   if (!fileMapKey) return null
 
-  const entry = fileMap.files[fileMapKey]
+  const entry = resolver.fileMap.files[fileMapKey]
   if (!entry) return null
 
+  const { assetMap } = resolver
   const mimeType = entry.mimeType ?? guessMimeType(fileMapKey)
 
   // HTML, CSS, and JS files are page/style sources — never upload them as
@@ -568,6 +568,71 @@ function resolveAndRecord(
   }
 
   return fileMapKey
+}
+
+/**
+ * Turn a resolved archive path into the FileMap key that actually holds the
+ * bytes, and report the ones that hold nothing.
+ *
+ * An exact hit is the normal case. The fallback exists because exporters do
+ * not always agree with themselves about filenames: a file stored as
+ * `101-&Berlin-Office-Us+ Coworking.webp` gets referenced from the HTML as
+ * `101-Berlin-Office-Us-Coworking.webp`, and the page imports with a broken
+ * image through no fault of the archive's owner. Comparing punctuation-
+ * insensitively reunites the two.
+ *
+ * The match must be UNIQUE. Two files that differ only in punctuation are two
+ * different files, and picking one would silently put the wrong image on the
+ * page — a worse outcome than the broken reference we started with. Ambiguity
+ * and genuine absence both fall through to the same warning.
+ */
+function resolveFileMapKey(resolvedPath: string, resolver: AssetResolver): string | null {
+  if (resolver.fileMap.files[resolvedPath]) return resolvedPath
+
+  const match = normalizedIndex(resolver).get(normalizeAssetPath(resolvedPath))
+  if (match) return match
+
+  // Only media references are worth reporting. Anchors point at pages and
+  // extensionless routes that legitimately live outside the archive, and a
+  // wall of warnings about those would bury the images that really are gone.
+  if (isImportUploadableMimeType(guessMimeType(resolvedPath)) && !resolver.reportedMissing.has(resolvedPath)) {
+    resolver.reportedMissing.add(resolvedPath)
+    resolver.warnings.push({
+      kind: 'unresolved-asset',
+      message: `"${resolvedPath}" is referenced but not in the archive — the element imports with a broken link. Re-export the site, or upload the file and repoint it.`,
+      path: resolvedPath,
+    })
+  }
+  return null
+}
+
+/**
+ * Index of every FileMap key by its punctuation-insensitive form. Keys that
+ * collide map to `null` — an ambiguous match is no match.
+ *
+ * Built on the first miss: an archive whose references all resolve exactly
+ * never pays for it.
+ */
+function normalizedIndex(resolver: AssetResolver): ReadonlyMap<string, string | null> {
+  if (resolver.byNormalizedPath) return resolver.byNormalizedPath
+
+  const index = new Map<string, string | null>()
+  for (const filePath of Object.keys(resolver.fileMap.files)) {
+    const key = normalizeAssetPath(filePath)
+    index.set(key, index.has(key) ? null : filePath)
+  }
+  resolver.byNormalizedPath = index
+  return index
+}
+
+/**
+ * Strip a path down to what survives an exporter's filename sanitising:
+ * lowercase, with everything but letters, digits, `.` and `/` removed. That
+ * folds `&`, `+`, spaces, and `-` together, which is exactly the set that
+ * differs between a stored filename and the reference written to it.
+ */
+function normalizeAssetPath(path: string): string {
+  return path.toLowerCase().replace(/[^a-z0-9./]+/g, '')
 }
 
 /**

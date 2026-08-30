@@ -350,6 +350,28 @@ On success the same step switches to its **complete** state — a success mark, 
 | `missing-stylesheet` | A `<link rel="stylesheet">` href was not found in the FileMap |
 | `asset-upload-failed` | An individual asset upload was rejected by the server; the original FileMap path remains in the import |
 | `external-font` | An `@font-face` with no bundled file (all `src` entries are external URLs) — skipped |
+| `unresolved-asset` | An HTML/CSS reference to a media file the archive does not contain under that path — one warning per distinct path |
+
+The import log shows the first 12 warnings, ordered so the kinds that name a
+missing file come first and the CSS interpretation notes last
+(`rankWarning` in `ImportStep.tsx`).
+
+### Filename matching
+
+Asset references resolve by exact FileMap key first. On a miss, the path is
+compared punctuation-insensitively (lowercased, with everything but letters,
+digits, `.` and `/` removed) against every file in the archive. This exists
+because exporters do not always agree with themselves: a Webflow export stores
+`101-&Berlin-Office-Us+ Coworking.webp` and references it from the HTML as
+`101-Berlin-Office-Us-Coworking.webp`, so an exact-only match imports the page
+with a broken image.
+
+The fallback match must be **unique**. Two files that differ only in
+punctuation are two different files, and picking one would put the wrong image
+on the page — so ambiguity falls through to the same `unresolved-asset`
+warning as genuine absence. Only references whose extension maps to an
+uploadable media MIME are reported: anchors to extensionless routes and pages
+outside the archive are normal and would bury the real misses.
 
 ---
 
