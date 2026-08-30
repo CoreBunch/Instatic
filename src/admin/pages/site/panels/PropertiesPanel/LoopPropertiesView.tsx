@@ -29,11 +29,8 @@ import type { PropertyControl, PropertySchema } from '@core/module-engine'
 import { listCmsDataRows, listCmsDataTables } from '@core/persistence/cmsData'
 import { getAncestors, type Page } from '@core/page-tree'
 import { PropertyControlRenderer } from '@site/property-controls/PropertyControlRenderer'
-import {
-  CUSTOM_HTML_TAG_VALUE,
-  customHtmlTagControl,
-  htmlTagControl,
-} from '@modules/base/utils/htmlTag'
+import { CUSTOM_HTML_TAG_VALUE } from '@core/htmlAttributes'
+import { customHtmlTagControl, htmlTagControl } from '@modules/base/utils/htmlTag'
 
 interface LoopPropertiesViewProps {
   nodeId: string

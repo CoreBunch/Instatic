@@ -23,8 +23,7 @@ import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
 import { CanvasModulePlaceholder } from '@ui/components/CanvasModulePlaceholder'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
-import { resolveHtmlTag } from '@modules/base/utils/htmlTag'
-import { htmlAttributesForReact } from '@core/htmlAttributes'
+import { htmlAttributesForReact, resolveHtmlTag } from '@core/htmlAttributes'
 
 export const LoopEditor: React.FC<ModuleComponentProps> = ({ props, children, mcClassName, nodeWrapperProps, nodeId }) => {
   const hasChildren = React.Children.count(children) > 0
