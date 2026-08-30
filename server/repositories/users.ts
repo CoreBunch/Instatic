@@ -504,6 +504,19 @@ export async function countActiveOwners(db: DbClient): Promise<number> {
   return Number(rows[0]?.count ?? 0)
 }
 
+export async function findActiveOwnerUserId(db: DbClient): Promise<string | null> {
+  const { rows } = await db<{ id: string }>`
+    select id
+    from users
+    where role_id = ${'owner'}
+      and status = ${'active'}
+      and deleted_at is null
+    order by created_at asc
+    limit 1
+  `
+  return rows[0]?.id ?? null
+}
+
 export async function markUserLoggedIn(db: DbClient, userId: string): Promise<void> {
   await db`
     update users

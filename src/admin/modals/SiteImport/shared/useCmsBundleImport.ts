@@ -53,8 +53,9 @@ function pluralize(count: number, singular: string, plural: string): string {
 }
 
 function buildCmsImportToastBody(result: CmsImportResult): string {
-  const strategyLabel: Record<ImportStrategy, string> = {
+  const strategyLabel: Record<CmsImportResult['strategy'], string> = {
     replace: 'Replace',
+    'replace-selected': 'Replace selected',
     'merge-add': 'Merge-add',
     'merge-overwrite': 'Merge-overwrite',
   }

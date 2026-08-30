@@ -26,10 +26,14 @@ import { SettingsCogSolidIcon } from 'pixel-art-icons/icons/settings-cog-solid'
 import { CommandIcon } from 'pixel-art-icons/icons/command'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
 import { SlidersHorizontalIcon } from 'pixel-art-icons/icons/sliders-horizontal'
+import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
+import { useCurrentAdminUser } from '@admin/sessionContext'
+import { hasCapability } from '@admin/access'
 import { GeneralSection } from './sections/GeneralSection'
 import { PublishingSection } from './sections/PublishingSection'
 import { ShortcutsSection } from './sections/ShortcutsSection'
 import { PreferencesSection } from './sections/PreferencesSection'
+import { StagingSection } from './sections/StagingSection'
 import s from './SettingsModal.module.css'
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
@@ -41,6 +45,7 @@ const NAV_ITEMS = [
   { id: 'general',     label: 'General',     icon: SettingsCogSolidIcon,  accent: 'lilac' },
   { id: 'shortcuts',   label: 'Shortcuts',   icon: CommandIcon,           accent: 'sky'   },
   { id: 'publishing',  label: 'Publishing',  icon: UploadIcon,            accent: 'mint'  },
+  { id: 'staging',     label: 'Staging',     icon: DatabaseSolidIcon,     accent: 'sky'   },
   { id: 'preferences', label: 'Preferences', icon: SlidersHorizontalIcon, accent: 'peach' },
 ] as const
 
@@ -63,8 +68,13 @@ export function SettingsModal() {
   // modal is lazy-loaded — this editor-store import only fires when the
   // user actually opens settings, never on first paint.
   const setSectionStore = useEditorStore((state) => state.setSettingsSection)
+  const currentUser = useCurrentAdminUser()
+  const canManageDeployment = !currentUser || hasCapability(currentUser, 'deployment.manage')
+  const visibleNavItems = canManageDeployment
+    ? NAV_ITEMS
+    : NAV_ITEMS.filter((item) => item.id !== 'staging')
 
-  const activeSection = normalizeSection(adminUiSection)
+  const activeSection = normalizeSection(adminUiSection, canManageDeployment)
   const activeItem = NAV_ITEMS.find((n) => n.id === activeSection) ?? NAV_ITEMS[0]
   const dialogRef = useRef<HTMLDivElement>(null)
   const navRef = useRef<HTMLElement>(null)
@@ -218,7 +228,7 @@ export function SettingsModal() {
               aria-label="Settings sections"
               className={s.sectionList}
             >
-              {NAV_ITEMS.map((item) => (
+              {visibleNavItems.map((item) => (
                 <SettingsNavButton
                   key={item.id}
                   item={item}
@@ -253,6 +263,7 @@ export function SettingsModal() {
               {activeSection === 'general'     && <GeneralSection />}
               {activeSection === 'shortcuts'   && <ShortcutsSection />}
               {activeSection === 'publishing'  && <PublishingSection />}
+              {activeSection === 'staging'     && <StagingSection />}
               {activeSection === 'preferences' && <PreferencesSection />}
             </div>
           </div>
@@ -262,7 +273,11 @@ export function SettingsModal() {
   )
 }
 
-function normalizeSection(section: string | null | undefined): SectionId {
+function normalizeSection(
+  section: string | null | undefined,
+  canManageDeployment: boolean,
+): SectionId {
+  if (section === 'staging' && !canManageDeployment) return 'general'
   return NAV_ITEMS.some((item) => item.id === section) ? (section as SectionId) : 'general'
 }
 

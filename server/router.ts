@@ -22,6 +22,7 @@ import { registry } from '@core/module-engine'
 import type { CssBundleFile, SiteCssBundleId } from '@core/publisher'
 import { buildPublishedSiteCssBundle } from './publish/siteCssBundle'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
+import { handleStagingSyncRequest, STAGING_SYNC_PATH } from './staging/receiver'
 
 const VITE_DEV_URL = 'http://localhost:5173'
 
@@ -35,6 +36,8 @@ interface ServerRuntime {
    * storage dashboard widget).
    */
   databaseUrl?: string
+  environment?: 'production' | 'staging'
+  stagingSyncToken?: string
 }
 
 /**
@@ -64,6 +67,7 @@ type RouteHandler = (
  */
 const routes: readonly RouteHandler[] = [
   tryServeHealth,
+  tryServeStagingSync,
   // OAuth discovery, dynamic client registration, and token exchange for
   // hosted MCP clients. These endpoints are public protocol surfaces; the
   // interactive consent step remains admin-session + step-up gated.
@@ -146,6 +150,20 @@ function asGetForHead(req: Request): Request {
 function tryServeHealth(_req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Response | null {
   if (pathname !== '/health') return null
   return jsonResponse({ status: 'ok', ts: Date.now() })
+}
+
+function tryServeStagingSync(
+  req: Request,
+  runtime: ServerRuntime,
+  _url: URL,
+  pathname: string,
+): Promise<Response> | null {
+  if (pathname !== STAGING_SYNC_PATH) return null
+  return handleStagingSyncRequest(req, runtime.db, {
+    environment: runtime.environment ?? 'production',
+    syncToken: runtime.stagingSyncToken,
+    uploadsDir: runtime.uploadsDir,
+  })
 }
 
 function tryServeMcpOAuth(

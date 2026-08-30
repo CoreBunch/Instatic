@@ -153,6 +153,12 @@ export function auditTitle(
       return `Data row ${dataRow} author changed`
     case 'publish':
       return 'Site was published'
+    case 'staging.configured':
+      return 'Staging environment was configured'
+    case 'staging.removed':
+      return 'Staging environment was removed'
+    case 'staging.refreshed':
+      return 'Staging environment was refreshed'
     case 'plugin.install':
       return `${pluginId} was installed`
     case 'plugin.update':

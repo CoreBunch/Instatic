@@ -113,6 +113,8 @@ const server = Bun.serve({
         staticDir: config.staticDir,
         uploadsDir: config.uploadsDir,
         databaseUrl: config.databaseUrl,
+        environment: config.environment,
+        stagingSyncToken: config.stagingSyncToken,
       })
       for (const [k, v] of Object.entries(cors)) {
         res.headers.set(k, v)

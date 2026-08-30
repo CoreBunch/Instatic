@@ -5,6 +5,8 @@ interface ServerConfig {
   staticDir: string
   trustedProxyCidrs: string[]
   publicOrigins: string[]
+  environment: 'production' | 'staging'
+  stagingSyncToken?: string
 }
 
 function readCsvList(value: string | undefined): string[] {
@@ -88,6 +90,7 @@ export function resolvePublicOrigins(env: Record<string, string | undefined>): s
 export function readServerConfig(
   env: Record<string, string | undefined> = process.env,
 ): ServerConfig {
+  const environment = env.INSTATIC_ENVIRONMENT === 'staging' ? 'staging' : 'production'
   return {
     port: Number(env.PORT ?? 3001),
     databaseUrl: env.DATABASE_URL ?? 'sqlite:./.tmp/dev.db',
@@ -95,5 +98,9 @@ export function readServerConfig(
     staticDir: env.STATIC_DIR ?? './dist',
     trustedProxyCidrs: readCsvList(env.TRUSTED_PROXY_CIDRS),
     publicOrigins: resolvePublicOrigins(env),
+    environment,
+    ...(env.STAGING_SYNC_TOKEN?.trim()
+      ? { stagingSyncToken: env.STAGING_SYNC_TOKEN.trim() }
+      : {}),
   }
 }

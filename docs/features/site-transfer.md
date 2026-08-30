@@ -42,7 +42,7 @@ src/core/data/bundleSchema.ts
 ├── MediaAssetExportSchema       — internal import payload asset with bytesBase64 + folderIds
 ├── BundleMediaFolderSchema      — one media-library folder (tree via parentId)
 ├── BundleRedirectSchema         — one published-URL redirect (raw row)
-├── ImportStrategySchema         — 'replace' | 'merge-add' | 'merge-overwrite'
+├── ImportStrategySchema         — user-facing import strategies plus internal staging replacement
 ├── ExportRequestSchema          — POST /export body
 ├── ExportEstimateSchema         — GET/POST /export/estimate response
 ├── ExportSummarySchema          — GET /export/summary response (category counts)
@@ -308,6 +308,14 @@ POST /admin/api/cms/export
   "includeMedia": true
 }
 ```
+
+The import engine also has an internal `replace-selected` mode reserved for staging
+synchronization. It replaces only the tables present in the validated bundle and
+preserves every other destination table; it is not accepted by the public import API.
+
+`replace-selected` is reserved for staging synchronization. It replaces only the
+tables present in the validated bundle and preserves every other destination table;
+the Site Import modal continues to expose the three interactive strategies.
 
 Save the response ZIP to disk (browser handles the download automatically).
 

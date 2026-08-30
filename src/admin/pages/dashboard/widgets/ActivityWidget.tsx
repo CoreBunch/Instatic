@@ -68,6 +68,12 @@ function actionVerb(action: string): string {
       return 'deleted collection'
     case 'publish':
       return 'published the site'
+    case 'staging.configured':
+      return 'configured staging'
+    case 'staging.removed':
+      return 'removed staging'
+    case 'staging.refreshed':
+      return 'refreshed staging'
     case 'plugin.install':
       return 'installed plugin'
     case 'plugin.update':

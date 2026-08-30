@@ -337,7 +337,7 @@ export type BundlePreview = Static<typeof BundlePreviewSchema>
  */
 export const ImportResultSchema = Type.Object({
   ok: Type.Literal(true),
-  strategy: ImportStrategySchema,
+  strategy: Type.Union([ImportStrategySchema, Type.Literal('replace-selected')]),
   tablesAffected: Type.Number(),
   rowsInserted: Type.Number(),
   rowsReplaced: Type.Number(),

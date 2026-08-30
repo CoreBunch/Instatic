@@ -1224,4 +1224,26 @@ export const sqliteMigrations: Migration[] = [
        where trim(lower(display_name)) = trim(lower(email));
     `,
   },
+  {
+    id: '025_staging_environment',
+    sql: `
+      create table if not exists staging_environment (
+        id integer primary key check (id = 1),
+        origin text not null,
+        token_ciphertext blob not null,
+        token_iv blob not null,
+        key_fingerprint text not null,
+        table_ids_json text not null default '[]',
+        include_site integer not null default 1,
+        created_by_user_id text references users(id) on delete set null,
+        created_at text not null default current_timestamp,
+        updated_at text not null default current_timestamp,
+        last_sync_at text,
+        last_sync_status text,
+        last_sync_error text,
+        constraint staging_environment_sync_status_check
+          check (last_sync_status is null or last_sync_status in ('success', 'failed'))
+      );
+    `,
+  },
 ]

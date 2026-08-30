@@ -85,6 +85,13 @@ export {
   updateCurrentUserProfile,
   uploadCurrentUserAvatar,
 } from './cmsAuth'
+export {
+  deleteCmsStagingEnvironment,
+  getCmsStagingEnvironment,
+  refreshCmsStagingEnvironment,
+  saveCmsStagingEnvironment,
+  testCmsStagingEnvironment,
+} from './cmsStaging'
 export type {
   CmsCurrentUser,
   CmsLoginActivityEvent,
