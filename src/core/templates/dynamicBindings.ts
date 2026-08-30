@@ -27,7 +27,7 @@
 
 import type { DynamicPropBinding } from '@core/page-tree'
 import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
-import { isRichtextPropKey } from '@core/sanitize'
+import { isRichtextPropKey, sanitizeRichtext } from '@core/sanitize'
 import type { TemplateRenderDataContext } from './renderDataContext'
 
 export type { TemplateRenderDataContext } from './renderDataContext'
@@ -200,6 +200,21 @@ export function resolveDynamicProps(
     resolved![key] = isRichtextPropKey(key)
       ? renderMarkdownToHtml(interpolated)
       : interpolated
+  }
+
+  // Richtext binding outputs render through `dangerouslySetInnerHTML` on the
+  // editor canvas (base.outlet's `html`) with no other guard, so sanitise every
+  // resolved richtext-keyed value the way the publisher's `escapeProps` does.
+  // The publisher sanitises these again in escapeProps, so this is idempotent
+  // on the publish path; the canvas has no escapeProps, so this is its only
+  // sanitiser (GHSA-7vxr-r5h2-rh76).
+  if (resolved) {
+    for (const key of Object.keys(resolved)) {
+      const value = resolved[key]
+      if (typeof value === 'string' && isRichtextPropKey(key)) {
+        resolved[key] = sanitizeRichtext(value)
+      }
+    }
   }
 
   return resolved ?? staticProps
