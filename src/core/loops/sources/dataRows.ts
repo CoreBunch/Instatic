@@ -20,12 +20,15 @@
  */
 
 import type { LoopEntitySource, LoopFetchResult, LoopItem, LoopSourceDb } from '@core/loops/types'
+import { cellFilterSql, cellOrderSql, parseCellFilter, parseCellOrder, type CellFilter } from '../cellFilter'
 import { isoDate } from '../../utils/isoDate'
 import { firstImagePathFromMarkdown } from '@core/markdown/renderMarkdown'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { publicDataUserFromParts } from '@core/data/publicDataUser'
+import { normalizeDataTableFields } from '@core/data/fields'
 import { readFeaturedMediaCell } from '@core/data/cells'
-import type { DataRowCells } from '@core/data/schemas'
+import type { DataField, DataRowCells } from '@core/data/schemas'
+import { collectMediaIds, resolveMediaIdsToPaths, resolvedMediaOverlay } from './dataRowsMedia'
 
 // ---------------------------------------------------------------------------
 // Internal SQL row shape
@@ -54,9 +57,9 @@ interface PublishedDataRowSqlRow {
   updated_at: Date | string
 }
 
-interface MediaAssetRow {
-  id: string
-  public_path: string
+interface DataTableProjectionRow {
+  kind: string
+  fields_json: unknown
 }
 
 type OrderColumn = 'publishedAt' | 'createdAt' | 'updatedAt' | 'slug'
@@ -81,52 +84,13 @@ function positionalParam(db: LoopSourceDb, index: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Media path resolution
-//
-// Featured media lives inside cells_json, not as a SQL column. We extract
-// the media id from each row's cells in TypeScript, deduplicate the set, and
-// resolve all unique ids with a SINGLE batched IN-query. One round trip
-// regardless of how many rows the page slice returned.
-// ---------------------------------------------------------------------------
-
-/**
- * Resolve a set of media asset ids to their public_path values in one query.
- * Uses db.unsafe with dialect-appropriate positional placeholders so the
- * same code works on both Postgres ($1, $2, …) and SQLite (?, ?, …).
- * Ids absent from the database are absent from the returned map.
- */
-export async function resolveMediaIdsToPaths(
-  db: LoopSourceDb,
-  ids: Iterable<string>,
-): Promise<Map<string, string>> {
-  const idList = [...new Set(ids)]
-  const pathMap = new Map<string, string>()
-  if (idList.length === 0) return pathMap
-  const placeholders = idList.map((_, i) => positionalParam(db, i + 1)).join(', ')
-  const { rows } = await db.unsafe<MediaAssetRow>(
-    `select id, public_path from media_assets where id in (${placeholders})`,
-    idList,
-  )
-  for (const row of rows) pathMap.set(row.id, row.public_path)
-  return pathMap
-}
-
-function extractFeaturedMediaIds(rows: Array<{ cells_json: Record<string, unknown> }>): string[] {
-  const ids: string[] = []
-  for (const row of rows) {
-    const id = readFeaturedMediaCell(row.cells_json as DataRowCells)
-    if (id) ids.push(id)
-  }
-  return ids
-}
-
-// ---------------------------------------------------------------------------
 // Row → LoopItem projection
 // ---------------------------------------------------------------------------
 
 function rowToLoopItem(
   row: PublishedDataRowSqlRow,
   mediaPathMap: Map<string, string>,
+  fields: readonly DataField[],
 ): LoopItem {
   const cells = row.cells_json as DataRowCells
   const tableRouteBase = normalizeRouteBase(row.table_route_base || `/${row.table_slug}`)
@@ -157,6 +121,9 @@ function rowToLoopItem(
     fields: {
       // Cells — all user-defined fields accessible by fieldId
       ...cells,
+      // Media fields: replace stored ids with resolved public paths so a
+      // `{currentEntry.<field>}` binding renders a URL, not the raw id.
+      ...resolvedMediaOverlay(cells, fields, mediaPathMap),
       // System identity (overlay after cells so these are never shadowed)
       id: row.row_id,
       rowId: row.row_id,
@@ -213,13 +180,27 @@ const POST_TYPE_ORDER_COLUMN: Record<OrderColumn, string> = {
 
 async function fetchPage(
   db: LoopSourceDb,
-  tableId: string,
   orderBy: OrderColumn,
   direction: 'asc' | 'desc',
-  limit: number,
-  offset: number,
+  opts: { tableId: string; limit: number; offset: number; filter: CellFilter | null; orderCellField: string | null },
 ): Promise<PublishedDataRowSqlRow[]> {
-  const orderColumn = POST_TYPE_ORDER_COLUMN[orderBy]
+  const { tableId, limit, offset, filter, orderCellField } = opts
+  const column = 'data_row_versions.cells_json'
+  // SQLite binds `?` by POSITION IN THE TEXT, so the parameter list must follow
+  // the clause order: tableId, the cell condition (WHERE), the ordering cell
+  // (ORDER BY), then limit/offset. Postgres indices are numbered to match.
+  const cell = filter
+    ? cellFilterSql({ filter, dialect: db.dialect, column, nextParamIndex: 2 })
+    : null
+  const cellParams = cell?.params ?? []
+  const order = orderCellField
+    ? cellOrderSql({ field: orderCellField, dialect: db.dialect, column, paramIndex: 2 + cellParams.length })
+    : null
+  const orderColumn = order ? order.sql : POST_TYPE_ORDER_COLUMN[orderBy]
+  const orderParams = order?.params ?? []
+  const before = cellParams.length + orderParams.length
+  const limitParam = positionalParam(db, 2 + before)
+  const offsetParam = positionalParam(db, 3 + before)
   const { rows } = await db.unsafe<PublishedDataRowSqlRow>(
     `select data_row_versions.id as version_id,
             data_rows.id as row_id,
@@ -252,9 +233,10 @@ async function fetchPage(
        and data_rows.status = 'published'
        and data_rows.deleted_at is null
        and data_tables.deleted_at is null
+       ${cell ? `and ${cell.sql}` : ''}
      order by ${orderColumn} ${direction}, data_row_versions.id ${direction}
-     limit ${positionalParam(db, 2)} offset ${positionalParam(db, 3)}`,
-    [tableId, limit, offset],
+     limit ${limitParam} offset ${offsetParam}`,
+    [tableId, ...cellParams, ...orderParams, limit, offset],
   )
   return rows
 }
@@ -290,6 +272,7 @@ interface DataKindRowSqlRow {
 function dataKindRowToLoopItem(
   row: DataKindRowSqlRow,
   mediaPathMap: Map<string, string>,
+  fields: readonly DataField[],
 ): LoopItem {
   const cells = row.cells_json as DataRowCells
   const tableRouteBase = normalizeRouteBase(row.table_route_base || `/${row.table_slug}`)
@@ -308,6 +291,9 @@ function dataKindRowToLoopItem(
     id: row.row_id,
     fields: {
       ...cells,
+      // Media fields: replace stored ids with resolved public paths (see
+      // `rowToLoopItem`).
+      ...resolvedMediaOverlay(cells, fields, mediaPathMap),
       id: row.row_id,
       rowId: row.row_id,
       tableId: row.table_id,
@@ -352,15 +338,27 @@ const DATA_KIND_ORDER_COLUMN: Record<'createdAt' | 'updatedAt' | 'slug', string>
 
 async function fetchDataKindPage(
   db: LoopSourceDb,
-  tableId: string,
   orderBy: OrderColumn,
   direction: 'asc' | 'desc',
-  limit: number,
-  offset: number,
+  opts: { tableId: string; limit: number; offset: number; filter: CellFilter | null; orderCellField: string | null },
 ): Promise<DataKindRowSqlRow[]> {
+  const { tableId, limit, offset, filter, orderCellField } = opts
   const sortKey: 'createdAt' | 'updatedAt' | 'slug' =
     orderBy === 'updatedAt' ? 'updatedAt' : orderBy === 'slug' ? 'slug' : 'createdAt'
-  const orderColumn = DATA_KIND_ORDER_COLUMN[sortKey]
+  const column = 'data_rows.cells_json'
+  // Parameter order follows the clause order — see `fetchPage`.
+  const cell = filter
+    ? cellFilterSql({ filter, dialect: db.dialect, column, nextParamIndex: 2 })
+    : null
+  const cellParams = cell?.params ?? []
+  const order = orderCellField
+    ? cellOrderSql({ field: orderCellField, dialect: db.dialect, column, paramIndex: 2 + cellParams.length })
+    : null
+  const orderColumn = order ? order.sql : DATA_KIND_ORDER_COLUMN[sortKey]
+  const orderParams = order?.params ?? []
+  const before = cellParams.length + orderParams.length
+  const limitParam = positionalParam(db, 2 + before)
+  const offsetParam = positionalParam(db, 3 + before)
 
   // Same safety contract as `fetchPage`: the ORDER BY text comes only from
   // the closed map above; every runtime value is a positional parameter.
@@ -384,9 +382,10 @@ async function fetchDataKindPage(
      where data_rows.table_id = ${positionalParam(db, 1)}
        and data_rows.deleted_at is null
        and data_tables.deleted_at is null
+       ${cell ? `and ${cell.sql}` : ''}
      order by ${orderColumn} ${direction}, data_rows.id ${direction}
-     limit ${positionalParam(db, 2)} offset ${positionalParam(db, 3)}`,
-    [tableId, limit, offset],
+     limit ${limitParam} offset ${offsetParam}`,
+    [tableId, ...cellParams, ...orderParams, limit, offset],
   )
   return rows
 }
@@ -413,62 +412,93 @@ export async function fetchPublishedDataRowItems(
     direction: 'asc' | 'desc'
     limit: number
     offset: number
+    /** Optional condition on one of the row's own cells. */
+    cellFilter?: CellFilter | null
   },
 ): Promise<LoopFetchResult> {
   if (!opts.tableId) return { items: [], totalItems: 0 }
+  const cellFilter = opts.cellFilter ?? null
 
-  const { rows: kindRows } = await db<{ kind: string }>`
-    select kind
+  const { rows: tableRows } = await db<DataTableProjectionRow>`
+    select kind, fields_json
     from data_tables
     where id = ${opts.tableId}
       and deleted_at is null
     limit 1
   `
-  const tableKind = kindRows[0]?.kind
-  if (!tableKind) return { items: [], totalItems: 0 }
+  const table = tableRows[0]
+  if (!table) return { items: [], totalItems: 0 }
+  const fields = normalizeDataTableFields(table.fields_json)
 
+  // `orderBy` is either one of the whitelisted columns or `cell:<fieldId>`,
+  // in which case the sort runs on the row's own cell (the field name binds
+  // as a parameter, so nothing reaches the SQL text).
+  const cellOrder = parseCellOrder(opts.orderBy)
+  const orderCellField = cellOrder?.field ?? null
   const orderBy: OrderColumn = ALLOWED_ORDER_BY.has(opts.orderBy as OrderColumn)
     ? (opts.orderBy as OrderColumn)
     : 'publishedAt'
   const direction: 'asc' | 'desc' = opts.direction === 'asc' ? 'asc' : 'desc'
 
-  if (tableKind === 'data') {
-    const { rows: countRows } = await db<{ total: number }>`
-      select count(*) as total
-      from data_rows
-      where table_id = ${opts.tableId}
-        and deleted_at is null
-    `
+  if (table.kind === 'data') {
+    // The count must apply the same condition, or pagination advertises rows
+    // the page query filters out.
+    const dataCountCell = cellFilter
+      ? cellFilterSql({ filter: cellFilter, dialect: db.dialect, column: 'data_rows.cells_json', nextParamIndex: 2 })
+      : null
+    const { rows: countRows } = await db.unsafe<{ total: number }>(
+      `select count(*) as total
+       from data_rows
+       where data_rows.table_id = ${positionalParam(db, 1)}
+         and data_rows.deleted_at is null
+         ${dataCountCell ? `and ${dataCountCell.sql}` : ''}`,
+      [opts.tableId, ...(dataCountCell?.params ?? [])],
+    )
     const totalItems = Number(countRows[0]?.total ?? 0)
     if (totalItems === 0) return { items: [], totalItems: 0 }
 
-    const sqlRows = await fetchDataKindPage(
-      db, opts.tableId, orderBy, direction, opts.limit, opts.offset,
-    )
-    const mediaPathMap = await resolveMediaIdsToPaths(db, extractFeaturedMediaIds(sqlRows))
+    const sqlRows = await fetchDataKindPage(db, orderBy, direction, {
+      tableId: opts.tableId,
+      limit: opts.limit,
+      offset: opts.offset,
+      filter: cellFilter,
+      orderCellField,
+    })
+    const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(sqlRows, fields))
     return {
-      items: sqlRows.map((row) => dataKindRowToLoopItem(row, mediaPathMap)),
+      items: sqlRows.map((row) => dataKindRowToLoopItem(row, mediaPathMap, fields)),
       totalItems,
     }
   }
 
   // Post-type path (default): only published rows, joined to active version.
-  const { rows: countRows } = await db<{ total: number }>`
-    select count(*) as total
-    from data_rows
-    join data_row_versions on data_row_versions.id = data_rows.active_version_id
-    where data_rows.table_id = ${opts.tableId}
-      and data_rows.status = 'published'
-      and data_rows.deleted_at is null
-  `
+  const postCountCell = cellFilter
+    ? cellFilterSql({ filter: cellFilter, dialect: db.dialect, column: 'data_row_versions.cells_json', nextParamIndex: 2 })
+    : null
+  const { rows: countRows } = await db.unsafe<{ total: number }>(
+    `select count(*) as total
+     from data_rows
+     join data_row_versions on data_row_versions.id = data_rows.active_version_id
+     where data_rows.table_id = ${positionalParam(db, 1)}
+       and data_rows.status = 'published'
+       and data_rows.deleted_at is null
+       ${postCountCell ? `and ${postCountCell.sql}` : ''}`,
+    [opts.tableId, ...(postCountCell?.params ?? [])],
+  )
   const totalItems = Number(countRows[0]?.total ?? 0)
   if (totalItems === 0) return { items: [], totalItems: 0 }
 
-  const sqlRows = await fetchPage(db, opts.tableId, orderBy, direction, opts.limit, opts.offset)
-  const mediaPathMap = await resolveMediaIdsToPaths(db, extractFeaturedMediaIds(sqlRows))
+  const sqlRows = await fetchPage(db, orderBy, direction, {
+    tableId: opts.tableId,
+    limit: opts.limit,
+    offset: opts.offset,
+    filter: cellFilter,
+    orderCellField,
+  })
+  const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(sqlRows, fields))
 
   return {
-    items: sqlRows.map((row) => rowToLoopItem(row, mediaPathMap)),
+    items: sqlRows.map((row) => rowToLoopItem(row, mediaPathMap, fields)),
     totalItems,
   }
 }
@@ -490,6 +520,30 @@ export const DataRowsSource: LoopEntitySource = {
       // available data tables — passing an empty list here keeps the schema
       // valid when the source is registered before the table list is loaded.
       options: [],
+    },
+    // Optional condition on one of the row's own cells: the difference
+    // between "the newest three" and "the three marked featured". Field
+    // options are populated per selected table by the Properties Panel.
+    cellField: {
+      type: 'select',
+      label: 'Filter by',
+      options: [],
+    },
+    cellOperator: {
+      type: 'select',
+      label: 'Condition',
+      options: [
+        { label: 'is', value: 'is' },
+        { label: 'is not', value: 'isNot' },
+        { label: 'is checked', value: 'isTrue' },
+        { label: 'is unchecked', value: 'isFalse' },
+        { label: 'has any value', value: 'isSet' },
+        { label: 'has no value', value: 'isEmpty' },
+      ],
+    },
+    cellValue: {
+      type: 'text',
+      label: 'Value',
     },
   },
 
@@ -526,6 +580,7 @@ export const DataRowsSource: LoopEntitySource = {
       direction: ctx.direction,
       limit: ctx.limit,
       offset: ctx.offset,
+      cellFilter: parseCellFilter(ctx.filters),
     })
   },
 

@@ -24,6 +24,7 @@ import type { Page, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { buildPageFrame, buildSiteFrame, buildRouteFrame } from '@core/templates/contextFrames'
+import { interpolateTokens } from '@core/templates/tokenInterpolation'
 import { classNamesForClassIds } from '@core/page-tree'
 import {
   normalizeHtmlAttributeName,
@@ -147,6 +148,26 @@ interface PublishPageOptions {
    * HTML representation the agent targets nodes through.
    */
   annotateNodeIds?: boolean
+  /**
+   * Per-render `<head>` overrides that outrank the site-level settings.
+   *
+   * Post-type entries carry their own authored SEO title / description
+   * (`seoTitle` / `seoDescription`). Those belong to the row, not to the
+   * composed template `Page`, and they must not be written onto
+   * `page.title` — that value also feeds the `{page.title}` binding and has
+   * to keep rendering the entry's real title. The entry render paths pass
+   * them here instead.
+   */
+  documentMeta?: DocumentMetaOverride
+}
+
+/**
+ * `<head>` values supplied by the caller for this render only. An omitted
+ * (or blank) key falls through to the site settings.
+ */
+export interface DocumentMetaOverride {
+  title?: string
+  description?: string
 }
 
 /**
@@ -297,9 +318,22 @@ function bodyHtmlAttributes(value: unknown): string {
 }
 
 /**
- * `<head>` metadata tags derived from site settings + page.
+ * `<head>` metadata tags derived from the caller's overrides + site
+ * settings + page.
  *
- * - `title` falls back through metaTitle → page.title → site.name.
+ * - `title` falls back through the caller's `documentMeta.title` (a
+ *   post-type entry's authored SEO title) → metaTitle → page.title →
+ *   site.name.
+ * - `description` falls back through `documentMeta.description` → the
+ *   site-level metaDescription.
+ * - Whichever value wins is then token-interpolated against the render
+ *   context before escaping, so `{currentEntry.*}` / `{page.*}` /
+ *   `{site.*}` resolve per-entry on entry routes. That serves both ways
+ *   of authoring a title: fill each row's SEO field by hand, or write one
+ *   pattern like `{currentEntry.name} | Acme` on the template page. The
+ *   fallback chain picks the raw value first; a token that resolves empty
+ *   does NOT re-trigger the fallback — authors opt into fallbacks with the
+ *   token's own `{...|fallback}` syntax.
  * - URL-typed settings (faviconUrl) are validated by
  *   isSafeUrl() (blocks `javascript:` / `vbscript:` schemes) and then
  *   escapeHtml()'d for safe attribute interpolation.
@@ -313,17 +347,26 @@ interface DocumentMetaTags {
   langAttr: string
 }
 
-function buildDocumentMetaTags(site: SiteDocument, page: Page): DocumentMetaTags {
+function buildDocumentMetaTags(
+  site: SiteDocument,
+  page: Page,
+  context: TemplateRenderDataContext,
+  override: DocumentMetaOverride = {},
+): DocumentMetaTags {
   const { settings } = site
-  const metaDesc = settings.metaDescription
-    ? `\n  <meta name="description" content="${escapeHtml(settings.metaDescription)}">`
+  const description = override.description || settings.metaDescription
+  const metaDesc = description
+    ? `
+  <meta name="description" content="${escapeHtml(interpolateTokens(description, context))}">`
     : ''
   const favicon =
     settings.faviconUrl && isSafeUrl(settings.faviconUrl)
       ? `\n  <link rel="icon" href="${escapeHtml(settings.faviconUrl)}">`
       : ''
   return {
-    pageTitle: escapeHtml(settings.metaTitle ?? page.title ?? site.name),
+    pageTitle: escapeHtml(
+      interpolateTokens(override.title || (settings.metaTitle ?? page.title ?? site.name), context),
+    ),
     metaDesc,
     favicon,
     langAttr: escapeHtml(settings.language ?? 'en'),
@@ -363,7 +406,7 @@ function buildRuntimeAssetsBlock(
   const hasInfiniteLoops = acc.infiniteLoopIds.size > 0
   const loopEndpointBaseUrl = options.loopEndpointBaseUrl ?? '/_instatic/loop/'
   const loopRuntimeScript = hasInfiniteLoops
-    ? `  <script type="module" src="/_instatic/assets/loop-runtime.js" data-instatic-loop-endpoint="${escapeHtml(loopEndpointBaseUrl)}" defer></script>`
+    ? `  <script type="module" src="/_instatic/assets/loop-runtime.js" data-instatic-loop-endpoint="${escapeHtml(loopEndpointBaseUrl)}"></script>`
     : ''
 
   // Hole runtime — injected into <head> (not body-end) so IntersectionObserver
@@ -499,6 +542,11 @@ export function publishPage(
   // emit <instatic-hole> placeholders instead of recursing.
   const dynamicNodeIds = findDynamicNodeIds(page, site, registry)
 
+  // Composed once per page render: the walker reads it through the config,
+  // and the <head> builder interpolates {source.field} tokens in the
+  // title/description against the same frames.
+  const templateContext = composeTemplateContext(page, site, options.templateContext)
+
   // Read-only inputs of this render pass. A renderer that needs a different
   // page (VC ref) or template frame (loop iteration) derives a child config —
   // it never mutates this one.
@@ -507,7 +555,7 @@ export function publishPage(
     site,
     registry,
     breakpointId: options.breakpointId,
-    templateContext: composeTemplateContext(page, site, options.templateContext),
+    templateContext,
     loopData: options.loopData,
     mediaAssets: options.mediaAssets,
     dynamicNodeIds: dynamicNodeIds.size > 0 ? dynamicNodeIds : undefined,
@@ -555,7 +603,7 @@ export function publishPage(
     acc.cssMap,
   )
 
-  const meta = buildDocumentMetaTags(site, page)
+  const meta = buildDocumentMetaTags(site, page, templateContext, options.documentMeta)
   const runtime = buildRuntimeAssetsBlock(options, acc)
   const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap, acc.cspSources)
 

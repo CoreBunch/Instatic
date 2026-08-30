@@ -14,9 +14,11 @@ export interface TestDb {
  * with all migrations applied. Each call produces a unique, independent DB.
  *
  * Set `DB=postgres TEST_POSTGRES_URL=postgres://...` to run against a real
- * Postgres instance instead. The helper supports that mode at the type level;
- * connection-pool teardown is left to process exit until DbClient grows a
- * close() method.
+ * Postgres instance instead.
+ *
+ * `cleanup()` closes the client before removing anything on disk. Windows
+ * refuses to unlink a file that is still open, so a SQLite handle left to
+ * garbage collection makes teardown fail there with EBUSY.
  *
  * @example
  * const { db, cleanup } = await createTestDb()
@@ -35,9 +37,7 @@ export async function createTestDb(): Promise<TestDb> {
     return {
       db,
       cleanup: async () => {
-        // TODO: extend DbClient with a close() method to properly terminate the
-        // Postgres connection pool. For now the process-level teardown is enough
-        // for the opt-in PG test mode.
+        await db.close()
       },
     }
   }
@@ -51,10 +51,9 @@ export async function createTestDb(): Promise<TestDb> {
   return {
     db,
     cleanup: async () => {
-      // Remove the entire temp directory. bun:sqlite doesn't expose a close()
-      // method on our DbClient interface; on macOS/Linux the file can still be
-      // deleted while the handle is open, and the handle goes out of scope once
-      // the test function returns.
+      // Close before unlinking: the file, and its WAL/SHM siblings, stay
+      // locked on Windows while the handle is open.
+      await db.close()
       await fs.rm(path.dirname(tmpFile), { recursive: true, force: true })
     },
   }

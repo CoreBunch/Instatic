@@ -309,8 +309,12 @@ test.describe('content', () => {
         await dialog.getByLabel('Name').fill(collectionName)
         await dialog.getByLabel('Singular label').fill('Product')
         await dialog.getByLabel('Plural label').fill(pluralLabel)
-        await dialog.getByLabel('Featured media').setChecked(false)
-        await dialog.getByLabel('SEO fields').setChecked(false)
+        for (const fieldLabel of ['Featured media', 'SEO title', 'SEO description']) {
+          await dialog.getByRole('button', { name: `Delete ${fieldLabel}` }).click()
+          const confirmDialog = page.getByRole('dialog', { name: `Delete field "${fieldLabel}"?` })
+          await confirmDialog.getByRole('button', { name: 'Delete' }).click()
+          await expect(confirmDialog).toBeHidden()
+        }
         await dialog.getByRole('button', { name: 'Create' }).click()
         await completeStepUp(page)
 

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 import { ApiError } from '@core/http'
-import { buildCmsRuntimePreview, resolveCmsRuntimeDependencies } from '@core/persistence'
+import {
+  buildCmsRuntimePreview,
+  resolveCmsRuntimeDependencies,
+  validateCmsRuntimeScripts,
+} from '@core/persistence'
 
 describe('CMS runtime client', () => {
   it('posts dependency manifests to the runtime resolve endpoint', async () => {
@@ -138,6 +142,39 @@ describe('CMS runtime client', () => {
       pageId: 'page_1',
       breakpointId: 'mobile',
       templateContext: { entryStack: [] },
+    }))
+  })
+
+  it('posts draft sites to the runtime validation endpoint', async () => {
+    const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+    const controller = new AbortController()
+    const diagnostics = await validateCmsRuntimeScripts(
+      { id: 'site_1', files: [] },
+      {
+        signal: controller.signal,
+        fetchImpl: async (input, init) => {
+          calls.push({ input, init })
+          return new Response(JSON.stringify({ diagnostics: [{
+            code: 'runtime-bundle-error',
+            severity: 'error',
+            message: 'Expected identifier',
+            fileId: 'script_1',
+            path: 'src/scripts/test.ts',
+            line: 3,
+            column: 4,
+          }] }), { status: 200 })
+        },
+      },
+    )
+
+    expect(diagnostics[0]).toMatchObject({ fileId: 'script_1', line: 3 })
+    expect(calls[0]).toMatchObject({
+      input: '/admin/api/cms/runtime/validate',
+      init: { method: 'POST', credentials: 'include' },
+    })
+    expect(calls[0].init?.signal).toBe(controller.signal)
+    expect(calls[0].init?.body).toBe(JSON.stringify({
+      site: { id: 'site_1', files: [] },
     }))
   })
 })

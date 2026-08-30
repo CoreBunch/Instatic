@@ -20,6 +20,7 @@
 import { Type } from '@sinclair/typebox'
 import type { DbClient } from '../../../db/client'
 import type { DataRow, DataRowCells, PublishedDataRow } from '@core/data/schemas'
+import { readEntrySeoOverride } from '@core/data/cells'
 import { resolveTemplateChain, composeTemplateChain } from '@core/templates'
 import { buildRouteFrame } from '@core/templates/contextFrames'
 import { publishPage } from '@core/publisher'
@@ -95,7 +96,9 @@ export async function handleRowPreview(
   }
   const merged = composeTemplateChain(chain, { kind: 'entry' })
   // The template chain has no Page for the entry, so composeTemplateChain
-  // can't know its title — the entry's own (draft) title is the real document title.
+  // can't know its title — the entry's own (draft) title is the real page
+  // title. The draft SEO override travels separately through
+  // `documentMeta` so it only ever reaches the `<head>`, mirroring publish.
   if (typeof draftCells.title === 'string') merged.title = draftCells.title
 
   // Build a synthetic PublishedDataRow with the draft cells merged in.
@@ -118,6 +121,7 @@ export async function handleRowPreview(
 
   const published = publishPage(merged, snapshot.site, registry, {
     templateContext,
+    documentMeta: readEntrySeoOverride(draftCells),
     runtimeAssets: snapshot.runtimeAssets,
     runtimePackageImportmap: snapshot.runtimePackageImportmap,
     cssEmission: 'external',

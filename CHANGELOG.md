@@ -4,7 +4,58 @@ All notable changes to Instatic will be documented here.
 
 This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
 
-## Unreleased
+## 0.0.17
+
+### AI and integrations
+
+- Fixed adding the Instatic MCP connector on Postgres installations. The dynamic client registration response returned `client_id_issued_at` as a quoted string, because Postgres declares the column `bigint` and returns it as a string to protect precision, so clients that validate the response against RFC 7591 rejected the connector with `expected number, received string`. SQLite installations were unaffected.
+
+### Editor, import, and publishing
+
+- Added a condition to data-row loops so a list can show a subset of a table rather than always its newest rows — pick one of the table's own fields and require it to be checked, unchecked, equal to a value, or to have any value at all. A relation field offers its rows by name instead of asking for an id. The condition applies on the canvas, on published pages, and in the "load more" endpoint, and the item count follows it so pagination never advertises rows the page drops.
+- Added the table's own fields to a data-row loop's "Order by" list, so a list can follow a real date, title, or rank stored in the row instead of only the row's built-in columns. Values compare as text, which sorts ISO dates chronologically.
+
+### Content and publishing
+
+- Fixed the SEO title and SEO description fields on a post so they reach the published page. Both were editable in the Content settings panel but never emitted anything: an entry's `<title>` always showed its plain title, and no description tag was written at all. An authored value now drives `<title>` / `<meta name="description">` and outranks the site-wide Meta Title and Meta Description, on the published page and in the Content editor's Live preview alike. The on-page `{page.title}` and `{currentEntry.title}` bindings keep rendering the entry's real title.
+
+## 0.0.16 - 2026-08-11
+
+### Media and integrations
+
+- Added an MCP `media_upload` tool so connected agents can upload images through the authenticated media pipeline.
+- Allowed published pages to load media from approved cross-origin sources without being blocked by the generated Content Security Policy.
+
+### Content and publishing
+
+- Resolved custom media fields to usable URLs when rendering collection rows in loops.
+- Reused the full schema composer when creating content collections, bringing collection setup in line with custom data-table creation.
+
+## 0.0.15 - 2026-08-11
+
+### Collaboration, AI, and integrations
+
+- Added real-time collaborative editing with continuous CRDT persistence, per-document undo, reconnect recovery, generation-aware resets, transport health checks, and clear user feedback when an edit cannot reach the relay.
+- Adopted the stateless MCP protocol and hardened authoring so connector writes wait for a writable editor, preserve authored structure, and cannot report changes that were never persisted.
+- Made AI colour-palette installation atomic so complete token batches land together or fail visibly.
+
+### Editor and data
+
+- Added hover previews to Site explorer rows and a **Used** filter to the Selectors panel.
+- Let every floating editor panel clear docked sidebars, polished context menus and data-binding controls, and rebuilt shared tabs with consistent keyboard and ARIA behavior.
+- Protected mandatory post-type title and slug fields from destructive table updates and repaired those fields when an earlier update removed them.
+
+### Publishing and runtime
+
+- Surfaced runtime-script build diagnostics in the Code editor and publish flow so authored script failures identify the affected file and source location.
+- Made collaborative persistence and publishing deterministic across resets, imports, route rosters, selector styles, and site-document ordering.
+- Scoped entry-route runtime assets to the template that renders them and stopped author bindings from exposing internal user objects or account email addresses.
+- Prefetched resolved media metadata for bound images so published output includes accessibility text, responsive variants, and intrinsic dimensions.
+- Made published routes answer `HEAD` like `GET`, allowing uptime monitors and link checkers to recognize healthy pages.
+
+### Import reliability
+
+- Scaled large CSS catalogue imports and reported invalid, unresolved, empty, or unsortable loop definitions instead of silently publishing missing or incorrectly ordered content.
 
 ## 0.0.14 - 2026-07-25
 

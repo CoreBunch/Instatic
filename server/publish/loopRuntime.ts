@@ -22,7 +22,13 @@
  */
 
 function runInstaticLoopRuntime(): void {
-  const scriptEl = document.currentScript
+  // Located by attribute rather than `document.currentScript`, which the HTML
+  // spec leaves null inside a module script — and the publisher injects this
+  // as `type="module"`. Reading currentScript therefore always fell through to
+  // the default below, so the endpoint attribute was never honoured. The
+  // runtime is deferred by virtue of being a module, so the tag is parsed and
+  // queryable by the time this runs.
+  const scriptEl = document.querySelector('script[data-instatic-loop-endpoint]')
   const endpointBase =
     (scriptEl && scriptEl.getAttribute('data-instatic-loop-endpoint')) || '/_instatic/loop/'
   const pagePath = location.pathname

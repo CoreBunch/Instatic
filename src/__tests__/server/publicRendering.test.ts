@@ -165,6 +165,176 @@ describe('public rendering', () => {
     expect(result).toBeNull()
   })
 
+  const entrySnapshotWithSettings = (
+    settings: PublishedPageSnapshot['site']['settings'],
+  ): PublishedPageSnapshot => ({
+      cmsSnapshotVersion: 1,
+      pageRowId: 'page_home',
+      site: {
+        id: 'project_1',
+        name: 'Public Site',
+        pages: [
+          {
+            id: 'entry_template',
+            title: 'Entry Template',
+            slug: 'entry-template',
+            rootNodeId: 'root',
+            template: { enabled: true, target: { kind: 'postTypes', tableSlugs: ['posts'] }, priority: 0 },
+            nodes: {
+              root: {
+                id: 'root',
+                moduleId: 'base.body',
+                props: {},
+                breakpointOverrides: {},
+                children: ['heading', 'crumb'],
+              },
+              heading: {
+                id: 'heading',
+                moduleId: 'base.text',
+                props: { text: '{currentEntry.title}', tag: 'h1' },
+                breakpointOverrides: {},
+                children: [],
+              },
+              crumb: {
+                id: 'crumb',
+                moduleId: 'base.text',
+                props: { text: 'Breadcrumb: {page.title}', tag: 'p' },
+                breakpointOverrides: {},
+                children: [],
+              },
+            },
+          } as unknown as PublishedPageSnapshot['site']['pages'][number],
+        ],
+        files: [],
+        visualComponents: [],
+        breakpoints: [
+          { id: 'desktop', label: 'Desktop', width: 1440, icon: 'monitor' },
+        ],
+        settings,
+        styleRules: {},
+        createdAt: 1000,
+        updatedAt: 2000,
+      },
+    })
+
+  const entryBaseRow: Omit<PublishedDataRow, 'cells'> = {
+    id: 'ver_1',
+    rowId: 'row_1',
+    tableId: 'tbl_posts',
+    tableSlug: 'posts',
+    tableKind: 'posts',
+    tableRouteBase: '/blog',
+    versionNumber: 1,
+    slug: 'hello',
+    featuredMediaId: null,
+    featuredMediaPath: null,
+    authorUserId: null,
+    authorName: null,
+    authorRoleSlug: null,
+    authorRoleName: null,
+    publishedByUserId: null,
+    publishedByName: null,
+    publishedByRoleSlug: null,
+    publishedByRoleName: null,
+    publishedAt: '2024-01-01T00:00:00.000Z',
+    createdAt: '2024-01-01T00:00:00.000Z',
+  }
+
+  // Guards the split between the entry's SEO `<head>` overrides and its real
+  // title: `seoTitle` / `seoDescription` drive `<title>` and
+  // `<meta name="description">`, while both on-page title bindings
+  // (`{currentEntry.title}` and `{page.title}`) keep rendering the plain
+  // title. `page.title` feeds the binding frame as well as the meta tag, so
+  // writing the SEO override onto it would leak into visible page content.
+  it('routes seoTitle/seoDescription into <head> without touching the on-page title bindings', async () => {
+    const snap = entrySnapshotWithSettings({ shortcuts: {} })
+
+    const withSeo = await renderPublishedDataRowTemplate(
+      snap,
+      {
+        ...entryBaseRow,
+        cells: {
+          title: 'Plain H1 Title',
+          seoTitle: 'SEO Override Title',
+          seoDescription: 'SEO override description',
+        },
+      },
+      { db: makeFakeDb(snap) },
+    )
+    expect(withSeo?.html).toContain('<title>SEO Override Title</title>')
+    expect(withSeo?.html).toContain(
+      '<meta name="description" content="SEO override description">',
+    )
+    expect(withSeo?.html).toContain('<h1>Plain H1 Title</h1>')
+    expect(withSeo?.html).toContain('<p>Breadcrumb: Plain H1 Title</p>')
+    expect(withSeo?.html).not.toContain('Breadcrumb: SEO Override Title')
+
+    resetForTests()
+
+    // No SEO cells → byte-identical to the pre-SEO behaviour: entry title in
+    // `<title>`, no description tag at all.
+    const withoutSeo = await renderPublishedDataRowTemplate(
+      snap,
+      { ...entryBaseRow, cells: { title: 'Plain H1 Title' } },
+      { db: makeFakeDb(snap) },
+    )
+    expect(withoutSeo?.html).toContain('<title>Plain H1 Title</title>')
+    expect(withoutSeo?.html).not.toContain('<meta name="description"')
+
+    resetForTests()
+
+    // A blank SEO cell is not an override — it falls through to the site
+    // settings exactly as an absent one does.
+    const blankSeo = await renderPublishedDataRowTemplate(
+      snap,
+      { ...entryBaseRow, cells: { title: 'Plain H1 Title', seoTitle: '   ', seoDescription: '' } },
+      { db: makeFakeDb(snap) },
+    )
+    expect(blankSeo?.html).toContain('<title>Plain H1 Title</title>')
+    expect(blankSeo?.html).not.toContain('<meta name="description"')
+  })
+
+  // A site-wide Meta Title (Settings → General) applies to every page. An
+  // entry's own authored SEO fields are more specific, so they win.
+  it('lets an entry SEO override outrank the site-level metaTitle/metaDescription', async () => {
+    const snap = entrySnapshotWithSettings({
+      metaTitle: 'Site Wide Meta Title',
+      metaDescription: 'Site wide description',
+      shortcuts: {},
+    })
+
+    const withSeo = await renderPublishedDataRowTemplate(
+      snap,
+      {
+        ...entryBaseRow,
+        cells: {
+          title: 'Plain H1 Title',
+          seoTitle: 'SEO Override Title',
+          seoDescription: 'SEO override description',
+        },
+      },
+      { db: makeFakeDb(snap) },
+    )
+    expect(withSeo?.html).toContain('<title>SEO Override Title</title>')
+    expect(withSeo?.html).toContain(
+      '<meta name="description" content="SEO override description">',
+    )
+
+    resetForTests()
+
+    // Without an entry override the site-level settings still win over the
+    // entry title, unchanged from before.
+    const withoutSeo = await renderPublishedDataRowTemplate(
+      snap,
+      { ...entryBaseRow, cells: { title: 'Plain H1 Title' } },
+      { db: makeFakeDb(snap) },
+    )
+    expect(withoutSeo?.html).toContain('<title>Site Wide Meta Title</title>')
+    expect(withoutSeo?.html).toContain(
+      '<meta name="description" content="Site wide description">',
+    )
+  })
+
   it('injects stored runtime asset manifests when rendering a published snapshot', async () => {
     const published = snapshot('Runtime page')
     published.runtimeAssets = {
