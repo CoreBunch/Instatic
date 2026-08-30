@@ -24,24 +24,24 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 |--------------------|----------------------------------------------------------------------|------------------------------------------------------------|
 | `Button`           | **Every** action button                                              | `variant: 'ghost' \| 'secondary' \| 'primary' \| 'destructive'`, `size: 'micro' \| 'xs' \| 'sm' \| 'md' \| 'lg'`, `iconOnly`, `pressed`, `tooltip` |
 | `SplitButton`      | A primary action fused to a chevron that opens a dropdown of related actions (Publish ▾, Add Google font ▾). Composes `Button` + `ContextMenu`. | `label`, `onClick`, `menuItems`, `icon?`, `variant?`, `size?`, `busy?`, `disabled?` |
-| `Switch`           | Boolean toggle (on / off)                                            | `checked`, `onChange`, `disabled`                          |
-| `Checkbox`         | Boolean inside a list / form                                         | `checked`, `onChange`, `indeterminate`                     |
+| `Switch`           | Boolean toggle (on / off)                                            | `checked`, `onCheckedChange`, `disabled`, `switchSize`     |
+| `Checkbox`         | Boolean inside a list / form                                         | `checked`, `onCheckedChange`, `boxSize`                    |
 | `SegmentedControl` | A few mutually exclusive options shown inline; `value` can be `undefined` for an unset state where no segment appears pressed | `options`, `value`, `onChange`, `onClear?` (deselectable — clicking the active segment fires `onClear` and shows a hover close-icon overlay) |
 | `Tabs`             | Top-level tab navigation within a workspace. Compound component: `<Tabs value onChange>` → `<TabList ariaLabel>` → `<Tab value>` + `<TabPanel value>`. WAI-ARIA automatic-activation pattern; arrow keys move focus and change the active value simultaneously. | `value`, `onChange` on `<Tabs>`; `ariaLabel` on `<TabList>`; `value` on `<Tab>` / `<TabPanel>` |
-| `RangeTabs`        | Tabbed numeric range selectors (spacing scales, etc.)                | `ranges`, `value`, `onChange`                              |
+| `RangeTabs`        | Tabbed numeric range selectors (spacing scales, etc.)                | `options`, `value`, `onChange`, `ariaLabel`                |
 
 ### Form controls
 
 | Primitive          | When to use                                                          | Key props                                                  |
 |--------------------|----------------------------------------------------------------------|------------------------------------------------------------|
-| `Input`            | Single-line text input. Pill radius, transparent fill                | `value`, `onChange`, `placeholder`, `type`, `error`        |
+| `Input`            | Single-line text input. Pill radius, transparent fill                | `value`, `onChange`, `placeholder`, `type`, `invalid`      |
 | `Textarea`         | Multi-line text input (exported from same module as `Input`)         | `value`, `onChange`, `rows`                                |
 | `FormField`        | Label + description shell around a form control                      | `label`, `description`, `layout: 'stacked' \| 'inline-end' \| 'inline-start'`, `htmlFor` |
 | `Select`           | Dropdown selection of fixed options                                  | `options`, `value`, `onChange`                             |
 | `ColorInput`       | Color picker — swatch + hex input                                    | `value`, `onChange`                                        |
-| `DateTimePicker`   | Date / time inputs                                                   | `value`, `onChange`, `mode: 'date' \| 'datetime'`          |
-| `FileUpload`       | Drop-zone + browse                                                   | `onSelect`, `accept`, `multiple`                           |
-| `SearchBar`        | Search input with magnifier icon + clear affordance                  | `value`, `onChange`, `placeholder`                         |
+| `DateTimePicker`   | Confirm-based date + time picker panel                               | `value`, `onConfirm`, `onCancel`, `minDate`                |
+| `FileUpload`       | File picker — a `Button` trigger backed by a hidden `<input type="file">` | `buttonProps`, `children`, `onChange`, `accept`, `multiple` |
+| `SearchBar`        | Search input with magnifier icon + clear affordance                  | `value`, `onValueChange`, `placeholder`                    |
 | `FilterBar`        | Panel filter strip: filter chips + optional search bar + action slots | `items`, `value`, `onValueChange`, `search?`, `searchLeading?`, `searchTrailing?`, `inlineActions?`, `trailing?`, `groupLabel?` |
 
 ### Layout / structural
@@ -50,24 +50,24 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 |--------------------|----------------------------------------------------------------------|------------------------------------------------------------|
 | `Stack`            | Small vertical / horizontal flex layouts, especially plugin admin UI  | `direction`, `gap`, `align`, `justify`, `wrap`, `height`   |
 | `Section`          | Collapsible titled section inside a panel (accordion)                | `title`, `children`, `defaultOpen`, `icon`, `meta`, `indicator`, `forceOpen`, `flush` |
-| `ControlRow`       | Label + control row in property panels                               | `label`, `description`, `children`                         |
+| `ControlRow`       | Label + control row in property panels                               | `propKey` (required), `label`, `layout`, `description`, `children` |
 | `Separator`        | Visual divider between sections                                      | `orientation: 'horizontal' \| 'vertical'`                  |
 | `Card`             | Token-backed panel surface for plugin/admin grouped content          | `padding`, `bordered`                                      |
-| `Widget`           | Borderless tile card on a darker parent (the dashboard pattern)      | `tint`, `title`, `children`                                |
+| `Widget`           | Borderless tile card on a darker parent (the dashboard pattern)      | `widgetId`, `title`, `tint`, `span`, `editing`, `loading`, `children` |
 | `WidgetSkeleton`   | Loading placeholder for a dashboard widget slot                      | `widgetId`, `span`                                         |
 | `WidgetList`       | List layout for rows inside a widget                                 | `children`; `WidgetListRow` takes `primary`, `meta`        |
-| `EmptyState`       | Empty list / page placeholder                                        | `icon`, `title`, `description`, `actions`                  |
+| `EmptyState`       | Empty list / page placeholder                                        | `icon`, `title`, `description`, `action`                   |
 
 ### Overlay / feedback
 
 | Primitive          | When to use                                                          | Key props                                                  |
 |--------------------|----------------------------------------------------------------------|------------------------------------------------------------|
 | `Alert`            | Inline non-blocking message in host/plugin admin UI                  | `tone: 'info' \| 'success' \| 'warning' \| 'danger'`, `title` |
-| `Dialog`           | Modal dialog with title + content                                    | `open`, `onClose`, `title`, `children`                     |
+| `Dialog`           | Modal dialog with title + content                                    | `open`, `onClose`, `title`, `children`, `footer`, `size`, `tone` |
 | `Tooltip`          | Hover hint — replaces `title=`; `CursorTooltip` anchors to a pointer | `content`, `side: 'top' \| 'bottom' \| 'left' \| 'right' \| 'auto'`, `children`; `CursorTooltip` takes `point` |
 | `Toast`            | Transient confirmation / error notification                          | Used via `pushToast({ kind, title, body, location? })`     |
 | `ContextMenu`      | Right-click and overflow (`…`) menus; searchable and nested menus use companion exports | `ariaLabel`, `onClose`, `children`; `x`/`y` (point) or `anchorRef` (anchor); `ContextMenuItem`, `ContextMenuSubmenu`, `MenuSearchHeader` |
-| `FloatingActionBar`| Multi-select bulk-action bar                                         | `selection`, `actions`                                     |
+| `FloatingActionBar`| Multi-select bulk-action bar                                         | `ariaLabel`, `label`, `children`, `onClose`, `open`        |
 | `ErrorBoundary`    | Component-level error containment                                    | `location: string`, `resetKeys?`, `children`               |
 
 ### Data / display
@@ -79,7 +79,7 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 | `Heading`                  | Semantic h1-h6 using editor typography tokens                | `level`, `children`                                      |
 | `Text`                     | Body, muted, strong, or monospace text in host/plugin UI     | `variant`, `size`, `children`                            |
 | `Code`                     | Preformatted snippets or logs                                | `children`                                               |
-| `Image`                    | Image with built-in blurhash fallback                        | `src`, `blurhash`, `alt`, `width`, `height`              |
+| `Image`                    | Responsive image — builds `srcset` from asset variants       | `asset` *or* `src` + `variants`, `alt`, `sizes`, `width`, `height` |
 | `CanvasModulePlaceholder`  | Diagonal-stripe placeholder for empty modules on the canvas  | `label`                                                  |
 | `Kbd`                      | Single keyboard keycap. Use anywhere a key name appears as a hint. | `children`, `className`                             |
 | `ShortcutKeys`             | Full shortcut sequence ("⌘K", "Ctrl+Shift+P") — splits the label into individual `Kbd` spans. | `label`, `aria-hidden`, `className` |
@@ -95,7 +95,7 @@ Four named shapes cover nearly every loading region in the admin:
 | `SkeletonRows`  | Stack of N thin shimmer rows. For list-style sidebars (Data tables, Content collections), table rows, and compact item lists. | `count?` (default 6), `rowHeight?` (default 24), `className?`, `ariaLabel?` |
 | `SkeletonTree`  | Depth-aware placeholder tree: each row is indented and carries a chevron slot (branch rows), an icon square, and a varying-width label bar. Shimmer cascades top-to-bottom. Use for tree-of-nodes surfaces (Layers panel, Selectors tree) where flat rows would misrepresent the nested structure. | `count?` (default 10), `rowHeight?` (default 28), `className?`, `ariaLabel?` |
 
-Low-level escape hatches (use only when the three named shapes don't fit):
+Low-level escape hatches (use only when the four named shapes don't fit):
 
 | Primitive       | When to use                                                  | Key props                                    |
 |-----------------|--------------------------------------------------------------|----------------------------------------------|
@@ -150,7 +150,7 @@ import { SkeletonBlock, SkeletonCards, SkeletonRows, SkeletonTree, Skeleton } fr
 | One-off bar that doesn't fit any of the above         | `Skeleton`         |
 | Avatar / round image placeholder                      | `SkeletonCircle`   |
 
-**Accessibility:** The three named shapes forward `ariaLabel` → `aria-label` + `role="status"` on the wrapper. The underlying `<Skeleton>` span is `aria-hidden` by default (pure visual chrome). The **surrounding host** (`Widget`, `Dialog`, `AdminPageLayout`) is responsible for setting `aria-busy="true"` — don't duplicate that on the skeleton itself.
+**Accessibility:** The four named shapes forward `ariaLabel` → `aria-label` + `role="status"` on the wrapper. The underlying `<Skeleton>` span is `aria-hidden` by default (pure visual chrome). The **surrounding host** (`Widget`, `Dialog`, `AdminPageLayout`) is responsible for setting `aria-busy="true"` — don't duplicate that on the skeleton itself.
 
 **`AdminPageLayout loading` prop:** When the page-level layout receives `loading={true}`, it renders `<SkeletonCards>` automatically. Don't add a skeleton below `AdminPageLayout` for full-page loads.
 
@@ -185,8 +185,8 @@ import { Button } from '@ui/components/Button'
 | Size    | Height | Use for                                                            |
 |---------|--------|--------------------------------------------------------------------|
 | `micro` | 18px   | Inline chips                                                       |
-| `xs`    | 26px   | Property panel rows                                                |
-| `sm`    | 28px   | **Default** — toolbar, dialogs                                     |
+| `xs`    | 22px   | Property panel rows                                                |
+| `sm`    | 26px   | **Default** — toolbar, dialogs                                     |
 | `md`    | 32px   | Primary CTAs in modals                                             |
 | `lg`    | 44px   | Touch targets, mobile                                              |
 
@@ -215,16 +215,17 @@ Bordered transparent inputs with a pill radius (`--input-radius`). Focus adds an
 import { Input, Textarea } from '@ui/components/Input'
 
 <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Page title" />
-<Input type="number" value={price} onChange={...} numeric />
-<Input value={email} type="email" error={emailError} aria-invalid={Boolean(emailError)} />
+<Input type="number" value={price} onChange={...} />
+<Input value={email} type="email" invalid={Boolean(emailError)} />
 
 <Textarea value={body} onChange={...} rows={6} />
 ```
 
 Standard `<input>` props pass through. Notable additions:
 
-- `error` — when truthy, applies the danger border + sets `aria-invalid`.
-- `prefix` / `suffix` — render an icon or unit inline (e.g. `px`, `$`).
+- `invalid` — when true, applies the danger border + sets `aria-invalid`.
+- `prefix` / `unit` — render a string inside the field on the leading / trailing edge (e.g. `$`, `px`).
+- `numberSpinner` — on by default for `type="number"`: hides the native browser spinner and renders compact ▲/▼ buttons inside the trailing edge. Pass `false` to opt out.
 
 ---
 
@@ -233,11 +234,11 @@ Standard `<input>` props pass through. Notable additions:
 ```tsx
 import { Switch } from '@ui/components/Switch'
 
-<Switch checked={autoSave} onChange={setAutoSave} />
+<Switch checked={autoSave} onCheckedChange={setAutoSave} />
 <Switch checked={...} disabled />
 ```
 
-Renders an accessible toggle that announces its state. **Always** pair with a visible label (use `<ControlRow label="..."><Switch ... /></ControlRow>` or a sibling `<label>` with `htmlFor`).
+Renders an accessible toggle that announces its state. **Always** pair with a visible label (use `<ControlRow propKey="..." label="..."><Switch ... /></ControlRow>` or a sibling `<label>` with `htmlFor`).
 
 ---
 
@@ -308,14 +309,23 @@ Use `active` for selected/editing chips, `muted` when the label is informational
 ```tsx
 import { Dialog } from '@ui/components/Dialog'
 
-<Dialog open={open} onClose={onClose} title="Delete page?">
+<Dialog
+  open={open}
+  onClose={onClose}
+  title="Delete page?"
+  tone="danger"
+  footer={
+    <>
+      <Button variant="ghost" onClick={onClose}>Cancel</Button>
+      <Button variant="destructive" onClick={onConfirm}>Delete</Button>
+    </>
+  }
+>
   <p>Are you sure? This can't be undone.</p>
-  <Dialog.Actions>
-    <Button variant="ghost" onClick={onClose}>Cancel</Button>
-    <Button variant="destructive" onClick={onConfirm}>Delete</Button>
-  </Dialog.Actions>
 </Dialog>
 ```
+
+Action buttons go in the `footer` prop — there is no compound `Dialog.Actions` component. When `footer` is omitted, the footer row and its border are not rendered. `size` picks the width variant (`sm` 360px → `2xl` 820px, default `md`), and `tone="danger"` colours the eyebrow/header and swaps the role to `alertdialog`.
 
 `Dialog` traps focus, restores it on close, escape-closes, click-outside-closes (configurable). Modal by default. Replaces native `alert()` / `confirm()` (which are banned by `no-native-browser-dialogs.test.ts`).
 
@@ -396,7 +406,7 @@ import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@ui/componen
 ```tsx
 const triggerRef = useRef<HTMLButtonElement>(null)
 
-<Button ref={triggerRef} onClick={() => setOpen(true)}>…</Button>
+<Button ref={triggerRef} variant="ghost" onClick={() => setOpen(true)}>…</Button>
 {open && (
   <ContextMenu
     anchorRef={triggerRef}
@@ -442,16 +452,18 @@ Layout primitives for property panels.
 
 `Section` is a collapsible accordion block. Each instance manages its own open/closed state via `defaultOpen` (the initial value). `forceOpen` overrides local state and keeps the section always open. The `flush` prop removes the section's own vertical padding so spacing comes entirely from the parent container's grid gap — used by the Properties panel (1px-gap card pattern). The `indicator` prop renders a small green dot next to the title to signal active state (e.g. properties are set in this section).
 
+`ControlRow` requires a `propKey` — it drives the `htmlFor`/`id` linkage between the label and the control (override with `inputId`). `label` is optional and falls back to `propKey`; pass `label=""` to suppress the label row entirely.
+
 ```tsx
 import { Section } from '@ui/components/Section'
 import { ControlRow } from '@ui/components/ControlRow'
 
 <Section title="Spacing" defaultOpen>
-  <ControlRow label="Margin top">
-    <Input value={mt} onChange={setMt} suffix="px" />
+  <ControlRow propKey="marginTop" label="Margin top">
+    <Input value={mt} onChange={(e) => setMt(e.target.value)} unit="px" />
   </ControlRow>
-  <ControlRow label="Margin bottom">
-    <Input value={mb} onChange={setMb} suffix="px" />
+  <ControlRow propKey="marginBottom" label="Margin bottom">
+    <Input value={mb} onChange={(e) => setMb(e.target.value)} unit="px" />
   </ControlRow>
 </Section>
 
@@ -477,11 +489,13 @@ The borderless tile-card pattern used by the dashboard. Borderless on a darker p
 ```tsx
 import { Widget } from '@ui/components/Widget'
 
-<Widget tint="mint" title="VISITORS">
+<Widget widgetId="visitors" title="VISITORS" tint="mint" span={4} editing={editing}>
   <div>2 unique</div>
   <Sparkline data={...} tint="mint" />
 </Widget>
 ```
+
+`widgetId` identifies the card to the dashboard's DnD layer, `span` is the grid column span (1–12, forwarded as `data-span`), and `editing` is true while the dashboard is in customize mode (drag handle + hover ring become visible) — widget bodies receive it from the dashboard and pass it straight through.
 
 | `tint`    | Color           | Typical category                        |
 |-----------|-----------------|-----------------------------------------|
@@ -550,12 +564,7 @@ import { Kbd, ShortcutKeys } from '@ui/components/Kbd'
 
 `ShortcutKeys` is marked `aria-hidden="true"` by default because the surrounding element usually labels the action. Pass `aria-hidden={false}` (or `"false"`) when there is no other label.
 
-`splitShortcut` is also exported for cases where you only need the token array:
-
-```ts
-import { splitShortcut } from '@ui/components/Kbd'
-splitShortcut('⌘⇧P') // → ['⌘', '⇧', 'P']
-```
+The label-splitting logic ("⌘⇧P" → `['⌘', '⇧', 'P']`) lives in `splitShortcut.ts` inside the module — internal to `ShortcutKeys`, not exported from the barrel.
 
 ---
 
@@ -579,7 +588,7 @@ import { cn } from '@ui/cn'
 <button className={cn(styles.btn, isActive && styles.active, props.className)} />
 ```
 
-`cn` accepts strings, falsy values, and arrays. Returns a single string. 3 lines of source. **Do not** add `clsx`, `tailwind-merge`, `class-variance-authority`, or `@radix-ui/*`.
+`cn` accepts strings and falsy values (`false` / `null` / `undefined`, which are dropped). Returns a single string. 3 lines of source. **Do not** add `clsx`, `tailwind-merge`, `class-variance-authority`, or `@radix-ui/*`.
 
 ---
 
