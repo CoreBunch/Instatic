@@ -164,10 +164,10 @@ describe('containsTokens', () => {
     expect(containsTokens('Hello {site.name}')).toBe(true)
   })
 
-  it('returns true even for escaped { (the parser will resolve it correctly)', () => {
-    // Cheap check is conservative — false positives are fine because the
-    // parser short-circuits on no real tokens.
-    expect(containsTokens('Literal \\{not-a-token}')).toBe(false)
+  it('returns true even for escaped { (the parser resolves it to a literal)', () => {
+    // Cheap check is conservative — an escaped `\{` still needs a parse so
+    // the backslash is stripped; a false positive only costs one parse.
+    expect(containsTokens('Literal \\{not-a-token}')).toBe(true)
   })
 })
 
@@ -302,6 +302,14 @@ describe('interpolateTokens', () => {
   it('emits empty when the value is missing and there is no fallback', () => {
     const c = ctx({ entryStack: [] })
     expect(interpolateTokens('Welcome, {currentEntry.title}!', c)).toBe('Welcome, !')
+  })
+
+  it('strips the backslash of an escaped `\\{` and emits a literal `{`', () => {
+    expect(interpolateTokens('Literal \\{not-a-token}', ctx())).toBe('Literal {not-a-token}')
+  })
+
+  it('strips the escape even when the string carries no real token', () => {
+    expect(interpolateTokens('\\{just-braces}', ctx())).toBe('{just-braces}')
   })
 })
 
