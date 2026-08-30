@@ -4,6 +4,8 @@ All notable changes to Instatic will be documented here.
 
 This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
 
+## 0.0.18
+
 ## 0.0.17 - 2026-08-30
 
 ### AI and integrations
