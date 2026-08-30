@@ -9,6 +9,10 @@
  *     (or a `*.<domain>` wildcard from that list). If `networkAllowedHosts`
  *     is empty or missing, ALL outbound is denied — fail-closed.
  *
+ * The resolved address is then validated against the SSRF blocklist and
+ * PINNED: the socket connects to the exact IP we checked, so a DNS rebinding
+ * between check and connect cannot swing the request to an internal target.
+ *
  * Returns a JSON-serializable response shape the VM-side `fetch` shim
  * reconstructs into a Response-like object. Bodies cross the boundary
  * byte-safely: the upstream response is read as raw bytes and carried as
@@ -17,6 +21,7 @@
 
 import { isIP } from 'node:net'
 import { lookup } from 'node:dns/promises'
+import ipaddr from 'ipaddr.js'
 import {
   decodeBodyBytes,
   encodeBodyBytes,
@@ -66,68 +71,59 @@ export function hostMatchesAllowlist(host: string, allowlist: ReadonlyArray<stri
   return false
 }
 
-function isBlockedIpv4(ip: string): boolean {
-  const parts = ip.split('.').map((p) => Number(p))
-  if (parts.length !== 4 || parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)) {
-    return true // malformed — fail closed
-  }
-  const [a, b] = parts as [number, number, number, number]
-  if (a === 0) return true // 0.0.0.0/8 "this network" / unspecified
-  if (a === 10) return true // 10.0.0.0/8 private
-  if (a === 127) return true // 127.0.0.0/8 loopback
-  if (a === 169 && b === 254) return true // 169.254.0.0/16 link-local (incl. 169.254.169.254 metadata)
-  if (a === 172 && b >= 16 && b <= 31) return true // 172.16.0.0/12 private
-  if (a === 192 && b === 168) return true // 192.168.0.0/16 private
-  if (a === 100 && b >= 64 && b <= 127) return true // 100.64.0.0/10 CGNAT
-  return false
-}
-
-function isBlockedIpv6(raw: string): boolean {
-  const addr = (raw.split('%')[0] ?? '').toLowerCase() // drop zone id
-  // IPv4-mapped, dotted form: ::ffff:127.0.0.1
-  const dotted = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(addr)
-  if (dotted?.[1]) return isBlockedIpv4(dotted[1])
-  // IPv4-mapped, hex form: ::ffff:7f00:0001
-  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(addr)
-  if (hex?.[1] && hex[2]) {
-    const hi = parseInt(hex[1], 16)
-    const lo = parseInt(hex[2], 16)
-    return isBlockedIpv4(`${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`)
-  }
-  if (addr === '::1' || addr === '0:0:0:0:0:0:0:1') return true // loopback
-  if (addr === '::' || addr === '0:0:0:0:0:0:0:0') return true // unspecified
-  if (/^f[cd]/.test(addr)) return true // fc00::/7 unique-local
-  if (/^fe[89ab]/.test(addr)) return true // fe80::/10 link-local
-  return false
-}
-
 /**
- * True for any address in a loopback / private / link-local / CGNAT /
- * unique-local / unspecified range — the SSRF blocklist. Non-IP strings
- * return false (the caller resolves hostnames to addresses first).
+ * True for any address that is not a globally-routable unicast address — the
+ * SSRF blocklist. `ipaddr.js` parses to a canonical value first, so every
+ * spelling of an address maps to the same range: a non-canonical loopback such
+ * as `::0:1` resolves to `loopback`, and the IPv6 transition prefixes NAT64
+ * (`rfc6052`), 6to4, and Teredo each get their own range. Allowing only
+ * `unicast` therefore blocks loopback, private, link-local (including cloud
+ * metadata `169.254.169.254`), CGNAT, unique-local, unspecified, and every
+ * transition prefix in one rule (GHSA-99x9, GHSA-ffj5, GHSA-c76p, GHSA-r4rj).
+ *
+ * A non-IP string fails closed (returns true) — callers resolve hostnames to
+ * addresses before calling this.
  */
 export function isBlockedAddress(ip: string): boolean {
-  const family = isIP(ip)
-  if (family === 4) return isBlockedIpv4(ip)
-  if (family === 6) return isBlockedIpv6(ip)
-  return false
+  let addr: ipaddr.IPv4 | ipaddr.IPv6
+  try {
+    addr = ipaddr.parse(ip)
+  } catch {
+    return true
+  }
+  // Judge an IPv4-mapped IPv6 (`::ffff:x`) by its embedded IPv4, so a mapped
+  // public address stays reachable while a mapped private one is blocked.
+  if (addr.kind() === 'ipv6') {
+    const v6 = addr as ipaddr.IPv6
+    if (v6.isIPv4MappedAddress()) addr = v6.toIPv4Address()
+  }
+  return addr.range() !== 'unicast'
 }
 
 function stripBrackets(host: string): string {
   return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
 }
 
+/** A validated outbound target plus the IP to pin the connection to. */
+interface ValidatedTarget {
+  /** The parsed request URL, still carrying the original hostname. */
+  url: URL
+  /** The validated IP to connect to, or `null` when the host is an IP literal. */
+  pinnedIp: string | null
+}
+
 /**
  * Validate a single outbound target — protocol, host allowlist, and that no
- * resolved address falls in a blocked range — and return the parsed URL.
- * Re-run for the initial URL and every redirect hop, so the allowlist + IP
- * guard remain the kernel-of-correctness across the whole chain.
+ * resolved address falls in a blocked range — and return the parsed URL plus
+ * the IP the caller must pin the connection to. Re-run for the initial URL and
+ * every redirect hop, so the allowlist + IP guard remain the
+ * kernel-of-correctness across the whole chain.
  */
 async function assertOutboundAllowed(
   manifest: HostPluginRecord['manifest'],
   urlString: string,
   resolveHost: (host: string) => Promise<string[]>,
-): Promise<URL> {
+): Promise<ValidatedTarget> {
   let parsed: URL
   try {
     parsed = new URL(urlString)
@@ -144,7 +140,16 @@ async function assertOutboundAllowed(
     )
   }
   const host = stripBrackets(parsed.hostname)
-  const addresses = isIP(host) ? [host] : await resolveHost(host)
+
+  // IP-literal host: no DNS, so nothing can rebind. Validate and connect as-is.
+  if (isIP(host)) {
+    if (isBlockedAddress(host)) {
+      throw new Error(`Plugin "${manifest.id}" requested fetch to "${host}", which is a blocked address.`)
+    }
+    return { url: parsed, pinnedIp: null }
+  }
+
+  const addresses = await resolveHost(host)
   if (addresses.length === 0) {
     throw new Error(`Plugin "${manifest.id}" fetch host "${host}" did not resolve to any address.`)
   }
@@ -155,7 +160,10 @@ async function assertOutboundAllowed(
       )
     }
   }
-  return parsed
+  // Pin to a validated address. Every resolved address passed the blocklist, so
+  // whichever the connection uses is safe; the redirect loop re-resolves and
+  // re-pins each hop.
+  return { url: parsed, pinnedIp: addresses[0] }
 }
 
 async function defaultResolveHost(host: string): Promise<string[]> {
@@ -172,6 +180,44 @@ function withoutBodyHeaders(headers: Record<string, string> | undefined): Record
     next[k] = v
   }
   return next
+}
+
+/** Replace any host header with `host`, so the pinned request keeps the original hostname. */
+function withHostHeader(headers: Record<string, string> | undefined, host: string): Record<string, string> {
+  const next: Record<string, string> = {}
+  if (headers) {
+    for (const [k, v] of Object.entries(headers)) {
+      if (k.toLowerCase() === 'host') continue
+      next[k] = v
+    }
+  }
+  next.Host = host
+  return next
+}
+
+/** Bun's `fetch` accepts a `tls` option that standard `RequestInit` omits. */
+type PinnedFetchInit = RequestInit & { tls?: { serverName: string } }
+
+/**
+ * Turn a validated target into the actual request: for a hostname, rewrite the
+ * URL to the pinned IP and carry the hostname in the `Host` header and (for
+ * https) the TLS `serverName`, so virtual hosting and certificate validation
+ * still target the host while the socket connects to the IP we checked. For an
+ * IP-literal target there is nothing to pin.
+ */
+function buildPinnedRequest(
+  parsed: URL,
+  pinnedIp: string | null,
+  headers: Record<string, string> | undefined,
+): { url: string; headers: Record<string, string> | undefined; tls?: { serverName: string } } {
+  if (pinnedIp === null) return { url: parsed.toString(), headers }
+
+  const ipHost = isIP(pinnedIp) === 6 ? `[${pinnedIp}]` : pinnedIp
+  const portPart = parsed.port ? `:${parsed.port}` : ''
+  const url = `${parsed.protocol}//${ipHost}${portPart}${parsed.pathname}${parsed.search}`
+  const nextHeaders = withHostHeader(headers, parsed.host)
+  const tls = parsed.protocol === 'https:' ? { serverName: parsed.hostname } : undefined
+  return { url, headers: nextHeaders, tls }
 }
 
 export async function performGatedFetch(
@@ -211,24 +257,31 @@ export async function performGatedFetch(
       : init.body
   try {
     for (let hop = 0; ; hop++) {
-      // Re-validate protocol + allowlist + resolved-IP on EVERY hop. Bun is
-      // told not to follow redirects, so an allowlisted host can never bounce
-      // us to a private/internal target (SSRF).
-      await assertOutboundAllowed(manifest, currentUrl, resolveHost)
+      // Re-validate protocol + allowlist + resolved-IP on EVERY hop and pin the
+      // connection to the checked IP. Bun is told not to follow redirects, so
+      // an allowlisted host can never bounce us to a private/internal target,
+      // and the pin closes the check-then-connect DNS-rebinding gap (SSRF).
+      const { url: parsed, pinnedIp } = await assertOutboundAllowed(manifest, currentUrl, resolveHost)
+      const request = buildPinnedRequest(parsed, pinnedIp, headers)
 
-      const response = await fetchImpl(currentUrl, {
+      const fetchInit: PinnedFetchInit = {
         method,
-        headers,
+        headers: request.headers,
         body,
         signal: controller.signal,
         redirect: 'manual',
-      })
+      }
+      if (request.tls) fetchInit.tls = request.tls
+
+      const response = await fetchImpl(request.url, fetchInit)
 
       const location = response.headers.get('location')
       if (REDIRECT_STATUSES.has(response.status) && location) {
         if (hop >= MAX_REDIRECTS) {
           throw new Error(`Plugin "${manifest.id}" fetch exceeded ${MAX_REDIRECTS} redirects.`)
         }
+        // Resolve the redirect against the ORIGINAL hostname URL, not the
+        // pinned IP URL, so a relative Location keeps the right host.
         const next = new URL(location, currentUrl)
         // Per the Fetch spec: 303 always becomes GET; 301/302 downgrade a
         // non-GET/HEAD request to GET and drop the body.

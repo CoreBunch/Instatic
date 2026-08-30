@@ -25,12 +25,19 @@ function makeEntry(allowlist: string[]): HostPluginRecord {
 
 const PUBLIC_IP = '93.184.216.34'
 
-/** A fetch stub driven by a scripted sequence of responses keyed by URL. */
+/**
+ * A fetch stub driven by a scripted sequence of responses keyed by the LOGICAL
+ * (hostname) URL. The guard pins the connection to a validated IP, so the real
+ * call arrives at `https://<ip>/path` with the hostname in the `Host` header;
+ * we reconstruct the hostname URL from that header so scripts stay readable.
+ */
 function scriptedFetch(script: Record<string, Response | (() => Response)>): typeof fetch {
-  return (async (input: string | URL | Request) => {
-    const url = typeof input === 'string' ? input : input.toString()
-    const entry = script[url]
-    if (!entry) throw new Error(`unexpected fetch to ${url}`)
+  return (async (input: string | URL | Request, init?: RequestInit) => {
+    const called = new URL(typeof input === 'string' ? input : input.toString())
+    const hostHeader = (init?.headers as Record<string, string> | undefined)?.Host
+    const logical = `${called.protocol}//${hostHeader ?? called.host}${called.pathname}${called.search}`
+    const entry = script[logical]
+    if (!entry) throw new Error(`unexpected fetch to ${logical} (pinned ${called.host})`)
     return typeof entry === 'function' ? entry() : entry
   }) as unknown as typeof fetch
 }
@@ -54,6 +61,18 @@ describe('isBlockedAddress', () => {
       expect(isBlockedAddress(ip)).toBe(false)
     }
   })
+  // GHSA-99x9: non-canonical spellings of loopback. GHSA-ffj5: IPv6 transition
+  // prefixes (NAT64 / 6to4 / Teredo) that embed an internal IPv4. The prior
+  // string / prefix matcher missed all of these; parsing to a canonical range
+  // catches them.
+  test('blocks non-canonical loopback and IPv6 transition addresses', () => {
+    for (const ip of [
+      '::0:1', '0::1', '0:0::1', '::00:1',
+      '64:ff9b::a9fe:a9fe', '2002:a9fe:a9fe::1', '2001:0000:4136:e378:8000:63bf:3fff:fdd2',
+    ]) {
+      expect(isBlockedAddress(ip)).toBe(true)
+    }
+  })
 })
 
 describe('performGatedFetch — SSRF guards', () => {
@@ -69,6 +88,39 @@ describe('performGatedFetch — SSRF guards', () => {
     )
     expect(res.body).toBe('OK')
     expect(res.status).toBe(200)
+  })
+
+  // GHSA-c76p / GHSA-r4rj: the check resolved the host, but the connect
+  // re-resolved it, so a rebinding DNS could swing the socket to an internal IP
+  // between the two. The guard now pins the connection to the checked IP.
+  test('pins the connection to the validated IP, defeating DNS rebinding', async () => {
+    let fetchedUrl = ''
+    let fetchedHost = ''
+    let fetchedSni = ''
+    const fetchImpl = (async (input: string | URL, init?: RequestInit & { tls?: { serverName: string } }) => {
+      fetchedUrl = String(input)
+      fetchedHost = (init?.headers as Record<string, string> | undefined)?.Host ?? ''
+      fetchedSni = init?.tls?.serverName ?? ''
+      return new Response('OK', { status: 200 })
+    }) as unknown as typeof fetch
+
+    // A rebinding resolver hands a metadata IP on any SECOND lookup. With
+    // pinning there is no second lookup, so the first (public) result is used.
+    let calls = 0
+    const rebinding = async () => (++calls === 1 ? [PUBLIC_IP] : ['169.254.169.254'])
+
+    const res = await performGatedFetch(
+      makeEntry(['rebind.example.com']),
+      'https://rebind.example.com/x',
+      {},
+      { fetchImpl, resolveHostAddresses: rebinding },
+    )
+
+    expect(res.status).toBe(200)
+    expect(fetchedUrl).toBe(`https://${PUBLIC_IP}/x`) // pinned to the checked IP
+    expect(fetchedHost).toBe('rebind.example.com') // Host preserved for vhosting
+    expect(fetchedSni).toBe('rebind.example.com') // TLS SNI + cert identity preserved
+    expect(calls).toBe(1) // resolved exactly once, no re-resolution to rebind
   })
 
   test('rejects an allowlisted host that resolves to a private IP (DNS rebinding)', async () => {
