@@ -40,10 +40,19 @@ export interface SiteImportAdapter {
   /**
    * Upload a single asset to the media library.
    *
+   * `signal` is the run's cancellation signal — implementations forward it to
+   * the underlying request so cancelling the wizard aborts the in-flight
+   * upload instead of only skipping the queued ones.
+   *
    * @returns The public media URL the page tree should reference (e.g.
    *          `"/uploads/abc123.png"` or `"https://cdn.example.com/..."`).
    */
-  uploadAsset(file: { path: string; bytes: Uint8Array; mimeType: string }): Promise<string>
+  uploadAsset(file: {
+    path: string
+    bytes: Uint8Array
+    mimeType: string
+    signal?: AbortSignal
+  }): Promise<string>
 
   /**
    * Install a Google font request extracted from a trusted CSS2 @import.

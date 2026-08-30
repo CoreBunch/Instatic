@@ -139,13 +139,13 @@ export function createSiteImportAdapter(opts: AdapterCallbacks): SiteImportAdapt
       return installCmsGoogleFont(font)
     },
 
-    async uploadAsset({ path, bytes, mimeType }) {
+    async uploadAsset({ path, bytes, mimeType, signal }) {
       opts.onUploadStart?.({ path })
       // bytes comes from fflate/File APIs — always backed by a plain ArrayBuffer.
       // TypeScript's BlobPart constraint excludes SharedArrayBuffer; the cast is safe.
       const blobData: ArrayBuffer = bytes.slice().buffer as ArrayBuffer
       const file = new File([blobData], basename(path), { type: mimeType })
-      const asset = await uploadCmsMediaAsset(file)
+      const asset = await uploadCmsMediaAsset(file, { signal })
 
       // Place the asset under a folder that mirrors its source bundle path.
       // Folder creation happens lazily here so a flat bundle (every asset at
