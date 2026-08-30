@@ -41,7 +41,18 @@ export const MEDIA_KIND_OPTIONS = [
   { value: 'video', label: 'Video' },
 ]
 
-const FIELD_ID_PATTERN = /^[a-z][a-z0-9_]*$/
+/**
+ * Field ids must start with a lowercase letter so they stay safe as token
+ * and binding keys, but the body accepts any letter case.
+ *
+ * camelCase is deliberately allowed: the storage schema puts no pattern on
+ * `id` at all (`FieldCommonProps.id` is a bare `Type.String()`), the API
+ * accepts camelCase today, and three of the built-in post-type fields —
+ * `featuredMedia`, `seoTitle`, `seoDescription` — are themselves camelCase.
+ * Rejecting it here was the only thing forcing a second convention into
+ * tables that already carry the first.
+ */
+const FIELD_ID_PATTERN = /^[a-z][a-zA-Z0-9_]*$/
 
 export function slugifyOptionValue(label: string): string {
   return label
@@ -65,7 +76,7 @@ export function makeOption(label: string): DraftOption {
 
 export function fieldIdError(id: string, existingIds: string[]): string | null {
   if (!id) return null
-  if (!FIELD_ID_PATTERN.test(id)) return 'Must start with a lowercase letter; use letters, numbers, underscores only.'
+  if (!FIELD_ID_PATTERN.test(id)) return 'Must start with a lowercase letter, then letters, numbers or underscores.'
   if (existingIds.includes(id)) return 'This ID is already in use.'
   return null
 }
