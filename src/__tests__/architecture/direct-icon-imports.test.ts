@@ -28,25 +28,33 @@ function collectFiles(dir: string, exts = ['.ts', '.tsx', '.js', '.jsx', '.mts',
   return results
 }
 
-const PROD_DIRS = ['editor', 'core', 'modules', 'ui', 'app', 'lib'].map((d) =>
-  join(SRC_ROOT, d),
-)
+const PROD_DIRS = ['admin', 'core', 'modules', 'ui'].map((d) => join(SRC_ROOT, d))
 
 function collectProdFiles(): string[] {
+  for (const dir of PROD_DIRS) {
+    if (!existsSync(dir)) {
+      throw new Error(
+        `Scan root missing: ${dir} — update PROD_DIRS to the directories that exist under src/.`,
+      )
+    }
+  }
   return PROD_DIRS.flatMap((dir) => collectFiles(dir))
 }
 
 describe('Direct icon imports — no lazy Icon wrapper in production UI', () => {
-  it('production source does not import a lazy pixel-art-icons/Icon wrapper or render <Icon>', () => {
+  it('production source does not import a lazy pixel-art-icons/Icon wrapper or render <Icon name=…>', () => {
     const violations: string[] = []
 
     for (const filePath of collectProdFiles()) {
       const rel = filePath.replace(SRC_ROOT, 'src/')
 
       const source = readFileSync(filePath, 'utf8')
+      // `<Icon name="…">` is the lazy wrapper's API. A local
+      // `const Icon = SomeConcreteIcon` rendered as `<Icon size={…}/>` is the
+      // allowed direct-import idiom and must not match.
       if (
         /from\s+['"]pixel-art-icons\/Icon['"]/.test(source) ||
-        /<Icon\b/.test(source)
+        /<Icon\b[^>]*\bname=/.test(source)
       ) {
         violations.push(rel)
       }

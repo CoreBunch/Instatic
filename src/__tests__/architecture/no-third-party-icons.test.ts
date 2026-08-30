@@ -59,11 +59,16 @@ function collectFiles(dir: string, exts = ['.ts', '.tsx', '.js', '.jsx', '.mts',
 
 // Scan production source only — not __tests__ (test files contain banned
 // strings as regex patterns and would false-positive).
-const PROD_DIRS = ['editor', 'core', 'modules', 'ui', 'app', 'lib'].map((d) =>
-  join(SRC_ROOT, d)
-)
+const PROD_DIRS = ['admin', 'core', 'modules', 'ui'].map((d) => join(SRC_ROOT, d))
 
 function collectProdFiles(): string[] {
+  for (const dir of PROD_DIRS) {
+    if (!existsSync(dir)) {
+      throw new Error(
+        `Scan root missing: ${dir} — update PROD_DIRS to the directories that exist under src/.`
+      )
+    }
+  }
   return PROD_DIRS.flatMap((dir) => collectFiles(dir))
 }
 

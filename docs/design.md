@@ -446,7 +446,7 @@ Rules:
 
 - No barrel import (`import { X } from 'pixel-art-icons'`) — always `pixel-art-icons/icons/<name>`.
 - No `lucide-react`, `heroicons`, `phosphor-icons`, or other catalogs. Gated by `no-third-party-icons.test.ts`.
-- No inline SVG strings in components. Gated by `direct-icon-imports.test.ts`.
+- No lazy `Icon` wrapper (`pixel-art-icons/Icon`, `<Icon name="…">`) — import the concrete icon component directly. Gated by `direct-icon-imports.test.ts`.
 - Icons in the panel rail or equivalent identity surfaces are colored via `--rail-icon-color` (which is derived from `--rail-icon-tint`). Don't hardcode `color` on the icon itself.
 - Adding a new icon: import it normally, then run `bun run icons:sync`. The vendored set is gated for freshness by `vendor-icons-fresh.test.ts`.
 
@@ -623,7 +623,7 @@ The HTML `title` attribute is banned for hover hints — gated by `no-native-tit
   - `src/__tests__/architecture/button-primitive-usage.test.ts` — every button goes through `Button`
   - `src/__tests__/architecture/ui-primitives-location.test.ts` — primitives live in `src/ui/components/`
   - `src/__tests__/architecture/no-third-party-icons.test.ts` — icons come from `pixel-art-icons`
-  - `src/__tests__/architecture/direct-icon-imports.test.ts` — no inline SVG strings
+  - `src/__tests__/architecture/direct-icon-imports.test.ts` — no lazy `Icon` wrapper; concrete icons imported directly
   - `src/__tests__/architecture/vendor-icons-fresh.test.ts` — vendored icon set is fresh
   - `src/__tests__/architecture/no-native-browser-dialogs.test.ts` — no `alert` / `confirm` / `prompt`
   - `src/__tests__/architecture/no-native-title-tooltips.test.ts` — no `title=` hover hints
