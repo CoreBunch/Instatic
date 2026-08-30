@@ -232,6 +232,17 @@ Text props mix literal text + tokens:
 
 Source: `src/core/templates/tokenInterpolation.ts`.
 
+### Where tokens are substituted
+
+`resolveDynamicProps` walks a node's props and interpolates:
+
+- **every string-typed prop** — `text`, `href`, `src`, `alt`, and any module's own string prop. Richtext prop keys (`html`, `richtext`, `*html`, `*richtext`) additionally render the interpolated value as markdown.
+- **every value inside `htmlAttributes`** — the one prop holding strings a level down. An author writing `src="{currentEntry.video-link}"` on a custom tag gets the same substitution a first-class `href` prop gets. Attribute values are never markdown-rendered: an attribute is a value, not a body.
+
+Nothing else is descended into. `filters` on a loop, for example, is a free-form bag whose values are configuration rather than authored output.
+
+All three render surfaces — the publisher (`renderNode.ts`), the editor canvas (`NodeRenderer.tsx`), and `ReadOnlyNodeTree` — resolve through this one function, so a token behaves identically in all of them.
+
 ---
 
 ## Editor canvas preview

@@ -391,3 +391,77 @@ describe('frame builders', () => {
     expect(route.path).toBe('/')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Tokens inside htmlAttributes
+// ---------------------------------------------------------------------------
+
+describe('resolveDynamicProps — tokens in htmlAttributes', () => {
+  const entry = { id: 'r1', fields: { 'video-link': 'https://cdn.example.com/hover.mp4', title: 'Peak' } }
+
+  it('interpolates a token written on an author-set attribute', () => {
+    // The case this exists for: a custom `<source>` tag whose `src` is bound
+    // per loop item. `href` on a link already worked because it is a
+    // first-class string prop; an attribute is one level down and was skipped,
+    // so the token shipped to the browser as literal text.
+    const props = resolveDynamicProps(
+      { tag: 'custom', customTag: 'source', htmlAttributes: { src: '{currentEntry.video-link}' } },
+      undefined,
+      ctx({ entryStack: [entry] }),
+    )
+    expect(props.htmlAttributes).toEqual({ src: 'https://cdn.example.com/hover.mp4' })
+  })
+
+  it('leaves attributes without tokens untouched, and does not copy needlessly', () => {
+    const staticProps = { htmlAttributes: { 'data-w-id': 'abc-123', loading: 'lazy' } }
+    const props = resolveDynamicProps(staticProps, undefined, ctx({ entryStack: [entry] }))
+    expect(props).toBe(staticProps)
+  })
+
+  it('interpolates only the attributes that carry tokens', () => {
+    const props = resolveDynamicProps(
+      { htmlAttributes: { src: '{currentEntry.video-link}', 'data-w-id': 'abc-123' } },
+      undefined,
+      ctx({ entryStack: [entry] }),
+    )
+    expect(props.htmlAttributes).toEqual({
+      src: 'https://cdn.example.com/hover.mp4',
+      'data-w-id': 'abc-123',
+    })
+  })
+
+  it('does not mutate the caller’s props object', () => {
+    const staticProps = { htmlAttributes: { src: '{currentEntry.video-link}' } }
+    resolveDynamicProps(staticProps, undefined, ctx({ entryStack: [entry] }))
+    expect(staticProps.htmlAttributes.src).toBe('{currentEntry.video-link}')
+  })
+
+  it('an unresolvable token becomes empty rather than shipping the literal', () => {
+    const props = resolveDynamicProps(
+      { htmlAttributes: { src: '{currentEntry.nope}' } },
+      undefined,
+      ctx({ entryStack: [entry] }),
+    )
+    expect(String((props.htmlAttributes as Record<string, string>).src)).not.toContain('{currentEntry')
+  })
+
+  it('never markdown-renders an attribute value', () => {
+    // `isRichtextPropKey` must not reach attribute values — an attribute is a
+    // value, not a body, and wrapping it in <p> would corrupt the URL.
+    const props = resolveDynamicProps(
+      { htmlAttributes: { html: '{currentEntry.title}' } },
+      undefined,
+      ctx({ entryStack: [entry] }),
+    )
+    expect((props.htmlAttributes as Record<string, string>).html).toBe('Peak')
+  })
+
+  it('ignores a malformed htmlAttributes bag instead of throwing', () => {
+    const props = resolveDynamicProps(
+      { htmlAttributes: { nested: { deep: 'x' } } as unknown as Record<string, string> },
+      undefined,
+      ctx({ entryStack: [entry] }),
+    )
+    expect(props.htmlAttributes).toEqual({ nested: { deep: 'x' } })
+  })
+})
