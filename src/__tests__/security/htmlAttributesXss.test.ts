@@ -23,7 +23,7 @@ import {
   sanitizeRenderableHtmlAttribute,
 } from '@core/htmlAttributes'
 import { htmlAttributesAttr } from '@core/publisher'
-import { resolveHtmlTag } from '@modules/base/utils/htmlTag'
+import { resolveHtmlTag } from '@core/htmlAttributes'
 
 describe('sanitizeRenderableHtmlAttribute — the shared custom-attribute gate', () => {
   it('drops srcdoc (raw-HTML iframe sink)', () => {

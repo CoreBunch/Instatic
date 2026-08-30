@@ -35,7 +35,7 @@ import type { ModuleDefinition } from '@core/module-engine'
 import { registry } from '@core/module-engine'
 import { Type, Value, type Static } from '@core/utils/typeboxHelpers'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
-import { resolveHtmlTag } from '@modules/base/utils/htmlTag'
+import { resolveHtmlTag } from '@core/htmlAttributes'
 import { HtmlAttributesPropSchemaOptions } from '@modules/base/shared/htmlAttributes'
 import { LoopEditor } from './LoopEditor'
 
