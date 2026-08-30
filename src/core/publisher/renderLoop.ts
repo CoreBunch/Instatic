@@ -21,7 +21,7 @@ import {
 } from '@core/loops'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { resolveHtmlTag } from '@modules/base/utils/htmlTag'
-import { htmlAttributesAttr } from '@modules/base/shared/htmlAttributes'
+import { htmlAttributesAttr } from './htmlAttributesEmit'
 import { injectNodeClassIds, injectNodeId, injectNodeInlineStyles } from './classInjection'
 import { escapeHtml } from './utils'
 import type { RenderConfig, RenderAccumulators, RenderNodeFn } from './renderConfig'

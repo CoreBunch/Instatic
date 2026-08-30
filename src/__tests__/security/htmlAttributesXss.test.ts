@@ -22,7 +22,7 @@ import {
   isRenderableHtmlAttributeName,
   sanitizeRenderableHtmlAttribute,
 } from '@core/htmlAttributes'
-import { htmlAttributesAttr } from '@modules/base/shared/htmlAttributes'
+import { htmlAttributesAttr } from '@core/publisher'
 import { resolveHtmlTag } from '@modules/base/utils/htmlTag'
 
 describe('sanitizeRenderableHtmlAttribute — the shared custom-attribute gate', () => {

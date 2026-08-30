@@ -34,6 +34,8 @@ export {
 
 export { escapeHtml, isSafeUrl, safeUrl, sanitiseCssValue } from './utils'
 
+export { htmlAttributesAttr } from './htmlAttributesEmit'
+
 export {
   bagToCSS,
   bagToInlineStyle,

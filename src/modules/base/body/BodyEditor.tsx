@@ -18,7 +18,7 @@
 import { use, useEffect } from 'react'
 import type { ModuleComponentProps, NodeWrapperProps as NodeWrapperPropsType } from '@core/module-engine'
 import { applyIframeBodyPresentation } from '@site/canvas/iframeBodyPresentation'
-import { htmlAttributesForReact } from '@modules/base/shared/htmlAttributes'
+import { htmlAttributesForReact } from '@core/htmlAttributes'
 import { CanvasDocumentContext } from '@site/canvas/CanvasContexts'
 
 type BodyProps = { htmlAttributes?: unknown }
