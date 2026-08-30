@@ -4,20 +4,43 @@ All notable changes to Instatic will be documented here.
 
 This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
 
-## 0.0.17
+## 0.0.17 - 2026-08-30
 
 ### AI and integrations
 
 - Fixed adding the Instatic MCP connector on Postgres installations. The dynamic client registration response returned `client_id_issued_at` as a quoted string, because Postgres declares the column `bigint` and returns it as a string to protect precision, so clients that validate the response against RFC 7591 rejected the connector with `expected number, received string`. SQLite installations were unaffected.
+- Streamed the MCP editor bridge as `text/event-stream` so buffering reverse proxies flush each record instead of holding the connection, keeping connected agents working against an open Site or Content workspace on proxied installations.
+- Added the AI workspace to the shared admin navigation and a Spotlight command, so users holding the AI capabilities can reach AI settings without typing the URL.
 
 ### Editor, import, and publishing
 
+- Added TypeScript tooling to Site Editor scripts: strict semantic diagnostics, DOM-aware completions, and hover information from a worker-isolated language service, collected in a compact Problems panel. Publish-time script build errors now come back as an author-actionable error with `file:line:column` diagnostics instead of a silent server error.
 - Added a condition to data-row loops so a list can show a subset of a table rather than always its newest rows — pick one of the table's own fields and require it to be checked, unchecked, equal to a value, or to have any value at all. A relation field offers its rows by name instead of asking for an id. The condition applies on the canvas, on published pages, and in the "load more" endpoint, and the item count follows it so pagination never advertises rows the page drops.
 - Added the table's own fields to a data-row loop's "Order by" list, so a list can follow a real date, title, or rank stored in the row instead of only the row's built-in columns. Values compare as text, which sorts ISO dates chronologically.
+- Let a data-row loop's wrapper carry custom HTML attributes, the same control containers already have, applied identically on the canvas and in published output.
+- Interpolated `{tokens}` inside a node's custom HTML attributes at publish time, so data-bound values reach `data-*` and ARIA attributes instead of publishing verbatim.
+- Fixed escaped `\{` in token interpolation to emit a literal brace without its backslash, as the escaping syntax always documented.
+- Fixed the loop "load more" runtime to read its endpoint from the script tag's attribute — `document.currentScript` is null inside module scripts, so a configured endpoint was never honored.
+- Let the New field dialog accept camelCase field ids, matching the camelCase built-in fields it sits beside.
+- Stopped the New field dialog crashing on admins served over plain HTTP, where no secure context means `crypto.randomUUID` does not exist.
+- Parsed CSS Color-4 space-separated `hsl()` values in framework color tokens, so tokens authored in the modern syntax generate their transparent, shade, and tint variants again.
+- Restored Escape dismissal in the Settings modal after focus left the dialog, and while tooltips are open.
+- Fixed Command Spotlight so select-type argument options can be chosen with a mouse click, not only with Enter.
+- Named every asset reference a site-import archive cannot satisfy: after a punctuation-insensitive retry against the archive's file list, each remaining media reference emits an `unresolved-asset` warning ranked first in the import log instead of disappearing silently.
+- Kept a newly created entry's title in the Content sidebar when the entries list was still loading — a request race left a nameless row.
 
 ### Content and publishing
 
 - Fixed the SEO title and SEO description fields on a post so they reach the published page. Both were editable in the Content settings panel but never emitted anything: an entry's `<title>` always showed its plain title, and no description tag was written at all. An authored value now drives `<title>` / `<meta name="description">` and outranks the site-wide Meta Title and Meta Description, on the published page and in the Content editor's Live preview alike. The on-page `{page.title}` and `{currentEntry.title}` bindings keep rendering the entry's real title.
+- Interpolated `{currentEntry.*}`, `{page.*}`, and `{site.*}` tokens in the published meta title and description, so per-entry SEO values written as token patterns resolve at publish time instead of appearing verbatim in the `<head>`.
+
+### Platform and maintenance
+
+- Let Railway and Render platform auto-detection survive an invalid `PUBLIC_ORIGIN` value: an unparseable origin list now falls through to auto-detection instead of silently degrading the origin check to an empty allowlist.
+- Gave `DbClient` a `close()` on both database adapters and wired it into file-backed test teardown, clearing the Windows test failures caused by SQLite handles outliving their temp directories.
+- Scaffolded plugin server entries now import the SDK through the same specifier as every other template, so a freshly scaffolded plugin type-checks inside the monorepo.
+- Mapped U+0000 to U+FFFD in `escapeCssIdentifier`, matching the `CSS.escape` specification it vendors.
+- Moved HTML tag and attribute rendering helpers into the engine so `src/core` never imports from `src/modules`, now gated by an architecture test.
 
 ## 0.0.16 - 2026-08-11
 
