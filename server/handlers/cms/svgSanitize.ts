@@ -14,14 +14,11 @@
  *   4. `javascript:` URLs inside `href` / `xlink:href`.
  *   5. `<a>` elements pointing at `javascript:` URLs.
  *
- * Why string-based rather than DOMPurify: the server runs on Bun with
- * happy-dom as its DOM. happy-dom does NOT parse SVG element trees the way
- * DOMPurify's SVG profile expects — DOMPurify drops EVERY SVG child element
- * (rect/circle/path/…), leaving only an empty `<svg></svg>` wrapper. That
- * gutting makes DOMPurify unusable for SVG in this runtime. SVG's dangerous
- * surface is small and well-defined, so a targeted string sanitizer is the
- * correct, predictable, dependency-free choice here. (Richtext HTML still
- * uses DOMPurify — happy-dom handles HTML fine; only SVG is broken.)
+ * Why string-based rather than DOMPurify: this sanitizer operates on the raw
+ * upload bytes rather than a parsed DOM, so it needs no DOM runtime. SVG's
+ * dangerous surface is small and well-defined, which makes a targeted string
+ * sanitizer a predictable, dependency-free guard at this layer. (Richtext HTML
+ * is sanitised separately by DOMPurify over jsdom in `server/richtextSanitizer.ts`.)
  *
  * Defense in depth: the sanitised bytes are what hit disk AND what the browser
  * receives, with no out-of-band cleaning step. Static assets are also served
