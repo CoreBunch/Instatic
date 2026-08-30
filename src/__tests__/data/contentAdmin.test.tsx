@@ -922,6 +922,46 @@ describe('ContentPage', () => {
     expect(useWorkspaceLayout.getState().rightPanel.collapsed).toBe(true)
   })
 
+  it('keeps the stored title in the list when a list load resolves after a create', async () => {
+    // `createUntitledEntry` stores "Untitled" on the server but hands the editor
+    // a copy whose title is blank, so the title field shows its placeholder. If
+    // the in-flight list load resolves *after* that create, the workspace used
+    // to merge the editor's blank copy back into the list and the sidebar
+    // rendered an empty row. Which request won was scheduling luck, so this
+    // test pins the losing order down instead of waiting for it to reappear.
+    const baseFetch = globalThis.fetch
+    let releaseInitialList: () => void = () => {}
+    const initialListHeld = new Promise<void>((resolve) => { releaseInitialList = resolve })
+    let heldTheListGet = false
+
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (
+        !heldTheListGet &&
+        String(input) === '/admin/api/cms/data/tables/posts/rows' &&
+        init?.method === 'GET'
+      ) {
+        heldTheListGet = true
+        await initialListHeld
+      }
+      return baseFetch(input, init)
+    }
+
+    render(
+      <AdminTestProviders>
+        <ContentPage />
+      </AdminTestProviders>,
+    )
+
+    const postsRegion = await screen.findByRole('region', { name: 'Posts' })
+    fireEvent.click(within(postsRegion).getByRole('button', { name: /new post/i }))
+    expect(await screen.findByTestId('content-settings-panel')).toBeDefined()
+
+    // The create has landed; now let the older list response arrive.
+    releaseInitialList()
+
+    expect(await within(postsRegion).findByText('Untitled')).toBeDefined()
+  })
+
   it('shows entry authors in the content list and reassigns the selected entry author', async () => {
     const user = userEvent.setup()
     const calls: FetchCall[] = []
@@ -1374,11 +1414,10 @@ describe('ContentPage', () => {
     const dialog = await screen.findByRole('dialog', { name: /new collection/i })
     fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Product Catalog' } })
     fireEvent.change(within(dialog).getByLabelText('Slug'), { target: { value: 'catalog-items' } })
-    fireEvent.change(within(dialog).getByLabelText('URL path'), { target: { value: '/catalog' } })
     fireEvent.change(within(dialog).getByLabelText('Singular label'), { target: { value: 'Product' } })
     fireEvent.change(within(dialog).getByLabelText('Plural label'), { target: { value: 'Catalog' } })
-    fireEvent.click(within(dialog).getByLabelText('Featured media'))
-    fireEvent.click(within(dialog).getByLabelText('SEO fields'))
+    expect(within(dialog).queryByRole('group', { name: 'Table kind' })).toBeNull()
+    expect(within(dialog).getByText('Record structure')).toBeTruthy()
     fireEvent.click(within(dialog).getByRole('button', { name: /^create$/i }))
 
     const catalogRegion = await screen.findByRole('region', { name: 'Catalog' })
@@ -1393,15 +1432,19 @@ describe('ContentPage', () => {
     expect(createCollectionCall?.init?.body).toBe(JSON.stringify({
       name: 'Product Catalog',
       slug: 'catalog-items',
-      routeBase: '/catalog',
+      kind: 'postType',
+      routeBase: '/catalog-items',
       singularLabel: 'Product',
       pluralLabel: 'Catalog',
+      primaryFieldId: 'title',
       fields: [
         { type: 'text', id: 'title', label: 'Title', required: true, builtIn: true },
         { type: 'text', id: 'slug', label: 'Slug', required: true, builtIn: true },
         { type: 'richText', id: 'body', label: 'Body', format: 'markdown', builtIn: true },
+        { type: 'media', id: 'featuredMedia', label: 'Featured media', mediaKind: 'image', builtIn: true },
+        { type: 'text', id: 'seoTitle', label: 'SEO title', builtIn: true },
+        { type: 'longText', id: 'seoDescription', label: 'SEO description', builtIn: true },
       ],
-      kind: 'postType',
     }))
     expect(calls.some((call) =>
       String(call.input) === '/admin/api/cms/data/tables/products/rows' &&

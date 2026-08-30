@@ -3,7 +3,7 @@ import type { DbClient, DbResult } from './client'
 
 export function createPostgresClient(connectionString: string): DbClient {
   const sql = new SQL(connectionString)
-  return wrapSql(sql)
+  return wrapSql(sql, true)
 }
 
 /**
@@ -48,7 +48,16 @@ function resultRowCount<Row>(result: Row[]): number {
   return typeof count === 'number' ? count : result.length
 }
 
-function wrapSql(sql: SQL): DbClient {
+/**
+ * Wrap a Bun SQL handle in the DbClient interface.
+ *
+ * `ownsPool` distinguishes the client returned by `createPostgresClient`,
+ * which owns the connection pool, from the transaction-scoped client handed
+ * to a `.transaction()` callback, which borrows it. Only the owner may close
+ * the pool; closing it mid-transaction would tear the connection out from
+ * under the surrounding `sql.begin()`.
+ */
+function wrapSql(sql: SQL, ownsPool = false): DbClient {
   const fn = (async <Row = Record<string, unknown>>(
     strings: TemplateStringsArray,
     ...values: unknown[]
@@ -69,6 +78,11 @@ function wrapSql(sql: SQL): DbClient {
 
   fn.transaction = async <T>(cb: (tx: DbClient) => Promise<T>): Promise<T> => {
     return await sql.begin(async (txSql) => cb(wrapSql(txSql as unknown as SQL)))
+  }
+
+  fn.close = async (): Promise<void> => {
+    if (!ownsPool) return
+    await sql.close()
   }
 
   return Object.assign(fn, { dialect: 'postgres' as const })

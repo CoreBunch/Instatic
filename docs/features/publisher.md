@@ -327,14 +327,30 @@ The publisher emits `<head>` in this order:
 
 1. `<meta charset="utf-8">`
 2. `<meta name="viewport" content="width=device-width, initial-scale=1">`
-3. `<title>` from `page.title`
-4. `<meta name="description">` if present in page settings
+3. `<title>` — the entry's `seoTitle` (post-type entries only) → `settings.metaTitle` → `page.title` → site name, then token-interpolated against the render context before escaping, so `{currentEntry.*}` resolves per-entry on entry routes (e.g. `{currentEntry.name} | Acme`) and `{page.*}` / `{site.*}` / `{route.*}` work everywhere
+4. `<meta name="description">` — the entry's `seoDescription` (post-type entries only) → `settings.metaDescription`; omitted when neither is set, and token-interpolated the same way
 5. `<link rel="icon">` if a favicon is configured
 6. `<script type="importmap">` mapping bare specifiers (e.g. `three`) to `/_instatic/runtime/cache/<hash>/...` URLs
 7. Runtime asset `<script>` tags (`scriptTagsForRuntimeAssets`)
 8. `<link rel="stylesheet" href="/_instatic/css/<bundle>-<hash>.css">` per bundle
 9. **`head` placement** plugin-injected tags (after the publisher's own head, before custom user head content)
 10. `<meta http-equiv="Content-Security-Policy" content="...">` — assembled based on what's actually in the page
+
+### `documentMeta` — per-render `<head>` overrides
+
+Rows 3 and 4 above take their most specific value from `PublishPageOptions.documentMeta`, a `{ title?, description? }` the caller supplies for this render only. A post-type entry's authored `seoTitle` / `seoDescription` are row cells, not fields of the composed template `Page`, so both entry render paths read them with `readEntrySeoOverride(cells)` (`src/core/data/cells.ts`) and pass them here:
+
+| Path | File |
+|---|---|
+| Publish / public route | `renderPublishedDataRowTemplate` in `server/publish/publicRenderer.ts` |
+| Content editor Live mode | `handleRowPreview` in `server/handlers/cms/data/preview.ts` |
+
+Two invariants:
+
+- **Never write the SEO override onto `page.title`.** `publishPage` hands `page` to `buildPageFrame`, so `page.title` is also the `{page.title}` binding — an SEO value assigned there renders inside the page body. `page.title` stays the entry's own `title` cell; the override reaches `<head>` and nothing else.
+- **A blank field is not an override.** `readEntrySeoOverride` omits an empty or whitespace-only cell, so it falls through to the site-level `metaTitle` / `metaDescription` exactly as an absent one does.
+
+Both call sites read through the one helper so publish and Live preview can't drift.
 
 Installed fonts are emitted through the CSS bundle, not external `<link>` tags. The font CSS includes self-hosted `@font-face` rules for `site.settings.fonts.items` plus `:root` declarations for editable tokens such as `--font-primary`. A page rule can therefore keep `font-family: var(--font-primary)` while the token assignment changes site-wide.
 
@@ -344,7 +360,8 @@ Plugins inject at four anchors. The order matters — see [docs/features/plugin-
 
 The CSP is modelled as **data**, not a string assembled with regex. `src/core/publisher/cspPlan.ts` owns one `CspPlan` (`Map<directive, Set<source>>`) and the deterministic `serializeCsp` (directives sorted by name, sources sorted within each directive). Every stage contributes to the same plan:
 
-- `createBaseCspPlan` (in `render.ts`) emits the base policy: `default-src 'self'`, restricted `script-src` (`'none'` → `'self'` + importmap `sha256` once any script tag is present), `style-src 'self' 'unsafe-inline'`, `img-src 'self' data: https:`, `frame-src 'none'`, and `worker-src` (`'none'` → `'self' blob:`).
+- `createBaseCspPlan` (in `render.ts`) emits the base policy: `default-src 'self'`, restricted `script-src` (`'none'` → `'self'` + importmap `sha256` once any script tag is present), `style-src 'self' 'unsafe-inline'`, `img-src 'self' data: https:`, `media-src 'self' data: https:`, `frame-src 'none'`, and `worker-src` (`'none'` → `'self' blob:`).
+  - `media-src` deliberately mirrors `img-src`. Both govern passive references that execute nothing, so allowing a remote image while blocking a remote `<video>` would be an arbitrary line. It has to be stated explicitly: an unset `media-src` falls back to `default-src 'self'`, and the only symptom is a video that silently never loads.
 - The server injection pipeline (`server/publish/frontendInjections.ts`) merges plugin `frontend.assets[]` relaxations + elected media-adapter origins into the plan in **one** pass via `rewriteCspMeta` — no second regex pass, no per-directive `RegExp`.
 - The module-JS injector (`injectModuleScripts` in `server/publish/moduleJsBundle.ts`) merges `script-src 'self'` through the same `rewriteCspMeta` helper — only when at least one `/_instatic/module-js/<moduleId>.js` script tag was injected.
 
@@ -369,7 +386,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/publish/renderCache.ts`                 | In-memory LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. `getOrRender` (single-flight). Reads the version from `publishState`; version captured at render start — a publish landing mid-render discards the result rather than caching stale HTML. Layer B. |
 | `server/publish/publishState.ts`                | Publish-time process state: `publishVersion` (`bumpPublishVersion`/`getPublishVersion`), `withPublishLock` (ISS-038 publish serializer), and `createVersionedSingleFlight` — the generalized version-keyed single-flight memo the hole endpoint reuses. Repositories import the version + lock from here (not from the cache). |
 | `server/publish/holeRuntime.ts`                 | Exports `runInstaticHoleRuntime` (the TypeScript source of the Layer C runtime) and `HOLE_RUNTIME_JS` (IIFE-serialized string, ~1.1 KB, served to browsers). Tests call `runInstaticHoleRuntime()` directly to avoid dynamic eval. |
-| `server/publish/publicRenderer.ts`              | `renderPublishedSnapshot`, `renderPublishedDataRowTemplate` — thin wrappers (resolve + compose the template chain, seed the context) over one shared `renderMergedTemplate` (CSS bundle + loop/media prefetch + `publishPage` + publish-version stamping). |
+| `server/publish/publicRenderer.ts`              | `renderPublishedSnapshot`, `renderPublishedDataRowTemplate` — thin wrappers (resolve + compose the template chain, seed the context) over one shared `renderMergedTemplate` (CSS bundle + loop/media prefetch + `publishPage` + publish-version stamping). The entry path also passes the row's `readEntrySeoOverride(...)` through as `documentMeta`. |
 | `server/publish/publishedHtmlPipeline.ts`       | Post-process: DOMPurify the final HTML, run plugin `publish.html` filter, splice in declarative tags from plugin manifests, inject runtime assets. Runs at publish time only — never per-request. |
 | `server/publish/siteCssBundle.ts`               | Hash the four CSS strings, write `uploads/css/...` files. The framework bundle's module-CSS half comes from the shared walk in `siteModuleAssets.ts`. |
 | `server/publish/siteModuleAssets.ts`            | `collectSiteModuleAssets` — the one full-site render walk whose accumulators feed BOTH the framework CSS bundle (`cssMap`) and the published module-JS map (`jsMap`). |
@@ -549,6 +566,7 @@ This is rare and requires architectural review — most "new behavior" fits with
 | Hand-writing `<picture>` / `<img srcset>` in a module         | Set `props.<key>` to a media URL; `mediaPresentation.ts` materializes the markup. |
 | Adding `@import url(...)` to module CSS                       | The final document passes through DOMPurify in `publishedHtmlPipeline.ts`, which strips dangerous CSS constructs. Add it to the site's user stylesheets instead (where it is intentional). |
 | Editing the CSP meta tag string manually                      | Edit the CSP source list — the tag is derived.             |
+| Assigning an entry's `seoTitle` to `page.title` to reach `<title>` | Pass it as `documentMeta.title`. `page.title` is also the `{page.title}` binding, so an override written there renders in the page body. |
 
 ---
 

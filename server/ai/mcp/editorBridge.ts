@@ -4,10 +4,11 @@
  * Browser-execution tools (insert HTML, apply CSS, set tokens, manage pages,
  * content CRUD, …) have no server implementation — their logic runs in the
  * editor app against the live store. To let an external MCP client use them,
- * the editor holds a long-lived NDJSON stream open while mounted; this module
- * keeps one bridge per user and workspace (the newest open instance wins)
- * and lets the MCP server relay a browser tool call to the correct workspace
- * before awaiting its result.
+ * the editor holds a long-lived newline-delimited JSON stream open while
+ * mounted. Its HTTP response is advertised as an event stream so reverse
+ * proxies preserve incremental delivery. This module keeps one bridge per user
+ * and workspace (the newest open instance wins) and lets the MCP server relay a
+ * browser tool call to the correct workspace before awaiting its result.
  *
  * Reuses the chat bridge machinery wholesale: `createBridge` issues the
  * `AiBrowserBridge` (whose `callBrowser` resolves when the editor POSTs back to

@@ -85,6 +85,33 @@ describe('resolvePublicOrigins', () => {
     ).toEqual(['https://www.example.com'])
   })
 
+  it('falls back to platform vars when every PUBLIC_ORIGIN entry is invalid', () => {
+    // A one-click template that renders `https://${RAILWAY_PUBLIC_DOMAIN}`
+    // before the domain exists yields the bare scheme. Gating precedence on
+    // the raw CSV instead of the normalized result made that value suppress
+    // auto-detection, leaving the CSRF check with no configured origin — i.e.
+    // setting PUBLIC_ORIGIN badly was worse than not setting it at all.
+    expect(
+      resolvePublicOrigins({
+        PUBLIC_ORIGIN: 'https://',
+        RAILWAY_PUBLIC_DOMAIN: 'app.up.railway.app',
+      }),
+    ).toEqual(['https://app.up.railway.app'])
+  })
+
+  it('falls back to platform vars when PUBLIC_ORIGIN is only separators', () => {
+    expect(
+      resolvePublicOrigins({
+        PUBLIC_ORIGIN: 'not-a-url, also-bad',
+        RENDER_EXTERNAL_URL: 'https://app.onrender.com',
+      }),
+    ).toEqual(['https://app.onrender.com'])
+  })
+
+  it('returns [] when PUBLIC_ORIGIN is invalid and no platform var is set', () => {
+    expect(resolvePublicOrigins({ PUBLIC_ORIGIN: 'https://' })).toEqual([])
+  })
+
   it('returns [] when nothing is configured', () => {
     expect(resolvePublicOrigins({})).toEqual([])
   })

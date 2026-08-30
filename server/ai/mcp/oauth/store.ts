@@ -20,7 +20,9 @@ interface OAuthClientRow {
   client_id: string
   client_name: string
   redirect_uris_json: string[]
-  client_id_issued_at: number
+  // `bigint` in Postgres — the driver returns int8 as a string to avoid
+  // precision loss, while SQLite hands back a number. Normalized in rowToClient.
+  client_id_issued_at: number | string
 }
 
 export interface OAuthClientRecord {
@@ -80,7 +82,7 @@ function rowToClient(row: OAuthClientRow): OAuthClientRecord {
     clientId: row.client_id,
     clientName: row.client_name,
     redirectUris: Array.isArray(row.redirect_uris_json) ? row.redirect_uris_json : [],
-    clientIdIssuedAt: row.client_id_issued_at,
+    clientIdIssuedAt: Number(row.client_id_issued_at),
   }
 }
 
