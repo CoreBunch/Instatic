@@ -99,4 +99,4 @@ export {
   ZipBombError,
   TooManyFilesError,
   PathTraversalError,
-} from './types'
+} from './errors'
