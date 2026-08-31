@@ -58,6 +58,7 @@ export const EXTENSION_FOR_MIME = {
   'image/png': '.png',
   'image/gif': '.gif',
   'image/webp': '.webp',
+  'image/avif': '.avif',
   'image/svg+xml': '.svg',
   'video/mp4': '.mp4',
   'video/webm': '.webm',
@@ -84,6 +85,7 @@ export const IMAGE_MIMES: ReadonlyArray<AcceptedMediaMime> = [
   'image/png',
   'image/gif',
   'image/webp',
+  'image/avif',
   'image/svg+xml',
 ]
 
@@ -91,6 +93,7 @@ const RESPONSIVE_VARIANT_MIMES: ReadonlySet<AcceptedMediaMime> = new Set([
   'image/jpeg',
   'image/png',
   'image/webp',
+  'image/avif',
 ])
 
 function shouldProcessResponsiveVariants(mime: AcceptedMediaMime): boolean {
@@ -119,6 +122,9 @@ const MEDIA_MAGIC_SIGNATURES: ReadonlyArray<{
   { mime: 'image/gif', bytes: [[0, 0x47], [1, 0x49], [2, 0x46], [3, 0x38], [4, 0x39], [5, 0x61]] },
   // WebP: RIFF<size>WEBP — bytes 0..3 = RIFF, bytes 8..11 = WEBP
   { mime: 'image/webp', bytes: [[0, 0x52], [1, 0x49], [2, 0x46], [3, 0x46], [8, 0x57], [9, 0x45], [10, 0x42], [11, 0x50]] },
+  // AVIF: ISO Base Media `ftyp` box with `avif` as the major brand. Keep this
+  // before MP4: MP4's broader `ftyp` signature also matches every AVIF file.
+  { mime: 'image/avif', bytes: [[4, 0x66], [5, 0x74], [6, 0x79], [7, 0x70], [8, 0x61], [9, 0x76], [10, 0x69], [11, 0x66]] },
   // MP4 / ISO Base Media: `ftyp` box at offset 4..7. The first 4 bytes are
   // the box size which varies; only the type identifier matters here.
   { mime: 'video/mp4', bytes: [[4, 0x66], [5, 0x74], [6, 0x79], [7, 0x70]] },
