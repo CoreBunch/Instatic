@@ -1,0 +1,13 @@
+/* UnitField — value ⊕ unit duo, on the Size section's fused-row proportions
+   so length rows read identically wherever they appear. */
+
+.duo {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 88px);
+    gap: var(--space-s);
+    min-width: 0;
+}
+
+.duo > * {
+    min-width: 0;
+}

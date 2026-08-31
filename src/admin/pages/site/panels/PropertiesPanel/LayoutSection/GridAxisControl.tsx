@@ -10,7 +10,7 @@
  */
 
 import { SegmentedControl } from '@ui/components/SegmentedControl'
-import { LabeledControl } from './LabeledControl'
+import { ControlRow } from '@ui/components/ControlRow'
 import { CROSS_HORIZONTAL_OPTIONS, CROSS_VERTICAL_OPTIONS } from './alignmentOptions'
 
 interface GridAxisControlProps {
@@ -30,7 +30,7 @@ export function GridAxisControl({ label, axis, value, isSet, onChange, onClear }
   // vertical-column icons (start = left, end = right).
   const options = axis === 'block' ? CROSS_HORIZONTAL_OPTIONS : CROSS_VERTICAL_OPTIONS
   return (
-    <LabeledControl label={label} isSet={isSet}>
+    <ControlRow label={label} isSet={isSet}>
       <SegmentedControl
         look="tiles"
         fullWidth
@@ -40,6 +40,6 @@ export function GridAxisControl({ label, axis, value, isSet, onChange, onClear }
         onClear={onClear}
         options={options}
       />
-    </LabeledControl>
+    </ControlRow>
   )
 }

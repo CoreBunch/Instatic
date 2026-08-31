@@ -1,4 +1,4 @@
-/* FloatingPanel — the panel's detached piece (inspector-panel.md §9).
+/* FloatingPanel — the panel's detached piece (inspector-panel.md §6.5, §10).
    Position is JS-driven: opens beside the trigger, then follows the header
    drag. */
 
@@ -44,11 +44,25 @@
     cursor: grabbing;
 }
 
+/* The title fills the middle so × hugs the right edge whether or not the
+   drill-in back arrow leads the row. It stays the drag handle. */
 .title {
+    flex: 1 1 auto;
     overflow: hidden;
     color: var(--text-muted);
     font-size: var(--text-2xs);
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Main view under a drilled-in view: kept mounted (state survives the round
+   trip), only its display goes. `display: contents` keeps the wrapper out of
+   the panel's layout when visible. */
+.content {
+    display: contents;
+}
+
+.content[data-drilled] {
+    display: none;
 }

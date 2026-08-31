@@ -26,6 +26,7 @@ import { useFrameworkChangeConfirm } from '@admin/shared/dialogs/FrameworkChange
 import { applyTypographyGroupPatchPreview } from '@site/store/slices/site/framework/typography'
 import { FontsSection } from './FontsSection/FontsSection'
 import styles from './TypographyPanel.module.css'
+import { copyToClipboard } from '@admin/lib/clipboard'
 
 const TYPOGRAPHY_CSS_PROPERTIES = [
   { value: 'font-size', label: 'font-size' },
@@ -55,11 +56,6 @@ function groupActionLabel(prefix: string, groupId: string): string {
 function formatTypeValue(value: number): string {
   if (!Number.isFinite(value)) return ''
   return value.toFixed(2).replace(/\.?0+$/, '')
-}
-
-function copyToClipboard(value: string) {
-  if (typeof navigator === 'undefined' || !navigator.clipboard) return
-  void navigator.clipboard.writeText(value).catch(() => {})
 }
 
 function TypographyScalePreview({ points }: { points: TypographyScalePoint[] }) {
@@ -92,7 +88,7 @@ function TypographyScalePreview({ points }: { points: TypographyScalePoint[] }) 
                 shape="flush"
                 className={styles.typeTokenButton}
                 aria-label={`Copy ${point.variableName}`}
-                onClick={() => copyToClipboard(variableValue)}
+                onClick={() => { void copyToClipboard(variableValue) }}
               >
                 {point.variableName}
               </Button>

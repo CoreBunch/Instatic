@@ -83,17 +83,9 @@ function credentialRevisionKey(credentials: AiResolvedCredential): string {
     credentials.id,
     credentials.authMode,
     credentials.baseUrl ?? '',
-    stableHash(credentials.apiKey ?? ''),
+    // Opacity, not integrity — the key must not sit in a Map key in clear.
+    Bun.hash(credentials.apiKey ?? '').toString(36),
   ].join('\0')
-}
-
-function stableHash(value: string): string {
-  let hash = 2166136261
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 16777619)
-  }
-  return (hash >>> 0).toString(16)
 }
 
 async function resolveWithTimeout(
@@ -101,20 +93,15 @@ async function resolveWithTimeout(
   credentials: AiResolvedCredential,
   modelId: string,
 ): Promise<AiProviderCapabilities> {
-  const controller = new AbortController()
-  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  const signal = AbortSignal.timeout(CAPABILITY_LOOKUP_TIMEOUT_MS)
+  // Race on top of the signal so a driver that ignores it still can't pin a
+  // waiter forever.
   const timeout = new Promise<never>((_resolve, reject) => {
-    timeoutId = setTimeout(() => {
-      controller.abort()
-      reject(new Error(`Model capability lookup timed out after ${CAPABILITY_LOOKUP_TIMEOUT_MS}ms.`))
-    }, CAPABILITY_LOOKUP_TIMEOUT_MS)
+    signal.addEventListener(
+      'abort',
+      () => reject(new Error(`Model capability lookup timed out after ${CAPABILITY_LOOKUP_TIMEOUT_MS}ms.`)),
+      { once: true },
+    )
   })
-  try {
-    return await Promise.race([
-      driver.resolveCapabilities!(credentials, modelId, controller.signal),
-      timeout,
-    ])
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId)
-  }
+  return Promise.race([driver.resolveCapabilities!(credentials, modelId, signal), timeout])
 }

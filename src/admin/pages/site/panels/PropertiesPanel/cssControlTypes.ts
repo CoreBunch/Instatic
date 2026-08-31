@@ -51,6 +51,37 @@ type CSSPropertyTokenSource = 'spacing' | 'typography'
 export const NUMBER_TYPED_PROPS = new Set<keyof CSSPropertyBag>(['zIndex', 'opacity'])
 
 // ---------------------------------------------------------------------------
+// Length properties → value ⊕ unit duo (UnitField)
+//
+// The author's reference panel draws every plain length as TWO controls — a
+// number field and a unit select — never one free-text field. Properties in
+// this map render with UnitField wherever a generic row shows them; the
+// keywords (`auto`, `none`, `normal`) live in the same select. Lengths with a
+// richer dedicated control (width/height mode selects, the spacing/inset
+// boxes, token-backed fontSize) are NOT here — those already speak a more
+// specific dialect.
+// ---------------------------------------------------------------------------
+
+export interface LengthControlSpec {
+  units: ReadonlyArray<string>
+  keywords: ReadonlyArray<string>
+}
+
+const SIZE_UNITS = ['px', '%', 'em', 'rem', 'vw', 'vh'] as const
+const TEXT_UNITS = ['px', 'em', 'rem'] as const
+
+export const LENGTH_PROPERTIES: ReadonlyMap<keyof CSSPropertyBag, LengthControlSpec> = new Map([
+  ['minWidth', { units: SIZE_UNITS, keywords: ['auto'] }],
+  ['maxWidth', { units: SIZE_UNITS, keywords: ['none'] }],
+  ['minHeight', { units: SIZE_UNITS, keywords: ['auto'] }],
+  ['maxHeight', { units: SIZE_UNITS, keywords: ['none'] }],
+  ['rowGap', { units: SIZE_UNITS, keywords: [] }],
+  ['columnGap', { units: SIZE_UNITS, keywords: [] }],
+  ['outlineOffset', { units: TEXT_UNITS, keywords: [] }],
+  ['letterSpacing', { units: TEXT_UNITS, keywords: ['normal'] }],
+])
+
+// ---------------------------------------------------------------------------
 // Color properties
 // ---------------------------------------------------------------------------
 
@@ -517,11 +548,36 @@ export const CLASS_STYLE_SECTIONS: ReadonlyArray<ClassStyleSectionDefinition> = 
 ]
 
 /**
+ * Section order for the editor and the rail. Position ALWAYS leads (author
+ * decision 2026-08-30: position always leads); text elements (modules with
+ * editable text) hoist Typography to second place, right after Position,
+ * the rest keeping catalog order. One helper so the section stack and the
+ * rail can never disagree on the order.
+ */
+export function getOrderedStyleSections(
+  typographyFirst: boolean,
+): ReadonlyArray<ClassStyleSectionDefinition> {
+  // Position is already first in the catalog, so only the Typography hoist
+  // needs a reorder.
+  if (!typographyFirst) return CLASS_STYLE_SECTIONS
+  return [
+    ...CLASS_STYLE_SECTIONS.filter((section) => section.id === 'position'),
+    ...CLASS_STYLE_SECTIONS.filter((section) => section.id === 'typography'),
+    ...CLASS_STYLE_SECTIONS.filter(
+      (section) => section.id !== 'position' && section.id !== 'typography',
+    ),
+  ]
+}
+
+/**
  * Per-section ADDABLE catalogs for the header "+" menu (inspector redesign):
  * the long-tail properties that have NO always-visible curated row in the
- * section's visual editor. Sections absent from this map render every
- * property as a standing row already (Position, Spacing, Effects, …) — they
- * get no "+" because there is nothing left to add.
+ * section's visual editor. Transforms and Interaction have no curated rows at
+ * all — they start EMPTY and every property arrives through the "+". Sections
+ * absent from this map render every property as a standing row already
+ * (Position, Spacing) — they get no "+" because there is nothing left to add.
+ * (Effects is special: its "+" adds effects AND the transition/animation
+ * declarations — see EffectAddMenu.)
  *
  * Keep in sync with the curated rows in LayoutSection / SizeSection /
  * StylesSection / TypographySection.
@@ -532,6 +588,8 @@ export const SECTION_ADDABLE_PROPERTIES: ReadonlyMap<
 > = new Map([
   ['layout', ['alignSelf', 'justifySelf', 'flex', 'rowGap', 'columnGap', 'gridColumn', 'gridRow']],
   ['size', ['minWidth', 'maxWidth', 'minHeight', 'maxHeight', 'aspectRatio', 'boxSizing']],
+  ['transforms', ['transform', 'transformOrigin']],
+  ['interaction', ['cursor', 'pointerEvents', 'userSelect', 'scrollBehavior']],
   [
     'styles',
     [
@@ -577,14 +635,6 @@ export function getClassStyleSectionSetCounts(
       section.properties.filter((prop) => hasStyleValue(storedStyles[prop])).length,
     ]),
   )
-}
-
-/**
- * Returns the active breakpoint tab id for class style reads/writes.
- * 'base' when desktop (or no breakpoint); otherwise the breakpoint id.
- */
-export function getActiveStyleTab(activeBreakpointId: string | undefined): string {
-  return activeBreakpointId && activeBreakpointId !== 'desktop' ? activeBreakpointId : 'base'
 }
 
 // ---------------------------------------------------------------------------

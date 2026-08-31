@@ -8,8 +8,8 @@
  * still serve turns and the picker.
  */
 
-import type { DbClient } from '../../db/client'
-import type { ModelCatalogue, ModelCatalogueEntry } from './openrouterCatalogue'
+import { placeholder, type DbClient } from '../../db/client'
+import type { ModelCatalogue } from './openrouterCatalogue'
 
 interface PricingRow {
   pricing_key: string
@@ -45,24 +45,40 @@ export async function loadCachedCatalogue(db: DbClient): Promise<ModelCatalogue 
   return catalogue
 }
 
+const PRICING_COLUMNS = 6
+/** Rows per INSERT. 200 × 6 params stays far under SQLite's variable cap. */
+const PRICING_INSERT_CHUNK = 200
+
 /** Replace the cached catalogue wholesale. */
 export async function saveCachedCatalogue(db: DbClient, catalogue: ModelCatalogue): Promise<void> {
+  const entries = [...catalogue]
   await db.transaction(async (tx) => {
     await tx`delete from ai_model_pricing`
-    for (const [key, entry] of catalogue) {
-      await insertPricingRow(tx, key, entry)
+    for (let start = 0; start < entries.length; start += PRICING_INSERT_CHUNK) {
+      const chunk = entries.slice(start, start + PRICING_INSERT_CHUNK)
+      const params: unknown[] = []
+      const tuples = chunk.map(([key, entry]) => {
+        params.push(
+          key,
+          entry.prices.inputPerMTok,
+          entry.prices.outputPerMTok,
+          entry.prices.cacheReadPerMTok,
+          entry.prices.cacheWritePerMTok,
+          entry.contextWindow,
+        )
+        const base = params.length - PRICING_COLUMNS
+        const slots = Array.from({ length: PRICING_COLUMNS }, (_, i) =>
+          placeholder(tx.dialect, base + i + 1),
+        )
+        return `(${slots.join(', ')})`
+      })
+      await tx.unsafe(
+        `insert into ai_model_pricing (
+           pricing_key, input_per_mtok, output_per_mtok,
+           cache_read_per_mtok, cache_write_per_mtok, context_window
+         ) values ${tuples.join(', ')}`,
+        params,
+      )
     }
   })
-}
-
-async function insertPricingRow(db: DbClient, key: string, entry: ModelCatalogueEntry): Promise<void> {
-  await db`
-    insert into ai_model_pricing (
-      pricing_key, input_per_mtok, output_per_mtok,
-      cache_read_per_mtok, cache_write_per_mtok, context_window
-    ) values (
-      ${key}, ${entry.prices.inputPerMTok}, ${entry.prices.outputPerMTok},
-      ${entry.prices.cacheReadPerMTok}, ${entry.prices.cacheWritePerMTok}, ${entry.contextWindow}
-    )
-  `
 }

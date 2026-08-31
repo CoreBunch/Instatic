@@ -8,13 +8,8 @@
     gap: var(--control-row-gap);
 }
 
-.dimensionRow {
-    display: grid;
-    grid-template-columns: var(--control-label-column) minmax(0, 1fr);
-    gap: var(--space-s);
-    align-items: center;
-    min-height: var(--control-height);
-}
+/* Row anatomy (label column, accent dot) comes from the shared ControlRow
+   primitive. */
 
 /* Value ⊕ mode: the mode has an 88px CEILING, not a fixed track, so it
    shrinks in a narrow panel instead of overlapping the value field. */
@@ -27,29 +22,6 @@
 
 .fused > * {
     min-width: 0;
-}
-
-/* Prototype `.row > .label`: one tone whatever the state — "set" is carried
-   by the accent dot, not by brightening the text. */
-.rowLabel {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2xs);
-    padding-left: var(--space-2xs);
-    font-size: var(--text-xs);
-    font-weight: 500;
-    color: var(--text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.rowDot {
-    flex: none;
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--accent-1);
 }
 
 /* Ratio lock — the bracket IS the button: two elbow arms (::before /

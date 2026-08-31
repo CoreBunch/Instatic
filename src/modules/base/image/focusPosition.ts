@@ -21,7 +21,7 @@ export interface FocusArea {
   height: number
 }
 
-export interface CropRectangle {
+interface CropRectangle {
   x: number
   y: number
   width: number

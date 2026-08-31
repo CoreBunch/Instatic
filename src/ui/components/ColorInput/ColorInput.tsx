@@ -6,6 +6,11 @@
  * and the dismissal rules for every floating editor in the app. This file is
  * left with the swatch, the open flag, and the picker.
  *
+ * A swatch that itself sits INSIDE a FloatingPanel (the border / effect
+ * popouts) opts into drill-in via `drillInTitle`: the picker view then pushes
+ * into that same panel — back arrow + contextual title — instead of stacking
+ * a second one. Standalone swatches keep their own panel.
+ *
  * Read-only swatches (`disabled`) render the preview alone and never open.
  */
 
@@ -17,7 +22,11 @@ import {
   type Ref,
 } from 'react'
 import { cn } from '@ui/cn'
-import { FloatingPanel } from '@ui/components/FloatingPanel'
+import {
+  FloatingPanel,
+  FloatingPanelDrillView,
+  useHasFloatingPanelHost,
+} from '@ui/components/FloatingPanel'
 import {
   ColorPicker,
   formatGradient,
@@ -49,16 +58,19 @@ interface ColorInputProps {
   onOpenChange?: (open: boolean) => void
   /** Offer the picker's Solid / Linear / Radial fill tabs. */
   gradients?: boolean
-  /** Offer the picker's Image fill tab (background fills only). */
-  images?: boolean
-  /** Opens the host's media library from the picker's Image tab. */
-  onPickImage?: () => void
   /** Site colour tokens shown in the picker's searchable list. */
   tokens?: readonly ColorPickerToken[]
   /** Fires when a token row is picked, with its `var(--name)` reference. */
   onSelectToken?: (reference: string) => void
   /** Enables the picker's "New Style" action. */
   onCreateToken?: (name: string, value: string) => void
+  /**
+   * Opt into drill-in: when set AND the swatch renders inside a
+   * FloatingPanel, opening the picker pushes the picker view into THAT panel
+   * under this contextual title (e.g. "Border color") instead of stacking a
+   * second panel. Outside a panel the swatch keeps its own floating panel.
+   */
+  drillInTitle?: string
   /** React 19: ref is a regular prop on function components. */
   ref?: Ref<HTMLButtonElement>
 }
@@ -80,16 +92,16 @@ export function ColorInput({
   onValueChange,
   onOpenChange,
   gradients = false,
-  images = false,
-  onPickImage,
   tokens,
   onSelectToken,
   onCreateToken,
+  drillInTitle,
   ref,
 }: ColorInputProps) {
   const triggerRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const interactive = !disabled && onValueChange != null
+  const hasPanelHost = useHasFloatingPanelHost()
 
   // Mirror open/close (and unmount-while-open) to the caller through a ref so
   // an unstable callback prop can't retrigger the effect.
@@ -133,30 +145,42 @@ export function ColorInput({
       >
         <span className={styles.preview} aria-hidden="true" />
       </button>
-      {onValueChange && (
-        <FloatingPanel
-          open={open}
-          onClose={() => setOpen(false)}
-          anchorRef={triggerRef}
-          title={ariaLabel ?? 'Fill'}
-          ariaLabel={ariaLabel ? `${ariaLabel} picker` : 'Colour picker'}
-          closeLabel="Close colour picker"
-          /* The on-canvas gradient gizmo is this picker's companion surface —
-             dragging it must not dismiss the picker it belongs to. */
-          keepOpenSelector="[data-color-picker-keep-open]"
-        >
-          <ColorPicker
-            value={value}
-            onChange={onValueChange}
-            gradients={gradients}
-            images={images}
-            onPickImage={onPickImage}
-            tokens={tokens}
-            onSelectToken={onSelectToken}
-            onCreateToken={onCreateToken}
-          />
-        </FloatingPanel>
-      )}
+      {onValueChange &&
+        (drillInTitle !== undefined && hasPanelHost ? (
+          open && (
+            <FloatingPanelDrillView title={drillInTitle} onBack={() => setOpen(false)}>
+              <ColorPicker
+                value={value}
+                onChange={onValueChange}
+                gradients={gradients}
+                tokens={tokens}
+                onSelectToken={onSelectToken}
+                onCreateToken={onCreateToken}
+              />
+            </FloatingPanelDrillView>
+          )
+        ) : (
+          <FloatingPanel
+            open={open}
+            onClose={() => setOpen(false)}
+            anchorRef={triggerRef}
+            title={ariaLabel ?? 'Fill'}
+            ariaLabel={ariaLabel ? `${ariaLabel} picker` : 'Colour picker'}
+            closeLabel="Close colour picker"
+            /* The on-canvas gradient gizmo is this picker's companion surface —
+               dragging it must not dismiss the picker it belongs to. */
+            keepOpenSelector="[data-color-picker-keep-open]"
+          >
+            <ColorPicker
+              value={value}
+              onChange={onValueChange}
+              gradients={gradients}
+              tokens={tokens}
+              onSelectToken={onSelectToken}
+              onCreateToken={onCreateToken}
+            />
+          </FloatingPanel>
+        ))}
     </>
   )
 }

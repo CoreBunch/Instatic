@@ -14,11 +14,11 @@
 import { useState } from 'react'
 import type { CSSPropertyBag } from '@core/page-tree'
 import { PerSideGlyph } from '@ui/icons/inspectorGlyphs'
+import { ControlRowLabel } from '@ui/components/ControlRow'
 import { TokenAwareInput } from '@site/property-controls/TokenAwareInput'
 import { useSpacingTokens } from '@site/property-controls/tokenUtils'
 import { ScopeGroup, type ScopeMode } from '../ScopeGroup'
 import { stepCssLength } from '../styleValueUtils'
-import styles from '../LayoutSection.module.css'
 
 const SIDES = [
   { prop: 'paddingTop', tag: 'T', label: 'Padding top' },
@@ -83,12 +83,7 @@ export function PaddingRow({
     <ScopeGroup
       testId="css-padding-row"
       isSet={anySet}
-      label={
-        <span className={styles.labeledLabel}>
-          {anySet && <span className={styles.labeledDot} aria-hidden="true" />}
-          Padding
-        </span>
-      }
+      label={<ControlRowLabel label="Padding" isSet={anySet} />}
       mode={mode}
       onModeChange={setMode}
       scopeAriaLabel="Padding scope"

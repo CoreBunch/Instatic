@@ -4,9 +4,10 @@
  * Composes the shared Button primitive: each segment is a Button with
  * `variant="secondary"` and `pressed` to surface the active state.
  *
- * The visual "track" is a 2px-padded overlay around the segments. Active
- * segments use overlay states instead of surface steps so light theme controls
- * still have visible contrast on pale panels.
+ * The visual "track" is a 2px-padded overlay around the segments. Tones
+ * follow the inspector field recipe's surface ladder: --bg-surface-2 track,
+ * hover lifts to --bg-surface-3, the active segment sits flat at
+ * --bg-surface-4 — no shadows.
  */
 
 .group {
@@ -93,14 +94,13 @@
 }
 
 .group .segment.segment:hover {
-    background: transparent;
+    background: var(--bg-surface-3);
     color: var(--text-bright);
 }
 
 .group .segment.segment[aria-pressed="true"] {
     background: var(--bg-surface-4);
     color: var(--text-bright);
-    box-shadow: 0 1px 2px var(--scrim-40);
 }
 
 .group[data-active-surface="recessed"] .segment.segment[aria-pressed="true"] {

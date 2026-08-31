@@ -30,6 +30,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@ui/cn'
+import { ensurePortalRoot } from '@ui/lib/portalRoot'
 import {
   computeFloatingPosition,
   type FloatingAlign,
@@ -64,16 +65,8 @@ interface TooltipProps {
 
 // ─── Portal root ─────────────────────────────────────────────────────────────
 
-/** Lazily appends a single #tooltip-root container to document.body. */
-function getTooltipRoot(): HTMLElement {
-  let root = document.getElementById('tooltip-root')
-  if (!root) {
-    root = document.createElement('div')
-    root.id = 'tooltip-root'
-    document.body.appendChild(root)
-  }
-  return root
-}
+/** Shared by `Tooltip` and `CursorTooltip` so both portal into one container. */
+export const TOOLTIP_ROOT_ID = 'tooltip-root'
 
 // ─── Position computation ─────────────────────────────────────────────────────
 
@@ -234,7 +227,7 @@ function TooltipInner({
             {content}
             <div className={styles.arrow} />
           </div>,
-          getTooltipRoot(),
+          ensurePortalRoot(TOOLTIP_ROOT_ID),
         )}
     </>
   )

@@ -14,25 +14,25 @@ bun run bench --help
 
 The orchestrator writes `.tmp/benchmarks/REPORT.md` and prints a one-line summary per bench. The report has a top-level **Headline numbers** table (every bench contributes ~3 numbers) followed by deep-dive sections.
 
-## Per-bench shortcuts
+## Running a single bench
 
 ```bash
-bun run bench:bundle        # just dist/ composition
-bun run bench:publisher     # just the page-tree → HTML pipeline
-bun run bench:publish       # full publish pipeline + public serving (DB-backed)
-bun run bench:editor-store  # editor store mutations + class system stress
-bun run bench:http          # HTTP latency + throughput (auto starts a server)
-bun run bench:db            # SQLite performance
-bun run bench:plugin        # QuickJS sandbox boot / hostCall / dispose
-bun run bench:footprint     # repo / node_modules / SLOC stats
-bun run bench:health        # fallow + jscpd + madge snapshot
-bun run bench:browser       # real Chromium via Playwright — opt-in
-bun run bench:browser:install   # one-time Chromium download (~92 MiB)
+bun run bench --only=bundle         # just dist/ composition
+bun run bench --only=publisher      # just the page-tree → HTML pipeline
+bun run bench --only=publish        # full publish pipeline + public serving (DB-backed)
+bun run bench --only=editor-store   # editor store mutations + class system stress
+bun run bench --only=http           # HTTP latency + throughput (auto starts a server)
+bun run bench --only=db             # SQLite performance
+bun run bench --only=plugin         # QuickJS sandbox boot / hostCall / dispose
+bun run bench --only=footprint      # repo / node_modules / SLOC stats
+bun run bench --only=health         # fallow + jscpd + madge snapshot
+bun run bench --only=browser        # real Chromium via Playwright — opt-in
+bun run bench:browser:install       # one-time Chromium download (~92 MiB)
 ```
 
-> The `browser` bench is **opt-in** — it isn't part of the default `bun run bench` because it needs Playwright's Chromium (downloaded once via `bun run bench:browser:install`, ~92 MiB) and adds ~10s to the run. Use the shortcut above, or pass `--only=browser`.
+> The `browser` bench is **opt-in** — it isn't part of the default `bun run bench` because it needs Playwright's Chromium (downloaded once via `bun run bench:browser:install`, ~92 MiB) and adds ~10s to the run. Pass `--only=browser` to include it.
 
-Or use `--only=NAME[,NAME]` on the orchestrator:
+`--only` and `--skip` both take a comma-separated list:
 
 ```bash
 bun run bench --only=publisher,editor-store
@@ -205,8 +205,7 @@ Each bench exports a single `BenchModule` with `{ name, title, description, run(
 ### Adding a new bench
 
 1. Create `scripts/bench/benches/<name>.ts` exporting a `BenchModule`.
-2. Add it to `ALL_BENCHES` in `scripts/bench/index.ts`.
-3. (Optional) Add a `bench:<name>` shortcut to `package.json`.
+2. Add it to `ALL_BENCHES` in `scripts/bench/index.ts`. `--only=<name>` picks it up automatically.
 
 A bench's `run(ctx)` should return a `BenchResult` with:
 - `headline` — 2–4 key-value pairs that bubble up to the top-level summary table.

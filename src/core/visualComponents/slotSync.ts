@@ -16,7 +16,7 @@
  */
 
 import { nanoid } from 'nanoid'
-import { deleteSubtree, type BaseNode } from '@core/page-tree-schema'
+import { collectSubtreeIds, deleteSubtree, type BaseNode } from '@core/page-tree-schema'
 import type { VisualComponent } from './schemas'
 
 // ---------------------------------------------------------------------------
@@ -42,27 +42,20 @@ export function collectSlotOutletNames(tree: {
 }): string[] {
   const result: string[] = []
   const seen = new Set<string>()
-  const stack: string[] = [tree.rootNodeId]
 
-  while (stack.length > 0) {
-    const id = stack.pop()!
+  // collectSubtreeIds owns the DFS pre-order walk *and* its cycle guard; no
+  // caller may re-implement that walk without one.
+  for (const id of collectSubtreeIds(tree.nodes, tree.rootNodeId)) {
     const node = tree.nodes[id]
-    if (!node) continue
+    if (node.moduleId !== 'base.slot-outlet') continue
 
-    if (node.moduleId === 'base.slot-outlet') {
-      const slotName =
-        typeof node.props.slotName === 'string' && node.props.slotName
-          ? node.props.slotName
-          : 'children'
-      if (!seen.has(slotName)) {
-        seen.add(slotName)
-        result.push(slotName)
-      }
-    }
-
-    // DFS pre-order: push children in reverse so leftmost is processed first.
-    for (let i = node.children.length - 1; i >= 0; i--) {
-      stack.push(node.children[i])
+    const slotName =
+      typeof node.props.slotName === 'string' && node.props.slotName
+        ? node.props.slotName
+        : 'children'
+    if (!seen.has(slotName)) {
+      seen.add(slotName)
+      result.push(slotName)
     }
   }
 

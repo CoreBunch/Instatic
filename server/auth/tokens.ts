@@ -1,6 +1,20 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 
 export const SESSION_COOKIE_NAME = 'instatic_admin_session'
+
+/**
+ * Length-independent, content-constant-time string comparison. The single
+ * copy for every secret comparison in the server (TOTP codes, recovery-code
+ * hashes, form challenge + page tokens) — `timingSafeEqual` throws on unequal
+ * lengths, so the length check must come first and is deliberately NOT
+ * constant-time (secret length is not itself a secret here).
+ */
+export function constantTimeEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a)
+  const right = Buffer.from(b)
+  if (left.length !== right.length) return false
+  return timingSafeEqual(left, right)
+}
 const SESSION_ABSOLUTE_TIMEOUT_MS = 1000 * 60 * 60 * 24 * 90
 
 export async function hashPassword(password: string): Promise<string> {

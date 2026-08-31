@@ -19,7 +19,7 @@
  * Editing happens in the real code editor rather than a cramped textarea so a
  * pasted logo / icon gets proper syntax highlighting, line numbers, and room.
  */
-import { Suspense, lazy, useState } from 'react'
+import { Suspense, lazy, useRef, useState } from 'react'
 import type { ControlProps } from './shared'
 import { useEditorStore } from '@site/store/store'
 import { sanitizeSvg } from '@core/sanitize'
@@ -54,6 +54,8 @@ export function SvgControl({
   const openPropInEditor = useEditorStore((s) => s.openPropInEditor)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [iconPickerOpen, setIconPickerOpen] = useState(false)
+  // Anchor for the icon-picker FloatingPanel — it opens beside this button.
+  const iconButtonRef = useRef<HTMLButtonElement>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -133,6 +135,7 @@ export function SvgControl({
             {loading ? 'Loading…' : 'From library'}
           </Button>
           <Button
+            ref={iconButtonRef}
             variant="secondary"
             size="sm"
             disabled={disabled}
@@ -161,6 +164,7 @@ export function SvgControl({
       <IconPicker
         open={iconPickerOpen}
         onClose={() => setIconPickerOpen(false)}
+        anchorRef={iconButtonRef}
         onPick={(svgMarkup) => onChange(propKey, svgMarkup)}
       />
 

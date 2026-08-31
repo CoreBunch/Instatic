@@ -25,8 +25,6 @@ interface TokenizedColorFieldProps {
   fieldSize?: 'xs' | 'sm' | 'md'
   /** Offer the picker's Solid / Linear / Radial / Conic fill tabs. */
   gradients?: boolean
-  /** Offer the picker's Image fill tab (background fills only). */
-  images?: boolean
   /**
    * Row presentation. `field` (default) is the swatch + typed value + token
    * suggestion menu — what the Colors panel needs to author token values.
@@ -35,6 +33,12 @@ interface TokenizedColorFieldProps {
    * popout instead, so every colour row in the panel reads identically.
    */
   look?: 'field' | 'swatch'
+  /**
+   * Forwarded to the swatch's ColorInput: inside a FloatingPanel (border /
+   * effect popouts) the picker drills into that panel under this title
+   * instead of stacking a second panel.
+   */
+  drillInTitle?: string
   onTextChange: (value: string) => void
   onTextBlur: () => void
   onSwatchChange: (value: string) => void
@@ -61,8 +65,8 @@ export function TokenizedColorField({
   monospace = false,
   fieldSize = 'sm',
   gradients = false,
-  images = false,
   look = 'field',
+  drillInTitle,
   onTextChange,
   onTextBlur,
   onSwatchChange,
@@ -188,13 +192,13 @@ export function TokenizedColorField({
       swatchValue={swatchValue}
       disabled={disabled}
       gradients={gradients}
-      images={images}
       // Only gradient-capable pickers drive the canvas gradient gizmo.
       onOpenChange={gradients ? setGradientPickerOpen : undefined}
       onValueChange={handleSwatchChange}
       tokens={pickerTokens}
       onSelectToken={handleTokenReference}
       onCreateToken={handleCreateToken}
+      drillInTitle={drillInTitle}
       aria-label={swatchLabel}
       fieldSize="xs"
       className={styles.colorInlineSwatch}

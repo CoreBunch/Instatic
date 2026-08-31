@@ -80,7 +80,7 @@ export function focusNodeDocument(store: EditorStore, nodeId: string): void {
   if (ownerVc) store.setActiveDocument({ kind: 'visualComponent', vcId: ownerVc.id })
 }
 
-export function currentAgentDocument(store: EditorStore): AgentDocumentRef | null {
+function currentAgentDocument(store: EditorStore): AgentDocumentRef | null {
   const site = store.site
   if (!site) return null
   const activeDocument = store.activeDocument

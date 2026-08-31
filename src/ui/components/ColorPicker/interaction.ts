@@ -5,10 +5,11 @@
  */
 
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
-import { clamp, type Hsva } from './colorMath'
+import { clamp } from '@ui/lib/clamp'
+import type { Hsva } from './colorMath'
 
 /** Arrow-key step, as a fraction of the track. Shift multiplies by 10. */
-export const KEY_STEP = 0.01
+const KEY_STEP = 0.01
 
 /**
  * Coalesce a high-frequency stream of positions to one `apply` per animation

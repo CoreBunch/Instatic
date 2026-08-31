@@ -14,7 +14,7 @@
 import { Button } from '@ui/components/Button'
 import type { AnyModuleDefinition } from '@core/module-engine'
 import type { StyleRule } from '@core/page-tree'
-import { CLASS_STYLE_SECTIONS } from './cssControlTypes'
+import { getOrderedStyleSections } from './cssControlTypes'
 import styles from './StyleCategoryRail.module.css'
 
 // ---------------------------------------------------------------------------
@@ -49,6 +49,8 @@ interface StyleCategoryRailProps {
    * style-editing target, it just writes `node.inlineStyles` instead of a rule.
    */
   editingInline?: boolean
+  /** Text element selected — the rail mirrors the editor's hoisted order. */
+  typographyFirst?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -95,6 +97,7 @@ export function StyleCategoryRail({
   definition,
   activeClass,
   editingInline = false,
+  typographyFirst = false,
 }: StyleCategoryRailProps) {
   const stylesLocked = activeClass === null && !editingInline
   const disabledTooltip = 'Add a class to unlock styles'
@@ -117,7 +120,7 @@ export function StyleCategoryRail({
       )}
 
       {/* ── CSS category buttons ──────────────────────────────────────── */}
-      {CLASS_STYLE_SECTIONS.map((section) => {
+      {getOrderedStyleSections(typographyFirst).map((section) => {
         const SectionIcon = section.icon
         const setCount = sectionSetCounts.get(section.id) ?? 0
         const hasSetStyles = setCount > 0

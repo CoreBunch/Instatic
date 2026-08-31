@@ -26,7 +26,7 @@
 import type { DbClient } from '../../../db/client'
 import { jsonResponse, methodNotAllowed } from '../../../http'
 import {
-  listRecentRuns,
+  listRecentRunsForSchedules,
   listSchedulesForPlugin,
   pauseSchedule,
   resumeSchedule,
@@ -40,10 +40,12 @@ export async function handlePluginSchedulesList(
 ): Promise<Response> {
   if (req.method !== 'GET') return methodNotAllowed()
   const schedules = await listSchedulesForPlugin(db, pluginId)
-  const recent: Record<string, Awaited<ReturnType<typeof listRecentRuns>>> = {}
-  for (const sched of schedules) {
-    recent[sched.scheduleId] = await listRecentRuns(db, pluginId, sched.scheduleId, 20)
-  }
+  const recent = await listRecentRunsForSchedules(
+    db,
+    pluginId,
+    schedules.map((s) => s.scheduleId),
+    20,
+  )
   return jsonResponse({ schedules, recent })
 }
 

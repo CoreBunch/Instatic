@@ -407,7 +407,25 @@ function runShellPostChecks(shell: SiteShell): SiteShell {
   normalizeSitePackage(shell)
   normalizeSiteRuntimeBlock(shell)
   normalizeFrameworkColors(shell)
+  normalizeStyleRuleDesktopContext(shell)
   return shell
+}
+
+/**
+ * Rule 5: fold `contextStyles['desktop']` into base styles. The desktop
+ * viewport IS the base context (desktop-first) — a 'desktop' override is
+ * invalid by construction, but a since-fixed canvas-gesture bug wrote them
+ * into live documents, where they beat base styles in the cascade while the
+ * inspector (which maps desktop → base) could neither show nor clear them.
+ * The override values win the merge: they are what the canvas rendered.
+ */
+function normalizeStyleRuleDesktopContext(shell: SiteShell): void {
+  for (const rule of Object.values(shell.styleRules)) {
+    const desktop = rule.contextStyles['desktop']
+    if (!desktop) continue
+    rule.styles = { ...rule.styles, ...desktop }
+    delete rule.contextStyles['desktop']
+  }
 }
 
 /** Rule 1: filter SiteFiles to safe, deduplicated, normalized paths (first-wins). */

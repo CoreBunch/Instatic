@@ -37,10 +37,10 @@ import {
 } from '@dnd-kit/core'
 import { createPortal } from 'react-dom'
 import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
-import { flattenSubtree } from '@core/page-tree'
-import { getAncestorIds } from '@site/hooks/useTreeWalkOrder'
 import { registry } from '@core/module-engine'
 import {
+  flattenSubtree,
+  getAncestors,
   getNodeDisplayName,
   getNodeHtmlTag,
   getNodeClassNames,
@@ -224,9 +224,8 @@ function DomPanelInner({ editable = true }: { editable?: boolean }) {
     // the row remains hidden under collapsed parents until the user expands
     // them manually.
     if (autoExpandSelected) {
-      const ancestorIds = getAncestorIds(page.nodes, page.rootNodeId, selectedNodeId)
-      for (const ancestorId of ancestorIds) {
-        store.expand(ancestorId)
+      for (const ancestor of getAncestors(page, selectedNodeId)) {
+        store.expand(ancestor.id)
       }
     }
 
@@ -495,17 +494,15 @@ function DomPanelInner({ editable = true }: { editable?: boolean }) {
         </div>
       </>
 
-      {/* Tree-background context menu — rendered via portal at document.body
-          to escape the panel's transform: translateZ(0) stacking context.
-          Without the portal, position:fixed inside a transformed ancestor is
-          positioned relative to that ancestor, not the viewport. */}
-      {editable && bgContextMenu && createPortal(
+      {/* ContextMenu portals itself to document.body — which is what keeps
+          its position:fixed measured against the viewport rather than the
+          panel's transform: translateZ(0) stacking context. */}
+      {editable && bgContextMenu && (
         <TreeBackgroundContextMenu
           x={bgContextMenu.x}
           y={bgContextMenu.y}
           onClose={() => setBgContextMenu(null)}
-        />,
-        document.body,
+        />
       )}
 
       {/* Module inserter — same command surface + target resolution as the

@@ -2,7 +2,7 @@
 
 The visual design system for Instatic — principles, tokens, surfaces, components.
 
-The design is a **two-layer color model**: an achromatic base (surfaces, borders, default text) with a deliberate semantic and categorical color layer on top (numbered accents for identity, state tokens for meaning, canvas neon for selection). Everything is tokenized in `src/styles/globals.css`. Every primitive lives in `src/ui/components/`.
+The design is a **two-layer color model**: an achromatic base (surfaces, borders, default text) with a deliberate semantic and categorical color layer on top (numbered accents for identity, state tokens for meaning, one canvas accent for selection). Everything is tokenized in `src/styles/globals.css`. Every primitive lives in `src/ui/components/`.
 
 ---
 
@@ -25,7 +25,7 @@ The design is a **two-layer color model**: an achromatic base (surfaces, borders
 
 ### 1. The base disappears, the meaning appears
 
-The chrome is neutral and quiet so the user's content and the system's signals are the only things competing for attention. The default theme is dark; the light theme swaps the achromatic base tokens and remaps identity accents to foreground-safe variants while preserving the same hierarchy. Surfaces, borders, default text — all achromatic. Color is reserved for things that mean something: a green dot says "saved", a peach widget header says "this card is about posts", a neon ring says "the canvas selected this node".
+The chrome is neutral and quiet so the user's content and the system's signals are the only things competing for attention. The default theme is dark; the light theme swaps the achromatic base tokens and remaps identity accents to foreground-safe variants while preserving the same hierarchy. Surfaces, borders, default text — all achromatic. Color is reserved for things that mean something: a green dot says "saved", a peach widget header says "this card is about posts", an accent-blue ring says "the canvas selected this node".
 
 If a color isn't carrying information, it doesn't belong in the chrome.
 
@@ -35,7 +35,7 @@ If a color isn't carrying information, it doesn't belong in the chrome.
 ┌────────────────────────────────────────────────────────────────┐
 │  Layer 2 — SEMANTIC + CATEGORICAL COLOR                        │
 │  numbered identity accents, state (danger/warning/               │
-│  success/info), canvas neon (selection/hover)                  │
+│  success/info), canvas accent (selection/hover)                │
 ├────────────────────────────────────────────────────────────────┤
 │  Layer 1 — ACHROMATIC BASE                                     │
 │  --bg-body / --bg-surface / --bg-surface-2..5                    │
@@ -106,8 +106,10 @@ Accent tokens don't live in `src/styles/globals.css` to be decorative — they'r
 
 The canvas — where the user's page renders — has three chromatic rings used purely as affordance:
 
-- `--canvas-selection-ring` (neon green `#39ff14`) — node selected by the user
-- `--canvas-hover-ring` (neon pink `#ff2bd6`) — node hovered
+- `--canvas-selection-ring` (solid `--canvas-accent`) — node selected by the user
+- `--canvas-hover-ring` (60% `--canvas-accent`, drawn dashed) — node hovered
+
+Both derive from **`--canvas-accent`**, which itself aliases `--panel-accent` — the editor's single accent literal, defined once in `globals.css`. Resize handles, the dimension badge, and smart-guide hairlines use the same token.
 - `--canvas-selector-ring` (neon orange `#ff8800`) — match sweep when hovering a selector rule in the Selectors panel
 
 These are bright on purpose so they read against any user content, including content that itself uses the chrome palette.
@@ -173,8 +175,8 @@ Semantic state (meaning layer):
 
 Canvas (selection / hover affordances):
   --canvas-chrome-shadow           (shared shadow for canvas notch chrome)
-  --canvas-selection-ring          (inset 1px neon green)
-  --canvas-hover-ring              (inset 1px neon pink)
+  --canvas-selection-ring          (inset 1px canvas accent)
+  --canvas-hover-ring              (inset 1px 60% canvas accent)
   --canvas-selection-ring-color    (bare colour for outline / border-color)
   --canvas-hover-ring-color
   --canvas-placeholder-bg          (diagonal-stripe pattern for empty modules)
@@ -340,20 +342,20 @@ Floating panels are the only surface that uses a visible border + blur — they'
 
 ### 3. Inputs
 
-Bordered, transparent, pill-shaped:
+Borderless filled fields (the inspector recipe — one recipe for every field in the app):
 
 ```css
 .input {
-  background: transparent;              /* transparent */
-  border: 1px solid var(--overlay-20);    /* rgba(255,255,255,0.20) */
-  border-radius: var(--input-radius);       /* 1em */
+  background: var(--bg-surface-2);       /* field fill, one step above its surface */
+  border: 1px solid transparent;         /* the border only appears on focus */
+  border-radius: var(--control-radius);  /* 8px */
   color: var(--text);
 }
-.input:hover  { border-color: var(--overlay-30); }
-.input:focus  { border-color: var(--overlay-50); box-shadow: var(--shadow-input-focus); }
+.input:hover { background: var(--bg-surface-3); }   /* hover lifts the tone */
+.input:focus { background: var(--bg-surface-2); border-color: var(--overlay-30); }
 ```
 
-The border is the input's identity. Don't fill them. Don't square the corners.
+The fill is the input's identity — no resting border. `SearchBar` uses the same recipe with the magnifier icon inside the field. `SegmentedControl` speaks the same surface ladder: a `--bg-surface-2` track, `--bg-surface-3` segment hover, and a flat `--bg-surface-4` active segment — no shadows.
 
 ### 4. Panel rail (the colored sidebar)
 
@@ -400,7 +402,7 @@ Every interactive control in the admin and editor goes through a primitive from 
 | `Stack`              | Small flex layouts for host/admin and plugin UI.                            |
 | `Separator`          | Visual divider between sections.                                            |
 | `Section`            | Titled section block in panels.                                             |
-| `ControlRow`         | Standard label + control row in property panels.                            |
+| `ControlRow`         | The one label + control row anatomy in property panels (`isSet` accent dot, `narrow`/`wide` variants; `ControlRowLabel` for composite rows). |
 | `Card`               | Token-backed panel surface for grouped host/admin content.                  |
 | `ContextMenu`        | Right-click and `…` overflow menus.                                         |
 | `FilterBar`          | Compound filter row (type + folder + date + query).                         |

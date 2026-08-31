@@ -19,10 +19,6 @@ export function statusLabel(status: CmsCurrentUser['status']): string {
   return status === 'active' ? 'Active' : 'Suspended'
 }
 
-export function formatDateTime(value: string | null): string {
-  return value ? new Date(value).toLocaleString() : 'Never'
-}
-
 export function formatCapabilitySummary(capabilities: string[]): string {
   if (capabilities.length === 0) return 'No admin capabilities'
   const capabilityLabel = capabilities.length === 1 ? 'capability' : 'capabilities'

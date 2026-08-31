@@ -127,7 +127,7 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
   // ── Module tab content — pre-rendered, passed to StyleSurface as a ReactNode.
   // The dispatch lives in `renderModuleTabContent` (own file) to keep this
   // shell flat — see that helper for the per-branch rationale.
-  const moduleTabContent: React.ReactNode = renderModuleTabContent({
+  const moduleTabArgs = {
     selectedNode: data.selectedNode,
     selectedNodeId: data.selectedNodeId,
     definition: data.definition,
@@ -142,7 +142,8 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
     handlePatch: data.handlePatch,
     onSetDynamicBinding: data.handleSetDynamicBinding,
     onClearDynamicBinding: data.handleClearDynamicBinding,
-  })
+  }
+  const moduleTabContent: React.ReactNode = renderModuleTabContent(moduleTabArgs)
 
   return (
     <aside

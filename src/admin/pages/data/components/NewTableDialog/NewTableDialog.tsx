@@ -15,18 +15,11 @@ import { StepUpCancelledMessage } from '@admin/shared/StepUp'
 import { FieldSchemaComposer } from '../FieldSchemaComposer'
 import styles from './NewTableDialog.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { slugify } from '@admin/lib/slugify'
 
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
-
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
 
 function singularFromPlural(value: string): string {
   if (/[^aeiou]ies$/i.test(value)) return value.replace(/ies$/i, 'y')

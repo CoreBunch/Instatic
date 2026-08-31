@@ -4,7 +4,7 @@
 
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { TextWrapIcon } from 'pixel-art-icons/icons/text-wrap'
-import { LabeledControl } from './LabeledControl'
+import { ControlRow } from '@ui/components/ControlRow'
 
 interface FlexWrapControlProps {
   value: string | undefined
@@ -15,7 +15,7 @@ interface FlexWrapControlProps {
 
 export function FlexWrapControl({ value, isSet, onChange, onClear }: FlexWrapControlProps) {
   return (
-    <LabeledControl label="Wrap" isSet={isSet}>
+    <ControlRow label="Wrap" isSet={isSet}>
       <SegmentedControl
         look="tiles"
         fullWidth
@@ -44,6 +44,6 @@ export function FlexWrapControl({ value, isSet, onChange, onClear }: FlexWrapCon
           },
         ]}
       />
-    </LabeledControl>
+    </ControlRow>
   )
 }

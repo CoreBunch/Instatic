@@ -32,6 +32,7 @@ import { listInstalledPlugins, type InstalledPluginResult } from '../repositorie
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 import { listElectedAdapters } from '../repositories/mediaStorageAdapters'
 import { addCspSources, rewriteCspMeta, setCspDirective } from '@core/publisher'
+import { escapeHtml } from '@core/html-sanitize'
 import type {
   FrontendAsset,
   FrontendAssetPlacement,
@@ -178,16 +179,16 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
     if (!url) return null
     const strategyAttrs = scriptStrategyAttrs(asset.strategy ?? 'defer')
     const extra = formatAttrs(asset.attrs)
-    const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
+    const pluginAttr = ` data-plugin-id="${escapeHtml(plugin.manifest.id)}"`
     return {
-      html: `<script src="${escapeAttr(url)}"${strategyAttrs}${extra}${pluginAttr}></script>`,
+      html: `<script src="${escapeHtml(url)}"${strategyAttrs}${extra}${pluginAttr}></script>`,
       placement,
     }
   }
 
   if (asset.kind === 'script-inline') {
     const extra = formatAttrs(asset.attrs)
-    const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
+    const pluginAttr = ` data-plugin-id="${escapeHtml(plugin.manifest.id)}"`
     // Inline `</script>` would close the wrapping tag. Standard escape.
     const body = asset.content.replace(/<\/script/gi, '<\\/script')
     return {
@@ -200,16 +201,16 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
     const url = resolveAssetUrl(plugin, asset.href)
     if (!url) return null
     const extra = formatAttrs(asset.attrs)
-    const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
+    const pluginAttr = ` data-plugin-id="${escapeHtml(plugin.manifest.id)}"`
     return {
-      html: `<link rel="stylesheet" href="${escapeAttr(url)}"${extra}${pluginAttr}>`,
+      html: `<link rel="stylesheet" href="${escapeHtml(url)}"${extra}${pluginAttr}>`,
       placement,
     }
   }
 
   if (asset.kind === 'style-inline') {
     const extra = formatAttrs(asset.attrs)
-    const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
+    const pluginAttr = ` data-plugin-id="${escapeHtml(plugin.manifest.id)}"`
     const body = asset.content.replace(/<\/style/gi, '<\\/style')
     return {
       html: `<style${extra}${pluginAttr}>${body}</style>`,
@@ -219,7 +220,7 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
 
   if (asset.kind === 'link') {
     const extra = formatAttrs(asset.attrs)
-    const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
+    const pluginAttr = ` data-plugin-id="${escapeHtml(plugin.manifest.id)}"`
     return {
       html: `<link${extra}${pluginAttr}>`,
       placement,
@@ -228,7 +229,7 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
 
   if (asset.kind === 'meta') {
     const extra = formatAttrs(asset.attrs)
-    const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
+    const pluginAttr = ` data-plugin-id="${escapeHtml(plugin.manifest.id)}"`
     return {
       html: `<meta${extra}${pluginAttr}>`,
       placement,
@@ -285,7 +286,7 @@ function formatAttrs(attrs: Record<string, string> | undefined): string {
   const parts: string[] = []
   for (const [name, value] of Object.entries(attrs)) {
     if (RESERVED.has(name.toLowerCase())) continue
-    parts.push(`${name}="${escapeAttr(value)}"`)
+    parts.push(`${name}="${escapeHtml(value)}"`)
   }
   return parts.length === 0 ? '' : ` ${parts.join(' ')}`
 }
@@ -438,17 +439,4 @@ async function collectMediaAdapterCspOrigins(
     }
   }
   return out
-}
-
-// ---------------------------------------------------------------------------
-// Attribute escaping
-// ---------------------------------------------------------------------------
-
-function escapeAttr(value: string): string {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
 }

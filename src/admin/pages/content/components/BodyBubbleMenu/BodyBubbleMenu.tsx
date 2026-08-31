@@ -16,7 +16,6 @@ import { useState, type ComponentType, type FormEvent, type ReactNode } from 're
 import type { ChainedCommands, Editor } from '@tiptap/core'
 import { useEditorState } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
-import type { VirtualElement } from '@floating-ui/dom'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
 import { ContextMenu, ContextMenuItem } from '@ui/components/ContextMenu'
@@ -100,7 +99,9 @@ export function BodyBubbleMenu({ editor, iframeEl }: BodyBubbleMenuProps) {
           shift: { boundary: iframeEl, padding: 8 },
           flip: { boundary: iframeEl, padding: 8 },
         },
-        getReferencedVirtualElement: (): VirtualElement | null => {
+        // Return type is checked structurally against floating-ui's
+        // `VirtualElement` where this object is spread onto <BubbleMenu>.
+        getReferencedVirtualElement: () => {
           if (editor.isDestroyed) return null
           const { from, to } = editor.state.selection
           // `coordsAtPos` returns viewport-relative coords for whichever

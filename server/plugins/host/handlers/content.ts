@@ -20,9 +20,8 @@
 
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
 import type { ContentTableSummary, PublishedSnapshot } from '@core/plugin-sdk/contentSchemas'
-import type { DataRow, DataTable } from '@core/data/schemas'
 import { parsePageNodeTree } from '@core/page-tree'
-import { readPageTree, mutatePageTree } from '../../../ai/content/treeService'
+import { readPageTree, mutatePageTree, resolvePageTreeField } from '../../../ai/content/treeService'
 import { hookBus } from '@core/plugins/hookBus'
 import {
   listDataTablesWithCounts,
@@ -472,28 +471,6 @@ export async function handleContentEntriesDeleteMany(
 // ---------------------------------------------------------------------------
 // Tree — read / mutate / replace
 // ---------------------------------------------------------------------------
-
-/**
- * Resolve the table + row + field meta needed for any `tree.*` call.
- * Throws if the entry doesn't exist, the field doesn't exist, or the
- * field isn't a `pageTree`-typed cell.
- */
-async function resolvePageTreeField(
-  db: DbClient,
-  entryId: string,
-  fieldId: string,
-): Promise<{ row: DataRow; table: DataTable }> {
-  const row = await getDataRow(db, entryId)
-  if (!row) throw new Error(`Entry "${entryId}" not found`)
-  const table = await getDataTable(db, row.tableId)
-  if (!table) throw new Error(`Table for entry "${entryId}" missing`)
-  const field = table.fields.find((f) => f.id === fieldId)
-  if (!field) throw new Error(`Field "${fieldId}" not found on table "${table.slug}"`)
-  if (field.type !== 'pageTree') {
-    throw new Error(`Field "${fieldId}" on table "${table.slug}" is not a pageTree field`)
-  }
-  return { row, table }
-}
 
 export async function handleContentTreeRead(
   msg: ApiCallFor<'cms.content.tree.read'>,

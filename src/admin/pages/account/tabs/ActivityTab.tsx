@@ -19,6 +19,7 @@
  */
 import { useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
+import { formatDateTime } from '@admin/lib/formatDateTime'
 import {
   DataTable,
   DataTableBody,
@@ -73,10 +74,6 @@ function isWithin24h(event: CmsLoginActivityEvent, now: number): boolean {
 function isRecentSuspicious(event: CmsLoginActivityEvent, now: number): boolean {
   if (event.result !== 'locked' && event.result !== 'rate_limited') return false
   return isWithin24h(event, now)
-}
-
-function formatDateTime(value: string): string {
-  return new Date(value).toLocaleString()
 }
 
 export function ActivityTab() {

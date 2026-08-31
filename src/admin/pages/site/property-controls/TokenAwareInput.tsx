@@ -102,6 +102,14 @@ interface TokenAwareInputProps {
   readOnly?: boolean
   'data-testid'?: string
   /**
+   * Suppress the token autocomplete dropdown while keeping every other token
+   * behaviour (short display, typed-step resolution, preview). The spacing /
+   * inset side fields use this: their value editor popout already carries the
+   * scale as a chip grid, so a second floating token list beside the same
+   * field is duplicate chrome that covers the canvas.
+   */
+  hideTokenMenu?: boolean
+  /**
    * Render the input as a caller-positioned overlay: the wrapper uses
    * `display: contents` so it establishes no box, letting the caller
    * absolutely position the input against its own container (used by the
@@ -109,13 +117,40 @@ interface TokenAwareInputProps {
    */
   overlay?: boolean
   /**
-   * When true, wrap the input in a Tooltip that surfaces the full draft
-   * value on hover whenever the rendered text overflows the field and the
-   * field isn't being edited (used by the narrow per-side spacing inputs).
+   * When true, wrap the input in a Tooltip that surfaces the full stored
+   * value — including the implicit `px` unit the display hides — on hover
+   * whenever the rendered text overflows the field and the field isn't
+   * being edited (used by the narrow per-side spacing inputs).
    */
   tooltipOnOverflow?: boolean
   /** React 19: ref is a regular prop on function components. */
   ref?: Ref<TokenAwareInputHandle>
+}
+
+// ---------------------------------------------------------------------------
+// Display helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * px is the field's implicit default unit: a stored `200px` renders as a
+ * bare `200` (`resolveTokenValue` mirrors this on the way back in — a bare
+ * typed number commits as `200px`). Any other unit, keyword, token step, or
+ * CSS expression displays as-is.
+ */
+const PX_VALUE = /^(-?\d+(?:\.\d+)?)px$/i
+
+function displayValue(
+  value: string | undefined,
+  tokens: ReadonlyArray<Token>,
+): string {
+  const display = displayTokenValue(value, tokens)
+  const match = display.match(PX_VALUE)
+  return match ? match[1] : display
+}
+
+/** Does the rendered text overrun the field's visible box? */
+function hasOverflow(el: HTMLInputElement): boolean {
+  return el.scrollWidth > el.clientWidth + 1
 }
 
 // ---------------------------------------------------------------------------
@@ -145,12 +180,13 @@ export function TokenAwareInput({
   disabled,
   readOnly,
   'data-testid': dataTestId,
+  hideTokenMenu = false,
   overlay = false,
   tooltipOnOverflow = false,
   ref,
 }: TokenAwareInputProps) {
-    const display = displayTokenValue(value, tokens)
-    const placeholderDisplay = displayTokenValue(placeholder, tokens)
+    const display = displayValue(value, tokens)
+    const placeholderDisplay = displayValue(placeholder, tokens)
 
     // The shared "preview suggestions on hover" preference. When off,
     // hovering a token row in the dropdown doesn't fire onPreview — but
@@ -161,6 +197,12 @@ export function TokenAwareInput({
     // round-trip through Mutative + re-validate every press).
     const [draft, setDraft] = useState(display)
     const [isEditing, setIsEditing] = useState(false)
+    // Focus alone is not "the user is mid-word". The value editor popout
+    // opens BESIDE a focused field and writes through the same commit
+    // channel, so a focused-but-untouched field must still follow the store —
+    // otherwise its draft goes stale and the next blur commits the pre-popout
+    // value back over the popout's.
+    const [isTyping, setIsTyping] = useState(false)
     const inputRef = useRef<HTMLInputElement>(null)
 
     useImperativeHandle(ref, () => ({
@@ -171,21 +213,43 @@ export function TokenAwareInput({
     // truncate long values like a full `clamp(...)`. Track overflow so the
     // optional tooltip can surface the full value on hover — only measured
     // when the caller opts in via `tooltipOnOverflow`.
+    //
+    // The draft-keyed measure below is only a warm-up for the common case
+    // (visible mount, value known). The authoritative measure runs on hover
+    // (the Input's onMouseEnter): geometry changes without the text changing
+    // — a mount inside a hidden panel surface reads 0×0, `field-sizing:
+    // content` resizes the field with its value, the panel resizes — and a
+    // stale "not overflowing" would otherwise disarm the tooltip forever.
     const [isOverflowing, setIsOverflowing] = useState(false)
     useLayoutEffect(() => {
       if (!tooltipOnOverflow) return
       const el = inputRef.current
       if (!el) return
-      setIsOverflowing(el.scrollWidth > el.clientWidth + 1)
+      setIsOverflowing(hasOverflow(el))
     }, [draft, tooltipOnOverflow])
 
-    // Sync external value → draft when not actively editing. React 19 idiom:
-    // adjust state during render by tracking the previous external value.
+    // Sync external value → draft unless the user is mid-keystroke. React 19
+    // idiom: adjust state during render by tracking the previous external value.
     const [lastExternalDisplay, setLastExternalDisplay] = useState(display)
-    if (!isEditing && display !== lastExternalDisplay) {
+    if (!isTyping && display !== lastExternalDisplay) {
       setLastExternalDisplay(display)
       setDraft(display)
     }
+
+    // Toggling the Tooltip's `disabled` swaps the Input in and out of the
+    // tooltip wrapper, which REMOUNTS the DOM input (Tooltip's disabled path
+    // renders its child bare). When that flip is caused by focus — editing
+    // disables the tooltip — the just-focused input would be destroyed and
+    // the click would appear to do nothing. Restore focus to the remounted
+    // node; a no-op whenever focus survived (no remount happened).
+    useLayoutEffect(() => {
+      if (!tooltipOnOverflow || !isEditing) return
+      const el = inputRef.current
+      if (el && document.activeElement !== el) {
+        el.focus()
+        el.setSelectionRange(el.value.length, el.value.length)
+      }
+    }, [isEditing, tooltipOnOverflow])
 
     // Filter tokens by typed prefix for the autocomplete dropdown.
     // When there's no query, the "Suggested" section is hidden entirely —
@@ -207,6 +271,7 @@ export function TokenAwareInput({
       onCommit(resolved)
       onDraftClear?.()
       setIsEditing(false)
+      setIsTyping(false)
     }
 
     // Preview a hovered token's value on the canvas. Gated by the
@@ -243,7 +308,7 @@ export function TokenAwareInput({
     // (numbers, units, `auto`, `calc(...)`, etc.) — non-token typing should
     // commit on Enter/Tab/Blur without the menu intercepting outside-clicks.
     const isDirectValue = looksLikeDirectValue(draft)
-    const showMenu = isEditing && !isDirectValue && tokens.length > 0
+    const showMenu = isEditing && !isDirectValue && tokens.length > 0 && !hideTokenMenu
 
     // Split tokens into "Suggested" (matching the typed query) and "All"
     // (everything else) so users always see the full scale even when they
@@ -270,25 +335,51 @@ export function TokenAwareInput({
         data-testid={dataTestId}
         onStep={onStep}
         className={cn(styles.input, inputClassName)}
+        onMouseEnter={
+          tooltipOnOverflow
+            ? () => {
+                // The authoritative overflow measure — at the moment the
+                // answer is needed (see the comment on the warm-up effect).
+                const el = inputRef.current
+                if (el) setIsOverflowing(hasOverflow(el))
+              }
+            : undefined
+        }
         onFocus={() => {
           setIsEditing(true)
+          setIsTyping(false)
           onFocus?.()
         }}
         onChange={(e) => {
           const next = e.target.value
+          // Typing is editing, whatever got us here (an arrow-key step drops
+          // isEditing so the stepped value can flow back into the draft).
+          setIsEditing(true)
+          setIsTyping(true)
           setDraft(next)
           onDraftChange?.(next)
           previewDraft(next)
         }}
         onBlur={(e) => commit(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+          if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && onStep) {
+            // Steps go through the caller's math (units survive), and the
+            // field leaves editing mode so the stepped external value flows
+            // back into the visible draft — the focused draft would otherwise
+            // keep showing the pre-step text.
+            e.preventDefault()
+            setIsEditing(false)
+            setIsTyping(false)
+            onDraftClear?.()
+            onStep((e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1))
+          } else if (e.key === 'Enter') {
             e.preventDefault()
             ;(e.target as HTMLInputElement).blur()
           } else if (e.key === 'Escape') {
             e.preventDefault()
             setDraft(display)
             setIsEditing(false)
+            setIsTyping(false)
             onDraftClear?.()
             ;(e.target as HTMLInputElement).blur()
           } else if (e.key === 'Tab') {
@@ -306,7 +397,9 @@ export function TokenAwareInput({
       >
         {tooltipOnOverflow ? (
           <Tooltip
-            content={draft}
+            // The full stored value — including the implicit px unit the
+            // bare-number display hides (a field showing "220" tips "220px").
+            content={value || draft}
             side="top"
             disabled={!isOverflowing || isEditing || !draft}
           >

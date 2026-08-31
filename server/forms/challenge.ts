@@ -1,4 +1,5 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
+import { constantTimeEqual } from '../auth/tokens'
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000
 const MAX_PUBLIC_FORM_CHALLENGES = 2_000
@@ -137,11 +138,4 @@ function signPageToken(input: {
     .update('\0')
     .update(input.formId)
     .digest('base64url')
-}
-
-function constantTimeEqual(a: string, b: string): boolean {
-  const left = Buffer.from(a)
-  const right = Buffer.from(b)
-  if (left.length !== right.length) return false
-  return timingSafeEqual(left, right)
 }

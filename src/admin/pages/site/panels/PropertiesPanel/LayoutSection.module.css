@@ -43,45 +43,9 @@
     gap: var(--control-row-gap);
 }
 
-/* Property row — the prototype's `.row`: a fixed label column and a control
- * column, 8px apart, on the shared control height. Same track as
- * SizeSection.module.css's `.dimensionRow` so labels line up across every
- * section of the panel. */
-.labeledRow {
-    display: grid;
-    grid-template-columns: var(--control-label-column) minmax(0, 1fr);
-    align-items: center;
-    gap: var(--space-s);
-    min-height: var(--control-height);
-}
-
-/* One tone whatever the state — "set" is carried by the accent dot, not by
- * brightening the text (prototype `.row > .label`). */
-.labeledLabel {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2xs);
-    padding-left: var(--space-2xs);
-    color: var(--text-muted);
-    font-size: var(--text-xs);
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.labeledDot {
-    flex: none;
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--accent-1);
-}
-
-.labeledControl {
-    min-width: 0;
-}
-
+/* Property-row anatomy (label column, accent dot, wide wrap) comes from the
+ * shared ControlRow primitive — this module only styles the section's
+ * composite control cells. */
 
 /* Grid-specific edit row — wraps a full-width text input that replaces
  * the segmented control while the user types a custom track template.

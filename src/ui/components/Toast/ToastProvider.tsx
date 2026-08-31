@@ -23,6 +23,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@ui/components/Button'
 import { cn } from '@ui/cn'
+import { ensurePortalRoot } from '@ui/lib/portalRoot'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { CircleAlertSolidIcon } from 'pixel-art-icons/icons/circle-alert-solid'
 import { WarningDiamondSolidIcon } from 'pixel-art-icons/icons/warning-diamond-solid'
@@ -43,16 +44,6 @@ const DEFAULT_DURATION_MS: Record<ToastKind, number> = {
 
 const TOAST_ROOT_ID = 'toast-root'
 
-function getToastRoot(): HTMLElement {
-  let root = document.getElementById(TOAST_ROOT_ID)
-  if (!root) {
-    root = document.createElement('div')
-    root.id = TOAST_ROOT_ID
-    document.body.appendChild(root)
-  }
-  return root
-}
-
 /**
  * Resolve the role attribute from the kind. Errors / warnings interrupt
  * assistive tech; info / success are non-blocking status announcements.
@@ -71,7 +62,7 @@ function ToastIcon({ kind }: { kind: ToastKind }) {
 export function ToastProvider() {
   const [items, setItems] = useState<ReadonlyArray<Toast>>([])
   const [paused, setPaused] = useState(false)
-  const portalRoot = typeof document !== 'undefined' ? getToastRoot() : null
+  const portalRoot = typeof document !== 'undefined' ? ensurePortalRoot(TOAST_ROOT_ID) : null
 
   useEffect(() => {
     return subscribeToasts((next) => setItems(next))

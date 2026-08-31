@@ -15,8 +15,10 @@
  * shadow", so a hidden effect would need a new key in the style model to live
  * in. The row carries the dash handle only — see §6.5's implementation note.
  *
- * `transition` and `animation` keep their plain rows: they are declarations
- * the author writes, not objects with parameters.
+ * `transition` and `animation` keep plain rows (they are declarations the
+ * author writes, not objects with parameters) — but like everything else in
+ * this section they exist only once added: the header's "+" lists them under
+ * the effect catalogue, and an added row carries the remove handle.
  */
 
 import { useRef, useState } from 'react'
@@ -84,16 +86,18 @@ export function EffectsSection({
         />
       ))}
 
-      {/* Declarations, not objects — they stay ordinary STANDING rows: the
-          section's "+" adds effects, so these have no other way in. */}
+      {/* Declarations, not objects — ordinary rows, but only once SET: the
+          section starts empty, and the header's "+" lists Transition and
+          Animation alongside the effect catalogue (EffectAddMenu). */}
       {(['transition', 'animation'] as const)
-        .filter((prop) => visible.has(prop))
+        .filter((prop) => visible.has(prop) && hasValue(storedStyles[prop]))
         .map((prop) => (
           <ClassPropertyRow
             key={`${activeTab}-${prop}`}
             property={prop}
-            value={hasValue(storedStyles[prop]) ? (storedStyles[prop] as string) : undefined}
-            isSet={hasValue(storedStyles[prop])}
+            value={storedStyles[prop] as string}
+            isSet
+            removable
             onChange={onChange}
             onRemove={onRemove}
             onPreview={

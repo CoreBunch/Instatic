@@ -9,7 +9,7 @@ import {
   sanitizeFontFallbackStack,
 } from '@core/fonts'
 import type { NewStyleRule, ImportFontToken } from './types'
-import { isRootScopeSelector } from './rootScope'
+import { extractRootCustomProperties } from './rootScope'
 
 const GENERIC_FAMILIES = new Set([
   'serif',
@@ -119,40 +119,9 @@ function importTokenFromDeclaration(prop: string, value: string): ImportFontToke
 export function extractRootFontTokens(
   rules: NewStyleRule[],
 ): { rules: NewStyleRule[]; fontTokens: ImportFontToken[] } {
-  const fontTokens: ImportFontToken[] = []
-  const out: NewStyleRule[] = []
-
-  for (const rule of rules) {
-    if (rule.kind !== 'ambient' || !isRootScopeSelector(rule.selector)) {
-      out.push(rule)
-      continue
-    }
-
-    const remaining: Record<string, unknown> = {}
-    const remainingPriorities: Record<string, 'important'> = {}
-    for (const [prop, value] of Object.entries(rule.styles)) {
-      const important = rule.stylePriorities?.[prop] === 'important'
-      const token = !important && typeof value === 'string'
-        ? importTokenFromDeclaration(prop, value.trim())
-        : null
-      if (token) fontTokens.push(token)
-      else {
-        remaining[prop] = value
-        if (important) remainingPriorities[prop] = 'important'
-      }
-    }
-
-    const hasContext = Object.keys(rule.contextStyles ?? {}).length > 0
-    if (Object.keys(remaining).length > 0 || hasContext) {
-      const rewritten = { ...rule, styles: remaining }
-      if (Object.keys(remainingPriorities).length > 0) {
-        rewritten.stylePriorities = remainingPriorities
-      } else {
-        delete rewritten.stylePriorities
-      }
-      out.push(rewritten)
-    }
-  }
-
-  return { rules: out, fontTokens }
+  const { rules: out, tokens } = extractRootCustomProperties<ImportFontToken>(
+    rules,
+    (prop, value) => importTokenFromDeclaration(prop, value.trim()),
+  )
+  return { rules: out, fontTokens: tokens }
 }

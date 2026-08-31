@@ -5,7 +5,7 @@
  */
 
 import { SegmentedControl } from '@ui/components/SegmentedControl'
-import { LabeledControl } from './LabeledControl'
+import { ControlRow } from '@ui/components/ControlRow'
 import {
   CROSS_HORIZONTAL_OPTIONS,
   CROSS_VERTICAL_OPTIONS,
@@ -51,7 +51,7 @@ export function AlignmentControl({
       : CROSS_VERTICAL_OPTIONS
 
   return (
-    <LabeledControl label={label} isSet={isSet}>
+    <ControlRow label={label} isSet={isSet}>
       <SegmentedControl
         look="tiles"
         fullWidth
@@ -61,6 +61,6 @@ export function AlignmentControl({
         onClear={onClear}
         options={options}
       />
-    </LabeledControl>
+    </ControlRow>
   )
 }

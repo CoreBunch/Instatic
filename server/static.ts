@@ -86,9 +86,14 @@ function selectEncoding(acceptEncoding: string | null): 'br' | 'gzip' | null {
   return null
 }
 
+/**
+ * Return the compressed bytes for `file`, reading the file off disk ONLY on a
+ * cache miss. Static assets are immutable+hashed, so after the first request
+ * per deploy this never touches the filesystem.
+ */
 async function compressForEncoding(
+  file: Bun.BunFile,
   filePath: string,
-  bytes: ResponseBytes,
   encoding: 'br' | 'gzip',
   mtimeMs: number,
 ): Promise<ResponseBytes> {
@@ -98,24 +103,24 @@ async function compressForEncoding(
     compressionCache.set(filePath, entry)
   }
 
+  const cached = encoding === 'br' ? entry.brotli : entry.gzip
+  if (cached) return cached
+
+  const bytes = new Uint8Array(await file.arrayBuffer()) as ResponseBytes
   if (encoding === 'br') {
-    if (!entry.brotli) {
-      // Brotli quality 5 — sweet spot for first-request latency on text payloads
-      // (~99% of max ratio for ~10% of the CPU vs. quality 11). We cache the
-      // result in-process anyway, so repeat hits pay zero cost.
-      const compressed = brotliCompressSync(bytes, {
-        params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5 },
-      })
-      // Node returns a Buffer (Uint8Array<ArrayBufferLike>); copy into a
-      // fresh ArrayBuffer-backed view so it satisfies BodyInit and our cache type.
-      entry.brotli = new Uint8Array(new Uint8Array(compressed)) as ResponseBytes
-    }
+    // Brotli quality 5 — sweet spot for first-request latency on text payloads
+    // (~99% of max ratio for ~10% of the CPU vs. quality 11). We cache the
+    // result in-process anyway, so repeat hits pay zero cost.
+    const compressed = brotliCompressSync(bytes, {
+      params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5 },
+    })
+    // Node returns a Buffer (Uint8Array<ArrayBufferLike>); copy into a
+    // fresh ArrayBuffer-backed view so it satisfies BodyInit and our cache type.
+    entry.brotli = new Uint8Array(new Uint8Array(compressed)) as ResponseBytes
     return entry.brotli
   }
 
-  if (!entry.gzip) {
-    entry.gzip = Bun.gzipSync(bytes) as ResponseBytes
-  }
+  entry.gzip = Bun.gzipSync(bytes) as ResponseBytes
   return entry.gzip
 }
 
@@ -135,15 +140,15 @@ export async function serveStaticFile(
     : 'no-cache'
   const mime = contentType(filePath)
 
-  const buffer = await file.arrayBuffer()
-  const bytes = new Uint8Array(buffer) as ResponseBytes
   const acceptEncoding = req?.headers.get('accept-encoding') ?? null
-  const encoding = isCompressible(filePath, bytes.byteLength)
+  // `file.size` is a stat, not a read — the bytes stay on disk until we know
+  // we actually need them (compression cache miss, or an identity response).
+  const encoding = isCompressible(filePath, file.size)
     ? selectEncoding(acceptEncoding)
     : null
 
   if (encoding) {
-    const compressed = await compressForEncoding(filePath, bytes, encoding, file.lastModified)
+    const compressed = await compressForEncoding(file, filePath, encoding, file.lastModified)
     // Body bytes are owned by us — no risk of consumer mutation.
     return new Response(compressed, {
       headers: {
@@ -157,7 +162,7 @@ export async function serveStaticFile(
     })
   }
 
-  return new Response(bytes, {
+  return new Response(new Uint8Array(await file.arrayBuffer()) as ResponseBytes, {
     headers: {
       'content-type': mime,
       'cache-control': cacheControl,

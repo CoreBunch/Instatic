@@ -13,8 +13,8 @@
  * write into an inline CSS custom property without further escaping.
  */
 
+import { clamp } from '@ui/lib/clamp'
 import {
-  clamp,
   formatColor,
   parseColor,
   type ColorFormat,

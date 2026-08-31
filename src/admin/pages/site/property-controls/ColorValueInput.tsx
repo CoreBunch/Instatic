@@ -22,8 +22,11 @@ interface ColorValueInputProps {
    * friends cannot, and offering it there would produce dead CSS.
    */
   gradients?: boolean
-  /** Offer the picker's Image fill tab (background fills only). */
-  images?: boolean
+  /**
+   * Inside a FloatingPanel (border popout), open the picker as a drill-in
+   * view of that panel — back arrow + this title — instead of a second panel.
+   */
+  drillInTitle?: string
   /** Fires with the validated, committed value (on blur, swatch, or token pick). */
   onChange: (value: string) => void
   /**
@@ -61,7 +64,7 @@ export function ColorValueInput({
   disabled,
   excludeTokenId,
   gradients = false,
-  images = false,
+  drillInTitle,
   onChange,
   onPreview,
   onClearPreview,
@@ -87,7 +90,7 @@ export function ColorValueInput({
       placeholder={placeholder}
       excludeTokenId={excludeTokenId}
       gradients={gradients}
-      images={images}
+      drillInTitle={drillInTitle}
       fieldSize="sm"
       monospace
       onTextChange={onChange}

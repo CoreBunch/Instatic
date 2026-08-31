@@ -40,7 +40,8 @@ import { UserAvatar } from '@admin/shared/UserAvatar'
 import { Badge } from '../components/Badge'
 import { RowActionMenu } from '../components/RowActionMenu'
 import { UserDialog } from '../components/UserDialog'
-import { displayUserName, formatDateTime, isOwnerUser, statusLabel } from '../utils/format'
+import { displayUserName, isOwnerUser, statusLabel } from '../utils/format'
+import { formatDateTime } from '@admin/lib/formatDateTime'
 import {
   emptyUserForm,
   type UserDialogMode,
@@ -350,7 +351,7 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
                     </div>
                   </DataTableCell>
                   <DataTableCell>
-                    <span className={styles.secondaryText}>{formatDateTime(user.lastLoginAt)}</span>
+                    <span className={styles.secondaryText}>{user.lastLoginAt ? formatDateTime(user.lastLoginAt) : 'Never'}</span>
                   </DataTableCell>
                   <DataTableCell className={styles.actionsCell}>
                     {canManageUsers && !owner && (

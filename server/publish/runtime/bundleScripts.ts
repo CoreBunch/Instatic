@@ -19,6 +19,7 @@ import {
   DEFAULT_SITE_PACKAGE_JSON,
 } from '@core/site-dependencies/manifest'
 import type { RuntimeDependencyCache } from './dependencyCache'
+import { contentTypeForPath } from './packageServer'
 import { materializeSiteScriptWorkspace } from './virtualSiteWorkspace'
 
 export interface BuiltRuntimeAssetFile {
@@ -72,13 +73,6 @@ function toPosixPath(path: string): string {
 function joinPublicPath(basePath: string, path: string): string {
   const base = basePath.endsWith('/') ? basePath : `${basePath}/`
   return `${base}${path.replace(/^\/+/, '')}`
-}
-
-function contentTypeForPath(path: string): string {
-  if (path.endsWith('.js')) return 'text/javascript; charset=utf-8'
-  if (path.endsWith('.css')) return 'text/css; charset=utf-8'
-  if (path.endsWith('.map')) return 'application/json; charset=utf-8'
-  return 'application/octet-stream'
 }
 
 function scriptFormat(entry: RuntimeScriptEntry): 'module' | 'classic' {

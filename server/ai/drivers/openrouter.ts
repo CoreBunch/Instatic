@@ -15,7 +15,10 @@
  * `parameters` directly — no Zod bridge.
  */
 
-import { Type, parseValue } from '@core/utils/typeboxHelpers'
+import { parseValue } from '@core/utils/typeboxHelpers'
+// The `/api/v1/models` boundary schema + price normaliser live with the
+// pricing catalogue, which validates the same endpoint. One copy, not two.
+import { OpenRouterModelsResponseSchema, perMTok } from '../pricing/openrouterCatalogue'
 import type {
   AiAuthMode,
   AiProviderId,
@@ -97,40 +100,6 @@ export const openrouterDriver: AiProvider = {
 // ---------------------------------------------------------------------------
 // Live model catalogue
 // ---------------------------------------------------------------------------
-
-const OpenRouterModelSchema = Type.Object({
-  id: Type.String(),
-  name: Type.Optional(Type.String()),
-  architecture: Type.Optional(
-    Type.Object({
-      input_modalities: Type.Optional(Type.Array(Type.String())),
-    }),
-  ),
-  supported_parameters: Type.Optional(Type.Array(Type.String())),
-  context_length: Type.Optional(Type.Number()),
-  pricing: Type.Optional(
-    Type.Object(
-      {
-        prompt: Type.Optional(Type.String()),
-        completion: Type.Optional(Type.String()),
-      },
-      { additionalProperties: true },
-    ),
-  ),
-})
-
-const OpenRouterModelsResponseSchema = Type.Object({
-  data: Type.Array(OpenRouterModelSchema),
-})
-
-/** OpenRouter quotes prices per token as a decimal string; the picker shows
- *  per-million-token. Returns null for an absent/blank/non-finite value. */
-function perMTok(value: string | undefined): number | null {
-  if (value === undefined || value.trim() === '') return null
-  const perToken = Number(value)
-  if (!Number.isFinite(perToken)) return null
-  return perToken * 1_000_000
-}
 
 async function fetchOpenRouterModels(
   creds: AiResolvedCredential,

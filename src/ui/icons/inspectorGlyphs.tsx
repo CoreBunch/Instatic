@@ -207,24 +207,6 @@ export function PinBarGlyph({ axis }: { axis: 'x' | 'y' }) {
   )
 }
 
-/** Step-group decrement (gap / grid track count). */
-export function StepperMinusGlyph() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-      <path d="M2.5 6h7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-/** Step-group increment (gap / grid track count). */
-export function StepperPlusGlyph() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-      <path d="M6 2.5v7M2.5 6h7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  )
-}
-
 /** Display segmented control: Flex (two upright bars). */
 export function DisplayFlexGlyph() {
   return (

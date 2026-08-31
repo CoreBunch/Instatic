@@ -61,6 +61,17 @@ Wiersze wyższe niż jedna kontrolka przełączają się na `align-items: start`
 i dają etykiecie `min-height: var(--control-height)`, żeby siedziała w osi
 pierwszej kontrolki, a nie na środku całości.
 
+W kodzie ta anatomia ma **jedną implementację**: współdzielony prymityw
+`ControlRow` (`@ui/components/ControlRow`). Poza etykietą i kolumną kontrolki
+niesie sygnał „ustawione" (`isSet` → kropka akcentowa `--accent-1` przed
+etykietą + `data-state="set"|"unset"` na wierszu), wariant `narrow` (52px w
+popoutach), wariant `wide` (kontrolka zawija się POD etykietę w wąskim doku —
+Inset, Spacing) oraz `testId`. Sekcje wizualne (Size, Layout, Position,
+Styles, Typography) i generyczne wiersze `ClassPropertyRow` używają tego
+samego komponentu, więc etykiety liczą się do piksela w całym panelu. Wiersze
+kompozytowe, które same rysują swoją siatkę (`ScopeGroup` — Padding, Radius),
+biorą samą etykietę przez `ControlRowLabel`.
+
 ---
 
 ## 3. Sekcje
@@ -207,15 +218,29 @@ w każdym paśmie. Kursory `n/e/s/w-resize`.
 
 W środku, na miejscu `.boxcore`, siedzi **pinbox**:
 
-- cztery belki `.pin` przy krawędziach; przypięta świeci `--accent-3`,
-  odpięta jest `--border-strong`
-- **pin blokuje krawędź**: `readOnly` na polu, pominięcie przy przeciąganiu
-  elementu na scenie podglądu, wygaszony tekst
-- `.core` w środku to **czysta wizualizacja** — nie przeciąga się i nie jedzie
-  za wartościami. Pozycję pokazuje scena, nie miniaturka w panelu.
+- cztery belki `.pin` ciasno wokół rdzenia (2px odstępu, nie przy krawędziach
+  pasm); przypięta świeci `--accent-3`, odpięta jest `--border-strong`
+- **pin blokuje krawędź**: `readOnly` na polu, wygaszony tekst, a na scenie
+  podglądu zamrożona oś free-move — przypięty top/bottom mrozi pion (zero
+  zapisu `top`), left/right poziom (zero zapisu `left`); obie osie przypięte →
+  chwyt wraca do przeciągania-reorderu (`useCanvasFreeMoveDrag`)
+- stan pinów to sesyjny stan edytora — `lockedInsetSides` w `selectionSlice`,
+  zerowany przy każdej zmianie zaznaczenia. CSS nie ma gdzie zapisać „ta
+  krawędź jest zablokowana", więc dokument nigdy go nie widzi.
+- `.pinCore` w środku to **przycisk free-move**: świeci akcentem
+  (`--accent-3`), póki żadna krawędź nie jest przypięta — element jeździ
+  wtedy swobodnie po scenie z podglądem wartości na żywo — a klik zdejmuje
+  wszystkie piny. Pozycji nie pokazuje; od tego jest scena.
 
 Piny leżą nad pasmami (`z-index: 2`) — inaczej klik wpadałby w strefę
 przeciągania wartości.
+
+**Free-move aktualizuje KAŻDY zapisany bok.** Drag przepisuje wszystkie
+offsety, które aktywny cel stylu faktycznie przechowuje: zapisane
+`right`/`bottom` dostają lustrzaną deltę (`right -= dx`, `bottom -= dy`),
+a `left`/`top` są dopisywane tylko, gdy ich oś nie ma kotwicy na przeciwnej
+krawędzi. Żadna wartość insetu nie zostaje w tyle po przeciągnięciu
+(`useCanvasFreeMoveDrag`).
 
 ### 6.3 Spacing
 
@@ -223,6 +248,64 @@ Zagnieżdżone `.box--margin` → `.boxInner` → `.box--padding` → `.boxcore`
 Każde pasmo ma własny `.sideval`. Nagłówki `MARGIN` / `PADDING` z przyciskami
 „połącz strony" i „wyczyść" (`.boxHeader`, `z-index: 2` z tego samego powodu
 co piny).
+
+**Szerokość pasm bocznych podąża za wartością.** Pola już mieszczą treść
+(`field-sizing: content`), ale pasmo miało sztywne `--band-x` — „1093" wylewało
+się poza krawędź trapezu. Teraz każdy box ustawia `--side-chars` (liczba
+znaków najszerszej WYRENDEROWANEJ wartości lewo/prawo, z draftami scrubu i
+popoutu włącznie), a CSS liczy `--band-x: clamp(szerokość projektowa, znaki ×
+7px + padding, 118px)` — pasmo dorasta do wartości i wraca, gdy ta maleje.
+Wartości boczne są przy tym kotwiczone do ŚRODKA swojego pasma (offset =
+połowa grubości pasma + transform recentrujący), a nie do krawędzi — więc
+rosnące pole i rosnące pasmo zawsze spotykają się na środku, zamiast doklejać
+liczbę do brzegu boxa. Ten sam mechanizm działa w wariancie inset.
+
+Box insetu dzieli z boxem spacingu CAŁY zestaw zachowań pasm: scrub (bez
+przypiętych krawędzi — pin znaczy „trzymane"), żywe drafty per krawędź
+(scrub może biec na innej krawędzi niż otwarty popout), i szerokość pasma
+podążającą za wartością. Wspólna logika mieszka w `sideScrub.ts`.
+
+**Scrub na pasmach.** Kursory `n/e/s/w-resize` na segmentach nie są dekoracją:
+przeciągnięcie pasma scrubuje wartość jego boku — ruch OD środka elementu
+zwiększa (1 px = 1 jednostka; em/rem 0.125/px jak krok suwaka; Shift ×10).
+Próg 3 px odróżnia scrub od kliku (klik nadal fokusuje pole i otwiera edytor
+wartości), w trakcie gestu leci sam podgląd (scena + drafty pól), commit jest
+jeden — na puszczeniu; `Escape` anuluje, a domykający klik jest połykany, żeby
+nie otwierał popoutu. Pointer capture trzyma gest poza pasmem; padding ma
+podłogę na 0, margines schodzi w ujemne. Logika w `sideScrub.ts`.
+
+**Gest z canvasu odbija się w panelu na żywo.** Free-move i uchwyty resize
+podglądają przez inline style w iframe (bez commitów w trakcie), więc panel
+nie widziałby ruchu aż do puszczenia. Dlatego oba gesty echem (throttle 64 ms)
+piszą swój bieżący patch do sesyjnego `canvasGesturePreview` w selectionSlice,
+a `StyleRuleComposer` / `InlineStyleComposer` nakładają go na stored styles —
+Inset, Size i każde inne pole idą za przeciąganiem, a release czyści kanał
+i commit przejmuje te same liczby bez mrugnięcia.
+
+**Podgląd na żywo na scenie.** Interakcja z bokiem — fokus pola, hover pasma,
+otwarty edytor wartości (§6.6) — podświetla na zaznaczonym elemencie
+odpowiadające pasmo box-modelu: **ukośnie kreskowany** pas marginesu
+(pomarańcz) NA ZEWNĄTRZ border-boxa albo paddingu (zieleń) WEWNĄTRZ niego,
+plus chip
+z użytą wartością w px („113px"; bok zerowy nie rysuje pasa, ale chip pokazuje
+„0"). W trybie połączonym świecą wszystkie cztery boki — dokładnie te, które
+zapis faktycznie zmieni. Stan to sesyjne `spacingHighlight` w `selectionSlice`;
+rysuje go `SpacingHighlightOverlay` (`canvas/`), mierząc `getComputedStyle`
+i rect elementu w pętli rAF aktywnej wyłącznie podczas interakcji — podglądy
+(pisanie, suwak, hover tokenu) odświeżają pasy co klatkę, a poza interakcją
+nakładka nie kosztuje nic.
+
+Pasy rysuje `repeating-linear-gradient` pod 135°: `--canvas-spacing-*-fill`
+to kreska, `--canvas-spacing-*-wash` to słabe tło między kreskami. Kreskowanie
+czyta się jako „to jest przestrzeń, nie treść" także nad zdjęciem, a przerwy
+zostawiają element pod spodem widoczny. Pasy żyją w przestrzeni pikseli
+ekranowych (portal poza warstwą transformacji), więc podziałka kreskowania jest
+stała na każdym zoomie.
+
+**Margines ujemny też się rysuje** — ale odbity na wewnętrzną stronę tej samej
+krawędzi (bo tyle miejsca element zabrał, przesuwając się w tył) i we własnym
+fiolecie (`--canvas-spacing-negative-*`), żeby „ściągnięte o 20px" nigdy nie
+wyglądało jak „odsunięte o 20px". Chip pokazuje wartość ze znakiem.
 
 ### 6.4 Pole obrazu
 
@@ -310,6 +393,78 @@ pól i to jest cała różnica między efektami:
 > i Inner shadow nad listą `box-shadow`, Layer blur nad `filter: blur()`,
 > Background blur nad `backdrop-filter: blur()`. Texture i Glass zostają
 > w makiecie: żaden z nich nie jest jedną właściwością CSS.
+
+> **Powłoka popoutu we wdrożeniu.** Produkcyjny `.popout` to
+> `FloatingPanel` (`src/ui/components/FloatingPanel`) — jedna powłoka dla
+> pickera koloru, popoutu bordera i parametrów efektu. Jej zachowanie:
+>
+> - **Zawsze w całości na ekranie.** Pierwsze ustawienie klampuje z
+>   szacowanej wysokości (panel nie jest jeszcze w DOM); zaraz po
+>   zamontowaniu pozycja jest doklampowana z realnego pomiaru, a
+>   `ResizeObserver` na panelu + nasłuch `resize` okna doklampowują ją przy
+>   każdej zmianie rozmiaru treści (np. wjeździe pickera koloru) i okna —
+>   z dala od krawędzi i od pasków oznaczonych `data-floating-obstacle`.
+> - **Jeden panel naraz — nawigacja zamiast stosu** (decyzja autora,
+>   2026-08-30): pole koloru wewnątrz popoutu bordera / efektu nie otwiera
+>   drugiego panelu, tylko **wsuwa widok pickera w ten sam panel**
+>   (`FloatingPanelDrillView`): nagłówek dostaje strzałkę wstecz i
+>   kontekstowy tytuł („Border color", „Shadow color"), × dalej zamyka cały
+>   panel, Escape najpierw cofa z wsuniętego widoku. Widok główny zostaje
+>   zamontowany pod spodem, więc jego stan (aktywna krawędź, niedokończone
+>   pole) przeżywa podróż tam i z powrotem. `ColorInput` włącza ten tryb
+>   propem `drillInTitle`; poza panelem swatch otwiera własny panel jak
+>   dotąd.
+> - **Menu nie zamykają panelu.** Pointerdown w rozwijaną listę selecta lub
+>   menu (`[role="listbox"]` / `[role="menu"]` portalowane PO panelu w
+>   porządku dokumentu) nie liczy się jako „klik poza".
+
+### 6.6 Edytor wartości (popout)
+
+Fokus w polu boku Spacingu (§6.3) lub Insetu (§6.2) otwiera **pływający edytor
+wartości** — `ValueEditorPopout` na wspólnym `FloatingPanel`, obok pola. Jeden
+naraz: fokus na innym boku przenosi go tam, Escape / klik obok zamyka. Od góry:
+
+- **suwak + pole liczbowe + select jednostki** (`px` domyślnie, `em`, `rem`,
+  `%`, `vw`, `vh`). Zakres suwaka zależy od jednostki (px 0–512, em/rem 0–16,
+  % 0–100); inset schodzi w ujemne. Zmiana jednostki **nie przelicza** —
+  przeetykietowuje liczbę (`16px` → `16em`).
+- **siatka chipów** w pięciu kolumnach: `Auto` (margin i inset — padding nie
+  zna auto) zajmuje dwie z nich, bo to słowo kluczowe, nie liczba; dalej
+  presety jednostki (px: 0…64, em/rem: 0…8). Klik commit-uje od razu, hover
+  podgląda.
+- **siatka tokenów** — cała skala spacingu frameworka (`4xs`…`4xl`) jako te
+  same chipy; klik zapisuje `var(--space-…)`. Dlatego pola boków **nie**
+  otwierają już własnego dropdownu z podpowiedziami: skala mieszka tutaj, a
+  druga pływająca lista obok tego samego pola zasłaniałaby scenę. Pole nadal
+  rozwiązuje wpisany krok (`m` → `var(--space-m)`) i pokazuje token skrótem.
+- **stopka Reset** — przycisk na pełną szerokość, opis pod nim; czyści bok do
+  „nieustawione" tą samą ścieżką co wyczyszczenie pola inline.
+
+Edytor **nie ma własnego kanału zapisu**: wszystko idzie przez onCommit /
+onPreview boku, więc tryb linked rozchodzi się na cztery strony jak przy
+wpisywaniu, a undo dostaje jeden krok na puszczenie suwaka / klik chipa.
+Suwak marginesu i insetu schodzi w **ujemne** (`-512…512` px) — marginy się
+zwijają, offsety insetu ciągną element poza krawędź. Padding zostaje na zerze:
+ujemny padding to niepoprawny CSS, nie decyzja produktowa.
+
+Wartość, której nie da się sparsować na liczbę + jednostkę (`calc(...)`),
+pokazuje stan „complex value": suwak, liczba i presety gasną, a jednostka,
+siatka tokenów i Reset zostają — token JEST wartością do wybrania tutaj, więc
+nie może zablokować edytora, który go ustawił. Przypięty bok insetu edytora
+nie otwiera.
+
+Popout podgląda na żywo: każdy ruch suwaka i hover chipa leci przez
+`onPreview`, a pola boków (oraz pole liczbowe w samym popoucie) pokazują ten
+draft od razu — commit na puszczeniu suwaka tylko go utrwala. Dzięki temu
+liczby idą w parze z tym, co widać na scenie, zamiast doskakiwać po fakcie.
+
+Pole boku zostaje **sfokusowane**, kiedy popout pisze — więc `TokenAwareInput`
+przyjmuje zewnętrzną wartość zawsze, gdy użytkownik nie jest w trakcie
+wpisywania (sam fokus jej nie blokuje). Bez tego draft pola zostawałby na
+wartości sprzed popoutu i najbliższy blur zapisywałby ją z powrotem, kasując
+to, co ustawił suwak albo chip. Suwak łapie `setPointerCapture` na
+`pointerdown`, żeby puszczenie przycisku poza torem też trafiło w commit —
+inaczej przeciągnięcie zostawałoby samym podglądem.
 
 ---
 

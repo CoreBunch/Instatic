@@ -5,11 +5,18 @@
     display: grid;
     grid-template-columns: var(--control-label-column) 1fr;
     gap: var(--space-s);
+    align-items: center;
     width: 100%;
     min-height: var(--control-height);
     /* Panel anatomy: 100px label column. The popout interior overrides to the
        narrow 52px variant — two widths, zero bespoke grids. */
     --control-label-column: 100px;
+}
+
+/* Grid items default to min-width auto — an input or button group in the 1fr
+   control column must be allowed to shrink instead of overflowing the panel. */
+.controlWrapper > * {
+    min-width: 0;
 }
 
 /* Narrow variant — popout interiors (52px labels). */
@@ -25,6 +32,29 @@
 .controlWrapperStacked {
     grid-template-columns: 1fr;
     gap: var(--space-xs);
+}
+
+/* Wide controls: WRAP, don't squeeze (mock `.row:has(> .spacebox)` family).
+ * The spacing box, the inset box and the image field need their width to be
+ * usable — in a narrow dock they don't shrink beside the label, they wrap
+ * UNDER it and take the section's full width. The wrap threshold is the
+ * control's flex-basis: while it fits beside the label it stays in the row.
+ * Flex, not grid — a grid can only squeeze its column. */
+.controlWrapperWide {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-3xs) var(--space-s);
+}
+
+.controlWrapperWide > .labelRow {
+    flex: 0 0 var(--control-label-column);
+    min-height: var(--control-height);
+}
+
+.controlWrapperWide > :not(.labelRow) {
+    flex: 1 1 220px;
+    min-width: 0;
 }
 
 /*
@@ -54,6 +84,36 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Prototype `.row > .label`: ONE tone whatever the state — "set" is carried
+   by the accent dot, never by brightening the text. */
+.label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    padding-left: var(--space-2xs);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Standalone label (ControlRowLabel) sits outside a .labelRow, so it carries
+   the label typography itself. */
+.standaloneLabel {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    font-weight: 500;
+}
+
+/* Set-state cue — a 5px accent dot before the label text. */
+.setDot {
+    flex: none;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent-1);
 }
 
 .labelOverride {

@@ -238,8 +238,9 @@ creating a second tag-specific tint scale.
 | Token                           | Use                                                           |
 |---------------------------------|---------------------------------------------------------------|
 | `--canvas-chrome-shadow`        | Achromatic drop shadow for canvas chrome overlays             |
-| `--canvas-selection-ring`       | Neon green inset ring for the selected node                   |
-| `--canvas-hover-ring`           | Neon pink inset ring for the hovered node                     |
+| `--canvas-accent`               | THE canvas accent (aliases `--panel-accent`) — rings, handles, badge, guides |
+| `--canvas-selection-ring`       | Accent inset ring for the selected node                       |
+| `--canvas-hover-ring`           | 60% accent inset ring (drawn dashed) for the hovered node     |
 | `--canvas-selector-ring`        | Neon orange inset ring for selector-panel match sweeps        |
 | `--canvas-selection-ring-color` | Bare selection colour for outline / border / custom shadows   |
 | `--canvas-hover-ring-color`     | Bare hover colour for outline / border / custom shadows       |
@@ -253,7 +254,9 @@ creating a second tag-specific tint scale.
 | `--canvas-placeholder-bg`       | Shared diagonal-stripe empty-module placeholder background    |
 | `--canvas-live-scrim`           | Live-preview overlay scrim, theme-adjusted                    |
 
-Bare colour variants (`*-ring-color`) are for surfaces that need an `outline` / `border-color` / custom shadow geometry rather than the full inset-ring shorthand. Keep them in sync with the shorthands. The selector ring (`#ff8800`) is a third distinct identity so a "show me everything this selector touches" sweep reads differently from selection (green) and hover (pink).
+The spacing-highlight bands are drawn as a 135° hatch: `--canvas-spacing-*-fill` is the stripe, `--canvas-spacing-*-wash` the tint between stripes. A negative margin uses the separate `--canvas-spacing-negative-*` violet so "took space away" reads differently from "added space".
+
+Bare colour variants (`*-ring-color`) are for surfaces that need an `outline` / `border-color` / custom shadow geometry rather than the full inset-ring shorthand. Keep them in sync with the shorthands. The selector ring (`#ff8800`) is a distinct identity so a "show me everything this selector touches" sweep reads differently from selection (solid accent) and hover (dashed 60% accent).
 
 ### Canvas placeholder
 

@@ -34,6 +34,7 @@ import { loadFontPreview, loadFontPreviewWithVariants } from '@core/fonts'
 import type { GoogleFontFamilyDto } from '@core/persistence/responseSchemas'
 import styles from './FontsSection.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { formatBytes } from '@admin/lib/formatBytes'
 
 interface AddGoogleFontDialogProps {
   /** Families already installed (case-insensitive) — disabled in the picker. */
@@ -68,21 +69,6 @@ interface EstimateState {
   totalBytes?: number
   fileCount?: number
   error?: string
-}
-
-/**
- * Format bytes as a short, human-friendly string for the install footer.
- * Uses base-2 KB / MB to match how OSes commonly display download sizes.
- *   - `0` → `"0 B"`
- *   - `< 1 KiB` → `"512 B"`
- *   - `< 1 MiB` → `"42 KB"` (no decimals)
- *   - `≥ 1 MiB` → `"1.4 MB"` (one decimal)
- */
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 /**
@@ -717,7 +703,7 @@ function EstimateHint({ estimate }: EstimateHintProps) {
   }
   return (
     <span className={styles.estimateHint} role="status" aria-live="polite">
-      <strong className={styles.estimateValue}>{formatBytes(estimate.totalBytes)}</strong>
+      <strong className={styles.estimateValue}>{formatBytes(estimate.totalBytes, { maxUnit: 'MB' })}</strong>
       <span className={styles.estimateMeta}>
         {estimate.fileCount} {estimate.fileCount === 1 ? 'file' : 'files'}
       </span>

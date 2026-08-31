@@ -9,7 +9,7 @@
 import { useEditorStore } from '@site/store/store'
 import type { StyleRule, CSSPropertyBag } from '@core/page-tree'
 import { StyleSectionsEditor } from './StyleSectionsEditor'
-import { getActiveStyleTab } from './cssControlTypes'
+import { getActiveStyleTab } from '@site/store/useActiveStyleTarget'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -20,6 +20,8 @@ interface StyleRuleComposerProps {
   cls: StyleRule
   /** Search query — filters visible properties across all categories. */
   styleQuery: string
+  /** Text element selected — Typography hoists to the front of the order. */
+  typographyFirst?: boolean
   mode?: 'contextual' | 'global'
 }
 
@@ -31,6 +33,7 @@ export function StyleRuleComposer({
   classId,
   cls,
   styleQuery,
+  typographyFirst,
   mode: _mode = 'contextual',
 }: StyleRuleComposerProps) {
   const activeBreakpointId = useEditorStore((s) => s.activeBreakpointId)
@@ -63,12 +66,21 @@ export function StyleRuleComposer({
       ? activeTab
       : null
 
-  const storedStyles: Record<string, unknown> = activeContextId
+  // Live values from an in-flight canvas gesture (free-move / resize handle)
+  // overlay the stored bag, so Position / Size fields track the drag instead
+  // of jumping at release. Session-only; the release commit replaces it with
+  // identical stored values, so nothing flickers.
+  const gesturePreview = useEditorStore((s) => s.canvasGesturePreview)
+
+  const storedBase: Record<string, unknown> = activeContextId
     ? (cls.contextStyles[activeContextId] ?? {})
     : cls.styles
+  const storedStyles: Record<string, unknown> = gesturePreview
+    ? { ...storedBase, ...gesturePreview }
+    : storedBase
   const currentStyles: Record<string, unknown> = activeContextId
     ? { ...cls.styles, ...storedStyles }
-    : cls.styles
+    : storedStyles
 
   const handleChange = (key: keyof CSSPropertyBag, value: string | number | undefined) => {
     const patch = { [key]: value ?? null } as Partial<CSSPropertyBag>
@@ -157,6 +169,7 @@ export function StyleRuleComposer({
       currentStyles={currentStyles}
       sectionKey={sectionKey}
       styleQuery={styleQuery}
+      typographyFirst={typographyFirst}
       onChange={handleChange}
       onChangeMany={handleChangeMany}
       onRemove={handleRemoveProperty}

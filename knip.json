@@ -26,11 +26,8 @@
   ],
   "ignoreDependencies": [
     "@fontsource-variable/inter",
-    "dependency-cruiser",
     "jscpd",
     "knip",
-    "madge",
-    "secretlint",
-    "@secretlint/secretlint-rule-preset-recommend"
+    "madge"
   ]
 }

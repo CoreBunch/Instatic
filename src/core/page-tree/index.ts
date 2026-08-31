@@ -46,6 +46,7 @@ export type { PageNode } from './pageNode'
 export type { TreeOperation, TreeMutateResult } from './operationSchema'
 export type { Page } from './page'
 export type { CSSPropertyBag } from './cssPropertyBag'
+export { pickValidCSSProperties } from './cssPropertyBag'
 export type {
   CSSDeclarationPriorityBag,
   SelectorCreateInput,

@@ -22,7 +22,7 @@ import {
 import { Skeleton } from '@ui/components/Skeleton'
 import { Badge } from '../components/Badge'
 import { auditActor, auditDetails, auditTitle } from '../utils/audit'
-import { formatDateTime } from '../utils/format'
+import { formatDateTime } from '@admin/lib/formatDateTime'
 import type { UsersPageData } from '../hooks/useUsersPageData'
 import styles from '../UsersPage.module.css'
 

@@ -15,6 +15,7 @@
 import type { CSSPropertyBag } from '@core/page-tree'
 import { ClassPropertyRow } from './ClassPropertyRow'
 import { Section } from '@ui/components/Section'
+import { ControlRow } from '@ui/components/ControlRow'
 import { SpacingBoxControl } from './SpacingBoxControl/SpacingBoxControl'
 import { CustomPropertiesSection } from './CustomPropertiesSection'
 import { LayoutSection } from './LayoutSection'
@@ -26,10 +27,9 @@ import { SizeSection } from './SizeSection'
 import { StylesSection } from './StylesSection'
 import { TypographySection } from './TypographySection'
 import {
-  CLASS_STYLE_SECTIONS,
+  getOrderedStyleSections,
   SECTION_ADDABLE_PROPERTIES,
   cssPropertyLabel,
-  getCSSPropertyDefaultValue,
   type ClassStyleSectionDefinition,
 } from './cssControlTypes'
 import { hasStyleValue } from './styleValueUtils'
@@ -45,6 +45,13 @@ const TYPOGRAPHY_SECTION_ID = 'typography'
 const EFFECTS_SECTION_ID = 'effects'
 const SIZE_SECTION_ID = 'size'
 
+/**
+ * Sections with NO curated standing rows — their whole body arrives through
+ * the header's "+". While empty they refuse to open (there is nothing to
+ * show); the first added row opens them.
+ */
+const ADD_ONLY_SECTION_IDS = new Set([EFFECTS_SECTION_ID, 'transforms', 'interaction'])
+
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
@@ -58,6 +65,8 @@ interface StyleSectionsEditorProps {
   sectionKey: string
   /** Search query — filters visible properties across all categories. */
   styleQuery: string
+  /** Text element selected — Typography hoists to the front of the order. */
+  typographyFirst?: boolean
   onChange: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
   /** Applies several properties in one store commit (one undo entry). */
   onChangeMany: (patch: Partial<CSSPropertyBag>) => void
@@ -78,6 +87,7 @@ export function StyleSectionsEditor({
   currentStyles,
   sectionKey,
   styleQuery,
+  typographyFirst = false,
   onChange,
   onChangeMany,
   onRemove,
@@ -86,7 +96,7 @@ export function StyleSectionsEditor({
   onPreview,
   onClearPreview,
 }: StyleSectionsEditorProps) {
-  const visibleStyleSections = getVisibleStyleSections(styleQuery)
+  const visibleStyleSections = getVisibleStyleSections(styleQuery, typographyFirst)
 
   // Default open/closed state for every section, from the user preference.
   const sectionsExpanded = useEditorPreference('propertiesSectionsExpanded')
@@ -172,6 +182,12 @@ function StyleSectionGroup({
   // narrowed list, and never properties that already hold a value.
   const addableProperties = SECTION_ADDABLE_PROPERTIES.get(section.id)
 
+  // Add-only sections lock closed while empty; the keyed remount below
+  // re-initialises the open state, so the first added row opens the section
+  // and clearing the last one collapses it again.
+  const isAddOnly = ADD_ONLY_SECTION_IDS.has(section.id)
+  const isEmpty = isAddOnly && !section.properties.some((prop) => hasStyleValue(storedStyles[prop]))
+
   // Per-property adapter over the patch-shaped section preview channel.
   const previewProperty = (
     property: keyof CSSPropertyBag,
@@ -180,8 +196,10 @@ function StyleSectionGroup({
 
   return (
     <Section
+      key={isAddOnly ? `add-only-${isEmpty}` : undefined}
       title={section.title}
-      defaultOpen={defaultOpen}
+      defaultOpen={isAddOnly ? !isEmpty : defaultOpen}
+      collapsible={!isEmpty}
       flush
       /* `.sec-head` is caret · name · "+" and nothing else
          (docs/features/inspector-panel.md §3). The set-signal lives where it
@@ -203,15 +221,23 @@ function StyleSectionGroup({
     >
       <div className={sectionStyles.sectionBody}>
         {section.id === SPACING_SECTION_ID ? (
-          <SpacingBoxControl
-            key={activeTab}
-            storedStyles={storedStyles}
-            currentStyles={currentStyles}
-            onChange={onChange}
-            onRemove={onRemove}
-            onPreview={onPreview}
-            onClearPreview={onClearPreview}
-          />
+          /* The mock's Spacing row: label beside the box while it fits,
+             box wrapping under it in a narrow dock. */
+          <ControlRow
+            label="Spacing"
+            wide
+            isSet={section.properties.some((prop) => hasStyleValue(storedStyles[prop]))}
+          >
+            <SpacingBoxControl
+              key={activeTab}
+              storedStyles={storedStyles}
+              currentStyles={currentStyles}
+              onChange={onChange}
+              onRemove={onRemove}
+              onPreview={onPreview}
+              onClearPreview={onClearPreview}
+            />
+          </ControlRow>
         ) : section.id === LAYOUT_SECTION_ID ? (
           <LayoutSection
             key={activeTab}
@@ -288,31 +314,27 @@ function StyleSectionGroup({
             onClearPreview={onClearPreview}
           />
         ) : (
-          section.properties.map((prop) => {
-            const storedValue = storedStyles[prop]
-            const isSet = hasStyleValue(storedValue)
-            const currentValue = currentStyles[prop]
-            const fallbackValue = hasStyleValue(currentValue)
-              ? currentValue
-              : getCSSPropertyDefaultValue(prop)
-
-            return (
+          /* Generic sections (Transforms, Interaction): EMPTY until the user
+             adds a property from the header's "+" — a row exists only while
+             its property holds a value, and carries the remove handle. */
+          section.properties
+            .filter((prop) => hasStyleValue(storedStyles[prop]))
+            .map((prop) => (
               <ClassPropertyRow
                 key={`${activeTab}-${String(prop)}`}
                 property={prop}
-                value={isSet ? (storedValue as string | number) : undefined}
-                placeholder={!isSet ? fallbackValue : undefined}
+                value={storedStyles[prop] as string | number}
                 fontFamilyValue={currentStyles.fontFamily}
                 backgroundImageValue={currentStyles.backgroundImage}
-                isSet={isSet}
+                isSet
+                removable
                 onChange={onChange}
                 onChangeMany={onChangeMany}
                 onRemove={onRemove}
                 onPreview={previewProperty}
                 onClearPreview={onClearPreview}
               />
-            )
-          })
+            ))
         )}
       </div>
     </Section>
@@ -323,10 +345,13 @@ function StyleSectionGroup({
 // Section filtering by search query
 // ---------------------------------------------------------------------------
 
-function getVisibleStyleSections(query: string): ReadonlyArray<ClassStyleSectionDefinition> {
+function getVisibleStyleSections(
+  query: string,
+  typographyFirst: boolean,
+): ReadonlyArray<ClassStyleSectionDefinition> {
   const normalizedQuery = query.trim().toLowerCase()
 
-  return CLASS_STYLE_SECTIONS.map((section) => ({
+  return getOrderedStyleSections(typographyFirst).map((section) => ({
     ...section,
     properties: section.properties.filter(
       (prop) =>

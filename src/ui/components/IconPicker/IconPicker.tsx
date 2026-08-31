@@ -1,6 +1,11 @@
 /**
  * `IconPicker` — choose an icon from the generated icon packs.
  *
+ * Rendered inside a {@link FloatingPanel} anchored beside its trigger (the
+ * inspector's "Icons" button), so picking an icon feels like every other
+ * floating editor — draggable header, closed by ×, Escape, or clicking
+ * outside.
+ *
  * Returns inline SVG MARKUP, not a component, because that is what the caller
  * stores: `base.svg` keeps a markup string and publishes it through the
  * DOMPurify boundary, which is already the right home for an icon on a page.
@@ -13,8 +18,8 @@
  * costs no bundle weight and needs no lazy `Icon` wrapper — the two failure
  * modes `direct-icon-imports.test.ts` exists to prevent.
  */
-import { useEffect, useState } from 'react'
-import { Dialog } from '@ui/components/Dialog'
+import { useEffect, useState, type RefObject } from 'react'
+import { FloatingPanel } from '@ui/components/FloatingPanel'
 import { Button } from '@ui/components/Button'
 import { SearchBar } from '@ui/components/SearchBar'
 import { EmptyState } from '@ui/components/EmptyState'
@@ -26,9 +31,14 @@ type IconEntry = readonly [name: string, svg: string]
 interface IconPickerProps {
   open: boolean
   onClose: () => void
+  /** The trigger button the panel opens beside. */
+  anchorRef: RefObject<HTMLElement | null>
   /** Receives ready-to-store inline SVG markup for the chosen icon. */
   onPick: (svgMarkup: string, name: string) => void
 }
+
+const PANEL_WIDTH = 380
+const PANEL_ESTIMATED_HEIGHT = 480
 
 // ponytail: render cap instead of a windowed list — 6k tiles in one paint
 // stalls; a virtualized grid is the upgrade path if browsing (not searching)
@@ -41,7 +51,7 @@ function searchable(name: string): string {
   return name.replace(/-/g, ' ')
 }
 
-export function IconPicker({ open, onClose, onPick }: IconPickerProps) {
+export function IconPicker({ open, onClose, anchorRef, onPick }: IconPickerProps) {
   const [query, setQuery] = useState('')
   const [packId, setPackId] = useState(ICON_PACKS[0].id)
   // Loaded pack tagged with its id, so switching packs derives "loading"
@@ -86,12 +96,14 @@ export function IconPicker({ open, onClose, onPick }: IconPickerProps) {
   }
 
   return (
-    <Dialog
+    <FloatingPanel
       open={open}
       onClose={onClose}
-      eyebrow="Icons"
+      anchorRef={anchorRef}
       title="Choose an icon"
-      size="2xl"
+      closeLabel="Close icon picker"
+      width={PANEL_WIDTH}
+      estimatedHeight={PANEL_ESTIMATED_HEIGHT}
     >
       <div className={styles.body}>
         <div className={styles.packs} role="tablist" aria-label="Icon families">
@@ -124,38 +136,40 @@ export function IconPicker({ open, onClose, onPick }: IconPickerProps) {
               : `${matches.length} of ${icons.length} icons`}
         </p>
 
-        {icons !== null && matches.length === 0 ? (
-          <EmptyState
-            title="No icons match that search"
-            description="Icon names are kebab-case, e.g. “arrow right” or “trash solid”."
-          />
-        ) : (
-          <div className={styles.grid}>
-            {visible.map((entry) => (
-              <Button
-                key={entry[0]}
-                variant="ghost"
-                shape="flush"
-                className={styles.tile}
-                onClick={() => choose(entry)}
-                aria-label={`Use the ${searchable(entry[0])} icon`}
-                tooltip={entry[0]}
-              >
-                {/*
-                  Generated, trusted-at-build-time markup; the stored value is
-                  still sanitized at the publish boundary like any `base.svg`.
-                  `aria-hidden` because the button already carries the name.
-                */}
-                <span
-                  className={styles.glyph}
-                  aria-hidden="true"
-                  dangerouslySetInnerHTML={{ __html: entry[1] }}
-                />
-              </Button>
-            ))}
-          </div>
-        )}
+        <div className={styles.gridScroll}>
+          {icons !== null && matches.length === 0 ? (
+            <EmptyState
+              title="No icons match that search"
+              description="Icon names are kebab-case, e.g. “arrow right” or “trash solid”."
+            />
+          ) : (
+            <div className={styles.grid}>
+              {visible.map((entry) => (
+                <Button
+                  key={entry[0]}
+                  variant="ghost"
+                  shape="flush"
+                  className={styles.tile}
+                  onClick={() => choose(entry)}
+                  aria-label={`Use the ${searchable(entry[0])} icon`}
+                  tooltip={entry[0]}
+                >
+                  {/*
+                    Generated, trusted-at-build-time markup; the stored value is
+                    still sanitized at the publish boundary like any `base.svg`.
+                    `aria-hidden` because the button already carries the name.
+                  */}
+                  <span
+                    className={styles.glyph}
+                    aria-hidden="true"
+                    dangerouslySetInnerHTML={{ __html: entry[1] }}
+                  />
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
-    </Dialog>
+    </FloatingPanel>
   )
 }

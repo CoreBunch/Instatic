@@ -129,21 +129,17 @@ function parseAndValidateBase64(value: string, source: string): Uint8Array {
 
 async function computeMasterKeyFingerprint(keyBytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', keyBytes as BufferSource)
-  const hex = Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-  return hex.slice(0, 16)
+  return Buffer.from(digest).toString('hex').slice(0, 16)
 }
 
 function base64ToBytes(value: string): Uint8Array {
-  const binary = atob(value)
-  const out = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
-  return out
+  // `atob` is the decoder here on purpose: it THROWS on malformed base64,
+  // which is what `parseAndValidateBase64` reports as a configuration error.
+  // `Buffer.from(value, 'base64')` would silently discard invalid characters
+  // and hand back a plausible-looking wrong key.
+  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0))
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!)
-  return btoa(binary)
+  return Buffer.from(bytes).toString('base64')
 }

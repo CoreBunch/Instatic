@@ -6,6 +6,7 @@ import { CellEditorRenderer } from '@admin/pages/data/components/DataGrid/cells/
 import { RelationPickerDialog } from '@admin/pages/data/components/RelationPickerDialog/RelationPickerDialog'
 import { useDataRowDraft } from '@admin/pages/data/hooks/useDataRowDraft'
 import { emptyCellValue } from '@admin/pages/data/utils/fieldDefaults'
+import { formatDateTime, SHORT_DATE_TIME } from '@admin/lib/formatDateTime'
 import type { DataTable, DataRow, DataRowCells } from '@core/data/schemas'
 import type { DataField } from '@core/data/schemas'
 import styles from './DataInspector.module.css'
@@ -47,18 +48,7 @@ interface PickerState {
 // ---------------------------------------------------------------------------
 
 function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } catch {
-    return iso
-  }
+  return iso ? formatDateTime(iso, SHORT_DATE_TIME) : '—'
 }
 
 function statusPillClass(status: DataRow['status']): string {

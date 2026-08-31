@@ -64,13 +64,11 @@ Legenda: ✅ zrobione · 🟡 częściowe (jest funkcja, wygląd/kształt do doc
 
 ### 2.5 Spacing
 
-- [ ] 🟡 **spacebox** — SpacingBoxControl istnieje; porównać 1:1 z makietą (`.spacebox`, `.boxHeader` z przyciskami "link all sides" i "clear", `.sideval`, trapezowe `.segment` z hoverem). Wyrównać CSS.
+- [x] ✅ **spacebox** — CSS boksu (fasety, `.boxHeader`, `.sideval`, trapezy) jest 1:1 z makietą; 2026-08-30 doszedł brakujący **wiersz z etykietą** („Spacing" po lewej) i makietowe zawijanie szerokich kontrolek (patrz § 2.14).
 
 ### 2.6 Styles
 
-- [x] ✅ **Fill → obraz w tym samym pickerze** — `ColorPicker` ma piątą zakładkę **Image** (włączaną prop-em `images`, dziś tylko z `BackgroundFillControl`): podgląd źródła na szachownicy, przycisk Choose/Replace image, wiersze Fit (Cover/Contain/Auto) i Repeat (Once/Tile). Model: `FillMode` ma arm `'image'`, `FillState.image` = `{ url, fit, repeat }`, `formatFill` emituje `url("…")`.
-- [ ] ❌ **Fill → obraz: podłączenie logiki** — potwierdzone w przeglądarce 2026-08-28: (a) `onPickImage` nie jest podpięty z żadnego miejsca (przycisk „Choose Image…" w pickerze jest disabled) — kontrakt § 2.13 każe wstrzyknąć slotem istniejący `MediaLibraryControl`; (b) wiersz `Type` (Fill/Fit/Stretch/Tile) rusza tylko stan lokalny pickera — do zmapowania na `backgroundSize` / `backgroundRepeat`; (c) po tym scalić osobny wiersz **Image** (`BackgroundImageControl`) z wierszem Fill, żeby było jedno miejsce na tło.
-- [ ] ❌ **Fill → obraz: siatka Position 3×3 do usunięcia** — kontrakt § 2.13 mówi wprost „bez Position", a zakładka Image nadal ją renderuje (razem z `ImageState.position`). Skasować przy podłączaniu logiki.
+- [x] ✅ **Fill → bez obrazu** (decyzja autora 2026-08-30, uchyla wcześniejszy plan „obraz w tym samym pickerze") — zakładka **Image** wyleciała z pickera w całości: obrazem tła zajmuje się wyłącznie osobny wiersz **Image** (`BackgroundImageControl`). Usunięte jako martwy kod: prop `images` (`ColorValueInput` / `TokenizedColorField` / `ColorInput` / `ColorPicker`), `onPickImage`, arm `'image'` w `FillMode`, `ImageState` / `ImageType` / `ImagePosition` / `parseImageUrl` w `fillState.ts`, pane Image + jego CSS. `initialFill` z zapisanym `url(…)` degraduje do solida jak każda nieparsowalna wartość.
 - [x] ✅ **SwatchRow** (wariant B — jeden wiersz na kolor) — prymityw `src/ui/components/SwatchRow`; `ColorValueInput` renderuje go (look `swatch`: chip · nazwa · ×) we wszystkich wierszach koloru — Fill, Border (popout), Typography→Color, kolory efektów.
 - [x] ✅ **Opacity** — pole to NumberField (hover-stepper, `inputMode="decimal"` — NIE `type="number"`: kontrolowany number input czyści każdy niepełny ułamek `0.` do pustego i kasowałby wartość w trakcie pisania); kolumna pola 88px jak w makiecie; szyna 3px malowana na pseudo-elemencie toru, więc knob 12px stoi na jej środku (`margin-top: -4.5px` na webkicie).
   - [ ] ❓ Wartość jest w skali 0–1 (jak makieta). Jeśli ma być w %, jak w narzędziach typu Figma — decyzja autora.
@@ -90,23 +88,25 @@ Legenda: ✅ zrobione · 🟡 częściowe (jest funkcja, wygląd/kształt do doc
 - [x] 🟡 **NumberField** — hover-stepper gotowy w prymitywie `Input` (`onStep`); zostaje drag + Shift×10 (patrz 2.4).
 - [x] ✅ **Wspólne glify** — `src/ui/icons/inspectorGlyphs.tsx`: cienkie marki 8–12px (caret, chevron steppera, lupka, kreska usuwania, kłódka, box wszystkie-strony / osobno), których nie ma w pixel-art-icons. Jedno miejsce zamiast kopii w każdym panelu (bramka Gate 3 zakazuje inline SVG w `src/admin/pages/site/`).
 - [x] ✅ **SwatchRow** — patrz 2.6.
-- [x] ✅ **Popout** — `FloatingPanel` (`src/ui/components/FloatingPanel`): jedna powłoka dla pickera koloru, `BorderPopoutRow` i `EffectParams`; otwiera się przy triggerze, znika od klika poza sobą.
+- [x] ✅ **Popout** — `FloatingPanel` (`src/ui/components/FloatingPanel`): jedna powłoka dla pickera koloru, `BorderPopoutRow` i `EffectParams`; otwiera się przy triggerze, znika od klika poza sobą. Po zamontowaniu doklampowuje pozycję z realnego pomiaru (`ResizeObserver` + `resize` okna), więc zawsze stoi w całości na ekranie. Jeden panel naraz: pole koloru w popoucie **wsuwa** widok pickera w ten sam panel (`FloatingPanelDrillView` — strzałka wstecz + tytuł „Border color" / „Shadow color"), zamiast otwierać drugi.
 - [x] ✅ **PropMenu** — `SectionAddMenu` (właściwości CSS) + `EffectAddMenu` (katalog efektów) — patrz 2.1 / 2.9.
 
 ### 2.9 Effects
 
 - [x] ✅ **efxlist** — `EffectsSection.tsx`: wiersze efektów z ikoną typu, wartością wiodącą i kreską usuwania; klik w pole otwiera popout parametrów (`EffectParams`) w `FloatingPanel`, otwarty popout maluje obrys pola i ikonę na akcent. Cztery efekty z czystym odpowiednikiem w CSS — Drop shadow / Inner shadow nad listą `box-shadow`, Layer blur nad `filter: blur()`, Background blur nad `backdrop-filter: blur()` (tłumaczenie w obie strony: `effectsModel.ts`). **Bez oka** — decyzja autora 2026-08-28: CSS nie zna wyłączonego cienia, więc stan „ukryty" nie miałby gdzie mieszkać bez nowego klucza w modelu. Texture i Glass poza zakresem (nie są jedną właściwością CSS).
 - [x] ✅ **`+` w Effects** — `EffectAddMenu.tsx`: katalog efektów zamiast właściwości CSS, efekt już obecny wygaszony i z ptaszkiem. Dodanie cienia dopisuje wpis do listy zamiast nadpisywać istniejący.
+- [x] ✅ **Sekcja pusta domyślnie** (decyzja autora 2026-08-30) — `transition` / `animation` nie stoją już jako puste wiersze: `EffectAddMenu` listuje je pod katalogiem efektów, wiersz pojawia się dopiero po dodaniu i ma uchwyt usuwania.
 - [ ] ❌ **Blend** (select) — wymaga klucza `mixBlendMode` w `CSSPropertyBag` + enum options.
 - [ ] ❓ **HOVER EFFECT popout** (makieta: Opacity/Scale/Rotate/Skew/Offset/Fill/Shadow/Transition „Spring") — to stany `:hover` + transition; wymaga decyzji jak mapować na styleRules (kontekst `:hover` istnieje w edytorze warunków?). Do omówienia przed implementacją.
 
 ### 2.10 Transforms
 
+- [x] ✅ **Sekcja pusta domyślnie** (decyzja autora 2026-08-30) — `transform` / `transformOrigin` nie stoją na sztywno; dodaje się je przez `+` w nagłówku, a dodany wiersz ma uchwyt usuwania.
 - [ ] ❌ **Rotate** (pole ° + segmented 2D/3D), **Scale** (x/y duo), **Origin** (select) — zadaniowe wiersze parsujące/emitujące `transform` + `transformOrigin` (dziś surowe pola tekstowe).
 
 ### 2.11 Interaction / Accessibility
 
-- ✅ Interaction: Cursor jako select — zgodne z makietą (generic row wystarcza).
+- [x] ✅ **Sekcja pusta domyślnie** (decyzja autora 2026-08-30) — Cursor / Pointer events / User select / Scroll behavior nie stoją na sztywno; wchodzą przez `+` (`SECTION_ADDABLE_PROPERTIES`), wiersz ma uchwyt usuwania. Cursor pozostaje selectem (generic row wystarcza).
 - [ ] ❓ **Accessibility** — makieta ma pustą sekcję. Co ma zawierać (aria-label? role? tabindex — to atrybuty HTML, nie CSS)? Nie tworzę pustej sekcji bez decyzji.
 
 ### 2.12 ADVANCED LAYOUT popout
@@ -124,7 +124,7 @@ Ustalone z autorem w rundzie pytań. **Nie podważać bez jego zgody.**
 - Kształt: `chip · nazwa wartości · ×`. **Bez pola tekstowego** — wpisywanie hexa
   i wyszukiwarka tokenów żyją w popoucie pickera.
 - Nazwa wartości: slug tokenu (`Grey-900`), rodzaj gradientu (`Linear`),
-  nazwa pliku dla obrazu, w przeciwnym razie hex bez `#` (`E50B0B`).
+  w przeciwnym razie hex bez `#` (`E50B0B`).
 - `×` **wewnątrz** pola, przy prawej krawędzi (nie w zewnętrznej kolumnie).
 - `×` widoczny **zawsze, gdy pole ma wartość**; puste pole — brak `×`.
   - **Wyjątek: `select`.** Strzałka i `×` nigdy nie pokazują się naraz — chevron jest stanem spoczynku (to jedyny sygnał, że kontrolka się rozwija), a `×` wchodzi na jego miejsce dopiero na hover/focus. Oba zajmują tę samą ramkę 20px, więc wartość nie przeskakuje.
@@ -132,29 +132,21 @@ Ustalone z autorem w rundzie pytań. **Nie podważać bez jego zgody.**
 - **Jeden `×`, dwa kroki:** klik czyści wartość → wiersz zostaje pusty; kolejny
   klik na pustym wierszu usuwa wiersz z sekcji. Zewnętrzna kolumna `rowx`
   znika z wierszy koloru.
-- Nazwa obrazu: nazwa pliku przycięta wielokropkiem, pełna w tooltipie;
-  fallback `Image`, gdy źródło to goły URL bez sensownej nazwy.
 
-### Fill + obraz
+### Fill + obraz — ZREWIDOWANE 2026-08-30
 
-- **Jeden** wiersz `Fill`. Osobny wiersz `Image` wypada z domyślnej sekcji i
-  zostaje wyłącznie w menu `+` jako właściwość do dodania (ścieżka awaryjna).
-- Popout: zakładki `Solid · Linear · Radial · Conic · Image`.
-- Zakładka Image zawiera **istniejący `MediaLibraryControl`** (Library | URL,
-  kafel z metadanymi, `Change image`, klik w kafel → viewer z alt/caption/tagami)
-  **plus wiersz `Type`** (Fill / Fit / Stretch / Tile → `background-size` +
-  `background-repeat`).
-- **Bez `Position`, bez `Resolution`, bez `Alt Text`** w pickerze. Siatka 3×3
-  zbudowana 2026-08-28 zostaje usunięta wraz z `ImageState.position`.
-- Seam: `ColorPicker` (w `src/ui/`) nie może importować z `src/admin/`, więc
-  dostaje **slot** na źródło obrazu; `BackgroundFillControl` wstrzykuje w niego
-  `MediaLibraryControl`.
+Decyzja autora uchyla kontrakt z 2026-08-28: picker Fill **nie ma** zakładki
+Image. Obrazem tła zajmuje się wyłącznie osobny wiersz **Image**
+(`BackgroundImageControl`); popout Fill zostaje przy zakładkach
+`Solid · Linear · Radial · Conic`. Cały arm obrazu (prop `images`,
+`onPickImage`, `FillMode: 'image'`, `ImageState`, pane w pickerze) został
+usunięty jako martwy kod — patrz § 2.6.
 
 ### Jeden krzyżyk (2026-08-28)
 
 W inspektorze obowiązuje **wyłącznie** kreskowy `RemoveXGlyph` (`@ui/icons/inspectorGlyphs`, 8×8, `stroke-width 1.5`). Pikselowy `CloseIcon` z `pixel-art-icons` został z niego usunięty — 10 użyć w 9 plikach `PropertiesPanel/` i `property-controls/`, wcześniej w sześciu różnych rozmiarach (8/10/11/12/13/16 px). Reszta admina (media, dashboard, dane, AI) zostaje na `CloseIcon` — to nadal domowy zestaw.
 
-- [ ] ❌ **`MediaPickerField` wnosi pikselowy × do popoutu Fill.** Używa `CloseIcon size={13}`, a zgodnie z kontraktem wstawiamy go w zakładkę Image. Trzeba go sparametryzować (prop wybierający glif) albo dać mu kreskowy × — dzieli plik ze stroną Media, gdzie pixel-art ma zostać.
+- [ ] ❌ **`MediaPickerField` wnosi pikselowy × do inspektora** przez `MediaLibraryControl` (wiersz Image). Używa `CloseIcon size={13}` — sparametryzować (prop wybierający glif) albo dać mu kreskowy ×; dzieli plik ze stroną Media, gdzie pixel-art ma zostać. (Zakładka Image w pickerze Fill wypadła 2026-08-30, więc popoutu Fill już nie dotyczy.)
 
 ### Fazy
 
@@ -162,8 +154,8 @@ W inspektorze obowiązuje **wyłącznie** kreskowy `RemoveXGlyph` (`@ui/icons/in
   lokalnym, **nie emitują CSS**. Bramki testowe aktualizowane w tej samej zmianie.
   Zakres: **tylko wiersz Fill** (Typography→Color, Border→Color i Shadows
   świadomie poza zakresem tej rundy, choć dzielą `ColorValueInput`).
-- **Faza 2 = D3** — emisja `background-image` / `-size` / `-repeat`, migracja
-  wartości ze starego wiersza Image, dopiero wtedy jego ostateczne usunięcie.
+- **Faza 2 = D3** — nieaktualna po rewizji 2026-08-30: wiersz Image zostaje
+  osobno, picker Fill emituje tylko kolory i gradienty.
 
 ### Trzy głębokości edycji (słownik dla kolejnych rund)
 
@@ -180,21 +172,103 @@ zrzut ekranu → poprawki → dopiero potem Faza 2. 5. Decyzje lądują tutaj.
 
 ---
 
+## 2.14 Audyt autora 2026-08-30 — naprawione rozjazdy
+
+Autor porównał produkcję z makietą (screenshoty) i zgłosił listę rozjazdów.
+Wszystko poniżej wdrożone i sprawdzone w przeglądarce tego samego dnia:
+
+- **Puste sekcje Effects / Transforms / Interaction** — patrz § 2.9–2.11:
+  żadnych wierszy na sztywno, wszystko przez `+`, dodane wiersze usuwalne.
+- **Zawijanie szerokich kontrolek** (makieta `.row:has(> .spacebox)` /
+  `.insetbox` / `.mediafield`) — wiersz jest flexem z `flex-wrap`: etykieta
+  trzyma kolumnę 100px, kontrolka (`flex: 1 1 220px`, mediafield 200px)
+  zostaje obok przy szerokim panelu i schodzi POD etykietę w wąskim doku.
+  Wdrożone jako `ControlRow wide` (Inset, nowy wiersz „Spacing") i
+  przebudowany `BackgroundImageControl` (etykieta „Image" + kolumna pola).
+- **Ucinana wartość insetu** („-419px" → „-419p…") — pola góra/dół w
+  `.box--inset` poszerzone do 68px (pełne pasmo i tak daje im miejsce);
+  lewe/prawe zostają 44px, ograniczone pasmem 48px.
+- **Dwutonowe wyłączone pole Radius** — `ScopeGroup` malował `--overlay-5`
+  na wewnętrznym inpucie, a wrapper ze stepperem trzymał własne tło.
+  Wypełnienie przeniesione na wrapper (`span[data-disabled]`), kolumna
+  steppera schowana — jak makietowy `.scopegroup[data-mode="parts"] > .field`.
+- **Znikające okna przy edycji koloru bordera** — klik w zagnieżdżony picker
+  (portal do `<body>`) był dla popoutu bordera „klikiem poza" i zamykał oba.
+  Rozwiązane u źródła (2026-08-30): picker koloru w popoucie **nie jest już
+  drugim panelem** — wsuwa się w ten sam `FloatingPanel`
+  (`FloatingPanelDrillView`, strzałka wstecz + kontekstowy tytuł). Ochrona
+  przed „klikiem poza" została tylko dla menu portalowanych PO panelu
+  (`[role="menu"]` / `[role="listbox"]` — to drugie naprawia też zamykanie
+  popoutu przez listę selecta stylu bordera).
+- **Pola liczbowe** — każde pole ze stepperem odpowiada też na klawiaturę:
+  ↑/↓ krokuje (Shift ×10) w prymitywie `Input`, `TokenAwareInput` przy kroku
+  wychodzi z trybu edycji, żeby nowa wartość wróciła do widocznego draftu;
+  Z-index dostał `onStep` (stepper w polu + scrub + strzałki). Pola zostają
+  `type="text"` + `inputMode` — świadomie, jak makieta i notatka przy Opacity
+  (kontrolowany `type="number"` czyści niedokończone ułamki).
+
+---
+
+## 2.15 Audyt autora 2026-08-30 — runda 2 (wdrożona)
+
+Druga porcja uwag autora z tego samego dnia, wdrożona i sprawdzona w
+przeglądarce:
+
+- **Dynamiczne wartości w Spacing i Inset** — pole boczne rośnie do treści
+  (`field-sizing: content` za `@supports`; stałe szerokości zostają jako
+  fallback), więc „1000px" czy „-1234px" widać w całości. Żeby wartość mogła
+  wyjść poza pasmo, input przestał być DZIECKIEM trapezowego segmentu (jego
+  `clip-path` przycinał wszystko poza pasmem) — jest bratem segmentu,
+  pozycjonowanym na tym samym `.box`, z `z-index: 1` nad zagnieżdżonym
+  pasmem. Tooltip przy przepełnieniu działa w obu boksach (Inset miał go już
+  wcześniej — `tooltipOnOverflow`).
+- **`UnitField`** (`property-controls/UnitField.tsx`) — długość jako DWA
+  kontrolki: pole liczbowe (odrzuca nie-liczby, stepper/scrub/↑↓) + select
+  jednostki (px/%/em/rem/vw/vh) ze słowami kluczowymi (`Auto`, `None`,
+  `Normal`) w tym samym selekcie. Wybór słowa wygasza pole liczbowe; wybór
+  jednostki konwertuje widoczną liczbę. Wartość nieparsowalna (`calc(…)`)
+  pokazuje się dosłownie i nie jest niszczona przy odczycie. Katalog
+  `LENGTH_PROPERTIES` w `cssControlTypes.ts` — dziś: min/max width/height,
+  rowGap, columnGap, outlineOffset, letterSpacing (wiersz „Spacing"
+  w Typography). Aspect ratio dostał osobne pole ratio (`16/9`, `1.5` —
+  nic innego). Columns/Rows w Layout: `inputMode="numeric"` + kroki ↑↓/scrub
+  na liczniku; surowy szablon (`200px 1fr`) nadal wchodzi w to samo pole —
+  to świadomy wyjątek, nie przeoczenie.
+- **Puste sekcje nie otwierają się** — `Section` dostał `collapsible`:
+  sekcja bez wierszy (Effects/Transforms/Interaction) ma wygaszony caret
+  i martwy nagłówek; pierwszy dodany wiersz ją otwiera (keyed remount),
+  usunięcie ostatniego z powrotem zamyka i blokuje.
+
+---
+
+## 2.16 Elementy tekstowe (decyzje 2026-08-30, zrewidowane tego samego dnia)
+
+Decyzje autora (odpowiedzi na pytania z opcjami — nie podważać bez zgody):
+
+1. **Wykrywanie**: element tekstowy = moduł deklarujący `inlineTextEdit`
+   (dziś: `base.text`, `base.button`, `base.link`; heading to tag Texta).
+2. **Content**: rewizja 2026-08-30 — promowany wiersz Content nad sekcjami
+   USUNIĘTY. Prop `inlineTextEdit` renderuje się w sekcji modułu („Text")
+   jak każda inna kontrolka, z etykietą ze schematu.
+3. **Kolejność**: Position ZAWSZE pierwsza; dla elementów tekstowych
+   Typography wskakuje na drugie miejsce (zaraz za Position), reszta w
+   kolejności katalogu (rail lustrzanie — wspólny helper
+   `getOrderedStyleSections`, sygnał z `definition.inlineTextEdit`).
+
+---
+
 ## 3. Kolejność proponowana
 
 Kroki 1–4 i 6 z pierwotnej listy są zrobione (PropMenu, StepGroup,
 NumberField, Popout + SwatchRow, chrome panelu). Zostało, w kolejności:
 
-1. **Fill → obraz: dokończenie** (§ 2.6) — wstrzyknięcie `MediaLibraryControl`
-   slotem, mapowanie Type na `backgroundSize`/`backgroundRepeat`, usunięcie
-   siatki Position 3×3, scalenie wiersza Image z Fill. Kontrakt § 2.13 już
-   podjęty — to implementacja, nie decyzja.
-2. **Rozbicie `ColorPicker.tsx`** — 733 linie > bramka 700
-   (`module-size-budgets`); wydzielić np. zakładkę Image lub edytor stopów
-   gradientu do osobnego pliku przy okazji kroku 1.
+1. ~~Fill → obraz: dokończenie~~ — nieaktualne: rewizja 2026-08-30 usunęła
+   arm obrazu z pickera zamiast go dokańczać (§ 2.6, § 2.13).
+2. ~~Rozbicie `ColorPicker.tsx`~~ — zrobione niejako samo: po usunięciu
+   zakładki Image plik ma ~548 linii, poniżej bramki 700.
 3. **Transforms** (§ 2.10) — zadaniowe wiersze Rotate/Scale/Origin.
 4. **Blend** (§ 2.9) — nowy klucz `mixBlendMode`.
-5. Szlify: spacebox 1:1 (§ 2.5), `MediaPickerField` z pikselowym × (§ 2.13).
+5. Szlify: `MediaPickerField` z pikselowym × (§ 2.13).
 
 Punkty oznaczone ❓ (Opacity w %, wordSpacing, Accessibility, HOVER EFFECT,
 ADVANCED LAYOUT) wymagają decyzji autora przed implementacją.
@@ -246,16 +320,17 @@ Size (klamra ratio, tryby Fixed/Relative/Fill/Fit + Viewport tylko w Height),
 Layout (kafle Flex/Grid, gap x/y, padding zbiorczy/per-side), Spacing box,
 Styles (Opacity pole+suwak, Visible Yes/No, Radius per-corner, Border „Add…"),
 Typography (Align ikonowy, Color jako SwatchRow), Effects („Add effect"),
-picker Fill z zakładkami Solid/Linear/Radial/Conic/Image, eyedropper,
+picker Fill z zakładkami Solid/Linear/Radial/Conic/Image (zakładka Image
+usunięta później, 2026-08-30 — § 2.13), eyedropper,
 HEX/RGB/HSL, tokeny, kąt gradientu ze stepperem.
 
 **Czerwone, w zakresie redesignu** (nowe pozycje TODO):
 
-- `module-size-budgets` — `src/ui/components/ColorPicker/ColorPicker.tsx`
-  ma 733 linie (bramka 700). Rozbić przy dokańczaniu zakładki Image (§ 3 pkt 2).
+- ~~`module-size-budgets` — `ColorPicker.tsx` 733 linie (bramka 700)~~ —
+  rozwiązane 2026-08-30: usunięcie zakładki Image zbiło plik do ~548 linii.
 - `bundle-size-budgets` — `AdminCanvasEditorBody` 791.3 kB vs budżet
   761.7 kB (pomiar na świeżym buildzie). Wzrost z prac nad gradientami
   (picker + gizmo na canvasie); albo lazy boundary, albo świadome
   podniesienie budżetu z notką.
-- Zakładka **Image** w pickerze: „Choose Image…" disabled (brak podpięcia
-  `onPickImage`), siatka Position 3×3 wbrew kontraktowi § 2.13 — patrz § 2.6.
+- ~~Zakładka **Image** w pickerze: „Choose Image…" disabled, siatka Position
+  3×3~~ — rozwiązane 2026-08-30: cała zakładka usunięta (§ 2.6, § 2.13).

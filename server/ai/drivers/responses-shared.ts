@@ -22,7 +22,6 @@ import {
   type AiContentBlock,
   type AiMessage,
   type AiStreamEvent,
-  type AiToolOutput,
 } from '../runtime/types'
 import type { AiStreamRequest } from './types'
 import {
@@ -35,6 +34,7 @@ import {
 } from './http/toolLoop'
 import type { SseFrame } from './http/sse'
 import { parseToolArguments } from './http/toolArgs'
+import { toolOutputToString } from './http/execTool'
 import { nanoid } from 'nanoid'
 
 // ---------------------------------------------------------------------------
@@ -144,18 +144,6 @@ function assistantItems(blocks: AiContentBlock[]): ResponsesTurn {
   if (textParts.length > 0) items.push({ type: 'message', role: 'assistant', content: textParts })
   items.push(...calls)
   return items
-}
-
-function toolOutputToString(output: AiToolOutput): string {
-  if (!output.ok) return output.error ?? 'Tool call failed.'
-  const text = JSON.stringify(output.data ?? { ok: true })
-  // The Responses `function_call_output` item is text-only — images can't ride
-  // in a tool result here (they'd need a separate user message). Drop with a
-  // note so the model knows visual evidence exists.
-  if (output.images && output.images.length > 0) {
-    return `${text}\n\n[${output.images.length} screenshot(s) omitted: this provider delivers tool results as text only.]`
-  }
-  return text
 }
 
 // ---------------------------------------------------------------------------

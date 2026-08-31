@@ -13,7 +13,6 @@ import {
   type AiContentBlock,
   type AiMessage,
   type AiStreamEvent,
-  type AiToolOutput,
 } from '../../runtime/types'
 import {
   type ProviderAdapter,
@@ -25,6 +24,7 @@ import {
 } from './toolLoop'
 import type { SseFrame } from './sse'
 import { parseToolArguments } from './toolArgs'
+import { toolOutputToString } from './execTool'
 import { nanoid } from 'nanoid'
 
 // ---------------------------------------------------------------------------
@@ -121,18 +121,6 @@ function assistantMessage(blocks: AiContentBlock[]): ChatMessage {
   return toolCalls.length > 0
     ? { role: 'assistant', content: text, tool_calls: toolCalls }
     : { role: 'assistant', content: text }
-}
-
-function toolOutputToString(output: AiToolOutput): string {
-  if (!output.ok) return output.error ?? 'Tool call failed.'
-  const text = JSON.stringify(output.data ?? { ok: true })
-  // The OpenAI-compatible `role:'tool'` message is text-only — an image can't
-  // ride in a tool result here. Drop it with a note so the model knows visual
-  // evidence exists but wasn't delivered through this channel.
-  if (output.images && output.images.length > 0) {
-    return `${text}\n\n[${output.images.length} screenshot(s) omitted: this provider delivers tool results as text only.]`
-  }
-  return text
 }
 
 // ---------------------------------------------------------------------------

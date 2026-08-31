@@ -22,10 +22,12 @@
  */
 
 import { useState, useRef, type ReactNode } from 'react'
-import { useEditorStore } from '@site/store/store'
+import { selectActiveCanvasPage, useEditorStore } from '@site/store/store'
 import type { AnyModuleDefinition } from '@core/module-engine'
 import type { StyleRule, CSSPropertyBag } from '@core/page-tree'
-import { isGeneratedClassLocked, styleRuleSelector } from '@core/page-tree'
+import { isGeneratedClassLocked, pickValidCSSProperties, styleRuleSelector } from '@core/page-tree'
+import { pushToast } from '@ui/components/Toast'
+import { getErrorMessage } from '@core/utils/errorMessage'
 import { Button } from '@ui/components/Button'
 import { SearchBar } from '@ui/components/SearchBar'
 import { Section } from '@ui/components/Section'
@@ -38,8 +40,8 @@ import {
   CLASS_STYLE_SECTIONS,
   getCSSPropertyDefaultValue,
   getClassStyleSectionSetCounts,
-  getActiveStyleTab,
 } from './cssControlTypes'
+import { getActiveStyleTab } from '@site/store/useActiveStyleTarget'
 import { useEditorPreference } from '@site/preferences/editorPreferences'
 import { useEditorPermissions } from '@site/editorPermissionsContext'
 import { EmptyState } from '@ui/components/EmptyState'
@@ -89,6 +91,9 @@ export function StyleSurface({
   moduleContent,
   onFocusClassPicker,
 }: StyleSurfaceProps) {
+  // Text modules (the ones declaring `inlineTextEdit`) hoist Typography to
+  // right after Position in the section order (author decision 2026-08-30).
+  const typographyHoisted = definition?.inlineTextEdit != null
   // scrollRef → outer grid which is also the scroll container
   const scrollRef = useRef<HTMLDivElement>(null)
   const [styleQuery, setStyleQuery] = useState('')
@@ -184,6 +189,13 @@ export function StyleSurface({
         />
       </div>
     )
+  } else if (showInline && activeContextId !== null) {
+    // Inline styles are BASE-ONLY — a `style=""` attribute cannot change per
+    // breakpoint/condition, so editing here would silently rewrite every
+    // width. Block with a way out (author decision 2026-08-31).
+    cssContent = (
+      <InlineBreakpointBlockedState nodeId={nodeId!} />
+    )
   } else if (showInline) {
     cssContent = (
       <InlineStyleComposer
@@ -191,6 +203,7 @@ export function StyleSurface({
         nodeId={nodeId!}
         inlineStyles={inlineStyles}
         styleQuery={styleQuery}
+        typographyFirst={typographyHoisted}
       />
     )
   } else if (activeClass != null) {
@@ -207,6 +220,7 @@ export function StyleSurface({
           classId={activeClassId!}
           cls={activeClass}
           styleQuery={styleQuery}
+          typographyFirst={typographyHoisted}
         />
       )
     }
@@ -279,8 +293,80 @@ export function StyleSurface({
           definition={definition ?? null}
           activeClass={activeClass}
           editingInline={showInline}
+          typographyFirst={typographyHoisted}
         />
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// InlineBreakpointBlockedState — inline editing on a non-base context
+// ---------------------------------------------------------------------------
+
+/**
+ * Shown instead of the inline composer when the editing context is a
+ * breakpoint or condition: inline styles have no responsive axis, so the only
+ * honest moves are (a) promote the inline bag into a class — which CAN hold
+ * per-context overrides — or (b) go back to the base (Desktop) context.
+ */
+function InlineBreakpointBlockedState({ nodeId }: { nodeId: string }) {
+  const node = useEditorStore((s) => selectActiveCanvasPage(s)?.nodes[nodeId] ?? null)
+  const styleRules = useEditorStore((s) => s.site?.styleRules ?? null)
+  const contextLabel = useEditorStore((s) => {
+    const condition = s.site?.conditions?.find((c) => c.id === s.activeConditionId)
+    if (condition) return condition.label
+    return s.site?.breakpoints.find((bp) => bp.id === s.activeBreakpointId)?.label ?? 'this breakpoint'
+  })
+  const createClass = useEditorStore((s) => s.createClass)
+  const addNodeClass = useEditorStore((s) => s.addNodeClass)
+  const clearNodeInlineStyles = useEditorStore((s) => s.clearNodeInlineStyles)
+  const setActiveClass = useEditorStore((s) => s.setActiveClass)
+  const setActiveBreakpoint = useEditorStore((s) => s.setActiveBreakpoint)
+
+  const handleMoveToClass = () => {
+    try {
+      // Unnamed nodes fall back to their module's tail ("base.container" →
+      // "container") so the created class reads like the element it styles.
+      const base = (node?.label ?? node?.moduleId.split('.').pop() ?? 'element')
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9_-]/g, '') || 'element'
+      const taken = new Set(Object.values(styleRules ?? {}).map((rule) => rule.name))
+      let name = base
+      for (let i = 2; taken.has(name); i++) name = `${base}-${i}`
+      const cls = createClass(name, pickValidCSSProperties(node?.inlineStyles ?? {}))
+      addNodeClass(nodeId, cls.id)
+      clearNodeInlineStyles(nodeId)
+      // Activating the class also exits inline editing (mutually exclusive).
+      setActiveClass(cls.id)
+    } catch (err) {
+      console.error('[StyleSurface] move inline styles to class:', err)
+      pushToast({
+        kind: 'error',
+        title: 'Unable to move styles to a class',
+        body: getErrorMessage(err, 'Unknown class error'),
+      })
+    }
+  }
+
+  return (
+    <div className={styles.lockedContent}>
+      <EmptyState
+        variant="centered"
+        title="Inline styles apply at every breakpoint"
+        description={`This element is styled inline — a style attribute can't change per breakpoint. Move its styles to a class to override them on ${contextLabel}.`}
+        action={
+          <>
+            <Button variant="secondary" size="sm" onClick={handleMoveToClass}>
+              Move to a class
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setActiveBreakpoint('desktop')}>
+              Edit base styles
+            </Button>
+          </>
+        }
+      />
     </div>
   )
 }

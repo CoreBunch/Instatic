@@ -1,8 +1,7 @@
 .body {
     display: grid;
-    gap: var(--space-l);
-    max-height: 60vh;
-    overflow-y: auto;
+    gap: var(--space-s);
+    padding: var(--space-s);
 }
 
 .packs {
@@ -15,6 +14,13 @@
     margin: 0;
     font-size: var(--text-xs);
     color: var(--text-subtle);
+}
+
+/* The grid scrolls on its own so the tabs, search, and count stay pinned
+   while the user browses a big family. */
+.gridScroll {
+    overflow-y: auto;
+    max-height: min(48vh, 420px);
 }
 
 .grid {

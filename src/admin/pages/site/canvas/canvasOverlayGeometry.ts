@@ -25,11 +25,24 @@ export interface CanvasOverlayRect {
 export interface CanvasOverlayMeasureSession {
   /** Canvas-root client rect, or null in the fixed/body fallback mode. */
   canvasRect: DOMRect | null
+  /** Canvas zoom applied to the iframe — divide overlay px by it for CSS px. */
+  scale: number
   /** Canvas-root scroll offsets in the same axis as measured overlay rects. */
   scrollLeft: number
   scrollTop: number
   /** Measure one iframe element into overlay scroll-content coords. */
   measure(target: HTMLElement | null): CanvasOverlayRect | null
+  /**
+   * Translate a rect already expressed in iframe-document coordinates (e.g.
+   * a spacing band derived from a measured element) into overlay coords.
+   * No zero-size guard — callers decide what an empty rect means.
+   */
+  measureRect(rect: {
+    left: number
+    top: number
+    width: number
+    height: number
+  }): CanvasOverlayRect
 }
 
 /**
@@ -51,10 +64,24 @@ export function createCanvasOverlayMeasureSession(
   const originLeft = (canvasRect?.left ?? 0) - scrollLeft
   const originTop = (canvasRect?.top ?? 0) - scrollTop
 
+  const measureRect = (rect: {
+    left: number
+    top: number
+    width: number
+    height: number
+  }): CanvasOverlayRect => ({
+    x: iframeRect.left + rect.left * iframeScale - originLeft,
+    y: iframeRect.top + rect.top * iframeScale - originTop,
+    width: rect.width * iframeScale,
+    height: rect.height * iframeScale,
+  })
+
   return {
     canvasRect,
+    scale: iframeScale,
     scrollLeft,
     scrollTop,
+    measureRect,
     measure(target) {
       // Duck-type check (`getBoundingClientRect` is callable) rather than
       // `instanceof Element` because iframe nodes have their own Element class.
@@ -69,12 +96,7 @@ export function createCanvasOverlayMeasureSession(
       if (elementRectInIframe.width === 0 && elementRectInIframe.height === 0) {
         return null
       }
-      return {
-        x: iframeRect.left + elementRectInIframe.left * iframeScale - originLeft,
-        y: iframeRect.top + elementRectInIframe.top * iframeScale - originTop,
-        width: elementRectInIframe.width * iframeScale,
-        height: elementRectInIframe.height * iframeScale,
-      }
+      return measureRect(elementRectInIframe)
     },
   }
 }

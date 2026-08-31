@@ -1,7 +1,7 @@
 import type { Draft } from 'mutative'
 import type { EditorStore, EditorStoreSliceCreator } from '@site/store/types'
 import { isUserVisibleClass } from '@core/page-tree'
-import type { BaseNode } from '@core/page-tree'
+import type { BaseNode, CSSPropertyBag } from '@core/page-tree'
 import type { NodeTree } from '@core/page-tree'
 import type { PageNode } from '@core/page-tree'
 import { flattenSubtree, getParent } from '@core/page-tree'
@@ -15,6 +15,23 @@ import { flattenSubtree, getParent } from '@core/page-tree'
  *   are allowed (matches Figma).
  */
 type SelectionMode = 'replace' | 'toggle' | 'range'
+
+/** One edge of the Position section's inset box. */
+export type InsetSide = 'top' | 'right' | 'bottom' | 'left'
+
+/**
+ * Live spacing highlight — the margin/padding sides of the SELECTED node the
+ * inspector's Spacing box is currently interacting with (side-input focus,
+ * band hover, or an open value-editor popout). Session-only UI state, never
+ * persisted: the canvas draws a translucent band + value chip over each
+ * listed side (`SpacingHighlightOverlay`). `sides` holds every side a
+ * commit/preview would actually write — all four in linked mode, one in
+ * split mode.
+ */
+export interface SpacingHighlight {
+  box: 'margin' | 'padding'
+  sides: InsetSide[]
+}
 
 interface SelectNodeOptions {
   preservePropertiesPanelCollapse?: boolean
@@ -57,6 +74,38 @@ interface SelectionSlice {
   removeFromSelection: (id: string) => void
   hoverNode: (id: string | null, breakpointId?: string | null) => void
   clearSelection: () => void
+
+  /**
+   * Pinned inset edges of the SELECTED node — session-only UI state, never
+   * persisted to the document (CSS has no "this edge is locked" concept).
+   * A pinned edge refuses panel edits (InsetBoxControl) and freezes its axis
+   * during the canvas free-move drag (useCanvasFreeMoveDrag): top/bottom pin
+   * the vertical axis, left/right the horizontal. Resets whenever the
+   * selection anchor changes — locks belong to one node, one session.
+   */
+  lockedInsetSides: InsetSide[]
+  /** Pin / unpin one inset edge of the selected node. */
+  toggleInsetLock: (side: InsetSide) => void
+  /** Unpin every inset edge — back to free move. */
+  clearInsetLocks: () => void
+
+  /**
+   * Spacing sides being interacted with in the inspector, or null. Drives the
+   * live band + value-chip highlight on the canvas (`SpacingHighlightOverlay`).
+   */
+  spacingHighlight: SpacingHighlight | null
+  setSpacingHighlight: (highlight: SpacingHighlight | null) => void
+
+  /**
+   * Live style patch from an in-flight canvas gesture (free-move drag, resize
+   * handles). The gestures preview by writing the iframe element's inline
+   * style — no document commit until release — and this session field is how
+   * the inspector's fields follow the numbers DURING the gesture instead of
+   * jumping at the end. Style composers overlay it on their stored styles;
+   * cleared on release/cancel. Throttled by the writer, not here.
+   */
+  canvasGesturePreview: Partial<CSSPropertyBag> | null
+  setCanvasGesturePreview: (patch: Partial<CSSPropertyBag> | null) => void
 }
 
 // Contribute this slice's fields to the combined `EditorStore` type via TS
@@ -70,6 +119,9 @@ export const createSelectionSlice: EditorStoreSliceCreator<SelectionSlice> = (se
   selectedNodeId: null,
   hoveredNodeId: null,
   hoveredBreakpointId: null,
+  lockedInsetSides: [],
+  spacingHighlight: null,
+  canvasGesturePreview: null,
 
   selectNode: (id, mode = 'replace', options) => {
     const current = get()
@@ -83,6 +135,7 @@ export const createSelectionSlice: EditorStoreSliceCreator<SelectionSlice> = (se
         state.selectedNodeId = null
         state.activeClassId = null
         state.inlineStyleEditing = false
+        state.lockedInsetSides = []
         state.propertiesPanel.collapsed = shouldCollapseProperties
       })
       return
@@ -170,7 +223,31 @@ export const createSelectionSlice: EditorStoreSliceCreator<SelectionSlice> = (se
     activeClassId: null,
     inlineStyleEditing: false,
     componentizeEditorRequest: null,
+    lockedInsetSides: [],
+    spacingHighlight: null,
   }),
+
+  toggleInsetLock: (side) =>
+    set((state) => {
+      state.lockedInsetSides = state.lockedInsetSides.includes(side)
+        ? state.lockedInsetSides.filter((existing) => existing !== side)
+        : [...state.lockedInsetSides, side]
+    }),
+
+  clearInsetLocks: () => {
+    if (get().lockedInsetSides.length === 0) return
+    set({ lockedInsetSides: [] })
+  },
+
+  setSpacingHighlight: (highlight) => {
+    if (get().spacingHighlight === null && highlight === null) return
+    set({ spacingHighlight: highlight })
+  },
+
+  setCanvasGesturePreview: (patch) => {
+    if (get().canvasGesturePreview === null && patch === null) return
+    set({ canvasGesturePreview: patch })
+  },
 })
 
 // ---------------------------------------------------------------------------
@@ -198,6 +275,8 @@ export function clearCanvasSelectionDraft(state: EditorStore): void {
   state.hoveredNodeId = null
   state.hoveredBreakpointId = null
   state.activeClassId = null
+  state.lockedInsetSides = []
+  state.spacingHighlight = null
   // A document/page switch invalidates any inline text-edit session — the
   // node it points at is no longer on the canvas. Live keystrokes already
   // committed; clearing here is the spec's "force-close without committing".
@@ -227,8 +306,11 @@ export function pruneCanvasSelectionDraft(state: EditorStore): void {
     ? state.selectedNodeIds.filter((id) => Boolean(tree.nodes[id]))
     : []
   if (surviving.length === state.selectedNodeIds.length) return
+  const prevAnchor = state.selectedNodeId
   state.selectedNodeIds = surviving
   state.selectedNodeId = surviving.length > 0 ? surviving[surviving.length - 1] : null
+  // Inset pins belong to the anchor node — a new anchor starts unpinned.
+  if (state.selectedNodeId !== prevAnchor) state.lockedInsetSides = []
   if (surviving.length === 0) {
     state.hoveredNodeId = null
     state.hoveredBreakpointId = null
@@ -290,8 +372,15 @@ function applySelection(
     }
     // Each new selection seeds its own edit target — inline mode for an
     // inline-only node, otherwise class/empty — never carrying a prior node's
-    // inline-editing mode across.
-    if (anchorChanged) state.inlineStyleEditing = nextInlineEditing
+    // inline-editing mode across. Inset pins are per-node too.
+    if (anchorChanged) {
+      state.inlineStyleEditing = nextInlineEditing
+      state.lockedInsetSides = []
+      // The spacing highlight tracks an inspector interaction with the OLD
+      // anchor; canvas clicks can reselect without ever blurring the panel
+      // input (iframe focus doesn't bubble out), so clear it here too.
+      state.spacingHighlight = null
+    }
     if (panelChanged) state.propertiesPanel.collapsed = shouldCollapseProperties
     if (current.componentizeEditorRequest?.nodeId !== nextAnchor) {
       state.componentizeEditorRequest = null

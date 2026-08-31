@@ -20,7 +20,25 @@
 import type { CSSPropertyBag } from '@core/page-tree'
 import { selectSelectedNode, useEditorStore } from './store'
 
+/**
+ * Returns the active breakpoint tab id for class style reads/writes.
+ * 'base' when desktop (or no breakpoint); otherwise the breakpoint id.
+ * The desktop viewport IS the base context — desktop-first: only the
+ * narrower breakpoints are stored as context overrides.
+ */
+export function getActiveStyleTab(activeBreakpointId: string | undefined): string {
+  return activeBreakpointId && activeBreakpointId !== 'desktop' ? activeBreakpointId : 'base'
+}
+
 export interface ActiveStyleTarget {
+  /**
+   * Where `writeStyles` lands: `'inline'` writes the node's `inlineStyles`
+   * (rendered as the element's real `style=""` attribute), `'class'` writes a
+   * StyleRule (rendered via the injected class stylesheet). Canvas gestures
+   * need the distinction — their inline preview must NOT be rolled back when
+   * the commit itself lives in the style attribute.
+   */
+  kind: 'inline' | 'class'
   /** The bag an edit would land in, merged over base for context overrides. */
   styles: Record<string, unknown>
   /** Apply several properties in one commit. `undefined` clears a key. */
@@ -51,8 +69,17 @@ export function useActiveStyleTarget(): ActiveStyleTarget | null {
   // Inline editing is mutually exclusive with an active class (selectionSlice
   // keeps them that way), and it wins when set — it is the explicit choice.
   if (nodeId && inlineStyleEditing) {
+    // Inline styles are BASE-ONLY — a real `style=""` attribute cannot be
+    // media-queried, so on a non-base breakpoint/condition context there is
+    // no writable target: a write would land in the base bag and change
+    // EVERY breakpoint. Callers hide the affordance instead (author decision
+    // 2026-08-31: block + hint, never leak silently).
+    if (getActiveStyleTab(activeBreakpointId) !== 'base' || activeConditionId !== null) {
+      return null
+    }
     const styles = selectedNode?.inlineStyles ?? {}
     return {
+      kind: 'inline',
       styles,
       writeStyles: (patch) => setNodeInlineStyles(nodeId, normalisePatch(patch)),
     }
@@ -60,9 +87,10 @@ export function useActiveStyleTarget(): ActiveStyleTarget | null {
 
   if (!activeClassId || !rule) return null
 
-  const contextId = activeConditionId ?? (activeBreakpointId && activeBreakpointId !== 'base'
-    ? activeBreakpointId
-    : null)
+  // Same base/override mapping the Properties panel applies — the desktop
+  // viewport writes BASE styles, not a 'desktop' context override.
+  const activeTab = getActiveStyleTab(activeBreakpointId)
+  const contextId = activeConditionId ?? (activeTab !== 'base' ? activeTab : null)
   const storedStyles = contextId ? (rule.contextStyles[contextId] ?? {}) : rule.styles
   // A context override paints ON TOP of base, so the value in effect — and
   // therefore the one the gizmo must visualise — is the merge.
@@ -71,6 +99,7 @@ export function useActiveStyleTarget(): ActiveStyleTarget | null {
     : rule.styles
 
   return {
+    kind: 'class',
     styles,
     writeStyles: (patch) => {
       const normalised = normalisePatch(patch)

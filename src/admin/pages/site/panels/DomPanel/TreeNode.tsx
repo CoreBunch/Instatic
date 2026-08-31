@@ -92,17 +92,10 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
   // or routes through the central confirm dialog (pref on).
   const confirmDelete = useConfirmDelete()
 
-  const selectNode = useEditorStore((s) => s.selectNode)
-  const hoverNode = useEditorStore((s) => s.hoverNode)
-  const deleteNode = useEditorStore((s) => s.deleteNode)
-  const deleteNodes = useEditorStore((s) => s.deleteNodes)
-  const duplicateNode = useEditorStore((s) => s.duplicateNode)
-  const renameNode = useEditorStore((s) => s.renameNode)
-  const wrapNode = useEditorStore((s) => s.wrapNode)
-  const copyNode = useEditorStore((s) => s.copyNode)
-  const cutNode = useEditorStore((s) => s.cutNode)
-  const pasteNode = useEditorStore((s) => s.pasteNode)
-  const openImportHtmlModal = useEditorStore((s) => s.openImportHtmlModal)
+  // Store actions are read imperatively at call time via
+  // `useEditorStore.getState()` rather than through selectors: subscribing to
+  // 11 stable action references would make Zustand re-run 11 extra selectors
+  // *per row* on every store write (i.e. per pointer-move during a drag).
 
   const store = useExpansionStore()
   // Hooks must be called unconditionally — evaluate expandedSelf regardless of isRoot,
@@ -119,7 +112,7 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
 
   const { activeId, target, invalidOverId, registerRow } = useDomPanelDndContext()
   const selectLayerNode = (mode?: 'replace' | 'toggle' | 'range') => {
-    selectNode(nodeId, mode, {
+    useEditorStore.getState().selectNode(nodeId, mode, {
       preservePropertiesPanelCollapse: isNarrowEditorChromeViewport(),
     })
   }
@@ -170,7 +163,7 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
     confirmDelete({
       title: 'Delete layer?',
       description: `${displayName} and any of its children will be removed. This can be undone with Ctrl/Cmd+Z.`,
-      commit: () => deleteNode(nodeId),
+      commit: () => useEditorStore.getState().deleteNode(nodeId),
     })
   }
 
@@ -202,7 +195,7 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
     confirmDelete({
       title: 'Delete layers?',
       description: `${deletableIds.length} layers and any children will be removed. This can be undone with Ctrl/Cmd+Z.`,
-      commit: () => deleteNodes([...deletableIds]),
+      commit: () => useEditorStore.getState().deleteNodes([...deletableIds]),
     })
   }
 
@@ -259,7 +252,7 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
     }
     const trimmed = renameValue.trim()
     if (trimmed && trimmed !== displayName) {
-      renameNode(nodeId, trimmed)
+      useEditorStore.getState().renameNode(nodeId, trimmed)
     }
     setIsRenaming(false)
   }
@@ -366,8 +359,8 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
           }
           setContextMenu({ x: e.clientX, y: e.clientY })
         }}
-        onMouseEnter={() => hoverNode(nodeId)}
-        onMouseLeave={() => hoverNode(null)}
+        onMouseEnter={() => useEditorStore.getState().hoverNode(nodeId)}
+        onMouseLeave={() => useEditorStore.getState().hoverNode(null)}
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
       >
@@ -427,15 +420,15 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
             setContextMenu(null)
             requestDeleteLayer()
           }}
-          onDuplicate={() => { duplicateNode(nodeId); setContextMenu(null) }}
+          onDuplicate={() => { useEditorStore.getState().duplicateNode(nodeId); setContextMenu(null) }}
           onRename={() => { setContextMenu(null); openRename() }}
           onWrapInContainer={() => {
-            wrapNode(nodeId, 'base.container')
+            useEditorStore.getState().wrapNode(nodeId, 'base.container')
             setContextMenu(null)
           }}
-          onCopy={() => { copyNode(nodeId); setContextMenu(null) }}
-          onCut={() => { cutNode(nodeId); setContextMenu(null) }}
-          onPaste={() => { pasteNode(nodeId); setContextMenu(null) }}
+          onCopy={() => { useEditorStore.getState().copyNode(nodeId); setContextMenu(null) }}
+          onCut={() => { useEditorStore.getState().cutNode(nodeId); setContextMenu(null) }}
+          onPaste={() => { useEditorStore.getState().pasteNode(nodeId); setContextMenu(null) }}
           onPasteHtml={async (targetNodeId) => {
             setContextMenu(null)
             let prefillHtml = ''
@@ -444,7 +437,7 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
             } catch (_err) {
               // Clipboard permission denied or API unavailable — open with an empty editor.
             }
-            openImportHtmlModal({ parentId: targetNodeId, prefillHtml })
+            useEditorStore.getState().openImportHtmlModal({ parentId: targetNodeId, prefillHtml })
           }}
         />,
         document.body,

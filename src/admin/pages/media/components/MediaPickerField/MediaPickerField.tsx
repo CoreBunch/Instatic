@@ -29,6 +29,7 @@ import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import type { CmsMediaAsset } from '@core/persistence/cmsMedia'
 import { blurHashToDataUrl, pickVariantUrl } from '@admin/pages/media/utils/variants'
+import { formatBytes } from '@admin/lib/formatBytes'
 import styles from './MediaPickerField.module.css'
 
 type MediaPickerFieldKind = 'image' | 'video'
@@ -263,7 +264,8 @@ function PickedTile({
       ? ({ backgroundImage: `url(${blurUrl})`, backgroundSize: 'cover' } as React.CSSProperties)
       : undefined
     const dimensions = asset.width && asset.height ? `${asset.width} × ${asset.height}` : null
-    const subParts = [asset.mimeType, formatBytes(asset.sizeBytes), dimensions]
+    const sizeLabel = asset.sizeBytes > 0 ? formatBytes(asset.sizeBytes) : null
+    const subParts = [asset.mimeType, sizeLabel, dimensions]
       .filter(Boolean)
       .join(' · ')
     body = (
@@ -303,9 +305,3 @@ function PickedTile({
   return <div className={styles.tile}>{body}</div>
 }
 
-function formatBytes(sizeBytes: number): string {
-  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) return ''
-  if (sizeBytes < 1024) return `${sizeBytes} B`
-  if (sizeBytes < 1024 * 1024) return `${Math.round(sizeBytes / 102.4) / 10} KB`
-  return `${Math.round(sizeBytes / 1024 / 102.4) / 10} MB`
-}

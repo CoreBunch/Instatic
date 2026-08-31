@@ -8,6 +8,7 @@
  */
 
 import { createReadStream } from 'node:fs'
+import { crc32 } from 'node:zlib'
 
 const ZIP_LOCAL_FILE_HEADER = 0x04034b50
 const ZIP_CENTRAL_DIRECTORY_HEADER = 0x02014b50
@@ -398,31 +399,23 @@ function writeUint64(view: DataView, offset: number, value: number): void {
   view.setBigUint64(offset, BigInt(value), true)
 }
 
-const CRC32_TABLE = new Uint32Array(256)
-for (let i = 0; i < CRC32_TABLE.length; i++) {
-  let value = i
-  for (let bit = 0; bit < 8; bit++) {
-    value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1)
-  }
-  CRC32_TABLE[i] = value >>> 0
-}
-
+/**
+ * Streaming CRC-32 over `node:zlib`'s native implementation. `crc32(buf, prev)`
+ * seeds from a previous result, which is exactly the chained-chunk contract the
+ * ZIP writer needs.
+ */
 export function createCrc32() {
-  let value = 0xffffffff
+  let value = 0
   return {
     update(bytes: Uint8Array) {
-      for (let i = 0; i < bytes.byteLength; i++) {
-        value = CRC32_TABLE[(value ^ bytes[i]!) & 0xff]! ^ (value >>> 8)
-      }
+      value = crc32(bytes, value)
     },
     digest() {
-      return (value ^ 0xffffffff) >>> 0
+      return value >>> 0
     },
   }
 }
 
 function crc32Of(bytes: Uint8Array): number {
-  const crc = createCrc32()
-  crc.update(bytes)
-  return crc.digest()
+  return crc32(bytes) >>> 0
 }

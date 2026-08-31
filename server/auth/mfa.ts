@@ -1,4 +1,5 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes } from 'node:crypto'
+import { constantTimeEqual } from './tokens'
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
 const TOTP_STEP_MS = 30_000
@@ -99,11 +100,4 @@ function totpAtCounter(secret: string, counter: number): string {
     | (digest[offset + 3]! & 0xff)
   ) % 1_000_000
   return value.toString().padStart(TOTP_DIGITS, '0')
-}
-
-function constantTimeEqual(a: string, b: string): boolean {
-  const left = Buffer.from(a)
-  const right = Buffer.from(b)
-  if (left.length !== right.length) return false
-  return timingSafeEqual(left, right)
 }

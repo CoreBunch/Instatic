@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useId, useRef, useState, type FormEvent } from 'react'
 import type { Page } from '@core/page-tree'
 import {
   createUniquePageSlug,
@@ -55,12 +55,6 @@ export function SiteCreateDialog({
   const slugError = isPage && trimmedName
     ? pageSlugError(pageSlug) || pageSlugDuplicateError(pageSlug, pages)
     : null
-
-  // Focus the name field on mount. Dialog's first-focusable would otherwise
-  // pick the close (X) button in the header.
-  useEffect(() => {
-    requestAnimationFrame(() => inputRef.current?.focus())
-  }, [])
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()

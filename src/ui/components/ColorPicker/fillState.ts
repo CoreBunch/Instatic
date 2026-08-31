@@ -17,32 +17,9 @@ import {
 } from './colorMath'
 import { formatGradient, parseGradient, type GradientKind } from './gradientMath'
 
-export type FillMode = 'solid' | GradientKind | 'image'
+export type FillMode = 'solid' | GradientKind
 
-/** How the source covers its box — the four `background-size`/`repeat` pairs. */
-export type ImageType = 'fill' | 'fit' | 'stretch' | 'tile'
-
-/** The nine `background-position` anchors, as a 3×3 grid. */
-export type ImagePosition =
-  | 'left top'
-  | 'center top'
-  | 'right top'
-  | 'left center'
-  | 'center'
-  | 'right center'
-  | 'left bottom'
-  | 'center bottom'
-  | 'right bottom'
-
-/** The image arm of a fill: a `url(...)` source plus how it lays out. */
-export interface ImageState {
-  /** Empty until a source is picked. */
-  url: string
-  type: ImageType
-  position: ImagePosition
-}
-
-export interface StopState {
+interface StopState {
   hsva: Hsva
   /** 0–1 along the gradient line. */
   pos: number
@@ -55,33 +32,9 @@ export interface FillState {
   stops: StopState[]
   /** Degrees, linear gradients only. */
   angle: number
-  /** The image arm — carried alongside so switching tabs never loses it. */
-  image: ImageState
 }
 
-const NO_IMAGE: ImageState = { url: '', type: 'fill', position: 'center' }
-
-/** `url("…")` / `url(…)` → the bare source, or null when it isn't one. */
-export function parseImageUrl(value: string): string | null {
-  const match = /^\s*url\(\s*([\s\S]*?)\s*\)\s*$/.exec(value)
-  if (!match) return null
-  return match[1].replace(/^["']|["']$/g, '')
-}
-
-export function initialFill(value: string, gradients: boolean, images = false): FillState {
-  if (images) {
-    const url = parseImageUrl(value)
-    if (url !== null) {
-      const hsva = rgbaToHsva(BLACK)
-      return {
-        mode: 'image',
-        hsva,
-        stops: defaultStops(hsva),
-        angle: 180,
-        image: { ...NO_IMAGE, url },
-      }
-    }
-  }
+export function initialFill(value: string, gradients: boolean): FillState {
   if (gradients) {
     const gradient = parseGradient(value)
     if (gradient) {
@@ -94,12 +47,12 @@ export function initialFill(value: string, gradients: boolean, images = false): 
         hsva: stops[0].hsva,
         stops,
         angle: gradient.angle,
-        image: NO_IMAGE,
       }
     }
   }
+  // Anything unparseable — including a stored `url(...)` — degrades to solid.
   const hsva = rgbaToHsva(parseColor(value) ?? BLACK)
-  return { mode: 'solid', hsva, stops: defaultStops(hsva), angle: 180, image: NO_IMAGE }
+  return { mode: 'solid', hsva, stops: defaultStops(hsva), angle: 180 }
 }
 
 /** Fresh gradient seed: the current colour fading to its transparent self. */
@@ -111,7 +64,6 @@ export function defaultStops(hsva: Hsva): StopState[] {
 }
 
 export function formatFill(fill: FillState, format: ColorFormat): string {
-  if (fill.mode === 'image') return fill.image.url ? `url("${fill.image.url}")` : ''
   if (fill.mode === 'solid') return formatColor(hsvaToRgba(fill.hsva), format)
   return formatGradient(
     {

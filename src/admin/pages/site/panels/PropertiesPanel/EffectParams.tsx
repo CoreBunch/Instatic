@@ -28,6 +28,7 @@ export function EffectParams({ effect, onChangeShadow, onChangeBlur }: EffectPar
       <div className={styles.params}>
         <ControlRow propKey="blur" label="Blur" narrow>
           <Input
+            fieldSize="xs"
             aria-label="Blur"
             value={effect.blur ?? ''}
             onChange={(event) => onChangeBlur(event.target.value)}
@@ -48,6 +49,7 @@ export function EffectParams({ effect, onChangeShadow, onChangeBlur }: EffectPar
       <ControlRow propKey="position" label="Position" narrow>
         <div className={styles.pair}>
           <Input
+            fieldSize="xs"
             aria-label="Offset x"
             value={shadow.x}
             onChange={(event) => patch({ x: event.target.value })}
@@ -57,6 +59,7 @@ export function EffectParams({ effect, onChangeShadow, onChangeBlur }: EffectPar
             }}
           />
           <Input
+            fieldSize="xs"
             aria-label="Offset y"
             value={shadow.y}
             onChange={(event) => patch({ y: event.target.value })}
@@ -69,6 +72,7 @@ export function EffectParams({ effect, onChangeShadow, onChangeBlur }: EffectPar
       </ControlRow>
       <ControlRow propKey="blur" label="Blur" narrow>
         <Input
+          fieldSize="xs"
           aria-label="Blur"
           value={shadow.blur}
           onChange={(event) => patch({ blur: event.target.value })}
@@ -80,6 +84,7 @@ export function EffectParams({ effect, onChangeShadow, onChangeBlur }: EffectPar
       </ControlRow>
       <ControlRow propKey="spread" label="Spread" narrow>
         <Input
+          fieldSize="xs"
           aria-label="Spread"
           value={shadow.spread}
           onChange={(event) => patch({ spread: event.target.value })}
@@ -92,11 +97,14 @@ export function EffectParams({ effect, onChangeShadow, onChangeBlur }: EffectPar
       <ControlRow propKey="color" label="Color" narrow>
         <div className={styles.colorRow} style={{ '--effect-color': shadow.color } as CSSProperties}>
           <ColorInput
+            fieldSize="xs"
             aria-label="Shadow colour"
             value={shadow.color}
+            drillInTitle="Shadow color"
             onValueChange={(next) => patch({ color: next })}
           />
           <Input
+            fieldSize="xs"
             aria-label="Shadow colour value"
             value={shadow.color}
             onChange={(event) => patch({ color: event.target.value })}

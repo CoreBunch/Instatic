@@ -8,11 +8,10 @@
  * action that mints a token from the current colour.
  *
  * With `gradients` enabled the picker grows a fill-type icon row (Solid /
- * Linear / Radial / Conic) and a stop strip; `images` adds one more tab so a
- * background fill can be an image picked in the SAME surface as its colours. In a gradient mode the whole solid-colour surface
- * edits the SELECTED stop: click the strip to add a stop, drag a handle to
- * move it, double-click to remove it. The emitted value is then a CSS
- * gradient string instead of a single colour.
+ * Linear / Radial / Conic) and a stop strip. In a gradient mode the whole
+ * solid-colour surface edits the SELECTED stop: click the strip to add a
+ * stop, drag a handle to move it, double-click to remove it. The emitted
+ * value is then a CSS gradient string instead of a single colour.
  *
  * The component is deliberately store-agnostic: tokens and token creation
  * arrive as props so `src/ui/` stays free of editor/state imports. The site
@@ -37,12 +36,11 @@ import { TargetSolidIcon } from 'pixel-art-icons/icons/target-solid'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
-import { Select } from '@ui/components/Select'
 import { pushToast } from '@ui/components/Toast'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { clamp } from '@ui/lib/clamp'
 import {
   COLOR_FORMATS,
-  clamp,
   formatColor,
   hsvaToRgba,
   hueCss,
@@ -59,8 +57,6 @@ import {
   initialFill,
   nearestStop,
   type FillMode,
-  type ImagePosition,
-  type ImageType,
   type FillState,
 } from './fillState'
 import { TokenStylesSection } from './TokenStylesSection'
@@ -108,10 +104,6 @@ interface ColorPickerProps {
   onChange: (value: string) => void
   /** Offer the Solid / Linear / Radial fill tabs and emit gradient strings. */
   gradients?: boolean
-  /** Offer the Image fill tab — for background fills, not colour-only fields. */
-  images?: boolean
-  /** Opens the host's media library. Without it the Choose button is inert. */
-  onPickImage?: () => void
   /** Site colour tokens offered in the searchable list. Omit to hide the list. */
   tokens?: readonly ColorPickerToken[]
   /** Fires when a token row is picked, with its `var(--name)` reference. */
@@ -127,10 +119,6 @@ type PickerVars = CSSProperties & {
   '--color-picker-y'?: string
   '--color-picker-swatch'?: string
   '--color-picker-gradient'?: string
-  '--color-picker-image'?: string
-  '--color-picker-image-size'?: string
-  '--color-picker-image-repeat'?: string
-  '--color-picker-image-position'?: string
 }
 
 /** Pointer distance (px) within which a strip press grabs an existing stop. */
@@ -157,48 +145,16 @@ const GRADIENT_TABS: ReadonlyArray<{ value: FillMode; label: string }> = [
   { value: 'conic', label: 'Conic gradient' },
 ]
 
-const IMAGE_TAB: { value: FillMode; label: string } = { value: 'image', label: 'Image' }
-
-const IMAGE_TYPES: ReadonlyArray<{ value: ImageType; label: string }> = [
-  { value: 'fill', label: 'Fill' },
-  { value: 'fit', label: 'Fit' },
-  { value: 'stretch', label: 'Stretch' },
-  { value: 'tile', label: 'Tile' },
-]
-
-/** The 3×3 anchor grid, in reading order. */
-const IMAGE_POSITIONS: ReadonlyArray<{ value: ImagePosition; label: string }> = [
-  { value: 'left top', label: 'Top left' },
-  { value: 'center top', label: 'Top' },
-  { value: 'right top', label: 'Top right' },
-  { value: 'left center', label: 'Left' },
-  { value: 'center', label: 'Center' },
-  { value: 'right center', label: 'Right' },
-  { value: 'left bottom', label: 'Bottom left' },
-  { value: 'center bottom', label: 'Bottom' },
-  { value: 'right bottom', label: 'Bottom right' },
-]
-
-/** How each Type paints the preview — and, later, the emitted CSS. */
-const IMAGE_TYPE_CSS: Record<ImageType, { size: string; repeat: string }> = {
-  fill: { size: 'cover', repeat: 'no-repeat' },
-  fit: { size: 'contain', repeat: 'no-repeat' },
-  stretch: { size: '100% 100%', repeat: 'no-repeat' },
-  tile: { size: 'auto', repeat: 'repeat' },
-}
-
 export function ColorPicker({
   value,
   onChange,
   gradients = false,
-  images = false,
-  onPickImage,
   tokens,
   onSelectToken,
   onCreateToken,
 }: ColorPickerProps) {
   const [format, setFormat] = useState<ColorFormat>(() => detectFormat(value))
-  const [fill, setFill] = useState<FillState>(() => initialFill(value, gradients, images))
+  const [fill, setFill] = useState<FillState>(() => initialFill(value, gradients))
   const [selectedStop, setSelectedStop] = useState(0)
   const [draft, setDraft] = useState<string | null>(null)
 
@@ -236,19 +192,11 @@ export function ColorPicker({
   if (lastValue !== value) {
     setLastValue(value)
     if (!recentEmits.includes(value)) {
-      setFill(initialFill(value, gradients, images))
+      setFill(initialFill(value, gradients))
       setSelectedStop(0)
       setDraft(null)
     }
   }
-
-  const isImage = fill.mode === 'image'
-  // One tab row for both capabilities: gradient arms only when `gradients`,
-  // the image arm only when `images`. A single tab is no choice, so hide it.
-  const fillTabs = [
-    ...(gradients ? GRADIENT_TABS : images ? [GRADIENT_TABS[0]] : []),
-    ...(images ? [IMAGE_TAB] : []),
-  ]
 
   // In a gradient mode the whole colour surface edits the selected stop.
   const stopIndex = Math.min(selectedStop, fill.stops.length - 1)
@@ -299,13 +247,6 @@ export function ColorPicker({
 
   function handleModeChange(nextMode: FillMode) {
     if (nextMode === fill.mode) return
-    if (nextMode === 'image') {
-      // With no source yet there is nothing to emit — opening the tab must not
-      // wipe the fill the element already has. The value lands on the pick.
-      if (fill.image.url) emit({ ...fill, mode: nextMode })
-      else setFill({ ...fill, mode: nextMode })
-      return
-    }
     if (nextMode === 'solid') {
       // Collapse to the colour being edited so nothing visibly jumps.
       emit({ ...fill, mode: 'solid', hsva })
@@ -426,9 +367,9 @@ export function ColorPicker({
 
   return (
     <div className={styles.picker} style={surfaceStyle}>
-      {fillTabs.length > 1 && (
+      {gradients && (
         <div className={styles.fillTabs} role="group" aria-label="Fill type">
-          {fillTabs.map((mode, index) => (
+          {GRADIENT_TABS.map((mode, index) => (
             <Fragment key={mode.value}>
               {index > 0 && <span className={styles.fillTabSeparator} aria-hidden="true" />}
               <Button
@@ -454,86 +395,7 @@ export function ColorPicker({
         </div>
       )}
 
-      {isImage && (
-        <div className={styles.imagePane}>
-          <div
-            className={styles.imageStage}
-            data-empty={fill.image.url ? undefined : 'true'}
-            style={
-              {
-                '--color-picker-image': fill.image.url
-                  ? `url("${fill.image.url}")`
-                  : 'none',
-                '--color-picker-image-size': IMAGE_TYPE_CSS[fill.image.type].size,
-                '--color-picker-image-repeat': IMAGE_TYPE_CSS[fill.image.type].repeat,
-                '--color-picker-image-position': fill.image.position,
-              } as PickerVars
-            }
-          >
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={onPickImage == null}
-              onClick={onPickImage}
-            >
-              {fill.image.url ? 'Replace Image…' : 'Choose Image…'}
-            </Button>
-          </div>
-
-          {/* ponytail: Type and Position move picker-local state only — they
-              belong on `background-size` / `-repeat` / `-position`, which this
-              picker does not own yet. Tracked in the inspector-redesign TODO. */}
-          <div className={styles.imageRow}>
-            <span className={styles.imageLabel}>Type</span>
-            <Select
-              fieldSize="xs"
-              value={fill.image.type}
-              aria-label="Image type"
-              onChange={(event) =>
-                setFill({
-                  ...fill,
-                  image: { ...fill.image, type: event.target.value as ImageType },
-                })
-              }
-            >
-              {IMAGE_TYPES.map((type) => (
-                <option key={type.value} value={type.value}>
-                  {type.label}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div className={styles.imageRow}>
-            <span className={styles.imageLabel}>Position</span>
-            <div className={styles.imagePosition}>
-              <div className={styles.positionGrid} role="group" aria-label="Image position">
-                {IMAGE_POSITIONS.map((anchor) => (
-                  <Button
-                    key={anchor.value}
-                    variant="ghost"
-                    size="micro"
-                    iconOnly
-                    className={styles.positionCell}
-                    aria-label={anchor.label}
-                    aria-pressed={fill.image.position === anchor.value}
-                    onClick={() =>
-                      setFill({ ...fill, image: { ...fill.image, position: anchor.value } })
-                    }
-                  >
-                    <span className={styles.positionDot} aria-hidden="true" />
-                  </Button>
-                ))}
-              </div>
-              <span className={styles.positionName}>
-                {IMAGE_POSITIONS.find((a) => a.value === fill.image.position)?.label}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {fill.mode !== 'solid' && !isImage && (
+      {fill.mode !== 'solid' && (
         <div
           className={styles.stops}
           role="group"
@@ -563,8 +425,6 @@ export function ColorPicker({
         </div>
       )}
 
-      {!isImage && (
-        <>
       <div
         className={styles.saturation}
         role="slider"
@@ -718,8 +578,6 @@ export function ColorPicker({
             : undefined
         }
       />
-        </>
-      )}
     </div>
   )
 }

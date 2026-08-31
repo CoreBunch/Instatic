@@ -11,6 +11,8 @@
  * HSL would make the handle drift.
  */
 
+import { clamp } from '@ui/lib/clamp'
+
 export interface Rgba {
   /** 0–255 */
   r: number
@@ -46,11 +48,6 @@ const FUNCTION_SWATCH_RE = /^(?:rgb|rgba|hsl|hsla)\([0-9a-z.%\s,+/-]+\)$/i
 const CSS_VARIABLE_RE = /^var\(--[a-z0-9_-]+\)$/i
 
 export const BLACK: Rgba = { r: 0, g: 0, b: 0, a: 1 }
-
-export function clamp(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return min
-  return Math.max(min, Math.min(max, value))
-}
 
 /**
  * Guard a value before it is written into an inline CSS custom property.

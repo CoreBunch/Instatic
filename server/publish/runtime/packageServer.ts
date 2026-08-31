@@ -37,7 +37,12 @@ import { nodeModulesDirForHash, sentinelPathForHash } from './dependencyCache'
 const RUNTIME_PACKAGE_PREFIX = '/_instatic/runtime/cache/'
 const HASH_PATTERN = /^[0-9a-f]{24}$/
 
-function contentTypeForPath(path: string): string {
+/**
+ * MIME for a runtime asset path. Shared with `bundleScripts.ts` — both the
+ * cache server and the bundle emitter label the same kinds of file, and two
+ * copies had already drifted apart on `.ts` / `.json` / `.wasm`.
+ */
+export function contentTypeForPath(path: string): string {
   if (path.endsWith('.js') || path.endsWith('.mjs')) return 'text/javascript; charset=utf-8'
   if (path.endsWith('.ts')) return 'text/javascript; charset=utf-8'
   if (path.endsWith('.css')) return 'text/css; charset=utf-8'

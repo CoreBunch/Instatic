@@ -1,36 +1,8 @@
 /* StylesSection — the unified visual-surface section (inspector redesign).
    Geometry mirrors the prototype's `.row` / `.field` / `.slider` blocks. */
 
-.row {
-    display: grid;
-    grid-template-columns: var(--control-label-column) minmax(0, 1fr);
-    gap: var(--space-s);
-    align-items: center;
-    min-height: var(--control-height);
-}
-
-/* Prototype `.row > .label`: one tone whatever the state — "set" is carried
-   by the accent dot, not by brightening the text. */
-.rowLabel {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2xs);
-    padding-left: var(--space-2xs);
-    font-size: var(--text-xs);
-    font-weight: 500;
-    color: var(--text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.rowDot {
-    flex: none;
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--accent-1);
-}
+/* Row anatomy (label column, accent dot) comes from the shared ControlRow
+   primitive — this module only styles the section's composite controls. */
 
 /* Opacity: the prototype's 88px number field, the slider takes the rest. */
 .opacityPair {

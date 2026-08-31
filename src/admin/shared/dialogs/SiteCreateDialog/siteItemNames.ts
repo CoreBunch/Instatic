@@ -1,11 +1,9 @@
+import { slugify } from '@admin/lib/slugify'
+
 export type SiteCreateKind = 'page' | 'component' | 'style' | 'script'
 
 export function slugifySiteItemName(value: string, fallback = 'page') {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '') || fallback
+  return slugify(value, { fallback })
 }
 
 function stripSitePrefix(value: string, prefix: string) {

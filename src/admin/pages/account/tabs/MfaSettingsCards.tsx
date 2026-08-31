@@ -12,7 +12,8 @@ import { Input } from '@ui/components/Input'
 import { CopySolidIcon } from 'pixel-art-icons/icons/copy-solid'
 import { SecurityCard } from './SecurityCard'
 import { isStepUpCancelled } from './securityErrors'
-import { formatDateTime } from './securityFormat'
+import { formatDateTime } from '@admin/lib/formatDateTime'
+import { copyToClipboard } from '@admin/lib/clipboard'
 import styles from '../AccountPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
@@ -338,18 +339,11 @@ export function MfaSettingsCards({
   async function handleCopySecret(): Promise<void> {
     if (!state.totpSetup) return
     dispatch({ type: 'setMfaError', message: null })
-    if (!navigator.clipboard?.writeText) {
-      dispatch({ type: 'setMfaError', message: 'Clipboard is not available in this browser.' })
+    if (await copyToClipboard(state.totpSetup.secret)) {
+      dispatch({ type: 'copySecretSucceeded' })
       return
     }
-
-    try {
-      await navigator.clipboard.writeText(state.totpSetup.secret)
-      dispatch({ type: 'copySecretSucceeded' })
-    } catch (err) {
-      console.error('[account-security] Copy MFA setup key failed:', err)
-      dispatch({ type: 'setMfaError', message: 'Could not copy the setup key.' })
-    }
+    dispatch({ type: 'setMfaError', message: 'Could not copy the setup key.' })
   }
 
   async function handleStartMfa(): Promise<void> {

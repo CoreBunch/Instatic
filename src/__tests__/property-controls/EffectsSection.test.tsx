@@ -76,6 +76,26 @@ describe('EffectsSection', () => {
     expect(String(onChange.mock.calls[0][1])).toBe('0 4px 10px 0 rgba(0, 0, 0, 0.25)')
     cleanup()
   })
+
+  it('drills the colour picker into the SAME panel, with a back arrow home', () => {
+    renderSection({ boxShadow: '0 4px 4px rgba(0, 0, 0, 0.25)' })
+
+    fireEvent.click(screen.getByLabelText('Drop shadow — edit'))
+    fireEvent.click(screen.getByLabelText('Shadow colour'))
+
+    // One panel, not a stacked second one; the header carries the
+    // contextual title and the back arrow.
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.getByText('Shadow color')).toBeTruthy()
+    expect(screen.getByLabelText(/Colour value/)).toBeTruthy()
+
+    // Back returns to the effect's parameters in the same panel.
+    fireEvent.click(screen.getByLabelText('Back'))
+    expect(screen.queryByLabelText(/Colour value/)).toBe(null)
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.getByLabelText('Blur')).toBeTruthy()
+    cleanup()
+  })
 })
 
 describe('EffectAddMenu', () => {

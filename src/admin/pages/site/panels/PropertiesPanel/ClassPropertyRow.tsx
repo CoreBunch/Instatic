@@ -22,7 +22,9 @@ import { BackgroundFillControl } from '@site/property-controls/BackgroundFillCon
 import { FontFamilyControl } from '@site/property-controls/FontFamilyControl'
 import { useEditorStore } from '@site/store/store'
 import { ControlRow } from '@ui/components/ControlRow'
+import { Input } from '@ui/components/Input'
 import { TokenAwareInput } from '@site/property-controls/TokenAwareInput'
+import { UnitField } from '@site/property-controls/UnitField'
 import {
   useSpacingTokens,
   useTypographyTokens,
@@ -36,6 +38,7 @@ import {
   getCSSPropertyTokenSource,
   getEnumOptions,
   cssPropertyLabel,
+  LENGTH_PROPERTIES,
   NUMBER_TYPED_PROPS,
 } from './cssControlTypes'
 import { getFontWeightOptions } from './fontWeightOptions'
@@ -247,6 +250,39 @@ export function ClassPropertyRow({
         />
       </ControlRow>
     )
+  } else if (LENGTH_PROPERTIES.has(property)) {
+    // Plain lengths render as value ⊕ unit — a number field plus a unit /
+    // keyword select — never one free-text input (author's reference panel).
+    const spec = LENGTH_PROPERTIES.get(property)!
+    control = (
+      <ControlRow propKey={String(property)} label={label}>
+        <UnitField
+          id={`ctrl-${String(property)}`}
+          value={value !== undefined ? String(value) : undefined}
+          placeholder={placeholderText}
+          units={spec.units}
+          keywords={spec.keywords}
+          aria-label={label}
+          onCommit={(raw) => {
+            if (raw === undefined) onRemove(property)
+            else onChange(property, raw)
+          }}
+        />
+      </ControlRow>
+    )
+  } else if (property === 'aspectRatio') {
+    // A ratio, not prose: digits, a decimal point, and one `/` ("1.5", "16/9").
+    control = (
+      <ControlRow propKey={String(property)} label={label}>
+        <AspectRatioField
+          value={value !== undefined ? String(value) : ''}
+          placeholder={placeholderText}
+          ariaLabel={label}
+          onChange={(next) => onChange(property, next)}
+          onClear={() => onRemove(property)}
+        />
+      </ControlRow>
+    )
   } else if (property === 'backgroundImage') {
     // background-image gets its own multi-mode control (None / Image picker /
     // Gradient text). See BackgroundImageControl for the value-string format
@@ -382,5 +418,57 @@ export function ClassPropertyRow({
         </Button>
       )}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// AspectRatioField — digits, one decimal point per part, one `/`
+// ---------------------------------------------------------------------------
+
+/** `1.5`, `16/9`, and every partial state on the way there. */
+const RATIO_DRAFT_RE = /^\d*\.?\d*(\/\d*\.?\d*)?$/
+
+interface AspectRatioFieldProps {
+  value: string
+  placeholder?: string
+  ariaLabel: string
+  onChange: (next: string) => void
+  onClear: () => void
+}
+
+function AspectRatioField({ value, placeholder, ariaLabel, onChange, onClear }: AspectRatioFieldProps) {
+  const [draft, setDraft] = useState<string | null>(null)
+
+  const commit = (raw: string) => {
+    const trimmed = raw.trim().replace(/\/$/, '')
+    if (trimmed === '') {
+      if (value !== '') onClear()
+      return
+    }
+    if (RATIO_DRAFT_RE.test(trimmed) && trimmed !== value) onChange(trimmed)
+  }
+
+  return (
+    <Input
+      fieldSize="sm"
+      inputMode="decimal"
+      aria-label={ariaLabel}
+      value={draft ?? value}
+      placeholder={placeholder}
+      onFocus={() => setDraft(value)}
+      onChange={(event) => {
+        const next = event.target.value
+        if (!RATIO_DRAFT_RE.test(next.trim())) return
+        setDraft(next)
+        commit(next)
+      }}
+      onBlur={(event) => {
+        commit(event.target.value)
+        setDraft(null)
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') (event.target as HTMLInputElement).blur()
+      }}
+    />
   )
 }

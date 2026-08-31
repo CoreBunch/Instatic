@@ -50,7 +50,9 @@ import { CropDialog } from '../CropDialog'
 import { UnsplashPicker } from '../UnsplashPicker'
 import { useUnsplashConfigured } from '../../hooks/useUnsplashConfigured'
 import { ViewerBody } from '../viewers/ViewerBody'
-import { formatBytes } from '../../utils/formatBytes'
+import { formatBytes } from '@admin/lib/formatBytes'
+import { copyToClipboard } from '@admin/lib/clipboard'
+import { formatDateTime } from '@admin/lib/formatDateTime'
 import styles from './MediaViewerWindow.module.css'
 
 /**
@@ -102,14 +104,6 @@ function arraysEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
   return true
-}
-
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString()
-  } catch {
-    return iso
-  }
 }
 
 function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
@@ -182,12 +176,7 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
   })
 
   const copyUrl = async () => {
-    if (!navigator.clipboard?.writeText) return
-    try {
-      await navigator.clipboard.writeText(asset.publicPath)
-    } catch (err) {
-      console.error('[MediaViewerWindow] copy URL failed:', err)
-    }
+    await copyToClipboard(asset.publicPath)
   }
 
   const folderNames = asset.folderIds
@@ -365,9 +354,9 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
               {asset.durationMs !== null && (
                 <Detail label="Duration" value={`${(asset.durationMs / 1000).toFixed(1)}s`} />
               )}
-              <Detail label="Uploaded" value={formatDate(asset.createdAt)} />
+              <Detail label="Uploaded" value={formatDateTime(asset.createdAt)} />
               {asset.replacedAt && (
-                <Detail label="Replaced" value={formatDate(asset.replacedAt)} />
+                <Detail label="Replaced" value={formatDateTime(asset.replacedAt)} />
               )}
             </dl>
           </Section>
@@ -387,7 +376,7 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
           {asset.deletedAt && (
             <Section>
               <p className={styles.warning} role="status">
-                In Trash since {formatDate(asset.deletedAt)}
+                In Trash since {formatDateTime(asset.deletedAt)}
               </p>
               <div className={styles.actionsRow}>
                 {canWrite && (

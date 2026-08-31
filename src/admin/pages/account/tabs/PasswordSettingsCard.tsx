@@ -6,7 +6,7 @@ import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { SecurityCard } from './SecurityCard'
 import { isStepUpCancelled } from './securityErrors'
-import { formatDateTime } from './securityFormat'
+import { formatDateTime } from '@admin/lib/formatDateTime'
 import styles from '../AccountPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 

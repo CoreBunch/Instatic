@@ -18,27 +18,19 @@
 
 import { urlScheme } from '@core/html-sanitize'
 
-/**
- * Well-formedness check, kept separate from the scheme decision.
- *
- * `urlScheme()` reads only the leading `scheme:` token — it says nothing about
- * whether the rest of the value parses. These predicates are input-boundary
- * gates whose job includes catching typos (`https://exa mple.com`, `http://`),
- * so they need both halves: the shared scheme extractor for the security
- * decision, and a real parse for well-formedness.
+/*
+ * Well-formedness is checked with `URL.canParse`, kept separate from the scheme
+ * decision. `urlScheme()` reads only the leading `scheme:` token — it says
+ * nothing about whether the rest of the value parses. These predicates are
+ * input-boundary gates whose job includes catching typos
+ * (`https://exa mple.com`, `http://`), so they need both halves: the shared
+ * scheme extractor for the security decision, and a real parse for
+ * well-formedness.
  *
  * Unlike `@core/html-sanitize`, this module is admin-only (React property
- * controls) and never bundled into a QuickJS plugin pack, so `new URL()` is
- * available here.
+ * controls) and never bundled into a QuickJS plugin pack, so the `URL` global
+ * is available here.
  */
-function parses(v: string): boolean {
-  try {
-    new URL(v)
-    return true
-  } catch {
-    return false
-  }
-}
 
 /**
  * Returns true if `v` is a safe general-purpose URL for storing in site
@@ -52,7 +44,7 @@ export function isValidUrl(v: string): boolean {
   if (!v) return true
   const scheme = urlScheme(v)
   if (scheme !== 'https:' && scheme !== 'http:' && scheme !== 'mailto:') return false
-  return parses(v)
+  return URL.canParse(v)
 }
 
 /**
@@ -73,7 +65,7 @@ export function isValidUrl(v: string): boolean {
 export function isValidImageUrl(v: string): boolean {
   if (!v) return true
   const scheme = urlScheme(v)
-  if (scheme === 'https:' || scheme === 'http:') return parses(v)
+  if (scheme === 'https:' || scheme === 'http:') return URL.canParse(v)
   if (scheme === 'data:') return v.trimStart().toLowerCase().startsWith('data:image/')
   return false
 }

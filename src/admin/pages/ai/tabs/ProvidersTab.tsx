@@ -1,6 +1,7 @@
 /** Provider management in the shared AI master-detail workspace. */
 import { useId, useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
+import { formatDateTime } from '@admin/lib/formatDateTime'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
@@ -355,7 +356,7 @@ function CredentialDetail({
           <DetailRow label="Endpoint" value={credential.baseUrl ?? provider.endpointLabel} code={Boolean(credential.baseUrl)} />
           <DetailRow
             label="Last used"
-            value={credential.lastUsedAt ? new Date(credential.lastUsedAt).toLocaleString() : 'Not used yet'}
+            value={credential.lastUsedAt ? formatDateTime(credential.lastUsedAt) : 'Not used yet'}
           />
         </dl>
       </DetailSection>

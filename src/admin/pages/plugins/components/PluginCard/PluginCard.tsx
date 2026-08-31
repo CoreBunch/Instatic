@@ -11,6 +11,7 @@
  * payload; the card just shows the result and reports button clicks.
  */
 import { Link } from '@admin/lib/routing'
+import { formatDateTime } from '@admin/lib/formatDateTime'
 import { Button } from '@ui/components/Button'
 import { Skeleton } from '@ui/components/Skeleton'
 import { PowerIcon } from 'pixel-art-icons/icons/power'
@@ -350,7 +351,7 @@ export function PluginCard(props: PluginCardProps) {
               {plugin.recentCrashes.map((crash) => (
                 <li key={crash.id}>
                   <time dateTime={crash.occurredAt}>
-                    {new Date(crash.occurredAt).toLocaleString()}
+                    {formatDateTime(crash.occurredAt)}
                   </time>
                   <span> — {crash.reason}</span>
                 </li>

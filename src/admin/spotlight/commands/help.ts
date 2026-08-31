@@ -9,6 +9,7 @@
  */
 
 import type { Command } from '../types'
+import { copyToClipboard } from '@admin/lib/clipboard'
 
 export function getHelpCommands(): Command[] {
   return [
@@ -87,9 +88,7 @@ export function getHelpCommands(): Command[] {
           `URL: ${window.location.href}`,
           `Date: ${new Date().toISOString()}`,
         ].join('\n')
-        navigator.clipboard?.writeText(info).catch((_err) => {
-          // Clipboard API may be unavailable in non-secure contexts; silently ignore.
-        })
+        void copyToClipboard(info)
       },
     },
   ]

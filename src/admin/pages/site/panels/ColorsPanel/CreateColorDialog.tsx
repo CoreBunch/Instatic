@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useId, useRef, useState, type FormEvent } from 'react'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
@@ -28,10 +28,6 @@ export function CreateColorDialog({
   const nameInputRef = useRef<HTMLInputElement>(null)
   const nameInputId = useId()
   const canSubmit = Boolean(name.trim() && lightValue.trim())
-
-  useEffect(() => {
-    requestAnimationFrame(() => nameInputRef.current?.focus())
-  }, [])
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()

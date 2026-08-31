@@ -26,6 +26,7 @@
  */
 
 import { Marked, type Tokens, type Token } from 'marked'
+import { videoTokenizerExtension } from './videoToken'
 
 // ---------------------------------------------------------------------------
 // ProseMirror JSON shape (just enough — we don't pull in @tiptap/pm here so
@@ -55,22 +56,10 @@ const VIDEO_RE = /^@\[video\]\(([^)\s]+)\)\s*$/
 
 const marked = new Marked({ gfm: true })
 
-// Register a block-level tokenizer for `@[video](url)`. Marked treats the
-// line as an HTML token by default; this lifts it out to its own typed
-// token so the walker can map it to a media node.
 marked.use({
   extensions: [
     {
-      name: 'instaticVideo',
-      level: 'block',
-      start(src: string) {
-        return src.indexOf('@[video](')
-      },
-      tokenizer(src: string) {
-        const match = src.match(/^@\[video\]\(([^)\s]+)\)\s*(?:\n|$)/)
-        if (!match) return undefined
-        return { type: 'instaticVideo', raw: match[0], href: match[1].trim() }
-      },
+      ...videoTokenizerExtension,
       renderer() {
         // We never use marked to render — only to lex. Return empty.
         return ''

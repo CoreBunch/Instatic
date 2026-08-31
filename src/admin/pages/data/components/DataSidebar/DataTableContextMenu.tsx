@@ -1,5 +1,4 @@
 import { useEffect, useRef, type ReactElement } from 'react'
-import { createPortal } from 'react-dom'
 import {
   ContextMenu,
   ContextMenuItem,
@@ -52,7 +51,7 @@ export function DataTableContextMenu({
     onClose()
   }
 
-  return createPortal(
+  return (
     <ContextMenu x={x} y={y} ariaLabel={`${table.pluralLabel} table actions`} onClose={onClose}>
       <ContextMenuItem
         ref={firstItemRef}
@@ -76,7 +75,6 @@ export function DataTableContextMenu({
         <span aria-hidden="true"><TrashSolidIcon size={13} /></span>
         Delete table
       </ContextMenuItem>
-    </ContextMenu>,
-    document.body,
+    </ContextMenu>
   )
 }

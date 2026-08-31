@@ -25,6 +25,7 @@
 import { useState, type CSSProperties } from 'react'
 import type { CSSPropertyBag } from '@core/page-tree'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
+import { ControlRow, ControlRowLabel } from '@ui/components/ControlRow'
 import { Input } from '@ui/components/Input'
 import { PerCornerGlyph } from '@ui/icons/inspectorGlyphs'
 import { ScopeGroup, type ScopeMode } from './ScopeGroup'
@@ -171,8 +172,7 @@ export function StylesSection({
         />
       )}
       {borderVisible && (
-        <div className={styles.row} data-state={borderIsSet ? 'set' : 'unset'}>
-          <RowLabel label="Border" isSet={borderIsSet} />
+        <ControlRow label="Border" isSet={borderIsSet}>
           <BorderPopoutRow
             storedStyles={storedStyles}
             currentStyles={currentStyles}
@@ -182,7 +182,7 @@ export function StylesSection({
             onPreview={onPreview}
             onClearPreview={onClearPreview}
           />
-        </div>
+        </ControlRow>
       )}
       {/* Long-tail rows appear only once SET — the section header's "+" is
           how they get added. */}
@@ -248,12 +248,7 @@ function OpacityRow({
   }
 
   return (
-    <div
-      className={styles.row}
-      data-state={isSet ? 'set' : 'unset'}
-      data-testid="css-property-row-opacity"
-    >
-      <RowLabel label="Opacity" isSet={isSet} />
+    <ControlRow label="Opacity" isSet={isSet} testId="css-property-row-opacity">
       <div className={styles.opacityPair}>
         <Input
           // Numeric field, not `type="number"`: a controlled number input
@@ -265,7 +260,12 @@ function OpacityRow({
           aria-label="Opacity"
           fieldSize="sm"
           value={draft ?? String(shown)}
-          onStep={(delta) => onChange('opacity', clamp01(roundTo2(effective + delta * 0.1)))}
+          onStep={(delta) => {
+            const next = clamp01(roundTo2(effective + delta * 0.1))
+            // Keep a focused draft in sync so arrow-key steps stay visible.
+            if (draft !== null) setDraft(String(next))
+            onChange('opacity', next)
+          }}
           onFocus={() => setDraft(isSet ? String(effective) : '')}
           onChange={(event) => {
             // The draft keeps lexical states (`0.`, empty) while finite values
@@ -321,7 +321,7 @@ function OpacityRow({
           }}
         />
       </div>
-    </div>
+    </ControlRow>
   )
 }
 
@@ -345,8 +345,7 @@ const VISIBLE_OPTIONS = [
 
 function VisibleRow({ stored, value, onChange, onClearProperty }: VisibleRowProps) {
   return (
-    <div className={styles.row} data-state={stored ? 'set' : 'unset'}>
-      <RowLabel label="Visible" isSet={stored} />
+    <ControlRow label="Visible" isSet={stored}>
       <SegmentedControl
         fullWidth
         aria-label="Visibility"
@@ -355,20 +354,7 @@ function VisibleRow({ stored, value, onChange, onClearProperty }: VisibleRowProp
         onChange={(next) => onChange('visibility', next)}
         onClear={() => onClearProperty('visibility')}
       />
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// RowLabel — prototype `.row > .label`: constant tone, accent dot when set
-// ---------------------------------------------------------------------------
-
-function RowLabel({ label, isSet }: { label: string; isSet: boolean }) {
-  return (
-    <span className={styles.rowLabel}>
-      {isSet && <span className={styles.rowDot} aria-hidden="true" />}
-      {label}
-    </span>
+    </ControlRow>
   )
 }
 
@@ -439,7 +425,7 @@ function RadiusRow({ storedStyles, currentStyles, onChange, onClearProperty }: R
     <ScopeGroup
       testId="css-radius-row"
       isSet={anySet}
-      label={<RowLabel label="Radius" isSet={anySet} />}
+      label={<ControlRowLabel label="Radius" isSet={anySet} />}
       mode={scope}
       scopeAriaLabel="Radius scope"
       allAriaLabel="All corners"

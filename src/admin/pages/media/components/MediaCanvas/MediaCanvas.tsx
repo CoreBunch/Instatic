@@ -54,6 +54,7 @@ import {
 } from '../../utils/mediaDragDrop'
 import { useMediaDnd } from '../../hooks/useMediaDnd'
 import styles from './MediaCanvas.module.css'
+import { copyToClipboard } from '@admin/lib/clipboard'
 import {
   AssetRow,
   AssetTile,
@@ -251,15 +252,7 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
 
   async function copyAssetUrl(asset: CmsMediaAsset) {
     setContextMenu(null)
-    if (!navigator.clipboard?.writeText) {
-      console.warn('[MediaCanvas] clipboard unavailable; cannot copy URL')
-      return
-    }
-    try {
-      await navigator.clipboard.writeText(asset.publicPath)
-    } catch (err) {
-      console.error('[MediaCanvas] copy URL failed:', err)
-    }
+    await copyToClipboard(asset.publicPath)
   }
 
   function buildExtraMenuItems(asset: CmsMediaAsset): ExplorerContextMenuItem[] {

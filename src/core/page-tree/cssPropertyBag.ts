@@ -19,7 +19,7 @@
  * Constraint #269: no imports from editor / editor-store here.
  */
 
-import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { Type, Value, type Static } from '@core/utils/typeboxHelpers'
 
 const CSSPropertyBagSchema = Type.Object({
   // Typography
@@ -204,3 +204,19 @@ const CSSPropertyBagSchema = Type.Object({
 })
 
 export type CSSPropertyBag = Static<typeof CSSPropertyBagSchema>
+
+/**
+ * Narrow a loose persisted style record (e.g. `node.inlineStyles`, stored as
+ * `Record<string, unknown>`) into a typed bag: keeps exactly the keys the
+ * schema declares, each only when its value passes that property's schema.
+ * Used when inline styles are promoted into a class rule.
+ */
+export function pickValidCSSProperties(loose: Record<string, unknown>): Partial<CSSPropertyBag> {
+  const picked: Record<string, unknown> = {}
+  for (const [key, schema] of Object.entries(CSSPropertyBagSchema.properties)) {
+    const value = loose[key]
+    if (value !== undefined && Value.Check(schema, value)) picked[key] = value
+  }
+  // Every entry above was validated against its declared property schema.
+  return picked as Partial<CSSPropertyBag>
+}

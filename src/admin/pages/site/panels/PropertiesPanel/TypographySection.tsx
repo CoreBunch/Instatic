@@ -15,6 +15,7 @@
  */
 
 import type { CSSPropertyBag } from '@core/page-tree'
+import { ControlRow } from '@ui/components/ControlRow'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import {
   TextAlignCenterGlyph,
@@ -174,11 +175,7 @@ function SizeRow({ storedStyles, currentStyles, onChange, onPreview, onClearPrev
   }
 
   return (
-    <div className={styles.row} data-state={isSet ? 'set' : 'unset'}>
-      <span className={styles.rowLabel}>
-        {isSet && <span className={styles.rowDot} aria-hidden="true" />}
-        Size
-      </span>
+    <ControlRow label="Size" isSet={isSet}>
       <div className={styles.duo}>
         <div data-testid="css-property-row-fontSize">
           <TokenAwareInput
@@ -218,7 +215,7 @@ function SizeRow({ storedStyles, currentStyles, onChange, onPreview, onClearPrev
           <span className={styles.cellTag} aria-hidden="true">lh</span>
         </div>
       </div>
-    </div>
+    </ControlRow>
   )
 }
 
@@ -241,11 +238,7 @@ function AlignRow({ storedValue, currentValue, onChange, onRemove }: AlignRowPro
   const pressed = ALIGN_OPTIONS.find((option) => option.value === effective)?.value
 
   return (
-    <div className={styles.row} data-state={isSet ? 'set' : 'unset'} data-testid="css-property-row-textAlign">
-      <span className={styles.rowLabel}>
-        {isSet && <span className={styles.rowDot} aria-hidden="true" />}
-        Align
-      </span>
+    <ControlRow label="Align" isSet={isSet} testId="css-property-row-textAlign">
       <SegmentedControl
         look="tiles"
         fullWidth
@@ -255,6 +248,6 @@ function AlignRow({ storedValue, currentValue, onChange, onRemove }: AlignRowPro
         onChange={(next) => onChange('textAlign', next)}
         onClear={isSet ? () => onRemove('textAlign') : undefined}
       />
-    </div>
+    </ControlRow>
   )
 }

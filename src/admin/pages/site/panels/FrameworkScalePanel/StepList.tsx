@@ -5,6 +5,7 @@ import { declarationFromStep, type FluidScaleStep } from '@core/framework'
 import type { resolveFrameworkPreferences } from '@core/framework'
 import type { GeneratorShape, GroupShape, ScaleAdapter } from './adapter'
 import styles from './StepList.module.css'
+import { copyToClipboard } from '@admin/lib/clipboard'
 
 interface StepListProps<G extends GroupShape, C extends GeneratorShape> {
   group: G
@@ -96,7 +97,7 @@ export function StepList<G extends GroupShape, C extends GeneratorShape>({
                   className={styles.stepName}
                   tooltip={tooltip}
                   aria-label={`Copy ${variableName}`}
-                  onClick={() => copyToClipboard(`var(${variableName})`)}
+                  onClick={() => { void copyToClipboard(`var(${variableName})`) }}
                 >
                   {variableName}
                 </Button>
@@ -152,9 +153,4 @@ export function StepList<G extends GroupShape, C extends GeneratorShape>({
       </div>
     </div>
   )
-}
-
-function copyToClipboard(value: string) {
-  if (typeof navigator === 'undefined' || !navigator.clipboard) return
-  void navigator.clipboard.writeText(value).catch(() => {})
 }

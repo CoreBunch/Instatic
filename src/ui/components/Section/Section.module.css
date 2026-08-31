@@ -91,6 +91,18 @@
     color: var(--text-muted);
 }
 
+/* An empty section refuses to open: the header is inert and its caret dims
+   so it doesn't promise content that isn't there. */
+.sectionToggle[aria-disabled="true"] {
+    cursor: default;
+}
+
+.sectionToggle[aria-disabled="true"] .sectionCaret,
+.sectionToggle[aria-disabled="true"]:hover .sectionCaret {
+    color: var(--text-disabled);
+    opacity: 0.5;
+}
+
 .sectionIcon {
     display: inline-flex;
     align-items: center;

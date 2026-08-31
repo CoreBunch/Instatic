@@ -20,8 +20,8 @@ import { useScrollSpy } from './useScrollSpy'
 import {
   CLASS_STYLE_SECTIONS,
   getClassStyleSectionSetCounts,
-  getActiveStyleTab,
 } from './cssControlTypes'
+import { getActiveStyleTab } from '@site/store/useActiveStyleTarget'
 import styles from './PropertiesPanel.module.css'
 
 const FIRST_STYLE_SECTION_ID = CLASS_STYLE_SECTIONS[0].id

@@ -8,7 +8,9 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@ui/cn'
-import { getTooltipRoot } from './tooltipPortal'
+import { clamp } from '@ui/lib/clamp'
+import { ensurePortalRoot } from '@ui/lib/portalRoot'
+import { TOOLTIP_ROOT_ID } from './Tooltip'
 import styles from './Tooltip.module.css'
 
 export interface CursorTooltipPoint {
@@ -72,11 +74,6 @@ export function CursorTooltip({
     >
       {content}
     </div>,
-    getTooltipRoot(),
+    ensurePortalRoot(TOOLTIP_ROOT_ID),
   )
-}
-
-function clamp(value: number, min: number, max: number): number {
-  if (max < min) return min
-  return Math.min(Math.max(value, min), max)
 }

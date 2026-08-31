@@ -19,7 +19,7 @@
  * `distinct on`, no `any($N::...)`. The architecture gate
  * `db-postgres-isms.test.ts` enforces this.
  */
-import type { DbClient } from '../db/client'
+import { placeholder, type DbClient } from '../db/client'
 import { isoDate, isoDateOrNull } from '@core/utils/isoDate'
 
 // ---------------------------------------------------------------------------
@@ -70,7 +70,7 @@ export interface PluginSchedule {
   updatedAt: string
 }
 
-interface PluginScheduleRun {
+export interface PluginScheduleRun {
   id: string
   pluginId: string
   scheduleId: string
@@ -501,19 +501,38 @@ export async function finalizeScheduleRun(
   `
 }
 
-export async function listRecentRuns(
+/**
+ * Recent runs for the given schedules of one plugin, in a single round trip.
+ *
+ * History is already capped at ~200 rows per (plugin_id, schedule_id) by
+ * `trimScheduleRunHistory`, so fetching the plugin's rows and slicing the
+ * newest `limitPerSchedule` in JS stays bounded. A per-group SQL limit would
+ * need window functions or a correlated subquery per id — neither is worth it
+ * for a data set this small.
+ */
+export async function listRecentRunsForSchedules(
   db: DbClient,
   pluginId: string,
-  scheduleId: string,
-  limit = 20,
-): Promise<PluginScheduleRun[]> {
-  const { rows } = await db<ScheduleRunRow>`
-    select * from plugin_schedule_runs
-    where plugin_id = ${pluginId} and schedule_id = ${scheduleId}
-    order by started_at desc
-    limit ${limit}
-  `
-  return rows.map(mapRun)
+  scheduleIds: readonly string[],
+  limitPerSchedule = 20,
+): Promise<Record<string, PluginScheduleRun[]>> {
+  const grouped: Record<string, PluginScheduleRun[]> = {}
+  for (const id of scheduleIds) grouped[id] = []
+  if (scheduleIds.length === 0) return grouped
+
+  const idList = scheduleIds.map((_, i) => placeholder(db.dialect, i + 2)).join(', ')
+  const { rows } = await db.unsafe<ScheduleRunRow>(
+    `select * from plugin_schedule_runs
+     where plugin_id = ${placeholder(db.dialect, 1)} and schedule_id in (${idList})
+     order by started_at desc`,
+    [pluginId, ...scheduleIds],
+  )
+
+  for (const row of rows) {
+    const bucket = grouped[row.schedule_id]
+    if (bucket && bucket.length < limitPerSchedule) bucket.push(mapRun(row))
+  }
+  return grouped
 }
 
 /**

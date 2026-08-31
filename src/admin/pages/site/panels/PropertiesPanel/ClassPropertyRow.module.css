@@ -17,21 +17,24 @@
     grid-template-columns: minmax(0, 1fr) var(--control-height);
     gap: var(--space-s);
 }
-.propertyRowWrap label {
-    color: var(--text);
-}
+/* No label recolour here: ControlRow's .labelRow already paints labels
+   `--text-muted`, the one tone the whole panel uses (prototype
+   `.row > .label`). A brighter override made ClassPropertyRow-based rows
+   (Fill, Font, Weight…) read as a different component than the sections'
+   own ControlRow-based rows. */
 
 /* Set-state dot — a 5px accent dot before the label marks properties that
-   hold a value, matching the inspector redesign's row anatomy. */
+   hold a value, matching ControlRow's own `isSet` dot. Painted as a CSS
+   ::before because the label renders deep inside the wrapped property
+   control (TextControl / ColorControl / …), where no `isSet` prop reaches.
+   The label is a flex row, so the parent's gap spaces the dot. */
 .propertyRowWrap[data-state="set"] :global(label)::before {
     content: "";
-    display: inline-block;
+    flex: none;
     width: 5px;
     height: 5px;
-    margin-right: var(--space-2xs);
     border-radius: 50%;
     background: var(--accent-1);
-    vertical-align: 1px;
 }
 
 /* No unset tone. The prototype's `.row > .label` is `--text-muted` whatever

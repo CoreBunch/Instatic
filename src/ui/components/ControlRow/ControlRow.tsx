@@ -6,13 +6,23 @@
  *
  *   - `inline` (default): 100px label column + control column.
  *   - `stacked`: label on its own line above a full-width control.
+ *   - `wide`: the control keeps a usable width by WRAPPING under the label
+ *     in a narrow dock instead of being squeezed beside it (spacing box,
+ *     inset box — the prototype's `.row:has(> .spacebox)` behaviour).
+ *
+ * The inspector's "is this property set?" cue is the `isSet` prop: a 5px
+ * accent dot in front of the label — never a colour change. The label keeps
+ * one tone (`--text-muted`) whatever the state (prototype `.row > .label`).
+ * `isSet` also stamps `data-state="set" | "unset"` on the wrapper.
  *
  * The `labelSuffix` slot is used by controls that surface inline metadata
  * next to the label (e.g. NumberControl's unit, MediaLibraryControl /
  * UrlControl's validation error).
  *
  * Shared admin primitive — used by the site editor's PropertiesPanel
- * property controls and the data admin's TableSettings inspector.
+ * (module property controls AND the visual style sections) and the data
+ * admin's TableSettings inspector. Composite rows that own their whole grid
+ * (ScopeGroup) reuse just the label anatomy via `ControlRowLabel`.
  */
 import type { ReactNode } from 'react'
 import { cn } from '@ui/cn'
@@ -23,7 +33,7 @@ type ControlRowLayout = 'inline' | 'stacked'
 
 interface ControlRowProps {
   /** Property key — used for the `htmlFor`/`id` linkage when `inputId` is omitted. */
-  propKey: string
+  propKey?: string
   /** Visible label text. Falls back to `propKey` when omitted. */
   label?: string
   /** Override the input id used for the `htmlFor` attribute. */
@@ -36,6 +46,16 @@ interface ControlRowProps {
   isOverride?: boolean
   /** Dim the row to indicate the control is disabled. */
   disabled?: boolean
+  /**
+   * Set-state cue: renders the accent dot before the label when true and
+   * stamps `data-state` on the wrapper. Leave undefined for rows without a
+   * set/unset notion (module props).
+   */
+  isSet?: boolean
+  /** Wide-control row — the control wraps UNDER the label in a narrow dock. */
+  wide?: boolean
+  /** `data-testid` for the wrapper. */
+  testId?: string
   /** Optional inline content rendered after the label (unit, validation error). */
   labelSuffix?: ReactNode
   /** Optional caption shown below the row in subdued text. */
@@ -52,6 +72,9 @@ export function ControlRow({
   narrow,
   isOverride,
   disabled,
+  isSet,
+  wide,
+  testId,
   labelSuffix,
   description,
   children,
@@ -63,6 +86,17 @@ export function ControlRow({
   // beneath the outer label. Passing `undefined` keeps the legacy fallback
   // of using `propKey` as the visible label.
   const showLabelRow = label !== ''
+  // Rows without a form-control linkage (visual section rows whose inner
+  // control carries its own aria-label) render a <span>, not a dangling
+  // <label htmlFor> pointing at nothing.
+  const htmlFor = inputId ?? (propKey !== undefined ? `ctrl-${propKey}` : undefined)
+  const labelClass = cn(styles.label, isOverride && styles.labelOverride)
+  const labelContent = (
+    <>
+      {isSet && <span className={styles.setDot} aria-hidden="true" />}
+      {label ?? propKey}
+    </>
+  )
 
   return (
     <div
@@ -70,18 +104,22 @@ export function ControlRow({
         styles.controlWrapper,
         layout === 'stacked' && styles.controlWrapperStacked,
         narrow && styles.controlWrapperNarrow,
+        wide && styles.controlWrapperWide,
         !showLabelRow && styles.controlWrapperNoLabel,
         disabled && styles.controlWrapperDisabled,
       )}
+      data-state={isSet === undefined ? undefined : isSet ? 'set' : 'unset'}
+      data-testid={testId}
     >
       {showLabelRow && (
         <div className={styles.labelRow}>
-          <label
-            htmlFor={inputId ?? `ctrl-${propKey}`}
-            className={isOverride ? styles.labelOverride : undefined}
-          >
-            {label ?? propKey}
-          </label>
+          {htmlFor !== undefined ? (
+            <label htmlFor={htmlFor} className={labelClass}>
+              {labelContent}
+            </label>
+          ) : (
+            <span className={labelClass}>{labelContent}</span>
+          )}
           {labelSuffix}
         </div>
       )}
@@ -90,5 +128,19 @@ export function ControlRow({
         <span className={styles.description}>{description}</span>
       )}
     </div>
+  )
+}
+
+/**
+ * ControlRowLabel — just the label anatomy (one tone, accent dot when set),
+ * for composite rows that own their whole grid themselves and take the label
+ * as a slot (ScopeGroup's Padding / Radius rows).
+ */
+export function ControlRowLabel({ label, isSet }: { label: string; isSet?: boolean }) {
+  return (
+    <span className={cn(styles.label, styles.standaloneLabel)}>
+      {isSet && <span className={styles.setDot} aria-hidden="true" />}
+      {label}
+    </span>
   )
 }

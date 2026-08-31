@@ -15,7 +15,6 @@ describe('development workflow', () => {
     }
 
     expect(pkg.scripts['dev']).toBe('bun run scripts/dev.ts')
-    expect(pkg.scripts['dev:agent']).toBe('bun run dev:server')
     expect(pkg.scripts['dev:server']).toBe('bun --watch server/index.ts')
     expect(pkg.scripts['dev:vite']).toBe('bun run scripts/vite.ts')
     expect(pkg.scripts['build']).toBe('tsc -b && bun run scripts/vite.ts build')

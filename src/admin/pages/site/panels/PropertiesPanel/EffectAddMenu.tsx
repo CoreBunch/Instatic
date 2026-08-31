@@ -3,10 +3,14 @@
  *
  * Unlike every other section's "+", this one adds an EFFECT, not a CSS
  * property, so it lists the effect catalogue instead of property names: a
- * plain list, no search box (four entries need no filter). An effect already
+ * plain list, no search box (six entries need no filter). An effect already
  * on the element is listed, dimmed and ticked, exactly like a used property
  * in the property menu — the two menus disagree on what they add, never on
  * how they behave.
+ *
+ * The section's two plain declarations — `transition` and `animation` — are
+ * listed after the effects: they are this section's only other rows and the
+ * "+" is their only way in (the section starts empty).
  *
  * Picking one writes a visible starter value, so the row it creates is set
  * and immediately editable.
@@ -29,7 +33,12 @@ import {
   writeBlur,
   type EffectKind,
 } from './effectsModel'
+import { cssPropertyLabel, getCSSPropertyDefaultValue } from './cssControlTypes'
+import { hasStyleValue } from './styleValueUtils'
 import styles from './SectionAddMenu.module.css'
+
+/** The section's plain declarations, addable next to the effect catalogue. */
+const DECLARATION_PROPS = ['transition', 'animation'] as const
 
 interface EffectAddMenuProps {
   storedStyles: Record<string, unknown>
@@ -97,6 +106,29 @@ export function EffectAddMenu({ storedStyles, onChange }: EffectAddMenuProps) {
               >
                 <span className={styles.itemRow}>
                   <span className={styles.itemLabel}>{EFFECT_LABELS[kind]}</span>
+                  {isUsed && (
+                    <span className={styles.itemTick}>
+                      <CheckGlyph />
+                    </span>
+                  )}
+                </span>
+              </ContextMenuItem>
+            )
+          })}
+          {DECLARATION_PROPS.map((prop) => {
+            const isUsed = hasStyleValue(storedStyles[prop])
+            return (
+              <ContextMenuItem
+                key={prop}
+                disabled={isUsed}
+                className={isUsed ? styles.itemUsed : undefined}
+                onClick={() => {
+                  onChange(prop, String(getCSSPropertyDefaultValue(prop)))
+                  setOpen(false)
+                }}
+              >
+                <span className={styles.itemRow}>
+                  <span className={styles.itemLabel}>{cssPropertyLabel(prop)}</span>
                   {isUsed && (
                     <span className={styles.itemTick}>
                       <CheckGlyph />

@@ -262,14 +262,21 @@
 
     /* Canvas */
     --canvas-chrome-shadow: 0 12px 28px var(--scrim-30);
-    --canvas-selection-ring: inset 0 0 0 1px #39ff14;
-    --canvas-hover-ring: inset 0 0 0 1px #ff2bd6;
+    /* Canvas accent — THE single source colour for every canvas affordance:
+       selection ring, hover outline, resize handles, dimension badge, smart
+       guides. Shares the inspector's --panel-accent so the editor has ONE
+       accent literal, defined once above; everything else derives via
+       color-mix, so a retint is a one-line change. */
+    --canvas-accent: var(--panel-accent);
+    --canvas-accent-60: color-mix(in srgb, var(--canvas-accent) 60%, transparent);
+    --canvas-selection-ring: inset 0 0 0 1px var(--canvas-accent);
+    --canvas-hover-ring: inset 0 0 0 1px var(--canvas-accent-60);
     /* Bare colours for surfaces that need an `outline` / `border-color` / or
        a custom box-shadow geometry rather than the full inset-ring shorthand
        above. Keep the two `*-color` tokens in sync with the shorthands so
        there's no drift. */
-    --canvas-selection-ring-color: #39ff14;
-    --canvas-hover-ring-color: #ff2bd6;
+    --canvas-selection-ring-color: var(--canvas-accent);
+    --canvas-hover-ring-color: var(--canvas-accent-60);
     --tree-drop-line: #5eead4;
     --tree-drop-line-shadow: rgba(94, 234, 212, 0.18);
     --tree-drop-inside-bg: rgba(94, 234, 212, 0.08);
@@ -284,6 +291,23 @@
        a selection. */
     --canvas-selector-ring: inset 0 0 0 1px #ff8800;
     --canvas-selector-ring-color: #ff8800;
+    /* Live spacing highlight: translucent bands drawn over the SELECTED
+       element's margin / padding while the inspector's Spacing box is being
+       interacted with (SpacingHighlightOverlay). DevTools-convention hues —
+       orange margin, green padding — kept translucent so the underlying
+       content stays readable. Distinct from the ring family above: these are
+       area fills, not 1px identity rings. */
+    /* Spacing bands are drawn as a diagonal hatch: the `-fill` is the stripe,
+       the `-wash` is the faint tint between stripes. */
+    --canvas-spacing-margin-fill: rgba(246, 178, 107, 0.42);
+    --canvas-spacing-padding-fill: rgba(147, 196, 125, 0.45);
+    --canvas-spacing-margin-wash: rgba(246, 178, 107, 0.14);
+    --canvas-spacing-padding-wash: rgba(147, 196, 125, 0.15);
+    /* Negative margin: drawn inside the edge it pulled past, in its own violet
+       so "took 20px away" never reads as "added 20px". */
+    --canvas-spacing-negative-fill: rgba(179, 136, 255, 0.46);
+    --canvas-spacing-negative-wash: rgba(179, 136, 255, 0.16);
+    --canvas-spacing-negative-text: #b388ff;
     /* Shared diagonal-stripe pattern used by every module's canvas empty
        state (image, video, content, loop, container, slot-outlet, VC ref
        placeholders). Strictly achromatic — colours derived from

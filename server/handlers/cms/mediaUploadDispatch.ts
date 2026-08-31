@@ -23,6 +23,7 @@
  * the caller's job, so transactional handling stays at the handler level.
  */
 
+import { createHash } from 'node:crypto'
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../../db/client'
 import type {
@@ -74,25 +75,15 @@ interface DispatchUploadResult {
  * Compute SHA-256 over the upload bytes. The adapter receives this in
  * `beginWrite` so it can dedupe or verify on the backend side.
  *
- * Web Crypto runs in Bun without an import; the result is a lowercase
- * hex string to match what S3 / R2 etc. expect in their X-Amz-Content-Sha256
- * headers (adapters can use it as-is).
+ * The result is a lowercase hex string to match what S3 / R2 etc. expect in
+ * their X-Amz-Content-Sha256 headers (adapters can use it as-is).
+ *
+ * `node:crypto` is used rather than Web Crypto: it is synchronous, honours
+ * the view's byteOffset/byteLength (so no defensive copy of a multi-MB
+ * upload), and hex-encodes natively.
  */
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  // `Uint8Array` is structurally a valid `BufferSource` but TS's lib.dom
-  // currently types `crypto.subtle.digest` as requiring `BufferSource`
-  // narrowed to `ArrayBufferView<ArrayBuffer>`. A defensive copy into a
-  // tight ArrayBuffer slice satisfies both shapes and avoids accidentally
-  // hashing past the end of a sub-array view.
-  const copy = new Uint8Array(bytes.byteLength)
-  copy.set(bytes)
-  const digest = await crypto.subtle.digest('SHA-256', copy.buffer)
-  const view = new Uint8Array(digest)
-  let out = ''
-  for (let i = 0; i < view.length; i++) {
-    out += view[i].toString(16).padStart(2, '0')
-  }
-  return out
+function sha256Hex(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex')
 }
 
 /**
@@ -131,7 +122,7 @@ export async function dispatchUpload(
   input: DispatchUploadInput,
 ): Promise<DispatchUploadResult> {
   const adapter = await resolveWriteAdapter(db, input.role)
-  const contentHash = await sha256Hex(input.bytes)
+  const contentHash = sha256Hex(input.bytes)
 
   // Stage 1 — adapter signs the upload plan.
   const plan = await adapter.beginWrite({

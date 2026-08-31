@@ -12,7 +12,7 @@
 import { useState } from 'react'
 import { Input } from '@ui/components/Input'
 import { StepGroup } from '@ui/components/StepGroup'
-import { LabeledControl } from './LabeledControl'
+import { ControlRow } from '@ui/components/ControlRow'
 import styles from '../LayoutSection.module.css'
 
 interface GridTrackControlProps {
@@ -54,22 +54,28 @@ export function GridTrackControl({
     if (trimmed !== value) onChange(trimmed)
   }
 
-  const step = (delta: 1 | -1) => {
+  const step = (delta: number) => {
     // Unset steps up from zero; `repeat(N, 1fr)` steps N. Custom templates
-    // have no count — the tiles are disabled below.
+    // have no count — the tiles disable and the field steppers no-op.
+    if (isCustom) return
     const current = count ?? 0
     const next = Math.min(99, Math.max(1, current + delta))
     if (next === current) return
+    if (draft !== null) setDraft(String(next))
     onChange(`repeat(${next}, 1fr)`)
   }
 
   return (
-    <LabeledControl label={label} isSet={isSet}>
+    <ControlRow label={label} isSet={isSet}>
       <div className={styles.trackDuo}>
         <Input
           fieldSize="sm"
           aria-label={ariaLabel}
           placeholder="auto"
+          // The value is a COUNT (numeric keypad, ↑↓ / scrub via onStep); a
+          // raw track template typed into the same field still passes through.
+          inputMode="numeric"
+          onStep={step}
           value={draft ?? shown}
           onFocus={() => setDraft(shown)}
           onChange={(e) => setDraft(e.target.value)}
@@ -95,7 +101,7 @@ export function GridTrackControl({
           onStep={step}
         />
       </div>
-    </LabeledControl>
+    </ControlRow>
   )
 }
 

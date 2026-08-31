@@ -1,5 +1,4 @@
 import { useEffect, useRef, type ReactElement, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
 import {
   ContextMenu,
   ContextMenuItem,
@@ -140,7 +139,7 @@ export function DataRowContextMenu({
     onClose()
   }
 
-  return createPortal(
+  return (
     <ContextMenu x={x} y={y} ariaLabel="Row actions" onClose={onClose}>
       {primaryAction !== null && (
         <ContextMenuItem
@@ -221,7 +220,6 @@ export function DataRowContextMenu({
           Delete row
         </ContextMenuItem>
       )}
-    </ContextMenu>,
-    document.body,
+    </ContextMenu>
   )
 }

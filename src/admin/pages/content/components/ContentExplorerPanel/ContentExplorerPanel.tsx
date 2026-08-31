@@ -27,6 +27,7 @@ import {
 } from '@content/components/ContentItemRenameDialog/ContentItemRenameDialog'
 import styles from '../../ContentPage.module.css'
 import { publicContentPath } from '@content/utils/contentEntryUtils'
+import { copyToClipboard } from '@admin/lib/clipboard'
 
 type ContentExplorerContextTarget =
   | { kind: 'collection'; collection: DataTable }
@@ -158,11 +159,7 @@ export function ContentExplorerPanel({
     const collection = collectionForEntry(entry)
     if (!collection) return
     const url = `${window.location.origin}${publicContentPath(collection.routeBase, entry.slug)}`
-    try {
-      await navigator.clipboard.writeText(url)
-    } catch (err) {
-      console.error('[ContentExplorerPanel] copy entry URL error:', err)
-    }
+    await copyToClipboard(url)
   }
 
   function moveSubmenuItem(target: ContentExplorerContextTarget): ExplorerContextMenuItem | null {

@@ -105,7 +105,7 @@ function deriveSiteActiveLeftPanel(selection: SiteLayoutSelection): string | nul
   return null
 }
 
-export function siteLayoutFromSelection(
+function siteLayoutFromSelection(
   selection: SiteLayoutSelection,
 ): StoredWorkspaceLayout {
   const [

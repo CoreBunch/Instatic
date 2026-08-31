@@ -8,7 +8,7 @@ import { ArrowRightIcon } from 'pixel-art-icons/icons/arrow-right'
 import { ArrowLeftIcon } from 'pixel-art-icons/icons/arrow-left'
 import { ArrowDownIcon } from 'pixel-art-icons/icons/arrow-down'
 import { ArrowUpIcon } from 'pixel-art-icons/icons/arrow-up'
-import { LabeledControl } from './LabeledControl'
+import { ControlRow } from '@ui/components/ControlRow'
 
 interface FlexDirectionControlProps {
   value: string | undefined
@@ -19,7 +19,7 @@ interface FlexDirectionControlProps {
 
 export function FlexDirectionControl({ value, isSet, onChange, onClear }: FlexDirectionControlProps) {
   return (
-    <LabeledControl label="Direction" isSet={isSet}>
+    <ControlRow label="Direction" isSet={isSet}>
       <SegmentedControl
         look="tiles"
         fullWidth
@@ -54,6 +54,6 @@ export function FlexDirectionControl({ value, isSet, onChange, onClear }: FlexDi
           },
         ]}
       />
-    </LabeledControl>
+    </ControlRow>
   )
 }

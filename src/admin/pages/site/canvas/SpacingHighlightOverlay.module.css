@@ -1,0 +1,93 @@
+/**
+ * SpacingHighlightOverlay — translucent margin/padding bands + value chips
+ * drawn over the selected element while the inspector's Spacing box is being
+ * interacted with. Portaled into the canvas root with the same scoped/fixed
+ * positioning contract as the selection rings
+ * (BreakpointSelectionOverlay.module.css) — screen-px space, so the bands
+ * track the element exactly at every zoom level.
+ */
+
+.layer {
+    pointer-events: none;
+}
+
+.band {
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    /* Same layer range as the selection rings/toolbar — below sidebars (55),
+       dialogs (95+), and editor toolbars (200+). */
+    z-index: 51;
+}
+
+.layer[data-canvas-spacing-overlay-mode="scoped"] .band,
+.layer[data-canvas-spacing-overlay-mode="scoped"] .chip {
+    position: absolute;
+}
+
+.layer[data-canvas-spacing-overlay-mode="fixed"] .band,
+.layer[data-canvas-spacing-overlay-mode="fixed"] .chip {
+    position: fixed;
+}
+
+/* Diagonal hatch, not a flat wash: the stripes read as "this is space, not
+   content" even where a band overlaps busy page imagery, and the gaps keep
+   the element underneath legible. Bands live in screen-px space (portaled
+   outside the transform layer), so the stripe pitch stays constant at every
+   zoom level. */
+.marginBand {
+    background-color: var(--canvas-spacing-margin-wash);
+    background-image: repeating-linear-gradient(
+        135deg,
+        var(--canvas-spacing-margin-fill) 0 4px,
+        transparent 4px 9px
+    );
+}
+
+.paddingBand {
+    background-color: var(--canvas-spacing-padding-wash);
+    background-image: repeating-linear-gradient(
+        135deg,
+        var(--canvas-spacing-padding-fill) 0 4px,
+        transparent 4px 9px
+    );
+}
+
+/* A negative margin is a different fact from a positive one — it took space
+   away instead of adding it — so it gets its own hue rather than the same
+   orange flipped to the other side of the edge. */
+.band[data-negative="true"] {
+    background-color: var(--canvas-spacing-negative-wash);
+    background-image: repeating-linear-gradient(
+        135deg,
+        var(--canvas-spacing-negative-fill) 0 4px,
+        transparent 4px 9px
+    );
+}
+
+/* Value chip — content-sized, centred on the band via the individual
+   `translate` property, which composes with the inline `transform` the RAF
+   tick writes (pure translations commute). Hidden until the first tick
+   places it (an unpositioned chip would flash at the layer origin). */
+.chip {
+    top: 0;
+    left: 0;
+    z-index: 52;
+    display: none;
+    translate: -50% -50%;
+    padding: var(--space-4xs) var(--space-2xs);
+    border-radius: var(--radius-sm);
+    background: var(--bg-body);
+    box-shadow: var(--shadow-panel);
+    color: var(--text);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.chip[data-negative="true"] {
+    color: var(--canvas-spacing-negative-text);
+}

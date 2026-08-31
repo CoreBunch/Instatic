@@ -26,7 +26,12 @@ export interface PageTreeAccessOptions {
   assertAccess?: (table: DataTable) => void
 }
 
-async function resolvePageTreeField(
+/**
+ * Resolve the table + row + field meta needed for any `tree.*` call.
+ * Throws if the entry doesn't exist, the field doesn't exist, or the
+ * field isn't a `pageTree`-typed cell.
+ */
+export async function resolvePageTreeField(
   db: DbClient,
   entryId: string,
   fieldId: string,

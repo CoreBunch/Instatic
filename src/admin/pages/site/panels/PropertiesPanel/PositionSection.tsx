@@ -32,7 +32,7 @@ import type { CSSPropertyBag } from '@core/page-tree'
 import { Input } from '@ui/components/Input'
 import { Select } from '@ui/components/Select'
 import { StepGroup } from '@ui/components/StepGroup'
-import { LabeledControl } from './LayoutSection/LabeledControl'
+import { ControlRow } from '@ui/components/ControlRow'
 import { getCSSPropertyDefaultValue } from './cssControlTypes'
 import { hasStyleValue, readString } from './styleValueUtils'
 import { InsetBoxControl } from './SpacingBoxControl/InsetBoxControl'
@@ -105,7 +105,7 @@ export function PositionSection({
   return (
     <>
       <div data-testid="css-position-switcher" data-position-value={position ?? ''}>
-        <LabeledControl label="Type" isSet={hasStyleValue(storedStyles.position)}>
+        <ControlRow label="Type" isSet={hasStyleValue(storedStyles.position)}>
           <Select
             fieldSize="sm"
             aria-label="Position"
@@ -123,10 +123,10 @@ export function PositionSection({
               </option>
             ))}
           </Select>
-        </LabeledControl>
+        </ControlRow>
       </div>
       {positionIsActive && (
-        <LabeledControl label="Inset" isSet={insetIsSet}>
+        <ControlRow label="Inset" isSet={insetIsSet} wide>
           <InsetBoxControl
             storedStyles={storedStyles}
             currentStyles={currentStyles}
@@ -134,7 +134,7 @@ export function PositionSection({
             onPreview={onPreview}
             onClearPreview={onClearPreview}
           />
-        </LabeledControl>
+        </ControlRow>
       )}
       <ZIndexRow
         key={`${activeTab}-zIndex`}
@@ -183,7 +183,7 @@ function ZIndexRow({ isSet, storedValue, fallback, onChange, onRemove }: ZIndexR
 
   return (
     <div data-testid="css-property-row-zIndex" data-state={isSet ? 'set' : 'unset'}>
-      <LabeledControl label="Z Index" isSet={isSet}>
+      <ControlRow label="Z Index" isSet={isSet}>
         <div className={styles.trackDuo}>
           <Input
             aria-label="Z index"
@@ -191,6 +191,19 @@ function ZIndexRow({ isSet, storedValue, fallback, onChange, onRemove }: ZIndexR
             inputMode="numeric"
             value={draft ?? (storedNumber !== null ? String(storedNumber) : '')}
             placeholder={!isSet ? String(fallback) : undefined}
+            onStep={(delta) => {
+              // The field is a numeric control (stepper, scrub, arrow keys) —
+              // step from the visible draft when one is active so mid-edit
+              // arrows continue from what the user sees.
+              const draftNumber =
+                draft !== null && draft.trim() !== '' ? Number(draft) : Number.NaN
+              const base = Number.isFinite(draftNumber)
+                ? Math.trunc(draftNumber)
+                : (storedNumber ?? 0)
+              const next = base + delta
+              if (draft !== null) setDraft(String(next))
+              onChange('zIndex', next)
+            }}
             onFocus={() => setDraft(storedNumber !== null ? String(storedNumber) : '')}
             onChange={(event) => {
               // Numeric field: anything but an integer draft is refused, so
@@ -213,7 +226,7 @@ function ZIndexRow({ isSet, storedValue, fallback, onChange, onRemove }: ZIndexR
             onStep={(delta) => onChange('zIndex', (storedNumber ?? 0) + delta)}
           />
         </div>
-      </LabeledControl>
+      </ControlRow>
     </div>
   )
 }

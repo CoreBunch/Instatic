@@ -27,21 +27,30 @@ function buildIndex<T extends { id: string }>(items: readonly T[]): Map<string, 
 const EMPTY_VC_MAP: ReadonlyMap<string, VisualComponent> = new Map()
 
 /**
- * Return a `Map<vcId, VisualComponent>` for the given site. Memoised on the
- * `site.visualComponents` array reference. When the site has no VCs
- * (undefined array), returns a shared empty map — callers can `.get()`
- * without a null check.
+ * Return a `Map<vcId, VisualComponent>` for a visual-component list, memoised
+ * on the array reference. When the list is undefined, returns a shared empty
+ * map — callers can `.get()` without a null check.
+ *
+ * Exported for consumers that hold the list rather than the whole site
+ * document (e.g. the layers panel resolving display names per row); it shares
+ * one cache with the site-level selectors below.
  */
-function selectVisualComponentsById(
-  site: SiteDocument,
+export function visualComponentsById(
+  vcs: readonly VisualComponent[] | undefined,
 ): ReadonlyMap<string, VisualComponent> {
-  const vcs = site.visualComponents
   if (!vcs) return EMPTY_VC_MAP
   const cached = _vcsByIdCache.get(vcs)
   if (cached) return cached
   const map = buildIndex(vcs)
   _vcsByIdCache.set(vcs, map)
   return map
+}
+
+/** Return the `vcId → VisualComponent` index for the given site. */
+function selectVisualComponentsById(
+  site: SiteDocument,
+): ReadonlyMap<string, VisualComponent> {
+  return visualComponentsById(site.visualComponents)
 }
 
 /** Lookup a single visual component by id. O(1) after the first call. */

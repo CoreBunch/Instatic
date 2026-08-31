@@ -17,6 +17,7 @@
  */
 import { useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
+import { formatDateTime, SHORT_DATE_TIME } from '@admin/lib/formatDateTime'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import {
@@ -175,14 +176,14 @@ function ScheduleRow({
         <dt>Cadence</dt>
         <dd>{cadenceLabel(schedule.cadence)}</dd>
         <dt>Last run</dt>
-        <dd>{schedule.lastRunAt ? formatDateTime(schedule.lastRunAt) : '—'}</dd>
+        <dd>{schedule.lastRunAt ? formatDateTime(schedule.lastRunAt, SHORT_DATE_TIME) : '—'}</dd>
         <dt>Next run</dt>
         <dd>
           {!schedule.enabled
             ? '— (cancelled)'
             : schedule.paused
               ? '— (paused)'
-              : formatDateTime(schedule.nextRunAt)}
+              : formatDateTime(schedule.nextRunAt, SHORT_DATE_TIME)}
         </dd>
         {schedule.consecutiveFailures > 0 && (
           <>
@@ -225,7 +226,7 @@ function ScheduleRow({
           <ul className={styles.recentRuns}>
             {recent.slice(0, 5).map((run) => (
               <li key={run.id} data-status={run.status}>
-                <span>{formatDateTime(run.startedAt)}</span>
+                <span>{formatDateTime(run.startedAt, SHORT_DATE_TIME)}</span>
                 <span>{run.error ?? formatStatus(run.status)}</span>
                 <span>{run.durationMs != null ? `${run.durationMs}ms` : '—'}</span>
               </li>
@@ -265,18 +266,6 @@ function formatStatus(status: string): string {
   if (status === 'error') return 'Failed'
   if (status === 'timeout') return 'Timed out'
   return 'Pending'
-}
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 /**

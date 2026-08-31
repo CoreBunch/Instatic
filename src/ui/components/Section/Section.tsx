@@ -28,6 +28,12 @@ interface SectionProps {
   headerAction?: React.ReactNode;
   forceOpen?: boolean;
   /**
+   * When false the header refuses to toggle: an EMPTY section has nothing to
+   * show, so its caret dims and the click is inert until content arrives
+   * (the Properties panel's add-only sections). Defaults to true.
+   */
+  collapsible?: boolean;
+  /**
    * Drop the section's own vertical padding so spacing comes entirely from the
    * parent container's grid gap (the borderless-tile / 1px-gap card pattern).
    * Used by the Properties panel; panels that rely on the section's own padding
@@ -47,20 +53,22 @@ export function Section({
   metaTestId,
   headerAction,
   forceOpen = false,
+  collapsible = true,
   flush = false,
 }: SectionProps) {
   const [open, setOpen] = useState(defaultOpen);
-  const expanded = forceOpen || open;
+  const expanded = collapsible && (forceOpen || open);
 
   return (
     <div className={cn(styles.section, flush && styles.sectionFlush, expanded && styles.sectionOpen)}>
       <div className={styles.sectionHeader}>
         <button
           onClick={() => {
-            if (!forceOpen) setOpen((o) => !o);
+            if (!forceOpen && collapsible) setOpen((o) => !o);
           }}
           className={styles.sectionToggle}
           aria-expanded={expanded}
+          aria-disabled={collapsible ? undefined : true}
         >
           <span className={styles.sectionCaret} aria-hidden="true">
             <CaretGlyph />

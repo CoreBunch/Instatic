@@ -27,6 +27,7 @@ import type { PageNode } from './pageNode'
 import type { VisualComponent } from '@core/visual-components-schema'
 import { resolveHtmlTagBadge, type AnyModuleDefinition } from '@core/module-engine-schema'
 import { classNamesForClassIds, type StyleRuleRegistry } from './classNames'
+import { visualComponentsById } from './siteSelectors'
 
 export function getNodeDisplayName(
   node: Pick<PageNode, 'label' | 'moduleId' | 'props'>,
@@ -38,7 +39,9 @@ export function getNodeDisplayName(
   if (node.moduleId === 'base.visual-component-ref') {
     const componentId = (node.props as Record<string, unknown> | undefined)?.componentId
     if (typeof componentId === 'string' && componentId.length > 0 && visualComponents) {
-      const vc = visualComponents.find((v) => v.id === componentId)
+      // Indexed lookup, not a scan: the layers panel resolves a display name for
+      // every node on every search keystroke, which made this O(nodes × VCs).
+      const vc = visualComponentsById(visualComponents).get(componentId)
       if (vc && vc.name.length > 0) return vc.name
     }
   }

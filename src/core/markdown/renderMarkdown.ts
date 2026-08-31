@@ -34,6 +34,8 @@
 import { Marked, type Tokens } from 'marked'
 import { escapeHtml, isSafeUrl } from '@core/html-sanitize'
 
+import { videoTokenizerExtension } from './videoToken'
+
 export { firstMediaPathFromMarkdown as firstImagePathFromMarkdown } from './markdownDocument'
 
 const marked = new Marked({ gfm: true, breaks: false })
@@ -41,16 +43,7 @@ const marked = new Marked({ gfm: true, breaks: false })
 marked.use({
   extensions: [
     {
-      name: 'instaticVideo',
-      level: 'block',
-      start(src: string) {
-        return src.indexOf('@[video](')
-      },
-      tokenizer(src: string) {
-        const match = src.match(/^@\[video\]\(([^)\s]+)\)\s*(?:\n|$)/)
-        if (!match) return undefined
-        return { type: 'instaticVideo', raw: match[0], href: match[1].trim() }
-      },
+      ...videoTokenizerExtension,
       renderer(token: Tokens.Generic) {
         const href = typeof token.href === 'string' ? token.href : ''
         return `<video controls src="${safeMarkdownUrl(href)}"></video>`

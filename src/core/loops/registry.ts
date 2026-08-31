@@ -12,9 +12,9 @@
  * enforces this rule across all registered sources.
  */
 
-import type { ILoopSourceRegistry, LoopEntitySource } from './types'
+import type { LoopEntitySource } from './types'
 
-class LoopSourceRegistry implements ILoopSourceRegistry {
+class LoopSourceRegistry {
   private readonly _sources = new Map<string, LoopEntitySource>()
 
   private validateId(id: string): void {

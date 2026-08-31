@@ -27,11 +27,20 @@
     position: relative;
     border: 0;
     border-radius: 6px;
+    /* Widest rendered left/right value in characters — set per box as an
+       inline custom property by SpacingBoxControl; this is the CSS-rule
+       default the no-fallback policy asks for. */
+    --side-chars: 1;
 }
 
 /* The lightness step between layers is LARGER than in the light-mode
    original — the same absolute difference reads far weaker on dark. */
 .box--margin {
+    /* The side band tracks its widest value: ~7px per tabular glyph at
+       --text-xs plus field padding, floored at the design width and capped
+       where the field's own 110px max-width caps (the overflow tooltip
+       covers anything past that). */
+    --band-x: clamp(34px, calc(var(--side-chars) * 7px + 16px), 118px);
     --band-y: 30px;
     padding: var(--band-y) var(--band-x);
     background: var(--bg-surface-3);
@@ -43,7 +52,7 @@
    No min-height: the height comes from the core, which keeps the top and
    bottom bands equal. */
 .box--padding {
-    --band-x: 30px;
+    --band-x: clamp(30px, calc(var(--side-chars) * 7px + 14px), 118px);
     --band-y: 26px;
     display: flex;
     flex-direction: column;
@@ -215,8 +224,13 @@
 
 /* ── Side value ──────────────────────────────────────────────────────────── */
 
+/* The side value is a SIBLING of its trapezoid segment (the segment's
+   clip-path would cut a grown value), positioned against the same `.box`.
+   z-index lifts it over the nested padding band so a wide margin value is
+   never painted under it; the box header and pins sit higher still (z 2). */
 .sideInput.sideInput {
     position: absolute;
+    z-index: 1;
     width: 30px;
     min-width: 30px;
     height: 18px;
@@ -234,7 +248,8 @@
     cursor: inherit;
 }
 
-.sideInput.sideInput::placeholder {
+.sideInput.sideInput::placeholder,
+.sideInput.sideInput input::placeholder {
     color: var(--text-subtle);
 }
 
@@ -245,7 +260,8 @@
 }
 
 .sideInput.sideInput:focus,
-.sideInput.sideInput:focus-visible {
+.sideInput.sideInput:focus-visible,
+.sideInput.sideInput:focus-within {
     outline: none;
     border: 0;
     background: var(--overlay-10);
@@ -253,34 +269,37 @@
     cursor: text;
 }
 
-.segmentLinked .sideInput.sideInput {
+.sideInputLinked.sideInputLinked,
+.sideInputLinked.sideInputLinked input {
     color: var(--text-bright);
 }
 
-/* Centred with a transform rather than a negative margin sized to the
-   field — the offset then survives any change to the field's own width. */
-.segment--top .sideInput.sideInput {
-    top: 4px;
+/* Each value sits at the CENTRE of its band, not glued to an edge: the
+   anchor is half the band's own thickness and the transform re-centres the
+   field on that point, so the offset survives any change to the field's
+   width (field-sizing growth) or the band's (--side-chars growth). */
+.sideInput--top.sideInput {
+    top: calc(var(--band-y) / 2);
     left: 50%;
-    transform: translateX(-50%);
+    transform: translate(-50%, -50%);
 }
 
-.segment--bottom .sideInput.sideInput {
-    bottom: 4px;
+.sideInput--bottom.sideInput {
+    bottom: calc(var(--band-y) / 2);
     left: 50%;
-    transform: translateX(-50%);
+    transform: translate(-50%, 50%);
 }
 
-.segment--left .sideInput.sideInput {
-    left: 2px;
+.sideInput--left.sideInput {
+    left: calc(var(--band-x) / 2);
     top: 50%;
-    transform: translateY(-50%);
+    transform: translate(-50%, -50%);
 }
 
-.segment--right .sideInput.sideInput {
-    right: 2px;
+.sideInput--right.sideInput {
+    right: calc(var(--band-x) / 2);
     top: 50%;
-    transform: translateY(-50%);
+    transform: translate(50%, -50%);
 }
 
 /* ── Inset variant ───────────────────────────────────────────────────────────
@@ -292,7 +311,7 @@
 .box--inset {
     /* Wider side bands than the spacing box: inset offsets carry a sign and
        a unit ("-70px"), which a 30px field built for token steps clips. */
-    --band-x: 48px;
+    --band-x: clamp(48px, calc(var(--side-chars) * 7px + 20px), 118px);
     --band-y: 30px;
     padding: var(--band-y) var(--band-x);
     background: var(--bg-surface-3);
@@ -302,6 +321,16 @@
 .box--inset .sideInput.sideInput {
     width: 44px;
     min-width: 44px;
+}
+
+/* Top/bottom sit on a full-width band, so give signed values real room:
+   "-419px" is six glyphs and a 44px field clips the tail. Left/right stay at
+   44px — they are bounded by the 48px side band. (Fallback sizes — where
+   `field-sizing` is supported the fields size to their content instead.) */
+.box--inset .sideInput--top.sideInput,
+.box--inset .sideInput--bottom.sideInput {
+    width: 68px;
+    min-width: 68px;
 }
 
 /* Replaces `.boxCore`: same role — the middle that stands for the element
@@ -314,23 +343,48 @@
     box-shadow: inset 0 1px 2px var(--scrim-40);
 }
 
-/* Pure visualisation: it does not drag and does not follow the values. Where
-   the element actually sits is the canvas's job to show, not a thumbnail's. */
-.pinCore {
+/* The free-move indicator: a real button, not a thumbnail. Lit (accent) while
+   no edge is pinned — the element drags freely on the canvas — and a click
+   clears every pin. It does not follow the offset values; where the element
+   actually sits is the canvas's job to show. Doubled selector lifts it over
+   Button.module.css's variant/size pairs, same trick as `.pin`. */
+.pinCore.pinCore {
     position: absolute;
-    inset: 30%;
+    z-index: 2;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    min-height: 0;
+    margin: -10px 0 0 -10px;
+    padding: 0;
+    border: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: var(--radius-sm);
     background: var(--bg-surface-4);
+    transition: background 120ms ease;
 }
 
-.pinCore::after {
+.pinCore.pinCore::after {
     content: "";
     width: 6px;
     height: 6px;
     border-radius: 50%;
+    background: var(--border-strong);
+    transition: background 120ms ease;
+}
+
+.pinCore.pinCore:hover {
+    background: var(--overlay-10);
+}
+
+.pinCore.pinCore[aria-pressed="true"] {
+    background: var(--accent-3-10);
+}
+
+.pinCore.pinCore[aria-pressed="true"]::after {
     background: var(--accent-3);
 }
 
@@ -362,23 +416,29 @@
     color: var(--accent-3);
 }
 
+/* The four pins hug the 20px core (2px gap), not the band edges — they pin
+   the element the core stands for, so they read as parts of one cluster.
+   All are offset from the pinbox centre: core half (10) + gap (2) = 12,
+   plus the pin's own 14px on the leading side. */
 .pin--top,
 .pin--bottom {
+    top: 50%;
     left: 50%;
     margin-left: -7px;
 }
 
-.pin--top { top: 3px; }
-.pin--bottom { bottom: 3px; }
+.pin--top { margin-top: -26px; }
+.pin--bottom { margin-top: 12px; }
 
 .pin--left,
 .pin--right {
     top: 50%;
+    left: 50%;
     margin-top: -7px;
 }
 
-.pin--left { left: 3px; }
-.pin--right { right: 3px; }
+.pin--left { margin-left: -26px; }
+.pin--right { margin-left: 12px; }
 
 /* Input renders a 16px stepper column inside any field given `onStep` —
    in a 30px side field that leaves 14px for the value, clipping "-70px"
@@ -395,7 +455,36 @@
     cursor: default;
 }
 
-.segment[data-locked="true"] .sideInput {
+.sideInputLocked.sideInputLocked,
+.sideInputLocked.sideInputLocked input {
     color: var(--text-disabled);
     cursor: default;
+}
+
+/* ── Dynamic side values ─────────────────────────────────────────────────────
+   Where the browser supports it, a side field sizes to its CONTENT: "1000px"
+   or "-419px" widens the field instead of clipping (author request,
+   2026-08-30). The fixed widths above stay as the fallback, and the overflow
+   tooltip still covers values that hit the cap. `field-sizing` only applies
+   to form controls, so it lands on the bare input (spacing box) AND on the
+   inner input of the stepper wrapper (inset box); end-of-file position lets
+   these win over every per-variant width rule. */
+@supports (field-sizing: content) {
+    .box .sideInput.sideInput,
+    .box .sideInput.sideInput input {
+        field-sizing: content;
+    }
+
+    .box .sideInput.sideInput {
+        width: auto;
+        min-width: 28px;
+        max-width: 110px;
+        padding: 0 var(--space-4xs);
+    }
+
+    .box .sideInput.sideInput input {
+        width: auto;
+        min-width: 0;
+        padding: 0;
+    }
 }

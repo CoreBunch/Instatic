@@ -29,6 +29,7 @@
 import { useState } from 'react'
 import type { CSSPropertyBag } from '@core/page-tree'
 import { Button } from '@ui/components/Button'
+import { ControlRow } from '@ui/components/ControlRow'
 import { Select } from '@ui/components/Select'
 import { PadlockGlyph } from '@ui/icons/inspectorGlyphs'
 import { TokenAwareInput } from '@site/property-controls/TokenAwareInput'
@@ -317,11 +318,7 @@ function DimensionRow({
     : undefined
 
   return (
-    <div className={styles.dimensionRow} data-state={isSet ? 'set' : 'unset'}>
-      <span className={styles.rowLabel}>
-        {isSet && <span className={styles.rowDot} aria-hidden="true" />}
-        {label}
-      </span>
+    <ControlRow label={label} isSet={isSet}>
       <div className={styles.fused}>
         <TokenAwareInput
           aria-label={label}
@@ -346,6 +343,6 @@ function DimensionRow({
           ))}
         </Select>
       </div>
-    </div>
+    </ControlRow>
   )
 }

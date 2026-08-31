@@ -1,6 +1,7 @@
 ﻿import {
   useRef,
   type InputHTMLAttributes,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type Ref,
@@ -130,6 +131,20 @@ export function Input({
   const step = (delta: number) => (onStep ? onStep(delta) : nudge(delta))
 
   /**
+   * A field with a stepper is a numeric control, so it answers the keyboard
+   * the way a native number input does: ArrowUp / ArrowDown step the value,
+   * Shift makes it coarse — the same contract as the chevrons and the scrub.
+   * Native number inputs keep the browser's own arrow behaviour instead.
+   */
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    props.onKeyDown?.(event)
+    if (event.defaultPrevented || !onStep || props.disabled || props.readOnly) return
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+    event.preventDefault()
+    step((event.key === 'ArrowUp' ? 1 : -1) * (event.shiftKey ? SHIFT_MULTIPLIER : 1))
+  }
+
+  /**
    * Drag left/right on the field to scrub its value — the prototype's
    * `.numberfield` behaviour, and the reason a field with a stepper wears the
    * `ew-resize` cursor.
@@ -194,6 +209,7 @@ export function Input({
         !hasAffix && className,
       )}
       {...props}
+      onKeyDown={onStep ? handleKeyDown : props.onKeyDown}
     />
   )
 

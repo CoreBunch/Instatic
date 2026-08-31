@@ -257,17 +257,3 @@ export interface ContextualLoopEntitySource extends LoopEntitySourceBase {
  * on import. Plugins register prefetched sources via the plugin SDK.
  */
 export type LoopEntitySource = PrefetchedLoopEntitySource | ContextualLoopEntitySource
-
-// ---------------------------------------------------------------------------
-// Registry interface
-// ---------------------------------------------------------------------------
-
-export interface ILoopSourceRegistry {
-  register(source: LoopEntitySource): void
-  registerOrReplace(source: LoopEntitySource): void
-  unregister(id: string): void
-  get(id: string): LoopEntitySource | undefined
-  getOrThrow(id: string): LoopEntitySource
-  has(id: string): boolean
-  list(): LoopEntitySource[]
-}

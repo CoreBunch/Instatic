@@ -72,23 +72,38 @@ const OpenRouterPricingSchema = Type.Object(
   { additionalProperties: true },
 )
 
+/**
+ * One row of `GET /api/v1/models`. This is the ONLY description of that
+ * endpoint's shape — the OpenRouter *driver* validates its own catalogue
+ * fetch against the same schema, so the picker fields (`name`,
+ * `architecture`, `supported_parameters`) live here too rather than in a
+ * second, drifting copy.
+ */
 const OpenRouterModelSchema = Type.Object(
   {
     id: Type.String(),
+    name: Type.Optional(Type.String()),
+    architecture: Type.Optional(
+      Type.Object(
+        { input_modalities: Type.Optional(Type.Array(Type.String())) },
+        { additionalProperties: true },
+      ),
+    ),
+    supported_parameters: Type.Optional(Type.Array(Type.String())),
     pricing: Type.Optional(OpenRouterPricingSchema),
     context_length: Type.Optional(Type.Number()),
   },
   { additionalProperties: true },
 )
 
-const OpenRouterModelsResponseSchema = Type.Object(
+export const OpenRouterModelsResponseSchema = Type.Object(
   { data: Type.Array(OpenRouterModelSchema) },
   { additionalProperties: true },
 )
 
 /** Per-token USD string → per-million-token number. Returns null for an
  *  absent/blank/non-finite value so the cost path can fall back cleanly. */
-function perMTok(value: string | undefined): number | null {
+export function perMTok(value: string | undefined): number | null {
   if (value === undefined || value.trim() === '') return null
   const perToken = Number(value)
   if (!Number.isFinite(perToken)) return null

@@ -661,7 +661,8 @@ describe('StyleRuleComposer unset CSS property placeholders', () => {
     const gapX = screen.getByLabelText('Column gap (x)') as HTMLInputElement
     const gapY = screen.getByLabelText('Row gap (y)') as HTMLInputElement
     expect(gapX.value).toBe('')
-    expect(gapX.placeholder).toBe('0px')
+    // px is the implicit default unit — TokenAwareInput strips it for display.
+    expect(gapX.placeholder).toBe('0')
     expect(gapY.value).toBe('')
     expect(useEditorStore.getState().site!.styleRules[clsId].styles.gap).toBeUndefined()
   })
@@ -681,9 +682,9 @@ describe('StyleRuleComposer unset CSS property placeholders', () => {
     expect(flexSegment.getAttribute('aria-pressed')).toBe('true')
 
     // Gap renders inside the flex block as the x / y pair — a single-value
-    // shorthand shows in both cells.
-    expect((screen.getByLabelText('Column gap (x)') as HTMLInputElement).value).toBe('32px')
-    expect((screen.getByLabelText('Row gap (y)') as HTMLInputElement).value).toBe('32px')
+    // shorthand shows in both cells, with the implicit px unit stripped.
+    expect((screen.getByLabelText('Column gap (x)') as HTMLInputElement).value).toBe('32')
+    expect((screen.getByLabelText('Row gap (y)') as HTMLInputElement).value).toBe('32')
   })
 })
 

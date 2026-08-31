@@ -1,1 +1,1 @@
-export { ControlRow } from './ControlRow'
+export { ControlRow, ControlRowLabel } from './ControlRow'

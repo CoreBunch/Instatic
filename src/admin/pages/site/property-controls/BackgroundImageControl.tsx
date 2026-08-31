@@ -43,7 +43,7 @@
  */
 import { useState } from 'react'
 import type { ControlProps } from './shared'
-import { ControlRow } from '@ui/components/ControlRow'
+import { cn } from '@ui/cn'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { Input } from '@ui/components/Input'
 import { ColorInput } from '@ui/components/ColorInput'
@@ -154,20 +154,20 @@ export function BackgroundImageControl({
   const imageUrl = mode === 'image' ? extractUrlPayload(cssValue) : ''
 
   return (
-    <>
-      {/*
-       * Mode row — inline layout so it matches every other CSS property's
-       * row anatomy (100px label column + control column). The mode-specific
-       * body below sits OUTSIDE this row so it can take the full wrapper
-       * width without being clipped to the 1fr control column.
-       */}
-      <ControlRow
-        propKey={propKey}
-        label={label}
-        layout="inline"
-        isOverride={isOverride}
-        disabled={disabled}
+    /*
+     * The mock's `.row:has(> .mediafield)`: a wrapping flex row — the label
+     * keeps its column and the whole image field (mode tabs + picker) lives
+     * in ONE control column beside it, wrapping under the label when the
+     * dock is too narrow to give it a usable width.
+     */
+    <div className={cn(styles.imageRow, disabled && styles.imageRowDisabled)}>
+      <label
+        className={cn(styles.imageLabel, isOverride && styles.imageLabelOverride)}
+        htmlFor={`ctrl-${propKey}`}
       >
+        {label ?? propKey}
+      </label>
+      <div className={styles.imageField}>
         <SegmentedControl<BgImageMode>
           value={mode}
           options={MODE_OPTIONS}
@@ -178,27 +178,23 @@ export function BackgroundImageControl({
           disabled={disabled}
           aria-label={`${label ?? propKey} mode`}
         />
-      </ControlRow>
 
-      {mode === 'image' && (
-        <div className={styles.modeBody}>
+        {mode === 'image' && (
           <MediaLibraryControl
             propKey={`${propKey}-image-url`}
             value={imageUrl}
             onChange={handleImageUrlChange}
             // Empty label suppresses MediaLibraryControl's inner labelRow
-            // entirely — the parent row above already labels the whole control.
+            // entirely — the row's own label already names the whole control.
             label=""
             isOverride={isOverride}
             disabled={disabled}
             layout="stacked"
             mediaKind="image"
           />
-        </div>
-      )}
+        )}
 
-      {mode === 'custom' && (
-        <div className={styles.modeBody}>
+        {mode === 'custom' && (
           <div className={styles.customRow}>
             {/*
               The swatch opens the rich picker WITH its fill tabs, so a
@@ -230,8 +226,8 @@ export function BackgroundImageControl({
               aria-label={`${label ?? propKey} custom CSS`}
             />
           </div>
-        </div>
-      )}
-    </>
+        )}
+      </div>
+    </div>
   )
 }

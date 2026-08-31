@@ -1,12 +1,12 @@
 /**
- * CanvasLayerContextMenu — portal-rendered right-click menu for canvas nodes.
+ * CanvasLayerContextMenu — right-click menu for canvas nodes. `ContextMenu`
+ * portals itself to `document.body`, so no wrapper portal is needed here.
  *
  * Pure JSX. Owns no state; the caller drives `position` and `onClose` via
  * `useCanvasLayerContextMenu`. Keeping this component focused means
  * `CanvasRoot` doesn't carry the action-routing boilerplate inline.
  */
 
-import { createPortal } from 'react-dom'
 import { LayerNodeContextMenu } from '@site/panels/DomPanel/LayerNodeContextMenu'
 import type { CanvasContextMenuPosition } from './useCanvasLayerContextMenu'
 
@@ -32,7 +32,7 @@ export function CanvasLayerContextMenu({
   onClose,
   actions,
 }: CanvasLayerContextMenuProps) {
-  return createPortal(
+  return (
     <LayerNodeContextMenu
       x={position.x}
       y={position.y}
@@ -69,7 +69,6 @@ export function CanvasLayerContextMenu({
         onClose()
       }}
       onPasteHtml={actions.pasteHtml}
-    />,
-    document.body,
+    />
   )
 }

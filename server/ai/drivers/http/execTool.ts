@@ -88,3 +88,20 @@ export function normaliseToolOutput(result: unknown): AiToolOutput {
   }
   return { ok: true, data: result }
 }
+
+/**
+ * Flatten a tool result into the text body a provider's tool-result message
+ * carries. Shared by both wire protocols the HTTP drivers speak — the OpenAI
+ * Responses `function_call_output` item and the OpenAI-compatible
+ * `role: 'tool'` message are BOTH text-only, so an image can't ride in either.
+ * Drop images with a note so the model knows visual evidence exists but wasn't
+ * delivered through this channel.
+ */
+export function toolOutputToString(output: AiToolOutput): string {
+  if (!output.ok) return output.error ?? 'Tool call failed.'
+  const text = JSON.stringify(output.data ?? { ok: true })
+  if (output.images && output.images.length > 0) {
+    return `${text}\n\n[${output.images.length} screenshot(s) omitted: this provider delivers tool results as text only.]`
+  }
+  return text
+}

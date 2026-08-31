@@ -34,14 +34,26 @@
 }
 
 /* Parts mode: the linked field stays put and goes quiet. `disabled` on the
-   input does the real work (no click, no tab, no scrub) — this only paints
-   it, and hides the stepper that would advertise an edit it won't accept. */
+   input does the real work (no click, no tab, no scrub) — these rules only
+   paint it. The quiet fill lands on the field's OUTERMOST box — the affix
+   wrapper (`span[data-disabled]`) that Input renders around a field with a
+   stepper column — matching the mock's `.scopegroup[data-mode="parts"] >
+   .field`. Painting the inner input alone split the field into two tones:
+   the stepper column kept the wrapper's own fill. */
 .row[data-mode='parts'] .linked input {
-    background: var(--overlay-5);
+    background: none;
     color: var(--text-disabled);
 }
 
-.row[data-mode='parts'] .linked button {
+.row[data-mode='parts'] .linked span[data-disabled],
+.row[data-mode='parts'] .linked span[data-disabled]:hover {
+    background: var(--overlay-5);
+    /* The overlay fill + disabled text IS the quiet state — no extra dimming. */
+    opacity: 1;
+}
+
+/* The stepper column would advertise an edit the field won't accept. */
+.row[data-mode='parts'] .linked span[data-disabled] span:has(> button) {
     display: none;
 }
 

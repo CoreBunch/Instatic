@@ -239,6 +239,7 @@ export function BorderControl({
             value={colorValue}
             ariaLabel={`Border ${scopeName} color`}
             swatchLabel={`Border ${scopeName} color swatch`}
+            drillInTitle="Border color"
             onChange={(v) => writeSide('Color', v || undefined)}
             onPreview={onPreview ? (v) => previewSide?.('Color', v || undefined) : undefined}
             onClearPreview={onClearPreview}
@@ -248,7 +249,7 @@ export function BorderControl({
         <FieldRow label="Width">
           <div className={styles.widthPair}>
             <Input
-              fieldSize="sm"
+              fieldSize="xs"
               value={widthValue}
               placeholder={widthPlaceholder}
               aria-label={`Border ${scopeName} width`}
@@ -269,7 +270,7 @@ export function BorderControl({
 
         <FieldRow label="Style">
           <Select
-            fieldSize="sm"
+            fieldSize="xs"
             value={styleValue}
             aria-label={`Border ${scopeName} style`}
             onChange={(e) => writeSide('Style', e.target.value || undefined)}
@@ -285,7 +286,7 @@ export function BorderControl({
         {/* Outline has no row in the prototype; it keeps its existing pair. */}
         <FieldRow label="Outline">
           <Input
-            fieldSize="sm"
+            fieldSize="xs"
             value={pickString(storedStyles.outline)}
             placeholder={pickString(currentStyles.outline) || 'none'}
             aria-label="Outline"
@@ -294,7 +295,7 @@ export function BorderControl({
         </FieldRow>
         <FieldRow label="Offset">
           <Input
-            fieldSize="sm"
+            fieldSize="xs"
             value={pickString(storedStyles.outlineOffset)}
             placeholder={pickString(currentStyles.outlineOffset) || '0px'}
             aria-label="Outline offset"

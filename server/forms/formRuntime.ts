@@ -13,6 +13,7 @@
  * `<form>` tag. Tokens are stateless HMAC signatures (no expiry), so baking
  * them into disk artefacts and cached fragments is safe.
  */
+import { escapeHtml } from '@core/html-sanitize'
 import { issuePublicFormPageToken } from './challenge'
 
 const CMS_FORM_TAG_PATTERN = /<form\b(?=[^>]*\bdata-instatic-form-mode=(["'])cms\1)(?=[^>]*\bdata-instatic-form-id=(["'])[^"']+\2)[^>]*>/gi
@@ -25,7 +26,7 @@ export function stampFormPageTokens(html: string, pageId: string): string {
     const token = issuePublicFormPageToken({ pageId, formId })
     return tag.replace(
       /<form\b/i,
-      `<form data-instatic-page-token="${escapeAttr(token)}" data-instatic-page-id="${escapeAttr(pageId)}"`,
+      `<form data-instatic-page-token="${escapeHtml(token)}" data-instatic-page-id="${escapeHtml(pageId)}"`,
     )
   })
 }
@@ -34,13 +35,4 @@ function attrValue(tag: string, name: string): string {
   const pattern = new RegExp(`\\b${name}=(["'])(.*?)\\1`, 'i')
   const match = tag.match(pattern)
   return match?.[2] ?? ''
-}
-
-function escapeAttr(value: string): string {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
 }

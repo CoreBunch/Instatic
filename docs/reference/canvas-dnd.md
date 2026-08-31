@@ -257,6 +257,7 @@ Don't add raw `dragstart` / `dragend` listeners — `@dnd-kit` owns those. If yo
   - `src/admin/pages/site/canvas/canvasInsertionDrop.ts` — pointer-to-canvas insertion target + fixed preview geometry shared by module and media insert sources
   - `src/admin/pages/site/canvas/CanvasRoot.tsx` — `<DndContext>` mount
   - `src/admin/pages/site/canvas/useCanvasReorderDrag.ts` — drag-state hook
+  - `src/admin/pages/site/canvas/useCanvasFreeMoveDrag.ts` — when the selected element's computed `position` is `relative` / `absolute` / `fixed`, the selection toolbar's hand-grab drag moves the element (rewriting every offset side the active style target stores through `useActiveStyleTarget`: a stored `right`/`bottom` gets its mirrored delta, `left`/`top` are introduced only when their axis has no opposite-edge anchor) instead of reordering; anything else — including `sticky` — falls through to the reorder drag. Pinned inset edges (the Position section's pinbox, `lockedInsetSides` in `selectionSlice`) freeze their axis: a pinned top/bottom freezes vertical movement (no `top` write), a pinned left/right freezes horizontal (no `left` write), and both axes pinned disables free-move so the grab falls through to the reorder drag
   - `src/admin/pages/site/panels/MediaExplorerPanel/mediaCanvasInsertion.ts` — media asset → base module/defaults mapping
   - `src/admin/pages/site/store/insertLocation.ts` — `InsertLocation` shape
   - `src/core/page-tree/mutations.ts` — `insertNode`, `moveNode`, `moveNodes`, `wrapNode`

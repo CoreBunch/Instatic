@@ -6,20 +6,30 @@
  * canvas, not over the panel it came from) and falls back under the trigger
  * when there is no room. It carries the panel's own tone, lifted by a border
  * and a shadow rather than by a lighter fill — it is a piece of the panel
- * that floated off, not a foreign box (docs/features/inspector-panel.md §9).
+ * that floated off, not a foreign box (docs/features/inspector-panel.md §10).
  *
  * Owns everything a floating editor needs and no editor logic at all:
- * placement, viewport clamping, staying clear of the marked sidebars, the
- * drag header, the glide-back after a rubber-banded drop, and dismissal by ×,
- * Escape, or a pointerdown outside itself and its trigger — which is what
- * keeps at most one panel open at a time.
+ * placement, viewport clamping (first from a size guess, then re-clamped from
+ * the real measurement — and kept on screen by a ResizeObserver as the content
+ * grows), staying clear of the marked sidebars, the drag header, the
+ * glide-back after a rubber-banded drop, and dismissal by ×, Escape, or a
+ * pointerdown outside itself and its trigger — which is what keeps at most
+ * one panel open at a time.
  *
- * Callers: the colour picker (ColorInput), and the inspector's effect / border
- * popouts. One implementation, so "the floating editor" behaves identically
- * wherever it appears.
+ * There is never a SECOND panel stacked on the first: a control inside the
+ * panel that needs a rich editor (the colour swatch in the border / effect
+ * popouts) pushes its view INTO this panel via `FloatingPanelDrillView` —
+ * the header swaps to a back arrow + a contextual title, × still closes the
+ * whole panel, and back returns to the main view with its state intact.
+ *
+ * Callers: the colour picker (ColorInput), the icon picker, and the
+ * inspector's effect / border popouts. One implementation, so "the floating
+ * editor" behaves identically wherever it appears.
  */
 
 import {
+  useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -33,6 +43,12 @@ import { createPortal } from 'react-dom'
 import { cn } from '@ui/cn'
 import { Button } from '@ui/components/Button'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
+import { ChevronLeftIcon } from 'pixel-art-icons/icons/chevron-left'
+import {
+  FloatingPanelHostContext,
+  type FloatingPanelDrill,
+  type FloatingPanelHost,
+} from './floatingPanelHost'
 import styles from './FloatingPanel.module.css'
 
 /** Panel gap from the trigger, and the viewport margin it is clamped to. */
@@ -50,6 +66,42 @@ type PanelStyle = CSSProperties & {
   '--floating-panel-y'?: string
 }
 
+interface FloatingPanelDrillViewProps {
+  /** Contextual header title naming what is edited (e.g. "Border color"). */
+  title: string
+  /** Fires from the header's back arrow (and Escape) — return to the main view. */
+  onBack: () => void
+  children: ReactNode
+}
+
+/**
+ * Push a view into the enclosing FloatingPanel instead of stacking a second
+ * panel. While mounted, the panel hides its main content (kept mounted, so
+ * its state survives the round trip), shows `children` in its place, and the
+ * header becomes back arrow + `title`. Unmounting — or the back arrow, which
+ * calls `onBack` so the OWNER unmounts it — restores the main view. Renders
+ * nothing outside a FloatingPanel.
+ */
+export function FloatingPanelDrillView({ title, onBack, children }: FloatingPanelDrillViewProps) {
+  const host = useContext(FloatingPanelHostContext)
+  const registerDrill = host?.registerDrill
+
+  // Latest onBack through a ref: the registration effect below must not
+  // depend on the callback's identity, or an unstable caller callback would
+  // re-register (→ re-render → re-register) on every render.
+  const onBackRef = useRef(onBack)
+  useEffect(() => {
+    onBackRef.current = onBack
+  })
+  useEffect(() => {
+    if (!registerDrill) return
+    return registerDrill({ title, onBack: () => onBackRef.current() })
+  }, [registerDrill, title])
+
+  if (host?.drillContainer == null) return null
+  return createPortal(children, host.drillContainer)
+}
+
 interface FloatingPanelProps {
   open: boolean
   onClose: () => void
@@ -57,6 +109,12 @@ interface FloatingPanelProps {
   anchorRef: RefObject<HTMLElement | null>
   /** Header text. Also the accessible name unless `ariaLabel` overrides it. */
   title: ReactNode
+  /**
+   * When set, a back-arrow button leads the header — for panels that are one
+   * step of a caller-managed navigation. Drill-in views set this internally
+   * via `FloatingPanelDrillView`; the drill's back wins while one is active.
+   */
+  onBack?: () => void
   ariaLabel?: string
   /** Accessible name of the × button — say WHAT closes, not just "Close". */
   closeLabel?: string
@@ -78,6 +136,7 @@ export function FloatingPanel({
   onClose,
   anchorRef,
   title,
+  onBack,
   ariaLabel,
   closeLabel = 'Close',
   children,
@@ -88,9 +147,23 @@ export function FloatingPanel({
 }: FloatingPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null)
+  const [drill, setDrill] = useState<FloatingPanelDrill | null>(null)
+  const [drillContainer, setDrillContainer] = useState<HTMLElement | null>(null)
+
+  // Referenced in the drill view's registration-effect dependency array, so
+  // it needs a GUARANTEED stable identity — an unstable one would re-register
+  // on every render (memoization-rule exception 1).
+  const registerDrill = useCallback((registration: FloatingPanelDrill) => {
+    setDrill(registration)
+    return () => setDrill((current) => (current === registration ? null : current))
+  }, [])
+  const host: FloatingPanelHost = { registerDrill, drillContainer }
 
   // Place on open, forget on close, so re-opening always lands beside the
-  // trigger rather than where the user last dragged it.
+  // trigger rather than where the user last dragged it. The panel is not in
+  // the DOM yet at this point, so this first placement clamps from the
+  // `estimatedHeight` guess — the effect below immediately re-clamps from the
+  // real measurement once it mounts.
   /* eslint-disable react-hooks/set-state-in-effect */
   useLayoutEffect(() => {
     if (!open) {
@@ -99,20 +172,42 @@ export function FloatingPanel({
     }
     const rect = anchorRef.current?.getBoundingClientRect()
     if (!rect) return
-    const panel = panelRef.current
-    // Once the panel has rendered its real content its height is known — the
-    // second pass re-clamps from the measurement instead of the guess, so it
-    // opens fully on screen and clear of the sidebars.
-    const measuredWidth = panel?.offsetWidth ?? width
-    const measuredHeight = panel?.offsetHeight ?? estimatedHeight
-    setPosition(
-      avoidObstacles(
-        placeBesideAnchor(rect, measuredWidth, measuredHeight),
-        measuredWidth,
-        measuredHeight,
-      ),
-    )
+    setPosition(avoidObstacles(placeBesideAnchor(rect, width, estimatedHeight), width, estimatedHeight))
   }, [open, anchorRef, width, estimatedHeight])
+
+  // Second pass and live re-clamp: once the panel is mounted its REAL size is
+  // known, so re-run the obstacle/viewport clamping from the measurement. The
+  // ResizeObserver keeps it fully on screen when the content later changes
+  // size (the drill-in colour view is taller than most popout bodies), and a
+  // window resize re-clamps too. Position identity is preserved when nothing
+  // needs to move, so this never fights the drag or the glide-back.
+  const mounted = open && position !== null
+  useLayoutEffect(() => {
+    if (!mounted) return
+    const panel = panelRef.current
+    if (!panel) return
+    const reclamp = () => {
+      setPosition((current) => {
+        if (current === null) return current
+        const panelWidth = panel.offsetWidth
+        const panelHeight = panel.offsetHeight
+        const next = avoidObstacles(
+          clampPosition(current.x, current.y, panelWidth, panelHeight),
+          panelWidth,
+          panelHeight,
+        )
+        return next.x === current.x && next.y === current.y ? current : next
+      })
+    }
+    reclamp()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(reclamp)
+    observer?.observe(panel)
+    window.addEventListener('resize', reclamp)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', reclamp)
+    }
+  }, [mounted])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Dismissal: Escape, or a pointerdown outside the panel and its trigger.
@@ -123,18 +218,33 @@ export function FloatingPanel({
       if (!(target instanceof Node)) return
       if (panelRef.current?.contains(target)) return
       if (anchorRef.current?.contains(target)) return
-      if (
-        keepOpenSelector &&
-        target instanceof Element &&
-        target.closest(keepOpenSelector)
-      ) {
-        return
+      if (target instanceof Element) {
+        if (keepOpenSelector && target.closest(keepOpenSelector)) return
+        // A dropdown spawned from a field inside this panel — a Select's
+        // listbox, a token menu — portals to <body>, so its clicks land
+        // "outside" this panel's DOM. Anything portalled AFTER this panel in
+        // document order is such a child surface; closing over it would
+        // unmount the dropdown mid-pick.
+        const overlay = target.closest('[role="menu"], [role="listbox"]')
+        if (
+          overlay &&
+          panelRef.current &&
+          panelRef.current.compareDocumentPosition(overlay) & Node.DOCUMENT_POSITION_FOLLOWING
+        ) {
+          return
+        }
       }
       onClose()
     }
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key !== 'Escape') return
       event.stopPropagation()
+      // Escape backs out of a drilled-in view first; only the next Escape
+      // (or ×, or a click outside) closes the whole panel.
+      if (drill) {
+        drill.onBack()
+        return
+      }
       onClose()
       // Focus goes back where it came from, or it lands on <body> and the
       // next Tab restarts from the top of the document.
@@ -146,7 +256,7 @@ export function FloatingPanel({
       document.removeEventListener('pointerdown', handlePointerDown, true)
       document.removeEventListener('keydown', handleKeyDown, true)
     }
-  }, [open, onClose, anchorRef, keepOpenSelector])
+  }, [open, onClose, anchorRef, keepOpenSelector, drill])
 
   /**
    * Header drag: window-level listeners (not pointer capture on the header)
@@ -222,11 +332,16 @@ export function FloatingPanel({
 
   if (!open || position === null || typeof document === 'undefined') return null
 
+  // While a drill view is active, its contextual title and back arrow replace
+  // the caller's header; × keeps closing the whole panel.
+  const headerTitle = drill?.title ?? title
+  const headerBack = drill?.onBack ?? onBack
+
   return createPortal(
     <div
       ref={panelRef}
       role="dialog"
-      aria-label={ariaLabel ?? (typeof title === 'string' ? title : undefined)}
+      aria-label={ariaLabel ?? (typeof headerTitle === 'string' ? headerTitle : undefined)}
       className={cn(styles.panel, className)}
       // Transitions from the panel's own controls bubble up here, so only the
       // panel's own position transition disarms the glide.
@@ -243,12 +358,25 @@ export function FloatingPanel({
       }
     >
       <div className={styles.header} onPointerDown={beginPanelDrag}>
-        <span className={styles.title}>{title}</span>
+        {headerBack && (
+          <Button variant="ghost" size="xs" iconOnly aria-label="Back" onClick={headerBack}>
+            <ChevronLeftIcon size={10} aria-hidden="true" />
+          </Button>
+        )}
+        <span className={styles.title}>{headerTitle}</span>
         <Button variant="ghost" size="xs" iconOnly aria-label={closeLabel} onClick={onClose}>
           <CloseIcon size={10} aria-hidden="true" />
         </Button>
       </div>
-      {children}
+      <FloatingPanelHostContext.Provider value={host}>
+        {/* The main view stays MOUNTED under a drill so its state (active
+            border side, half-typed fields) survives the round trip — only its
+            display goes. */}
+        <div className={styles.content} data-drilled={drill ? '' : undefined}>
+          {children}
+        </div>
+        {drill && <div ref={setDrillContainer} />}
+      </FloatingPanelHostContext.Provider>
     </div>,
     document.body,
   )

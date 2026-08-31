@@ -126,7 +126,8 @@ describe('dynamic binding controls', () => {
     render(<PropertiesPanel />)
 
     // String-typed controls (text) use insert mode — the affordance
-    // button's aria-label reads "Insert binding for …".
+    // button's aria-label reads "Insert binding for …", following the
+    // prop's label.
     fireEvent.click(screen.getByRole('button', { name: /insert binding for text/i }))
     await waitFor(() => expect(screen.getByRole('menu', { name: /insert binding for text/i })).toBeDefined())
 

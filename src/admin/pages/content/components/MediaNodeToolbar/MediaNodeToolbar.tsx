@@ -26,7 +26,6 @@ import { NodeSelection } from '@tiptap/pm/state'
 import type { Editor } from '@tiptap/core'
 import { useEditorState } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
-import type { VirtualElement } from '@floating-ui/dom'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
 import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
@@ -76,7 +75,9 @@ export function MediaNodeToolbar({ editor, onPickMedia, iframeEl }: MediaNodeToo
           shift: { boundary: iframeEl, padding: 8 },
           flip: { boundary: iframeEl, padding: 8 },
         },
-        getReferencedVirtualElement: (): VirtualElement | null => {
+        // Return type is checked structurally against floating-ui's
+        // `VirtualElement` where this object is spread onto <BubbleMenu>.
+        getReferencedVirtualElement: () => {
           if (editor.isDestroyed) return null
           const sel = editor.state.selection
           if (!(sel instanceof NodeSelection)) return null

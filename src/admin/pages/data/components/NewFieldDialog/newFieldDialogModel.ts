@@ -1,5 +1,6 @@
 import { nanoid } from 'nanoid'
 import type { DataFieldType } from '@core/data/schemas'
+import { slugify } from '@admin/lib/slugify'
 
 export interface DraftOption {
   id: string
@@ -44,11 +45,7 @@ export const MEDIA_KIND_OPTIONS = [
 const FIELD_ID_PATTERN = /^[a-z][a-z0-9_]*$/
 
 export function slugifyOptionValue(label: string): string {
-  return label
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
+  return slugify(label, { sep: '_' })
 }
 
 export function fieldIdFromLabel(label: string): string {

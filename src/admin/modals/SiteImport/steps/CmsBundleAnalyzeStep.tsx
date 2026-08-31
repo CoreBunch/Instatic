@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from 'react'
 import { Checkbox } from '@ui/components/Checkbox'
 import { Switch } from '@ui/components/Switch'
 import { assignRailAccents, railTintVar, type RailAccent } from '@ui/railAccent'
+import { formatBytes } from '@admin/lib/formatBytes'
 import { DragAndDropSolidIcon } from 'pixel-art-icons/icons/drag-and-drop-solid'
 import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
 import { HeadingIcon } from 'pixel-art-icons/icons/heading'
@@ -499,7 +500,7 @@ function renderCmsMedia(
                 {renderCmsMediaThumb(asset)}
                 <div className={styles.info}>
                   <span className={styles.title}>{asset.filename}</span>
-                  <span className={styles.meta}>{asset.mimeType} · {formatBytes(asset.sizeBytes)}</span>
+                  <span className={styles.meta}>{asset.mimeType} · {formatBytes(asset.sizeBytes, { maxUnit: 'MB' })}</span>
                 </div>
                 <Switch
                   checked={on}
@@ -617,10 +618,4 @@ function rowTitle(row: CmsBundleState['bundle']['rows'][number], primaryFieldId:
   const primary = row.cells[primaryFieldId]
   if (typeof primary === 'string' && primary.trim()) return primary
   return row.slug || row.id
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }

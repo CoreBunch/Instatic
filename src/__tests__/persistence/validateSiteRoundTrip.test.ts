@@ -204,3 +204,17 @@ describe('validateSite — negative: unsafe SiteFile path is silently dropped (r
     }
   })
 })
+
+describe('validateSite — contextStyles[desktop] folds into base styles (rule 5)', () => {
+  it('desktop override values win the merge and the context key is removed', () => {
+    const raw = loadFixture() as { styleRules: Record<string, { styles: Record<string, unknown>; contextStyles: Record<string, Record<string, unknown>> }> }
+    const rule = Object.values(raw.styleRules)[0]
+    rule.styles.width = '200px'
+    rule.contextStyles['desktop'] = { width: '456px', top: '10px' }
+    const shell = validateSite(raw)
+    const parsed = Object.values(shell.styleRules)[0]
+    expect(parsed.styles.width).toBe('456px')
+    expect(parsed.styles.top).toBe('10px')
+    expect(parsed.contextStyles['desktop']).toBeUndefined()
+  })
+})

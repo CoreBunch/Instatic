@@ -2,6 +2,8 @@
 import { useId, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
+import { formatDateTime } from '@admin/lib/formatDateTime'
+import { copyToClipboard } from '@admin/lib/clipboard'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
@@ -434,10 +436,6 @@ function ConnectionDetailRow({ label, value }: { label: string; value: string })
   )
 }
 
-function formatDateTime(value: string): string {
-  return new Date(value).toLocaleString()
-}
-
 const ACCESS_TOKEN_FORM_ID = 'mcp-access-token-form'
 
 function CreateAccessTokenDialog({
@@ -624,17 +622,15 @@ function CopyField({
   const [copied, setCopied] = useState(false)
 
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(value)
+    if (await copyToClipboard(value)) {
       setCopied(true)
-    } catch (err) {
-      console.error('[McpTab] clipboard write failed:', err)
-      pushToast({
-        kind: 'error',
-        title: 'Could not copy to clipboard',
-        body: getErrorMessage(err, 'Unknown clipboard error'),
-      })
+      return
     }
+    pushToast({
+      kind: 'error',
+      title: 'Could not copy to clipboard',
+      body: 'The browser refused the clipboard write.',
+    })
   }
 
   return (

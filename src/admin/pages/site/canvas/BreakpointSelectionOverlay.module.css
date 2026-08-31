@@ -70,8 +70,10 @@
     box-shadow: var(--canvas-selection-ring);
 }
 
+/* Hover reads as "could select" — dashed, 60% accent — versus the solid
+   selection ring's "is selected". */
 .hover {
-    box-shadow: var(--canvas-hover-ring);
+    border: 1px dashed var(--canvas-hover-ring-color);
 }
 
 /* Selector-affinity ring: every canvas element matching a selector hovered in
@@ -265,6 +267,82 @@
 .treeLadderRelation {
     flex-shrink: 0;
     padding-left: var(--space-s);
+}
+
+/* ── Resize handles ──────────────────────────────────────────────────────
+   Eight interactive squares (corners + edge midpoints) riding the selection
+   ring. Like the rings they live in screen-px space, so they keep their size
+   at every zoom. White fill + accent outline per the reference spec. */
+.resizeHandleLayer {
+    pointer-events: none;
+}
+
+.resizeHandle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 8px;
+    height: 8px;
+    box-sizing: border-box;
+    border: 1px solid var(--canvas-accent);
+    border-radius: 2px;
+    background: var(--picker-white);
+    pointer-events: auto;
+    z-index: 52;
+}
+
+.resizeHandle[data-direction="n"],
+.resizeHandle[data-direction="s"] {
+    cursor: ns-resize;
+}
+
+.resizeHandle[data-direction="e"],
+.resizeHandle[data-direction="w"] {
+    cursor: ew-resize;
+}
+
+.resizeHandle[data-direction="ne"],
+.resizeHandle[data-direction="sw"] {
+    cursor: nesw-resize;
+}
+
+.resizeHandle[data-direction="nw"],
+.resizeHandle[data-direction="se"] {
+    cursor: nwse-resize;
+}
+
+/* ── Dimension badge ─────────────────────────────────────────────────────
+   `700 × 412` under the selection ring — CSS px of the element, not screen
+   px, so the number matches what the inspector fields say at any zoom. */
+.dimensionBadge {
+    position: absolute;
+    top: 0;
+    left: 0;
+    translate: -50% 0;
+    padding: var(--space-4xs) var(--space-2xs);
+    border-radius: var(--radius-sm);
+    background: var(--canvas-accent);
+    color: var(--picker-white);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 52;
+}
+
+/* ── Smart guides ────────────────────────────────────────────────────────
+   1px screen-px alignment lines shown while a free-move drag snaps to a
+   sibling edge / centre. Created imperatively by the drag (no React state on
+   the hot path); position/size arrive via inline transform + width/height. */
+.smartGuide {
+    position: absolute;
+    top: 0;
+    left: 0;
+    background: var(--canvas-accent);
+    pointer-events: none;
+    z-index: 52;
 }
 
 .dragToolbarButton {

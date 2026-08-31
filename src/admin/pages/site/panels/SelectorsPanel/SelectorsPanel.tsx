@@ -32,6 +32,7 @@ import {
   selectorMatchesQuery,
 } from '../selectorUsage'
 import styles from './SelectorsPanel.module.css'
+import { copyToClipboard } from '@admin/lib/clipboard'
 
 type SelectorsPanelProps = DockablePanelProps
 
@@ -294,7 +295,7 @@ export function SelectorsPanel({
   }
 
   function handleCopySelector(cls: StyleRule) {
-    void navigator.clipboard?.writeText(styleRuleSelector(cls))
+    void copyToClipboard(styleRuleSelector(cls))
     setContextMenu(null)
   }
 

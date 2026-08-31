@@ -18,7 +18,7 @@
  */
 
 import type { NewStyleRule, ImportColorToken } from './types'
-import { isRootScopeSelector } from './rootScope'
+import { extractRootCustomProperties } from './rootScope'
 
 // ---------------------------------------------------------------------------
 // Colour-value detection
@@ -90,39 +90,12 @@ export function isCssColorValue(raw: string): boolean {
 export function extractRootColorTokens(
   rules: NewStyleRule[],
 ): { rules: NewStyleRule[]; colorTokens: ImportColorToken[] } {
-  const colorTokens: ImportColorToken[] = []
-  const out: NewStyleRule[] = []
-
-  for (const rule of rules) {
-    if (rule.kind !== 'ambient' || !isRootScopeSelector(rule.selector)) {
-      out.push(rule)
-      continue
-    }
-
-    const remaining: Record<string, unknown> = {}
-    const remainingPriorities: Record<string, 'important'> = {}
-    for (const [prop, value] of Object.entries(rule.styles)) {
-      const important = rule.stylePriorities?.[prop] === 'important'
-      if (!important && prop.startsWith('--') && typeof value === 'string' && isCssColorValue(value)) {
-        colorTokens.push({ slug: prop.slice(2), value: value.trim() })
-      } else {
-        remaining[prop] = value
-        if (important) remainingPriorities[prop] = 'important'
-      }
-    }
-
-    const hasContext = Object.keys(rule.contextStyles ?? {}).length > 0
-    // Keep the rule only if it still carries declarations (base or contextual).
-    if (Object.keys(remaining).length > 0 || hasContext) {
-      const rewritten = { ...rule, styles: remaining }
-      if (Object.keys(remainingPriorities).length > 0) {
-        rewritten.stylePriorities = remainingPriorities
-      } else {
-        delete rewritten.stylePriorities
-      }
-      out.push(rewritten)
-    }
-  }
-
-  return { rules: out, colorTokens }
+  const { rules: out, tokens } = extractRootCustomProperties<ImportColorToken>(
+    rules,
+    (prop, value) =>
+      prop.startsWith('--') && isCssColorValue(value)
+        ? { slug: prop.slice(2), value: value.trim() }
+        : null,
+  )
+  return { rules: out, colorTokens: tokens }
 }

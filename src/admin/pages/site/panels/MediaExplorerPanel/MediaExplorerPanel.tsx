@@ -59,6 +59,7 @@ import {
 } from './useMediaCanvasInsertionDrag'
 import styles from '../SiteExplorerPanel/SiteExplorerPanel.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { copyToClipboard } from '@admin/lib/clipboard'
 
 interface MediaExplorerPanelProps {
   variant?: 'docked' | 'tab'
@@ -296,17 +297,7 @@ export function MediaExplorerPanel({
 
   async function copyTargetUrl(target: CmsMediaAsset) {
     setContextMenu(null)
-    if (!navigator.clipboard?.writeText) {
-      setMediaError('Clipboard is unavailable')
-      return
-    }
-
-    try {
-      await navigator.clipboard.writeText(target.publicPath)
-    } catch (err) {
-      setMediaError('Unable to copy media URL')
-      console.error('[MediaExplorerPanel] copy media URL error:', err)
-    }
+    if (!await copyToClipboard(target.publicPath)) setMediaError('Unable to copy media URL')
   }
 
   function contextMenuItems(target: CmsMediaAsset): ExplorerContextMenuItem[] {

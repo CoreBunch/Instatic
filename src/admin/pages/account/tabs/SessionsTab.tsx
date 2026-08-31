@@ -42,10 +42,7 @@ import {
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import styles from '../AccountPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
-
-function formatDateTime(value: string): string {
-  return new Date(value).toLocaleString()
-}
+import { formatDateTime } from '@admin/lib/formatDateTime'
 
 function formatLastSeen(value: string): string {
   const ms = Date.now() - new Date(value).getTime()

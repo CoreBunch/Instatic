@@ -41,7 +41,7 @@ import { AlignmentControl } from './AlignmentControl'
 import { GapInput } from './GapInput'
 import { GridTrackControl } from './GridTrackControl'
 import { GridAxisControl } from './GridAxisControl'
-import { LabeledControl } from './LabeledControl'
+import { ControlRow } from '@ui/components/ControlRow'
 import { PaddingRow } from './PaddingRow'
 import styles from '../LayoutSection.module.css'
 
@@ -185,7 +185,7 @@ export function LayoutSection({
   return (
     <div className={styles.layoutSection}>
       {/* Display switcher — labeled "Type" like the redesign's Layout row */}
-      <LabeledControl label="Type" isSet={hasStyleValue(storedStyles.display)}>
+      <ControlRow label="Type" isSet={hasStyleValue(storedStyles.display)}>
         <DropdownSwitcher
           property="display"
           value={display}
@@ -196,7 +196,7 @@ export function LayoutSection({
           onPreview={onPreview ? (v) => onPreview({ display: v } as Partial<CSSPropertyBag>) : undefined}
           onClearPreview={onClearPreview}
         />
-      </LabeledControl>
+      </ControlRow>
 
       {/* Flex-only fields, revealed when display === 'flex' */}
       {display === 'flex' && (

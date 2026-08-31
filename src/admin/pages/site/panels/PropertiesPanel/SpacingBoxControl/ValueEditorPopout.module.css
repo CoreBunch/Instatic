@@ -1,0 +1,193 @@
+/* ValueEditorPopout — body of the floating value editor a spacing / inset
+   side opens. The shell (tone, border, radius, placement, drag, dismissal)
+   belongs to the shared FloatingPanel; this file only lays out the editor
+   inside it: slider row, preset chips, reset footer. */
+
+.body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    padding: var(--space-2xs) var(--space-l) var(--space-l);
+}
+
+/* ── Slider row: rail · number · unit ───────────────────────────────────── */
+
+.sliderRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+}
+
+/* Same recipe as the opacity slider in StylesSection.module.css: a styled
+   native range whose filled part is painted by `--value-progress`, set from
+   the component as a dynamic custom property. */
+.slider {
+    --value-rail: 3px;
+    --value-knob: 12px;
+    --value-progress: 0%;
+    appearance: none;
+    -webkit-appearance: none;
+    flex: 1;
+    min-width: 0;
+    height: var(--control-height-sm);
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+.slider:disabled {
+    cursor: default;
+    opacity: 0.4;
+}
+
+.slider::-webkit-slider-runnable-track {
+    height: var(--value-rail);
+    border-radius: 2px;
+    background:
+        linear-gradient(var(--overlay-60), var(--overlay-60))
+            left center / var(--value-progress) 100% no-repeat,
+        var(--bg-surface-4);
+}
+
+.slider::-moz-range-track {
+    height: var(--value-rail);
+    border-radius: 2px;
+    background:
+        linear-gradient(var(--overlay-60), var(--overlay-60))
+            left center / var(--value-progress) 100% no-repeat,
+        var(--bg-surface-4);
+}
+
+.slider::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: var(--value-knob);
+    height: var(--value-knob);
+    /* Webkit top-aligns the thumb in the runnable track; pull it back by
+       half the difference so it centres on the rail. */
+    margin-top: calc((var(--value-rail) - var(--value-knob)) / 2);
+    border: 0;
+    border-radius: 50%;
+    background: var(--text-bright);
+    box-shadow: 0 1px 3px var(--scrim-40);
+}
+
+.slider::-moz-range-thumb {
+    width: var(--value-knob);
+    height: var(--value-knob);
+    border: 0;
+    border-radius: 50%;
+    background: var(--text-bright);
+    box-shadow: 0 1px 3px var(--scrim-40);
+}
+
+.slider:focus-visible {
+    outline: 1px solid var(--overlay-30);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+/* Compact numeric field beside the rail. */
+.numberField.numberField {
+    width: 44px;
+    min-width: 44px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.unitSelect {
+    width: 52px;
+    flex: none;
+}
+
+/* ── Preset chips ────────────────────────────────────────────────────────── */
+
+/* Five equal columns so both rows line up. Auto takes two of them: it is a
+   keyword, not a number, and the wider cell says so at a glance. */
+.chips {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: var(--space-3xs);
+}
+
+.chipAuto.chipAuto {
+    grid-column: span 2;
+}
+
+/* Doubled selector lifts specificity over Button.module.css's variant/size
+   pairs, same trick as SpacingBoxControl's header buttons. */
+.chip.chip {
+    min-width: 30px;
+    padding: 0 var(--space-2xs);
+    border-radius: var(--radius-sm);
+    background: var(--overlay-5);
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.chip.chip:hover {
+    background: var(--overlay-10);
+    color: var(--text-bright);
+}
+
+.chip.chip[aria-pressed="true"] {
+    background: var(--accent-3-10);
+    color: var(--accent-3);
+}
+
+/* ── Token grid ──────────────────────────────────────────────────────────
+   The framework spacing scale, in the same chip language as the presets —
+   picking `m` writes `var(--space-m)`, so a value can stay on the scale
+   instead of freezing as a literal. Sits under the fixed presets and above
+   the Reset footer. */
+
+.tokens {
+    display: grid;
+    gap: var(--space-3xs);
+    padding-top: var(--space-3xs);
+    border-top: 1px solid var(--overlay-5);
+}
+
+.tokensLabel {
+    color: var(--text-subtle);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.tokenGrid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: var(--space-3xs);
+}
+
+/* ── Complex-value state ─────────────────────────────────────────────────── */
+
+.complexNote {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+}
+
+/* ── Reset footer ────────────────────────────────────────────────────────── */
+
+/* Reset owns a full-width row; the explanation reads underneath it rather
+   than competing for width beside it. */
+.footer {
+    display: grid;
+    gap: var(--space-3xs);
+    padding-top: var(--space-3xs);
+    border-top: 1px solid var(--overlay-5);
+}
+
+.resetButton.resetButton {
+    width: 100%;
+}
+
+.hint {
+    color: var(--text-subtle);
+    font-size: var(--text-2xs);
+    line-height: 1.3;
+}

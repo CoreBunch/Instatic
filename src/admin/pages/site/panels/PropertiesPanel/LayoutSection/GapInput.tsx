@@ -11,7 +11,7 @@
 import { TokenAwareInput } from '@site/property-controls/TokenAwareInput'
 import { useSpacingTokens } from '@site/property-controls/tokenUtils'
 import { stepCssLength } from '../styleValueUtils'
-import { LabeledControl } from './LabeledControl'
+import { ControlRow } from '@ui/components/ControlRow'
 import styles from '../LayoutSection.module.css'
 
 interface GapInputProps {
@@ -57,7 +57,7 @@ export function GapInput({ value, isSet, onChange, onPreview, onClearPreview }: 
   const [row, column] = parseGap(value)
 
   return (
-    <LabeledControl label="Gap" isSet={isSet}>
+    <ControlRow label="Gap" isSet={isSet}>
       <div className={styles.gapDuo}>
         <div className={styles.gapCell}>
           <TokenAwareInput
@@ -92,6 +92,6 @@ export function GapInput({ value, isSet, onChange, onPreview, onClearPreview }: 
           <span className={styles.gapAxis} aria-hidden="true">y</span>
         </div>
       </div>
-    </LabeledControl>
+    </ControlRow>
   )
 }
