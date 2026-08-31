@@ -14,7 +14,14 @@
  * tracker plugin with a single external script hit this.
  */
 import { describe, it, expect } from 'bun:test'
-import { injectFrontendAssets, type FrontendInjections } from '../../../server/publish/frontendInjections'
+import { PLUGIN_API_VERSION, type FrontendAsset } from '@core/plugin-sdk'
+import type { DbResult } from '../../../server/db'
+import {
+  collectFrontendInjections,
+  injectFrontendAssets,
+  type FrontendInjections,
+} from '../../../server/publish/frontendInjections'
+import { createFakeDb } from '../server/dbTestFake'
 
 const PAGE_WITH_CSP_META = `<!doctype html>
 <html>
@@ -34,6 +41,110 @@ function emptyPlan(): FrontendInjections {
     mediaCspOrigins: [],
   }
 }
+
+function frontendAssetDb(assets: FrontendAsset[]) {
+  const manifest = {
+    id: 'acme.assets',
+    name: 'Asset fixtures',
+    version: '1.0.0',
+    apiVersion: PLUGIN_API_VERSION,
+    permissions: ['frontend.assets'],
+    grantedPermissions: ['frontend.assets'],
+    resources: [],
+    adminPages: [],
+    frontend: { assets },
+    assetBasePath: '/uploads/plugins/acme.assets/1.0.0',
+  }
+
+  return createFakeDb(async (sql): Promise<DbResult> => {
+    if (sql.includes('from installed_plugins')) {
+      return {
+        rows: [{
+          id: manifest.id,
+          name: manifest.name,
+          version: manifest.version,
+          enabled: true,
+          lifecycle_status: 'active',
+          last_error: null,
+          granted_permissions_json: manifest.grantedPermissions,
+          manifest_json: manifest,
+          settings_json: {},
+          installed_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+        }],
+        rowCount: 1,
+      }
+    }
+    if (sql.includes('from active_media_storage_adapter')) {
+      return { rows: [], rowCount: 0 }
+    }
+    throw new Error(`Unexpected query in frontend asset fixture: ${sql}`)
+  })
+}
+
+describe('frontend injection — asset attributes', () => {
+  it('preserves JSON-LD type and bare link attributes', async () => {
+    const jsonLd = '{"@context":"https://schema.org","@type":"Article"}'
+    const plan = await collectFrontendInjections(frontendAssetDb([
+      {
+        kind: 'script-inline',
+        placement: 'head-end',
+        attrs: { type: 'application/ld+json' },
+        content: jsonLd,
+      },
+      {
+        kind: 'link',
+        attrs: { rel: 'preconnect', href: 'https://cdn.example.com' },
+      },
+    ]))
+
+    expect(plan.tags['head-end']).toEqual([
+      `<script type="application/ld+json" data-plugin-id="acme.assets">${jsonLd}</script>`,
+      '<link rel="preconnect" href="https://cdn.example.com" data-plugin-id="acme.assets">',
+    ])
+  })
+
+  it('keeps host-owned asset attributes authoritative', async () => {
+    const plan = await collectFrontendInjections(frontendAssetDb([
+      {
+        kind: 'script',
+        src: 'frontend/app.js',
+        strategy: 'module',
+        attrs: {
+          src: 'https://attacker.example/app.js',
+          type: 'application/ld+json',
+          async: '',
+          integrity: 'sha384-fixture',
+        },
+      },
+      {
+        kind: 'style',
+        href: 'frontend/app.css',
+        attrs: {
+          href: 'https://attacker.example/app.css',
+          rel: 'alternate',
+          media: 'print',
+        },
+      },
+      {
+        kind: 'script-inline',
+        content: '{}',
+        attrs: {
+          src: 'https://attacker.example/app.js',
+          type: 'application/ld+json',
+        },
+      },
+    ]))
+
+    expect(plan.tags['body-end']).toEqual([
+      '<script src="/uploads/plugins/acme.assets/1.0.0/frontend/app.js" type="module" integrity="sha384-fixture" data-plugin-id="acme.assets"></script>',
+      '<script type="application/ld+json" data-plugin-id="acme.assets">{}</script>',
+    ])
+    expect(plan.tags['head-end']).toEqual([
+      '<link rel="stylesheet" href="/uploads/plugins/acme.assets/1.0.0/frontend/app.css" media="print" data-plugin-id="acme.assets">',
+    ])
+  })
+})
 
 describe('frontend injection — CSP relaxation', () => {
   it('keeps script-src `none` when no plugin contributes a tag', () => {

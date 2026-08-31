@@ -620,6 +620,8 @@ Published-page tags are declarative. A plugin declares `frontend.assets[]` in th
 
 Supported `kind` values are `script`, `script-inline`, `style`, `style-inline`, `link`, and `meta`. Placements are `head`, `head-end`, `body-start`, and `body-end`; defaults are chosen by tag type when omitted. `script.strategy` maps to `defer`, `async`, `module`, or sync script emission. External `src` / `href` paths are plugin-package-relative safe paths resolved under `/uploads/plugins/<id>/<version>/`; arbitrary remote script URLs are not accepted as plugin asset paths.
 
+`attrs` passes through to the emitted tag except where `server/publish/frontendInjections.ts` owns the value: `data-plugin-id` on every tag, `src` on every script, strategy attributes on external scripts, and `href` plus `rel` on stylesheet assets. Bare `link` and `meta` declarations rely entirely on `attrs`. Inline JSON-LD uses `{ "kind": "script-inline", "attrs": { "type": "application/ld+json" }, "content": "..." }`.
+
 The injection pipeline derives CSP changes from the plan. Inline scripts/styles add the matching `'unsafe-inline'` directive. `networkAllowedHosts[]` contributes published-page `connect-src` origins for plugins with frontend assets, which is why frontend trackers that call their own or third-party ingest endpoints must list those hosts as well as declare `frontend.assets`.
 
 ### Settings — declared in `instatic-plugin.config.ts` / `plugin.json`
