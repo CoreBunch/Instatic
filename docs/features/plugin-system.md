@@ -306,7 +306,7 @@ That trust level is gated by one permission: **`editor.code`** (risk: dangerous)
 - `adminPages[].content.assetPath` is pinned to the plugin's own `/uploads/plugins/{id}/{version}` subtree so a manifest can't point the dynamic import at foreign code.
 - The install review dialog (always shown — even for zero-permission plugins) calls out `editor.code` with a dedicated unsandboxed-code warning.
 
-Inside the admin window, plugin React surfaces (panels, app pages, canvas overlays) mount under a `PluginContext` carrying the granted permission set; permission-gated host hooks enforce against it — `useEditorStore` from `@instatic/host-hooks` requires `editor.store.read` and exposes no write accessor (writes go through `api.editor.store.transaction`, which requires `editor.store.write`).
+Inside the admin window, plugin React surfaces (panels, app pages, canvas overlays, and dashboard widgets) mount under a `PluginContext` carrying the granted permission set; permission-gated host hooks enforce against it — `useEditorStore` from `@instatic/host-hooks` requires `editor.store.read` and exposes no write accessor (writes go through `api.editor.store.transaction`, which requires `editor.store.write`). Dashboard widgets receive the same context in the grid, Customize mode, and the Block Library preview.
 
 ### What's available inside
 
@@ -501,7 +501,7 @@ export function activate(api) {
 }
 ```
 
-Widget ids must be namespaced under the plugin id (`<pluginId>.<rest>`). The component should compose the host `Widget` primitive so plugin tiles use the same card chrome, drag handle, menu, loading state, and tint behavior as first-party widgets.
+Widget ids must be namespaced under the plugin id (`<pluginId>.<rest>`). The component should compose the host `Widget` primitive so plugin tiles use the same card chrome, drag handle, menu, loading state, and tint behavior as first-party widgets. It may use `usePluginContext`, `usePluginSettings`, `usePluginRoutes`, and the other `@instatic/host-hooks`; the host supplies the registering plugin's context at every widget mount.
 
 ### CMS routes — requires `cms.routes` (public routes also require `cms.routes.public`)
 
