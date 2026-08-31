@@ -195,8 +195,7 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
           <LiquidProgressRing value={done} total={total} />
           <h2 className={styles.headTitle}>Finish setting up your site</h2>
           <p className={styles.headDesc}>
-            {done} of {total} steps complete. Hit each one in any order — your site is live the
-            moment you publish a page.
+            {`${done} of ${total} steps complete. Hit each one in any order — your site is live the moment you publish a page.`}
           </p>
         </div>
         <div className={styles.headActions}>

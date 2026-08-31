@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 import { useState, type CSSProperties } from 'react'
 import { Checkbox } from '@ui/components/Checkbox'
 import { Switch } from '@ui/components/Switch'
@@ -330,7 +331,7 @@ function renderCmsMode(
   strategy: ImportStrategy,
   onStrategyChange: (strategy: ImportStrategy) => void,
 ) {
-  const exportedAt = new Date(preview.meta.exportedAt).toLocaleString(undefined, {
+  const exportedAt = new Date(preview.meta.exportedAt).toLocaleString(getActiveAdminLocale(), {
     dateStyle: 'medium',
     timeStyle: 'short',
   })

@@ -54,7 +54,7 @@ function AssignedClassPill({
       onMainKeyDown={handleKeyDown}
       onContextMenu={onContextMenu}
       onRemove={onRemove}
-      mainAriaLabel={`${isActive ? 'Deselect' : 'Edit'} class ${selectorLabel}`}
+      mainAriaLabel={isActive ? `Deselect class ${selectorLabel}` : `Edit class ${selectorLabel}`}
       removeAriaLabel={`Remove class ${selectorLabel}`}
       removeTooltip="Remove from this element"
       mainTestId={`class-chip-${cls.name}`}
@@ -84,7 +84,7 @@ function AmbientSelectorPill({
       active={pill.active}
       onClick={onToggle}
       onMainKeyDown={handleKeyDown}
-      mainAriaLabel={`${pill.active ? 'Deselect' : 'Edit'} selector ${selectorLabel}`}
+      mainAriaLabel={pill.active ? `Deselect selector ${selectorLabel}` : `Edit selector ${selectorLabel}`}
       mainTestId={`selector-chip-${pill.rule.id}`}
     />
   )
@@ -114,7 +114,7 @@ function InlineStylePill({
       onClick={onToggle}
       onMainKeyDown={handleKeyDown}
       onRemove={onRemove}
-      mainAriaLabel={`${isActive ? 'Stop editing' : 'Edit'} inline styles`}
+      mainAriaLabel={isActive ? 'Stop editing inline styles' : 'Edit inline styles'}
       removeAriaLabel="Clear inline styles"
       removeTooltip="Clear inline styles"
       mainTestId="inline-style-pill"

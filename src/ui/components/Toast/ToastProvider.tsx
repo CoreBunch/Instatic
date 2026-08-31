@@ -32,6 +32,7 @@ import {
   type Toast,
   type ToastKind,
 } from './toastBus'
+import { useUiMessages } from '@ui/i18n'
 import styles from './Toast.module.css'
 
 const DEFAULT_DURATION_MS: Record<ToastKind, number> = {
@@ -69,6 +70,7 @@ function ToastIcon({ kind }: { kind: ToastKind }) {
 }
 
 export function ToastProvider() {
+  const t = useUiMessages()
   const [items, setItems] = useState<ReadonlyArray<Toast>>([])
   const [paused, setPaused] = useState(false)
   const portalRoot = typeof document !== 'undefined' ? getToastRoot() : null
@@ -111,7 +113,7 @@ export function ToastProvider() {
     <div
       className={styles.stack}
       data-testid="toast-stack"
-      aria-label="Notifications"
+      aria-label={t('notifications')}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
@@ -138,6 +140,7 @@ async function runToastAction(
 }
 
 function ToastItem({ toast }: { toast: Toast }) {
+  const t = useUiMessages()
   const [actionPending, setActionPending] = useState(false)
 
   async function handleAction() {
@@ -178,7 +181,7 @@ function ToastItem({ toast }: { toast: Toast }) {
           variant="ghost"
           size="micro"
           iconOnly
-          aria-label="Dismiss notification"
+          aria-label={t('dismissNotification')}
           onClick={() => dismissToast(toast.id)}
         >
           <CloseIcon size={12} aria-hidden="true" />

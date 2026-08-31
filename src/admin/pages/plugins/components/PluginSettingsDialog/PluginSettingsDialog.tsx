@@ -94,6 +94,7 @@ export function PluginSettingsDialog({
     fallbackError: 'Failed to load settings',
   })
   const schema: PluginSettingsSchema | null = data?.schema ?? null
+  const emptyMessage = 'This plugin does not expose any user-configurable settings.'
 
   // Editable form values, seeded from the loaded settings the first time each
   // load resolves. Render-time seeding (keyed on the stable `data.settings`
@@ -165,7 +166,7 @@ export function PluginSettingsDialog({
       {!loading && !loadError && schema && schema.length === 0 && (
         <pluginAdminUi.EmptyState
           title="No settings declared"
-          body="This plugin does not expose any user-configurable settings."
+          body={emptyMessage}
         />
       )}
       {!loading && !loadError && schema && schema.length > 0 && (

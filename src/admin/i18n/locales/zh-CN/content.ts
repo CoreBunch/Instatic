@@ -1,4 +1,13 @@
 export const contentZhCN = {
+  "Upload failed: {0}": "上传失败：{0}",
+  "Uploading {0}… {1}%": "正在上传{0}… {1}%",
+  "Post body (live preview)": "文章正文（实时预览）",
+  "No AI provider configured for the content workspace. Open /admin/ai/providers to add a credential, then /admin/ai/defaults to pick one for the \"content\" scope.": "内容工作区尚未配置 AI 服务商。请打开 /admin/ai/providers 添加凭据，再到 /admin/ai/defaults 为“content”范围选择默认凭据。",
+  "Post": "文章",
+  "Choose featured media": "选择特色媒体",
+  "Current entry": "当前条目",
+  "featured media": "特色媒体",
+  "Publish {0}": "发布{0}",
   "Content Explorer": "内容资源管理器",
   "Content item options": "内容项目选项",
   "Draft saved": "草稿已保存",

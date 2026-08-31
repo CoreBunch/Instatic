@@ -206,7 +206,7 @@ export const siteCZhCN = {
   "This control is not inside a form.": "此控件不在表单中。",
   "This element can no longer be saved as a layout.": "此元素无法再保存为布局。",
   "This image is already being saved to Media": "此图片已在保存到媒体库",
-  "This is a utility class. Utility classes have a single purpose and aren&apos;t meant to be edited.": "这是一个实用类。实用类用途单一，不应直接编辑。",
+  "This is a utility class. Utility classes have a single purpose and aren't meant to be edited.": "这是一个实用类。实用类用途单一，不应直接编辑。",
   "This label has no form control after it.": "此标签后没有表单控件。",
   "This layout contains a component that references the component being edited.": "此布局包含一个引用当前正在编辑组件的组件。",
   "This layout includes a content outlet and this document already has one.": "此布局包含内容出口，而此文档已经有一个。",

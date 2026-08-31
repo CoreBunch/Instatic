@@ -55,11 +55,6 @@ const ALL_RAIL_ITEMS: RailItem[] = [
   { id: 'storage', label: 'Storage', icon: CloudUploadSolidIcon, iconName: 'cloud-upload' },
 ]
 
-const PANEL_TITLES: Record<MediaSidebarPanelId, string> = {
-  folders: 'Folders',
-  storage: 'Storage',
-}
-
 export function MediaSidebar({ workspace, activePanel, onActivePanelChange }: MediaSidebarProps) {
   const sidebarRef = useRef<HTMLElement | null>(null)
   const leftSidebarWidth = useWorkspaceLayout((s) => s.leftSidebarWidth)
@@ -79,6 +74,7 @@ export function MediaSidebar({ workspace, activePanel, onActivePanelChange }: Me
     if (item.id === 'storage') return hasCapability(currentUser, 'storage.elect')
     return true
   })
+  const panelTitle = railItems.find((item) => item.id === activePanel)?.label ?? ''
   const railAccents = assignRailAccents(
     railItems,
     (item) => `media:${item.id}:${item.label}`,
@@ -114,7 +110,7 @@ export function MediaSidebar({ workspace, activePanel, onActivePanelChange }: Me
           {railItems.map((item, index) => {
             const Icon = item.icon
             const active = activePanel === item.id
-            const action = active ? 'Close' : 'Open'
+            const actionLabel = active ? `Close ${item.label} panel` : `Open ${item.label} panel`
             const accent = railAccents[index] ?? 'mint'
             const buttonStyle = {
               '--rail-icon-tint': railTintVar(accent),
@@ -126,7 +122,7 @@ export function MediaSidebar({ workspace, activePanel, onActivePanelChange }: Me
                 size="md"
                 iconOnly
                 pressed={active}
-                aria-label={`${action} ${item.label} panel`}
+                aria-label={actionLabel}
                 tooltip={`${item.label} panel`}
                 data-testid={`media-panel-rail-${item.id}`}
                 data-icon={item.iconName}
@@ -152,8 +148,8 @@ export function MediaSidebar({ workspace, activePanel, onActivePanelChange }: Me
           {activePanel && (
             <Panel
               panelId={`media-${activePanel}`}
-              title={PANEL_TITLES[activePanel]}
-              ariaLabel={`${PANEL_TITLES[activePanel]} panel`}
+              title={panelTitle}
+              ariaLabel={`${panelTitle} panel`}
               testId={`media-${activePanel}-panel`}
               onClose={() => onActivePanelChange(null)}
               // The folder tree owns its own scroll container (`body="bare"`),

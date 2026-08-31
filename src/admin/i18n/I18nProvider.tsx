@@ -8,12 +8,13 @@ import {
 import { translate, type AdminLocale, type MessageKey, type MessageParams } from './catalog'
 import {
   ADMIN_LOCALE_STORAGE_KEY,
-  readAdminLocalePreference,
   resolveInitialAdminLocale,
   writeAdminLocalePreference,
 } from './localePreference'
 import { setActiveAdminLocale } from './runtime'
 import { I18nContext } from './context'
+import { UiMessagesContext } from '@ui/i18n'
+import { uiMessageCatalogs } from './uiMessages'
 
 interface I18nProviderProps {
   children: ReactNode
@@ -32,9 +33,8 @@ export function I18nProvider({ children, initialLocale }: I18nProviderProps) {
 
   useEffect(() => {
     function handleStorage(event: StorageEvent): void {
-      if (event.key !== ADMIN_LOCALE_STORAGE_KEY) return
-      const storedLocale = readAdminLocalePreference()
-      if (storedLocale) setLocaleState(storedLocale)
+      if (event.key !== null && event.key !== ADMIN_LOCALE_STORAGE_KEY) return
+      setLocaleState(resolveInitialAdminLocale())
     }
 
     window.addEventListener('storage', handleStorage)
@@ -52,7 +52,9 @@ export function I18nProvider({ children, initialLocale }: I18nProviderProps) {
 
   return (
     <I18nContext.Provider value={{ locale, setLocale, t }}>
-      <Fragment key={locale}>{children}</Fragment>
+      <UiMessagesContext.Provider value={uiMessageCatalogs[locale]}>
+        <Fragment key={locale}>{children}</Fragment>
+      </UiMessagesContext.Provider>
     </I18nContext.Provider>
   )
 }

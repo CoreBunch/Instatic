@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /**
  * MediaViewerWindow — the asset viewer / editor window.
  *
@@ -91,7 +92,7 @@ function arraysEqual(a: string[], b: string[]): boolean {
 
 function formatDate(iso: string): string {
   try {
-    return new Date(iso).toLocaleString()
+    return new Date(iso).toLocaleString(getActiveAdminLocale())
   } catch {
     return iso
   }

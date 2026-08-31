@@ -40,6 +40,7 @@ import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { Button } from '@ui/components/Button'
 import { cn } from '@ui/cn'
 import { useDelayedUnmount } from '@ui/lib/useDelayedUnmount'
+import { useUiMessages } from '@ui/i18n'
 import styles from './FloatingActionBar.module.css'
 
 /**
@@ -92,10 +93,11 @@ export function FloatingActionBar({
   label,
   children,
   onClose,
-  closeLabel = 'Close',
+  closeLabel,
   open = true,
   className,
 }: FloatingActionBarProps) {
+  const t = useUiMessages()
   const { mounted, exiting } = useDelayedUnmount(open, EXIT_DURATION_MS)
 
   if (!mounted) return null
@@ -123,8 +125,8 @@ export function FloatingActionBar({
           variant="ghost"
           size="sm"
           iconOnly
-          aria-label={closeLabel}
-          tooltip={closeLabel}
+          aria-label={closeLabel ?? t('close')}
+          tooltip={closeLabel ?? t('close')}
           onClick={onClose}
         >
           <CloseIcon size={12} aria-hidden="true" />

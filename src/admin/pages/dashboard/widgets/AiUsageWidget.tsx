@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /**
  * AI usage widget — "this month" rollup from `/admin/api/ai/audit`.
  *
@@ -33,7 +34,7 @@ function formatCost(usd: number): string {
   if (usd === 0) return '$0.00'
   if (usd < 0.01) return '< $0.01'
   if (usd < 1) return `$${usd.toFixed(2)}`
-  return `$${usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+  return `$${usd.toLocaleString(getActiveAdminLocale(), { maximumFractionDigits: 2 })}`
 }
 
 function topScope(data: AiAuditResponse): string | null {

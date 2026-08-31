@@ -1,4 +1,5 @@
 import MagicString from 'magic-string'
+import { decodeHTMLStrict } from 'entities'
 import * as ts from 'typescript'
 import type { Plugin } from 'vite'
 
@@ -10,7 +11,7 @@ export interface AdminMessageOccurrence {
   filePath: string
   line: number
   message: string
-  kind: 'jsx-text' | 'jsx-attribute' | 'jsx-expression' | 'object-property' | 'call-argument'
+  kind: 'jsx-text' | 'jsx-attribute' | 'jsx-expression' | 'object-property' | 'call-argument' | 'default-value'
 }
 
 const LOCALIZE_IMPORT =
@@ -27,9 +28,12 @@ const USER_FACING_ATTRIBUTES = new Set([
   'emptyLabel',
   'emptyMessage',
   'errorMessage',
+  'eyebrow',
+  'fallbackError',
   'helperText',
   'hint',
   'label',
+  'meta',
   'placeholder',
   'subtitle',
   'sub',
@@ -39,6 +43,8 @@ const USER_FACING_ATTRIBUTES = new Set([
 ])
 
 const USER_FACING_PROPERTIES = new Set([
+  'aria-description',
+  'aria-label',
   'actionLabel',
   'ariaLabel',
   'body',
@@ -52,6 +58,7 @@ const USER_FACING_PROPERTIES = new Set([
   'emptyLabel',
   'emptyMessage',
   'errorMessage',
+  'fallbackError',
   'heading',
   'helperText',
   'hint',
@@ -66,6 +73,14 @@ const USER_FACING_PROPERTIES = new Set([
   'tooltip',
   'valueLabel',
 ])
+
+function isUserFacingAttribute(name: string): boolean {
+  return USER_FACING_ATTRIBUTES.has(name) || /(?:Label|Title|Description|Tooltip|Placeholder|Message|Hint)$/.test(name)
+}
+
+function isUserFacingProperty(name: string): boolean {
+  return USER_FACING_PROPERTIES.has(name) || /(?:Label|Title|Description|Tooltip|Placeholder|Message|Hint)$/.test(name)
+}
 
 const USER_MESSAGE_CALLS = new Set([
   'getErrorMessage',
@@ -112,6 +127,12 @@ function declarationName(node: ts.BindingName | undefined): string | null {
   return node && ts.isIdentifier(node) ? node.text : null
 }
 
+function isUserFacingDeclaration(node: ts.Node): boolean {
+  if (ts.isVariableDeclaration(node)) return USER_FACING_NAME.test(declarationName(node.name) ?? '')
+  if (ts.isBindingElement(node) || ts.isParameter(node)) return isUserFacingAttribute(declarationName(node.name) ?? '')
+  return ts.isFunctionDeclaration(node) && USER_FACING_NAME.test(node.name?.text ?? '')
+}
+
 function cleanJsxText(raw: string): string {
   const lines = raw.split(/\r\n|\n|\r/)
   let lastNonEmptyLine = 0
@@ -128,7 +149,7 @@ function cleanJsxText(raw: string): string {
     if (index !== lastNonEmptyLine) line += ' '
     result += line
   }
-  return result
+  return decodeHTMLStrict(result)
 }
 
 function isCandidateMessage(message: string): boolean {
@@ -144,8 +165,11 @@ function literalMessage(
   source: string,
 ): LiteralMessage | null {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-    if (!isCandidateMessage(node.text)) return null
-    return { message: node.text.trim(), english: node.text, expressions: [] }
+    // JSX entities are decoded by the JSX compiler. A replacement JS string
+    // must carry that decoded value; ordinary TS strings stay byte-for-byte.
+    const english = ts.isJsxAttribute(node.parent) ? decodeHTMLStrict(node.text) : node.text
+    if (!isCandidateMessage(english)) return null
+    return { message: english.trim(), english, expressions: [] }
   }
 
   if (!ts.isTemplateExpression(node)) return null
@@ -371,7 +395,7 @@ export function extractAdminMessages(source: string, filePath: string): AdminMes
 
     if (ts.isJsxAttribute(node)) {
       const name = node.name.getText(sourceFile)
-      if (USER_FACING_ATTRIBUTES.has(name) && node.initializer) {
+      if (isUserFacingAttribute(name) && node.initializer) {
         if (ts.isStringLiteral(node.initializer)) {
           const literal = literalMessage(node.initializer, source)
           if (literal) {
@@ -440,9 +464,18 @@ export function extractAdminMessages(source: string, filePath: string): AdminMes
       }
     }
 
+    if (ts.isBindingElement(node) || ts.isParameter(node)) {
+      const name = declarationName(node.name)
+      if (name && isUserFacingAttribute(name) && node.initializer) {
+        collectRenderableOccurrences(node.initializer, source, sourceFile, filePath, 'default-value', occurrences)
+        visitNestedUiNodes(node.initializer)
+        return
+      }
+    }
+
     if (ts.isPropertyAssignment(node)) {
       const name = propertyName(node.name)
-      if (name && USER_FACING_PROPERTIES.has(name)) {
+      if (name && isUserFacingProperty(name)) {
         collectRenderableOccurrences(
           node.initializer,
           source,
@@ -480,7 +513,8 @@ export function extractAdminMessages(source: string, filePath: string): AdminMes
       ts.isJsxElement(node) ||
       ts.isJsxFragment(node) ||
       ts.isJsxSelfClosingElement(node) ||
-      (ts.isPropertyAssignment(node) && USER_FACING_PROPERTIES.has(propertyName(node.name) ?? ''))
+      isUserFacingDeclaration(node) ||
+      (ts.isPropertyAssignment(node) && isUserFacingProperty(propertyName(node.name) ?? ''))
     ) {
       visit(node)
       return
@@ -523,7 +557,7 @@ export function transformAdminMessages(
 
     if (ts.isJsxAttribute(node)) {
       const name = node.name.getText(sourceFile)
-      if (USER_FACING_ATTRIBUTES.has(name) && node.initializer) {
+      if (isUserFacingAttribute(name) && node.initializer) {
         if (ts.isStringLiteral(node.initializer)) {
           const literal = literalMessage(node.initializer, source)
           const chinese = literal && literal.message in catalog ? catalog[literal.message] : undefined
@@ -576,9 +610,20 @@ export function transformAdminMessages(
       }
     }
 
+    if (ts.isBindingElement(node) || ts.isParameter(node)) {
+      const name = declarationName(node.name)
+      if (name && isUserFacingAttribute(name) && node.initializer) {
+        for (const replacement of collectValueLiterals(node.initializer, source, catalog)) {
+          replace(replacement.start, replacement.end, replacement.text)
+        }
+        visitNestedUiNodes(node.initializer)
+        return
+      }
+    }
+
     if (ts.isPropertyAssignment(node)) {
       const name = propertyName(node.name)
-      if (name && USER_FACING_PROPERTIES.has(name)) {
+      if (name && isUserFacingProperty(name)) {
         const replacements = collectValueLiterals(node.initializer, source, catalog)
         if (replacements.length > 0) {
           const initializer = applyRelativeReplacements(
@@ -615,7 +660,8 @@ export function transformAdminMessages(
       ts.isJsxElement(node) ||
       ts.isJsxFragment(node) ||
       ts.isJsxSelfClosingElement(node) ||
-      (ts.isPropertyAssignment(node) && USER_FACING_PROPERTIES.has(propertyName(node.name) ?? ''))
+      isUserFacingDeclaration(node) ||
+      (ts.isPropertyAssignment(node) && isUserFacingProperty(propertyName(node.name) ?? ''))
     ) {
       visit(node)
       return

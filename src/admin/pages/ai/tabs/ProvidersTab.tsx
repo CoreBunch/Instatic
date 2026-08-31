@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /** Provider management in the shared AI master-detail workspace. */
 import { useId, useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
@@ -304,6 +305,11 @@ function CredentialDetail({
     : testResult?.ok === true
       ? 'Connected'
       : 'Configured'
+  const authenticationLabel = credential.authMode === 'apiKey' ? 'API key' : 'Endpoint URL'
+  const credentialLabel = 'Encrypted credential'
+  const lastUsedLabel = credential.lastUsedAt
+    ? new Date(credential.lastUsedAt).toLocaleString(getActiveAdminLocale())
+    : 'Not used yet'
 
   return (
     <article className={styles.credentialDetail} aria-labelledby="credential-detail-title">
@@ -350,12 +356,12 @@ function CredentialDetail({
 
       <DetailSection title="Connection">
         <dl className={styles.connectionDetails}>
-          <DetailRow label="Authentication" value={credential.authMode === 'apiKey' ? 'API key' : 'Endpoint URL'} />
-          <DetailRow label="Credential" value="Encrypted credential" />
+          <DetailRow label="Authentication" value={authenticationLabel} />
+          <DetailRow label="Credential" value={credentialLabel} />
           <DetailRow label="Endpoint" value={credential.baseUrl ?? provider.endpointLabel} code={Boolean(credential.baseUrl)} />
           <DetailRow
             label="Last used"
-            value={credential.lastUsedAt ? new Date(credential.lastUsedAt).toLocaleString() : 'Not used yet'}
+            value={lastUsedLabel}
           />
         </dl>
       </DetailSection>

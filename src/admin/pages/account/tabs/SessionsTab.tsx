@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /**
  * Account → Active devices tab.
  *
@@ -44,7 +45,7 @@ import styles from '../AccountPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
 function formatDateTime(value: string): string {
-  return new Date(value).toLocaleString()
+  return new Date(value).toLocaleString(getActiveAdminLocale())
 }
 
 function formatLastSeen(value: string): string {

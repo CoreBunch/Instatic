@@ -140,7 +140,7 @@ function ContentRailButton({
   onToggle,
 }: ContentRailButtonProps) {
   const RailIcon = icon
-  const action = active ? 'Close' : 'Open'
+  const actionLabel = active ? `Close ${label} panel` : `Open ${label} panel`
   const accent = railAccent(`content:${id}:${label}`)
   const style = {
     '--rail-icon-tint': railTintVar(accent),
@@ -152,7 +152,7 @@ function ContentRailButton({
       size="md"
       iconOnly
       pressed={active}
-      aria-label={`${action} ${label} panel`}
+      aria-label={actionLabel}
       tooltip={`${label} panel`}
       data-testid={`panel-rail-${id}`}
       data-icon={iconName}

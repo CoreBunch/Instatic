@@ -73,6 +73,7 @@
         "@types/semver": "^7.7.1",
         "@vitejs/plugin-react": "^6.0.1",
         "dependency-cruiser": "^17.4.0",
+        "entities": "^7.0.1",
         "eslint": "^10.3.0",
         "eslint-plugin-react-compiler": "^19.1.0-rc.2",
         "eslint-plugin-react-hooks": "^7.1.1",

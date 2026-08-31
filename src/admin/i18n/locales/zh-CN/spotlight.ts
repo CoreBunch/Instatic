@@ -1,4 +1,6 @@
 export const spotlightZhCN = {
+  "Go to AI settings": "前往 AI 设置",
+  "Manage providers, defaults, connections, and usage": "管理服务商、默认设置、连接和用量",
   "{0}px": "{0}px",
   "About Instatic": "关于 Instatic",
   "Add a field to the currently open table": "向当前打开的数据表添加字段",

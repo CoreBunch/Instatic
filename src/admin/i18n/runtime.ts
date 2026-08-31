@@ -1,6 +1,10 @@
-import type { AdminLocale } from './catalog'
+import { DEFAULT_ADMIN_LOCALE, type AdminLocale } from './catalog'
 
-let activeLocale: AdminLocale = 'zh-CN'
+let activeLocale: AdminLocale = DEFAULT_ADMIN_LOCALE
+
+export function getActiveAdminLocale(): AdminLocale {
+  return activeLocale
+}
 
 export function setActiveAdminLocale(locale: AdminLocale): void {
   activeLocale = locale

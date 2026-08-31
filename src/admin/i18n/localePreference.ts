@@ -19,22 +19,26 @@ function browserStorage(): Storage | null {
 }
 
 export function readAdminLocalePreference(): AdminLocale | null {
-  const storage = browserStorage()
-  if (!storage) return null
+  try {
+    const storage = browserStorage()
+    if (!storage) return null
 
-  const raw = storage.getItem(ADMIN_LOCALE_STORAGE_KEY)
-  if (!raw) return null
+    const raw = storage.getItem(ADMIN_LOCALE_STORAGE_KEY)
+    if (!raw) return null
 
-  const result = safeParseJson(raw, AdminLocalePreferenceSchema)
-  return result.ok ? result.value.locale : null
+    const result = safeParseJson(raw, AdminLocalePreferenceSchema)
+    return result.ok ? result.value.locale : null
+  } catch (_err) {
+    // Browsers may block storage access; use the default locale in that case.
+    return null
+  }
 }
 
 export function writeAdminLocalePreference(locale: AdminLocale): void {
-  const storage = browserStorage()
-  if (!storage) return
-
-  const preference: AdminLocalePreference = { locale }
   try {
+    const storage = browserStorage()
+    if (!storage) return
+    const preference: AdminLocalePreference = { locale }
     storage.setItem(ADMIN_LOCALE_STORAGE_KEY, JSON.stringify(preference))
   } catch (_err) {
     // Locale persistence is best-effort; the live selection still works.

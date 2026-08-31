@@ -17,6 +17,7 @@ import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { Button } from '@ui/components/Button'
 import { cn } from '@ui/cn'
 import { pillAccent, pillAccentVar, type PillAccent } from '@ui/pillAccent'
+import { useUiMessages } from '@ui/i18n'
 import styles from './TagPill.module.css'
 
 type TagPillSize = 'xs' | 'sm'
@@ -66,6 +67,7 @@ export function TagPill({
   removeTestId,
   'aria-hidden': ariaHidden,
 }: TagPillProps) {
+  const t = useUiMessages()
   const resolvedAccent = accent ?? pillAccent(colorKey ?? label)
   const removable = Boolean(onRemove)
   const style = {
@@ -128,7 +130,7 @@ export function TagPill({
           variant="ghost"
           size="micro"
           iconOnly
-          aria-label={removeAriaLabel ?? `Remove ${label}`}
+          aria-label={removeAriaLabel ?? t('removeItem', { label })}
           tooltip={removeTooltip}
           dangerHover
           className={styles.removeButton}

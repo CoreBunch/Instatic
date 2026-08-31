@@ -4,6 +4,7 @@ import { Input } from "@ui/components/Input";
 import { CloseIcon } from "pixel-art-icons/icons/close";
 import { SearchSolidIcon } from "pixel-art-icons/icons/search-solid";
 import { cn } from "@ui/cn";
+import { useUiMessages } from '@ui/i18n'
 import styles from "./SearchBar.module.css";
 
 interface SearchBarProps extends Omit<
@@ -22,11 +23,12 @@ export function SearchBar({
   value,
   onValueChange,
   onClear,
-  clearLabel = "Clear search",
+  clearLabel,
   className,
   ref,
   ...inputProps
 }: SearchBarProps) {
+  const t = useUiMessages()
   function handleClear() {
     if (onClear) onClear();
     else onValueChange("");
@@ -53,7 +55,7 @@ export function SearchBar({
           size="xs"
           iconOnly
           onClick={handleClear}
-          aria-label={clearLabel}
+          aria-label={clearLabel ?? t('clearSearch')}
         >
           <CloseIcon size={10} aria-hidden="true" />
         </Button>

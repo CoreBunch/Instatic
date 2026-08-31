@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /**
  * Media widget — total file count + a 16-cell thumbnail mosaic. When
  * the host has uploaded media, the mosaic renders the 16 most-recent
@@ -122,7 +123,7 @@ export function MediaWidget({ span, editing }: DashboardWidgetRendererProps) {
       >
         {!isLoading && (<>
         <StatValue
-          value={(count ?? 0).toLocaleString()}
+          value={(count ?? 0).toLocaleString(getActiveAdminLocale())}
           sub={<span>files · {formatSize(totalBytes ?? 0)}</span>}
         />
         {thumbs.length > 0 ? (

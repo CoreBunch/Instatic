@@ -48,8 +48,6 @@ export const siteAZhCN = {
   "{0}% available": "剩余 {0}%",
   "{0}px viewport": "{0}px 视口",
   "@media (prefers-reduced-motion: reduce) {\n            [data-testid=\"canvas-transform-layer\"] {\n              transition: none !important;\n            }\n          }": "@media (prefers-reduced-motion: reduce) {\n            [data-testid=\"canvas-transform-layer\"] {\n              transition: none !important;\n            }\n          }",
-  "&ldquo;": "“",
-  "&rdquo;": "”",
   "#000000 or rgb(...)": "#000000 或 rgb(...) ",
   "+ Create": "+ 创建",
   "0px": "0px",

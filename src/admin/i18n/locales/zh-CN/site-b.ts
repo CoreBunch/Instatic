@@ -245,7 +245,6 @@ export const siteBZhCN = {
   "No packages matching \"{0}\"": "没有依赖包匹配“{0}”",
   "No pages to target": "没有可作为目标的页面",
   "No reusable selectors yet.": "暂无可复用选择器。",
-  "No selectors match &ldquo;": "没有选择器匹配“",
   "No SVG": "没有 SVG",
   "No templates to target": "没有可作为目标的模板",
   "Node content appears clipped by hidden overflow.": "节点内容似乎被隐藏溢出裁剪。",

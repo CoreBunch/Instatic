@@ -29,6 +29,7 @@ import type { ReactNode } from 'react'
 import { Button, type ButtonProps } from '@ui/components/Button'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { cn } from '@ui/cn'
+import { useUiMessages } from '@ui/i18n'
 import styles from './SegmentedControl.module.css'
 
 interface SegmentedControlOption<T extends string> {
@@ -80,6 +81,7 @@ export function SegmentedControl<T extends string>({
   'aria-label': ariaLabel,
   'data-testid': dataTestId,
 }: SegmentedControlProps<T>) {
+  const t = useUiMessages()
   const clearable = onClear != null
 
   return (
@@ -102,7 +104,7 @@ export function SegmentedControl<T extends string>({
             size={size}
             iconOnly={iconOnly}
             pressed={isActive}
-            tooltip={isActive && clearable ? `Clear ${label}` : option.tooltip}
+            tooltip={isActive && clearable ? t('clearItem', { label }) : option.tooltip}
             aria-label={label}
             className={styles.segment}
             disabled={disabled}

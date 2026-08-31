@@ -18,7 +18,7 @@ export function PanelModeButton({
   onToggle,
 }: PanelModeButtonProps) {
   const floating = mode === 'floating'
-  const action = floating ? `Dock ${panelLabel} panel` : `Unpin ${panelLabel} panel`
+  const actionLabel = floating ? `Dock ${panelLabel} panel` : `Unpin ${panelLabel} panel`
   const tooltip = floating ? `Dock in ${dockLocation}` : 'Unpin to floating panel'
 
   return (
@@ -27,7 +27,7 @@ export function PanelModeButton({
       size="xs"
       iconOnly
       onClick={onToggle}
-      aria-label={action}
+      aria-label={actionLabel}
       tooltip={tooltip}
     >
       {floating ? (

@@ -1,4 +1,7 @@
 export const usersZhCN = {
+  "Actions for {0}": "{0}的操作",
+  "Role actions for {0}": "角色 {0} 的操作",
+  "User actions for {0}": "用户 {0} 的操作",
   "{0} logged in": "{0} 已登录",
   "{0} logged out": "{0} 已退出",
   "{0} pack was installed": "已安装 {0} 资源包",

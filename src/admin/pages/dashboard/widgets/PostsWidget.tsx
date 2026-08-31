@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /**
  * Posts widget — total post count + daily-publish histogram for the
  * last 28 days. Data comes from `usePostsStats()` (server-side
@@ -31,7 +32,7 @@ export function PostsWidget({ span, editing }: DashboardWidgetRendererProps) {
       {stats && (
         <>
           <StatValue
-            value={stats.total.toLocaleString()}
+            value={stats.total.toLocaleString(getActiveAdminLocale())}
             sub={(
               stats.categories === 0
                 ? <span>Total · no categories yet</span>

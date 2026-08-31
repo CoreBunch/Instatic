@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 import { useEffect, useEffectEvent, useState, type ReactElement, type ReactNode } from 'react'
 import { Button } from '@ui/components/Button'
 import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
@@ -49,7 +50,7 @@ interface PickerState {
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—'
   try {
-    return new Date(iso).toLocaleString(undefined, {
+    return new Date(iso).toLocaleString(getActiveAdminLocale(), {
       year: 'numeric',
       month: 'short',
       day: 'numeric',

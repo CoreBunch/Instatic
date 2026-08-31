@@ -46,6 +46,7 @@ import { Button } from '@ui/components/Button'
 import { SkeletonBlock } from '@ui/components/Skeleton'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { cn } from '@ui/cn'
+import { useUiMessages } from '@ui/i18n'
 import styles from './Dialog.module.css'
 
 type DialogSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl'
@@ -131,6 +132,7 @@ export function Dialog({
   initialFocusRef,
   ref,
 }: DialogProps) {
+  const t = useUiMessages()
   const titleId = useId()
   const descId = useId()
   const dialogRef = useRef<HTMLDivElement | null>(null)
@@ -220,7 +222,7 @@ export function Dialog({
               iconOnly
               type="button"
               onClick={onClose}
-              aria-label="Close dialog"
+              aria-label={t('closeDialog')}
             >
               <CloseIcon size={14} aria-hidden="true" />
             </Button>

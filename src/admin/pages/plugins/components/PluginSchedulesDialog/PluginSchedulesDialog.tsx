@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /**
  * Plugin schedules dialog — shows every scheduled job a plugin has
  * registered, plus recent run history, plus per-schedule controls
@@ -86,6 +87,7 @@ export function PluginSchedulesDialog({
   // error from the resource; the view shows whichever is present.
   const [actionError, setActionError] = useState<string | null>(null)
   const error = loadError ?? actionError
+  const emptyMessage = 'This plugin has not called api.cms.schedule.register() during activate. Schedules show up here automatically once a plugin registers them.'
 
   async function withStepUp<T>(scheduleId: string, action: () => Promise<T>): Promise<void> {
     await runScheduleAction(scheduleId, action, runStepUp, setBusyScheduleId, setActionError, refresh)
@@ -109,7 +111,7 @@ export function PluginSchedulesDialog({
       {!loading && data && data.schedules.length === 0 && (
         <pluginAdminUi.EmptyState
           title="No schedules registered"
-          body="This plugin has not called api.cms.schedule.register() during activate. Schedules show up here automatically once a plugin registers them."
+          body={emptyMessage}
         />
       )}
 
@@ -270,7 +272,7 @@ function formatStatus(status: string): string {
 function formatDateTime(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString(getActiveAdminLocale(), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

@@ -1,4 +1,7 @@
 export const accountZhCN = {
+  "Could not load activity": "无法加载活动记录",
+  "Could not load sessions": "无法加载会话",
+  "Email + password is the only sign-in method right now.": "目前仅支持使用邮箱和密码登录。",
   "{0} recovery {1} remaining.": "还剩 {0} 个恢复{1}。",
   "Account sections": "账户页面分区",
   "Disabling...": "正在关闭…",

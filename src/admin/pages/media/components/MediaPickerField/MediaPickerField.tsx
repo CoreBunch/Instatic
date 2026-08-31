@@ -86,7 +86,7 @@ export function MediaPickerField({
   chooseLabel,
   changeLabel,
 }: MediaPickerFieldProps) {
-  const subject = subjectLabel ?? mediaKind
+  const mediaSubjectLabel = subjectLabel ?? (mediaKind === 'image' ? 'image' : 'video')
   const populated = asset !== null || hasValue
   const showEdit = populated && Boolean(asset) && Boolean(onEdit)
   const showClear = populated && Boolean(onClear)
@@ -97,12 +97,12 @@ export function MediaPickerField({
   // in a tight property panel) while the aria-label carries the kind, so
   // screen readers still announce "Browse image library" / "Browse video
   // library" / "Browse featured media library".
-  const browseVisible = populated
-    ? (changeLabel ?? `Change ${subject}`)
+  const browseLabel = populated
+    ? (changeLabel ?? `Change ${mediaSubjectLabel}`)
     : (chooseLabel ?? `Browse library…`)
-  const browseAria = populated
-    ? (changeLabel ?? `Change ${subject}`)
-    : (chooseLabel ?? `Browse ${subject} library`)
+  const browseAriaLabel = populated
+    ? (changeLabel ?? `Change ${mediaSubjectLabel}`)
+    : (chooseLabel ?? `Browse ${mediaSubjectLabel} library`)
 
   // Whole-tile click target. When populated and an `onEdit` is wired, the
   // tile opens the viewer (edit alt/caption/tags); otherwise — including
@@ -112,12 +112,14 @@ export function MediaPickerField({
   // button so screen-reader / test queries that target one don't
   // accidentally pick up the other.
   const onTileClick = asset && onEdit ? onEdit : onBrowse
-  const tileAria = asset && onEdit
+  const tileAriaLabel = asset && onEdit
     ? `Edit ${asset.filename} in viewer`
-    : `Open the ${subject} library`
+    : `Open the ${mediaSubjectLabel} library`
   const tileTooltip = asset && onEdit
     ? 'Click to edit this asset (alt text, caption, tags…)'
-    : `Open the media library to ${populated ? 'pick a different' : 'pick a'} ${subject}`
+    : populated
+      ? `Open the media library to pick a different ${mediaSubjectLabel}`
+      : `Open the media library to pick a ${mediaSubjectLabel}`
 
   return (
     <div className={styles.field}>
@@ -127,9 +129,9 @@ export function MediaPickerField({
         fallbackLabel={fallbackLabel}
         fallbackHint={fallbackHint}
         mediaKind={mediaKind}
-        subjectLabel={subject}
+        subjectLabel={mediaSubjectLabel}
         onClick={disabled ? null : onTileClick}
-        ariaLabel={tileAria}
+        ariaLabel={tileAriaLabel}
         tooltip={tileTooltip}
       />
       <div className={styles.actions}>
@@ -138,10 +140,10 @@ export function MediaPickerField({
           size="sm"
           disabled={disabled}
           onClick={onBrowse}
-          aria-label={browseAria}
+          aria-label={browseAriaLabel}
         >
           <ImagesSolidIcon size={13} />
-          <span>{browseVisible}</span>
+          <span>{browseLabel}</span>
         </Button>
         {showEdit && onEdit && (
           <Button
@@ -149,7 +151,7 @@ export function MediaPickerField({
             size="sm"
             disabled={disabled}
             onClick={onEdit}
-            aria-label={`Edit ${subject} in viewer`}
+            aria-label={`Edit ${mediaSubjectLabel} in viewer`}
             tooltip="Edit asset (alt text, caption, tags…)"
           >
             <EditSolidIcon size={13} />
@@ -162,7 +164,7 @@ export function MediaPickerField({
             size="sm"
             disabled={disabled}
             onClick={onClear}
-            aria-label={`Clear ${subject}`}
+            aria-label={`Clear ${mediaSubjectLabel}`}
           >
             Clear
           </Button>

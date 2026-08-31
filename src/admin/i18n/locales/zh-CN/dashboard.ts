@@ -1,4 +1,5 @@
 export const dashboardZhCN = {
+  "{0} of {1} steps complete. Hit each one in any order — your site is live the moment you publish a page.": "已完成 {0}/{1} 个步骤。你可以按任意顺序完成；页面一经发布，站点即可上线。",
   "— drag, resize, or add blocks.": "——可拖动、调整大小或添加区块。",
   "· self-hosted": "· 自托管",
   "· top: {0}": "· 最高：{0}",
@@ -76,7 +77,6 @@ export const dashboardZhCN = {
   "used ·": "已使用 ·",
   "Variables only, the full utility framework, or skip it and bring your own CSS.": "选择仅变量、完整实用类框架，或跳过并使用自己的 CSS。",
   "y": "",
-  "Good {0}, {1}.": "{1}，{0}好。",
   "yest.": "昨天",
   "yesterday": "昨天",
   "{0} block preview": "{0}区块预览",
@@ -156,7 +156,6 @@ export const dashboardZhCN = {
   "SSL · auto-renew": "SSL · 自动续期",
   "Status": "状态",
   "STEP": "步骤",
-  "steps complete. Hit each one in any order — your site is live the moment you publish a page.": "个步骤已完成。你可以按任意顺序完成；页面一经发布，站点即可上线。",
   "Storage": "存储",
   "System": "系统",
   "Uptime, builds, backups": "运行时间、构建与备份",

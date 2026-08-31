@@ -28,11 +28,13 @@ import styles from './AiPage.module.css'
 
 type Section = 'providers' | 'defaults' | 'mcp' | 'audit'
 
-const SECTION_LABELS: Record<Section, string> = {
-  providers: 'Providers',
-  defaults: 'Defaults',
-  mcp: 'MCP connections',
-  audit: 'Audit',
+function sectionLabel(section: Section): string {
+  switch (section) {
+    case 'providers': return 'Providers'
+    case 'defaults': return 'Defaults'
+    case 'mcp': return 'MCP connections'
+    case 'audit': return 'Audit'
+  }
 }
 
 const SECTION_ICONS = {
@@ -89,7 +91,7 @@ export function AiPage() {
                   className={styles.workspaceNavigationButton}
                 >
                   <Icon size={16} aria-hidden="true" />
-                  <span>{SECTION_LABELS[item]}</span>
+                  <span>{sectionLabel(item)}</span>
                 </Button>
               )
             })}

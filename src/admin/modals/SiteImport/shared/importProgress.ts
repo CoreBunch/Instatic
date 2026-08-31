@@ -11,6 +11,7 @@
  */
 
 import type { ImportPlan, ImportResult } from '@core/siteImport'
+import { getActiveAdminLocale, translate } from '@admin/i18n'
 import type { ImportResult as CmsImportResult } from '@core/data/bundleSchema'
 
 type RunPhase = 'idle' | 'uploading' | 'applying' | 'done' | 'failed'
@@ -114,7 +115,7 @@ export interface CmsRunTotals {
 export function makeCmsRunProgress(totals: CmsRunTotals): RunProgress {
   const progress = makeInitialRunProgress()
   progress.phase = 'applying'
-  progress.currentItem = 'Importing site bundle…'
+  progress.currentItem = translate(getActiveAdminLocale(), 'import.bundleProgress')
   progress.categories.site = { done: 0, total: totals.site }
   progress.categories.rows = { done: 0, total: totals.rows }
   progress.categories.media = { done: 0, total: totals.media }

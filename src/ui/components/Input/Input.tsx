@@ -7,6 +7,7 @@ import {
 } from 'react'
 import { cn } from '@ui/cn'
 import { ChevronDown2Icon } from 'pixel-art-icons/icons/chevron-down-2'
+import { useUiMessages } from '@ui/i18n'
 import styles from './Input.module.css'
 
 type FieldSize = 'xs' | 'sm' | 'md'
@@ -77,6 +78,7 @@ export function Input({
   ref,
   ...props
 }: InputProps) {
+  const t = useUiMessages()
   const isNumber = type === 'number'
   // Only number inputs get the spinner. Default on for number, off otherwise.
   const showSpinner = isNumber && (numberSpinner ?? true)
@@ -148,7 +150,7 @@ export function Input({
             type="button"
             className={styles.spinnerButton}
             tabIndex={-1}
-            aria-label="Increase"
+            aria-label={t('increase')}
             disabled={props.disabled}
             onClick={() => nudge(1)}
           >
@@ -158,7 +160,7 @@ export function Input({
             type="button"
             className={styles.spinnerButton}
             tabIndex={-1}
-            aria-label="Decrease"
+            aria-label={t('decrease')}
             disabled={props.disabled}
             onClick={() => nudge(-1)}
           >

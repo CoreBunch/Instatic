@@ -79,6 +79,7 @@ import {
 } from './components/BlockLibrary'
 import { DashboardGrid } from './components/DashboardGrid'
 import { RangeTabs } from '@ui/components/RangeTabs'
+import { formatDashboardGreeting } from './greeting'
 import styles from './DashboardPage.module.css'
 import gridStyles from './components/DashboardGrid.module.css'
 
@@ -118,13 +119,6 @@ const PROXIMITY_MIN_SCALE = 0.32
  * pill's top edge, which is `window.innerHeight - PILL_FOOTPRINT_PX`.
  */
 const PILL_FOOTPRINT_PX = 72
-
-function greetingFor(displayName: string | null | undefined): string {
-  const hour = new Date().getHours()
-  const time = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening'
-  const name = displayName?.split(' ')[0] ?? 'there'
-  return `Good ${time}, ${name}.`
-}
 
 export function DashboardPage() {
   const currentUser = useAuthenticatedAdminUser()
@@ -498,7 +492,7 @@ export function DashboardPage() {
   return (
     <AdminPageLayout
       workspace="dashboard"
-      title={greetingFor(currentUser.displayName)}
+      title={formatDashboardGreeting(currentUser.displayName)}
       description="Your site at a glance — content, activity, storage and plugins. Configure the grid to surface exactly what you watch."
       actions={(
         <>

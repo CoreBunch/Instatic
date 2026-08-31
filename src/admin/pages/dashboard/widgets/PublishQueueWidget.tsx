@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /**
  * Publish lineup widget — what's coming up next, what just shipped, and
  * what's still in drafts. Replaces the old static "Publish queue"
@@ -69,7 +70,7 @@ function formatRelative(iso: string | null): string {
   // Beyond a month — fall back to a date so the row doesn't read like
   // "in 73d" which is more noise than signal.
   const d = new Date(ts)
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return d.toLocaleDateString(getActiveAdminLocale(), { month: 'short', day: 'numeric' })
 }
 
 export function PublishQueueWidget({ span, editing }: DashboardWidgetRendererProps) {

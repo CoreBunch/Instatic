@@ -1,8 +1,8 @@
+import { getActiveAdminLocale, translate } from '@admin/i18n'
 /**
  * Pure formatting / labelling helpers used across the Users workspace.
  *
- * Everything here is pure: no React, no API calls, no DOM. The functions
- * convert raw CMS values into the strings the UI shows.
+ * Display helpers use the active admin locale without changing CMS values.
  */
 import type { CmsCurrentUser } from '@core/persistence'
 import type { Tab } from '../types'
@@ -20,13 +20,15 @@ export function statusLabel(status: CmsCurrentUser['status']): string {
 }
 
 export function formatDateTime(value: string | null): string {
-  return value ? new Date(value).toLocaleString() : 'Never'
+  const locale = getActiveAdminLocale()
+  return value ? new Date(value).toLocaleString(locale) : translate(locale, 'time.never')
 }
 
 export function formatCapabilitySummary(capabilities: string[]): string {
-  if (capabilities.length === 0) return 'No admin capabilities'
-  const capabilityLabel = capabilities.length === 1 ? 'capability' : 'capabilities'
-  return `${capabilities.length} ${capabilityLabel}`
+  const locale = getActiveAdminLocale()
+  if (capabilities.length === 0) return translate(locale, 'users.noCapabilities')
+  if (capabilities.length === 1) return translate(locale, 'users.oneCapability')
+  return translate(locale, 'users.capabilities', { count: capabilities.length })
 }
 
 export function tabLabel(tab: Tab): string {
