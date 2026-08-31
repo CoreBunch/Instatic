@@ -1,22 +1,21 @@
 /**
- * Gated outbound fetch — kernel-of-correctness for the `network.outbound`
- * permission.
+ * SSRF-safe outbound fetch for every server-initiated request to a
+ * caller-influenced URL: the plugin `network.outbound` capability
+ * (`performGatedFetch`) and media storage migration both go through
+ * `guardedFetch` here.
  *
- * Two checks happen here:
- *  1. The plugin must have `network.outbound` granted (enforced by the
- *     caller via `assertHostPluginPermission`).
- *  2. The URL's host must match an entry in `manifest.networkAllowedHosts`
- *     (or a `*.<domain>` wildcard from that list). If `networkAllowedHosts`
- *     is empty or missing, ALL outbound is denied — fail-closed.
+ * `guardedFetch` resolves the host, refuses any address that is not a
+ * globally-routable public unicast address, and PINS the connection to the
+ * exact IP it validated, so a DNS rebinding between check and connect cannot
+ * swing the socket to an internal target. It re-validates and re-pins every
+ * redirect hop and caps the chain. The hostname is preserved in the `Host`
+ * header and, for https, the TLS `serverName`, so virtual hosting and
+ * certificate validation still work.
  *
- * The resolved address is then validated against the SSRF blocklist and
- * PINNED: the socket connects to the exact IP we checked, so a DNS rebinding
- * between check and connect cannot swing the request to an internal target.
- *
- * Returns a JSON-serializable response shape the VM-side `fetch` shim
- * reconstructs into a Response-like object. Bodies cross the boundary
- * byte-safely: the upstream response is read as raw bytes and carried as
- * UTF-8 text when possible, base64 otherwise (see `protocol/bodyEncoding.ts`).
+ * `performGatedFetch` wraps it with the plugin-specific parts: the
+ * `networkAllowedHosts` allowlist, VM-side abort wiring, and the byte-safe
+ * request/response shape the QuickJS `fetch` shim reconstructs (see
+ * `protocol/bodyEncoding.ts`).
  */
 
 import { isIP } from 'node:net'
@@ -113,30 +112,33 @@ interface ValidatedTarget {
 }
 
 /**
- * Validate a single outbound target — protocol, host allowlist, and that no
- * resolved address falls in a blocked range — and return the parsed URL plus
- * the IP the caller must pin the connection to. Re-run for the initial URL and
- * every redirect hop, so the allowlist + IP guard remain the
- * kernel-of-correctness across the whole chain.
+ * Validate a single outbound target — protocol, optional host allowlist, and
+ * that no resolved address falls in a blocked range — and return the parsed URL
+ * plus the IP the caller must pin the connection to. Re-run for the initial URL
+ * and every redirect hop.
+ *
+ * `allowlist` is the plugin `networkAllowedHosts` gate; pass `undefined` for
+ * callers that have no host allowlist (any public host is acceptable). `label`
+ * prefixes error messages.
  */
 async function assertOutboundAllowed(
-  manifest: HostPluginRecord['manifest'],
+  allowlist: ReadonlyArray<string> | undefined,
   urlString: string,
   resolveHost: (host: string) => Promise<string[]>,
+  label: string,
 ): Promise<ValidatedTarget> {
   let parsed: URL
   try {
     parsed = new URL(urlString)
   } catch {
-    throw new Error(`Invalid URL: "${urlString}"`)
+    throw new Error(`${label} fetch has an invalid URL: "${urlString}"`)
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    throw new Error(`Plugin network.fetch only supports http: and https: URLs (got "${parsed.protocol}")`)
+    throw new Error(`${label} fetch only supports http: and https: URLs (got "${parsed.protocol}")`)
   }
-  const allowlist = manifest.networkAllowedHosts ?? []
-  if (!hostMatchesAllowlist(parsed.host, allowlist)) {
+  if (allowlist !== undefined && !hostMatchesAllowlist(parsed.host, allowlist)) {
     throw new Error(
-      `Plugin "${manifest.id}" requested fetch to "${parsed.host}", which is not in the manifest's networkAllowedHosts allowlist.`,
+      `${label} requested fetch to "${parsed.host}", which is not in the networkAllowedHosts allowlist.`,
     )
   }
   const host = stripBrackets(parsed.hostname)
@@ -144,19 +146,19 @@ async function assertOutboundAllowed(
   // IP-literal host: no DNS, so nothing can rebind. Validate and connect as-is.
   if (isIP(host)) {
     if (isBlockedAddress(host)) {
-      throw new Error(`Plugin "${manifest.id}" requested fetch to "${host}", which is a blocked address.`)
+      throw new Error(`${label} requested fetch to "${host}", which is a blocked address.`)
     }
     return { url: parsed, pinnedIp: null }
   }
 
   const addresses = await resolveHost(host)
   if (addresses.length === 0) {
-    throw new Error(`Plugin "${manifest.id}" fetch host "${host}" did not resolve to any address.`)
+    throw new Error(`${label} fetch host "${host}" did not resolve to any address.`)
   }
   for (const address of addresses) {
     if (isBlockedAddress(address)) {
       throw new Error(
-        `Plugin "${manifest.id}" requested fetch to "${host}", which resolves to a blocked address (${address}).`,
+        `${label} requested fetch to "${host}", which resolves to a blocked address (${address}).`,
       )
     }
   }
@@ -220,6 +222,87 @@ function buildPinnedRequest(
   return { url, headers: nextHeaders, tls }
 }
 
+/** Options for the shared SSRF-safe fetch. */
+export interface GuardedFetchOptions {
+  /**
+   * Host allowlist. When set (even to `[]`), the host must match or the request
+   * is refused — the fail-closed plugin gate. Omit for callers that have no
+   * host allowlist and accept any public host (media migration).
+   */
+  allowlist?: ReadonlyArray<string>
+  resolveHost?: (host: string) => Promise<string[]>
+  fetchImpl?: typeof fetch
+  signal?: AbortSignal
+  maxRedirects?: number
+  /** Prefix for error messages, e.g. a plugin id or `Media migration`. */
+  label?: string
+}
+
+/**
+ * The SSRF-safe outbound fetch. Validates + pins each hop and returns the final
+ * `Response`. The caller reads the body (streaming stays possible, since the
+ * body is never consumed here).
+ */
+export async function guardedFetch(
+  urlString: string,
+  init: { method?: string; headers?: Record<string, string>; body?: string | Uint8Array<ArrayBuffer> },
+  opts: GuardedFetchOptions = {},
+): Promise<Response> {
+  const resolveHost = opts.resolveHost ?? defaultResolveHost
+  const fetchImpl = opts.fetchImpl ?? fetch
+  const maxRedirects = opts.maxRedirects ?? MAX_REDIRECTS
+  const label = opts.label ?? 'Outbound'
+
+  let currentUrl = urlString
+  let method = init.method ?? 'GET'
+  let headers = init.headers
+  let body = init.body
+
+  for (let hop = 0; ; hop++) {
+    // Re-validate protocol + allowlist + resolved-IP on EVERY hop and pin the
+    // connection to the checked IP. Bun is told not to follow redirects, so an
+    // allowlisted host can never bounce us to a private/internal target, and
+    // the pin closes the check-then-connect DNS-rebinding gap (SSRF).
+    const { url: parsed, pinnedIp } = await assertOutboundAllowed(opts.allowlist, currentUrl, resolveHost, label)
+    const request = buildPinnedRequest(parsed, pinnedIp, headers)
+
+    const fetchInit: PinnedFetchInit = {
+      method,
+      headers: request.headers,
+      body,
+      signal: opts.signal,
+      redirect: 'manual',
+    }
+    if (request.tls) fetchInit.tls = request.tls
+
+    const response = await fetchImpl(request.url, fetchInit)
+
+    const location = response.headers.get('location')
+    if (REDIRECT_STATUSES.has(response.status) && location) {
+      if (hop >= maxRedirects) {
+        throw new Error(`${label} fetch exceeded ${maxRedirects} redirects.`)
+      }
+      // Resolve the redirect against the ORIGINAL hostname URL, not the pinned
+      // IP URL, so a relative Location keeps the right host.
+      const next = new URL(location, currentUrl)
+      // Per the Fetch spec: 303 always becomes GET; 301/302 downgrade a
+      // non-GET/HEAD request to GET and drop the body.
+      if (
+        response.status === 303 ||
+        ((response.status === 301 || response.status === 302) && method !== 'GET' && method !== 'HEAD')
+      ) {
+        method = 'GET'
+        body = undefined
+        headers = withoutBodyHeaders(headers)
+      }
+      currentUrl = next.toString()
+      continue
+    }
+
+    return response
+  }
+}
+
 export async function performGatedFetch(
   entry: HostPluginRecord,
   urlString: string,
@@ -233,8 +316,6 @@ export async function performGatedFetch(
   deps: GatedFetchDeps = {},
 ): Promise<SerializedNetworkResponse> {
   const manifest = entry.manifest
-  const fetchImpl = deps.fetchImpl ?? fetch
-  const resolveHost = deps.resolveHostAddresses ?? defaultResolveHost
 
   // Per-call AbortController so the plugin's VM-side signal can short-
   // circuit the actual upstream request, not just the in-VM wait. If the
@@ -245,69 +326,38 @@ export async function performGatedFetch(
   const abortId = init.abortId
   if (abortId) entry.inflightFetches.set(abortId, controller)
 
-  let currentUrl = urlString
-  let method = init.method ?? 'GET'
-  let headers = init.headers
-  // Decode the VM-supplied body once up front: a utf8 body is passed
-  // through as the string (fetch UTF-8-encodes it to the same bytes), a
-  // base64 body becomes the exact raw bytes the plugin handed to fetch.
-  let body: string | Uint8Array<ArrayBuffer> | undefined =
+  // Decode the VM-supplied body once up front: a utf8 body is passed through as
+  // the string (fetch UTF-8-encodes it to the same bytes), a base64 body
+  // becomes the exact raw bytes the plugin handed to fetch.
+  const body: string | Uint8Array<ArrayBuffer> | undefined =
     init.body !== undefined && init.bodyEncoding === 'base64'
       ? decodeBodyBytes(init.body, 'base64')
       : init.body
+
   try {
-    for (let hop = 0; ; hop++) {
-      // Re-validate protocol + allowlist + resolved-IP on EVERY hop and pin the
-      // connection to the checked IP. Bun is told not to follow redirects, so
-      // an allowlisted host can never bounce us to a private/internal target,
-      // and the pin closes the check-then-connect DNS-rebinding gap (SSRF).
-      const { url: parsed, pinnedIp } = await assertOutboundAllowed(manifest, currentUrl, resolveHost)
-      const request = buildPinnedRequest(parsed, pinnedIp, headers)
-
-      const fetchInit: PinnedFetchInit = {
-        method,
-        headers: request.headers,
-        body,
+    const response = await guardedFetch(
+      urlString,
+      { method: init.method, headers: init.headers, body },
+      {
+        // Fail-closed: an empty allowlist denies all outbound.
+        allowlist: manifest.networkAllowedHosts ?? [],
+        resolveHost: deps.resolveHostAddresses,
+        fetchImpl: deps.fetchImpl,
         signal: controller.signal,
-        redirect: 'manual',
-      }
-      if (request.tls) fetchInit.tls = request.tls
+        label: `Plugin "${manifest.id}"`,
+      },
+    )
 
-      const response = await fetchImpl(request.url, fetchInit)
-
-      const location = response.headers.get('location')
-      if (REDIRECT_STATUSES.has(response.status) && location) {
-        if (hop >= MAX_REDIRECTS) {
-          throw new Error(`Plugin "${manifest.id}" fetch exceeded ${MAX_REDIRECTS} redirects.`)
-        }
-        // Resolve the redirect against the ORIGINAL hostname URL, not the
-        // pinned IP URL, so a relative Location keeps the right host.
-        const next = new URL(location, currentUrl)
-        // Per the Fetch spec: 303 always becomes GET; 301/302 downgrade a
-        // non-GET/HEAD request to GET and drop the body.
-        if (
-          response.status === 303 ||
-          ((response.status === 301 || response.status === 302) && method !== 'GET' && method !== 'HEAD')
-        ) {
-          method = 'GET'
-          body = undefined
-          headers = withoutBodyHeaders(headers)
-        }
-        currentUrl = next.toString()
-        continue
-      }
-
-      const respHeaders: Record<string, string> = {}
-      response.headers.forEach((v, k) => { respHeaders[k] = v })
-      // Read the upstream body as raw bytes — `response.text()` would
-      // lossily UTF-8-decode binary payloads (images, gzip, protobuf).
-      const bytes = new Uint8Array(await response.arrayBuffer())
-      return {
-        status: response.status,
-        ok: response.ok,
-        headers: respHeaders,
-        ...encodeBodyBytes(bytes),
-      }
+    const respHeaders: Record<string, string> = {}
+    response.headers.forEach((v, k) => { respHeaders[k] = v })
+    // Read the upstream body as raw bytes — `response.text()` would lossily
+    // UTF-8-decode binary payloads (images, gzip, protobuf).
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    return {
+      status: response.status,
+      ok: response.ok,
+      headers: respHeaders,
+      ...encodeBodyBytes(bytes),
     }
   } finally {
     if (abortId) entry.inflightFetches.delete(abortId)
