@@ -425,6 +425,7 @@ applyPublishedHtmlPipeline(renderedOutput, db)
 ```
 
 Plugins shouldn't need to know about the publisher internals — they get the HTML string and return the transformed string.
+`src/core/plugins/hookBus.ts` rejects a non-string `publish.html` result, logs the plugin ID, and keeps the previous HTML so one invalid plugin result cannot blank the page.
 
 ---
 
