@@ -22,6 +22,7 @@ export function placeholder(dialect: Dialect, index: number): string {
  * Tagged-template callable returning DbResult, plus:
  *   - .unsafe(...) — execute raw SQL strings (e.g. stored migration blocks)
  *   - .transaction(fn) — runs a callback inside a DB transaction
+ *   - .close()      — release the underlying handle or connection pool
  *   - .dialect      — which SQL dialect the backing database speaks
  */
 export interface DbClient {
@@ -31,5 +32,18 @@ export interface DbClient {
   ): Promise<DbResult<Row>>
   unsafe<Row = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<DbResult<Row>>
   transaction<T>(fn: (tx: DbClient) => Promise<T>): Promise<T>
+  /**
+   * Release the backing resource: the SQLite file handle (and its WAL/SHM
+   * siblings) or the Postgres connection pool. Queries issued after close
+   * reject. Long-lived server clients never call this; it exists for callers
+   * with a bounded lifetime, chiefly test teardown, which must release the
+   * handle before deleting the database file. Windows refuses to unlink a
+   * file that is still open, so leaving it to garbage collection is not
+   * portable.
+   *
+   * On a transaction-scoped client (the `tx` passed to `.transaction()`)
+   * this is a no-op: the enclosing client owns the resource.
+   */
+  close(): Promise<void>
   readonly dialect: Dialect
 }

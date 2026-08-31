@@ -72,6 +72,13 @@ export const EXTENSION_FOR_MIME = {
 
 type AcceptedMediaMime = keyof typeof EXTENSION_FOR_MIME
 
+/**
+ * Hard ceiling on any single media upload, shared by every surface that
+ * accepts bytes (the HTTP media route, the MCP upload tool). Callers pass it
+ * as the `maxBytes` policy knob so the limit lives in exactly one place.
+ */
+export const MAX_MEDIA_BYTES = 50 * 1024 * 1024
+
 export const IMAGE_MIMES: ReadonlyArray<AcceptedMediaMime> = [
   'image/jpeg',
   'image/png',

@@ -146,7 +146,12 @@ describe('Tooltip', () => {
     expect(screen.queryByRole('tooltip')).toBeNull()
   })
 
-  it('consumes Escape before a parent panel handler can close', () => {
+  // Regression: the tooltip used to `preventDefault()` + `stopPropagation()`
+  // on Escape. Tooltips open on plain hover, so that swallowed Escape app-wide
+  // — no modal, context menu, or spotlight could close whenever the pointer
+  // happened to rest on a tooltip trigger. Escape now dismisses the tooltip
+  // AND reaches whatever surface owns the keystroke.
+  it('hides on Escape without consuming it from other handlers', () => {
     let parentEscapeCount = 0
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') parentEscapeCount += 1
@@ -162,10 +167,11 @@ describe('Tooltip', () => {
       const trigger = screen.getByRole('button', { name: 'Trigger' })
       act(() => trigger.focus())
 
-      fireEvent.keyDown(trigger, { key: 'Escape' })
+      const delivered = fireEvent.keyDown(trigger, { key: 'Escape' })
 
       expect(screen.queryByRole('tooltip')).toBeNull()
-      expect(parentEscapeCount).toBe(0)
+      expect(parentEscapeCount).toBe(1)
+      expect(delivered).toBe(true) // not defaultPrevented
       expect(document.activeElement).toBe(trigger)
     } finally {
       document.removeEventListener('keydown', onKeyDown)

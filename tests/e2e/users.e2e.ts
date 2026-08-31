@@ -310,7 +310,7 @@ test.describe('users and roles', () => {
     const editedRoleName = `Role lifecycle edited ${suffix}`
 
     await page.goto('/admin/users')
-    await page.getByRole('button', { name: 'Roles', exact: true }).click()
+    await page.getByRole('tab', { name: 'Roles', exact: true }).click()
 
     await test.step('create a custom role with selected capabilities', async () => {
       await page.getByRole('button', { name: 'Create Role', exact: true }).click()
@@ -361,7 +361,7 @@ test.describe('users and roles', () => {
     const roleName = `Role mobile ${Date.now().toString(36)}`
 
     await page.goto('/admin/users')
-    await page.getByRole('button', { name: 'Roles', exact: true }).click()
+    await page.getByRole('tab', { name: 'Roles', exact: true }).click()
 
     const rolesTable = page.getByRole('table', { name: 'Roles' })
     await expect(rolesTable).toBeVisible()
@@ -399,7 +399,7 @@ test.describe('users and roles', () => {
 
     // Reload so the read-only audit feed is fetched from the authoritative API.
     await page.goto('/admin/users')
-    await page.getByRole('button', { name: 'Audit', exact: true }).click()
+    await page.getByRole('tab', { name: 'Audit', exact: true }).click()
 
     const auditTable = page.getByRole('table', { name: 'Audit events' })
     await expect(auditTable).toBeVisible()
@@ -431,7 +431,7 @@ test.describe('users and roles', () => {
     await expect(page.getByText(email)).toBeVisible()
 
     await page.goto('/admin/users')
-    await page.getByRole('button', { name: 'Audit', exact: true }).click()
+    await page.getByRole('tab', { name: 'Audit', exact: true }).click()
 
     const auditTable = page.getByRole('table', { name: 'Audit events' })
     await expect(auditTable).toBeVisible()
@@ -514,7 +514,7 @@ if (result.changes !== 1) {
 /** Create a custom role granting only Site (read) and Media (read). */
 async function createSiteAndMediaRole(page: Page, name: string): Promise<void> {
   await page.goto('/admin/users')
-  await page.getByRole('button', { name: 'Roles', exact: true }).click()
+  await page.getByRole('tab', { name: 'Roles', exact: true }).click()
   await page.getByRole('button', { name: 'Create Role', exact: true }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Create Role' })

@@ -35,10 +35,10 @@ function button(): HTMLButtonElement {
 }
 
 describe('PageTreeCell', () => {
-  // A `pageTree` cell on a system table is ALWAYS readOnly — every built-in
-  // field of `pages` / `components` / `layouts` is value-locked. The button
-  // navigates to the visual editor rather than editing the cell, so gating it
-  // on readOnly disabled it on exactly the rows it exists for.
+  // A `pageTree` cell is never editable inline — the tree is authored in the
+  // visual editor, not typed into a cell. The button navigates to that editor
+  // rather than editing the cell, so gating it on readOnly disabled it on
+  // exactly the rows it exists for.
   it('stays enabled on a read-only cell when a handler is wired', async () => {
     let opened = 0
     renderCell({ readOnly: true, onOpenEditor: () => { opened += 1 } })

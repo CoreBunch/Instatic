@@ -10,11 +10,11 @@
  * pattern that `RelationCell` uses for `onOpenPicker`.
  *
  * `readOnly` deliberately does NOT gate the button. It means "this value is
- * not editable in the grid", which is always true for a `pageTree` cell on a
- * system table (`isBuiltInValueLocked` holds for every built-in field of
- * `pages` / `components` / `layouts`). The button edits nothing — it navigates
- * to the visual editor, which enforces its own permissions. Gating it on
- * `readOnly` disabled it on exactly the rows it exists for.
+ * not editable inline in the grid", which a `pageTree` cell never is — the
+ * tree is authored in the visual editor, not typed into a cell. The button
+ * edits nothing, it navigates to that editor, which enforces its own
+ * permissions. Gating it on `readOnly` disabled it on exactly the rows it
+ * exists for.
  */
 import type { ReactElement } from 'react'
 import { Button } from '@ui/components/Button'

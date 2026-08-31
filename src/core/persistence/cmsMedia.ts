@@ -132,9 +132,14 @@ export async function listCmsMediaAssets(
   return parsed.value.assets.map(normalizeCmsMediaAsset)
 }
 
+interface UploadCmsMediaAssetOptions extends ClientBase {
+  /** Aborts the in-flight upload (e.g. the Super Import run was cancelled). */
+  signal?: AbortSignal
+}
+
 export async function uploadCmsMediaAsset(
   file: File,
-  options: ClientBase = {},
+  options: UploadCmsMediaAssetOptions = {},
 ): Promise<CmsMediaAsset> {
   const { fetchImpl, basePath } = resolveClient(options)
   const body = new FormData()
@@ -144,6 +149,7 @@ export async function uploadCmsMediaAsset(
     method: 'POST',
     credentials: 'include',
     body,
+    signal: options.signal,
   })
   const payload = await readEnvelope(res, CmsMediaAssetEnvelopeSchema, `CMS media upload failed with ${res.status}`)
   return normalizeCmsMediaAsset(payload.asset)

@@ -10,30 +10,61 @@ import { openSiteEditor } from './helpers/editor'
 
 const OFFLINE_OLLAMA_URL = 'http://127.0.0.1:1'
 
+// Credentials and their auto-seeded defaults are global state. Later specs
+// (CONTENT-007's no-provider guidance, capability empty-state checks) assume
+// a clean slate, so every test in this file clears what it created. Defaults
+// hold a restrictive FK to credentials, so they clear first.
+test.afterEach(async ({ page }) => {
+  if (!page.url().startsWith('http')) return
+  await page.evaluate(async () => {
+    for (const scope of ['site', 'content', 'data', 'plugin']) {
+      await fetch(`/admin/api/ai/defaults/${scope}`, { method: 'DELETE' }).catch(() => null)
+    }
+    const res = await fetch('/admin/api/ai/credentials')
+    if (!res.ok) return
+    const body: unknown = await res.json()
+    const credentials =
+      body && typeof body === 'object' && 'credentials' in body && Array.isArray(body.credentials)
+        ? body.credentials as Array<{ id?: unknown }>
+        : []
+    for (const credential of credentials) {
+      if (typeof credential.id !== 'string') continue
+      await fetch(`/admin/api/ai/credentials/${credential.id}`, { method: 'DELETE' }).catch(() => null)
+    }
+  })
+})
+
 async function addOllamaCredential(
   page: Page,
   label: string,
   baseUrl = OFFLINE_OLLAMA_URL,
 ) {
-  await page.getByRole('button', { name: 'Add credential' }).click()
+  // The Providers section lists provider entries under "Add provider";
+  // selecting one opens the connect panel with the credential form. The
+  // entry's accessible name is label plus short label ("Ollama Local models").
+  await page.getByRole('button', { name: /^Ollama\b/ }).click()
+  await expect(page.getByRole('heading', { name: 'Connect Ollama' })).toBeVisible()
 
-  const dialog = page.getByRole('dialog', { name: 'Add AI credential' })
-  await expect(dialog).toBeVisible()
+  await page.getByLabel('Display label').fill(label)
+  await page.getByLabel('Base URL').fill(baseUrl)
+  await page.getByRole('button', { name: 'Connect Ollama' }).click()
 
-  await dialog.getByRole('combobox', { name: 'Provider' }).click()
-  await page.getByRole('option', { name: 'Ollama (local)' }).click()
-
-  await expect(dialog.getByLabel('Base URL')).toBeVisible()
-  await expect(dialog.getByLabel('Bearer token (optional)')).toBeVisible()
-  await expect(dialog.getByLabel('API key')).toHaveCount(0)
-
-  await dialog.getByLabel('Display label').fill(label)
-  await dialog.getByLabel('Base URL').fill(baseUrl)
-  await dialog.getByRole('button', { name: 'Add credential' }).click()
+  // Success lands the new credential in the browser sidebar list.
+  await expect(
+    page.getByRole('button', { name: new RegExp(escapeRegExp(label)) }),
+  ).toBeVisible({ timeout: 20_000 })
 }
 
 async function addOfflineOllamaCredential(page: Page, label: string) {
   await addOllamaCredential(page, label)
+}
+
+async function removeCredential(page: Page, label: string) {
+  await page.getByRole('button', { name: new RegExp(escapeRegExp(label)) }).click()
+  await page.getByRole('button', { name: 'Remove credential' }).click()
+  const confirm = page.getByRole('dialog', { name: 'Remove credential?' })
+  await confirm.getByRole('button', { name: 'Remove credential' }).click()
+  await expect(confirm).toBeHidden()
 }
 
 interface FakeOllamaToolCall {
@@ -148,7 +179,7 @@ async function createRole(
   capabilityLabels: readonly string[],
 ): Promise<void> {
   await page.goto('/admin/users')
-  await page.getByRole('button', { name: 'Roles', exact: true }).click()
+  await page.getByRole('tab', { name: 'Roles', exact: true }).click()
   await page.getByRole('button', { name: 'Create Role', exact: true }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Create Role' })
@@ -168,7 +199,7 @@ async function setRoleCapabilities(
   capabilityLabels: readonly string[],
 ): Promise<void> {
   await page.goto('/admin/users')
-  await page.getByRole('button', { name: 'Roles', exact: true }).click()
+  await page.getByRole('tab', { name: 'Roles', exact: true }).click()
   await openRoleAction(page, roleName, 'Edit')
 
   const dialog = page.getByRole('dialog', { name: 'Edit Role' })
@@ -255,25 +286,28 @@ test.describe('AI settings', () => {
     const label = `E2E Ollama ${suffix}`
 
     await page.goto('/admin/ai')
-    await expect(page.getByRole('heading', { name: 'AI' })).toBeVisible()
-    await expect(page.getByRole('tab', { name: 'Providers' })).toHaveAttribute(
-      'aria-selected',
-      'true',
+    await expect(page.getByRole('heading', { name: 'AI', exact: true })).toBeVisible()
+    await expect(page.getByTestId('ai-nav-providers')).toHaveAttribute(
+      'aria-current',
+      'page',
     )
 
     await test.step('create an Ollama base URL credential', async () => {
       await addOfflineOllamaCredential(page, label)
     })
 
-    const credentialCard = page.locator('div').filter({ hasText: label }).first()
-    await expect(credentialCard).toBeVisible({ timeout: 20_000 })
-    await expect(credentialCard).toContainText('Ollama')
-    await expect(credentialCard).toContainText('Endpoint URL')
-    await expect(credentialCard.getByRole('button', { name: 'Test' })).toBeVisible()
-    await expect(credentialCard.getByRole('button', { name: 'Delete' })).toBeVisible()
+    // The new credential opens in the detail pane: provider identity,
+    // endpoint row, and the test/remove affordances.
+    await page.getByRole('button', { name: new RegExp(escapeRegExp(label)) }).click()
+    await expect(page.getByText('Endpoint', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Test connection' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Remove credential' })).toBeVisible()
 
     await test.step('delete the created credential', async () => {
-      await credentialCard.getByRole('button', { name: 'Delete' }).click()
+      await page.getByRole('button', { name: 'Remove credential' }).click()
+      const confirm = page.getByRole('dialog', { name: 'Remove credential?' })
+      await confirm.getByRole('button', { name: 'Remove credential' }).click()
+      await expect(confirm).toBeHidden()
       await expect(page.getByText(label)).toHaveCount(0)
     })
   })
@@ -285,18 +319,20 @@ test.describe('AI settings', () => {
     const label = `E2E Defaults Ollama ${suffix}`
 
     await page.goto('/admin/ai')
-    await expect(page.getByRole('heading', { name: 'AI' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'AI', exact: true })).toBeVisible()
 
     await test.step('create a credential for the defaults picker', async () => {
       await addOfflineOllamaCredential(page, label)
-      await expect(page.getByText(label)).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByRole('heading', { name: label })).toBeVisible({ timeout: 20_000 })
     })
 
     await test.step('choose and save a Data default model', async () => {
-      await page.getByRole('tab', { name: 'Defaults' }).click()
-      await expect(page.getByRole('heading', { name: 'Per-scope defaults' })).toBeVisible()
+      await page.getByTestId('ai-nav-defaults').click()
+      await expect(page.getByRole('heading', { name: 'Defaults', exact: true })).toBeVisible()
 
-      const dataModelButton = page.getByRole('button', { name: 'Model for data' })
+      // Scopes list in the browser sidebar; the detail pane holds the picker.
+      await page.getByRole('button', { name: /^Data\b/ }).click()
+      const dataModelButton = page.getByRole('button', { name: 'Model for Data' })
       await dataModelButton.click()
       await expect(page.getByRole('menuitemradio', { name: 'Llama 4' })).toBeVisible({
         timeout: 20_000,
@@ -304,39 +340,28 @@ test.describe('AI settings', () => {
       await page.getByRole('menuitemradio', { name: 'Llama 4' }).click()
 
       await expect(dataModelButton).toContainText(`${label} · Llama 4`)
-      await page
-        .locator('div')
-        .filter({ hasText: /^dataUsed by the data workspace/ })
-        .getByRole('button', { name: 'Save' })
-        .click()
-      await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible()
+      await page.getByRole('button', { name: 'Save default' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible()
     })
 
     await test.step('reload and verify the saved default resolves', async () => {
       await page.reload()
-      await expect(page.getByRole('heading', { name: 'AI' })).toBeVisible()
-      await page.getByRole('tab', { name: 'Defaults' }).click()
-      await expect(page.getByRole('button', { name: 'Model for data' })).toContainText(
+      await expect(page.getByRole('heading', { name: 'AI', exact: true })).toBeVisible()
+      await page.getByTestId('ai-nav-defaults').click()
+      await page.getByRole('button', { name: /^Data\b/ }).click()
+      await expect(page.getByRole('button', { name: 'Model for Data' })).toContainText(
         `${label} · Llama 4`,
         { timeout: 20_000 },
       )
     })
 
     await test.step('clear the default and delete the credential', async () => {
-      await page
-        .locator('div')
-        .filter({ hasText: /^dataUsed by the data workspace/ })
-        .getByRole('button', { name: 'Clear' })
-        .click()
-      await expect(page.getByRole('status').filter({ hasText: 'Cleared.' })).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Model for data' })).toContainText(
-        'Choose a model',
-      )
+      await page.getByRole('button', { name: 'Clear', exact: true }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'Cleared' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Model for Data' })).not.toContainText(label)
 
-      await page.getByRole('tab', { name: 'Providers' }).click()
-      const credentialCard = page.locator('div').filter({ hasText: label }).first()
-      await expect(credentialCard).toBeVisible()
-      await credentialCard.getByRole('button', { name: 'Delete' }).click()
+      await page.getByTestId('ai-nav-providers').click()
+      await removeCredential(page, label)
       await expect(page.getByText(label)).toHaveCount(0)
     })
   })
@@ -351,9 +376,9 @@ test.describe('AI settings', () => {
     try {
       await test.step('create a live local credential for chat', async () => {
         await page.goto('/admin/ai')
-        await expect(page.getByRole('heading', { name: 'AI' })).toBeVisible()
+        await expect(page.getByRole('heading', { name: 'AI', exact: true })).toBeVisible()
         await addOllamaCredential(page, label, fakeOllama.baseUrl)
-        await expect(page.getByText(label)).toBeVisible({ timeout: 20_000 })
+        await expect(page.getByRole('heading', { name: label })).toBeVisible({ timeout: 20_000 })
         await expect.poll(() => fakeOllama.requests.tags).toBeGreaterThan(0)
       })
 
@@ -376,7 +401,7 @@ test.describe('AI settings', () => {
 
       await test.step('verify the Audit tab shows the persisted usage', async () => {
         await page.goto('/admin/ai')
-        await page.getByRole('tab', { name: 'Audit' }).click()
+        await page.getByTestId('ai-nav-audit').click()
         await expect(page.getByRole('heading', { name: 'Usage audit' })).toBeVisible()
         await expect(page.getByText('e2e-model')).toBeVisible({ timeout: 20_000 })
         await expect(page.getByRole('heading', { name: 'By surface' })).toBeVisible()
@@ -410,10 +435,8 @@ test.describe('AI settings', () => {
             if (!res.ok) throw new Error(`Failed to clear ${scope} default: ${res.status}`)
           }
         })
-        await page.getByRole('tab', { name: 'Providers' }).click()
-        const credentialCard = page.locator('div').filter({ hasText: label }).first()
-        await expect(credentialCard).toBeVisible()
-        await credentialCard.getByRole('button', { name: 'Delete' }).click()
+        await page.getByTestId('ai-nav-providers').click()
+        await removeCredential(page, label)
         await expect(page.getByText(label)).toHaveCount(0)
       })
     } finally {
@@ -435,9 +458,9 @@ test.describe('AI settings', () => {
     try {
       await test.step('create a live local credential for the tool loop', async () => {
         await page.goto('/admin/ai')
-        await expect(page.getByRole('heading', { name: 'AI' })).toBeVisible()
+        await expect(page.getByRole('heading', { name: 'AI', exact: true })).toBeVisible()
         await addOllamaCredential(page, label, fakeOllama.baseUrl)
-        await expect(page.getByText(label)).toBeVisible({ timeout: 20_000 })
+        await expect(page.getByRole('heading', { name: label })).toBeVisible({ timeout: 20_000 })
         await expect.poll(() => fakeOllama.requests.tags).toBeGreaterThan(0)
       })
 
@@ -495,9 +518,7 @@ test.describe('AI settings', () => {
           }
         })
         await page.goto('/admin/ai')
-        const credentialCard = page.locator('div').filter({ hasText: label }).first()
-        await expect(credentialCard).toBeVisible()
-        await credentialCard.getByRole('button', { name: 'Delete' }).click()
+        await removeCredential(page, label)
         await expect(page.getByText(label)).toHaveCount(0)
       })
     } finally {
@@ -516,9 +537,9 @@ test.describe('AI settings', () => {
     try {
       await test.step('create a live local credential for the conversation', async () => {
         await page.goto('/admin/ai')
-        await expect(page.getByRole('heading', { name: 'AI' })).toBeVisible()
+        await expect(page.getByRole('heading', { name: 'AI', exact: true })).toBeVisible()
         await addOllamaCredential(page, label, fakeOllama.baseUrl)
-        await expect(page.getByText(label)).toBeVisible({ timeout: 20_000 })
+        await expect(page.getByRole('heading', { name: label })).toBeVisible({ timeout: 20_000 })
         await expect.poll(() => fakeOllama.requests.tags).toBeGreaterThan(0)
       })
 
@@ -533,7 +554,7 @@ test.describe('AI settings', () => {
         await composer.fill(prompt)
         await assistantPanel.getByRole('button', { name: 'Send' }).click()
 
-        await expect(assistantPanel.getByText(prompt)).toBeVisible()
+        await expect(assistantPanel.getByText(prompt).first()).toBeVisible()
         await expect(assistantPanel.getByText('E2E conversation reply.')).toBeVisible({
           timeout: 20_000,
         })
@@ -554,7 +575,7 @@ test.describe('AI settings', () => {
         await expect(savedChat).toBeVisible()
         await savedChat.click()
 
-        await expect(assistantPanel.getByText(prompt)).toBeVisible()
+        await expect(assistantPanel.getByText(prompt).first()).toBeVisible()
         await expect(assistantPanel.getByText('E2E conversation reply.')).toBeVisible()
       })
 
@@ -575,9 +596,7 @@ test.describe('AI settings', () => {
           }
         })
         await page.goto('/admin/ai')
-        const credentialCard = page.locator('div').filter({ hasText: label }).first()
-        await expect(credentialCard).toBeVisible()
-        await credentialCard.getByRole('button', { name: 'Delete' }).click()
+        await removeCredential(page, label)
         await expect(page.getByText(label)).toHaveCount(0)
       })
     } finally {
@@ -628,10 +647,10 @@ test.describe.serial('AI write-tool capability filtering', () => {
         await test.step('persona creates its own disposable fake-provider credential', async () => {
           await loginAs(personaPage, email, password)
           await personaPage.goto('/admin/ai')
-          await expect(personaPage.getByRole('heading', { name: 'AI' })).toBeVisible()
+          await expect(personaPage.getByRole('heading', { name: 'AI', exact: true })).toBeVisible()
           await addOllamaCredential(personaPage, label, fakeOllama.baseUrl)
           credentialCreated = true
-          await expect(personaPage.getByText(label)).toBeVisible({ timeout: 20_000 })
+          await expect(personaPage.getByRole('heading', { name: label })).toBeVisible({ timeout: 20_000 })
           await expect.poll(() => fakeOllama.requests.tags).toBeGreaterThan(0)
         })
 
@@ -692,9 +711,10 @@ test.describe.serial('AI write-tool capability filtering', () => {
             }
           })
           await personaPage.goto('/admin/ai')
-          const credentialCard = personaPage.locator('div').filter({ hasText: label }).first()
-          await expect(credentialCard).toBeVisible()
-          await credentialCard.getByRole('button', { name: 'Delete' }).click()
+          await personaPage.getByRole('button', { name: new RegExp(escapeRegExp(label)) }).click()
+          await personaPage.getByRole('button', { name: 'Remove credential' }).click()
+          const confirm = personaPage.getByRole('dialog', { name: 'Remove credential?' })
+          await confirm.getByRole('button', { name: 'Remove credential' }).click()
           await expect(personaPage.getByText(label)).toHaveCount(0)
         }
         await personaContext.close()

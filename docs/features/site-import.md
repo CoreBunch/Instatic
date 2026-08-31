@@ -332,7 +332,7 @@ The modal is mounted once at the authenticated admin shell (`AuthenticatedAdmin.
 
 **Conflicts** — shown only when conflicts exist. Static imports resolve page slugs, class names, design tokens, and cross-sheet classes. CMS bundle imports resolve row slug collisions reported by `/admin/api/cms/import/preview`; the default action renames the incoming row to the server-provided next slug, but users can skip or custom-rename each row before import. Those decisions travel as `selection.rowSlugOverrides` to the archive endpoint while the browser still uploads the original ZIP unchanged.
 
-**Import** (`ImportStep`) — a calm, determinate progress surface (no terminal log). A headline activity (phase verb + N of M), a determinate bar with a travelling shimmer, a one-line current-item ticker, and a per-category breakdown mirroring the Review navigator (pending ring → spinner → mint check, with a tint-washed progress fill). Static imports are driven by real pipeline state: media (asset uploads) is the only incremental phase, so it dominates the bar; the other categories land together at the atomic commit. CMS bundle imports show the same surface with CMS-native categories (site, rows, media, folders, redirects) while the server streams the archive. The commit phase is uncancellable; the upload phase is cancellable (orphaned uploads are harmless).
+**Import** (`ImportStep`) — a calm, determinate progress surface (no terminal log). A headline activity (phase verb + N of M), a determinate bar with a travelling shimmer, a one-line current-item ticker, and a per-category breakdown mirroring the Review navigator (pending ring → spinner → mint check, with a tint-washed progress fill). Static imports are driven by real pipeline state: media (asset uploads) is the only incremental phase, so it dominates the bar; the other categories land together at the atomic commit. CMS bundle imports show the same surface with CMS-native categories (site, rows, media, folders, redirects) while the server streams the archive. The commit phase is uncancellable; the upload phase is genuinely cancellable — Cancel (or closing the dialog) aborts the run's `AbortSignal`, which stops queued uploads, aborts the in-flight one, and prevents `adapter.commit` and the draft save. A toast reports how many files had already uploaded; those stay in the Media Library.
 
 On success the same step switches to its **complete** state — a success mark, an "Imported into &lt;site&gt;" summary, and every category shown as done. Footer actions: **View import log** (reveals per-category counts + warnings) and **Open site →** (jumps to the first imported page). On failure it shows an inline error surface, and the failure is also surfaced via toast.
 
@@ -350,6 +350,28 @@ On success the same step switches to its **complete** state — a success mark, 
 | `missing-stylesheet` | A `<link rel="stylesheet">` href was not found in the FileMap |
 | `asset-upload-failed` | An individual asset upload was rejected by the server; the original FileMap path remains in the import |
 | `external-font` | An `@font-face` with no bundled file (all `src` entries are external URLs) — skipped |
+| `unresolved-asset` | An HTML/CSS reference to a media file the archive does not contain under that path — one warning per distinct path |
+
+The import log shows the first 12 warnings, ordered so the kinds that name a
+missing file come first and the CSS interpretation notes last
+(`rankWarning` in `ImportStep.tsx`).
+
+### Filename matching
+
+Asset references resolve by exact FileMap key first. On a miss, the path is
+compared punctuation-insensitively (lowercased, with everything but letters,
+digits, `.` and `/` removed) against every file in the archive. This exists
+because exporters do not always agree with themselves: a Webflow export stores
+`101-&Berlin-Office-Us+ Coworking.webp` and references it from the HTML as
+`101-Berlin-Office-Us-Coworking.webp`, so an exact-only match imports the page
+with a broken image.
+
+The fallback match must be **unique**. Two files that differ only in
+punctuation are two different files, and picking one would put the wrong image
+on the page — so ambiguity falls through to the same `unresolved-asset`
+warning as genuine absence. Only references whose extension maps to an
+uploadable media MIME are reported: anchors to extensionless routes and pages
+outside the archive are normal and would bury the real misses.
 
 ---
 

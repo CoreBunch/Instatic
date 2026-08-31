@@ -208,15 +208,29 @@ export async function getDataTableBySlug(db: DbClient, slug: string): Promise<Da
  * (the data API, an MCP connector, an import) used to arrive unroutable.
  * Seeding here makes the invariant hold for every caller instead.
  *
+ * Only the mandatory two are held — the same rule `keepPostTypeBuiltIns`
+ * enforces on PATCH. The optional built-ins (body, featured media, the SEO
+ * pair) are deliberately removable, and the New collection dialog lets the
+ * author drop them before creating; re-adding them here silently overrode
+ * that choice. A caller that supplies no fields at all still gets the full
+ * canonical set, matching the dialog's starting state.
+ *
  * Caller-supplied fields win on id collision, so an explicit `title` override
- * (a different label, say) survives; omitted built-ins are prepended in their
+ * (a different label, say) survives; held built-ins are prepended in their
  * canonical order.
  */
 function withPostTypeBuiltIns(kind: DataTableKind | undefined, fields: DataField[]): DataField[] {
   if (kind !== 'postType') return fields
+  if (fields.length === 0) return buildPostTypeDefaultFields()
   const supplied = new Set(fields.map((field) => field.id))
-  const missing = buildPostTypeDefaultFields().filter((field) => !supplied.has(field.id))
-  return [...missing, ...fields]
+  const canonical = new Map(buildPostTypeDefaultFields().map((field) => [field.id, field]))
+  const held: DataField[] = []
+  for (const id of POST_TYPE_MANDATORY_FIELD_IDS) {
+    if (supplied.has(id)) continue
+    const field = canonical.get(id)
+    if (field) held.push(field)
+  }
+  return held.length === 0 ? fields : [...held, ...fields]
 }
 
 /**

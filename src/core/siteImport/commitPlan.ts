@@ -16,11 +16,18 @@
  *   `adapter.commit` call that the admin side executes as one history
  *   snapshot — Cmd+Z reverts the entire import in one step.
  *
+ * Cancellation:
+ *   `options.signal` aborts the run at the next boundary — before each asset
+ *   upload, each font install, and before the store commit — and an aborted
+ *   in-flight upload rethrows instead of degrading to a warning. Aborting
+ *   after Step C has started has no effect: the commit is atomic.
+ *
  * Each commit concern (tokens, fonts, rules, pages, page-scoped files) is a
  * named function below; the transaction recipe is straight-line calls.
  */
 
 import { nanoid } from 'nanoid'
+import { isAbortError } from '@core/http'
 import type { FontEntry } from '@core/fonts'
 import { applyAssetRewrites } from './applyAssetRewrites'
 import { rewriteInternalLinks } from './linkRewrite'
@@ -36,17 +43,29 @@ import type {
 } from './types'
 import type { SiteImportAdapter, SiteImportTransaction } from './adapter'
 
+export interface CommitImportPlanOptions {
+  /**
+   * Cancels the run: no further uploads or font installs start, the in-flight
+   * upload aborts, and the store commit never happens. Already-uploaded assets
+   * stay in the media library — the caller reports them to the user.
+   */
+  signal?: AbortSignal
+}
+
 export async function commitImportPlan(
   plan: ImportPlan,
   adapter: SiteImportAdapter,
+  options: CommitImportPlanOptions = {},
 ): Promise<ImportResult> {
+  const { signal } = options
+
   // ── Step A: upload all assets ─────────────────────────────────────────────
-  const { rewriteMap, warnings: uploadWarnings } = await uploadPlanAssets(plan, adapter)
+  const { rewriteMap, warnings: uploadWarnings } = await uploadPlanAssets(plan, adapter, signal)
 
   // ── Step B: rewrite plan URLs + install Google fonts ──────────────────────
   const rewrittenPlan = applyAssetRewrites(plan, rewriteMap)
   const { installedGoogleFonts, warnings: fontInstallWarnings } =
-    await installPlanGoogleFonts(rewrittenPlan, adapter)
+    await installPlanGoogleFonts(rewrittenPlan, adapter, signal)
 
   // ── Step C: commit pages + style rules (single atomic transaction) ────────
   // Conflict resolution lookup maps (source → resolution).
@@ -76,6 +95,9 @@ export async function commitImportPlan(
     scripts: [],
     stylesheets: [],
   }
+
+  // Cancellation gate: past this point the commit is atomic and runs to the end.
+  signal?.throwIfAborted()
 
   await adapter.commit((tx) => {
     // Merge reusable conditions first so rule contextStyles keys resolve.
@@ -138,18 +160,23 @@ type CommitResults = Pick<
 async function uploadPlanAssets(
   plan: ImportPlan,
   adapter: SiteImportAdapter,
+  signal?: AbortSignal,
 ): Promise<{ rewriteMap: Record<string, string>; warnings: ImportWarning[] }> {
   const rewriteMap: Record<string, string> = {}
   const warnings: ImportWarning[] = []
   for (const asset of plan.assets) {
+    signal?.throwIfAborted()
     try {
       const newUrl = await adapter.uploadAsset({
         path: asset.sourcePath,
         bytes: asset.bytes,
         mimeType: asset.mimeType,
+        signal,
       })
       rewriteMap[asset.sourcePath] = newUrl
     } catch (err) {
+      // Cancellation ends the run — it must never degrade into a warning.
+      if (isAbortError(err)) throw err
       const reason = err instanceof Error ? err.message : 'Unknown upload error'
       warnings.push({
         kind: 'asset-upload-failed',
@@ -164,13 +191,16 @@ async function uploadPlanAssets(
 async function installPlanGoogleFonts(
   plan: ImportPlan,
   adapter: SiteImportAdapter,
+  signal?: AbortSignal,
 ): Promise<{ installedGoogleFonts: FontEntry[]; warnings: ImportWarning[] }> {
   const installedGoogleFonts: FontEntry[] = []
   const warnings: ImportWarning[] = []
   for (const font of plan.googleFonts) {
+    signal?.throwIfAborted()
     try {
       installedGoogleFonts.push(await adapter.installGoogleFont(font))
     } catch (err) {
+      if (isAbortError(err)) throw err
       const reason = err instanceof Error ? err.message : 'Unknown font install error'
       warnings.push({
         kind: 'font-install-failed',

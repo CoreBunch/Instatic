@@ -21,6 +21,7 @@ import { Dialog } from '@ui/components/Dialog'
 import { Button } from '@ui/components/Button'
 import { cn } from '@ui/cn'
 import styles from './AdminCanvasLayout.module.css'
+import type { RuntimeScriptValidationState } from '@admin/pages/site/hooks/useRuntimeScriptDiagnostics'
 
 // Register the editor-only runtime graph from the lazy body, not the route
 // shell. The toolbar/chrome can paint without block definitions or loop
@@ -37,6 +38,7 @@ interface AdminCanvasEditorBodyProps {
   canSaveSite: boolean
   canUseAiChat: boolean
   loadError: string | null
+  runtimeValidation: RuntimeScriptValidationState
 }
 
 export function AdminCanvasEditorBody({
@@ -44,6 +46,7 @@ export function AdminCanvasEditorBody({
   canSaveSite,
   canUseAiChat,
   loadError,
+  runtimeValidation,
 }: AdminCanvasEditorBodyProps) {
   // Keep `siteRuntime.dependencyLock` in lockstep with `packageJson` while
   // the editor body is open.
@@ -127,7 +130,7 @@ export function AdminCanvasEditorBody({
           canvas stage. The panel itself is small chrome; the heavy CodeMirror
           6 bundle (~600 kB) is lazy-loaded inside the panel only when the
           user opens a text file. */}
-      <CodeEditorPanel />
+      <CodeEditorPanel runtimeValidation={runtimeValidation} />
 
       {/* Naming step for "Save as layout" / saved-layout rename. Renders null
           until a layoutNameDialogRequest is set on the ui slice. */}

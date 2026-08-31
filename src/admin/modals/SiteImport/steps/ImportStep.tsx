@@ -26,7 +26,7 @@ import { HeadingIcon } from 'pixel-art-icons/icons/heading'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { WarningDiamondSolidIcon } from 'pixel-art-icons/icons/warning-diamond-solid'
-import type { ImportResult } from '@core/siteImport'
+import type { ImportResult, ImportWarning } from '@core/siteImport'
 import type { ImportResult as CmsImportResult } from '@core/data/bundleSchema'
 import { ImportStepper } from '../shared/ImportStepper'
 import { withSiteImportCategoryTints } from '../shared/importCategoryAccent'
@@ -248,7 +248,12 @@ function ImportLog({ result, droppedAtRules }: { result: ImportResult; droppedAt
   if (result.scripts.length > 0) counts.push(`${result.scripts.length} ${plural(result.scripts.length, 'script')} imported`)
   if (droppedAtRules > 0) counts.push(`${droppedAtRules} @-${plural(droppedAtRules, 'rule')} dropped`)
 
-  const warnings = result.warnings
+  // Only the first 12 warnings are shown, and a stylesheet-heavy import can
+  // produce dozens of cosmetic CSS notes — so the ones naming a specific file
+  // the user has to go fetch lead, ahead of the ones that are FYI.
+  const warnings = [...result.warnings].sort(
+    (a, b) => rankWarning(a.kind) - rankWarning(b.kind),
+  )
 
   return (
     <section className={styles.log} aria-label="Import log">
@@ -343,4 +348,24 @@ function categoryCount(categories: RunProgress['categories'], id: ImportCategory
 
 function plural(n: number, word: string): string {
   return n === 1 ? word : `${word}s`
+}
+
+/**
+ * Display order for the import log's warning list: something is missing from
+ * the site → something needs re-adding by hand → everything else, which is a
+ * note about how a CSS declaration was interpreted.
+ */
+function rankWarning(kind: ImportWarning['kind']): number {
+  switch (kind) {
+    case 'unresolved-asset':
+    case 'asset-upload-failed':
+    case 'missing-stylesheet':
+    case 'missing-script':
+      return 0
+    case 'external-font':
+    case 'font-install-failed':
+      return 1
+    default:
+      return 2
+  }
 }

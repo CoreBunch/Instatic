@@ -44,6 +44,12 @@ const PLUGINS_ACCESS_CAPABILITIES = [
   'plugins.lifecycle',
 ] as const
 
+/** Mirrors `canAccessAiWorkspace` in access.ts. */
+const AI_ACCESS_CAPABILITIES = [
+  'ai.providers.manage',
+  'ai.audit.read',
+] as const
+
 export function getNavigationCommands(): Command[] {
   return [
     {
@@ -113,6 +119,20 @@ export function getNavigationCommands(): Command[] {
       capability: PLUGINS_ACCESS_CAPABILITIES,
       run: (ctx) => {
         ctx.navigate('/admin/plugins')
+        ctx.closeSpotlight()
+      },
+    },
+    {
+      id: 'navigation.goToAi',
+      title: 'Go to AI settings',
+      subtitle: 'Manage providers, defaults, connections, and usage',
+      group: 'navigation',
+      iconName: 'ai-box-solid',
+      keywords: ['ai', 'models', 'providers', 'openai', 'anthropic', 'ollama', 'mcp'],
+      workspaces: ['any'],
+      capability: AI_ACCESS_CAPABILITIES,
+      run: (ctx) => {
+        ctx.navigate('/admin/ai')
         ctx.closeSpotlight()
       },
     },
