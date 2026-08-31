@@ -10,6 +10,7 @@ import {
 } from '../../../server/forms/challenge'
 import { publicFormPerFormRateLimit, publicFormPerIpRateLimit } from '../../../server/forms/rateLimit'
 import { configurePublicOrigins, resetPublicOrigins, stampSocketIp } from '../../../server/auth/security'
+import { hookBus } from '@core/plugins/hookBus'
 import { createFakeDb } from './dbTestFake'
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
 
@@ -159,6 +160,11 @@ function makeDb(options: {
       })
       return { rows: [{ id: params[0] }], rowCount: 1 }
     }
+    if (sql.startsWith('select data_tables.slug')) {
+      const row = createdRows.find((candidate) => candidate.id === params[0])
+      const table = row ? tableRows[String(row.table_id)] : undefined
+      return table ? { rows: [{ slug: table.slug }], rowCount: 1 } : { rows: [], rowCount: 0 }
+    }
     if (sql.startsWith('select data_rows.id') && sql.includes('from data_rows')) {
       const row = createdRows.find((candidate) => candidate.id === params[0])
       if (!row) return { rows: [], rowCount: 0 }
@@ -220,6 +226,7 @@ function pageToken(): string {
 describe('public CMS-native form endpoint', () => {
   afterEach(() => {
     resetPublicOrigins()
+    hookBus.reset()
   })
 
   it('router owns public form challenge URLs before public-route/setup fallthrough', async () => {
@@ -409,11 +416,15 @@ describe('public CMS-native form endpoint', () => {
     })).toBeNull()
   })
 
-  it('creates a data row for a valid challenged submission', async () => {
+  it('creates a data row and emits its content event for a valid challenged submission', async () => {
     resetPublicFormChallenges()
     publicFormPerIpRateLimit.reset('unknown')
     publicFormPerFormRateLimit.reset('unknown|newsletter')
     const { db, createdRows } = makeDb()
+    const createdEvents: unknown[] = []
+    hookBus.on('test.notifications', 'content.entry.created', (payload) => {
+      createdEvents.push(payload)
+    })
     const challengeResponse = await handlePublicFormRequest(
       makeRequest('/_instatic/form/challenge', { formId: 'newsletter', pageId: 'page-home', pageToken: pageToken() }),
       db,
@@ -437,6 +448,11 @@ describe('public CMS-native form endpoint', () => {
     expect(createdRows).toHaveLength(1)
     expect(createdRows[0].table_id).toBe('newsletter_submissions')
     expect(createdRows[0].cells_json).toEqual({ email: 'ai@example.com' })
+    expect(createdEvents).toEqual([{
+      tableSlug: 'newsletter-submissions',
+      entryId: createdRows[0].id,
+      actor: { kind: 'system' },
+    }])
   })
 
   it('rejects oversized submit payloads before consuming form rate-limit quota', async () => {

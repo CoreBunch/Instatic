@@ -756,6 +756,8 @@ The host protocol names the per-table entry calls as `cms.content.entries.list`,
 
 Three event channels fire alongside every content write. Plugins use `actor` to skip their own writes (avoid feedback loops):
 
+Successful CMS-native public form submissions emit `content.entry.created` with `{ kind: 'system' }`, so notification and automation plugins observe them through the same channel as other row creation.
+
 ```js
 api.cms.hooks.on('content.entry.updated', async ({ tableSlug, entryId, changedFieldIds, actor }) => {
   if (actor.kind === 'plugin' && actor.pluginId === api.plugin.id) return
