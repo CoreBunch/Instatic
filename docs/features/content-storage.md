@@ -243,6 +243,8 @@ For **post-types**, public row routes require an explicitly authored entry templ
 
 `status: 'scheduled'` with `scheduled_publish_at: <ISO datetime>`. The publisher's scheduler tick (`server/publish/publishScheduler.ts`) polls for rows where `scheduled_publish_at <= now()`, fires `publishDataRow(...)`, and flips the row to `published`. On failure, the row drops back to `draft`.
 
+A row publish writes that row's own artefact and nothing else, so any baked listing page that loops over its table would still show the pre-publish set. Every path that changes an entry's public visibility — this tick, and the publish / unpublish / delete routes — therefore asks `server/publish/autoSitePublish.ts` for a coalesced background site republish. See [docs/features/publisher.md](publisher.md) → "Keeping listings honest".
+
 ---
 
 ## Cookbook

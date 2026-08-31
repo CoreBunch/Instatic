@@ -58,6 +58,7 @@ server/publish/
 ├── mediaPrefetch.ts, loopPrefetch.ts — pre-warm caches needed by the renderer
 ├── republish.ts                    — bulk re-publish on site-level changes
 ├── publishScheduler.ts             — scheduled publish jobs
+├── autoSitePublish.ts              — coalesced site republish after an entry's public state changes
 ├── runtime/                        — per-site bun install workspace serving
 └── loopRuntime.ts                  — loop runtime asset
 ```
@@ -319,6 +320,46 @@ The exclusive namespaces `/_instatic/css/*` (`serveSiteCss`) and `/_instatic/ass
 publish whose disk write failed. Unknown paths under either prefix 404 rather
 than falling through.
 
+### Keeping listings honest — automatic republish
+
+Baking everything to disk has one consequence that has to be handled
+explicitly: **a listing is a static artefact too**. A `base.loop` over a content
+table is expanded once, at full-publish time, and the resulting cards are baked
+into the slot. Per-entry publishing (`publishDataRow`) rewrites that entry's own
+artefact and nothing else — it never re-expands anybody else's loop.
+
+So the moment an entry enters or leaves public visibility, every listing that
+links to it is stale, and stays stale until someone presses Publish: a deleted
+post keeps a live card pointing at a 404, and a scheduled post that fires at
+09:00 is missing from the index until a human notices.
+
+`server/publish/autoSitePublish.ts` closes that gap. Every path that changes an
+entry's public visibility — publish, scheduled publish, unpublish, delete —
+calls `requestAutoSitePublish(db, uploadsDir)` next to the `emitContentEntry*`
+call it already makes, and the module runs one `publishDraftSite` in the
+background. Four rules make that affordable and safe:
+
+| Rule | How |
+|---|---|
+| **Coalesced** | The first request opens a 5-second batch window; every request inside it is absorbed. Forty posts going live cost one site publish. The window is half a `publishScheduler` tick, so one tick's worth of due rows lands in a single batch. |
+| **Never re-entrant** | At most one run is in flight — two would race the slot swap. Requests raised during a run collapse into exactly one follow-up window (the running publish may have read the database before their entry committed). |
+| **Never recursive** | Guaranteed structurally: the publish pipeline never calls the trigger, and `src/__tests__/architecture/auto-site-publish-callers.test.ts` fails the build if a new caller appears. A runtime origin check would lie — plugin `publish.*` handlers run in the QuickJS worker and their RPCs return on their own event-loop task. |
+| **Never a surprise publish** | `publishDraftSite` promotes the *draft*. A run therefore only proceeds while the draft already matches what is published, so it changes no page and its only effect is re-expanding the loops. With unpublished site edits present the run is skipped and logged — that operator is about to publish anyway. |
+
+The rebuild is background work: the author's request returns as soon as their
+entry is committed. A failed run is logged under `[publish:auto]` and dropped —
+the entry publish already committed, and the bake reaches `swapSlot` only after
+it succeeds, so a failure leaves the live site exactly as it was. Attribution is
+the system actor (`published_by_user_id = null`), the same convention the
+scheduled-publish tick uses: nobody asked for this site publish.
+
+Operators who publish on their own cadence set
+`AUTO_SITE_PUBLISH_ON_ENTRY_CHANGE=0` (also `false` / `off` / `no`) and keep the
+old behaviour, where only an explicit Publish rebuilds the site. Default is on.
+Note the cost of leaving it on: each automatic run writes a new
+`site_snapshots` row and a new `data_row_versions` row per page, exactly as a
+manual Publish does.
+
 ---
 
 ## `<head>` assembly
@@ -393,6 +434,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/publish/moduleJsBundle.ts`              | Module-JS channel: `buildSiteModuleJsMap` (fresh), `buildPublishedSiteModuleJsMap` (memoised per publishVersion + site, invalidated by `bumpPublishVersion()`), and `injectModuleScripts` (per-page `<script defer>` tags + CSP `script-src 'self'` relaxation). |
 | `server/publish/republish.ts`                   | Bulk re-publish on settings change (touches every page).            |
 | `server/publish/publishScheduler.ts`            | Scheduled publish jobs (cron-style).                                |
+| `server/publish/autoSitePublish.ts`             | `requestAutoSitePublish` — coalesced, non-re-entrant, background site republish after an entry's public visibility changes, so baked listings stop showing the pre-change set. See "Keeping listings honest". |
 | `server/publish/frontendInjections.ts`          | Compute plugin `<script>`/`<link>`/`<meta>` tags + CSP entries.     |
 | `server/publish/mediaPresentation.ts`           | Materialize media paths (originals + responsive variants) for publisher consumers. |
 | `src/core/publisher/responsiveBackground.ts`    | Convert media-library `background-image: url(...)` values into optimized variant fallback + `image-set(...)` declarations. |

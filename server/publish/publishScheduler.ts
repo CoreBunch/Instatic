@@ -21,6 +21,12 @@
  * instance ticks at a time; SQLite is single-process so the lock is a no-op
  * sentinel.
  *
+ * Listing freshness: flipping a row to `published` writes that row's own
+ * artefact and nothing else, so every baked listing that loops over its table
+ * still shows the pre-publish set. Each fired row asks `autoSitePublish.ts` for
+ * a site republish; its batch window collapses a whole tick — up to
+ * `TICK_BATCH_LIMIT` rows — into one.
+ *
  * Failure policy: when `publishDataRow` throws (e.g. validation fails,
  * the row got deleted between selection and publish), the row is
  * reverted to `'draft'` via `cancelScheduledPublish` and the error is
@@ -32,6 +38,7 @@
 import type { DbClient } from '../db/client'
 import { withSchedulerLeaderLock } from '../db/advisoryLock'
 import { publishDataRow } from './publishRow'
+import { requestAutoSitePublish } from './autoSitePublish'
 import { emitContentEntryUpdated } from './contentEvents'
 import {
   cancelScheduledPublish,
@@ -115,6 +122,11 @@ async function fireOne(db: DbClient, rowId: string, uploadsDir?: string): Promis
     // The `published_by_user_id` column lands as null which downstream
     // UI renders as "Scheduled publish" instead of a user attribution.
     await publishDataRow(db, rowId, null, uploadsDir)
+    // Nobody is watching a scheduled publish land, so a stale listing here goes
+    // unnoticed for as long as it takes a reader to complain. Ask for the site
+    // rebuild that re-expands the loops; the batch window folds a whole tick's
+    // worth of due rows into one publish.
+    requestAutoSitePublish(db, uploadsDir)
     await emitContentEntryUpdated(db, rowId, ['status'], { kind: 'system' })
   } catch (err) {
     console.error(`[publish-scheduler] failed to publish row ${rowId}:`, err)

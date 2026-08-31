@@ -539,6 +539,7 @@ Server-side publishing helpers live in `server/publish/`:
 | `siteCssBundle.ts`                | Per-site reset / framework / style CSS bundles (hashed filenames).  |
 | `republish.ts`                    | Bulk re-publish (after a settings change touches all pages).        |
 | `publishScheduler.ts`             | Scheduled publish jobs.                                             |
+| `autoSitePublish.ts`              | `requestAutoSitePublish` — coalesced background full-site republish after an entry's public visibility changes, so baked listing pages stop showing the pre-change set. Non-re-entrant; skipped while the site draft has unpublished edits; `AUTO_SITE_PUBLISH_ON_ENTRY_CHANGE=0` turns it off. |
 | `frontendInjections.ts`           | Plugin-contributed frontend scripts injected into published HTML.   |
 | `mediaPresentation.ts`            | `<picture>` / `<img srcset>` materialization at publish time.       |
 | `mediaPrefetch.ts`, `loopPrefetch.ts` | Pre-warm caches needed by published pages.                      |

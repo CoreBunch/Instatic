@@ -36,6 +36,7 @@ import {
   updateDataRowTable,
 } from '../../../repositories/data'
 import { publishDataRow, removeDataRowArtefact } from '../../../publish/publishRow'
+import { requestAutoSitePublish } from '../../../publish/autoSitePublish'
 import { runPublishFlush } from '../../../publish/publishFlush'
 import { findUserById } from '../../../repositories/users'
 import { slugForTable } from '@core/data/cells'
@@ -216,7 +217,12 @@ async function handleRowItemDelete(
   }
   // Layer B mirror of the artefact prune: a published row's route is
   // retracted, so the render cache must stop serving it.
-  if (row.status === 'published') await bumpPublishVersionSerialized()
+  if (row.status === 'published') {
+    await bumpPublishVersionSerialized()
+    // Pruning the row's own artefact does not touch the listings that link to
+    // it — without a site republish they keep advertising a route that now 404s.
+    requestAutoSitePublish(db, options.uploadsDir)
+  }
   await emitContentEntryDeleted(db, rowId, { kind: 'user', userId: user.id })
   await recordRowAuditEvent(db, user, req, 'data.row.delete', row)
   return jsonResponse({ row })
@@ -236,6 +242,9 @@ async function handleRowPublish(
   if (currentRow instanceof Response) return currentRow
 
   const result = await publishDataRow(db, rowId, user.id, options.uploadsDir)
+  // The row now has its own artefact, but every baked listing that loops over
+  // this table still shows the pre-publish set. Rebuild them in the background.
+  requestAutoSitePublish(db, options.uploadsDir)
   await emitContentEntryUpdated(db, rowId, ['status'], { kind: 'user', userId: user.id })
   await recordRowAuditEvent(db, user, req, 'data.row.publish', result.row, {
     versionNumber: result.version.versionNumber,
@@ -333,6 +342,9 @@ async function handleRowStatus(
       console.error('[publish:row] failed to remove artefact for retracted row', rowId, err)
     })
   }
+  // Only a row that WAS public changes what the listings should show; flipping
+  // an already-draft row between draft and unpublished is invisible publicly.
+  if (currentRow.status === 'published') requestAutoSitePublish(db, options.uploadsDir)
   await recordRowAuditEvent(db, user, req, 'data.row.status', row, { status: body.status })
   return jsonResponse({ row })
 }

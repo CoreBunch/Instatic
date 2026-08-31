@@ -48,6 +48,10 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 - Mapped U+0000 to U+FFFD in `escapeCssIdentifier`, matching the `CSS.escape` specification it vendors.
 - Moved HTML tag and attribute rendering helpers into the engine so `src/core` never imports from `src/modules`, now gated by an architecture test.
 
+### Content and publishing
+
+- Kept published listing pages in step with their entries. A listing expands its loop at full-publish time and bakes the result, so publishing, scheduling, unpublishing, or deleting an entry used to leave every index that links to it showing the previous set — a deleted post kept a live card pointing at a 404, and a scheduled post stayed off the index until someone published by hand. Those four paths now trigger a background site republish, coalesced so a batch of entries costs one publish, and skipped while the site draft has unpublished edits so an entry publish never pushes unfinished design work live. Set `AUTO_SITE_PUBLISH_ON_ENTRY_CHANGE=0` to publish on your own cadence instead.
+
 ## 0.0.16 - 2026-08-11
 
 ### Media and integrations
