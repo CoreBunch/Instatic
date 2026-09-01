@@ -22,6 +22,8 @@ import { registry } from '@core/module-engine'
 import type { CssBundleFile, SiteCssBundleId } from '@core/publisher'
 import { buildPublishedSiteCssBundle } from './publish/siteCssBundle'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
+import { clientIp } from './auth/security'
+import { handlePublicApiProxy } from './publicApiProxy'
 
 const VITE_DEV_URL = 'http://localhost:5173'
 
@@ -35,6 +37,9 @@ interface ServerRuntime {
    * storage dashboard widget).
    */
   databaseUrl?: string
+  publicApiProxyUrl?: string | null
+  publicApiProxyFetch?: typeof globalThis.fetch
+  publicOrigins?: string[]
 }
 
 /**
@@ -64,6 +69,7 @@ type RouteHandler = (
  */
 const routes: readonly RouteHandler[] = [
   tryServeHealth,
+  tryServePublicApiProxy,
   // OAuth discovery, dynamic client registration, and token exchange for
   // hosted MCP clients. These endpoints are public protocol surfaces; the
   // interactive consent step remains admin-session + step-up gated.
@@ -146,6 +152,20 @@ function asGetForHead(req: Request): Request {
 function tryServeHealth(_req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Response | null {
   if (pathname !== '/health') return null
   return jsonResponse({ status: 'ok', ts: Date.now() })
+}
+
+function tryServePublicApiProxy(
+  req: Request,
+  runtime: ServerRuntime,
+  url: URL,
+  _pathname: string,
+): Promise<Response | null> {
+  return handlePublicApiProxy(req, url, {
+    baseUrl: runtime.publicApiProxyUrl,
+    clientIp: clientIp(req),
+    fetch: runtime.publicApiProxyFetch,
+    publicOrigins: runtime.publicOrigins,
+  })
 }
 
 function tryServeMcpOAuth(

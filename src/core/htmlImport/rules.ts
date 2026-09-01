@@ -475,7 +475,8 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
     // recurse intentionally omitted — void elements must remain childless.
   },
 
-  // YouTube iframes and native <video> elements → base.video (LEAF).
+  // Google Maps, YouTube iframes, and native <video> elements → dedicated
+  // first-party modules (LEAF).
   //
   // NOTE on layering: src/core/ MUST NOT import from src/modules/. The
   // canonical YouTube URL parser lives in src/modules/base/video/youtube.ts
@@ -483,6 +484,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
   // against the known YouTube domains. It does NOT extract the video ID;
   // base.video's render() re-parses the stored videoUrl at publish time.
   //
+  // `<iframe src="https://www.google.com/maps/embed?...">` → base.google-map
   // `<iframe src="https://www.youtube.com/embed/ID">` → base.video
   // `<iframe src="https://player.vimeo.com/...">` → base.container fallback
   // `<video src="clip.mp4" controls>` → base.video
@@ -497,12 +499,25 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
     map: (el) => {
       const src = attr(el, 'src')
       let isYoutube = false
+      let isGoogleMapsEmbed = false
       if (src) {
         try {
-          const host = new URL(src).hostname.toLowerCase().replace(/^www\./, '')
+          const url = new URL(src)
+          const host = url.hostname.toLowerCase().replace(/^www\./, '')
           isYoutube = host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com' || host === 'youtu.be'
+          isGoogleMapsEmbed = url.protocol === 'https:' && url.hostname.toLowerCase() === 'www.google.com' && url.pathname === '/maps/embed'
         } catch {
-          // malformed URL — not YouTube
+          // malformed URL — not a supported iframe provider
+        }
+      }
+
+      if (isGoogleMapsEmbed) {
+        return {
+          moduleId: 'base.google-map',
+          props: {
+            embedUrl: src,
+            ...(attr(el, 'title') ? { title: attr(el, 'title') } : {}),
+          },
         }
       }
 

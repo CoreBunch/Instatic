@@ -79,6 +79,23 @@ import { getLatestSnapshotForVersion } from './publishedSnapshotCache'
 import { snapshotForEntryRoute, snapshotForNotFoundRoute } from './entryTemplateSnapshot'
 import { getPublishVersion } from './publishState'
 import { canonicalRenderQuery } from './loopPrefetch'
+import { googleMapsEmbedUrl } from '@modules/base/googleMap/url'
+
+/**
+ * Old imports could bake a Google Maps placeholder as a div. A platform
+ * upgrade cannot rewrite that immutable disk artefact, so identify only the
+ * exact legacy marker + official embed URL and fall through to the current
+ * snapshot renderer. The normal Layer-B cache still prevents repeat renders.
+ */
+function hasLegacyGoogleMapsDiv(html: string): boolean {
+  const divTags = html.match(/<div\b[^>]*>/gi) ?? []
+  return divTags.some((tag) => {
+    const classValue = tag.match(/\bclass\s*=\s*(["'])(.*?)\1/i)?.[2]
+    const srcValue = tag.match(/\bsrc\s*=\s*(["'])(.*?)\1/i)?.[2]
+    if (!classValue?.split(/\s+/).includes('instatic-map-embed') || !srcValue) return false
+    return googleMapsEmbedUrl(srcValue.replaceAll('&amp;', '&')) !== null
+  })
+}
 
 // ---------------------------------------------------------------------------
 // Path helpers
@@ -232,7 +249,7 @@ export async function renderPublicResolution(
   // canonical URL's baked HTML; junk query strings still hit the disk artefact.
   if (uploadsDir && canonicalQuery === '') {
     const html = await readArtefact(uploadsDir, url.pathname)
-    if (html !== null) {
+    if (html !== null && !hasLegacyGoogleMapsDiv(html)) {
       return new Response(html, {
         headers: { 'content-type': 'text/html; charset=utf-8' },
       })

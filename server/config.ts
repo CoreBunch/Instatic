@@ -5,6 +5,7 @@ interface ServerConfig {
   staticDir: string
   trustedProxyCidrs: string[]
   publicOrigins: string[]
+  publicApiProxyUrl: string | null
 }
 
 function readCsvList(value: string | undefined): string[] {
@@ -54,6 +55,21 @@ function normalizeOrigins(raw: readonly string[]): string[] {
   return out
 }
 
+function normalizeHttpBaseUrl(raw: string | undefined): string | null {
+  if (!raw?.trim()) return null
+  try {
+    const url = new URL(raw.trim())
+    if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) return null
+    if (url.username || url.password) return null
+    url.search = ''
+    url.hash = ''
+    url.pathname = url.pathname.replace(/\/+$/, '')
+    return url.toString().replace(/\/$/, '')
+  } catch {
+    return null
+  }
+}
+
 /**
  * The set of public origins the CSRF check derives `expectedOrigin` from.
  *
@@ -95,5 +111,6 @@ export function readServerConfig(
     staticDir: env.STATIC_DIR ?? './dist',
     trustedProxyCidrs: readCsvList(env.TRUSTED_PROXY_CIDRS),
     publicOrigins: resolvePublicOrigins(env),
+    publicApiProxyUrl: normalizeHttpBaseUrl(env.PUBLIC_API_PROXY_URL),
   }
 }

@@ -36,6 +36,7 @@ import './forms'
 
 // Media modules (extended)
 import './video'
+import './googleMap'
 
 // Component system modules
 import './slotInstance'

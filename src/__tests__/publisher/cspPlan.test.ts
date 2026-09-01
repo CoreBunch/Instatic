@@ -25,6 +25,9 @@ import {
   type FrontendInjections,
 } from '../../../server/publish/frontendInjections'
 import { VideoModule } from '@modules/base/video'
+import { GoogleMapModule } from '@modules/base/googleMap'
+import { ContainerModule } from '@modules/base/container'
+import { BodyModule } from '@modules/base/body'
 import { makeModule, makeRegistry, makePage, makeSite } from './helpers'
 
 describe('CspPlan — serialization is deterministic and sorted', () => {
@@ -232,6 +235,126 @@ describe('publishPage — CSP frame-src from module cspSources', () => {
     const csp = extractPublishedCsp(html)
     expect(csp).toContain("frame-src 'none'")
     expect(csp).not.toContain('youtube')
+  })
+
+  it('page with an official Google Maps embed permits only www.google.com in frame-src', () => {
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['map'] },
+      map: {
+        moduleId: 'base.google-map',
+        props: {
+          embedUrl: 'https://www.google.com/maps/embed?pb=official',
+          title: 'Bernie’s Heating and A/C Service location on Google Maps',
+        },
+      },
+    })
+    const reg = makeRegistry({
+      'base.body': BodyModule as AnyModuleDefinition,
+      'base.google-map': GoogleMapModule as AnyModuleDefinition,
+    })
+    const { html } = publishPage(page, makeSite(), reg)
+    const csp = extractPublishedCsp(html)
+    expect(html).toContain('loading="lazy"')
+    expect(html).toContain('referrerpolicy="strict-origin-when-cross-origin"')
+    expect(csp).toContain('frame-src https://www.google.com;')
+    expect(csp).not.toContain("frame-src 'none'")
+  })
+
+  it('does not relax frame-src for a Google Maps URL outside the exact allowed origin', () => {
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['map'] },
+      map: {
+        moduleId: 'base.google-map',
+        props: {
+          embedUrl: 'https://google.com/maps/embed?pb=not-allowed',
+          title: 'Map',
+        },
+      },
+    })
+    const reg = makeRegistry({
+      'base.body': BodyModule as AnyModuleDefinition,
+      'base.google-map': GoogleMapModule as AnyModuleDefinition,
+    })
+    const { html } = publishPage(page, makeSite(), reg)
+    const csp = extractPublishedCsp(html)
+    expect(html).not.toContain('<iframe')
+    expect(csp).toContain("frame-src 'none'")
+  })
+
+  it('keeps legacy custom-iframe containers working for the exact Google Maps embed origin', () => {
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['map'] },
+      map: {
+        moduleId: 'base.container',
+        props: {
+          tag: 'custom',
+          customTag: 'iframe',
+          htmlAttributes: {
+            src: 'https://www.google.com/maps/embed?pb=legacy',
+            title: 'Bernie’s Heating and A/C Service on Google Maps',
+          },
+        },
+      },
+    })
+    const reg = makeRegistry({
+      'base.body': BodyModule as AnyModuleDefinition,
+      'base.container': ContainerModule as AnyModuleDefinition,
+    })
+    const { html } = publishPage(page, makeSite(), reg)
+    const csp = extractPublishedCsp(html)
+    expect(html).toContain('<iframe')
+    expect(csp).toContain('frame-src https://www.google.com;')
+    expect(csp).not.toContain("frame-src 'none'")
+  })
+
+  it('repairs sanitized legacy map divs without requiring a page re-import', () => {
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['map'] },
+      map: {
+        moduleId: 'base.container',
+        props: {
+          tag: 'div',
+          customTag: '',
+          htmlAttributes: {
+            src: 'https://www.google.com/maps/embed?pb=sanitized-legacy',
+            title: 'Bernie’s Heating and A/C Service on Google Maps',
+          },
+        },
+      },
+    })
+    const reg = makeRegistry({
+      'base.body': BodyModule as AnyModuleDefinition,
+      'base.container': ContainerModule as AnyModuleDefinition,
+    })
+    const { html } = publishPage(page, makeSite(), reg)
+    const csp = extractPublishedCsp(html)
+    expect(html).toContain('<iframe')
+    expect(html).not.toContain('<div src="https://www.google.com/maps/embed')
+    expect(csp).toContain('frame-src https://www.google.com;')
+    expect(csp).not.toContain("frame-src 'none'")
+  })
+
+  it('does not widen CSP for other legacy custom-iframe container origins', () => {
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['map'] },
+      map: {
+        moduleId: 'base.container',
+        props: {
+          tag: 'custom',
+          customTag: 'iframe',
+          htmlAttributes: {
+            src: 'https://example.com/embed',
+            title: 'Untrusted embed',
+          },
+        },
+      },
+    })
+    const reg = makeRegistry({
+      'base.body': BodyModule as AnyModuleDefinition,
+      'base.container': ContainerModule as AnyModuleDefinition,
+    })
+    const { html } = publishPage(page, makeSite(), reg)
+    expect(extractPublishedCsp(html)).toContain("frame-src 'none'")
   })
 
   it('youtube sources are sorted deterministically across repeated builds', () => {

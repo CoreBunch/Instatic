@@ -1382,7 +1382,21 @@ describe('base.video — <iframe> import mapping', () => {
     expect(node.props.customTag).toBe('iframe')
   })
 
-  it('Google Maps iframe → falls back to base.container', () => {
+  it('official Google Maps Embed iframe → base.google-map with accessible title', () => {
+    const src = 'https://www.google.com/maps/embed?pb=abc'
+    const node = single(`<iframe src="${src}" title="Bernie’s Heating and A/C Service location on Google Maps"></iframe>`)
+    expect(node.moduleId).toBe('base.google-map')
+    expect(node.props.embedUrl).toBe(src)
+    expect(node.props.title).toBe('Bernie’s Heating and A/C Service location on Google Maps')
+  })
+
+  it('bare google.com embed iframe falls back instead of requesting an origin the module CSP does not allow', () => {
+    const node = single('<iframe src="https://google.com/maps/embed?pb=abc"></iframe>')
+    expect(node.moduleId).toBe('base.container')
+    expect(node.props.customTag).toBe('iframe')
+  })
+
+  it('non-embed Google Maps iframe falls back to base.container', () => {
     const node = single('<iframe src="https://maps.google.com/maps?q=London"></iframe>')
     expect(node.moduleId).toBe('base.container')
     expect(node.props.customTag).toBe('iframe')

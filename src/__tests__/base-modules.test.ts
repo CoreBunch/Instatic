@@ -36,6 +36,7 @@ import { LoopModule } from '@modules/base/loop'
 import { ImageModule } from '@modules/base/image'
 import { SvgModule } from '@modules/base/svg'
 import { VideoModule } from '@modules/base/video'
+import { GoogleMapModule } from '@modules/base/googleMap'
 import { ListModule } from '@modules/base/list'
 import { LinkModule } from '@modules/base/link'
 import { BodyModule } from '@modules/base/body'
@@ -55,6 +56,7 @@ runModuleConformanceSuite(LoopModule)
 runModuleConformanceSuite(ImageModule)
 runModuleConformanceSuite(SvgModule)
 runModuleConformanceSuite(VideoModule)
+runModuleConformanceSuite(GoogleMapModule)
 runModuleConformanceSuite(ListModule)
 runModuleConformanceSuite(LinkModule)
 runModuleConformanceSuite(VisualComponentRefModule)
@@ -106,6 +108,7 @@ describe('base module registration', () => {
       ImageModule,
       SvgModule,
       VideoModule,
+      GoogleMapModule,
       ButtonModule,
       LinkModule,
       VisualComponentRefModule,

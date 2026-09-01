@@ -126,6 +126,7 @@ describe('readServerConfig', () => {
       staticDir: './dist',
       trustedProxyCidrs: [],
       publicOrigins: [],
+      publicApiProxyUrl: null,
     })
   })
 
@@ -140,6 +141,7 @@ describe('readServerConfig', () => {
         PUBLIC_ORIGIN: 'https://CMS.example.com/, http://localhost:5173',
         RENDER_EXTERNAL_URL: 'https://ignored.onrender.com',
         RAILWAY_PUBLIC_DOMAIN: 'ignored.up.railway.app',
+        PUBLIC_API_PROXY_URL: 'http://bchvac-api.railway.internal:8080/',
       }),
     ).toEqual({
       port: 4321,
@@ -148,6 +150,12 @@ describe('readServerConfig', () => {
       staticDir: '/srv/instatic/dist',
       trustedProxyCidrs: ['10.0.0.0/8', '192.168.0.0/16'],
       publicOrigins: ['https://cms.example.com', 'http://localhost:5173'],
+      publicApiProxyUrl: 'http://bchvac-api.railway.internal:8080',
     })
+  })
+
+  it('disables the public API proxy for malformed or non-http targets', () => {
+    expect(readServerConfig({ PUBLIC_API_PROXY_URL: 'not-a-url' }).publicApiProxyUrl).toBeNull()
+    expect(readServerConfig({ PUBLIC_API_PROXY_URL: 'file:///etc/passwd' }).publicApiProxyUrl).toBeNull()
   })
 })

@@ -21,6 +21,19 @@ import { htmlAttributesAttr } from '@core/publisher'
 import { Value } from '@core/utils/typeboxHelpers'
 import { ContainerEditor } from './ContainerEditor'
 import { ContainerPropsSchema, type ContainerStoredProps } from './props'
+import { googleMapsEmbedUrl } from '@modules/base/googleMap/url'
+
+const GOOGLE_MAPS_CSP_SOURCES = [
+  { directive: 'frame-src' as const, sources: ['https://www.google.com'] },
+]
+
+function legacyGoogleMapsEmbed(props: ContainerStoredProps): string | null {
+  const isLegacyIframe = props.tag === 'custom' && props.customTag.trim().toLowerCase() === 'iframe'
+  const isSanitizedLegacyDiv = props.tag === 'div'
+  if (!isLegacyIframe && !isSanitizedLegacyDiv) return null
+  const src = props.htmlAttributes?.src
+  return typeof src === 'string' ? googleMapsEmbedUrl(src) : null
+}
 
 export const ContainerModule: ModuleDefinition<ContainerStoredProps> = {
   id: 'base.container',
@@ -47,6 +60,18 @@ export const ContainerModule: ModuleDefinition<ContainerStoredProps> = {
   htmlTag: (props) => resolveHtmlTag(props.tag, props.customTag),
 
   render: (props, renderedChildren) => {
+    // Backward compatibility for maps imported before base.google-map existed.
+    // The importer may have preserved the iframe as either a blocked custom tag
+    // or a sanitized div. Restore only this exact official embed shape and only
+    // its fixed CSP origin.
+    if (legacyGoogleMapsEmbed(props)) {
+      const attrs = htmlAttributesAttr(props.htmlAttributes)
+      return {
+        html: `<iframe${attrs}></iframe>`,
+        cspSources: GOOGLE_MAPS_CSP_SOURCES,
+      }
+    }
+
     const tag = resolveHtmlTag(props.tag, props.customTag)
     const attrs = htmlAttributesAttr(props.htmlAttributes)
     // Void elements (br, hr, img, …) take no closing tag — `<br></br>` would

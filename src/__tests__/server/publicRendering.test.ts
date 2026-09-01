@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { DbClient, DbResult } from '../../../server/db'
 import { resetForTests } from '../../../server/publish/renderCache'
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
@@ -8,6 +11,12 @@ import {
 } from '../../../server/publish/publicRenderer'
 import type { PublishedDataRow } from '@core/data/schemas'
 import { handleServerRequest } from '../../../server/router'
+import { renderPublicResolution } from '../../../server/publish/publicRouter'
+import {
+  prepareInactiveSlot,
+  swapSlot,
+  writeArtefact,
+} from '../../../server/publish/staticArtefact'
 
 function snapshot(text: string): PublishedPageSnapshot {
   return {
@@ -120,6 +129,52 @@ describe('public rendering', () => {
     expect(html).toContain('<!DOCTYPE html>')
     expect(html).toContain('Visible to public')
     expect(html).toContain('<title>Public Site</title>')
+  })
+
+  it('bypasses a baked legacy Google Maps div so the current renderer can repair it', async () => {
+    const snap = snapshot('Legacy map placeholder')
+    const page = snap.site.pages[0]!
+    page.slug = 'contact'
+    page.nodes.root!.children = ['map']
+    page.nodes.map = {
+      id: 'map',
+      moduleId: 'base.container',
+      props: {
+        tag: 'div',
+        customTag: '',
+        htmlAttributes: {
+          class: 'instatic-map-embed bernies-contact-map',
+          src: 'https://www.google.com/maps/embed?pb=legacy-published-snapshot',
+          title: 'Bernie’s Heating and A/C Service location',
+        },
+      },
+      breakpointOverrides: {},
+      children: [],
+    }
+
+    const uploadsDir = await mkdtemp(join(tmpdir(), 'legacy-google-map-'))
+    try {
+      const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+      await writeArtefact(
+        slotDir,
+        '/contact',
+        '<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="frame-src \'none\';"><div class="instatic-map-embed bernies-contact-map" src="https://www.google.com/maps/embed?pb=legacy-published-snapshot"></div>',
+      )
+      await swapSlot(uploadsDir, slot)
+
+      const response = await renderPublicResolution(
+        makeFakeDb(snap),
+        new URL('https://example.com/contact'),
+        uploadsDir,
+      )
+      expect(response).not.toBeNull()
+      const html = await response!.text()
+      expect(html).toContain('<iframe')
+      expect(html).toContain('frame-src https://www.google.com;')
+      expect(html).not.toContain("frame-src 'none'")
+    } finally {
+      await rm(uploadsDir, { recursive: true, force: true })
+    }
   })
 
   // Guards the page-wrapper's identity reporting after the shared
