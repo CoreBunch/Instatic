@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { Database } from 'bun:sqlite'
 import { pgMigrations } from '../../../server/db/migrations-pg'
 import { sqliteMigrations } from '../../../server/db/migrations-sqlite'
 import { SYSTEM_ROLES } from '../../../server/auth/capabilities'
@@ -68,6 +69,40 @@ describe('CMS migrations', () => {
         expect(pgSql).toContain(capability)
         expect(sqliteSql).toContain(capability)
       }
+    }
+  })
+
+  it('removes legacy roles.manage grants only from non-Owner roles', () => {
+    const db = new Database(':memory:')
+    try {
+      db.exec(`
+        create table roles (
+          id text primary key,
+          capabilities_json text not null,
+          updated_at text not null default current_timestamp
+        );
+        insert into roles (id, capabilities_json) values
+          ('owner', '["users.manage","roles.manage"]'),
+          ('legacy-custom', '["users.manage","roles.manage"]'),
+          ('ordinary-custom', '["site.read"]');
+      `)
+      const migration = sqliteMigrations.find(
+        (candidate) => candidate.id === '025_remove_non_owner_role_management',
+      )
+      expect(migration).toBeDefined()
+      db.exec(migration!.sql)
+
+      const rows = db.query<{ id: string; capabilities_json: string }, []>(
+        'select id, capabilities_json from roles order by id',
+      ).all()
+      const capabilities = new Map(
+        rows.map((row) => [row.id, JSON.parse(row.capabilities_json) as string[]]),
+      )
+      expect(capabilities.get('owner')).toEqual(['users.manage', 'roles.manage'])
+      expect(capabilities.get('legacy-custom')).toEqual(['users.manage'])
+      expect(capabilities.get('ordinary-custom')).toEqual(['site.read'])
+    } finally {
+      db.close()
     }
   })
 })
