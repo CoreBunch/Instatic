@@ -4,8 +4,11 @@
  * `bun run dev` is the only thing a developer should need.
  *
  * Default behaviour (no DATABASE_URL in the environment): the script uses
- * SQLite at ./.tmp/dev.db — no Docker or any other external services required.
- * The parent directory is created automatically on first run.
+ * SQLite in the platform-native per-user data directory — see
+ * `server/secrets/dataPaths.ts` for the per-platform path. No Docker or
+ * any other external services required. The parent directory is created
+ * automatically on first run. Override with `INSTATIC_DATA_DIR` to point
+ * dev state at an external volume, or set `DATABASE_URL` directly.
  *
  * Postgres mode: set DATABASE_URL=postgres://... to run against a Postgres
  * database. The script will manage a local docker postgres for you:
@@ -28,6 +31,7 @@
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { isSqliteUrl } from '../server/db'
+import { defaultDevDbUrl } from '../server/secrets/dataPaths'
 import { bunCommand, viteCommand } from './lib/bunCommand'
 import { ensurePortFree } from './lib/freePort'
 
@@ -35,7 +39,7 @@ const CMS_PORT = Number(process.env.PORT ?? '3001')
 const VITE_PORT = Number(process.env.VITE_PORT ?? '5173')
 const POSTGRES_HOST = '127.0.0.1'
 const POSTGRES_PORT = 5433
-const DATABASE_URL = process.env.DATABASE_URL ?? 'sqlite:./.tmp/dev.db'
+const DATABASE_URL = process.env.DATABASE_URL ?? defaultDevDbUrl()
 
 const decoder = new TextDecoder()
 

@@ -1,3 +1,5 @@
+import { defaultDevDbUrl } from './secrets/dataPaths'
+
 interface ServerConfig {
   port: number
   databaseUrl: string
@@ -90,7 +92,7 @@ export function readServerConfig(
 ): ServerConfig {
   return {
     port: Number(env.PORT ?? 3001),
-    databaseUrl: env.DATABASE_URL ?? 'sqlite:./.tmp/dev.db',
+    databaseUrl: env.DATABASE_URL ?? defaultDevDbUrl(),
     uploadsDir: env.UPLOADS_DIR ?? './uploads',
     staticDir: env.STATIC_DIR ?? './dist',
     trustedProxyCidrs: readCsvList(env.TRUSTED_PROXY_CIDRS),
