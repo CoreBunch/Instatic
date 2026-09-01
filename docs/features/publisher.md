@@ -56,6 +56,7 @@ server/publish/
 ├── mediaPresentation.ts            — media URL materialization for originals + responsive variants
 ├── renderTreeWalk.ts               — walkRenderTree: visits every node that contributes to a rendered page (page nodes + VC definition trees, cycle-guarded); single source of truth for loop-prefetch and media-prefetch
 ├── mediaPrefetch.ts, loopPrefetch.ts — pre-warm caches needed by the renderer
+├── sitemap.ts                      — generated /sitemap.xml + /robots.txt (enumerate published routes)
 ├── republish.ts                    — bulk re-publish on site-level changes
 ├── publishScheduler.ts             — scheduled publish jobs
 ├── runtime/                        — per-site bun install workspace serving
@@ -382,6 +383,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | File                                            | Role                                                                |
 |-------------------------------------------------|---------------------------------------------------------------------|
 | `server/publish/publicRouter.ts`                | Gateway: Layer A disk fast-path → Layer B LRU → live `resolvePublicRoute` + `renderPublicResolution`. |
+| `server/publish/sitemap.ts`                     | Generated `GET /sitemap.xml` + `GET /robots.txt`. Enumerates published pages (excluding template pages) + data-row routes from the DB on each request, anchored to the request origin. Owned before `tryServePublicRoute` so these paths can't be shadowed by a same-slug page. |
 | `server/publish/staticArtefact.ts`              | Two-slot symlink swap (`swapSlot`), per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), and reads (`readArtefact`). Layer A. |
 | `server/publish/renderCache.ts`                 | In-memory LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. `getOrRender` (single-flight). Reads the version from `publishState`; version captured at render start — a publish landing mid-render discards the result rather than caching stale HTML. Layer B. |
 | `server/publish/publishState.ts`                | Publish-time process state: `publishVersion` (`bumpPublishVersion`/`getPublishVersion`), `withPublishLock` (ISS-038 publish serializer), and `createVersionedSingleFlight` — the generalized version-keyed single-flight memo the hole endpoint reuses. Repositories import the version + lock from here (not from the cache). |
@@ -404,6 +406,37 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/handlers/cms/hole.ts`                   | `GET /_instatic/hole-runtime.js` (serves `HOLE_RUNTIME_JS`) and `GET /_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` (renders a node subtree at request time for Layer C islands). |
 | `server/handlers/cms/moduleJs.ts`               | `GET /_instatic/module-js/<moduleId>.js?v=<publishVersion>` — serves a module's render-emitted JS from the memoised site map; validates the untrusted moduleId segment; 404 unknown; `text/javascript`; `cache-control: public, max-age=3600`. |
 | `server/richtextSanitizer.ts`                   | Installs the server's happy-dom-backed DOMPurify runtime without global DOM objects. |
+
+### Sitemap & robots.txt
+
+`sitemap.ts` owns two reserved public routes, registered in `server/router.ts`
+as `tryServeSitemap` **before** `tryServePublicRoute` (so a published page with
+slug `sitemap.xml`/`robots.txt` can never shadow them), and opted into the Vite
+dev proxy in `vite.config.ts` (both carry a file extension, so — like the
+`/_instatic/` routes — they need an explicit allow past the extension-rejection
+rule):
+
+- `GET /sitemap.xml` — a `urlset` of every published, **directly-routable** URL.
+  `collectSitemapEntries(db)` unions:
+  - Published `pages` rows (`listPublishedPageRoutes`), keyed by `data_rows.slug`
+    (the exact slug the resolver matches; the `index` slug → `/`), **minus**
+    template pages — a page id flagged `isTemplatePage` in the latest published
+    `SiteDocument` is dropped, since entry templates / layouts / the notFound
+    page are never routable.
+  - Published data-row routes (`listPublishedRowRoutes` → `publicDataPath`),
+    using each row's active-version slug.
+  Pages win on a path collision (mirrors resolver order). Each `<url>` carries a
+  `<lastmod>` from the row's `updated_at`.
+- `GET /robots.txt` — allow-all except `/admin`, plus a `Sitemap:` line.
+
+Both are rebuilt from the DB per request (crawled infrequently, cheap to
+recompute; `Cache-Control: public, max-age=3600`) and anchored to
+`canonicalPublicOrigin(url)` (`server/auth/security.ts`): the configured
+`PUBLIC_ORIGIN` entry whose host matches the request wins (so a
+TLS-terminating edge that hands the container plain HTTP still yields
+`https://` locs), else the canonical first entry, else the request's own
+origin. The pure builders (`buildSitemapXml`, `buildRobotsTxt`), enumeration,
+and origin anchoring are gated by `src/__tests__/server/sitemap.test.ts`.
 
 ### `publishedHtmlPipeline.ts` — the plugin filter point
 

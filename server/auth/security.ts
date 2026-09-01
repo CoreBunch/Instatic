@@ -101,6 +101,22 @@ export function publicOriginIsHttps(): boolean {
 }
 
 /**
+ * Canonical absolute origin for URLs embedded in generated public documents
+ * (sitemap `<loc>`, robots `Sitemap:`). Behind a TLS-terminating edge the
+ * request URL's scheme is plain http, so raw `url.origin` would leak
+ * `http://` URLs into crawler-facing output; the configured public origins
+ * are authoritative instead. A configured entry whose host matches the
+ * request host wins (multi-domain installs emit the domain the crawler
+ * actually fetched, upgraded to its configured scheme), else the canonical
+ * first entry, else — nothing configured — the request's own origin.
+ */
+export function canonicalPublicOrigin(url: URL): string {
+  const host = url.host.toLowerCase()
+  const match = publicOrigins.find((origin) => new URL(origin).host === host)
+  return match ?? publicOrigins[0] ?? url.origin
+}
+
+/**
  * True when the request's `Origin` header is acceptable for a state-changing
  * action. The check is a CSRF defense-in-depth on top of `SameSite=Lax`:
  *

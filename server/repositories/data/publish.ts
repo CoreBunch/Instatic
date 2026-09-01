@@ -294,6 +294,8 @@ interface PublishedRowRoute {
   rowSlug: string
   tableSlug: string
   tableRouteBase: string
+  /** ISO timestamp of the row's last change — becomes the sitemap `<lastmod>`. */
+  updatedAt: string
 }
 
 /**
@@ -301,7 +303,7 @@ interface PublishedRowRoute {
  * its active version's slug and its table's route info. The full publish uses
  * this to bake a Layer A artefact for each row route into the fresh slot —
  * without it, the slot swap would strand every row artefact written by
- * incremental publishes.
+ * incremental publishes. The sitemap builder consumes the same list.
  */
 export async function listPublishedRowRoutes(db: DbClient): Promise<PublishedRowRoute[]> {
   const { rows } = await db<{
@@ -309,11 +311,13 @@ export async function listPublishedRowRoutes(db: DbClient): Promise<PublishedRow
     row_slug: string
     table_slug: string
     table_route_base: string
+    updated_at: string | Date
   }>`
     select data_rows.id as row_id,
            data_row_versions.slug as row_slug,
            data_tables.slug as table_slug,
-           data_tables.route_base as table_route_base
+           data_tables.route_base as table_route_base,
+           data_rows.updated_at as updated_at
     from data_rows
     join data_tables on data_tables.id = data_rows.table_id
     join data_row_versions on data_row_versions.id = data_rows.active_version_id
@@ -328,6 +332,7 @@ export async function listPublishedRowRoutes(db: DbClient): Promise<PublishedRow
     rowSlug: row.row_slug,
     tableSlug: row.table_slug,
     tableRouteBase: normalizeRouteBase(row.table_route_base),
+    updatedAt: isoDate(row.updated_at),
   }))
 }
 
