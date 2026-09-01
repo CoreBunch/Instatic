@@ -532,25 +532,22 @@ Opens the rail-selected panel:
 - `PluginEditorPanel` — plugin-provided editor panels
 - `AgentPanel` — AI assistant
 
-Explorer, Selectors, Framework, Dependencies, and plugin panels use the shared
-`Panel` header contract and can be unpinned into one draggable canvas window.
-Switching among those rail items while unpinned replaces the window content
-without redocking it; the same header action docks the active panel back into
-the left sidebar. A keyboard-accessible bottom-right handle resizes the
-floating window in both axes (arrow keys resize by 10px; Shift+arrow by 40px).
-`leftSidebarMode`, the shared floating position, and its user-set width and
-height are persisted through `siteEditorLayoutPersistence` /
-`workspaceLayoutStorage`.
+Every built-in left-rail panel, including AI, can be undocked independently;
+the active plugin panel follows the same host contract. An undocked panel stays open as its own draggable canvas window
+while another rail item can open normally in the left sidebar. Its rail icon is
+muted while detached, and the panel header can dock it back into the sidebar.
+Each floating window has its own keyboard-accessible bottom-right resize handle
+(arrow keys resize by 10px; Shift+arrow by 40px). Built-in panel modes, open
+state, positions, and dimensions are persisted through
+`siteEditorLayoutPersistence` / `workspaceLayoutStorage`.
 
 The outer left-sidebar layout shell intentionally has no `z-index`, so it does
 not trap floating descendants in a sidebar stacking context. Its docked panel
-slot owns layer 85; the undocked slot and independent Agent panel participate
-directly in the shared floating tier at 90.
-
-The AI Assistant is an independent draggable and resizable floating window, so
-it can stay open beside Explorer/Layers or any other hosted panel. Its position,
-dimensions, and open state persist separately across reloads. Properties
-follows the same independent floating-window interaction contract on the right.
+slot owns layer 85; individually undocked panel hosts participate directly in
+the shared floating tier at 90. The AI Assistant is docked by default and uses
+the same per-panel contract as Explorer, Framework, Selectors, and Dependencies.
+Properties follows the equivalent independent floating-window interaction
+contract on the right.
 
 ### Right sidebar (`RightSidebar`)
 
