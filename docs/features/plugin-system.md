@@ -111,6 +111,7 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
     "editor.code",        // required by entrypoints.editor (unsandboxed admin-window code)
     "modules.register",   // required by entrypoints.modules
     "frontend.assets",    // required by frontend.assets[]
+    "publisher.csp",      // required by publisher.csp (high risk, site-wide)
     "network.outbound"    // required by fetch() in the server sandbox
   ],
 
@@ -624,6 +625,31 @@ Supported `kind` values are `script`, `script-inline`, `style`, `style-inline`, 
 
 The injection pipeline derives CSP changes from the plan. Inline scripts/styles add the matching `'unsafe-inline'` directive. `networkAllowedHosts[]` contributes published-page `connect-src` origins for plugins with frontend assets, which is why frontend trackers that call their own or third-party ingest endpoints must list those hosts as well as declare `frontend.assets`.
 
+### Site-wide CSP contributions — requires `publisher.csp`
+
+An enabled plugin may declare one host-owned resource as a source of additive CSP entries:
+
+```jsonc
+{
+  "permissions": ["admin.navigation", "publisher.csp"],
+  "publisher": { "csp": { "resource": "sources" } },
+  "resources": [{
+    "id": "sources",
+    "title": "CSP sources",
+    "fields": [
+      { "id": "directive", "label": "Directive", "type": "text", "required": true },
+      { "id": "origin", "label": "HTTPS origin", "type": "text", "required": true },
+      { "id": "enabled", "label": "Enabled", "type": "boolean", "required": true },
+      { "id": "description", "label": "Description", "type": "longtext" }
+    ]
+  }]
+}
+```
+
+The resource shape is exact and the host validates every row at both write and read boundaries. `directive` is limited to `script-src`, `connect-src`, `img-src`, or `frame-src`; `origin` must be an exact canonical HTTPS origin with no wildcard, credentials, path, query, fragment, Unicode hostname, default-port spelling, or CSP token. Rows contain no replace/remove operation. Enabled rows are deduplicated, sorted, and unioned through `addCspSources`; a missing grant, disabled plugin, absent resource, disabled row, or empty resource contributes nothing.
+
+The persistence is site-local `plugin_records` storage and survives process reloads. Resource create/edit/delete actions are recorded as `plugin.resource.create`, `plugin.resource.update`, and `plugin.resource.delete`; install/enable/disable/uninstall events provide the grant/revoke lifecycle trail. The reference installable package is [`examples/plugins/csp-manager/`](../../examples/plugins/csp-manager/).
+
 ### Settings — declared in `instatic-plugin.config.ts` / `plugin.json`
 
 ```js
@@ -928,6 +954,7 @@ Risk levels:
 | `cms.storage`               | Admin / editor / server| Medium  | Read/write plugin-owned records                                         |
 | `cms.routes`                | Server               | High      | Register authenticated backend routes                                   |
 | `cms.routes.public`         | Server               | Dangerous | Register anonymously-callable routes; requires `cms.routes` too          |
+| `publisher.csp`             | Frontend / admin     | High      | Add validated exact HTTPS origins to four site-wide CSP directives       |
 | `cms.hooks`                 | Server               | High      | Listen to CMS events / filter values                                    |
 | `cms.schedule`              | Server               | High      | Register cadence-driven handlers                                        |
 | `cms.content.read`          | Server               | Low       | List / read entries; read trees; search; published snapshots             |

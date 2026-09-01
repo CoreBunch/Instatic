@@ -363,9 +363,12 @@ The CSP is modelled as **data**, not a string assembled with regex. `src/core/pu
 - `createBaseCspPlan` (in `render.ts`) emits the base policy: `default-src 'self'`, restricted `script-src` (`'none'` → `'self'` + importmap `sha256` once any script tag is present), `style-src 'self' 'unsafe-inline'`, `img-src 'self' data: https:`, `media-src 'self' data: https:`, `frame-src 'none'`, and `worker-src` (`'none'` → `'self' blob:`).
   - `media-src` deliberately mirrors `img-src`. Both govern passive references that execute nothing, so allowing a remote image while blocking a remote `<video>` would be an arbitrary line. It has to be stated explicitly: an unset `media-src` falls back to `default-src 'self'`, and the only symptom is a video that silently never loads.
 - The server injection pipeline (`server/publish/frontendInjections.ts`) merges plugin `frontend.assets[]` relaxations + elected media-adapter origins into the plan in **one** pass via `rewriteCspMeta` — no second regex pass, no per-directive `RegExp`.
+- Enabled plugins granted `publisher.csp` may contribute validated site-wide rows from a host-owned resource. Only exact canonical HTTPS origins for `script-src`, `connect-src`, `img-src`, and `frame-src` survive the boundary; every contribution is unioned with `addCspSources`, so plugins cannot replace or remove the base policy.
 - The module-JS injector (`injectModuleScripts` in `server/publish/moduleJsBundle.ts`) merges `script-src 'self'` through the same `rewriteCspMeta` helper — only when at least one `/_instatic/module-js/<moduleId>.js` script tag was injected.
 
 Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-identical** policy across runs (gated by `src/__tests__/publisher/cspPlan.test.ts`) — important for content-hashing and stable tests. Editing the emitted CSP string manually is **not** safe — it's a derived value. Mutate the plan (`setCspDirective` to replace, `addCspSources` to union) and re-serialize.
+
+Public page responses also send the serialized policy as the `Content-Security-Policy` HTTP header, including baked Layer A artefacts, live Layer B renders, and published 404 pages. The header is the enforcement boundary; the existing meta element remains in the generated document for publisher/preview compatibility rather than being the only CSP delivery mechanism.
 
 ---
 

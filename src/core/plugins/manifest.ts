@@ -21,6 +21,8 @@ import { collectEnabledAdminPages, pluginAdminPageRoute } from './manifestAdminP
 // `@core/plugins/manifest` stays the public surface.
 export { collectEnabledAdminPages, pluginAdminPageRoute }
 export { findPluginResource, validatePluginRecordData } from './resourceRecords'
+export { assertPluginCspResource, assertPluginCspPublisherDeclaration, validatePluginCspContributionRecord } from './cspContributions'
+import { assertPluginCspPublisherDeclaration } from './cspContributions'
 
 const PLUGIN_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/
 /**
@@ -351,6 +353,7 @@ const manifestSchema = Type.Object({
       { maxItems: 50 },
     ),
   })),
+  publisher: Type.Optional(Type.Object({ csp: Type.Object({ resource: Type.String({ pattern: MANIFEST_SLUG_PATTERN.source, maxLength: 80 }) }, { additionalProperties: false }) }, { additionalProperties: false })),
   assetBasePath: Type.Optional(Type.String({ pattern: ASSET_BASE_PATH_PATTERN.source })),
   resources: Type.Array(resourceSchema, { maxItems: 20, default: [] }),
   adminPages: Type.Array(adminPageSchema, { maxItems: 20, default: [] }),
@@ -457,6 +460,8 @@ export function parsePluginManifest(input: unknown): PluginManifest {
 
     return resource as PluginResource
   })
+
+  assertPluginCspPublisherDeclaration(data.publisher, data.permissions as PluginPermission[], resources)
 
   // Admin pages mount in the CMS sidebar — that surface is gated by the
   // `admin.navigation` permission. A manifest declaring pages without the
@@ -669,6 +674,7 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     frontend: data.frontend
       ? { assets: data.frontend.assets.map((asset) => ({ ...asset })) } as PluginManifest['frontend']
       : undefined,
+    publisher: data.publisher ? { csp: { resource: data.publisher.csp.resource } } : undefined,
     settings: data.settings,
     author: data.author,
     license: data.license,
@@ -690,4 +696,3 @@ export function missingPluginPermissionGrants(
 export function permissionLabel(permission: PluginPermission): string {
   return sdkPermissionLabel(permission)
 }
-

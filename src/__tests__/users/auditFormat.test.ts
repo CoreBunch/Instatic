@@ -127,6 +127,15 @@ describe('audit event formatting', () => {
       },
       {
         event: auditEvent({
+          action: 'plugin.resource.update',
+          targetType: 'plugin',
+          targetId: 'instatic.csp-manager',
+          metadata: { pluginId: 'instatic.csp-manager', resourceId: 'sources', recordId: 'source_1' },
+        }),
+        expected: 'instatic.csp-manager resource record was updated',
+      },
+      {
+        event: auditEvent({
           action: 'ai.default.updated',
           targetType: 'ai_default',
           targetId: 'site',

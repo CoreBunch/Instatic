@@ -137,6 +137,11 @@ export function cspMetaTag(plan: CspPlan): string {
   return `<meta http-equiv="Content-Security-Policy" content="${serializeCsp(plan)}">`
 }
 
+/** Read the serialized publisher policy so HTTP responses can enforce it as a header. */
+export function cspContentFromHtml(html: string): string | null {
+  return CSP_META_PATTERN.exec(html)?.[1] ?? null
+}
+
 /**
  * Rewrite the CSP `<meta>` tag in an HTML document by mutating its policy as
  * data: parse the current policy into a plan, apply `mutate`, and re-serialize

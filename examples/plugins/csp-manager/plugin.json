@@ -1,0 +1,43 @@
+{
+  "id": "instatic.csp-manager",
+  "name": "CSP Manager",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "description": "Manage additive site-wide Content Security Policy origins from a host-owned admin page.",
+  "permissions": [
+    "admin.navigation",
+    "publisher.csp"
+  ],
+  "resources": [
+    {
+      "id": "sources",
+      "title": "CSP sources",
+      "singularLabel": "CSP source",
+      "pluralLabel": "CSP sources",
+      "fields": [
+        { "id": "directive", "label": "Directive", "type": "text", "required": true },
+        { "id": "origin", "label": "HTTPS origin", "type": "text", "required": true },
+        { "id": "enabled", "label": "Enabled", "type": "boolean", "required": true },
+        { "id": "description", "label": "Description", "type": "longtext" }
+      ]
+    }
+  ],
+  "adminPages": [
+    {
+      "id": "policy",
+      "title": "CSP Manager",
+      "navLabel": "CSP Manager",
+      "content": {
+        "kind": "resource",
+        "heading": "Content Security Policy",
+        "resource": "sources"
+      }
+    }
+  ],
+  "publisher": {
+    "csp": { "resource": "sources" }
+  },
+  "author": { "name": "Instatic" },
+  "license": "MIT",
+  "keywords": ["csp", "security", "integrations"]
+}

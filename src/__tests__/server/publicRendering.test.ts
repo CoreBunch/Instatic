@@ -172,6 +172,7 @@ describe('public rendering', () => {
       expect(html).toContain('<iframe')
       expect(html).toContain('frame-src https://www.google.com;')
       expect(html).not.toContain("frame-src 'none'")
+      expect(response!.headers.get('content-security-policy')).toContain('frame-src https://www.google.com')
     } finally {
       await rm(uploadsDir, { recursive: true, force: true })
     }

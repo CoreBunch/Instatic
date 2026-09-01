@@ -17,6 +17,7 @@
  */
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../../../db/client'
+import type { AuthUser } from '../../../repositories/users'
 import {
   createPluginRecord,
   deletePluginRecord,
@@ -25,14 +26,28 @@ import {
 } from '../../../repositories/plugins'
 import { StorageListOptionsSchema } from '@core/plugin-sdk/storageSchemas'
 import { Type, parseValue } from '@core/utils/typeboxHelpers'
-import { validatePluginRecordData } from '@core/plugins/manifest'
+import {
+  validatePluginCspContributionRecord,
+  validatePluginRecordData,
+} from '@core/plugins/manifest'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../../http'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import {
   getEnabledPluginResource,
   pluginRecordNotFound,
   pluginResourceNotFound,
+  recordPluginAuditEvent,
 } from './shared'
+
+function validateRecordData(
+  resource: Awaited<ReturnType<typeof getEnabledPluginResource>>,
+  input: unknown,
+): Record<string, unknown> {
+  if (!resource) throw new Error('Plugin resource not found')
+  return resource.publisherCsp
+    ? { ...validatePluginCspContributionRecord(input) }
+    : validatePluginRecordData(resource.resource, input)
+}
 
 /**
  * Parse list options from URL search params. Returns `null` on a validation
@@ -86,6 +101,7 @@ function parseListOptions(url: string): { options: unknown } | { error: string }
 export async function handlePluginRecordsCollection(
   req: Request,
   db: DbClient,
+  user: AuthUser,
   pluginId: string,
   resourceId: string,
 ): Promise<Response> {
@@ -104,7 +120,7 @@ export async function handlePluginRecordsCollection(
     }
 
     const { records, totalCount } = await listPluginRecords(db, pluginId, resourceId, options)
-    return jsonResponse({ resource, records, totalCount })
+    return jsonResponse({ resource: resource.resource, records, totalCount })
   }
 
   if (req.method === 'POST') {
@@ -112,12 +128,16 @@ export async function handlePluginRecordsCollection(
     const body = await readValidatedBody(req, PluginRecordBodySchema)
     if (!body) return badRequest('Invalid request body')
     try {
-      const data = validatePluginRecordData(resource, body.data ?? body)
+      const data = validateRecordData(resource, body.data ?? body)
       const record = await createPluginRecord(db, {
         id: nanoid(),
         pluginId,
         resourceId,
         data,
+      })
+      await recordPluginAuditEvent(db, user, req, 'plugin.resource.create', pluginId, {
+        resourceId,
+        recordId: record.id,
       })
       return jsonResponse({ record }, { status: 201 })
     } catch (err) {
@@ -131,6 +151,7 @@ export async function handlePluginRecordsCollection(
 export async function handlePluginRecordItem(
   req: Request,
   db: DbClient,
+  user: AuthUser,
   pluginId: string,
   resourceId: string,
   recordId: string,
@@ -143,7 +164,7 @@ export async function handlePluginRecordItem(
     const body = await readValidatedBody(req, PluginRecordPatchBodySchema)
     if (!body) return badRequest('Invalid request body')
     try {
-      const data = validatePluginRecordData(resource, body.data ?? body)
+      const data = validateRecordData(resource, body.data ?? body)
       const record = await updatePluginRecord(db, {
         id: recordId,
         pluginId,
@@ -151,6 +172,10 @@ export async function handlePluginRecordItem(
         data,
       })
       if (!record) return pluginRecordNotFound()
+      await recordPluginAuditEvent(db, user, req, 'plugin.resource.update', pluginId, {
+        resourceId,
+        recordId,
+      })
       return jsonResponse({ record })
     } catch (err) {
       return badRequest(getErrorMessage(err, 'Invalid plugin record data'))
@@ -164,6 +189,10 @@ export async function handlePluginRecordItem(
       resourceId,
     })
     if (!deleted) return pluginRecordNotFound()
+    await recordPluginAuditEvent(db, user, req, 'plugin.resource.delete', pluginId, {
+      resourceId,
+      recordId,
+    })
     return jsonResponse({ ok: true })
   }
 

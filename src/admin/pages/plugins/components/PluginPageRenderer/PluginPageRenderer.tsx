@@ -24,6 +24,7 @@ import {
   createCmsPluginResourceRecord,
   deleteCmsPluginResourceRecord,
   getCmsPluginResource,
+  updateCmsPluginResourceRecord,
 } from '@core/persistence'
 import { pluginRuntime } from '@core/plugins/runtime'
 import {
@@ -106,6 +107,29 @@ async function deletePluginRecord(
     setRecords((current) => current.filter((candidate) => candidate.id !== recordId))
   } catch (err) {
     setError(getErrorMessage(err, 'Could not delete record'))
+  }
+}
+
+async function updatePluginRecord(
+  pluginId: string,
+  resource: PluginResource,
+  recordId: string,
+  data: Record<string, unknown>,
+  setSaving: (v: boolean) => void,
+  setError: (v: string | null) => void,
+  setRecords: (updater: (current: PluginRecord[]) => PluginRecord[]) => void,
+  finishEditing: () => void,
+): Promise<void> {
+  setSaving(true)
+  setError(null)
+  try {
+    const record = await updateCmsPluginResourceRecord(pluginId, resource.id, recordId, data)
+    setRecords((current) => current.map((candidate) => candidate.id === recordId ? record : candidate))
+    finishEditing()
+  } catch (err) {
+    setError(getErrorMessage(err, 'Could not update record'))
+  } finally {
+    setSaving(false)
   }
 }
 
@@ -303,6 +327,7 @@ function PluginResourcePage({ page }: { page: ResourcePluginPageRoute }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [editingRecordId, setEditingRecordId] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -340,6 +365,22 @@ function PluginResourcePage({ page }: { page: ResourcePluginPageRoute }) {
 
   async function createRecord() {
     if (!resource) return
+    if (editingRecordId) {
+      await updatePluginRecord(
+        page.pluginId,
+        resource,
+        editingRecordId,
+        readFormRecord(),
+        setSaving,
+        setError,
+        setRecords,
+        () => {
+          setEditingRecordId(null)
+          setFormData(emptyForm(resource))
+        },
+      )
+      return
+    }
     await createPluginRecord(
       page.pluginId,
       resource,
@@ -349,6 +390,21 @@ function PluginResourcePage({ page }: { page: ResourcePluginPageRoute }) {
       setRecords,
       setFormData,
     )
+  }
+
+  function editRecord(record: PluginRecord) {
+    if (!resource) return
+    setEditingRecordId(record.id)
+    setFormData(Object.fromEntries(resource.fields.map((field) => [
+      field.id,
+      field.type === 'boolean' ? Boolean(record.data[field.id]) : String(record.data[field.id] ?? ''),
+    ])))
+  }
+
+  function cancelEditing() {
+    if (!resource) return
+    setEditingRecordId(null)
+    setFormData(emptyForm(resource))
   }
 
   async function deleteRecord(record: PluginRecord) {
@@ -384,7 +440,7 @@ function PluginResourcePage({ page }: { page: ResourcePluginPageRoute }) {
               void createRecord()
             }}
           >
-            <h2>New {resource.singularLabel ?? resource.title}</h2>
+            <h2>{editingRecordId ? 'Edit' : 'New'} {resource.singularLabel ?? resource.title}</h2>
             {resource.fields.map((field) => (
               <label key={field.id} className={styles.resourceField}>
                 <span>{field.label}</span>
@@ -419,8 +475,15 @@ function PluginResourcePage({ page }: { page: ResourcePluginPageRoute }) {
               </label>
             ))}
             <Button variant="primary" size="sm" type="submit" disabled={saving}>
-              <span>{saving ? 'Creating' : `Create ${resource.singularLabel ?? resource.title}`}</span>
+              <span>{saving
+                ? (editingRecordId ? 'Saving' : 'Creating')
+                : `${editingRecordId ? 'Save' : 'Create'} ${resource.singularLabel ?? resource.title}`}</span>
             </Button>
+            {editingRecordId && (
+              <Button variant="secondary" size="sm" type="button" onClick={cancelEditing} disabled={saving}>
+                <span>Cancel</span>
+              </Button>
+            )}
           </form>
 
           <div className={styles.resourceRecords} aria-label={`${resource.title} records`}>
@@ -436,6 +499,14 @@ function PluginResourcePage({ page }: { page: ResourcePluginPageRoute }) {
                     </div>
                   ))}
                 </dl>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => editRecord(record)}
+                  aria-label={`Edit ${recordValue(record, resource.fields[0]) || record.id}`}
+                >
+                  <span>Edit</span>
+                </Button>
                 <Button
                   variant="secondary"
                   size="sm"

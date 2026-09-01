@@ -35,6 +35,7 @@ export const permissions = {
   loopsRegister: 'loops.register',
   visualComponentsRegister: 'visualComponents.register',
   frontendAssets: 'frontend.assets',
+  publisherCsp: 'publisher.csp',
   networkOutbound: 'network.outbound',
   cmsSchedule: 'cms.schedule',
   cmsContentRead: 'cms.content.read',

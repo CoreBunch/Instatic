@@ -83,6 +83,10 @@ export const PLUGIN_PERMISSION_VALUES = [
   // implicit `window.__instatic.*` — a plugin that wants `window.__instatic_analytics`
   // ships the IIFE that installs it as one of its own assets.
   'frontend.assets',
+  // Add exact HTTPS origins to the published site's CSP through a host-owned
+  // resource. High risk because script/frame allowlisting changes the browser
+  // trust boundary for every visitor page.
+  'publisher.csp',
   // Network — outbound HTTP from the sandbox.
   // Requires the plugin manifest to also declare `networkAllowedHosts`;
   // calls to hosts outside the allowlist are rejected at the host bridge

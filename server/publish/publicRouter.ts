@@ -80,6 +80,15 @@ import { snapshotForEntryRoute, snapshotForNotFoundRoute } from './entryTemplate
 import { getPublishVersion } from './publishState'
 import { canonicalRenderQuery } from './loopPrefetch'
 import { googleMapsEmbedUrl } from '@modules/base/googleMap/url'
+import { cspContentFromHtml } from '@core/publisher'
+
+function publishedHtmlHeaders(html: string): Record<string, string> {
+  const csp = cspContentFromHtml(html)
+  return {
+    'content-type': 'text/html; charset=utf-8',
+    ...(csp ? { 'content-security-policy': csp } : {}),
+  }
+}
 
 /**
  * Old imports could bake a Google Maps placeholder as a div. A platform
@@ -251,7 +260,7 @@ export async function renderPublicResolution(
     const html = await readArtefact(uploadsDir, url.pathname)
     if (html !== null && !hasLegacyGoogleMapsDiv(html)) {
       return new Response(html, {
-        headers: { 'content-type': 'text/html; charset=utf-8' },
+        headers: publishedHtmlHeaders(html),
       })
     }
   }
@@ -287,7 +296,7 @@ export async function renderPublicResolution(
         : await renderPublishedDataRowTemplate(resolution.snapshot, resolution.row, { db, url })
       if (!rendered) return null
       const html = await applyPublishedHtmlPipeline(rendered, db)
-      return { body: html, headers: { 'content-type': 'text/html; charset=utf-8' }, status: 200 }
+      return { body: html, headers: publishedHtmlHeaders(html), status: 200 }
     },
   )
   if (!cached) return null
@@ -324,13 +333,11 @@ export async function renderNotFoundResponse(
   url: URL,
   uploadsDir?: string,
 ): Promise<Response | null> {
-  const htmlHeaders = { 'content-type': 'text/html; charset=utf-8' }
-
   // ── Layer A: baked 404 artefact ───────────────────────────────────────────
   if (uploadsDir) {
     const html = await readArtefact(uploadsDir, NOT_FOUND_ARTEFACT_URL_PATH)
     if (html !== null) {
-      return new Response(html, { status: 404, headers: htmlHeaders })
+      return new Response(html, { status: 404, headers: publishedHtmlHeaders(html) })
     }
   }
 
@@ -351,7 +358,7 @@ export async function renderNotFoundResponse(
     const rendered = await renderPublishedNotFound(snapshot, { db, url: syntheticUrl })
     if (!rendered) return null
     const html = await applyPublishedHtmlPipeline(rendered, db)
-    return { body: html, headers: htmlHeaders, status: 200 }
+    return { body: html, headers: publishedHtmlHeaders(html), status: 200 }
   })
   if (!cached) return null
   return new Response(cached.body, { headers: cached.headers, status: 404 })

@@ -3,6 +3,7 @@ import type { PluginFrontendDeclarations } from './frontend'
 import type { PluginApiVersion } from './apiVersion'
 import type { PluginPermission } from './permissions'
 import type { PluginResource } from './resources'
+import type { PluginPublisherDeclarations } from './publisher'
 import type { ContentAccessEntry } from '../contentSchemas'
 import type { PluginSettingDefinition } from '../builders/settings'
 
@@ -67,6 +68,8 @@ export interface PluginManifest {
    * for placement semantics.
    */
   frontend?: PluginFrontendDeclarations
+  /** Site-wide additive CSP sources, read from a host-owned plugin resource. */
+  publisher?: PluginPublisherDeclarations
   /** Author / publisher metadata — surfaced on the Plugins admin card. */
   author?: PluginAuthorMetadata
   /** SPDX license identifier (e.g. `MIT`, `Apache-2.0`). */

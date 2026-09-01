@@ -42,7 +42,7 @@ Every event has a typed `action` string. The closed union is the source of truth
 | Roles           | `role.create`, `role.update`, `role.delete`, `role.assign`                                |
 | Data            | `data.table.create`, `data.table.update`, `data.table.delete`, `data.row.create`, `data.row.update`, `data.row.delete`, `data.row.publish`, `data.row.schedule`, `data.row.schedule.cancel`, `data.row.status`, `data.row.move`, `data.author.assign` |
 | Publishing      | `publish`                                                                                 |
-| Plugins         | `plugin.install`, `plugin.update`, `plugin.enable`, `plugin.disable`, `plugin.delete`, `plugin.pack.install`, `plugin.settings.update` |
+| Plugins         | `plugin.install`, `plugin.update`, `plugin.enable`, `plugin.disable`, `plugin.delete`, `plugin.pack.install`, `plugin.settings.update`, `plugin.resource.create`, `plugin.resource.update`, `plugin.resource.delete` |
 | AI              | `ai.credential.created`, `ai.credential.updated`, `ai.credential.deleted`, `ai.credential.tested`, `ai.default.updated`, `ai.default.cleared`, `ai.chat.started`, `ai.chat.completed`, `ai.chat.failed`, `ai.mcp_connector.created`, `ai.mcp_connector.revoked` |
 
 If you add a new action that fits an existing group, append to the union. New groups (e.g. media-related audit) extend the same union.
@@ -85,7 +85,7 @@ No nested objects. The constraint keeps audit queries cheap and lets the UI rend
 | `role.*`             | `slug`, `name`, `capabilities?`                                                   |
 | `data.row.*`         | `tableId`, `tableSlug`, `slug`, `status?`, `fromStatus?`, `toStatus?`             |
 | `publish`            | `pageId`, `slug`, `routeBase?`                                                    |
-| `plugin.*`           | `pluginId`, `version`, `permissions?`                                             |
+| `plugin.*`           | `pluginId`, `version`, `permissions?`; resource mutations add `resourceId`, `recordId` |
 | `ai.credential.*`    | `providerId`, `authMode`, `displayLabel`; `tested` adds `ok`, `modelCount`, `error?` |
 | `ai.default.updated` | `scope`, `credentialId`, `modelId`, `auto?` (true when seeded at credential create) |
 | `ai.default.cleared` | `scope` |
@@ -222,7 +222,7 @@ There is no URL-level audit filtering yet. Add it deliberately at both layers if
 
 ### Audit a plugin lifecycle event
 
-The plugin host calls `createAuditEvent(db, { action: 'plugin.install', ... })` when a plugin is installed (and the matching actions for update / enable / disable / delete). Plugin authors don't write audit events directly — the host does on their behalf at lifecycle boundaries.
+The plugin host calls `createAuditEvent(db, { action: 'plugin.install', ... })` when a plugin is installed (and the matching actions for update / enable / disable / delete). Host-owned resource CRUD emits `plugin.resource.create`, `plugin.resource.update`, or `plugin.resource.delete` with the resource and record ids. Plugin authors don't write audit events directly — the host does on their behalf at lifecycle and admin-resource boundaries.
 
 If a plugin needs its own per-plugin event log, use `api.cms.storage.collection(...)` and `api.cms.hooks.emit(...)` — that data isn't an admin audit record, it's plugin-owned activity.
 

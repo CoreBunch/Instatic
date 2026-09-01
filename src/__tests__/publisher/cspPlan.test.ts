@@ -123,6 +123,7 @@ function planWith(overrides: Partial<FrontendInjections>): FrontendInjections {
     hasInlineStyle: false,
     networkAllowedHosts: [],
     mediaCspOrigins: [],
+    cspSources: [],
     ...overrides,
   }
 }

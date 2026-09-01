@@ -39,6 +39,7 @@ function emptyPlan(): FrontendInjections {
     hasInlineStyle: false,
     networkAllowedHosts: [],
     mediaCspOrigins: [],
+    cspSources: [],
   }
 }
 
@@ -183,5 +184,20 @@ describe('frontend injection — CSP relaxation', () => {
     const out = injectFrontendAssets(PAGE_WITH_CSP_META, plan)
     expect(out).toContain("script-src 'self' 'unsafe-inline';")
     expect(out).toContain("worker-src 'self' blob:;")
+  })
+
+  it('additively merges site-wide plugin CSP sources without replacing host sources', () => {
+    const plan = emptyPlan()
+    plan.cspSources = [
+      { directive: 'script-src', origin: 'https://connect.facebook.net' },
+      { directive: 'connect-src', origin: 'https://graph.facebook.com' },
+      { directive: 'script-src', origin: 'https://connect.facebook.net' },
+    ]
+
+    const out = injectFrontendAssets(PAGE_WITH_CSP_META, plan)
+    expect(out).toContain("script-src https://connect.facebook.net;")
+    expect(out).toContain("connect-src 'self' https://graph.facebook.com;")
+    expect(out.match(/https:\/\/connect\.facebook\.net/g)).toHaveLength(1)
+    expect(out).toContain("default-src 'self';")
   })
 })

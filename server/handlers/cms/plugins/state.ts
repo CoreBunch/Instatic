@@ -45,7 +45,7 @@ import {
   removeAllPluginAssets,
 } from './shared'
 import { runPluginLifecycleHook } from './lifecycle'
-import type { InstalledPlugin } from '@core/plugin-sdk'
+import type { InstalledPlugin, PluginPermission } from '@core/plugin-sdk'
 
 /**
  * PATCH `enabled` on a single plugin. Both branches flip the enabled flag,
@@ -99,6 +99,7 @@ async function setPluginEnabledFromRequest(
     req,
     enabled ? 'plugin.enable' : 'plugin.disable',
     pluginId,
+    { permissions: updated.grantedPermissions },
   )
   return jsonResponse({ plugin: await presentPluginSecrets(db, lifecycle.plugin), ...(await pluginsPayload(db)) })
 }
@@ -150,7 +151,15 @@ export async function handlePluginItem(
       if (!uninstalled.ok) return uninstallHookFailure('uninstall', uninstalled.plugin)
     }
 
-    return removePluginCompletely(req, db, options, user, pluginId, force)
+    return removePluginCompletely(
+      req,
+      db,
+      options,
+      user,
+      pluginId,
+      force,
+      lookup.kind === 'ok' ? lookup.plugin.grantedPermissions : [],
+    )
   }
 
   return methodNotAllowed()
@@ -188,6 +197,7 @@ async function removePluginCompletely(
   user: AuthUser,
   pluginId: string,
   forced: boolean,
+  permissions: PluginPermission[],
 ): Promise<Response> {
   const deleted = await deletePlugin(db, pluginId)
   if (!deleted) return pluginNotFound()
@@ -209,7 +219,7 @@ async function removePluginCompletely(
     req,
     'plugin.delete',
     pluginId,
-    forced ? { forced: true } : {},
+    { ...(forced ? { forced: true } : {}), permissions },
   )
   broadcastPluginEvent({
     kind: 'uninstalled',

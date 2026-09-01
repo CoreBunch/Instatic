@@ -133,6 +133,13 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
     surfaces: ['frontend', 'manifest'],
   },
   {
+    permission: 'publisher.csp',
+    label: 'Add site-wide Content Security Policy sources',
+    description: 'Allows an enabled plugin to contribute exact HTTPS origins to the published site\'s script, connection, image, and frame policies. Contributions are additive and validated by the host; they cannot replace or remove existing policy sources.',
+    risk: 'high',
+    surfaces: ['frontend', 'manifest', 'admin'],
+  },
+  {
     permission: 'cms.schedule',
     label: 'Register scheduled jobs',
     description: 'Allows the plugin to register handlers that fire on a cadence (hourly / daily / weekly / monthly / every-N-minutes). Each handler runs inside the QuickJS sandbox with a per-fire wall-clock budget; the host scheduler tick drives dispatch and records run history.',

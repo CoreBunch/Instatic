@@ -100,7 +100,10 @@ export async function handlePluginsCollection(
       const installed = await installPlugin(db, manifest, grantedPermissions)
       const updatedResult = await setPluginLifecycleStatus(db, installed.id, 'active')
       const plugin = (updatedResult?.kind === 'ok' ? updatedResult.plugin : null) ?? installed
-      await recordPluginAuditEvent(db, user, req, 'plugin.install', plugin.id)
+      await recordPluginAuditEvent(db, user, req, 'plugin.install', plugin.id, {
+        version: plugin.version,
+        permissions: plugin.grantedPermissions,
+      })
       broadcastPluginEvent({
         kind: 'installed',
         pluginId: plugin.id,
@@ -243,6 +246,7 @@ async function installFreshFromPackage(ctx: InstallContext): Promise<Response> {
 
   await recordPluginAuditEvent(db, user, req, 'plugin.install', activateLifecycle.plugin.id, {
     version: activateLifecycle.plugin.version,
+    permissions: activateLifecycle.plugin.grantedPermissions,
   })
   broadcastPluginEvent({
     kind: 'installed',
@@ -372,6 +376,7 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
   await recordPluginAuditEvent(db, user, req, 'plugin.update', pluginId, {
     fromVersion,
     toVersion: newVersion,
+    permissions: finalRow.grantedPermissions,
   })
   broadcastPluginEvent({
     kind: 'updated',

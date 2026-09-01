@@ -31,6 +31,7 @@ import type {
   PluginFrontendDeclarations,
   PluginManifest,
   PluginPermission,
+  PluginPublisherDeclarations,
   PluginResource,
 } from '../types'
 import type { PluginModuleDefinition } from '../modules'
@@ -112,6 +113,9 @@ export interface DefinePluginConfig {
    * the per-tag shape and the four placement anchors.
    */
   frontend?: PluginFrontendDeclarations
+
+  /** Host-owned resource whose rows add validated site-wide CSP sources. */
+  publisher?: PluginPublisherDeclarations
 }
 
 /**
@@ -187,6 +191,9 @@ export function definePlugin(config: DefinePluginConfig): PluginDefinition {
     ...(config.icon !== undefined ? { icon: config.icon } : {}),
     ...(config.frontend !== undefined
       ? { frontend: { assets: config.frontend.assets.map((asset) => ({ ...asset })) } }
+      : {}),
+    ...(config.publisher !== undefined
+      ? { publisher: { csp: { ...config.publisher.csp } } }
       : {}),
   }
   return {

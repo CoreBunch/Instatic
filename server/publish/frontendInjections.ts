@@ -28,7 +28,11 @@
  */
 
 import type { DbClient } from '../db/client'
-import { listInstalledPlugins, type InstalledPluginResult } from '../repositories/plugins'
+import {
+  listInstalledPlugins,
+  listPluginRecords,
+  type InstalledPluginResult,
+} from '../repositories/plugins'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 import { listElectedAdapters } from '../repositories/mediaStorageAdapters'
 import { addCspSources, rewriteCspMeta, setCspDirective } from '@core/publisher'
@@ -36,7 +40,9 @@ import type {
   FrontendAsset,
   FrontendAssetPlacement,
   InstalledPlugin,
+  PluginCspContribution,
 } from '@core/plugin-sdk'
+import { validatePluginCspContributionRecord } from '@core/plugins/manifest'
 
 // ---------------------------------------------------------------------------
 // Plan shape
@@ -103,6 +109,8 @@ export interface FrontendInjections {
     directive: 'img-src' | 'media-src' | 'connect-src'
     origin: string
   }>
+  /** Validated, additive site-wide sources contributed by enabled plugins. */
+  cspSources: PluginCspContribution[]
 }
 
 // ---------------------------------------------------------------------------
@@ -167,7 +175,43 @@ export async function collectFrontendInjections(db: DbClient): Promise<FrontendI
     hasExternalScript,
     networkAllowedHosts: [...networkAllowedHostsSet].sort(),
     mediaCspOrigins: await collectMediaAdapterCspOrigins(db),
+    cspSources: await collectPluginCspSources(db, okPlugins),
   }
+}
+
+async function collectPluginCspSources(
+  db: DbClient,
+  plugins: InstalledPlugin[],
+): Promise<PluginCspContribution[]> {
+  const keyed = new Map<string, PluginCspContribution>()
+  const eligible = plugins
+    .filter((plugin) => plugin.enabled && plugin.lifecycleStatus !== 'error')
+    .filter((plugin) => plugin.grantedPermissions.includes('publisher.csp'))
+    .filter((plugin) => plugin.manifest.publisher?.csp)
+    .sort((a, b) => a.id.localeCompare(b.id))
+
+  for (const plugin of eligible) {
+    const resourceId = plugin.manifest.publisher?.csp.resource
+    if (!resourceId) continue
+    const { records } = await listPluginRecords(db, plugin.id, resourceId, { limit: 1000 })
+    for (const record of records) {
+      try {
+        const contribution = validatePluginCspContributionRecord(record.data)
+        if (!contribution.enabled) continue
+        keyed.set(`${contribution.directive}\u0000${contribution.origin}`, contribution)
+      } catch (err) {
+        // Persisted rows are untrusted storage input. Fail closed per row so a
+        // corrupt legacy value cannot weaken or break the site's policy.
+        console.error(`[plugin:${plugin.id}] ignored invalid CSP contribution:`, err)
+      }
+    }
+  }
+
+  return [...keyed.values()].sort((a, b) => {
+    const aKey = `${a.directive}\u0000${a.origin}`
+    const bKey = `${b.directive}\u0000${b.origin}`
+    return aKey.localeCompare(bKey)
+  })
 }
 
 /**
@@ -349,7 +393,7 @@ export function injectFrontendAssets(
   }
 
   const hasTagWork = PLACEMENT_ORDER.some((p) => injections.tags[p].length > 0)
-  if (hasTagWork || injections.mediaCspOrigins.length > 0) {
+  if (hasTagWork || injections.mediaCspOrigins.length > 0 || injections.cspSources.length > 0) {
     next = relaxCspForPlan(next, injections, hasTagWork)
   }
   return next
@@ -412,6 +456,13 @@ function relaxCspForPlan(html: string, plan: FrontendInjections, hasTags: boolea
     // (`/uploads/*`, `/_instatic/*`) working.
     for (const { directive, origin } of plan.mediaCspOrigins) {
       addCspSources(csp, directive, ["'self'", `https://${origin}`])
+    }
+
+    // Publisher CSP contributions are always additive. The record shape has
+    // no replace/remove operation, and the host validator admits only an exact
+    // directive allowlist plus canonical HTTPS origins.
+    for (const { directive, origin } of plan.cspSources) {
+      addCspSources(csp, directive, [origin])
     }
   })
 }

@@ -54,6 +54,7 @@ export {
   createCmsPluginResourceRecord,
   deleteCmsPluginResourceRecord,
   getCmsPluginResource,
+  updateCmsPluginResourceRecord,
 } from './cmsPluginRecords'
 export {
   createCmsRole,

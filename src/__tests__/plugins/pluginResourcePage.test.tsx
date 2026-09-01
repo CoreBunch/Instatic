@@ -104,6 +104,58 @@ describe('PluginPageRenderer resource pages', () => {
     })
   })
 
+  it('edits an existing host-owned resource record in place', async () => {
+    const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ input, init })
+      const url = String(input)
+      const record = {
+        id: 'record_1',
+        pluginId: 'acme.books',
+        resourceId: 'books',
+        data: init?.method === 'PATCH'
+          ? JSON.parse(String(init.body)).data
+          : { title: 'Invisible Cities', author: 'Italo Calvino' },
+        createdAt: '2026-05-01T10:00:00.000Z',
+        updatedAt: '2026-05-01T10:05:00.000Z',
+      }
+      if (url.endsWith('/records') && init?.method === 'GET') {
+        return json({
+          resource: {
+            id: 'books',
+            title: 'Books',
+            singularLabel: 'Book',
+            fields: [
+              { id: 'title', label: 'Title', type: 'text', required: true },
+              { id: 'author', label: 'Author', type: 'text' },
+            ],
+          },
+          records: [record],
+        })
+      }
+      if (url.endsWith('/records/record_1') && init?.method === 'PATCH') {
+        return json({ record })
+      }
+      return json({ error: `Unhandled ${init?.method} ${url}` }, 500)
+    }
+
+    render(<PluginPageRenderer page={booksPage} />)
+    expect(await screen.findByText('Invisible Cities')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: /edit invisible cities/i }))
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'If on a winter’s night a traveler' } })
+    fireEvent.click(screen.getByRole('button', { name: /save book/i }))
+
+    await waitFor(() => {
+      expect(calls.some((call) =>
+        String(call.input).endsWith('/records/record_1') &&
+        call.init?.method === 'PATCH' &&
+        call.init.body === JSON.stringify({
+          data: { title: 'If on a winter’s night a traveler', author: 'Italo Calvino' },
+        })
+      )).toBe(true)
+    })
+  })
+
   it('mounts packaged admin app pages and threads the plugin-scoped CMS API into the SDK render fn', async () => {
     const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {

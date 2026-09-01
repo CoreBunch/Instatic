@@ -25,6 +25,7 @@ export {
   addCspSources,
   createBaseCspPlan,
   cspMetaTag,
+  cspContentFromHtml,
   parseCspContent,
   rewriteCspMeta,
   serializeCsp,

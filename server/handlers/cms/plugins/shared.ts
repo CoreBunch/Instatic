@@ -66,6 +66,9 @@ type PluginAuditAction =
   | 'plugin.enable'
   | 'plugin.disable'
   | 'plugin.delete'
+  | 'plugin.resource.create'
+  | 'plugin.resource.update'
+  | 'plugin.resource.delete'
 
 /**
  * Record a plugin lifecycle action in the audit log. The mutation endpoints
@@ -383,8 +386,15 @@ export async function getEnabledPluginResource(
   db: DbClient,
   pluginId: string,
   resourceId: string,
-): Promise<PluginResource | null> {
+): Promise<{ resource: PluginResource; publisherCsp: boolean } | null> {
   const result = await getInstalledPlugin(db, pluginId)
   if (!result || result.kind !== 'ok' || !result.plugin.enabled) return null
-  return findPluginResource(result.plugin.manifest, resourceId)
+  const resource = findPluginResource(result.plugin.manifest, resourceId)
+  if (!resource) return null
+  return {
+    resource,
+    publisherCsp:
+      result.plugin.grantedPermissions.includes('publisher.csp') &&
+      result.plugin.manifest.publisher?.csp.resource === resourceId,
+  }
 }

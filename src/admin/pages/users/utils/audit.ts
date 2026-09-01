@@ -167,6 +167,12 @@ export function auditTitle(
       return `${pluginId} pack was installed`
     case 'plugin.settings.update':
       return `${pluginId} settings were updated`
+    case 'plugin.resource.create':
+      return `${pluginId} resource record was created`
+    case 'plugin.resource.update':
+      return `${pluginId} resource record was updated`
+    case 'plugin.resource.delete':
+      return `${pluginId} resource record was deleted`
     case 'ai.credential.created':
       return `AI credential ${aiCredential} was created`
     case 'ai.credential.updated':
