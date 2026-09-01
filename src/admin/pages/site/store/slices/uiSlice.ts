@@ -16,6 +16,7 @@ export type LeftSidebarPanelId =
   | 'framework'
   | 'dependencies'
   | 'agent'
+export type LeftPanelModes = Record<LeftSidebarPanelId, PanelMode>
 /** Tabs inside the consolidated Framework panel. */
 export type FrameworkPanelTab = 'home' | 'colors' | 'typography' | 'spacing'
 /**
@@ -81,7 +82,7 @@ interface UiSlice {
   propertiesPanelMode: PanelMode
   propertiesPanelAutoOpenSuppressed: boolean
   leftSidebarWidth: number
-  leftSidebarMode: PanelMode
+  leftPanelModes: LeftPanelModes
   focusedPanel: FocusedPanel
 
   // Settings modal state lives in `settingsSlice` (single source of truth) —
@@ -124,13 +125,13 @@ interface UiSlice {
 
   /**
    * Plugin-registered editor panel currently open in the left sidebar, or
-   * `null` when a built-in panel (or nothing) is active. Mutually exclusive
-   * with the built-in `*PanelOpen` flags — the setters below clear the
-   * other side automatically. The id is the full panel id registered by the
+   * `null` when no plugin panel is active. A floating plugin panel may remain
+   * open beside one docked built-in panel. The id is the full panel id registered by the
    * plugin (e.g. `acme.workflow.review`); the host looks it up in
    * `pluginRuntime.getPanel(id)` at render time.
    */
   activePluginPanelId: string | null
+  pluginPanelMode: PanelMode
 
   // CodeEditorPanel (Task #433) — whether the code editor floating panel is visible
   codeEditorPanelOpen: boolean
@@ -147,7 +148,7 @@ interface UiSlice {
   consumePropertiesPanelAutoOpenSuppression: () => boolean
   setPropertiesPanelMode: (mode: PanelMode) => void
   setLeftSidebarWidth: (width: number) => void
-  setLeftSidebarMode: (mode: PanelMode) => void
+  setLeftSidebarPanelMode: (panel: LeftSidebarPanelId, mode: PanelMode) => void
   togglePropertiesPanel: () => void
   setFocusedPanel: (panel: FocusedPanel) => void
   cycleFocusedPanel: () => void
@@ -182,6 +183,7 @@ interface UiSlice {
   setActivePluginPanel: (panelId: string | null) => void
   /** Toggle a plugin panel — open if not active, close if active. */
   toggleActivePluginPanel: (panelId: string) => void
+  setPluginPanelMode: (mode: PanelMode) => void
 
   /** Show / hide the CodeEditor floating panel. */
   setCodeEditorPanelOpen: (open: boolean) => void
@@ -280,16 +282,43 @@ const DEFAULT_PROPERTIES_PANEL: PanelState = {
   width: PROPERTIES_PANEL_DEFAULT_WIDTH,
 }
 
-function getActiveLeftSidebarPanel(state: EditorStore): LeftSidebarPanelId | null {
-  // A plugin panel takes precedence over every built-in panel — the
-  // built-in `*PanelOpen` flags are forced to false whenever a plugin
-  // panel is opened, so short-circuit here too.
-  if (state.activePluginPanelId !== null) return null
-  if (state.explorerPanelOpen) return 'explorer'
-  if (state.selectorsPanelOpen) return 'selectors'
-  if (state.frameworkPanelOpen) return 'framework'
-  if (state.dependenciesPanelOpen) return 'dependencies'
-  return null
+const DEFAULT_LEFT_PANEL_MODES: LeftPanelModes = {
+  explorer: 'docked',
+  selectors: 'docked',
+  framework: 'docked',
+  dependencies: 'docked',
+  agent: 'docked',
+}
+
+function setBuiltInPanelOpen(
+  state: EditorStore,
+  panel: LeftSidebarPanelId,
+  open: boolean,
+): void {
+  if (panel === 'agent') {
+    state.isAgentOpen = open
+    return
+  }
+  state.explorerPanelOpen = panel === 'explorer' ? open : state.explorerPanelOpen
+  state.selectorsPanelOpen = panel === 'selectors' ? open : state.selectorsPanelOpen
+  state.frameworkPanelOpen = panel === 'framework' ? open : state.frameworkPanelOpen
+  state.dependenciesPanelOpen = panel === 'dependencies' ? open : state.dependenciesPanelOpen
+}
+
+function isBuiltInPanelOpen(state: EditorStore, panel: LeftSidebarPanelId): boolean {
+  if (panel === 'agent') return state.isAgentOpen
+  if (panel === 'explorer') return state.explorerPanelOpen
+  if (panel === 'selectors') return state.selectorsPanelOpen
+  if (panel === 'framework') return state.frameworkPanelOpen
+  return state.dependenciesPanelOpen
+}
+
+function closeDockedBuiltInPanels(state: EditorStore, except: LeftSidebarPanelId): void {
+  for (const panel of Object.keys(DEFAULT_LEFT_PANEL_MODES) as LeftSidebarPanelId[]) {
+    if (panel !== except && state.leftPanelModes[panel] === 'docked') {
+      setBuiltInPanelOpen(state, panel, false)
+    }
+  }
 }
 
 // Contribute this slice's fields to the combined `EditorStore` type via TS
@@ -303,7 +332,7 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
   propertiesPanelMode: 'docked',
   propertiesPanelAutoOpenSuppressed: false,
   leftSidebarWidth: LEFT_SIDEBAR_DEFAULT_WIDTH,
-  leftSidebarMode: 'docked',
+  leftPanelModes: { ...DEFAULT_LEFT_PANEL_MODES },
   focusedPanel: 'canvas',
   previewOpen: false,
   formPreviewStates: {},
@@ -319,6 +348,7 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
   frameworkManagerOpen: false,
   dependenciesPanelOpen: false,
   activePluginPanelId: null,
+  pluginPanelMode: 'docked',
   codeEditorPanelOpen: false,
   activeEditorFileId: null,
   activeCodeBuffer: null,
@@ -366,9 +396,16 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
     set({ leftSidebarWidth: nextWidth })
   },
 
-  setLeftSidebarMode: (mode) => {
-    if (Object.is(get().leftSidebarMode, mode)) return
-    set({ leftSidebarMode: mode })
+  setLeftSidebarPanelMode: (panel, mode) => {
+    if (Object.is(get().leftPanelModes[panel], mode)) return
+    set((state) => {
+      state.leftPanelModes[panel] = mode
+      if (mode === 'docked') {
+        closeDockedBuiltInPanels(state, panel)
+        setBuiltInPanelOpen(state, panel, true)
+        state.activePluginPanelId = null
+      }
+    })
   },
 
   togglePropertiesPanel: () =>
@@ -447,48 +484,53 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
 
   setLeftSidebarPanel: (panel) =>
     set((state) => {
-      if (panel === 'agent') {
-        state.isAgentOpen = true
+      if (panel === null) {
+        for (const id of Object.keys(DEFAULT_LEFT_PANEL_MODES) as LeftSidebarPanelId[]) {
+          if (state.leftPanelModes[id] === 'docked') setBuiltInPanelOpen(state, id, false)
+        }
         return
       }
-      state.explorerPanelOpen = panel === 'explorer'
-      state.selectorsPanelOpen = panel === 'selectors'
-      state.frameworkPanelOpen = panel === 'framework'
-      state.dependenciesPanelOpen = panel === 'dependencies'
-      // Built-in panels are mutually exclusive with plugin panels.
-      state.activePluginPanelId = null
+      if (state.leftPanelModes[panel] === 'docked') {
+        closeDockedBuiltInPanels(state, panel)
+        state.activePluginPanelId = null
+      }
+      setBuiltInPanelOpen(state, panel, true)
     }),
 
   toggleLeftSidebarPanel: (panel) => {
-    if (panel === 'agent') {
-      set((state) => {
-        state.isAgentOpen = !state.isAgentOpen
-      })
+    const state = get()
+    if (isBuiltInPanelOpen(state, panel)) {
+      set((draft) => setBuiltInPanelOpen(draft, panel, false))
       return
     }
-    // Account for the plugin-panel-takes-precedence rule in
-    // getActiveLeftSidebarPanel: if a plugin panel is currently active
-    // and the user clicks a built-in rail item, that should open the
-    // built-in panel (not toggle it closed because it "wasn't active").
-    const state = get()
-    const activePanel = state.activePluginPanelId === null
-      ? getActiveLeftSidebarPanel(state)
-      : null
-    get().setLeftSidebarPanel(activePanel === panel ? null : panel)
+    get().setLeftSidebarPanel(panel)
   },
 
   setActivePluginPanel: (panelId) =>
     set((state) => {
-      state.explorerPanelOpen = false
-      state.selectorsPanelOpen = false
-      state.frameworkPanelOpen = false
-      state.dependenciesPanelOpen = false
+      if (panelId !== null && state.pluginPanelMode === 'docked') {
+        for (const id of Object.keys(DEFAULT_LEFT_PANEL_MODES) as LeftSidebarPanelId[]) {
+          if (state.leftPanelModes[id] === 'docked') setBuiltInPanelOpen(state, id, false)
+        }
+      }
       state.activePluginPanelId = panelId
     }),
 
   toggleActivePluginPanel: (panelId) => {
     const current = get().activePluginPanelId
     get().setActivePluginPanel(current === panelId ? null : panelId)
+  },
+
+  setPluginPanelMode: (mode) => {
+    if (Object.is(get().pluginPanelMode, mode)) return
+    set((state) => {
+      state.pluginPanelMode = mode
+      if (mode === 'docked' && state.activePluginPanelId !== null) {
+        for (const id of Object.keys(DEFAULT_LEFT_PANEL_MODES) as LeftSidebarPanelId[]) {
+          if (state.leftPanelModes[id] === 'docked') setBuiltInPanelOpen(state, id, false)
+        }
+      }
+    })
   },
 
   setCodeEditorPanelOpen: (open) => set({ codeEditorPanelOpen: open }),
