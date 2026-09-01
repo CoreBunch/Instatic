@@ -2,7 +2,7 @@
 
 This index maps supported deployment targets to the files, variables, and persistence rules they need.
 
-Instatic is one Bun server packaged by the root `Dockerfile`. The server reads runtime configuration from `server/config.ts`: `PORT`, `DATABASE_URL`, `UPLOADS_DIR`, `STATIC_DIR`, `PUBLIC_ORIGIN`, and `TRUSTED_PROXY_CIDRS`. Reversible server secrets, including AI provider credentials, plugin secret settings, and MFA TOTP seeds, are encrypted with `INSTATIC_SECRET_KEY` when configured. Database migrations run automatically on boot in `server/index.ts`.
+Instatic is one Bun server packaged by the root `Dockerfile`. The server reads runtime configuration from `server/config.ts`: `PORT`, `DATABASE_URL`, `UPLOADS_DIR`, `STATIC_DIR`, `PUBLIC_ORIGIN`, and `TRUSTED_PROXY_CIDRS`. Reversible server secrets, including AI provider credentials, plugin secret settings, MFA TOTP seeds, and staging connection tokens, are encrypted with `INSTATIC_SECRET_KEY` when configured. Database migrations run automatically on boot in `server/index.ts`.
 
 ---
 
@@ -31,6 +31,8 @@ UPLOADS_DIR   directory for media, plugin packs, fonts, and published disk artef
 STATIC_DIR    built admin SPA directory; /app/dist in the Docker image
 INSTATIC_SECRET_KEY  base64 32-byte key for encrypted server secrets
 PUBLIC_ORIGIN        comma-separated public origin(s) the CSRF check trusts; auto-detected from RENDER_EXTERNAL_URL / RAILWAY_PUBLIC_DOMAIN on those platforms
+INSTATIC_ENVIRONMENT set to staging only on a staging instance
+STAGING_SYNC_TOKEN   receiver credential; required when INSTATIC_ENVIRONMENT=staging
 TRUSTED_PROXY_CIDRS  optional; trusts proxy socket peers for forwarded client-IP attribution only (audit logs, rate-limit keys) — NOT used for CSRF
 ```
 
@@ -103,6 +105,7 @@ SQLite installs also need the SQLite database file on persistent storage. On pla
 | [docker-image.md](docker-image.md) | Generic Docker image contract and `docker run` examples |
 | [tls-caddy.md](tls-caddy.md) | Caddy TLS overlay for VPS Compose installs |
 | [backup-restore.md](backup-restore.md) | Database and uploads backup/restore |
+| [staging.md](staging.md) | Persistent staging instance and one-click database refresh |
 | [release-workflow.md](release-workflow.md) | Maintainer image publishing workflow |
 
 ## Related

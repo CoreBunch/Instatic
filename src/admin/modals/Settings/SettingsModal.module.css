@@ -329,6 +329,101 @@
   font-family: var(--font-mono);
 }
 
+/* StagingSection */
+.stagingFields {
+  display: grid;
+  gap: var(--space-s);
+}
+
+.fieldLabel {
+  margin-top: var(--space-s);
+  color: var(--text-bright);
+  font-size: var(--text-s);
+  font-weight: 600;
+}
+
+.stagingWarning {
+  margin: var(--space-xs) 0 0;
+  padding: var(--space-m) var(--space-l);
+  border-radius: var(--panel-radius);
+  color: var(--warning-text);
+  background: var(--warning-10);
+  font-size: var(--text-s);
+  line-height: 1.5;
+}
+
+.stagingTableList {
+  display: grid;
+  gap: var(--space-px);
+  max-height: 210px;
+  margin: var(--space-l) 0 0;
+  padding: var(--space-px);
+  overflow: auto;
+  border: 0;
+  border-radius: var(--panel-radius);
+  background: var(--border);
+}
+
+.stagingTableList legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.stagingTableRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-m);
+  padding: var(--space-m) var(--space-l);
+  background: var(--bg-surface-2);
+  color: var(--text-bright);
+  font-size: var(--text-s);
+  cursor: pointer;
+}
+
+.stagingTableRow:first-of-type {
+  border-radius: var(--panel-radius) var(--panel-radius) 0 0;
+}
+
+.stagingTableRow:last-of-type {
+  border-radius: 0 0 var(--panel-radius) var(--panel-radius);
+}
+
+.stagingTableRow small {
+  color: var(--text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.stagingStatus {
+  margin: var(--space-2xl) 0 0;
+  padding: var(--space-m) var(--space-l);
+  border-radius: var(--panel-radius);
+  background: var(--bg-surface-2);
+  color: var(--text-muted);
+  font-size: var(--text-s);
+  line-height: 1.5;
+}
+
+.stagingStatus[data-status="success"] {
+  background: var(--success-10);
+  color: var(--success-text);
+}
+
+.stagingStatus[data-status="failed"] {
+  background: var(--danger-10);
+  color: var(--danger-text);
+}
+
+.stagingActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-s);
+  margin-top: var(--space-2xl);
+}
+
 /* ── GeneralSection ───────────────────────────────────────────────────────── */
 .genFieldRow {
   margin-bottom: var(--space-2xl);

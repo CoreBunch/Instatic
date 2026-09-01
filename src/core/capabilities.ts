@@ -66,6 +66,8 @@ export const CORE_CAPABILITIES = [
   'data.rows.move',
   'data.export',
   'data.import',
+  // Deployment targets and environment promotion.
+  'deployment.manage',
   // AI runtime — `ai.chat` for conversations + read tools; `ai.tools.write`
   // for canvas write tools. See `docs/plans/2026-05-26-ai-runtime-rewrite.md`.
   'ai.chat',

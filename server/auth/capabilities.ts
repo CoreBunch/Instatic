@@ -74,6 +74,7 @@ const adminCapabilities: CoreCapability[] = [
   'data.rows.move',
   'data.export',
   'data.import',
+  'deployment.manage',
   'ai.chat',
   'ai.tools.write',
   'ai.providers.manage',

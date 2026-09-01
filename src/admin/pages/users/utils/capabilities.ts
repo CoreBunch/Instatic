@@ -56,7 +56,12 @@ export const CAPABILITY_GROUPS: CapabilityGroup[] = [
   },
   {
     title: 'Runtime & storage',
-    capabilities: ['runtime.dependencies', 'storage.elect', 'storage.migrate'],
+    capabilities: [
+      'runtime.dependencies',
+      'storage.elect',
+      'storage.migrate',
+      'deployment.manage',
+    ],
   },
   {
     title: 'Plugins',

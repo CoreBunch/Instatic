@@ -126,6 +126,7 @@ describe('readServerConfig', () => {
       staticDir: './dist',
       trustedProxyCidrs: [],
       publicOrigins: [],
+      environment: 'production',
     })
   })
 
@@ -148,6 +149,17 @@ describe('readServerConfig', () => {
       staticDir: '/srv/instatic/dist',
       trustedProxyCidrs: ['10.0.0.0/8', '192.168.0.0/16'],
       publicOrigins: ['https://cms.example.com', 'http://localhost:5173'],
+      environment: 'production',
+    })
+  })
+
+  it('enables the staging receiver only from explicit environment settings', () => {
+    expect(readServerConfig({
+      INSTATIC_ENVIRONMENT: 'staging',
+      STAGING_SYNC_TOKEN: '  long-random-token  ',
+    })).toMatchObject({
+      environment: 'staging',
+      stagingSyncToken: 'long-random-token',
     })
   })
 })

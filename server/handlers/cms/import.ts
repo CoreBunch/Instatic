@@ -61,7 +61,9 @@ import {
   SiteBundleSchema,
   ImportStrategySchema,
   ImportResultSchema,
+  type ImportResult,
   type ImportStrategy,
+  type SiteBundle,
 } from '@core/data/bundleSchema'
 import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
 import {
@@ -173,6 +175,16 @@ export async function handleImportRoute(
     }
   }
 
+  return jsonResponse(await applySiteBundle(db, bundle, strategy, options))
+}
+
+export async function applySiteBundle(
+  db: DbClient,
+  bundle: SiteBundle,
+  strategy: ImportStrategy | 'replace-selected',
+  options: CmsHandlerOptions = {},
+): Promise<ImportResult> {
+
   // ---------------------------------------------------------------------------
   // Counters
   // ---------------------------------------------------------------------------
@@ -204,8 +216,11 @@ export async function handleImportRoute(
       ['pages', 'components', 'layouts'].map((tableId) => [tableId, new Set<string>()]),
     )
     let shellWasWritten = false
-    if (strategy === 'replace') {
+    if (strategy === 'replace' || strategy === 'replace-selected') {
       for (const tableId of affectedCollabRows.keys()) {
+        if (strategy === 'replace-selected' && !bundle.tables.some((table) => table.id === tableId)) {
+          continue
+        }
         for (const row of await listDataRows(db, tableId)) {
           affectedCollabRows.get(tableId)?.add(row.id)
         }
@@ -299,6 +314,67 @@ export async function handleImportRoute(
       //    bundle now that the target rows exist.
       if (bundle.redirects) {
         await deleteAllDataRowRedirects(tx)
+        for (const redirect of bundle.redirects) {
+          await importDataRowRedirect(tx, redirect)
+          redirectsImported++
+        }
+      }
+    })
+  } else if (strategy === 'replace-selected') {
+    await db.transaction(async (tx) => {
+      for (const table of bundle.tables) {
+        await tx`delete from data_rows where table_id = ${table.id}`
+      }
+
+      const existingTableIds = new Set((await listDataTables(tx)).map((table) => table.id))
+      for (const table of bundle.tables) {
+        if (existingTableIds.has(table.id)) {
+          await updateDataTable(tx, table.id, {
+            name: table.name,
+            slug: table.slug,
+            routeBase: table.routeBase,
+            singularLabel: table.singularLabel,
+            pluralLabel: table.pluralLabel,
+            primaryFieldId: table.primaryFieldId,
+            fields: table.fields,
+          })
+        } else if (!SYSTEM_TABLE_IDS.has(table.id)) {
+          await createDataTable(tx, {
+            id: table.id,
+            name: table.name,
+            slug: table.slug,
+            kind: table.kind,
+            routeBase: table.routeBase,
+            singularLabel: table.singularLabel,
+            pluralLabel: table.pluralLabel,
+            primaryFieldId: table.primaryFieldId,
+            fields: table.fields,
+          })
+        }
+        tablesAffected++
+      }
+
+      for (const row of bundle.rows) {
+        await replaceDataRow(tx, {
+          id: row.id,
+          tableId: row.tableId,
+          cells: row.cells,
+          slug: row.slug,
+          status: row.status,
+          publishedAt: row.publishedAt,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+        })
+        affectedCollabRows.get(row.tableId)?.add(row.id)
+        rowsInserted++
+      }
+
+      if (bundle.site) {
+        await saveDraftSite(tx, bundle.site, null, { collabInternal: true })
+        shellWasWritten = true
+      }
+
+      if (bundle.redirects) {
         for (const redirect of bundle.redirects) {
           await importDataRowRedirect(tx, redirect)
           redirectsImported++
@@ -436,7 +512,9 @@ export async function handleImportRoute(
         if (ids.size > 0) notifyRowWrite({ tableId, rowIds: [...ids], kind: 'create' })
       }
     } else {
-      const eventKind: RowWriteKind = strategy === 'replace' ? 'delete' : 'create'
+      const eventKind: RowWriteKind = strategy === 'replace' || strategy === 'replace-selected'
+        ? 'delete'
+        : 'create'
       for (const [tableId, ids] of affectedCollabRows) {
         if (ids.size > 0) notifyRowWrite({ tableId, rowIds: [...ids], kind: eventKind })
       }
@@ -518,5 +596,5 @@ export async function handleImportRoute(
   // Paranoia: validate result shape before returning
   parseValue(ImportResultSchema, result)
 
-  return jsonResponse(result)
+  return result
 }

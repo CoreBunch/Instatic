@@ -8,7 +8,7 @@ For the broader auth flow (sessions, MFA, step-up), see [docs/features/auth-and-
 
 ## TL;DR
 
-- Defined as a `const` array in `src/core/capabilities.ts` (`@core/capabilities`); `CoreCapability` is derived via `typeof CORE_CAPABILITIES[number]`. **38 capabilities.**
+- Defined as a `const` array in `src/core/capabilities.ts` (`@core/capabilities`); `CoreCapability` is derived via `typeof CORE_CAPABILITIES[number]`. **39 capabilities.**
 - Handlers gate on capability, not on role: `requireCapability(req, db, 'site.read')`.
 - The **Owner AND Admin** roles get their capability lists force-resynced from `SYSTEM_ROLES` on every server boot. Hand-edits to either built-in role through the admin UI are restored at next boot — they are code-level decisions, not runtime ones.
 - Adding a capability: append the literal to `CORE_CAPABILITIES` in `src/core/capabilities.ts` (one place — server imports it), add it to the relevant `SYSTEM_ROLES` entries, wire `requireCapability(...)` at the gate point, and add picker meta + groups for the role-edit dialog. The two architecture tests (`capability-picker-coverage.test.ts`, `cms-handlers-capability-gated.test.ts`) catch missing pieces.
@@ -99,6 +99,7 @@ Was a single `runtime.manage`. Split because adapter election (bytes go to a plu
 | `runtime.dependencies` | Edit site `package.json` dependencies; trigger `POST /runtime/dependencies/resolve`. | Owner, Admin |
 | `storage.elect`        | Elect a media storage adapter per asset role (originals / variants / avatars / fonts); elect/clear the variant delegate; verify adapter credentials. | Owner, Admin |
 | `storage.migrate`      | Run the migration SSE that moves bytes between adapters after an election change. | Owner, Admin |
+| `deployment.manage`    | Configure, test, and refresh a persistent staging environment. Save and refresh actions require step-up. | Owner, Admin |
 
 ### Plugins (granular split)
 

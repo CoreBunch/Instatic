@@ -193,12 +193,12 @@ describe('SettingsModal — backdrop', () => {
 // ---------------------------------------------------------------------------
 
 describe('SettingsModal — section navigation', () => {
-  it('renders exactly 4 nav items (general, shortcuts, publishing, preferences)', () => {
+  it('renders the five settings sections for an unrestricted session', () => {
     openModal()
     render(<SettingsModal />)
     const nav = screen.getByRole('navigation', { name: /settings sections/i })
     const navBtns = Array.from(nav.querySelectorAll('button'))
-    expect(navBtns.length).toBe(4)
+    expect(navBtns.length).toBe(5)
   })
 
   it('renders nav items with the current section labels', () => {
@@ -210,6 +210,7 @@ describe('SettingsModal — section navigation', () => {
     expect(within(nav).getByText('General')).toBeDefined()
     expect(within(nav).getByText('Shortcuts')).toBeDefined()
     expect(within(nav).getByText('Publishing')).toBeDefined()
+    expect(within(nav).getByText('Staging')).toBeDefined()
     expect(within(nav).getByText('Preferences')).toBeDefined()
     // Dropped sections — moved to their dedicated controls.
     expect(within(nav).queryByText('Pages')).toBeNull()
@@ -575,7 +576,7 @@ describe('SettingsButton + settingsSlice — section ID alignment (source enforc
   })
 
   it('settingsSlice activeSection default is a valid section ID', () => {
-    expect(settingsSliceSrc).toMatch(/DEFAULT_SECTION: SettingsSection = '(general|preferences|shortcuts|publishing)'/)
+    expect(settingsSliceSrc).toMatch(/DEFAULT_SECTION: SettingsSection = '(general|preferences|shortcuts|publishing|staging)'/)
   })
 })
 

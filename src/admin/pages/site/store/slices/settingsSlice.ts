@@ -32,6 +32,7 @@ export type SettingsSection =
   | 'preferences'
   | 'shortcuts'
   | 'publishing'
+  | 'staging'
 
 export interface SettingsSlice {
   /** Whether the settings modal is currently open */

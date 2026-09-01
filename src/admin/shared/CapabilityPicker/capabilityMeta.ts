@@ -103,6 +103,10 @@ export const CAPABILITY_META: Record<CoreCapability, CapabilityMeta> = {
     label: 'Migrate storage bytes',
     description: 'Run the migration SSE that moves bytes between storage adapters after an election change.',
   },
+  'deployment.manage': {
+    label: 'Manage deployment environments',
+    description: 'Configure staging targets, test their connection, and replace staging content from this instance.',
+  },
   // ---------------------------------------------------------------------
   // Plugins — granular split (read/configure/install/lifecycle)
   // ---------------------------------------------------------------------
