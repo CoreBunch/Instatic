@@ -29,7 +29,16 @@ interface EditorBridgeEntry {
 }
 
 export type EditorBridgeScope = 'site' | 'content'
-const STREAM_LEASE_MS = 120_000
+/**
+ * How long a stream may sit with NO tool traffic before the server drops it.
+ * This is an IDLE lease: every relayed tool request re-arms it, so an active
+ * batch is never cut mid-flight (a fixed lease used to kill the stream at
+ * exactly two minutes, failing whichever tool call straddled the boundary).
+ * Its purpose is bounding orphan lifetime when a proxy fails to propagate a
+ * closed downstream connection; the client reconnect loop restores a
+ * legitimately alive workspace within seconds of the drop.
+ */
+const STREAM_IDLE_LEASE_MS = 120_000
 
 const byUser = new Map<string, Map<EditorBridgeScope, EditorBridgeEntry>>()
 
@@ -54,6 +63,8 @@ export function createEditorBridgeStream(
   userId: string,
   scope: EditorBridgeScope,
   signal: AbortSignal,
+  // Test seam: the idle lease shrinks to milliseconds in unit tests.
+  idleLeaseMs: number = STREAM_IDLE_LEASE_MS,
 ): ReadableStream<Uint8Array> {
   let closeStream: (() => void) | null = null
 
@@ -90,10 +101,20 @@ export function createEditorBridgeStream(
       }
       closeStream = cleanup
 
+      const armLease = (): void => {
+        if (closed) return
+        if (lease) clearTimeout(lease)
+        lease = setTimeout(cleanup, idleLeaseMs)
+      }
+
       const emit = (event: AiStreamEvent): void => {
         if (closed) return
         try {
           controller.enqueue(encodeStreamEvent(event))
+          // Tool traffic proves the stream is wanted — keep the idle lease
+          // from expiring under an active batch. (The relay's own per-call
+          // timeout is 90s, comfortably inside the lease.)
+          armLease()
         } catch {
           cleanup()
         }
@@ -124,8 +145,9 @@ export function createEditorBridgeStream(
         }
       }, 25_000)
       // Bound orphan lifetime when a proxy fails to propagate a closed
-      // downstream connection. The client reconnect loop restores the bridge.
-      lease = setTimeout(cleanup, STREAM_LEASE_MS)
+      // downstream connection. Idle-based: re-armed by every relayed tool
+      // request, so only genuinely quiet streams recycle.
+      armLease()
 
       if (signal.aborted) cleanup()
       else signal.addEventListener('abort', cleanup, { once: true })
