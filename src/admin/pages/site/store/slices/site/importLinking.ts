@@ -8,7 +8,7 @@
 
 import { nanoid } from 'nanoid'
 import { classKindSelector } from '@core/page-tree'
-import type { StyleRule } from '@core/page-tree'
+import type { StyleRule, StyleRuleOrigin } from '@core/page-tree'
 import type { NewStyleRule } from '@core/siteImport'
 
 export type StyleRuleOrderAllocator = () => number
@@ -41,6 +41,51 @@ export function indexStyleRulesByName(rules: Record<string, StyleRule>): Map<str
     if (!byName.has(cls.name)) byName.set(cls.name, cls.id)
   }
   return byName
+}
+
+function originKey(origin: StyleRuleOrigin): string {
+  return `${origin.source}\u0000${origin.ordinal}`
+}
+
+/**
+ * Index a StyleRule registry by import origin (stylesheet + ordinal). Rules
+ * without an origin — user-authored, or pasted `<style>` CSS — are not
+ * indexed and can never be matched by a re-import.
+ */
+export function indexStyleRulesByOrigin(rules: Record<string, StyleRule>): Map<string, StyleRule> {
+  const byOrigin = new Map<string, StyleRule>()
+  for (const rule of Object.values(rules)) {
+    if (rule.origin) byOrigin.set(originKey(rule.origin), rule)
+  }
+  return byOrigin
+}
+
+/**
+ * The registry rule that `incoming` is delivering AGAIN: the same import origin
+ * AND the same selector. Origin alone is not enough — a stylesheet that gained
+ * a rule shifts every later ordinal, and those must arrive as new rules rather
+ * than overwrite unrelated ones. Selector alone is not enough either: a sheet
+ * may declare one selector several times, and a user-authored `body {}` must
+ * survive an import of a theme that also styles `body`.
+ *
+ * Both import paths — the whole-site wizard (`mutateAllPagesAndSite`) and the
+ * single-fragment paste (`mergeImportedStyleRules`) — decide identity here.
+ */
+export function findReimportedStyleRule(
+  byOrigin: ReadonlyMap<string, StyleRule>,
+  incoming: NewStyleRule,
+): StyleRule | undefined {
+  if (!incoming.origin) return undefined
+  const existing = byOrigin.get(originKey(incoming.origin))
+  return existing && existing.selector === incoming.selector ? existing : undefined
+}
+
+/**
+ * Register a freshly committed rule in the origin index so a later rule in the
+ * same transaction (or the next import) can find it.
+ */
+export function registerStyleRuleOrigin(byOrigin: Map<string, StyleRule>, rule: StyleRule): void {
+  if (rule.origin) byOrigin.set(originKey(rule.origin), rule)
 }
 
 /**
@@ -98,13 +143,17 @@ export function linkImportedClassNames(
  * in the Selectors panel and binds to the matching `class=` tokens.
  *
  * Collision policy (first-wins, mirroring the rest of the import pipeline):
- *   - class rules — skipped when a class of that name already exists; the
- *     node's `class=` token then links to the existing class. New names are
- *     added and registered in `byName` so `linkImportedClassNames` (run AFTER
- *     this) resolves the token to the freshly-added rule.
- *   - ambient rules (`body`, `a:hover`, `.a .b`, …) — skipped when an ambient
- *     rule with the identical selector already exists, so repeated imports
- *     don't pile up duplicates.
+ *   - a rule that is a re-import of one already in the registry (same
+ *     `origin` + selector, see `findReimportedStyleRule`) replaces that rule
+ *     in place, keeping its id and cascade order.
+ *   - class rules — otherwise skipped when a class of that name already
+ *     exists; the node's `class=` token then links to the existing class.
+ *     New names are added and registered in `byName` so
+ *     `linkImportedClassNames` (run AFTER this) resolves the token to the
+ *     freshly-added rule.
+ *   - ambient rules (`body`, `a:hover`, `.a .b`, …) without an origin (pasted
+ *     `<style>` CSS has none) — skipped when an ambient rule with the
+ *     identical selector already exists, so repeated pastes don't pile up.
  *
  * Mutates `siteRules` and `byName`. Must run inside the Mutative recipe that
  * owns the `site` draft, BEFORE `linkImportedClassNames`.
@@ -117,6 +166,7 @@ export function mergeImportedStyleRules(
 ): void {
   if (rules.length === 0) return
 
+  const byOrigin = indexStyleRulesByOrigin(siteRules)
   const ambientSelectors = new Set<string>()
   for (const r of Object.values(siteRules)) {
     if (r.kind === 'ambient') ambientSelectors.add(r.selector)
@@ -124,9 +174,20 @@ export function mergeImportedStyleRules(
 
   const now = Date.now()
   for (const rule of rules) {
+    const reimported = findReimportedStyleRule(byOrigin, rule)
+    if (reimported) {
+      siteRules[reimported.id] = {
+        ...rule,
+        id: reimported.id,
+        order: reimported.order,
+        createdAt: reimported.createdAt,
+        updatedAt: now,
+      }
+      continue
+    }
     if (rule.kind === 'class') {
       if (byName.has(rule.name)) continue // existing class wins
-    } else if (ambientSelectors.has(rule.selector)) {
+    } else if (!rule.origin && ambientSelectors.has(rule.selector)) {
       continue // identical ambient selector already present
     }
 
@@ -139,6 +200,7 @@ export function mergeImportedStyleRules(
       updatedAt: now,
     }
     siteRules[id] = newRule
+    registerStyleRuleOrigin(byOrigin, newRule)
     if (rule.kind === 'class') byName.set(rule.name, id)
     else ambientSelectors.add(rule.selector)
   }

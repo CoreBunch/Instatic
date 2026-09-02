@@ -202,10 +202,25 @@ function safeStorageStem(filename: string): string {
   return safe || 'upload'
 }
 
-export async function readUploadedFile(req: Request): Promise<File | null> {
+export interface UploadForm {
+  /** The `file` part, or null when the multipart body has none. */
+  file: File | null
+  /** Optional `altText` text part — a site import sends the authored `<img alt>`. */
+  altText: string | undefined
+}
+
+/**
+ * Read the multipart upload body once (a `FormData` stream can only be
+ * consumed once) and hand back the parts the media routes accept.
+ */
+export async function readUploadForm(req: Request): Promise<UploadForm> {
   const body = await req.formData()
   const file = body.get('file')
-  return file instanceof File ? file : null
+  const altText = body.get('altText')
+  return {
+    file: file instanceof File ? file : null,
+    altText: typeof altText === 'string' ? altText : undefined,
+  }
 }
 
 interface AcceptUploadInput {
@@ -223,6 +238,8 @@ interface AcceptUploadInput {
   role: MediaAssetRole
   /** User who triggered the upload; persisted on the media row. */
   uploadedByUserId: string | null
+  /** Alt text the new record starts with (site import). Absent = empty. */
+  altText?: string
   /** Error message for the size-limit response (keeps the prose per-surface). */
   oversizedMessage: string
   /** Error message when the sniffed MIME isn't in `allowedMimes`. */
@@ -321,6 +338,7 @@ export async function acceptUploadedMedia(
     uploadedByUserId: input.uploadedByUserId,
     storageAdapterId: dispatched.storageAdapterId,
     externallyHosted: dispatched.externallyHosted,
+    ...(input.altText !== undefined ? { altText: input.altText } : {}),
   })
 
   // Responsive pipeline (docs/features/media.md). Raster-only for v1:
