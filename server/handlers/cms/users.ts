@@ -35,6 +35,7 @@ import {
 } from '../../repositories/users'
 import type { UserStatus } from '../../types'
 import { Type } from '@core/utils/typeboxHelpers'
+import { MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT_MESSAGE } from '@core/utils/passwordPolicy'
 import { badRequest, jsonResponse, readValidatedBody } from '../../http'
 import {
   CMS_API_PREFIX,
@@ -106,13 +107,11 @@ function userNotFound(): Response {
   return jsonResponse(USER_NOT_FOUND_BODY, { status: 404 })
 }
 
-const PASSWORD_MIN_LENGTH = 12
-
 function rejectsShortPassword(password: string | undefined): Response | null {
   if (password === undefined) return null
-  return password.length >= PASSWORD_MIN_LENGTH
+  return password.length >= MIN_PASSWORD_LENGTH
     ? null
-    : badRequest(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`)
+    : badRequest(PASSWORD_TOO_SHORT_MESSAGE)
 }
 
 // ---------------------------------------------------------------------------

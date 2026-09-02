@@ -284,7 +284,7 @@ describe('Account security endpoints', () => {
     const invalidCases: Array<{ body: Record<string, unknown>; error: string }> = [
       {
         body: { displayName: 'Owner Invalid', email: 'not-an-email' },
-        error: 'Invalid email',
+        error: 'Invalid email address',
       },
       {
         body: { displayName: 'A'.repeat(161), email: 'owner-too-long@example.com' },
