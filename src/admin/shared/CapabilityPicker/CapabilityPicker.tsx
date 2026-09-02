@@ -31,6 +31,8 @@ interface CapabilityPickerProps {
   onChange: (next: Set<CoreCapability>) => void
   /** Read-only: every checkbox disabled, all toggles hidden. */
   readonly?: boolean
+  /** Capabilities shown for context but unavailable for selection. */
+  disabledCapabilities?: ReadonlySet<CoreCapability>
   /** Picker heading. Defaults to "Capabilities". */
   title?: string
 }
@@ -40,18 +42,23 @@ export function CapabilityPicker({
   selected,
   onChange,
   readonly = false,
+  disabledCapabilities = new Set(),
   title = 'Capabilities',
 }: CapabilityPickerProps) {
   // De-duplicate across groups for the master count/toggle (groups are normally
   // disjoint, but don't assume it).
-  const allCaps = [...new Set(groups.flatMap((g) => g.capabilities))]
-  const totalCount = allCaps.length
-  const selectedCount = allCaps.reduce((n, cap) => (selected.has(cap) ? n + 1 : n), 0)
+  const renderedCaps = [...new Set(groups.flatMap((g) => g.capabilities))]
+  const selectableCaps = readonly
+    ? renderedCaps
+    : renderedCaps.filter((capability) => !disabledCapabilities.has(capability))
+  const totalCount = selectableCaps.length
+  const selectedCount = selectableCaps.reduce((n, cap) => (selected.has(cap) ? n + 1 : n), 0)
   const allSelected = totalCount > 0 && selectedCount === totalCount
 
   function setMany(capabilities: readonly CoreCapability[], checked: boolean) {
     const next = new Set(selected)
     for (const cap of capabilities) {
+      if (disabledCapabilities.has(cap)) continue
       if (checked) next.add(cap)
       else next.delete(cap)
     }
@@ -73,7 +80,7 @@ export function CapabilityPicker({
             variant="ghost"
             size="xs"
             aria-label={allSelected ? 'Clear all capabilities' : 'Select all capabilities'}
-            onClick={() => setMany(allCaps, !allSelected)}
+            onClick={() => setMany(selectableCaps, !allSelected)}
           >
             <span>{allSelected ? 'Clear all' : 'Select all'}</span>
           </Button>
@@ -82,9 +89,12 @@ export function CapabilityPicker({
 
       <div className={styles.capabilityGroups}>
         {groups.map((group) => {
-          const groupSelected = group.capabilities.filter((cap) => selected.has(cap)).length
-          const groupTotal = group.capabilities.length
-          const groupAllSelected = groupSelected === groupTotal
+          const selectableGroupCapabilities = readonly
+            ? group.capabilities
+            : group.capabilities.filter((capability) => !disabledCapabilities.has(capability))
+          const groupSelected = selectableGroupCapabilities.filter((cap) => selected.has(cap)).length
+          const groupTotal = selectableGroupCapabilities.length
+          const groupAllSelected = groupTotal > 0 && groupSelected === groupTotal
           return (
             <section key={group.title} className={styles.capabilityGroup}>
               <header className={styles.capabilityGroupHeader}>
@@ -107,7 +117,7 @@ export function CapabilityPicker({
                         ? `Clear ${group.title} capabilities`
                         : `Select all ${group.title} capabilities`
                     }
-                    onClick={() => setMany(group.capabilities, !groupAllSelected)}
+                    onClick={() => setMany(selectableGroupCapabilities, !groupAllSelected)}
                   >
                     <span>{groupAllSelected ? 'Clear' : 'Select all'}</span>
                   </Button>
@@ -117,12 +127,13 @@ export function CapabilityPicker({
                 {group.capabilities.map((capability) => {
                   const meta = CAPABILITY_META[capability]
                   const checked = selected.has(capability)
+                  const disabled = readonly || disabledCapabilities.has(capability)
                   return (
                     <li key={capability} className={styles.capabilityItem} data-checked={checked}>
                       <label className={styles.capabilityRow}>
                         <Checkbox
                           checked={checked}
-                          disabled={readonly}
+                          disabled={disabled}
                           onCheckedChange={(next) => setMany([capability], next)}
                         />
                         <span className={styles.capabilityRowText}>

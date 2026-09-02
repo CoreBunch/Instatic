@@ -36,6 +36,7 @@ import type {
   ImportFontFamily,
   ImportFontFile,
   ImportStylesheet,
+  ImportAsset,
 } from './types'
 import { guessMimeType, isImportUploadableMimeType } from './mimeTypes'
 
@@ -91,7 +92,7 @@ interface AssetPlanResult {
    */
   fonts: ImportFontFamily[]
   /** Deduplicated asset list for upload, keyed by FileMap path. */
-  assets: { sourcePath: string; mimeType: string; bytes: Uint8Array }[]
+  assets: ImportAsset[]
   warnings: ImportWarning[]
 }
 
@@ -107,7 +108,7 @@ interface AssetPlanResult {
 interface AssetResolver {
   fileMap: FileMap
   /** Deduplicated assets to upload, keyed by FileMap key. */
-  assetMap: Map<string, { sourcePath: string; mimeType: string; bytes: Uint8Array }>
+  assetMap: Map<string, ImportAsset>
   warnings: ImportWarning[]
   /** Lazily built by `normalizedIndex` — see the note there. */
   byNormalizedPath?: ReadonlyMap<string, string | null>
@@ -152,22 +153,27 @@ export function buildAssetPlan(
 ): AssetPlanResult {
   const warnings: ImportWarning[] = []
   /** Deduplicated assets by FileMap key. */
-  const assetMap = new Map<string, { sourcePath: string; mimeType: string; bytes: Uint8Array }>()
+  const assetMap = new Map<string, ImportAsset>()
   const resolver: AssetResolver = { fileMap, assetMap, warnings, reportedMissing: new Set() }
 
   // --- Normalise node fragments ---
   const normalizedPagePlans: PagePlan[] = pagePlans.map((plan) => {
-    const normalizedFragment = normalizeFragment(plan.nodeFragment, plan.source, resolver)
+    const normalizedFragment = normalizeFragment(plan.nodeFragment, plan.source, plan.imageAlts, resolver)
     return { ...plan, nodeFragment: normalizedFragment }
   })
 
   // --- Normalise CSS rules ---
+  // Every rule is stamped with its import origin (stylesheet + ordinal) —
+  // the durable identity a later re-import reconciles against, so the same
+  // rule arriving again replaces itself instead of piling up (#404).
   const normalizedStyleRules: NewStyleRule[] = []
   const styleRuleSources: string[] = []
   for (const { cssPath, rules, assetRefs } of cssFileResults) {
     const normalized = normalizeRules(rules, assetRefs, cssPath, resolver)
-    normalizedStyleRules.push(...normalized)
-    for (let i = 0; i < normalized.length; i++) styleRuleSources.push(cssPath)
+    normalized.forEach((rule, ordinal) => {
+      normalizedStyleRules.push({ ...rule, origin: { source: cssPath, ordinal } })
+      styleRuleSources.push(cssPath)
+    })
   }
 
   // --- Flatten + normalise kept stylesheets (mode 'file') ---
@@ -306,12 +312,20 @@ function buildFontFamilies(
 function normalizeFragment(
   fragment: ImportFragment,
   htmlFilePath: string,
+  imageAlts: Record<string, string>,
   resolver: AssetResolver,
 ): ImportFragment {
   const normalizedNodes: Record<string, PageNode> = {}
 
   for (const [id, node] of Object.entries(fragment.nodes)) {
     const newProps = normalizeNodeProps(node.props, htmlFilePath, resolver)
+    // The authored alt rides on the planned asset so the Media Library record
+    // is created with it. First page to describe a file wins.
+    const alt = imageAlts[id]
+    if (alt !== undefined && typeof newProps.src === 'string') {
+      const asset = resolver.assetMap.get(newProps.src)
+      if (asset && asset.altText === undefined) asset.altText = alt
+    }
     // Inline background images live on `node.inlineStyles` as CSS `url(...)`
     // payloads — normalise them to FileMap keys exactly like CSS-rule
     // background values so `applyAssetRewrites` can swap in the media URL.

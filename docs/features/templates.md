@@ -238,7 +238,7 @@ Source: `src/core/templates/tokenInterpolation.ts`.
 
 `resolveDynamicProps` walks a node's props and interpolates:
 
-- **every string-typed prop** — `text`, `href`, `src`, `alt`, and any module's own string prop. Richtext prop keys (`html`, `richtext`, `*html`, `*richtext`) additionally render the interpolated value as markdown.
+- **every string-typed prop** — `text`, `href`, `src`, `alt`, and any module's own string prop. Richtext prop keys (`html`, `richtext`, `*html`, `*richtext`) additionally render the interpolated value as markdown, then sanitise the result with `sanitizeRichtext`. The editor canvas injects these through `dangerouslySetInnerHTML` and never runs the publisher's `escapeProps`, so the sanitiser has to live here for both surfaces to be safe.
 - **every value inside `htmlAttributes`** — the one prop holding strings a level down. An author writing `src="{currentEntry.video-link}"` on a custom tag gets the same substitution a first-class `href` prop gets. Attribute values are never markdown-rendered: an attribute is a value, not a body.
 
 Nothing else is descended into. `filters` on a loop, for example, is a free-form bag whose values are configuration rather than authored output.

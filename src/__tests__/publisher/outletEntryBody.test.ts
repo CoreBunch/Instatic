@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'bun:test'
 import { makeModule, makePage, makeRegistry, makeSite } from './helpers'
 import { publishPage } from '@core/publisher'
+import { effectiveNodeBindings, resolveDynamicProps } from '@core/templates/dynamicBindings'
 import type { LoopItem } from '@core/loops/types'
 
 const bodyModule = makeModule('base.body', {
@@ -65,5 +66,33 @@ describe('entry outlet body binding', () => {
 
     expect(html).toContain('data-instatic-content-region')
     expect(html).not.toContain('Hello world')
+  })
+})
+
+describe('canvas outlet body sanitisation (GHSA-7vxr)', () => {
+  it('sanitises the resolved outlet body, since the canvas renders it via dangerouslySetInnerHTML', () => {
+    // The editor canvas resolves the outlet body through resolveDynamicProps and
+    // renders props.html directly, with no escapeProps pass of its own. A member
+    // could publish a post whose body carries raw HTML with event handlers; when
+    // an owner previews it in the Site editor the markup runs same-origin with
+    // /admin. resolveDynamicProps must return a sanitised html prop.
+    const bindings = effectiveNodeBindings({ moduleId: 'base.outlet' })
+    const body = [
+      '<p onclick="alert(1)">click</p>',
+      '',
+      '<a href="javascript:alert(2)">link</a>',
+      '',
+      '<script>alert(3)</script>',
+    ].join('\n')
+
+    const props = resolveDynamicProps({ html: '' }, bindings, { entryStack: [entry(body)] })
+    const html = String(props.html)
+
+    expect(html).not.toContain('onclick')
+    expect(html).not.toContain('javascript:')
+    expect(html).not.toContain('<script')
+    // Legitimate text is preserved.
+    expect(html).toContain('click')
+    expect(html).toContain('link')
   })
 })

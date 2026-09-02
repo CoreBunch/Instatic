@@ -156,7 +156,9 @@ function detectRuleConflicts(
       conflictedNames.add(desiredName)
       const resolvedName = nextAvailableName(desiredName, claimedNames)
       conflicts.push({
-        source: '', // CSS file path is not tracked per-rule in NewStyleRule
+        // The stylesheet the rule came from; the wizard shows it above the
+        // class name the way page rows show their HTML path.
+        source: rule.origin?.source ?? '',
         desiredName,
         existingRuleId: existingId,
         defaultResolution: {

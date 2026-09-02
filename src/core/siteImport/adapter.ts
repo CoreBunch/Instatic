@@ -23,6 +23,7 @@ import type {
   ImportFontToken,
   ImportScript,
   ImportStylesheet,
+  UploadedImportAsset,
 } from './types'
 import type { ConditionDef } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
@@ -40,19 +41,24 @@ export interface SiteImportAdapter {
   /**
    * Upload a single asset to the media library.
    *
+   * `altText` is the authored `<img alt>` for the file (when any page gave it
+   * one) — the record is created with it, since the library owns alt text.
    * `signal` is the run's cancellation signal — implementations forward it to
    * the underlying request so cancelling the wizard aborts the in-flight
    * upload instead of only skipping the queued ones.
    *
-   * @returns The public media URL the page tree should reference (e.g.
-   *          `"/uploads/abc123.png"` or `"https://cdn.example.com/..."`).
+   * Resolves once the bytes are in the library with their final public URL
+   * (e.g. `"/uploads/abc123.png"` or `"https://cdn.example.com/..."`).
+   * Anything best-effort around the upload — folder placement — must not
+   * reject; it is reported through `warnings` so the URL rewrite still runs.
    */
   uploadAsset(file: {
     path: string
     bytes: Uint8Array
     mimeType: string
+    altText?: string
     signal?: AbortSignal
-  }): Promise<string>
+  }): Promise<UploadedImportAsset>
 
   /**
    * Install a Google font request extracted from a trusted CSS2 @import.
@@ -130,11 +136,15 @@ export interface SiteImportTransaction {
   ): void
 
   /**
-   * Add a new style rule to the site's global registry.
+   * Put a style rule into the site's global registry: add it — or, when the
+   * registry already holds the rule this import is delivering again (same
+   * `origin` and selector), replace that rule in place, keeping its id and
+   * cascade order. That is what makes importing the same site twice a no-op
+   * for its ambient rules.
    *
-   * @returns The new rule's generated id.
+   * @returns The rule's id (fresh, or the replaced rule's).
    */
-  addStyleRule(rule: NewStyleRule): string
+  putStyleRule(rule: NewStyleRule): string
 
   /**
    * Overwrite an existing style rule (conflict: overwrite resolution).

@@ -1156,4 +1156,16 @@ export const pgMigrations: Migration[] = [
        where trim(lower(display_name)) = trim(lower(email));
     `,
   },
+  {
+    // See migrations-sqlite.ts:025 — remove the forbidden Owner-only grant
+    // from every persisted non-Owner role on existing installations.
+    id: '025_remove_non_owner_role_management',
+    sql: `
+      update roles
+         set capabilities_json = capabilities_json - 'roles.manage',
+             updated_at = current_timestamp
+       where id <> 'owner'
+         and capabilities_json ? 'roles.manage';
+    `,
+  },
 ]

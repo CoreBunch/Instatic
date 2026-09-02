@@ -135,6 +135,11 @@ export async function listCmsMediaAssets(
 interface UploadCmsMediaAssetOptions extends ClientBase {
   /** Aborts the in-flight upload (e.g. the Super Import run was cancelled). */
   signal?: AbortSignal
+  /**
+   * Alt text the new record starts with — the authored `<img alt>` on a site
+   * import. Omitted: the record keeps the server default (empty).
+   */
+  altText?: string
 }
 
 export async function uploadCmsMediaAsset(
@@ -144,6 +149,7 @@ export async function uploadCmsMediaAsset(
   const { fetchImpl, basePath } = resolveClient(options)
   const body = new FormData()
   body.set('file', file)
+  if (options.altText !== undefined) body.set('altText', options.altText)
 
   const res = await fetchImpl(`${basePath}/media`, {
     method: 'POST',

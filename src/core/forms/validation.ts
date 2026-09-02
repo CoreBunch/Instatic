@@ -2,6 +2,7 @@ import type {
   DataField,
   DataTable,
 } from '@core/data/schemas'
+import { isValidEmail } from '../utils/email'
 import type {
   FormControlBinding,
   FormSubmissionLimits,
@@ -233,10 +234,6 @@ function validateCoercedValue(
   }
 
   return null
-}
-
-function isValidEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 }
 
 function isValidUrl(value: string): boolean {

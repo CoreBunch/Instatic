@@ -331,3 +331,17 @@ if (typeof (globalThis as { EventSource?: unknown }).EventSource === 'undefined'
     resetAppStores()
   })
 }
+
+// ---------------------------------------------------------------------------
+// Run DOMPurify on the same jsdom backend the server installs in production.
+//
+// The ambient happy-dom DOM above is fine for @testing-library/react, but its
+// NodeIterator mishandles DOMPurify's node walk: siblings (and SVG geometry)
+// after the first removed node are dropped or, for richtext, passed through
+// unsanitised (GHSA-jg75). Configuring the real server runtime here means every
+// test's `sanitizeRichtext` / `sanitizeSvg` matches runtime behaviour instead
+// of the test DOM's, so sanitisation assertions are trustworthy.
+{
+  const { installServerRichtextSanitizer } = await import('../../server/richtextSanitizer')
+  installServerRichtextSanitizer()
+}

@@ -176,4 +176,33 @@ describe('data system-table visibility + lockdown', () => {
       await harness.cleanup()
     }
   })
+
+  it('denies system-table ROW reads to a content persona without data.system.tables.read (GHSA-x69h)', async () => {
+    const harness = await createCapabilityTestHarness()
+    try {
+      await harness.setupOwner() // seeds the system tables (pages/posts) and a home page row
+      const editor = await harness.createRoleUser({
+        name: 'Custom Editor',
+        slug: 'custom-editor',
+        capabilities: ['content.create', 'content.edit.any', 'data.custom.tables.read'],
+      })
+
+      // Listing a system table's rows is refused at the row layer now, matching
+      // the schema-read sibling. `content.edit.any` satisfies the data-access
+      // floor but not the system-table read gate.
+      const list = await harness.cms(`${TABLES}/pages/rows`, { method: 'GET', cookie: editor.cookie })
+      expect(list.status).toBe(404)
+
+      // Spotlight search does not surface system-table rows to this persona.
+      const search = await harness.cms('/admin/api/cms/data/search?query=index', {
+        method: 'GET',
+        cookie: editor.cookie,
+      })
+      expect(search.status).toBe(200)
+      const { entries } = await readJson<{ entries: { tableSlug: string }[] }>(search)
+      expect(entries.every((e) => e.tableSlug !== 'pages' && e.tableSlug !== 'posts')).toBe(true)
+    } finally {
+      await harness.cleanup()
+    }
+  })
 })

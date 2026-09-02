@@ -1479,6 +1479,28 @@ describe('ImportStep — progress + completion states', () => {
     expect(screen.getByText('Dropped @keyframes slideIn')).toBeDefined()
   })
 
+  it('complete state keeps the planned media total and flags the shortfall (#412)', () => {
+    const result = makeMinimalResult({
+      assets: [{ sourcePath: 'images/a.png', mediaUrl: '/uploads/a.png' }],
+      warnings: [
+        { kind: 'asset-upload-failed', message: 'Failed to upload images/b.png (image/png): boom', path: 'images/b.png' },
+      ],
+    })
+    const progress = makeDoneProgress(result)
+    progress.categories.media = { done: 1, total: 2 }
+    renderImportStep(progress, result)
+
+    const media = screen.getByTestId('site-import-category-media')
+    expect(media.getAttribute('data-state')).toBe('partial')
+    expect(media.textContent).toContain('1 / 2')
+    expect(screen.getByText(/1 of 2 media files failed to upload/i)).toBeDefined()
+    const normalize = (s: string) => s.replace(/\s+/g, ' ').trim()
+    const sub = Array.from(document.querySelectorAll('p')).find((p) =>
+      normalize(p.textContent ?? '').includes('1 of 2 media'),
+    )
+    expect(sub).not.toBeUndefined()
+  })
+
   it('running state shows a determinate percentage from media uploads', () => {
     const progress = makeInitialRunProgress()
     progress.phase = 'uploading'
@@ -2077,12 +2099,12 @@ describe('commitImportPlan — uploadAsset called only for entries in plan.asset
       }),
       uploadAsset: async ({ path }) => {
         uploadedPaths.push(path)
-        return `/uploads/logo.png`
+        return { url: '/uploads/logo.png', warnings: [] }
       },
       commit: async (recipe) => {
         recipe({
           addPage: (_input) => 'page-id',
-          addStyleRule: (_rule) => 'rule-id',
+          putStyleRule: (_rule) => 'rule-id',
           overwritePage: () => {},
           overwriteStyleRule: () => {},
           addConditions: () => {},
@@ -2137,14 +2159,14 @@ describe('commitImportPlan — overwrite with no existing target falls back to a
         createdAt: 1,
         updatedAt: 1,
       }),
-      uploadAsset: async ({ path }) => `/uploads/${path}`,
+      uploadAsset: async ({ path }) => ({ url: `/uploads/${path}`, warnings: [] }),
       commit: async (recipe) => {
         recipe({
           addPage: (input) => {
             addedPageIds.push(input.id)
             return input.id ?? 'fresh-id'
           },
-          addStyleRule: () => 'rule-id',
+          putStyleRule: () => 'rule-id',
           overwritePage: (pageId) => {
             if (!pageId) throw new Error('overwritePage: page not found')
             overwrotePageIds.push(pageId)
@@ -2260,7 +2282,7 @@ describe('commitImportPlan — abort signal cancels the run', () => {
       }),
       uploadAsset: async ({ path }) => {
         onUpload(path)
-        return `/uploads/${path}`
+        return { url: `/uploads/${path}`, warnings: [] }
       },
       commit: async () => { commitCalled = true },
     }
@@ -2489,5 +2511,84 @@ describe('SiteImportModal — cancelling a static import run', () => {
     expect(uploadCalls).toBe(1)
     expect(useEditorStore.getState().site!.pages.length).toBe(pagesBefore)
     expect(saveCalls).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 12 — A static run where one upload fails (#412)
+// ---------------------------------------------------------------------------
+
+describe('SiteImportModal — a static run with a failed upload', () => {
+  it('finishes with the planned total, names the shortfall, and opens the import log', async () => {
+    let uploadCalls = 0
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/admin/api/cms/media' && init?.method === 'POST') {
+        uploadCalls += 1
+        if (uploadCalls === 2) {
+          return jsonResponse({ error: 'Only JPEG, PNG, GIF, WebP, SVG, MP4, WebM, and web font files can be uploaded' }, 400)
+        }
+        return jsonResponse({
+          asset: {
+            id: `asset-${uploadCalls}`,
+            filename: `upload-${uploadCalls}.png`,
+            mimeType: 'image/png',
+            sizeBytes: 2,
+            publicPath: `/uploads/upload-${uploadCalls}.png`,
+            uploadedByUserId: null,
+            createdAt: NOW_ISO,
+          },
+        }, 201)
+      }
+      if (url === '/admin/api/cms/site-document' && init?.method === 'PUT') {
+        return jsonResponse({ ok: true, seq: 1 })
+      }
+      return jsonResponse({ error: `Unexpected request: ${url}` }, 500)
+    }
+
+    let capturedToasts: Toast[] = []
+    const unsubscribe = subscribeToasts((snapshot) => { capturedToasts = [...snapshot] })
+
+    try {
+      useEditorStore.setState({
+        site: makeSite(),
+      } as Parameters<typeof useEditorStore.setState>[0])
+      useAdminUi.getState().openSiteImport()
+
+      render(<SiteImportHarness />)
+
+      const htmlFile = new File(
+        [
+          '<!doctype html><html><head><title>Partial Repro</title></head>' +
+          '<body><img src="one.png" alt="One"><img src="two.png" alt="Two"></body></html>',
+        ],
+        'partial-repro.html',
+        { type: 'text/html' },
+      )
+      const images = ['one.png', 'two.png'].map(
+        (name) => new File([new Uint8Array([0x89, 0x50])], name, { type: 'image/png' }),
+      )
+      fireEvent.drop(screen.getByLabelText(/drop site files/i), {
+        dataTransfer: { files: [htmlFile, ...images] },
+      })
+
+      expect(await screen.findByText('Review import')).toBeDefined()
+      fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+
+      expect(await screen.findByText('Import complete')).toBeDefined()
+      expect(uploadCalls).toBe(2)
+
+      const media = screen.getByTestId('site-import-category-media')
+      expect(media.getAttribute('data-state')).toBe('partial')
+      expect(media.textContent).toContain('1 / 2')
+      expect(screen.getByText(/1 of 2 media files failed to upload/i)).toBeDefined()
+
+      // The log opens by itself so the failed path is visible without a click.
+      expect(screen.getByText(/two\.png/)).toBeDefined()
+      expect(capturedToasts.some((toast) => toast.kind === 'warning' && /1 of 2/.test(toast.body ?? ''))).toBe(true)
+      expect(capturedToasts.some((toast) => toast.kind === 'success')).toBe(false)
+    } finally {
+      unsubscribe()
+    }
   })
 })

@@ -160,7 +160,8 @@ const BUDGETS: ChunkBudget[] = [
     maxBytes: 100_000,
     rationale:
       'content workspace route after Tiptap/LiveCanvas lazy split and shared ' +
-      'data-binding picker adoption. Current ~91 KB raw / ~31 KB gzipped.',
+      'data-binding picker adoption, including the role editor safeguards that ' +
+      'keep Owner-only capabilities visible but non-selectable. Current ~91 KB raw / ~31 KB gzipped.',
   },
 
   {
