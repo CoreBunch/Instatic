@@ -24,17 +24,23 @@
     width: 100%;
 }
 
-/* Each segment fills available width and uses a smaller radius so it nests
- * cleanly inside the 10px track. The doubled `.group .segment.segment`
- * selector lifts specificity above Button.module.css's `.btn.variant-X`
- * pairings so the segment's transparent / pressed look wins regardless of
- * stylesheet load order. */
+/* Segments are content-sized — each takes its natural width from the
+ * Button's own padding, so labels of different lengths never get stretched
+ * to identical widths. A `fullWidth` group switches back to equal fill.
+ * The smaller radius nests cleanly inside the 10px track. The doubled
+ * `.group .segment.segment` selector lifts specificity above
+ * Button.module.css's `.btn.variant-X` pairings so the segment's
+ * transparent / pressed look wins regardless of stylesheet load order. */
 .group .segment.segment {
     position: relative;
-    flex: 1 1 0;
+    flex: 0 0 auto;
     min-width: 0;
     border-radius: 8px;
     background: transparent;
+}
+
+.fullWidth .segment.segment {
+    flex: 1 1 0;
 }
 
 .group .segment.segment:hover {

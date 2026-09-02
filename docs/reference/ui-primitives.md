@@ -53,7 +53,7 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 | `ControlRow`       | Label + control row in property panels                               | `propKey` (required), `label`, `layout`, `description`, `children` |
 | `Separator`        | Visual divider between sections                                      | `orientation: 'horizontal' \| 'vertical'`                  |
 | `Card`             | Token-backed panel surface for plugin/admin grouped content          | `padding`, `bordered`                                      |
-| `Widget`           | Borderless tile card on a darker parent (the dashboard pattern)      | `widgetId`, `title`, `tint`, `span`, `editing`, `loading`, `children` |
+| `Widget`           | Borderless tile card on a darker parent (the dashboard pattern)      | `widgetId`, `title`, `tint`, `span`, `editing`, `loading`, `onMenuClick?` (kebab renders only when provided) |
 | `WidgetSkeleton`   | Loading placeholder for a dashboard widget slot                      | `widgetId`, `span`                                         |
 | `WidgetList`       | List layout for rows inside a widget                                 | `children`; `WidgetListRow` takes `primary`, `meta`        |
 | `EmptyState`       | Empty list / page placeholder                                        | `icon`, `title`, `description`, `action`                   |
@@ -201,6 +201,7 @@ import { Button } from '@ui/components/Button'
 | `menuItem`    | Style override for dropdown menu rows                               |
 | `navItem`     | Style override for top-level nav items                              |
 | `dangerHover` | Ghost buttons only: hover brightens the foreground without adding a background box — use for inline remove/close controls on tinted chips where a colored background would clash with the chip tint |
+| `busy`        | In-flight state for async actions: spinning loader + `aria-busy`, disables activation until the work settles. Icon-only buttons swap their icon for the spinner |
 | `tooltip`     | Wraps with `Tooltip` — works even when disabled. Auto-suppressed while `aria-expanded={true}` (open dropdown/menu) so the tooltip never overlays the open popup. |
 
 `type="button"` is the default — Button never accidentally submits a form. Pass `type="submit"` explicitly when needed.
