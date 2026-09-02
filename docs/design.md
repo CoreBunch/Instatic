@@ -382,7 +382,7 @@ Every interactive control in the admin and editor goes through a primitive from 
 
 | Primitive            | When to use                                                                 |
 |----------------------|-----------------------------------------------------------------------------|
-| `Button`             | Every action button. Variants for primary / secondary / ghost / danger.     |
+| `Button`             | Every action button. Variants for primary / secondary / ghost / danger. Primary is the high-contrast inverse pill (`--btn-primary-*`: white-on-dark, ink-on-light) — the one visually loud action; secondary/ghost stay on the neutral overlay scale. |
 | `Input`              | Single-line text input. Pill radius, transparent fill, bordered.            |
 | `FormField`          | Label + description shell for form controls.                               |
 | `Switch`             | Boolean toggle.                                                             |

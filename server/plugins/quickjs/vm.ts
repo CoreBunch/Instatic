@@ -28,7 +28,14 @@
  *     `runtime.executePendingJobs()` after each settle and during eval polling.
  */
 
-import { getQuickJS, type QuickJSContext, type QuickJSHandle, type QuickJSWASMModule } from 'quickjs-emscripten'
+// @ts-expect-error — Bun `type: 'file'` embed import of a .wasm asset. Under
+// `bun run` it resolves to the on-disk path; under `bun build --compile` the
+// WASM is embedded into the single-file binary, which is the only way a
+// compiled server can load it (compiled binaries cannot resolve loose
+// node_modules files at runtime).
+import quickjsWasmPath from '../../../node_modules/@jitl/quickjs-wasmfile-release-sync/dist/emscripten-module.wasm' with { type: 'file' }
+import { RELEASE_SYNC, type QuickJSContext, type QuickJSHandle, type QuickJSWASMModule } from 'quickjs-emscripten'
+import { newQuickJSWASMModuleFromVariant, newVariant } from 'quickjs-emscripten-core'
 import { BOOTSTRAP_SOURCE } from './bootstrap/index'
 import { DEFAULT_EVAL_TIMEOUT_MS, DEFAULT_MEMORY_LIMIT_BYTES, DEFAULT_STACK_SIZE_BYTES } from './limits'
 import { jsToHandle } from './marshal'
@@ -72,7 +79,12 @@ type DispatcherName = (typeof DISPATCHER_NAMES)[number]
 let wasmModulePromise: Promise<QuickJSWASMModule> | null = null
 
 export function getWasmModule(): Promise<QuickJSWASMModule> {
-  if (!wasmModulePromise) wasmModulePromise = getQuickJS()
+  if (!wasmModulePromise) {
+    wasmModulePromise = (async () => {
+      const wasmBinary = await Bun.file(quickjsWasmPath).arrayBuffer()
+      return newQuickJSWASMModuleFromVariant(newVariant(RELEASE_SYNC, { wasmBinary }))
+    })()
+  }
   return wasmModulePromise
 }
 

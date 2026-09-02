@@ -56,8 +56,12 @@ describe('plugin sandbox invariants', () => {
   it('quickjs/vm.ts uses sync QuickJS + ctx.newPromise (no asyncified host functions)', async () => {
     const source = await read('server/plugins/quickjs/vm.ts')
     // Sync variant — asyncified is known to corrupt VM state on the second
-    // async eval (see comment block at the top of vm.ts).
-    expect(source).toContain('getQuickJS')
+    // async eval (see comment block at the top of vm.ts). The WASM binary is
+    // file-embedded and handed to the sync variant explicitly so compiled
+    // single-file server binaries can load it (see release artifacts).
+    expect(source).toContain('RELEASE_SYNC')
+    expect(source).toContain('newVariant(RELEASE_SYNC')
+    expect(source).not.toContain('RELEASE_ASYNC')
     expect(source).not.toContain('newQuickJSAsyncWASMModule')
     expect(source).not.toContain('newAsyncifiedFunction')
     // Deferred VM-side Promise pattern is what we rely on.
