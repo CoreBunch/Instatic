@@ -63,6 +63,7 @@ import {
   republishAndSweep,
   runSitePluginActivation,
   sameStringSet,
+  withSitePluginLock,
 } from './service'
 
 // Service re-exports — external consumers (the AI plugin tools) import the
@@ -435,7 +436,8 @@ export async function handleSitePluginsRoutes(
     if (req.method !== 'POST') return methodNotAllowed()
     const user = await requireCapability(req, db, 'plugins.install')
     if (user instanceof Response) return user
-    return handleRollback(req, db, options, user, rollbackMatch.groups['localId']!)
+    const localId = rollbackMatch.groups['localId']!
+    return withSitePluginLock(localId, () => handleRollback(req, db, options, user, localId))
   }
 
   const itemMatch = ITEM_PATTERN.exec(pathname)
@@ -447,7 +449,8 @@ export async function handleSitePluginsRoutes(
     if (user instanceof Response) return user
     const stepUp = await requireStepUp(req, db, user)
     if (stepUp) return stepUp
-    return handleDelete(req, db, options, user, itemMatch.groups['localId']!)
+    const localId = itemMatch.groups['localId']!
+    return withSitePluginLock(localId, () => handleDelete(req, db, options, user, localId))
   }
 
   return jsonResponse({ error: 'Not found' }, { status: 404 })
