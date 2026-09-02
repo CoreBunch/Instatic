@@ -116,6 +116,8 @@ export type {
   PluginDeleteFileInput,
   PluginOpenFileInput,
 } from './toolSchemas'
+export { applyExactReplacements, countOccurrences } from './textReplacements'
+export type { ExactReplacementResult, ExactTextReplacement } from './textReplacements'
 export {
   describeAgentDocuments,
   documentRefEquals,

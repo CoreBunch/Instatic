@@ -1,6 +1,7 @@
 import {
   aiToolError,
   aiToolOk,
+  applyExactReplacements,
   type AiToolOutput,
   type InspectCodeRuntimeInput,
   type ListCodeAssetsInput,
@@ -158,16 +159,6 @@ function normalizeRequestedRuntimeDependencies(
   return { ok: true, dependencies }
 }
 
-function countOccurrences(content: string, search: string): number {
-  let count = 0
-  let index = content.indexOf(search)
-  while (index !== -1) {
-    count++
-    index = content.indexOf(search, index + search.length)
-  }
-  return count
-}
-
 function runtimeInspectionPage(
   store: EditorStore,
   input: InspectCodeRuntimeInput,
@@ -312,30 +303,18 @@ export async function runPatchCodeAsset(input: PatchCodeAssetInput): Promise<AiT
     )
   }
 
-  let nextContent = currentContent
-  let replacementCount = 0
-  for (const replacement of input.replacements) {
-    const matches = countOccurrences(nextContent, replacement.oldText)
-    if (matches === 0) {
-      return aiToolError(`Replacement text not found in ${resolved.file.path}.`)
-    }
-    if (matches > 1 && replacement.replaceAll !== true) {
-      return aiToolError(
-        `Replacement for ${resolved.file.path} is ambiguous: ${matches} matches. ` +
-          'Use a larger oldText span or set replaceAll:true.',
-      )
-    }
-
-    if (replacement.replaceAll === true) {
-      nextContent = nextContent.split(replacement.oldText).join(replacement.newText)
-      replacementCount += matches
-    } else {
-      nextContent = nextContent.replace(replacement.oldText, replacement.newText)
-      replacementCount += 1
-    }
+  const applied = applyExactReplacements(currentContent, input.replacements)
+  if (!applied.ok) {
+    return aiToolError(
+      applied.reason === 'not-found'
+        ? `Replacement text not found in ${resolved.file.path}.`
+        : `Replacement for ${resolved.file.path} is ambiguous: ${applied.matches} matches. ` +
+            'Use a larger oldText span or set replaceAll:true.',
+    )
   }
+  const replacementCount = applied.replaced
 
-  store.updateFileContent(resolved.file.id, nextContent)
+  store.updateFileContent(resolved.file.id, applied.content)
   const afterStore = getStoreState()
   const file = afterStore.site?.files.find((candidate) => candidate.id === resolved.file.id)
   if (!file || !isCodeAssetFile(file)) {
