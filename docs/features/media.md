@@ -254,6 +254,8 @@ Folder routes (`/admin/api/cms/media/folders/...`) are matched **before** asset 
 
 Uploads initiated outside the Media page use the same pipeline. In particular, the Agent Panel's explicit **Save to Media** image action resolves the private chat image, wraps it in a MIME-correct `File`, and calls `uploadCmsMediaAsset`; it does not create an AI-specific storage route. On success, `mediaAssetEvents.ts` upserts the new row into an already-mounted Site → Media explorer while the normal media cache is primed for canvas consumers.
 
+The multipart body carries the `file` part and, optionally, an `altText` text part: Site Import sends the authored `<img alt>` so the record is created with it (`createMediaAsset` writes `alt_text`), instead of leaving every imported image blank for the user to back-fill. Every other upload omits it and the record starts empty.
+
 ```text
 POST /admin/api/cms/media
     │

@@ -9,7 +9,7 @@
  *   base.text    — `text` (string), `tag` (TextTag)
  *   base.link    — `text` (string), `href`, `target`   (NOT `label`)
  *   base.button  — `label` (string), `href`, `target`, `disabled`
- *   base.image   — `src` only (alt comes from media library, not a prop)
+ *   base.image   — `src` + `loading` / `decoding` / `fetchPriority` (alt is reported to the media record, not a prop)
  *   base.container — `tag` (builtin name | 'custom'), `customTag` (free text)
  *   base.form + form controls — semantic form primitives.
  *
@@ -64,6 +64,24 @@ function attr(el: Element, name: string): string {
 
 function normalizedAttr(el: Element, name: string): string {
   return attr(el, name).trim().toLowerCase()
+}
+
+const IMAGE_LOADING_VALUES = ['lazy', 'eager'] as const
+const IMAGE_DECODING_VALUES = ['async', 'sync', 'auto'] as const
+const IMAGE_FETCH_PRIORITY_VALUES = ['auto', 'high', 'low'] as const
+
+/**
+ * `{ [propName]: value }` when the attribute holds one of `allowed`
+ * (case-insensitively), else `{}` so the module default applies.
+ */
+function enumAttr<T extends string>(
+  el: Element,
+  attrName: string,
+  propName: string,
+  allowed: readonly T[],
+): Record<string, T> {
+  const value = normalizedAttr(el, attrName)
+  return (allowed as readonly string[]).includes(value) ? { [propName]: value as T } : {}
 }
 
 function numberAttr(el: Element, name: string, fallback: number = 0): number {
@@ -398,13 +416,21 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
     }),
   },
 
-  // Images. `src` only — alt text is sourced from the media library asset,
-  // not stored as a per-instance prop. LEAF.
+  // Images. `src` plus the authored perf hints, mapped onto the module's
+  // first-class props only when the value is one the module offers — anything
+  // else keeps the module default. `alt` is NOT a prop: the Media Library asset
+  // is the single source of truth, so the walker reports it separately
+  // (`imageAlts`) and the site importer creates the record with it. LEAF.
   {
     match: 'img',
     map: (el) => ({
       moduleId: 'base.image',
-      props: { src: el.getAttribute('src') ?? '' },
+      props: {
+        src: el.getAttribute('src') ?? '',
+        ...enumAttr(el, 'loading', 'loading', IMAGE_LOADING_VALUES),
+        ...enumAttr(el, 'decoding', 'decoding', IMAGE_DECODING_VALUES),
+        ...enumAttr(el, 'fetchpriority', 'fetchPriority', IMAGE_FETCH_PRIORITY_VALUES),
+      },
     }),
   },
 

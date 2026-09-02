@@ -100,7 +100,7 @@ Callers splice the fragment into the page tree via `insertImportedNodes(parentId
 | `h1`–`h6`, `p`, `span`, `small`, `strong`, `em` | `base.text` | `text` = `el.textContent`, `tag` = tag name | No |
 | `a` with class `btn` | `base.button` | `label` = `el.textContent`, `href`, `target` | No |
 | `a` (no `btn` class) | `base.link` | `text` = `el.textContent`, `href`, `target` | No |
-| `img` | `base.image` | `src` = `src` attribute only | No |
+| `img` | `base.image` | `src`, plus `loading` / `decoding` / `fetchPriority` when the attribute holds a value the module offers; `alt` is reported in `imageAlts` for the media record, not stored as a prop | No |
 | `form` | `base.form` | `mode`, `formId`, CMS data attrs, custom `action` / `method` | Yes |
 | `label` | `base.label` unless wrapping elements, then `base.container` | `text`, `targetMode`, `targetId` | No for plain labels; yes for wrapper labels |
 | `input` | `base.input`, `base.checkbox`, `base.radio`, `base.submit`, or `base.button` | Native form attrs modeled by the target module | No |
@@ -122,7 +122,7 @@ Callers splice the fragment into the page tree via `insertImportedNodes(parentId
 - **Direct text inside a recursing container is preserved.** The walker iterates `childNodes` (not just `children`): element children route through the rules, and each significant text node becomes a synthesized `base.text` child with `tag: 'none'` in document order. That no-wrapper text mode publishes back to bare text, so `<div class="num">98%</div>` and `<li>Buy milk</li>` import as containers holding their original text without adding selector-visible wrapper elements. Whitespace-only text (indentation between tags) is skipped; internal whitespace runs collapse to single spaces, and boundary spaces are kept when the text run sits between element siblings.
 - **`<body>` metadata is preserved separately.** Classes, safe HTML attributes (`id`, ARIA, `data-*`, etc.), and harvested inline styles on `<body>` are returned as `fragment.body` rather than inserted into `rootIds`. Full-site import applies them to `base.body`; paste-style HTML import can ignore them without changing the fragment structure.
 - `base.link` uses the prop `text` (not `label`). `base.button` uses `label` (not `text`). These match the module source.
-- `base.image` captures `src` only. `alt` is not a per-instance prop — it comes from the media library asset.
+- `base.image` captures `src` and the authored `loading` / `decoding` / `fetchpriority` hints (unknown values keep the module defaults). `alt` is not a per-instance prop — it comes from the media library asset — so the walker reports it per node in `WalkResult.imageAlts` (an empty string is a deliberate decorative alt) and Site Import creates the media record with it.
 - **Form elements import as form primitives.** Third-party `<form>` elements default to `base.form` in `custom` mode, so they do not become CMS submission endpoints until an author binds them to a data table. Published CMS-native forms can round-trip their `data-instatic-*` form metadata. Plain labels become `base.label`; labels that wrap controls become a `base.container` with `customTag:'label'` so nested inputs are not dropped.
 - **Void elements** (`<br>`, `<hr>`, etc.) have their own rule that sits before the catch-all. They map to `base.container` with `tag:'custom'` + the real tag name, but with `recurse:false` so the produced node has no children. `<input>` is not part of this fallback anymore; it imports through the form-control rule. The canvas renderer (`ContainerEditor`) also guards against passing children (including the empty-container placeholder) to void element tags, because React throws if you do so.
 - The catch-all (`*`) handles `li`, `figure`, `blockquote`, `table`, `dialog`, and anything else not listed. It uses `tag: 'custom'` + `customTag` so `resolveHtmlTag` in `base.container` emits the real element name. Using `tag: 'div'` + `customTag` would render `<div>` instead.
@@ -156,7 +156,7 @@ The importer is "approximate by construction". Several inputs do not survive the
 
 | Input | What happens | Why |
 |---|---|---|
-| `alt=""` on `<img>` | Dropped | `base.image` has no `alt` prop — alt text is stored on the media library asset |
+| `alt=""` on `<img>` | Reported in `imageAlts`, not stored on the node | `base.image` has no `alt` prop — alt text lives on the media library asset, which Site Import creates with the authored value |
 | Safe HTML attributes not modeled by the matched module (`id`, ARIA attrs, `role`, custom attrs, `data-*`, etc.) | Preserved in `props.htmlAttributes` on base container/text/link/button/image nodes and editable in the Properties panel Attributes view. `class` names become registry classes, inline `style` declarations become `node.inlineStyles`, event handlers are stripped, reserved editor/runtime `data-*` names are not imported, and attributes already owned by the module (for example `href` on links and `src` on images) stay in their first-class module props. | The module schema owns modeled props; `htmlAttributes` is the safe escape hatch for extra authored attributes |
 | Exact inline whitespace around mixed content (`<div>Hello <em>world</em></div>`) | Approximated | Each text run becomes a `base.text` child with `tag: 'none'` and whitespace collapsed to single spaces. True parent-edge indentation is trimmed, but a single boundary space is preserved around element siblings so `Hello <em>world</em>` does not become `Helloworld`. The text itself is **preserved** and publishes without an extra wrapper. |
 | Whitespace-only text (newlines/indentation between tags) | Dropped in normal flow; preserved verbatim inside `<pre>` | Normal-flow indentation carries no rendered content, while `<pre>` whitespace is content and must retain its literal DOM text-node shape for CSS and runtime scripts. |
@@ -230,7 +230,7 @@ The importer preserves CSS across two layers, both gated by `isEmittableProperty
 | Calling `walkAndMap` before `stripUnsafe` | Call `importHtml(source)` — it runs both in the correct order |
 | Importing `parseHtml` or `walkAndMap` from inside `src/core/` via a deep path | Import through the barrel: `import { importHtml } from '@core/htmlImport'` |
 | Adding a server-side DOM import to `parseHtml.ts` | If server-side parsing is needed, add a guarded dynamic import at the call site — `parseHtml.ts` must stay importable in the browser bundle without bundling a DOM library |
-| Storing `alt` text on `base.image` nodes produced by the importer | `base.image` has no `alt` prop; alt lives on the media library asset |
+| Storing `alt` text on `base.image` nodes produced by the importer | `base.image` has no `alt` prop; alt lives on the media library asset — carry it through `imageAlts` to the upload instead |
 
 ---
 
