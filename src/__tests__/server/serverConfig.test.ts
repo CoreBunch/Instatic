@@ -121,6 +121,8 @@ describe('readServerConfig', () => {
   it('uses self-hosted local defaults when no environment values are set', () => {
     expect(readServerConfig({})).toEqual({
       port: 3001,
+      host: '0.0.0.0',
+      shutdownToken: null,
       databaseUrl: 'sqlite:./.tmp/dev.db',
       uploadsDir: './uploads',
       staticDir: './dist',
@@ -133,6 +135,8 @@ describe('readServerConfig', () => {
     expect(
       readServerConfig({
         PORT: '4321',
+        HOST: '127.0.0.1',
+        INSTATIC_SHUTDOWN_TOKEN: 'tok-123',
         DATABASE_URL: 'postgres://instatic:secret@postgres:5432/instatic',
         UPLOADS_DIR: '/srv/instatic/uploads',
         STATIC_DIR: '/srv/instatic/dist',
@@ -143,6 +147,8 @@ describe('readServerConfig', () => {
       }),
     ).toEqual({
       port: 4321,
+      host: '127.0.0.1',
+      shutdownToken: 'tok-123',
       databaseUrl: 'postgres://instatic:secret@postgres:5432/instatic',
       uploadsDir: '/srv/instatic/uploads',
       staticDir: '/srv/instatic/dist',

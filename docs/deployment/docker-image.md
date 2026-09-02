@@ -140,6 +140,7 @@ Render auto-injects `RENDER_EXTERNAL_URL`, which Instatic uses as the CSRF publi
 | `UPLOADS_DIR` | Yes for durable media | Persistent upload directory |
 | `STATIC_DIR` | Yes in Docker | `/app/dist` |
 | `PORT` | Platform-dependent | HTTP listen port; defaults to `3001` |
+| `HOST` | Optional | Bind address; defaults to `0.0.0.0`. set `127.0.0.1` to keep a local instance off the LAN |
 | `INSTATIC_SECRET_KEY` | Yes for reversible server secrets | Output of `bun run scripts/generate-secret-key.ts` |
 | `PUBLIC_ORIGIN` | Behind managed HTTPS proxies | Comma-separated public origins for the CSRF check, e.g. `https://www.example.com`. Auto-detected from `RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN` on those platforms |
 | `TRUSTED_PROXY_CIDRS` | Optional | Comma-separated trusted proxy CIDRs for client-IP attribution only (audit logs, rate-limit keys) — **not** used for CSRF. Trust only your real proxy CIDRs; never `0.0.0.0/0` for a public service |
