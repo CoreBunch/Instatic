@@ -26,6 +26,7 @@ interface FakeIde {
   contentOf(fileId: string): string
   selected: string[]
   canEdit: boolean
+  synced: boolean
 }
 
 function createFakeIde(seed: Record<string, string>): FakeIde {
@@ -47,9 +48,14 @@ function createFakeIde(seed: Record<string, string>): FakeIde {
     addFile(`${FOLDER}${relative}`, content)
   }
 
-  const state: { selected: string[]; canEdit: boolean } = { selected: [], canEdit: true }
+  const state: { selected: string[]; canEdit: boolean; synced: boolean } = {
+    selected: [],
+    canEdit: true,
+    synced: true,
+  }
 
   const session = {
+    synced: () => state.synced,
     contentText: (fileId: string) => texts.get(fileId) ?? null,
     createFile: (path: string, content?: string) => addFile(path, content ?? ''),
     renameFile: (fileId: string, nextPath: string) => {
@@ -93,6 +99,12 @@ function createFakeIde(seed: Record<string, string>): FakeIde {
     },
     get canEdit() {
       return state.canEdit
+    },
+    set synced(value: boolean) {
+      state.synced = value
+    },
+    get synced() {
+      return state.synced
     },
   }
 }
@@ -168,6 +180,32 @@ describe('plugin bridge dispatcher', () => {
     })
     expect(stale.ok).toBe(false)
     expect(stale.error).toContain('Hash mismatch')
+  })
+
+  test('patch inserts replacement text verbatim — dollar patterns are never interpreted', async () => {
+    await executePluginTool('plugin_write_file', {
+      path: 'price.ts',
+      content: 'const p = html`<p>${props.price}</p>`\n',
+    })
+    const hash = await readHash('price.ts')
+    const patched = await executePluginTool('plugin_patch_file', {
+      path: 'price.ts',
+      expectedHash: hash,
+      replacements: [{ oldText: '${props.price}', newText: '$${props.price}' }],
+    })
+    expect(patched.ok).toBe(true)
+    const meta = ide.metas.find((entry) => entry.path === `${FOLDER}price.ts`)!
+    expect(ide.contentOf(meta.id)).toBe('const p = html`<p>$${props.price}</p>`\n')
+  })
+
+  test('every tool waits for the initial sync', async () => {
+    ide.synced = false
+    const read = await executePluginTool('plugin_read_file', { path: 'plugin.json' })
+    expect(read.ok).toBe(false)
+    if (!read.ok) expect(read.error).toContain('still connecting')
+    const write = await executePluginTool('plugin_write_file', { path: 'early.ts', content: '' })
+    expect(write.ok).toBe(false)
+    expect(ide.metas.some((entry) => entry.path === `${FOLDER}early.ts`)).toBe(false)
   })
 
   test('ambiguous replacements require replaceAll', async () => {

@@ -20,7 +20,10 @@ import styles from './IdeActions.module.css'
 interface IdeActionsProps {
   summary: SitePluginSummary | null
   peers: IdePeer[]
+  /** plugins.install — build & activate, rollback, delete. */
   canInstall: boolean
+  /** plugins.lifecycle — enable, deactivate, restart (server-gated + step-up). */
+  canManageLifecycle: boolean
   activating: boolean
   onActivate: () => void
   onPreview: () => void
@@ -37,6 +40,7 @@ export function IdeActions({
   summary,
   peers,
   canInstall,
+  canManageLifecycle,
   activating,
   onActivate,
   onPreview,
@@ -84,8 +88,23 @@ export function IdeActions({
     }
   }
 
-  const needsInstallCap = primary?.action === 'activate' || primary?.action === 'review' || primary?.action === 'enable' || primary?.action === 'delete'
-  const primaryDisabled = activating || (needsInstallCap && !canInstall)
+  // Same split as the server: install-class actions need plugins.install,
+  // enable/disable/restart need plugins.lifecycle.
+  const needsInstallCap =
+    primary?.action === 'activate' || primary?.action === 'review' || primary?.action === 'delete'
+  const needsLifecycleCap = primary?.action === 'enable'
+  const primaryBlockedReason =
+    needsInstallCap && !canInstall
+      ? 'Requires the plugins.install permission'
+      : needsLifecycleCap && !canManageLifecycle
+        ? 'Requires the plugins.lifecycle permission'
+        : null
+  const primaryDisabled = activating || primaryBlockedReason !== null
+  const lifecycleBlockedReason = !canManageLifecycle
+    ? 'Requires the plugins.lifecycle permission'
+    : !summary?.activeVersion
+      ? 'Nothing is activated yet'
+      : null
 
   return (
     <div className={styles.actions}>
@@ -114,11 +133,7 @@ export function IdeActions({
           variant="primary"
           size="sm"
           disabled={primaryDisabled}
-          tooltip={
-            needsInstallCap && !canInstall
-              ? 'Requires the plugins.install permission'
-              : undefined
-          }
+          tooltip={primaryBlockedReason ?? undefined}
           onClick={runPrimary}
           data-testid="ide-primary-action"
         >
@@ -182,8 +197,11 @@ export function IdeActions({
             Rollback to previous revision
           </ContextMenuItem>
           <ContextMenuItem
-            disabled={!summary?.activeVersion || summary.state === 'disabled'}
-            tooltip={!summary?.activeVersion ? 'Nothing is activated yet' : undefined}
+            disabled={lifecycleBlockedReason !== null || summary?.state === 'disabled'}
+            tooltip={
+              lifecycleBlockedReason ??
+              (summary?.state === 'disabled' ? 'Already deactivated' : undefined)
+            }
             onClick={() => {
               onSetEnabled(false)
               setMenuOpen(false)
@@ -192,8 +210,8 @@ export function IdeActions({
             Deactivate
           </ContextMenuItem>
           <ContextMenuItem
-            disabled={!summary?.activeVersion}
-            tooltip={!summary?.activeVersion ? 'Nothing is activated yet' : undefined}
+            disabled={lifecycleBlockedReason !== null}
+            tooltip={lifecycleBlockedReason ?? undefined}
             onClick={() => {
               onRestart()
               setMenuOpen(false)

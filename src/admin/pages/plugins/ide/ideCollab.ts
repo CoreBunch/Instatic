@@ -10,6 +10,19 @@
  * persists on its debounce and the site editor's projection picks changes
  * up live. Per-file Y.UndoManagers give each buffer its own local-only
  * undo (the yCollab binding registers its origin on them).
+ *
+ * Two lifecycle rules keep the session honest:
+ *   - Nothing writes before the server's initial sync. An unsynced doc has
+ *     no `files` map yet; creating one client-side would win the merge
+ *     (the server seeds with client id 1) and replace EVERY site file with
+ *     the one just created. Every mutating method throws
+ *     `IdeNotSyncedError` until `synced()` is true.
+ *   - A relay reset (`FRAME_RESET` — an out-of-relay shell write such as a
+ *     scaffold, a delete, a settings save, or an import reseeded the doc)
+ *     destroys the bound Y.Doc. The session rebinds immediately, bumps its
+ *     `generation`, and drops the undo managers that referenced the dead
+ *     Y.Text; editors key their mounts on the generation so the buffer
+ *     remounts onto the fresh text instead of typing into a destroyed one.
  */
 import * as Y from 'yjs'
 import {
@@ -26,11 +39,20 @@ import { sitePluginFolder } from '@core/site-plugins'
 import { nanoid } from 'nanoid'
 import {
   createCollabProvider,
+  type BoundCollabDoc,
   type CollabProvider,
 } from '@site/collab/collabProvider'
 
 /** Origin for IDE-local transactions — streamed by the provider (≠ remote). */
 export const IDE_ORIGIN = Symbol('plugin-ide-local')
+
+/** Thrown by every mutating session method before the initial sync lands. */
+export class IdeNotSyncedError extends Error {
+  constructor() {
+    super('The live draft is still connecting — try again in a moment.')
+    this.name = 'IdeNotSyncedError'
+  }
+}
 
 export interface IdeFileMeta {
   id: string
@@ -40,9 +62,18 @@ export interface IdeFileMeta {
 
 export interface IdeCollabSession {
   provider: CollabProvider
-  doc: Y.Doc
-  whenSynced: Promise<void>
+  /**
+   * True once the server's initial sync landed for the CURRENT binding —
+   * false again during a relay reset until the reseeded doc arrives.
+   */
   synced(): boolean
+  /** Fires on every sync transition, including the rebind after a reset. */
+  onSyncChange(listener: () => void): () => void
+  /**
+   * Increments on every rebind. Editors key their mounts on it so a reset
+   * remounts the buffer onto the fresh Y.Text.
+   */
+  generation(): number
   /** Metadata of this plugin's files, path-sorted. Content stays in Y.Text. */
   pluginFiles(): IdeFileMeta[]
   onFilesChange(listener: () => void): () => void
@@ -70,21 +101,56 @@ function projectFileMeta(id: string, entry: Y.Map<unknown>): IdeFileMeta {
   }
 }
 
+function notify(listeners: ReadonlySet<() => void>): void {
+  for (const listener of listeners) listener()
+}
+
 export function createIdeCollabSession(localId: string): IdeCollabSession {
   const provider = createCollabProvider()
-  const binding = provider.bind(MAIN_SITE_DOC_ID)
-  const doc = binding.doc
   const folder = sitePluginFolder(localId)
   const filesListeners = new Set<() => void>()
+  const syncListeners = new Set<() => void>()
   const undoManagers = new Map<string, Y.UndoManager>()
-  let observedFilesMap: Y.Map<unknown> | null = null
+  let binding: BoundCollabDoc
+  let generation = 0
+  let destroyed = false
 
-  const notifyFiles = (): void => {
-    for (const listener of filesListeners) listener()
+  const shell = (): Y.Map<unknown> => shellMap(binding.doc)
+
+  // Observe the whole shell deeply — file metadata changes (path renames,
+  // membership) re-notify; pure content keystrokes also fire but the hook
+  // layer collapses them via a metadata signature, so React work stays
+  // proportional to structural changes.
+  const shellObserver = (): void => notify(filesListeners)
+
+  const attach = (): void => {
+    binding = provider.bind(MAIN_SITE_DOC_ID)
+    shell().observeDeep(shellObserver)
+    const bound = binding
+    void bound.whenSynced.then(() => {
+      // A binding unbound by a reset resolves its promise too — only the
+      // current binding's sync is news.
+      if (destroyed || binding !== bound) return
+      notify(syncListeners)
+      notify(filesListeners)
+    })
   }
+  attach()
+
+  const detachReset = provider.onReset((docId) => {
+    if (docId !== SITE_DOC_ID || destroyed) return
+    // The provider already destroyed the old doc; the undo managers hold
+    // its Y.Text instances and must not outlive it.
+    for (const manager of undoManagers.values()) manager.destroy()
+    undoManagers.clear()
+    generation += 1
+    attach()
+    notify(syncListeners)
+    notify(filesListeners)
+  })
 
   const filesMap = (): Y.Map<unknown> | null => {
-    const value = shellMap(doc).get('files')
+    const value = shell().get('files')
     return value instanceof Y.Map ? value : null
   }
 
@@ -92,29 +158,27 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
    * The granular files map, upgrading a legacy LWW-array layout in place —
    * from the EXISTING entries, never an empty map (an empty replacement
    * would project a shell that lost every other site file). Must run
-   * inside a doc transaction.
+   * inside a doc transaction, after sync.
    */
   const ensureFilesMap = (): Y.Map<unknown> => {
-    const shell = shellMap(doc)
-    const value = shell.get('files')
+    const current = shell()
+    const value = current.get('files')
     if (value instanceof Y.Map) return value
-    const map = Array.isArray(value)
-      ? buildSiteFilesMap(value as SiteFile[])
-      : new Y.Map<unknown>()
-    shell.set('files', map)
-    return map
+    if (Array.isArray(value)) {
+      const map = buildSiteFilesMap(value as SiteFile[])
+      current.set('files', map)
+      return map
+    }
+    // Absent after sync means the server seed is broken. Never paper over
+    // it with an empty map — that map would win the merge and erase every
+    // other site file.
+    throw new Error('The live draft has no files map — refusing to write')
   }
 
-  // Observe the whole shell deeply — file metadata changes (path renames,
-  // membership) re-notify; pure content keystrokes also fire but the hook
-  // layer collapses them via a metadata signature, so React work stays
-  // proportional to structural changes.
-  const shellObserver = (): void => {
-    const current = filesMap()
-    if (current !== observedFilesMap) observedFilesMap = current
-    notifyFiles()
+  const assertWritable = (): void => {
+    if (destroyed) throw new Error('The Plugin IDE session is closed')
+    if (!binding.synced) throw new IdeNotSyncedError()
   }
-  shellMap(doc).observeDeep(shellObserver)
 
   /** id/path metas across BOTH layouts (granular map, legacy LWW array). */
   const allFileMetas = (): IdeFileMeta[] => {
@@ -126,7 +190,7 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
       }
       return out
     }
-    const value = shellMap(doc).get('files')
+    const value = shell().get('files')
     if (!Array.isArray(value)) return []
     return (value as SiteFile[]).map((file) => ({
       id: file.id,
@@ -151,9 +215,14 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
 
   return {
     provider,
-    doc,
-    whenSynced: binding.whenSynced,
     synced: () => binding.synced,
+    onSyncChange: (listener) => {
+      syncListeners.add(listener)
+      return () => {
+        syncListeners.delete(listener)
+      }
+    },
+    generation: () => generation,
 
     pluginFiles: () =>
       allFileMetas()
@@ -167,12 +236,12 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
       }
     },
 
-    contentText: (fileId) => siteFileContentText(shellMap(doc), fileId),
+    contentText: (fileId) => siteFileContentText(shell(), fileId),
 
     undoManagerFor: (fileId) => {
       const existing = undoManagers.get(fileId)
       if (existing) return existing
-      const text = siteFileContentText(shellMap(doc), fileId)
+      const text = siteFileContentText(shell(), fileId)
       if (!text) return null
       // Tracks IDE transactions + whatever origins the yCollab binding
       // registers on it; remote peers' edits are never undone locally.
@@ -185,6 +254,7 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
     },
 
     createFile: (rawPath, content = '') => {
+      assertWritable()
       const path = requireSafePluginPath(rawPath)
       if (pathTaken(path)) throw new Error(`A file at "${path}" already exists`)
       const id = nanoid()
@@ -197,16 +267,17 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
         createdAt: now,
         updatedAt: now,
       }
-      doc.transact(() => {
+      binding.doc.transact(() => {
         ensureFilesMap().set(id, buildSiteFileEntry(file))
       }, IDE_ORIGIN)
       return id
     },
 
     renameFile: (fileId, nextPath) => {
+      assertWritable()
       const path = requireSafePluginPath(nextPath)
       if (pathTaken(path, fileId)) throw new Error(`A file at "${path}" already exists`)
-      doc.transact(() => {
+      binding.doc.transact(() => {
         const entry = ensureFilesMap().get(fileId)
         if (!(entry instanceof Y.Map)) return
         entry.set('path', path)
@@ -215,15 +286,17 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
     },
 
     deleteFile: (fileId) => {
+      assertWritable()
       undoManagers.get(fileId)?.destroy()
       undoManagers.delete(fileId)
-      doc.transact(() => {
+      binding.doc.transact(() => {
         ensureFilesMap().delete(fileId)
       }, IDE_ORIGIN)
     },
 
     replaceFileContent: (fileId, content) => {
-      doc.transact(() => {
+      assertWritable()
+      binding.doc.transact(() => {
         const entry = ensureFilesMap().get(fileId)
         if (!(entry instanceof Y.Map)) return
         const text = entry.get('content')
@@ -234,7 +307,8 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
     },
 
     destroy: () => {
-      shellMap(doc).unobserveDeep(shellObserver)
+      destroyed = true
+      detachReset()
       for (const manager of undoManagers.values()) manager.destroy()
       undoManagers.clear()
       provider.destroy()

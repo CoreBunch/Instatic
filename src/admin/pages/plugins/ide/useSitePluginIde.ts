@@ -33,6 +33,8 @@ export interface SitePluginIdeVm {
   session: IdeCollabSession | null
   files: IdeFileMeta[]
   synced: boolean
+  /** Bumps on every relay reset — the editor buffer remounts on it. */
+  generation: number
   activeFileId: string | null
   selectFile: (fileId: string | null) => void
   summary: SitePluginSummary | null
@@ -56,8 +58,6 @@ export function useSitePluginIde(localId: string): SitePluginIdeVm {
   // One session per (mounted page, localId) — StrictMode-safe via ref-count
   // free create/destroy in the effect below.
   const [session, setSession] = useState<IdeCollabSession | null>(null)
-  const sessionRef = useRef<IdeCollabSession | null>(null)
-  const [synced, setSynced] = useState(false)
   const [activeFileId, setActiveFileId] = useState<string | null>(null)
   const [summary, setSummary] = useState<SitePluginSummary | null>(null)
   const [diagnostics, setDiagnostics] = useState<string[]>([])
@@ -68,7 +68,6 @@ export function useSitePluginIde(localId: string): SitePluginIdeVm {
 
   useEffect(() => {
     const created = createIdeCollabSession(localId)
-    sessionRef.current = created
     let alive = true
     // Deferred so the effect body never sets state synchronously (lint rule
     // react-hooks/set-state-in-effect) — one tick is invisible next to the
@@ -76,20 +75,25 @@ export function useSitePluginIde(localId: string): SitePluginIdeVm {
     const publish = setTimeout(() => {
       if (!alive) return
       setSession(created)
-      setSynced(created.synced())
       setActiveFileId(null)
     }, 0)
-    void created.whenSynced.then(() => {
-      if (!alive) return
-      setSynced(true)
-    })
     return () => {
       alive = false
       clearTimeout(publish)
-      sessionRef.current = null
       created.destroy()
     }
   }, [localId])
+
+  // Sync state and the rebind generation come straight from the session —
+  // both flip on a relay reset (synced → false → true, generation + 1), and
+  // the editor buffer remounts on the generation.
+  // useCallback kept: useSyncExternalStore resubscribes on identity change.
+  const subscribeSync = useCallback(
+    (onStoreChange: () => void) => session?.onSyncChange(onStoreChange) ?? (() => {}),
+    [session],
+  )
+  const synced = useSyncExternalStore(subscribeSync, () => session?.synced() ?? false)
+  const generation = useSyncExternalStore(subscribeSync, () => session?.generation() ?? 0)
 
   // Files metadata via useSyncExternalStore — content keystrokes fire the
   // underlying observer too, so the snapshot is signature-cached and only
@@ -297,6 +301,7 @@ export function useSitePluginIde(localId: string): SitePluginIdeVm {
     session,
     files,
     synced,
+    generation,
     activeFileId,
     selectFile: setActiveFileId,
     summary,

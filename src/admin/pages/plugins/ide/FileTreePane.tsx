@@ -97,6 +97,12 @@ interface FileTreePaneProps {
   activeFileId: string | null
   peers: IdePeer[]
   canEdit: boolean
+  /**
+   * False until the live draft has synced. Creating, renaming, or deleting
+   * before that would write into an unseeded doc — the session refuses it,
+   * and the tree keeps the controls disabled with the reason.
+   */
+  ready: boolean
   onSelect: (fileId: string) => void
   onCreate: (relativePath: string) => void
   onRename: (fileId: string, relativePath: string) => void
@@ -110,6 +116,7 @@ export function FileTreePane({
   activeFileId,
   peers,
   canEdit,
+  ready,
   onSelect,
   onCreate,
   onRename,
@@ -117,6 +124,12 @@ export function FileTreePane({
   onClose,
 }: FileTreePaneProps) {
   const folder = sitePluginFolder(localId)
+  const canMutate = canEdit && ready
+  const mutateBlockedReason = !canEdit
+    ? 'Requires the plugins.edit permission'
+    : !ready
+      ? 'Connecting to the live draft…'
+      : null
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [pendingNew, setPendingNew] = useState<string | null>(null) // parent folder ('' = root)
   const [renamingFileId, setRenamingFileId] = useState<string | null>(null)
@@ -141,7 +154,7 @@ export function FileTreePane({
   }
 
   const openMenu = (event: MouseEvent, entry: TreeEntry): void => {
-    if (!canEdit) return
+    if (!canMutate) return
     event.preventDefault()
     event.stopPropagation()
     setMenu({ x: event.clientX, y: event.clientY, entry })
@@ -192,8 +205,8 @@ export function FileTreePane({
           size="xs"
           iconOnly
           aria-label="New file"
-          tooltip={canEdit ? 'New file' : 'Editing requires the site structure permission'}
-          disabled={!canEdit}
+          tooltip={mutateBlockedReason ?? 'New file'}
+          disabled={!canMutate}
           onClick={() => setPendingNew('')}
           data-testid="ide-new-file"
         >
@@ -241,13 +254,13 @@ export function FileTreePane({
                     }}
                     onContextMenu={(event) => openMenu(event, entry)}
                     onDoubleClick={(event) => {
-                      if (entry.kind !== 'file' || !canEdit) return
+                      if (entry.kind !== 'file' || !canMutate) return
                       event.preventDefault()
                       event.stopPropagation()
                       setRenamingFileId(entry.fileId ?? null)
                     }}
                     onKeyDown={(event) => {
-                      if (event.key === 'F2' && entry.kind === 'file' && canEdit) {
+                      if (event.key === 'F2' && entry.kind === 'file' && canMutate) {
                         event.preventDefault()
                         event.stopPropagation()
                         setRenamingFileId(entry.fileId ?? null)
