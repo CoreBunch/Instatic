@@ -22,6 +22,7 @@
 import {
   aiToolError,
   aiToolOk,
+  applyExactReplacements,
   PluginDeleteFileInputSchema,
   PluginListFilesInputSchema,
   PluginOpenFileInputSchema,
@@ -63,7 +64,7 @@ function requireCtx(): BridgeCtx | AiToolOutput {
     return aiToolError('The Plugin IDE is not open — open /admin/plugins/develop/<id> first.')
   }
   const session = handle.session()
-  if (!session) {
+  if (!session || !session.synced()) {
     return aiToolError('The Plugin IDE session is still connecting — retry in a moment.')
   }
   return { handle, session, folder: sitePluginFolder(handle.localId) }
@@ -133,16 +134,6 @@ async function describeFile(ctx: BridgeCtx, file: IdeFileMeta) {
 
 function isManifestFile(ctx: BridgeCtx, file: IdeFileMeta): boolean {
   return file.path === `${ctx.folder}plugin.json`
-}
-
-function countOccurrences(content: string, search: string): number {
-  let count = 0
-  let index = content.indexOf(search)
-  while (index !== -1) {
-    count++
-    index = content.indexOf(search, index + search.length)
-  }
-  return count
 }
 
 // ---------------------------------------------------------------------------
@@ -226,32 +217,29 @@ async function runPatchFile(
     )
   }
 
-  let nextContent = currentContent
-  let replacementCount = 0
-  for (const replacement of input.replacements) {
-    const matches = countOccurrences(nextContent, replacement.oldText)
-    if (matches === 0) {
-      return aiToolError(`Replacement text not found in ${relativePathOf(ctx, resolved.file)}.`)
-    }
-    if (matches > 1 && replacement.replaceAll !== true) {
-      return aiToolError(
-        `Replacement in ${relativePathOf(ctx, resolved.file)} is ambiguous: ${matches} matches. ` +
-          'Use a larger oldText span or set replaceAll:true.',
-      )
-    }
-    if (replacement.replaceAll === true) {
-      nextContent = nextContent.split(replacement.oldText).join(replacement.newText)
-      replacementCount += matches
-    } else {
-      nextContent = nextContent.replace(replacement.oldText, replacement.newText)
-      replacementCount += 1
-    }
+  const applied = applyExactReplacements(currentContent, input.replacements)
+  if (!applied.ok) {
+    const path = relativePathOf(ctx, resolved.file)
+    return aiToolError(
+      applied.reason === 'not-found'
+        ? `Replacement text not found in ${path}.`
+        : `Replacement in ${path} is ambiguous: ${applied.matches} matches. ` +
+            'Use a larger oldText span or set replaceAll:true.',
+    )
   }
 
-  ctx.session.replaceFileContent(resolved.file.id, nextContent)
+  // The hash check awaited a digest; a remote keystroke that landed in that
+  // window would be reverted by a diff computed from the pre-digest text.
+  if (contentOf(ctx, resolved.file.id) !== currentContent) {
+    return aiToolError(
+      `${relativePathOf(ctx, resolved.file)} changed while patching. Call plugin_read_file again before patching.`,
+    )
+  }
+
+  ctx.session.replaceFileContent(resolved.file.id, applied.content)
   return aiToolOk({
     ...(await describeFile(ctx, resolved.file)),
-    replacements: replacementCount,
+    replacements: applied.replaced,
   })
 }
 

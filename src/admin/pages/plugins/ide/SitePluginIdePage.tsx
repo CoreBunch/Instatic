@@ -16,7 +16,12 @@ import { useEffect, useState } from 'react'
 import { AdminWorkspaceCanvasLayout } from '@admin/layouts/AdminWorkspaceCanvasLayout/AdminWorkspaceCanvasLayout'
 import { useNavigate, useParams } from '@admin/lib/routing'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
-import { canEditPlugins, canInstallPlugins, canUseAiChat } from '@admin/access'
+import {
+  canEditPlugins,
+  canInstallPlugins,
+  canManagePluginLifecycle,
+  canUseAiChat,
+} from '@admin/access'
 import { ConfirmDeleteDialog } from '@admin/shared/dialogs/ConfirmDeleteDialog/ConfirmDeleteDialog'
 import { SITE_PLUGIN_LOCAL_ID_PATTERN, sitePluginFolder } from '@core/site-plugins'
 import { useSitePluginIde } from './useSitePluginIde'
@@ -65,6 +70,7 @@ function SitePluginIde({ localId }: { localId: string }) {
   const navigate = useNavigate()
   const canEdit = canEditPlugins(currentUser)
   const canInstall = canInstallPlugins(currentUser)
+  const canManageLifecycle = canManagePluginLifecycle(currentUser)
   const canChat = canUseAiChat(currentUser)
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
@@ -103,12 +109,16 @@ function SitePluginIde({ localId }: { localId: string }) {
     },
   })
 
-  // Auto-select plugin.json (or the first file) once files arrive.
+  // Auto-select plugin.json (or the first file) once files arrive. Only
+  // while synced: during a relay reset the file list is empty for a moment,
+  // and reacting to that would drop the active buffer and land the user in
+  // the manifest when the reseeded doc (same file ids) comes back.
   useEffect(() => {
+    if (!vm.synced) return
     if (activeFileId && files.some((file) => file.id === activeFileId)) return
     const manifest = files.find((file) => file.path === `${folder}plugin.json`)
     selectFile(manifest?.id ?? files[0]?.id ?? null)
-  }, [files, activeFileId, folder, selectFile])
+  }, [vm.synced, files, activeFileId, folder, selectFile])
 
   // Cmd+S — there is nothing to save (edits persist live); honor the muscle
   // memory by re-running diagnostics instead of the browser save dialog.
@@ -140,6 +150,7 @@ function SitePluginIde({ localId }: { localId: string }) {
               activeFileId={activeFileId}
               peers={peers}
               canEdit={canEdit}
+              ready={vm.synced}
               onSelect={selectFile}
               onCreate={(relativePath) => {
                 if (!session) return
@@ -177,6 +188,7 @@ function SitePluginIde({ localId }: { localId: string }) {
                 session={session}
                 fileId={activeFile.id}
                 path={activeFile.path}
+                generation={vm.generation}
                 readOnly={!canEdit}
               />
             ) : (
@@ -200,6 +212,7 @@ function SitePluginIde({ localId }: { localId: string }) {
             summary={vm.summary}
             peers={peers}
             canInstall={canInstall}
+            canManageLifecycle={canManageLifecycle}
             activating={vm.activating}
             onActivate={() => {
               // Grant-changing activations are consent moments — show the
