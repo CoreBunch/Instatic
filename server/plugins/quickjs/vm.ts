@@ -39,6 +39,8 @@ import { newQuickJSWASMModuleFromVariant, newVariant } from 'quickjs-emscripten-
 import { BOOTSTRAP_SOURCE } from './bootstrap/index'
 import { DEFAULT_EVAL_TIMEOUT_MS, DEFAULT_MEMORY_LIMIT_BYTES, DEFAULT_STACK_SIZE_BYTES } from './limits'
 import { jsToHandle } from './marshal'
+import { bytesToBase64 } from '../protocol/bodyEncoding'
+import { CRYPTO_RANDOM_BYTES_MAX } from './bootstrap/crypto'
 import { callString, callVoid, evalJson, withSyncDeadline } from './eval'
 import type { PluginVm, PluginVmEnv } from './types'
 
@@ -288,6 +290,27 @@ export async function createPluginVm(args: {
     })
     ctx.setProp(ctx.global, '__log', logHandle)
     hostFunctionHandles.push(logHandle)
+
+    // 2b. Wire __hostRandomBytes — CSPRNG entropy, returned SYNCHRONOUSLY as
+    //     base64. Deliberately not routed through __hostCall: that returns a
+    //     VM-side Promise, and `crypto.getRandomValues` is synchronous by
+    //     spec, so a plugin could not await it. Pure computation with no I/O
+    //     and no privilege to escalate, so it needs no permission gate — the
+    //     same reasoning the crypto.digest / crypto.signHmac handlers document.
+    //     Capped at the WebCrypto quota so a plugin cannot ask the host for an
+    //     unbounded allocation; the VM-side shim enforces the same bound and
+    //     throws the spec's QuotaExceededError before ever calling in.
+    const hostRandomBytesHandle = ctx.newFunction('__hostRandomBytes', (countHandle) => {
+      const requested = ctx.getNumber(countHandle)
+      const count = Number.isFinite(requested) ? Math.floor(requested) : 0
+      if (count <= 0) return ctx.newString('')
+      if (count > CRYPTO_RANDOM_BYTES_MAX) {
+        return { error: ctx.newError(`__hostRandomBytes: at most ${CRYPTO_RANDOM_BYTES_MAX} bytes`) }
+      }
+      return ctx.newString(bytesToBase64(crypto.getRandomValues(new Uint8Array(count))))
+    })
+    ctx.setProp(ctx.global, '__hostRandomBytes', hostRandomBytesHandle)
+    hostFunctionHandles.push(hostRandomBytesHandle)
 
     // 3. Wire meta + settings as VM globals.
     //
