@@ -413,8 +413,7 @@ describe('CMS media handlers', () => {
     }
   })
 
-  // F-0002 regression: stored XSS via spoofed Content-Type was the entry
-   it('stores the alt text sent with the upload on the new asset row (#411)', async () => {
+  it('stores the alt text sent with the upload on the new asset row (#411)', async () => {
     const db = makeFakeDb()
     const cookie = await createCookie(db)
     const uploadsDir = mkdtempSync(join(tmpdir(), 'instatic-uploads-'))
@@ -443,7 +442,8 @@ describe('CMS media handlers', () => {
     }
   })
 
- // point. The upload handler MUST reject any file whose actual bytes do
+  // F-0002 regression: stored XSS via spoofed Content-Type was the entry
+  // point. The upload handler MUST reject any file whose actual bytes do
   // not match an accepted image/video signature, regardless of what the
   // client claimed in the multipart `Content-Type` header.
   it('rejects an HTML payload that lies about its Content-Type as image/png (F-0002)', async () => {

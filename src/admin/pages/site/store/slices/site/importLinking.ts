@@ -43,19 +43,26 @@ export function indexStyleRulesByName(rules: Record<string, StyleRule>): Map<str
   return byName
 }
 
-function originKey(origin: StyleRuleOrigin): string {
-  return `${origin.source}\u0000${origin.ordinal}`
+/**
+ * The identity a re-import reconciles against: import origin (stylesheet +
+ * ordinal) AND selector. Origin alone is not unique in the registry — a class
+ * rule the user let the Conflicts step rename (`hero` → `hero-2`) keeps the
+ * origin of the rule it was renamed from — so the selector is part of the key
+ * rather than a check applied after a lookup that could land on either.
+ */
+function reimportKey(origin: StyleRuleOrigin, selector: string): string {
+  return `${origin.source}\u0000${origin.ordinal}\u0000${selector}`
 }
 
 /**
- * Index a StyleRule registry by import origin (stylesheet + ordinal). Rules
- * without an origin — user-authored, or pasted `<style>` CSS — are not
- * indexed and can never be matched by a re-import.
+ * Index a StyleRule registry by re-import identity. Rules without an origin —
+ * user-authored, or pasted `<style>` CSS — are not indexed and can never be
+ * matched by a re-import.
  */
 export function indexStyleRulesByOrigin(rules: Record<string, StyleRule>): Map<string, StyleRule> {
   const byOrigin = new Map<string, StyleRule>()
   for (const rule of Object.values(rules)) {
-    if (rule.origin) byOrigin.set(originKey(rule.origin), rule)
+    if (rule.origin) byOrigin.set(reimportKey(rule.origin, rule.selector), rule)
   }
   return byOrigin
 }
@@ -76,16 +83,15 @@ export function findReimportedStyleRule(
   incoming: NewStyleRule,
 ): StyleRule | undefined {
   if (!incoming.origin) return undefined
-  const existing = byOrigin.get(originKey(incoming.origin))
-  return existing && existing.selector === incoming.selector ? existing : undefined
+  return byOrigin.get(reimportKey(incoming.origin, incoming.selector))
 }
 
 /**
- * Register a freshly committed rule in the origin index so a later rule in the
- * same transaction (or the next import) can find it.
+ * Register a freshly committed rule in the identity index so a later rule in
+ * the same transaction (or the next import) can find it.
  */
 export function registerStyleRuleOrigin(byOrigin: Map<string, StyleRule>, rule: StyleRule): void {
-  if (rule.origin) byOrigin.set(originKey(rule.origin), rule)
+  if (rule.origin) byOrigin.set(reimportKey(rule.origin, rule.selector), rule)
 }
 
 /**
