@@ -1,5 +1,6 @@
 import { type KeyboardEvent, type Ref } from 'react'
 import { SearchBar } from '@ui/components/SearchBar'
+import { useUiMessages } from '@ui/i18n'
 import styles from './ContextMenu.module.css'
 
 interface MenuSearchHeaderProps {
@@ -27,11 +28,13 @@ export function MenuSearchHeader({
   value,
   onValueChange,
   onKeyDown,
-  placeholder = 'Search…',
+  placeholder,
   inputRef,
   controls,
   activeOptionId,
 }: MenuSearchHeaderProps) {
+  const t = useUiMessages()
+  const searchLabel = placeholder ?? t('search')
   return (
     <div className={styles.searchHeader}>
       <SearchBar
@@ -39,8 +42,8 @@ export function MenuSearchHeader({
         value={value}
         onValueChange={onValueChange}
         onKeyDown={onKeyDown}
-        placeholder={placeholder}
-        aria-label={placeholder}
+        placeholder={searchLabel}
+        aria-label={searchLabel}
         role="combobox"
         aria-controls={controls}
         aria-expanded

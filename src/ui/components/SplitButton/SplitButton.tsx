@@ -17,6 +17,7 @@ import { Button, type ButtonProps } from '@ui/components/Button'
 import { ContextMenu, ContextMenuItem } from '@ui/components/ContextMenu'
 import { ChevronDown2Icon } from 'pixel-art-icons/icons/chevron-down-2'
 import type { IconComponent } from 'pixel-art-icons/types'
+import { useUiMessages } from '@ui/i18n'
 import styles from './SplitButton.module.css'
 
 export interface SplitButtonMenuItem {
@@ -83,7 +84,7 @@ export function SplitButton({
   busy = false,
   primaryAriaLabel,
   primaryTooltip,
-  menuTriggerLabel = 'More actions',
+  menuTriggerLabel,
   menuLabel,
   menuWidth = DEFAULT_MENU_WIDTH,
   primaryState,
@@ -94,6 +95,8 @@ export function SplitButton({
   menuTriggerTestId,
   menuTestId,
 }: SplitButtonProps) {
+  const t = useUiMessages()
+  const triggerLabel = menuTriggerLabel ?? t('moreActions')
   const [menuOpen, setMenuOpen] = useState(false)
   const menuId = useId()
   const triggerRef = useRef<HTMLButtonElement | null>(null)
@@ -141,11 +144,11 @@ export function SplitButton({
         size={size}
         iconOnly
         className={cn(styles.trigger, triggerClassName)}
-        aria-label={menuTriggerLabel}
+        aria-label={triggerLabel}
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         aria-controls={menuOpen ? menuId : undefined}
-        tooltip={menuTriggerLabel}
+        tooltip={triggerLabel}
         onClick={() => setMenuOpen((open) => !open)}
         disabled={menuItems.length === 0}
         data-testid={menuTriggerTestId}
@@ -163,7 +166,7 @@ export function SplitButton({
           width={menuWidth}
           minWidth={menuWidth}
           zIndex={10000}
-          ariaLabel={menuLabel ?? menuTriggerLabel}
+          ariaLabel={menuLabel ?? triggerLabel}
           onClose={closeMenu}
           data-testid={menuTestId}
         >

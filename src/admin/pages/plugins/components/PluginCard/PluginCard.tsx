@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /**
  * `PluginCard` — a single row in the installed-plugins list on the
  * Plugins admin page. Renders the plugin's identity (icon, name, version,
@@ -350,7 +351,7 @@ export function PluginCard(props: PluginCardProps) {
               {plugin.recentCrashes.map((crash) => (
                 <li key={crash.id}>
                   <time dateTime={crash.occurredAt}>
-                    {new Date(crash.occurredAt).toLocaleString()}
+                    {new Date(crash.occurredAt).toLocaleString(getActiveAdminLocale())}
                   </time>
                   <span> — {crash.reason}</span>
                 </li>

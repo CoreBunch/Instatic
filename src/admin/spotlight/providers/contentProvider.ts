@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /**
  * Content provider — live data row search via /admin/api/cms/data/search.
  *
@@ -46,7 +47,7 @@ export const contentProvider = makeServerProvider({
 
 function formatDate(iso: string): string {
   try {
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(getActiveAdminLocale(), {
       month: 'short',
       day: 'numeric',
       year: 'numeric',

@@ -58,15 +58,16 @@ export function DataGridToolbar({
   sortLabel,
   onClearSort,
 }: DataGridToolbarProps): ReactElement {
-  const totalNoun = totalCount === 1 ? 'row' : 'rows'
+  const countLabel = totalCount === 1 ? '1 row' : `${totalCount} rows`
   const groupedByStatus =
     hasPublishWorkflow &&
     (statusFilter === 'all' || statusFilter === 'pages' || statusFilter === 'templates') &&
     totalCount > 0
 
   const subtitleParts: string[] = []
-  if (!loading) subtitleParts.push(`${totalCount} ${totalNoun.toLowerCase()}`)
-  if (groupedByStatus) subtitleParts.push('grouped by status')
+  const groupingLabel = 'grouped by status'
+  if (!loading) subtitleParts.push(countLabel)
+  if (groupedByStatus) subtitleParts.push(groupingLabel)
   const subtitleText = subtitleParts.join(' · ')
 
   return (
@@ -114,7 +115,9 @@ export function DataGridToolbar({
               shape="pill"
               className={styles.sortIndicator}
               onClick={onClearSort}
-              aria-label={`Sorted by ${sortLabel} ${sort.dir === 'asc' ? 'ascending' : 'descending'} — click to clear`}
+              aria-label={sort.dir === 'asc'
+                ? `Sorted by ${sortLabel} ascending — click to clear`
+                : `Sorted by ${sortLabel} descending — click to clear`}
               tooltip="Clear sort"
             >
               <span className={styles.sortArrow} data-dir={sort.dir} aria-hidden="true">

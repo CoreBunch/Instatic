@@ -399,7 +399,7 @@ function SentinelRow({
   onDrop,
 }: SentinelRowProps) {
   const ariaLabel = meta !== undefined
-    ? `${label} — ${meta} ${meta === 1 ? 'asset' : 'assets'}`
+    ? meta === 1 ? `${label} — 1 asset` : `${label} — ${meta} assets`
     : label
   return (
     <TreeRow

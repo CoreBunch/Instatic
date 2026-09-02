@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /**
  * Account → Sign-in history tab.
  *
@@ -76,7 +77,7 @@ function isRecentSuspicious(event: CmsLoginActivityEvent, now: number): boolean 
 }
 
 function formatDateTime(value: string): string {
-  return new Date(value).toLocaleString()
+  return new Date(value).toLocaleString(getActiveAdminLocale())
 }
 
 export function ActivityTab() {

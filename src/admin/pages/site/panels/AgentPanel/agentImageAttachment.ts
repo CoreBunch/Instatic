@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 import {
   AI_USER_IMAGE_MAX_BYTES,
   AI_USER_IMAGE_MAX_EDGE,
@@ -60,7 +61,7 @@ export async function normaliseAgentImage(
     || sourceSize.width * sourceSize.height > AI_USER_IMAGE_MAX_SOURCE_PIXELS
   ) {
     throw new Error(
-      `Source image dimensions exceed the ${AI_USER_IMAGE_MAX_SOURCE_EDGE}px / ${AI_USER_IMAGE_MAX_SOURCE_PIXELS.toLocaleString()}px limit.`,
+      `Source image dimensions exceed the ${AI_USER_IMAGE_MAX_SOURCE_EDGE}px / ${AI_USER_IMAGE_MAX_SOURCE_PIXELS.toLocaleString(getActiveAdminLocale())}px limit.`,
     )
   }
   const decodeSize = fitAgentImageSize(sourceSize.width, sourceSize.height)

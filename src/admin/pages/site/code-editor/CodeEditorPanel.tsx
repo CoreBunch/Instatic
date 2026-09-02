@@ -293,10 +293,10 @@ export function CodeEditorPanel({ runtimeValidation }: CodeEditorPanelProps) {
 }
 
 function diagnosticLocation(diagnostic: SiteRuntimeDiagnostic): string {
-  const path = diagnostic.path ?? 'Runtime script'
-  if (diagnostic.line === undefined) return path
+  const pathLabel = diagnostic.path ?? 'Runtime script'
+  if (diagnostic.line === undefined) return pathLabel
   const column = diagnostic.column === undefined ? '' : `:${diagnostic.column + 1}`
-  return `${path}:${diagnostic.line}${column}`
+  return `${pathLabel}:${diagnostic.line}${column}`
 }
 
 function RuntimeProblems({
@@ -312,7 +312,7 @@ function RuntimeProblems({
   const statusLabel = validation?.status === 'validating'
     ? 'Checking…'
     : errorCount > 0
-      ? `${errorCount} error${errorCount === 1 ? '' : 's'}`
+      ? errorCount === 1 ? '1 error' : `${errorCount} errors`
       : 'No errors'
 
   return (

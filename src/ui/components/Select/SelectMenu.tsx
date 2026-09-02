@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom'
+import { useUiMessages } from '@ui/i18n'
 import { useEffect, useRef, type KeyboardEvent, type RefObject } from 'react'
 import { ContextMenu, ContextMenuItem, MenuSearchHeader } from '@ui/components/ContextMenu'
 import styles from './Select.module.css'
@@ -58,6 +59,7 @@ export function SelectMenu({
   onSelect,
   onClose,
 }: SelectMenuProps) {
+  const t = useUiMessages()
   const searchInputRef = useRef<HTMLInputElement>(null)
   const menuElRef = useRef<HTMLDivElement>(null)
 
@@ -94,7 +96,7 @@ export function SelectMenu({
       minWidth={menuSizing.minWidth}
       maxHeight={maxHeight}
       zIndex={10000}
-      ariaLabel={ariaLabel ?? 'Select option'}
+      ariaLabel={ariaLabel ?? t('selectOption')}
       aria-labelledby={ariaLabelledBy}
       role="listbox"
       onClose={onClose}
@@ -112,7 +114,7 @@ export function SelectMenu({
     >
       {options.length === 0 ? (
         <div className={styles.emptyOption} role="presentation">
-          No matches
+          {t('noMatches')}
         </div>
       ) : (
         options.map((option, index) =>

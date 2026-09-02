@@ -9,6 +9,7 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 ## TL;DR
 
 - Import from `@ui/components/<Name>` — each primitive lives in its own folder with `Component.tsx`, `Component.module.css`, and `index.ts`.
+- Primitive-owned labels use `useUiMessages()` from `@ui/i18n`. The admin supplies its locale catalog through `UiMessagesContext`; standalone use defaults to English. Keep caller content untouched and never import the admin layer into UI primitives. Date/time formatting and calendar labels are explicit `DateTimePicker` props.
 - The primitive catalog below covers every interactive control in the admin. If something's missing, add a new primitive (see "Adding a new primitive" below) — don't reach for a third-party library.
 - Composition uses `cn` from `@ui/cn` — a 3-line in-house helper. **Never** `clsx` / `tailwind-merge` / `cva` / `@radix-ui/*` — gated by `no-tailwind-deps.test.ts`.
 - All colors, radii, admin font sizes, and admin spacing values come from CSS custom properties in `src/styles/globals.css` — see [docs/reference/design-tokens.md](design-tokens.md).
@@ -39,7 +40,7 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 | `FormField`        | Label + description shell around a form control                      | `label`, `description`, `layout: 'stacked' \| 'inline-end' \| 'inline-start'`, `htmlFor` |
 | `Select`           | Dropdown selection of fixed options                                  | `options`, `value`, `onChange`                             |
 | `ColorInput`       | Color picker — swatch + hex input                                    | `value`, `onChange`                                        |
-| `DateTimePicker`   | Confirm-based date + time picker panel                               | `value`, `onConfirm`, `onCancel`, `minDate`                |
+| `DateTimePicker`   | Confirm-based date + time picker panel; host-supplied locale and labels, English by default | `value`, `onConfirm`, `onCancel`, `minDate`, `locale`, `labels` |
 | `FileUpload`       | File picker — a `Button` trigger backed by a hidden `<input type="file">` | `buttonProps`, `children`, `onChange`, `accept`, `multiple` |
 | `SearchBar`        | Search input with magnifier icon + clear affordance                  | `value`, `onValueChange`, `placeholder`                    |
 | `FilterBar`        | Panel filter strip: filter chips + optional search bar + action slots | `items`, `value`, `onValueChange`, `search?`, `searchLeading?`, `searchTrailing?`, `inlineActions?`, `trailing?`, `groupLabel?` |

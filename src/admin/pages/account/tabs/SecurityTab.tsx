@@ -19,6 +19,7 @@ export function SecurityTab({ user }: SecurityTabProps) {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
+  const connectedSignInsStatus = 'Email + password is the only sign-in method right now.'
 
   return (
     <section className={styles.section} aria-labelledby="account-security-title">
@@ -64,7 +65,7 @@ export function SecurityTab({ user }: SecurityTabProps) {
           testId="security-connected-card"
           title="Connected sign-ins"
           description="OAuth providers and passkeys you can use alongside your password."
-          status="Email + password is the only sign-in method right now."
+          status={connectedSignInsStatus}
           action={
             <Button
               type="button"

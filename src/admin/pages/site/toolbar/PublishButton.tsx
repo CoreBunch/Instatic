@@ -50,7 +50,7 @@ export function PublishButton({
   const publishedSiteRef = useRef<SiteDocument | null>(null)
   const syncError = saveStatus?.state === 'error' ? saveStatus.message ?? 'Sync failed' : null
   const runtimeErrorCount = runtimeDiagnostics.filter((diagnostic) => diagnostic.severity === 'error').length
-  const runtimeErrorLabel = `${runtimeErrorCount} code error${runtimeErrorCount === 1 ? '' : 's'}`
+  const runtimeErrorLabel = runtimeErrorCount === 1 ? '1 code error' : `${runtimeErrorCount} code errors`
 
   useEffect(() => {
     const timer = statusTimerRef

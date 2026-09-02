@@ -30,6 +30,7 @@ import { MoreHorizontalSolidIcon } from 'pixel-art-icons/icons/more-horizontal-s
 import { Button } from '@ui/components/Button'
 import { SkeletonBlock } from '@ui/components/Skeleton'
 import { cn } from '@ui/cn'
+import { useUiMessages } from '@ui/i18n'
 import styles from './Widget.module.css'
 
 /**
@@ -105,13 +106,14 @@ interface WidgetSkeletonProps {
 }
 
 export function WidgetSkeleton({ widgetId, span }: WidgetSkeletonProps) {
+  const t = useUiMessages()
   return (
     <section
       className={styles.widget}
       data-widget={widgetId}
       data-span={span}
       aria-busy="true"
-      aria-label="Loading widget"
+      aria-label={t('loadingWidget')}
     >
       <header className={styles.head}>
         <div className={styles.title}>
@@ -146,6 +148,7 @@ export function Widget({
   loading = false,
   children,
 }: WidgetProps) {
+  const t = useUiMessages()
   const style: CSSProperties = {
     ['--tint' as string]: TINT_TOKEN[tint],
   }
@@ -176,7 +179,7 @@ export function Widget({
               size="micro"
               iconOnly
               className={styles.menu}
-              aria-label={`${title} options`}
+              aria-label={t('widgetOptions', { title })}
             >
               <MoreHorizontalSolidIcon size={12} />
             </Button>

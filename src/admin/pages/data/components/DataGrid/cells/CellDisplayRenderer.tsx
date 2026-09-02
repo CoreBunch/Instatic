@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /**
  * CellDisplayRenderer — read-only display rendering for grid cells.
  *
@@ -69,19 +70,19 @@ function formatNumber(value: number, field: Extract<DataField, { type: 'number' 
     : {} as Intl.NumberFormatOptions
   try {
     if (field.format === 'currency') {
-      return new Intl.NumberFormat(undefined, {
+      return new Intl.NumberFormat(getActiveAdminLocale(), {
         style: 'currency',
         currency: field.currency || 'USD',
         ...intOpts,
       }).format(value)
     }
     if (field.format === 'percent') {
-      return new Intl.NumberFormat(undefined, {
+      return new Intl.NumberFormat(getActiveAdminLocale(), {
         style: 'percent',
         ...intOpts,
       }).format(value)
     }
-    return new Intl.NumberFormat(undefined, intOpts).format(value)
+    return new Intl.NumberFormat(getActiveAdminLocale(), intOpts).format(value)
   } catch {
     return String(value)
   }
@@ -95,7 +96,7 @@ function formatDate(iso: string, withTime: boolean): string | null {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return null
   if (withTime) {
-    return d.toLocaleString(undefined, {
+    return d.toLocaleString(getActiveAdminLocale(), {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -103,7 +104,7 @@ function formatDate(iso: string, withTime: boolean): string | null {
       minute: '2-digit',
     })
   }
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString(getActiveAdminLocale(), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

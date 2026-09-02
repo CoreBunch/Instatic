@@ -473,7 +473,9 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
       kind: 'info',
       title: 'Import cancelled',
       body: uploaded > 0
-        ? `Nothing was imported. ${uploaded} ${uploaded === 1 ? 'file' : 'files'} already uploaded ${uploaded === 1 ? 'stays' : 'stay'} in the Media Library.`
+        ? uploaded === 1
+          ? 'Nothing was imported. 1 file already uploaded stays in the Media Library.'
+          : `Nothing was imported. ${uploaded} files already uploaded stay in the Media Library.`
         : 'Nothing was imported.',
     })
     closeModal()

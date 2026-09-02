@@ -7,13 +7,13 @@ import type { DashboardWidgetRendererProps } from '@core/dashboard'
 import { Widget } from '@ui/components/Widget'
 import styles from './widgets.module.css'
 
-interface Row { label: string; value: string; tone: 'green' | 'amber' }
+interface Row { label: string; valueLabel: string; tone: 'green' | 'amber' }
 
 const ROWS: readonly Row[] = [
-  { label: 'Site', value: 'Live', tone: 'green' },
-  { label: 'Build', value: '3m ago', tone: 'green' },
-  { label: 'Backup', value: '2h ago', tone: 'green' },
-  { label: 'Plugins', value: '1 update', tone: 'amber' },
+  { label: 'Site', valueLabel: 'Live', tone: 'green' },
+  { label: 'Build', valueLabel: '3m ago', tone: 'green' },
+  { label: 'Backup', valueLabel: '2h ago', tone: 'green' },
+  { label: 'Plugins', valueLabel: '1 update', tone: 'amber' },
 ]
 
 export function StatusWidget({ span, editing }: DashboardWidgetRendererProps) {
@@ -33,7 +33,7 @@ export function StatusWidget({ span, editing }: DashboardWidgetRendererProps) {
               <span className={`${styles.dot} ${r.tone === 'green' ? styles.dotGreen : styles.dotAmber}`} />
               {r.label}
             </span>
-            <span className={styles.wlistMeta}>{r.value}</span>
+            <span className={styles.wlistMeta}>{r.valueLabel}</span>
           </div>
         ))}
       </div>

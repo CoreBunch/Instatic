@@ -244,7 +244,7 @@ export function PanelRail({
 
 function RailButton({ item }: { item: RailItem }) {
   const RailIcon = item.icon
-  const action = item.open ? 'Close' : 'Open'
+  const actionLabel = item.open ? `Close ${item.label} panel` : `Open ${item.label} panel`
   const style = {
     '--rail-icon-tint': railTintVar(item.accent),
   } as CSSProperties
@@ -260,7 +260,7 @@ function RailButton({ item }: { item: RailItem }) {
       size="md"
       iconOnly
       pressed={item.open && !item.detached}
-      aria-label={`${action} ${item.label} panel`}
+      aria-label={actionLabel}
       disabled={item.disabled}
       tooltip={title}
       data-testid={`panel-rail-${item.id}`}

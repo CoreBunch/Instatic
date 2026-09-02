@@ -46,11 +46,21 @@ import styles from './DateTimePicker.module.css'
 // Date math (local time, no library — small surface, easy to maintain)
 // ---------------------------------------------------------------------------
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]
-const DAY_LABELS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+const DEFAULT_LABELS = {
+  picker: 'Date and time picker',
+  calendar: 'Calendar',
+  previousMonth: 'Previous month',
+  nextMonth: 'Next month',
+  time: 'Time',
+  hours: 'Hours',
+  minutes: 'Minutes',
+  timeHelp: '24-hour · local time',
+  cancel: 'Cancel',
+  confirm: 'Confirm',
+  days: (month: string) => `${month} days`,
+  increase: (unit: string) => `Increase ${unit.toLowerCase()}`,
+  decrease: (unit: string) => `Decrease ${unit.toLowerCase()}`,
+}
 
 /** Days in a 0-indexed month, accounting for leap years on Feb. */
 function daysInMonth(year: number, month: number): number {
@@ -173,6 +183,9 @@ interface DateTimePickerProps {
    * Optional aria-label override. Defaults to "Date and time picker".
    */
   ariaLabel?: string
+  /** Formatting locale and UI copy are supplied by the host, not the CMS data. */
+  locale?: string
+  labels?: typeof DEFAULT_LABELS
 }
 
 /** Round a Date forward to the next 5-minute boundary. */
@@ -207,7 +220,9 @@ export function DateTimePicker({
   onConfirm,
   onCancel,
   minDate,
-  ariaLabel = 'Date and time picker',
+  ariaLabel,
+  locale = 'en',
+  labels = DEFAULT_LABELS,
 }: DateTimePickerProps) {
   const initial = value ?? defaultInitialDate()
 
@@ -317,13 +332,18 @@ export function DateTimePicker({
     onConfirm(selected)
   }
 
-  const monthLabel = `${MONTH_NAMES[viewMonth]} ${viewYear}`
+  const monthLabel = new Date(viewYear, viewMonth, 1).toLocaleDateString(locale, {
+    month: 'long', year: 'numeric',
+  })
+  const dayLabels = Array.from({ length: 7 }, (_, index) => (
+    new Date(2026, 0, 5 + index).toLocaleDateString(locale, { weekday: 'short' })
+  ))
 
   return (
     <div
       className={styles.root}
       role="dialog"
-      aria-label={ariaLabel}
+      aria-label={ariaLabel ?? labels.picker}
       // Pre-fill `--current-week-col` so the active week row gets a
       // subtle highlight in CSS. Computed from selected day below.
       style={
@@ -333,13 +353,13 @@ export function DateTimePicker({
       }
     >
       <div className={styles.split}>
-        <section className={styles.calendar} aria-label="Calendar">
+        <section className={styles.calendar} aria-label={labels.calendar}>
           <header className={styles.monthHeader}>
             <Button
               variant="ghost"
               size="sm"
               iconOnly
-              aria-label="Previous month"
+              aria-label={labels.previousMonth}
               onClick={goPrevMonth}
             >
               <ChevronLeftIcon size={12} aria-hidden="true" />
@@ -349,7 +369,7 @@ export function DateTimePicker({
               variant="ghost"
               size="sm"
               iconOnly
-              aria-label="Next month"
+              aria-label={labels.nextMonth}
               onClick={goNextMonth}
             >
               <ChevronRightIcon size={12} aria-hidden="true" />
@@ -357,7 +377,7 @@ export function DateTimePicker({
           </header>
 
           <div className={styles.weekdayRow} aria-hidden="true">
-            {DAY_LABELS.map((label) => (
+            {dayLabels.map((label) => (
               <span key={label} className={styles.weekdayLabel}>{label}</span>
             ))}
           </div>
@@ -366,7 +386,7 @@ export function DateTimePicker({
             ref={gridRef}
             className={styles.dayGrid}
             role="grid"
-            aria-label={`${monthLabel} days`}
+            aria-label={labels.days(monthLabel)}
             onKeyDown={handleGridKey}
           >
             {cells.map((cell, idx) => {
@@ -393,7 +413,7 @@ export function DateTimePicker({
                     isBeforeMin && styles.dayCellDisabled,
                   )}
                   disabled={isBeforeMin}
-                  aria-label={cell.date.toDateString()}
+                  aria-label={cell.date.toLocaleDateString(locale, { dateStyle: 'full' })}
                   aria-selected={isSelected}
                   onClick={() => handlePickDay(cell)}
                 >
@@ -404,11 +424,13 @@ export function DateTimePicker({
           </div>
         </section>
 
-        <section className={styles.timeColumn} aria-label="Time">
-          <div className={styles.timeLabel}>Time</div>
+        <section className={styles.timeColumn} aria-label={labels.time}>
+          <div className={styles.timeLabel}>{labels.time}</div>
           <div className={styles.timeSpinners}>
             <TimeSpinner
-              label="Hours"
+              label={labels.hours}
+              increaseLabel={labels.increase(labels.hours)}
+              decreaseLabel={labels.decrease(labels.hours)}
               value={selected.getHours()}
               onChange={handleHourChange}
               onBump={bumpHour}
@@ -416,35 +438,37 @@ export function DateTimePicker({
             />
             <span className={styles.timeColon} aria-hidden="true">:</span>
             <TimeSpinner
-              label="Minutes"
+              label={labels.minutes}
+              increaseLabel={labels.increase(labels.minutes)}
+              decreaseLabel={labels.decrease(labels.minutes)}
               value={selected.getMinutes()}
               onChange={handleMinuteChange}
               onBump={bumpMinute}
               max={59}
             />
           </div>
-          <p className={styles.timeHelp}>24-hour · local time</p>
+          <p className={styles.timeHelp}>{labels.timeHelp}</p>
         </section>
       </div>
 
       <footer className={styles.footer}>
         <span className={styles.summary} aria-live="polite">
-          {selected.toLocaleDateString(undefined, {
+          {selected.toLocaleDateString(locale, {
             weekday: 'short',
             month: 'short',
             day: 'numeric',
             year: 'numeric',
           })}
           {' · '}
-          {selected.toLocaleTimeString(undefined, {
+          {selected.toLocaleTimeString(locale, {
             hour: '2-digit',
             minute: '2-digit',
             hour12: false,
           })}
         </span>
         <div className={styles.footerActions}>
-          <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
-          <Button variant="primary" size="sm" onClick={handleConfirm}>Confirm</Button>
+          <Button variant="ghost" size="sm" onClick={onCancel}>{labels.cancel}</Button>
+          <Button variant="primary" size="sm" onClick={handleConfirm}>{labels.confirm}</Button>
         </div>
       </footer>
     </div>
@@ -457,13 +481,15 @@ export function DateTimePicker({
 
 interface TimeSpinnerProps {
   label: string
+  increaseLabel: string
+  decreaseLabel: string
   value: number
   onChange: (raw: string) => void
   onBump: (delta: number) => void
   max: number
 }
 
-function TimeSpinner({ label, value, onChange, onBump, max: _max }: TimeSpinnerProps) {
+function TimeSpinner({ label, increaseLabel, decreaseLabel, value, onChange, onBump, max: _max }: TimeSpinnerProps) {
   // 2-digit display ("04", "59"). `value` is the source of truth; the
   // input is controlled so users can clear / type freely while the
   // displayed digits update on every render.
@@ -474,7 +500,7 @@ function TimeSpinner({ label, value, onChange, onBump, max: _max }: TimeSpinnerP
         variant="ghost"
         size="micro"
         iconOnly
-        aria-label={`Increase ${label.toLowerCase()}`}
+        aria-label={increaseLabel}
         onClick={() => onBump(1)}
       >
         <ChevronUpIcon size={10} aria-hidden="true" />
@@ -492,7 +518,7 @@ function TimeSpinner({ label, value, onChange, onBump, max: _max }: TimeSpinnerP
         variant="ghost"
         size="micro"
         iconOnly
-        aria-label={`Decrease ${label.toLowerCase()}`}
+        aria-label={decreaseLabel}
         onClick={() => onBump(-1)}
       >
         <ChevronDownIcon size={10} aria-hidden="true" />

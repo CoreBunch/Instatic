@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /**
  * Activity widget — recent edits, publishes, plugin lifecycle, and
  * user/role changes pulled from `audit_events`. Reads from
@@ -155,7 +156,7 @@ function formatRelative(iso: string): string {
   if (day < 2) return 'yest.'
   if (day < 30) return `${Math.round(day)}d`
 
-  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return new Date(ts).toLocaleDateString(getActiveAdminLocale(), { month: 'short', day: 'numeric' })
 }
 
 export function ActivityWidget({ span, editing }: DashboardWidgetRendererProps) {

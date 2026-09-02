@@ -11,6 +11,7 @@ import {
 } from 'react'
 import { ChevronDown2Icon } from 'pixel-art-icons/icons/chevron-down-2'
 import { cn } from '@ui/cn'
+import { useUiMessages } from '@ui/i18n'
 import styles from './Select.module.css'
 import {
   getInitialActiveIndex,
@@ -123,7 +124,7 @@ export function Select({
   menuMinWidth,
   menuMaxHeight = DEFAULT_MENU_MAX_HEIGHT,
   searchable,
-  searchPlaceholder = 'Search…',
+  searchPlaceholder,
   menuPlacement = 'bottom-start',
   menuAnchorRef,
   'aria-label': ariaLabel,
@@ -132,6 +133,7 @@ export function Select({
   ref,
   ...props
 }: SelectProps) {
+  const t = useUiMessages()
   const generatedId = useId()
   const triggerId = id ?? `select-${generatedId}`
   const menuId = `${triggerId}-menu`
@@ -400,7 +402,7 @@ export function Select({
           selectedValue={selectedValue}
           searchable={searchEnabled}
           query={query}
-          searchPlaceholder={searchPlaceholder}
+          searchPlaceholder={searchPlaceholder ?? t('search')}
           onQueryChange={handleQueryChange}
           onSearchKeyDown={handleSearchKeyDown}
           onHover={setActiveIndex}

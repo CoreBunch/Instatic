@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /**
  * MediaStoragePanel — Media sidebar panel for storage configuration.
  *
@@ -354,7 +355,7 @@ function RoleSection({
               <div className={styles.rowHead}>
                 <span className={styles.rowLabel}>{ROLE_LABELS[role]}</span>
                 <span className={styles.rowMeta}>
-                  {assetCount.toLocaleString()} asset{assetCount === 1 ? '' : 's'}
+                  {assetCount.toLocaleString(getActiveAdminLocale())} asset{assetCount === 1 ? '' : 's'}
                 </span>
               </div>
               <Select
@@ -426,12 +427,12 @@ function MigrationAffordance({
   // any backlog remains (e.g. a retry after partial failure).
   if (migration?.kind === 'done') {
     const failedNote = migration.failed > 0
-      ? `, ${migration.failed.toLocaleString()} failed`
+      ? `, ${migration.failed.toLocaleString(getActiveAdminLocale())} failed`
       : ''
     return (
       <div className={styles.migration}>
         <span className={styles.statusGood}>
-          Migrated {migration.migrated.toLocaleString()} / {migration.total.toLocaleString()}{failedNote}.
+          Migrated {migration.migrated.toLocaleString(getActiveAdminLocale())} / {migration.total.toLocaleString(getActiveAdminLocale())}{failedNote}.
         </span>
         {backlog > 0 && (
           <Button
@@ -440,7 +441,7 @@ function MigrationAffordance({
             onClick={() => onMigrate(role)}
             disabled={otherMigrationRunning}
           >
-            Retry · {backlog.toLocaleString()} pending
+            Retry · {backlog.toLocaleString(getActiveAdminLocale())} pending
           </Button>
         )}
       </div>
@@ -468,7 +469,7 @@ function MigrationAffordance({
     return (
       <div className={styles.migration}>
         <span className={styles.migrationProgress}>
-          Migrating… {migration.migrated.toLocaleString()} / {migration.total.toLocaleString()} ({ratio}%)
+          Migrating… {migration.migrated.toLocaleString(getActiveAdminLocale())} / {migration.total.toLocaleString(getActiveAdminLocale())} ({ratio}%)
         </span>
         <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
         {migration.lastError && (
@@ -488,7 +489,7 @@ function MigrationAffordance({
         onClick={() => onMigrate(role)}
         disabled={otherMigrationRunning}
       >
-        Migrate {backlog.toLocaleString()} pending →
+        Migrate {backlog.toLocaleString(getActiveAdminLocale())} pending →
       </Button>
       <span className={styles.rowHint}>
         Move existing {role === 'variant' ? 'variants' : 'originals'} to the elected backend.

@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /** MCP connection management in the shared AI master-detail workspace. */
 import { useId, useState } from 'react'
 import type { FormEvent } from 'react'
@@ -435,7 +436,7 @@ function ConnectionDetailRow({ label, value }: { label: string; value: string })
 }
 
 function formatDateTime(value: string): string {
-  return new Date(value).toLocaleString()
+  return new Date(value).toLocaleString(getActiveAdminLocale())
 }
 
 const ACCESS_TOKEN_FORM_ID = 'mcp-access-token-form'

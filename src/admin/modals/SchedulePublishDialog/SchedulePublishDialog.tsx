@@ -15,6 +15,7 @@
  * inline message + the dialog stays open so the user can retry.
  */
 import { useState } from 'react'
+import { useI18n } from '@admin/i18n'
 import {
   scheduleCmsDataRowPublish,
   cancelCmsDataRowSchedule,
@@ -101,6 +102,7 @@ export function SchedulePublishDialog({
   entityLabel,
   onScheduled,
 }: SchedulePublishDialogProps) {
+  const { locale, t } = useI18n()
   const initialValue = currentScheduledAt ? new Date(currentScheduledAt) : null
 
   const [error, setError] = useState<string | null>(null)
@@ -133,6 +135,22 @@ export function SchedulePublishDialog({
       // rows competing for attention.
     >
       <DateTimePicker
+        locale={locale}
+        labels={{
+          picker: t('datePicker.picker'),
+          calendar: t('datePicker.calendar'),
+          previousMonth: t('datePicker.previousMonth'),
+          nextMonth: t('datePicker.nextMonth'),
+          time: t('datePicker.time'),
+          hours: t('datePicker.hours'),
+          minutes: t('datePicker.minutes'),
+          timeHelp: t('datePicker.timeHelp'),
+          cancel: t('datePicker.cancel'),
+          confirm: t('datePicker.confirm'),
+          days: (month) => t('datePicker.days', { month }),
+          increase: (unit) => t('datePicker.increase', { unit: unit.toLowerCase() }),
+          decrease: (unit) => t('datePicker.decrease', { unit: unit.toLowerCase() }),
+        }}
         value={initialValue}
         onCancel={onClose}
         onConfirm={handleConfirm}

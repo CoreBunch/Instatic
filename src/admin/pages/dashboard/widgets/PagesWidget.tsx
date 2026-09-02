@@ -1,3 +1,4 @@
+import { getActiveAdminLocale } from "@admin/i18n"
 /**
  * Pages widget — total published / drafts / scheduled counts pulled
  * from `usePagesStats()`. The "+N this week" delta reads
@@ -31,7 +32,7 @@ export function PagesWidget({ span, editing }: DashboardWidgetRendererProps) {
       {stats && (
         <>
           <StatValue
-            value={stats.published.toLocaleString()}
+            value={stats.published.toLocaleString(getActiveAdminLocale())}
             sub={(
               <>
                 <span>Published</span>
