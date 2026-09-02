@@ -30,12 +30,34 @@ import type { AuthUser } from '../../../repositories/users'
 import { getDraftSite } from '../../../repositories/site'
 import { getInstalledPlugin, listInstalledPlugins } from '../../../repositories/plugins'
 import { runPublishFlush } from '../../../publish/publishFlush'
-import { republishAllPages } from '../../../publish/republish'
-import { bumpPublishVersionSerialized } from '../../../publish/publishState'
+import { republishAllDataRows, republishAllPages } from '../../../publish/republish'
+import {
+  bumpPublishVersion,
+  getPublishVersion,
+  withPublishLock,
+} from '../../../publish/publishState'
 import { buildSitePlugin } from '../../../plugins/sitePlugins/build'
 import { sweepSitePluginRevisions } from '../../../plugins/sitePlugins/retention'
+import { createKeyedSerializer } from '../../../util/keyedSerial'
 import type { CmsHandlerOptions } from '../shared'
 import { activatePluginPackageFromDisk } from '../plugins/install'
+
+// ---------------------------------------------------------------------------
+// Per-plugin lifecycle lock
+// ---------------------------------------------------------------------------
+
+const serializeLifecycle = createKeyedSerializer()
+
+/**
+ * Serialize lifecycle transitions (activate, rollback, delete) per local id.
+ * Two overlapping activations would otherwise both read the same row
+ * version, derive the same next counter, and race the upgrade path — the
+ * build below is single-flight on its own, but the read-row → derive →
+ * activate window around it was not.
+ */
+export function withSitePluginLock<T>(localId: string, fn: () => Promise<T>): Promise<T> {
+  return serializeLifecycle(localId, fn)
+}
 
 // ---------------------------------------------------------------------------
 // Draft access
@@ -161,7 +183,7 @@ export type SitePluginActivationResult =
   | { status: 'build-failed'; diagnostics: string[] }
   | { status: 'upgrade-error'; message: string }
 
-export async function runSitePluginActivation(input: {
+export interface SitePluginActivationInput {
   db: DbClient
   options: CmsHandlerOptions
   user: AuthUser
@@ -173,7 +195,17 @@ export async function runSitePluginActivation(input: {
    * only AFTER a successful step-up; tool callers always pass false.
    */
   allowGrantChange: boolean
-}): Promise<SitePluginActivationResult> {
+}
+
+export function runSitePluginActivation(
+  input: SitePluginActivationInput,
+): Promise<SitePluginActivationResult> {
+  return withSitePluginLock(input.localId, () => activateUnlocked(input))
+}
+
+async function activateUnlocked(
+  input: SitePluginActivationInput,
+): Promise<SitePluginActivationResult> {
   const { db, options, user, req, localId, allowGrantChange } = input
   if (!options.uploadsDir) {
     return { status: 'invalid', message: 'Uploads directory is not configured' }
@@ -268,7 +300,10 @@ export async function runSitePluginActivation(input: {
  * Layer-A HTML embeds versioned asset URLs, so when the plugin has
  * visitor-facing surfaces the host republishes BEFORE any old revision is
  * garbage-collected — published pages must never reference a deleted
- * revision. Backend-only plugins skip the republish and sweep immediately.
+ * revision. Both artefact kinds are re-baked: pages AND entry-template
+ * data rows (`/posts/hello`), which a page-only republish would leave
+ * pointing at the swept directory. Backend-only plugins skip the republish
+ * and sweep immediately.
  */
 export async function republishAndSweep(
   db: DbClient,
@@ -279,8 +314,15 @@ export async function republishAndSweep(
     (manifest.frontend?.assets.length ?? 0) > 0 || Boolean(manifest.entrypoints?.modules)
   if (visitorFacing) {
     try {
-      await republishAllPages(db, uploadsDir)
-      await bumpPublishVersionSerialized()
+      // Under the publish lock, with the same version ordering the full
+      // publish uses: bake at N+1, then bump. Baking at N and bumping after
+      // would stamp every hole shell one version stale.
+      await withPublishLock(async () => {
+        const nextVersion = getPublishVersion() + 1
+        await republishAllPages(db, uploadsDir, nextVersion)
+        await republishAllDataRows(db, uploadsDir, nextVersion)
+        bumpPublishVersion()
+      })
     } catch (err) {
       // A failed republish must not fail the activation — but it must also
       // not trigger the sweep (old revision stays referenced).

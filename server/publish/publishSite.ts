@@ -290,7 +290,10 @@ async function publishDraftSiteLocked(
       // template bakes into the same slot. Without this the slot swap would
       // strand every previously-baked row artefact in the inactive slot and
       // ALL row routes would fall to the live renderer after a full publish.
-      const rowBake = await bakePublishedDataRowArtefacts(db, slotDir, nextPublishVersion)
+      const rowBake = await bakePublishedDataRowArtefacts(db, {
+        publishVersion: nextPublishVersion,
+        write: (urlPath, html) => writeArtefact(slotDir, urlPath, html),
+      })
       for (const cssBundle of rowBake.cssBundles) collectCssFiles(cssBundle)
 
       for (const [publicPath, bytes] of assetsByPath) {

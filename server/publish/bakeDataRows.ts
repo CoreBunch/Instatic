@@ -30,9 +30,23 @@ import {
 } from '../repositories/data/publish'
 import { renderPublishedDataRowTemplate } from './publicRenderer'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
-import { writeArtefact } from './staticArtefact'
 import { getLatestSnapshotForVersion } from './publishedSnapshotCache'
 import { snapshotForEntryRoute } from './entryTemplateSnapshot'
+
+export interface DataRowBakeTarget {
+  /**
+   * The publish version the baked shells must carry — the NEXT version for
+   * a full publish (the bake runs before `bumpPublishVersion()`), and
+   * likewise for an in-place republish that bumps right after.
+   */
+  publishVersion: number
+  /**
+   * Where each route's HTML goes: `writeArtefact` into the inactive slot
+   * for a full publish, `updateArtefactInPlace` into the active slot for a
+   * republish. The render path is identical either way.
+   */
+  write: (urlPath: string, html: string) => Promise<void>
+}
 
 interface DataRowBakeResult {
   /** Routes successfully baked into the slot. */
@@ -51,20 +65,22 @@ function publicRowPath(routeBase: string, slug: string): string {
 }
 
 /**
- * Bake every published data-row route into `slotDir`. Called by the full
- * publish AFTER its transaction commits (the row list and snapshot reads see
- * the freshly-committed publish) and BEFORE the slot swap.
+ * Bake every published data-row route through `target.write`. The full
+ * publish calls this AFTER its transaction commits (the row list and
+ * snapshot reads see the freshly-committed publish) and BEFORE the slot
+ * swap; a site plugin activation calls it to refresh the active slot in
+ * place.
  *
- * `publishVersion` is the NEXT publish version — the bake runs before
- * `bumpPublishVersion()`, so baked hole shells must carry the version that
- * becomes current at the swap. Passing it to the versioned snapshot memo
- * also pre-warms the cache visitors are about to read.
+ * `target.publishVersion` is the version that becomes current at the
+ * caller's swap or bump, so baked hole shells are never stamped stale.
+ * Passing it to the versioned snapshot memo also pre-warms the cache
+ * visitors are about to read.
  */
 export async function bakePublishedDataRowArtefacts(
   db: DbClient,
-  slotDir: string,
-  publishVersion: number,
+  target: DataRowBakeTarget,
 ): Promise<DataRowBakeResult> {
+  const { publishVersion } = target
   const result: DataRowBakeResult = { baked: 0, cssBundles: [] }
 
   const routes = await listPublishedRowRoutes(db)
@@ -102,7 +118,7 @@ export async function bakePublishedDataRowArtefacts(
       })
       if (!rendered) continue
       const html = await applyPublishedHtmlPipeline(rendered, db)
-      await writeArtefact(slotDir, urlPath, html)
+      await target.write(urlPath, html)
       result.cssBundles.push(rendered.cssBundle)
       result.baked++
     } catch (err) {

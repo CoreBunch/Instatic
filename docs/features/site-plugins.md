@@ -79,12 +79,25 @@ derive the manifest, materialize a temp workspace, and run the shared
   (`with { type: 'text' }`) fail the build (without this, draft code could
   embed `.env`/DB files into a bundle and exfiltrate them through the
   plugin's own routes — the sandbox literal scan does not cover this class);
+- **build-time macros are refused before Bun parses the file.** Bun runs
+  `import x from './m.ts' with { type: 'macro' }` inside the host process at
+  bundle time, with full Node/Bun access; the macro module resolves inside
+  the workspace, so path containment cannot catch it, and the sandbox scan
+  runs on the output after the macro already executed. The containment
+  plugin's `onLoad` hook (`assertNoBuildTimeMacros`) scans every workspace
+  source textually and fails closed: only `{ type: 'json' | 'text' | 'file'
+  | 'toml' }` attribute clauses are allowed, anything else (a macro, a
+  comment inside the clause, an escaped key) is a build error;
 - exactly one bare specifier is mapped: `@instatic/plugin-sdk` → the host
   SDK entry (pure data builders inline into sandbox bundles);
 - editor/admin bundles keep the host-runtime externals (import-map
   resolved).
 
-Builds are single-flight per plugin with a 30 s timeout. Validate-only mode
+Builds are single-flight per plugin with a 30 s timeout, and every
+lifecycle transition (activate, rollback, delete) is serialized per plugin
+id on top of that (`withSitePluginLock` in the service layer) — two
+overlapping activations would otherwise both read the same row version,
+derive the same next counter, and race the upgrade path. Validate-only mode
 writes into the throwaway workspace (never uploads), returns diagnostics,
 and can return the built modules bundle text (the preview-pack route).
 Diagnostics are bundle/parse errors, sandbox-scan violations, containment
@@ -155,10 +168,29 @@ The IDE binds ONLY `site:default` over the site socket (its own
 - two admins co-type one file character-level, with per-peer colored carets
   (y-codemirror.next);
 - file CRUD and renames merge per-field;
-- the site editor's code panel rides the same granularity;
+- the shell's `files` value is granular for every consumer of the site doc
+  (the site editor's Scripts panel still writes whole strings at the store
+  layer, so it is the IDE that co-edits character-level);
 - presence is shared: site editors see IDE users in their roster; IDE rows
   show who's editing which file;
-- undo is per-file and local-only (Y.UndoManager).
+- undo is per-file and local-only: the co-edited buffer mounts WITHOUT
+  CodeMirror's own `history()` (which would record peers' deltas as
+  undoable steps) and the Y.UndoManager keymap takes precedence over every
+  other Mod-z binding.
+
+Two lifecycle rules keep the session safe:
+
+- **nothing writes before the first sync.** An unsynced doc has no `files`
+  map; creating one client-side would win the merge (the server seeds with
+  client id 1) and replace every site file with the one just created. Every
+  mutating session method throws `IdeNotSyncedError` until `synced()` is
+  true, the file tree keeps New file / rename / delete disabled with the
+  reason, and the agent bridge answers "still connecting";
+- **a relay reset rebinds.** `FRAME_RESET` (an out-of-relay shell write —
+  scaffold, delete, settings save, import — reseeded the doc) destroys the
+  bound Y.Doc. The session rebinds at once, bumps its `generation`, drops
+  the undo managers that referenced the dead Y.Text, and the buffer
+  remounts keyed on the generation instead of typing into a destroyed type.
 
 There is no save button — the relay persists continuously; Cmd+S re-runs
 diagnostics. Automatic validation runs debounced on every change.
@@ -205,8 +237,11 @@ permission treatment lives where it matters: the activation review dialog.
 
 - Activating a revision with visitor-facing surfaces (frontend assets or a
   module pack) **republishes before sweeping** — baked Layer-A HTML embeds
-  versioned asset URLs and must never reference a deleted revision.
-  Backend-only plugins skip the republish.
+  versioned asset URLs and must never reference a deleted revision. Both
+  artefact kinds are re-baked in place under the publish lock: pages
+  (`republishAllPages`) and entry-template data rows such as `/posts/hello`
+  (`republishAllDataRows`), stamped with the version that becomes current
+  at the bump that follows. Backend-only plugins skip the republish.
 - Retention keeps the active revision + the immediately previous one (the
   `Rollback to previous revision` target — source rolls forward only, so
   the artifact is the only rollback). Uninstall sweeps the whole
@@ -245,6 +280,9 @@ import map); editor/admin bundles resolve it through the host import map.
 - Provenance branches in runtime machinery (gated).
 - Calling `buildPluginPackage` server-side without the containment policy
   (gated).
+- `with { type: 'macro' }` (or any non-inert import attribute) in draft
+  source — refused before Bun parses the file (gated).
+- Writing to the IDE session before `synced()` is true.
 
 ## Gate tests
 

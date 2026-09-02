@@ -22,6 +22,7 @@ import {
   sitePluginFolder,
 } from '@core/site-plugins'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { createKeyedSerializer } from '../../util/keyedSerial'
 import { materializeSitePluginWorkspace } from './workspace'
 
 /**
@@ -68,19 +69,10 @@ export interface SitePluginBuildFailure {
 export type SitePluginBuildResult = SitePluginBuildSuccess | SitePluginBuildFailure
 
 // Single-flight per localId — later builds chain behind earlier ones.
-const inflight = new Map<string, Promise<unknown>>()
+const serializeBuild = createKeyedSerializer()
 
 export function buildSitePlugin(input: SitePluginBuildInput): Promise<SitePluginBuildResult> {
-  const previous = inflight.get(input.localId) ?? Promise.resolve()
-  const next = previous.then(
-    () => runBuild(input),
-    () => runBuild(input),
-  )
-  inflight.set(input.localId, next)
-  void next.finally(() => {
-    if (inflight.get(input.localId) === next) inflight.delete(input.localId)
-  })
-  return next
+  return serializeBuild(input.localId, () => runBuild(input))
 }
 
 async function runBuild(input: SitePluginBuildInput): Promise<SitePluginBuildResult> {
