@@ -25,9 +25,11 @@
  *     and signals so Ctrl+C cleanly kills both.
  */
 
+import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { isSqliteUrl } from '../server/db'
+import { defaultMasterKeyPath } from '../server/secrets/paths'
 import { bunCommand, viteCommand } from './lib/bunCommand'
 import { ensurePortFree } from './lib/freePort'
 
@@ -206,6 +208,30 @@ async function waitForPostgresReady(timeoutMs = 60_000): Promise<void> {
 }
 
 // --- main -----------------------------------------------------------------
+
+// Fail-closed master-key guard. We don't read the key here (the server does that
+// on first encrypt), but we DO want to short-circuit before spawning docker or
+// the cms child if there's no way the server can boot. A key path that already
+// exists is enough — the master-key module re-uses it without rewriting.
+function hasUsableMasterKey(): boolean {
+  if (process.env.INSTATIC_SECRET_KEY?.trim()) return true
+  if (process.env.INSTATIC_SECRET_KEY_FILE?.trim()) return true
+  if (process.env.INSTATIC_ALLOW_DEV_KEY_AUTOGEN === '1') {
+    try {
+      if (existsSync(defaultMasterKeyPath())) return true
+    } catch {
+      // best-effort
+    }
+  }
+  return false
+}
+
+if (!hasUsableMasterKey()) {
+  fail(
+    'set INSTATIC_SECRET_KEY, INSTATIC_SECRET_KEY_FILE, or ' +
+      'INSTATIC_ALLOW_DEV_KEY_AUTOGEN=1 to start the dev server.',
+  )
+}
 
 if (isSqliteUrl(DATABASE_URL)) {
   const dbPath = DATABASE_URL.replace(/^sqlite:|^file:/, '')
