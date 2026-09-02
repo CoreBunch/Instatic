@@ -274,13 +274,16 @@ interface UpgradeContext extends InstallContext {
  * Order of operations:
  *   1. Run old version's `deactivate(api)` and unregister its module pack.
  *   2. Write the new version's assets to its own version-stamped dir
- *      (`/uploads/plugins/{id}/{newVersion}/`). The old version's dir is
- *      preserved on disk until step 6 — that's what makes rollback cheap.
+ *      (`/uploads/plugins/{id}/{newVersion}/`). The old version's dir stays on
+ *      disk — that's what makes rollback cheap, and published pages still
+ *      link it by version (see step 6).
  *   3. Replace the DB row with the new manifest (settings, granted
  *      permissions from the user's confirmation, installed_at preserved).
  *   4. Run new version's `migrate({ fromVersion }, api)`.
  *   5. Run new version's `activate(api)`.
- *   6. Delete the OLD version's asset dir.
+ *   6. Leave the OLD version's asset dir alone. Baked pages reference plugin
+ *      frontend assets by version, so the next publish retires it
+ *      (`sweepStalePluginVersionAssets`), not the upgrade.
  *
  * Any failure in steps 4 or 5 triggers a rollback: revert the DB row to
  * the previous manifest, delete the new version's assets, re-activate the
