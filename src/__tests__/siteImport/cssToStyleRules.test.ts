@@ -760,3 +760,45 @@ describe('cssToStyleRules — custom @media as conditional layers (no warnings)'
     expect(a.contextStyles[cid]).toMatchObject({ color: 'red', fontSize: '14px' })
   })
 })
+
+// ---------------------------------------------------------------------------
+// Shorthand expansion: `none` must never reach a colour longhand.
+//
+// `background: none` and `border: none` are common resets. Expanding them can
+// put `none` in colour longhands. Browsers reject those declarations, causing
+// an authored reset to stop resetting and expose an underlying theme style.
+// ---------------------------------------------------------------------------
+
+describe('cssToStyleRules — shorthand expansion into colour longhands', () => {
+  it('background: none does not publish background-color: none', () => {
+    const { rules } = cssToStyleRules('.close { background: none }')
+    expect(rules[0].styles.backgroundImage).toBe('none')
+    expect(rules[0].styles.backgroundColor).toBe('initial')
+  })
+
+  it('border: none does not publish border-*-color: none', () => {
+    const { rules } = cssToStyleRules('.close { border: none }')
+    expect(rules[0].styles.borderTopStyle).toBe('none')
+    for (const side of ['borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor']) {
+      expect(rules[0].styles[side]).toBe('initial')
+    }
+  })
+
+  it('a real colour is left exactly as authored', () => {
+    const { rules } = cssToStyleRules('.close { background: #e6e6e6; border: 1px solid #ccc }')
+    expect(rules[0].styles.backgroundColor).toBe('#e6e6e6')
+    expect(rules[0].styles.borderTopColor).toBe('#ccc')
+  })
+
+  it('none is still honoured on the properties that accept it', () => {
+    const { rules } = cssToStyleRules('.close { background-image: none; border-style: none }')
+    expect(rules[0].styles.backgroundImage).toBe('none')
+    expect(rules[0].styles.borderTopStyle).toBe('none')
+  })
+
+  it('none survives verbatim in camelCase and kebab-case custom properties', () => {
+    const { rules } = cssToStyleRules('.card { --myColor: none; --my-color: none }')
+    expect(rules[0].styles['--myColor']).toBe('none')
+    expect(rules[0].styles['--my-color']).toBe('none')
+  })
+})

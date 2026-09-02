@@ -393,7 +393,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/publish/moduleJsBundle.ts`              | Module-JS channel: `buildSiteModuleJsMap` (fresh), `buildPublishedSiteModuleJsMap` (memoised per publishVersion + site, invalidated by `bumpPublishVersion()`), and `injectModuleScripts` (per-page `<script defer>` tags + CSP `script-src 'self'` relaxation). |
 | `server/publish/republish.ts`                   | Bulk re-publish on settings change (touches every page).            |
 | `server/publish/publishScheduler.ts`            | Scheduled publish jobs (cron-style).                                |
-| `server/publish/frontendInjections.ts`          | Compute plugin `<script>`/`<link>`/`<meta>` tags + CSP entries.     |
+| `server/publish/frontendInjections.ts`          | Compute plugin `<script>`/`<link>`/`<meta>` tags, preserve per-kind manifest attributes, protect host-owned attributes, and derive CSP entries. |
 | `server/publish/mediaPresentation.ts`           | Materialize media paths (originals + responsive variants) for publisher consumers. |
 | `src/core/publisher/responsiveBackground.ts`    | Convert media-library `background-image: url(...)` values into optimized variant fallback + `image-set(...)` declarations. |
 | `server/publish/mediaPrefetch.ts`               | Collect every image/media-typed prop and every media-library background-image URL from the full render tree — including VC definition trees — via `walkRenderTree`, then batch-fetch matching `media_assets` rows into a `Map<publicPath, MediaAsset>` before render. Uses `MEDIA_ASSET_COLUMNS` and `mapMediaAssetRow` from `server/repositories/mediaAssetMapping.ts` (shared with the admin repository) so the published page and the admin panel always see one identical asset shape. |
@@ -425,6 +425,7 @@ applyPublishedHtmlPipeline(renderedOutput, db)
 ```
 
 Plugins shouldn't need to know about the publisher internals — they get the HTML string and return the transformed string.
+`src/core/plugins/hookBus.ts` rejects a non-string `publish.html` result, logs the plugin ID, and keeps the previous HTML so one invalid plugin result cannot blank the page.
 
 ---
 

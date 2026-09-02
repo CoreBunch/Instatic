@@ -288,7 +288,7 @@ mediaVariants.ts (host)    ← streams each returned variant through
 media_assets row created, variants_json populated for raster sources
 ```
 
-SVG uploads are sanitized and stored as originals only. GIF uploads also stay original-only so animation is preserved; the responsive WebP ladder is generated only for JPEG, PNG, and WebP uploads.
+SVG uploads are sanitized and stored as originals only. GIF uploads also stay original-only so animation is preserved; the responsive WebP ladder is generated for JPEG, PNG, WebP, and AVIF uploads.
 
 The ladder encodes one WebP per target width (64 / 320 / 640 / 1024 / 1600 / 2048) **below** the source's intrinsic width — never upscaled — plus one rung **at** the intrinsic width. That top rung exists so `srcset` can be built from variants alone: the original file (often a multi-MB PNG) never appears as a srcset candidate, because a high-DPI display asking for more pixels than the largest sub-intrinsic rung would otherwise select it (`sizes="1280px"` on a 2x screen requests 2560 device px). `buildMediaSrcset` (publisher) and `buildVariantSrcset` (admin surfaces) both enforce the variants-only rule at render time. The `sizes` attribute has no user knob: the publisher's `resolveAutoSizes` (`src/core/publisher/sizesResolver.ts`) derives it from the layout it generates the CSS for — pixel caps, `%`/`vw` widths, px paddings, and grid column tracks all compose into exact CSS math per viewport tier (e.g. `(max-width: 375px) 100vw, min(33.33vw - 16px, 410.67px)`); constructs it can't model (flex rows, auto-fit grids) degrade to the container width, which only ever over-fetches, never blurs. Lazy images prefix the `auto` keyword so Chromium-based browsers select by the actual rendered width.
 

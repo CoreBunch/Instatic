@@ -1,7 +1,7 @@
 export const sharedZhCN = {
   "The homepage is always served at “/”.": "首页始终通过“/”访问。",
   "Dock {0} panel": "停靠{0}面板",
-  "Unpin {0} panel": "取消固定{0}面板",
+  "Undock {0} panel": "取消停靠{0}面板",
   "Core Framework": "核心框架",
   "Pick a model": "选择模型",
   "Something went wrong": "出现错误",
@@ -29,7 +29,7 @@ export const sharedZhCN = {
   "settings": "设置",
   "step_up_cancelled": "step_up_cancelled",
   "Switch to variables": "切换为仅变量",
-  "Unpin to floating panel": "取消固定为浮动面板",
+  "Undock to canvas": "取消停靠到画布",
   "Up to date": "已是最新",
   "Update framework": "更新框架",
   "Utility classes + variables. The complete Core Framework, ready to use on the canvas.": "实用类与变量。完整核心框架，可直接在画布中使用。",

@@ -1,5 +1,6 @@
 export const siteCZhCN = {
   "Placement": "位置",
+  "Plugin": "插件",
   "Plugin layout": "插件布局",
   "Plugin panel": "插件面板",
   "Portrait": "纵向",
