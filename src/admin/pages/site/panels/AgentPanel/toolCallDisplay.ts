@@ -39,7 +39,11 @@ export interface ToolCallDisplay {
  * and the current provider names (`site_set_color_tokens`, `site_insert_html`,
  * `content_create_document`) resolve to the same canonical key.
  */
-export function getToolCallDisplay(actionType: string, params: unknown): ToolCallDisplay {
+export function getToolCallDisplay(
+  actionType: string,
+  params: unknown,
+  displayLabel?: string,
+): ToolCallDisplay {
   const toolName = normalizeToolName(actionType)
   const p = asRecord(params)
 
@@ -60,30 +64,30 @@ export function getToolCallDisplay(actionType: string, params: unknown): ToolCal
     case 'insert_html':
       return display('Inserting HTML', targetDetail('inside', p.parentId), 'code', 'write')
     case 'get_node_html':
-      return display('Reading node HTML', nodeDetail(p.nodeId), 'node', 'read')
+      return display('Reading node HTML', nodeDetail(p.nodeId, displayLabel), 'node', 'read')
     case 'read_document':
       return display('Reading document', documentDetail(p.document), 'document', 'read')
     case 'open_document':
       return display('Opening document', documentDetail(p.document), 'open', 'read')
     case 'replace_node_html':
-      return display('Replacing node HTML', nodeDetail(p.nodeId), 'code', 'write')
+      return display('Replacing node HTML', nodeDetail(p.nodeId, displayLabel), 'code', 'write')
     case 'delete_node':
-      return display('Deleting node', nodeDetail(p.nodeId), 'delete', 'danger')
+      return display('Deleting node', nodeDetail(p.nodeId, displayLabel), 'delete', 'danger')
     case 'update_node_props':
-      return display('Updating node props', nodeBreakpointDetail(p.nodeId, p.breakpointId), 'edit', 'write')
+      return display('Updating node props', nodeBreakpointDetail(p.nodeId, p.breakpointId, displayLabel), 'edit', 'write')
     case 'move_node':
       return display('Moving node', targetDetail('to', p.newParentId), 'move', 'write')
     case 'rename_node':
       return display('Renaming node', optionalString(p.label), 'edit', 'write')
     case 'duplicate_node':
-      return display('Duplicating node', duplicateNodeDetail(p.nodeId, p.count), 'copy', 'write')
+      return display('Duplicating node', duplicateNodeDetail(p.nodeId, p.count, displayLabel), 'copy', 'write')
 
     case 'apply_css':
       return cssOperationDisplay(p)
     case 'assign_class':
-      return display('Assigning class', classDetail(p.classId, p.nodeId), 'class', 'style')
+      return display('Assigning class', classDetail(p.classId, p.nodeId, displayLabel), 'class', 'style')
     case 'remove_class':
-      return display('Removing class', classDetail(p.classId, p.nodeId), 'class', 'danger')
+      return display('Removing class', classDetail(p.classId, p.nodeId, displayLabel), 'class', 'danger')
 
     case 'list_code_assets':
       return display('Listing code assets', titleCase(optionalString(p.type)), 'code', 'read')
@@ -118,7 +122,7 @@ export function getToolCallDisplay(actionType: string, params: unknown): ToolCal
     case 'set_spacing_scale':
       return display('Updating spacing scale', scaleDetail(p.groupId, p.namingConvention), 'tokens', 'style')
     case 'render_snapshot':
-      return display('Capturing preview', previewDetail(p), 'preview', 'read')
+      return display('Capturing preview', previewDetail(p, displayLabel), 'preview', 'read')
 
     case 'list_collections':
       return display('Listing collections', '', 'collection', 'read')
@@ -208,9 +212,11 @@ function shortId(value: unknown): string {
   return text.length > 12 ? `${text.slice(0, 12)}...` : text
 }
 
-function nodeDetail(nodeId: unknown): string {
-  const id = shortId(nodeId)
-  return id ? `node ${id}` : ''
+function nodeDetail(nodeId: unknown, cachedLabel?: string): string {
+  if (cachedLabel) return cachedLabel
+  const id = optionalString(nodeId)
+  if (!id) return ''
+  return shortId(nodeId)
 }
 
 function pageDetail(pageId: unknown): string {
@@ -223,23 +229,35 @@ function targetDetail(prefix: string, idValue: unknown): string {
   return id ? `${prefix} ${id}` : ''
 }
 
-function nodeBreakpointDetail(nodeId: unknown, breakpointId: unknown): string {
-  const node = nodeDetail(nodeId)
+function nodeBreakpointDetail(
+  nodeId: unknown,
+  breakpointId: unknown,
+  cachedLabel?: string,
+): string {
+  const node = nodeDetail(nodeId, cachedLabel)
   const breakpoint = optionalString(breakpointId)
   if (!node) return breakpoint
   return breakpoint ? `${node} at ${breakpoint}` : node
 }
 
-function duplicateNodeDetail(nodeId: unknown, count: unknown): string {
-  const node = nodeDetail(nodeId)
+function duplicateNodeDetail(
+  nodeId: unknown,
+  count: unknown,
+  cachedLabel?: string,
+): string {
+  const node = nodeDetail(nodeId, cachedLabel)
   const copies = typeof count === 'number' && count > 1 ? `${count} copies` : ''
   if (!node) return copies
   return copies ? `${node}, ${copies}` : node
 }
 
-function classDetail(classId: unknown, nodeId: unknown): string {
+function classDetail(
+  classId: unknown,
+  nodeId: unknown,
+  cachedLabel?: string,
+): string {
   const className = optionalString(classId)
-  const node = nodeDetail(nodeId)
+  const node = nodeDetail(nodeId, cachedLabel)
   if (!className) return node
   return node ? `${className} on ${node}` : className
 }
@@ -307,8 +325,11 @@ function scaleDetail(groupId: unknown, namingConvention: unknown): string {
   return optionalString(groupId) || optionalString(namingConvention)
 }
 
-function previewDetail(params: Record<string, unknown>): string {
-  const node = nodeDetail(params.nodeId)
+function previewDetail(
+  params: Record<string, unknown>,
+  cachedLabel?: string,
+): string {
+  const node = nodeDetail(params.nodeId, cachedLabel)
   const breakpoint = optionalString(params.breakpointId)
   if (!node) return breakpoint
   return breakpoint ? `${node} at ${breakpoint}` : node

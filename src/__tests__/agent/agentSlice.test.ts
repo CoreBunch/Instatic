@@ -16,6 +16,11 @@ import '@modules/base'
 // Test helpers
 // ---------------------------------------------------------------------------
 
+function nodeModuleId(n: unknown): string {
+  const node = n as { moduleId: string; moduleOverlay?: { moduleId: string } | null }
+  return node.moduleOverlay?.moduleId ?? node.moduleId
+}
+
 function freshAgentState() {
   useEditorStore.setState({
     site: null,
@@ -48,6 +53,7 @@ function freshAgentState() {
     isAgentProviderPending: false,
     agentComposerEpoch: 0,
     agentConversations: [],
+    agentDraftMentions: [],
     hasUnsavedChanges: false,
   })
 
@@ -322,7 +328,7 @@ describe('processStreamEvent — toolRequest dispatches to executor', () => {
     expect(result.ok).toBe(true)
 
     const page = useEditorStore.getState().site!.pages[0]
-    expect(Object.values(page.nodes).some((n) => n.moduleId === 'base.text')).toBe(true)
+    expect(Object.values(page.nodes).some((n) => nodeModuleId(n) === 'base.text')).toBe(true)
   })
 
   it('reports an error result when the tool input is invalid', async () => {
@@ -1007,6 +1013,7 @@ describe('loadAgentConversation — rehydration', () => {
 describe('conversation reset key-set', () => {
   // All three reset paths clear the same conversation keys and advance the
   // composer epoch so local text/image drafts cannot cross conversations.
+  // Layer-mention state is also reset so stale drafts don't carry over.
   const RESET_SNAPSHOT = {
     agentMessages: [],
     agentError: null,
@@ -1024,6 +1031,8 @@ describe('conversation reset key-set', () => {
       costUsd: 0,
     },
     agentComposerEpoch: 1,
+    agentDraftMentions: [],
+    agentMentionLabels: {},
   }
 
   function seedDirtyConversation() {
@@ -1045,6 +1054,8 @@ describe('conversation reset key-set', () => {
         cacheCreationTokens: 500,
         costUsd: 0.42,
       },
+      agentDraftMentions: [{ nodeId: 'abc123', label: 'Layer abc123' }],
+      agentMentionLabels: { abc123: 'Layer abc123' },
     })
   }
 
@@ -1058,6 +1069,8 @@ describe('conversation reset key-set', () => {
       agentActiveModelId: s.agentActiveModelId,
       agentUsage: s.agentUsage,
       agentComposerEpoch: s.agentComposerEpoch,
+      agentDraftMentions: s.agentDraftMentions,
+      agentMentionLabels: s.agentMentionLabels,
     }
   }
 
@@ -1547,5 +1560,46 @@ describe('setAgentProvider', () => {
     } finally {
       intercept.restore()
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// stageAgentMentions — "Add to AI Chat" staging
+// ---------------------------------------------------------------------------
+
+describe('stageAgentMentions', () => {
+  it('stages mentions and opens the agent panel', () => {
+    freshAgentState()
+    useEditorStore.setState({ isAgentOpen: false, agentDraftMentions: [] })
+
+    useEditorStore.getState().stageAgentMentions([{ nodeId: 'abc123', label: 'Layer abc123' }])
+
+    expect(useEditorStore.getState().agentDraftMentions).toEqual([{ nodeId: 'abc123', label: 'Layer abc123' }])
+    expect(useEditorStore.getState().isAgentOpen).toBe(true)
+  })
+
+  it('appends to existing mentions', () => {
+    freshAgentState()
+    useEditorStore.setState({ agentDraftMentions: [{ nodeId: 'old', label: 'Layer old' }] })
+
+    useEditorStore.getState().stageAgentMentions([
+      { nodeId: 'abc123', label: 'Layer abc123' },
+      { nodeId: 'def456', label: 'Layer def456' },
+    ])
+
+    expect(useEditorStore.getState().agentDraftMentions).toEqual([
+      { nodeId: 'old', label: 'Layer old' },
+      { nodeId: 'abc123', label: 'Layer abc123' },
+      { nodeId: 'def456', label: 'Layer def456' },
+    ])
+  })
+
+  it('clears mentions via clearAgentDraftMentions', () => {
+    freshAgentState()
+    useEditorStore.setState({ agentDraftMentions: [{ nodeId: 'abc123', label: 'Layer abc123' }] })
+
+    useEditorStore.getState().clearAgentDraftMentions()
+
+    expect(useEditorStore.getState().agentDraftMentions).toEqual([])
   })
 })

@@ -19,13 +19,14 @@
  * @see Guideline #410 — 3 Self-Contained Independent Panels
  */
 
-import { useRef, useEffect, useState, memo } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { useAgentStore, useAgentStoreApi } from '@admin/ai/useAgentStore'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useAdminNavigate } from '@admin/lib/useAdminNavigate'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import { listCredentials } from '@admin/ai/api'
-import { renderMarkdownToHtml, type AgentMessage, type AgentToolCall } from '@site/agent'
+import { type AgentMessage, type AgentToolCall, type AgentMessageMention } from '@site/agent'
+import { RichTextBubble } from './RichTextBubble'
 import { AiBoxSolidIcon } from 'pixel-art-icons/icons/ai-box-solid'
 import { AiSettingsSolidIcon } from 'pixel-art-icons/icons/ai-settings-solid'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
@@ -395,7 +396,7 @@ function MessageBubble({
           DOMPurify-sanitised HTML pipeline. */}
       {groupRenderItems(group.messages).map((item) =>
         item.kind === 'text' ? (
-          <MarkdownTextBubble key={item.key} text={item.text} isUser={isUser} />
+          <RichTextBubble key={item.key} text={item.text} isUser={isUser} mentions={item.mentions} />
         ) : item.kind === 'images' ? (
           <MessageImageGallery
             key={item.key}
@@ -446,7 +447,7 @@ function groupConsecutiveMessages(messages: AgentMessage[]): ConversationGroup[]
 type MessageBlock = AgentMessage['blocks'][number]
 
 type MessageRenderItem =
-  | { kind: 'text'; key: string; text: string }
+  | { kind: 'text'; key: string; text: string; mentions?: AgentMessageMention[] }
   | {
       kind: 'images'
       key: string
@@ -460,7 +461,7 @@ function groupRenderItems(messages: AgentMessage[]): MessageRenderItem[] {
     message.blocks.forEach((block: MessageBlock, index) => {
       if (block.kind === 'text') {
         // Position-based key, stable as streaming deltas append in place.
-        items.push({ kind: 'text', key: `text-${message.id}-${index}`, text: block.text })
+        items.push({ kind: 'text', key: `text-${message.id}-${index}`, text: block.text, mentions: message.mentions })
         return
       }
       if (block.kind === 'image') {
@@ -548,38 +549,6 @@ function ToolPreviewGallery({
 }
 
 // ---------------------------------------------------------------------------
-// MarkdownTextBubble — parses + sanitises the block text and injects it via
-// dangerouslySetInnerHTML. Memoised render so streaming deltas don't re-parse
-// markdown for unchanged blocks.
-// ---------------------------------------------------------------------------
-
-interface MarkdownTextBubbleProps {
-  text: string
-  isUser: boolean
-}
-
-// Exception #2: React.memo re-render bailout on a hot, list-rendered component
-// (one per text block, re-rendered on every streaming delta).
-const MarkdownTextBubble = memo(function MarkdownTextBubble({
-  text,
-  isUser,
-}: MarkdownTextBubbleProps) {
-  const html = renderMarkdownToHtml(text)
-  // Empty/whitespace-only blocks don't render at all (avoids stray bubbles
-  // around stripped-out tool blocks during streaming).
-  if (!html) return null
-  return (
-    <div
-      className={cn(
-        styles.messageText,
-        isUser ? styles.messageTextUser : styles.messageTextAssistant,
-        styles.markdownText,
-      )}
-      // Safe: sanitised by DOMPurify (via sanitizeRichtext) before reaching here.
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  )
-})
 
 // ---------------------------------------------------------------------------
 // Empty state
