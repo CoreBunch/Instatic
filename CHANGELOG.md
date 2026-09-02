@@ -8,7 +8,6 @@ This project is pre-1.0. Breaking changes may appear in minor or patch releases 
 
 ### Editor, import, and publishing
 
-- Fixed HTML import silently dropping the contents of a compound button. A `<button>` or a `.btn` anchor that wrapped an icon, an inline `<svg>` or an `<img>` next to its label imported as a label-only node, because `base.button` cannot hold children, so the nested media disappeared while any image it referenced stayed behind in the Media Library. Compound `.btn` anchors now import as `base.link` and compound non-submit buttons as a container tagged `button`, keeping the nested content. Text-only buttons and form submit buttons are unchanged.
 - Fixed Cancel during a static site import's upload phase closing the wizard while the import kept running and could still commit. Cancelling (or closing the dialog mid-upload) now aborts the remaining uploads, prevents the site commit and draft save, and reports how many files had already reached the Media Library.
 
 ## 0.0.17 - 2026-08-30
