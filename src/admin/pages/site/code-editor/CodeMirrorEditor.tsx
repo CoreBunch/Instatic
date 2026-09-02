@@ -29,7 +29,7 @@
  */
 
 import { useRef, useEffect, useEffectEvent, useCallback } from 'react'
-import { EditorView, basicSetup } from 'codemirror'
+import { EditorView } from '@codemirror/view'
 import { EditorState } from '@codemirror/state'
 import { syntaxHighlighting } from '@codemirror/language'
 import {
@@ -51,6 +51,7 @@ import type {
 } from './typescriptProtocol'
 import { renderMarkdownDocumentation } from './markdownDocumentation'
 import {
+  editingSetup,
   editorChromeTheme,
   getLanguageExtensions,
   readableHighlightStyle,
@@ -96,6 +97,12 @@ interface CodeMirrorEditorProps {
    * change (which remounts the view).
    */
   extensions?: Extension[]
+  /**
+   * Whether the buffer keeps CodeMirror's own undo history (default). The
+   * co-edited buffer passes false: its undo is the Y.UndoManager, and a
+   * local history would record remote peers' edits as undoable steps.
+   */
+  localHistory?: boolean
   /** Authoritative publisher-compiler diagnostics for this document. */
   diagnostics?: SiteRuntimeDiagnostic[]
   /** Site-relative path used by the TypeScript language-service project. */
@@ -252,6 +259,7 @@ export default function CodeMirrorEditor({
   projectFiles = EMPTY_PROJECT_FILES,
   onTypeScriptDiagnosticsChange,
   extensions,
+  localHistory = true,
 }: CodeMirrorEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -311,7 +319,7 @@ export default function CodeMirrorEditor({
       state: EditorState.create({
         doc: value,
         extensions: [
-          basicSetup,
+          ...editingSetup({ localHistory }),
           ...getLanguageExtensions(language),
           ...(typeScriptClient && filePath
             ? [

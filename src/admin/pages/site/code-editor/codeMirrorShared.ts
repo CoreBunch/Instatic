@@ -8,15 +8,86 @@
  * This module imports CodeMirror packages and is therefore part of the
  * lazy-loaded editor chunk graph — listed in the codemirror-lazy-only gate.
  */
-import { EditorView } from '@codemirror/view'
-import { HighlightStyle } from '@codemirror/language'
+import {
+  EditorView,
+  crosshairCursor,
+  drawSelection,
+  dropCursor,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  highlightSpecialChars,
+  keymap,
+  lineNumbers,
+  rectangularSelection,
+} from '@codemirror/view'
+import { EditorState, type Extension } from '@codemirror/state'
+import {
+  HighlightStyle,
+  bracketMatching,
+  defaultHighlightStyle,
+  foldGutter,
+  foldKeymap,
+  indentOnInput,
+  syntaxHighlighting,
+} from '@codemirror/language'
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { highlightSelectionMatches, searchKeymap } from '@codemirror/search'
+import {
+  autocompletion,
+  closeBrackets,
+  closeBracketsKeymap,
+  completionKeymap,
+} from '@codemirror/autocomplete'
+import { lintKeymap } from '@codemirror/lint'
 import { javascript } from '@codemirror/lang-javascript'
 import { css } from '@codemirror/lang-css'
 import { json } from '@codemirror/lang-json'
 import { markdown } from '@codemirror/lang-markdown'
 import { html } from '@codemirror/lang-html'
 import { tags as t } from '@lezer/highlight'
-import type { Extension } from '@codemirror/state'
+
+/**
+ * The editor's base extension stack — `codemirror`'s `basicSetup`, spelled
+ * out so the LOCAL undo history can be left out.
+ *
+ * The co-edited buffer must not carry CodeMirror's own `history()`: the
+ * Yjs binding dispatches remote peers' deltas as ordinary transactions,
+ * `history()` records them as undoable steps, and Cmd+Z would revert a
+ * peer's typing — then broadcast the revert. That buffer gets its undo from
+ * `Y.UndoManager` through y-codemirror's keymap instead, which only ever
+ * tracks local origins. Everything else (gutters, folding, brackets,
+ * completion, search) is identical between the two editors.
+ */
+export function editingSetup(options: { localHistory: boolean }): Extension[] {
+  return [
+    lineNumbers(),
+    highlightActiveLineGutter(),
+    highlightSpecialChars(),
+    ...(options.localHistory ? [history()] : []),
+    foldGutter(),
+    drawSelection(),
+    dropCursor(),
+    EditorState.allowMultipleSelections.of(true),
+    indentOnInput(),
+    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    bracketMatching(),
+    closeBrackets(),
+    autocompletion(),
+    rectangularSelection(),
+    crosshairCursor(),
+    highlightActiveLine(),
+    highlightSelectionMatches(),
+    keymap.of([
+      ...closeBracketsKeymap,
+      ...defaultKeymap,
+      ...searchKeymap,
+      ...(options.localHistory ? historyKeymap : []),
+      ...foldKeymap,
+      ...completionKeymap,
+      ...lintKeymap,
+    ]),
+  ]
+}
 
 
 // ---------------------------------------------------------------------------

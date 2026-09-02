@@ -7,11 +7,13 @@
  * y-codemirror.next's `yCollab` extension: local keystrokes splice the
  * bound Y.Text, remote peers' edits apply character-precise, and their
  * carets/selections render inline colored by each peer's awareness
- * identity. Undo is the passed Y.UndoManager — local-only by construction.
+ * identity. Undo is the passed Y.UndoManager — local-only by construction:
+ * the base editor mounts WITHOUT its own `history()` (which would record
+ * remote deltas as undoable steps), and the Y undo keymap takes precedence
+ * over every other Mod-z binding in the stack.
  */
-import { keymap } from '@codemirror/view'
-import { EditorState, type Extension } from '@codemirror/state'
-import { EditorView } from 'codemirror'
+import { EditorView, keymap } from '@codemirror/view'
+import { EditorState, Prec, type Extension } from '@codemirror/state'
 import type * as Y from 'yjs'
 import type { Awareness } from 'y-protocols/awareness'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
@@ -96,7 +98,7 @@ export default function CollabCodeMirrorEditor({
   // Recomputed per render is fine: CodeMirrorEditor captures `value` and
   // `extensions` at mount and only remounts when `docKey` changes.
   const extensions: Extension[] = [
-    keymap.of(yUndoManagerKeymap),
+    Prec.high(keymap.of(yUndoManagerKeymap)),
     yCollab(text, awareness, { undoManager }),
     remotePeerTheme,
     ...(readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
@@ -111,6 +113,7 @@ export default function CollabCodeMirrorEditor({
       // onChange stays a no-op so nothing double-writes.
       onChange={() => {}}
       extensions={extensions}
+      localHistory={false}
     />
   )
 }
