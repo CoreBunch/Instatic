@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { nanoid } from 'nanoid'
 import { placeholder, type DbClient } from '../db/client'
 import { isoDateOrNull } from '@core/utils/isoDate'
-import { normalizeCapabilities, type CoreCapability } from '../auth/capabilities'
+import { normalizeCapabilitiesForRole, type CoreCapability } from '../auth/capabilities'
 import {
   normalizeStepUpAuthMode,
   normalizeStepUpWindowMinutes,
@@ -175,7 +175,7 @@ export function computeGravatarHash(email: string): string {
 }
 
 export function rowToUser(row: JoinedUserRow): AuthUser {
-  const capabilities = normalizeCapabilities(row.role_capabilities_json)
+  const capabilities = normalizeCapabilitiesForRole(row.role_id, row.role_capabilities_json)
   const mfaRecoveryCodeHashes = filterArray(
     RecoveryCodeHashSchema,
     row.mfa_recovery_code_hashes_json,

@@ -256,4 +256,54 @@ describe('AI credential handler', () => {
     expect(body.modelCount).toBeUndefined()
     expect(body.error).toContain('No live models were returned')
   })
+
+  it('lets only the owner point a provider at an internal address (GHSA-886f)', async () => {
+    await harness.setupOwner() // seeds the install and enables role creation
+    const { cookie } = await harness.createRoleUser({
+      name: 'AI Manager',
+      slug: 'ai-manager',
+      capabilities: ['ai.providers.manage'],
+    })
+
+    // Non-owner + a base URL that resolves to an internal address → refused.
+    // (An owner setting the same is allowed — covered by the tests above, which
+    // create owner credentials against 127.0.0.1.)
+    const internal = await harness.ai('/admin/api/ai/credentials', {
+      method: 'POST',
+      cookie,
+      json: {
+        providerId: 'ollama',
+        authMode: 'baseUrl',
+        displayLabel: 'Internal probe',
+        baseUrl: 'http://127.0.0.1:11434',
+      },
+    })
+    expect(internal.status).toBe(403)
+
+    // Cloud-metadata address too.
+    const metadata = await harness.ai('/admin/api/ai/credentials', {
+      method: 'POST',
+      cookie,
+      json: {
+        providerId: 'openai-compatible',
+        authMode: 'baseUrl',
+        displayLabel: 'Metadata probe',
+        baseUrl: 'http://169.254.169.254/v1',
+      },
+    })
+    expect(metadata.status).toBe(403)
+
+    // Non-owner + a public host is fine (mock serves api.openai.com/v1/models).
+    const publicRes = await harness.ai('/admin/api/ai/credentials', {
+      method: 'POST',
+      cookie,
+      json: {
+        providerId: 'openai-compatible',
+        authMode: 'baseUrl',
+        displayLabel: 'Public host',
+        baseUrl: 'https://api.openai.com',
+      },
+    })
+    expect(publicRes.status).toBe(201)
+  })
 })

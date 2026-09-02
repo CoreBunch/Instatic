@@ -34,7 +34,7 @@ import { getLatestPublishedSiteSnapshot } from '../../../repositories/publish'
 import { getDataRow, getDataTable } from '../../../repositories/data'
 import { applyPublishedHtmlPipeline } from '../../../publish/publishedHtmlPipeline'
 import { badRequest, jsonResponse, readValidatedBody } from '../../../http'
-import { canReadDataRow, forbidden, requireDataAccess } from './access'
+import { canReadDataRow, canReadTable, forbidden, requireDataAccess } from './access'
 import type { RouteParams } from '../routeTable'
 
 const CSS_ASSET_BASE_URL = '/_instatic/css/'
@@ -70,6 +70,8 @@ export async function handleRowPreview(
 
   const table = await getDataTable(db, row.tableId)
   if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
+  // System-table rows need data.system.tables.read even to preview (GHSA-x69h).
+  if (!canReadTable(user, table)) return jsonResponse({ error: 'Row not found' }, { status: 404 })
 
   if (!canReadDataRow(user, row)) return forbidden()
   if (table.kind !== 'postType') return badRequest('Only post-type rows can be previewed')

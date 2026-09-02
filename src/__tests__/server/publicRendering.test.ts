@@ -379,7 +379,27 @@ describe('public rendering', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
     expect(res.headers.get('cache-control')).toContain('immutable')
+    // Hardening: no scripting context, no MIME sniffing (GHSA-5h25).
+    expect(res.headers.get('content-security-policy')).toBe("default-src 'none'")
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff')
     expect(await res.text()).toBe('console.log("runtime")')
+  })
+
+  // GHSA-5h25: this namespace served SVG (active content) from the CMS origin
+  // with no CSP. It now serves only the asset kinds the publisher emits and
+  // refuses everything else, even a file that is present.
+  it('refuses to serve an SVG from the runtime-asset namespace', async () => {
+    const res = await handleServerRequest(new Request('http://localhost/_instatic/assets/version_1/poc.svg'), {
+      db: makeFakeDb(null, [
+        {
+          public_path: '/_instatic/assets/version_1/poc.svg',
+          content_type: 'image/svg+xml',
+          content_bytes: new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"></svg>'),
+        },
+      ]),
+    })
+
+    expect(res.status).toBe(404)
   })
 
   it('returns 404 when there is no active published snapshot', async () => {

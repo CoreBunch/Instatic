@@ -301,6 +301,9 @@ async function handleTableRows(
   if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
 
   if (req.method === 'GET') {
+    // A broad content.* capability satisfies requireDataAccess, but reading a
+    // system table's rows still needs data.system.tables.read (GHSA-x69h).
+    if (!canReadTable(user, table)) return jsonResponse({ error: 'Table not found' }, { status: 404 })
     const visibility = canSeeAllDataRows(user) ? {} : { ownerUserId: user.id }
     return jsonResponse({ rows: await listDataRows(db, tableId, visibility) })
   }

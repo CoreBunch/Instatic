@@ -75,3 +75,10 @@ export const CORE_CAPABILITIES = [
 ] as const
 
 export type CoreCapability = typeof CORE_CAPABILITIES[number]
+
+/**
+ * Capabilities that are structural powers of the installation Owner rather
+ * than delegable role grants. Keeping this policy beside CORE_CAPABILITIES
+ * gives the server and role editor one shared source of truth.
+ */
+export const OWNER_ONLY_CAPABILITIES = ['roles.manage'] as const satisfies readonly CoreCapability[]
