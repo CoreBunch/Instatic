@@ -31,8 +31,7 @@ import { findSandboxLiterals } from '@core/plugins/sandboxScan'
 import { parsePluginManifest } from '@core/plugins/manifest'
 import { readPluginDefinition } from './build'
 import type { PluginDefinition } from '../builders/definePlugin'
-import type { PluginPermission } from '../types'
-import type { ContentAccessMode } from '../contentSchemas'
+import { CONTENT_ACCESS_MODE_PERMISSIONS, type ContentAccessMode } from '../contentSchemas'
 
 export type LintSeverity = 'error' | 'warning'
 
@@ -52,14 +51,6 @@ export interface LintResult {
 }
 
 const SANDBOXED_ENTRYPOINTS: ReadonlyArray<'server' | 'modules'> = ['server', 'modules']
-
-/** Which `contentAccess` mode consumes each `cms.content.*` permission. */
-const CONTENT_PERMISSION_MODES: ReadonlyArray<{ permission: PluginPermission; mode: ContentAccessMode }> = [
-  { permission: 'cms.content.read', mode: 'read' },
-  { permission: 'cms.content.write', mode: 'write' },
-  { permission: 'cms.content.publish', mode: 'publish' },
-  { permission: 'cms.content.delete', mode: 'delete' },
-]
 
 /**
  * Run all lint checks for a plugin source directory. Throws on a corrupt
@@ -154,7 +145,8 @@ export async function lintPlugin(sourceDir: string): Promise<LintResult> {
   // empty so the parser's error isn't double-reported as warnings.)
   const contentAccess = manifest.contentAccess ?? []
   if (contentAccess.length > 0) {
-    for (const { permission, mode } of CONTENT_PERMISSION_MODES) {
+    for (const mode of Object.keys(CONTENT_ACCESS_MODE_PERMISSIONS) as ContentAccessMode[]) {
+      const permission = CONTENT_ACCESS_MODE_PERMISSIONS[mode]
       if (!manifest.permissions.includes(permission)) continue
       if (contentAccess.some((entry) => entry.modes.includes(mode))) continue
       findings.push({
