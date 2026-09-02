@@ -135,6 +135,7 @@ export const CORE_CAPABILITIES = [
   'data.system.tables.read', 'data.system.tables.manage',
   'data.rows.move', 'data.export', 'data.import',
   'ai.chat', 'ai.tools.write', 'ai.providers.manage', 'ai.audit.read',
+  'directus.read',
 ] as const
 
 export type CoreCapability = typeof CORE_CAPABILITIES[number]

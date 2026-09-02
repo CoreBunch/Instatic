@@ -184,6 +184,10 @@ export const CAPABILITY_META: Record<CoreCapability, CapabilityMeta> = {
     label: 'Read AI audit log',
     description: 'View site-wide AI usage, cost, and error events across all users.',
   },
+  'directus.read': {
+    label: 'Read Directus reference data',
+    description: 'Read geography and workfields from Directus. Never writes.',
+  },
 }
 
 /**

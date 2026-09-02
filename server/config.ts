@@ -1,3 +1,8 @@
+export interface DirectusConfig {
+  url: string
+  token: string
+}
+
 interface ServerConfig {
   port: number
   databaseUrl: string
@@ -5,6 +10,7 @@ interface ServerConfig {
   staticDir: string
   trustedProxyCidrs: string[]
   publicOrigins: string[]
+  directus: DirectusConfig | null
 }
 
 function readCsvList(value: string | undefined): string[] {
@@ -85,6 +91,25 @@ export function resolvePublicOrigins(env: Record<string, string | undefined>): s
   return normalizeOrigins(derived)
 }
 
+/**
+ * Optional read-only Directus reader. Both variables must be set; a
+ * malformed URL disables the reader rather than pointing it somewhere odd.
+ */
+export function readDirectusConfig(
+  env: Record<string, string | undefined> = process.env,
+): DirectusConfig | null {
+  const url = (env.MKP_CONTENT_SERVICE_DIRECTUS_URL ?? '').trim().replace(/\/+$/, '')
+  const token = (env.MKP_CONTENT_SERVICE_DIRECTUS_TOKEN ?? '').trim()
+  if (!url || !token) return null
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null
+  } catch {
+    return null
+  }
+  return { url, token }
+}
+
 export function readServerConfig(
   env: Record<string, string | undefined> = process.env,
 ): ServerConfig {
@@ -95,5 +120,6 @@ export function readServerConfig(
     staticDir: env.STATIC_DIR ?? './dist',
     trustedProxyCidrs: readCsvList(env.TRUSTED_PROXY_CIDRS),
     publicOrigins: resolvePublicOrigins(env),
+    directus: readDirectusConfig(env),
   }
 }

@@ -1156,4 +1156,18 @@ export const pgMigrations: Migration[] = [
        where trim(lower(display_name)) = trim(lower(email));
     `,
   },
+  {
+    id: '025_directus_read_capability',
+    // Owner and Admin are force-resynced from SYSTEM_ROLES on every boot, so
+    // the code change alone grants them directus.read. This migration keeps
+    // the seeded snapshot in step with the code (cmsMigrations.test.ts) and
+    // covers a database that is migrated but not yet booted by the new code.
+    sql: `
+      update roles
+         set capabilities_json = capabilities_json || '["directus.read"]'::jsonb,
+             updated_at = current_timestamp
+       where id in ('owner', 'admin')
+         and not (capabilities_json ? 'directus.read');
+    `,
+  },
 ]

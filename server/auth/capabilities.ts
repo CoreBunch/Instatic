@@ -78,6 +78,7 @@ const adminCapabilities: CoreCapability[] = [
   'ai.tools.write',
   'ai.providers.manage',
   'ai.audit.read',
+  'directus.read',
 ]
 
 const clientCapabilities: CoreCapability[] = [

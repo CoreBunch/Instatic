@@ -1224,4 +1224,20 @@ export const sqliteMigrations: Migration[] = [
        where trim(lower(display_name)) = trim(lower(email));
     `,
   },
+  {
+    id: '025_directus_read_capability',
+    // Owner and Admin are force-resynced from SYSTEM_ROLES on every boot, so
+    // the code change alone grants them directus.read. This migration keeps
+    // the seeded snapshot in step with the code (cmsMigrations.test.ts) and
+    // covers a database that is migrated but not yet booted by the new code.
+    sql: `
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'directus.read'),
+             updated_at = current_timestamp
+       where id in ('owner', 'admin')
+         and not exists (
+           select 1 from json_each(roles.capabilities_json) where value = 'directus.read'
+         );
+    `,
+  },
 ]

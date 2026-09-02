@@ -32,6 +32,7 @@ import { contextMcpTools } from './tools/contextTool'
 import { documentMcpTools } from './tools/documentTools'
 import { createPublishMcpTool, type McpPublishRuntime } from './tools/publishTool'
 import { uploadMediaMcpTool } from './tools/uploadMediaTool'
+import { directusMcpTools } from './tools/directusTools'
 
 // Server-resolved site read tools whose handlers read the browser-posted
 // `ctx.snapshot`, which is null over MCP — they'd return nothing or throw.
@@ -54,6 +55,7 @@ function allMcpTools(runtime?: McpPublishRuntime): AiTool[] {
     ...documentMcpTools,
     createPublishMcpTool(runtime),
     uploadMediaMcpTool,
+    ...directusMcpTools,
     ...contentTools,
     ...siteTools,
   ]

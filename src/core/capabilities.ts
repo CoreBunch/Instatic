@@ -72,6 +72,8 @@ export const CORE_CAPABILITIES = [
   'ai.tools.write',
   'ai.providers.manage',
   'ai.audit.read',
+  // Directus reference data — geography + workfields. Read-only; there is no write.
+  'directus.read',
 ] as const
 
 export type CoreCapability = typeof CORE_CAPABILITIES[number]

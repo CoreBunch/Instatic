@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test'
-import { normalizeOrigin, readServerConfig, resolvePublicOrigins } from '../../../server/config'
+import {
+  normalizeOrigin,
+  readDirectusConfig,
+  readServerConfig,
+  resolvePublicOrigins,
+} from '../../../server/config'
 
 describe('normalizeOrigin', () => {
   it('lowercases scheme and host and strips the trailing slash', () => {
@@ -126,6 +131,7 @@ describe('readServerConfig', () => {
       staticDir: './dist',
       trustedProxyCidrs: [],
       publicOrigins: [],
+      directus: null,
     })
   })
 
@@ -148,6 +154,36 @@ describe('readServerConfig', () => {
       staticDir: '/srv/instatic/dist',
       trustedProxyCidrs: ['10.0.0.0/8', '192.168.0.0/16'],
       publicOrigins: ['https://cms.example.com', 'http://localhost:5173'],
+      directus: null,
     })
+  })
+})
+
+describe('readDirectusConfig', () => {
+  it('returns null when url or token is missing', () => {
+    expect(readDirectusConfig({})).toBeNull()
+    expect(readDirectusConfig({ MKP_CONTENT_SERVICE_DIRECTUS_URL: 'https://cms.example.com' })).toBeNull()
+    expect(readDirectusConfig({ MKP_CONTENT_SERVICE_DIRECTUS_TOKEN: 'reader' })).toBeNull()
+  })
+
+  it('reads the reader URL and token and strips a trailing slash', () => {
+    expect(readDirectusConfig({
+      MKP_CONTENT_SERVICE_DIRECTUS_URL: 'https://mkp-directus.dev.example.com/',
+      MKP_CONTENT_SERVICE_DIRECTUS_TOKEN: 'reader-token',
+    })).toEqual({
+      url: 'https://mkp-directus.dev.example.com',
+      token: 'reader-token',
+    })
+  })
+
+  it('rejects a non-http(s) or unparsable url', () => {
+    expect(readDirectusConfig({
+      MKP_CONTENT_SERVICE_DIRECTUS_URL: 'ftp://cms.example.com',
+      MKP_CONTENT_SERVICE_DIRECTUS_TOKEN: 'reader',
+    })).toBeNull()
+    expect(readDirectusConfig({
+      MKP_CONTENT_SERVICE_DIRECTUS_URL: 'not a url',
+      MKP_CONTENT_SERVICE_DIRECTUS_TOKEN: 'reader',
+    })).toBeNull()
   })
 })

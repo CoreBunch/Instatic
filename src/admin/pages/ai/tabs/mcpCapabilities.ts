@@ -6,7 +6,7 @@ import type { CapabilityPickerGroup } from '@admin/shared/CapabilityPicker'
 export const MCP_CAPABILITY_GROUPS: readonly CapabilityPickerGroup[] = [
   {
     title: 'Read',
-    capabilities: ['site.read', 'content.manage', 'data.custom.tables.read', 'data.system.tables.read', 'media.read'],
+    capabilities: ['site.read', 'content.manage', 'data.custom.tables.read', 'data.system.tables.read', 'media.read', 'directus.read'],
   },
   {
     title: 'Allow writes',

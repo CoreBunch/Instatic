@@ -49,6 +49,7 @@ import { handleMediaStorageAdminRoutes } from './mediaStorageAdmin'
 import { handlePluginsRoutes } from './plugins'
 import { handleDataRoutes } from './data'
 import { handleDashboardRoutes } from './dashboard'
+import { handleDirectusRoutes } from './directus'
 import { handleFontsRoutes } from './fonts'
 import { handlePublishRoutes } from './publish'
 import { handleExportRoute } from './export'
@@ -109,6 +110,7 @@ export async function handleCmsRequest(
     // dashboard widgets. Lives after data routes so future routes
     // under `/data/...` can never accidentally shadow it.
     ?? (await handleDashboardRoutes(req, db, options))
+    ?? (await handleDirectusRoutes(req, db))
     ?? (await handleFontsRoutes(req, db, options))
     ?? (await handlePublishRoutes(req, db, options))
     // Export and import are registered after data routes so their exact paths

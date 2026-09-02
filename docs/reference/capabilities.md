@@ -223,6 +223,14 @@ There are deliberately **no** whole-family "super-set" constants (e.g. one `MEDI
 
 ---
 
+### Directus
+
+Read-only reference data from the install's Directus instance (geography + workfields). There is no `directus.write`.
+
+| Capability       | Grants                                                              | Roles         |
+|------------------|---------------------------------------------------------------------|---------------|
+| `directus.read`  | Call `GET /admin/api/cms/directus/*` and the matching MCP tools. The Directus token stays on the server. | Owner, Admin |
+
 ## Cookbook
 
 ### Gate a handler
