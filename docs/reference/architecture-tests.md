@@ -41,6 +41,7 @@ See [docs/reference/database-dialects.md](database-dialects.md).
 | `data-tables-system-flag.test.ts`             | System tables (`posts`, `pages`, `components`) are seeded with `system: true`.    |
 | `no-legacy-content-domain.test.ts`            | The `content_*` tables / handlers don't return. Everything lives in `data_*`.    |
 | `no-legacy-pages-table.test.ts`               | No `pages` or `page_versions` tables in migrations.                              |
+| `branch-scope-repositories.test.ts`           | Every exported repository function on `site` / `data_tables` / `data_rows` takes a `BranchScope`; raw SQL on those tables outside `server/repositories`, `server/branches`, `server/db` names `branch_id`; the physical-id scheme lives only in `src/core/branches/ids.ts`. |
 
 ### Page tree
 

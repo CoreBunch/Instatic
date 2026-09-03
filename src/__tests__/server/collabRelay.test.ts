@@ -11,7 +11,7 @@ import {
   projectPageDoc,
   rostersMap,
   shellMap,
-  SITE_DOC_ID,
+  MAIN_SITE_DOC_ID,
   treeMap,
 } from '@core/collab'
 import { createCollabRelay, type CollabRelay } from '../../../server/collab/relay'
@@ -33,6 +33,7 @@ import {
   createCapabilityTestHarness,
   type CapabilityTestHarness,
 } from '../helpers/capabilityHarness'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 
 let cleanups: Array<() => Promise<void>> = []
 
@@ -152,7 +153,7 @@ function gateRosterSweep(db: DbClient): {
     if (
       armed &&
       !gated &&
-      sql.includes('select id, slug from data_rows') &&
+      sql.includes('select logical_id as id, slug from data_rows') &&
       values.includes('pages')
     ) {
       gated = true
@@ -314,7 +315,7 @@ function observeRosterSweep(db: DbClient): {
     if (
       armed &&
       !announced &&
-      strings.join('?').includes('select id, slug from data_rows') &&
+      strings.join('?').includes('select logical_id as id, slug from data_rows') &&
       values.includes('layouts')
     ) {
       announced = true
@@ -360,7 +361,7 @@ function populateFreshPage(doc: Y.Doc, title: string, slug: string): void {
 describe('collab relay', () => {
   it('seeds a page doc deterministically from the stored row (identical state on repeat)', async () => {
     const { harness, relay, homeId } = await setup()
-    const { doc: doc } = await relay.openDoc(`page:${homeId}`)
+    const { doc: doc } = await relay.openDoc(`page:main:${homeId}`)
     const projected = projectPageDoc(doc, homeId)
     expect(projected.slug).toBe('index')
     expect(projected.rootNodeId).not.toBe('')
@@ -369,13 +370,13 @@ describe('collab relay', () => {
     // deterministic seeding must produce an identical state vector.
     const relay2 = createCollabRelay(harness.db, { persistDebounceMs: 10 })
     cleanups.push(() => relay2.destroy())
-    const { doc: doc2 } = await relay2.openDoc(`page:${homeId}`)
+    const { doc: doc2 } = await relay2.openDoc(`page:main:${homeId}`)
     expect(Y.encodeStateVector(doc2)).toEqual(Y.encodeStateVector(doc))
   })
 
   it('persists the blob AND the derived JSON after an update', async () => {
     const { harness, relay, homeId } = await setup()
-    const docId = `page:${homeId}`
+    const docId = `page:main:${homeId}`
     const { doc: doc } = await relay.openDoc(docId)
     editTitleUpdate(doc, 'Hero section')
 
@@ -402,7 +403,7 @@ describe('collab relay', () => {
       select id from data_rows where table_id = ${'pages'}
     `
     const homeId = rows[0].id
-    const docId = `page:${homeId}`
+    const docId = `page:main:${homeId}`
     const { doc } = await relay.retain(docId)
 
     failing.arm()
@@ -436,7 +437,7 @@ describe('collab relay', () => {
     const { rows } = await harness.db<{ id: string }>`
       select id from data_rows where table_id = ${'pages'}
     `
-    const docId = `page:${rows[0].id}`
+    const docId = `page:main:${rows[0].id}`
     const { doc } = await relay.openDoc(docId)
 
     failing.arm()
@@ -453,7 +454,7 @@ describe('collab relay', () => {
 
   it('roster removal soft-deletes the row on site-doc persist', async () => {
     const { harness, relay, homeId } = await setup()
-    const { doc: siteDoc } = await relay.openDoc(SITE_DOC_ID)
+    const { doc: siteDoc } = await relay.openDoc(MAIN_SITE_DOC_ID)
     siteDoc.transact(() => {
       const rosters = rostersMap(siteDoc)
       ;(rosters.get('pages') as Y.Map<unknown>).delete(homeId)
@@ -470,7 +471,7 @@ describe('collab relay', () => {
 
   it('an out-of-relay row write resets the doc and notifies listeners', async () => {
     const { harness, relay, homeId } = await setup()
-    const docId = `page:${homeId}`
+    const docId = `page:main:${homeId}`
     await relay.openDoc(docId)
     await relay.flushAll()
     expect((await getCollabDocumentState(harness.db, docId))?.state).toBeDefined()
@@ -482,7 +483,7 @@ describe('collab relay', () => {
     const { rows } = await harness.db<{ cells_json: Record<string, unknown>; slug: string }>`
       select cells_json, slug from data_rows where id = ${homeId}
     `
-    await saveDataRowDraft(harness.db, homeId, { cells: rows[0].cells_json, slug: rows[0].slug })
+    await saveDataRowDraft(harness.db, MAIN_SCOPE, homeId, { cells: rows[0].cells_json, slug: rows[0].slug })
 
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(resets).toContain(docId)
@@ -491,7 +492,7 @@ describe('collab relay', () => {
 
   it('a doc with neither blob nor row starts empty (client-created-row flow) and persists a new row', async () => {
     const { harness, relay } = await setup()
-    const docId = 'page:fresh-row-id'
+    const docId = 'page:main:fresh-row-id'
     const { doc: doc } = await relay.openDoc(docId)
     expect(treeMap(doc).get('rootNodeId')).toBeUndefined()
 
@@ -524,12 +525,12 @@ describe('collab relay', () => {
 
   it('does not resurrect a dirty deleted page ahead of its same-slug replacement', async () => {
     const { harness, relay, homeId } = await setup()
-    const { doc: siteDoc } = await relay.openDoc(SITE_DOC_ID)
-    const { doc: oldPage } = await relay.openDoc(`page:${homeId}`)
+    const { doc: siteDoc } = await relay.openDoc(MAIN_SITE_DOC_ID)
+    const { doc: oldPage } = await relay.openDoc(`page:main:${homeId}`)
     editTitleUpdate(oldPage, 'Dirty page being replaced')
 
     const replacementId = 'replacement-page'
-    const { doc: replacement } = await relay.openDoc(`page:${replacementId}`)
+    const { doc: replacement } = await relay.openDoc(`page:main:${replacementId}`)
     populateFreshPage(replacement, 'Replacement', 'index')
 
     siteDoc.transact(() => {
@@ -561,7 +562,7 @@ describe('collab relay', () => {
     const { rows } = await harness.db<{ id: string }>`
       select id from data_rows where table_id = ${'pages'}
     `
-    const docId = `page:${rows[0].id}`
+    const docId = `page:main:${rows[0].id}`
     const { doc } = await relay.openDoc(docId)
     gated.arm()
     editTitleUpdate(doc, 'Snapshot A')
@@ -599,9 +600,9 @@ describe('collab relay', () => {
 
   it('does not insert a client-created page that was removed from the roster before its first flush', async () => {
     const { harness, relay } = await setup()
-    const { doc: siteDoc } = await relay.openDoc(SITE_DOC_ID)
+    const { doc: siteDoc } = await relay.openDoc(MAIN_SITE_DOC_ID)
     const rowId = 'abandoned-page'
-    const { doc: pageDoc } = await relay.openDoc(`page:${rowId}`)
+    const { doc: pageDoc } = await relay.openDoc(`page:main:${rowId}`)
     populateFreshPage(pageDoc, 'Abandoned', 'abandoned')
 
     siteDoc.transact(() => {
@@ -621,22 +622,22 @@ describe('collab relay', () => {
 
   it('restores the latest page after deletion, disconnect, eviction, and roster undo', async () => {
     const { harness, relay, homeId } = await setup()
-    const { doc: siteDoc } = await relay.openDoc(SITE_DOC_ID)
-    const retained = await relay.retain(`page:${homeId}`)
+    const { doc: siteDoc } = await relay.openDoc(MAIN_SITE_DOC_ID)
+    const retained = await relay.retain(`page:main:${homeId}`)
     editTitleUpdate(retained.doc, 'Latest content survives undo')
 
     siteDoc.transact(() => {
       ;(rostersMap(siteDoc).get('pages') as Y.Map<unknown>).delete(homeId)
     }, LOCAL_ORIGIN)
     await relay.flushAll()
-    expect(await getCollabDocumentState(harness.db, `page:${homeId}`)).not.toBeNull()
+    expect(await getCollabDocumentState(harness.db, `page:main:${homeId}`)).not.toBeNull()
 
     const destroyed = new Promise<void>((resolve) => {
       retained.doc.on('destroy', () => resolve())
     })
-    relay.release(`page:${homeId}`)
+    relay.release(`page:main:${homeId}`)
     await destroyed
-    expect(await getCollabDocumentState(harness.db, `page:${homeId}`)).not.toBeNull()
+    expect(await getCollabDocumentState(harness.db, `page:main:${homeId}`)).not.toBeNull()
 
     siteDoc.transact(() => {
       ;(rostersMap(siteDoc).get('pages') as Y.Map<unknown>).set(homeId, true)
@@ -665,8 +666,8 @@ describe('collab relay', () => {
       select id from data_rows where table_id = ${'pages'}
     `
     const homeId = rows[0].id
-    const { doc: siteDoc } = await relay.openDoc(SITE_DOC_ID)
-    const { doc: pageDoc } = await relay.openDoc(`page:${homeId}`)
+    const { doc: siteDoc } = await relay.openDoc(MAIN_SITE_DOC_ID)
+    const { doc: pageDoc } = await relay.openDoc(`page:main:${homeId}`)
 
     gated.arm()
     editTitleUpdate(pageDoc, 'Persist blocked before roster removal')
@@ -703,13 +704,14 @@ describe('collab relay', () => {
 
   it('coalesces shell and row invalidations so an external batch creation survives reset', async () => {
     const { harness, relay, homeId } = await setup()
-    await relay.openDoc(SITE_DOC_ID)
+    await relay.openDoc(MAIN_SITE_DOC_ID)
     const { rows: sourceRows } = await harness.db<{ cells_json: Record<string, unknown> }>`
       select cells_json from data_rows where id = ${homeId}
     `
     const rowId = 'external-batch-page'
     await createDataRow(
       harness.db,
+      MAIN_SCOPE,
       {
         id: rowId,
         tableId: 'pages',
@@ -728,12 +730,12 @@ describe('collab relay', () => {
     })
     const unsubscribe = relay.onReset((docId) => {
       resetIds.add(docId)
-      if (resetIds.has(SITE_DOC_ID) && resetIds.has(`page:${rowId}`)) finishReset()
+      if (resetIds.has(MAIN_SITE_DOC_ID) && resetIds.has(`page:main:${rowId}`)) finishReset()
     })
     // siteDocument emits these synchronously after one committed save and
     // reports newly created rows in the changed/update group.
-    notifyShellWrite()
-    notifyRowWrite({ tableId: 'pages', rowIds: [rowId], kind: 'update' })
+    notifyShellWrite('main')
+    notifyRowWrite({ branchId: 'main', tableId: 'pages', rowIds: [rowId], kind: 'update' })
     await resetDone
     unsubscribe()
 
@@ -741,7 +743,7 @@ describe('collab relay', () => {
       select deleted_at from data_rows where id = ${rowId}
     `
     expect(rows[0]?.deleted_at).toBeNull()
-    const { doc: reseededSite } = await relay.openDoc(SITE_DOC_ID)
+    const { doc: reseededSite } = await relay.openDoc(MAIN_SITE_DOC_ID)
     const pages = rostersMap(reseededSite).get('pages') as Y.Map<unknown>
     expect([...pages.keys()]).toContain(rowId)
   })
@@ -756,20 +758,20 @@ describe('collab relay', () => {
     const { rows: sourceRows } = await harness.db<{ cells_json: Record<string, unknown> }>`
       select cells_json from data_rows where table_id = ${'pages'}
     `
-    const { doc: siteDoc } = await relay.openDoc(SITE_DOC_ID)
+    const { doc: siteDoc } = await relay.openDoc(MAIN_SITE_DOC_ID)
 
     gated.arm()
     siteDoc.transact(() => {
       shellMap(siteDoc).set('name', 'Older collaborative shell')
     }, LOCAL_ORIGIN)
     await gated.blocked
-    notifyShellWrite()
+    notifyShellWrite('main')
     // Let reset A capture its own SITE-only batch and wait on the blocked
     // persist before the external creation emits reset B.
     await Bun.sleep(5)
 
     const rowId = 'later-reset-page'
-    await createDataRow(harness.db, {
+    await createDataRow(harness.db, MAIN_SCOPE, {
       id: rowId,
       tableId: 'pages',
       cells: sourceRows[0].cells_json,
@@ -782,7 +784,7 @@ describe('collab relay', () => {
       select deleted_at from data_rows where id = ${rowId}
     `
     expect(rows[0]?.deleted_at).toBeNull()
-    const { doc: reseededSite } = await relay.openDoc(SITE_DOC_ID)
+    const { doc: reseededSite } = await relay.openDoc(MAIN_SITE_DOC_ID)
     const pages = rostersMap(reseededSite).get('pages') as Y.Map<unknown>
     expect([...pages.keys()]).toContain(rowId)
   })
@@ -799,12 +801,12 @@ describe('collab relay', () => {
       select id, slug, cells_json from data_rows where table_id = ${'pages'}
     `
     const page = rows[0]
-    const pageDocId = `page:${page.id}`
+    const pageDocId = `page:main:${page.id}`
     const deleting = gateCollabBlobDelete(harness.db, pageDocId)
     const sweep = observeRosterSweep(deleting.db)
     const relay = createCollabRelay(sweep.db, { persistDebounceMs: 5 })
     cleanups.push(() => relay.destroy())
-    const { doc: siteDoc } = await relay.openDoc(SITE_DOC_ID)
+    const { doc: siteDoc } = await relay.openDoc(MAIN_SITE_DOC_ID)
     await relay.openDoc(pageDocId)
 
     const externalCells = structuredClone(page.cells_json)
@@ -814,7 +816,7 @@ describe('collab relay', () => {
     }
     externalBody.nodes[externalBody.rootNodeId].label = 'Older external page write'
     deleting.arm()
-    await saveDataRowDraft(sweep.db, page.id, {
+    await saveDataRowDraft(sweep.db, MAIN_SCOPE, page.id, {
       cells: externalCells,
       slug: page.slug,
     })
@@ -854,8 +856,8 @@ describe('collab relay', () => {
       select id, slug, cells_json from data_rows where table_id = ${'pages'}
     `
     const page = rows[0]
-    const pageDocId = `page:${page.id}`
-    await relay.openDoc(SITE_DOC_ID)
+    const pageDocId = `page:main:${page.id}`
+    await relay.openDoc(MAIN_SITE_DOC_ID)
     const { doc: pageDoc } = await relay.openDoc(pageDocId)
     editTitleUpdate(pageDoc, 'Older dirty collaborative page')
 
@@ -864,13 +866,13 @@ describe('collab relay', () => {
     const resetsDone = new Promise<void>((resolve) => { finishResets = resolve })
     const unsubscribe = relay.onReset((docId) => {
       resetIds.add(docId)
-      if (resetIds.has(SITE_DOC_ID) && resetIds.has(pageDocId)) finishResets()
+      if (resetIds.has(MAIN_SITE_DOC_ID) && resetIds.has(pageDocId)) finishResets()
     })
 
-    const externalShell = await getDraftSite(harness.db)
+    const externalShell = await getDraftSite(harness.db, MAIN_SCOPE)
     expect(externalShell).not.toBeNull()
     gated.arm()
-    await saveDraftSite(gated.db, {
+    await saveDraftSite(gated.db, MAIN_SCOPE, {
       ...externalShell!,
       name: 'Authoritative external shell',
     })
@@ -884,7 +886,7 @@ describe('collab relay', () => {
       rootNodeId: string
     }
     body.nodes[body.rootNodeId].label = 'Authoritative external page'
-    const pageWrite = saveDataRowDraft(gated.db, page.id, {
+    const pageWrite = saveDataRowDraft(gated.db, MAIN_SCOPE, page.id, {
       cells: externalCells,
       slug: page.slug,
     })
@@ -893,7 +895,7 @@ describe('collab relay', () => {
     await resetsDone
     unsubscribe()
 
-    expect((await getDraftSite(harness.db))?.name).toBe('Authoritative external shell')
+    expect((await getDraftSite(harness.db, MAIN_SCOPE))?.name).toBe('Authoritative external shell')
     const { rows: persisted } = await harness.db<{ cells_json: Record<string, unknown> }>`
       select cells_json from data_rows where id = ${page.id}
     `
@@ -903,7 +905,7 @@ describe('collab relay', () => {
     }
     expect(persistedBody.nodes[persistedBody.rootNodeId]?.label)
       .toBe('Authoritative external page')
-    const { doc: reseededSite } = await relay.openDoc(SITE_DOC_ID)
+    const { doc: reseededSite } = await relay.openDoc(MAIN_SITE_DOC_ID)
     const { doc: reseededPage } = await relay.openDoc(pageDocId)
     expect(shellMap(reseededSite).get('name')).toBe('Authoritative external shell')
     expect(projectPageDoc(reseededPage, page.id).nodes[body.rootNodeId]?.label)
@@ -914,7 +916,7 @@ describe('collab relay', () => {
     const harness = await createCapabilityTestHarness()
     cleanups.push(() => harness.cleanup())
     await harness.setupOwner()
-    const customTable = await createDataTable(harness.db, {
+    const customTable = await createDataTable(harness.db, MAIN_SCOPE, {
       id: 'archive-table',
       name: 'Archive',
       slug: 'archive',
@@ -929,7 +931,7 @@ describe('collab relay', () => {
       select id, cells_json from data_rows where table_id = ${'pages'}
     `
     const original = rows[0]
-    const docId = `page:${original.id}`
+    const docId = `page:main:${original.id}`
     const relay = createCollabRelay(harness.db, { persistDebounceMs: 60_000 })
     cleanups.push(() => relay.destroy())
     const retained = await relay.retain(docId)
@@ -937,7 +939,7 @@ describe('collab relay', () => {
     retained.doc.on('destroy', () => { oldDocDestroyed = true })
     editTitleUpdate(retained.doc, 'Stale page edit must not undo the move')
 
-    const moved = await updateDataRowTable(harness.db, original.id, customTable.id)
+    const moved = await updateDataRowTable(harness.db, MAIN_SCOPE, original.id, customTable.id)
     expect(moved.ok).toBeTrue()
     await relay.flushAll()
 
@@ -955,7 +957,7 @@ describe('collab relay', () => {
     expect(resetBlob?.generation).not.toBe(retained.generation)
     const rebound = await relay.openDoc(docId)
     expect(rebound.generation).not.toBe(retained.generation)
-    const { doc: reseededSite } = await relay.openDoc(SITE_DOC_ID)
+    const { doc: reseededSite } = await relay.openDoc(MAIN_SITE_DOC_ID)
     const pages = rostersMap(reseededSite).get('pages') as Y.Map<unknown>
     expect([...pages.keys()]).not.toContain(original.id)
     relay.release(docId)
@@ -965,7 +967,7 @@ describe('collab relay', () => {
     const harness = await createCapabilityTestHarness()
     cleanups.push(() => harness.cleanup())
     const cookie = await harness.setupOwner()
-    const targetTable = await createDataTable(harness.db, {
+    const targetTable = await createDataTable(harness.db, MAIN_SCOPE, {
       id: 'import-target',
       name: 'Import targets',
       slug: 'import-targets',
@@ -973,8 +975,8 @@ describe('collab relay', () => {
       singularLabel: 'Import target',
       pluralLabel: 'Import targets',
     })
-    const [page] = await listDataRows(harness.db, 'pages')
-    const docId = `page:${page.id}`
+    const [page] = await listDataRows(harness.db, MAIN_SCOPE, 'pages')
+    const docId = `page:main:${page.id}`
     const relay = createCollabRelay(harness.db, { persistDebounceMs: 60_000 })
     cleanups.push(() => relay.destroy())
     const retained = await relay.retain(docId)
@@ -1013,7 +1015,7 @@ describe('collab relay', () => {
     expect(oldDocDestroyed).toBeTrue()
     const rebound = await relay.openDoc(docId)
     expect(rebound.generation).not.toBe(oldGeneration)
-    const { doc: reseededSite } = await relay.openDoc(SITE_DOC_ID)
+    const { doc: reseededSite } = await relay.openDoc(MAIN_SITE_DOC_ID)
     const pages = rostersMap(reseededSite).get('pages') as Y.Map<unknown>
     expect([...pages.keys()]).not.toContain(page.id)
     relay.release(docId)
@@ -1023,14 +1025,14 @@ describe('collab relay', () => {
     const harness = await createCapabilityTestHarness()
     cleanups.push(() => harness.cleanup())
     const cookie = await harness.setupOwner()
-    const [existingPage] = await listDataRows(harness.db, 'pages')
-    const storedShell = await getDraftSite(harness.db)
+    const [existingPage] = await listDataRows(harness.db, MAIN_SCOPE, 'pages')
+    const storedShell = await getDraftSite(harness.db, MAIN_SCOPE)
     expect(storedShell).not.toBeNull()
 
     const relay = createCollabRelay(harness.db, { persistDebounceMs: 60_000 })
     cleanups.push(() => relay.destroy())
-    const { doc: pageDoc } = await relay.openDoc(`page:${existingPage.id}`)
-    const { doc: siteDoc } = await relay.openDoc(SITE_DOC_ID)
+    const { doc: pageDoc } = await relay.openDoc(`page:main:${existingPage.id}`)
+    const { doc: siteDoc } = await relay.openDoc(MAIN_SITE_DOC_ID)
     editTitleUpdate(pageDoc, 'Dirty row survives skipped import')
     siteDoc.transact(() => {
       shellMap(siteDoc).set('name', 'Dirty shell survives skipped import')
@@ -1059,17 +1061,17 @@ describe('collab relay', () => {
       rootNodeId: string
     }
     expect(body.nodes[body.rootNodeId]?.label).toBe('Dirty row survives skipped import')
-    expect((await getDraftSite(harness.db))?.name)
+    expect((await getDraftSite(harness.db, MAIN_SCOPE))?.name)
       .toBe('Dirty shell survives skipped import')
   })
 
   it('sweeps roster deletions before a site reset flushes a same-slug replacement', async () => {
     const { harness, relay, homeId } = await setup()
-    const { doc: siteDoc } = await relay.openDoc(SITE_DOC_ID)
-    const { doc: oldPage } = await relay.openDoc(`page:${homeId}`)
+    const { doc: siteDoc } = await relay.openDoc(MAIN_SITE_DOC_ID)
+    const { doc: oldPage } = await relay.openDoc(`page:main:${homeId}`)
     editTitleUpdate(oldPage, 'Dirty page during site reset')
     const replacementId = 'reset-replacement'
-    const { doc: replacement } = await relay.openDoc(`page:${replacementId}`)
+    const { doc: replacement } = await relay.openDoc(`page:main:${replacementId}`)
     populateFreshPage(replacement, 'Reset replacement', 'index')
     siteDoc.transact(() => {
       const pages = rostersMap(siteDoc).get('pages') as Y.Map<unknown>
@@ -1080,7 +1082,7 @@ describe('collab relay', () => {
     // A settings save resets only site:default. Its stale shell must not be
     // written back, but its current roster still has to release the old slug
     // before non-reset row docs are flushed.
-    await relay.resetDocs([SITE_DOC_ID])
+    await relay.resetDocs([MAIN_SITE_DOC_ID])
 
     const { rows } = await harness.db<{ id: string; deleted_at: string | null }>`
       select id, deleted_at from data_rows
@@ -1103,7 +1105,7 @@ describe('collab relay', () => {
     const { rows } = await harness.db<{ id: string }>`
       select id from data_rows where table_id = ${'pages'}
     `
-    const docId = `page:${rows[0].id}`
+    const docId = `page:main:${rows[0].id}`
 
     const { doc } = await relay.openDoc(docId)
     // The generation-mint write has landed; arm the gate so the DEBOUNCED
@@ -1132,7 +1134,7 @@ describe('collab relay', () => {
     const { rows } = await harness.db<{ id: string }>`
       select id from data_rows where table_id = ${'pages'}
     `
-    const docId = `page:${rows[0].id}`
+    const docId = `page:main:${rows[0].id}`
     const retained = await relay.retain(docId)
 
     gated.arm()
@@ -1164,9 +1166,9 @@ describe('collab relay', () => {
     const { rows } = await harness.db<{ id: string }>`
       select id from data_rows where table_id = ${'pages'}
     `
-    const docId = `page:${rows[0].id}`
+    const docId = `page:main:${rows[0].id}`
     const retained = await relay.retain(docId)
-    const { doc: siteDoc } = await relay.openDoc(SITE_DOC_ID)
+    const { doc: siteDoc } = await relay.openDoc(MAIN_SITE_DOC_ID)
     let originalDestroyed = false
     retained.doc.on('destroy', () => { originalDestroyed = true })
 
@@ -1179,7 +1181,7 @@ describe('collab relay', () => {
     // resetDocs installs both reset gates immediately, then waits for the
     // blocked SITE persist before it snapshots heldResetRefs. Releasing here
     // must decrement the live entry without starting a competing eviction.
-    const reset = relay.resetDocs([SITE_DOC_ID, docId])
+    const reset = relay.resetDocs([MAIN_SITE_DOC_ID, docId])
     relay.release(docId)
     gated.release()
     await reset
@@ -1206,7 +1208,7 @@ describe('collab relay', () => {
       select id, slug, cells_json from data_rows where table_id = ${'pages'}
     `
     const row = rows[0]
-    const docId = `page:${row.id}`
+    const docId = `page:main:${row.id}`
 
     const seedRelay = createCollabRelay(harness.db, { persistDebounceMs: 5 })
     const { doc: seededDoc } = await seedRelay.openDoc(docId)
@@ -1233,7 +1235,7 @@ describe('collab relay', () => {
         resolve()
       })
     })
-    await saveDataRowDraft(harness.db, row.id, {
+    await saveDataRowDraft(harness.db, MAIN_SCOPE, row.id, {
       cells: externalCells,
       slug: row.slug,
     })
@@ -1256,7 +1258,7 @@ describe('collab relay', () => {
     const { rows } = await harness.db<{ id: string }>`
       select id from data_rows where table_id = ${'pages'}
     `
-    const docId = `page:${rows[0].id}`
+    const docId = `page:main:${rows[0].id}`
 
     const seedRelay = createCollabRelay(harness.db, { persistDebounceMs: 5 })
     const seeded = await seedRelay.openDoc(docId)
@@ -1310,7 +1312,7 @@ describe('collab relay', () => {
       select id, slug, cells_json from data_rows where table_id = ${'pages'}
     `
     const row = rows[0]
-    const docId = `page:${row.id}`
+    const docId = `page:main:${row.id}`
     const { doc } = await relay.openDoc(docId)
 
     gated.arm()
@@ -1330,7 +1332,7 @@ describe('collab relay', () => {
         resolve()
       })
     })
-    await saveDataRowDraft(harness.db, row.id, {
+    await saveDataRowDraft(harness.db, MAIN_SCOPE, row.id, {
       cells: externalCells,
       slug: row.slug,
     })
@@ -1360,7 +1362,7 @@ describe('collab relay', () => {
       select id, slug, cells_json from data_rows where table_id = ${'pages'}
     `
     const row = rows[0]
-    const docId = `page:${row.id}`
+    const docId = `page:main:${row.id}`
     const gated = gateDerivedRowWrites(harness.db, row.id)
     const relay = createCollabRelay(gated.db, { persistDebounceMs: 5 })
     cleanups.push(() => relay.destroy())
@@ -1385,7 +1387,7 @@ describe('collab relay', () => {
         resolve()
       })
     })
-    const externalSave = saveDataRowDraft(harness.db, row.id, {
+    const externalSave = saveDataRowDraft(harness.db, MAIN_SCOPE, row.id, {
       cells: externalCells,
       slug: row.slug,
     }).then(() => { externalFinished = true })
@@ -1421,9 +1423,9 @@ describe('collab relay', () => {
       select id, slug, cells_json from data_rows where table_id = ${'pages'}
     `
     const row = rows[0]
-    const docId = `page:${row.id}`
+    const docId = `page:main:${row.id}`
     const { doc: pageDoc } = await relay.openDoc(docId)
-    const { doc: siteDoc } = await relay.openDoc(SITE_DOC_ID)
+    const { doc: siteDoc } = await relay.openDoc(MAIN_SITE_DOC_ID)
 
     const externalCells = structuredClone(row.cells_json)
     const externalBody = externalCells.body as {
@@ -1433,6 +1435,7 @@ describe('collab relay', () => {
     externalBody.nodes[externalBody.rootNodeId].label = 'External reset is authoritative'
     await saveDataRowDraft(
       harness.db,
+      MAIN_SCOPE,
       row.id,
       { cells: externalCells, slug: row.slug },
       null,
@@ -1447,7 +1450,7 @@ describe('collab relay', () => {
       shellMap(siteDoc).set('name', 'Stale collaborative shell')
     }, LOCAL_ORIGIN)
     await gated.blocked
-    const reset = relay.resetDocs([SITE_DOC_ID, docId])
+    const reset = relay.resetDocs([MAIN_SITE_DOC_ID, docId])
     editTitleUpdate(pageDoc, 'Late stale collaborative edit')
     await Bun.sleep(30)
     gated.release()
@@ -1481,7 +1484,7 @@ describe('collab relay', () => {
       select id, slug, cells_json from data_rows where table_id = ${'pages'}
     `
     const row = rows[0]
-    const docId = `page:${row.id}`
+    const docId = `page:main:${row.id}`
     await relay.retain(docId)
     await relay.flushAll()
 
@@ -1492,7 +1495,7 @@ describe('collab relay', () => {
     }
     externalBody.nodes[externalBody.rootNodeId].label = 'Survives reset retry'
     failing.arm()
-    await saveDataRowDraft(harness.db, row.id, {
+    await saveDataRowDraft(harness.db, MAIN_SCOPE, row.id, {
       cells: externalCells,
       slug: row.slug,
     })
@@ -1540,8 +1543,8 @@ describe('collab relay', () => {
   it('a relay-only page survives a site-doc reset instead of vanishing from the roster', async () => {
     const { harness, relay } = await setup()
     const rowId = 'relay-only-page'
-    const { doc: pageDoc } = await relay.openDoc(`page:${rowId}`)
-    await relay.openDoc(SITE_DOC_ID)
+    const { doc: pageDoc } = await relay.openDoc(`page:main:${rowId}`)
+    await relay.openDoc(MAIN_SITE_DOC_ID)
 
     pageDoc.transact(() => {
       const tree = treeMap(pageDoc)
@@ -1563,14 +1566,14 @@ describe('collab relay', () => {
     // Reset the SITE doc while the new page exists ONLY in the relay. Its
     // derived JSON must be flushed first, or the reseed — which builds the
     // roster from listDataRowIdSlugs — cannot see the row at all.
-    await relay.resetDocs([SITE_DOC_ID])
+    await relay.resetDocs([MAIN_SITE_DOC_ID])
 
     const { rows } = await harness.db<{ id: string }>`
       select id from data_rows where id = ${rowId} and deleted_at is null
     `
     expect(rows).toHaveLength(1)
 
-    const { doc: reseeded } = await relay.openDoc(SITE_DOC_ID)
+    const { doc: reseeded } = await relay.openDoc(MAIN_SITE_DOC_ID)
     const pages = rostersMap(reseeded).get('pages') as Y.Map<unknown>
     expect([...pages.keys()]).toContain(rowId)
   })

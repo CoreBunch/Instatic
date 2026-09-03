@@ -9,7 +9,7 @@ import {
   seedPageDoc,
   seedSiteDoc,
   shellMap,
-  SITE_DOC_ID,
+  MAIN_SITE_DOC_ID,
   treeMap,
 } from '@core/collab'
 import type { CoreCapability } from '@core/capabilities'
@@ -75,7 +75,7 @@ describe('collab update capability guard', () => {
     })
     const doc = new Y.Doc()
     seedPageDoc(doc, page)
-    const docId = 'page:page-1'
+    const docId = 'page:main:page-1'
 
     const contentUpdate = updateFrom(doc, (fork) => {
       const props = nodeMap(fork, 'copy').get('props') as Y.Map<unknown>
@@ -107,8 +107,8 @@ describe('collab update capability guard', () => {
       const settings = shellMap(fork).get('settings') as Y.Map<unknown>
       settings.set('metaTitle', 'Collaborative title')
     })
-    expectAllowed(SITE_DOC_ID, doc, contentUpdate, CONTENT)
-    expectForbidden(SITE_DOC_ID, doc, contentUpdate, STYLE, 'forbidden content change')
+    expectAllowed(MAIN_SITE_DOC_ID, doc, contentUpdate, CONTENT)
+    expectForbidden(MAIN_SITE_DOC_ID, doc, contentUpdate, STYLE, 'forbidden content change')
 
     const styleUpdate = updateFrom(doc, (fork) => {
       const styleRules = shellMap(fork).get('styleRules') as Y.Map<unknown>
@@ -118,21 +118,21 @@ describe('collab update capability guard', () => {
         styles: { color: 'var(--foreground)' },
       })
     })
-    expectAllowed(SITE_DOC_ID, doc, styleUpdate, STYLE)
-    expectForbidden(SITE_DOC_ID, doc, styleUpdate, CONTENT, 'forbidden style change')
+    expectAllowed(MAIN_SITE_DOC_ID, doc, styleUpdate, STYLE)
+    expectForbidden(MAIN_SITE_DOC_ID, doc, styleUpdate, CONTENT, 'forbidden style change')
 
     const structureUpdate = updateFrom(doc, (fork) => {
       shellMap(fork).set('name', 'Renamed site')
     })
-    expectAllowed(SITE_DOC_ID, doc, structureUpdate, STRUCTURE)
-    expectForbidden(SITE_DOC_ID, doc, structureUpdate, CONTENT, 'forbidden structure change')
+    expectAllowed(MAIN_SITE_DOC_ID, doc, structureUpdate, STRUCTURE)
+    expectForbidden(MAIN_SITE_DOC_ID, doc, structureUpdate, CONTENT, 'forbidden structure change')
 
     const rosterUpdate = updateFrom(doc, (fork) => {
       const pages = rostersMap(fork).get('pages') as Y.Map<unknown>
       pages.set('page-2', true)
     })
-    expectAllowed(SITE_DOC_ID, doc, rosterUpdate, STRUCTURE)
-    expectForbidden(SITE_DOC_ID, doc, rosterUpdate, CONTENT, 'roster changes')
+    expectAllowed(MAIN_SITE_DOC_ID, doc, rosterUpdate, STRUCTURE)
+    expectForbidden(MAIN_SITE_DOC_ID, doc, rosterUpdate, CONTENT, 'roster changes')
   })
 
   it('requires structure capability for component and layout documents', () => {
@@ -141,9 +141,9 @@ describe('collab update capability guard', () => {
     const componentUpdate = updateFrom(componentDoc, (fork) => {
       metaMap(fork).set('name', 'Renamed hero')
     })
-    expectAllowed('component:component-1', componentDoc, componentUpdate, STRUCTURE)
+    expectAllowed('component:main:component-1', componentDoc, componentUpdate, STRUCTURE)
     expectForbidden(
-      'component:component-1',
+      'component:main:component-1',
       componentDoc,
       componentUpdate,
       CONTENT,
@@ -168,9 +168,9 @@ describe('collab update capability guard', () => {
         classes: { 'hero-layout': { id: 'hero-layout', name: 'Hero layout', styles: {} } },
       })
     })
-    expectAllowed('layout:layout-1', layoutDoc, layoutUpdate, STRUCTURE)
+    expectAllowed('layout:main:layout-1', layoutDoc, layoutUpdate, STRUCTURE)
     expectForbidden(
-      'layout:layout-1',
+      'layout:main:layout-1',
       layoutDoc,
       layoutUpdate,
       STYLE,

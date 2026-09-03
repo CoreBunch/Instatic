@@ -8,6 +8,7 @@ import { useEffect } from 'react'
 import { Type } from '@core/utils/typeboxHelpers'
 import type { AiToolOutput } from '@core/ai'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { withAmbientHeaders } from '@core/http'
 import { readNdjsonStream } from './ndjsonStream'
 import { postToolResult } from './toolResultApi'
 
@@ -82,14 +83,14 @@ export async function runMcpWorkspaceBridgeConnection(
   let bridgeId = ''
 
   try {
-    const res = await fetch(`${MCP_BRIDGE_PATH}?scope=${scope}`, {
+    const res = await fetch(`${MCP_BRIDGE_PATH}?scope=${scope}`, withAmbientHeaders({
       method: 'GET',
       credentials: 'same-origin',
       // The bridge body stays newline-delimited JSON, but the event-stream
       // media type prevents reverse proxies from buffering the open response.
       headers: { Accept: 'text/event-stream' },
       signal,
-    })
+    }))
     if (res.status === 401 || res.status === 403) return 'auth'
     if (!res.ok || !res.body) return 'transient'
 

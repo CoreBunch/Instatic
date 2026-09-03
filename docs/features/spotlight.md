@@ -159,6 +159,7 @@ The subscription is **dropped on close** to avoid spurious re-renders.
 | `settings`         | Open framework scale, Open site settings                             |
 | `ai`               | Open / focus AI assistant                                            |
 | `account` / `users`| Account security, session revocation, user management                |
+| `branches`         | Switch branch…, Create branch…, Switch to main, Manage branches… (`commands/branches.ts`) |
 
 Each command's `when(ctx)` / `workspaces` / `capability` fields filter by user capability + workspace context. `filterCommands(commands, ctx)` runs once per palette open.
 
@@ -195,6 +196,8 @@ interface SpotlightProvider {
 There are two kinds of provider:
 
 **Local providers** (`pagesProvider`, `siteFilesProvider`) read data from the editor store synchronously. No HTTP call, `debounceMs: 0`.
+
+**Local providers** read a store synchronously with no debounce: `pagesProvider` (the editor store's pages) and `branchesProvider` (the branch store — "Switch to <branch>" rows for a typed branch name).
 
 **Server providers** (`mediaProvider`, `contentProvider`, `dataProvider`, `pluginPagesProvider`) fetch via `/admin/api/cms/...`. They are built with shared scaffolding in `serverProvider.ts` (see below).
 

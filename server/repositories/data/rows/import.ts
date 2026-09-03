@@ -8,8 +8,13 @@
  *
  * User reference columns (author, createdBy, etc.) are intentionally dropped
  * on import: the user ids from the source instance will not exist in the target.
+ *
+ * Bundle ids are LOGICAL ids; the branch being imported into supplies the
+ * physical key (see `@core/branches`).
  */
+import { physicalId } from '@core/branches'
 import type { DbClient } from '../../../db/client'
+import type { BranchScope } from '../../../branches/scope'
 import type { DataRowCells, DataRowStatus } from '@core/data/schemas'
 
 export interface DataRowImportInput {
@@ -29,17 +34,19 @@ export interface DataRowImportInput {
  */
 export async function upsertDataRow(
   db: DbClient,
+  scope: BranchScope,
   input: DataRowImportInput,
 ): Promise<void> {
   const createdAt = input.createdAt ?? new Date().toISOString()
   const updatedAt = input.updatedAt ?? new Date().toISOString()
   await db`
     insert into data_rows (
-      id, table_id, cells_json, slug, status,
+      id, branch_id, table_id, cells_json, slug, status,
       published_at, created_at, updated_at
     )
     values (
-      ${input.id}, ${input.tableId}, ${input.cells}, ${input.slug}, ${input.status},
+      ${physicalId(scope.branchId, input.id)}, ${scope.branchId},
+      ${physicalId(scope.branchId, input.tableId)}, ${input.cells}, ${input.slug}, ${input.status},
       ${input.publishedAt}, ${createdAt}, ${updatedAt}
     )
     on conflict (id) do update
@@ -63,17 +70,19 @@ export async function upsertDataRow(
  */
 export async function insertDataRowIfAbsent(
   db: DbClient,
+  scope: BranchScope,
   input: DataRowImportInput,
 ): Promise<boolean> {
   const createdAt = input.createdAt ?? new Date().toISOString()
   const updatedAt = input.updatedAt ?? new Date().toISOString()
   const { rows } = await db<{ id: string }>`
     insert into data_rows (
-      id, table_id, cells_json, slug, status,
+      id, branch_id, table_id, cells_json, slug, status,
       published_at, created_at, updated_at
     )
     values (
-      ${input.id}, ${input.tableId}, ${input.cells}, ${input.slug}, ${input.status},
+      ${physicalId(scope.branchId, input.id)}, ${scope.branchId},
+      ${physicalId(scope.branchId, input.tableId)}, ${input.cells}, ${input.slug}, ${input.status},
       ${input.publishedAt}, ${createdAt}, ${updatedAt}
     )
     on conflict do nothing
@@ -84,22 +93,24 @@ export async function insertDataRowIfAbsent(
 
 /**
  * Plain INSERT with no conflict handling. Assumes the caller has already wiped
- * the table (as the `replace` strategy does). Returns void — the caller does
- * not need the inserted row shape.
+ * the branch's rows (as the `replace` strategy does). Returns void — the
+ * caller does not need the inserted row shape.
  */
 export async function replaceDataRow(
   db: DbClient,
+  scope: BranchScope,
   input: DataRowImportInput,
 ): Promise<void> {
   const createdAt = input.createdAt ?? new Date().toISOString()
   const updatedAt = input.updatedAt ?? new Date().toISOString()
   await db`
     insert into data_rows (
-      id, table_id, cells_json, slug, status,
+      id, branch_id, table_id, cells_json, slug, status,
       published_at, created_at, updated_at
     )
     values (
-      ${input.id}, ${input.tableId}, ${input.cells}, ${input.slug}, ${input.status},
+      ${physicalId(scope.branchId, input.id)}, ${scope.branchId},
+      ${physicalId(scope.branchId, input.tableId)}, ${input.cells}, ${input.slug}, ${input.status},
       ${input.publishedAt}, ${createdAt}, ${updatedAt}
     )
   `

@@ -131,6 +131,13 @@ export interface SourceFetchContext {
    * because cookies would fragment the Layer B cache per visitor.
    */
   request?: SourceRequestContext
+  /**
+   * Branch whose rows the source reads. Publishing and public rendering run
+   * on `main`; the editor's runtime preview and branch previews pass the
+   * branch being viewed so `data.rows` addresses that branch's tables (see
+   * `@core/branches`). Absent means main.
+   */
+  branchId?: string
 }
 
 /**

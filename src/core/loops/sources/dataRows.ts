@@ -19,6 +19,7 @@
  *   - tableId (required) — the data table to iterate
  */
 
+import { MAIN_BRANCH_ID, physicalId } from '@core/branches'
 import type { LoopEntitySource, LoopFetchResult, LoopItem, LoopSourceDb } from '@core/loops/types'
 import { cellFilterSql, cellOrderSql, parseCellFilter, parseCellOrder, type CellFilter } from '../cellFilter'
 import { isoDate } from '../../utils/isoDate'
@@ -203,7 +204,7 @@ async function fetchPage(
   const offsetParam = positionalParam(db, 3 + before)
   const { rows } = await db.unsafe<PublishedDataRowSqlRow>(
     `select data_row_versions.id as version_id,
-            data_rows.id as row_id,
+            data_rows.logical_id as row_id,
             data_rows.table_id,
             data_tables.slug as table_slug,
             data_tables.kind as table_kind,
@@ -340,9 +341,17 @@ async function fetchDataKindPage(
   db: LoopSourceDb,
   orderBy: OrderColumn,
   direction: 'asc' | 'desc',
-  opts: { tableId: string; limit: number; offset: number; filter: CellFilter | null; orderCellField: string | null },
+  opts: {
+    tableId: string
+    limit: number
+    offset: number
+    filter: CellFilter | null
+    orderCellField: string | null
+    /** Post-type drafts (a branch): skip rows explicitly taken offline. */
+    excludeUnpublished: boolean
+  },
 ): Promise<DataKindRowSqlRow[]> {
-  const { tableId, limit, offset, filter, orderCellField } = opts
+  const { tableId, limit, offset, filter, orderCellField, excludeUnpublished } = opts
   const sortKey: 'createdAt' | 'updatedAt' | 'slug' =
     orderBy === 'updatedAt' ? 'updatedAt' : orderBy === 'slug' ? 'slug' : 'createdAt'
   const column = 'data_rows.cells_json'
@@ -363,7 +372,7 @@ async function fetchDataKindPage(
   // Same safety contract as `fetchPage`: the ORDER BY text comes only from
   // the closed map above; every runtime value is a positional parameter.
   const { rows } = await db.unsafe<DataKindRowSqlRow>(
-    `select data_rows.id as row_id,
+    `select data_rows.logical_id as row_id,
             data_rows.table_id,
             data_tables.slug as table_slug,
             data_tables.route_base as table_route_base,
@@ -382,6 +391,7 @@ async function fetchDataKindPage(
      where data_rows.table_id = ${positionalParam(db, 1)}
        and data_rows.deleted_at is null
        and data_tables.deleted_at is null
+       ${excludeUnpublished ? "and data_rows.status <> 'unpublished'" : ''}
        ${cell ? `and ${cell.sql}` : ''}
      order by ${orderColumn} ${direction}, data_rows.id ${direction}
      limit ${limitParam} offset ${offsetParam}`,
@@ -414,6 +424,12 @@ export async function fetchPublishedDataRowItems(
     offset: number
     /** Optional condition on one of the row's own cells. */
     cellFilter?: CellFilter | null
+    /**
+     * Read post-type rows as DRAFTS instead of through their published
+     * versions — a branch has no versions (publishing is main-only), so its
+     * loops show what the branch would publish.
+     */
+    drafts?: boolean
   },
 ): Promise<LoopFetchResult> {
   if (!opts.tableId) return { items: [], totalItems: 0 }
@@ -440,7 +456,8 @@ export async function fetchPublishedDataRowItems(
     : 'publishedAt'
   const direction: 'asc' | 'desc' = opts.direction === 'asc' ? 'asc' : 'desc'
 
-  if (table.kind === 'data') {
+  const excludeUnpublished = table.kind !== 'data' && opts.drafts === true
+  if (table.kind === 'data' || opts.drafts) {
     // The count must apply the same condition, or pagination advertises rows
     // the page query filters out.
     const dataCountCell = cellFilter
@@ -451,6 +468,7 @@ export async function fetchPublishedDataRowItems(
        from data_rows
        where data_rows.table_id = ${positionalParam(db, 1)}
          and data_rows.deleted_at is null
+         ${excludeUnpublished ? "and data_rows.status <> 'unpublished'" : ''}
          ${dataCountCell ? `and ${dataCountCell.sql}` : ''}`,
       [opts.tableId, ...(dataCountCell?.params ?? [])],
     )
@@ -463,6 +481,7 @@ export async function fetchPublishedDataRowItems(
       offset: opts.offset,
       filter: cellFilter,
       orderCellField,
+      excludeUnpublished,
     })
     const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(sqlRows, fields))
     return {
@@ -574,8 +593,12 @@ export const DataRowsSource: LoopEntitySource = {
   ],
 
   async fetch(ctx): Promise<LoopFetchResult> {
+    // The loop stores the table's logical id; the SQL below addresses the
+    // physical table row of the branch being rendered.
+    const logicalTableId = typeof ctx.filters.tableId === 'string' ? ctx.filters.tableId : ''
     return fetchPublishedDataRowItems(ctx.db, {
-      tableId: typeof ctx.filters.tableId === 'string' ? ctx.filters.tableId : '',
+      tableId: logicalTableId ? physicalId(ctx.branchId ?? MAIN_BRANCH_ID, logicalTableId) : '',
+      drafts: (ctx.branchId ?? MAIN_BRANCH_ID) !== MAIN_BRANCH_ID,
       orderBy: ctx.orderBy,
       direction: ctx.direction,
       limit: ctx.limit,

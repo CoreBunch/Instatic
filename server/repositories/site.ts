@@ -7,6 +7,10 @@
  * id, name, breakpoints, settings, styleRules, files, packageJson, runtime,
  * Site Explorer organization, createdAt, updatedAt.
  *
+ * One shell row per branch. Its logical id is always `default`
+ * (`SITE_SHELL_LOGICAL_ID`); the physical row id follows the branch id
+ * scheme in `@core/branches`, so `main` keeps the historical `default` key.
+ *
  * Storage format inside `settings_json`:
  *   { cmsSiteSchemaVersion: 1, site: <SiteShell without name> }
  * The `name` is stored in the dedicated `site.name` column.
@@ -18,10 +22,12 @@ import {
   parseConditions,
   parseSiteExplorerOrganization,
 } from '@core/page-tree'
+import { SITE_SHELL_LOGICAL_ID, physicalId } from '@core/branches'
 import { validateSite } from '@core/persistence/validate'
 import { normalizeSitePackageJson } from '@core/site-dependencies/manifest'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import type { DbClient } from '../db/client'
+import type { BranchScope } from '../branches/scope'
 import { notifyShellWrite, serializeCollabAwareWrite } from './rowWriteEvents'
 import type { SiteRow } from '../types'
 
@@ -44,12 +50,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+/** The physical primary key of a branch's shell row. */
+export function siteRowId(scope: BranchScope): string {
+  return physicalId(scope.branchId, SITE_SHELL_LOGICAL_ID)
+}
+
 function readStoredShell(row: SiteRow): SiteShell {
   const stored = row.settings_json
   const site: Record<string, unknown> = isRecord(stored?.site) ? stored.site as Record<string, unknown> : {}
   const conditions = parseConditions(site.conditions)
   return {
-    id: typeof site.id === 'string' ? site.id : 'default',
+    id: typeof site.id === 'string' ? site.id : SITE_SHELL_LOGICAL_ID,
     name: typeof row.name === 'string' ? row.name : '',
     files: Array.isArray(site.files) ? site.files as SiteShell['files'] : [],
     packageJson: normalizeSitePackageJson(site.packageJson),
@@ -68,11 +79,11 @@ function readStoredShell(row: SiteRow): SiteShell {
   }
 }
 
-export async function getDraftSite(db: DbClient): Promise<SiteShell | null> {
+export async function getDraftSite(db: DbClient, scope: BranchScope): Promise<SiteShell | null> {
   const { rows } = await db<SiteRow>`
     select id, name, settings_json, created_at, updated_at
     from site
-    where id = 'default'
+    where id = ${siteRowId(scope)}
     limit 1
   `
   const row = rows[0]
@@ -84,19 +95,25 @@ export async function getDraftSite(db: DbClient): Promise<SiteShell | null> {
 
 export async function saveDraftSite(
   db: DbClient,
+  scope: BranchScope,
   shell: SiteShell,
   _actorUserId: string | null = null,
   opts: { collabInternal?: boolean } = {},
 ): Promise<void> {
   if (!opts.collabInternal) {
     return serializeCollabAwareWrite(async () => {
-      await saveDraftSite(db, shell, _actorUserId, { collabInternal: true })
-      notifyShellWrite()
+      await saveDraftSite(db, scope, shell, _actorUserId, { collabInternal: true })
+      notifyShellWrite(scope.branchId)
     })
   }
   await db`
-    insert into site (id, name, settings_json)
-    values ('default', ${shell.name}, ${shellToStorage(shell)})
+    insert into site (id, name, settings_json, branch_id)
+    values (
+      ${siteRowId(scope)},
+      ${shell.name},
+      ${shellToStorage(shell)},
+      ${scope.branchId}
+    )
     on conflict (id) do update
       set name = excluded.name,
           settings_json = excluded.settings_json,
@@ -110,10 +127,10 @@ export async function saveDraftSite(
  * reads this inside the transaction for the shell conflict check; the GET
  * shell endpoint returns it so clients can seed their base seq.
  */
-export async function getDraftSiteSeq(db: DbClient): Promise<number> {
+export async function getDraftSiteSeq(db: DbClient, scope: BranchScope): Promise<number> {
   const { rows } = await db<{ seq: number }>`
     select seq from site
-    where id = 'default'
+    where id = ${siteRowId(scope)}
     limit 1
   `
   return rows[0] ? Number(rows[0].seq) : 0
@@ -128,10 +145,10 @@ export async function getDraftSiteSeq(db: DbClient): Promise<number> {
  * conditional stamp keeps the shell seq an honest "shell content changed"
  * signal (see repositories/syncSequence.ts).
  */
-export async function stampDraftSiteSeq(db: DbClient, seq: number): Promise<void> {
+export async function stampDraftSiteSeq(db: DbClient, scope: BranchScope, seq: number): Promise<void> {
   await db`
     update site
     set seq = ${seq}
-    where id = 'default'
+    where id = ${siteRowId(scope)}
   `
 }

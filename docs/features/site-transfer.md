@@ -141,6 +141,7 @@ GET accepts filter options as query-string params. POST accepts either a JSON bo
   includeSite?:         boolean     // include site shell; default: true
   includeMediaFolders?: boolean     // include the folder tree + asset membership; default: true
   includeRedirects?:    boolean     // include published-URL redirects; default: true
+  branchId?:            string      // site branch to export (the form POST cannot carry the branch header); default: main
 }
 ```
 

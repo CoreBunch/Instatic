@@ -9,6 +9,7 @@ import { createDataRow } from '../../repositories/data'
 import { resolveBridgeToolResult } from '../runtime'
 import { buildMcpServer } from './server'
 import { createEditorBridgeStream } from './editorBridge'
+import { MAIN_SCOPE } from '../../branches/scope'
 
 const decoder = new TextDecoder()
 
@@ -199,7 +200,7 @@ describe('mcp server', () => {
       insert into users (id, email, email_normalized, display_name, password_hash, role_id)
       values ('u2', 'u2@example.com', 'u2@example.com', 'User Two', 'x', 'admin')
     `
-    const foreignRow = await createDataRow(db, {
+    const foreignRow = await createDataRow(db, MAIN_SCOPE, {
       id: 'foreign-row',
       tableId: 'posts',
       cells: { title: 'Foreign row' },

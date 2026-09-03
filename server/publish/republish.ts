@@ -80,7 +80,8 @@ export async function republishAllPages(db: DbClient): Promise<number> {
   const { rows } = await db<{ id: string }>`
     select id
     from data_rows
-    where table_id = 'pages'
+    where branch_id = 'main'
+      and table_id = 'pages'
       and status = 'published'
       and deleted_at is null
     order by created_at asc

@@ -52,6 +52,7 @@ import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
 import { runPublishFlush } from './publishFlush'
+import { MAIN_SCOPE } from '../branches/scope'
 
 interface PublishResult {
   publishedPages: number
@@ -104,7 +105,7 @@ async function publishDraftSiteLocked(
   // write (autosaves, row publishes) behind it. `withPublishLock` already
   // serializes publishes, and version numbers are only allocated by publish
   // paths under that same lock, so reading outside the transaction is stable.
-  const site = await getDraftSiteDocument(db)
+  const site = await getDraftSiteDocument(db, MAIN_SCOPE)
   if (!site) throw new Error('draft site not found')
 
   const runtime = normalizeSiteRuntimeConfig(site.runtime)

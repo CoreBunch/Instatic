@@ -9,8 +9,13 @@
  *   getDataRowBySlug      — a single row by its denormalized slug
  *   countDataRows         — non-deleted row count for a table
  *   listDataAuthorOptions — active users for the author picker
+ *
+ * Every id in and out is LOGICAL; the branch comes from `scope` and is
+ * folded into the physical ids the SQL binds (see `@core/branches`).
  */
+import { logicalIdOf, physicalId } from '@core/branches'
 import type { DbClient } from '../../../db/client'
+import type { BranchScope } from '../../../branches/scope'
 import type { DataRow } from '@core/data/schemas'
 import { selectHydratedDataRows, isOwnedByUser, placeholder } from './mapper'
 
@@ -33,12 +38,13 @@ interface DataAuthorRow {
 
 export async function listDataRows(
   db: DbClient,
+  scope: BranchScope,
   tableId: string,
   visibility: ListDataRowsVisibility = {},
 ): Promise<DataRow[]> {
-  const dataRows = await selectHydratedDataRows(db, {
+  const dataRows = await selectHydratedDataRows(db, scope, {
     where: `data_rows.table_id = ${placeholder(db.dialect, 1)} and data_rows.deleted_at is null`,
-    params: [tableId],
+    params: [physicalId(scope.branchId, tableId)],
     tail: 'order by data_rows.updated_at desc, data_rows.created_at desc',
   })
   if (visibility.ownerUserId) {
@@ -61,11 +67,13 @@ interface DataRowIdSlug {
  */
 export async function listDataRowIdSlugs(
   db: DbClient,
+  scope: BranchScope,
   tableId: string,
 ): Promise<DataRowIdSlug[]> {
   const { rows } = await db<DataRowIdSlug>`
-    select id, slug from data_rows
-    where table_id = ${tableId}
+    select logical_id as id, slug from data_rows
+    where table_id = ${physicalId(scope.branchId, tableId)}
+      and branch_id = ${scope.branchId}
       and deleted_at is null
   `
   return rows
@@ -79,11 +87,13 @@ export async function listDataRowIdSlugs(
  */
 export async function listSoftDeletedDataRowIds(
   db: DbClient,
+  scope: BranchScope,
   tableId: string,
 ): Promise<string[]> {
   const { rows } = await db<{ id: string }>`
-    select id from data_rows
-    where table_id = ${tableId}
+    select logical_id as id from data_rows
+    where table_id = ${physicalId(scope.branchId, tableId)}
+      and branch_id = ${scope.branchId}
       and deleted_at is not null
   `
   return rows.map((r) => r.id)
@@ -104,15 +114,21 @@ export interface DataRowSeq {
  */
 export async function listDataRowSeqs(
   db: DbClient,
+  scope: BranchScope,
   tableId: string,
   rowIds: ReadonlyArray<string>,
 ): Promise<DataRowSeq[]> {
   if (rowIds.length === 0) return []
   const placeholders = rowIds.map((_, i) => placeholder(db.dialect, i + 2)).join(', ')
   const { rows } = await db.unsafe<DataRowSeq>(
-    `select id, seq from data_rows
-     where table_id = ${placeholder(db.dialect, 1)} and id in (${placeholders})`,
-    [tableId, ...rowIds],
+    `select logical_id as id, seq from data_rows
+     where table_id = ${placeholder(db.dialect, 1)} and id in (${placeholders})
+       and branch_id = ${placeholder(db.dialect, rowIds.length + 2)}`,
+    [
+      physicalId(scope.branchId, tableId),
+      ...rowIds.map((rowId) => physicalId(scope.branchId, rowId)),
+      scope.branchId,
+    ],
   )
   return rows.map((r) => ({ id: r.id, seq: Number(r.seq) }))
 }
@@ -132,20 +148,22 @@ export interface ChangedDataRowRef {
  */
 export async function listChangedDataRowRefsSince(
   db: DbClient,
+  scope: BranchScope,
   tableIds: ReadonlyArray<string>,
   cursor: number,
 ): Promise<ChangedDataRowRef[]> {
   if (tableIds.length === 0) return []
   const placeholders = tableIds.map((_, i) => placeholder(db.dialect, i + 2)).join(', ')
   const { rows } = await db.unsafe<{ id: string; table_id: string; seq: number; deleted_at: string | null }>(
-    `select id, table_id, seq, deleted_at from data_rows
+    `select logical_id as id, table_id, seq, deleted_at from data_rows
      where seq > ${placeholder(db.dialect, 1)} and table_id in (${placeholders})
+       and branch_id = ${placeholder(db.dialect, tableIds.length + 2)}
      order by seq asc`,
-    [cursor, ...tableIds],
+    [cursor, ...tableIds.map((tableId) => physicalId(scope.branchId, tableId)), scope.branchId],
   )
   return rows.map((row) => ({
     id: row.id,
-    tableId: row.table_id,
+    tableId: logicalIdOf(scope.branchId, row.table_id),
     seq: Number(row.seq),
     deleted: row.deleted_at !== null,
   }))
@@ -153,11 +171,12 @@ export async function listChangedDataRowRefsSince(
 
 export async function getDataRow(
   db: DbClient,
+  scope: BranchScope,
   rowId: string,
 ): Promise<DataRow | null> {
-  const rows = await selectHydratedDataRows(db, {
+  const rows = await selectHydratedDataRows(db, scope, {
     where: `data_rows.id = ${placeholder(db.dialect, 1)} and data_rows.deleted_at is null`,
-    params: [rowId],
+    params: [physicalId(scope.branchId, rowId)],
     tail: 'limit 1',
   })
   return rows[0] ?? null
@@ -171,13 +190,14 @@ export async function getDataRow(
  */
 export async function getDataRowMany(
   db: DbClient,
+  scope: BranchScope,
   rowIds: ReadonlyArray<string>,
 ): Promise<DataRow[]> {
   if (rowIds.length === 0) return []
   const placeholders = rowIds.map((_, i) => placeholder(db.dialect, i + 1)).join(', ')
-  return selectHydratedDataRows(db, {
+  return selectHydratedDataRows(db, scope, {
     where: `data_rows.id in (${placeholders}) and data_rows.deleted_at is null`,
-    params: [...rowIds],
+    params: rowIds.map((rowId) => physicalId(scope.branchId, rowId)),
   })
 }
 
@@ -189,25 +209,28 @@ export async function getDataRowMany(
  */
 export async function getDataRowBySlug(
   db: DbClient,
+  scope: BranchScope,
   tableId: string,
   slug: string,
 ): Promise<DataRow | null> {
   const { rows } = await db<{ id: string }>`
-    select id from data_rows
-    where table_id = ${tableId}
+    select logical_id as id from data_rows
+    where table_id = ${physicalId(scope.branchId, tableId)}
+      and branch_id = ${scope.branchId}
       and slug = ${slug}
       and deleted_at is null
     limit 1
   `
-  return rows[0] ? getDataRow(db, rows[0].id) : null
+  return rows[0] ? getDataRow(db, scope, rows[0].id) : null
 }
 
 /** Count non-deleted rows in a table — one indexed COUNT. */
-export async function countDataRows(db: DbClient, tableId: string): Promise<number> {
+export async function countDataRows(db: DbClient, scope: BranchScope, tableId: string): Promise<number> {
   const { rows } = await db<{ count: number | string }>`
     select count(*) as count
     from data_rows
-    where table_id = ${tableId}
+    where table_id = ${physicalId(scope.branchId, tableId)}
+      and branch_id = ${scope.branchId}
       and deleted_at is null
   `
   return Number(rows[0]?.count ?? 0)

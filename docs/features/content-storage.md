@@ -26,7 +26,9 @@ The schema for a collection. One row per collection.
 
 | Column            | Type      | Notes                                                            |
 |-------------------|-----------|------------------------------------------------------------------|
-| `id`              | text PK   |                                                                  |
+| `id`              | text PK   | Physical key: the logical id on main, `<branch>:<logical>` on a branch |
+| `branch_id`       | text      | `main` by default; see [`branches.md`](branches.md)                 |
+| `logical_id`      | text      | Generated from `id` + `branch_id` — the id content code uses      |
 | `name`            | text      | Human-readable                                                   |
 | `slug`            | text      | URL-safe (kebab-case)                                            |
 | `kind`            | text      | `'postType' \| 'data' \| 'page' \| 'component' \| 'layout'`      |
@@ -44,8 +46,10 @@ One row per content row.
 
 | Column                  | Type       | Notes                                                           |
 |-------------------------|------------|-----------------------------------------------------------------|
-| `id`                    | text PK    |                                                                 |
-| `table_id`              | text FK    | → `data_tables.id`                                              |
+| `id`                    | text PK    | Physical key: the logical id on main, `<branch>:<logical>` on a branch |
+| `branch_id`             | text       | `main` by default; repositories read and write one branch per `BranchScope` |
+| `logical_id`            | text       | Generated from `id` + `branch_id`; the id every API and tree carries |
+| `table_id`              | text FK    | → `data_tables.id` (physical — a branch row points at the branch's table) |
 | `cells_json`            | jsonb      | `Record<fieldId, cellValue>`                                    |
 | `slug`                  | text       | Denormalized from `cells_json.slug` for fast route lookup       |
 | `status`                | text       | `'draft' \| 'published' \| 'unpublished' \| 'scheduled'`        |

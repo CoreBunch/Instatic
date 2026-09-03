@@ -134,12 +134,13 @@ function buildFakeDb(
 
     // ── listDataRows (pages + components) ─────────────────────────────────
     // `listDataRows` parameterizes the table_id ($1), so we check params.
-    if (s.includes('select data_rows.id') && s.includes('from data_rows') && s.includes('order by')) {
+    if (s.includes('select data_rows.logical_id') && s.includes('from data_rows') && s.includes('order by')) {
       if (params[0] === 'pages') {
         return {
           rows: [
             {
               id: staticPage.id,
+              logical_id: staticPage.id,
               table_id: 'pages',
               slug: staticPage.slug,
               status: 'draft',
@@ -176,6 +177,7 @@ function buildFakeDb(
             },
             {
               id: dynamicPage.id,
+              logical_id: dynamicPage.id,
               table_id: 'pages',
               slug: dynamicPage.slug,
               status: 'draft',

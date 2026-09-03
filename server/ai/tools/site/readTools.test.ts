@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { createCapabilityTestHarness, type CapabilityTestHarness } from '../../../../src/__tests__/helpers/capabilityHarness'
 import { createDataTable } from '../../../repositories/data'
 import { siteReadTools } from './readTools'
+import { MAIN_SCOPE } from '../../../branches/scope'
 
 describe('site read tools', () => {
   let harness: CapabilityTestHarness
@@ -15,7 +16,7 @@ describe('site read tools', () => {
   })
 
   it('lists only routable post types as template targets', async () => {
-    await createDataTable(harness.db, {
+    await createDataTable(harness.db, MAIN_SCOPE, {
       id: 'projects',
       name: 'Projects',
       slug: 'projects',
@@ -24,7 +25,7 @@ describe('site read tools', () => {
       singularLabel: 'Project',
       pluralLabel: 'Projects',
     })
-    await createDataTable(harness.db, {
+    await createDataTable(harness.db, MAIN_SCOPE, {
       id: 'people',
       name: 'People',
       slug: 'people',
@@ -42,6 +43,7 @@ describe('site read tools', () => {
       userId: 'owner',
       capabilities: ['site.read'],
       scope: 'site',
+      branch: MAIN_SCOPE,
       conversationId: 'test',
       snapshot: null,
       signal: new AbortController().signal,

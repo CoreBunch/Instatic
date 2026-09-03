@@ -1,3 +1,4 @@
+import { MAIN_BRANCH_ID } from '@core/branches'
 import type { DbClient } from '../db/client'
 
 interface SetupStatus {
@@ -62,9 +63,11 @@ export async function createSite(
   name: string,
   settings: Record<string, unknown>,
 ): Promise<void> {
+  // First-run setup creates the `main` shell; every other branch's shell is
+  // forked from it (see server/branches/fork.ts).
   await db`
-    insert into site (id, name, settings_json)
-    values ('default', ${name}, ${settings})
+    insert into site (id, name, settings_json, branch_id)
+    values ('default', ${name}, ${settings}, ${MAIN_BRANCH_ID})
     on conflict (id) do update
       set name = excluded.name,
           settings_json = excluded.settings_json,

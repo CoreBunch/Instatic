@@ -4,6 +4,7 @@ import { createCapabilityTestHarness, type CapabilityTestHarness } from '../../.
 import { saveDraftSite } from '../../../repositories/site'
 import type { ToolContext } from '../../runtime/types'
 import { styleMcpTools } from './styleTools'
+import { MAIN_SCOPE } from '../../../branches/scope'
 
 describe('MCP site_read_styles', () => {
   let harness: CapabilityTestHarness
@@ -18,7 +19,7 @@ describe('MCP site_read_styles', () => {
 
   it('includes Core Framework font-token variables in token-inclusive reads', async () => {
     const base = makeSite()
-    await saveDraftSite(harness.db, {
+    await saveDraftSite(harness.db, MAIN_SCOPE, {
       ...base,
       settings: {
         ...base.settings,
@@ -55,6 +56,7 @@ describe('MCP site_read_styles', () => {
       userId: 'owner',
       capabilities: ['site.read'],
       scope: 'site',
+      branch: MAIN_SCOPE,
       conversationId: 'test',
       snapshot: null,
       signal: new AbortController().signal,

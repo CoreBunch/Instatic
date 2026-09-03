@@ -59,6 +59,7 @@ import { Navigate, useInRouterContext } from './lib/routing'
 import { SpotlightRoot } from './spotlight'
 import { prewarmedLazy } from './lib/prewarmedLazy'
 import { useAdminUi } from './state/adminUi'
+import { useBranchWorkspaceKey } from './state/branchStore'
 import styles from './AdminEntry.module.css'
 
 // The 10 workspace pages — pre-warmed AND synchronously-renderable once
@@ -207,6 +208,10 @@ export default function AuthenticatedAdmin({ section, currentUser }: Authenticat
   const fallbackWorkspace = firstAccessibleWorkspace(currentUser)
   const siteImportOpen = useAdminUi((s) => s.siteImportOpen)
   const siteExportOpen = useAdminUi((s) => s.siteExport !== null)
+  // Branch-scoped workspaces remount on a branch switch — and after a merge
+  // or update rewrote the branch in place — so every hook inside them reloads
+  // against the current content (the site store, entry lists, grids).
+  const branchKey = useBranchWorkspaceKey()
 
   // Schedule background preloads for non-active workspace pages AFTER
   // the active page has rendered + painted. `useEffect` fires after
@@ -309,9 +314,9 @@ export default function AuthenticatedAdmin({ section, currentUser }: Authenticat
                   shouldn't ship until needed. */}
           <Suspense fallback={<AppLoadingScreen />}>
             {section === 'dashboard' ? <DashboardPage /> :
-              section === 'site' ? <SitePage /> :
-              section === 'content' ? <ContentPage /> :
-              section === 'data' ? <DataPage /> :
+              section === 'site' ? <SitePage key={branchKey} /> :
+              section === 'content' ? <ContentPage key={branchKey} /> :
+              section === 'data' ? <DataPage key={branchKey} /> :
               section === 'media' ? <MediaPage /> :
               section === 'plugins' ? <PluginsPage /> :
               section === 'users' ? <UsersPage /> :

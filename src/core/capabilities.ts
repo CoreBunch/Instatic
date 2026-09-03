@@ -28,6 +28,9 @@ export const CORE_CAPABILITIES = [
   'site.structure.edit',
   'site.content.edit',
   'site.style.edit',
+  // Branches — create, rename, delete, merge, update, and share preview links.
+  // Listing and switching branches only need `site.read`.
+  'site.branches.manage',
   'pages.edit',
   'pages.publish',
   'content.create',

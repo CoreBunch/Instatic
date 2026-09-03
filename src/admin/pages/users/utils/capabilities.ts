@@ -24,6 +24,7 @@ export const CAPABILITY_GROUPS: CapabilityGroup[] = [
       'site.structure.edit',
       'site.content.edit',
       'site.style.edit',
+      'site.branches.manage',
     ],
   },
   { title: 'Pages', capabilities: ['pages.edit', 'pages.publish'] },

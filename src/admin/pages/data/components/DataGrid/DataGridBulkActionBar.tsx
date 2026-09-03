@@ -9,6 +9,7 @@ import { FloatingActionBar } from '@ui/components/FloatingActionBar'
 import { ArrowDownIcon } from 'pixel-art-icons/icons/arrow-down'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import type { DataRowStatus } from '@core/data/schemas'
+import { useBranchPublishGate } from '@admin/state/branchStore'
 import styles from './DataGrid.module.css'
 
 interface DataGridBulkActionBarProps {
@@ -29,6 +30,9 @@ export function DataGridBulkActionBar({
   onExport,
   onDelete,
 }: DataGridBulkActionBarProps): ReactElement {
+  // Publishing only exists on main — the bulk publish stays visible but
+  // disabled with the reason while a branch is active.
+  const branchGate = useBranchPublishGate()
   return (
     <FloatingActionBar
       open={selectedCount > 0}
@@ -44,6 +48,8 @@ export function DataGridBulkActionBar({
             size="sm"
             shape="pill"
             className={styles.bulkBarBtn}
+            disabled={branchGate.onBranch}
+            tooltip={branchGate.reason ?? undefined}
             onClick={() => onSetStatus('published')}
           >
             Publish

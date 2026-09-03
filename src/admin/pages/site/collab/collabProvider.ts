@@ -109,6 +109,15 @@ interface BoundEntry {
    * client-created-row flow). See @core/collab/protocol.
    */
   generation: string
+  /**
+   * Local updates made before the lineage is known. The server refuses a
+   * write carrying `''` once its doc has content — and the doc has content
+   * as soon as the FIRST such write lands, so a second local change inside
+   * the bind round trip (a row created and placed, a seed in two
+   * transactions) would be reset as stale. Held here and sent as one update
+   * the moment the first inbound frame names the lineage.
+   */
+  pending: Uint8Array[]
   synced: boolean
   whenSynced: Promise<void>
   resolveSynced: () => void
@@ -201,18 +210,27 @@ export function createCollabProvider(
     const entry: BoundEntry = {
       doc,
       generation: '',
+      pending: [],
       synced: false,
       whenSynced,
       resolveSynced,
       updateHandler: (update, origin) => {
         if (origin === REMOTE_ORIGIN) return
-        const encoder = encoding.createEncoder()
-        syncProtocol.writeUpdate(encoder, update)
-        sendFrame(docId, FRAME_SYNC, encoding.toUint8Array(encoder))
+        if (entry.generation === '') {
+          entry.pending.push(update)
+          return
+        }
+        sendUpdate(docId, update)
       },
     }
     doc.on('update', entry.updateHandler)
     return entry
+  }
+
+  function sendUpdate(docId: string, update: Uint8Array): void {
+    const encoder = encoding.createEncoder()
+    syncProtocol.writeUpdate(encoder, update)
+    sendFrame(docId, FRAME_SYNC, encoding.toUint8Array(encoder))
   }
 
   const awarenessUpdateHandler = (
@@ -252,9 +270,15 @@ export function createCollabProvider(
       return
     }
     // Adopt the server's lineage from the first frame that names one, so every
-    // subsequent outbound frame is refusable if this doc is later reseeded.
+    // subsequent outbound frame is refusable if this doc is later reseeded —
+    // and release the local changes held back until now, as one update.
     if (entry.generation === '' && frame.generation !== '') {
       entry.generation = frame.generation
+      if (entry.pending.length > 0) {
+        const held = entry.pending
+        entry.pending = []
+        sendUpdate(frame.docId, held.length === 1 ? held[0]! : Y.mergeUpdates(held))
+      }
     }
     if (frame.frameType !== FRAME_SYNC) return
 

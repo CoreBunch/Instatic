@@ -4,6 +4,11 @@
  * The relay owns document lifecycle and socket references; this module owns the
  * database-facing half of a Y document: deterministic JSON seeding, derived
  * row/site writes, authoritative roster deletion, and undo recovery.
+ *
+ * Every doc id carries its branch (see `@core/collab` docIds), and every
+ * roster is kept PER BRANCH: a branch's site doc is the authority for that
+ * branch's row docs only, and its sweep can only ever soft-delete rows of
+ * that branch.
  */
 import * as Y from 'yjs'
 import {
@@ -21,6 +26,7 @@ import {
 } from '@core/collab'
 import '@modules/base' // registry population — inline-text props seed as Y.Text
 import type { SiteShell } from '@core/page-tree'
+import { MAIN_BRANCH_ID, SITE_SHELL_LOGICAL_ID } from '@core/branches'
 import { pageFromRow, pageToCells } from '@core/data/pageFromRow'
 import { visualComponentFromRow, visualComponentToCells } from '@core/data/componentFromRow'
 import { savedLayoutFromRow, savedLayoutToCells } from '@core/data/layoutFromRow'
@@ -28,6 +34,7 @@ import { vcSlugFromName } from '@core/visualComponents'
 import { layoutSlugFromName } from '@core/layouts'
 import { validateSite } from '@core/persistence/validate'
 import type { DbClient } from '../db/client'
+import type { BranchScope } from '../branches/scope'
 import {
   getDataRow,
   listDataRowIdSlugs,
@@ -56,15 +63,16 @@ interface RelayPersistenceHooks {
 }
 
 export interface RelayPersistence {
-  hasRosterSnapshot(): boolean
+  hasRosterSnapshot(branchId: string): boolean
   rosterContains(docId: string): boolean
-  observeSiteRoster(doc: Y.Doc): void
+  observeSiteRoster(branchId: string, doc: Y.Doc): void
   noteOpenedRow(docId: string, state: { stored: boolean; seeded: boolean }): void
   markRowEstablished(docId: string): void
   isUnrosteredEstablishedDoc(docId: string): boolean
   seedFromJson(docId: string, doc: Y.Doc): Promise<boolean>
   serializeMutation<T>(operation: () => Promise<T>): Promise<T>
   sweepRosterDeletions(
+    branchId: string,
     rosters: SiteRosters,
     invalidationCutoff: number,
     protectedDocIds?: ReadonlySet<string>,
@@ -74,7 +82,9 @@ export interface RelayPersistence {
     doc: Y.Doc,
     invalidationCutoff: number,
   ): Promise<DerivedWrite>
-  invalidateRosterSweep(): void
+  invalidateRosterSweep(branchId: string): void
+  /** Drop every roster and recovery record of a branch that no longer exists. */
+  forgetBranch(branchId: string): void
   drainRecoveries(throwOnFailure: boolean): Promise<void>
 }
 
@@ -82,39 +92,49 @@ export function createRelayPersistence(
   db: DbClient,
   hooks: RelayPersistenceHooks,
 ): RelayPersistence {
-  // Last roster set the site-doc persist actually swept, so shell-field-only
-  // persists skip the three full-table scans. Reset when the site doc resets.
-  let lastSweptRostersKey: string | null = null
+  // Last roster set each branch's site-doc persist actually swept, so
+  // shell-field-only persists skip the three full-table scans. Cleared for a
+  // branch when its site doc resets.
+  const lastSweptRostersKey = new Map<string, string>()
   /**
-   * The site roster is authoritative for an established row doc. A freshly
-   * created client doc may arrive before its roster frame, so it remains
-   * provisional until either the roster names it or its first derived row is
-   * written. Once established, removing it from the roster defers all later
-   * row writes instead of letting a dirty editor resurrect the deletion.
+   * A branch's site roster is authoritative for its established row docs. A
+   * freshly created client doc may arrive before its roster frame, so it
+   * remains provisional until either the roster names it or its first
+   * derived row is written. Once established, removing it from the roster
+   * defers all later row writes instead of letting a dirty editor resurrect
+   * the deletion.
    */
-  let rosterDocIds: Set<string> | null = null
+  const rosterDocIdsByBranch = new Map<string, Set<string>>()
   const knownRowDocIds = new Set<string>()
   const provisionalRowDocIds = new Set<string>()
   const pendingRosterRecoveries = new Map<string, Promise<void>>()
   const failedRosterRecoveries = new Set<string>()
 
+  function branchOf(docId: string): string {
+    return parseCollabDocId(docId)?.branchId ?? MAIN_BRANCH_ID
+  }
+
+  function rosterFor(docId: string): Set<string> | null {
+    return rosterDocIdsByBranch.get(branchOf(docId)) ?? null
+  }
+
   function serializeMutation<T>(operation: () => Promise<T>): Promise<T> {
     return serializeCollabAwareWrite(operation)
   }
 
-  function projectedRosterDocIds(doc: Y.Doc): Set<string> {
+  function projectedRosterDocIds(branchId: string, doc: Y.Doc): Set<string> {
     const { rosters } = projectSiteDoc(doc)
     return new Set([
-      ...rosters.pages.map((rowId) => encodeCollabDocId({ kind: 'page', rowId })),
-      ...rosters.components.map((rowId) => encodeCollabDocId({ kind: 'component', rowId })),
-      ...rosters.layouts.map((rowId) => encodeCollabDocId({ kind: 'layout', rowId })),
+      ...rosters.pages.map((rowId) => encodeCollabDocId({ kind: 'page', branchId, rowId })),
+      ...rosters.components.map((rowId) => encodeCollabDocId({ kind: 'component', branchId, rowId })),
+      ...rosters.layouts.map((rowId) => encodeCollabDocId({ kind: 'layout', branchId, rowId })),
     ])
   }
 
-  function observeSiteRoster(doc: Y.Doc): void {
-    const previous = rosterDocIds
-    const next = projectedRosterDocIds(doc)
-    rosterDocIds = next
+  function observeSiteRoster(branchId: string, doc: Y.Doc): void {
+    const previous = rosterDocIdsByBranch.get(branchId) ?? null
+    const next = projectedRosterDocIds(branchId, doc)
+    rosterDocIdsByBranch.set(branchId, next)
     for (const docId of next) {
       knownRowDocIds.add(docId)
       provisionalRowDocIds.delete(docId)
@@ -136,9 +156,9 @@ export function createRelayPersistence(
       // Collaborative deletion keeps the row blob as an undo tombstone. Only
       // a stored lineage can be revived; never mint an empty page here.
       const stored = await getCollabDocumentState(db, docId)
-      if (!stored || !rosterDocIds?.has(docId)) return
+      if (!stored || !rosterFor(docId)?.has(docId)) return
       await hooks.openDoc(docId)
-      if (rosterDocIds?.has(docId)) hooks.schedulePersist(docId)
+      if (rosterFor(docId)?.has(docId)) hooks.schedulePersist(docId)
     })()
     pendingRosterRecoveries.set(docId, recovery)
     void recovery.catch((err) => {
@@ -170,19 +190,21 @@ export function createRelayPersistence(
   }
 
   function isUnrosteredEstablishedDoc(docId: string): boolean {
-    return rosterDocIds !== null && knownRowDocIds.has(docId) && !rosterDocIds.has(docId)
+    const roster = rosterFor(docId)
+    return roster !== null && knownRowDocIds.has(docId) && !roster.has(docId)
   }
 
   async function seedFromJson(docId: string, doc: Y.Doc): Promise<boolean> {
     const parsed = parseCollabDocId(docId)
     if (!parsed) return false
+    const scope: BranchScope = { branchId: parsed.branchId }
     if (parsed.kind === 'site') {
-      const shell = await getDraftSite(db)
-      if (!shell) return false // pre-setup — nothing to seed
+      const shell = await getDraftSite(db, scope)
+      if (!shell) return false // pre-setup, or a branch with no shell — nothing to seed
       const [pages, components, layouts] = await Promise.all([
-        listDataRowIdSlugs(db, 'pages'),
-        listDataRowIdSlugs(db, 'components'),
-        listDataRowIdSlugs(db, 'layouts'),
+        listDataRowIdSlugs(db, scope, 'pages'),
+        listDataRowIdSlugs(db, scope, 'components'),
+        listDataRowIdSlugs(db, scope, 'layouts'),
       ])
       seedSiteDocFromParts(doc, shell as unknown as Record<string, unknown>, {
         pages: pages.map((row) => row.id),
@@ -191,7 +213,7 @@ export function createRelayPersistence(
       })
       return true
     }
-    const row = await getDataRow(db, parsed.rowId)
+    const row = await getDataRow(db, scope, parsed.rowId)
     if (!row || row.tableId !== KIND_TABLE[parsed.kind]) return false
     if (parsed.kind === 'page') {
       seedPageDoc(doc, pageFromRow(row))
@@ -208,35 +230,41 @@ export function createRelayPersistence(
   }
 
   async function sweepRosterDeletions(
+    branchId: string,
     rosters: SiteRosters,
     invalidationCutoff: number,
     protectedDocIds: ReadonlySet<string> = new Set(),
   ): Promise<void> {
+    const scope: BranchScope = { branchId }
     let deletedPublished = false
     for (const [kind, table, ids] of [
       ['page', 'pages', rosters.pages],
       ['component', 'components', rosters.components],
       ['layout', 'layouts', rosters.layouts],
     ] as const) {
-      const live = await listDataRowIdSlugs(db, table)
+      const live = await listDataRowIdSlugs(db, scope, table)
       const keep = new Set(ids)
       for (const row of live) {
-        const rowDocId = encodeCollabDocId({ kind, rowId: row.id })
+        const rowDocId = encodeCollabDocId({ kind, branchId, rowId: row.id })
         // A newer roster frame or authoritative row write may land while this
         // snapshot's sweep is queued. Only writes ordered AFTER the snapshot
         // are protected; an older invalidation still resetting must not erase
         // a later collaborative deletion.
+        // Read the live roster per row: a newer roster frame (a peer's undo of
+        // this very deletion) can replace the set while the sweep awaits.
         if (
           keep.has(row.id) ||
-          rosterDocIds?.has(rowDocId) ||
+          rosterDocIdsByBranch.get(branchId)?.has(rowDocId) ||
           hooks.invalidationVersion(rowDocId) > invalidationCutoff ||
           protectedDocIds.has(rowDocId)
         ) continue
-        const deleted = await softDeleteDataRow(db, row.id, null, { collabInternal: true })
+        const deleted = await softDeleteDataRow(db, scope, row.id, null, { collabInternal: true })
         if (deleted?.status === 'published') deletedPublished = true
       }
     }
-    if (deletedPublished) await bumpPublishVersionSerialized()
+    // Only main's routes are served; a branch deletion never touches the
+    // public render cache.
+    if (deletedPublished && branchId === MAIN_BRANCH_ID) await bumpPublishVersionSerialized()
   }
 
   async function persistDerivedJson(
@@ -246,6 +274,7 @@ export function createRelayPersistence(
   ): Promise<DerivedWrite> {
     const parsed = parseCollabDocId(docId)
     if (!parsed) return 'incomplete'
+    const scope: BranchScope = { branchId: parsed.branchId }
     if (parsed.kind === 'site') {
       const projected = projectSiteDoc(doc)
       if (Object.keys(projected.shell).length === 0) return 'incomplete'
@@ -255,7 +284,7 @@ export function createRelayPersistence(
         // per-mutation noise) — inject them at the persistence boundary.
         shell = validateSite({
           ...projected.shell,
-          id: 'default',
+          id: SITE_SHELL_LOGICAL_ID,
           updatedAt:
             typeof projected.shell.updatedAt === 'number' ? projected.shell.updatedAt : Date.now(),
         })
@@ -265,15 +294,15 @@ export function createRelayPersistence(
         console.error('[collab] projected shell failed validation — JSON write skipped:', err)
         return 'invalid'
       }
-      await saveDraftSite(db, shell, null, { collabInternal: true })
+      await saveDraftSite(db, scope, shell, null, { collabInternal: true })
 
       const rostersKey =
         projected.rosters.pages.join(',') + '|' +
         projected.rosters.components.join(',') + '|' +
         projected.rosters.layouts.join(',')
-      if (rostersKey === lastSweptRostersKey) return 'written'
-      await sweepRosterDeletions(projected.rosters, invalidationCutoff)
-      lastSweptRostersKey = rostersKey
+      if (rostersKey === lastSweptRostersKey.get(parsed.branchId)) return 'written'
+      await sweepRosterDeletions(parsed.branchId, projected.rosters, invalidationCutoff)
+      lastSweptRostersKey.set(parsed.branchId, rostersKey)
       return 'written'
     }
 
@@ -303,6 +332,7 @@ export function createRelayPersistence(
 
     await upsertDataRowDraft(
       db,
+      scope,
       { id: parsed.rowId, tableId: table, cells, slug },
       null,
       { collabInternal: true },
@@ -313,7 +343,7 @@ export function createRelayPersistence(
 
   async function drainRecoveries(throwOnFailure: boolean): Promise<void> {
     for (const docId of [...failedRosterRecoveries]) {
-      if (rosterDocIds?.has(docId)) scheduleRosterRecovery(docId)
+      if (rosterFor(docId)?.has(docId)) scheduleRosterRecovery(docId)
       else failedRosterRecoveries.delete(docId)
     }
     while (pendingRosterRecoveries.size > 0) {
@@ -331,9 +361,23 @@ export function createRelayPersistence(
     }
   }
 
+  function forgetBranch(branchId: string): void {
+    rosterDocIdsByBranch.delete(branchId)
+    lastSweptRostersKey.delete(branchId)
+    for (const docId of [...knownRowDocIds]) {
+      if (branchOf(docId) === branchId) knownRowDocIds.delete(docId)
+    }
+    for (const docId of [...provisionalRowDocIds]) {
+      if (branchOf(docId) === branchId) provisionalRowDocIds.delete(docId)
+    }
+    for (const docId of [...failedRosterRecoveries]) {
+      if (branchOf(docId) === branchId) failedRosterRecoveries.delete(docId)
+    }
+  }
+
   return {
-    hasRosterSnapshot: () => rosterDocIds !== null,
-    rosterContains: (docId) => rosterDocIds?.has(docId) ?? false,
+    hasRosterSnapshot: (branchId) => rosterDocIdsByBranch.has(branchId),
+    rosterContains: (docId) => rosterFor(docId)?.has(docId) ?? false,
     observeSiteRoster,
     noteOpenedRow,
     markRowEstablished,
@@ -342,7 +386,8 @@ export function createRelayPersistence(
     serializeMutation,
     sweepRosterDeletions,
     persistDerivedJson,
-    invalidateRosterSweep: () => { lastSweptRostersKey = null },
+    invalidateRosterSweep: (branchId) => { lastSweptRostersKey.delete(branchId) },
+    forgetBranch,
     drainRecoveries,
   }
 }
