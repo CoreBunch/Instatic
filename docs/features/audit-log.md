@@ -44,7 +44,7 @@ Every event has a typed `action` string. The closed union is the source of truth
 | Publishing      | `publish`                                                                                 |
 | Plugins         | `plugin.install`, `plugin.update`, `plugin.enable`, `plugin.disable`, `plugin.delete`, `plugin.pack.install`, `plugin.settings.update` |
 | AI              | `ai.credential.created`, `ai.credential.updated`, `ai.credential.deleted`, `ai.credential.tested`, `ai.default.updated`, `ai.default.cleared`, `ai.chat.started`, `ai.chat.completed`, `ai.chat.failed`, `ai.mcp_connector.created`, `ai.mcp_connector.revoked` |
-| Branches        | `branch.create`, `branch.rename`, `branch.delete`, `branch.merge`, `branch.update`, `branch.preview.share`, `branch.preview.revoke` |
+| Branches        | `branch.create`, `branch.rename`, `branch.delete`, `branch.merge`, `branch.update`, `branch.preview.share`, `branch.preview.revoke`, `branch.review.request`, `branch.review.withdraw`, `branch.review.decline`, `branch.review.comment` |
 | Versions        | `version.restore` — a published version copied back into a row's draft (metadata: `versionId`, `versionNumber`, `branchId`) |
 
 If you add a new action that fits an existing group, append to the union. New groups (e.g. media-related audit) extend the same union.

@@ -18,7 +18,7 @@ import { Switch } from '@ui/components/Switch'
 import styles from './BranchReviewPage.module.css'
 
 const PAGE_WIDTH = 1280
-const MIN_HEIGHT = 720
+const MIN_HEIGHT = 360
 const MAX_HEIGHT = 2400
 
 interface HighlightBox {
@@ -146,6 +146,15 @@ function ScaledFrame({ branchId, rowId, side, title, marks, showHighlights }: Fr
 
 type Mode = 'side' | 'swipe' | 'list'
 
+/**
+ * "Changed · Hero title" when the node carries a name of its own; a bare
+ * "Changed" when the plan could only name its module (`text`, `container`).
+ */
+function markLabel(verb: string, nodeLabel: string | undefined): string {
+  if (!nodeLabel || /^[a-z][a-z0-9-]*$/.test(nodeLabel)) return verb
+  return `${verb} · ${nodeLabel}`
+}
+
 interface PageCompareProps {
   branchId: string
   rowId: string
@@ -167,11 +176,11 @@ export function PageCompare({ branchId, rowId, label, action, tree, fieldLines, 
 
   const branchMarks = tree
     ? [
-        ...tree.changed.map((id) => ({ id, label: tree.labels[id] ?? 'changed', tone: 'changed' as const })),
-        ...tree.added.map((id) => ({ id, label: tree.labels[id] ?? 'added', tone: 'added' as const })),
+        ...tree.changed.map((id) => ({ id, label: markLabel('Changed', tree.labels[id]), tone: 'changed' as const })),
+        ...tree.added.map((id) => ({ id, label: markLabel('Added', tree.labels[id]), tone: 'added' as const })),
       ]
     : []
-  const mainMarks = tree ? tree.removed.map((id) => ({ id, label: tree.labels[id] ?? 'removed', tone: 'removed' as const })) : []
+  const mainMarks = tree ? tree.removed.map((id) => ({ id, label: markLabel('Removed', tree.labels[id]), tone: 'removed' as const })) : []
   const treeLines = tree
     ? [
         ...tree.added.map((id) => `Added ${tree.labels[id] ?? id}`),

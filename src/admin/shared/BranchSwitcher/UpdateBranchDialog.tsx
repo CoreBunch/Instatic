@@ -1,6 +1,7 @@
 /**
- * MergeBranchDialog — review what a merge (branch → main) or an update
- * (main → branch) will change, decide every conflict, then apply.
+ * UpdateBranchDialog — review what updating a branch from main will change,
+ * decide every conflict, then apply. Merging into main has its own page
+ * (`/admin/branches/:id/review`); this dialog only ever updates the branch.
  *
  * The plan comes from the server; the dialog never guesses. A change with
  * conflicts renders a two-way choice — keep this side or take the other —
@@ -11,10 +12,8 @@
  */
 import { useEffect, useState } from 'react'
 import { ArrowDownIcon } from 'pixel-art-icons/icons/arrow-down'
-import { GitMergeSolidIcon } from 'pixel-art-icons/icons/git-merge-solid'
 import {
   type MergeChange,
-  type MergeDirection,
   type MergePlan,
   type MergeResolution,
   type SiteBranch,
@@ -28,15 +27,13 @@ import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { Skeleton } from '@ui/components/Skeleton'
-import { Switch } from '@ui/components/Switch'
 import { TagPill } from '@ui/components/TagPill'
 import { pushToast } from '@ui/components/Toast'
 import { cn } from '@ui/cn'
-import styles from './MergeBranchDialog.module.css'
+import styles from './UpdateBranchDialog.module.css'
 
-interface MergeBranchDialogProps {
+interface UpdateBranchDialogProps {
   branch: SiteBranch
-  direction: MergeDirection
   onClose: () => void
 }
 
@@ -67,24 +64,21 @@ function describeConflicts(conflicts: string[]): string {
   return conflicts.length > 3 ? `Both sides changed ${fields} and ${conflicts.length - 3} more` : `Both sides changed ${fields}`
 }
 
-export function MergeBranchDialog({ branch, direction, onClose }: MergeBranchDialogProps) {
+export function UpdateBranchDialog({ branch, onClose }: UpdateBranchDialogProps) {
   const { runStepUp } = useStepUp()
   const [plan, setPlan] = useState<MergePlan | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [resolutions, setResolutions] = useState<Record<string, MergeResolution>>({})
-  const [deleteAfter, setDeleteAfter] = useState(direction === 'merge')
   const [busy, setBusy] = useState(false)
 
-  const isMerge = direction === 'merge'
-  const title = isMerge ? `Merge ${branch.name} into main` : `Update ${branch.name} from main`
-  const intoLabel = isMerge ? 'Keep main' : 'Keep branch'
-  const fromLabel = isMerge ? 'Take branch' : 'Take main'
+  const title = `Update ${branch.name} from main`
+  const intoLabel = 'Keep branch'
+  const fromLabel = 'Take main'
 
-  // Mounted fresh per open (keyed by direction in the strip), so the plan
-  // state starts empty and needs no reset here.
+  // Mounted fresh per open, so the plan state starts empty and needs no reset.
   useEffect(() => {
     const controller = new AbortController()
-    getCmsBranchMergePlan(branch.id, direction)
+    getCmsBranchMergePlan(branch.id, 'update')
       .then((next) => {
         if (!controller.signal.aborted) setPlan(next)
       })
@@ -94,7 +88,7 @@ export function MergeBranchDialog({ branch, direction, onClose }: MergeBranchDia
         setLoadError(getErrorMessage(err, 'Could not compare the branches'))
       })
     return () => controller.abort()
-  }, [branch.id, direction])
+  }, [branch.id])
 
   const unresolved = plan
     ? plan.changes.filter((change) => change.conflicts.length > 0 && !resolutions[change.key]).length
@@ -105,28 +99,24 @@ export function MergeBranchDialog({ branch, direction, onClose }: MergeBranchDia
     if (!plan || busy || unresolved > 0) return
     setBusy(true)
     try {
-      const result = await runStepUp(() =>
-        mergeBranch(branch.id, direction, { resolutions, deleteBranch: isMerge && deleteAfter }),
-      )
+      const result = await runStepUp(() => mergeBranch(branch.id, 'update', { resolutions }))
       onClose()
       const count = result.plan.changes.length
       pushToast({
         kind: 'success',
-        title: isMerge ? `Merged ${branch.name} into main` : `Updated ${branch.name} from main`,
-        body: isMerge
-          ? `${count} change${count === 1 ? '' : 's'} landed in main's draft. Publish when you're ready.${result.branchDeleted ? ' The branch was deleted.' : ''}`
-          : `${count} change${count === 1 ? '' : 's'} from main now on the branch.`,
+        title: `Updated ${branch.name} from main`,
+        body: `${count} change${count === 1 ? '' : 's'} from main now on the branch.`,
       })
     } catch (err) {
       if (err instanceof Error && err.message === StepUpCancelledMessage) return
       console.error('[branches] merge failed:', err)
       pushToast({
         kind: 'error',
-        title: isMerge ? 'Merge failed' : 'Update failed',
-        body: getErrorMessage(err, 'Unknown merge error'),
+        title: 'Update failed',
+        body: getErrorMessage(err, 'Unknown update error'),
       })
       // A conflict that appeared after the plan was loaded: reload it.
-      getCmsBranchMergePlan(branch.id, direction).then(setPlan).catch(() => undefined)
+      getCmsBranchMergePlan(branch.id, 'update').then(setPlan).catch(() => undefined)
     } finally {
       setBusy(false)
     }
@@ -137,22 +127,10 @@ export function MergeBranchDialog({ branch, direction, onClose }: MergeBranchDia
       open
       onClose={onClose}
       title={title}
-      eyebrow={isMerge ? 'Merge' : 'Update'}
+      eyebrow="Update"
       size="lg"
       footer={(
         <>
-          {isMerge && (
-            <label className={styles.deleteToggle}>
-              <Switch
-                checked={deleteAfter}
-                onCheckedChange={setDeleteAfter}
-                switchSize="sm"
-                aria-label="Delete branch after merging"
-                data-testid="branch-merge-delete-toggle"
-              />
-              <span>Delete branch after merging</span>
-            </label>
-          )}
           <span className={styles.footerSpacer} aria-hidden="true" />
           <Button variant="ghost" size="sm" type="button" onClick={onClose} disabled={busy}>
             Cancel
@@ -167,12 +145,8 @@ export function MergeBranchDialog({ branch, direction, onClose }: MergeBranchDia
             data-testid="branch-merge-apply"
             onClick={() => { void apply() }}
           >
-            {isMerge ? <GitMergeSolidIcon size={12} aria-hidden="true" /> : <ArrowDownIcon size={12} aria-hidden="true" />}
-            <span>
-              {isMerge
-                ? `Merge ${total} change${total === 1 ? '' : 's'}`
-                : `Update with ${total} change${total === 1 ? '' : 's'}`}
-            </span>
+            <ArrowDownIcon size={12} aria-hidden="true" />
+            <span>{`Update with ${total} change${total === 1 ? '' : 's'}`}</span>
           </Button>
         </>
       )}
@@ -187,16 +161,12 @@ export function MergeBranchDialog({ branch, direction, onClose }: MergeBranchDia
         </div>
       ) : total === 0 ? (
         <p className={styles.empty} data-testid="branch-merge-empty">
-          {isMerge
-            ? `${branch.name} has no changes that main does not already have.`
-            : `${branch.name} already has everything on main.`}
+          {`${branch.name} already has everything on main.`}
         </p>
       ) : (
         <>
           <p className={styles.summary} data-testid="branch-merge-summary">
-            {isMerge
-              ? `${total} change${total === 1 ? '' : 's'} will land in main's draft.`
-              : `${total} change${total === 1 ? '' : 's'} from main will land on the branch.`}
+            {`${total} change${total === 1 ? '' : 's'} from main will land on the branch.`}
             {plan.conflictCount > 0 && (
               <>
                 {' '}

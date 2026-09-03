@@ -177,7 +177,7 @@ test('share a preview link and open it as a visitor (BRANCH-004)', async ({ page
   await expect(page.getByTestId('branch-strip')).toHaveCount(0)
 })
 
-test('merge a branch into main from the review dialog (BRANCH-005)', async ({ page }) => {
+test('merge a branch into main from the review page (BRANCH-005)', async ({ page }) => {
   await login(page)
   await openSiteEditor(page)
   await page.getByTestId('branch-chip').click()
@@ -192,18 +192,18 @@ test('merge a branch into main from the review dialog (BRANCH-005)', async ({ pa
   await expect(page.getByText('A change was reverted')).toHaveCount(0)
 
   await page.getByTestId('branch-strip-merge').click()
-  const dialog = page.getByRole('dialog', { name: 'Merge Merge Me into main' })
-  await expect(dialog).toBeVisible()
-  await expect(page.getByTestId('branch-merge-summary')).toContainText('1 change')
+  // The review page: one node per change, the decision in the footer.
+  await expect(page.getByTestId('branch-review-title')).toHaveText('Merge Merge Me into main')
+  await expect(page.getByTestId('branch-review')).toContainText('1 change')
   // A page that exists only on the branch cannot conflict with main.
-  await expect(dialog.getByText(/Both sides changed|Deleted on one side/)).toHaveCount(0)
-  await expect(dialog.getByText('Branch Page')).toBeVisible()
+  await expect(page.getByText(/Both sides changed|Deleted on one side/)).toHaveCount(0)
+  await expect(page.getByTestId('branch-review')).toContainText('Branch Page')
   await page.waitForTimeout(400)
   await shot(page, '8-merge-review', 'full')
 
-  await page.getByTestId('branch-merge-apply').click()
+  await page.getByTestId('review-merge').click()
   await completeStepUp(page)
-  await expect(dialog).toBeHidden()
+  await expect(page).toHaveURL(/\/admin\/site/)
   // The branch was deleted after merging, so the tab is back on main …
   await expect(page.getByTestId('branch-strip')).toHaveCount(0)
   // … where the page now exists.
