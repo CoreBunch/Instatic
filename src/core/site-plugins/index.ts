@@ -23,6 +23,7 @@ export {
   contentHashOfVersion,
   deriveSitePluginManifest,
   nextSitePluginVersion,
+  sitePluginDisplayVersion,
   type DeriveSitePluginManifestInput,
 } from './derive'
 export {
@@ -35,6 +36,7 @@ export {
 } from './templates'
 export {
   SITE_PLUGIN_RUNTIME_STATES,
+  SitePluginRevisionSchema,
   SitePluginRuntimeStateSchema,
   SitePluginSummarySchema,
   SitePluginsPayloadSchema,
@@ -43,6 +45,7 @@ export {
   sitePluginStateLabel,
   type SitePluginPrimaryAction,
   type SitePluginPrimaryActionKind,
+  type SitePluginRevision,
   type SitePluginRuntimeState,
   type SitePluginStateInput,
   type SitePluginSummary,

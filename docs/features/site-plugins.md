@@ -247,10 +247,18 @@ permission treatment lives where it matters: the activation review dialog.
   (`republishAllPages`) and entry-template data rows such as `/posts/hello`
   (`republishAllDataRows`), stamped with the version that becomes current
   at the bump that follows. Backend-only plugins skip the republish.
-- Retention keeps the active revision + the immediately previous one (the
-  `Rollback to previous revision` target — source rolls forward only, so
-  the artifact is the only rollback). Uninstall sweeps the whole
-  `uploads/plugins/site.<id>/` tree via the existing teardown.
+- Retention keeps the five highest builds plus the active one
+  (`RETAINED_REVISIONS` in `server/plugins/sitePlugins/retention.ts`); the
+  sweep runs after activation and the coupled republish succeed. Every
+  retained build is a rollback target: the summary lists them
+  (`revisions`, newest first, with the build time), the IDE's `Roll back
+  to…` submenu offers them, and `POST …/rollback { version }` re-activates
+  one — the version is validated against the retained directories, never
+  joined into a path unchecked, and a target with a different grant set
+  steps up like any grant change. Source rolls forward only, so the
+  artifact is the only rollback; after one the draft reads `Draft changed`
+  and `Build & activate` redeploys the newest code. Uninstall sweeps the
+  whole `uploads/plugins/site.<id>/` tree via the existing teardown.
 - `Preview in canvas` (module drafts): the IDE opens
   `/admin/site?previewSitePlugin=<local-id>`; the editor fetches the
   validate-only bundle from `GET .../preview-pack.js` (no-store), activates

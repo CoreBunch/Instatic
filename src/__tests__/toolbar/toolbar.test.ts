@@ -592,7 +592,10 @@ describe('Toolbar — structural requirements', () => {
     expect(src).toContain('<ContextMenu')
     expect(src).toContain('<ContextMenuItem')
     expect(src).toContain('createPortal')
-    expect(src).toContain('zIndex={10000}')
+    // The menu (and any submenu, which stacks above it) sits above every
+    // editor panel: one named constant, applied to both.
+    expect(src).toContain('const MENU_Z_INDEX = 10000')
+    expect(src).toContain('zIndex={MENU_Z_INDEX}')
   })
 
   it('AdminCanvasLayout imports and renders Toolbar', () => {

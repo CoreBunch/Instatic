@@ -49,7 +49,7 @@ import {
 import { getDraftSite, saveDraftSite } from '../../../repositories/site'
 import { getInstalledPlugin } from '../../../repositories/plugins'
 import { runPublishFlush } from '../../../publish/publishFlush'
-import { previousSitePluginRevision } from '../../../plugins/sitePlugins/retention'
+import { listSitePluginRevisions } from '../../../plugins/sitePlugins/retention'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../../http'
 import { type CmsHandlerOptions } from '../shared'
 import { activatePluginPackageFromDisk } from '../plugins/install'
@@ -220,7 +220,7 @@ async function handleActivate(
         ...(result.upgrade ? { upgrade: result.upgrade } : {}),
         ...(result.skipped ? { skipped: true } : {}),
         ...(result.warning ? { warning: result.warning } : {}),
-        sitePlugins: await listSitePlugins(db),
+        sitePlugins: await listSitePlugins(db, options.uploadsDir ?? null),
       })
     case 'not-found':
       return jsonResponse({ error: result.message }, { status: 404 })
@@ -237,7 +237,7 @@ async function handleActivate(
       )
     case 'upgrade-error':
       return jsonResponse(
-        { error: result.message, sitePlugins: await listSitePlugins(db) },
+        { error: result.message, sitePlugins: await listSitePlugins(db, options.uploadsDir ?? null) },
         { status: 400 },
       )
     case 'grants-changed':
@@ -247,8 +247,13 @@ async function handleActivate(
 }
 
 // ---------------------------------------------------------------------------
-// POST /site-plugins/:localId/rollback — re-activate the previous revision
+// POST /site-plugins/:localId/rollback — re-activate a retained revision
 // ---------------------------------------------------------------------------
+
+const RollbackBodySchema = Type.Object({
+  /** A retained generated version (see the summary's `revisions`). */
+  version: Type.String({ minLength: 1, maxLength: 80 }),
+})
 
 async function handleRollback(
   req: Request,
@@ -260,6 +265,9 @@ async function handleRollback(
   if (!options.uploadsDir) {
     return jsonResponse({ error: 'Uploads directory is not configured' }, { status: 500 })
   }
+  const body = await readValidatedBody(req, RollbackBodySchema)
+  if (!body) return badRequest('Pass the retained revision to roll back to as `version`')
+
   const pluginId = sitePluginIdFromLocalId(localId)
   const rowResult = await getInstalledPlugin(db, pluginId)
   const row = rowResult?.kind === 'ok' ? rowResult.plugin : null
@@ -267,9 +275,15 @@ async function handleRollback(
     return jsonResponse({ error: `Site plugin "${localId}" has no runtime record` }, { status: 404 })
   }
 
-  const previousVersion = await previousSitePluginRevision(options.uploadsDir, pluginId, row.version)
-  if (!previousVersion) {
-    return badRequest(`No previous revision of "${localId}" is retained to roll back to`)
+  // Only a retained directory is a valid target — the version is user
+  // input and must never be joined into a path unchecked.
+  const retained = await listSitePluginRevisions(options.uploadsDir, pluginId)
+  const target = retained.find((revision) => revision.version === body.version)
+  if (!target) {
+    return badRequest(`Revision ${body.version} of "${localId}" is not retained`)
+  }
+  if (target.version === row.version) {
+    return badRequest(`Revision ${body.version} of "${localId}" is already active`)
   }
 
   let manifest: PluginManifest
@@ -278,13 +292,13 @@ async function handleRollback(
       options.uploadsDir,
       'plugins',
       pluginId,
-      previousVersion,
+      target.version,
       'plugin.json',
     )
     manifest = parsePluginManifest(JSON.parse(await readFile(manifestPath, 'utf8')))
   } catch (err) {
     return badRequest(
-      `Previous revision ${previousVersion} is unreadable: ${getErrorMessage(err, 'corrupt package')}`,
+      `Revision ${target.version} is unreadable: ${getErrorMessage(err, 'corrupt package')}`,
     )
   }
 
@@ -306,7 +320,7 @@ async function handleRollback(
   })
   if (outcome.upgradeError) {
     return jsonResponse(
-      { error: outcome.upgradeError, sitePlugins: await listSitePlugins(db) },
+      { error: outcome.upgradeError, sitePlugins: await listSitePlugins(db, options.uploadsDir ?? null) },
       { status: 400 },
     )
   }
@@ -315,9 +329,9 @@ async function handleRollback(
 
   return jsonResponse({
     plugin: await presentPluginSecrets(db, outcome.plugin),
-    rolledBackTo: previousVersion,
+    rolledBackTo: target.version,
     ...(warning ? { warning } : {}),
-    sitePlugins: await listSitePlugins(db),
+    sitePlugins: await listSitePlugins(db, options.uploadsDir ?? null),
   })
 }
 
@@ -355,7 +369,7 @@ async function handleDelete(
     }
   }
 
-  return jsonResponse({ ok: true, sitePlugins: await listSitePlugins(db) })
+  return jsonResponse({ ok: true, sitePlugins: await listSitePlugins(db, options.uploadsDir ?? null) })
 }
 
 // ---------------------------------------------------------------------------
@@ -376,7 +390,7 @@ export async function handleSitePluginsRoutes(
       // for pure site developers via site.read.
       const user = await requireAnyCapability(req, db, ['plugins.read', 'site.read'])
       if (user instanceof Response) return user
-      return jsonResponse({ sitePlugins: await listSitePlugins(db) })
+      return jsonResponse({ sitePlugins: await listSitePlugins(db, options.uploadsDir ?? null) })
     }
     if (req.method === 'POST') {
       // Scaffolding writes plugin source into the draft — the authoring

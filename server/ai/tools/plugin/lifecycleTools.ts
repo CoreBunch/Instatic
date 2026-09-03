@@ -55,7 +55,7 @@ const listPluginsTool: AiTool = {
     'List every site plugin (draft folders ∪ runtime rows) with its computed state, active version, declared vs granted permissions, and last runtime error. Use to orient before working on a plugin, or to find the localId for plugin_validate / plugin_activate.',
   inputSchema: Type.Object({}),
   handler: async (_input, ctx) => {
-    return aiToolOk({ sitePlugins: await listSitePlugins(ctx.db) })
+    return aiToolOk({ sitePlugins: await listSitePlugins(ctx.db, ctx.uploadsDir) })
   },
 }
 

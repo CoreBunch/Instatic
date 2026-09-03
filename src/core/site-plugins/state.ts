@@ -22,6 +22,15 @@ export const SitePluginRuntimeStateSchema = Type.Union(
   SITE_PLUGIN_RUNTIME_STATES.map((state) => Type.Literal(state)),
 )
 
+/** One retained build — a rollback target. */
+export const SitePluginRevisionSchema = Type.Object({
+  /** Generated version (`1.0.<n>+<hash>`). */
+  version: Type.String(),
+  /** Build time, epoch ms. */
+  builtAt: Type.Number(),
+})
+export type SitePluginRevision = Static<typeof SitePluginRevisionSchema>
+
 /** Wire shape of one site plugin in the list payload. */
 export const SitePluginSummarySchema = Type.Object({
   localId: Type.String(),
@@ -31,6 +40,8 @@ export const SitePluginSummarySchema = Type.Object({
   state: SitePluginRuntimeStateSchema,
   /** Active generated version (1.0.<n>+<hash>), or null before first build. */
   activeVersion: Type.Union([Type.String(), Type.Null()]),
+  /** Retained builds, newest first — every entry is a rollback target. Empty until the first build. */
+  revisions: Type.Array(SitePluginRevisionSchema),
   /** False when the runtime row survives a deleted plugins/<id>/ folder. */
   hasDraftSource: Type.Boolean(),
   /** Draft declares a module pack — enables `Preview in canvas`. */
