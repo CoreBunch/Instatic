@@ -4,7 +4,7 @@
  * `Preview in canvas` secondary (module drafts), and the overflow menu.
  * Unavailable actions are disabled with an inline reason, never hidden.
  */
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   sitePluginPrimaryAction,
   sitePluginStateLabel,
@@ -30,10 +30,10 @@ interface IdeActionsProps {
   onRollback: () => void
   onSetEnabled: (enabled: boolean) => void
   onRestart: () => void
-  onRerunDiagnostics: () => void
-  onOpenSettings: () => void
+  onRunDiagnostics: () => void
+  /** Logs, settings, schedules and restart-after-crash live on the Plugins page. */
+  onOpenPluginsPage: () => void
   onDelete: () => void
-  onShowDiagnostics: () => void
 }
 
 export function IdeActions({
@@ -47,13 +47,20 @@ export function IdeActions({
   onRollback,
   onSetEnabled,
   onRestart,
-  onRerunDiagnostics,
-  onOpenSettings,
+  onRunDiagnostics,
+  onOpenPluginsPage,
   onDelete,
-  onShowDiagnostics,
 }: IdeActionsProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const overflowRef = useRef<HTMLButtonElement | null>(null)
+
+  // The menu is not focusable and a mouse click does not leave focus on
+  // the trigger (the Button's tooltip wrapper re-renders it once
+  // aria-expanded flips), so put focus on the trigger after the open
+  // commits: Escape then closes what the click opened.
+  useEffect(() => {
+    if (menuOpen) overflowRef.current?.focus()
+  }, [menuOpen])
 
   const state = summary?.state ?? null
   const primary = state ? sitePluginPrimaryAction(state) : null
@@ -72,10 +79,10 @@ export function IdeActions({
         onActivate()
         return
       case 'diagnostics':
-        onShowDiagnostics()
+        onRunDiagnostics()
         return
-      case 'logs':
-        onOpenSettings()
+      case 'open-plugins-page':
+        onOpenPluginsPage()
         return
       case 'delete':
         onDelete()
@@ -148,7 +155,14 @@ export function IdeActions({
         iconOnly
         aria-label="More actions"
         tooltip="More actions"
+        aria-expanded={menuOpen}
         onClick={() => setMenuOpen((open) => !open)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && menuOpen) {
+            event.preventDefault()
+            setMenuOpen(false)
+          }
+        }}
         data-testid="ide-overflow"
       >
         <MoreHorizontalSolidIcon size={14} aria-hidden="true" />
@@ -162,18 +176,8 @@ export function IdeActions({
           minWidth={230}
         >
           <ContextMenuItem
-            disabled={!summary?.hasModules || !summary.hasDraftSource}
-            tooltip={!summary?.hasModules ? 'The draft declares no module pack' : undefined}
             onClick={() => {
-              onPreview()
-              setMenuOpen(false)
-            }}
-          >
-            Preview in canvas
-          </ContextMenuItem>
-          <ContextMenuItem
-            onClick={() => {
-              onRerunDiagnostics()
+              onRunDiagnostics()
               setMenuOpen(false)
             }}
           >
@@ -220,14 +224,12 @@ export function IdeActions({
             Restart
           </ContextMenuItem>
           <ContextMenuItem
-            disabled={!summary?.activeVersion}
-            tooltip={!summary?.activeVersion ? 'Settings exist after the first activation' : undefined}
             onClick={() => {
-              onOpenSettings()
+              onOpenPluginsPage()
               setMenuOpen(false)
             }}
           >
-            Open plugin settings
+            Open on Plugins page
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem

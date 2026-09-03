@@ -93,7 +93,7 @@ export type SitePluginPrimaryActionKind =
   | 'activate'
   | 'review'
   | 'diagnostics'
-  | 'logs'
+  | 'open-plugins-page'
   | 'delete'
   | 'enable'
   | null
@@ -114,7 +114,9 @@ export function sitePluginPrimaryAction(state: SitePluginRuntimeState): SitePlug
     case 'build-failed':
       return { label: 'View diagnostics', action: 'diagnostics' }
     case 'runtime-error':
-      return { label: 'View logs', action: 'logs' }
+      // The IDE shows the runtime error inline; logs and restart live on the
+      // Plugins page, and the label says exactly where the click goes.
+      return { label: 'Open on Plugins page', action: 'open-plugins-page' }
     case 'source-missing':
       return { label: 'Delete site plugin', action: 'delete' }
     case 'disabled':

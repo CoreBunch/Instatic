@@ -57,7 +57,8 @@ export function SitePluginPermissionReviewDialog({
       <div className={styles.body}>
         <p className={styles.intro}>
           Building activates this plugin’s current draft with exactly the
-          permissions it declares:
+          permissions it declares. You will be asked for your password to
+          confirm.
         </p>
 
         {added.length > 0 && (
