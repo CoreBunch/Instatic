@@ -23,7 +23,7 @@ import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
 import { pushToast } from '@ui/components/Toast'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { sitePluginFolder } from '@core/site-plugins'
+import { sitePluginDisplayVersion, sitePluginFolder } from '@core/site-plugins'
 import { FilePlusSolidIcon } from 'pixel-art-icons/icons/file-plus-solid'
 import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
 import { FolderGlyphIcon } from 'pixel-art-icons/icons/folder-glyph'
@@ -204,10 +204,8 @@ export function FileTreePane({
         <span className={styles.titleContent}>
           <span className={styles.titleName}>{pluginName}</span>
           {activeVersion && (
-            // The generated version is `1.0.<n>+<content hash>`; the hash is
-            // for the build's skip check, not for people.
             <span className={styles.titleVersion} title={activeVersion}>
-              v{activeVersion.replace(/\+.*$/, '')}
+              v{sitePluginDisplayVersion(activeVersion)}
             </span>
           )}
         </span>

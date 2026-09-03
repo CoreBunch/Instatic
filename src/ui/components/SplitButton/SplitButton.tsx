@@ -14,7 +14,12 @@ import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom'
 import { cn } from '@ui/cn'
 import { Button, type ButtonProps } from '@ui/components/Button'
-import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@ui/components/ContextMenu'
+import {
+  ContextMenu,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSubmenu,
+} from '@ui/components/ContextMenu'
 import { ChevronDown2Icon } from 'pixel-art-icons/icons/chevron-down-2'
 import { LoaderIcon } from 'pixel-art-icons/icons/loader'
 import type { IconComponent } from 'pixel-art-icons/types'
@@ -32,7 +37,13 @@ export interface SplitButtonMenuItem {
   danger?: boolean
   /** Draw a divider above this row to start a new group. */
   separatorBefore?: boolean
-  onSelect: () => void | Promise<void>
+  /**
+   * Nested rows — the row becomes a submenu trigger and `onSelect` is not
+   * called. A disabled row with children renders as a plain disabled row
+   * (with its tooltip) so the reason stays visible.
+   */
+  children?: SplitButtonMenuItem[]
+  onSelect?: () => void | Promise<void>
   testId?: string
 }
 
@@ -83,6 +94,8 @@ export interface SplitButtonProps {
 
 const DEFAULT_MENU_WIDTH = 184
 const MENU_GAP = 6
+/** Above editor panels; a submenu stacks itself just above this. */
+const MENU_Z_INDEX = 10000
 
 export function SplitButton({
   label,
@@ -123,9 +136,60 @@ export function SplitButton({
   }, [menuOpen])
 
   function handleSelect(item: SplitButtonMenuItem) {
-    if (item.disabled) return
+    if (item.disabled || !item.onSelect) return
     setMenuOpen(false)
     void item.onSelect()
+  }
+
+  function renderRow(item: SplitButtonMenuItem) {
+    const ItemIcon = item.icon
+    const content = (
+      <>
+        {ItemIcon && (
+          <span aria-hidden="true">
+            <ItemIcon size={14} />
+          </span>
+        )}
+        <span>{item.label}</span>
+      </>
+    )
+    if (item.children && !item.disabled) {
+      return (
+        <ContextMenuSubmenu
+          label={item.label}
+          icon={ItemIcon ? <ItemIcon size={14} /> : undefined}
+          zIndex={MENU_Z_INDEX}
+          width={menuWidth}
+          onClose={() => setMenuOpen(false)}
+        >
+          {item.children.map((child) => (
+            <Fragment key={child.id}>
+              {child.separatorBefore && <ContextMenuSeparator />}
+              <ContextMenuItem
+                disabled={child.disabled}
+                tooltip={child.tooltip}
+                danger={child.danger}
+                onClick={() => handleSelect(child)}
+                data-testid={child.testId}
+              >
+                {child.label}
+              </ContextMenuItem>
+            </Fragment>
+          ))}
+        </ContextMenuSubmenu>
+      )
+    }
+    return (
+      <ContextMenuItem
+        disabled={item.disabled}
+        tooltip={item.tooltip}
+        danger={item.danger}
+        onClick={() => handleSelect(item)}
+        data-testid={item.testId}
+      >
+        {content}
+      </ContextMenuItem>
+    )
   }
 
   const resolvedAriaLabel =
@@ -197,33 +261,17 @@ export function SplitButton({
           offset={MENU_GAP}
           width={menuWidth}
           minWidth={menuWidth}
-          zIndex={10000}
+          zIndex={MENU_Z_INDEX}
           ariaLabel={menuLabel ?? menuTriggerLabel}
           onClose={closeMenu}
           data-testid={menuTestId}
         >
-          {menuItems.map((item) => {
-            const ItemIcon = item.icon
-            return (
-              <Fragment key={item.id}>
-                {item.separatorBefore && <ContextMenuSeparator />}
-                <ContextMenuItem
-                  disabled={item.disabled}
-                  tooltip={item.tooltip}
-                  danger={item.danger}
-                  onClick={() => handleSelect(item)}
-                  data-testid={item.testId}
-                >
-                  {ItemIcon && (
-                    <span aria-hidden="true">
-                      <ItemIcon size={14} />
-                    </span>
-                  )}
-                  <span>{item.label}</span>
-                </ContextMenuItem>
-              </Fragment>
-            )
-          })}
+          {menuItems.map((item) => (
+            <Fragment key={item.id}>
+              {item.separatorBefore && <ContextMenuSeparator />}
+              {renderRow(item)}
+            </Fragment>
+          ))}
         </ContextMenu>,
         document.body,
       )}

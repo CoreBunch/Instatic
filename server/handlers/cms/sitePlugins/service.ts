@@ -40,7 +40,10 @@ import {
   buildSitePlugin,
   type SitePluginBuildResult,
 } from '../../../plugins/sitePlugins/build'
-import { sweepSitePluginRevisions } from '../../../plugins/sitePlugins/retention'
+import {
+  listSitePluginRevisions,
+  sweepSitePluginRevisions,
+} from '../../../plugins/sitePlugins/retention'
 import { createKeyedSerializer } from '../../../util/keyedSerial'
 import type { CmsHandlerOptions } from '../shared'
 import { activatePluginPackageFromDisk } from '../plugins/install'
@@ -110,7 +113,14 @@ export function sameStringSet(a: readonly string[], b: readonly string[]): boole
 // GET /site-plugins — the list
 // ---------------------------------------------------------------------------
 
-export async function listSitePlugins(db: DbClient): Promise<SitePluginSummary[]> {
+/**
+ * @param uploadsDir Where built revisions live; null (no uploads configured)
+ *   lists every plugin with an empty `revisions` array.
+ */
+export async function listSitePlugins(
+  db: DbClient,
+  uploadsDir: string | null,
+): Promise<SitePluginSummary[]> {
   const draftFiles = await readDraftPluginFiles(db)
   let discovered: ReturnType<typeof discoverSitePlugins>
   try {
@@ -133,9 +143,13 @@ export async function listSitePlugins(db: DbClient): Promise<SitePluginSummary[]
   // Union — a deleted folder must never hide a still-running backend.
   const localIds = [...new Set([...draftByLocalId.keys(), ...rowByLocalId.keys()])].sort()
 
-  return localIds.map((localId) => {
+  const summaries: SitePluginSummary[] = []
+  for (const localId of localIds) {
     const draft = draftByLocalId.get(localId) ?? null
     const row = rowByLocalId.get(localId) ?? null
+    const pluginId = sitePluginIdFromLocalId(localId)
+    const revisions =
+      row && uploadsDir ? await listSitePluginRevisions(uploadsDir, pluginId) : []
 
     let manifest: PluginManifest | null = null
     let manifestError: string | null = null
@@ -174,12 +188,13 @@ export async function listSitePlugins(db: DbClient): Promise<SitePluginSummary[]
       grantsChanged,
     })
 
-    return {
+    summaries.push({
       localId,
-      pluginId: sitePluginIdFromLocalId(localId),
+      pluginId,
       name: manifest?.name ?? row?.name ?? localId,
       state,
       activeVersion: row?.version ?? null,
+      revisions,
       hasDraftSource: draft !== null,
       hasModules: Boolean(manifest?.entrypoints?.modules),
       declaredPermissions: declared,
@@ -188,8 +203,9 @@ export async function listSitePlugins(db: DbClient): Promise<SitePluginSummary[]
       removedPermissions: granted.filter((permission) => !declared.includes(permission)),
       manifestError,
       lastError: row?.lastError ?? null,
-    }
-  })
+    })
+  }
+  return summaries
 }
 
 // ---------------------------------------------------------------------------

@@ -75,6 +75,14 @@ export function contentHashOfVersion(version: string | null | undefined): string
   return match?.[1] ?? null
 }
 
+/**
+ * The version as people read it: `1.0.<n>` without the `+<hash>` build
+ * metadata, which exists for the skip-rebuild check, not for display.
+ */
+export function sitePluginDisplayVersion(version: string): string {
+  return version.replace(/\+.*$/, '')
+}
+
 export interface DeriveSitePluginManifestInput {
   localId: string
   draftManifestJson: string

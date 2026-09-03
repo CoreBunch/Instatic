@@ -265,12 +265,87 @@ describe('site plugin activation authority', () => {
     }
   })
 
-  test('the list reports active after activation', async () => {
+  test('the list reports active after activation, with every retained build', async () => {
     const res = await harness.cms('/admin/api/cms/site-plugins', { cookie: ownerCookie })
     const body = await readJson<{ sitePlugins: SitePluginSummary[] }>(res)
     const entry = body.sitePlugins.find((plugin) => plugin.localId === 'newsletter')
     expect(entry?.state).toBe('active')
     expect(entry?.activeVersion).toStartWith('1.0.3+')
+    // Three builds so far, all retained (the policy keeps five), newest first.
+    expect(entry?.revisions.map((revision) => revision.version.split('+')[0])).toEqual([
+      '1.0.3',
+      '1.0.2',
+      '1.0.1',
+    ])
+    for (const revision of entry?.revisions ?? []) {
+      expect(revision.builtAt).toBeGreaterThan(0)
+    }
+  })
+
+  test('rollback targets a retained build; a different grant set steps up', async () => {
+    const list = await readJson<{ sitePlugins: SitePluginSummary[] }>(
+      await harness.cms('/admin/api/cms/site-plugins', { cookie: ownerCookie }),
+    )
+    const entry = list.sitePlugins.find((plugin) => plugin.localId === 'newsletter')!
+    const target = entry.revisions.find((revision) => revision.version.startsWith('1.0.2+'))!
+
+    const installer = await harness.createRoleUser({
+      name: 'Installer 4',
+      slug: 'installer-4',
+      capabilities: ['plugins.read', 'plugins.install', 'site.read'],
+    })
+
+    // An unknown version is refused before anything is touched.
+    const bogus = await harness.cms('/admin/api/cms/site-plugins/newsletter/rollback', {
+      method: 'POST',
+      cookie: installer.cookie,
+      json: { version: '1.0.99+deadbeef' },
+    })
+    expect(bogus.status).toBe(400)
+
+    // 1.0.2 was granted [cms.routes]; the active 1.0.3 holds [cms.routes,
+    // cms.routes.public] — a grant change, so the consent moment applies.
+    const noStepUp = await harness.cms('/admin/api/cms/site-plugins/newsletter/rollback', {
+      method: 'POST',
+      cookie: installer.cookie,
+      json: { version: target.version },
+    })
+    await expectStepUpRequired(noStepUp)
+
+    const stepped = await harness.stepUp(installer.cookie)
+    const res = await harness.cms('/admin/api/cms/site-plugins/newsletter/rollback', {
+      method: 'POST',
+      cookie: stepped,
+      json: { version: target.version },
+    })
+    expect(res.status).toBe(200)
+    const body = await readJson<{ rolledBackTo: string; plugin: { version: string } }>(res)
+    expect(body.rolledBackTo).toBe(target.version)
+    expect(body.plugin.version).toBe(target.version)
+
+    const row = await getInstalledPlugin(harness.db, 'site.newsletter')
+    expect(row?.kind).toBe('ok')
+    if (row?.kind === 'ok') {
+      expect(row.plugin.version).toBe(target.version)
+      expect(row.plugin.grantedPermissions).toEqual(['cms.routes'])
+    }
+
+    // The newer build stays retained: rolling forward is a rollback too.
+    const after = await readJson<{ sitePlugins: SitePluginSummary[] }>(
+      await harness.cms('/admin/api/cms/site-plugins', { cookie: ownerCookie }),
+    )
+    const afterEntry = after.sitePlugins.find((plugin) => plugin.localId === 'newsletter')
+    expect(afterEntry?.revisions.some((revision) => revision.version.startsWith('1.0.3+'))).toBe(true)
+    // The draft still declares cms.routes.public, which the rolled-back
+    // grant set lacks — that outranks "draft changed" in the state machine.
+    expect(afterEntry?.state).toBe('permission-review')
+
+    const alreadyActive = await harness.cms('/admin/api/cms/site-plugins/newsletter/rollback', {
+      method: 'POST',
+      cookie: stepped,
+      json: { version: target.version },
+    })
+    expect(alreadyActive.status).toBe(400)
   })
 })
 

@@ -6,6 +6,7 @@
  * with an inline reason, never hidden.
  */
 import {
+  sitePluginDisplayVersion,
   sitePluginPrimaryAction,
   sitePluginStateLabel,
   type SitePluginRuntimeState,
@@ -13,6 +14,7 @@ import {
 } from '@core/site-plugins'
 import { SplitButton, type SplitButtonMenuItem } from '@ui/components/SplitButton'
 import { PeerAvatar } from '@site/collab/PeerAvatar'
+import { formatRelativeTime } from '@site/panels/AgentPanel/relativeTime'
 import { ToolbarStatus, type ToolbarStatusTone } from '@site/toolbar/ToolbarStatus'
 import type { IdePeer } from './idePresence'
 import styles from './IdeActions.module.css'
@@ -47,7 +49,8 @@ interface IdeActionsProps {
   activating: boolean
   onActivate: () => void
   onPreview: () => void
-  onRollback: () => void
+  /** Re-activate one retained build (a version from `summary.revisions`). */
+  onRollback: (version: string) => void
   onSetEnabled: (enabled: boolean) => void
   onRestart: () => void
   onRunDiagnostics: () => void
@@ -130,6 +133,26 @@ export function IdeActions({
       ? 'The draft declares no module pack'
       : null
 
+  // Every retained build is a rollback target; the active one is listed
+  // so the picker reads as a history, but cannot be re-activated.
+  const revisions = summary?.revisions ?? []
+  const rollbackTargets: SplitButtonMenuItem[] = revisions.map((revision) => {
+    const active = revision.version === summary?.activeVersion
+    return {
+      id: `rollback:${revision.version}`,
+      label: `v${sitePluginDisplayVersion(revision.version)} · ${formatRelativeTime(revision.builtAt)}${active ? ' · active' : ''}`,
+      disabled: active,
+      tooltip: active ? 'This build is the active one' : undefined,
+      onSelect: () => onRollback(revision.version),
+      testId: `ide-rollback-${sitePluginDisplayVersion(revision.version)}`,
+    }
+  })
+  const rollbackBlockedReason = !canInstall
+    ? INSTALL_REASON
+    : revisions.length < 2
+      ? 'No other build is retained yet'
+      : null
+
   const menuItems: SplitButtonMenuItem[] = [
     {
       id: 'preview',
@@ -142,15 +165,12 @@ export function IdeActions({
     { id: 'diagnostics', label: 'Re-run diagnostics', onSelect: onRunDiagnostics },
     {
       id: 'rollback',
-      label: 'Rollback to previous revision',
+      label: 'Roll back to…',
       separatorBefore: true,
-      disabled: !canInstall || !summary?.activeVersion,
-      tooltip: !canInstall
-        ? INSTALL_REASON
-        : !summary?.activeVersion
-          ? 'Nothing is activated yet'
-          : undefined,
-      onSelect: onRollback,
+      disabled: rollbackBlockedReason !== null,
+      tooltip: rollbackBlockedReason ?? undefined,
+      children: rollbackTargets,
+      testId: 'ide-rollback',
     },
     {
       id: 'deactivate',

@@ -228,7 +228,7 @@ function SitePluginIde({ localId }: { localId: string }) {
               else void vm.activate()
             }}
             onPreview={vm.openPreview}
-            onRollback={() => void vm.rollback()}
+            onRollback={(version) => void vm.rollback(version)}
             onSetEnabled={(enabled) => void vm.setEnabled(enabled)}
             onRestart={() => void vm.restart()}
             onRunDiagnostics={vm.runValidation}

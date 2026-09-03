@@ -11,7 +11,11 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { apiRequest } from '@core/http'
 import { Type } from '@core/utils/typeboxHelpers'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { SitePluginsPayloadSchema, type SitePluginSummary } from '@core/site-plugins'
+import {
+  SitePluginsPayloadSchema,
+  sitePluginDisplayVersion,
+  type SitePluginSummary,
+} from '@core/site-plugins'
 import { pushToast } from '@ui/components/Toast'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
@@ -48,7 +52,8 @@ interface SitePluginIdeVm {
   runValidation: () => void
   activating: boolean
   activate: () => Promise<void>
-  rollback: () => Promise<void>
+  /** Re-activate one of the retained builds (`summary.revisions`). */
+  rollback: (version: string) => Promise<void>
   setEnabled: (enabled: boolean) => Promise<void>
   restart: () => Promise<void>
   deletePlugin: () => Promise<void>
@@ -227,10 +232,13 @@ export function useSitePluginIde(localId: string): SitePluginIdeVm {
     }
   }
 
-  const rollback = (): Promise<void> =>
+  const rollback = (version: string): Promise<void> =>
     runLifecycle(
-      lifecycleRequest(`/admin/api/cms/site-plugins/${localId}/rollback`, { method: 'POST' }),
-      { success: 'Rolled back to the previous revision', failure: 'Rollback failed' },
+      lifecycleRequest(`/admin/api/cms/site-plugins/${localId}/rollback`, {
+        method: 'POST',
+        body: { version },
+      }),
+      { success: `Rolled back to v${sitePluginDisplayVersion(version)}`, failure: 'Rollback failed' },
     )
 
   const setEnabled = (enabled: boolean): Promise<void> =>
