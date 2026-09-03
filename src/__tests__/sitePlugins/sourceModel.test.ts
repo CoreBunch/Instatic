@@ -200,13 +200,11 @@ describe('runtime state machine', () => {
     manifestError: null,
     draftContentHash: 'abc',
     activeContentHash: 'abc',
-    grantsChanged: false,
   }
 
-  test('precedence: source-missing > runtime-error > disabled > build-failed > review > draft-changed > active', () => {
+  test('precedence: source-missing > runtime-error > disabled > build-failed > draft-changed > active', () => {
     expect(computeSitePluginState(base)).toBe('active')
     expect(computeSitePluginState({ ...base, draftContentHash: 'zzz' })).toBe('draft-changed')
-    expect(computeSitePluginState({ ...base, grantsChanged: true })).toBe('permission-review')
     expect(computeSitePluginState({ ...base, manifestError: 'bad json' })).toBe('build-failed')
     expect(
       computeSitePluginState({

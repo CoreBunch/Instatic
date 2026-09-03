@@ -24,8 +24,6 @@ function stateTone(state: SitePluginRuntimeState): ToolbarStatusTone {
   switch (state) {
     case 'active':
       return 'success'
-    case 'permission-review':
-      return 'warning'
     case 'build-failed':
     case 'runtime-error':
     case 'source-missing':
@@ -80,8 +78,7 @@ export function IdeActions({
 
   // Same split as the server: install-class actions need plugins.install,
   // enable/disable/restart need plugins.lifecycle.
-  const needsInstallCap =
-    primary?.action === 'activate' || primary?.action === 'review' || primary?.action === 'delete'
+  const needsInstallCap = primary?.action === 'activate' || primary?.action === 'delete'
   const needsLifecycleCap = primary?.action === 'enable'
   // `active` has no state action of its own: the left half keeps reading
   // "Build & activate" and says why there is nothing to build.
@@ -99,9 +96,8 @@ export function IdeActions({
   const runPrimary = (): void => {
     switch (primary?.action) {
       case 'activate':
-      case 'review':
-        // The review moment IS activation — the server enforces step-up and
-        // the dialog shows the grant diff before anything changes.
+        // The page opens the permission review first when the grant set
+        // changed; the server enforces step-up either way.
         onActivate()
         return
       case 'diagnostics':

@@ -250,13 +250,15 @@ sitePluginRoute('<localId>', '/path') from '@instatic/plugin-sdk'
 3. Visitor-facing surfaces (modules pack, frontend assets) trigger an
    automatic republish of baked pages on activation.
 
-States: active · draft-changed (source differs from active revision) ·
-build-failed · permission-review (grants differ) · runtime-error · disabled ·
-source-missing. plugin_list_plugins reports them.
+States: active · draft-changed (source differs from the active revision; a
+changed permission set is a draft change too — the review happens on the
+activation click) · build-failed · runtime-error · disabled · source-missing.
+plugin_list_plugins reports them, plus newPermissions / removedPermissions.
 
-Settings + secrets survive rebuilds. Rollback re-activates the retained
-previous revision (IDE header menu). Deleting the plugin removes the runtime
-row AND the draft folder.
+Settings + secrets survive rebuilds. The five most recent builds are
+retained; the IDE header menu can roll back to any of them (the user does
+this, there is no tool for it). Deleting the plugin removes the runtime row
+AND the draft folder.
 
 Gotchas:
 - diagnostics are build/containment/manifest errors, NOT TypeScript type checks;
