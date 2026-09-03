@@ -36,7 +36,10 @@ import {
   getPublishVersion,
   withPublishLock,
 } from '../../../publish/publishState'
-import { buildSitePlugin } from '../../../plugins/sitePlugins/build'
+import {
+  buildSitePlugin,
+  type SitePluginBuildResult,
+} from '../../../plugins/sitePlugins/build'
 import { sweepSitePluginRevisions } from '../../../plugins/sitePlugins/retention'
 import { createKeyedSerializer } from '../../../util/keyedSerial'
 import type { CmsHandlerOptions } from '../shared'
@@ -72,6 +75,28 @@ export async function readDraftPluginFiles(db: DbClient): Promise<SiteFile[]> {
   await runPublishFlush()
   const shell = await getDraftSite(db)
   return shell?.files.filter((file) => file.type === 'plugin') ?? []
+}
+
+/**
+ * Validate-only build of one draft plugin — the diagnostics strip, the
+ * preview-pack route and the AI `plugin_validate` tool all run exactly
+ * this. Null when no `plugins/<localId>/` source exists.
+ */
+export async function buildDraftSitePlugin(
+  db: DbClient,
+  localId: string,
+): Promise<SitePluginBuildResult | null> {
+  const draftFiles = await readDraftPluginFiles(db)
+  const plugin = discoverSitePlugins(draftFiles).find((entry) => entry.localId === localId)
+  if (!plugin) return null
+  const rowResult = await getInstalledPlugin(db, sitePluginIdFromLocalId(localId))
+  const row = rowResult?.kind === 'ok' ? rowResult.plugin : null
+  return buildSitePlugin({
+    localId,
+    files: plugin.files,
+    previousVersion: row?.version ?? null,
+    validateOnly: true,
+  })
 }
 
 export function sameStringSet(a: readonly string[], b: readonly string[]): boolean {
@@ -176,9 +201,18 @@ export async function listSitePlugins(db: DbClient): Promise<SitePluginSummary[]
 // ---------------------------------------------------------------------------
 
 export type SitePluginActivationResult =
-  | { status: 'ok'; plugin: InstalledPlugin; upgrade?: { fromVersion: string; toVersion: string }; skipped: boolean }
+  | {
+      status: 'ok'
+      plugin: InstalledPlugin
+      upgrade?: { fromVersion: string; toVersion: string }
+      skipped: boolean
+      /** The activation succeeded but the coupled republish did not. */
+      warning?: string
+    }
   | { status: 'not-found'; message: string }
   | { status: 'invalid'; message: string }
+  /** The row is deactivated; rebuilding must not silently re-enable it. */
+  | { status: 'disabled'; message: string }
   | { status: 'grants-changed'; newPermissions: string[]; removedPermissions: string[] }
   | { status: 'build-failed'; diagnostics: string[] }
   | { status: 'upgrade-error'; message: string }
@@ -222,6 +256,18 @@ async function activateUnlocked(
   const rowResult = await getInstalledPlugin(db, sitePluginIdFromLocalId(localId))
   const row = rowResult?.kind === 'ok' ? rowResult.plugin : null
   const contentHash = computeSitePluginContentHash(plugin.files)
+
+  // An operator deactivated this plugin on purpose. A rebuild (the everyday
+  // agent loop over MCP included) must not bring it back as a side effect:
+  // enabling is a lifecycle action with its own capability and step-up.
+  if (row && (!row.enabled || row.lifecycleStatus === 'disabled')) {
+    return {
+      status: 'disabled',
+      message:
+        `Site plugin "${localId}" is deactivated. Activate it first (the Activate action ` +
+        'on the Plugins page or in the IDE header), then build again.',
+    }
+  }
 
   // Skip when the active revision already matches the draft source.
   if (
@@ -285,13 +331,14 @@ async function activateUnlocked(
     return { status: 'upgrade-error', message: outcome.upgradeError }
   }
 
-  await republishAndSweep(db, options.uploadsDir, built.manifest)
+  const warning = await republishAndSweep(db, options.uploadsDir, built.manifest)
 
   return {
     status: 'ok',
     plugin: outcome.plugin,
     ...(outcome.upgrade ? { upgrade: outcome.upgrade } : {}),
     skipped: false,
+    ...(warning ? { warning } : {}),
   }
 }
 
@@ -304,12 +351,17 @@ async function activateUnlocked(
  * data rows (`/posts/hello`), which a page-only republish would leave
  * pointing at the swept directory. Backend-only plugins skip the republish
  * and sweep immediately.
+ *
+ * Returns a warning for the caller to surface when the republish failed:
+ * the activation stands, the old revision stays on disk (unswept, so
+ * published pages keep working), and the operator has to publish to move
+ * visitors onto the new revision.
  */
 export async function republishAndSweep(
   db: DbClient,
   uploadsDir: string,
   manifest: PluginManifest,
-): Promise<void> {
+): Promise<string | null> {
   const visitorFacing =
     (manifest.frontend?.assets.length ?? 0) > 0 || Boolean(manifest.entrypoints?.modules)
   if (visitorFacing) {
@@ -327,8 +379,12 @@ export async function republishAndSweep(
       // A failed republish must not fail the activation — but it must also
       // not trigger the sweep (old revision stays referenced).
       console.error(`[site-plugins] post-activation republish failed for ${manifest.id}:`, err)
-      return
+      return (
+        `Activated, but republishing the site failed: ${getErrorMessage(err, 'unknown error')}. ` +
+        'Published pages still use the previous revision until you publish the site.'
+      )
     }
   }
   await sweepSitePluginRevisions(uploadsDir, manifest.id, manifest.version)
+  return null
 }
