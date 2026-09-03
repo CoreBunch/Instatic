@@ -21,6 +21,20 @@ export function sitePluginIdFromLocalId(localId: string): string {
   return `${SITE_PLUGIN_ID_PREFIX}${localId}`
 }
 
+/**
+ * The local id suggested from a display name ("Hello Banner" → "hello-banner").
+ * May come back empty or still invalid for names without a letter; callers
+ * validate the result against `SITE_PLUGIN_LOCAL_ID_PATTERN`.
+ */
+export function sitePluginLocalIdFromName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/^[^a-z]+/, '')
+    .slice(0, 40)
+}
+
 /** Strip the `site.` prefix; null when the id is not a site plugin id. */
 export function localIdFromSitePluginId(pluginId: string): string | null {
   if (!pluginId.startsWith(SITE_PLUGIN_ID_PREFIX)) return null

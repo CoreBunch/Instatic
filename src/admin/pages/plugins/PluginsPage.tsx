@@ -13,6 +13,7 @@ import { PluginSettingsDialog } from './components/PluginSettingsDialog/PluginSe
 import { PluginSchedulesDialog } from './components/PluginSchedulesDialog/PluginSchedulesDialog'
 import { isSandboxRelatedError, usePluginsWorkspace } from './hooks/usePluginsWorkspace'
 import { useSitePlugins } from './hooks/useSitePlugins'
+import { localIdFromSitePluginId } from '@core/site-plugins'
 import { notifyCmsPluginsChanged } from './utils/pluginEvents'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import {
@@ -202,7 +203,10 @@ export function PluginsPage() {
                   onReinstall={() => fileInputRef.current?.click()}
                   onToggle={(p) => void vm.togglePlugin(p)}
                   onRemove={(p) => vm.setPendingRemove({ plugin: p, force: false })}
-                  onOpenIde={(p) => openIde(p.id.replace(/^site\./, ''))}
+                  onOpenIde={(p) => {
+                    const localId = localIdFromSitePluginId(p.id)
+                    if (localId) openIde(localId)
+                  }}
                 />
               ))}
               {draftOnlySitePlugins.map((plugin) => (

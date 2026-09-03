@@ -32,8 +32,7 @@ export const pluginTools: AiTool[] = [
 ]
 
 export { buildPluginSystemPrompt } from './systemPrompt'
-export {
-  PluginIdeSnapshotSchema,
-  emptyPluginIdeSnapshot,
-} from './snapshot'
-export type { PluginIdeSnapshot } from './snapshot'
+// The snapshot schema lives in @core/ai so the IDE and the server derive
+// the same type; re-exported here for the chat handler's scope wiring.
+export { PluginIdeSnapshotSchema, emptyPluginIdeSnapshot } from '@core/ai'
+export type { PluginIdeSnapshot } from '@core/ai'

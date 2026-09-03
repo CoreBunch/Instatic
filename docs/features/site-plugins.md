@@ -8,8 +8,8 @@ compiled server-side into packages **byte-compatible with installed plugins**
 exact same install/upgrade lifecycle, sandbox, permissions, settings, and
 crash handling. The runtime never branches on provenance.
 
-Design history: `docs/plans/2026-07-02-site-local-integrations-design.md`
-(spec) and `docs/plans/2026-07-03-site-plugins-implementation.md` (plan).
+This document is the design of record; the original spec and implementation
+plan were working notes and are not kept in the repository.
 
 ## The user-facing model
 
@@ -97,7 +97,11 @@ Builds are single-flight per plugin with a 30 s timeout, and every
 lifecycle transition (activate, rollback, delete) is serialized per plugin
 id on top of that (`withSitePluginLock` in the service layer) — two
 overlapping activations would otherwise both read the same row version,
-derive the same next counter, and race the upgrade path. Validate-only mode
+derive the same next counter, and race the upgrade path. The diagnostics
+strip, the preview-pack route and the AI `plugin_validate` tool all run the
+same `buildDraftSitePlugin` (service layer). Diagnostics carry the author's
+file, line and column (`plugins/<id>/modules/foo.ts:22:16: …`); the modules
+pack's generated facade never appears in them. Validate-only mode
 writes into the throwaway workspace (never uploads), returns diagnostics,
 and can return the built modules bundle text (the preview-pack route).
 Diagnostics are bundle/parse errors, sandbox-scan violations, containment
@@ -148,8 +152,9 @@ deactivate/delete):
 `runtime-error` · `disabled` · `source-missing`
 
 Each state maps to ONE smart primary action (`sitePluginPrimaryAction`),
-used by both the Plugins-page card and the IDE header. Unavailable actions
-are disabled with an inline reason, never hidden.
+rendered in the IDE header; the Plugins-page draft card only offers `Open
+IDE` (an activated site plugin is an ordinary installed row there).
+Unavailable actions are disabled with an inline reason, never hidden.
 
 ## The Plugin IDE
 

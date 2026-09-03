@@ -429,7 +429,6 @@ const PluginFileRefInputSchema = Type.Object({
 })
 
 export const PluginListFilesInputSchema = Type.Object({})
-export type PluginListFilesInput = Static<typeof PluginListFilesInputSchema>
 
 export const PluginReadFileInputSchema = Type.Composite([
   PluginFileRefInputSchema,
@@ -438,13 +437,11 @@ export const PluginReadFileInputSchema = Type.Composite([
     maxChars: Type.Optional(Type.Integer({ minimum: 1, maximum: 100000 })),
   }),
 ])
-export type PluginReadFileInput = Static<typeof PluginReadFileInputSchema>
 
 export const PluginWriteFileInputSchema = Type.Object({
   path: Type.String({ minLength: 1 }),
   content: Type.String(),
 })
-export type PluginWriteFileInput = Static<typeof PluginWriteFileInputSchema>
 
 export const PluginPatchFileInputSchema = Type.Composite([
   PluginFileRefInputSchema,
@@ -460,7 +457,6 @@ export const PluginPatchFileInputSchema = Type.Composite([
     ),
   }),
 ])
-export type PluginPatchFileInput = Static<typeof PluginPatchFileInputSchema>
 
 export const PluginRenameFileInputSchema = Type.Composite([
   PluginFileRefInputSchema,
@@ -468,10 +464,7 @@ export const PluginRenameFileInputSchema = Type.Composite([
     newPath: Type.String({ minLength: 1 }),
   }),
 ])
-export type PluginRenameFileInput = Static<typeof PluginRenameFileInputSchema>
 
 export const PluginDeleteFileInputSchema = PluginFileRefInputSchema
-export type PluginDeleteFileInput = Static<typeof PluginDeleteFileInputSchema>
 
 export const PluginOpenFileInputSchema = PluginFileRefInputSchema
-export type PluginOpenFileInput = Static<typeof PluginOpenFileInputSchema>

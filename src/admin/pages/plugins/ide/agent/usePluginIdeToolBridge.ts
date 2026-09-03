@@ -14,8 +14,8 @@ import {
   setPluginIdeBridgeHandle,
   summarySnapshotFields,
   type PluginIdeAgentCurrentUser,
-  type PluginIdeAgentSnapshot,
   type PluginIdeBridgeHandle,
+  type PluginIdeSnapshot,
 } from './pluginBridgeHandle'
 
 interface UsePluginIdeToolBridgeOptions {
@@ -52,7 +52,7 @@ export function usePluginIdeToolBridge(options: UsePluginIdeToolBridgeOptions): 
     }
     const handle: PluginIdeBridgeHandle = {
       localId,
-      buildSnapshot(): PluginIdeAgentSnapshot {
+      buildSnapshot(): PluginIdeSnapshot {
         const current = optionsRef.current
         return {
           localId,

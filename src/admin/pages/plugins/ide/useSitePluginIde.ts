@@ -7,16 +7,14 @@
  * (activate / rollback / deactivate / delete / preview) with the same
  * step-up retry pattern the Plugins page uses.
  */
-import { useEffect, useRef, useState, useSyncExternalStore, useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { apiRequest } from '@core/http'
 import { Type } from '@core/utils/typeboxHelpers'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import {
-  SitePluginsPayloadSchema,
-  type SitePluginSummary,
-} from '@core/site-plugins'
+import { SitePluginsPayloadSchema, type SitePluginSummary } from '@core/site-plugins'
 import { pushToast } from '@ui/components/Toast'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
+import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useNavigate } from '@admin/lib/routing'
 import { notifyCmsPluginsChanged } from '@plugins/utils/pluginEvents'
 import { createIdeCollabSession, type IdeCollabSession, type IdeFileMeta } from './ideCollab'
@@ -26,9 +24,16 @@ const ValidateResponseSchema = Type.Object({
   diagnostics: Type.Array(Type.String()),
 })
 
-const AUTO_VALIDATE_DEBOUNCE_MS = 900
+/** Every lifecycle route may carry a non-fatal warning (a failed republish). */
+const LifecycleResponseSchema = Type.Object({
+  warning: Type.Optional(Type.String()),
+})
 
-export interface SitePluginIdeVm {
+const AUTO_VALIDATE_DEBOUNCE_MS = 900
+const NO_FILES: IdeFileMeta[] = []
+const noop = (): void => {}
+
+interface SitePluginIdeVm {
   /** Null for at most one render — the mount effect creates it. */
   session: IdeCollabSession | null
   files: IdeFileMeta[]
@@ -38,7 +43,6 @@ export interface SitePluginIdeVm {
   activeFileId: string | null
   selectFile: (fileId: string | null) => void
   summary: SitePluginSummary | null
-  refreshSummary: () => Promise<void>
   diagnostics: string[]
   validating: boolean
   runValidation: () => void
@@ -59,7 +63,6 @@ export function useSitePluginIde(localId: string): SitePluginIdeVm {
   // free create/destroy in the effect below.
   const [session, setSession] = useState<IdeCollabSession | null>(null)
   const [activeFileId, setActiveFileId] = useState<string | null>(null)
-  const [summary, setSummary] = useState<SitePluginSummary | null>(null)
   const [diagnostics, setDiagnostics] = useState<string[]>([])
   const [validating, setValidating] = useState(false)
   const [activating, setActivating] = useState(false)
@@ -89,51 +92,44 @@ export function useSitePluginIde(localId: string): SitePluginIdeVm {
   // the editor buffer remounts on the generation.
   // useCallback kept: useSyncExternalStore resubscribes on identity change.
   const subscribeSync = useCallback(
-    (onStoreChange: () => void) => session?.onSyncChange(onStoreChange) ?? (() => {}),
+    (onStoreChange: () => void) => session?.onSyncChange(onStoreChange) ?? noop,
     [session],
   )
   const synced = useSyncExternalStore(subscribeSync, () => session?.synced() ?? false)
   const generation = useSyncExternalStore(subscribeSync, () => session?.generation() ?? 0)
 
-  // Files metadata via useSyncExternalStore — content keystrokes fire the
-  // underlying observer too, so the snapshot is signature-cached and only
-  // re-renders on structural/metadata changes.
-  const filesCache = useRef<{ signature: string; files: IdeFileMeta[] }>({
-    signature: '',
-    files: [],
-  })
+  // File metadata. The session hands back the same array until an id or a
+  // path changes, so content keystrokes (which fire the same observer)
+  // never re-render the tree.
+  // useCallback kept: same reason as subscribeSync.
   const subscribeFiles = useCallback(
-    (onStoreChange: () => void) => session?.onFilesChange(onStoreChange) ?? (() => {}),
+    (onStoreChange: () => void) => session?.onFilesChange(onStoreChange) ?? noop,
     [session],
   )
-  const getFilesSnapshot = useCallback((): IdeFileMeta[] => {
-    const files = session?.pluginFiles() ?? []
-    const signature = files.map((file) => `${file.id}:${file.path}`).join('|')
-    if (signature !== filesCache.current.signature) {
-      filesCache.current = { signature, files }
-    }
-    return filesCache.current.files
-  }, [session])
-  const files = useSyncExternalStore(subscribeFiles, getFilesSnapshot)
+  const files = useSyncExternalStore(subscribeFiles, () => session?.pluginFiles() ?? NO_FILES)
 
-  const refreshSummary = useCallback(async (): Promise<void> => {
-    try {
-      const payload = await apiRequest('/admin/api/cms/site-plugins', {
+  // The runtime summary (state chip, grants, active version): one GET, the
+  // canonical single-resource shape.
+  const summaryResource = useAsyncResource(
+    (signal) =>
+      apiRequest('/admin/api/cms/site-plugins', {
         schema: SitePluginsPayloadSchema,
-      })
-      setSummary(payload.sitePlugins.find((entry) => entry.localId === localId) ?? null)
-    } catch (err) {
-      console.error('[SitePluginIde] summary load failed:', err)
-    }
-  }, [localId])
-
+        signal,
+      }).then(
+        (payload) => payload.sitePlugins.find((entry) => entry.localId === localId) ?? null,
+      ),
+    [localId],
+    { fallbackError: 'Could not load the plugin state' },
+  )
+  const summary = summaryResource.data
+  const refreshSummary = summaryResource.refresh
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void refreshSummary()
-    }, 0)
-    return () => clearTimeout(timer)
-  }, [refreshSummary])
+    if (summaryResource.error) {
+      console.error('[SitePluginIde] summary load failed:', summaryResource.error)
+    }
+  }, [summaryResource.error])
 
+  // useCallback kept: runValidation is a dependency of the effects below.
   const runValidation = useCallback((): void => {
     const seq = ++validateSeq.current
     setValidating(true)
@@ -154,7 +150,7 @@ export function useSitePluginIde(localId: string): SitePluginIdeVm {
       })
     // State chips (draft-changed vs active) key off the content hash — keep
     // the summary fresh alongside diagnostics.
-    void refreshSummary()
+    refreshSummary()
   }, [localId, refreshSummary])
 
   // Automatic validation — debounced on every file change (metadata or
@@ -187,115 +183,81 @@ export function useSitePluginIde(localId: string): SitePluginIdeVm {
     return () => clearTimeout(timer)
   }, [synced, runValidation])
 
-  const activate = useCallback(async (): Promise<void> => {
+  /**
+   * Every lifecycle action has the same shape: a step-up-aware request, a
+   * success toast, a nudge to open editors (so a new revision's module pack
+   * or editor entrypoint loads without a reload), then a summary refresh.
+   * A cancelled step-up is silent; anything else toasts as an error.
+   */
+  const runLifecycle = async (
+    request: () => Promise<{ warning?: string }>,
+    labels: { success: string | null; failure: string },
+    hooks: { after?: () => void; onFailure?: () => void } = {},
+  ): Promise<void> => {
+    try {
+      const result = await runStepUp(request)
+      if (labels.success) pushToast({ kind: 'success', title: labels.success })
+      if (result.warning) {
+        pushToast({ kind: 'warning', title: 'Completed with a warning', body: result.warning })
+      }
+      notifyCmsPluginsChanged()
+      ;(hooks.after ?? refreshSummary)()
+    } catch (err) {
+      if (err instanceof Error && err.message === StepUpCancelledMessage) return
+      pushToast({ kind: 'error', title: labels.failure, body: getErrorMessage(err, 'Unknown error') })
+      hooks.onFailure?.()
+    }
+  }
+
+  const lifecycleRequest =
+    (path: string, init: { method: 'POST' | 'PATCH' | 'DELETE'; body?: unknown }) =>
+    () =>
+      apiRequest(path, { ...init, schema: LifecycleResponseSchema })
+
+  const activate = async (): Promise<void> => {
     setActivating(true)
     try {
-      await runStepUp(() =>
-        apiRequest(`/admin/api/cms/site-plugins/${localId}/activate`, { method: 'POST' }),
+      await runLifecycle(
+        lifecycleRequest(`/admin/api/cms/site-plugins/${localId}/activate`, { method: 'POST' }),
+        { success: 'Site plugin activated', failure: 'Build & activate failed' },
+        { onFailure: runValidation },
       )
-      pushToast({ kind: 'success', title: 'Site plugin activated' })
-      // Open editor sessions re-run their plugin activation pass so the new
-      // revision's module pack / editor entrypoint load without a reload.
-      notifyCmsPluginsChanged()
-      await refreshSummary()
-    } catch (err) {
-      if (!(err instanceof Error && err.message === StepUpCancelledMessage)) {
-        pushToast({
-          kind: 'error',
-          title: 'Build & activate failed',
-          body: getErrorMessage(err, 'Unknown activation error'),
-        })
-        runValidation()
-      }
     } finally {
       setActivating(false)
     }
-  }, [localId, refreshSummary, runStepUp, runValidation])
+  }
 
-  const rollback = useCallback(async (): Promise<void> => {
-    try {
-      await runStepUp(() =>
-        apiRequest(`/admin/api/cms/site-plugins/${localId}/rollback`, { method: 'POST' }),
-      )
-      pushToast({ kind: 'success', title: 'Rolled back to the previous revision' })
-      notifyCmsPluginsChanged()
-      await refreshSummary()
-    } catch (err) {
-      if (!(err instanceof Error && err.message === StepUpCancelledMessage)) {
-        pushToast({
-          kind: 'error',
-          title: 'Rollback failed',
-          body: getErrorMessage(err, 'Unknown rollback error'),
-        })
-      }
-    }
-  }, [localId, refreshSummary, runStepUp])
+  const rollback = (): Promise<void> =>
+    runLifecycle(
+      lifecycleRequest(`/admin/api/cms/site-plugins/${localId}/rollback`, { method: 'POST' }),
+      { success: 'Rolled back to the previous revision', failure: 'Rollback failed' },
+    )
 
-  const setEnabled = useCallback(
-    async (enabled: boolean): Promise<void> => {
-      try {
-        await runStepUp(() =>
-          apiRequest(`/admin/api/cms/plugins/site.${localId}`, {
-            method: 'PATCH',
-            body: { enabled },
-          }),
-        )
-        notifyCmsPluginsChanged()
-        await refreshSummary()
-      } catch (err) {
-        if (!(err instanceof Error && err.message === StepUpCancelledMessage)) {
-          pushToast({
-            kind: 'error',
-            title: enabled ? 'Could not activate' : 'Could not deactivate',
-            body: getErrorMessage(err, 'Unknown error'),
-          })
-        }
-      }
-    },
-    [localId, refreshSummary, runStepUp],
-  )
+  const setEnabled = (enabled: boolean): Promise<void> =>
+    runLifecycle(
+      lifecycleRequest(`/admin/api/cms/plugins/site.${localId}`, {
+        method: 'PATCH',
+        body: { enabled },
+      }),
+      { success: null, failure: enabled ? 'Could not activate' : 'Could not deactivate' },
+    )
 
-  const restart = useCallback(async (): Promise<void> => {
-    try {
-      await runStepUp(() =>
-        apiRequest(`/admin/api/cms/plugins/site.${localId}/restart`, { method: 'POST' }),
-      )
-      pushToast({ kind: 'success', title: 'Plugin restarted' })
-      notifyCmsPluginsChanged()
-      await refreshSummary()
-    } catch (err) {
-      if (!(err instanceof Error && err.message === StepUpCancelledMessage)) {
-        pushToast({
-          kind: 'error',
-          title: 'Restart failed',
-          body: getErrorMessage(err, 'Unknown error'),
-        })
-      }
-    }
-  }, [localId, refreshSummary, runStepUp])
+  const restart = (): Promise<void> =>
+    runLifecycle(
+      lifecycleRequest(`/admin/api/cms/plugins/site.${localId}/restart`, { method: 'POST' }),
+      { success: 'Plugin restarted', failure: 'Restart failed' },
+    )
 
-  const deletePlugin = useCallback(async (): Promise<void> => {
-    try {
-      await runStepUp(() =>
-        apiRequest(`/admin/api/cms/site-plugins/${localId}`, { method: 'DELETE' }),
-      )
-      pushToast({ kind: 'success', title: 'Site plugin deleted' })
-      notifyCmsPluginsChanged()
-      navigate('/admin/plugins')
-    } catch (err) {
-      if (!(err instanceof Error && err.message === StepUpCancelledMessage)) {
-        pushToast({
-          kind: 'error',
-          title: 'Delete failed',
-          body: getErrorMessage(err, 'Unknown error'),
-        })
-      }
-    }
-  }, [localId, navigate, runStepUp])
+  const deletePlugin = (): Promise<void> =>
+    runLifecycle(
+      lifecycleRequest(`/admin/api/cms/site-plugins/${localId}`, { method: 'DELETE' }),
+      { success: 'Site plugin deleted', failure: 'Delete failed' },
+      { after: () => navigate('/admin/plugins') },
+    )
 
-  const openPreview = useCallback((): void => {
+  const openPreview = (): void => {
     navigate(`/admin/site?previewSitePlugin=${encodeURIComponent(localId)}`)
-  }, [localId, navigate])
+  }
 
   return {
     session,
@@ -305,7 +267,6 @@ export function useSitePluginIde(localId: string): SitePluginIdeVm {
     activeFileId,
     selectFile: setActiveFileId,
     summary,
-    refreshSummary,
     diagnostics,
     validating,
     runValidation,

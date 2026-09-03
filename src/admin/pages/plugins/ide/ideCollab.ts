@@ -114,6 +114,7 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
   let binding: BoundCollabDoc
   let generation = 0
   let destroyed = false
+  let filesCache: { signature: string; files: IdeFileMeta[] } = { signature: '', files: [] }
 
   const shell = (): Y.Map<unknown> => shellMap(binding.doc)
 
@@ -224,10 +225,17 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
     },
     generation: () => generation,
 
-    pluginFiles: () =>
-      allFileMetas()
+    pluginFiles: () => {
+      const next = allFileMetas()
         .filter((file) => file.path.startsWith(folder))
-        .sort((a, b) => a.path.localeCompare(b.path)),
+        .sort((a, b) => a.path.localeCompare(b.path))
+      // Same array back while ids and paths are unchanged, so a keystroke
+      // (which fires the same observer) is not a structural change to
+      // whoever renders the list.
+      const signature = next.map((file) => `${file.id}:${file.path}`).join('|')
+      if (signature !== filesCache.signature) filesCache = { signature, files: next }
+      return filesCache.files
+    },
 
     onFilesChange: (listener) => {
       filesListeners.add(listener)

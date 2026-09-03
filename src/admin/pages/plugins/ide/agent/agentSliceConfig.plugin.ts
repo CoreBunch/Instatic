@@ -11,15 +11,12 @@
  */
 import type { AgentSliceConfig } from '@site/agent'
 import { executePluginTool } from './pluginBridge'
-import {
-  emptyPluginIdeAgentSnapshot,
-  getPluginIdeBridgeHandle,
-} from './pluginBridgeHandle'
+import { emptyPluginIdeSnapshot, getPluginIdeBridgeHandle } from './pluginBridgeHandle'
 
 export const pluginAgentSliceConfig: AgentSliceConfig = {
   scope: 'plugin',
   buildSnapshot: () =>
-    getPluginIdeBridgeHandle()?.buildSnapshot() ?? emptyPluginIdeAgentSnapshot(),
+    getPluginIdeBridgeHandle()?.buildSnapshot() ?? emptyPluginIdeSnapshot(),
   dispatchTool: executePluginTool,
   noProviderMessage:
     'No AI provider configured for the Plugin IDE. Open /admin/ai/providers to add a credential, then /admin/ai/defaults to pick one for the "plugin" scope.',

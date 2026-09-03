@@ -23,6 +23,9 @@ import {
   aiToolError,
   aiToolOk,
   applyExactReplacements,
+  hashText,
+  paginateText,
+  utf8ByteLength,
   PluginDeleteFileInputSchema,
   PluginListFilesInputSchema,
   PluginOpenFileInputSchema,
@@ -35,7 +38,7 @@ import {
 import { isSafePath, normalizePath } from '@core/files/pathValidation'
 import { sitePluginFolder } from '@core/site-plugins'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { parseValue, type TSchema, type Static } from '@core/utils/typeboxHelpers'
+import { parseValue, type Static } from '@core/utils/typeboxHelpers'
 import type { IdeCollabSession, IdeFileMeta } from '../ideCollab'
 import {
   getPluginIdeBridgeHandle,
@@ -43,14 +46,6 @@ import {
 } from './pluginBridgeHandle'
 
 const DEFAULT_READ_MAX_CHARS = 12000
-const textEncoder = new TextEncoder()
-
-async function hashContent(content: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', textEncoder.encode(content))
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
-}
 
 interface BridgeCtx {
   handle: PluginIdeBridgeHandle
@@ -116,18 +111,23 @@ function resolveFile(
   return { ok: true, file: file! }
 }
 
-function contentOf(ctx: BridgeCtx, fileId: string): string {
-  return ctx.session.contentText(fileId)?.toString() ?? ''
+/** Live text of a file, or null when the entry carries no editable text. */
+function contentOf(ctx: BridgeCtx, fileId: string): string | null {
+  return ctx.session.contentText(fileId)?.toString() ?? null
+}
+
+function noTextError(ctx: BridgeCtx, file: IdeFileMeta): AiToolOutput {
+  return aiToolError(`${relativePathOf(ctx, file)} has no editable text content.`)
 }
 
 async function describeFile(ctx: BridgeCtx, file: IdeFileMeta) {
-  const content = contentOf(ctx, file.id)
+  const content = contentOf(ctx, file.id) ?? ''
   return {
     fileId: file.id,
     path: relativePathOf(ctx, file),
     contentChars: content.length,
-    bytes: textEncoder.encode(content).byteLength,
-    hash: await hashContent(content),
+    bytes: utf8ByteLength(content),
+    hash: await hashText(content),
     updatedAt: file.updatedAt,
   }
 }
@@ -153,28 +153,19 @@ async function runReadFile(
   if (!resolved.ok) return aiToolError(resolved.error)
 
   const content = contentOf(ctx, resolved.file.id)
-  const maxChars = input.maxChars ?? DEFAULT_READ_MAX_CHARS
-  const totalParts = Math.max(1, Math.ceil(content.length / maxChars))
-  const part = input.part ?? 1
-  if (part > totalParts) {
-    return aiToolError(`File part ${part} is out of range; totalParts is ${totalParts}.`)
-  }
-  const start = (part - 1) * maxChars
-  const end = Math.min(content.length, start + maxChars)
+  if (content === null) return noTextError(ctx, resolved.file)
+  const page = paginateText(content, {
+    part: input.part,
+    maxChars: input.maxChars,
+    defaultMaxChars: DEFAULT_READ_MAX_CHARS,
+  })
+  if (!page.ok) return aiToolError(page.error)
   return aiToolOk({
     fileId: resolved.file.id,
     path: relativePathOf(ctx, resolved.file),
-    content: content.slice(start, end),
-    hash: await hashContent(content),
-    pageInfo: {
-      part,
-      totalParts,
-      nextPart: part < totalParts ? part + 1 : null,
-      maxChars,
-      start,
-      end,
-      totalChars: content.length,
-    },
+    content: page.content,
+    hash: await hashText(content),
+    pageInfo: page.pageInfo,
   })
 }
 
@@ -210,7 +201,8 @@ async function runPatchFile(
   if (!resolved.ok) return aiToolError(resolved.error)
 
   const currentContent = contentOf(ctx, resolved.file.id)
-  const currentHash = await hashContent(currentContent)
+  if (currentContent === null) return noTextError(ctx, resolved.file)
+  const currentHash = await hashText(currentContent)
   if (currentHash !== input.expectedHash) {
     return aiToolError(
       `Hash mismatch for ${relativePathOf(ctx, resolved.file)} — the file changed since you read it. Call plugin_read_file again before patching.`,
@@ -314,28 +306,24 @@ export async function executePluginTool(
   try {
     switch (toolName) {
       case 'plugin_list_files':
-        parse(PluginListFilesInputSchema, input)
+        parseValue(PluginListFilesInputSchema, input)
         return await runListFiles(ctx)
       case 'plugin_read_file':
-        return await runReadFile(ctx, parse(PluginReadFileInputSchema, input))
+        return await runReadFile(ctx, parseValue(PluginReadFileInputSchema, input))
       case 'plugin_write_file':
-        return await runWriteFile(ctx, parse(PluginWriteFileInputSchema, input))
+        return await runWriteFile(ctx, parseValue(PluginWriteFileInputSchema, input))
       case 'plugin_patch_file':
-        return await runPatchFile(ctx, parse(PluginPatchFileInputSchema, input))
+        return await runPatchFile(ctx, parseValue(PluginPatchFileInputSchema, input))
       case 'plugin_rename_file':
-        return await runRenameFile(ctx, parse(PluginRenameFileInputSchema, input))
+        return await runRenameFile(ctx, parseValue(PluginRenameFileInputSchema, input))
       case 'plugin_delete_file':
-        return runDeleteFile(ctx, parse(PluginDeleteFileInputSchema, input))
+        return runDeleteFile(ctx, parseValue(PluginDeleteFileInputSchema, input))
       case 'plugin_open_file':
-        return runOpenFile(ctx, parse(PluginOpenFileInputSchema, input))
+        return runOpenFile(ctx, parseValue(PluginOpenFileInputSchema, input))
       default:
         return aiToolError(`Unknown plugin tool: ${toolName}`)
     }
   } catch (err) {
     return aiToolError(getErrorMessage(err, `Tool ${toolName} failed.`))
   }
-}
-
-function parse<S extends TSchema>(schema: S, input: unknown): Static<S> {
-  return parseValue(schema, input)
 }

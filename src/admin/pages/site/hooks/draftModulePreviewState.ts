@@ -4,6 +4,8 @@
  * revision). The module inserter reads this to render the `Draft` badge;
  * nothing here is ever persisted or server-side.
  */
+import { useSyncExternalStore } from 'react'
+
 const draftModuleIds = new Set<string>()
 const listeners = new Set<() => void>()
 
@@ -21,9 +23,14 @@ export function isDraftPreviewModule(moduleId: string): boolean {
   return draftModuleIds.has(moduleId)
 }
 
-export function onDraftPreviewModulesChange(listener: () => void): () => void {
+function onDraftPreviewModulesChange(listener: () => void): () => void {
   listeners.add(listener)
   return () => {
     listeners.delete(listener)
   }
+}
+
+/** Reactive read for the inserter — re-renders when the draft pack loads or unloads. */
+export function useIsDraftPreviewModule(moduleId: string): boolean {
+  return useSyncExternalStore(onDraftPreviewModulesChange, () => isDraftPreviewModule(moduleId))
 }

@@ -1,15 +1,16 @@
 /** The docked Content agent UI. Tool registration lives at ContentPage level. */
 import { useEffect, useState } from 'react'
 import { AgentStoreProvider } from '@admin/ai/AgentStoreContext'
+import { createScopedAgentStore } from '@admin/ai/createScopedAgentStore'
 import { AgentPanel } from '@site/panels/AgentPanel'
-import { createContentAgentStore } from './contentAgentStore'
+import { contentAgentSliceConfig } from './agentSliceConfig.content'
 
 interface ContentAgentMountProps {
   isVisible: boolean
 }
 
 export function ContentAgentMount({ isVisible }: ContentAgentMountProps) {
-  const [store] = useState(() => createContentAgentStore())
+  const [store] = useState(() => createScopedAgentStore(contentAgentSliceConfig))
 
   useEffect(() => {
     if (isVisible) store.getState().openAgent()

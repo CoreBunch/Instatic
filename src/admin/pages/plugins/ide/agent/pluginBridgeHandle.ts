@@ -8,33 +8,17 @@
  * dispatcher reads it and calls methods on it. Same module-level-handle
  * pattern as the content workspace's `contentBridgeHandle.ts`.
  *
- * The snapshot shape structurally mirrors
- * `server/ai/tools/plugin/snapshot.ts → PluginIdeSnapshot` — defined here
- * (not imported) so the frontend doesn't reach into `server/`. Keep the two
- * in sync.
+ * The snapshot shape is `PluginIdeSnapshot` from `@core/ai` — the same
+ * schema the server validates against, so the two sides cannot drift.
  */
+import type { PluginIdeSnapshot } from '@core/ai'
 import type { SitePluginSummary } from '@core/site-plugins'
 import type { IdeCollabSession, IdeFileMeta } from '../ideCollab'
 
-export interface PluginIdeAgentCurrentUser {
-  id: string
-  displayName: string
-  email: string
-}
+export type { PluginIdeSnapshot } from '@core/ai'
+export { emptyPluginIdeSnapshot } from '@core/ai'
 
-/** Mirrors `PluginIdeSnapshot` (server) — see module doc. */
-export interface PluginIdeAgentSnapshot {
-  localId: string
-  pluginId: string
-  files: Array<{ id: string; path: string }>
-  activeFile: { id: string; path: string } | null
-  state: string
-  activeVersion: string | null
-  declaredPermissions: string[]
-  grantedPermissions: string[]
-  latestDiagnostics: string[] | null
-  currentUser: PluginIdeAgentCurrentUser
-}
+export type PluginIdeAgentCurrentUser = PluginIdeSnapshot['currentUser']
 
 /**
  * Imperative surface the IDE page exposes to the agent bridge. Accessors
@@ -45,7 +29,7 @@ export interface PluginIdeBridgeHandle {
   /** The plugin this IDE mount edits. */
   readonly localId: string
   /** Per-request snapshot for the system prompt + server tools. */
-  buildSnapshot(): PluginIdeAgentSnapshot
+  buildSnapshot(): PluginIdeSnapshot
   /** The live collab session; null for at most the mount render. */
   session(): IdeCollabSession | null
   /** Live file metas (full `plugins/<localId>/…` paths), path-sorted. */
@@ -66,26 +50,11 @@ export function getPluginIdeBridgeHandle(): PluginIdeBridgeHandle | null {
   return handle
 }
 
-export function emptyPluginIdeAgentSnapshot(): PluginIdeAgentSnapshot {
-  return {
-    localId: '',
-    pluginId: '',
-    files: [],
-    activeFile: null,
-    state: 'draft-changed',
-    activeVersion: null,
-    declaredPermissions: [],
-    grantedPermissions: [],
-    latestDiagnostics: null,
-    currentUser: { id: '', displayName: '', email: '' },
-  }
-}
-
 /** Narrow a SitePluginSummary into the snapshot's runtime fields. */
 export function summarySnapshotFields(
   summary: SitePluginSummary | null,
 ): Pick<
-  PluginIdeAgentSnapshot,
+  PluginIdeSnapshot,
   'state' | 'activeVersion' | 'declaredPermissions' | 'grantedPermissions'
 > {
   return {
