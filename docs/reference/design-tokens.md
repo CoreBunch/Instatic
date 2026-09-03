@@ -383,18 +383,19 @@ Cards are filled and borderless; inputs are unfilled and bordered. That's the lo
 
 ## Z-index layers
 
-Four global tokens cover the layered surfaces that float above the editor:
+Five global tokens cover the layered surfaces that float above the editor:
 
 ```css
 --z-dropdown:           20;
 --spotlight-z-index:  9000;
+--tour-z-index:       9500;
 --toast-z-index:     10000;
 --tooltip-z-index:   10001;
 ```
 
-Token names: `--z-dropdown`, `--spotlight-z-index`, `--toast-z-index`, `--tooltip-z-index`.
+Token names: `--z-dropdown`, `--spotlight-z-index`, `--tour-z-index`, `--toast-z-index`, `--tooltip-z-index`.
 
-`--tooltip-z-index` is deliberately the highest token so tooltips are never occluded by the surface their trigger lives on. `--toast-z-index` sits above modal layers and below tooltips. `--spotlight-z-index` is reused by several modal-level surfaces that need to sit above the editor chrome.
+`--tooltip-z-index` is deliberately the highest token so tooltips are never occluded by the surface their trigger lives on. `--toast-z-index` sits above modal layers and below tooltips. `--spotlight-z-index` is reused by several modal-level surfaces that need to sit above the editor chrome. `--tour-z-index` sits above every editor surface (dialogs, panels, the Spotlight palette) so a guided-tour coach mark is never occluded mid-tour, but below toasts/tooltips — a toast error should still interrupt the tour, and a tooltip must always render on top. The tour's own bubble renders at `calc(--tour-z-index + 1)`, one layer above its backdrop, so it's never covered by its own scrim. See [docs/features/editor-tour.md](../features/editor-tour.md).
 
 **Global modal layer** (all raw values in the shared admin stacking context):
 
@@ -403,10 +404,12 @@ Token names: `--z-dropdown`, `--spotlight-z-index`, `--toast-z-index`, `--toolti
 | 9000  | Spotlight backdrop (`--spotlight-z-index`); Settings modal backdrop; ModuleInserterDialog backdrop |
 | 9001  | Settings dialog wrapper (`--spotlight-z-index + 1`) |
 | 9050  | MediaPickerModal backdrop (`calc(--spotlight-z-index + 50)`) — sits above Settings because the picker can be opened from inside Settings (e.g. Settings → General → Favicon → Browse library…) |
+| 9500  | Editor guided-tour backdrop (`--tour-z-index`) |
+| 9501  | Editor guided-tour bubble (`calc(--tour-z-index + 1)`) |
 | 10000 | BodySlashMenu — predates tokenisation; see inline comment in `BodySlashMenu.module.css` |
 | 10001 | Tooltips (`--tooltip-z-index`); `AdminContextMenuGuard` |
 
-The gap between 9001 (Settings dialog) and 9050 (MediaPickerModal) is intentional headroom for any future sub-dialogs inside Settings. The gap between 9050 and 10000 (BodySlashMenu) keeps the slash menu above all modal layers. Do not add new raw values into these ranges without updating this table.
+The gap between 9001 (Settings dialog) and 9050 (MediaPickerModal) is intentional headroom for any future sub-dialogs inside Settings. `--tour-z-index` (9500) uses part of the headroom between 9050 and 10000 (BodySlashMenu), which still keeps the slash menu above all modal layers. Do not add new raw values into these ranges without updating this table.
 
 The visual editor uses additional raw z-index values that are **not** tokenised. They fall into two independent stacking contexts:
 

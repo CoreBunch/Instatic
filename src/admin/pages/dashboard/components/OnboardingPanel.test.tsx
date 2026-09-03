@@ -11,12 +11,19 @@
  */
 import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from '@admin/lib/routing'
+import { MemoryRouter, useLocation } from '@admin/lib/routing'
 import { cmsAdapter } from '@core/persistence/cms'
 import type { SiteDocument } from '@core/page-tree'
 import { CMS_SITE_RELOAD_EVENT } from '@admin/state/adminEvents'
+import { peekPendingAction } from '@admin/spotlight/pendingAction'
 import { OnboardingPanel } from './OnboardingPanel'
 import type { OnboardingFacts } from '../hooks/useOnboardingState'
+
+/** Renders the current in-memory route so tests can assert on navigation. */
+function LocationProbe() {
+  const { pathname } = useLocation()
+  return <span data-testid="location-probe">{pathname}</span>
+}
 
 afterEach(cleanup)
 
@@ -40,10 +47,11 @@ function fakeSite(): SiteDocument {
 }
 
 const FACTS: OnboardingFacts = {
+  loading: false,
   identity: 'active',
   framework: 'active',
+  tour: 'active',
   firstPage: 'active',
-  plugin: 'active',
   team: 'active',
 }
 
@@ -88,5 +96,89 @@ describe('OnboardingPanel framework import', () => {
       loadSpy.mockRestore()
       saveSpy.mockRestore()
     }
+  })
+})
+
+describe('OnboardingPanel tour step', () => {
+  afterEach(() => {
+    globalThis.sessionStorage?.clear()
+  })
+
+  it('renders the tour step and no longer offers the removed plugin step', () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/dashboard']}>
+        <OnboardingPanel facts={FACTS} onDismiss={() => {}} onFrameworkImported={() => {}} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('Tour the editor')).toBeTruthy()
+    expect(screen.queryByText('Install a plugin')).toBeNull()
+    expect(screen.queryByRole('button', { name: /browse plugins/i })).toBeNull()
+  })
+
+  it('queues the site.startTour pending action and navigates to the Site workspace', () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/dashboard']}>
+        <OnboardingPanel facts={FACTS} onDismiss={() => {}} onFrameworkImported={() => {}} />
+        <LocationProbe />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /^start tour$/i }))
+
+    expect(peekPendingAction('site.startTour')).not.toBeNull()
+    expect(screen.getByTestId('location-probe').textContent).toBe('/admin/site')
+  })
+})
+
+describe('OnboardingPanel first-page step', () => {
+  afterEach(() => {
+    globalThis.sessionStorage?.clear()
+  })
+
+  it('queues site.revealNewPage and navigates to the Site workspace', () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/dashboard']}>
+        <OnboardingPanel facts={FACTS} onDismiss={() => {}} onFrameworkImported={() => {}} />
+        <LocationProbe />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /^new page$/i }))
+
+    expect(peekPendingAction('site.revealNewPage')).not.toBeNull()
+    expect(screen.getByTestId('location-probe').textContent).toBe('/admin/site')
+  })
+})
+
+describe('OnboardingPanel team step', () => {
+  afterEach(() => {
+    globalThis.sessionStorage?.clear()
+  })
+
+  it('is titled "View your team & roles" and no longer asks for invites', () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/dashboard']}>
+        <OnboardingPanel facts={FACTS} onDismiss={() => {}} onFrameworkImported={() => {}} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('View your team & roles')).toBeTruthy()
+    expect(screen.queryByText('Invite your team')).toBeNull()
+    expect(screen.queryByRole('button', { name: /add members/i })).toBeNull()
+  })
+
+  it('queues users.viewRoles and navigates to the Users workspace', () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/dashboard']}>
+        <OnboardingPanel facts={FACTS} onDismiss={() => {}} onFrameworkImported={() => {}} />
+        <LocationProbe />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /^view roles$/i }))
+
+    expect(peekPendingAction('users.viewRoles')).not.toBeNull()
+    expect(screen.getByTestId('location-probe').textContent).toBe('/admin/users')
   })
 })

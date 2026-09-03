@@ -74,6 +74,24 @@ describe('J6 DomPanel — store layer', () => {
     expect(useEditorStore.getState().explorerPanelOpen).toBe(false)
   })
 
+  it('revealNewPageButton opens the Explorer Site tab and arms the attention pulse', () => {
+    useEditorStore.setState({
+      explorerPanelOpen: false,
+      explorerPanelTab: 'layers',
+      frameworkPanelOpen: true,
+      newPageAttention: false,
+    } as Parameters<typeof useEditorStore.setState>[0])
+    useEditorStore.getState().revealNewPageButton()
+    const state = useEditorStore.getState()
+    expect(state.explorerPanelOpen).toBe(true)
+    expect(state.frameworkPanelOpen).toBe(false)
+    expect(state.explorerPanelTab).toBe('site')
+    expect(state.newPageAttention).toBe(true)
+
+    useEditorStore.getState().clearNewPageAttention()
+    expect(useEditorStore.getState().newPageAttention).toBe(false)
+  })
+
   it('cycleFocusedPanel cycles canvas → domTree → properties → canvas', () => {
     const state = useEditorStore.getState()
     // Initial state is canvas

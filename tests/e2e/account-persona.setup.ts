@@ -1,6 +1,13 @@
 import { expect, test as setup } from '@playwright/test'
 import { ACCOUNT_PERSONA } from './helpers/constants'
-import { completeStepUp, expectLoggedIn, login, loginAs, logout } from './helpers'
+import {
+  completeStepUp,
+  expectLoggedIn,
+  login,
+  loginAs,
+  logout,
+  seedEditorTourPreference,
+} from './helpers'
 
 /**
  * Create the identity used by destructive account self-management tests.
@@ -8,9 +15,17 @@ import { completeStepUp, expectLoggedIn, login, loginAs, logout } from './helper
  * Those tests rotate credentials, toggle MFA, and revoke other sessions. Keeping
  * them on a separate Admin prevents them from invalidating the owner session
  * serialized by `auth.setup.ts` and consumed by the rest of the suite.
+ *
+ * This project also seeds the `editor-tour` preference (as `'completed'`) for
+ * both shared identities it touches — the owner and the persona it creates.
+ * It runs after `dashboard-preflight` (whose onboarding-checklist assertions
+ * need the owner's tour preference untouched) and before the main `e2e`
+ * project (whose dozens of specs open the Site editor expecting a clean
+ * canvas, not a first-run tour bubble). See `helpers/preferences.ts`.
  */
 setup('create the account-management persona', async ({ page }) => {
   await login(page)
+  await seedEditorTourPreference(page, 'completed')
   await page.goto('/admin/users')
   await expect(page.getByRole('table', { name: 'Users' })).toBeVisible()
 
@@ -33,4 +48,5 @@ setup('create the account-management persona', async ({ page }) => {
   await logout(page)
   await loginAs(page, ACCOUNT_PERSONA.email, ACCOUNT_PERSONA.password)
   await expectLoggedIn(page)
+  await seedEditorTourPreference(page, 'completed')
 })

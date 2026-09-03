@@ -1,8 +1,9 @@
-import type { KeyboardEvent, MouseEvent } from 'react'
+import { useEffect, type KeyboardEvent, type MouseEvent } from 'react'
 import { FilePlusSolidIcon } from 'pixel-art-icons/icons/file-plus-solid'
 import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
 import type { SiteExplorerSectionId } from '@core/page-tree'
+import { useEditorStore } from '@site/store/store'
 import { SiteExplorerTreeSection, type SiteExplorerInlineRenameTarget } from './SiteExplorerTreeSection'
 import type { SiteExplorerDndState } from './SiteExplorerDndScope'
 import type {
@@ -12,6 +13,13 @@ import type {
   SiteExplorerTreeSectionModel,
 } from './siteExplorerModel'
 import type { SiteExplorerContextTarget, SiteExplorerAnySectionModel, SiteExplorerSectionGroup } from './siteExplorerPanelTypes'
+
+/**
+ * How long the New page button's attention cue stays armed — covers the three
+ * pulse iterations (see `.actionAttention` in SiteExplorerPanel.module.css)
+ * plus the static-ring duration under reduced motion.
+ */
+const NEW_PAGE_ATTENTION_MS = 3200
 
 interface SiteExplorerPanelSectionsProps {
   /** Which group of sections to render — `site` (pages/templates/components)
@@ -98,6 +106,19 @@ export function SiteExplorerPanelSections({
   onContextMenuFolder,
   onKeyDownFolder,
 }: SiteExplorerPanelSectionsProps) {
+  // Transient pulse on the New page button, armed by `revealNewPageButton`
+  // (the dashboard onboarding "Create your first page" CTA). Cleared here —
+  // after the CSS animation has played — so the cue never re-fires when the
+  // user later toggles panels or tabs.
+  const newPageAttention = useEditorStore((state) => state.newPageAttention)
+  useEffect(() => {
+    if (!newPageAttention) return
+    const timer = setTimeout(() => {
+      useEditorStore.getState().clearNewPageAttention()
+    }, NEW_PAGE_ATTENTION_MS)
+    return () => clearTimeout(timer)
+  }, [newPageAttention])
+
   return (
     <>
       {sectionGroup === 'site' && pageTreeModel && (
@@ -106,6 +127,8 @@ export function SiteExplorerPanelSections({
           count={normalPageCount}
           actionLabel="New page"
           actionIcon={FilePlusSolidIcon}
+          actionTestId="site-explorer-new-page"
+          actionAttention={newPageAttention}
           onAction={onCreatePage}
           model={pageTreeModel}
           dropTarget={explorerDnd.target}

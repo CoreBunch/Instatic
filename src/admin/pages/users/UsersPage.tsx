@@ -12,7 +12,7 @@
  * mutation refresh callback live here.
  */
 import { useEffect, useEffectEvent, useState } from 'react'
-import { peekPendingAction } from '@admin/spotlight/pendingAction'
+import { consumePendingAction, peekPendingAction } from '@admin/spotlight/pendingAction'
 import { Tab, TabList, TabPanel, Tabs } from '@ui/components/Tabs'
 import { AdminPageLayout } from '@admin/layouts/AdminPageLayout'
 import { hasCapability } from '@admin/access'
@@ -58,9 +58,14 @@ export function UsersPage() {
       peekPendingAction('users.newRole') && availableTabs.includes('roles')
     const invitePending =
       peekPendingAction('users.invite') && availableTabs.includes('users')
-    if (!newRolePending && !invitePending) return
+    // Unlike the two above, `users.viewRoles` has no downstream consumer (the
+    // whole action IS the tab selection), so consume it here rather than
+    // leaving it queued.
+    const viewRolesPending =
+      consumePendingAction('users.viewRoles') !== null && availableTabs.includes('roles')
+    if (!newRolePending && !invitePending && !viewRolesPending) return
     queueMicrotask(() => {
-      if (newRolePending) setTab('roles')
+      if (newRolePending || viewRolesPending) setTab('roles')
       else if (invitePending) setTab('users')
     })
   })

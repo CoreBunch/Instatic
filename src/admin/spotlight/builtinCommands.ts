@@ -24,6 +24,7 @@ import { getLayersCommands } from './commands/layers'
 import { getPanelsCommands } from './commands/panels'
 import { getSettingsCommands } from './commands/settings'
 import { getHelpCommands } from './commands/help'
+import { getTourCommands } from './commands/tour'
 import { getPagesCommands } from './commands/pages'
 import { getBreakpointsCommands } from './commands/breakpoints'
 import { getContentCommands } from './commands/content'
@@ -86,6 +87,7 @@ export function getAllCommands(): Command[] {
       ...getSiteExportCommands(),
       ...getAiAssistantCommands(),
       ...getHelpCommands(),
+      ...getTourCommands(),
     ]
   }
   return [...CACHED_STATIC_COMMANDS, ...getPluginsCommands()]

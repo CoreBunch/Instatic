@@ -297,6 +297,14 @@
     --spotlight-width: 640px;
     --progress-shimmer: var(--overlay-40);
 
+    /* Editor onboarding tour. Sits above every editor surface (dialogs,
+     * panels, the command-palette spotlight) so a coach mark is never
+     * occluded mid-tour, but stays below toasts/tooltips — a toast error
+     * should still interrupt the tour, and a tooltip must always render on
+     * top. The bubble itself renders one layer above this so it's never
+     * covered by its own backdrop. */
+    --tour-z-index: 9500;
+
     /* Bespoke surface tints */
     --plugins-hero-tint-a: rgba(35, 92, 72, 0.32);
     --plugins-hero-tint-b: rgba(49, 64, 94, 0.24);

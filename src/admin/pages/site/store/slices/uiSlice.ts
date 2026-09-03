@@ -167,6 +167,17 @@ interface UiSlice {
 
   setExplorerPanelOpen: (open: boolean) => void
   setExplorerPanelTab: (tab: ExplorerPanelTab) => void
+
+  /**
+   * Transient "look here" cue on the Explorer's New page button, armed by
+   * `revealNewPageButton` (the dashboard onboarding "Create your first page"
+   * CTA lands the user in the editor through it). The explorer clears the
+   * flag itself once the pulse has played.
+   */
+  newPageAttention: boolean
+  /** Open the Explorer's Site tab and pulse the New page button. */
+  revealNewPageButton: () => void
+  clearNewPageAttention: () => void
   setSelectorsPanelOpen: (open: boolean) => void
   setFrameworkPanelOpen: (open: boolean) => void
   setFrameworkPanelTab: (tab: FrameworkPanelTab) => void
@@ -347,6 +358,7 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
   frameworkPanelTab: 'home',
   frameworkManagerOpen: false,
   dependenciesPanelOpen: false,
+  newPageAttention: false,
   activePluginPanelId: null,
   pluginPanelMode: 'docked',
   codeEditorPanelOpen: false,
@@ -471,6 +483,16 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
   setExplorerPanelOpen: (open) => set({ explorerPanelOpen: open }),
 
   setExplorerPanelTab: (tab) => set({ explorerPanelTab: tab }),
+
+  revealNewPageButton: () => {
+    get().setLeftSidebarPanel('explorer')
+    set({ explorerPanelTab: 'site', newPageAttention: true })
+  },
+
+  clearNewPageAttention: () => {
+    if (!get().newPageAttention) return
+    set({ newPageAttention: false })
+  },
 
   setSelectorsPanelOpen: (open) => set({ selectorsPanelOpen: open }),
 

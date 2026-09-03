@@ -32,6 +32,7 @@ import {
   updateCmsRole,
   type CmsRole,
 } from '@core/persistence'
+import { setUserPreference } from '@core/persistence/userPreferences'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { Badge } from '../components/Badge'
 import { RowActionMenu } from '../components/RowActionMenu'
@@ -146,6 +147,17 @@ export function RolesTab({ data, canManageRoles }: RolesTabProps) {
     if (!canManageRoles) return
     consumeNewRolePending()
   }, [canManageRoles])
+
+  // Opening this tab is what completes the dashboard onboarding "View your
+  // team & roles" step (TabPanel unmounts inactive children, so mounting
+  // here means the tab was actually visited). Fire-and-forget: the write is
+  // idempotent and the onboarding step is best-effort UX, so a failure only
+  // warns — it must never disturb the tab itself.
+  useEffect(() => {
+    setUserPreference('team-roles-viewed', { viewed: true }).catch((err) => {
+      console.warn('[roles-tab] failed to persist team-roles-viewed preference:', err)
+    })
+  }, [])
 
   function openView(role: CmsRole) {
     if (!canManageRoles) return

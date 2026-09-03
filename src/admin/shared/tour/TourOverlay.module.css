@@ -1,0 +1,220 @@
+/*
+ * TourOverlay — dim backdrop + spotlight cutout + positioned coach-mark
+ * bubble. Portal-rendered to document.body; both pieces are position:
+ * fixed and stack via --tour-z-index (see src/styles/globals.css).
+ *
+ * Bubble position is applied via CSS custom properties injected through
+ * inline style (the one sanctioned use of inline `style`):
+ *   --tour-x / --tour-y     translate offset from top-left
+ *   --tour-arrow-offset     cross-axis position of the bubble's arrow tip
+ *
+ * Centered steps (no anchor) compute a pixel --tour-x/--tour-y too (see
+ * computeCenteredPosition in TourOverlay.tsx), so every step — anchored or
+ * centered — moves through the same `transform` transition: the bubble is
+ * one persistent element for the whole tour, and this is what lets it glide
+ * from the previous step's position to the next instead of popping in.
+ *
+ * No !important, no hardcoded colours, no Tailwind utilities.
+ */
+
+/* ── Backdrop ───────────────────────────────────────────────────────────── */
+
+.backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: var(--tour-z-index);
+    background: var(--scrim-60);
+    animation: tourBackdropIn 160ms ease-out;
+}
+
+/* Spotlight mode dims via the SVG's masked rect instead of a flat scrim, so
+   the cutout can be a soft rounded rect rather than a hard rectangle. */
+.backdrop[data-anchored] {
+    background: transparent;
+}
+
+.spotlightSvg {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.spotlightDim {
+    fill: var(--scrim-60);
+}
+
+.spotlightHole {
+    transition: x 160ms ease, y 160ms ease, width 160ms ease, height 160ms ease;
+}
+
+/* Traces the cutout edge so the target reads as "the one we mean" even when
+   the dim scrim over an already-dark UI doesn't create much contrast on its
+   own. Achromatic --text (near-white on dark, dark grey on light) keeps the
+   ring neutral against the scrim in both themes. */
+.spotlightRing {
+    stroke: var(--text);
+    stroke-width: 1.5px;
+    transition: x 160ms ease, y 160ms ease, width 160ms ease, height 160ms ease;
+}
+
+/* Wider, low-opacity stroke of the same achromatic token sitting behind .spotlightRing
+   for a soft glow — stroke-opacity only, no second colour. */
+.spotlightRingGlow {
+    stroke: var(--text);
+    stroke-width: 4px;
+    stroke-opacity: 0.25;
+    transition: x 160ms ease, y 160ms ease, width 160ms ease, height 160ms ease;
+}
+
+@keyframes tourBackdropIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* ── Bubble ─────────────────────────────────────────────────────────────── */
+
+.bubble {
+    position: fixed;
+    top: 0;
+    left: 0;
+    --tour-x: 0px;
+    --tour-y: 0px;
+    --tour-arrow-offset: 0px;
+    transform: translate3d(var(--tour-x), var(--tour-y), 0);
+    z-index: calc(var(--tour-z-index) + 1);
+
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-m);
+    width: min(320px, calc(100vw - var(--space-4xl)));
+    padding: var(--space-xl) var(--space-2xl);
+
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--panel-radius);
+    box-shadow: var(--shadow-panel);
+    color: var(--text);
+
+    transition: transform 160ms ease, opacity 120ms ease;
+    /* Plays once, when the bubble first mounts for a tour run (it's a
+       single persistent element after that — see module doc above) — so a
+       brand-new bubble fades in already at its computed position instead
+       of flashing at (0, 0). */
+    animation: tourBubbleIn 160ms ease-out;
+}
+
+@keyframes tourBubbleIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.progress {
+    margin: 0;
+    font-size: var(--text-2xs);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+}
+
+.title {
+    margin: 0;
+    font-size: var(--text-xl);
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--text-bright);
+}
+
+.body {
+    margin: 0;
+    font-size: var(--text-s);
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-m);
+    margin-top: var(--space-xs);
+}
+
+.navActions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+}
+
+/* ── Arrow ──────────────────────────────────────────────────────────────── */
+/*
+ * Same technique as Tooltip's arrow: a 6×6px square rotated 45° to a
+ * diamond, one corner poking past the bubble edge. Background matches the
+ * bubble; a border on only the two outward-facing sides reads as a thin
+ * outline on the exposed corner without doubling the bubble's own border.
+ * Positioned via --tour-arrow-offset (the bubble's own --tour-x/--tour-y
+ * pattern) so it tracks the anchor's cross-axis centre; flips side via the
+ * bubble's `data-side` attribute. It's a plain child of the bubble, so the
+ * bubble's transform transition carries it along — no separate animation.
+ */
+
+.arrow {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    background: var(--bg-surface);
+    transform: rotate(45deg);
+}
+
+/* Bubble above anchor → arrow at bottom, pointing down */
+.bubble[data-side='top'] .arrow {
+    bottom: -3px;
+    left: calc(var(--tour-arrow-offset) - 3px);
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+}
+
+/* Bubble below anchor → arrow at top, pointing up */
+.bubble[data-side='bottom'] .arrow {
+    top: -3px;
+    left: calc(var(--tour-arrow-offset) - 3px);
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+}
+
+/* Bubble left of anchor → arrow at right edge, pointing right */
+.bubble[data-side='left'] .arrow {
+    right: -3px;
+    top: calc(var(--tour-arrow-offset) - 3px);
+    border-top: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+}
+
+/* Bubble right of anchor → arrow at left edge, pointing left */
+.bubble[data-side='right'] .arrow {
+    left: -3px;
+    top: calc(var(--tour-arrow-offset) - 3px);
+    border-bottom: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+/* Durations are already clamped globally (see src/styles/globals.css), this
+   just drops the entrance animations entirely rather than let them play at
+   0.01ms. */
+
+@media (prefers-reduced-motion: reduce) {
+    .backdrop,
+    .bubble {
+        animation: none;
+    }
+}

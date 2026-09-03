@@ -45,7 +45,7 @@ import { useCurrentAdminUser } from '@admin/sessionContext'
 import { useStepUp } from '@admin/shared/StepUp'
 import { spotlightReducer, initialState } from './state'
 import { ProviderRunner } from './providerRunner'
-import type { AdminWorkspace } from '@admin/workspace'
+import { workspaceFromPathname } from './workspaceFromPathname'
 import type { Command, CommandContext, CommandRunContext } from './types'
 import type { SpotlightControls } from './spotlightControls'
 import { recordRecentCommand } from './recentStore'
@@ -61,18 +61,6 @@ import { findMatchingShortcutCommand } from './shortcutDispatch'
 const LazySpotlight = lazy(() =>
   import('./Spotlight').then((m) => ({ default: m.Spotlight })),
 )
-
-// ─── Workspace detection ──────────────────────────────────────────────────────
-
-function workspaceFromPathname(pathname: string): AdminWorkspace {
-  if (pathname.startsWith('/admin/content')) return 'content'
-  if (pathname.startsWith('/admin/data')) return 'data'
-  if (pathname.startsWith('/admin/media')) return 'media'
-  if (pathname.startsWith('/admin/plugins')) return 'plugins'
-  if (pathname.startsWith('/admin/users')) return 'users'
-  if (pathname.startsWith('/admin/account')) return 'account'
-  return 'site'
-}
 
 // ─── Editor context snapshot type ────────────────────────────────────────────
 

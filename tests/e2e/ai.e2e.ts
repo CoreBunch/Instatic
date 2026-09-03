@@ -5,6 +5,7 @@ import {
   completeStepUp,
   login,
   loginAs,
+  seedEditorTourPreference,
 } from './helpers'
 import { openSiteEditor } from './helpers/editor'
 
@@ -228,7 +229,17 @@ async function createUser(
   await completeStepUp(page)
 }
 
+/**
+ * Opens the Site editor for whichever persona `page` is authenticated as.
+ * These personas are freshly created just for this spec and never touch the
+ * central seeding in `account-persona.setup.ts`, so without this they'd be
+ * genuine first-run users — the tour's fixed `inset-0` backdrop would then
+ * intercept every click these capability tests make afterward. Seeding
+ * before the (possibly first) navigation to `/admin/site` avoids the race
+ * with `useEditorTour`'s own preference fetch.
+ */
 async function openReadableSiteEditor(page: Page): Promise<void> {
+  await seedEditorTourPreference(page, 'completed')
   if (!(await page.getByTestId('canvas-root').isVisible({ timeout: 1_000 }).catch(() => false))) {
     await page.goto('/admin/site')
   }
