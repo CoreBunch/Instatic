@@ -8,6 +8,10 @@
  * their toolbar roster; the extra `ideFile` field is what IDE peers key on.
  * Character-precise remote carets inside a code buffer ride y-codemirror's
  * own `cursor` awareness field — this module never touches it.
+ *
+ * Identity is set once per session; the active file is a FIELD update. A
+ * whole-state replace on every file switch would drop and re-add this
+ * client in every peer's roster (a visible leave + rejoin).
  */
 import { useEffect, useState } from 'react'
 import { safeParseValue, Type, type Static } from '@core/utils/typeboxHelpers'
@@ -46,13 +50,10 @@ export function usePublishIdePresence(
   localId: string,
   activeFile: { fileId: string; path: string } | null,
 ): void {
-  const fileId = activeFile?.fileId ?? null
-  const path = activeFile?.path ?? null
-
   useEffect(() => {
     if (!session) return undefined
     const awareness = session.provider.awareness
-    const previous = awareness.getLocalState()
+    const previous: Record<string, unknown> | null = awareness.getLocalState()
     awareness.setLocalState({
       ...previous,
       user: {
@@ -68,12 +69,23 @@ export function usePublishIdePresence(
       editingNodeId: null,
       pointer: null,
       textCaret: null,
-      ideFile: fileId && path ? { localId, fileId, path } : null,
+      // Keep whatever file the field effect below already published.
+      ideFile: previous?.['ideFile'] ?? null,
     })
     return () => {
       awareness.setLocalState(null)
     }
-  }, [session, user.id, user.displayName, user.avatarUrl, user.gravatarHash, localId, fileId, path])
+  }, [session, user.id, user.displayName, user.avatarUrl, user.gravatarHash])
+
+  const fileId = activeFile?.fileId ?? null
+  const path = activeFile?.path ?? null
+  useEffect(() => {
+    if (!session) return
+    session.provider.awareness.setLocalStateField(
+      'ideFile',
+      fileId && path ? { localId, fileId, path } : null,
+    )
+  }, [session, localId, fileId, path])
 }
 
 function readIdePeers(session: IdeCollabSession, localId: string): IdePeer[] {

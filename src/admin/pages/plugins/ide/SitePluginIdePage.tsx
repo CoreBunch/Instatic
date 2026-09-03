@@ -201,6 +201,7 @@ function SitePluginIde({ localId }: { localId: string }) {
           </div>
           <DiagnosticsStrip
             diagnostics={vm.diagnostics}
+            runtimeError={vm.summary?.state === 'runtime-error' ? vm.summary.lastError : null}
             validating={vm.validating}
             synced={vm.synced}
           />
@@ -228,8 +229,8 @@ function SitePluginIde({ localId }: { localId: string }) {
             onRollback={() => void vm.rollback()}
             onSetEnabled={(enabled) => void vm.setEnabled(enabled)}
             onRestart={() => void vm.restart()}
-            onRerunDiagnostics={vm.runValidation}
-            onOpenSettings={() => navigate('/admin/plugins')}
+            onRunDiagnostics={vm.runValidation}
+            onOpenPluginsPage={() => navigate('/admin/plugins')}
             onDelete={() =>
               setPendingDelete({
                 title: `Delete site plugin “${localId}”?`,
@@ -239,7 +240,6 @@ function SitePluginIde({ localId }: { localId: string }) {
                 commit: () => void vm.deletePlugin(),
               })
             }
-            onShowDiagnostics={vm.runValidation}
           />
           {reviewOpen && vm.summary && (
             <SitePluginPermissionReviewDialog
