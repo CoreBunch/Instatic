@@ -13,5 +13,11 @@ export {
   type BuildPackageResult,
 } from './buildPackage'
 export { assertNoBuildTimeMacros, type ImportResolverPolicy } from './containment'
-export { bundleEntrypoint, HOST_RUNTIME_EXTERNALS, type BundleOptions } from './bundle'
+export {
+  bundleEntrypoint,
+  formatBuildLog,
+  HOST_RUNTIME_EXTERNALS,
+  type BuildLogLike,
+  type BundleOptions,
+} from './bundle'
 export { generateModulesFacade, generateSandboxFacade } from './facades'

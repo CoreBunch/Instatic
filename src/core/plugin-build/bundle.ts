@@ -103,6 +103,36 @@ export interface BundleOptions {
    * is byte-identical to the historical CLI build.
    */
   resolve?: ImportResolverPolicy
+  /**
+   * How the failure header names this bundle. Defaults to `sourcePath`;
+   * generated entrypoints (the modules facade) pass something an author
+   * recognizes instead of the synthetic file name.
+   */
+  label?: string
+}
+
+/**
+ * One bundler message, positioned. Bun reports 1-based lines and 0-based
+ * columns; authors read `file:line:col` the way their editor shows it, so
+ * the column is shifted to 1-based here.
+ */
+export interface BuildLogLike {
+  message: string
+  position?: { file?: string; line?: number; column?: number } | null
+}
+
+export function formatBuildLog(log: BuildLogLike): string {
+  const position = log.position
+  if (!position?.file) return log.message
+  const where =
+    position.line !== undefined
+      ? `${position.file}:${position.line}${position.column !== undefined ? `:${position.column + 1}` : ''}`
+      : position.file
+  return `${where}: ${log.message}`
+}
+
+function isBuildLogLike(value: unknown): value is BuildLogLike {
+  return typeof value === 'object' && value !== null && 'message' in value
 }
 
 export async function bundleEntrypoint(
@@ -189,15 +219,15 @@ export async function bundleEntrypoint(
     }).catch((err: unknown) => {
       if (err instanceof AggregateError && err.errors.length > 0) {
         const messages = err.errors
-          .map((e) => (e instanceof Error ? e.message : String(e)))
+          .map((e) => (isBuildLogLike(e) ? formatBuildLog(e) : String(e)))
           .join('\n')
-        throw new Error(`Failed to bundle ${sourcePath}:\n${messages}`, { cause: err })
+        throw new Error(`Failed to bundle ${options.label ?? sourcePath}:\n${messages}`, { cause: err })
       }
       throw err
     })
     if (!result.success) {
-      const messages = result.logs.map((l) => l.message).join('\n')
-      throw new Error(`Failed to bundle ${sourcePath}:\n${messages}`)
+      const messages = result.logs.map(formatBuildLog).join('\n')
+      throw new Error(`Failed to bundle ${options.label ?? sourcePath}:\n${messages}`)
     }
     const built = result.outputs[0]
     if (!built) throw new Error(`No output from Bun.build for ${sourcePath}`)
