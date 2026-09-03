@@ -147,6 +147,7 @@ function SitePluginIde({ localId }: { localId: string }) {
               onClose={() => setActivePanel(null)}
               localId={localId}
               pluginName={vm.summary?.name ?? localId}
+              activeVersion={vm.summary?.activeVersion ?? null}
               files={files}
               activeFileId={activeFileId}
               peers={peers}

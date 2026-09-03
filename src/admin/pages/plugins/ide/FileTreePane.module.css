@@ -44,21 +44,23 @@
   padding-right: var(--space-xs);
 }
 
-.footer {
-  flex-shrink: 0;
-  border-top: 1px solid var(--border-muted);
-  padding: var(--space-s) var(--space-m);
+.titleContent {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  min-width: 0;
 }
 
-.hint {
-  margin: 0;
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  color: var(--text-subtle);
+.titleName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.hint code {
+.titleVersion {
+  opacity: 0.5;
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
-  color: var(--text);
+  font-weight: 400;
+  white-space: nowrap;
 }

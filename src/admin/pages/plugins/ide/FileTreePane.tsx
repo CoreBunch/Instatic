@@ -95,6 +95,8 @@ interface FileTreePaneProps {
   localId: string
   /** The plugin's display name — the panel is titled with it so the IDE always says which plugin is open. */
   pluginName: string
+  /** Active generated version (`1.0.<n>+<hash>`), shown muted beside the name; null before the first build. */
+  activeVersion: string | null
   files: IdeFileMeta[]
   activeFileId: string | null
   peers: IdePeer[]
@@ -115,6 +117,7 @@ interface FileTreePaneProps {
 export function FileTreePane({
   localId,
   pluginName,
+  activeVersion,
   files,
   activeFileId,
   peers,
@@ -197,6 +200,18 @@ export function FileTreePane({
     <Panel
       panelId="ide-files"
       title={pluginName}
+      titleContent={(
+        <span className={styles.titleContent}>
+          <span className={styles.titleName}>{pluginName}</span>
+          {activeVersion && (
+            // The generated version is `1.0.<n>+<content hash>`; the hash is
+            // for the build's skip check, not for people.
+            <span className={styles.titleVersion} title={activeVersion}>
+              v{activeVersion.replace(/\+.*$/, '')}
+            </span>
+          )}
+        </span>
+      )}
       ariaLabel={`${pluginName} files`}
       testId="ide-file-tree"
       body="bare"
@@ -311,13 +326,6 @@ export function FileTreePane({
           )}
         </TreeContainer>
       </div>
-
-      <footer className={styles.footer}>
-        <p className={styles.hint}>
-          Files live in <code>{folder}</code> and save live — every open
-          editor co-edits the same draft.
-        </p>
-      </footer>
 
       {menu && (
         <ContextMenu

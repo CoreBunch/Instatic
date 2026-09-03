@@ -10,11 +10,11 @@
  * Used by the editor's Publish control (PublishActionGroup) and the Typography
  * panel's add-font control (FontsSection).
  */
-import { useId, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@ui/cn'
 import { Button, type ButtonProps } from '@ui/components/Button'
-import { ContextMenu, ContextMenuItem } from '@ui/components/ContextMenu'
+import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@ui/components/ContextMenu'
 import { ChevronDown2Icon } from 'pixel-art-icons/icons/chevron-down-2'
 import { LoaderIcon } from 'pixel-art-icons/icons/loader'
 import type { IconComponent } from 'pixel-art-icons/types'
@@ -26,6 +26,12 @@ export interface SplitButtonMenuItem {
   /** Optional leading icon for the menu row. */
   icon?: IconComponent
   disabled?: boolean
+  /** Shown on hover — pass the reason whenever the row is disabled. */
+  tooltip?: string
+  /** Destructive styling for delete / remove rows. */
+  danger?: boolean
+  /** Draw a divider above this row to start a new group. */
+  separatorBefore?: boolean
   onSelect: () => void | Promise<void>
   testId?: string
 }
@@ -109,6 +115,13 @@ export function SplitButton({
     triggerRef.current?.focus()
   }
 
+  // The menu is not focusable and a mouse click does not leave focus on the
+  // chevron, so after the open commits put focus on the trigger: Escape
+  // (handled on the trigger below) then closes what the click opened.
+  useEffect(() => {
+    if (menuOpen) triggerRef.current?.focus()
+  }, [menuOpen])
+
   function handleSelect(item: SplitButtonMenuItem) {
     if (item.disabled) return
     setMenuOpen(false)
@@ -163,6 +176,12 @@ export function SplitButton({
         aria-controls={menuOpen ? menuId : undefined}
         tooltip={menuTriggerLabel}
         onClick={() => setMenuOpen((open) => !open)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && menuOpen) {
+            event.preventDefault()
+            closeMenu()
+          }
+        }}
         disabled={menuItems.length === 0}
         data-testid={menuTriggerTestId}
       >
@@ -186,19 +205,23 @@ export function SplitButton({
           {menuItems.map((item) => {
             const ItemIcon = item.icon
             return (
-              <ContextMenuItem
-                key={item.id}
-                disabled={item.disabled}
-                onClick={() => handleSelect(item)}
-                data-testid={item.testId}
-              >
-                {ItemIcon && (
-                  <span aria-hidden="true">
-                    <ItemIcon size={14} />
-                  </span>
-                )}
-                <span>{item.label}</span>
-              </ContextMenuItem>
+              <Fragment key={item.id}>
+                {item.separatorBefore && <ContextMenuSeparator />}
+                <ContextMenuItem
+                  disabled={item.disabled}
+                  tooltip={item.tooltip}
+                  danger={item.danger}
+                  onClick={() => handleSelect(item)}
+                  data-testid={item.testId}
+                >
+                  {ItemIcon && (
+                    <span aria-hidden="true">
+                      <ItemIcon size={14} />
+                    </span>
+                  )}
+                  <span>{item.label}</span>
+                </ContextMenuItem>
+              </Fragment>
             )
           })}
         </ContextMenu>,
