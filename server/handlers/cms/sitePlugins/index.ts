@@ -33,7 +33,6 @@ import { parsePluginManifest } from '@core/plugins/manifest'
 import {
   SITE_PLUGIN_LOCAL_ID_PATTERN,
   SITE_PLUGIN_TEMPLATE_IDS,
-  discoverSitePlugins,
   sitePluginFolder,
   sitePluginIdFromLocalId,
   sitePluginTemplateFiles,
@@ -50,7 +49,6 @@ import {
 import { getDraftSite, saveDraftSite } from '../../../repositories/site'
 import { getInstalledPlugin } from '../../../repositories/plugins'
 import { runPublishFlush } from '../../../publish/publishFlush'
-import { buildSitePlugin } from '../../../plugins/sitePlugins/build'
 import { previousSitePluginRevision } from '../../../plugins/sitePlugins/retention'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../../http'
 import { type CmsHandlerOptions } from '../shared'
@@ -58,8 +56,8 @@ import { activatePluginPackageFromDisk } from '../plugins/install'
 import { presentPluginSecrets } from '../plugins/shared'
 import { uninstallPluginById } from '../plugins/state'
 import {
+  buildDraftSitePlugin,
   listSitePlugins,
-  readDraftPluginFiles,
   republishAndSweep,
   runSitePluginActivation,
   sameStringSet,
@@ -69,6 +67,7 @@ import {
 // Service re-exports — external consumers (the AI plugin tools) import the
 // engine through this barrel.
 export {
+  buildDraftSitePlugin,
   listSitePlugins,
   runSitePluginActivation,
 } from './service'
@@ -151,23 +150,11 @@ async function handleScaffold(req: Request, db: DbClient): Promise<Response> {
 // ---------------------------------------------------------------------------
 
 async function handleValidate(db: DbClient, localId: string): Promise<Response> {
-  const draftFiles = await readDraftPluginFiles(db)
-  const plugin = discoverSitePlugins(draftFiles).find((entry) => entry.localId === localId)
-  if (!plugin) {
+  const result = await buildDraftSitePlugin(db, localId)
+  if (!result) {
     return jsonResponse({ error: `No site plugin source at plugins/${localId}/` }, { status: 404 })
   }
-  const rowResult = await getInstalledPlugin(db, sitePluginIdFromLocalId(localId))
-  const row = rowResult?.kind === 'ok' ? rowResult.plugin : null
-  const result = await buildSitePlugin({
-    localId,
-    files: plugin.files,
-    previousVersion: row?.version ?? null,
-    validateOnly: true,
-  })
-  if (!result.ok) {
-    return jsonResponse({ ok: false, diagnostics: result.diagnostics })
-  }
-  return jsonResponse({ ok: true, diagnostics: [] })
+  return jsonResponse({ ok: result.ok, diagnostics: result.ok ? [] : result.diagnostics })
 }
 
 // ---------------------------------------------------------------------------
@@ -175,19 +162,10 @@ async function handleValidate(db: DbClient, localId: string): Promise<Response> 
 // ---------------------------------------------------------------------------
 
 async function handlePreviewPack(db: DbClient, localId: string): Promise<Response> {
-  const draftFiles = await readDraftPluginFiles(db)
-  const plugin = discoverSitePlugins(draftFiles).find((entry) => entry.localId === localId)
-  if (!plugin) {
+  const result = await buildDraftSitePlugin(db, localId)
+  if (!result) {
     return jsonResponse({ error: `No site plugin source at plugins/${localId}/` }, { status: 404 })
   }
-  const rowResult = await getInstalledPlugin(db, sitePluginIdFromLocalId(localId))
-  const row = rowResult?.kind === 'ok' ? rowResult.plugin : null
-  const result = await buildSitePlugin({
-    localId,
-    files: plugin.files,
-    previousVersion: row?.version ?? null,
-    validateOnly: true,
-  })
   if (!result.ok) {
     return jsonResponse(
       { error: `Draft build failed: ${result.diagnostics.join('; ')}` },
@@ -241,10 +219,13 @@ async function handleActivate(
         plugin: await presentPluginSecrets(db, result.plugin),
         ...(result.upgrade ? { upgrade: result.upgrade } : {}),
         ...(result.skipped ? { skipped: true } : {}),
+        ...(result.warning ? { warning: result.warning } : {}),
         sitePlugins: await listSitePlugins(db),
       })
     case 'not-found':
       return jsonResponse({ error: result.message }, { status: 404 })
+    case 'disabled':
+      return jsonResponse({ error: result.message }, { status: 409 })
     case 'invalid':
       return result.message === 'Uploads directory is not configured'
         ? jsonResponse({ error: result.message }, { status: 500 })
@@ -330,11 +311,12 @@ async function handleRollback(
     )
   }
 
-  await republishAndSweep(db, options.uploadsDir, manifest)
+  const warning = await republishAndSweep(db, options.uploadsDir, manifest)
 
   return jsonResponse({
     plugin: await presentPluginSecrets(db, outcome.plugin),
     rolledBackTo: previousVersion,
+    ...(warning ? { warning } : {}),
     sitePlugins: await listSitePlugins(db),
   })
 }

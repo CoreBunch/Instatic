@@ -224,7 +224,7 @@ Two consumers:
 1. Published pages — declare tags in the manifest (permission "frontend.assets"):
    "frontend": { "assets": [
      { "kind": "script", "src": "frontend/widget.ts", "placement": "body-end" },
-     { "kind": "style", "src": "frontend/widget.css" }
+     { "kind": "style", "href": "frontend/widget.css" }
    ] }
    The build rewrites .ts→.js. The host injects the tags into every published
    page and adjusts CSP. Use api.plugin.assetUrl(path) server-side for URLs.

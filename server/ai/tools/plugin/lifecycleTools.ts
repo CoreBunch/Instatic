@@ -19,22 +19,15 @@
 import { Type } from '@core/utils/typeboxHelpers'
 import type { CoreCapability } from '@core/capabilities'
 import { aiToolError, aiToolOk } from '@core/ai'
-import {
-  discoverSitePlugins,
-  sitePluginIdFromLocalId,
-} from '@core/site-plugins'
 import type { AiTool } from '../types'
 import type { ToolContext } from '../../runtime/types'
 import {
+  buildDraftSitePlugin,
   listSitePlugins,
   runSitePluginActivation,
 } from '../../../handlers/cms/sitePlugins'
-import { buildSitePlugin } from '../../../plugins/sitePlugins/build'
-import { runPublishFlush } from '../../../publish/publishFlush'
-import { getDraftSite } from '../../../repositories/site'
-import { getInstalledPlugin } from '../../../repositories/plugins'
 import { findUserById } from '../../../repositories/users'
-import { PluginIdeSnapshotSchema } from './snapshot'
+import { PluginIdeSnapshotSchema } from '@core/ai'
 import { safeParseValue } from '@core/utils/typeboxHelpers'
 
 const PLUGIN_READ_CAPS: readonly CoreCapability[] = ['site.read', 'plugins.read']
@@ -79,21 +72,10 @@ const validateTool: AiTool = {
     if (!localId) {
       return aiToolError('No plugin in scope — pass localId (see plugin_list_plugins).')
     }
-    await runPublishFlush()
-    const shell = await getDraftSite(ctx.db)
-    const draftFiles = shell?.files.filter((file) => file.type === 'plugin') ?? []
-    const plugin = discoverSitePlugins(draftFiles).find((entry) => entry.localId === localId)
-    if (!plugin) {
+    const result = await buildDraftSitePlugin(ctx.db, localId)
+    if (!result) {
       return aiToolError(`No site plugin source at plugins/${localId}/`)
     }
-    const rowResult = await getInstalledPlugin(ctx.db, sitePluginIdFromLocalId(localId))
-    const row = rowResult?.kind === 'ok' ? rowResult.plugin : null
-    const result = await buildSitePlugin({
-      localId,
-      files: plugin.files,
-      previousVersion: row?.version ?? null,
-      validateOnly: true,
-    })
     return aiToolOk({ ok: result.ok, diagnostics: result.ok ? [] : result.diagnostics })
   },
 }
@@ -133,7 +115,10 @@ const activateTool: AiTool = {
           pluginId: result.plugin.id,
           version: result.plugin.version,
           ...(result.upgrade ? { upgrade: result.upgrade } : {}),
+          ...(result.warning ? { warning: result.warning } : {}),
         })
+      case 'disabled':
+        return aiToolError(result.message)
       case 'grants-changed':
         return aiToolError(
           `Activation needs human consent: the permission grant set changed ` +
