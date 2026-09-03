@@ -109,9 +109,7 @@ export default function CollabCodeMirrorEditor({
       docKey={docKey}
       value={text.toString()}
       language={language}
-      // Content persistence is the Y binding's job — the store-style
-      // onChange stays a no-op so nothing double-writes.
-      onChange={() => {}}
+      // Content persistence is the Y binding's job — no onChange, no listener.
       extensions={extensions}
       localHistory={false}
     />

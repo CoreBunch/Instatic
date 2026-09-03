@@ -83,8 +83,12 @@ interface CodeMirrorEditorProps {
   value: string
   /** Which language extensions to load for highlighting. */
   language: CodeLanguage
-  /** Debounced (250 ms) on every edit, and flushed immediately on docKey switch. */
-  onChange: (content: string) => void
+  /**
+   * Debounced (250 ms) on every edit, and flushed immediately on docKey
+   * switch. Omit it when something else owns persistence (the co-edited
+   * buffer's Y binding): no listener is installed and nothing is buffered.
+   */
+  onChange?: (content: string) => void
   /**
    * Change propagation delay. File editors keep the 250 ms default; modal
    * command surfaces can pass 0 so their primary action never reads stale text.
@@ -294,7 +298,7 @@ export default function CodeMirrorEditor({
     }
     if (pendingContentRef.current !== null) {
       // Flush-on-switch: persist pending edit before unmounting.
-      onChangeRef.current(pendingContentRef.current)
+      onChangeRef.current?.(pendingContentRef.current)
       pendingContentRef.current = null
     }
   }, [])
@@ -334,6 +338,8 @@ export default function CodeMirrorEditor({
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) return
             const content = update.state.doc.toString()
+            // The language service tracks the buffer even in a read-only
+            // view (no `onChange`), so diagnostics stay honest.
             if (typeScriptClient && filePath) {
               typeScriptClient.updateFile(filePath, content)
               if (typeScriptDiagnosticsTimer) clearTimeout(typeScriptDiagnosticsTimer)
@@ -342,20 +348,21 @@ export default function CodeMirrorEditor({
                 typeScriptDiagnosticsTimer = null
               }, 300)
             }
+            if (!onChange) return
             if (changeDelayMs <= 0) {
               if (timerRef.current) {
                 clearTimeout(timerRef.current)
                 timerRef.current = null
               }
               pendingContentRef.current = null
-              onChangeRef.current(content)
+              onChangeRef.current?.(content)
               return
             }
             pendingContentRef.current = content
             if (timerRef.current) clearTimeout(timerRef.current)
             timerRef.current = setTimeout(() => {
               if (pendingContentRef.current !== null) {
-                onChangeRef.current(pendingContentRef.current)
+                onChangeRef.current?.(pendingContentRef.current)
                 pendingContentRef.current = null
               }
               timerRef.current = null

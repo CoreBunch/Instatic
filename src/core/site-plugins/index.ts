@@ -14,6 +14,7 @@ export {
   localIdFromSitePluginId,
   sitePluginFolder,
   sitePluginIdFromLocalId,
+  sitePluginLocalIdFromName,
   type SitePluginDraftManifest,
 } from './schemas'
 export { discoverSitePlugins, type DiscoveredSitePlugin } from './discover'

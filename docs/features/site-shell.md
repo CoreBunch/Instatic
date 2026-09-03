@@ -513,8 +513,9 @@ plus one `site:<branch>` doc per branch for the shell and the roster order
 as a Y.Map with the module's inline-text prop as Y.Text, nested
 `breakpointOverrides` Y.Maps, `children` as Y.Array; `parentId` is derived,
 never stored). Layout snapshots are whole-value LWW. The shell keeps
-`settings` / `styleRules` / `explorer` as per-entry Y.Maps and everything
-else plain. Deterministic reconciles (`integrity.ts` tree repair, roster
+`settings` / `styleRules` / `explorer` as per-entry Y.Maps, `files` as a
+per-file Y.Map whose `content` is a Y.Text (`filesY.ts`, so code files
+co-edit character-level), and everything else plain. Deterministic reconciles (`integrity.ts` tree repair, roster
 order) run identically on every peer.
 
 **Editor write path** (`src/admin/pages/site/store/slices/site/collabBinding.ts`):

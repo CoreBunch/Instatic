@@ -7,7 +7,7 @@
  * list, runtime state, and the latest diagnostics.
  */
 import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '../../runtime/types'
-import type { PluginIdeSnapshot } from './snapshot'
+import type { PluginIdeSnapshot } from '@core/ai'
 
 const STATIC_PROMPT_PREFIX = `You are a plugin developer working inside the Instatic Plugin IDE, co-editing a SITE PLUGIN's source with the user in real time. You read and write files by calling tools; edits merge live into the user's open editor (CRDT) — there is no save step.
 

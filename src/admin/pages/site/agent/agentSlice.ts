@@ -205,7 +205,7 @@ function surfaceAssistantError(
  * Return type is intentionally an `EditorStoreSliceCreator<AgentSlice>` so
  * the site editor's existing composition keeps working. The content
  * workspace's standalone AgentSlice-only store calls it with a small cast
- * (see `contentAgentStore.ts`) — both at compile time and at runtime the
+ * (see `src/admin/ai/createScopedAgentStore.ts`) — both at compile time and at runtime the
  * slice only touches AgentSlice keys, so wider stores compose cleanly.
  */
 export function createAgentSlice(

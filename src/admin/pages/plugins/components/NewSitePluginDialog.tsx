@@ -13,11 +13,13 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 import {
   SITE_PLUGIN_LOCAL_ID_PATTERN,
   SITE_PLUGIN_TEMPLATES,
+  sitePluginLocalIdFromName,
   type SitePluginTemplateId,
 } from '@core/site-plugins'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
+import { pushToast } from '@ui/components/Toast'
 import styles from './NewSitePluginDialog.module.css'
 
 const ScaffoldResponseSchema = Type.Object({
@@ -25,15 +27,6 @@ const ScaffoldResponseSchema = Type.Object({
   localId: Type.String(),
   files: Type.Array(Type.String()),
 })
-
-function deriveLocalId(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/^[^a-z]+/, '')
-    .slice(0, 40)
-}
 
 interface NewSitePluginDialogProps {
   existingLocalIds: string[]
@@ -51,15 +44,14 @@ export function NewSitePluginDialog({
   const [localId, setLocalId] = useState('')
   const [template, setTemplate] = useState<SitePluginTemplateId>('module')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
-  const effectiveLocalId = localIdTouched ? localId : deriveLocalId(name)
+  const effectiveLocalId = localIdTouched ? localId : sitePluginLocalIdFromName(name)
   const idValid = SITE_PLUGIN_LOCAL_ID_PATTERN.test(effectiveLocalId)
   const idTaken = existingLocalIds.includes(effectiveLocalId)
   const canSubmit = name.trim().length > 0 && idValid && !idTaken && !busy
 
-  // Field-local validation stays inline (allowed exception); operation
-  // failures surface via the dialog-level alert below.
+  // Field-local validation stays inline (the allowed exception); the scaffold
+  // request itself is an operation and toasts on failure.
   const idHint = !effectiveLocalId
     ? null
     : !idValid
@@ -71,7 +63,6 @@ export function NewSitePluginDialog({
   const submit = async (): Promise<void> => {
     if (!canSubmit) return
     setBusy(true)
-    setError(null)
     try {
       const result = await apiRequest('/admin/api/cms/site-plugins', {
         method: 'POST',
@@ -80,7 +71,11 @@ export function NewSitePluginDialog({
       })
       onCreated(result.localId)
     } catch (err) {
-      setError(getErrorMessage(err, 'Could not create the site plugin'))
+      pushToast({
+        kind: 'error',
+        title: 'Could not create the site plugin',
+        body: getErrorMessage(err, 'Unknown error'),
+      })
       setBusy(false)
     }
   }
@@ -153,7 +148,6 @@ export function NewSitePluginDialog({
               size="sm"
               role="radio"
               aria-checked={template === option.id}
-              pressed={template === option.id}
               className={styles.templateCard}
               onClick={() => setTemplate(option.id)}
               data-testid={`template-${option.id}`}
@@ -163,12 +157,6 @@ export function NewSitePluginDialog({
             </Button>
           ))}
         </div>
-
-        {error && (
-          <p className={styles.error} role="alert">
-            {error}
-          </p>
-        )}
       </div>
     </Dialog>
   )
