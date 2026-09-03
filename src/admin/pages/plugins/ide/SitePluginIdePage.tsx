@@ -146,6 +146,7 @@ function SitePluginIde({ localId }: { localId: string }) {
             <FileTreePane
               onClose={() => setActivePanel(null)}
               localId={localId}
+              pluginName={vm.summary?.name ?? localId}
               files={files}
               activeFileId={activeFileId}
               peers={peers}

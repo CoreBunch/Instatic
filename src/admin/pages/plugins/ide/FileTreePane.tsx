@@ -93,6 +93,8 @@ function buildRows(
 
 interface FileTreePaneProps {
   localId: string
+  /** The plugin's display name — the panel is titled with it so the IDE always says which plugin is open. */
+  pluginName: string
   files: IdeFileMeta[]
   activeFileId: string | null
   peers: IdePeer[]
@@ -112,6 +114,7 @@ interface FileTreePaneProps {
 
 export function FileTreePane({
   localId,
+  pluginName,
   files,
   activeFileId,
   peers,
@@ -193,8 +196,8 @@ export function FileTreePane({
   return (
     <Panel
       panelId="ide-files"
-      title="Files"
-      ariaLabel="Site plugin files"
+      title={pluginName}
+      ariaLabel={`${pluginName} files`}
       testId="ide-file-tree"
       body="bare"
       bodyClassName={styles.body}

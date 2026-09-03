@@ -8,14 +8,33 @@ import { useEffect, useRef, useState } from 'react'
 import {
   sitePluginPrimaryAction,
   sitePluginStateLabel,
+  type SitePluginRuntimeState,
   type SitePluginSummary,
 } from '@core/site-plugins'
 import { Button } from '@ui/components/Button'
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@ui/components/ContextMenu'
 import { MoreHorizontalSolidIcon } from 'pixel-art-icons/icons/more-horizontal-solid'
 import { PeerAvatar } from '@site/collab/PeerAvatar'
+import { ToolbarStatus, type ToolbarStatusTone } from '@site/toolbar/ToolbarStatus'
 import type { IdePeer } from './idePresence'
 import styles from './IdeActions.module.css'
+
+/** The site toolbar's tone vocabulary, applied to the plugin's runtime state. */
+function stateTone(state: SitePluginRuntimeState): ToolbarStatusTone {
+  switch (state) {
+    case 'active':
+      return 'success'
+    case 'permission-review':
+      return 'warning'
+    case 'build-failed':
+    case 'runtime-error':
+    case 'source-missing':
+      return 'danger'
+    case 'draft-changed':
+    case 'disabled':
+      return 'neutral'
+  }
+}
 
 interface IdeActionsProps {
   summary: SitePluginSummary | null
@@ -124,9 +143,12 @@ export function IdeActions({
       )}
 
       {state && (
-        <span className={styles.stateChip} data-state={state} data-testid="ide-state-chip">
-          {sitePluginStateLabel(state)}
-        </span>
+        <ToolbarStatus
+          label={sitePluginStateLabel(state)}
+          tone={stateTone(state)}
+          state={state}
+          testId="ide-state-chip"
+        />
       )}
 
       {summary?.hasModules && summary.hasDraftSource && (
