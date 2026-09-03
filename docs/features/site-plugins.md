@@ -167,7 +167,12 @@ Unavailable actions are disabled with an inline reason, never hidden.
 `/admin/plugins/develop/<local-id>` — a full-screen workspace-canvas route
 (`AdminWorkspace: 'pluginIde'`, layout persistence like every canvas):
 file tree (left, resizable) and the co-edited CodeMirror buffer with the
-diagnostics strip beneath it. There is deliberately no right panel:
+diagnostics strip beneath it. The tree is built from the same primitives as
+the Layers panel (`@site/ui/Tree`): folders sort first, a folder's chevron
+sits at the end of its row so files and folders at one depth share a left
+edge, and a clicked, expanded folder paints its subtree as one `TreeGroup`
+surface — the same nesting the Layers panel gives a selected container.
+There is deliberately no right panel:
 `plugin.json` is edited as raw JSON in the buffer (auto-selected on open),
 and every manifest mistake surfaces as a named diagnostic.
 

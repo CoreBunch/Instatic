@@ -36,6 +36,7 @@ import { LayerNodeContextMenu } from './LayerNodeContextMenu'
 import { Input } from '@ui/components/Input'
 import { cn } from '@ui/cn'
 import {
+  TreeGroup,
   TreeRow,
   treeDropStyles,
 } from '@site/ui/Tree'
@@ -278,12 +279,11 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
   return (
     // Wrapper preserves the recursive tree shape. DnD refs live on TreeRow so
     // hit-testing uses the actual visible row height.
-    <div
+    <TreeGroup
       data-node-id={nodeId}
-      data-open-container-group={isOpenContainerGroup ? 'true' : undefined}
+      open={isOpenContainerGroup}
       className={cn(
         node.moduleId === 'base.slot-instance' && styles.slotInstanceRow,
-        isOpenContainerGroup && styles.openContainerGroup,
         activeId === nodeId && styles.dragSource,
       )}
     >
@@ -449,7 +449,7 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
         />,
         document.body,
       )}
-    </div>
+    </TreeGroup>
   )
 })
 

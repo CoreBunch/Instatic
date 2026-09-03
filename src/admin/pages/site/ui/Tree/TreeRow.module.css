@@ -77,6 +77,17 @@
     opacity: 0.5;
 }
 
+/* A subtree — one row plus the group of its children. While the parent is
+   the selection and expanded, the block reads as one raised surface: the
+   parent row's paint sits on it and the children belong to it visibly. */
+.group {
+    border-radius: 8px;
+}
+
+.groupOpen {
+    background: var(--bg-surface);
+}
+
 .chevron {
     width: 14px;
     height: 14px;

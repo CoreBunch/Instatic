@@ -7,11 +7,14 @@
   min-height: 0;
 }
 
+/* Same inset as the Layers panel's tree area: rows keep a gap from the
+   panel's right edge so their hover and selection paint stays rounded. */
 .tree {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-xs) 0;
+  overflow-x: hidden;
+  padding: var(--space-xs) var(--space-s) var(--space-xs) 0;
 }
 
 /* Same reset the Site Explorer applies to its row buttons — the TreeRow
@@ -34,6 +37,12 @@
 .treeRowButton:hover,
 .treeRowButton:active {
   background: transparent;
+}
+
+/* Folder chevrons sit at the end of the row: files and folders at one depth
+   then share the same left edge (icon, then name). */
+.chevronEnd {
+  margin-left: auto;
 }
 
 .rowPeers {
