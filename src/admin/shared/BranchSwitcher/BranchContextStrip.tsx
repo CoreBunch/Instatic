@@ -19,7 +19,7 @@ import { LinkIcon } from 'pixel-art-icons/icons/link'
 import { MoreHorizontalSolidIcon } from 'pixel-art-icons/icons/more-horizontal-solid'
 import { ShareSolidIcon } from 'pixel-art-icons/icons/share-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
-import { MAIN_BRANCH_ID, type BranchPreview, type MergeDirection, type SiteBranch } from '@core/branches'
+import { MAIN_BRANCH_ID, type BranchPreview, type SiteBranch } from '@core/branches'
 import { getCmsBranchPreview, issueCmsBranchPreview, revokeCmsBranchPreview } from '@core/persistence'
 import { isAbortError } from '@core/http'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -36,8 +36,8 @@ import styles from './BranchSwitcher.module.css'
 const DeleteBranchDialog = lazy(() =>
   import('./DeleteBranchDialog').then((m) => ({ default: m.DeleteBranchDialog })),
 )
-const MergeBranchDialog = lazy(() =>
-  import('./MergeBranchDialog').then((m) => ({ default: m.MergeBranchDialog })),
+const UpdateBranchDialog = lazy(() =>
+  import('./UpdateBranchDialog').then((m) => ({ default: m.UpdateBranchDialog })),
 )
 
 async function copyToClipboard(text: string): Promise<boolean> {
@@ -68,7 +68,7 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
   const [deleting, setDeleting] = useState(false)
   const [preview, setPreview] = useState<BranchPreview | null>(null)
   const [sharing, setSharing] = useState(false)
-  const [merge, setMerge] = useState<MergeDirection | null>(null)
+  const [updateOpen, setUpdateOpen] = useState(false)
   const moreRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -199,7 +199,7 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
               data-testid="branch-strip-update"
               onClick={() => {
                 setMoreOpen(false)
-                setMerge('update')
+                setUpdateOpen(true)
               }}
             >
               <ArrowDownIcon size={12} aria-hidden="true" />
@@ -264,9 +264,9 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
           <DeleteBranchDialog branch={current} onClose={() => setDeleting(false)} />
         </Suspense>
       )}
-      {merge && (
+      {updateOpen && (
         <Suspense fallback={null}>
-          <MergeBranchDialog key={merge} branch={current} direction={merge} onClose={() => setMerge(null)} />
+          <UpdateBranchDialog branch={current} onClose={() => setUpdateOpen(false)} />
         </Suspense>
       )}
     </div>

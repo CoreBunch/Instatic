@@ -88,14 +88,6 @@
     font-size: var(--text-2xs);
 }
 
-.deleteToggle {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-xs);
-    color: var(--text);
-    font-size: var(--text-xs);
-}
-
 .footerSpacer {
     flex: 1;
 }

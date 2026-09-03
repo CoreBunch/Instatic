@@ -48,9 +48,14 @@ async function api<T>(page: Page, path: string, init: { method?: string; body?: 
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
     })
     const text = await res.text()
-    let body: unknown = null
-    try { body = JSON.parse(text) } catch { body = text }
-    return { status: res.status, body: body as never }
+    const parse = (): unknown => {
+      try {
+        return JSON.parse(text)
+      } catch {
+        return text
+      }
+    }
+    return { status: res.status, body: parse() as never }
   }, { path, init })
 }
 
