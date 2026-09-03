@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { applyBranchMerge, planBranchMerge } from '../../../server/branches/merge'
-import { getDataRow, listDataRows, saveDataRowDraft } from '../../../server/repositories/data'
+import { getDataRow, listDataRows, saveDataRowDraft, upsertDataRowDraft } from '../../../server/repositories/data'
 import { getDraftSite, saveDraftSite } from '../../../server/repositories/site'
 import {
   createCapabilityTestHarness,
@@ -108,18 +108,42 @@ describe('merge review', () => {
   it('describes a page change as fields plus a node-level tree diff', async () => {
     harness = await createCapabilityTestHarness()
     const owner = await harness.setupOwner()
+    // A node written outside the editor (no style maps at all) lives on main
+    // before the fork; the branch stores it with the maps the editor adds.
+    const shapeOnlyNodeId = 'review-shape-node'
+    const [seed] = await listDataRows(harness.db, MAIN_SCOPE, 'pages')
+    const seedBody = seed!.cells.body as { nodes: Record<string, Record<string, unknown>>; rootNodeId: string }
+    await saveDataRowDraft(harness.db, MAIN_SCOPE, seed!.id, {
+      cells: {
+        ...seed!.cells,
+        body: {
+          ...seedBody,
+          nodes: {
+            ...seedBody.nodes,
+            [shapeOnlyNodeId]: { id: shapeOnlyNodeId, moduleId: 'base.text', props: { text: 'Stays' }, children: [] },
+          },
+        },
+      },
+      slug: seed!.slug,
+    })
     const branchId = await forkViaApi(harness, owner, 'Home copy')
     const branch = { branchId }
 
     const [home] = await listDataRows(harness.db, branch, 'pages')
     const body = home!.cells.body as { nodes: Record<string, Record<string, unknown>>; rootNodeId: string }
-    const nodeIds = Object.keys(body.nodes)
+    const nodeIds = Object.keys(body.nodes).filter((id) => id !== shapeOnlyNodeId)
     expect(nodeIds.length).toBeGreaterThan(0)
     const changedNodeId = nodeIds[nodeIds.length - 1]!
     const addedNodeId = 'review-added-node'
     const nextNodes = {
       ...body.nodes,
-      [changedNodeId]: { ...body.nodes[changedNodeId]!, props: { ...(body.nodes[changedNodeId]!.props as object), reviewed: true } },
+      // Same node as the editor would load it: empty maps are not a change.
+      [shapeOnlyNodeId]: { ...body.nodes[shapeOnlyNodeId]!, inlineStyles: {}, breakpointOverrides: {}, classIds: [] },
+      [changedNodeId]: {
+        ...body.nodes[changedNodeId]!,
+        label: 'Reviewed block',
+        props: { ...(body.nodes[changedNodeId]!.props as object), reviewed: true },
+      },
       [addedNodeId]: { id: addedNodeId, moduleId: 'base.text', props: { text: 'Added on the branch' }, children: [] },
     }
     await saveDataRowDraft(harness.db, branch, home!.id, {
@@ -137,9 +161,11 @@ describe('merge review', () => {
       // The tree is not shown as a JSON blob; it is a node diff.
       expect(change.detail.fields.some((field) => field.id === 'body')).toBe(false)
       expect(change.detail.tree).not.toBeNull()
-      expect(change.detail.tree!.changed).toContain(changedNodeId)
+      expect(change.detail.tree!.changed).toEqual([changedNodeId])
       expect(change.detail.tree!.added).toEqual([addedNodeId])
       expect(change.detail.tree!.removed).toEqual([])
+      // Labels: the editor's node name when there is one, else the module.
+      expect(change.detail.tree!.labels[changedNodeId]).toBe('Reviewed block')
       expect(change.detail.tree!.labels[addedNodeId]).toBe('text')
     }
   })
@@ -221,6 +247,66 @@ describe('merge review', () => {
     const after = await readJson<BranchReviewState>(await harness.cms(review, { cookie: stepped }))
     expect(after.request?.status).toBe('merged')
     expect(after.request?.resolvedBy?.email).toBeDefined()
+    // Timestamps are UTC ISO strings on both dialects (not SQLite's local-time text).
+    const resolvedAt = Date.parse(after.request!.resolvedAt!)
+    expect(Math.abs(Date.now() - resolvedAt)).toBeLessThan(60_000)
+    expect(after.request!.resolvedAt).toMatch(/Z$/)
+  })
+
+  it('withholds rows of content tables the reader may not open, while pages stay readable', async () => {
+    harness = await createCapabilityTestHarness()
+    const owner = await harness.setupOwner()
+    // site.read only: can review, but has no data-table read capability at all.
+    const reader = await harness.createRoleUser({ name: 'Site reader', slug: 'site-reader', capabilities: ['site.read'] })
+    const branchId = await forkViaApi(harness, owner, 'Redacted')
+    const branch = { branchId }
+    const [home] = await listDataRows(harness.db, branch, 'pages')
+    await saveDataRowDraft(harness.db, branch, home!.id, { cells: { ...home!.cells, title: 'Secret title' }, slug: home!.slug })
+    await upsertDataRowDraft(harness.db, branch, {
+      id: 'secret-post',
+      tableId: 'posts',
+      cells: { title: 'Secret post', slug: 'secret-post' },
+      slug: 'secret-post',
+    })
+
+    const { plan } = await readJson<{ plan: MergePlan }>(await harness.cms(`${BRANCHES}/${branchId}/merge`, { cookie: reader.cookie }))
+    expect(plan.changes).toHaveLength(2)
+    // Pages are the site: readable with site.read, rendered too.
+    const page = plan.changes.find((change) => change.logicalId === home!.id)!
+    expect(page.label).toBe('Secret title')
+    const render = await harness.cms(`${BRANCHES}/${branchId}/review/render?row=${encodeURIComponent(home!.id)}&side=branch`, { cookie: reader.cookie })
+    expect(render.status).toBe(200)
+    // Posts follow the data workspace's gate: withheld from a site.read-only reader.
+    const post = plan.changes.find((change) => change.logicalId === 'secret-post')!
+    expect(post.label).toBe('A row you cannot read')
+    expect(post.detail).toEqual({ kind: 'row', fields: [], tree: null })
+    expect(JSON.stringify(plan)).not.toContain('Secret post')
+
+    // The owner sees everything.
+    const full = await readJson<{ plan: MergePlan }>(await harness.cms(`${BRANCHES}/${branchId}/merge`, { cookie: owner }))
+    expect(full.plan.changes.map((change) => change.label)).toEqual(expect.arrayContaining(['Secret title', 'Secret post']))
+  })
+
+  it('refuses to merge a file whose path another file already uses, instead of dropping it', async () => {
+    harness = await createCapabilityTestHarness()
+    const owner = await harness.setupOwner()
+    const branchId = await forkViaApi(harness, owner, 'Collide')
+    const branch = { branchId }
+    // Main and the branch each add a file at the same path under different ids.
+    const mainShell = (await getDraftSite(harness.db, MAIN_SCOPE))!
+    await saveDraftSite(harness.db, MAIN_SCOPE, { ...mainShell, files: [...mainShell.files, themeFile('main', { id: 'file-main' })] })
+    const branchShell = (await getDraftSite(harness.db, branch))!
+    await saveDraftSite(harness.db, branch, { ...branchShell, files: [...branchShell.files, themeFile('branch', { id: 'file-branch' })] })
+
+    const { plan } = await planBranchMerge(harness.db, branchId, 'merge')
+    const incoming = plan.changes.find((change) => change.key === 'file:file-branch')!
+    expect(incoming.action).toBe('create')
+    expect(incoming.conflicts).toEqual(['(path)'])
+    // Keeping main's file is a valid decision; taking the branch's is refused, never silently lost.
+    await expect(
+      applyBranchMerge(harness.db, { branchId, direction: 'merge', resolutions: { 'file:file-branch': 'from' }, actorUserId: null }),
+    ).rejects.toThrow(/already uses the path/)
+    expect((await getDraftSite(harness.db, MAIN_SCOPE))!.files.filter((file) => file.path === 'src/styles/theme.css')).toHaveLength(1)
   })
 
   it('lets a reader load the plan and renders a page for either side with node ids', async () => {
@@ -248,7 +334,9 @@ describe('merge review', () => {
     const render = `${BRANCHES}/${branchId}/review/render`
     const branchSide = await harness.cms(`${render}?row=${encodeURIComponent(home!.id)}&side=branch`, { cookie: editor.cookie })
     expect(branchSide.status).toBe(200)
-    expect(branchSide.headers.get('content-type')).toContain('text/html')
+    // Served as text so a direct navigation never runs it as a page.
+    expect(branchSide.headers.get('content-type')).toContain('text/plain')
+    expect(branchSide.headers.get('content-security-policy')).toBe('sandbox')
     expect(branchSide.headers.get('cache-control')).toBe('no-store')
     const branchHtml = await branchSide.text()
     expect(branchHtml).toContain('<title>Rendered on the branch')

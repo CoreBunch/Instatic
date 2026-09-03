@@ -13,7 +13,7 @@
 import { useEffect, useState } from 'react'
 import { MAIN_BRANCH_ID, type MergeChange, type MergeResolution, type ReviewUserLabel } from '@core/branches'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { AdminWorkspaceCanvasLayout } from '@admin/layouts/AdminWorkspaceCanvasLayout/AdminWorkspaceCanvasLayout'
+import { AdminWorkspaceCanvasLayout } from '@admin/layouts/AdminWorkspaceCanvasLayout'
 import { useNavigate, useParams } from '@admin/lib/routing'
 import { hasCapability } from '@admin/access'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
@@ -287,6 +287,20 @@ function Review({ branchId, branchName }: ReviewProps) {
                             ) : (
                               <p className={styles.cardEmpty}>No note.</p>
                             )}
+                            {!open && plan.changes.length > 0 && (
+                              <div className={styles.requestEmpty}>
+                                <span>
+                                  {request.status === 'merged'
+                                    ? 'That request was merged. The changes below are new work since.'
+                                    : 'That request is closed. Request a merge again when the branch is ready.'}
+                                </span>
+                                <div>
+                                  <Button variant="secondary" size="sm" type="button" onClick={() => setDialog('request')} data-testid="review-request-open">
+                                    Request merge…
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
                           </>
                         ) : (
                           <>
@@ -382,7 +396,7 @@ function Review({ branchId, branchName }: ReviewProps) {
                         branchId={branchId}
                         change={change}
                         resolution={resolutions[change.key]}
-                        canResolve={canManage && (request === null || open)}
+                        canResolve={canManage}
                         onResolve={(resolution) => setResolutions((current) => ({ ...current, [change.key]: resolution }))}
                       />
                     )}
@@ -522,14 +536,12 @@ function Review({ branchId, branchName }: ReviewProps) {
                     {request?.status === 'declined'
                       ? 'Fix what the note asks for, then request a merge again.'
                       : request?.status === 'merged'
-                        ? 'This branch was merged.'
+                        ? 'The last request was merged. New work on this branch can be requested again.'
                         : 'Request a merge when the branch is ready for review.'}
                   </span>
-                  {request?.status !== 'merged' && (
-                    <Button variant="primary" size="sm" type="button" disabled={busy} onClick={() => setDialog('request')} data-testid="review-request-open">
-                      {request?.status === 'declined' ? 'Request merge again…' : 'Request merge…'}
-                    </Button>
-                  )}
+                  <Button variant="primary" size="sm" type="button" disabled={busy || plan.changes.length === 0} tooltip={plan.changes.length === 0 ? 'Nothing to merge yet' : undefined} onClick={() => setDialog('request')} data-testid="review-request-open">
+                    {request?.status === 'declined' ? 'Request merge again…' : 'Request merge…'}
+                  </Button>
                 </>
               )}
             </footer>

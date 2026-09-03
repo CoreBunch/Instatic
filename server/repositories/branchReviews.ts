@@ -141,34 +141,45 @@ export async function insertMergeRequest(
   input: { branchId: string; requestedByUserId: string; note: string; contentHash: string },
 ): Promise<BranchMergeRequest> {
   const id = sortableId()
+  const now = new Date().toISOString()
   await db`
-    insert into site_branch_merge_requests (id, branch_id, requested_by_user_id, note, content_hash, status)
-    values (${id}, ${input.branchId}, ${input.requestedByUserId}, ${input.note}, ${input.contentHash}, 'open')
+    insert into site_branch_merge_requests (id, branch_id, requested_by_user_id, note, content_hash, status, created_at, updated_at)
+    values (${id}, ${input.branchId}, ${input.requestedByUserId}, ${input.note}, ${input.contentHash}, 'open', ${now}, ${now})
   `
   const request = await getMergeRequestById(db, id)
   if (!request) throw new Error('[branches] merge request vanished after insert')
   return request
 }
 
-/** Close the request; returns null when it is not open any more. */
-export async function resolveMergeRequest(
+/**
+ * Close every open request on the branch (there should be one; a race that
+ * produced two must not leave a stray one open). Returns the newest closed
+ * request, or null when none was open.
+ */
+export async function closeOpenMergeRequests(
   db: DbClient,
-  id: string,
+  branchId: string,
   input: { status: Exclude<MergeRequestStatus, 'open'>; resolvedByUserId: string | null; resolutionNote: string },
 ): Promise<BranchMergeRequest | null> {
+  // Bound as ISO text from here: SQLite's `current_timestamp` is a space-
+  // separated local-time string that `Date.parse` reads as local time.
+  const now = new Date().toISOString()
   const { rows } = await db<{ id: string }>`
     update site_branch_merge_requests
     set status = ${input.status},
         resolved_by_user_id = ${input.resolvedByUserId},
-        resolved_at = current_timestamp,
+        resolved_at = ${now},
         resolution_note = ${input.resolutionNote},
-        updated_at = current_timestamp
-    where id = ${id}
+        updated_at = ${now}
+    where branch_id = ${branchId}
       and status = 'open'
     returning id
   `
   if (rows.length === 0) return null
-  return getMergeRequestById(db, id)
+  const closed = await Promise.all(rows.map((row) => getMergeRequestById(db, row.id)))
+  return closed
+    .filter((request): request is BranchMergeRequest => request !== null)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0] ?? null
 }
 
 function mapComment(row: CommentRow): BranchReviewComment {
@@ -211,8 +222,8 @@ export async function insertReviewComment(
 ): Promise<BranchReviewComment> {
   const id = sortableId()
   await db`
-    insert into site_branch_review_comments (id, branch_id, request_id, entity_key, author_user_id, body)
-    values (${id}, ${input.branchId}, ${input.requestId}, ${input.entityKey}, ${input.authorUserId}, ${input.body})
+    insert into site_branch_review_comments (id, branch_id, request_id, entity_key, author_user_id, body, created_at)
+    values (${id}, ${input.branchId}, ${input.requestId}, ${input.entityKey}, ${input.authorUserId}, ${input.body}, ${new Date().toISOString()})
   `
   const [comment] = await selectComments(db, `where c.id = ${placeholder(db.dialect, 1)} limit 1`, [id])
   if (!comment) throw new Error('[branches] review comment vanished after insert')

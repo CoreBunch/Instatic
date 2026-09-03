@@ -27,7 +27,8 @@ import {
   type MergePlan,
   type MergeResolution,
 } from '@core/branches'
-import { validateSite } from '@core/persistence/validate'
+import { SiteValidationError, validateSite } from '@core/persistence/validate'
+import { normalizePath } from '@core/files/pathValidation'
 import type { SiteFile } from '@core/files/schemas'
 import type { DbClient } from '../db/client'
 import { MAIN_SCOPE, isMainScope, type BranchScope } from './scope'
@@ -103,6 +104,26 @@ export class MergeApplyError extends Error {
 }
 
 const DELETED_MARKER = '(deleted)'
+/** A file whose path another file (a different id) already uses on the receiving side. */
+const PATH_MARKER = '(path)'
+
+/**
+ * The shell keeps one file per normalized path (first wins), so a merged
+ * file that lands on a path a different file already holds would vanish
+ * silently. Report it on the plan instead; applying it is refused.
+ */
+function pathCollision(entry: Work, into: Map<string, BranchEntity>): boolean {
+  if (entry.change.kind !== 'file' || entry.result === null) return false
+  const incoming = entry.result as { path?: unknown }
+  if (typeof incoming.path !== 'string') return false
+  const path = normalizePath(incoming.path)
+  for (const entity of into.values()) {
+    if (entity.kind !== 'file' || entity.logicalId === entry.change.logicalId) continue
+    const other = entity.content as { path?: unknown }
+    if (typeof other.path === 'string' && normalizePath(other.path) === path) return true
+  }
+  return false
+}
 
 function scopesFor(branchId: string, direction: MergeDirection): { from: BranchScope; into: BranchScope } {
   const branch: BranchScope = { branchId }
@@ -207,6 +228,11 @@ export async function planBranchMerge(
     work.push({ change: describe(theirs, 'update', merged.conflicts, ours, theirs), ours, theirs, result: merged.value })
   }
 
+  for (const entry of work) {
+    if (pathCollision(entry, intoEntities) && !entry.change.conflicts.includes(PATH_MARKER)) {
+      entry.change.conflicts.push(PATH_MARKER)
+    }
+  }
   work.sort((a, b) => changeOrder(a.change) - changeOrder(b.change) || a.change.label.localeCompare(b.change.label))
   const changes = work.map((entry) => entry.change)
   return {
@@ -221,6 +247,16 @@ export async function planBranchMerge(
     work,
     converged,
     stale,
+  }
+}
+
+/** A merged shell that fails validation is a refused change, not a crash. */
+function validateMergedShell(key: string, candidate: unknown): ReturnType<typeof validateSite> {
+  try {
+    return validateSite(candidate)
+  } catch (err) {
+    if (err instanceof SiteValidationError) throw new MergeApplyError(key, `The merged site is invalid: ${err.message}`)
+    throw err
   }
 }
 
@@ -266,7 +302,7 @@ async function writeEntity(
     const content = parseContent(SiteContentSchema, result, 'site')
     // The merged shell is rebuilt from stored JSON — validate it as a whole
     // before it becomes the draft, exactly like the relay's projection.
-    const shell = validateSite({
+    const shell = validateMergedShell(key, {
       ...current,
       ...content.shell,
       id: current.id,
@@ -290,14 +326,17 @@ async function writeEntity(
     } else {
       const content = parseContent(FileContentSchema, result, 'file')
       const existing = current.files.find((file) => file.id === logicalId)
-      files = [
-        ...others,
-        existing
-          ? { ...existing, ...content, updatedAt: now }
-          : { id: logicalId, ...content, createdAt: now, updatedAt: now },
-      ]
+      // The merged content is the whole file: a key the other side dropped
+      // (blob, ejected, …) must not survive from the previous version.
+      files = [...others, { id: logicalId, createdAt: existing?.createdAt ?? now, ...content, updatedAt: now }]
     }
-    const shell = validateSite({ ...current, files, updatedAt: now })
+    const shell = validateMergedShell(key, { ...current, files, updatedAt: now })
+    if (shell.files.length < files.length) {
+      throw new MergeApplyError(
+        key,
+        `Another file on ${scope.branchId} already uses the path "${entry.change.label}"; rename one of them first`,
+      )
+    }
     await saveDraftSite(tx, scope, shell, actorUserId, { collabInternal: true })
     notices.shell = true
     return
