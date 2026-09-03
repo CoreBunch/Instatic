@@ -1,19 +1,17 @@
 /**
- * IdeActions — the IDE toolbar's right slot: peer avatar stack, runtime
- * state chip, ONE state-appropriate smart primary action, an optional
- * `Preview in canvas` secondary (module drafts), and the overflow menu.
- * Unavailable actions are disabled with an inline reason, never hidden.
+ * IdeActions — the IDE toolbar's right slot: peer avatar stack, the runtime
+ * state indicator, and ONE split button (the same control the site
+ * toolbar's Publish uses): the state-appropriate primary action on the
+ * left, every other action in the menu. Unavailable actions are disabled
+ * with an inline reason, never hidden.
  */
-import { useEffect, useRef, useState } from 'react'
 import {
   sitePluginPrimaryAction,
   sitePluginStateLabel,
   type SitePluginRuntimeState,
   type SitePluginSummary,
 } from '@core/site-plugins'
-import { Button } from '@ui/components/Button'
-import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@ui/components/ContextMenu'
-import { MoreHorizontalSolidIcon } from 'pixel-art-icons/icons/more-horizontal-solid'
+import { SplitButton, type SplitButtonMenuItem } from '@ui/components/SplitButton'
 import { PeerAvatar } from '@site/collab/PeerAvatar'
 import { ToolbarStatus, type ToolbarStatusTone } from '@site/toolbar/ToolbarStatus'
 import type { IdePeer } from './idePresence'
@@ -35,6 +33,9 @@ function stateTone(state: SitePluginRuntimeState): ToolbarStatusTone {
       return 'neutral'
   }
 }
+
+const INSTALL_REASON = 'Requires the plugins.install permission'
+const LIFECYCLE_REASON = 'Requires the plugins.lifecycle permission'
 
 interface IdeActionsProps {
   summary: SitePluginSummary | null
@@ -70,28 +71,31 @@ export function IdeActions({
   onOpenPluginsPage,
   onDelete,
 }: IdeActionsProps) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const overflowRef = useRef<HTMLButtonElement | null>(null)
-
-  // The menu is not focusable and a mouse click does not leave focus on
-  // the trigger (the Button's tooltip wrapper re-renders it once
-  // aria-expanded flips), so put focus on the trigger after the open
-  // commits: Escape then closes what the click opened.
-  useEffect(() => {
-    if (menuOpen) overflowRef.current?.focus()
-  }, [menuOpen])
-
   const state = summary?.state ?? null
   const primary = state ? sitePluginPrimaryAction(state) : null
-
   const uniquePeers = new Map(peers.map((peer) => [peer.user.id, peer]))
 
+  // Same split as the server: install-class actions need plugins.install,
+  // enable/disable/restart need plugins.lifecycle.
+  const needsInstallCap =
+    primary?.action === 'activate' || primary?.action === 'review' || primary?.action === 'delete'
+  const needsLifecycleCap = primary?.action === 'enable'
+  // `active` has no state action of its own: the left half keeps reading
+  // "Build & activate" and says why there is nothing to build.
+  const primaryLabel = primary && primary.action !== null ? primary.label : 'Build & activate'
+  const primaryBlockedReason = !summary
+    ? 'Loading the plugin state…'
+    : primary?.action === null
+      ? 'The active revision already matches the draft'
+      : needsInstallCap && !canInstall
+        ? INSTALL_REASON
+        : needsLifecycleCap && !canManageLifecycle
+          ? LIFECYCLE_REASON
+          : null
+
   const runPrimary = (): void => {
-    if (!primary) return
-    switch (primary.action) {
+    switch (primary?.action) {
       case 'activate':
-        onActivate()
-        return
       case 'review':
         // The review moment IS activation — the server enforces step-up and
         // the dialog shows the grant diff before anything changes.
@@ -110,27 +114,71 @@ export function IdeActions({
         onSetEnabled(true)
         return
       case null:
+      case undefined:
         return
     }
   }
 
-  // Same split as the server: install-class actions need plugins.install,
-  // enable/disable/restart need plugins.lifecycle.
-  const needsInstallCap =
-    primary?.action === 'activate' || primary?.action === 'review' || primary?.action === 'delete'
-  const needsLifecycleCap = primary?.action === 'enable'
-  const primaryBlockedReason =
-    needsInstallCap && !canInstall
-      ? 'Requires the plugins.install permission'
-      : needsLifecycleCap && !canManageLifecycle
-        ? 'Requires the plugins.lifecycle permission'
-        : null
-  const primaryDisabled = activating || primaryBlockedReason !== null
   const lifecycleBlockedReason = !canManageLifecycle
-    ? 'Requires the plugins.lifecycle permission'
+    ? LIFECYCLE_REASON
     : !summary?.activeVersion
       ? 'Nothing is activated yet'
       : null
+  const previewBlockedReason = !summary?.hasDraftSource
+    ? 'The draft source is missing'
+    : !summary.hasModules
+      ? 'The draft declares no module pack'
+      : null
+
+  const menuItems: SplitButtonMenuItem[] = [
+    {
+      id: 'preview',
+      label: 'Preview in canvas',
+      disabled: previewBlockedReason !== null,
+      tooltip: previewBlockedReason ?? undefined,
+      onSelect: onPreview,
+      testId: 'ide-preview',
+    },
+    { id: 'diagnostics', label: 'Re-run diagnostics', onSelect: onRunDiagnostics },
+    {
+      id: 'rollback',
+      label: 'Rollback to previous revision',
+      separatorBefore: true,
+      disabled: !canInstall || !summary?.activeVersion,
+      tooltip: !canInstall
+        ? INSTALL_REASON
+        : !summary?.activeVersion
+          ? 'Nothing is activated yet'
+          : undefined,
+      onSelect: onRollback,
+    },
+    {
+      id: 'deactivate',
+      label: 'Deactivate',
+      disabled: lifecycleBlockedReason !== null || summary?.state === 'disabled',
+      tooltip:
+        lifecycleBlockedReason ??
+        (summary?.state === 'disabled' ? 'Already deactivated' : undefined),
+      onSelect: () => onSetEnabled(false),
+    },
+    {
+      id: 'restart',
+      label: 'Restart',
+      disabled: lifecycleBlockedReason !== null,
+      tooltip: lifecycleBlockedReason ?? undefined,
+      onSelect: onRestart,
+    },
+    { id: 'plugins-page', label: 'Open on Plugins page', onSelect: onOpenPluginsPage },
+    {
+      id: 'delete',
+      label: 'Delete site plugin',
+      separatorBefore: true,
+      danger: true,
+      disabled: !canInstall,
+      tooltip: !canInstall ? INSTALL_REASON : undefined,
+      onSelect: onDelete,
+    },
+  ]
 
   return (
     <div className={styles.actions}>
@@ -151,122 +199,22 @@ export function IdeActions({
         />
       )}
 
-      {summary?.hasModules && summary.hasDraftSource && (
-        <Button variant="secondary" size="sm" onClick={onPreview} data-testid="ide-preview">
-          Preview in canvas
-        </Button>
-      )}
-
-      {primary && primary.action !== null && (
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={primaryDisabled}
-          tooltip={primaryBlockedReason ?? undefined}
-          onClick={runPrimary}
-          data-testid="ide-primary-action"
-        >
-          {activating && primary.action === 'activate' ? 'Building…' : primary.label}
-        </Button>
-      )}
-
-      <Button
-        ref={overflowRef}
-        variant="ghost"
+      <SplitButton
+        variant="primary"
         size="sm"
-        iconOnly
-        aria-label="More actions"
-        tooltip="More actions"
-        aria-expanded={menuOpen}
-        onClick={() => setMenuOpen((open) => !open)}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape' && menuOpen) {
-            event.preventDefault()
-            setMenuOpen(false)
-          }
-        }}
-        data-testid="ide-overflow"
-      >
-        <MoreHorizontalSolidIcon size={14} aria-hidden="true" />
-      </Button>
-
-      {menuOpen && (
-        <ContextMenu
-          anchorRef={overflowRef}
-          ariaLabel="Site plugin actions"
-          onClose={() => setMenuOpen(false)}
-          minWidth={230}
-        >
-          <ContextMenuItem
-            onClick={() => {
-              onRunDiagnostics()
-              setMenuOpen(false)
-            }}
-          >
-            Re-run diagnostics
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem
-            disabled={!canInstall || !summary?.activeVersion}
-            tooltip={
-              !canInstall
-                ? 'Requires the plugins.install permission'
-                : !summary?.activeVersion
-                  ? 'Nothing is activated yet'
-                  : undefined
-            }
-            onClick={() => {
-              onRollback()
-              setMenuOpen(false)
-            }}
-          >
-            Rollback to previous revision
-          </ContextMenuItem>
-          <ContextMenuItem
-            disabled={lifecycleBlockedReason !== null || summary?.state === 'disabled'}
-            tooltip={
-              lifecycleBlockedReason ??
-              (summary?.state === 'disabled' ? 'Already deactivated' : undefined)
-            }
-            onClick={() => {
-              onSetEnabled(false)
-              setMenuOpen(false)
-            }}
-          >
-            Deactivate
-          </ContextMenuItem>
-          <ContextMenuItem
-            disabled={lifecycleBlockedReason !== null}
-            tooltip={lifecycleBlockedReason ?? undefined}
-            onClick={() => {
-              onRestart()
-              setMenuOpen(false)
-            }}
-          >
-            Restart
-          </ContextMenuItem>
-          <ContextMenuItem
-            onClick={() => {
-              onOpenPluginsPage()
-              setMenuOpen(false)
-            }}
-          >
-            Open on Plugins page
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem
-            danger
-            disabled={!canInstall}
-            tooltip={!canInstall ? 'Requires the plugins.install permission' : undefined}
-            onClick={() => {
-              onDelete()
-              setMenuOpen(false)
-            }}
-          >
-            Delete site plugin
-          </ContextMenuItem>
-        </ContextMenu>
-      )}
+        label={activating && primary?.action === 'activate' ? 'Building…' : primaryLabel}
+        onClick={runPrimary}
+        disabled={activating || primaryBlockedReason !== null}
+        busy={activating}
+        primaryTooltip={primaryBlockedReason ?? undefined}
+        menuItems={menuItems}
+        menuTriggerLabel="More plugin actions"
+        menuLabel="Site plugin actions"
+        menuWidth={240}
+        primaryTestId="ide-primary-action"
+        menuTriggerTestId="ide-overflow"
+        menuTestId="ide-actions-menu"
+      />
     </div>
   )
 }
