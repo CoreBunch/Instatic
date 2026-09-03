@@ -1291,4 +1291,38 @@ export const pgMigrations: Migration[] = [
          and not (capabilities_json ? 'site.branches.manage');
     `,
   },
+  {
+    id: '027_site_branch_reviews',
+    sql: `
+      create table if not exists site_branch_merge_requests (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        requested_by_user_id text references users(id) on delete set null,
+        note text not null default '',
+        content_hash text not null default '',
+        status text not null default 'open',
+        resolved_by_user_id text references users(id) on delete set null,
+        resolved_at timestamptz,
+        resolution_note text not null default '',
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
+
+      create index if not exists site_branch_merge_requests_branch_idx
+        on site_branch_merge_requests (branch_id, status, created_at desc);
+
+      create table if not exists site_branch_review_comments (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        request_id text references site_branch_merge_requests(id) on delete set null,
+        entity_key text not null default '',
+        author_user_id text references users(id) on delete set null,
+        body text not null,
+        created_at timestamptz not null default now()
+      );
+
+      create index if not exists site_branch_review_comments_branch_idx
+        on site_branch_review_comments (branch_id, created_at);
+    `,
+  },
 ]

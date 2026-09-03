@@ -2,7 +2,7 @@
  * Merging a branch into main, and updating a branch from main.
  *
  * Both are the same three-way comparison run in opposite directions. Every
- * entity (the site shell, each table, each row) is compared on three sides:
+ * entity (the site shell, each site file, each table, each row) is compared on three sides:
  * the BASE — main's content when the branch and main last agreed (fork, or
  * the latest merge/update; kept in `site_branch_bases`) — the side receiving
  * changes (`into`), and the side contributing them (`from`).
@@ -19,11 +19,20 @@
  * update. Row publish status is never part of the content: a merge changes
  * drafts, never what is live.
  */
-import { MAIN_BRANCH_ID, mergeJson } from '@core/branches'
+import {
+  MAIN_BRANCH_ID,
+  mergeJson,
+  type MergeChange,
+  type MergeDirection,
+  type MergePlan,
+  type MergeResolution,
+} from '@core/branches'
 import { validateSite } from '@core/persistence/validate'
+import type { SiteFile } from '@core/files/schemas'
 import type { DbClient } from '../db/client'
 import { MAIN_SCOPE, isMainScope, type BranchScope } from './scope'
 import {
+  FileContentSchema,
   RowContentSchema,
   SiteContentSchema,
   TableContentSchema,
@@ -31,6 +40,7 @@ import {
   parseContent,
   type BranchEntityKind,
 } from './contentHash'
+import { describeChange } from './changeDetail'
 import { collectBranchEntities, type BranchEntity } from './entities'
 import { deleteBranchBases, listBranchBases, upsertBranchBases, type BranchBase } from '../repositories/branchBases'
 import { touchBranch } from '../repositories/branches'
@@ -60,33 +70,8 @@ import {
 } from '../publish/contentEvents'
 import { runPublishFlush } from '../publish/publishFlush'
 
-/** `merge`: branch → main. `update`: main → branch. */
-export type MergeDirection = 'merge' | 'update'
-/** Which side wins a conflicting entity. */
-export type MergeResolution = 'into' | 'from'
-export type MergeAction = 'create' | 'update' | 'delete'
-
-export interface MergeChange {
-  /** `<kind>:<logicalId>` — the key resolutions are addressed by. */
-  key: string
-  kind: BranchEntityKind
-  logicalId: string
-  label: string
-  tableId: string | null
-  tableName: string | null
-  action: MergeAction
-  /** Field paths both sides changed differently; non-empty means a decision is needed. */
-  conflicts: string[]
-}
-
-export interface MergePlan {
-  branchId: string
-  direction: MergeDirection
-  from: string
-  into: string
-  changes: MergeChange[]
-  conflictCount: number
-}
+export type { MergeChange, MergeDirection, MergePlan, MergeResolution } from '@core/branches'
+export type MergeAction = MergeChange['action']
 
 interface Work {
   change: MergeChange
@@ -124,14 +109,21 @@ function scopesFor(branchId: string, direction: MergeDirection): { from: BranchS
   return direction === 'merge' ? { from: branch, into: MAIN_SCOPE } : { from: MAIN_SCOPE, into: branch }
 }
 
-/** Site first, then table creates/updates, rows, and table deletes last. */
+/** Site first, then files, table creates/updates, rows, and table deletes last. */
 function changeOrder(change: MergeChange): number {
   if (change.kind === 'site') return 0
-  if (change.kind === 'table') return change.action === 'delete' ? 3 : 1
-  return 2
+  if (change.kind === 'file') return 1
+  if (change.kind === 'table') return change.action === 'delete' ? 4 : 2
+  return 3
 }
 
-function describe(entity: BranchEntity, action: MergeAction, conflicts: string[]): MergeChange {
+function describe(
+  entity: BranchEntity,
+  action: MergeAction,
+  conflicts: string[],
+  ours: BranchEntity | undefined,
+  theirs: BranchEntity | undefined,
+): MergeChange {
   return {
     key: `${entity.kind}:${entity.logicalId}`,
     kind: entity.kind,
@@ -141,6 +133,7 @@ function describe(entity: BranchEntity, action: MergeAction, conflicts: string[]
     tableName: entity.tableName,
     action,
     conflicts,
+    detail: describeChange(entity.kind, entity.tableId, ours?.content, theirs?.content, conflicts),
   }
 }
 
@@ -196,22 +189,22 @@ export async function planBranchMerge(
     if (!theirs) {
       if (!base || !ours) continue
       const conflicts = base.contentHash === oursHash ? [] : [DELETED_MARKER]
-      work.push({ change: describe(ours, 'delete', conflicts), ours, theirs, result: null })
+      work.push({ change: describe(ours, 'delete', conflicts, ours, theirs), ours, theirs, result: null })
       continue
     }
     if (!ours) {
       if (base && base.contentHash === theirsHash) continue
       const conflicts = base ? [DELETED_MARKER] : []
-      work.push({ change: describe(theirs, 'create', conflicts), ours, theirs, result: theirs.content })
+      work.push({ change: describe(theirs, 'create', conflicts, ours, theirs), ours, theirs, result: theirs.content })
       continue
     }
     if (base && base.contentHash === theirsHash) continue
     if (base && base.contentHash === oursHash) {
-      work.push({ change: describe(theirs, 'update', []), ours, theirs, result: theirs.content })
+      work.push({ change: describe(theirs, 'update', [], ours, theirs), ours, theirs, result: theirs.content })
       continue
     }
     const merged = mergeJson(base?.content, ours.content, theirs.content)
-    work.push({ change: describe(theirs, 'update', merged.conflicts), ours, theirs, result: merged.value })
+    work.push({ change: describe(theirs, 'update', merged.conflicts, ours, theirs), ours, theirs, result: merged.value })
   }
 
   work.sort((a, b) => changeOrder(a.change) - changeOrder(b.change) || a.change.label.localeCompare(b.change.label))
@@ -281,6 +274,30 @@ async function writeEntity(
       createdAt: current.createdAt,
       updatedAt: Date.now(),
     })
+    await saveDraftSite(tx, scope, shell, actorUserId, { collabInternal: true })
+    notices.shell = true
+    return
+  }
+  if (kind === 'file') {
+    const current = await getDraftSite(tx, scope)
+    if (!current) return
+    const now = Date.now()
+    const others = current.files.filter((file) => file.id !== logicalId)
+    let files: SiteFile[]
+    if (result === null) {
+      if (others.length === current.files.length) return
+      files = others
+    } else {
+      const content = parseContent(FileContentSchema, result, 'file')
+      const existing = current.files.find((file) => file.id === logicalId)
+      files = [
+        ...others,
+        existing
+          ? { ...existing, ...content, updatedAt: now }
+          : { id: logicalId, ...content, createdAt: now, updatedAt: now },
+      ]
+    }
+    const shell = validateSite({ ...current, files, updatedAt: now })
     await saveDraftSite(tx, scope, shell, actorUserId, { collabInternal: true })
     notices.shell = true
     return

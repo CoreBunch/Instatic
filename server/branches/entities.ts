@@ -1,13 +1,13 @@
 /**
- * The mergeable entities of a branch — the site shell, every table, every
- * row — in one keyed map, with the content projection the merge compares
+ * The mergeable entities of a branch — the site shell, every site file,
+ * every table, every row — in one keyed map, with the content projection the merge compares
  * and hashes. Shared by fork (to record bases) and merge (to plan).
  */
 import { SITE_SHELL_LOGICAL_ID } from '@core/branches'
 import type { DataRow, DataTable } from '@core/data/schemas'
 import type { DbClient } from '../db/client'
 import type { BranchScope } from './scope'
-import { rowContent, siteContent, tableContent, type BranchEntityKind } from './contentHash'
+import { fileContent, rowContent, siteContent, tableContent, type BranchEntityKind } from './contentHash'
 import { listDataRows, listDataTables } from '../repositories/data'
 import { getDraftSite } from '../repositories/site'
 
@@ -45,6 +45,16 @@ export async function collectBranchEntities(db: DbClient, scope: BranchScope): P
       tableName: null,
       content: siteContent(shell),
     })
+    for (const file of shell.files) {
+      entities.set(entityKey('file', file.id), {
+        kind: 'file',
+        logicalId: file.id,
+        label: file.path,
+        tableId: null,
+        tableName: null,
+        content: fileContent(file),
+      })
+    }
   }
   const tables = await listDataTables(db, scope)
   for (const table of tables) {

@@ -107,4 +107,10 @@ export {
   revokeCmsBranchPreview,
   getCmsBranchMergePlan,
   applyCmsBranchMerge,
+  getCmsBranchReview,
+  requestCmsBranchMerge,
+  withdrawCmsBranchMergeRequest,
+  declineCmsBranchMergeRequest,
+  addCmsBranchReviewComment,
+  cmsBranchReviewRenderUrl,
 } from './cmsBranches'

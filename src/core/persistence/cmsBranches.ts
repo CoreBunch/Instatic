@@ -15,13 +15,21 @@ import {
   BranchListEnvelopeSchema,
   BranchPreviewLinkEnvelopeSchema,
   BranchPreviewStateEnvelopeSchema,
+  BranchReviewStateSchema,
   MergePlanEnvelopeSchema,
+  MergeRequestEnvelopeSchema,
+  ReviewCommentEnvelopeSchema,
   type ApplyMergeBody,
+  type BranchMergeRequest,
   type BranchPreview,
+  type BranchReviewComment,
+  type BranchReviewState,
   type CreateBranchBody,
+  type CreateReviewCommentBody,
   type MergeDirection,
   type MergePlan,
   type RenameBranchBody,
+  type ReviewRenderSide,
   type SiteBranch,
 } from '@core/branches'
 
@@ -106,4 +114,64 @@ export async function applyCmsBranchMerge(
     schema: ApplyMergeEnvelopeSchema,
     fallbackMessage: direction === 'merge' ? 'Failed to merge the branch' : 'Failed to update the branch',
   })
+}
+
+// ---------------------------------------------------------------------------
+// Merge review
+// ---------------------------------------------------------------------------
+
+function reviewPath(id: string): string {
+  return `${BRANCHES_PATH}/${encodeURIComponent(id)}/review`
+}
+
+export async function getCmsBranchReview(id: string, signal?: AbortSignal): Promise<BranchReviewState> {
+  return apiRequest(reviewPath(id), {
+    schema: BranchReviewStateSchema,
+    signal,
+    fallbackMessage: 'Failed to load the review',
+  })
+}
+
+export async function requestCmsBranchMerge(id: string, note: string): Promise<BranchMergeRequest> {
+  const payload = await apiRequest(`${reviewPath(id)}/request`, {
+    method: 'POST',
+    body: { note },
+    schema: MergeRequestEnvelopeSchema,
+    fallbackMessage: 'Failed to request the merge',
+  })
+  return payload.request
+}
+
+export async function withdrawCmsBranchMergeRequest(id: string): Promise<BranchMergeRequest> {
+  const payload = await apiRequest(`${reviewPath(id)}/withdraw`, {
+    method: 'POST',
+    schema: MergeRequestEnvelopeSchema,
+    fallbackMessage: 'Failed to withdraw the request',
+  })
+  return payload.request
+}
+
+export async function declineCmsBranchMergeRequest(id: string, note: string): Promise<BranchMergeRequest> {
+  const payload = await apiRequest(`${reviewPath(id)}/decline`, {
+    method: 'POST',
+    body: { note },
+    schema: MergeRequestEnvelopeSchema,
+    fallbackMessage: 'Failed to decline the request',
+  })
+  return payload.request
+}
+
+export async function addCmsBranchReviewComment(id: string, body: CreateReviewCommentBody): Promise<BranchReviewComment> {
+  const payload = await apiRequest(`${reviewPath(id)}/comments`, {
+    method: 'POST',
+    body,
+    schema: ReviewCommentEnvelopeSchema,
+    fallbackMessage: 'Failed to post the comment',
+  })
+  return payload.comment
+}
+
+/** URL of one page's HTML as `side` renders it — for a sandboxed iframe, not for fetch. */
+export function cmsBranchReviewRenderUrl(id: string, rowId: string, side: ReviewRenderSide): string {
+  return `${reviewPath(id)}/render?row=${encodeURIComponent(rowId)}&side=${side}`
 }
