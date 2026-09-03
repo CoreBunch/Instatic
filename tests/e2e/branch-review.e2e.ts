@@ -59,6 +59,11 @@ async function api<T>(page: Page, path: string, init: { method?: string; body?: 
   }, { path, init })
 }
 
+/** A page node shaped the way the editor writes one (the maps are never absent). */
+function node(id: string, moduleId: string, props: Record<string, unknown>, children: string[] = [], label?: string) {
+  return { id, moduleId, props, children, breakpointOverrides: {}, classIds: [], ...(label ? { label } : {}) }
+}
+
 interface HomeRow {
   id: string
   slug: string
@@ -68,7 +73,8 @@ interface HomeRow {
 async function homeRow(page: Page, branch?: string): Promise<HomeRow> {
   const { status, body } = await api<{ rows: HomeRow[] }>(page, '/admin/api/cms/pages', { branch })
   expect(status).toBe(200)
-  const home = body.rows.find((row) => row.slug === '' || row.slug === 'home') ?? body.rows[0]
+  // The seeded home page; never fall back to whichever row sorts first.
+  const home = body.rows.find((row) => row.slug === 'index')
   expect(home).toBeDefined()
   return home!
 }
@@ -138,10 +144,10 @@ test('owner prepares a branch and an editor without merge rights', async ({ page
   const nodes = {
     ...home.cells.body.nodes,
     [root]: { ...home.cells.body.nodes[root]!, children: ['review-hero'] },
-    'review-hero': { id: 'review-hero', moduleId: 'base.container', props: {}, children: ['review-heading', 'review-copy', 'review-cta'] },
-    'review-heading': { id: 'review-heading', moduleId: 'base.text', props: { text: 'Ship your site faster', tag: 'h1' }, children: [] },
-    'review-copy': { id: 'review-copy', moduleId: 'base.text', props: { text: 'A self-hosted CMS with a visual editor and a plugin system that runs in a sandbox.', tag: 'p' }, children: [] },
-    'review-cta': { id: 'review-cta', moduleId: 'base.button', props: { label: 'Get started', href: '/pricing' }, children: [] },
+    'review-hero': node('review-hero', 'base.container', {}, ['review-heading', 'review-copy', 'review-cta']),
+    'review-heading': node('review-heading', 'base.text', { text: 'Ship your site faster', tag: 'h1' }, [], 'Headline'),
+    'review-copy': node('review-copy', 'base.text', { text: 'A self-hosted CMS with a visual editor and a plugin system that runs in a sandbox.', tag: 'p' }),
+    'review-cta': node('review-cta', 'base.button', { label: 'Get started', href: '/pricing' }),
   }
   await saveHome(page, home, { ...home.cells, title: 'Home', body: { ...home.cells.body, nodes } })
 
@@ -160,7 +166,7 @@ test('the editor edits the branch, reads the review, comments and requests a mer
     ...home.cells.body.nodes,
     'review-heading': { ...heading, props: { ...heading.props, text: 'Launch week starts Monday' } },
     'review-hero': { ...hero, children: [...(hero.children ?? []), 'review-note'] },
-    'review-note': { id: 'review-note', moduleId: 'base.text', props: { text: 'Five features in five days, starting with branches.', tag: 'p' }, children: [] },
+    'review-note': node('review-note', 'base.text', { text: 'Five features in five days, starting with branches.', tag: 'p' }),
   }
   await saveHome(page, home, { ...home.cells, title: BRANCH_TITLE, body: { ...home.cells.body, nodes } }, BRANCH_ID)
 
@@ -180,8 +186,9 @@ test('the editor edits the branch, reads the review, comments and requests a mer
   // render, found by their node ids.
   await expect(homeChange.locator('[data-tone="changed"]')).toHaveCount(1)
   await expect(homeChange.locator('[data-tone="added"]')).toHaveCount(1)
-  // Labels name the node the plan diffed (a text node here).
-  await expect(homeChange.locator('[data-tone="changed"]')).toContainText('text')
+  // The badge carries the node's editor name; a bare module id stays hidden.
+  await expect(homeChange.locator('[data-tone="changed"]')).toContainText('Headline')
+  await expect(homeChange.locator('[data-tone="added"]')).toHaveText('Added')
   await shot(page, '1-editor-review')
 
   await page.getByTestId(`review-thread-row:${home.id}-input`).fill('New headline for launch week; the rest of the page is untouched.')

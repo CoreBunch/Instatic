@@ -1311,6 +1311,10 @@ export const pgMigrations: Migration[] = [
       create index if not exists site_branch_merge_requests_branch_idx
         on site_branch_merge_requests (branch_id, status, created_at desc);
 
+      create unique index if not exists site_branch_merge_requests_open_idx
+        on site_branch_merge_requests (branch_id)
+        where status = 'open';
+
       create table if not exists site_branch_review_comments (
         id text primary key,
         branch_id text not null references site_branches(id) on delete cascade,

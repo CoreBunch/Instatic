@@ -9,6 +9,7 @@
  * (`from`) — main and the branch for a merge, the other way round for an
  * update.
  */
+import { parsePageNode } from '@core/page-tree'
 import { canonicalJson } from '@core/utils/canonicalJson'
 import type {
   MergeChangeDetail,
@@ -57,27 +58,45 @@ function fieldChanges(
     if (canonicalJson(a ?? null) === canonicalJson(b ?? null)) continue
     const shownBefore = displayValue(a)
     const shownAfter = displayValue(b)
+    const path = `${options.prefix}${key}`
     out.push({
       id: key,
       label: options.labels?.[key] ?? key,
       before: shownBefore.text,
       after: shownAfter.text,
       structured: shownBefore.structured || shownAfter.structured,
-      conflict: options.conflicts.has(`${options.prefix}${key}`),
+      // A conflict deeper inside a structured value still belongs to this field.
+      conflict: [...options.conflicts].some((conflict) => conflict === path || conflict.startsWith(`${path}.`)),
     })
   }
   return out
 }
 
+/**
+ * What "the same node" means for the diff: the node as the editor would load
+ * it, minus its children (a child list change is the child's own add/remove).
+ * Rows written outside the editor (the data API, an import) may store `{}`
+ * maps or omit them; parsing both sides first keeps those from counting as
+ * changes.
+ */
 function nodeSignature(node: unknown): string {
   if (!isRecord(node)) return canonicalJson(node ?? null)
-  const { children: _children, ...rest } = node
+  const { children: _children, ...rest } = normalizeNode(node)
   return canonicalJson(rest)
+}
+
+function normalizeNode(node: Record<string, unknown>): Record<string, unknown> {
+  try {
+    return parsePageNode(node, 'node')
+  } catch {
+    // A node the editor could not load is compared as stored.
+    return node
+  }
 }
 
 function nodeLabel(node: unknown): string {
   if (!isRecord(node)) return 'node'
-  if (typeof node.name === 'string' && node.name.trim()) return node.name.trim()
+  if (typeof node.label === 'string' && node.label.trim()) return node.label.trim()
   if (typeof node.moduleId === 'string') return node.moduleId.replace(/^base\./, '')
   return 'node'
 }

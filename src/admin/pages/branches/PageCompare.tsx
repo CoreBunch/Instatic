@@ -8,7 +8,7 @@
  * from the tree diff, not from guesses. Side by side, a swipe with one
  * frame clipped over the other, or the plain change list.
  */
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { MergeTreeDiff, ReviewRenderSide } from '@core/branches'
 import { apiTextRequest, isAbortError } from '@core/http'
 import { cmsBranchReviewRenderUrl } from '@core/persistence'
@@ -79,14 +79,21 @@ function ScaledFrame({ branchId, rowId, side, title, marks, showHighlights }: Fr
     return () => observer.disconnect()
   }, [])
 
-  function measure(): void {
+  // The marks come from the parent's plan; `measure` reads them through a
+  // ref so it can stay a stable callback (it is an effect dependency below —
+  // React Compiler exception 1).
+  const marksRef = useRef(marks)
+  useEffect(() => {
+    marksRef.current = marks
+  })
+  const measure = useCallback((): void => {
     const frame = frameRef.current
     const doc = frame?.contentDocument
     if (!frame || !doc?.documentElement) return
     const height = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, doc.documentElement.scrollHeight))
     setDocHeight(height)
     const next: HighlightBox[] = []
-    for (const mark of marks) {
+    for (const mark of marksRef.current) {
       const element = doc.querySelector(`[uid="${CSS.escape(mark.id)}"]`)
       if (!(element instanceof doc.defaultView!.HTMLElement)) continue
       const rect = element.getBoundingClientRect()
@@ -103,7 +110,14 @@ function ScaledFrame({ branchId, rowId, side, title, marks, showHighlights }: Fr
     }
     setBoxes(next)
     setLoaded(true)
-  }
+  }, [])
+
+  // Marks come from the plan; a reload can change them while the HTML is
+  // the same, so the boxes follow the marks, not only the frame's load.
+  const marksKey = marks.map((mark) => `${mark.tone}:${mark.id}`).join('|')
+  useEffect(() => {
+    if (loaded) measure()
+  }, [marksKey, loaded, measure])
 
   const hostStyle = { '--frame-scale': scale, '--frame-h': `${docHeight * scale}px` } as CSSProperties
   const stageStyle = { '--doc-h': `${docHeight}px` } as CSSProperties

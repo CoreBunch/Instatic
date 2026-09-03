@@ -50,6 +50,11 @@ import {
 import { renderBranchReviewPage } from '../../publish/branchReviewRender'
 import { getOpenMergeRequest } from '../../repositories/branchReviews'
 import { userHasCapability } from '../../auth/authz'
+import { canReadTable } from './data/access'
+import { listDataTables } from '../../repositories/data'
+import { MAIN_SCOPE } from '../../branches/scope'
+import type { AuthUser } from '../../repositories/users'
+import type { MergePlan } from '@core/branches'
 import type { DbClient } from '../../db/client'
 import type { BranchScope } from '../../branches/scope'
 import { forkBranch } from '../../branches/fork'
@@ -144,7 +149,36 @@ async function handleMergePlan(
   // the review shows exactly what people see on the canvas.
   await runPublishFlush()
   const { plan } = await planBranchMerge(db, branchId, direction)
-  return jsonResponse({ plan })
+  return jsonResponse({ plan: await redactPlanForReader(db, plan, user) })
+}
+
+/**
+ * Pages, components and layouts ARE the site: whoever may read the site
+ * (`site.read`, the canvas viewer) sees them. Every other table follows the
+ * data workspace's gate (`canReadTable`: `posts` needs
+ * `data.system.tables.read`, custom tables `data.custom.tables.read`). Rows
+ * the reader may not open stay in the plan as a stub — the key and kind so
+ * counts add up and a manager's resolution still addresses them — with the
+ * label and detail withheld.
+ */
+const SITE_TABLES = new Set(['pages', 'components', 'layouts'])
+
+async function redactPlanForReader(db: DbClient, plan: MergePlan, user: AuthUser): Promise<MergePlan> {
+  const gated = plan.changes.filter((change) => change.kind === 'row' && change.tableId !== null && !SITE_TABLES.has(change.tableId))
+  if (gated.length === 0) return plan
+  const tables = new Map<string, { system: boolean }>()
+  for (const scope of [MAIN_SCOPE, { branchId: plan.branchId }]) {
+    for (const table of await listDataTables(db, scope)) tables.set(table.id, table)
+  }
+  return {
+    ...plan,
+    changes: plan.changes.map((change) => {
+      if (change.kind !== 'row' || change.tableId === null || SITE_TABLES.has(change.tableId)) return change
+      const table = tables.get(change.tableId)
+      if (table && canReadTable(user, table)) return change
+      return { ...change, label: 'A row you cannot read', detail: { kind: 'row', fields: [], tree: null } }
+    }),
+  }
 }
 
 async function handleMergeApply(
@@ -298,6 +332,7 @@ async function handleReviewRequest(req: Request, db: DbClient, branchId: string)
 async function handleReviewWithdraw(req: Request, db: DbClient, branchId: string): Promise<Response> {
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
+  if (isMainBranch(branchId)) return badRequest('Main is the live site; it is what branches merge into')
   const branch = await getBranch(db, branchId)
   if (!branch) return branchNotFound(branchId)
   const open = await getOpenMergeRequest(db, branchId)
@@ -327,6 +362,7 @@ async function handleReviewWithdraw(req: Request, db: DbClient, branchId: string
 async function handleReviewDecline(req: Request, db: DbClient, branchId: string): Promise<Response> {
   const user = await requireCapability(req, db, 'site.branches.manage')
   if (user instanceof Response) return user
+  if (isMainBranch(branchId)) return badRequest('Main is the live site; it is what branches merge into')
   const branch = await getBranch(db, branchId)
   if (!branch) return branchNotFound(branchId)
   const body = await readValidatedBody(req, DeclineMergeRequestBodySchema)
@@ -384,15 +420,19 @@ async function handleReviewRender(req: Request, db: DbClient, branchId: string, 
   if (!rowId || (side !== 'main' && side !== 'branch')) {
     return badRequest('Pass ?row=<page row id>&side=main|branch')
   }
+  // Pages are the site: `site.read` (the canvas viewer) is the whole gate.
   const html = await renderBranchReviewPage(db, branchId, side, rowId)
   if (html === null) return jsonResponse({ error: `No page "${rowId}" on ${side}` }, { status: 404 })
+  // Served as text and sandboxed: the review reads it and hands it to a
+  // scriptless srcdoc frame; navigated to directly it is never a page that
+  // runs with the admin session.
   return new Response(html, {
     headers: {
-      'content-type': 'text/html; charset=utf-8',
+      'content-type': 'text/plain; charset=utf-8',
       'cache-control': 'no-store',
       'x-robots-tag': 'noindex',
-      // The review embeds this in a sandboxed iframe of its own origin only.
-      'content-security-policy': "frame-ancestors 'self'",
+      'content-security-policy': 'sandbox',
+      'x-content-type-options': 'nosniff',
     },
   })
 }

@@ -11,14 +11,15 @@ import type { BranchMergeRequest, BranchReviewComment, BranchReviewState, SiteBr
 import { createHash } from 'node:crypto'
 import type { DbClient } from '../db/client'
 import { contentHash } from './contentHash'
+import { runPublishFlush } from '../publish/publishFlush'
 import { collectBranchEntities } from './entities'
 import {
+  closeOpenMergeRequests,
   getLatestMergeRequest,
   getOpenMergeRequest,
   insertMergeRequest,
   insertReviewComment,
   listReviewComments,
-  resolveMergeRequest,
 } from '../repositories/branchReviews'
 
 export class MergeRequestAlreadyOpenError extends Error {
@@ -49,6 +50,8 @@ export async function branchContentHash(db: DbClient, branchId: string): Promise
 }
 
 export async function readBranchReviewState(db: DbClient, branch: SiteBranch): Promise<BranchReviewState> {
+  // Same reason as the plan: the hash must see what the editors see.
+  await runPublishFlush()
   const [request, comments, hash] = await Promise.all([
     getLatestMergeRequest(db, branch.id),
     listReviewComments(db, branch.id),
@@ -57,17 +60,32 @@ export async function readBranchReviewState(db: DbClient, branch: SiteBranch): P
   return { branch, request, comments, contentHash: hash }
 }
 
+/** True when the error is the partial unique index on open requests firing. */
+function isOpenRequestUniqueViolation(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : ''
+  return /site_branch_merge_requests_open_idx|unique constraint failed: site_branch_merge_requests/i.test(message)
+}
+
 export async function openMergeRequest(
   db: DbClient,
   input: { branchId: string; requestedByUserId: string; note: string },
 ): Promise<BranchMergeRequest> {
   if (await getOpenMergeRequest(db, input.branchId)) throw new MergeRequestAlreadyOpenError()
-  return insertMergeRequest(db, {
-    branchId: input.branchId,
-    requestedByUserId: input.requestedByUserId,
-    note: input.note.trim(),
-    contentHash: await branchContentHash(db, input.branchId),
-  })
+  // Live editors hold edits in the relay's debounce window; the hash the
+  // request records must cover them.
+  await runPublishFlush()
+  try {
+    return await insertMergeRequest(db, {
+      branchId: input.branchId,
+      requestedByUserId: input.requestedByUserId,
+      note: input.note.trim(),
+      contentHash: await branchContentHash(db, input.branchId),
+    })
+  } catch (err) {
+    // Two requests raced past the check above; the index keeps one.
+    if (isOpenRequestUniqueViolation(err)) throw new MergeRequestAlreadyOpenError()
+    throw err
+  }
 }
 
 export async function closeMergeRequest(
@@ -75,9 +93,7 @@ export async function closeMergeRequest(
   branchId: string,
   input: { status: 'declined' | 'merged' | 'withdrawn'; resolvedByUserId: string | null; note: string },
 ): Promise<BranchMergeRequest> {
-  const open = await getOpenMergeRequest(db, branchId)
-  if (!open) throw new NoOpenMergeRequestError()
-  const closed = await resolveMergeRequest(db, open.id, {
+  const closed = await closeOpenMergeRequests(db, branchId, {
     status: input.status,
     resolvedByUserId: input.resolvedByUserId,
     resolutionNote: input.note.trim(),
@@ -92,9 +108,7 @@ export async function markMergeRequestMerged(
   branchId: string,
   resolvedByUserId: string | null,
 ): Promise<BranchMergeRequest | null> {
-  const open = await getOpenMergeRequest(db, branchId)
-  if (!open) return null
-  return resolveMergeRequest(db, open.id, { status: 'merged', resolvedByUserId, resolutionNote: '' })
+  return closeOpenMergeRequests(db, branchId, { status: 'merged', resolvedByUserId, resolutionNote: '' })
 }
 
 export async function addReviewComment(
