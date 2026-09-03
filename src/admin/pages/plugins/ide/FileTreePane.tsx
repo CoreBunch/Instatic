@@ -1,17 +1,20 @@
 /**
  * FileTreePane — the Plugin IDE's file explorer.
  *
- * Composed from the SAME primitives as the Site Explorer / DOM panel trees:
- * the shared `Panel` shell (chrome, header, close) with `TreeRow` rows whose
- * interactive surface is a ghost Button (`TreeChevron` + `TreeIconSlot` +
- * `TreeLabelGroup`), F2/double-click inline rename, and the standard
- * point-anchored context menu. Peers editing a file show as identity
- * avatars on its row.
+ * Composed from the SAME primitives as the Layers panel and the Site
+ * Explorer: the shared `Panel` shell (chrome, header, close), `TreeGroup`
+ * subtrees (a folder row plus its children — one raised surface while the
+ * folder is the selection), `TreeRow` rows whose interactive surface is a
+ * ghost Button, F2/double-click inline rename, and the standard
+ * point-anchored context menu. Folders carry their chevron at the end of
+ * the row so files and folders at one depth share the same left edge. Peers
+ * editing a file show as identity avatars on its row.
  */
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import {
   TreeChevron,
   TreeContainer,
+  TreeGroup,
   TreeIconSlot,
   TreeLabel,
   TreeLabelGroup,
@@ -32,15 +35,22 @@ import type { IdeFileMeta } from './ideCollab'
 import type { IdePeer } from './idePresence'
 import styles from './FileTreePane.module.css'
 
-interface TreeEntry {
-  key: string
-  kind: 'folder' | 'file'
+interface FolderEntry {
+  kind: 'folder'
   label: string
-  depth: number
-  fileId?: string
   /** Plugin-folder-relative path. */
   path: string
+  children: TreeEntry[]
 }
+
+interface FileEntry {
+  kind: 'file'
+  label: string
+  path: string
+  fileId: string
+}
+
+type TreeEntry = FolderEntry | FileEntry
 
 interface MenuState {
   x: number
@@ -48,47 +58,46 @@ interface MenuState {
   entry: TreeEntry
 }
 
-/** Flatten paths into depth-annotated rows; folders derive from prefixes. */
-function buildRows(
-  files: IdeFileMeta[],
-  folder: string,
-  collapsed: ReadonlySet<string>,
-): TreeEntry[] {
-  const rows: TreeEntry[] = []
-  const seenFolders = new Set<string>()
+const ROOT = ''
+
+function compareLabels(a: TreeEntry, b: TreeEntry): number {
+  if (a.kind !== b.kind) return a.kind === 'folder' ? -1 : 1
+  return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })
+}
+
+/** Nest plugin-relative paths into folders; folders first, then files, by name. */
+function buildTree(files: IdeFileMeta[], folder: string): TreeEntry[] {
+  const root: FolderEntry = { kind: 'folder', label: ROOT, path: ROOT, children: [] }
+  const folders = new Map<string, FolderEntry>([[ROOT, root]])
   for (const file of files) {
     const relative = file.path.slice(folder.length)
     const segments = relative.split('/')
-    let prefix = ''
-    let hidden = false
+    let parent = root
     for (let depth = 0; depth < segments.length - 1; depth++) {
       const segment = segments[depth]!
-      const folderPath = prefix ? `${prefix}/${segment}` : segment
-      if (!hidden && !seenFolders.has(folderPath)) {
-        seenFolders.add(folderPath)
-        rows.push({
-          key: `folder:${folderPath}`,
-          kind: 'folder',
-          label: segment,
-          depth,
-          path: folderPath,
-        })
+      const path = parent.path ? `${parent.path}/${segment}` : segment
+      let next = folders.get(path)
+      if (!next) {
+        next = { kind: 'folder', label: segment, path, children: [] }
+        folders.set(path, next)
+        parent.children.push(next)
       }
-      if (collapsed.has(folderPath)) hidden = true
-      prefix = folderPath
+      parent = next
     }
-    if (!hidden) {
-      rows.push({
-        key: `file:${file.id}`,
-        kind: 'file',
-        label: segments[segments.length - 1] ?? relative,
-        depth: segments.length - 1,
-        fileId: file.id,
-        path: relative,
-      })
-    }
+    parent.children.push({
+      kind: 'file',
+      label: segments[segments.length - 1] ?? relative,
+      path: relative,
+      fileId: file.id,
+    })
   }
-  return rows
+  for (const entry of folders.values()) entry.children.sort(compareLabels)
+  return root.children
+}
+
+function parentFolderOf(relativePath: string): string {
+  const cut = relativePath.lastIndexOf('/')
+  return cut === -1 ? ROOT : relativePath.slice(0, cut)
 }
 
 interface FileTreePaneProps {
@@ -137,17 +146,30 @@ export function FileTreePane({
       ? 'Connecting to the live draft…'
       : null
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
+  // The folder the user last clicked. Like a selected container in the
+  // Layers panel, its expanded subtree paints as one surface. Selecting a
+  // file hands the selection back to the file.
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
   const [pendingNew, setPendingNew] = useState<string | null>(null) // parent folder ('' = root)
   const [renamingFileId, setRenamingFileId] = useState<string | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
 
-  const rows = buildRows(files, folder, collapsed)
+  const tree = buildTree(files, folder)
   const peersByFileId = new Map<string, IdePeer[]>()
   for (const peer of peers) {
     if (!peer.ideFile) continue
     const bucket = peersByFileId.get(peer.ideFile.fileId) ?? []
     bucket.push(peer)
     peersByFileId.set(peer.ideFile.fileId, bucket)
+  }
+
+  const expand = (path: string): void => {
+    setCollapsed((current) => {
+      if (!current.has(path)) return current
+      const next = new Set(current)
+      next.delete(path)
+      return next
+    })
   }
 
   const toggleFolder = (path: string): void => {
@@ -164,6 +186,11 @@ export function FileTreePane({
     event.preventDefault()
     event.stopPropagation()
     setMenu({ x: event.clientX, y: event.clientY, entry })
+  }
+
+  const startNewFile = (parentFolder: string): void => {
+    expand(parentFolder)
+    setPendingNew(parentFolder)
   }
 
   const submitNew = (relativePath: string): void => {
@@ -196,6 +223,140 @@ export function FileTreePane({
     }
   }
 
+  const renderRowButton = (entry: TreeEntry, expanded: boolean, children: ReactNode) => (
+    <Button
+      variant="ghost"
+      size="sm"
+      align="start"
+      className={styles.treeRowButton}
+      aria-label={entry.label}
+      onClick={() => {
+        if (entry.kind === 'folder') {
+          setSelectedFolder(entry.path)
+          toggleFolder(entry.path)
+        } else {
+          setSelectedFolder(null)
+          onSelect(entry.fileId)
+        }
+      }}
+      onContextMenu={(event) => openMenu(event, entry)}
+      onDoubleClick={(event) => {
+        if (entry.kind !== 'file' || !canMutate) return
+        event.preventDefault()
+        event.stopPropagation()
+        setRenamingFileId(entry.fileId)
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'F2' && entry.kind === 'file' && canMutate) {
+          event.preventDefault()
+          event.stopPropagation()
+          setRenamingFileId(entry.fileId)
+        }
+      }}
+    >
+      {children}
+      {entry.kind === 'folder' && <TreeChevron expanded={expanded} className={styles.chevronEnd} />}
+    </Button>
+  )
+
+  const renderPendingNew = (parentFolder: string, depth: number) => (
+    <TreeRow depth={depth} data-testid="ide-new-file-row">
+      <TreeIconSlot icon={FilePlusSolidIcon} iconSize={12} />
+      <InlineRenameInput
+        value={parentFolder === ROOT ? '' : `${parentFolder}/`}
+        placeholder="path/to/file.ts"
+        ariaLabel="New file path"
+        onCommit={submitNew}
+        onCancel={() => setPendingNew(null)}
+      />
+    </TreeRow>
+  )
+
+  const renderFile = (entry: FileEntry, depth: number) => {
+    const filePeers = peersByFileId.get(entry.fileId) ?? []
+    const isRenaming = renamingFileId === entry.fileId
+    return (
+      <TreeRow
+        key={`file:${entry.fileId}`}
+        depth={depth}
+        selected={entry.fileId === activeFileId}
+        role="treeitem"
+        aria-label={entry.label}
+        aria-level={depth + 1}
+        data-testid="ide-file-row"
+        data-path={entry.path}
+      >
+        {isRenaming ? (
+          <>
+            <TreeIconSlot icon={FileTextSolidIcon} iconSize={12} />
+            <InlineRenameInput
+              value={entry.path}
+              ariaLabel={`Rename ${entry.label}`}
+              onCommit={(value) => submitRename(entry.fileId, value)}
+              onCancel={() => setRenamingFileId(null)}
+            />
+          </>
+        ) : (
+          renderRowButton(entry, false, (
+            <>
+              <TreeIconSlot icon={FileTextSolidIcon} iconSize={12} />
+              <TreeLabelGroup>
+                <TreeLabel>{entry.label}</TreeLabel>
+              </TreeLabelGroup>
+              {filePeers.length > 0 && (
+                <span
+                  className={styles.rowPeers}
+                  aria-label={`${filePeers.length} peer(s) editing this file`}
+                >
+                  {filePeers.slice(0, 3).map((peer) => (
+                    <PeerAvatar key={peer.clientId} user={peer.user} size={14} />
+                  ))}
+                </span>
+              )}
+            </>
+          ))
+        )}
+      </TreeRow>
+    )
+  }
+
+  const renderFolder = (entry: FolderEntry, depth: number) => {
+    const expanded = !collapsed.has(entry.path)
+    const selected = selectedFolder === entry.path
+    return (
+      <TreeGroup key={`folder:${entry.path}`} open={selected && expanded} data-path={entry.path}>
+        <TreeRow
+          depth={depth}
+          selected={selected}
+          role="treeitem"
+          aria-label={entry.label}
+          aria-level={depth + 1}
+          aria-expanded={expanded}
+          data-testid="ide-folder-row"
+          data-path={entry.path}
+        >
+          {renderRowButton(entry, expanded, (
+            <>
+              <TreeIconSlot icon={FolderGlyphIcon} iconSize={12} />
+              <TreeLabelGroup>
+                <TreeLabel>{entry.label}</TreeLabel>
+              </TreeLabelGroup>
+            </>
+          ))}
+        </TreeRow>
+        {expanded && (
+          <div role="group">
+            {renderEntries(entry.children, depth + 1)}
+            {pendingNew === entry.path && renderPendingNew(entry.path, depth + 1)}
+          </div>
+        )}
+      </TreeGroup>
+    )
+  }
+
+  const renderEntries = (entries: TreeEntry[], depth: number) =>
+    entries.map((entry) => (entry.kind === 'folder' ? renderFolder(entry, depth) : renderFile(entry, depth)))
+
   return (
     <Panel
       panelId="ide-files"
@@ -223,7 +384,7 @@ export function FileTreePane({
           aria-label="New file"
           tooltip={mutateBlockedReason ?? 'New file'}
           disabled={!canMutate}
-          onClick={() => setPendingNew('')}
+          onClick={() => startNewFile(ROOT)}
           data-testid="ide-new-file"
         >
           <FilePlusSolidIcon size={14} aria-hidden="true" />
@@ -232,96 +393,8 @@ export function FileTreePane({
     >
       <div className={styles.tree}>
         <TreeContainer ariaLabel="Site plugin files">
-          {rows.map((entry) => {
-            const filePeers = entry.fileId ? (peersByFileId.get(entry.fileId) ?? []) : []
-            const isRenaming = entry.kind === 'file' && renamingFileId === entry.fileId
-            return (
-              <TreeRow
-                key={entry.key}
-                depth={entry.depth}
-                selected={entry.kind === 'file' && entry.fileId === activeFileId}
-                role="treeitem"
-                aria-label={entry.label}
-                aria-level={entry.depth + 1}
-                aria-expanded={entry.kind === 'folder' ? !collapsed.has(entry.path) : undefined}
-                data-testid={entry.kind === 'file' ? 'ide-file-row' : 'ide-folder-row'}
-                data-path={entry.path}
-              >
-                {isRenaming ? (
-                  <>
-                    <TreeIconSlot icon={FileTextSolidIcon} iconSize={12} />
-                    <InlineRenameInput
-                      value={entry.path}
-                      ariaLabel={`Rename ${entry.label}`}
-                      onCommit={(value) => submitRename(entry.fileId!, value)}
-                      onCancel={() => setRenamingFileId(null)}
-                    />
-                  </>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    align="start"
-                    className={styles.treeRowButton}
-                    aria-label={entry.label}
-                    onClick={() => {
-                      if (entry.kind === 'folder') toggleFolder(entry.path)
-                      else if (entry.fileId) onSelect(entry.fileId)
-                    }}
-                    onContextMenu={(event) => openMenu(event, entry)}
-                    onDoubleClick={(event) => {
-                      if (entry.kind !== 'file' || !canMutate) return
-                      event.preventDefault()
-                      event.stopPropagation()
-                      setRenamingFileId(entry.fileId ?? null)
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'F2' && entry.kind === 'file' && canMutate) {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        setRenamingFileId(entry.fileId ?? null)
-                      }
-                    }}
-                  >
-                    {entry.kind === 'folder' ? (
-                      <>
-                        <TreeChevron expanded={!collapsed.has(entry.path)} />
-                        <TreeIconSlot icon={FolderGlyphIcon} iconSize={12} />
-                      </>
-                    ) : (
-                      <TreeIconSlot icon={FileTextSolidIcon} iconSize={12} />
-                    )}
-                    <TreeLabelGroup>
-                      <TreeLabel>{entry.label}</TreeLabel>
-                    </TreeLabelGroup>
-                    {filePeers.length > 0 && (
-                      <span
-                        className={styles.rowPeers}
-                        aria-label={`${filePeers.length} peer(s) editing this file`}
-                      >
-                        {filePeers.slice(0, 3).map((peer) => (
-                          <PeerAvatar key={peer.clientId} user={peer.user} size={14} />
-                        ))}
-                      </span>
-                    )}
-                  </Button>
-                )}
-              </TreeRow>
-            )
-          })}
-
-          {pendingNew !== null && (
-            <TreeRow depth={pendingNew === '' ? 0 : pendingNew.split('/').length}>
-              <TreeIconSlot icon={FilePlusSolidIcon} iconSize={12} />
-              <InlineRenameInput
-                value={pendingNew === '' ? '' : `${pendingNew}/`}
-                placeholder="path/to/file.ts"
-                ariaLabel="New file path"
-                onCommit={submitNew}
-                onCancel={() => setPendingNew(null)}
-              />
-            </TreeRow>
-          )}
+          {renderEntries(tree, 0)}
+          {pendingNew === ROOT && renderPendingNew(ROOT, 0)}
         </TreeContainer>
       </div>
 
@@ -335,7 +408,7 @@ export function FileTreePane({
           {menu.entry.kind === 'folder' ? (
             <ContextMenuItem
               onClick={() => {
-                setPendingNew(menu.entry.path)
+                startNewFile(menu.entry.path)
                 setMenu(null)
               }}
             >
@@ -345,7 +418,15 @@ export function FileTreePane({
             <>
               <ContextMenuItem
                 onClick={() => {
-                  setRenamingFileId(menu.entry.fileId ?? null)
+                  startNewFile(parentFolderOf(menu.entry.path))
+                  setMenu(null)
+                }}
+              >
+                New file here…
+              </ContextMenuItem>
+              <ContextMenuItem
+                onClick={() => {
+                  setRenamingFileId(menu.entry.kind === 'file' ? menu.entry.fileId : null)
                   setMenu(null)
                 }}
               >
@@ -360,7 +441,7 @@ export function FileTreePane({
                     : undefined
                 }
                 onClick={() => {
-                  if (menu.entry.fileId) onDelete(menu.entry.fileId)
+                  if (menu.entry.kind === 'file') onDelete(menu.entry.fileId)
                   setMenu(null)
                 }}
               >

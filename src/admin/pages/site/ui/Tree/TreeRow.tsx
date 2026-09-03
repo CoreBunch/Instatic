@@ -70,6 +70,24 @@ export function TreeRow({
   )
 }
 
+interface TreeGroupProps extends HTMLAttributes<HTMLDivElement> {
+  /** The parent row is selected and expanded: paint the subtree as one surface. */
+  open?: boolean
+  ref?: Ref<HTMLDivElement>
+}
+
+/** Wrapper for a row and its children — the unit that nests. */
+export function TreeGroup({ open = false, className, ref, ...props }: TreeGroupProps) {
+  return (
+    <div
+      ref={ref}
+      data-tree-group-open={open ? 'true' : undefined}
+      className={cn(styles.group, open && styles.groupOpen, className)}
+      {...props}
+    />
+  )
+}
+
 interface TreeChevronProps extends HTMLAttributes<HTMLSpanElement> {
   expanded?: boolean
   visible?: boolean

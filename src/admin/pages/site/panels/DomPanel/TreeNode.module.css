@@ -40,16 +40,6 @@
     background: var(--bg-surface-2);
 }
 
-/* ── Open container group highlight ─────────────────────────────────────── */
-.openContainerGroup {
-    border-radius: 8px;
-    background: var(--bg-surface);
-}
-
-.openContainerGroup > [role="treeitem"] {
-    border-radius: 8px;
-}
-
 /* ── Drag/drop state ─────────────────────────────────────────────────────── */
 .dragSource {
     opacity: 0.46;
