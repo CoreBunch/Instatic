@@ -16,7 +16,7 @@ For the broader auth flow (sessions, MFA, step-up), see [docs/features/auth-and-
 
 ---
 
-## The 38 core capabilities
+## The 39 core capabilities
 
 ### Read
 
@@ -32,6 +32,7 @@ For the broader auth flow (sessions, MFA, step-up), see [docs/features/auth-and-
 | `site.structure.edit`    | Add / remove / move / rename nodes; manage pages, VCs, classes      | Owner, Admin  |
 | `site.content.edit`      | Modify content props (text, image src/alt, link href) on existing nodes — no structure or style edits | Owner, Admin, Client |
 | `site.style.edit`        | Modify CSS classes, style overrides, breakpoints, framework tokens  | Owner, Admin  |
+| `site.branches.manage`   | Create, rename, delete, merge, and update site branches; share and revoke preview links (see [`features/branches.md`](../features/branches.md)) | Owner, Admin  |
 
 `SITE_WRITE_CAPABILITIES` is the convenience set `['site.structure.edit', 'site.content.edit', 'site.style.edit']` — defined locally in `server/handlers/cms/siteDocument.ts` and `src/admin/access.ts` at each point of use, not in a shared capabilities module. The transactional site-document save (`PUT /admin/api/cms/site-document`) accepts any site writer, then diff-validates the batch by category: page deletions, page metadata, topology, module identity, non-content props, and dynamic bindings require `site.structure.edit`; content-category props (and site-wide SEO copy on the shell) require `site.content.edit`; inline styles/classes/breakpoint overrides and style rules require `site.style.edit`. Empty change sets are no-op saves any site writer may perform, but changed/deleted components and layouts remain structural work (`site.structure.edit`).
 

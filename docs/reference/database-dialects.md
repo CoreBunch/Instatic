@@ -355,6 +355,24 @@ await db.transaction(async (tx) => {
 
 The callback receives a `DbClient` scoped to the transaction. If it throws, the transaction is rolled back.
 
+### Adding a generated column
+
+Both dialects accept a column computed from the same row. SQLite can only ADD a `virtual` generated column; Postgres wants `stored`:
+
+```sql
+-- migrations-sqlite.ts
+alter table data_rows add column logical_id text generated always as (
+  case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+) virtual;
+
+-- migrations-pg.ts
+alter table data_rows add column logical_id text generated always as (
+  case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+) stored;
+```
+
+Inserts must not name the column; reads and `returning` may. Migration 026 uses this for `logical_id` on the three branched tables.
+
 ---
 
 ## Forbidden patterns

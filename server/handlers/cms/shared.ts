@@ -15,6 +15,8 @@
  */
 import { Type } from '@core/utils/typeboxHelpers'
 import type { DbClient } from '../../db/client'
+import type { CollabRelay } from '../../collab/relay'
+import type { BranchScope } from '../../branches/scope'
 import { jsonResponse } from '../../http'
 import { clientIp } from '../../auth/security'
 import { listDataRows } from '../../repositories/data'
@@ -35,6 +37,12 @@ export interface CmsHandlerOptions {
    * branch on `db.dialect` instead of inspecting the URL themselves.
    */
   databaseUrl?: string
+  /**
+   * The live collab relay. Branch deletion evicts the branch's resident
+   * documents through it so an in-flight persist cannot resurrect a blob
+   * after the rows are gone. Absent in handler tests that run without one.
+   */
+  collabRelay?: CollabRelay
 }
 
 export function requestAuditContext(req: Request): { ipAddress: string | null; userAgent: string | null } {
@@ -50,9 +58,10 @@ export function requestAuditContext(req: Request): { ipAddress: string | null; u
  */
 export async function siteCollectionRowsResponse(
   db: DbClient,
+  scope: BranchScope,
   tableId: 'pages' | 'components' | 'layouts',
 ): Promise<Response> {
-  return jsonResponse({ rows: await listDataRows(db, tableId) })
+  return jsonResponse({ rows: await listDataRows(db, scope, tableId) })
 }
 
 export function mutationErrorResponse(err: unknown): Response {

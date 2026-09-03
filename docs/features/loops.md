@@ -337,7 +337,7 @@ In the editor, `useLoopPreviewItems` (`src/admin/pages/site/canvas/useLoopPrevie
 
 | Source | Canvas path |
 |---|---|
-| `data.rows` | GETs `/data/tables/:id/loop-preview` — same projection as the publisher, and takes `cellField` / `cellOperator` / `cellValue` plus a `cell:<fieldId>` `orderBy` so the canvas shows the rows the published page will emit. Falls back to synthetic items from the table's field definitions when no published rows exist yet. |
+| `data.rows` | GETs `/data/tables/:id/loop-preview` — same projection as the publisher, and takes `cellField` / `cellOperator` / `cellValue` plus a `cell:<fieldId>` `orderBy` so the canvas shows the rows the published page will emit. On a site branch the preview reads the branch's draft rows (the branch has nothing published), mirroring `renderBranchPreview`. Falls back to synthetic items from the table's field definitions when no rows exist yet. |
 | `site.pages` | Reads pages from the in-memory site document via `selectSitePagesLoopItems`. Applies `filterPagesForLoop` + `pageToLoopItem` imported from `@core/loops` — identical to the publisher path. |
 | `site.media` | Fetches via `listCmsMediaAssets()`, filters by MIME prefix, sorts + slices client-side. |
 | Plugin sources | Calls `source.preview(ctx)` synchronously. |

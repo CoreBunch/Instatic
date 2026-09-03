@@ -56,8 +56,8 @@ function makeFakeDb() {
     if (normalized.includes('insert into site')) {
       siteRow = {
         id: 'default',
-        name: values[0],
-        settings_json: values[1],
+        name: values[1],
+        settings_json: values[2],
         created_at: new Date('2026-01-01').toISOString(),
         updated_at: new Date('2026-01-02').toISOString(),
       }

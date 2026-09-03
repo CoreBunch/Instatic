@@ -27,6 +27,7 @@ import type { DataRow, DataRowCells, DataRowStatus } from '@core/data/schemas'
 import { pushToast } from '@ui/components/Toast'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { PublishActionGroup, type PublishActionMenuItem } from '@site/toolbar/PublishActionGroup'
+import { useBranchPublishGate } from '@admin/state/branchStore'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { CircleAlertSolidIcon } from 'pixel-art-icons/icons/circle-alert-solid'
 import { LoaderIcon } from 'pixel-art-icons/icons/loader'
@@ -280,6 +281,9 @@ export function DataPage() {
     onSelect: () => { void handleSaveActiveDraft() },
     testId: 'toolbar-data-save-draft-action',
   }]
+  // Publishing only exists on main — on a branch the group stays visible but
+  // disabled, with the reason inline.
+  const branchGate = useBranchPublishGate()
   const publishStatus = activeDraft?.saveError
     ? { label: 'Draft save failed', tone: 'danger' as const }
     : isSavingDraft
@@ -341,12 +345,20 @@ export function DataPage() {
           <PublishActionGroup
             statusLabel={publishStatus.label}
             statusTone={publishStatus.tone}
-            publishLabel={publishBusy ? 'Publishing' : !hasPublishableChanges ? 'Published' : 'Publish data'}
-            publishAriaLabel={!hasPublishableChanges ? 'Data published' : 'Publish data'}
-            publishTitle={!hasPublishableChanges ? 'Data published' : `Publish changes to ${selectedTable.pluralLabel}`}
-            publishState={publishBusy ? 'busy' : publishState === 'error' ? 'error' : !hasPublishableChanges ? 'success' : 'idle'}
+            statusAriaLabel={branchGate.reason ?? undefined}
+            publishLabel={publishBusy ? 'Publishing' : !hasPublishableChanges && !branchGate.onBranch ? 'Published' : 'Publish data'}
+            publishAriaLabel={
+              branchGate.reason
+                ? `Cannot publish: ${branchGate.reason}`
+                : !hasPublishableChanges ? 'Data published' : 'Publish data'
+            }
+            publishTitle={
+              branchGate.reason
+                ?? (!hasPublishableChanges ? 'Data published' : `Publish changes to ${selectedTable.pluralLabel}`)
+            }
+            publishState={publishBusy ? 'busy' : publishState === 'error' ? 'error' : !hasPublishableChanges && !branchGate.onBranch ? 'success' : 'idle'}
             publishBusy={publishBusy}
-            publishDisabled={!hasPublishableChanges || activeDraftDirty || isSavingDraft || publishBusy}
+            publishDisabled={branchGate.onBranch || !hasPublishableChanges || activeDraftDirty || isSavingDraft || publishBusy}
             publishIcon={PublishDataIcon}
             onPublish={handlePublishData}
             menuItems={publishMenuItems}

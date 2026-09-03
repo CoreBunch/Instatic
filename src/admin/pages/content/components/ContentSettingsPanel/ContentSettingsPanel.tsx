@@ -20,6 +20,7 @@ import {
 } from '@core/data/schemas'
 import propertiesStyles from '../../../site/panels/PropertiesPanel/PropertiesPanel.module.css'
 import { PanelHeader } from '@admin/shared/PanelHeader'
+import { useBranchPublishGate } from '@admin/state/branchStore'
 import styles from '../../ContentPage.module.css'
 
 // Lazy-load the generic custom-field editors: they pull in the Data
@@ -147,10 +148,14 @@ export function ContentSettingsPanel({
   const canEditSelectedEntry = Boolean(selectedEntry && canEditEntry)
   const canMoveSelectedEntry = Boolean(selectedEntry && canMoveEntry)
   const canChangeStatus = Boolean(selectedEntry && (canEditEntry || canPublishEntry))
+  // Publishing only exists on main — the option stays listed but disabled,
+  // and the reason renders under the control while a branch is active.
+  const branchGate = useBranchPublishGate()
+  const canPublishHere = canPublishEntry && !branchGate.onBranch
   const statusOptions = [
     { value: 'draft', label: 'Draft', enabled: canEditEntry },
     { value: 'scheduled', label: 'Scheduled', enabled: false },
-    { value: 'published', label: 'Published', enabled: canPublishEntry },
+    { value: 'published', label: 'Published', enabled: canPublishHere },
     { value: 'unpublished', label: 'Unpublished', enabled: canEditEntry },
   ].filter((option) => option.enabled || option.value === selectedEntry?.status)
     .map(({ value, label, enabled }) => ({ value, label, disabled: !enabled }))
@@ -234,12 +239,15 @@ export function ContentSettingsPanel({
                 disabled={!canChangeStatus}
                 onChange={(event) => {
                   const nextStatus = event.target.value as DataRowStatus
-                  if (nextStatus === 'published' && !canPublishEntry) return
+                  if (nextStatus === 'published' && !canPublishHere) return
                   if (nextStatus !== 'published' && !canEditEntry) return
                   onStatusChange(nextStatus)
                 }}
                 options={statusOptions}
               />
+              {branchGate.reason && (
+                <p className={styles.fieldHint} role="note">{branchGate.reason}</p>
+              )}
             </div>
             <div className={styles.metaBlock}>
               <span>Public URL</span>

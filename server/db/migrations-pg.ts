@@ -1190,4 +1190,105 @@ export const pgMigrations: Migration[] = [
         on plugin_media_sources (asset_id);
     `,
   },
+  {
+    // See migrations-sqlite.ts:026 — site branches. Same semantic effect:
+    // branch registry, `branch_id` + `logical_id` on the three branched
+    // tables backfilled to main, per-branch table-slug uniqueness, collab
+    // doc ids gaining a branch segment, and the base-hash + preview tables.
+    id: '027_site_branches',
+    sql: `
+      create table if not exists site_branches (
+        id text primary key,
+        name text not null,
+        base_branch_id text,
+        created_by_user_id text references users(id) on delete set null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
+
+      insert into site_branches (id, name, base_branch_id)
+      values ('main', 'main', null)
+      on conflict (id) do nothing;
+
+      alter table site add column branch_id text not null default 'main';
+      alter table site add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) stored;
+
+      create unique index if not exists site_branch_idx
+        on site (branch_id);
+
+      alter table data_tables add column branch_id text not null default 'main';
+      alter table data_tables add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) stored;
+
+      create index if not exists data_tables_branch_idx
+        on data_tables (branch_id);
+
+      drop index if exists data_tables_slug_active_idx;
+
+      create unique index if not exists data_tables_branch_slug_active_idx
+        on data_tables (branch_id, slug)
+        where deleted_at is null;
+
+      alter table data_rows add column branch_id text not null default 'main';
+      alter table data_rows add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) stored;
+
+      create index if not exists data_rows_branch_idx
+        on data_rows (branch_id);
+
+      update collab_documents
+         set doc_id = 'site:main'
+       where doc_id = 'site:default';
+
+      update collab_documents
+         set doc_id = 'page:main:' || substr(doc_id, 6)
+       where doc_id like 'page:%'
+         and doc_id not like 'page:main:%';
+
+      update collab_documents
+         set doc_id = 'component:main:' || substr(doc_id, 11)
+       where doc_id like 'component:%'
+         and doc_id not like 'component:main:%';
+
+      update collab_documents
+         set doc_id = 'layout:main:' || substr(doc_id, 8)
+       where doc_id like 'layout:%'
+         and doc_id not like 'layout:main:%';
+
+      create table if not exists site_branch_bases (
+        branch_id text not null references site_branches(id) on delete cascade,
+        kind text not null,
+        logical_id text not null,
+        content_hash text not null,
+        content_json jsonb not null default '{}'::jsonb,
+        primary key (branch_id, kind, logical_id)
+      );
+
+      create table if not exists site_branch_previews (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        token_hash text not null,
+        expires_at timestamptz,
+        created_by_user_id text references users(id) on delete set null,
+        created_at timestamptz not null default now(),
+        revoked_at timestamptz
+      );
+
+      create unique index if not exists site_branch_previews_token_idx
+        on site_branch_previews (token_hash);
+
+      create index if not exists site_branch_previews_branch_idx
+        on site_branch_previews (branch_id);
+
+      update roles
+         set capabilities_json = capabilities_json || '["site.branches.manage"]'::jsonb,
+             updated_at = current_timestamp
+       where id in ('owner', 'admin')
+         and not (capabilities_json ? 'site.branches.manage');
+    `,
+  },
 ]

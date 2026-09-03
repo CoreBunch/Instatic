@@ -14,6 +14,7 @@
 
 import { StepUpCancelledMessage } from '@admin/shared/StepUp'
 import { publishCmsDraft } from '@core/persistence'
+import { isOnMainBranch } from '@admin/state/branchStore'
 import type { Command } from '../types'
 
 /** Mirrors `SITE_WRITE_CAPABILITIES` — any holder can save a draft. */
@@ -34,6 +35,8 @@ export function getEditorCommands(): Command[] {
       keywords: ['publish', 'deploy', 'live', 'production'],
       workspaces: ['site'],
       capability: 'pages.publish',
+      // Publishing only exists on main; on a branch the palette hides it.
+      when: () => isOnMainBranch(),
       run: async (ctx) => {
         ctx.closeSpotlight()
         try {

@@ -56,6 +56,7 @@ import {
 } from '@core/data/bundleArchive'
 import { canSeeAllDataRows } from './data/access'
 import { createStoredZipStream, estimateStoredZipSize, type StoredZipEntry } from '../../archive/storedZip'
+import { resolveBranchScopeById, type BranchScope } from '../../branches/scope'
 
 const EXPORT_PATH = `${CMS_API_PREFIX}/export`
 const EXPORT_ESTIMATE_PATH = `${CMS_API_PREFIX}/export/estimate`
@@ -111,6 +112,7 @@ interface ExportSelection {
 export async function handleExportRoute(
   req: Request,
   db: DbClient,
+  scope: BranchScope,
   options: CmsHandlerOptions = {},
 ): Promise<Response | null> {
   const url = new URL(req.url)
@@ -143,6 +145,8 @@ export async function handleExportRoute(
   let includeSite: boolean
   let includeMediaFolders: boolean
   let includeRedirects: boolean
+  // The form-POST download names its branch in the body (see ExportRequestSchema).
+  let exportScope = scope
 
   if (req.method === 'POST') {
     const exportReq = await readValidatedBody(req, ExportRequestSchema, {
@@ -156,6 +160,11 @@ export async function handleExportRoute(
     includeSite = exportReq.includeSite ?? true
     includeMediaFolders = exportReq.includeMediaFolders ?? true
     includeRedirects = exportReq.includeRedirects ?? true
+    if (exportReq.branchId !== undefined) {
+      const requested = await resolveBranchScopeById(db, exportReq.branchId)
+      if (requested instanceof Response) return requested
+      exportScope = requested
+    }
   } else {
     // GET supports whole-table selection only (comma-separated ids); row-level
     // subsets are a POST-only concern (the export dialog always POSTs).
@@ -170,14 +179,14 @@ export async function handleExportRoute(
   }
 
   // Always load the site shell — needed for sourceSiteName even when includeSite=false
-  const shell = await getDraftSite(db)
+  const shell = await getDraftSite(db, exportScope)
   if (!shell) {
     return jsonResponse({ error: 'Site not initialised — run setup before exporting' }, { status: 404 })
   }
 
   // Resolve the table set: all tables for a full export, or just the named ones.
   const selectionByTable = selections ? new Map(selections.map((s) => [s.tableId, s])) : null
-  let tables = await listDataTables(db)
+  let tables = await listDataTables(db, exportScope)
   if (selectionByTable) {
     tables = tables.filter((t) => selectionByTable.has(t.id))
   }
@@ -190,7 +199,7 @@ export async function handleExportRoute(
   const visibility = canSeeAllDataRows(user) ? {} : { ownerUserId: user.id }
   const rowsPerTable = await Promise.all(
     tables.map(async (table) => {
-      const all = await listDataRows(db, table.id, visibility)
+      const all = await listDataRows(db, exportScope, table.id, visibility)
       const sel = selectionByTable?.get(table.id)
       if (!sel?.rowIds) return all
       const want = new Set(sel.rowIds)

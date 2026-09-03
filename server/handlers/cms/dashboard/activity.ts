@@ -115,7 +115,7 @@ async function loadRouteBases(
   const routeBaseById = new Map<string, string | null>()
   for (const id of tableIds) {
     const { rows } = await db<{ route_base: string | null }>`
-      select route_base from data_tables where id = ${id}
+      select route_base from data_tables where id = ${id} and branch_id = 'main'
     `
     routeBaseById.set(id, rows[0]?.route_base ?? null)
   }

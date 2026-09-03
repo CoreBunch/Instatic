@@ -1,0 +1,86 @@
+/* Version history dialog. */
+
+.loading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    padding: var(--space-xs) 0;
+}
+
+.error,
+.empty {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+}
+
+.error {
+    color: var(--danger-text);
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    min-height: 44px;
+    padding: var(--space-xs) var(--space-s);
+    border-radius: var(--radius);
+    background: var(--bg-surface-2);
+    color: var(--text);
+    font-size: var(--text-xs);
+}
+
+.rowConfirm {
+    background: color-mix(in oklab, var(--warning) 10%, var(--bg-surface-2));
+}
+
+.icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+.main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-px);
+    min-width: 0;
+}
+
+.label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-weight: 650;
+}
+
+.meta {
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    line-height: 1.4;
+}
+
+.actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-4xs);
+    flex-shrink: 0;
+}
+
+/* A pill inside a shrink-to-fit flex row: its percentage max-width has no
+   definite box to resolve against (WebKit collapses the label to one letter),
+   and nothing here needs it to truncate. */
+.pill {
+    max-width: none;
+}

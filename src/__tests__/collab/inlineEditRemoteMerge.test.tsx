@@ -95,7 +95,7 @@ async function setupEditingSession(initialText: string): Promise<{
   await waitFor(() => expect(editable.getAttribute('contenteditable')).toBeTruthy())
   expect(editable.textContent).toBe(initialText)
 
-  const local = collabDocFor(encodeCollabDocId({ kind: 'page', rowId: pageId }))!
+  const local = collabDocFor(encodeCollabDocId({ kind: 'page', branchId: 'main', rowId: pageId }))!
   expect(local).toBeTruthy()
   return { nodeId, pageId, editable, local }
 }

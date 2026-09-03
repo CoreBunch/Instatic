@@ -27,6 +27,7 @@ export type CommandGroup =
   | 'account'
   | 'settings'
   | 'preview'
+  | 'branches'
   | 'ai'
   | 'help'
   | 'recent'   // synthetic — only when query is empty

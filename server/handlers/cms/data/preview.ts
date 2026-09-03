@@ -36,6 +36,7 @@ import { applyPublishedHtmlPipeline } from '../../../publish/publishedHtmlPipeli
 import { badRequest, jsonResponse, readValidatedBody } from '../../../http'
 import { canReadDataRow, canReadTable, forbidden, requireDataAccess } from './access'
 import type { RouteParams } from '../routeTable'
+import type { BranchScope } from '../../../branches/scope'
 
 const CSS_ASSET_BASE_URL = '/_instatic/css/'
 const LOOP_ENDPOINT_BASE_URL = '/_instatic/loop/'
@@ -61,14 +62,15 @@ export async function handleRowPreview(
   req: Request,
   db: DbClient,
   params: RouteParams,
+  scope: BranchScope,
 ): Promise<Response> {
   const user = await requireDataAccess(req, db)
   if (user instanceof Response) return user
 
-  const row = await getDataRow(db, params.id)
+  const row = await getDataRow(db, scope, params.id)
   if (!row) return jsonResponse({ error: 'Row not found' }, { status: 404 })
 
-  const table = await getDataTable(db, row.tableId)
+  const table = await getDataTable(db, scope, row.tableId)
   if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
   // System-table rows need data.system.tables.read even to preview (GHSA-x69h).
   if (!canReadTable(user, table)) return jsonResponse({ error: 'Row not found' }, { status: 404 })
@@ -114,7 +116,9 @@ export async function handleRowPreview(
     entryStack: [publishedDataRowToLoopItem(draftPublishedRow)],
     route: buildRouteFrame(syntheticUrl.toString()),
   }
-  const loopData = await prefetchLoopData(merged, snapshot.site, db)
+  const loopData = await prefetchLoopData(merged, snapshot.site, db, undefined, {
+    branchId: scope.branchId,
+  })
   const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, db, {
     templateContext,
     loopData,

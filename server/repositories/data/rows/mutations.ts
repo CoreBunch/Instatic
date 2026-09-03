@@ -15,9 +15,14 @@
  * directly from RETURNING. Because RETURNING carries no user-ref joins, the
  * result is a narrow `DeletedRowSummary` (not a `DataRow`) — the delete callers
  * only consume id / tableId / slug / status / deletedAt.
+ *
+ * Ids in and out are LOGICAL; every statement binds the physical id for the
+ * given `scope` (see `@core/branches`).
  */
 import { nanoid } from 'nanoid'
+import { logicalIdOf, physicalId } from '@core/branches'
 import type { DbClient } from '../../../db/client'
+import type { BranchScope } from '../../../branches/scope'
 import type { DataRow, DataRowStatus, DeletedRowSummary } from '@core/data/schemas'
 import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import { type InsertDataRowInput, type UpdateDataRowDraftInput } from './mapper'
@@ -31,6 +36,7 @@ type UpdateDataRowTableResult =
 
 export async function createDataRow(
   db: DbClient,
+  scope: BranchScope,
   input: InsertDataRowInput,
   actorUserId: string | null = null,
   pluginActorId: string | null = null,
@@ -40,18 +46,26 @@ export async function createDataRow(
     return serializeCollabAwareWrite(async () => {
       const created = await createDataRow(
         db,
+        scope,
         input,
         actorUserId,
         pluginActorId,
         { collabInternal: true },
       )
-      notifyRowWrite({ tableId: created.tableId, rowIds: [created.id], kind: 'create' })
+      notifyRowWrite({
+        branchId: scope.branchId,
+        tableId: created.tableId,
+        rowIds: [created.id],
+        kind: 'create',
+      })
       return created
     })
   }
-  const { rows } = await db<{ id: string }>`
+  const logicalId = input.id ?? nanoid()
+  const { rows } = await db<{ logical_id: string }>`
     insert into data_rows (
       id,
+      branch_id,
       table_id,
       cells_json,
       slug,
@@ -62,8 +76,9 @@ export async function createDataRow(
       plugin_actor_id
     )
     values (
-      ${input.id ?? nanoid()},
-      ${input.tableId},
+      ${physicalId(scope.branchId, logicalId)},
+      ${scope.branchId},
+      ${physicalId(scope.branchId, input.tableId)},
       ${input.cells},
       ${input.slug},
       ${'draft'},
@@ -72,15 +87,16 @@ export async function createDataRow(
       ${actorUserId},
       ${pluginActorId}
     )
-    returning id
+    returning logical_id
   `
-  const created = await getDataRow(db, rows[0].id)
+  const created = await getDataRow(db, scope, rows[0].logical_id)
   if (!created) throw new Error('data row was created but could not be re-read')
   return created
 }
 
 export async function saveDataRowDraft(
   db: DbClient,
+  scope: BranchScope,
   rowId: string,
   input: UpdateDataRowDraftInput,
   actorUserId: string | null = null,
@@ -91,18 +107,21 @@ export async function saveDataRowDraft(
     return serializeCollabAwareWrite(async () => {
       const row = await saveDataRowDraft(
         db,
+        scope,
         rowId,
         input,
         actorUserId,
         pluginActorId,
         { collabInternal: true },
       )
-      if (row) notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'update' })
+      if (row) {
+        notifyRowWrite({ branchId: scope.branchId, tableId: row.tableId, rowIds: [row.id], kind: 'update' })
+      }
       return row
     })
   }
-  const updated = await updateDataRowDraftCells(db, rowId, input, actorUserId, pluginActorId)
-  return updated ? getDataRow(db, rowId) : null
+  const updated = await updateDataRowDraftCells(db, scope, rowId, input, actorUserId, pluginActorId)
+  return updated ? getDataRow(db, scope, rowId) : null
 }
 
 /**
@@ -113,6 +132,7 @@ export async function saveDataRowDraft(
  */
 export async function updateDataRowDraftCells(
   db: DbClient,
+  scope: BranchScope,
   rowId: string,
   input: UpdateDataRowDraftInput,
   actorUserId: string | null = null,
@@ -125,7 +145,8 @@ export async function updateDataRowDraftCells(
         updated_by_user_id = ${actorUserId},
         plugin_actor_id = ${pluginActorId},
         updated_at = current_timestamp
-    where id = ${rowId}
+    where id = ${physicalId(scope.branchId, rowId)}
+      and branch_id = ${scope.branchId}
       and deleted_at is null
     returning id
   `
@@ -140,6 +161,7 @@ export async function updateDataRowDraftCells(
  */
 export async function resurrectDataRow(
   db: DbClient,
+  scope: BranchScope,
   rowId: string,
   input: UpdateDataRowDraftInput,
   actorUserId: string | null = null,
@@ -151,7 +173,8 @@ export async function resurrectDataRow(
         slug = ${input.slug},
         updated_by_user_id = ${actorUserId},
         updated_at = current_timestamp
-    where id = ${rowId}
+    where id = ${physicalId(scope.branchId, rowId)}
+      and branch_id = ${scope.branchId}
       and deleted_at is not null
   `
 }
@@ -165,26 +188,30 @@ export async function resurrectDataRow(
  */
 export async function upsertDataRowDraft(
   db: DbClient,
+  scope: BranchScope,
   input: InsertDataRowInput & { id: string },
   actorUserId: string | null = null,
   opts: { collabInternal?: boolean } = {},
 ): Promise<void> {
   if (!opts.collabInternal) {
     return serializeCollabAwareWrite(async () => {
-      await upsertDataRowDraft(db, input, actorUserId, { collabInternal: true })
-      notifyRowWrite({ tableId: input.tableId, rowIds: [input.id], kind: 'update' })
+      await upsertDataRowDraft(db, scope, input, actorUserId, { collabInternal: true })
+      notifyRowWrite({ branchId: scope.branchId, tableId: input.tableId, rowIds: [input.id], kind: 'update' })
     })
   }
   const draft = { cells: input.cells, slug: input.slug }
-  const updated = await updateDataRowDraftCells(db, input.id, draft, actorUserId)
+  const updated = await updateDataRowDraftCells(db, scope, input.id, draft, actorUserId)
   if (updated) return
   const { rows } = await db<{ id: string }>`
-    select id from data_rows where id = ${input.id} and deleted_at is not null
+    select id from data_rows
+    where id = ${physicalId(scope.branchId, input.id)}
+      and branch_id = ${scope.branchId}
+      and deleted_at is not null
   `
   if (rows.length > 0) {
-    await resurrectDataRow(db, input.id, draft, actorUserId)
+    await resurrectDataRow(db, scope, input.id, draft, actorUserId)
   } else {
-    await createDataRow(db, input, actorUserId, null, { collabInternal: true })
+    await createDataRow(db, scope, input, actorUserId, null, { collabInternal: true })
   }
 }
 
@@ -196,13 +223,15 @@ export async function upsertDataRowDraft(
  */
 export async function updateDataRowSlug(
   db: DbClient,
+  scope: BranchScope,
   rowId: string,
   slug: string,
 ): Promise<void> {
   await db`
     update data_rows
     set slug = ${slug}
-    where id = ${rowId}
+    where id = ${physicalId(scope.branchId, rowId)}
+      and branch_id = ${scope.branchId}
       and deleted_at is null
   `
 }
@@ -218,19 +247,22 @@ export async function updateDataRowSlug(
  */
 export async function softDeleteDataRow(
   db: DbClient,
+  scope: BranchScope,
   rowId: string,
   actorUserId: string | null = null,
   opts: { collabInternal?: boolean } = {},
 ): Promise<DeletedRowSummary | null> {
   if (!opts.collabInternal) {
     return serializeCollabAwareWrite(async () => {
-      const row = await softDeleteDataRow(db, rowId, actorUserId, { collabInternal: true })
-      if (row) notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'delete' })
+      const row = await softDeleteDataRow(db, scope, rowId, actorUserId, { collabInternal: true })
+      if (row) {
+        notifyRowWrite({ branchId: scope.branchId, tableId: row.tableId, rowIds: [row.id], kind: 'delete' })
+      }
       return row
     })
   }
   const { rows } = await db<{
-    id: string
+    logical_id: string
     table_id: string
     slug: string
     status: DataRowStatus
@@ -240,15 +272,16 @@ export async function softDeleteDataRow(
     set deleted_at = current_timestamp,
         updated_by_user_id = ${actorUserId},
         updated_at = current_timestamp
-    where id = ${rowId}
+    where id = ${physicalId(scope.branchId, rowId)}
+      and branch_id = ${scope.branchId}
       and deleted_at is null
-    returning id, table_id, slug, status, deleted_at
+    returning logical_id, table_id, slug, status, deleted_at
   `
   const row = rows[0]
   if (!row) return null
   return {
-    id: row.id,
-    tableId: row.table_id,
+    id: row.logical_id,
+    tableId: logicalIdOf(scope.branchId, row.table_id),
     slug: row.slug,
     status: row.status,
     deletedAt: isoDateOrNull(row.deleted_at),
@@ -263,6 +296,7 @@ export async function softDeleteDataRow(
  */
 export async function updateDataRowTable(
   db: DbClient,
+  scope: BranchScope,
   rowId: string,
   tableId: string,
   actorUserId: string | null = null,
@@ -270,9 +304,10 @@ export async function updateDataRowTable(
 ): Promise<UpdateDataRowTableResult> {
   if (!opts.collabInternal) {
     const moved = await serializeCollabAwareWrite(async () => {
-      const before = await getDataRow(db, rowId)
+      const before = await getDataRow(db, scope, rowId)
       const result = await updateDataRowTable(
         db,
+        scope,
         rowId,
         tableId,
         actorUserId,
@@ -283,8 +318,8 @@ export async function updateDataRowTable(
         // A table move changes both collection rosters. Emit the pair while
         // still holding the collab-aware write lane so a dirty old row doc
         // cannot land between the move and its synchronous invalidation.
-        notifyRowWrite({ tableId: before.tableId, rowIds: [rowId], kind: 'delete' })
-        notifyRowWrite({ tableId: result.row.tableId, rowIds: [rowId], kind: 'create' })
+        notifyRowWrite({ branchId: scope.branchId, tableId: before.tableId, rowIds: [rowId], kind: 'delete' })
+        notifyRowWrite({ branchId: scope.branchId, tableId: result.row.tableId, rowIds: [rowId], kind: 'create' })
         bumpPublishVersion = before.status === 'published'
       }
       return { result, bumpPublishVersion }
@@ -295,25 +330,29 @@ export async function updateDataRowTable(
     return moved.result
   }
 
-  const row = await getDataRow(db, rowId)
+  const row = await getDataRow(db, scope, rowId)
   if (!row) return { ok: false, reason: 'row_not_found' }
   if (row.tableId === tableId) return { ok: true, row }
 
+  const targetTableId = physicalId(scope.branchId, tableId)
   const { rows: tableRows } = await db<{ id: string }>`
     select id from data_tables
-    where id = ${tableId}
+    where id = ${targetTableId}
+      and branch_id = ${scope.branchId}
       and deleted_at is null
     limit 1
   `
   if (!tableRows[0]) return { ok: false, reason: 'table_not_found' }
 
+  const physicalRowId = physicalId(scope.branchId, rowId)
   // Only check for slug conflicts when the row has a non-empty slug.
   if (row.slug) {
     const { rows: conflictRows } = await db<{ id: string }>`
       select id from data_rows
-      where table_id = ${tableId}
+      where table_id = ${targetTableId}
+        and branch_id = ${scope.branchId}
         and slug = ${row.slug}
-        and id <> ${rowId}
+        and id <> ${physicalRowId}
         and deleted_at is null
       limit 1
     `
@@ -322,15 +361,16 @@ export async function updateDataRowTable(
 
   const { rows } = await db<{ id: string }>`
     update data_rows
-    set table_id = ${tableId},
+    set table_id = ${targetTableId},
         updated_by_user_id = ${actorUserId},
         updated_at = current_timestamp
-    where id = ${rowId}
+    where id = ${physicalRowId}
+      and branch_id = ${scope.branchId}
       and deleted_at is null
     returning id
   `
   if (!rows[0]) return { ok: false, reason: 'row_not_found' }
-  const updated = await getDataRow(db, rows[0].id)
+  const updated = await getDataRow(db, scope, rowId)
   if (!updated) return { ok: false, reason: 'row_not_found' }
   return { ok: true, row: updated }
 }
@@ -343,6 +383,7 @@ export async function updateDataRowTable(
  */
 export async function updateDataRowStatus(
   db: DbClient,
+  scope: BranchScope,
   rowId: string,
   status: 'draft' | 'unpublished',
   actorUserId: string | null = null,
@@ -355,18 +396,20 @@ export async function updateDataRowStatus(
         scheduled_publish_at = null,
         updated_by_user_id = ${actorUserId},
         updated_at = current_timestamp
-    where id = ${rowId}
+    where id = ${physicalId(scope.branchId, rowId)}
+      and branch_id = ${scope.branchId}
       and deleted_at is null
     returning id
   `
   if (!rows[0]) return null
   // Invalidate the render cache — the route's published state changed.
   await bumpPublishVersionSerialized()
-  return getDataRow(db, rows[0].id)
+  return getDataRow(db, scope, rowId)
 }
 
 export async function updateDataRowAuthor(
   db: DbClient,
+  scope: BranchScope,
   rowId: string,
   authorUserId: string,
   actorUserId: string | null = null,
@@ -376,9 +419,10 @@ export async function updateDataRowAuthor(
     set author_user_id = ${authorUserId},
         updated_by_user_id = ${actorUserId},
         updated_at = current_timestamp
-    where id = ${rowId}
+    where id = ${physicalId(scope.branchId, rowId)}
+      and branch_id = ${scope.branchId}
       and deleted_at is null
     returning id
   `
-  return rows[0] ? getDataRow(db, rows[0].id) : null
+  return rows[0] ? getDataRow(db, scope, rowId) : null
 }

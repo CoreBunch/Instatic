@@ -135,6 +135,11 @@ export interface AiTool {
 export interface ToolContext {
   /** Database client — server-side tool handlers query through this. */
   readonly db: import('../../db/client').DbClient
+  /**
+   * Branch the tool reads and writes. The chat endpoint resolves it from the
+   * request like every CMS route; MCP headless tools run on main.
+   */
+  readonly branch: import('../../branches/scope').BranchScope
   readonly userId: string
   /** The caller's capability set — handlers and the re-check gate read this. */
   readonly capabilities: readonly CoreCapability[]

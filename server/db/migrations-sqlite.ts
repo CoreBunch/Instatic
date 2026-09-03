@@ -1266,4 +1266,113 @@ export const sqliteMigrations: Migration[] = [
         on plugin_media_sources (asset_id);
     `,
   },
+  {
+    // Site branches. Every content row keeps its LOGICAL id on every branch;
+    // the physical primary key stays `id` and is `<branch>:<logical>` off
+    // main (see src/core/branches/ids.ts). Existing rows all belong to
+    // `main`, where physical == logical, so nothing moves. Collab doc ids
+    // gain a branch segment. Nothing is dropped except the table-slug
+    // uniqueness index, which is recreated per branch.
+    id: '027_site_branches',
+    sql: `
+      create table if not exists site_branches (
+        id text primary key,
+        name text not null,
+        base_branch_id text,
+        created_by_user_id text references users(id) on delete set null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      insert into site_branches (id, name, base_branch_id)
+      values ('main', 'main', null)
+      on conflict (id) do nothing;
+
+      alter table site add column branch_id text not null default 'main';
+      alter table site add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) virtual;
+
+      create unique index if not exists site_branch_idx
+        on site (branch_id);
+
+      alter table data_tables add column branch_id text not null default 'main';
+      alter table data_tables add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) virtual;
+
+      create index if not exists data_tables_branch_idx
+        on data_tables (branch_id);
+
+      drop index if exists data_tables_slug_active_idx;
+
+      create unique index if not exists data_tables_branch_slug_active_idx
+        on data_tables (branch_id, slug)
+        where deleted_at is null;
+
+      alter table data_rows add column branch_id text not null default 'main';
+      alter table data_rows add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) virtual;
+
+      create index if not exists data_rows_branch_idx
+        on data_rows (branch_id);
+
+      update collab_documents
+         set doc_id = 'site:main'
+       where doc_id = 'site:default';
+
+      update collab_documents
+         set doc_id = 'page:main:' || substr(doc_id, 6)
+       where doc_id like 'page:%'
+         and doc_id not like 'page:main:%';
+
+      update collab_documents
+         set doc_id = 'component:main:' || substr(doc_id, 11)
+       where doc_id like 'component:%'
+         and doc_id not like 'component:main:%';
+
+      update collab_documents
+         set doc_id = 'layout:main:' || substr(doc_id, 8)
+       where doc_id like 'layout:%'
+         and doc_id not like 'layout:main:%';
+
+      create table if not exists site_branch_bases (
+        branch_id text not null references site_branches(id) on delete cascade,
+        kind text not null,
+        logical_id text not null,
+        content_hash text not null,
+        content_json text not null default '{}',
+        primary key (branch_id, kind, logical_id)
+      );
+
+      create table if not exists site_branch_previews (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        token_hash text not null,
+        expires_at text,
+        created_by_user_id text references users(id) on delete set null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        revoked_at text
+      );
+
+      create unique index if not exists site_branch_previews_token_idx
+        on site_branch_previews (token_hash);
+
+      create index if not exists site_branch_previews_branch_idx
+        on site_branch_previews (branch_id);
+
+      -- Branch management is an Owner/Admin power; the boot-time role sync
+      -- re-applies this, the migration records it for the seed snapshot.
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'site.branches.manage'),
+             updated_at = current_timestamp
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'site.branches.manage'
+             );
+    `,
+  },
 ]
