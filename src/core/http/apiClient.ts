@@ -231,6 +231,19 @@ export async function apiBlobRequest(
   return res.blob()
 }
 
+/**
+ * Fetch a text response (server-rendered HTML for a sandboxed frame, plain
+ * text exports) through the same transport as {@link apiRequest}. Text has
+ * no TypeBox shape; the caller decides what the string is.
+ */
+export async function apiTextRequest(
+  path: string,
+  options: Omit<ApiRequestOptions, 'schema'> = {},
+): Promise<string> {
+  const res = await requestResponse(path, options)
+  return res.text()
+}
+
 async function requestResponse(
   path: string,
   options: Omit<ApiRequestOptions, 'schema'> | ApiRequestOptions,

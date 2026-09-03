@@ -11,10 +11,16 @@
  *   GET    /admin/api/cms/branches/:id/preview   the active preview link    (site.read)
  *   POST   /admin/api/cms/branches/:id/preview   issue a new preview link   (site.branches.manage)
  *   DELETE /admin/api/cms/branches/:id/preview   revoke the preview link    (site.branches.manage)
- *   GET    /admin/api/cms/branches/:id/merge     plan merging into main     (site.branches.manage)
+ *   GET    /admin/api/cms/branches/:id/merge     plan merging into main     (site.read)
  *   POST   /admin/api/cms/branches/:id/merge     merge into main            (site.branches.manage + step-up)
- *   GET    /admin/api/cms/branches/:id/update    plan updating from main    (site.branches.manage)
+ *   GET    /admin/api/cms/branches/:id/update    plan updating from main    (site.read)
  *   POST   /admin/api/cms/branches/:id/update    update from main           (site.branches.manage)
+ *   GET    /admin/api/cms/branches/:id/review            request + comments + content hash (site.read)
+ *   POST   /admin/api/cms/branches/:id/review/request    ask for a merge            (site.read)
+ *   POST   /admin/api/cms/branches/:id/review/withdraw   withdraw the open request  (requester or site.branches.manage)
+ *   POST   /admin/api/cms/branches/:id/review/decline    decline with a note        (site.branches.manage)
+ *   POST   /admin/api/cms/branches/:id/review/comments   comment on a change        (site.read)
+ *   GET    /admin/api/cms/branches/:id/review/render     one page as main or the branch renders it (site.read)
  *
  * Main is fixed: it cannot be renamed or deleted. Every mutation lands in
  * the audit log.
@@ -23,12 +29,27 @@ import {
   ApplyMergeBodySchema,
   BRANCH_NAME_MAX_LENGTH,
   CreateBranchBodySchema,
+  CreateMergeRequestBodySchema,
+  CreateReviewCommentBodySchema,
+  DeclineMergeRequestBodySchema,
   RenameBranchBodySchema,
   isMainBranch,
   isValidBranchId,
   slugifyBranchName,
   type MergeDirection,
 } from '@core/branches'
+import {
+  MergeRequestAlreadyOpenError,
+  NoOpenMergeRequestError,
+  addReviewComment,
+  closeMergeRequest,
+  markMergeRequestMerged,
+  openMergeRequest,
+  readBranchReviewState,
+} from '../../branches/review'
+import { renderBranchReviewPage } from '../../publish/branchReviewRender'
+import { getOpenMergeRequest } from '../../repositories/branchReviews'
+import { userHasCapability } from '../../auth/authz'
 import type { DbClient } from '../../db/client'
 import type { BranchScope } from '../../branches/scope'
 import { forkBranch } from '../../branches/fork'
@@ -80,6 +101,24 @@ export async function handleBranchesRoutes(
     if (req.method === 'DELETE') return handlePreviewRevoke(req, db, branchId)
     return methodNotAllowed()
   }
+  if (segments[1] === 'review') {
+    if (segments.length === 2) {
+      if (req.method === 'GET') return handleReviewState(req, db, branchId)
+      return methodNotAllowed()
+    }
+    if (segments.length === 3 && req.method === 'POST') {
+      if (segments[2] === 'request') return handleReviewRequest(req, db, branchId)
+      if (segments[2] === 'withdraw') return handleReviewWithdraw(req, db, branchId)
+      if (segments[2] === 'decline') return handleReviewDecline(req, db, branchId)
+      if (segments[2] === 'comments') return handleReviewComment(req, db, branchId)
+      return null
+    }
+    if (segments.length === 3 && segments[2] === 'render') {
+      if (req.method === 'GET') return handleReviewRender(req, db, branchId, url)
+      return methodNotAllowed()
+    }
+    return null
+  }
   if (segments.length === 2 && (segments[1] === 'merge' || segments[1] === 'update')) {
     const direction: MergeDirection = segments[1]
     if (req.method === 'GET') return handleMergePlan(req, db, branchId, direction)
@@ -95,7 +134,9 @@ async function handleMergePlan(
   branchId: string,
   direction: MergeDirection,
 ): Promise<Response> {
-  const user = await requireCapability(req, db, 'site.branches.manage')
+  // Reading the plan is reading content both sides hold; the review page
+  // shows it to whoever can read the site. Applying it stays a manager power.
+  const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
   if (isMainBranch(branchId)) return badRequest('Main is the live site; it is what branches merge into')
   if (!(await getBranch(db, branchId))) return branchNotFound(branchId)
@@ -150,6 +191,8 @@ async function handleMergeApply(
     metadata: { name: branch.name, changes: plan.changes.length, conflicts: plan.conflictCount },
     ...requestAuditContext(req),
   })
+  // The open merge request, if any, is what this merge answered.
+  if (direction === 'merge') await markMergeRequestMerged(db, branchId, user.id)
 
   let branchDeleted = false
   if (direction === 'merge' && body.deleteBranch) {
@@ -209,6 +252,149 @@ async function handlePreviewRevoke(req: Request, db: DbClient, branchId: string)
     })
   }
   return jsonResponse({ ok: true })
+}
+
+// ---------------------------------------------------------------------------
+// Merge review
+// ---------------------------------------------------------------------------
+
+async function handleReviewState(req: Request, db: DbClient, branchId: string): Promise<Response> {
+  const user = await requireCapability(req, db, 'site.read')
+  if (user instanceof Response) return user
+  if (isMainBranch(branchId)) return badRequest('Main is the live site; it is what branches merge into')
+  const branch = await getBranch(db, branchId)
+  if (!branch) return branchNotFound(branchId)
+  return jsonResponse(await readBranchReviewState(db, branch))
+}
+
+async function handleReviewRequest(req: Request, db: DbClient, branchId: string): Promise<Response> {
+  const user = await requireCapability(req, db, 'site.read')
+  if (user instanceof Response) return user
+  if (isMainBranch(branchId)) return badRequest('Main is the live site; it is what branches merge into')
+  const branch = await getBranch(db, branchId)
+  if (!branch) return branchNotFound(branchId)
+  const body = await readValidatedBody(req, CreateMergeRequestBodySchema)
+  if (!body) return badRequest('Invalid merge request payload')
+  let request
+  try {
+    request = await openMergeRequest(db, { branchId, requestedByUserId: user.id, note: body.note })
+  } catch (err) {
+    if (err instanceof MergeRequestAlreadyOpenError) {
+      return jsonResponse({ error: err.message, code: 'merge_request_open' }, { status: 409 })
+    }
+    throw err
+  }
+  await createAuditEvent(db, {
+    actorUserId: user.id,
+    action: 'branch.review.request',
+    targetType: 'branch',
+    targetId: branchId,
+    metadata: { name: branch.name, requestId: request.id },
+    ...requestAuditContext(req),
+  })
+  return jsonResponse({ request }, { status: 201 })
+}
+
+async function handleReviewWithdraw(req: Request, db: DbClient, branchId: string): Promise<Response> {
+  const user = await requireCapability(req, db, 'site.read')
+  if (user instanceof Response) return user
+  const branch = await getBranch(db, branchId)
+  if (!branch) return branchNotFound(branchId)
+  const open = await getOpenMergeRequest(db, branchId)
+  if (!open) return jsonResponse({ error: 'This branch has no open merge request' }, { status: 409 })
+  // The requester takes their own request back; a branch manager can too.
+  if (open.requestedBy?.id !== user.id && !userHasCapability(user, 'site.branches.manage')) {
+    return jsonResponse({ error: 'Only the requester or a branch manager can withdraw this request' }, { status: 403 })
+  }
+  let request
+  try {
+    request = await closeMergeRequest(db, branchId, { status: 'withdrawn', resolvedByUserId: user.id, note: '' })
+  } catch (err) {
+    if (err instanceof NoOpenMergeRequestError) return jsonResponse({ error: err.message }, { status: 409 })
+    throw err
+  }
+  await createAuditEvent(db, {
+    actorUserId: user.id,
+    action: 'branch.review.withdraw',
+    targetType: 'branch',
+    targetId: branchId,
+    metadata: { name: branch.name, requestId: request.id },
+    ...requestAuditContext(req),
+  })
+  return jsonResponse({ request })
+}
+
+async function handleReviewDecline(req: Request, db: DbClient, branchId: string): Promise<Response> {
+  const user = await requireCapability(req, db, 'site.branches.manage')
+  if (user instanceof Response) return user
+  const branch = await getBranch(db, branchId)
+  if (!branch) return branchNotFound(branchId)
+  const body = await readValidatedBody(req, DeclineMergeRequestBodySchema)
+  if (!body || body.note.trim().length === 0) return badRequest('A decline needs a note the requester can act on')
+  let request
+  try {
+    request = await closeMergeRequest(db, branchId, { status: 'declined', resolvedByUserId: user.id, note: body.note })
+  } catch (err) {
+    if (err instanceof NoOpenMergeRequestError) return jsonResponse({ error: err.message }, { status: 409 })
+    throw err
+  }
+  await createAuditEvent(db, {
+    actorUserId: user.id,
+    action: 'branch.review.decline',
+    targetType: 'branch',
+    targetId: branchId,
+    metadata: { name: branch.name, requestId: request.id },
+    ...requestAuditContext(req),
+  })
+  return jsonResponse({ request })
+}
+
+async function handleReviewComment(req: Request, db: DbClient, branchId: string): Promise<Response> {
+  const user = await requireCapability(req, db, 'site.read')
+  if (user instanceof Response) return user
+  if (isMainBranch(branchId)) return badRequest('Main is the live site; it is what branches merge into')
+  const branch = await getBranch(db, branchId)
+  if (!branch) return branchNotFound(branchId)
+  const body = await readValidatedBody(req, CreateReviewCommentBodySchema)
+  if (!body || body.body.trim().length === 0) return badRequest('A comment needs some text')
+  const comment = await addReviewComment(db, {
+    branchId,
+    authorUserId: user.id,
+    entityKey: body.entityKey,
+    body: body.body,
+  })
+  await createAuditEvent(db, {
+    actorUserId: user.id,
+    action: 'branch.review.comment',
+    targetType: 'branch',
+    targetId: branchId,
+    metadata: { name: branch.name, commentId: comment.id, entityKey: comment.entityKey },
+    ...requestAuditContext(req),
+  })
+  return jsonResponse({ comment }, { status: 201 })
+}
+
+async function handleReviewRender(req: Request, db: DbClient, branchId: string, url: URL): Promise<Response> {
+  const user = await requireCapability(req, db, 'site.read')
+  if (user instanceof Response) return user
+  if (isMainBranch(branchId)) return badRequest('Main is the live site; it is what branches merge into')
+  if (!(await getBranch(db, branchId))) return branchNotFound(branchId)
+  const rowId = url.searchParams.get('row')?.trim() ?? ''
+  const side = url.searchParams.get('side')
+  if (!rowId || (side !== 'main' && side !== 'branch')) {
+    return badRequest('Pass ?row=<page row id>&side=main|branch')
+  }
+  const html = await renderBranchReviewPage(db, branchId, side, rowId)
+  if (html === null) return jsonResponse({ error: `No page "${rowId}" on ${side}` }, { status: 404 })
+  return new Response(html, {
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-robots-tag': 'noindex',
+      // The review embeds this in a sandboxed iframe of its own origin only.
+      'content-security-policy': "frame-ancestors 'self'",
+    },
+  })
 }
 
 function branchNotFound(branchId: string): Response {

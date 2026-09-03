@@ -12,9 +12,11 @@ import type { Static, TSchema } from '@sinclair/typebox'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 import { canonicalJson } from '@core/utils/canonicalJson'
 import { DataFieldSchema, DataTableKindSchema, type DataRow, type DataTable } from '@core/data/schemas'
+import { SiteFileSchema, type SiteFile } from '@core/files/schemas'
+import type { MergeEntityKind } from '@core/branches'
 import type { SiteShell } from '@core/page-tree'
 
-export type BranchEntityKind = 'row' | 'table' | 'site'
+export type BranchEntityKind = MergeEntityKind
 
 export interface RowContent {
   tableId: string
@@ -33,10 +35,14 @@ export interface TableContent {
   fields: DataTable['fields']
 }
 
+/** The shell minus identity, timestamps, and files (files are entities of their own). */
 export interface SiteContent {
   name: string
-  shell: Omit<SiteShell, 'id' | 'name' | 'createdAt' | 'updatedAt'>
+  shell: Omit<SiteShell, 'id' | 'name' | 'createdAt' | 'updatedAt' | 'files'>
 }
+
+/** A site file minus its id (the logical id) and timestamps (never merged). */
+export type FileContent = Omit<SiteFile, 'id' | 'createdAt' | 'updatedAt'>
 
 export function rowContent(row: Pick<DataRow, 'tableId' | 'cells' | 'slug'>): RowContent {
   return { tableId: row.tableId, cells: row.cells, slug: row.slug }
@@ -56,8 +62,13 @@ export function tableContent(table: DataTable): TableContent {
 }
 
 export function siteContent(shell: SiteShell): SiteContent {
-  const { id: _id, name, createdAt: _createdAt, updatedAt: _updatedAt, ...rest } = shell
+  const { id: _id, name, createdAt: _createdAt, updatedAt: _updatedAt, files: _files, ...rest } = shell
   return { name, shell: rest }
+}
+
+export function fileContent(file: SiteFile): FileContent {
+  const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...rest } = file
+  return rest
 }
 
 export function contentHash(value: unknown): string {
@@ -90,6 +101,8 @@ export const SiteContentSchema = Type.Object({
   name: Type.String(),
   shell: Type.Record(Type.String(), Type.Unknown()),
 })
+
+export const FileContentSchema = Type.Omit(SiteFileSchema, ['id', 'createdAt', 'updatedAt'])
 
 /** Parse merged content back into its typed shape; throws on drift. */
 export function parseContent<T extends TSchema>(schema: T, value: unknown, what: string): Static<T> {

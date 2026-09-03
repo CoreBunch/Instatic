@@ -6,6 +6,7 @@
 export {
   apiRequest,
   apiBlobRequest,
+  apiTextRequest,
   readEnvelope,
   assertOk,
   responseErrorMessage,

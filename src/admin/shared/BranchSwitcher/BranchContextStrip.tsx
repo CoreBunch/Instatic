@@ -8,6 +8,7 @@
  */
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from '@admin/lib/routing'
 import { ArrowDownIcon } from 'pixel-art-icons/icons/arrow-down'
 import { CircleDotSolidIcon } from 'pixel-art-icons/icons/circle-dot-solid'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
@@ -61,6 +62,7 @@ export function BranchContextStrip() {
 function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
   const user = useCurrentAdminUser()
   const canManage = hasCapability(user, 'site.branches.manage')
+  const navigate = useNavigate()
   const openManage = useBranchStore((state) => state.openManage)
   const [moreOpen, setMoreOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -153,18 +155,18 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
         </Button>
       )}
 
-      {canManage && (
-        <Button
-          variant="primary"
-          size="xs"
-          type="button"
-          data-testid="branch-strip-merge"
-          onClick={() => setMerge('merge')}
-        >
-          <GitMergeSolidIcon size={12} aria-hidden="true" />
-          <span>Merge into main…</span>
-        </Button>
-      )}
+      <Button
+        variant="primary"
+        size="xs"
+        type="button"
+        data-testid="branch-strip-merge"
+        tooltip={canManage ? 'Review every change, then merge' : 'Review the changes and request a merge'}
+        tooltipSide="bottom"
+        onClick={() => navigate(`/admin/branches/${encodeURIComponent(current.id)}/review`)}
+      >
+        <GitMergeSolidIcon size={12} aria-hidden="true" />
+        <span>{canManage ? 'Merge into main…' : 'Request merge…'}</span>
+      </Button>
 
       <Button
         ref={moreRef}

@@ -109,6 +109,9 @@ const SiteImportModal = lazy(() =>
   import('./modals/SiteImport').then((m) => ({ default: m.SiteImportModal })),
 )
 
+const BranchReviewPage = lazy(() =>
+  import('./pages/branches/BranchReviewPage').then((m) => ({ default: m.BranchReviewPage })),
+)
 const SiteExportModal = lazy(() =>
   import('./modals/SiteExport').then((m) => ({ default: m.SiteExportModal })),
 )
@@ -197,6 +200,7 @@ function pageForSection(section: AdminWorkspace) {
     section === 'plugins' ? PluginsPage :
     section === 'users' ? UsersPage :
     section === 'ai' ? AiPage :
+    section === 'branchReview' ? SitePage :
     section === 'pluginPage' ? PluginPage :
     section === 'account' ? AccountPage :
     DashboardPage
@@ -321,6 +325,7 @@ export default function AuthenticatedAdmin({ section, currentUser }: Authenticat
               section === 'plugins' ? <PluginsPage /> :
               section === 'users' ? <UsersPage /> :
               section === 'ai' ? <AiPage /> :
+              section === 'branchReview' ? <BranchReviewPage /> :
               section === 'pluginPage' ? <PluginPage /> :
               section === 'account' ? <AccountPage /> :
               <DashboardPage />}

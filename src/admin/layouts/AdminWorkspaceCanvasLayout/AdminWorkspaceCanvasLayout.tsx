@@ -34,7 +34,7 @@ const SettingsModal = lazy(() =>
   import('@admin/modals/Settings/SettingsModal').then((m) => ({ default: m.SettingsModal })),
 )
 
-type WorkspaceCanvasSection = Extract<AdminWorkspace, 'content' | 'data' | 'media'>
+type WorkspaceCanvasSection = Extract<AdminWorkspace, 'content' | 'data' | 'media' | 'branchReview'>
 
 interface AdminWorkspaceCanvasLayoutProps {
   workspace: WorkspaceCanvasSection
@@ -55,7 +55,8 @@ export function AdminWorkspaceCanvasLayout({
   const pluginBackgroundWorkEnabled = canRunPluginBackgroundWork(currentUser)
 
   useSiteSummary()
-  useWorkspaceLayoutPersistence(workspace)
+  // The merge review has no panels of its own; it reads the content workspace's stored layout.
+  useWorkspaceLayoutPersistence(workspace === 'branchReview' ? 'content' : workspace)
   useInstalledEditorPlugins(pluginBackgroundWorkEnabled)
   usePluginEventBridge(pluginBackgroundWorkEnabled)
 
