@@ -125,6 +125,9 @@ export async function buildPluginPackage(input: BuildPackageInput): Promise<Buil
       // sandbox path has no import map / module resolver.
       await bundleEntrypoint(modulesFacadePath, join(outputDir, entrypoints.modules), {
         inlineHostRuntime: true,
+        // Diagnostics name the author's module file via their position; the
+        // header must not point at the synthetic facade.
+        label: 'the modules pack (modules/*)',
         ...(input.resolve ? { resolve: input.resolve } : {}),
       })
       files.push(entrypoints.modules)
