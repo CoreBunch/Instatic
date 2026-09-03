@@ -10,7 +10,6 @@ export const SITE_PLUGIN_RUNTIME_STATES = [
   'active',
   'draft-changed',
   'build-failed',
-  'permission-review',
   'runtime-error',
   'disabled',
   'source-missing',
@@ -77,8 +76,6 @@ export interface SitePluginStateInput {
   draftContentHash: string | null
   /** Hash carried by the active row's version (`+<hash>`), or null. */
   activeContentHash: string | null
-  /** Grant diff between the derived draft manifest and the row. */
-  grantsChanged: boolean
 }
 
 /**
@@ -86,6 +83,10 @@ export interface SitePluginStateInput {
  * table implies: missing source beats everything (an invisible-but-running
  * backend must surface), then runtime errors, then disabled, then draft
  * problems, then the hash comparison.
+ *
+ * A changed grant set is not a state of its own: grants live in
+ * `plugin.json`, so any grant change is a draft change, and the consent
+ * step (permission review + step-up) belongs to the activation click.
  */
 export function computeSitePluginState(input: SitePluginStateInput): SitePluginRuntimeState {
   if (!input.hasDraftSource) return 'source-missing'
@@ -94,7 +95,6 @@ export function computeSitePluginState(input: SitePluginStateInput): SitePluginR
     return 'disabled'
   }
   if (input.manifestError) return 'build-failed'
-  if (input.grantsChanged) return 'permission-review'
   if (!input.row) return 'draft-changed' // never built — the first Build & activate
   if (input.draftContentHash !== input.activeContentHash) return 'draft-changed'
   return 'active'
@@ -102,7 +102,6 @@ export function computeSitePluginState(input: SitePluginStateInput): SitePluginR
 
 export type SitePluginPrimaryActionKind =
   | 'activate'
-  | 'review'
   | 'diagnostics'
   | 'open-plugins-page'
   | 'delete'
@@ -119,9 +118,9 @@ export interface SitePluginPrimaryAction {
 export function sitePluginPrimaryAction(state: SitePluginRuntimeState): SitePluginPrimaryAction {
   switch (state) {
     case 'draft-changed':
+      // When the declared grants differ from the granted ones, the IDE opens
+      // the permission review before building — same click, one more step.
       return { label: 'Build & activate', action: 'activate' }
-    case 'permission-review':
-      return { label: 'Review permissions', action: 'review' }
     case 'build-failed':
       return { label: 'View diagnostics', action: 'diagnostics' }
     case 'runtime-error':
@@ -146,8 +145,6 @@ export function sitePluginStateLabel(state: SitePluginRuntimeState): string {
       return 'Draft changed'
     case 'build-failed':
       return 'Build failed'
-    case 'permission-review':
-      return 'Permission review needed'
     case 'runtime-error':
       return 'Runtime error'
     case 'disabled':

@@ -148,8 +148,14 @@ the **union** of draft folders and site-local rows — deleting the folder
 never hides a running backend (`Source missing` still lists, offering
 deactivate/delete):
 
-`active` · `draft-changed` · `build-failed` · `permission-review` ·
-`runtime-error` · `disabled` · `source-missing`
+`active` · `draft-changed` · `build-failed` · `runtime-error` · `disabled`
+· `source-missing`
+
+A changed grant set is not a state of its own: grants live in
+`plugin.json`, so any grant change is a draft change, and the consent step
+(the permission review dialog, then step-up) belongs to the `Build &
+activate` click. The summary still carries `newPermissions` /
+`removedPermissions` so the dialog can show the diff.
 
 Each state maps to ONE smart primary action (`sitePluginPrimaryAction`),
 rendered in the IDE header; the Plugins-page draft card only offers `Open

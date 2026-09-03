@@ -337,8 +337,10 @@ describe('site plugin activation authority', () => {
     const afterEntry = after.sitePlugins.find((plugin) => plugin.localId === 'newsletter')
     expect(afterEntry?.revisions.some((revision) => revision.version.startsWith('1.0.3+'))).toBe(true)
     // The draft still declares cms.routes.public, which the rolled-back
-    // grant set lacks — that outranks "draft changed" in the state machine.
-    expect(afterEntry?.state).toBe('permission-review')
+    // grant set lacks: that is a draft change like any other, and the
+    // review happens on the next activation click.
+    expect(afterEntry?.state).toBe('draft-changed')
+    expect(afterEntry?.newPermissions).toEqual(['cms.routes.public'])
 
     const alreadyActive = await harness.cms('/admin/api/cms/site-plugins/newsletter/rollback', {
       method: 'POST',

@@ -175,7 +175,6 @@ export async function listSitePlugins(
 
     const declared = manifest?.permissions ?? []
     const granted = row?.grantedPermissions ?? []
-    const grantsChanged = manifest !== null && row !== null && !sameStringSet(declared, granted)
 
     const state = computeSitePluginState({
       hasDraftSource: draft !== null,
@@ -185,7 +184,6 @@ export async function listSitePlugins(
       manifestError,
       draftContentHash,
       activeContentHash: contentHashOfVersion(row?.version),
-      grantsChanged,
     })
 
     summaries.push({
