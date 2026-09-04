@@ -30,10 +30,22 @@ import {
 } from '@site/preferences/editorPreferences'
 import { clearTelemetry } from '@admin/spotlight/telemetry'
 import { clearRecentCommands } from '@admin/spotlight/recentStore'
+import { useCurrentAdminUser } from '@admin/sessionContext'
+import { canEditStructure } from '@admin/access'
 import s from '../SettingsModal.module.css'
 
 export function PreferencesSection() {
+  const currentUser = useCurrentAdminUser()
+  // Gated preferences are hidden, not disabled — a user who can't use the
+  // feature shouldn't see a dead toggle. Gate checks live in access.ts.
+  const passesGate = (pref: CatalogPreferenceDef): boolean =>
+    !('gate' in pref) || pref.gate !== 'structure-edit' || canEditStructure(currentUser)
   const groups = preferencesByCategory()
+    .map((group) => ({
+      ...group,
+      preferences: group.preferences.filter(passesGate),
+    }))
+    .filter((group) => group.preferences.length > 0)
 
   return (
     <div>

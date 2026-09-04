@@ -164,7 +164,8 @@ describe('runtime dependency resolution', () => {
       let installCount = 0
       const runInstall = async (_command: string[], options: { cwd: string }) => {
         installCount += 1
-        await mkdir(join(options.cwd, 'node_modules'), { recursive: true })
+        await mkdir(join(options.cwd, 'node_modules', 'canvas-confetti'), { recursive: true })
+        await writeFile(join(options.cwd, 'node_modules', 'canvas-confetti', 'package.json'), '{}', 'utf8')
       }
 
       const first = await ensureRuntimeDependencyCache(lock, { cacheRoot, runInstall })
@@ -172,6 +173,67 @@ describe('runtime dependency resolution', () => {
 
       expect(installCount).toBe(1)
       expect(second.workspaceDir).toBe(first.workspaceDir)
+    } finally {
+      await rm(cacheRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('reinstalls when the sentinel survived but a locked package was reaped from node_modules', async () => {
+    // The default cache root is the OS temp dir. Temp cleaners delete package
+    // files by age (packages Bun clones from its global cache keep old
+    // mtimes) and leave the directories and the sentinel behind — the exact
+    // state that made publish validation report `Could not resolve
+    // "canvas-confetti"` for a declared, locked dependency.
+    const cacheRoot = await mkdtemp(join(tmpdir(), 'instatic-runtime-cache-test-'))
+    const lock: SiteDependencyLock = {
+      version: 1,
+      updatedAt: 100,
+      packages: {
+        'canvas-confetti': {
+          name: 'canvas-confetti',
+          requested: '^1.9.3',
+          version: '1.9.3',
+          resolvedAt: 100,
+        },
+        swup: { name: 'swup', requested: '^4', version: '4.9.2', resolvedAt: 100 },
+      },
+    }
+    const installAll = async (_command: string[], options: { cwd: string }) => {
+      for (const name of ['canvas-confetti', 'swup']) {
+        await mkdir(join(options.cwd, 'node_modules', name, 'dist'), { recursive: true })
+        await writeFile(join(options.cwd, 'node_modules', name, 'package.json'), '{}', 'utf8')
+        await writeFile(join(options.cwd, 'node_modules', name, 'dist', 'index.js'), '', 'utf8')
+      }
+    }
+
+    try {
+      const first = await ensureRuntimeDependencyCache(lock, { cacheRoot, runInstall: installAll })
+      // Reap one package's files the way a temp cleaner does: files go,
+      // empty directories and the sentinel stay.
+      const reaped = join(first.nodeModulesDir, 'canvas-confetti')
+      await rm(join(reaped, 'package.json'), { force: true })
+      await rm(join(reaped, 'dist', 'index.js'), { force: true })
+      expect(await readFile(join(first.workspaceDir, '.instatic-install-complete'), 'utf8')).toContain(first.hash)
+
+      let installCount = 0
+      const healed = await ensureRuntimeDependencyCache(lock, {
+        cacheRoot,
+        runInstall: async (command, options) => {
+          installCount += 1
+          await installAll(command, options)
+        },
+      })
+
+      expect(installCount).toBe(1)
+      expect(healed.workspaceDir).toBe(first.workspaceDir)
+      expect(await readFile(join(healed.nodeModulesDir, 'canvas-confetti', 'package.json'), 'utf8')).toBe('{}')
+
+      // Intact again: no third install.
+      await ensureRuntimeDependencyCache(lock, {
+        cacheRoot,
+        runInstall: async () => { installCount += 1 },
+      })
+      expect(installCount).toBe(1)
     } finally {
       await rm(cacheRoot, { recursive: true, force: true })
     }

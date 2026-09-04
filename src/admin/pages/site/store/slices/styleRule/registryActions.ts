@@ -17,6 +17,7 @@ import {
   uniqueClassCopyName,
   findNodeWithClassIds,
   mutateNodeClassIds,
+  forgetDeletedRuleRefs,
 } from './helpers'
 
 type RegistryActions = Pick<
@@ -203,18 +204,7 @@ export function createRegistryActions({
           }
         }
         if (!mutated) return false
-        // Clear active / selected references that pointed at a deleted class.
-        if (state.activeClassId && targets.has(state.activeClassId)) {
-          state.activeClassId = null
-        }
-        if (state.selectedSelectorClassId && targets.has(state.selectedSelectorClassId)) {
-          state.selectedSelectorClassId = null
-        }
-        if (state.selectedSelectorClassIds.length > 0) {
-          state.selectedSelectorClassIds = state.selectedSelectorClassIds.filter(
-            (id) => !targets.has(id),
-          )
-        }
+        forgetDeletedRuleRefs(state, targets)
         return true
       })
     },

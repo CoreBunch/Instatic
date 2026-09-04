@@ -137,3 +137,19 @@ export function uniqueClassCopyName(classes: Record<string, StyleRule>, original
   }
   return `${baseName}-${suffix}`
 }
+
+/**
+ * Drop editor-state references to rules that a recipe just deleted, so the
+ * Properties panel never points at a rule that no longer exists.
+ */
+export function forgetDeletedRuleRefs(state: Draft<EditorStore>, deletedIds: ReadonlySet<string>): void {
+  if (state.activeClassId && deletedIds.has(state.activeClassId)) {
+    state.activeClassId = null
+  }
+  if (state.selectedSelectorClassId && deletedIds.has(state.selectedSelectorClassId)) {
+    state.selectedSelectorClassId = null
+  }
+  if (state.selectedSelectorClassIds.length > 0) {
+    state.selectedSelectorClassIds = state.selectedSelectorClassIds.filter((id) => !deletedIds.has(id))
+  }
+}

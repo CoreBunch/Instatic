@@ -215,6 +215,22 @@
     color: var(--danger-light);
 }
 
+/* The chip as a Button (an actionable status): keep the chip's compact text
+ * metrics, drop the button chrome, keep the tone colour above. */
+.publishActionStatusButton {
+    height: auto;
+    min-height: 0;
+    padding: 0 var(--space-xs);
+    border: 0;
+    background: transparent;
+    font-size: var(--text-xs);
+    font-weight: 700;
+    max-width: 132px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .publishActionStatusDot {
     width: 6px;
     height: 6px;

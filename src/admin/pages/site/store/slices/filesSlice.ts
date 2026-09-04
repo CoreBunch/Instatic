@@ -21,7 +21,9 @@ import type { EditorStoreSliceCreator } from '@site/store/types'
 import type { SiteFile, SiteFileType } from '@core/files/schemas'
 import { isSafePath, normalizePath } from '@core/files/pathValidation'
 import { reconcileSiteExplorerInPlace } from '@core/page-tree'
+import { pageScriptPath, pageScriptRuntimeConfig } from '@core/site-runtime'
 import { buildSiteHelpers } from './site/helpers'
+import { siteRuntimeWithoutFile, writeSiteRuntimeDraft } from './site/siteRuntimeDraft'
 
 // ---------------------------------------------------------------------------
 // Slice interface
@@ -38,6 +40,16 @@ interface FilesSlice {
    * - A file at the normalized path already exists (CWE-22 / uniqueness).
    */
   createFile(path: string, type: SiteFileType, content?: string): string
+
+  /**
+   * Create a page's script asset — `scripts/pages/<slug>.js` with a runtime
+   * scope of exactly that page — in ONE undo step (file + runtime config).
+   * The God Mode JS panel calls this lazily on the first edit; resolve an
+   * existing one with `findPageScript` first. Returns the new file's id.
+   *
+   * Throws if no site is loaded or the page does not exist.
+   */
+  createPageScript(pageId: string, content: string): string
 
   /**
    * Delete the file with the given id.
@@ -127,15 +139,37 @@ export const createFilesSlice: EditorStoreSliceCreator<FilesSlice> = (set, get) 
     return id
   },
 
+  createPageScript(pageId, content) {
+    const { site } = get()
+    if (!site) throw new Error('[filesSlice] Site document is not initialized')
+    const page = site.pages.find((p) => p.id === pageId)
+    if (!page) throw new Error(`[filesSlice] Page "${pageId}" not found`)
+
+    const path = pageScriptPath(site.files, page)
+    const now = Date.now()
+    const id = nanoid()
+    const config = pageScriptRuntimeConfig(pageId)
+
+    mutateSiteState((state, siteDraft) => {
+      siteDraft.files.push({ id, path, type: 'script', content, createdAt: now, updatedAt: now })
+      reconcileSiteExplorerInPlace(siteDraft)
+      writeSiteRuntimeDraft(state, siteDraft, {
+        ...state.siteRuntime,
+        scripts: { ...state.siteRuntime.scripts, [id]: config },
+      })
+      siteDraft.updatedAt = now
+      return true
+    })
+
+    return id
+  },
+
   deleteFile(id) {
     mutateSiteState((state, siteDraft) => {
       const idx = siteDraft.files.findIndex((f) => f.id === id)
       if (idx === -1) return false
       siteDraft.files.splice(idx, 1)
-      if (siteDraft.runtime?.scripts) delete siteDraft.runtime.scripts[id]
-      if (siteDraft.runtime?.styles) delete siteDraft.runtime.styles[id]
-      delete state.siteRuntime.scripts[id]
-      delete state.siteRuntime.styles[id]
+      writeSiteRuntimeDraft(state, siteDraft, siteRuntimeWithoutFile(state.siteRuntime, id))
       if (state.activeEditorFileId === id) state.activeEditorFileId = null
       reconcileSiteExplorerInPlace(siteDraft)
       siteDraft.updatedAt = Date.now()

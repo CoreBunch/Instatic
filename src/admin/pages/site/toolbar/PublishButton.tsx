@@ -37,6 +37,7 @@ export function PublishButton({
   const siteId = useEditorStore((s) => s.site?.id ?? null)
   const activePage = useEditorStore(selectActivePage)
   const openPreview = useEditorStore((s) => s.openPreview)
+  const openInEditor = useEditorStore((s) => s.openInEditor)
   const { runStepUp } = useStepUp()
   const [state, setState] = useState<PublishState>('idle')
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false)
@@ -49,8 +50,16 @@ export function PublishButton({
    */
   const publishedSiteRef = useRef<SiteDocument | null>(null)
   const syncError = saveStatus?.state === 'error' ? saveStatus.message ?? 'Sync failed' : null
-  const runtimeErrorCount = runtimeDiagnostics.filter((diagnostic) => diagnostic.severity === 'error').length
+  const runtimeErrors = runtimeDiagnostics.filter((diagnostic) => diagnostic.severity === 'error')
+  const runtimeErrorCount = runtimeErrors.length
   const runtimeErrorLabel = `${runtimeErrorCount} code error${runtimeErrorCount === 1 ? '' : 's'}`
+  // The chip opens the first error's file in the Code Editor, whose Problems
+  // list names every error with its file:line:column. A diagnostic without a
+  // file (a dependency install failure) has nothing to open.
+  const firstRuntimeErrorFile = runtimeErrors.find((diagnostic) => diagnostic.fileId !== undefined)
+  const openFirstRuntimeError = firstRuntimeErrorFile?.fileId !== undefined
+    ? () => openInEditor(firstRuntimeErrorFile.fileId!)
+    : undefined
 
   useEffect(() => {
     const timer = statusTimerRef
@@ -184,7 +193,13 @@ export function PublishButton({
     runtimeErrorCount > 0 ? {
       label: runtimeErrorLabel,
       tone: 'danger' as const,
-      ariaLabel: `${runtimeErrorLabel}. Resolve the highlighted script errors before publishing.`,
+      ariaLabel: firstRuntimeErrorFile?.path
+        ? `${runtimeErrorLabel}. Open ${firstRuntimeErrorFile.path} to see them.`
+        : `${runtimeErrorLabel}. Resolve the script errors before publishing.`,
+      activate: openFirstRuntimeError,
+      tooltip: firstRuntimeErrorFile?.path
+        ? `Open ${firstRuntimeErrorFile.path} — the Problems list shows every error with its line`
+        : undefined,
     } :
     runtimeValidationPending ? {
       label: 'Checking code',
@@ -235,6 +250,8 @@ export function PublishButton({
         statusLabel={state === 'published' ? null : status.label}
         statusTone={status.tone}
         statusAriaLabel={status.ariaLabel}
+        onStatusActivate={'activate' in status ? status.activate : undefined}
+        statusTooltip={'tooltip' in status ? status.tooltip : undefined}
         publishLabel={label}
         publishAriaLabel={
           state === 'published'

@@ -33,6 +33,7 @@ import { escapeProps } from './escapeProps'
 import { injectNodeClassIds, injectNodeId, injectNodeInlineStyles } from './classInjection'
 import { renderVisualComponentRef } from './renderVisualComponentRef'
 import { renderLoop } from './renderLoop'
+import { resolveProjectionRenderer } from './renderProjection'
 import { resolveAutoSizes } from './sizesResolver'
 import { sanitizeRichtext } from '@core/sanitize'
 import type {
@@ -139,17 +140,25 @@ function renderStandardNode(
   // breakpointOverridable schema keys only — content props always publish
   // their base value because HTML is a single document) and apply dynamic
   // template bindings.
+  //
+  // Projection mode preserves source text: tokens stay verbatim, structured
+  // bindings are not applied, and `cms:page:<id>` refs stay raw — the
+  // projection shows what the author wrote, not what a render resolves it to.
   const effectiveProps = resolveProps(node, config.breakpointId, def.schema)
-  const dynamicProps = resolveDynamicProps(
-    effectiveProps,
-    effectiveNodeBindings(node),
-    config.templateContext,
-  )
+  const dynamicProps = config.projection
+    ? effectiveProps
+    : resolveDynamicProps(
+        effectiveProps,
+        effectiveNodeBindings(node),
+        config.templateContext,
+      )
 
   // Resolve internal page references (`cms:page:<id>`) to the target page's
   // CURRENT public path, so links survive slug renames. Runs before validation
   // / escaping so the resolved URL flows through the normal href pipeline.
-  const resolvedProps = resolvePageRefProps(dynamicProps, config.site.pages)
+  const resolvedProps = config.projection
+    ? dynamicProps
+    : resolvePageRefProps(dynamicProps, config.site.pages)
 
   // Coerce/default-fill authored props against the module's TypeBox schema
   // (soft boundary — never throws; unknown injected keys survive the merge).
@@ -157,9 +166,13 @@ function renderStandardNode(
 
   // Escape all string props (Constraint #211) before calling render(), then
   // attach derived assets that survive the escape boundary unchanged.
+  // Projection skips the derived-asset enrichment (srcset ladders, resolved
+  // sizes) — the editable HTML shows the authored prop values.
   const safeProps = escapeProps(validatedProps, def.schema)
-  attachResolvedMediaByKey(safeProps, def, validatedProps, config.mediaAssets)
-  attachResolvedAutoSizes(safeProps, def, node, config)
+  if (!config.projection) {
+    attachResolvedMediaByKey(safeProps, def, validatedProps, config.mediaAssets)
+    attachResolvedAutoSizes(safeProps, def, node, config)
+  }
 
   const output = def.render(safeProps as never, renderedChildren)
 
@@ -195,7 +208,10 @@ function renderStandardNode(
   if (node.moduleId === 'base.body') return output.html
   const withClasses = injectNodeClassIds(output.html, node.classIds, config.site)
   const withStyles = injectNodeInlineStyles(withClasses, node.inlineStyles, config.mediaAssets)
-  return config.annotateNodeIds ? injectNodeId(withStyles, node.id) : withStyles
+  // Projection implies uid annotation — the dialect's identity guarantee.
+  return config.annotateNodeIds || config.projection
+    ? injectNodeId(withStyles, node.id)
+    : withStyles
 }
 
 /**
@@ -301,7 +317,10 @@ export function renderNode(
 ): string {
   const node = config.page.nodes[nodeId]
   if (!node) return ''
-  if (node.hidden) return ''
+  // Hidden nodes are absent from publish output but PRESENT in the editable
+  // projection — dropping them would make an HTML apply delete them (their
+  // uids would vanish). The hidden flag itself is uid-carried metadata.
+  if (node.hidden && !config.projection) return ''
 
   const def = config.registry.get(node.moduleId)
   if (!def) {
@@ -312,12 +331,18 @@ export function renderNode(
   // Layer C: when this node id is in the dynamic set, emit a <instatic-hole>
   // placeholder and do NOT recurse into the subtree. The hole runtime will
   // fetch the full rendered fragment at request time via /_instatic/hole/<nodeId>.
-  if (config.dynamicNodeIds?.has(nodeId)) {
+  // Never in projection — the editable HTML always shows the real subtree.
+  if (!config.projection && config.dynamicNodeIds?.has(nodeId)) {
     return renderHolePlaceholder(node, def, config, acc)
   }
 
-  const specialRenderer = resolveSpecialRenderer(def)
-  if (specialRenderer) return specialRenderer(node, config, acc, renderNode)
+  if (config.projection) {
+    const projectionRenderer = resolveProjectionRenderer(node.moduleId)
+    if (projectionRenderer) return projectionRenderer(node, config, acc, renderNode)
+  } else {
+    const specialRenderer = resolveSpecialRenderer(def)
+    if (specialRenderer) return specialRenderer(node, config, acc, renderNode)
+  }
 
   return renderStandardNode(node, def, config, acc)
 }

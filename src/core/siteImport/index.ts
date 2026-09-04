@@ -68,6 +68,7 @@ export { commitImportPlan } from './commitPlan'
 export type {
   // Phase 1
   NewStyleRule,
+  BreakpointHint,
   // Phase 2
   FileMap,
   FileRole,

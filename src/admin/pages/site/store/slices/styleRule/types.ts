@@ -16,6 +16,7 @@
 
 import type { StyleRule, CSSPropertyBag, Condition, ConditionDef } from '@core/page-tree'
 import type { NewStyleRule } from '@core/siteImport'
+import type { StylesheetEdit } from '@core/cssProjection'
 
 /**
  * Inputs accepted by `createAmbientRule`. `selector` is required (e.g.
@@ -57,6 +58,15 @@ export interface CssRuleApplyResult {
 export interface CssRuleDeleteResult {
   deleted: number
   missingSelectors: string[]
+  blockedSelectors: string[]
+}
+
+export interface StylesheetEditResult {
+  created: number
+  updated: number
+  cleared: number
+  deleted: number
+  inlineChanged: boolean
   blockedSelectors: string[]
 }
 
@@ -133,6 +143,14 @@ export interface StyleRuleSlice {
 
   /** Delete every editable rule whose emitted selector exactly matches. */
   deleteCssRules(selectors: string[]): CssRuleDeleteResult
+
+  /**
+   * Apply a God Mode CSS panel edit plan (`planStylesheetEdit`) atomically:
+   * exact-selector upserts with replace semantics, cleared class blocks,
+   * deleted ambient blocks and the projected node's inline styles land as
+   * ONE undo step. Locked framework selectors are skipped and reported.
+   */
+  applyStylesheetEdit(edit: StylesheetEdit): StylesheetEditResult
 
   /**
    * Remove storage-key CSS properties from base and every context of every

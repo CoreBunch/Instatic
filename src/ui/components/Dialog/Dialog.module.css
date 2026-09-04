@@ -40,6 +40,22 @@
     width: min(820px, 100%);
 }
 
+.dialog[data-size="full"] {
+    width: calc(100vw - 2 * var(--space-xl));
+    height: calc(100vh - 2 * var(--space-xl));
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+}
+
+.dialog[data-size="full"] .body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+}
+
 .header {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 26px;

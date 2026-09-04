@@ -38,31 +38,14 @@ import { StyleSettingsPane } from './StyleSettingsPane'
 import { EmptyState } from '@ui/components/EmptyState'
 import { Button } from '@ui/components/Button'
 import { cn } from '@ui/cn'
-import type { SiteFile } from '@core/files/schemas'
 import type { SiteRuntimeDiagnostic } from '@core/site-runtime'
-import type { CodeLanguage } from './CodeMirrorEditor'
+import { fileLanguage } from './fileLanguage'
 import type { TypeScriptEditorDiagnostic } from './typescriptProtocol'
-import type { RuntimeScriptValidationState } from '@site/hooks/useRuntimeScriptDiagnostics'
+import {
+  fileRuntimeDiagnostics,
+  type RuntimeScriptValidationState,
+} from '@site/hooks/useRuntimeScriptDiagnostics'
 import styles from './CodeEditorPanel.module.css'
-
-/** Map a SiteFile to the editor's highlighting language (no CM6 imports here). */
-function fileLanguage(file: SiteFile): CodeLanguage {
-  switch (file.type) {
-    case 'component': return 'tsx'
-    case 'script':
-      if (/\.tsx$/.test(file.path)) return 'tsx'
-      if (/\.jsx$/.test(file.path)) return 'jsx'
-      if (/\.[cm]?js$/.test(file.path)) return 'javascript'
-      return 'ts'
-    case 'style': return 'css'
-    case 'config':
-      if (file.path.endsWith('.json')) return 'json'
-      if (file.path.endsWith('.ts') || file.path.endsWith('.mts')) return 'ts'
-      return 'text'
-    case 'doc': return 'markdown'
-    default: return 'text'
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Lazy-load CodeMirrorEditor — code-splits the heavy CodeMirror 6 bundle
@@ -175,10 +158,7 @@ export function CodeEditorPanel({ runtimeValidation }: CodeEditorPanelProps) {
   const isStyleFile = activeFile?.type === 'style'
   const runtimeDiagnostics = runtimeValidation?.diagnostics ?? EMPTY_DIAGNOSTICS
   const activeFileDiagnostics = activeFile
-    ? runtimeDiagnostics.filter((diagnostic) => (
-        diagnostic.fileId === activeFile.id ||
-        (!diagnostic.fileId && diagnostic.path === activeFile.path)
-      ))
+    ? fileRuntimeDiagnostics(runtimeDiagnostics, activeFile)
     : EMPTY_DIAGNOSTICS
   const activeTypeScriptDiagnostics = activeFile && typeScriptProblems.docKey === activeFile.id
     ? typeScriptProblems.diagnostics.map((diagnostic): SiteRuntimeDiagnostic => ({

@@ -1,0 +1,169 @@
+.dock {
+  /* Overridden from the dock element (MIN_COLUMN_WIDTH); default for CSS alone. */
+  --code-dock-column-min: 280px;
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  height: var(--code-dock-height);
+  min-height: 0;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-muted);
+}
+
+.heightHandle {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: row-resize;
+  z-index: 1;
+  touch-action: none;
+}
+
+.heightHandle:hover,
+.heightHandle:focus-visible {
+  background: var(--overlay-10);
+  outline: none;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-s);
+  padding: var(--space-2xs) var(--space-s);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.panelToggles {
+  display: flex;
+  align-items: center;
+  gap: var(--space-px);
+  padding: var(--space-px);
+  border-radius: var(--radius);
+  background: var(--overlay-10);
+}
+
+.panelToggle {
+  gap: var(--space-4xs);
+}
+
+.panelToggle[aria-pressed='false'] .panelToggleMark,
+.panelToggle[aria-selected='false'] .panelToggleMark {
+  visibility: hidden;
+}
+
+.panelToggle[aria-pressed='false'],
+.panelToggle[aria-selected='false'] {
+  color: var(--text-muted);
+}
+
+.columns {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.columnGroup {
+  display: flex;
+  flex: 1 1 0;
+  /* A column can be dragged down to this, never out of existence; when
+     the visible columns cannot all fit, the dock falls back to tabs. */
+  min-width: var(--code-dock-column-min);
+}
+
+/* Per-column flex weights, driven by uiSlice via CSS custom properties
+   (updated imperatively during divider drags, committed on pointer-up).
+   They size the GROUP (divider + panel); the panel fills its group. */
+.columnGroup_html {
+  flex-grow: var(--code-dock-weight-html);
+}
+
+.columnGroup_css {
+  flex-grow: var(--code-dock-weight-css);
+}
+
+.columnGroup_js {
+  flex-grow: var(--code-dock-weight-js);
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.columnDivider {
+  flex: none;
+  position: relative;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 1;
+  touch-action: none;
+}
+
+/* A visible 1px line inside a 7px grab area, so the handle can be found. */
+.columnDivider::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: var(--border-subtle);
+}
+
+.columnDivider:hover::after,
+.columnDivider:focus-visible::after,
+.columnDivider[data-dragging='true']::after {
+  background: var(--text-muted);
+  left: 2px;
+  width: 3px;
+}
+
+.columnDivider:focus-visible {
+  outline: none;
+}
+
+.columnTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  padding: var(--space-3xs) var(--space-3xs) var(--space-3xs) var(--space-s);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+.expandedPlaceholder {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: var(--space-s);
+  font-size: var(--text-s);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.expandedBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.allHidden {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-s);
+  color: var(--text-muted);
+}

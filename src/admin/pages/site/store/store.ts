@@ -8,6 +8,7 @@ import { createSiteSlice } from './slices/siteSlice'
 import { createSelectionSlice } from './slices/selectionSlice'
 import { createCanvasSlice } from './slices/canvasSlice'
 import { createUiSlice } from './slices/uiSlice'
+import { createCodeDockSlice } from './slices/codeDockSlice'
 import { createStyleRuleSlice } from './slices/styleRuleSlice'
 import { createFilesSlice } from './slices/filesSlice'
 import { createVisualComponentsSlice } from './slices/visualComponentsSlice'
@@ -66,6 +67,7 @@ export const useEditorStore = create<EditorStore>()(
         ...createSelectionSlice(...args),
         ...createCanvasSlice(...args),
         ...createUiSlice(...args),
+        ...createCodeDockSlice(...args),
         ...createStyleRuleSlice(...args),
         ...createFilesSlice(...args),
         ...createVisualComponentsSlice(...args),
@@ -195,6 +197,9 @@ export const selectActivePage = (s: EditorStore): Page | null => {
 
 /** Select whether the docked right sidebar is currently taking layout space. */
 export const selectRightSidebarExpanded = (s: EditorStore) =>
+  // God Mode replaces the docked properties sidebar with the Code Dock.
+  // Floating properties (the escape hatch) is unaffected by this selector.
+  !s.godModeActive &&
   s.propertiesPanelMode === 'docked' &&
   !s.propertiesPanel.collapsed &&
   Boolean(

@@ -38,6 +38,7 @@
  * No env vars, no API keys, no endpoint configuration required (Constraint #385).
  */
 import { Toolbar } from '@admin/pages/site/toolbar/Toolbar'
+import { GodModeToggleButton } from '@admin/pages/site/toolbar/GodModeToggleButton'
 import { ZoomControls } from '@admin/pages/site/toolbar/ZoomControls'
 import { PublishButton } from '@admin/pages/site/toolbar/PublishButton'
 import { PeerAvatarStack } from '@admin/pages/site/toolbar/PeerAvatarStack'
@@ -228,6 +229,7 @@ export function AdminCanvasLayout() {
           rightSlot={(
             <>
               <PeerAvatarStack />
+              <GodModeToggleButton />
               <ZoomControls />
               <PublishButton
                 enabled={canPublishPages}

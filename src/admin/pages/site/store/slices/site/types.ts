@@ -26,7 +26,7 @@ import type {
   StructuralSiteExplorerSectionId,
 } from '@core/page-tree'
 import type { FontEntry, FontToken } from '@core/fonts'
-import type { ImportFragment } from '@core/htmlImport'
+import type { ImportFragment, ProjectionImportResult } from '@core/htmlImport'
 import type { NewStyleRule, SiteImportTransaction } from '@core/siteImport'
 import type { FrameworkChangeImpact, FrameworkPreset } from '@core/framework'
 import type { EditorStore } from '@site/store/types'
@@ -184,6 +184,15 @@ export interface SiteSlice {
     fragment: ImportFragment,
     opts?: { index?: number; styleRules?: NewStyleRule[]; conditions?: ConditionDef[] },
   ) => string[]
+
+  /**
+   * Apply a uid-preserving projection import (`importProjectionHtml`) to the
+   * active tree as ONE undo step: the projected subtree is replaced by the
+   * result's nodes (matched ids and metadata survive, vanished ids are
+   * deleted and pruned from the selection), class names link to registry
+   * classes. Returns false when the result's root is no longer in the tree.
+   */
+  applyProjectionImport: (result: ProjectionImportResult) => boolean
 
   /**
    * Insert a `base.visual-component-ref` node into the active document.

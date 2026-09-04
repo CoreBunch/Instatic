@@ -571,9 +571,13 @@ describe('Toolbar — structural requirements', () => {
       new URL('../../admin/pages/site/toolbar/PublishActionGroup.tsx', import.meta.url),
       'utf-8',
     )
-    // The optional status pill stays owned by PublishActionGroup.
+    // The optional status pill stays owned by PublishActionGroup: a passive
+    // `role="status"` label, or a Button when the status is actionable.
     expect(src).toContain('statusLabel?: string | null')
-    expect(src).toContain('{statusLabel && (')
+    expect(src).toContain('onStatusActivate?: () => void')
+    expect(src).toContain('{statusLabel && onStatusActivate ? (')
+    expect(src).toContain('role="status"')
+    expect(src).toContain('data-testid="toolbar-status-action"')
     // The split button + dropdown mechanics now live in the shared primitive.
     expect(src).toContain('@ui/components/SplitButton')
     expect(src).toContain('<SplitButton')

@@ -21,17 +21,26 @@ function childrenOf(html: string) {
 }
 
 describe('<br> inside a heading is preserved', () => {
-  it('heading with <br> recurses and keeps the break + both text halves', () => {
-    const { root, kids } = childrenOf('<h2>Get the<br/>file-based CMS.</h2>')
+  it('heading whose only element children are <br> maps to ONE base.text with \\n', () => {
+    // base.text renders authored newlines as <br> (textToBreakHtml), so this
+    // shape is the module's own output — importing it back to a single text
+    // node keeps the break AND makes the projection dialect round-trip
+    // (God Mode ticket 03) instead of exploding into container + three nodes.
+    const { root } = childrenOf('<h2>Get the<br/>file-based CMS.</h2>')
+    expect(root.moduleId).toBe('base.text')
+    expect(root.props.tag).toBe('h2')
+    expect(root.props.text).toBe('Get the\nfile-based CMS.')
+    // …and the module renders the break back out.
+    const { html } = TextModule.render(root.props as never, [])
+    expect(html).toContain('Get the<br>file-based CMS.')
+  })
+
+  it('a heading mixing <br> with other element children still recurses', () => {
+    const { root, kids } = childrenOf('<h2>Get the<br/><em>file-based</em> CMS.</h2>')
     expect(root.moduleId).toBe('base.container')
     expect(root.props.customTag).toBe('h2')
     const tags = kids.map((k) => k.props.customTag ?? k.moduleId)
     expect(tags).toContain('br') // the line break survives as a node
-    const texts = kids
-      .filter((k) => k.moduleId === 'base.text' && k.props.tag === 'none')
-      .map((k) => k.props.text)
-    expect(texts).toContain('Get the')
-    expect(texts).toContain('file-based CMS.')
   })
 })
 

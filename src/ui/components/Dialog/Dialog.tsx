@@ -23,6 +23,7 @@
  *
  * Variants:
  *   `size`  — sm (360px) | md (440px, default) | lg (520px) | xl (640px) | 2xl (820px)
+ *             | full (the viewport minus a margin, for workspaces such as an expanded code panel)
  *   `tone`  — neutral (default) | danger — colours the eyebrow / header
  *
  * Accessibility:
@@ -48,7 +49,7 @@ import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { cn } from '@ui/cn'
 import styles from './Dialog.module.css'
 
-type DialogSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl'
+type DialogSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full'
 type DialogTone = 'neutral' | 'danger'
 
 interface DialogProps {

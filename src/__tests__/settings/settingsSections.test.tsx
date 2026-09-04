@@ -13,6 +13,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { PreferencesSection } from '@admin/modals/Settings/sections/PreferencesSection'
+import { AdminSessionProvider } from '@admin/session'
+import type { CmsCurrentUser } from '@core/persistence'
 import { PublishingSection } from '@admin/modals/Settings/sections/PublishingSection'
 import { useEditorStore } from '@site/store/store'
 import { makeSite } from '../fixtures'
@@ -54,7 +56,7 @@ describe('PreferencesSection — catalog-driven rendering', () => {
     render(<PreferencesSection />)
 
     // Boolean preferences currently declared in `admin/pages/site/preferences/catalog.ts`:
-    //   hoverPreview, confirmBeforeDelete,
+    //   hoverPreview, godMode (capability-gated; test users are full-access), confirmBeforeDelete,
     //   layersShowIcon, layersShowTag, layersShowClasses,
     //   layersAutoExpandSelected, layersSmoothScroll,
     //   dimInactiveBreakpoints, propertiesSmoothScroll,
@@ -62,7 +64,7 @@ describe('PreferencesSection — catalog-driven rendering', () => {
     //   spotlightTelemetryEnabled  ← Phase 6: opt-in command-usage telemetry
     // Adding/removing a boolean preference is one catalog edit and this
     // assertion updates with it.
-    expect(screen.getAllByRole('switch')).toHaveLength(11)
+    expect(screen.getAllByRole('switch')).toHaveLength(12)
     expect(screen.getByRole('switch', { name: /preview suggestions on hover/i })).toBeDefined()
     expect(screen.getByRole('switch', { name: /confirm before deleting/i })).toBeDefined()
     expect(screen.getByRole('switch', { name: /show module icon/i })).toBeDefined()
@@ -76,6 +78,49 @@ describe('PreferencesSection — catalog-driven rendering', () => {
     expect(screen.getByRole('switch', { name: /track command usage/i })).toBeDefined()
     expect(screen.queryByRole('switch', { name: /snap to grid/i })).toBeNull()
     expect(screen.queryByRole('switch', { name: /reduce motion/i })).toBeNull()
+  })
+
+  it('hides capability-gated preferences from users without structure-edit rights', () => {
+    // Minimal content-editor user: no site.structure.edit / pages.edit.
+    const contentEditor: CmsCurrentUser = {
+      id: 'u_content',
+      email: 'copy@example.com',
+      displayName: 'Copy Editor',
+      status: 'active',
+      role: {
+        id: 'editor',
+        slug: 'editor',
+        name: 'Editor',
+        description: '',
+        isSystem: true,
+        capabilities: ['site.read', 'content.edit'],
+      },
+      capabilities: ['site.read', 'content.edit'],
+      lastLoginAt: null,
+      failedLoginCount: 0,
+      lockedUntil: null,
+      passwordUpdatedAt: null,
+      mfaEnabled: false,
+      mfaEnabledAt: null,
+      mfaRecoveryCodesRemaining: 0,
+      stepUpAuthMode: 'required',
+      stepUpWindowMinutes: 15,
+      avatarMediaId: null,
+      avatarUrl: null,
+      gravatarHash: '',
+      createdAt: '2026-05-09T10:00:00.000Z',
+      updatedAt: '2026-05-09T10:00:00.000Z',
+    }
+
+    render(
+      <AdminSessionProvider user={contentEditor}>
+        <PreferencesSection />
+      </AdminSessionProvider>,
+    )
+
+    expect(screen.queryByRole('switch', { name: /god mode/i })).toBeNull()
+    // Ungated preferences still render.
+    expect(screen.getByRole('switch', { name: /preview suggestions on hover/i })).toBeDefined()
   })
 
   it('auto-renders one combobox per select catalog entry', () => {

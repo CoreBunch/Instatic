@@ -202,3 +202,16 @@
     animation-duration: 0.01ms;
   }
 }
+
+/* God Mode Code Dock placeholder — holds the dock's height while the lazy
+   chunk loads so the toggle has an immediate, visible effect. */
+.codeDockLoading {
+  flex: none;
+  display: grid;
+  place-items: center;
+  height: var(--code-dock-height);
+  border-top: 1px solid var(--border-muted);
+  background: var(--bg-surface);
+  font-size: var(--text-s);
+  color: var(--text-muted);
+}

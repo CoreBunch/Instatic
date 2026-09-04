@@ -371,7 +371,9 @@ function sameTree(state: EditorStore, existingIds: string[], id: string): boolea
  * so the slice's helpers can use the page-tree selectors uniformly.
  * Also consumed by `inlineEditSlice` (same no-cycle rationale).
  */
-export function getActiveTree(state: EditorStore): NodeTree<PageNode> | null {
+export type ActiveTreeInputs = Pick<EditorStore, 'site' | 'activeDocument' | 'activePageId'>
+
+export function getActiveTree(state: ActiveTreeInputs): NodeTree<PageNode> | null {
   if (!state.site) return null
   const activeDocument = state.activeDocument
   if (activeDocument?.kind === 'visualComponent') {
