@@ -38,15 +38,19 @@ describe('registry proxy routes', () => {
     harness = await createCapabilityTestHarness()
     cookie = await harness.setupOwner()
     seen.length = 0
+    // Routed on the parsed host and path, never a substring: a bare
+    // `includes('api.npmjs.org')` matches any URL that merely contains the
+    // host, which is the shape CodeQL flags wherever it appears.
     setRegistryFetchForTests((async (input: RequestInfo | URL) => {
-      const url = String(input)
-      seen.push(url)
-      if (url.includes('api.npmjs.org')) return json({ downloads: [{ day: 'x', downloads: 5 }] })
-      if (url.includes('api.osv.dev')) return json({ vulns: [] })
-      if (url.includes('/-/v1/search')) return json(SEARCH_BODY)
-      if (url.endsWith('/@scope%2Fpkg/latest')) return json({ name: '@scope/pkg', version: '1.0.0' })
-      if (url.endsWith('/@scope%2Fpkg')) return json(PACKUMENT)
-      if (url.endsWith('/flaky')) return json({ error: 'upstream down' }, 502)
+      const raw = String(input)
+      seen.push(raw)
+      const url = new URL(raw)
+      if (url.host === 'api.npmjs.org') return json({ downloads: [{ day: 'x', downloads: 5 }] })
+      if (url.host === 'api.osv.dev') return json({ vulns: [] })
+      if (url.pathname === '/-/v1/search') return json(SEARCH_BODY)
+      if (url.pathname === '/@scope%2Fpkg/latest') return json({ name: '@scope/pkg', version: '1.0.0' })
+      if (url.pathname === '/@scope%2Fpkg') return json(PACKUMENT)
+      if (url.pathname === '/flaky') return json({ error: 'upstream down' }, 502)
       return json({ error: 'not found' }, 404)
     }) as typeof fetch)
   })
