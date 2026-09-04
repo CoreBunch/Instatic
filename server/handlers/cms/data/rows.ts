@@ -55,6 +55,7 @@ import {
   canEditDataRow,
   canPublishDataRow,
   canReadDataRow,
+  canReadTable,
   forbidden,
   requireDataAccess,
   requireDataAuthorManager,
@@ -120,6 +121,13 @@ async function loadRowForAccess(
 ): Promise<DataRow | Response> {
   const row = await getDataRow(db, rowId)
   if (!row) return rowNotFound()
+  // Enforce the table-family read boundary BEFORE the row-ownership check. A
+  // persona granted a broad content.* capability but NOT data.system.tables.read
+  // satisfies row ownership on every row, so without this it could read, edit,
+  // and publish system-table rows (pages/posts drafts, author identity). The
+  // schema-read sibling already checks this; the row layer did not (GHSA-x69h).
+  const table = await getDataTable(db, row.tableId)
+  if (!table || !canReadTable(user, table)) return rowNotFound()
   if (!check(user, row)) return forbidden()
   return row
 }

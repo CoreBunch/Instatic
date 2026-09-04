@@ -1,0 +1,262 @@
+/**
+ * Build per-platform runnable server artifacts: a `bun build --compile`
+ * single-file server binary plus the admin `dist/`, packed as
+ * `instatic-server-<version>-<platform>.tar.gz` with a sha256 checksums file.
+ *
+ * These assets let a release run anywhere Bun does, no container needed (a
+ * release is "artifact-enabled" when they are present). The compile has two
+ * requirements the CLI can't express, so the build goes through `Bun.build`:
+ *
+ *  1. `sharp` must resolve to its CJS entry — the ESM entry loads the native
+ *     binding via `createRequire(import.meta.url)`, which cannot resolve bare
+ *     specifiers inside a compiled binary. The CJS entry uses literal
+ *     `require()` calls the bundler embeds.
+ *  2. Every non-target `@img/*` package must be externalized — with all
+ *     platforms installed (`bun install --os='*' --cpu='*'`), every
+ *     platform's native blobs would otherwise embed into every binary.
+ *
+ * Usage:
+ *   bun scripts/build-server-artifact.ts [targets...] [--all] [--version <v>]
+ *
+ * Targets: darwin-arm64 | darwin-x64 | linux-x64 (default: host platform).
+ * Cross-target builds need `bun install --os='*' --cpu='*'` first.
+ */
+import { existsSync, readdirSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
+
+const ROOT = resolve(import.meta.dir, '..')
+const OUT_DIR = join(ROOT, '.tmp', 'server-artifacts')
+const ENTRY_DIR = join(ROOT, '.tmp')
+
+const SUPPORTED_TARGETS = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'windows-x64'] as const
+type ArtifactTarget = (typeof SUPPORTED_TARGETS)[number]
+
+/** npm platform suffix for `@img/sharp-*` packages (windows is `win32` there). */
+function sharpTarget(target: ArtifactTarget): string {
+  return target === 'windows-x64' ? 'win32-x64' : target
+}
+
+function isSupportedTarget(value: string): value is ArtifactTarget {
+  return (SUPPORTED_TARGETS as readonly string[]).includes(value)
+}
+
+function hostTarget(): ArtifactTarget {
+  const host = `${process.platform}-${process.arch}`
+  if (!isSupportedTarget(host)) {
+    throw new Error(`Host platform ${host} is not a supported artifact target (${SUPPORTED_TARGETS.join(', ')})`)
+  }
+  return host
+}
+
+function parseArgs(): { targets: ArtifactTarget[]; version: string | null } {
+  const args = Bun.argv.slice(2)
+  const targets: ArtifactTarget[] = []
+  let version: string | null = null
+  let all = false
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (arg === '--all') all = true
+    else if (arg === '--version') {
+      version = args[++i] ?? null
+      if (!version) throw new Error('--version requires a value')
+    } else if (isSupportedTarget(arg)) targets.push(arg)
+    else throw new Error(`Unknown argument: ${arg}. Targets: ${SUPPORTED_TARGETS.join(', ')}`)
+  }
+  if (all) return { targets: [...SUPPORTED_TARGETS], version }
+  return { targets: targets.length > 0 ? targets : [hostTarget()], version }
+}
+
+async function resolveVersion(explicit: string | null): Promise<string> {
+  if (explicit) return explicit.replace(/^v/, '')
+  const pkg = JSON.parse(await readFile(join(ROOT, 'package.json'), 'utf-8')) as { version?: string }
+  if (!pkg.version) throw new Error('package.json has no version')
+  return pkg.version
+}
+
+/** libvips binary filename inside the sharp platform package is versioned — discover it. */
+function findLibvips(target: ArtifactTarget): { pkgDir: string; file: string } {
+  const pkgDir = join(ROOT, 'node_modules', '@img', `sharp-libvips-${sharpTarget(target)}`, 'lib')
+  if (!existsSync(pkgDir)) {
+    throw new Error(
+      `Missing @img/sharp-libvips-${sharpTarget(target)}. Cross-target builds need: bun install --os='*' --cpu='*'`,
+    )
+  }
+  const file = readdirSync(pkgDir).find((name) => name.startsWith('libvips-cpp.'))
+  if (!file) throw new Error(`No libvips-cpp library found in ${pkgDir}`)
+  return { pkgDir, file }
+}
+
+/** Windows keeps its DLLs inside `@img/sharp-win32-x64/lib` — discover both. */
+function findWindowsDlls(): { base: string; cpp: string } {
+  const pkgDir = join(ROOT, 'node_modules', '@img', 'sharp-win32-x64', 'lib')
+  if (!existsSync(pkgDir)) {
+    throw new Error(`Missing @img/sharp-win32-x64. Cross-target builds need: bun install --os='*' --cpu='*'`)
+  }
+  const names = readdirSync(pkgDir)
+  const cpp = names.find((name) => name.startsWith('libvips-cpp'))
+  const base = names.find((name) => name.startsWith('libvips-') && !name.startsWith('libvips-cpp'))
+  if (!cpp || !base) throw new Error(`libvips DLLs not found in ${pkgDir} (saw: ${names.join(', ')})`)
+  return { base, cpp }
+}
+
+function entrySource(target: ArtifactTarget): string {
+  if (target === 'windows-x64') {
+    const { base, cpp } = findWindowsDlls()
+    const libvipsVersion = /^libvips-cpp-(.+)\.dll$/.exec(cpp)?.[1] ?? cpp
+    return `// GENERATED by scripts/build-server-artifact.ts — compile entry for ${target}.
+// Bun extracts embedded files under hashed names, which breaks Windows
+// by-name DLL dependency resolution — self-extract both DLLs with their
+// real names first. The Windows loader resolves a module's by-name imports
+// against the process's already-loaded module list before searching disk
+// (and never searches the loaded DLL's own directory), so preload
+// bottom-up: ${base} ← ${cpp} ← sharp.node. Extraction is per-libvips
+// version and tolerant of a sibling server holding the same DLLs mapped
+// (writing to a mapped DLL is a sharing violation).
+// @ts-expect-error file embed
+import libvipsBasePath from '../node_modules/@img/sharp-win32-x64/lib/${base}' with { type: 'file' }
+// @ts-expect-error file embed
+import libvipsCppPath from '../node_modules/@img/sharp-win32-x64/lib/${cpp}' with { type: 'file' }
+import { dlopen, ptr } from 'bun:ffi'
+import { mkdirSync, renameSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const libDir = join(tmpdir(), 'instatic-native', '${libvipsVersion}')
+mkdirSync(libDir, { recursive: true })
+
+async function extractDll(name: string, embedded: string): Promise<string> {
+  const target = join(libDir, name)
+  const source = Bun.file(embedded)
+  const existing = Bun.file(target)
+  if ((await existing.exists()) && existing.size === source.size) return target
+  const tmp = target + '.' + process.pid + '.tmp'
+  try {
+    await Bun.write(tmp, source)
+    renameSync(tmp, target)
+  } catch (err) {
+    rmSync(tmp, { force: true })
+    // A running sibling server holds the same-version DLL mapped; the file
+    // on disk is identical, so load it as-is.
+    if (!(await existing.exists())) throw err
+  }
+  return target
+}
+
+const baseDll = await extractDll('${base}', libvipsBasePath)
+const cppDll = await extractDll('${cpp}', libvipsCppPath)
+// Belt-and-braces: PATH is the loader's fallback should a preload be bypassed.
+process.env.PATH = libDir + ';' + (process.env.PATH ?? '')
+dlopen(baseDll, { vips_version: { args: ['i32'], returns: 'i32' } })
+// ${cpp} exports only C++-mangled names, which bun:ffi cannot request (its
+// generated wrapper needs each symbol to be a valid C identifier). Load it
+// through the Win32 loader instead: a by-path LoadLibraryW puts the module
+// in the process list under its real name, which is exactly what the sharp
+// .node's import resolution needs.
+const kernel32 = dlopen('kernel32.dll', { LoadLibraryW: { args: ['ptr'], returns: 'ptr' } })
+const cppDllWide = new Uint16Array(cppDll.length + 1)
+for (let i = 0; i < cppDll.length; i++) cppDllWide[i] = cppDll.charCodeAt(i)
+if (!kernel32.symbols.LoadLibraryW(ptr(cppDllWide))) {
+  throw new Error('Failed to load ' + cppDll)
+}
+require('@img/sharp-win32-x64/sharp.node')
+await import('../server/index.ts')
+`
+  }
+  const { file: libvipsFile } = findLibvips(target)
+  return `// GENERATED by scripts/build-server-artifact.ts — compile entry for ${target}.
+// Embeds libvips, preloads it via dlopen (the .node's loader dependency is
+// then satisfied in-process), embeds the sharp native binding, then boots
+// the server. See the script header for why this wrapper exists.
+// @ts-expect-error file embed
+import libvipsPath from '../node_modules/@img/sharp-libvips-${target}/lib/${libvipsFile}' with { type: 'file' }
+import { dlopen } from 'bun:ffi'
+dlopen(libvipsPath, { vips_version: { args: ['i32'], returns: 'i32' } })
+require('@img/sharp-${target}/sharp.node')
+await import('../server/index.ts')
+`
+}
+
+async function compileBinary(target: ArtifactTarget, outfile: string): Promise<void> {
+  const sharpNative = join(ROOT, 'node_modules', '@img', `sharp-${sharpTarget(target)}`)
+  if (!existsSync(sharpNative)) {
+    throw new Error(
+      `Missing @img/sharp-${sharpTarget(target)}. Cross-target builds need: bun install --os='*' --cpu='*'`,
+    )
+  }
+  const entryPath = join(ENTRY_DIR, `server-artifact-entry-${target}.ts`)
+  await mkdir(ENTRY_DIR, { recursive: true })
+  await writeFile(entryPath, entrySource(target), 'utf-8')
+
+  const sharpCjs = join(ROOT, 'node_modules', 'sharp', 'dist', 'index.cjs')
+  const external = readdirSync(join(ROOT, 'node_modules', '@img'))
+    .filter((name) => name.startsWith('sharp-') && !name.endsWith(`-${sharpTarget(target)}`))
+    .flatMap((name) => [`@img/${name}`, `@img/${name}/*`])
+
+  const result = await Bun.build({
+    entrypoints: [entryPath],
+    external,
+    compile: { outfile, target: `bun-${target}` },
+    plugins: [
+      {
+        name: 'force-sharp-cjs',
+        setup(build) {
+          build.onResolve({ filter: /^sharp$/ }, () => ({ path: sharpCjs }))
+        },
+      },
+    ],
+  })
+  if (!result.success) {
+    throw new Error(`Compile failed for ${target}:\n${result.logs.join('\n')}`)
+  }
+}
+
+async function sha256(path: string): Promise<string> {
+  const hasher = new Bun.CryptoHasher('sha256')
+  hasher.update(await Bun.file(path).arrayBuffer())
+  return hasher.digest('hex')
+}
+
+const { targets, version } = parseArgs()
+const resolvedVersion = await resolveVersion(version)
+
+if (!existsSync(join(ROOT, 'dist', 'index.html'))) {
+  throw new Error('dist/ is missing — run `bun run build` before building server artifacts')
+}
+
+await rm(OUT_DIR, { recursive: true, force: true })
+await mkdir(OUT_DIR, { recursive: true })
+
+const checksumLines: string[] = []
+for (const target of targets) {
+  const artifactName = `instatic-server-${resolvedVersion}-${target}`
+  const stageDir = join(OUT_DIR, artifactName)
+  await mkdir(stageDir, { recursive: true })
+
+  console.log(`[artifact] compiling ${target}…`)
+  const binaryName = target === 'windows-x64' ? 'instatic-server.exe' : 'instatic-server'
+  // Bun appends .exe to windows outfiles on its own — hand it the final name.
+  await compileBinary(target, join(stageDir, binaryName))
+  await cp(join(ROOT, 'dist'), join(stageDir, 'dist'), { recursive: true })
+  await cp(join(ROOT, 'LICENSE'), join(stageDir, 'LICENSE'))
+  await writeFile(
+    join(stageDir, 'manifest.json'),
+    `${JSON.stringify({ name: 'instatic-server', version: resolvedVersion, platform: target }, null, 2)}\n`,
+    'utf-8',
+  )
+
+  const tarballName = `${artifactName}.tar.gz`
+  const tar = spawnSync('tar', ['-czf', join(OUT_DIR, tarballName), '-C', OUT_DIR, artifactName], {
+    stdio: 'inherit',
+  })
+  if (tar.status !== 0) throw new Error(`tar failed for ${target} (exit ${tar.status})`)
+  await rm(stageDir, { recursive: true, force: true })
+
+  checksumLines.push(`${await sha256(join(OUT_DIR, tarballName))}  ${tarballName}`)
+  console.log(`[artifact] ${tarballName} ready`)
+}
+
+const checksumsPath = join(OUT_DIR, `instatic-server-${resolvedVersion}-checksums.txt`)
+await writeFile(checksumsPath, `${checksumLines.join('\n')}\n`, 'utf-8')
+console.log(`[artifact] wrote ${checksumsPath}`)

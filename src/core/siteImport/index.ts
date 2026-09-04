@@ -79,6 +79,9 @@ export type {
   CrossSheetClassConflict,
   ImportPlan,
   ImportResult,
+  ImportWarning,
+  ImportAsset,
+  UploadedImportAsset,
   StylesheetImportMode,
   ImportStylesheet,
   // @font-face import
@@ -98,4 +101,4 @@ export {
   ZipBombError,
   TooManyFilesError,
   PathTraversalError,
-} from './types'
+} from './errors'

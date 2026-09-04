@@ -73,6 +73,18 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  *   (or `local(...)` only) — nothing to upload, so the face is skipped rather
  *   than imported. The user can re-add the font by hand. Self-hosted faces
  *   (a bundled `.woff2`/`.woff`/`.ttf`/`.otf`) ARE imported as custom fonts.
+ * - `unresolved-asset`: an HTML/CSS reference to a media file (image, font,
+ *   video, …) that the archive does not contain under that path — not even
+ *   after the punctuation-insensitive fallback match. The reference is left
+ *   pointing at its original path, so the page imports with a broken image
+ *   rather than losing the element. One warning per distinct missing path.
+ * - `asset-folder-failed`: the asset uploaded and its URL was rewritten, but
+ *   placing it under the folder that mirrors its bundle path failed (folder
+ *   listing or creation rejected). The asset sits at the media root; the user
+ *   can drag it into place. Never blocks the URL rewrite (#409).
+ * - `script-order-conflict`: two pages link the same scripts in contradictory
+ *   orders, so no single load order satisfies both. The order from the page
+ *   that links them first wins; `path` names the first script of the cycle.
  */
 type ImportWarningKind =
   | 'dropped-at-rule'
@@ -85,8 +97,11 @@ type ImportWarningKind =
   | 'missing-stylesheet'
   | 'missing-script'
   | 'asset-upload-failed'
+  | 'asset-folder-failed'
   | 'font-install-failed'
   | 'external-font'
+  | 'unresolved-asset'
+  | 'script-order-conflict'
 
 export interface ImportWarning {
   kind: ImportWarningKind
@@ -270,7 +285,12 @@ export interface ImportScript {
   pageSources: string[]
   /** Final committed page IDs. Filled by `commitImportPlan` before adapter call. */
   pageIds?: string[]
-  /** Runtime ordering; lower runs earlier. Derived from first HTML occurrence. */
+  /**
+   * Runtime ordering; lower runs earlier. One number per script, so it is
+   * derived from EVERY page's document order at once (`scriptOrder.ts`): a
+   * script shared by two pages sits after whatever either page loads before
+   * it. Contradictory page orders surface as `script-order-conflict`.
+   */
   priority: number
   /** npm dependencies needed by this module script after import conversion. */
   dependencies?: ImportScriptDependency[]
@@ -351,6 +371,31 @@ export type PageScript =
 // Phase 2 — Site-import pipeline types
 // ---------------------------------------------------------------------------
 
+/** A media/font file the plan will upload, with its raw bytes. */
+export interface ImportAsset {
+  /** FileMap key — also the token `applyAssetRewrites` swaps for the media URL. */
+  sourcePath: string
+  mimeType: string
+  bytes: Uint8Array
+  /**
+   * Authored alt text from the first `<img>` that references this file, so
+   * the Media Library record is created with it. Absent when no page gave
+   * the image an alt attribute.
+   */
+  altText?: string
+}
+
+/** What `SiteImportAdapter.uploadAsset` reports back for one uploaded file. */
+export interface UploadedImportAsset {
+  /** Public media URL the page tree should reference. */
+  url: string
+  /**
+   * Non-fatal notes about this upload — the asset is in the library and its
+   * URL is final, but something around it (folder placement) did not happen.
+   */
+  warnings: ImportWarning[]
+}
+
 /**
  * A normalized map of all files in the import input.
  *
@@ -420,6 +465,14 @@ export interface PagePlan {
    * replacement without needing the original base path.
    */
   nodeFragment: ImportFragment
+  /**
+   * Authored `alt` per `base.image` node id, for every `<img>` that carried
+   * an alt attribute (an empty string is a deliberate decorative alt). Alt is
+   * not a per-instance prop — the Media Library asset is the source of truth
+   * — so `buildAssetPlan` carries it onto the planned asset and the upload
+   * creates the record with it.
+   */
+  imageAlts: Record<string, string>
 }
 
 /** How a slug, rule-name, or token-variable conflict is resolved for a single item. */
@@ -540,9 +593,11 @@ export interface ImportPlan {
   /**
    * Index-aligned with `styleRules`: the FileMap key of the source stylesheet
    * each rule was parsed from (a real `.css` path, or a synthetic
-   * `<htmlPath>::inline` key for an inline `<style>` block). Import-time
-   * metadata only — used by the wizard to group rules by source stylesheet.
-   * NOT persisted onto the committed `StyleRule`.
+   * `<htmlPath>::inline` key for an inline `<style>` block). Wizard-side
+   * grouping only: every rule, including ones the cross-sheet resolver
+   * materialises, has a display group here. The durable identity a re-import
+   * reconciles against is `rule.origin` (source + ordinal), stamped by
+   * `buildAssetPlan` and persisted on the committed `StyleRule`.
    */
   styleRuleSources: string[]
   /**
@@ -564,7 +619,7 @@ export interface ImportPlan {
    */
   conditions: ConditionDef[]
   /** Assets to upload, with their raw bytes. */
-  assets: { sourcePath: string; mimeType: string; bytes: Uint8Array }[]
+  assets: ImportAsset[]
   /**
    * Colour-valued custom properties pulled from root-scope rules, ready to
    * commit into the CMS colours system. Deduped by slug across all CSS files.
@@ -628,69 +683,4 @@ export interface ImportResult {
   /** Resolved conflicts (mirrors ImportPlan.conflicts with final actions). */
   conflicts: ImportPlan['conflicts']
   warnings: ImportWarning[]
-}
-
-// ---------------------------------------------------------------------------
-// Typed error classes for the import pipeline
-// ---------------------------------------------------------------------------
-
-/** Thrown when the import input contains no processable files. */
-export class EmptyImportError extends Error {
-  constructor() {
-    super('Import input is empty — drop at least one file')
-    this.name = 'EmptyImportError'
-  }
-}
-
-/** Thrown when the aggregate input size exceeds the configured limit. */
-export class OversizeImportError extends Error {
-  readonly sizeBytes: number
-  readonly limitBytes: number
-  constructor(sizeBytes: number, limitBytes: number) {
-    super(
-      `Import aggregate size ${sizeBytes} bytes exceeds the ${limitBytes}-byte limit`,
-    )
-    this.name = 'OversizeImportError'
-    this.sizeBytes = sizeBytes
-    this.limitBytes = limitBytes
-  }
-}
-
-/** Thrown when a zip's uncompressed size exceeds the zip-bomb guard limit. */
-export class ZipBombError extends Error {
-  readonly uncompressedBytes: number
-  readonly limitBytes: number
-  constructor(uncompressedBytes: number, limitBytes: number) {
-    super(
-      `Zip uncompressed size ${uncompressedBytes} bytes exceeds the ${limitBytes}-byte limit (zip-bomb guard)`,
-    )
-    this.name = 'ZipBombError'
-    this.uncompressedBytes = uncompressedBytes
-    this.limitBytes = limitBytes
-  }
-}
-
-/** Thrown when the file count in the import exceeds the configured limit. */
-export class TooManyFilesError extends Error {
-  readonly count: number
-  readonly limit: number
-  constructor(count: number, limit: number) {
-    super(`Import contains ${count} files, exceeding the ${limit}-file limit`)
-    this.name = 'TooManyFilesError'
-    this.count = count
-    this.limit = limit
-  }
-}
-
-/**
- * Thrown when a path contains `..` segments, an absolute prefix (`/` or a
- * Windows drive letter), or other traversal attempts.
- */
-export class PathTraversalError extends Error {
-  readonly path: string
-  constructor(path: string) {
-    super(`Unsafe path rejected — path traversal or absolute path detected: "${path}"`)
-    this.name = 'PathTraversalError'
-    this.path = path
-  }
 }

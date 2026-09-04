@@ -246,7 +246,7 @@ describe('base.button — <a class="btn"> elements', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 3. <img> → base.image (src only, NO alt prop)
+// 3. <img> → base.image (src + perf hints; alt travels to the media record)
 // ---------------------------------------------------------------------------
 
 describe('base.image — <img> elements', () => {
@@ -260,12 +260,50 @@ describe('base.image — <img> elements', () => {
     expect(node.props.src).toBe('/photo.jpg')
   })
 
-  it('<img src alt> — alt is NOT stored as a prop (alt comes from the media library)', () => {
-    const node = single('<img src="/photo.jpg" alt="A beautiful photo">')
+  it('<img src alt> — alt is NOT a prop; it is reported through imageAlts for the media record', () => {
+    const result = imported('<img src="/photo.jpg" alt="A beautiful photo">')
+    const node = result.nodes[result.rootIds[0]!]!
     expect(node.moduleId).toBe('base.image')
     expect(node.props.src).toBe('/photo.jpg')
-    // alt must NOT be on the node — it comes from the media library asset only
+    // alt is not per-instance — the Media Library asset is the source of truth.
     expect('alt' in node.props).toBe(false)
+    expect(result.imageAlts).toEqual({ [node.id]: 'A beautiful photo' })
+  })
+
+  it('an intentionally empty alt (decorative image) is reported as empty, not dropped', () => {
+    const result = imported('<img src="/deco.png" alt="">')
+    expect(result.imageAlts[result.rootIds[0]!]).toBe('')
+  })
+
+  it('an <img> without alt reports nothing, so the media record keeps its own alt', () => {
+    const result = imported('<img src="/photo.jpg">')
+    expect(result.imageAlts).toEqual({})
+  })
+
+  it('maps authored loading, decoding and fetchpriority onto the first-class Image props', () => {
+    const props = singleProps('<img src="/hero.jpg" loading="eager" decoding="sync" fetchpriority="high">')
+    expect(props.loading).toBe('eager')
+    expect(props.decoding).toBe('sync')
+    expect(props.fetchPriority).toBe('high')
+  })
+
+  it('reads the perf hints case-insensitively', () => {
+    const props = singleProps('<img src="/hero.jpg" loading="EAGER" decoding="Auto" fetchpriority="Low">')
+    expect(props.loading).toBe('eager')
+    expect(props.decoding).toBe('auto')
+    expect(props.fetchPriority).toBe('low')
+  })
+
+  it('unknown loading / decoding / fetchpriority values fall back to the module defaults', () => {
+    const props = singleProps('<img src="/a.png" loading="soon" decoding="fast" fetchpriority="urgent">')
+    expect(props.loading).toBe('lazy')
+    expect(props.decoding).toBe('async')
+    expect(props.fetchPriority).toBe('auto')
+  })
+
+  it('keeps generated attributes out of htmlAttributes while preserving the rest', () => {
+    const props = singleProps('<img src="/a.png" alt="x" loading="eager" width="10" height="10" data-track="hero">')
+    expect(props.htmlAttributes).toEqual({ 'data-track': 'hero' })
   })
 
   it('<img> with empty src → src is empty string', () => {

@@ -4,7 +4,100 @@ All notable changes to Instatic will be documented here.
 
 This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
 
-## Unreleased
+## 0.0.18 - 2026-09-01
+
+### Security
+
+- Fixed a stored cross-site scripting hole in server-side richtext sanitization ([GHSA-jg75-xjf8-vvf8](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-jg75-xjf8-vvf8)). DOMPurify ran on happy-dom, which does not implement the DOM's NodeIterator removing steps: when DOMPurify removed a disallowed node mid-walk the iterator detached and the walk stopped, so every sibling after it, including a trailing `<script>`, was emitted unsanitized. Because the richtext profile drops `<img>`, any body carrying an image followed by script triggered it. The server now backs DOMPurify with jsdom, the DOM implementation it documents and tests against. Reported by [@asachs01](https://github.com/asachs01).
+- Fixed a stored cross-site scripting hole in the Site editor canvas ([GHSA-7vxr-r5h2-rh76](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-7vxr-r5h2-rh76)). A content author's post body was sanitized for the published page but not for the canvas: the outlet's body binding rendered the markdown to HTML and the canvas injected it through `dangerouslySetInnerHTML` with no sanitizer, so an owner who previewed the entry in the editor ran the author's markup same-origin with `/admin`. Richtext binding results are now sanitized in `resolveDynamicProps`, the resolution step the canvas and the publisher share. Reported by [@Alpastx](https://github.com/Alpastx).
+- Fixed a stored cross-site scripting chain in bundle media import ([GHSA-5h25-59wc-mqh9](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-5h25-59wc-mqh9)). A user holding only `data.import` could write an SVG into the served published-asset tree and have it returned, unauthenticated, from the CMS origin as `image/svg+xml` with no Content-Security-Policy, so its script ran in the admin origin. Three defects chained, each fixed on its own: the reserved-subtree denylist in `resolveMediaWriteTarget` tested the raw path, so a leading `./` normalized straight back into `published/` (now tested on the normalized landing path); the byte-level SVG sanitizer was a literal-tag regex a namespace-prefixed `<s:script>` slipped past (now DOMPurify's namespace-aware SVG profile over jsdom); and `/_instatic/assets/*` served any extension with no CSP (now serves only the kinds the publisher emits, with `default-src 'none'` and `nosniff`). Reported by [@w1p3r](https://github.com/w1p3r).
+- Hardened the plugin outbound network guard against server-side request forgery ([GHSA-c76p-6v4v-6pg8](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-c76p-6v4v-6pg8), [GHSA-r4rj-5h92-pmjg](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-r4rj-5h92-pmjg), [GHSA-99x9-9h78-8qxr](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-99x9-9h78-8qxr), [GHSA-ffj5-qw5f-m346](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-ffj5-qw5f-m346)). The guard resolved a plugin's fetch target and checked the resolved addresses, then let the runtime re-resolve and connect, so a DNS rebinding between check and connect could reach an internal address; it now pins the connection to the exact IP it validated, keeping the hostname in the `Host` header and the TLS SNI. The IP blocklist was string and prefix matching that missed non-canonical IPv6 loopback spellings and the NAT64, 6to4, and Teredo transition prefixes; it now parses addresses with `ipaddr.js` and allows only globally-routable unicast. Reported by [@N3agu](https://github.com/N3agu), [@Vip3r-MC](https://github.com/Vip3r-MC), [@mdhaiwat](https://github.com/mdhaiwat), and [@tonghuaroot](https://github.com/tonghuaroot).
+- Restricted operator-set AI provider base URLs pointing at internal addresses to the owner ([GHSA-886f-pfqc-7gm5](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-886f-pfqc-7gm5)). A user with `ai.providers.manage` but not the owner role could register an OpenAI-compatible or Ollama provider whose base URL resolved to loopback, a private range, or cloud metadata, and have the server fetch it, turning the CMS into an SSRF proxy. Pointing a provider at a local address is how self-hosted local models (Ollama, a LAN LLM) are wired, so it stays available to the owner; a non-owner is now refused an internal base URL when creating or updating a credential. Reported by [@tonghuaroot](https://github.com/tonghuaroot).
+- Closed a server-side request forgery in media storage migration ([GHSA-rmm7-wqw2-jwc6](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-rmm7-wqw2-jwc6)). A plugin holding only `media.storage.adapter` supplies the URL the migration reads, and the migration fetched it with an unguarded `fetch()`, so the plugin gained the network reach of `network.outbound` and could point the server at an internal service or cloud metadata. The migration read now goes through the same SSRF-safe guard as plugin fetches: internal addresses are refused and the connection is pinned to the checked IP. Reported by [@uziii2208](https://github.com/uziii2208) and [@thewindghost](https://github.com/thewindghost).
+- Required `plugins.configure` to read plugin-owned records ([GHSA-q5j5-qp67-65vf](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-q5j5-qp67-65vf)). Reading a plugin resource's records returns the raw stored payload with no field masking, which can include tokens, customer data, or other operational secrets, but the route gated reads on `plugins.read` — the browse-only capability meant for the plugin list and masked settings. A role holding only `plugins.read` could enumerate and dump the records of any enabled plugin. Reads now require `plugins.configure`, matching the write path. Reported by [@uziii2208](https://github.com/uziii2208) and [@ugvxb](https://github.com/ugvxb).
+- Gated system-table row reads on `data.system.tables.read` ([GHSA-x69h-wqp3-28mq](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-x69h-wqp3-28mq)). The table-schema endpoint enforced the system-vs-custom table boundary, but the four row-level reads — list rows, read one row, preview, and cross-table search — gated only on a broad `content.*` capability plus row ownership. A persona granted `content.edit.any` or `content.manage` but deliberately withheld `data.system.tables.read` could read, preview, and search every system-table row, including other authors' unpublished drafts and author identity. Every row read now enforces the same check the schema read does. Reported by [@tonghuaroot](https://github.com/tonghuaroot).
+- Fixed privilege escalation through unrestricted user-role assignment ([GHSA-rrpm-wfw7-4q8x](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-rrpm-wfw7-4q8x)). A user manager could assign any non-Owner role, including Admin, to themselves or another user, because the assignment endpoints never checked that the target role's capabilities were a subset of the actor's own. Role assignment now follows a strict delegation rule on both user creation and role change, including self-assignment, and `roles.manage` is reserved for the Owner: role mutations reject it, persisted non-Owner grants are stripped while hydrating authorization state, and an additive migration removes legacy invalid grants. Reported by [@Alpastx](https://github.com/Alpastx).
+- Fixed web cache poisoning in the server-island fragment renderer ([GHSA-f29g-gm7f-4925](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-f29g-gm7f-4925)). A fragment's content depends on the originating page URL, whose path drives `route.path`, `route.slug`, and `route.segments`, but the render cache keyed only on the publish version and the page query. An unauthenticated attacker could render a fragment under an arbitrary page path and have it stored as the canonical cached response served to every subsequent visitor of the real page until the next publish. The cache key now includes the page path. Reported by [@wsparks-vc](https://github.com/wsparks-vc).
+
+### Editor, import, and publishing
+
+- Fixed Cancel during a static site import's upload phase closing the wizard while the import kept running and could still commit. Cancelling (or closing the dialog mid-upload) now aborts the remaining uploads, prevents the site commit and draft save, and reports how many files had already reached the Media Library.
+
+## 0.0.17 - 2026-08-30
+
+### AI and integrations
+
+- Fixed adding the Instatic MCP connector on Postgres installations. The dynamic client registration response returned `client_id_issued_at` as a quoted string, because Postgres declares the column `bigint` and returns it as a string to protect precision, so clients that validate the response against RFC 7591 rejected the connector with `expected number, received string`. SQLite installations were unaffected.
+- Streamed the MCP editor bridge as `text/event-stream` so buffering reverse proxies flush each record instead of holding the connection, keeping connected agents working against an open Site or Content workspace on proxied installations.
+- Added the AI workspace to the shared admin navigation and a Spotlight command, so users holding the AI capabilities can reach AI settings without typing the URL.
+
+### Editor, import, and publishing
+
+- Added TypeScript tooling to Site Editor scripts: strict semantic diagnostics, DOM-aware completions, and hover information from a worker-isolated language service, collected in a compact Problems panel. Publish-time script build errors now come back as an author-actionable error with `file:line:column` diagnostics instead of a silent server error.
+- Added a condition to data-row loops so a list can show a subset of a table rather than always its newest rows — pick one of the table's own fields and require it to be checked, unchecked, equal to a value, or to have any value at all. A relation field offers its rows by name instead of asking for an id. The condition applies on the canvas, on published pages, and in the "load more" endpoint, and the item count follows it so pagination never advertises rows the page drops.
+- Added the table's own fields to a data-row loop's "Order by" list, so a list can follow a real date, title, or rank stored in the row instead of only the row's built-in columns. Values compare as text, which sorts ISO dates chronologically.
+- Let a data-row loop's wrapper carry custom HTML attributes, the same control containers already have, applied identically on the canvas and in published output.
+- Interpolated `{tokens}` inside a node's custom HTML attributes at publish time, so data-bound values reach `data-*` and ARIA attributes instead of publishing verbatim.
+- Fixed escaped `\{` in token interpolation to emit a literal brace without its backslash, as the escaping syntax always documented.
+- Fixed the loop "load more" runtime to read its endpoint from the script tag's attribute — `document.currentScript` is null inside module scripts, so a configured endpoint was never honored.
+- Let the New field dialog accept camelCase field ids, matching the camelCase built-in fields it sits beside.
+- Stopped the New field dialog crashing on admins served over plain HTTP, where no secure context means `crypto.randomUUID` does not exist.
+- Parsed CSS Color-4 space-separated `hsl()` values in framework color tokens, so tokens authored in the modern syntax generate their transparent, shade, and tint variants again.
+- Restored Escape dismissal in the Settings modal after focus left the dialog, and while tooltips are open.
+- Fixed Command Spotlight so select-type argument options can be chosen with a mouse click, not only with Enter.
+- Named every asset reference a site-import archive cannot satisfy: after a punctuation-insensitive retry against the archive's file list, each remaining media reference emits an `unresolved-asset` warning ranked first in the import log instead of disappearing silently.
+- Kept a newly created entry's title in the Content sidebar when the entries list was still loading — a request race left a nameless row.
+
+### Content and publishing
+
+- Fixed the SEO title and SEO description fields on a post so they reach the published page. Both were editable in the Content settings panel but never emitted anything: an entry's `<title>` always showed its plain title, and no description tag was written at all. An authored value now drives `<title>` / `<meta name="description">` and outranks the site-wide Meta Title and Meta Description, on the published page and in the Content editor's Live preview alike. The on-page `{page.title}` and `{currentEntry.title}` bindings keep rendering the entry's real title.
+- Interpolated `{currentEntry.*}`, `{page.*}`, and `{site.*}` tokens in the published meta title and description, so per-entry SEO values written as token patterns resolve at publish time instead of appearing verbatim in the `<head>`.
+
+### Platform and maintenance
+
+- Let Railway and Render platform auto-detection survive an invalid `PUBLIC_ORIGIN` value: an unparseable origin list now falls through to auto-detection instead of silently degrading the origin check to an empty allowlist.
+- Gave `DbClient` a `close()` on both database adapters and wired it into file-backed test teardown, clearing the Windows test failures caused by SQLite handles outliving their temp directories.
+- Scaffolded plugin server entries now import the SDK through the same specifier as every other template, so a freshly scaffolded plugin type-checks inside the monorepo.
+- Mapped U+0000 to U+FFFD in `escapeCssIdentifier`, matching the `CSS.escape` specification it vendors.
+- Moved HTML tag and attribute rendering helpers into the engine so `src/core` never imports from `src/modules`, now gated by an architecture test.
+
+## 0.0.16 - 2026-08-11
+
+### Media and integrations
+
+- Added an MCP `media_upload` tool so connected agents can upload images through the authenticated media pipeline.
+- Allowed published pages to load media from approved cross-origin sources without being blocked by the generated Content Security Policy.
+
+### Content and publishing
+
+- Resolved custom media fields to usable URLs when rendering collection rows in loops.
+- Reused the full schema composer when creating content collections, bringing collection setup in line with custom data-table creation.
+
+## 0.0.15 - 2026-08-11
+
+### Collaboration, AI, and integrations
+
+- Added real-time collaborative editing with continuous CRDT persistence, per-document undo, reconnect recovery, generation-aware resets, transport health checks, and clear user feedback when an edit cannot reach the relay.
+- Adopted the stateless MCP protocol and hardened authoring so connector writes wait for a writable editor, preserve authored structure, and cannot report changes that were never persisted.
+- Made AI colour-palette installation atomic so complete token batches land together or fail visibly.
+
+### Editor and data
+
+- Added hover previews to Site explorer rows and a **Used** filter to the Selectors panel.
+- Let every floating editor panel clear docked sidebars, polished context menus and data-binding controls, and rebuilt shared tabs with consistent keyboard and ARIA behavior.
+- Protected mandatory post-type title and slug fields from destructive table updates and repaired those fields when an earlier update removed them.
+
+### Publishing and runtime
+
+- Surfaced runtime-script build diagnostics in the Code editor and publish flow so authored script failures identify the affected file and source location.
+- Made collaborative persistence and publishing deterministic across resets, imports, route rosters, selector styles, and site-document ordering.
+- Scoped entry-route runtime assets to the template that renders them and stopped author bindings from exposing internal user objects or account email addresses.
+- Prefetched resolved media metadata for bound images so published output includes accessibility text, responsive variants, and intrinsic dimensions.
+- Made published routes answer `HEAD` like `GET`, allowing uptime monitors and link checkers to recognize healthy pages.
+
+### Import reliability
+
+- Scaled large CSS catalogue imports and reported invalid, unresolved, empty, or unsortable loop definitions instead of silently publishing missing or incorrectly ordered content.
 
 ## 0.0.14 - 2026-07-25
 

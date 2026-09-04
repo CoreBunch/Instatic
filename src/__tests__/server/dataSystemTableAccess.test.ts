@@ -5,6 +5,51 @@ import type { DataTable } from '@core/data/schemas'
 const TABLES = '/admin/api/cms/data/tables'
 
 describe('data system-table visibility + lockdown', () => {
+  it('preserves explicitly blank route bases through API create and PATCH', async () => {
+    const harness = await createCapabilityTestHarness()
+    try {
+      const ownerCookie = await harness.setupOwner()
+      const createdResponse = await harness.cms(TABLES, {
+        method: 'POST',
+        cookie: ownerCookie,
+        json: {
+          name: 'Fee lines',
+          slug: 'fee-lines',
+          kind: 'data',
+          routeBase: '',
+          singularLabel: 'Fee line',
+          pluralLabel: 'Fee lines',
+        },
+      })
+      expect(createdResponse.status).toBe(201)
+      const created = (await readJson<{ table: DataTable }>(createdResponse)).table
+      expect(created.routeBase).toBe('')
+
+      const routedResponse = await harness.cms(`${TABLES}/${created.id}`, {
+        method: 'PATCH',
+        cookie: ownerCookie,
+        json: { routeBase: '  /fees/  ' },
+      })
+      expect(routedResponse.status).toBe(200)
+      expect((await readJson<{ table: DataTable }>(routedResponse)).table.routeBase).toBe('/fees')
+
+      const blankResponse = await harness.cms(`${TABLES}/${created.id}`, {
+        method: 'PATCH',
+        cookie: ownerCookie,
+        json: { routeBase: '   ' },
+      })
+      expect(blankResponse.status).toBe(200)
+      expect((await readJson<{ table: DataTable }>(blankResponse)).table.routeBase).toBe('')
+
+      const { rows } = await harness.db<{ route_base: string }>`
+        select route_base from data_tables where id = ${created.id}
+      `
+      expect(rows[0]?.route_base).toBe('')
+    } finally {
+      await harness.cleanup()
+    }
+  })
+
   it('does not create a template page when creating a post-type table', async () => {
     const harness = await createCapabilityTestHarness()
     try {
@@ -127,6 +172,35 @@ describe('data system-table visibility + lockdown', () => {
         json: { primaryFieldId: 'name' },
       })
       await expectForbidden(attempt)
+    } finally {
+      await harness.cleanup()
+    }
+  })
+
+  it('denies system-table ROW reads to a content persona without data.system.tables.read (GHSA-x69h)', async () => {
+    const harness = await createCapabilityTestHarness()
+    try {
+      await harness.setupOwner() // seeds the system tables (pages/posts) and a home page row
+      const editor = await harness.createRoleUser({
+        name: 'Custom Editor',
+        slug: 'custom-editor',
+        capabilities: ['content.create', 'content.edit.any', 'data.custom.tables.read'],
+      })
+
+      // Listing a system table's rows is refused at the row layer now, matching
+      // the schema-read sibling. `content.edit.any` satisfies the data-access
+      // floor but not the system-table read gate.
+      const list = await harness.cms(`${TABLES}/pages/rows`, { method: 'GET', cookie: editor.cookie })
+      expect(list.status).toBe(404)
+
+      // Spotlight search does not surface system-table rows to this persona.
+      const search = await harness.cms('/admin/api/cms/data/search?query=index', {
+        method: 'GET',
+        cookie: editor.cookie,
+      })
+      expect(search.status).toBe(200)
+      const { entries } = await readJson<{ entries: { tableSlug: string }[] }>(search)
+      expect(entries.every((e) => e.tableSlug !== 'pages' && e.tableSlug !== 'posts')).toBe(true)
     } finally {
       await harness.cleanup()
     }

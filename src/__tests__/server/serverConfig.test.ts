@@ -85,6 +85,33 @@ describe('resolvePublicOrigins', () => {
     ).toEqual(['https://www.example.com'])
   })
 
+  it('falls back to platform vars when every PUBLIC_ORIGIN entry is invalid', () => {
+    // A one-click template that renders `https://${RAILWAY_PUBLIC_DOMAIN}`
+    // before the domain exists yields the bare scheme. Gating precedence on
+    // the raw CSV instead of the normalized result made that value suppress
+    // auto-detection, leaving the CSRF check with no configured origin — i.e.
+    // setting PUBLIC_ORIGIN badly was worse than not setting it at all.
+    expect(
+      resolvePublicOrigins({
+        PUBLIC_ORIGIN: 'https://',
+        RAILWAY_PUBLIC_DOMAIN: 'app.up.railway.app',
+      }),
+    ).toEqual(['https://app.up.railway.app'])
+  })
+
+  it('falls back to platform vars when PUBLIC_ORIGIN is only separators', () => {
+    expect(
+      resolvePublicOrigins({
+        PUBLIC_ORIGIN: 'not-a-url, also-bad',
+        RENDER_EXTERNAL_URL: 'https://app.onrender.com',
+      }),
+    ).toEqual(['https://app.onrender.com'])
+  })
+
+  it('returns [] when PUBLIC_ORIGIN is invalid and no platform var is set', () => {
+    expect(resolvePublicOrigins({ PUBLIC_ORIGIN: 'https://' })).toEqual([])
+  })
+
   it('returns [] when nothing is configured', () => {
     expect(resolvePublicOrigins({})).toEqual([])
   })
@@ -94,6 +121,8 @@ describe('readServerConfig', () => {
   it('uses self-hosted local defaults when no environment values are set', () => {
     expect(readServerConfig({})).toEqual({
       port: 3001,
+      host: '0.0.0.0',
+      shutdownToken: null,
       databaseUrl: 'sqlite:./.tmp/dev.db',
       uploadsDir: './uploads',
       staticDir: './dist',
@@ -106,6 +135,8 @@ describe('readServerConfig', () => {
     expect(
       readServerConfig({
         PORT: '4321',
+        HOST: '127.0.0.1',
+        INSTATIC_SHUTDOWN_TOKEN: 'tok-123',
         DATABASE_URL: 'postgres://instatic:secret@postgres:5432/instatic',
         UPLOADS_DIR: '/srv/instatic/uploads',
         STATIC_DIR: '/srv/instatic/dist',
@@ -116,6 +147,8 @@ describe('readServerConfig', () => {
       }),
     ).toEqual({
       port: 4321,
+      host: '127.0.0.1',
+      shutdownToken: 'tok-123',
       databaseUrl: 'postgres://instatic:secret@postgres:5432/instatic',
       uploadsDir: '/srv/instatic/uploads',
       staticDir: '/srv/instatic/dist',

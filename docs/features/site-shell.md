@@ -204,6 +204,19 @@ Schema source of truth: `src/core/files/schemas.ts`.
 
 Generated files (e.g. `package.json`, `vite.config.ts`) are hidden in the Site Explorer until the user ejects them. Files are created and renamed through the Site Explorer panel and edited with the CodeMirror-backed code editor.
 
+TypeScript site scripts get semantic authoring support in that editor, not
+just grammar highlighting. Opening a `.ts`/`.tsx` script lazily starts a
+dedicated browser Worker containing TypeScript's language service and the
+ES2020 + DOM standard-library declarations. The worker keeps an in-memory
+project of authored TypeScript script files so CodeMirror can show strict type
+diagnostics, DOM-aware completions, cross-file relative-import types, and hover
+signatures without running the compiler on the UI thread. Bare npm imports stay
+under the existing runtime dependency analyzer—the browser language service
+does not pretend an installed package has declarations when none were loaded.
+The worker is editor assistance only: esbuild remains the authoritative canvas
+and publish compiler, and semantic type errors do not replace the publish-time
+runtime validation gate.
+
 ### Site Explorer organization — `SiteExplorerOrganization`
 
 Site Explorer organization is split by whether a section owns URL/file paths.
@@ -571,6 +584,11 @@ exponential backoff, and each (re)connect re-runs syncStep1 so Yjs state
 vectors pull exactly the missed delta. `usePersistence` HTTP-loads the
 document once for first paint, then connects the provider — edits gate on
 each doc's first sync so an unseeded doc can never receive local ops.
+Because every committed edit is a frame, burst-prone inputs coalesce before
+they commit: the `ColorInput` primitive throttles picker-drag change events
+(leading fire for instant clicks, one trailing fire with the final value),
+so a color drag cannot fill the socket backlog past the provider's send
+gate.
 
 In production the socket is same-origin. Under `vite dev` it is NOT: the
 socket dials the CMS port directly, bypassing the Vite proxy

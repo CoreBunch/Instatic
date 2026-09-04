@@ -37,7 +37,9 @@ export interface PanelSize {
 export type FloatingPanelId =
   | 'properties'
   | 'site'
+  | 'explorer'
   | 'selectors'
+  | 'framework'
   | 'colors'
   | 'typography'
   | 'spacing'
@@ -45,6 +47,7 @@ export type FloatingPanelId =
   | 'dependencies'
   | 'codeeditor'
   | 'agent'
+  | 'plugin'
   | 'agentImagePreview'
   | 'mediaUploadQueue'
   | 'mediaDetachedInspector'
@@ -90,10 +93,10 @@ export interface StoredWorkspaceLayout {
   codeEditorPanelOpen?: boolean
   /** Properties panel docked vs floating (site only). */
   propertiesPanelMode?: PanelMode
-  /** Left-rail panel docked vs floating (site only). */
-  leftSidebarMode?: PanelMode
-  /** Whether the independent floating AI assistant is open (site only). */
-  agentPanelOpen?: boolean
+  /** Placement of each built-in left-rail panel (site only). */
+  leftPanelModes?: Record<string, PanelMode>
+  /** Built-in left-rail panels that are open, including floating panels. */
+  openLeftPanels?: string[]
 }
 
 interface StoredEditorLayout {
@@ -144,8 +147,8 @@ const StoredWorkspaceLayoutSchema = Type.Object(
     // Panel modes are string unions; keep them loose to avoid coupling this
     // persisted boundary to their exact membership.
     propertiesPanelMode: Type.Optional(Type.String()),
-    leftSidebarMode: Type.Optional(Type.String()),
-    agentPanelOpen: Type.Optional(Type.Boolean()),
+    leftPanelModes: Type.Optional(Type.Record(Type.String(), Type.String())),
+    openLeftPanels: Type.Optional(Type.Array(Type.String())),
   },
   { additionalProperties: true },
 )

@@ -50,12 +50,15 @@ describe('workspaceLayoutStorage — floating panel sizes', () => {
   })
 
   it('preserves workspace layout state when updating floating dimensions', () => {
-    writeWorkspaceLayout('site', { leftWidth: 380, leftSidebarMode: 'floating' })
+    writeWorkspaceLayout('site', {
+      leftWidth: 380,
+      leftPanelModes: { explorer: 'floating' },
+    })
     writeStoredPanelSize('properties', { width: 480, height: 620 })
 
     expect(readWorkspaceLayout('site')).toMatchObject({
       leftWidth: 380,
-      leftSidebarMode: 'floating',
+      leftPanelModes: { explorer: 'floating' },
     })
     expect(readStoredPanelSize('properties')).toEqual({ width: 480, height: 620 })
   })

@@ -23,12 +23,19 @@ import { createUser } from '../../repositories/users'
 import { createAuditEvent } from '../../repositories/audit'
 import { createDataRow } from '../../repositories/data'
 import { createNode } from '@core/page-tree'
+import { isValidEmail } from '@core/utils/email'
+import { MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT_MESSAGE } from '@core/utils/passwordPolicy'
 import { pageToCells } from '../../../src/core/data/pageFromRow'
 import type { Page } from '@core/page-tree'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 import type { SiteRow } from '../../types'
 import { CMS_API_PREFIX, requestAuditContext } from './shared'
+import {
+  notifyRowWrite,
+  notifyShellWrite,
+  serializeCollabAwareWrite,
+} from '../../repositories/rowWriteEvents'
 
 export async function handleSetupRoutes(req: Request, db: DbClient): Promise<Response | null> {
   const url = new URL(req.url)
@@ -66,42 +73,51 @@ export async function handleSetupRoutes(req: Request, db: DbClient): Promise<Res
     const displayName = body.displayName?.trim() ?? ''
 
     if (!siteName) return badRequest('Missing siteName')
-    if (!email.includes('@')) return badRequest('Invalid email')
-    if (password.length < 12) return badRequest('Password must be at least 12 characters')
+    if (!isValidEmail(email)) return badRequest('Invalid email address')
+    if (password.length < MIN_PASSWORD_LENGTH) return badRequest(PASSWORD_TOO_SHORT_MESSAGE)
 
-    return await db.transaction(async (tx) => {
-      await createSite(tx, siteName, {})
-      const owner = await createUser(tx, {
-        id: nanoid(),
-        email,
-        displayName,
-        passwordHash: await hashPassword(password),
-        roleId: 'owner',
-        allowOwnerRole: true,
+    return serializeCollabAwareWrite(async () => {
+      let homePageId = ''
+      const response = await db.transaction(async (tx) => {
+        await createSite(tx, siteName, {})
+        const owner = await createUser(tx, {
+          id: nanoid(),
+          email,
+          displayName,
+          passwordHash: await hashPassword(password),
+          roleId: 'owner',
+          allowOwnerRole: true,
+        })
+        await createAuditEvent(tx, {
+          actorUserId: null,
+          action: 'user.create',
+          targetType: 'user',
+          targetId: owner.id,
+          metadata: { roleId: 'owner', source: 'setup' },
+          ...requestAuditContext(req),
+        })
+        // Seed a starter homepage as a data_row in the 'pages' system table.
+        const rootNode = createNode('base.body')
+        const homePage: Page = {
+          id: nanoid(),
+          title: 'Home',
+          slug: 'index',
+          nodes: { [rootNode.id]: rootNode },
+          rootNodeId: rootNode.id,
+        }
+        homePageId = homePage.id
+        await createDataRow(
+          tx,
+          { id: homePage.id, tableId: 'pages', cells: pageToCells(homePage), slug: homePage.slug },
+          owner.id,
+          null,
+          { collabInternal: true },
+        )
+        return jsonResponse({ ok: true }, { status: 201 })
       })
-      await createAuditEvent(tx, {
-        actorUserId: null,
-        action: 'user.create',
-        targetType: 'user',
-        targetId: owner.id,
-        metadata: { roleId: 'owner', source: 'setup' },
-        ...requestAuditContext(req),
-      })
-      // Seed a starter homepage as a data_row in the 'pages' system table.
-      const rootNode = createNode('base.body')
-      const homePage: Page = {
-        id: nanoid(),
-        title: 'Home',
-        slug: 'index',
-        nodes: { [rootNode.id]: rootNode },
-        rootNodeId: rootNode.id,
-      }
-      await createDataRow(
-        tx,
-        { id: homePage.id, tableId: 'pages', cells: pageToCells(homePage), slug: homePage.slug },
-        owner.id,
-      )
-      return jsonResponse({ ok: true }, { status: 201 })
+      notifyShellWrite()
+      notifyRowWrite({ tableId: 'pages', rowIds: [homePageId], kind: 'create' })
+      return response
     })
   }
 

@@ -13,9 +13,11 @@ import {
   decodeCollabFrame,
   encodeCollabFrame,
   FRAME_PING,
+  FRAME_PONG,
   FRAME_RESET,
   FRAME_SYNC,
   LOCAL_ORIGIN,
+  PRESENCE_DOC_ID,
 } from '@core/collab'
 import {
   createCollabProvider,
@@ -161,6 +163,29 @@ describe('collab provider', () => {
     expect(provider.status()).toBe('offline')
     expect(provider.canSend()).toBe(false)
     expect(seen).toContain('offline')
+    provider.destroy()
+  })
+
+  it('stays connected while its pings keep being answered', async () => {
+    const socket = new FakeSocket()
+    const provider = createCollabProvider({ createSocket: () => socket, pingIntervalMs: 20 })
+    socket.open()
+
+    // Answer every ping with a pong, like the live relay does. The provider
+    // must never conclude "offline" from elapsed time alone — only from a
+    // ping that stayed unanswered (a throttled background webview skips
+    // whole ping intervals, and resuming must not read as a dead socket).
+    const answering = setInterval(() => {
+      const pings = socket.sent.filter((f) => decodeCollabFrame(f).frameType === FRAME_PING)
+      if (pings.length > 0) {
+        socket.emit(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_PONG, new Uint8Array()))
+      }
+    }, 10)
+
+    await Bun.sleep(150)
+    clearInterval(answering)
+    expect(provider.status()).toBe('connected')
+    expect(provider.canSend()).toBe(true)
     provider.destroy()
   })
 

@@ -77,13 +77,30 @@ interface DataTableRow {
   updated_at: string | Date
 }
 
+/**
+ * An empty route base is the persisted sentinel for a non-routable table.
+ * Only an omitted value gets the conventional slug-derived route on create;
+ * callers that explicitly send an empty (or whitespace-only) value are opting
+ * out of public routing and that choice must survive every repository path.
+ */
+function normalizeExplicitRouteBase(routeBase: string): string {
+  const trimmed = routeBase.trim()
+  return trimmed === '' ? '' : normalizeRouteBase(trimmed)
+}
+
+function routeBaseForCreate(routeBase: string | undefined, slug: string): string {
+  return routeBase === undefined
+    ? normalizeRouteBase(slug)
+    : normalizeExplicitRouteBase(routeBase)
+}
+
 function mapTable(row: DataTableRow): DataTable {
   return {
     id: row.id,
     name: row.name,
     slug: row.slug,
     kind: row.kind,
-    routeBase: row.route_base ? normalizeRouteBase(row.route_base) : normalizeRouteBase(row.slug),
+    routeBase: normalizeExplicitRouteBase(row.route_base),
     singularLabel: row.singular_label,
     pluralLabel: row.plural_label,
     primaryFieldId: row.primary_field_id,
@@ -191,15 +208,29 @@ export async function getDataTableBySlug(db: DbClient, slug: string): Promise<Da
  * (the data API, an MCP connector, an import) used to arrive unroutable.
  * Seeding here makes the invariant hold for every caller instead.
  *
+ * Only the mandatory two are held — the same rule `keepPostTypeBuiltIns`
+ * enforces on PATCH. The optional built-ins (body, featured media, the SEO
+ * pair) are deliberately removable, and the New collection dialog lets the
+ * author drop them before creating; re-adding them here silently overrode
+ * that choice. A caller that supplies no fields at all still gets the full
+ * canonical set, matching the dialog's starting state.
+ *
  * Caller-supplied fields win on id collision, so an explicit `title` override
- * (a different label, say) survives; omitted built-ins are prepended in their
+ * (a different label, say) survives; held built-ins are prepended in their
  * canonical order.
  */
 function withPostTypeBuiltIns(kind: DataTableKind | undefined, fields: DataField[]): DataField[] {
   if (kind !== 'postType') return fields
+  if (fields.length === 0) return buildPostTypeDefaultFields()
   const supplied = new Set(fields.map((field) => field.id))
-  const missing = buildPostTypeDefaultFields().filter((field) => !supplied.has(field.id))
-  return [...missing, ...fields]
+  const canonical = new Map(buildPostTypeDefaultFields().map((field) => [field.id, field]))
+  const held: DataField[] = []
+  for (const id of POST_TYPE_MANDATORY_FIELD_IDS) {
+    if (supplied.has(id)) continue
+    const field = canonical.get(id)
+    if (field) held.push(field)
+  }
+  return held.length === 0 ? fields : [...held, ...fields]
 }
 
 /**
@@ -271,7 +302,7 @@ export async function createDataTable(
       ${input.name},
       ${input.slug},
       ${input.kind ?? 'data'},
-      ${normalizeRouteBase(input.routeBase ?? input.slug)},
+      ${routeBaseForCreate(input.routeBase, input.slug)},
       ${input.singularLabel},
       ${input.pluralLabel},
       ${input.primaryFieldId ?? 'title'},
@@ -299,7 +330,7 @@ export async function updateDataTable(
     if (!existing) return null
     fields = keepPostTypeBuiltIns(existing, normalizeDataTableFields(input.fields))
   }
-  const routeBase = input.routeBase === undefined ? null : normalizeRouteBase(input.routeBase)
+  const routeBase = input.routeBase === undefined ? null : normalizeExplicitRouteBase(input.routeBase)
   const { rows } = await db<DataTableRow>`
     update data_tables
     set name = coalesce(${input.name ?? null}, name),
@@ -353,7 +384,7 @@ export async function insertDataTableIfAbsent(
       ${input.name},
       ${input.slug},
       ${input.kind ?? 'data'},
-      ${normalizeRouteBase(input.routeBase ?? input.slug)},
+      ${routeBaseForCreate(input.routeBase, input.slug)},
       ${input.singularLabel},
       ${input.pluralLabel},
       ${input.primaryFieldId ?? 'title'},

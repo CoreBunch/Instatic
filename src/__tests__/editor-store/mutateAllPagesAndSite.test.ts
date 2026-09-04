@@ -2,14 +2,14 @@
  * Tests for `mutateAllPagesAndSite` and the extracted `importLinking` module.
  *
  * Coverage:
- *  1. Basic happy path — addPage and addStyleRule produce new entries with
+ *  1. Basic happy path — addPage and putStyleRule produce new entries with
  *     fresh ids + timestamps.
  *  2. Atomicity — one recipe that calls all four helpers produces exactly one
  *     history snapshot; a single undo reverts everything.
  *  3. Name→id linking — addPage with fragment nodes whose classIds contain
  *     class *names* resolves them to real registry ids and auto-creates bare
  *     StyleRules for unknown names.
- *  4. Cross-helper dedup — addStyleRule('btn') then addPage(node with 'btn')
+ *  4. Cross-helper dedup — putStyleRule('btn') then addPage(node with 'btn')
  *     shares the same registry id (shared byName map).
  *  5. No-op recipe — returning false produces no history entry.
  *  6. Missing-id errors — overwritePage / overwriteStyleRule on non-existent
@@ -111,13 +111,13 @@ describe('mutateAllPagesAndSite — basic happy path', () => {
     expect(newPage.slug).toBe('new-page')
   })
 
-  it('addStyleRule creates an entry in site.styleRules with fresh id and timestamps', () => {
+  it('putStyleRule creates an entry in site.styleRules with fresh id and timestamps', () => {
     const store = useEditorStore.getState()
     store.createSite('Test')
 
     let addedId = ''
     useEditorStore.getState().mutateAllPagesAndSite((_site, helpers) => {
-      addedId = helpers.addStyleRule({
+      addedId = helpers.putStyleRule({
         name: 'hero',
         kind: 'class',
         selector: '.hero',
@@ -189,7 +189,7 @@ describe('mutateAllPagesAndSite — atomicity', () => {
     let existingRuleId = ''
     useEditorStore.getState().mutateAllPagesAndSite((_site, helpers) => {
       existingPageId = helpers.addPage({ title: 'Old', slug: 'old', nodeFragment: makeFragment() })
-      existingRuleId = helpers.addStyleRule({
+      existingRuleId = helpers.putStyleRule({
         name: 'old-rule',
         kind: 'class',
         selector: '.old-rule',
@@ -203,7 +203,7 @@ describe('mutateAllPagesAndSite — atomicity', () => {
     // Now run the four-helper recipe.
     useEditorStore.getState().mutateAllPagesAndSite((_site, helpers) => {
       helpers.addPage({ title: 'Added', slug: 'added', nodeFragment: makeFragment() })
-      helpers.addStyleRule({ name: 'new-rule', kind: 'class', selector: '.new-rule', order: 0, styles: {}, contextStyles: {} })
+      helpers.putStyleRule({ name: 'new-rule', kind: 'class', selector: '.new-rule', order: 0, styles: {}, contextStyles: {} })
       helpers.overwritePage(existingPageId, { title: 'Updated', slug: 'updated', nodeFragment: makeFragment() })
       helpers.overwriteStyleRule(existingRuleId, { name: 'old-rule', kind: 'class', selector: '.old-rule', order: 0, styles: { color: 'blue' }, contextStyles: {} })
       return true
@@ -225,7 +225,7 @@ describe('mutateAllPagesAndSite — atomicity', () => {
     let existingRuleId = ''
     useEditorStore.getState().mutateAllPagesAndSite((_site, helpers) => {
       existingPageId = helpers.addPage({ title: 'Seed Page', slug: 'seed', nodeFragment: makeFragment() })
-      existingRuleId = helpers.addStyleRule({ name: 'seed-rule', kind: 'class', selector: '.seed-rule', order: 0, styles: {}, contextStyles: {} })
+      existingRuleId = helpers.putStyleRule({ name: 'seed-rule', kind: 'class', selector: '.seed-rule', order: 0, styles: {}, contextStyles: {} })
       return true
     })
 
@@ -235,7 +235,7 @@ describe('mutateAllPagesAndSite — atomicity', () => {
 
     useEditorStore.getState().mutateAllPagesAndSite((_site, helpers) => {
       helpers.addPage({ title: 'Extra', slug: 'extra', nodeFragment: makeFragment() })
-      helpers.addStyleRule({ name: 'extra-rule', kind: 'class', selector: '.extra-rule', order: 0, styles: {}, contextStyles: {} })
+      helpers.putStyleRule({ name: 'extra-rule', kind: 'class', selector: '.extra-rule', order: 0, styles: {}, contextStyles: {} })
       helpers.overwritePage(existingPageId, { title: 'Overwritten', slug: 'overwritten', nodeFragment: makeFragment() })
       helpers.overwriteStyleRule(existingRuleId, { name: 'seed-rule', kind: 'class', selector: '.seed-rule', order: 0, styles: { opacity: '0.5' }, contextStyles: {} })
       return true
@@ -310,7 +310,7 @@ describe('mutateAllPagesAndSite — name→id linking', () => {
     // Pre-create a class rule named 'existing-cls'
     let existingId = ''
     useEditorStore.getState().mutateAllPagesAndSite((_site, helpers) => {
-      existingId = helpers.addStyleRule({
+      existingId = helpers.putStyleRule({
         name: 'existing-cls',
         kind: 'class',
         selector: '.existing-cls',
@@ -383,7 +383,7 @@ describe('inline background carries through to node.inlineStyles', () => {
 // ---------------------------------------------------------------------------
 
 describe('mutateAllPagesAndSite — cross-helper dedup', () => {
-  it('addStyleRule then addPage referencing same name resolves to same id', () => {
+  it('putStyleRule then addPage referencing same name resolves to same id', () => {
     useEditorStore.getState().createSite('Test')
 
     let addedRuleId = ''
@@ -391,7 +391,7 @@ describe('mutateAllPagesAndSite — cross-helper dedup', () => {
 
     useEditorStore.getState().mutateAllPagesAndSite((_site, helpers) => {
       // Step 1: add a class rule named 'btn'
-      addedRuleId = helpers.addStyleRule({
+      addedRuleId = helpers.putStyleRule({
         name: 'btn',
         kind: 'class',
         selector: '.btn',
@@ -416,7 +416,7 @@ describe('mutateAllPagesAndSite — cross-helper dedup', () => {
     const btnRules = Object.values(site!.styleRules).filter((r) => r.name === 'btn')
     expect(btnRules).toHaveLength(1)
 
-    // The node's classId should reference the rule added by addStyleRule
+    // The node's classId should reference the rule added by putStyleRule
     expect(fragNode.classIds).toContain(addedRuleId)
     expect(fragNode.classIds).toHaveLength(1)
   })
@@ -546,7 +546,7 @@ describe('mutateAllPagesAndSite — large selector batches', () => {
 
     const startedAt = performance.now()
     useEditorStore.getState().mutateAllPagesAndSite((_site, helpers) => {
-      for (const rule of rules) helpers.addStyleRule(rule)
+      for (const rule of rules) helpers.putStyleRule(rule)
       return true
     })
     const elapsedMs = performance.now() - startedAt
