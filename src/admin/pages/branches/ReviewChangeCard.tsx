@@ -7,9 +7,10 @@
 import type { MergeChange, MergeFieldChange, MergeResolution } from '@core/branches'
 import { countDiffLines, diffLines } from '@core/utils/lineDiff'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
+import { TagPill } from '@ui/components/TagPill'
 import { WarningDiamondSolidIcon } from 'pixel-art-icons/icons/warning-diamond-solid'
 import { PageCompare } from './PageCompare'
-import { ACTION_WORD, changeKindLabel, isPageChange } from './reviewFormat'
+import { ACTION_TONE, ACTION_WORD, changeKindLabel, isPageChange } from './reviewFormat'
 import styles from './BranchReviewPage.module.css'
 
 interface ReviewChangeCardProps {
@@ -98,14 +99,14 @@ export function ReviewChangeCard({ branchId, change, resolution, canResolve, onR
   const { detail } = change
   const header = (
     <div className={styles.cardHead}>
-      <span className={styles.cardKind}>{changeKindLabel(change)}</span>
+      <TagPill label={changeKindLabel(change)} size="xs" />
       <strong className={detail.kind === 'file' ? styles.mono : undefined}>{change.label}</strong>
       {detail.kind === 'file' && detail.pathBefore && (
         <span className={styles.cardPath}>was {detail.pathBefore}</span>
       )}
       <span className={styles.spacer} />
       {detail.kind === 'file' && !detail.binary && <FileCounts before={detail.before ?? ''} after={detail.after ?? ''} />}
-      <span>{ACTION_WORD[change.action]}</span>
+      <TagPill label={ACTION_WORD[change.action]} size="xs" tone={ACTION_TONE[change.action]} />
     </div>
   )
 
@@ -144,9 +145,13 @@ export function ReviewChangeCard({ branchId, change, resolution, canResolve, onR
             <li key={field.id} className={styles.schemaRow}>
               <span>{field.label}</span>
               <span className={styles.schemaType}>{field.type}</span>
-              <span className={styles.schemaBadge} data-status={field.status}>
-                {field.status === 'same' ? 'unchanged' : field.status}
-              </span>
+              <TagPill
+                className={styles.schemaStatus}
+                label={field.status === 'same' ? 'unchanged' : field.status}
+                size="xs"
+                muted={field.status === 'same'}
+                tone={field.status === 'new' ? 'success' : field.status === 'changed' ? 'warning' : field.status === 'removed' ? 'danger' : undefined}
+              />
             </li>
           ))}
         </ul>
@@ -164,7 +169,7 @@ export function ReviewChangeCard({ branchId, change, resolution, canResolve, onR
     <section className={styles.card} data-testid={`review-change-${change.key}`}>
       {header}
       <ConflictStrip change={change} resolution={resolution} canResolve={canResolve} onResolve={onResolve} />
-      {body}
+      <div className={styles.cardBody}>{body}</div>
     </section>
   )
 }

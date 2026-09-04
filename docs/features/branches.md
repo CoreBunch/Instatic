@@ -15,7 +15,7 @@ main with a three-way review. Publishing only ever happens on main.
 - **Publish and schedule are disabled on a branch** with the reason inline (`useBranchPublishGate`); the server answers `409` if a request slips through.
 - **Preview links** (`/_instatic/preview/<token>`) set an HttpOnly cookie; while it names a live link, every public GET renders the branch's draft with a banner (`server/publish/branchPreview.ts`).
 - **Merge** (branch → main) and **Update** (main → branch) are the same three-way merge over `site_branch_bases` (`server/branches/merge.ts`): field-level where both sides moved different fields, a reviewer decision where they moved the same one. An update never writes main.
-- **Merge review** (`/admin/branches/:id/review`) is where merging happens: one timeline node per planned change — pages as before/after renders with the changed nodes outlined, entries as field tables, tables as schemas, files as line diffs — each with its own comment thread; anyone with `site.read` can ask for a merge, comment, and read the plan, a branch manager declines or merges from the page's footer.
+- **Merge review** (`/admin/branches/:id/review`) is where merging happens: one row of tiles per planned change, its comment thread beside it — pages as before/after renders with the changed nodes outlined, entries as field tables, tables as schemas, files as line diffs — each with its own comment thread; anyone with `site.read` can ask for a merge, comment, and read the plan, a branch manager declines or merges from the page's footer.
 - **Version history** lists a row's published versions and restores one into the draft on the active branch (`data_row_versions`, `GET/POST …/data/rows/:id/versions`).
 - Capability: `site.branches.manage` (Owner, Admin). Audit: `branch.*`, `version.restore`.
 
@@ -55,7 +55,7 @@ server/publish/publicRoutes.ts    dispatcher tail: preview link, public route, 4
 
 src/admin/state/branchStore.ts            active branch, registry, switcher UI state, publish gate
 src/admin/shared/BranchSwitcher/          chip + palette, context strip, manage / delete / update dialogs
-src/admin/pages/branches/                 the merge review page (timeline, page compare, threads)
+src/admin/pages/branches/                 the merge review page (rows of tiles, page compare, threads)
 src/admin/shared/VersionHistoryDialog/    published versions + restore
 src/admin/spotlight/commands/branches.ts  Switch / Create / Manage / Switch to main
 src/admin/spotlight/providers/branchesProvider.ts  "Switch to <branch>" rows
@@ -153,11 +153,11 @@ Endpoints: `GET|POST /admin/api/cms/branches/:id/merge` and `…/update`. `GET` 
 
 ## Merge review
 
-`/admin/branches/:id/review` (`src/admin/pages/branches/BranchReviewPage.tsx`, workspace `branchReview`, gated by `site.read`) is the review. Opening it switches the tab to the branch. It loads the merge plan and the review state together and renders one timeline:
+`/admin/branches/:id/review` (`src/admin/pages/branches/BranchReviewPage.tsx`, workspace `branchReview`, gated by `site.read`) is the review. Opening it switches the tab to the branch. It loads the merge plan and the review state together and renders rows of tiles on the workspace canvas (house surfaces, no borders; a thread tile beside what it discusses):
 
-- **The request node** — the open or last merge request (who, note, status pill: *Awaiting review* / *Changes requested* / *Merged* / *Withdrawn*), with the general conversation beside it and a facts grid (changes by kind, conflicts left, freshness, what merging does). Without a request it offers *Request merge…*.
-- **One node per change**, marked `A` / `M` / `D` on the line, with a thread box on the left (comments keyed by the change's `key`, an always-present composer) and the change on the right: a page (`row` in the `pages` table) as **before/after frames**, an entry as a field table, a table as its schema, the shell as a settings table, a file as a line diff (`@core/utils/lineDiff`). A change with conflicts carries a strip with *Keep main* / *Take branch* (managers only).
-- **The decision node** — the decline note, the merge outcome, or the wait.
+- **The request row** — the open or last merge request (who, note, state badge: *Awaiting review* / *Changes requested* / *Merged* / *Withdrawn*, a `TagPill` with a state `tone`), with the general conversation beside it and a row of fact tiles (changes by kind, conflicts left, freshness, what merging does). Without a request it offers *Request merge…*.
+- **One row per change**, its kind (*Page*, *Entry*, *Table*, *File*) and action (*new* / *changed* / *removed*) as badges in the card head, with the thread tile on the left (comments keyed by the change's `key`, an always-present composer) and the change on the right: a page (`row` in the `pages` table) as **before/after frames**, an entry as a field table, a table as its schema, the shell as a settings table, a file as a line diff (`@core/utils/lineDiff`). A change with conflicts carries a strip with *Keep main* / *Take branch* (managers only).
+- **The decision row** — the decline note, the merge outcome, or the wait.
 - **The footer** — managers: *Delete branch after merging*, *Decline…* (open request only; a note is required) and *Merge N changes*, disabled with the count while conflicts are undecided; the merge runs the existing step-up-gated `POST …/merge`. Requesters: *Withdraw request*; everyone else: *Request merge…*.
 
 Page frames: `GET /admin/api/cms/branches/:id/review/render?row=<page row id>&side=main|branch` (`site.read`) returns the page's HTML composed like the branch preview (template chain, draft loops, inlined CSS, `dynamicNodes: 'inline'`) with `annotateNodeIds` on, so every node's root element carries `uid="<node id>"`; no runtime scripts are bundled. The page fetches it through `apiTextRequest` and hands it to an `<iframe sandbox="allow-same-origin">` as `srcdoc` (scripts stay off). After load, the frame is measured and the nodes the plan's tree diff lists are found by `uid` and outlined in place — highlights come from the diff, never from guesses. Modes: side by side, swipe (one frame clipped over the other), and the plain change list.
