@@ -8,6 +8,7 @@ import type {
   PluginResource,
 } from '@core/plugin-sdk'
 import {
+  CONTENT_ACCESS_MODE_PERMISSIONS,
   isCompatiblePluginApiVersion,
   MIN_SUPPORTED_PLUGIN_API_VERSION,
   OWN_CREATED_TABLES_MARKER,
@@ -562,12 +563,8 @@ export function parsePluginManifest(input: unknown): PluginManifest {
   // Fail-closed defense: a plugin that requests `cms.content.write` but
   // omits the allowlist would otherwise silently fail every write at the
   // host bridge with a cryptic per-call error.
-  const contentPerms = data.permissions.filter((p) =>
-    p === 'cms.content.read' ||
-    p === 'cms.content.write' ||
-    p === 'cms.content.publish' ||
-    p === 'cms.content.delete',
-  )
+  const contentPermissions = new Set<PluginPermission>(Object.values(CONTENT_ACCESS_MODE_PERMISSIONS))
+  const contentPerms = data.permissions.filter((p) => contentPermissions.has(p))
   const contentAccess = data.contentAccess ?? []
   if (contentPerms.length > 0 && contentAccess.length === 0) {
     throw new Error(
@@ -591,11 +588,7 @@ export function parsePluginManifest(input: unknown): PluginManifest {
         }
         seenModes.add(mode)
 
-        const requiredPermission: PluginPermission =
-          mode === 'read' ? 'cms.content.read' :
-          mode === 'write' ? 'cms.content.write' :
-          mode === 'publish' ? 'cms.content.publish' :
-          'cms.content.delete'
+        const requiredPermission = CONTENT_ACCESS_MODE_PERMISSIONS[mode]
 
         if (!data.permissions.includes(requiredPermission)) {
           throw new Error(

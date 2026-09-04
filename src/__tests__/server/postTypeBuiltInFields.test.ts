@@ -25,6 +25,7 @@ import type { DbClient } from '../../../server/db/client'
 import { createDataTable, getDataTable, updateDataTable } from '../../../server/repositories/data'
 import { insertDataTableIfAbsent } from '../../../server/repositories/data/tables'
 import { slugForTable } from '@core/data/cells'
+import { buildPostTypeDefaultFields } from '@core/data/fields'
 import {
   POST_TYPE_MANDATORY_FIELD_IDS,
   POST_TYPE_OPTIONAL_BUILTIN_FIELD_IDS,
@@ -34,7 +35,13 @@ async function setupDb(): Promise<{ db: DbClient; cleanup: () => Promise<void> }
   const dir = await mkdtemp(join(tmpdir(), 'instatic-posttype-'))
   const db = createSqliteClient(join(dir, 'test.db'))
   await runMigrations(db, sqliteMigrations)
-  return { db, cleanup: async () => { await rm(dir, { recursive: true, force: true }) } }
+  return {
+    db,
+    cleanup: async () => {
+      await db.close()
+      await rm(dir, { recursive: true, force: true })
+    },
+  }
 }
 
 describe('createDataTable — post-type built-in fields', () => {
@@ -58,6 +65,54 @@ describe('createDataTable — post-type built-in fields', () => {
       expect(ids).toContain('crop')
       // Built-ins lead so the Content editor renders them in canonical order.
       expect(ids.indexOf('title')).toBeLessThan(ids.indexOf('crop'))
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('respects removal of the optional built-ins, matching the PATCH rule', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      const supplied = buildPostTypeDefaultFields().filter(
+        (field) => !['featuredMedia', 'seoTitle', 'seoDescription'].includes(field.id),
+      )
+      const table = await createDataTable(db, {
+        name: 'Catalog',
+        slug: 'catalog',
+        kind: 'postType',
+        routeBase: '/catalog',
+        singularLabel: 'Product',
+        pluralLabel: 'Catalog',
+        fields: supplied,
+      })
+
+      const ids = table.fields.map((field) => field.id)
+      expect(ids).not.toContain('featuredMedia')
+      expect(ids).not.toContain('seoTitle')
+      expect(ids).not.toContain('seoDescription')
+      for (const required of POST_TYPE_MANDATORY_FIELD_IDS) {
+        expect(ids).toContain(required)
+      }
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('seeds the full canonical set when no fields are supplied at all', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      const table = await createDataTable(db, {
+        name: 'Notes',
+        slug: 'notes',
+        kind: 'postType',
+        routeBase: '/notes',
+        singularLabel: 'Note',
+        pluralLabel: 'Notes',
+        fields: [],
+      })
+
+      const canonicalIds = buildPostTypeDefaultFields().map((field) => field.id)
+      expect(table.fields.map((field) => field.id)).toEqual(canonicalIds)
     } finally {
       await cleanup()
     }

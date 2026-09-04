@@ -136,13 +136,14 @@ export default definePlugin({
     { table: 'pages', modes: ['read', 'write'] },
   ],
 
-  entrypoints: { server: 'server/index.js' },
+  // No entrypoints here — \`instatic-plugin build\` auto-wires
+  // \`entrypoints.server\` because \`server/index.ts\` exists.
 })
 `
 }
 
 function serverEntryTemplate({ pluginName }: InitTemplate): string {
-  return `import type { ServerPluginModule } from '@instatic/plugin-sdk'
+  return `import type { ServerPluginModule } from '@core/plugin-sdk'
 
 /**
  * Server entrypoint for ${pluginName}.

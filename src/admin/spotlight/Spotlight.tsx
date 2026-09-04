@@ -178,16 +178,7 @@ export function Spotlight({ isClosing = false }: SpotlightProps): ReactNode {
             else if (filtered.length > 0) value = filtered[0]!.value
           }
 
-          const isLastArg = argMode.argIndex >= args.length - 1
-
-          if (isLastArg) {
-            // All args filled — run the command
-            const fullArgs = { ...argMode.values, [currentArg.id]: value }
-            dispatch({ type: 'EXIT_ARG_MODE' })
-            void runCommandWithArgs(argMode.command, fullArgs)
-          } else {
-            dispatch({ type: 'SAVE_ARG_AND_ADVANCE', argId: currentArg.id, value })
-          }
+          selectArg(value)
           break
         }
 
@@ -302,6 +293,24 @@ export function Spotlight({ isClosing = false }: SpotlightProps): ReactNode {
     void runCommand(cmd)
   }
 
+  // ─── Arg selection (shared by keyboard Enter + mouse click) ────────────────
+  // Saves the given arg value and either advances to the next arg or, when the
+  // last arg is filled, exits arg mode and runs the command.
+  const selectArg = (value: string) => {
+    if (!dispatch || !runCommandWithArgs || !argMode) return
+    const args = argMode.command.args ?? []
+    const currentArg = args[argMode.argIndex]
+    if (!currentArg) return
+    const isLastArg = argMode.argIndex >= args.length - 1
+    if (isLastArg) {
+      const fullArgs = { ...argMode.values, [currentArg.id]: value }
+      dispatch({ type: 'EXIT_ARG_MODE' })
+      void runCommandWithArgs(argMode.command, fullArgs)
+    } else {
+      dispatch({ type: 'SAVE_ARG_AND_ADVANCE', argId: currentArg.id, value })
+    }
+  }
+
   // Derive input placeholder
   const placeholder = (() => {
     if (argMode) {
@@ -391,6 +400,7 @@ export function Spotlight({ isClosing = false }: SpotlightProps): ReactNode {
           listboxId={listboxId}
           highlightedIndex={highlightedIndex}
           onHighlightChange={handleHighlightChange}
+          onSelectArg={selectArg}
           onRun={handleRun}
           activeScopeId={activeScopeId}
         />

@@ -125,6 +125,40 @@ describe('role management edge semantics', () => {
     expect(normalizedPayload.role.capabilities).toEqual(['site.read', 'media.read'])
   })
 
+  it('rejects the Owner-only roles.manage grant on every non-Owner role', async () => {
+    const harness = await createCapabilityTestHarness()
+    try {
+      const ownerCookie = await harness.setupOwner()
+
+      const create = await harness.cms('/admin/api/cms/roles', {
+        method: 'POST',
+        cookie: ownerCookie,
+        json: {
+          name: 'Forbidden Role Manager',
+          slug: 'forbidden-role-manager',
+          capabilities: ['users.manage', 'roles.manage'],
+        },
+      })
+      expect(create.status).toBe(400)
+      expect(await roleError(create)).toBe('roles.manage is reserved for the Owner role')
+
+      const roleId = await harness.createRole({
+        name: 'Ordinary User Manager',
+        slug: 'ordinary-user-manager',
+        capabilities: ['users.manage'],
+      })
+      const update = await harness.cms(`/admin/api/cms/roles/${roleId}`, {
+        method: 'PATCH',
+        cookie: ownerCookie,
+        json: { capabilities: ['users.manage', 'roles.manage'] },
+      })
+      expect(update.status).toBe(400)
+      expect(await roleError(update)).toBe('roles.manage is reserved for the Owner role')
+    } finally {
+      await harness.cleanup()
+    }
+  })
+
   it('rejects deleting system roles and roles assigned to active users', async () => {
     const harness = await createCapabilityTestHarness()
     const ownerCookie = await harness.setupOwner()

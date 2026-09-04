@@ -35,6 +35,7 @@ import {
 } from '@core/page-tree'
 import { StorageFilterValueSchema } from './storageSchemas'
 import { PluginContentFieldSchema } from './types/content'
+import type { PluginPermission } from './types/permissions'
 
 // ---------------------------------------------------------------------------
 // Tables
@@ -182,11 +183,27 @@ export const ContentAccessModeSchema = Type.Union([
 export type ContentAccessMode = Static<typeof ContentAccessModeSchema>
 
 /**
+ * The permission each `contentAccess` mode consumes. `parsePluginManifest`
+ * requires the permission for every declared mode and `instatic-plugin lint`
+ * warns about a permission no entry's mode consumes — both read this one
+ * table, so the two checks cannot drift apart.
+ */
+export const CONTENT_ACCESS_MODE_PERMISSIONS: Readonly<Record<ContentAccessMode, PluginPermission>> = {
+  read: 'cms.content.read',
+  write: 'cms.content.write',
+  publish: 'cms.content.publish',
+  delete: 'cms.content.delete',
+}
+
+/**
  * `contentAccess[].table` marker granting access to every table THIS plugin
  * created at runtime via `cms.content.tables.create` (matched against the
  * table's `createdByPluginId`, never by slug). Importer/migration plugins
  * whose table names are chosen by the operator at runtime declare this
  * instead of a slug they cannot know at packaging time.
+ *
+ * Orthogonal to the mode table above: that decides WHICH PERMISSION a mode
+ * needs, this decides WHICH TABLES an entry addresses.
  */
 export const OWN_CREATED_TABLES_MARKER = '@own-created'
 

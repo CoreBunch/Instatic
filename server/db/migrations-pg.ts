@@ -1157,11 +1157,26 @@ export const pgMigrations: Migration[] = [
     `,
   },
   {
+    // See migrations-sqlite.ts:025 — remove the forbidden Owner-only grant
+    // from every persisted non-Owner role on existing installations.
+    id: '025_remove_non_owner_role_management',
+    sql: `
+      update roles
+         set capabilities_json = capabilities_json - 'roles.manage',
+             updated_at = current_timestamp
+       where id <> 'owner'
+         and capabilities_json ? 'roles.manage';
+    `,
+  },
+  {
     // Which plugin created this table via `cms.content.tables.create` (null
     // for user/import-created tables). The plugin host's `@own-created`
     // contentAccess marker resolves against this column, so a plugin keeps
     // access to tables it created at runtime — durable across restarts and
     // admin-side slug renames. Nullable, no default: purely additive.
+    //
+    // Shares the `025_` prefix with the migration above — see the note on the
+    // SQLite twin for why that is safe and when renumbering is not.
     id: '025_data_tables_created_by_plugin',
     sql: `
       alter table data_tables add column created_by_plugin_id text;

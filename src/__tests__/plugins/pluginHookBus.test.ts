@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import { canonicalPluginEventName, hookBus } from '@core/plugins/hookBus'
 
 afterEach(() => {
@@ -46,6 +46,23 @@ describe('hookBus', () => {
     })
     hookBus.filter('plugin.good', 'pipe', (value) => `${value}-good`)
     expect(await hookBus.applyFilter('pipe', 'seed')).toBe('seed-good')
+  })
+
+  it('falls back to the previous HTML if a filter returns null', async () => {
+    const errorLog = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      hookBus.filter('plugin.bad', 'publish.html', () => null)
+      hookBus.filter('plugin.good', 'publish.html', (value) => `${value}-good`)
+
+      expect(await hookBus.applyFilter('publish.html', '<main>page</main>')).toBe(
+        '<main>page</main>-good',
+      )
+      expect(errorLog).toHaveBeenCalledWith(
+        '[plugin:plugin.bad] filter "publish.html" returned a different value type; keeping the previous value.',
+      )
+    } finally {
+      errorLog.mockRestore()
+    }
   })
 
   it('delivers host emits of core events to listeners on the bare core name', async () => {

@@ -40,6 +40,7 @@ import { normalizeDataTableFields } from '@core/data/fields'
 import { slugForTable } from '@core/data/cells'
 import { slugFromTitle } from '@core/utils/slug'
 import { fetchPublishedDataRowItems } from '@core/loops/sources/dataRows'
+import { parseCellFilter } from '@core/loops/cellFilter'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../../http'
 import { CMS_API_PREFIX, requestAuditContext } from '../shared'
 import {
@@ -300,6 +301,9 @@ async function handleTableRows(
   if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
 
   if (req.method === 'GET') {
+    // A broad content.* capability satisfies requireDataAccess, but reading a
+    // system table's rows still needs data.system.tables.read (GHSA-x69h).
+    if (!canReadTable(user, table)) return jsonResponse({ error: 'Table not found' }, { status: 404 })
     const visibility = canSeeAllDataRows(user) ? {} : { ownerUserId: user.id }
     return jsonResponse({ rows: await listDataRows(db, tableId, visibility) })
   }
@@ -382,12 +386,21 @@ async function handleTableLoopPreview(
   const rawOffset = Number.parseInt(url.searchParams.get('offset') ?? '0', 10)
   const offset = Math.max(Number.isFinite(rawOffset) ? rawOffset : 0, 0)
 
+  // The canvas preview must apply the loop's cell condition too, or the
+  // editor shows rows the published page will not.
+  const cellFilter = parseCellFilter({
+    cellField: url.searchParams.get('cellField') ?? '',
+    cellOperator: url.searchParams.get('cellOperator') ?? '',
+    cellValue: url.searchParams.get('cellValue') ?? '',
+  })
+
   const result = await fetchPublishedDataRowItems(db, {
     tableId,
     orderBy,
     direction,
     limit,
     offset,
+    cellFilter,
   })
   return jsonResponse(result)
 }

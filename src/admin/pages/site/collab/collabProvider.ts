@@ -150,6 +150,12 @@ export function createCollabProvider(
 
   const presenceDoc = new Y.Doc()
   const awareness = new awarenessProtocol.Awareness(presenceDoc)
+  // y-protocols seeds the local state as `{}`, and the connect handler
+  // re-announces any non-null state — so without this, every connect
+  // broadcast a meaningless empty presence (and its periodic re-announce)
+  // that peers must ignore. Stay silent until the editor publishes real
+  // presence via usePublishEditorPresence.
+  awareness.setLocalState(null)
 
   function setStatus(next: CollabStatus): void {
     if (status === next) return
@@ -275,9 +281,21 @@ export function createCollabProvider(
       attempts = 0
       setStatus('connected')
       lastInboundAt = Date.now()
+      // Timestamp of the first UNANSWERED ping of the current cycle; a cycle
+      // ends when any inbound frame arrives after it.
+      let lastPingSentAt = 0
       clearInterval(pingTimer)
       pingTimer = setInterval(() => {
-        if (Date.now() - lastInboundAt > livenessTimeoutMs) {
+        const now = Date.now()
+        // A black hole is a ping that went UNANSWERED — not mere quiet. In a
+        // hidden/background webview (a backgrounded browser tab, a
+        // minimized window) this interval itself is throttled, so
+        // long gaps with no ping sent are normal; judging them as silence
+        // used to declare a healthy socket offline the moment the tab
+        // resumed, toasting "Still connecting" at whatever the user did
+        // next.
+        const answered = lastInboundAt >= lastPingSentAt
+        if (!answered && now - lastPingSentAt > livenessTimeoutMs) {
           // Publish OFFLINE synchronously: `onclose` is not prompt on a black
           // hole, and the write gate must not keep accepting edits while the
           // toolbar still reads "Draft synced".
@@ -285,6 +303,7 @@ export function createCollabProvider(
           socket?.close()
           return
         }
+        if (answered) lastPingSentAt = now
         sendFrame(PRESENCE_DOC_ID, FRAME_PING, new Uint8Array())
       }, pingIntervalMs)
       for (const [docId, entry] of bound) sendSyncStep1(docId, entry.doc)

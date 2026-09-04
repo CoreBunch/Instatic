@@ -1,3 +1,4 @@
+import { nanoid } from 'nanoid'
 import { Button } from '@ui/components/Button'
 import { ClassGeneratorRow } from './ClassGeneratorRow'
 import type { GeneratorShape, GroupShape, ScaleAdapter } from './adapter'
@@ -29,7 +30,7 @@ export function ClassGeneratorList<C extends GeneratorShape>({
 
   function handleAdd() {
     const fresh = {
-      id: crypto.randomUUID(),
+      id: nanoid(),
       name: `${groupNamingConvention}-*`,
       property: [adapter.classGeneratorProperties[0]?.value ?? ''],
       tabId: groupId,

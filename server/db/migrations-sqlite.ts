@@ -1225,11 +1225,39 @@ export const sqliteMigrations: Migration[] = [
     `,
   },
   {
+    // `roles.manage` is an installation-Owner power, not a delegable grant.
+    // Older builds allowed it to be persisted on custom/non-Owner roles.
+    id: '025_remove_non_owner_role_management',
+    sql: `
+      update roles
+         set capabilities_json = (
+               select coalesce(json_group_array(value), '[]')
+                 from json_each(roles.capabilities_json)
+                where value <> 'roles.manage'
+             ),
+             updated_at = current_timestamp
+       where id <> 'owner'
+         and exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'roles.manage'
+             );
+    `,
+  },
+  {
     // Which plugin created this table via `cms.content.tables.create` (null
     // for user/import-created tables). The plugin host's `@own-created`
     // contentAccess marker resolves against this column, so a plugin keeps
     // access to tables it created at runtime — durable across restarts and
     // admin-side slug renames. Nullable, no default: purely additive.
+    //
+    // The `025_` prefix is shared with the migration above. The runner keys on
+    // the FULL id string (runMigrations.ts), so both run exactly once and
+    // neither masks the other; the prefix is a naming convention, not the key.
+    // Renumber this entry only while no installation has applied it: the ALTER
+    // carries no guard — SQLite has no `add column if not exists`, as migration
+    // 010 already documents — so a new id re-runs it against a column that
+    // exists and takes the boot down.
     id: '025_data_tables_created_by_plugin',
     sql: `
       alter table data_tables add column created_by_plugin_id text;

@@ -312,7 +312,7 @@ Every successful content write fires one of three events on the hook bus alongsi
 
 | Event                       | Fires when                                                                 | Payload                                                                                  |
 |-----------------------------|-----------------------------------------------------------------------------|------------------------------------------------------------------------------------------|
-| `content.entry.created`     | A new row is inserted (admin CMS, plugin via `api.cms.content`)              | `{ tableSlug, entryId, actor }`                                                          |
+| `content.entry.created`     | A new row is inserted (admin CMS, public form, plugin via `api.cms.content`) | `{ tableSlug, entryId, actor }`                                                          |
 | `content.entry.updated`     | A row's cells / slug / status change (draft save, publish, schedule, move)  | `{ tableSlug, entryId, changedFieldIds, actor }`                                         |
 | `content.entry.deleted`     | A row is soft-deleted                                                       | `{ tableSlug, entryId, actor }`                                                          |
 
@@ -322,10 +322,10 @@ The `actor` shape:
 type ContentEntryActor =
   | { kind: 'user'; userId: string }
   | { kind: 'plugin'; pluginId: string }
-  | { kind: 'system' }  // schedulers, scheduled-publish tick
+  | { kind: 'system' }  // public forms, schedulers, scheduled-publish tick
 ```
 
-There's also one filter — `content.entry.cells` — that runs over the cell bag BEFORE persistence. All write paths — admin HTTP handlers (`rows.ts`, `tables.ts`) and the plugin `api.cms.content.*` surface — apply it via `applyContentEntryCellsFilter` from `server/publish/contentEvents.ts`. Plugins use it to validate, normalize, or auto-fill cells:
+There's also one filter — `content.entry.cells` — that runs over the cell bag BEFORE persistence. Admin HTTP handlers (`rows.ts`, `tables.ts`) and the plugin `api.cms.content.*` surface apply it via `applyContentEntryCellsFilter` from `server/publish/contentEvents.ts`. Plugins use it to validate, normalize, or auto-fill cells:
 
 ```ts
 api.cms.hooks.filter('content.entry.cells', (cells, { tableSlug, entryId, actor }) => {
@@ -338,7 +338,7 @@ api.cms.hooks.filter('content.entry.cells', (cells, { tableSlug, entryId, actor 
 })
 ```
 
-Events are emitted from `server/publish/contentEvents.ts`, which also exports `applyContentEntryCellsFilter`. Admin CMS handlers and plugin handlers both call these helpers directly; the publish scheduler emits the `system` actor variant.
+Events are emitted from `server/publish/contentEvents.ts`, which also exports `applyContentEntryCellsFilter`. Admin CMS handlers, the public form handler, and plugin handlers call these helpers directly; public submissions and the publish scheduler emit the `system` actor variant.
 
 ---
 
