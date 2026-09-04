@@ -199,7 +199,27 @@ function bagToDeclarations(
     }
     decls.push([kebab, sanitised, important])
   }
+  return orderShorthandsFirst(decls)
+}
+
+/**
+ * A shorthand emitted AFTER one of its longhands silently overwrites it —
+ * `border-top-width: 4px; border: 1px dashed blue;` loses the 4px. Bags are
+ * insertion-ordered, so that happened whenever a shorthand row was added
+ * later than the per-side rows. Emit every shorthand before the longhands it
+ * covers (`border` → `border-top` → `border-top-width`); the relative order
+ * of everything else is untouched.
+ */
+function orderShorthandsFirst(
+  decls: Array<[string, string, boolean]>,
+): Array<[string, string, boolean]> {
+  const names = decls.map(([name]) => name)
+  const depth = (name: string) =>
+    names.filter((other) => other !== name && name.startsWith(`${other}-`)).length
   return decls
+    .map((decl, index) => ({ decl, index, depth: depth(decl[0]) }))
+    .sort((a, b) => a.depth - b.depth || a.index - b.index)
+    .map(({ decl }) => decl)
 }
 
 /**

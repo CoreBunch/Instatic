@@ -75,11 +75,16 @@ interface TokenAwareInputProps {
   /** Side-effect fired when the input gains focus (e.g. tracking last-focused field). */
   onFocus?: () => void
   /**
-   * Renders the field's hover-revealed ▲▼ stepper and delegates each click
-   * here. Used by dimension fields (Width / Height), whose value is free-form
-   * text but carries a numeric part worth stepping.
+   * The field's step math, pure: `current` is the value the field shows
+   * (stored value, else placeholder), `delta` the steps; return the next raw
+   * CSS value, or undefined when there is nothing to step (`auto`, a token).
+   * Renders the hover-revealed ▲▼ stepper and enables arrow keys and the
+   * drag-to-scrub — one math, three gestures. A scrub PREVIEWS `stepValue(
+   * start, total)` every frame through `onPreview` and commits once on
+   * release, so the canvas follows the hand instantly and undo gets one entry
+   * per drag; chevrons and keys commit each step.
    */
-  onStep?: (delta: number) => void
+  stepValue?: (current: string, delta: number) => string | undefined
   fieldSize?: 'xs' | 'sm' | 'md'
   /** Aria label for the input — required when there's no visible label. */
   'aria-label': string
@@ -109,6 +114,12 @@ interface TokenAwareInputProps {
    * field is duplicate chrome that covers the canvas.
    */
   hideTokenMenu?: boolean
+  /**
+   * Unit a typed bare number resolves to — `px` by default. Pass `''` for a
+   * property whose bare number is the value itself (`line-height: 1.5`),
+   * otherwise `1.5` would be stored as `1.5px`.
+   */
+  implicitUnit?: string
   /**
    * Render the input as a caller-positioned overlay: the wrapper uses
    * `display: contents` so it establishes no box, letting the caller
@@ -168,7 +179,7 @@ export function TokenAwareInput({
   onDraftChange,
   onDraftClear,
   onFocus,
-  onStep,
+  stepValue,
   fieldSize = 'sm',
   'aria-label': ariaLabel,
   className,
@@ -181,6 +192,7 @@ export function TokenAwareInput({
   readOnly,
   'data-testid': dataTestId,
   hideTokenMenu = false,
+  implicitUnit = 'px',
   overlay = false,
   tooltipOnOverflow = false,
   ref,
@@ -266,9 +278,46 @@ export function TokenAwareInput({
           .slice(0, 8)
 
     const commit = (raw: string) => {
-      const resolved = resolveTokenValue(raw, tokens)
+      const resolved = resolveTokenValue(raw, tokens, implicitUnit)
       onClearPreview?.()
       onCommit(resolved)
+      onDraftClear?.()
+      setIsEditing(false)
+      setIsTyping(false)
+    }
+
+    // What a step reads from: the stored value, else what the field shows.
+    const stepBase = value ?? placeholder ?? ''
+
+    /** Chevron / arrow key: one committed step. */
+    const applyStep = (delta: number) => {
+      if (!stepValue) return
+      const next = stepValue(stepBase, delta)
+      if (next === undefined) return
+      setIsEditing(false)
+      setIsTyping(false)
+      onDraftClear?.()
+      onCommit(next)
+    }
+
+    // Drag-to-scrub session: the base is frozen at the grab, every frame
+    // previews `base + total`, release commits once. With no preview channel
+    // the frames commit instead (still relative to the frozen base).
+    const scrubBase = useRef<string | null>(null)
+    const handleScrub = (total: number, phase: 'move' | 'end') => {
+      if (!stepValue) return
+      if (scrubBase.current === null) scrubBase.current = stepBase
+      const next = stepValue(scrubBase.current, total)
+      if (phase === 'move') {
+        if (next === undefined) return
+        setDraft(displayValue(next, tokens))
+        if (onPreview) onPreview(next)
+        else onCommit(next)
+        return
+      }
+      scrubBase.current = null
+      onClearPreview?.()
+      if (next !== undefined) onCommit(next)
       onDraftClear?.()
       setIsEditing(false)
       setIsTyping(false)
@@ -280,7 +329,7 @@ export function TokenAwareInput({
     // on, since it reflects an explicit edit the user is making.
     const previewToken = (rawValue: string) => {
       if (!hoverPreviewEnabled || !onPreview) return
-      const resolved = resolveTokenValue(rawValue, tokens)
+      const resolved = resolveTokenValue(rawValue, tokens, implicitUnit)
       onPreview(resolved)
     }
 
@@ -300,7 +349,7 @@ export function TokenAwareInput({
     const previewDraft = (rawValue: string) => {
       if (!onPreview) return
       if (!isLivePreviewable(rawValue)) return
-      const resolved = resolveTokenValue(rawValue, tokens)
+      const resolved = resolveTokenValue(rawValue, tokens, implicitUnit)
       onPreview(resolved)
     }
 
@@ -333,7 +382,8 @@ export function TokenAwareInput({
         disabled={disabled}
         readOnly={readOnly}
         data-testid={dataTestId}
-        onStep={onStep}
+        onStep={stepValue ? applyStep : undefined}
+        onScrub={stepValue ? handleScrub : undefined}
         className={cn(styles.input, inputClassName)}
         onMouseEnter={
           tooltipOnOverflow
@@ -362,16 +412,13 @@ export function TokenAwareInput({
         }}
         onBlur={(e) => commit(e.target.value)}
         onKeyDown={(e) => {
-          if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && onStep) {
+          if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && stepValue) {
             // Steps go through the caller's math (units survive), and the
             // field leaves editing mode so the stepped external value flows
             // back into the visible draft — the focused draft would otherwise
             // keep showing the pre-step text.
             e.preventDefault()
-            setIsEditing(false)
-            setIsTyping(false)
-            onDraftClear?.()
-            onStep((e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1))
+            applyStep((e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1))
           } else if (e.key === 'Enter') {
             e.preventDefault()
             ;(e.target as HTMLInputElement).blur()

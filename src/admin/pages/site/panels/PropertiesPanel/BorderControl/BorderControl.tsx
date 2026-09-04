@@ -33,11 +33,16 @@ import { Select } from '@ui/components/Select'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { AllSidesGlyph, PerSideGlyph, RemoveXGlyph } from '@ui/icons/inspectorGlyphs'
 import { ColorValueInput } from '@site/property-controls/ColorValueInput'
+import { UnitField } from '@site/property-controls/UnitField'
 import { useEditorPreference } from '@site/preferences/editorPreferences'
-import { LinkIcon } from 'pixel-art-icons/icons/link'
 import { cn } from '@ui/cn'
-import { getEnumOptions } from '../cssControlTypes'
+import { getEnumOptions, LENGTH_PROPERTIES } from '../cssControlTypes'
 import styles from './BorderControl.module.css'
+
+// Both are catalogued lengths — the popout uses the same unit spec the
+// generic rows for these keys use, so the two never disagree.
+const BORDER_WIDTH_SPEC = LENGTH_PROPERTIES.get('borderTopWidth')!
+const OUTLINE_OFFSET_SPEC = LENGTH_PROPERTIES.get('outlineOffset')!
 
 // ---------------------------------------------------------------------------
 // Types + key helpers
@@ -129,9 +134,11 @@ export function BorderControl({
   const borderUniform = widthState.uniform && styleState.uniform && colorState.uniform
   const borderAnySet = widthState.anySet || styleState.anySet || colorState.anySet
 
+  // Split sides open per-side; anything else opens linked. The scope never
+  // flips on its own afterwards — the seed writes the same value to all
+  // four sides, so an auto-relink on "uniform" would bounce the user straight
+  // back out of per-side mode the moment they entered it.
   const [linked, setLinked] = useState<boolean>(() => borderUniform || !borderAnySet)
-  // Auto-relink (never auto-unlink — splitting is a deliberate user action).
-  if (!linked && borderUniform) setLinked(true)
 
   const [activeSide, setActiveSide] = useState<Side>('Top')
 
@@ -206,18 +213,11 @@ export function BorderControl({
       />
 
       <div className={styles.scopeRow}>
-        <Button
-          variant="ghost"
-          className={styles.sideChip}
-          pressed={linked}
-          aria-label={linked ? 'Editing all sides' : `Editing ${scopeName} side`}
-          onClick={() => setScope(linked ? 'side' : 'all')}
-        >
-          <span className={styles.sideChipLabel}>
-            {linked ? 'Editing all sides' : `Editing ${scopeName} side`}
-          </span>
-          <LinkIcon size={12} aria-hidden="true" />
-        </Button>
+        {/* Plain text, not a third scope control: the edge box picks a side
+            and the Width row's toggle picks the mode — this only SAYS which. */}
+        <span className={styles.scopeLabel} role="status">
+          {linked ? 'Editing all sides' : `Editing ${scopeName} side`}
+        </span>
         {borderAnySet && (
           <Button
             variant="ghost"
@@ -248,12 +248,20 @@ export function BorderControl({
 
         <FieldRow label="Width">
           <div className={styles.widthPair}>
-            <Input
+            {/* The shared length duo, never a raw text field: a bare `4`
+                stored unitless is invalid CSS the browser drops — and the
+                whole border with it. */}
+            <UnitField
               fieldSize="xs"
-              value={widthValue}
+              className={styles.widthField}
+              value={widthValue || undefined}
               placeholder={widthPlaceholder}
+              units={BORDER_WIDTH_SPEC.units}
+              keywords={BORDER_WIDTH_SPEC.keywords}
               aria-label={`Border ${scopeName} width`}
-              onChange={(e) => writeSide('Width', e.target.value || undefined)}
+              onCommit={(raw) => writeSide('Width', raw)}
+              onPreview={previewSide ? (raw) => previewSide('Width', raw) : undefined}
+              onClearPreview={previewSide ? onClearPreview : undefined}
             />
             <SegmentedControl<BorderScope>
               fullWidth
@@ -294,12 +302,14 @@ export function BorderControl({
           />
         </FieldRow>
         <FieldRow label="Offset">
-          <Input
+          <UnitField
             fieldSize="xs"
-            value={pickString(storedStyles.outlineOffset)}
+            value={pickString(storedStyles.outlineOffset) || undefined}
             placeholder={pickString(currentStyles.outlineOffset) || '0px'}
+            units={OUTLINE_OFFSET_SPEC.units}
+            keywords={OUTLINE_OFFSET_SPEC.keywords}
             aria-label="Outline offset"
-            onChange={(e) => onChange('outlineOffset', e.target.value || undefined)}
+            onCommit={(raw) => onChange('outlineOffset', raw)}
           />
         </FieldRow>
       </div>

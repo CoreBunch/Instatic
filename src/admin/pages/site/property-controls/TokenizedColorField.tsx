@@ -39,8 +39,12 @@ interface TokenizedColorFieldProps {
    * instead of stacking a second panel.
    */
   drillInTitle?: string
-  onTextChange: (value: string) => void
-  onTextBlur: () => void
+  /**
+   * Text-field callbacks — only the `field` look mounts an input, so the
+   * `swatch` look leaves both off.
+   */
+  onTextChange?: (value: string) => void
+  onTextBlur?: () => void
   onSwatchChange: (value: string) => void
   onTokenSelect: (value: string) => void
   /**
@@ -107,7 +111,7 @@ export function TokenizedColorField({
   }
 
   function handleTextBlur() {
-    onTextBlur()
+    onTextBlur?.()
     onTokenPreviewClear?.()
     // Options prevent default on mousedown, so blur here always means focus
     // left the field — including onto the swatch, which now opens its own
@@ -116,7 +120,7 @@ export function TokenizedColorField({
   }
 
   function handleTextChange(event: ChangeEvent<HTMLInputElement>) {
-    onTextChange(event.target.value)
+    onTextChange?.(event.target.value)
     setOpen(true)
   }
 

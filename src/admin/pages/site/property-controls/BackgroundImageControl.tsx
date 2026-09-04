@@ -43,7 +43,7 @@
  */
 import { useState } from 'react'
 import type { ControlProps } from './shared'
-import { cn } from '@ui/cn'
+import { ControlRow } from '@ui/components/ControlRow'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { Input } from '@ui/components/Input'
 import { ColorInput } from '@ui/components/ColorInput'
@@ -155,18 +155,17 @@ export function BackgroundImageControl({
 
   return (
     /*
-     * The mock's `.row:has(> .mediafield)`: a wrapping flex row — the label
-     * keeps its column and the whole image field (mode tabs + picker) lives
-     * in ONE control column beside it, wrapping under the label when the
-     * dock is too narrow to give it a usable width.
+     * `wide`: the whole image field (mode tabs + picker) lives in ONE control
+     * column beside the label and wraps under it when the dock is too narrow
+     * to give it a usable width — the mock's `.row:has(> .mediafield)`.
      */
-    <div className={cn(styles.imageRow, disabled && styles.imageRowDisabled)}>
-      <label
-        className={cn(styles.imageLabel, isOverride && styles.imageLabelOverride)}
-        htmlFor={`ctrl-${propKey}`}
-      >
-        {label ?? propKey}
-      </label>
+    <ControlRow
+      propKey={propKey}
+      label={label}
+      wide
+      disabled={disabled}
+      isOverride={isOverride}
+    >
       <div className={styles.imageField}>
         <SegmentedControl<BgImageMode>
           value={mode}
@@ -174,6 +173,7 @@ export function BackgroundImageControl({
           onChange={handleModeChange}
           onClear={handleClear}
           size="sm"
+          look="tiles"
           fullWidth
           disabled={disabled}
           aria-label={`${label ?? propKey} mode`}
@@ -228,6 +228,6 @@ export function BackgroundImageControl({
           </div>
         )}
       </div>
-    </div>
+    </ControlRow>
   )
 }

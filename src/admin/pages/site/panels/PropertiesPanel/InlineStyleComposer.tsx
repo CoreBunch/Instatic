@@ -7,8 +7,11 @@
  *
  * Inline styles are BASE-ONLY — a real HTML `style=""` attribute cannot be
  * media-queried — so this editor ignores the breakpoint / condition switcher
- * entirely and always edits the single inline bag (sectionKey `'base'`). The
- * canvas hover-preview channel is class-keyed, so preview is a no-op here.
+ * entirely and always edits the single inline bag (sectionKey `'base'`).
+ * Live preview (typing, sliders, chip hover) goes through
+ * `previewInlineStyles`, the inline sibling of the class preview channel:
+ * `NodeRenderer` overlays it on the node's stored bag, so the canvas follows
+ * every keystroke instead of waiting for the blur that commits.
  */
 
 import { useEditorStore } from '@site/store/store'
@@ -31,6 +34,8 @@ interface InlineStyleComposerProps {
 export function InlineStyleComposer({ nodeId, inlineStyles, styleQuery, typographyFirst }: InlineStyleComposerProps) {
   const setNodeInlineStyles = useEditorStore((s) => s.setNodeInlineStyles)
   const removeNodeInlineStyleProperty = useEditorStore((s) => s.removeNodeInlineStyleProperty)
+  const setPreviewInlineStyles = useEditorStore((s) => s.setPreviewInlineStyles)
+  const clearPreviewInlineStyles = useEditorStore((s) => s.clearPreviewInlineStyles)
 
   // Same gesture-preview overlay as StyleRuleComposer — canvas drags echo
   // their live values here so the fields follow instead of jumping at release.
@@ -71,11 +76,8 @@ export function InlineStyleComposer({ nodeId, inlineStyles, styleQuery, typograp
       onRemove={handleRemove}
       onClearProperty={handleRemove}
       onClearProperties={handleClearProperties}
-      // Hover-preview is class-keyed in the store; skip it for inline editing.
-      onPreview={noop}
-      onClearPreview={noop}
+      onPreview={(patch) => setPreviewInlineStyles({ nodeId, styles: patch })}
+      onClearPreview={() => clearPreviewInlineStyles(nodeId)}
     />
   )
 }
-
-function noop() {}

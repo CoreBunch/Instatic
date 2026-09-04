@@ -33,6 +33,9 @@ export interface SpacingHighlight {
   sides: InsetSide[]
 }
 
+/** One value for every corner, or one per corner. */
+export type RadiusScope = 'all' | 'parts'
+
 interface SelectNodeOptions {
   preservePropertiesPanelCollapse?: boolean
 }
@@ -95,6 +98,32 @@ interface SelectionSlice {
    */
   spacingHighlight: SpacingHighlight | null
   setSpacingHighlight: (highlight: SpacingHighlight | null) => void
+  /**
+   * "Show all spacing" — the Spacing box's pin. While on, the canvas draws
+   * every margin and padding band of the selected node all the time, not only
+   * the side being edited. Session-only; survives reselection on purpose (it
+   * is a way of LOOKING at elements, so it must not reset per element).
+   */
+  spacingOverlayPinned: boolean
+  setSpacingOverlayPinned: (pinned: boolean) => void
+  /**
+   * The Radius row's scope for the selected node — all corners at once or
+   * each on its own. Session-only and per selection (reset with the inset
+   * pins): the inspector row and the canvas corner dots read the SAME value,
+   * so a dot dragged in "separately" mode rounds only its corner. `null`
+   * means "not chosen yet — derive from the data" (split when the stored
+   * corners differ, linked otherwise).
+   */
+  radiusScope: RadiusScope | null
+  setRadiusScope: (scope: RadiusScope) => void
+  /**
+   * The Size row's ratio lock for the selected node. Session-only and per
+   * selection: the inspector's Width/Height fields AND the canvas resize
+   * handles read it, so a locked element keeps its proportions whichever way
+   * it is resized. Shift on a handle flips it for one drag.
+   */
+  sizeRatioLocked: boolean
+  setSizeRatioLocked: (locked: boolean) => void
 
   /**
    * Live style patch from an in-flight canvas gesture (free-move drag, resize
@@ -121,6 +150,9 @@ export const createSelectionSlice: EditorStoreSliceCreator<SelectionSlice> = (se
   hoveredBreakpointId: null,
   lockedInsetSides: [],
   spacingHighlight: null,
+  spacingOverlayPinned: false,
+  radiusScope: null,
+  sizeRatioLocked: false,
   canvasGesturePreview: null,
 
   selectNode: (id, mode = 'replace', options) => {
@@ -225,6 +257,8 @@ export const createSelectionSlice: EditorStoreSliceCreator<SelectionSlice> = (se
     componentizeEditorRequest: null,
     lockedInsetSides: [],
     spacingHighlight: null,
+    radiusScope: null,
+    sizeRatioLocked: false,
   }),
 
   toggleInsetLock: (side) =>
@@ -242,6 +276,21 @@ export const createSelectionSlice: EditorStoreSliceCreator<SelectionSlice> = (se
   setSpacingHighlight: (highlight) => {
     if (get().spacingHighlight === null && highlight === null) return
     set({ spacingHighlight: highlight })
+  },
+
+  setSpacingOverlayPinned: (pinned) => {
+    if (get().spacingOverlayPinned === pinned) return
+    set({ spacingOverlayPinned: pinned })
+  },
+
+  setRadiusScope: (scope) => {
+    if (get().radiusScope === scope) return
+    set({ radiusScope: scope })
+  },
+
+  setSizeRatioLocked: (locked) => {
+    if (get().sizeRatioLocked === locked) return
+    set({ sizeRatioLocked: locked })
   },
 
   setCanvasGesturePreview: (patch) => {
@@ -277,6 +326,8 @@ export function clearCanvasSelectionDraft(state: EditorStore): void {
   state.activeClassId = null
   state.lockedInsetSides = []
   state.spacingHighlight = null
+  state.radiusScope = null
+  state.sizeRatioLocked = false
   // A document/page switch invalidates any inline text-edit session — the
   // node it points at is no longer on the canvas. Live keystrokes already
   // committed; clearing here is the spec's "force-close without committing".
@@ -380,6 +431,9 @@ function applySelection(
       // anchor; canvas clicks can reselect without ever blurring the panel
       // input (iframe focus doesn't bubble out), so clear it here too.
       state.spacingHighlight = null
+      // The radius scope and the ratio lock are choices about THIS node.
+      state.radiusScope = null
+      state.sizeRatioLocked = false
     }
     if (panelChanged) state.propertiesPanel.collapsed = shouldCollapseProperties
     if (current.componentizeEditorRequest?.nodeId !== nextAnchor) {

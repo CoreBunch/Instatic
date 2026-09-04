@@ -46,7 +46,7 @@ export function StepList<G extends GroupShape, C extends GeneratorShape>({
   onRemoveLastStep,
 }: StepListProps<G, C>) {
   return (
-    <div className={styles.stepList}>
+    <div className={styles.stepList} data-surface="card">
       <div className={styles.stepListHeader}>
         <Button
           variant="ghost"

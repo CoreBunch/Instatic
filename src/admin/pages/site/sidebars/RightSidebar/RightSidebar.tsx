@@ -51,6 +51,9 @@ export function RightSidebar({ mode }: RightSidebarProps) {
     <aside
       ref={sidebarRef}
       className={styles.sidebar}
+      // Chrome surface: every field inside (the docked inspector included)
+      // takes the panel ramp — see "Surface ramps" in globals.css.
+      data-surface="chrome"
       data-testid="right-sidebar"
       data-expanded={isExpanded ? 'true' : 'false'}
       data-mode={propertiesPanelMode}

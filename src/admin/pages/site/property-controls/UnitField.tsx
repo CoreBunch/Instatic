@@ -24,9 +24,11 @@
  *     and keep the unit.
  */
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Input } from '@ui/components/Input'
 import { Select } from '@ui/components/Select'
+import type { FieldSize } from '@ui/fieldSize'
+import { cn } from '@ui/cn'
 import styles from './UnitField.module.css'
 
 // ---------------------------------------------------------------------------
@@ -76,8 +78,26 @@ interface UnitFieldProps {
   /** Keyword values (`auto`, `none`) listed after the units. */
   keywords: ReadonlyArray<string>
   'aria-label': string
+  /** Control height for both halves; the section rows use `sm`, popouts `xs`. */
+  fieldSize?: FieldSize
+  /** Extra class on the duo wrapper — hosts override the column split. */
+  className?: string
   /** `undefined` removes the property (empty field committed). */
   onCommit: (raw: string | undefined) => void
+  /**
+   * Live canvas preview. With it, a drag-to-scrub previews every frame and
+   * commits once on release (one undo entry, no per-frame store writes);
+   * without it the scrub commits per frame.
+   */
+  onPreview?: (raw: string | undefined) => void
+  onClearPreview?: () => void
+  /**
+   * Fires on every select pick, unit or keyword — including a unit picked
+   * while the field is still empty, which commits nothing yet. Hosts that
+   * key other controls on the unit (a slider's range, preset chips) follow
+   * the select through this instead of waiting for a number.
+   */
+  onUnitChange?: (next: string) => void
 }
 
 export function UnitField({
@@ -87,7 +107,12 @@ export function UnitField({
   units,
   keywords,
   'aria-label': ariaLabel,
+  fieldSize = 'sm',
+  className,
   onCommit,
+  onPreview,
+  onClearPreview,
+  onUnitChange,
 }: UnitFieldProps) {
   const parsed = parseLength(value, units, keywords)
   const parsedPlaceholder = parseLength(placeholder, units, keywords)
@@ -124,7 +149,30 @@ export function UnitField({
     onCommit(`${parsed}${unit}`)
   }
 
+  // Drag-to-scrub session: the number is frozen at the grab, every frame
+  // previews `base + total`, release commits once.
+  const scrubBase = useRef<number | null>(null)
+  const handleScrub = (total: number, phase: 'move' | 'end') => {
+    if (scrubBase.current === null) {
+      const base = Number(shownNumber !== '' ? shownNumber : (placeholderNumber ?? '0'))
+      scrubBase.current = Number.isFinite(base) ? base : 0
+    }
+    const next = Math.round((scrubBase.current + total) * 100) / 100
+    const unit = isKeyword ? units[0] : activeUnit
+    if (phase === 'move') {
+      setDraft(String(next))
+      if (onPreview) onPreview(`${next}${unit}`)
+      else onCommit(`${next}${unit}`)
+      return
+    }
+    scrubBase.current = null
+    onClearPreview?.()
+    onCommit(`${next}${unit}`)
+    setDraft(null)
+  }
+
   const handleUnitChange = (next: string) => {
+    onUnitChange?.(next)
     if (keywords.includes(next)) {
       setPendingUnit(null)
       setDraft(null)
@@ -147,10 +195,10 @@ export function UnitField({
   }
 
   return (
-    <div className={styles.duo}>
+    <div className={cn(styles.duo, className)}>
       <Input
         id={id}
-        fieldSize="sm"
+        fieldSize={fieldSize}
         inputMode="decimal"
         aria-label={ariaLabel}
         value={isKeyword ? '' : shownNumber}
@@ -167,6 +215,7 @@ export function UnitField({
                 commitNumber(String(next))
               }
         }
+        onScrub={isKeyword ? undefined : handleScrub}
         onFocus={() => setDraft(shownNumber)}
         onChange={(event) => {
           const next = event.target.value
@@ -187,7 +236,7 @@ export function UnitField({
         }}
       />
       <Select
-        fieldSize="sm"
+        fieldSize={fieldSize}
         aria-label={`${ariaLabel} unit`}
         value={activeUnit}
         onChange={(event) => handleUnitChange(event.target.value)}

@@ -209,6 +209,7 @@ export function MediaLibraryControl({
           options={MEDIA_SOURCE_OPTIONS}
           onChange={setMode}
           size="sm"
+          look="tiles"
           fullWidth
           disabled={disabled}
           aria-label={`${label ?? propKey} source`}

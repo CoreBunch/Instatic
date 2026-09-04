@@ -218,7 +218,16 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
     })
   }, [isInlineEditing, inlineEditInitialValue, nodeId])
 
-  const inlineStyle = useResponsiveBackgroundStyle(node?.inlineStyles)
+  // Live inline-style preview (typing / sliding in the inspector with an
+  // inline target): the previewed patch overlays the stored bag for THIS node
+  // only. The selector resolves to the same object reference while the
+  // preview targets another node (null), so no other node re-renders.
+  const inlinePreview = useEditorStore((s) =>
+    s.previewInlineStyles?.nodeId === nodeId ? s.previewInlineStyles.styles : null,
+  )
+  const inlineStyle = useResponsiveBackgroundStyle(
+    inlinePreview ? { ...node?.inlineStyles, ...inlinePreview } : node?.inlineStyles,
+  )
 
   if (!node) return null
   if (node.hidden) return null

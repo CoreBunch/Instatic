@@ -22,6 +22,8 @@ type UiStateActions = Pick<
   | 'clearPreviewNodeClass'
   | 'setPreviewClassStyles'
   | 'clearPreviewClassStyles'
+  | 'setPreviewInlineStyles'
+  | 'clearPreviewInlineStyles'
 >
 
 export function createUiStateActions({ set, get }: SiteSliceHelpers): UiStateActions {
@@ -94,6 +96,29 @@ export function createUiStateActions({ set, get }: SiteSliceHelpers): UiStateAct
       if (classId !== undefined && current.classId !== classId) return
       set((s) => {
         s.previewClassStyles = null
+      })
+    },
+
+    setPreviewInlineStyles(preview) {
+      const current = get().previewInlineStyles
+      if (
+        current &&
+        current.nodeId === preview.nodeId &&
+        shallowEqualStyles(current.styles, preview.styles)
+      ) {
+        return
+      }
+      set((s) => {
+        s.previewInlineStyles = preview
+      })
+    },
+
+    clearPreviewInlineStyles(nodeId) {
+      const current = get().previewInlineStyles
+      if (!current) return
+      if (nodeId !== undefined && current.nodeId !== nodeId) return
+      set((s) => {
+        s.previewInlineStyles = null
       })
     },
   }

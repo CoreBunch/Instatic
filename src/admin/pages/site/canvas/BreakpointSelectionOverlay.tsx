@@ -100,13 +100,16 @@ import {
   measureSelectorHighlightRects,
   positionDimensionBadge,
   positionOverlayElement,
+  positionRadiusHandles,
   positionResizeHandles,
   positionToolbar,
   rectStyle,
+  RADIUS_HANDLE_CORNERS,
   RESIZE_HANDLE_DIRECTIONS,
   syncSelectorHighlightRings,
 } from './canvasSelectionOverlayPositioning'
 import { useCanvasResizeDrag } from './useCanvasResizeDrag'
+import { readCornerRadii, useCanvasRadiusDrag } from './useCanvasRadiusDrag'
 import styles from './BreakpointSelectionOverlay.module.css'
 
 interface BreakpointSelectionOverlayProps {
@@ -188,9 +191,10 @@ export function BreakpointSelectionOverlay({
   const ringRefs = useRef<Map<string, HTMLDivElement | null> | null>(null)
   if (ringRefs.current === null) ringRefs.current = new Map()
   const hoverRef = useRef<HTMLDivElement>(null)
-  // Resize handles + dimension badge — single-selection chrome, positioned in
-  // the same WRITE phase as the rings.
+  // Resize handles + corner-radius dots + dimension badge — single-selection
+  // chrome, positioned in the same WRITE phase as the rings.
   const resizeHandlesRef = useRef<HTMLDivElement>(null)
+  const radiusHandlesRef = useRef<HTMLDivElement>(null)
   const dimensionBadgeRef = useRef<HTMLDivElement>(null)
   // Container whose children are the orange selector-affinity rings. Their
   // count is driven by the live DOM (how many elements match the selector), so
@@ -282,6 +286,7 @@ export function BreakpointSelectionOverlay({
     canvasRootRef: viewportActions?.canvasRootRef,
   })
   const resizeDrag = useCanvasResizeDrag({ iframeElement, styleTarget })
+  const radiusDrag = useCanvasRadiusDrag({ iframeElement, styleTarget })
   // Handles resize via the style channel, so they need style-edit capability
   // (the drag itself falls back to inline styles when no class is active);
   // scoped to the active frame like the toolbar so only one frame grows chrome.
@@ -327,6 +332,7 @@ export function BreakpointSelectionOverlay({
       syncSelectorHighlightRings(selectorHighlightRef.current, null)
       hideOverlayElement(toolbarRef.current)
       positionResizeHandles(resizeHandlesRef.current, null)
+      positionRadiusHandles(radiusHandlesRef.current, null, [], 1)
       positionDimensionBadge(dimensionBadgeRef.current, null, 1, null, { left: 0, top: 0 })
       return
     }
@@ -358,16 +364,26 @@ export function BreakpointSelectionOverlay({
       session,
     )
 
-    // Single-selection chrome (resize handles + dimension badge) anchors to
-    // the one ring rect already measured — nothing is measured twice.
+    // Single-selection chrome (resize handles + radius dots + dimension badge)
+    // anchors to the one ring rect already measured — nothing is measured
+    // twice. The radius dots also read the element's used corner radii here,
+    // in the READ phase, so the dots sit on the curves they edit (and follow
+    // a drag preview frame by frame).
     const singleRect =
       showResizeChrome && ringPlacements.length === 1 ? ringPlacements[0].rect : null
+    const singleElement =
+      singleRect ? elementCache.resolve(iframeDoc, selectedNodeIds[0]) : null
+    const singleRadii =
+      singleElement && iframeDoc.defaultView
+        ? readCornerRadii(iframeDoc.defaultView.getComputedStyle(singleElement))
+        : []
 
     // ── WRITE phase ─────────────────────────────────────────────────────
     for (const { ring, rect } of ringPlacements) positionOverlayElement(ring, rect)
     positionOverlayElement(hoverRef.current, hoverRect)
     syncSelectorHighlightRings(selectorHighlightRef.current, selectorRects)
     positionResizeHandles(resizeHandlesRef.current, singleRect)
+    positionRadiusHandles(radiusHandlesRef.current, singleRect, singleRadii, session.scale)
     positionDimensionBadge(dimensionBadgeRef.current, singleRect, session.scale, session.canvasRect, {
       left: session.scrollLeft,
       top: session.scrollTop,
@@ -526,6 +542,26 @@ export function BreakpointSelectionOverlay({
                 data-direction={direction}
                 style={{ display: 'none' }}
                 onPointerDown={(event) => resizeDrag.begin(event, direction)}
+              />
+            ))}
+          </div>
+          {/* Corner-radius dots: one per corner, just inside the ring on the
+              corner's diagonal. Pull inward to round (all corners; Alt = this
+              one). Same imperative placement contract as the resize handles. */}
+          <div
+            ref={radiusHandlesRef}
+            className={styles.resizeHandleLayer}
+            data-canvas-radius-handles="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {RADIUS_HANDLE_CORNERS.map((corner) => (
+              <div
+                key={corner}
+                className={styles.radiusHandle}
+                data-corner={corner}
+                title="Drag to round the corners (Alt: this corner only)"
+                style={{ display: 'none' }}
+                onPointerDown={(event) => radiusDrag.begin(event, corner)}
               />
             ))}
           </div>

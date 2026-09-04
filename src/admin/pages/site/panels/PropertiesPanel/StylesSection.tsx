@@ -7,23 +7,25 @@
  *                 The slider previews while dragging and commits on release,
  *                 so a drag is one undo entry.
  *   • Visible   — Yes / No segmented pair on `visibility` (visible/hidden).
- *                 Clicking the pressed segment clears the property.
+ *                 Unset reads as Yes (the CSS initial); clicking the pressed
+ *                 segment clears the property.
  *   • Fill      — the unified fill row (`backgroundColor` + gradient routing
  *                 to `backgroundImage`, via BackgroundFillControl).
  *   • Image     — `backgroundImage` (None / Image picker / Custom).
  *   • Overflow  — enum select.
  *   • Radius    — corner longhands with an all-corners / per-corner scope
- *                 pair; per-corner mode reveals four cells.
+ *                 pair; splitting fills all four cells with the current value.
  *   • Border    — the visual BorderControl (edge box + per-side longhands,
  *                 outline).
  *
- * The long tail (background longhands, object-fit, per-axis overflow, border
- * shorthands, appearance) stays reachable behind the shared Advanced
- * disclosure — same pattern as the Size section.
+ * The long tail (background longhands, object-fit / object-position, per-axis
+ * overflow, border shorthands, appearance) appears as ordinary rows only once
+ * set — the section header's "+" is how they get added.
  */
 
-import { useState, type CSSProperties } from 'react'
+import { useRef, useState, type CSSProperties } from 'react'
 import type { CSSPropertyBag } from '@core/page-tree'
+import { useEditorStore } from '@site/store/store'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { ControlRow, ControlRowLabel } from '@ui/components/ControlRow'
 import { Input } from '@ui/components/Input'
@@ -136,7 +138,7 @@ export function StylesSection({
   // The trigger row's dot follows the same rule as every other row: any
   // stored border longhand makes it "set".
   const borderIsSet = Object.keys(storedStyles).some(
-    (key) => key.startsWith('border') && !key.startsWith('borderRadius') && hasStyleValue(storedStyles[key]),
+    (key) => key.startsWith('border') && !key.includes('Radius') && hasStyleValue(storedStyles[key]),
   )
 
   return (
@@ -164,11 +166,12 @@ export function StylesSection({
       {renderRow('overflow')}
       {visible.has('borderRadius') && (
         <RadiusRow
-          key={`${activeTab}-radius`}
           storedStyles={storedStyles}
           currentStyles={currentStyles}
           onChange={onChange}
           onClearProperty={onClearProperty}
+          onPreview={onPreview}
+          onClearPreview={onClearPreview}
         />
       )}
       {borderVisible && (
@@ -178,6 +181,7 @@ export function StylesSection({
             currentStyles={currentStyles}
             activeTab={activeTab}
             onChange={onChange}
+            onChangeMany={onChangeMany}
             onClearProperty={onClearProperty}
             onPreview={onPreview}
             onClearPreview={onClearPreview}
@@ -234,6 +238,8 @@ function OpacityRow({
   const [dragValue, setDragValue] = useState<number | null>(null)
   // The text field keeps lexical drafts (`0.`, empty) while focused.
   const [draft, setDraft] = useState<string | null>(null)
+  // Opacity at the start of a drag-to-scrub on the field.
+  const scrubBase = useRef<number | null>(null)
 
   const shown = dragValue ?? effective
 
@@ -265,6 +271,21 @@ function OpacityRow({
             // Keep a focused draft in sync so arrow-key steps stay visible.
             if (draft !== null) setDraft(String(next))
             onChange('opacity', next)
+          }}
+          // Drag-to-scrub rides the slider's own preview/commit split: the
+          // base is frozen at the grab, frames preview, release commits once.
+          onScrub={(total, phase) => {
+            if (scrubBase.current === null) scrubBase.current = effective
+            const next = clamp01(roundTo2(scrubBase.current + total * 0.1))
+            if (phase === 'move') {
+              setDragValue(next)
+              onPreview?.({ opacity: next })
+              return
+            }
+            scrubBase.current = null
+            onClearPreview?.()
+            onChange('opacity', next)
+            setDragValue(null)
           }}
           onFocus={() => setDraft(isSet ? String(effective) : '')}
           onChange={(event) => {
@@ -349,7 +370,10 @@ function VisibleRow({ stored, value, onChange, onClearProperty }: VisibleRowProp
       <SegmentedControl
         fullWidth
         aria-label="Visibility"
-        value={value === 'visible' || value === 'hidden' ? value : undefined}
+        // Unset reads as "Yes": that IS the CSS initial value, and an empty
+        // pair told the user nothing. The dot on the label is what says
+        // whether the value is stored.
+        value={value === 'hidden' ? 'hidden' : 'visible'}
         options={VISIBLE_OPTIONS}
         onChange={(next) => onChange('visibility', next)}
         onClear={() => onClearProperty('visibility')}
@@ -382,30 +406,51 @@ function readCornerValue(bag: Record<string, unknown>, corner: Corner): string {
   return ''
 }
 
-
 function roundTo2(n: number): number {
   return Math.round(n * 100) / 100
 }
-
-
 
 interface RadiusRowProps {
   storedStyles: Record<string, unknown>
   currentStyles: Record<string, unknown>
   onChange: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
   onClearProperty: (property: keyof CSSPropertyBag) => void
+  onPreview?: (patch: Partial<CSSPropertyBag>) => void
+  onClearPreview?: () => void
 }
 
-function RadiusRow({ storedStyles, currentStyles, onChange, onClearProperty }: RadiusRowProps) {
+/** The preview patch for a set of corners — every listed corner takes the value. */
+function cornersPatch(
+  corners: ReadonlyArray<Corner>,
+  value: string | undefined,
+): Partial<CSSPropertyBag> {
+  const patch: Record<string, string | null> = {}
+  for (const corner of corners) patch[cornerKey(corner)] = value ?? null
+  return patch as Partial<CSSPropertyBag>
+}
+
+function RadiusRow({
+  storedStyles,
+  currentStyles,
+  onChange,
+  onClearProperty,
+  onPreview,
+  onClearPreview,
+}: RadiusRowProps) {
   const tokens = useSpacingTokens()
   const stored = CORNERS.map((corner) => readCornerValue(storedStyles, corner))
   const anySet = stored.some((value) => value !== '')
   const uniform = anySet && stored.every((value) => value === stored[0])
 
-  const [scope, setScope] = useState<ScopeMode>(() => (uniform || !anySet ? 'all' : 'parts'))
-  // Auto-relink when an external edit brings the corners back to one value;
-  // never auto-split — that stays a deliberate user action.
-  if (scope === 'parts' && uniform) setScope('all')
+  // The scope lives in the editor store (session, per selection) because the
+  // canvas corner dots follow it too: a dot dragged in "separately" mode
+  // rounds only its corner. Until the user picks, split corners open
+  // per-corner and anything else opens linked; the scope never flips on its
+  // own afterwards — typing the same value into the fourth corner must not
+  // yank the user back to the single field mid-edit.
+  const chosenScope = useEditorStore((s) => s.radiusScope)
+  const setScope = useEditorStore((s) => s.setRadiusScope)
+  const scope: ScopeMode = chosenScope ?? (uniform || !anySet ? 'all' : 'parts')
 
   const fallback = (corner: Corner) =>
     readCornerValue(currentStyles, corner) ||
@@ -439,10 +484,9 @@ function RadiusRow({ storedStyles, currentStyles, onChange, onClearProperty }: R
           tokens={tokens}
           disabled={scope === 'parts'}
           onCommit={(resolved) => writeAll(resolved)}
-          onStep={(delta) => {
-            const next = stepCssLength(linkedValue || linkedPlaceholder, delta)
-            if (next) writeAll(next)
-          }}
+          stepValue={(current, delta) => stepCssLength(current, delta)}
+          onPreview={onPreview ? (resolved) => onPreview(cornersPatch(CORNERS, resolved)) : undefined}
+          onClearPreview={onClearPreview}
         />
       }
       parts={CORNERS.map((corner, index) => ({
@@ -455,10 +499,9 @@ function RadiusRow({ storedStyles, currentStyles, onChange, onClearProperty }: R
             tokens={tokens}
             tooltipOnOverflow
             onCommit={(resolved) => onChange(cornerKey(corner), resolved)}
-            onStep={(delta) => {
-              const next = stepCssLength(stored[index] || fallback(corner), delta)
-              if (next) onChange(cornerKey(corner), next)
-            }}
+            stepValue={(current, delta) => stepCssLength(current, delta)}
+            onPreview={onPreview ? (resolved) => onPreview(cornersPatch([corner], resolved)) : undefined}
+            onClearPreview={onClearPreview}
           />
         ),
       }))}
@@ -466,6 +509,10 @@ function RadiusRow({ storedStyles, currentStyles, onChange, onClearProperty }: R
         // Re-linking collapses the corners onto the first one's value so the
         // single field the user is about to type into is honest.
         if (next === 'all' && anySet && !uniform) writeAll(stored[0] || undefined)
+        // Splitting with nothing stored writes the current radius into all
+        // four corners: the second click SHOWS what the mode does (four
+        // filled fields) instead of four empty ones the user must decode.
+        if (next === 'parts' && !anySet) writeAll(linkedValue || linkedPlaceholder)
         setScope(next)
       }}
     />

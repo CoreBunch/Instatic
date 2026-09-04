@@ -163,6 +163,9 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
           : undefined
       }
       className={cn(styles.panel, variant === 'docked' && styles.panelDocked)}
+      // Docked: inherits the chrome ramp from the sidebar shell. Floating: a
+      // --bg-surface card, so its fields take the card ramp.
+      data-surface={variant === 'docked' ? undefined : 'card'}
     >
       {/* ─── Screen-reader live region (Guideline #331) ─────────────────── */}
       <div role="status" aria-live="polite" className={styles.srLiveRegion}>

@@ -1,4 +1,5 @@
 ﻿import {
+  useEffect,
   useRef,
   type InputHTMLAttributes,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -20,6 +21,15 @@ const SCRUB_STEP_PX = 4
 const SHIFT_MULTIPLIER = 10
 /** Guard against a runaway loop if a scrub reports an absurd jump. */
 const MAX_STEPS_PER_EVENT = 100
+/**
+ * Frames a scrub waits for the field to show the previous step before it
+ * applies the next batch. A row's step math is relative to its rendered
+ * value, so stepping again before React painted the last commit would step
+ * from a stale base (740 → 732, then 740 − 3 = 737: the value bounces).
+ * Capped, because a step that legitimately changes nothing (already at the
+ * floor) must not stall the drag.
+ */
+const SCRUB_ACK_FRAMES = 3
 
 type TextEmphasis = 'default' | 'strong'
 
@@ -69,6 +79,14 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
    * fast scrub sends however many steps it crossed between two pointer events.
    */
   onStep?: (delta: number) => void
+  /**
+   * The scrub as a SESSION, for fields that can preview: called once per
+   * frame with the TOTAL steps since the grab (`'move'` — the caller previews
+   * `start + total`, so no step ever reads a stale base) and once on release
+   * (`'end'` — the caller commits). Chevrons and arrow keys still go through
+   * `onStep`. Without this, a scrub batches into `onStep` instead.
+   */
+  onScrub?: (totalSteps: number, phase: 'move' | 'end') => void
   /** React 19: ref is a regular prop on function components. */
   ref?: Ref<HTMLInputElement>
 }
@@ -94,6 +112,7 @@ export function Input({
   trailingSlot,
   numberSpinner,
   onStep,
+  onScrub,
   type,
   autoComplete = 'off',
   ref,
@@ -129,6 +148,16 @@ export function Input({
   }
 
   const step = (delta: number) => (onStep ? onStep(delta) : nudge(delta))
+  // The scrub's window listeners outlive the render that started them, but
+  // a caller's step math reads the value of the render it belongs to — so
+  // every batch must reach the LATEST handler, never the one captured at
+  // pointerdown (that one would step from the pre-drag value forever).
+  const stepRef = useRef(step)
+  const scrubRef = useRef(onScrub)
+  useEffect(() => {
+    stepRef.current = step
+    scrubRef.current = onScrub
+  })
 
   /**
    * A field with a stepper is a numeric control, so it answers the keyboard
@@ -160,9 +189,55 @@ export function Input({
     // Chevrons and any trailing affordance keep their own click.
     if (event.target instanceof Element && event.target.closest('button')) return
     const wrapper = event.currentTarget
+    const pointerId = event.pointerId
     const startX = event.clientX
     let anchor = startX
     let scrubbing = false
+    // Steps accumulated since the last frame; applied once per frame so a
+    // high-rate mouse (1000 Hz) cannot turn one drag into hundreds of store
+    // commits — the value moves as far, in far fewer writes.
+    let pending = 0
+    let frame = 0
+    // Session mode (onScrub): the caller previews `start + total` per frame
+    // and commits on release — every frame is relative to the grab, so
+    // there is no stale base and nothing to wait for.
+    const session = scrubRef.current
+    let total = 0
+    // The field text after the last applied batch — the ack that React has
+    // painted it — and how many frames the next batch has waited for it.
+    // Only the onStep fallback needs it: its steps are relative to the
+    // rendered value.
+    let lastSeen: string | null = null
+    let waited = 0
+
+    const applyPending = () => {
+      const delta = pending
+      pending = 0
+      waited = 0
+      if (session) {
+        total += delta
+        session(total, 'move')
+        return
+      }
+      stepRef.current(delta)
+      lastSeen = localRef.current?.value ?? null
+    }
+
+    const flush = () => {
+      frame = 0
+      if (pending === 0) return
+      if (
+        !session &&
+        lastSeen !== null &&
+        localRef.current?.value === lastSeen &&
+        waited < SCRUB_ACK_FRAMES
+      ) {
+        waited += 1
+        frame = requestAnimationFrame(flush)
+        return
+      }
+      applyPending()
+    }
 
     const handleMove = (move: PointerEvent) => {
       if (!scrubbing) {
@@ -171,17 +246,39 @@ export function Input({
         wrapper.dataset.scrubbing = 'true'
         localRef.current?.blur()
         document.getSelection()?.removeAllRanges()
+        // From here on the pointer belongs to the dial: capture keeps every
+        // move coming to this element even over the canvas iframe (which
+        // would otherwise swallow them and hand back one giant jump on
+        // re-entry), and stops the browser's text-selection drag.
+        try {
+          wrapper.setPointerCapture(pointerId)
+        } catch {
+          // Some test envs reject setPointerCapture; window listeners still run.
+        }
       }
+      move.preventDefault()
       const steps = Math.trunc((move.clientX - anchor) / SCRUB_STEP_PX)
       if (steps === 0) return
       anchor += steps * SCRUB_STEP_PX
-      step(steps * (move.shiftKey ? SHIFT_MULTIPLIER : 1))
+      pending += steps * (move.shiftKey ? SHIFT_MULTIPLIER : 1)
+      if (frame === 0) frame = requestAnimationFrame(flush)
     }
     const handleEnd = () => {
       window.removeEventListener('pointermove', handleMove)
       window.removeEventListener('pointerup', handleEnd)
       window.removeEventListener('pointercancel', handleEnd)
+      if (frame !== 0) cancelAnimationFrame(frame)
+      frame = 0
+      // Release applies what is left right away — no ack to wait for — and
+      // closes a session so the caller commits once.
+      if (pending !== 0) applyPending()
+      if (session && scrubbing) session(total, 'end')
       delete wrapper.dataset.scrubbing
+      try {
+        if (wrapper.hasPointerCapture(pointerId)) wrapper.releasePointerCapture(pointerId)
+      } catch {
+        // Nothing to release when capture was refused above.
+      }
     }
     window.addEventListener('pointermove', handleMove)
     window.addEventListener('pointerup', handleEnd)

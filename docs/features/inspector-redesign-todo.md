@@ -39,14 +39,14 @@ Legenda: ✅ zrobione · 🟡 częściowe (jest funkcja, wygląd/kształt do doc
 - [~] 🟡 **classbar** — wskaźnik aktywnego breakpointu **jest** (`SelectorPillStack`, mono przy prawej krawędzi, tytuł „Editing the … viewport"): dotąd fakt, na który viewport lecą edycje, był widoczny tylko w pasku canvasu, daleko od pól, którymi rządzi. Zostaje kształt paska: produkcja ma stałe pole „Add or create selector…", makieta — pigułkę `+ class`, która to pole otwiera.
 - [x] ✅ **Przycisk `+` w nagłówku sekcji** — `SectionAddMenu.tsx`: propmenu w stylu makiety (wyszukiwarka „Type to search…" z lupką, lista pełnowierszowych pozycji). Listuje TYLKO właściwości do dodania (katalog `SECTION_ADDABLE_PROPERTIES` w `cssControlTypes.ts` minus już ustawione); klik zapisuje default i wiersz pojawia się w sekcji. Sekcje bez ogona (Position/Spacing/Effects/…) nie renderują `+`.
 - [x] ✅ **Advanced usunięte** — disclosure `AdvancedRows` skasowany we wszystkich sekcjach; ogon właściwości renderuje się jako zwykłe wiersze dopiero gdy ustawiony (dodawanie przez `+`).
-- [x] ✅ **`rowx`** — przycisk usuwania wiersza: zawsze widoczny **×** (`RemoveXGlyph` z `@ui/icons/inspectorGlyphs` — ten sam, którego używają SwatchRow i BorderControl) w zarezerwowanej kolumnie po prawej (30×30, hover `--bg-surface-3`). Wcześniejsza kreska − była niespójna z resztą panelu; `RemoveDashGlyph` skasowany.
+- [x] ✅ **`rowx`** — przycisk usuwania siedzi w zarezerwowanej kolumnie po prawej (30×30, hover `--bg-surface-3`). Dwa glify z `@ui/icons/inspectorGlyphs`, dwa znaczenia: **kreska −** (`RemoveDashGlyph`) na zwykłych wierszach właściwości i na wierszach efektów (`ClassPropertyRow.tsx`, `EffectsSection.tsx`) — kasuje właściwość z reguły; **×** (`RemoveXGlyph`) *wewnątrz* pola koloru (SwatchRow, `BorderControl`) — czyści samą wartość, zgodnie z kontraktem § 2.13.
 - [x] ✅ Nagłówek sekcji: caret = SVG z prototypu 1:1; licznik przy nazwie; linia `--border-muted` zamykająca każdą sekcję (+ otwierająca pierwszą).
 
 ### 2.2 Layout
 
 - [x] ✅ Wiersz **Type** z etykietą (Layout i Position).
 - [x] ✅ **Columns / Rows** = pole + **StepGroup** − | + (`GridTrackControl` przepisany; własny szablon wpisuje się w to samo pole, kafle wtedy nieaktywne).
-- [x] ✅ **Padding w Layout** — pole „wszystkie strony" (4 propy jednym commitem, „Mixed" przy różnych) + kafle zakresu; tryb „osobno" = rząd T/R/B/L pod spodem, w kolumnie kontrolek, pola pełnej wysokości, tagi pod polami.
+- [x] ~~✅ **Padding w Layout**~~ — USUNIĘTE 2026-09-04 na polecenie autora: dublował box Spacing (jeden komponent na jedną rzecz). `PaddingRow.tsx` skasowany; padding edytuje się wyłącznie w sekcji Spacing.
 
 ### 2.3 Position
 
@@ -85,7 +85,7 @@ Legenda: ✅ zrobione · 🟡 częściowe (jest funkcja, wygląd/kształt do doc
 ### 2.8 Nowe prymitywy do zbudowania
 
 - [x] ✅ **StepGroup** — `src/ui/components/StepGroup` (użyty w Columns/Rows; Z Index — do wpięcia).
-- [x] 🟡 **NumberField** — hover-stepper gotowy w prymitywie `Input` (`onStep`); zostaje drag + Shift×10 (patrz 2.4).
+- [x] ✅ **NumberField** — hover-stepper (`onStep`) plus scrub przeciąganiem i Shift×10, wszystko w prymitywie `Input` (`src/ui/components/Input/Input.tsx`, patrz 2.4).
 - [x] ✅ **Wspólne glify** — `src/ui/icons/inspectorGlyphs.tsx`: cienkie marki 8–12px (caret, chevron steppera, lupka, kreska usuwania, kłódka, box wszystkie-strony / osobno), których nie ma w pixel-art-icons. Jedno miejsce zamiast kopii w każdym panelu (bramka Gate 3 zakazuje inline SVG w `src/admin/pages/site/`).
 - [x] ✅ **SwatchRow** — patrz 2.6.
 - [x] ✅ **Popout** — `FloatingPanel` (`src/ui/components/FloatingPanel`): jedna powłoka dla pickera koloru, `BorderPopoutRow` i `EffectParams`; otwiera się przy triggerze, znika od klika poza sobą. Po zamontowaniu doklampowuje pozycję z realnego pomiaru (`ResizeObserver` + `resize` okna), więc zawsze stoi w całości na ekranie. Jeden panel naraz: pole koloru w popoucie **wsuwa** widok pickera w ten sam panel (`FloatingPanelDrillView` — strzałka wstecz + tytuł „Border color" / „Shadow color"), zamiast otwierać drugi.
@@ -257,6 +257,174 @@ Decyzje autora (odpowiedzi na pytania z opcjami — nie podważać bez zgody):
 
 ---
 
+## 2.17 Audyt autora 2026-09-04 — stabilność, spójność, praktyczność (wdrożone)
+
+Zasady autora z tej rundy (patrz też pamięć projektu): **user nie czyta** —
+każda wartość ma być do wyklikania, wzorcem jest popout efektu; **dwa
+kliknięcia mają pokazać, do czego coś służy**; **jeden komponent na jedną
+rzecz**; kolory WSZYSTKICH pól i grup przycisków w edytorze = kolory
+inspektora; testy tylko z tego obszaru (`bun test src/__tests__/panels/
+src/__tests__/property-controls/ src/__tests__/ui/ src/__tests__/architecture/`,
+~35 s), nigdy pełny zestaw.
+
+- **Zakres palety** (root cause „lewa strona ma inne inputy") — remap
+  `--bg-surface-2/3/4` + `--border-*` przestał być prywatny dla `.panelDocked`:
+  `globals.css` ma dwie drabinki (`--card-*`, `--panel-*`) i przełącznik
+  `[data-surface="chrome" | "card"]` (inspector-panel.md §10). Stemple:
+  oba sidebary, toolbar i `FloatingPanel` = `chrome`; Agent, pływający
+  wariant panelu, `ColorTokenCard`, `StepList` = `card`. `FloatingPanel`
+  maluje się teraz na `--bg-body` (jak zadokowany panel) i zwija akcenty do
+  `--panel-accent`. `SearchBar` na `--control-height` (było sztywne 28px).
+- **Grupy przycisków** — `look="tiles"` w chrome edytora (Layers/Site/Code/
+  Media, FrameworkPanel, CanvasContextSelector, ModuleInserterDialog,
+  MediaLibraryControl, UrlControl, BackgroundImageControl); prop
+  `activeSurface="recessed"` skasowany (jedyny konsument).
+- **Wiersz Image** — `BackgroundImageControl` na `ControlRow wide` zamiast
+  własnej etykiety (etykieta była grubsza i przesunięta względem reszty).
+- **Visible** — nieustawione czyta się jako „Yes" (initial CSS), kropka mówi,
+  czy wartość jest zapisana.
+- **Radius** — wejście w tryb per-corner przy pustym stanie zapisuje bieżący
+  promień do czterech rogów (drugi klik POKAZUJE, co robi tryb); render-time
+  auto-relink skasowany (wpisanie tej samej wartości w czwarty róg nie
+  wyrzuca już z trybu).
+- **Popout wartości (Spacing/Inset)** — liczba ⊕ jednostka to teraz wspólny
+  `UnitField` (nowe propsy `fieldSize`, `className`, `onUnitChange`), z
+  `auto` jako słowem w selekcie — pole trzyma `auto`; chip `Auto` = kwadrat
+  2×2, siatka 4 kolumny (§6.6).
+- **Object position / Background position** — nowy `PositionControl`
+  (`property-controls/`): pole-trigger + popout z siatką 3×3 kotwic i polami
+  X/Y na `UnitField`; wpięty w `ClassPropertyRow`. Test:
+  `positionControl.test.tsx`.
+- **„Pokaż wszystkie odstępy"** — pin (oko) w slocie akcji NAGŁÓWKA SEKCJI
+  Spacing (`SpacingOverlayToggle`; sekcja nie ma `+`, więc miejsce było
+  wolne — uwaga autora); sesyjne `spacingOverlayPinned` w `selectionSlice`,
+  `SpacingHighlightOverlay` rysuje osiem pasów (box × bok) zamiast tylko
+  edytowanego; przeżywa zmianę zaznaczenia (§6.3). Test w
+  `spacingHighlight.test.tsx`.
+- **Kłódka proporcji w Size działa też na canvasie** — stan przeniesiony
+  z `useState` do sesyjnego `sizeRatioLocked` w `selectionSlice` (reset przy
+  zmianie zaznaczenia); `useCanvasResizeDrag` przy włączonej kłódce trzyma
+  proporcje (krawędź wyprowadza drugą oś, róg idzie za osią z większym
+  ruchem), Shift odwraca na czas jednego przeciągnięcia. Pola Width/Height
+  skalowały drugi wymiar już wcześniej (commit i — od tej rundy — podgląd).
+- **Border „nic nie robi" — przyczyna źródłowa** (audyt funkcjonalny:
+  klucze NIE giną nigdzie w torze panel → store → `bagToCSS` → scena; giną
+  WARTOŚCI): pole Width w popoucie było jedynym polem długości poza
+  `UnitField`/`TokenAwareInput` i zapisywało gołe `400` → `border-top-width:
+  400` = niepoprawny CSS, przeglądarka odrzuca deklarację. Naprawa u źródła:
+  Width i Offset w popoucie na `UnitField`, klucze `border*Width` w
+  `LENGTH_PROPERTIES` (generyczne wiersze też). Dwa sąsiednie błędy tej
+  samej rodziny: (a) `bagToDeclarations` emitowało deklaracje w kolejności
+  wstawienia, więc shorthand `border` dodany PO longhandach je nadpisywał —
+  teraz `orderShorthandsFirst` (test `bagToCssShorthandOrder.test.ts`);
+  (b) line-height: wpisane `1.5` dostawało `px` (`resolveTokenValue`) —
+  nowy parametr `implicitUnit`, pole Line height przekazuje `''`.
+  Pierwszy klik w pusty wiersz Border sieje 1px solid `#ffffff` na cztery
+  strony jednym commitem (`borderPopoutRow.test.tsx`).
+- **Border, runda 2** (autor: „edycja poszczególnych ścian blokuje, Width
+  nie da się ustawić"): (1) `BorderControl` miał render-time auto-relink
+  (`if (!linked && borderUniform) setLinked(true)`) — po seedzie cztery
+  strony są identyczne, więc wejście w tryb „osobno" natychmiast wracało do
+  „wszystkie"; skasowany, jak wcześniej w Radius. (2) `UnitField` w parze
+  Width ⊕ kafle miał siatkę sekcyjną (1fr ⊕ 88px) w ~90px — pole liczby
+  znikało, zostawał sam select jednostki; własny podział `.widthField`
+  (1fr ⊕ 52px) + popout 288px. (3) Trzy kontrolki jednego stanu (klikalny
+  chip „Editing all sides", kafle all/side, edge box) → chip jest teraz
+  tekstem (`role="status"`), scope zmieniają kafle i edge box. Test
+  „per-side mode stays per-side".
+- **Kolory — regresja z tej rundy, naprawiona**: stemple
+  `data-surface="chrome"` na obu sidebarach NIE weszły do kodu (edycja
+  perlem z `\n` w regexie cicho nie dopasowała), a remap z `.panelDocked` był
+  już usunięty — inspektor dostał JAŚNIEJSZĄ drabinkę kart zamiast ciemnej
+  panelowej („na odwrót"). Stemple dodane; zasada bez zmian: ciemna drabinka
+  inspektora idzie na wszystkie pola chrome.
+- **Trzy wiersze „martwe" na scenie z założenia** — `cursor`, `userSelect`
+  (reset ramki projektowej) i `transition` (wyłączane, żeby edycja nie
+  płynęła): wiersz pokazuje pod kontrolką jednowierszową notę „Applies on
+  the published page — the canvas hides it". Wyłączanie `transition`
+  przeniesione z `EditorChromeInjector` (wszystkie ramki) do
+  `iframeBodyReset` (tylko ramki projektowe) — ramka live zachowuje
+  przejścia jak strona.
+- **Scrub na całym polu liczbowym** — gest działał od dawna na całym polu
+  (próg 4 px), ale natywny kursor tekstowy na `<input>` chował afordancję do
+  16-px kolumny steppera („trzeba wycelować"). `Input.module.css`: kursor
+  `ew-resize` także na samym inpucie, `text` dopiero po fokusie.
+  **Stabilność** (uwaga autora „nad canvasem głupieje"): gest nie
+  przechwytywał wskaźnika, więc nad iframe'em sceny ruchy ginęły, a po
+  powrocie przychodziła jedna wielka delta = skok wartości; do tego każdy
+  ruch myszy (przy 1000 Hz setki na sekundę) robił osobny commit. Teraz:
+  `setPointerCapture` po przekroczeniu progu (iframe nie widzi zdarzeń,
+  zaznaczanie tekstu nie startuje), kroki zbierane i aplikowane raz na
+  klatkę, puszczenie dopłukuje resztę. Test `numberFieldScrub.test.tsx`.
+  **Odbijanie 740 → 730 → 720 → 730** (uwaga autora, bug starszy niż ta
+  runda): `beginScrub` łapał domknięcie `step` z chwili pointerdown, więc
+  każda partia liczyła się od wartości SPRZED przeciągania. Teraz `stepRef`
+  (aktualne domknięcie, odświeżane w efekcie) + bramka ack: kolejna partia
+  czeka do 3 klatek, aż pole pokaże poprzedni krok — krok liczy się zawsze
+  od bieżącej wartości. Test „every batch steps from the CURRENT value".
+  **Natychmiast (cel autora)** — scrub to teraz SESJA z podziałem
+  podgląd/commit, jak gesty canvasu: `Input.onScrub(total, 'move'|'end')`
+  daje co klatkę SUMĘ kroków od chwytu (baza zamrożona = zero problemu
+  nieświeżej bazy, zero czekania na ack), pole podgląda `start + total`
+  przez `onPreview` (tani kanał `previewClassStyles` /
+  `previewInlineStyles`, żadnych zapisów do store), a puszczenie robi JEDEN
+  commit = jeden wpis undo na przeciągnięcie. Żeby to działało w jednym
+  miejscu, wiersze przestały same commitować w `onStep`: `TokenAwareInput`
+  ma `stepValue(current, delta) → next` (czysta matematyka), a chevrony,
+  strzałki i scrub jadą na niej (`applyStep` / `handleScrub`). Migracja:
+  ClassPropertyRow, GapInput, Size (`stepDimension` skasowany — commit idzie
+  przez `commitDimension`), Inset, Radius (dostał kanał podglądu), Typography
+  (font size, line height). `UnitField` dostał `onPreview`/`onClearPreview`
+  i tę samą sesję (ClassPropertyRow, popout wartości, PositionControl,
+  Border width); Opacity — sesję na własnym `dragValue`. Bez kanału
+  podglądu (EffectParams, GridTrack, z-index) scrub nadal commituje partiami
+  z bramką ack. Testy: `tokenAwareInputScrub.test.tsx`, `numberFieldScrub`
+  („onScrub gets the TOTAL…").
+- **Padding w Layout usunięty** (polecenie autora) — dublował box Spacing;
+  `PaddingRow.tsx` skasowany, `onChangeMany` zniknęło z propsów Layout.
+- **Scrollbar pickera koloru** — `.picker` nie ma już sztywnych 244px
+  (2px przepełnienia w panelu 244px z ramką 1px + `overflow-y: auto`).
+- **Uchwyty promienia na canvasie** (dogrywka tego samego dnia) — cztery
+  okrągłe kropki wewnątrz rogów zaznaczenia, na przekątnej rogu, `radius ×
+  zoom` od narożnika; ciągnięcie do środka zaokrągla. Które rogi — decyduje
+  tryb wiersza Radius: jego przełącznik „wszystkie / osobno" przeniósł się z
+  lokalnego stanu wiersza do sesyjnego `radiusScope` w `selectionSlice`
+  (reset przy zmianie zaznaczenia, jak piny insetu), więc kropka w trybie
+  „osobno" zaokrągla tylko swój róg, w trybie „wszystkie" — cztery; Alt
+  odwraca tryb na czas przeciągania. Pisze longhandy `border*Radius` (te same
+  klucze co wiersz) i czyści zapisany shorthand. Żeby nie powielać resize'a,
+  szkielet gestu (guardy, preview inline, echo do `canvasGesturePreview`,
+  jeden commit, Escape, blokada na nie-bazowym breakpoincie) wyjechał do
+  `canvas/canvasStyleGesture.ts`; `useCanvasResizeDrag` i nowy
+  `useCanvasRadiusDrag` niosą tylko własną matematykę. Test:
+  `useCanvasRadiusDrag.test.tsx`; opis w `docs/editor.md` §2.
+- Martwe: `onTextChange`/`onTextBlur` pass-throughs w `ColorValueInput`,
+  nieaktualne docstringi (StylesSection „Advanced disclosure"), wpisy w §5.
+- **Zero lagu między panelem a sceną** (uwaga autora: „efekt natychmiastowy,
+  żadnych płynnych przesunięć") — trzy źródła opóźnienia, trzy naprawy:
+  (1) cel inline nie miał podglądu na żywo (`onPreview={noop}` w
+  `InlineStyleComposer`) — scena czekała na blur; teraz jest kanał
+  `previewInlineStyles` w store (rodzeństwo `previewClassStyles`), który
+  `NodeRenderer` nakłada na zapisany worek jednego węzła; (2) `transition`
+  ze stylów strony animowało każdą edycję — `EditorChromeInjector` wyłącza
+  przejścia na `[data-node-id]` i potomkach (nielayerowane, bez `!important`;
+  animacje zostają); (3) klamra proporcji w Size skalowała drugi wymiar
+  dopiero przy commicie — `resolveDimension` służy teraz commitowi I
+  podglądowi. Dodatkowo kropka radiusa straciła swoje 80 ms `transition`.
+
+**Nadal otwarte po tej rundzie** (niezrobione świadomie — wymagają decyzji
+lub osobnego PR): Transforms Rotate/Scale/Origin (§2.10); Blend (§2.9); `background` shorthand
+jest w sekcji Styles, ale nie renderuje go żaden wiersz i jest wykluczony z
+Custom properties (zaimportowany `background: url(…)` niewidoczny); filtr
+wyszukiwania stylów omija Layout/Size/Position/Spacing; `rowGap`/`columnGap`/
+`outlineOffset` bez słowa kluczowego (nie da się wrócić do `normal`);
+`aspectRatio` dodany z `+` zapisuje `0`; pikselowy `CloseIcon` wchodzi do
+inspektora z `SegmentedControl`, `FloatingPanel`, `TokenStylesSection`,
+`MediaPickerField`; chipy Media (FilterBar) i `CanvasModeToggle` to nadal
+Buttony na `--overlay-*`, nie kafle.
+
+---
+
 ## 3. Kolejność proponowana
 
 Kroki 1–4 i 6 z pierwotnej listy są zrobione (PropMenu, StepGroup,
@@ -328,9 +496,11 @@ HEX/RGB/HSL, tokeny, kąt gradientu ze stepperem.
 
 - ~~`module-size-budgets` — `ColorPicker.tsx` 733 linie (bramka 700)~~ —
   rozwiązane 2026-08-30: usunięcie zakładki Image zbiło plik do ~548 linii.
-- `bundle-size-budgets` — `AdminCanvasEditorBody` 791.3 kB vs budżet
+- ~~`bundle-size-budgets` — `AdminCanvasEditorBody` 791.3 kB vs budżet
   761.7 kB (pomiar na świeżym buildzie). Wzrost z prac nad gradientami
-  (picker + gizmo na canvasie); albo lazy boundary, albo świadome
-  podniesienie budżetu z notką.
+  (picker + gizmo na canvasie)~~ — rozwiązane: budżet podniesiony świadomie
+  do 880 000 B w `src/__tests__/architecture/bundle-size-budgets.test.ts`,
+  z uzasadnieniem w `rationale` (redesign inspektora — sekcje stylów,
+  pływające popouty, overlay spacingu, drag resize/free-move na canvasie).
 - ~~Zakładka **Image** w pickerze: „Choose Image…" disabled, siatka Position
   3×3~~ — rozwiązane 2026-08-30: cała zakładka usunięta (§ 2.6, § 2.13).

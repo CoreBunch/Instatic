@@ -15,11 +15,24 @@
 import { useState } from 'react'
 import type { CSSPropertyBag } from '@core/page-tree'
 import { TextControl } from '@site/property-controls/TextControl'
+
+/**
+ * Properties the design canvas deliberately neutralises (iframeBodyReset.ts:
+ * `cursor` / `user-select` so the frame reads as click-to-select,
+ * `transition` so edits land the same frame). They still publish and still
+ * apply in the live frame — the row says so instead of looking dead.
+ */
+const CANVAS_HIDDEN_PROPERTIES = new Set<keyof CSSPropertyBag>([
+  'cursor',
+  'userSelect',
+  'transition',
+])
 import { ColorControl } from '@site/property-controls/ColorControl'
 import { SelectControl } from '@site/property-controls/SelectControl'
 import { BackgroundImageControl } from '@site/property-controls/BackgroundImageControl'
 import { BackgroundFillControl } from '@site/property-controls/BackgroundFillControl'
 import { FontFamilyControl } from '@site/property-controls/FontFamilyControl'
+import { PositionControl } from '@site/property-controls/PositionControl'
 import { useEditorStore } from '@site/store/store'
 import { ControlRow } from '@ui/components/ControlRow'
 import { Input } from '@ui/components/Input'
@@ -238,13 +251,11 @@ export function ClassPropertyRow({
           placeholder={placeholderText}
           tokens={tokens}
           onCommit={handleTokenCommit}
-          onStep={(delta) => {
-            // Every token-source property is a length, so every one of them
-            // is worth stepping and scrubbing.
-            const base = value !== undefined ? String(value) : (placeholderText ?? '0px')
-            const next = stepCssLength(base, delta, { min: Number.NEGATIVE_INFINITY })
-            if (next) onChange(property, next)
-          }}
+          // Every token-source property is a length, so every one of them
+          // is worth stepping and scrubbing.
+          stepValue={(current, delta) =>
+            stepCssLength(current || '0px', delta, { min: Number.NEGATIVE_INFINITY })
+          }
           onPreview={onPreview ? handleTokenPreview : undefined}
           onClearPreview={onClearPreview}
         />
@@ -267,6 +278,8 @@ export function ClassPropertyRow({
             if (raw === undefined) onRemove(property)
             else onChange(property, raw)
           }}
+          onPreview={onPreview ? (raw) => handleControlPreview(String(property), raw) : undefined}
+          onClearPreview={onClearPreview}
         />
       </ControlRow>
     )
@@ -296,6 +309,20 @@ export function ClassPropertyRow({
         value={String(value ?? '')}
         onChange={handleControlChange}
         label={label}
+      />
+    )
+  } else if (property === 'objectPosition' || property === 'backgroundPosition') {
+    // A `<position>` is two anchors, not a phrase: the row opens a 3×3 grid
+    // popout (plus X / Y offsets) instead of asking for "center center".
+    control = (
+      <PositionControl
+        propKey={String(property)}
+        value={String(value ?? '')}
+        placeholder={placeholderText}
+        onChange={handleControlChange}
+        label={label}
+        onPreview={onPreview ? handleControlPreview : undefined}
+        onClearPreview={onClearPreview}
       />
     )
   } else if (property === 'backgroundColor' && onChangeMany) {
@@ -399,6 +426,9 @@ export function ClassPropertyRow({
     >
       {/* Control renders with its own .controlWrapper — identical to module rows (PP-18) */}
       {control}
+      {CANVAS_HIDDEN_PROPERTIES.has(property) && (
+        <span className={styles.rowHint}>Applies on the published page — the canvas hides it.</span>
+      )}
 
       {/* Row handle (`.rowx`) — always visible, in the row's own trailing
           column. It wears a DASH, not a cross: the cross clears a value and

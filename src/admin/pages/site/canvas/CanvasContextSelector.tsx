@@ -431,6 +431,7 @@ function ContextDialog({ mode, onClose }: { mode: Exclude<DialogState, null>; on
             options={segOptions}
             onChange={(k) => { setSegment(k); setError(null) }}
             size="sm"
+            look="tiles"
             fullWidth
             aria-label="Context type"
           />

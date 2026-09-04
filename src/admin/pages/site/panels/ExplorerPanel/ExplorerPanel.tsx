@@ -61,7 +61,7 @@ export function ExplorerPanel({
           options={TABS}
           onChange={setTab}
           size="sm"
-          activeSurface="recessed"
+          look="tiles"
           fullWidth
         />
       </div>

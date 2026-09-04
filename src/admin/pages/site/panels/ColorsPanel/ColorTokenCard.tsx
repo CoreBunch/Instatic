@@ -23,7 +23,7 @@ export function ColorTokenCard({
   onContextMenu,
 }: ColorTokenCardProps) {
   return (
-    <div className={styles.card}>
+    <div className={styles.card} data-surface="card">
       <div className={styles.row} onContextMenu={onContextMenu}>
         <span className={styles.swatches}>
           <ColorInput

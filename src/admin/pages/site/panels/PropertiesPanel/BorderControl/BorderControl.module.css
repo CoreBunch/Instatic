@@ -73,7 +73,7 @@
     width: 3px;
 }
 
-/* ── Scope chip (prototype `.sidechip`) ──────────────────────────────────── */
+/* ── Scope line ──────────────────────────────────────────────────────────── */
 
 .scopeRow {
     display: flex;
@@ -82,40 +82,16 @@
     margin-bottom: var(--control-row-gap);
 }
 
-/* Doubled selector lifts specificity above Button.module.css's variant / size
-   pairs so the chip keeps the prototype's full-width bar geometry. */
-.sideChip.sideChip {
+/* Says which sides the rows below edit. Text, not a control: the edge box
+   and the Width row's tiles are the two ways to change the scope, and a third
+   (the old clickable chip) only made the two of them look optional. */
+.scopeLabel {
     flex: 1 1 auto;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-s);
-    width: 100%;
-    height: var(--control-height);
-    padding: 0 var(--space-m);
-    border: 0;
-    border-radius: var(--control-radius);
-    background: var(--bg-surface-2);
+    min-width: 0;
+    padding-left: var(--space-2xs);
     color: var(--text-muted);
     font-size: var(--text-xs);
     font-weight: 500;
-}
-
-.sideChip.sideChip:hover {
-    background: var(--bg-surface-3);
-    color: var(--text-bright);
-}
-
-.sideChip.sideChip[aria-pressed="true"] {
-    background: var(--bg-surface-2);
-    color: var(--text-bright);
-}
-
-.sideChip.sideChip[aria-pressed="true"] svg {
-    color: var(--accent-3);
-}
-
-.sideChipLabel {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -151,13 +127,21 @@
     min-width: 0;
 }
 
-/* Width ⊕ scope pair — the prototype's 68px trailing track. */
+/* Width ⊕ scope pair — the prototype's trailing track (two icon tiles). */
 .widthPair {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 68px;
+    grid-template-columns: minmax(0, 1fr) 60px;
     gap: var(--space-s);
     align-items: center;
     min-width: 0;
+}
+
+/* The shared UnitField on the pair's proportions: its section-row split
+   (1fr ⊕ 88px) left the number column no room beside the tiles — the field
+   showed only its unit select. */
+.widthField.widthField {
+    grid-template-columns: minmax(0, 1fr) 52px;
+    gap: var(--space-2xs);
 }
 
 .widthPair > * {

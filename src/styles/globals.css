@@ -78,17 +78,25 @@
        read as cards one step above it. */
     --bg-body: #0d0d0e;
     --bg-surface: #1b1b1b;
-    --bg-surface-2: #282828;
-    --bg-surface-3: #323232;
-    --bg-surface-4: #4a4a4a;
+    /* Card ramp — fields standing on a --bg-surface card. The live
+       --bg-surface-2/3/4 and --border-* alias whichever ramp the nearest
+       [data-surface] picked (see "Surface ramps" below). */
+    --card-surface-2: #282828;
+    --card-surface-3: #323232;
+    --card-surface-4: #4a4a4a;
+    --card-line-subtle: #1f1f1f;
+    --card-line-muted: #2e2e2e;
+    --bg-surface-2: var(--card-surface-2);
+    --bg-surface-3: var(--card-surface-3);
+    --bg-surface-4: var(--card-surface-4);
     --bg-surface-5: #605f5f;
 
-    /* Inspector-panel ramp (docs/features/inspector-panel.md §9). The panel is
-       NOT a card — it sits straight on the #0d0d0e chrome, so its fills,
-       hairlines and pressed keys keep the ΔL* they were designed with one step
-       lower than the card ramp above. Scoped to the docked panel, which
-       remaps --bg-surface-* onto these; the rest of the admin still has cards
-       and needs the lighter ramp to keep fields visible on them. */
+    /* Chrome ramp (docs/features/inspector-panel.md §9). Controls standing
+       straight on the #0d0d0e chrome — sidebars, toolbar, floating popouts —
+       keep the ΔL* they were designed with one step lower than the card ramp
+       above. Applied wherever a shell stamps [data-surface="chrome"]; a card
+       with fields inside such a shell stamps [data-surface="card"] to get
+       the lighter ramp back. */
     --panel-surface-2: #1b1b1b;
     --panel-surface-3: #252525;
     --panel-surface-4: #3c3c3c;
@@ -98,8 +106,8 @@
     --panel-accent: #0099ff;
 
     /* Borders */
-    --border-subtle: #1f1f1f;
-    --border-muted: #2e2e2e;
+    --border-subtle: var(--card-line-subtle);
+    --border-muted: var(--card-line-muted);
     --border: #333333;
     --border-strong: #4a4a4a;
 
@@ -437,23 +445,28 @@
     /* Surfaces */
     --bg-body: #e3e7ed;
     --bg-surface: #ffffff;
-    --bg-surface-2: #f6f7f9;
-    --bg-surface-3: #eceff3;
-    --bg-surface-4: #e1e5ea;
+    --card-surface-2: #f6f7f9;
+    --card-surface-3: #eceff3;
+    --card-surface-4: #e1e5ea;
+    --card-line-subtle: #eef0f3;
+    --card-line-muted: #dce1e7;
+    --bg-surface-2: var(--card-surface-2);
+    --bg-surface-3: var(--card-surface-3);
+    --bg-surface-4: var(--card-surface-4);
     --bg-surface-5: #d3d9e1;
 
-    /* Light theme has no separate panel ramp — the card ladder already reads
+    /* Light theme has no separate chrome ramp — the card ladder already reads
        correctly on #e3e7ed, so the panel tokens alias it. */
-    --panel-surface-2: var(--bg-surface-2);
-    --panel-surface-3: var(--bg-surface-3);
-    --panel-surface-4: var(--bg-surface-4);
-    --panel-line-subtle: var(--border-subtle);
-    --panel-line-muted: var(--border-muted);
+    --panel-surface-2: var(--card-surface-2);
+    --panel-surface-3: var(--card-surface-3);
+    --panel-surface-4: var(--card-surface-4);
+    --panel-line-subtle: var(--card-line-subtle);
+    --panel-line-muted: var(--card-line-muted);
     --panel-accent: #0369a1;
 
     /* Borders */
-    --border-subtle: #eef0f3;
-    --border-muted: #dce1e7;
+    --border-subtle: var(--card-line-subtle);
+    --border-muted: var(--card-line-muted);
     --border: #cbd3dc;
     --border-strong: #aeb8c5;
 
@@ -545,6 +558,28 @@
         transition-duration: 0.01ms !important;
         scroll-behavior: auto !important;
     }
+}
+
+/* Surface ramps — a field is always one step above whatever it stands on.
+   Shells standing on --bg-body (editor sidebars, toolbar, FloatingPanel)
+   stamp data-surface="chrome"; a --bg-surface card with fields inside one
+   of those shells stamps data-surface="card" to take the lighter ramp back.
+   Nothing else in the admin needs a stamp: the root already resolves to the
+   card ramp. */
+[data-surface='chrome'] {
+    --bg-surface-2: var(--panel-surface-2);
+    --bg-surface-3: var(--panel-surface-3);
+    --bg-surface-4: var(--panel-surface-4);
+    --border-subtle: var(--panel-line-subtle);
+    --border-muted: var(--panel-line-muted);
+}
+
+[data-surface='card'] {
+    --bg-surface-2: var(--card-surface-2);
+    --bg-surface-3: var(--card-surface-3);
+    --bg-surface-4: var(--card-surface-4);
+    --border-subtle: var(--card-line-subtle);
+    --border-muted: var(--card-line-muted);
 }
 
 /* Base reset */

@@ -68,3 +68,15 @@
     border: 1px solid var(--border-muted);
     color: var(--text-bright);
 }
+
+/* Note under a row whose property the design canvas neutralises (cursor,
+   user-select, transition): it applies on the published page and in the
+   live frame, so the row must not look broken. Indented to the control
+   column, quiet, one line. */
+.rowHint {
+    grid-column: 1 / -1;
+    padding-left: var(--control-label-column);
+    color: var(--text-subtle);
+    font-size: var(--text-2xs);
+    line-height: 1.3;
+}

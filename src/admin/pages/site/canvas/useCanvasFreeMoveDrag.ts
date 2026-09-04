@@ -39,7 +39,7 @@ import { selectActiveCanvasPage, useEditorStore } from '@site/store/store'
 import type { ActiveStyleTarget } from '@site/store/useActiveStyleTarget'
 import { escapeCssAttributeValue } from './canvasNodeLookup'
 import { clearCanvasPointerRelay, markCanvasPointerRelay } from './canvasPointerRelay'
-import { restoreInline, saveInline } from './useCanvasResizeDrag'
+import { restoreInline, saveInline } from './canvasStyleGesture'
 import styles from './BreakpointSelectionOverlay.module.css'
 
 const FREE_MOVE_POSITIONS = new Set(['relative', 'absolute', 'fixed'])

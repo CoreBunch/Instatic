@@ -6,7 +6,7 @@
     flex-shrink: 0;
     gap: var(--space-xs);
     box-sizing: border-box;
-    min-height: 28px;
+    min-height: var(--control-height);
     padding: var(--space-2xs) var(--space-s);
     background: var(--bg-surface-2);
     border: 1px solid transparent;

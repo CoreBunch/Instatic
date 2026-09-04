@@ -203,9 +203,18 @@
  * row shows the value, not the controls. No borders, no fill — colour alone
  * carries the hover state. */
 /* A field carrying the stepper is the prototype's `.numberfield`, which
-   advertises its numeric nature with the horizontal-resize cursor. */
-.inputWrapper:has(> .spinner) {
+   advertises its numeric nature with the horizontal-resize cursor — over the
+   WHOLE field, input included: the scrub gesture already starts anywhere on
+   the wrapper, but the native text cursor on the <input> hid that, so the
+   affordance looked confined to the 16px stepper column. Once the field is
+   focused you are editing text again, and the caret cursor says so. */
+.inputWrapper:has(> .spinner),
+.inputWrapper:has(> .spinner) > .input {
     cursor: ew-resize;
+}
+
+.inputWrapper:has(> .spinner):focus-within > .input {
+    cursor: text;
 }
 
 .spinner {

@@ -143,6 +143,8 @@ export function LeftSidebar({
     <aside
       ref={sidebarRef}
       className={styles.sidebar}
+      // Chrome surface: fields here match the inspector's — same ramp.
+      data-surface="chrome"
       data-testid="left-sidebar"
       data-expanded={panelExpanded ? 'true' : 'false'}
       // Floating pickers (ColorInput's panel) must not cover the editing

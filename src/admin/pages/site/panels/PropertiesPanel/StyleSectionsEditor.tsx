@@ -17,6 +17,7 @@ import { ClassPropertyRow } from './ClassPropertyRow'
 import { Section } from '@ui/components/Section'
 import { ControlRow } from '@ui/components/ControlRow'
 import { SpacingBoxControl } from './SpacingBoxControl/SpacingBoxControl'
+import { SpacingOverlayToggle } from './SpacingBoxControl/SpacingOverlayToggle'
 import { CustomPropertiesSection } from './CustomPropertiesSection'
 import { LayoutSection } from './LayoutSection'
 import { PositionSection } from './PositionSection'
@@ -209,6 +210,9 @@ function StyleSectionGroup({
            catalogue (docs/features/inspector-panel.md §7.6). */
         section.id === EFFECTS_SECTION_ID ? (
           <EffectAddMenu storedStyles={storedStyles} onChange={onChange} />
+        ) : section.id === SPACING_SECTION_ID ? (
+          /* Spacing has nothing to add — its slot pins the canvas overlay. */
+          <SpacingOverlayToggle />
         ) : addableProperties ? (
           <SectionAddMenu
             sectionTitle={section.title}
@@ -245,7 +249,6 @@ function StyleSectionGroup({
             currentStyles={currentStyles}
             activeTab={activeTab}
             onChange={onChange}
-            onChangeMany={onChangeMany}
             onRemove={onRemove}
             onClearProperty={onClearProperty}
             onClearProperties={onClearProperties}

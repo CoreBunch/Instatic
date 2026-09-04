@@ -5,10 +5,17 @@
  * number committed without its mode's unit is invalid CSS the browser drops,
  * and a broken ratio link would overwrite the other dimension with garbage.
  */
-import { describe, expect, it, mock } from 'bun:test'
+import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { CSSPropertyBag } from '@core/page-tree'
 import { SizeSection } from '@admin/pages/site/panels/PropertiesPanel/SizeSection'
+import { useEditorStore } from '@site/store/store'
+
+// The ratio lock is session state in the store (the canvas handles read it
+// too) — start every case unlocked.
+beforeEach(() => {
+  useEditorStore.setState({ sizeRatioLocked: false })
+})
 
 function renderSection(
   styles: Record<string, unknown>,
@@ -16,6 +23,7 @@ function renderSection(
     onChange?: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
     onChangeMany?: (patch: Partial<CSSPropertyBag>) => void
     onRemove?: (property: keyof CSSPropertyBag) => void
+    onPreview?: (patch: Partial<CSSPropertyBag>) => void
   } = {},
 ) {
   render(
@@ -26,6 +34,7 @@ function renderSection(
       onChange={handlers.onChange ?? (() => {})}
       onChangeMany={handlers.onChangeMany ?? (() => {})}
       onRemove={handlers.onRemove ?? (() => {})}
+      onPreview={handlers.onPreview}
     />,
   )
 }
@@ -69,6 +78,18 @@ describe('SizeSection', () => {
     fireEvent.blur(input)
 
     expect(onChangeMany).toHaveBeenCalledWith({ width: '900px', height: '450px' })
+    cleanup()
+  })
+
+  it('previews the locked pair while typing — the canvas must not wait for the blur', () => {
+    const onPreview = mock((_p: Partial<CSSPropertyBag>) => {})
+    renderSection({ width: '800px', height: '400px' }, { onPreview })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Link width and height' }))
+    const input = screen.getByLabelText('Width') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '900' } })
+
+    expect(onPreview).toHaveBeenLastCalledWith({ width: '900px', height: '450px' })
     cleanup()
   })
 

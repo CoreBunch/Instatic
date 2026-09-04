@@ -1,46 +1,15 @@
 /*
- * BackgroundImageControl — the mock's `.row:has(> .mediafield)`: a wrapping
- * flex row. The label keeps its column, the image field (mode tabs + picker /
- * custom CSS) stacks in one control column beside it, and in a narrow dock
- * the field wraps UNDER the label and takes the section's full width instead
- * of being squeezed beside it.
+ * BackgroundImageControl — the row chrome (label column + wrapping control
+ * column) comes from the shared `ControlRow` in its `wide` variant. What is
+ * left here is the field's own interior: the mode tabs stacked above the
+ * picker / custom-CSS input.
  */
-
-.imageRow {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: var(--space-3xs) var(--space-s);
-    min-height: var(--control-height);
-}
-
-.imageRowDisabled {
-    opacity: 0.5;
-}
-
-.imageLabel {
-    display: flex;
-    align-items: center;
-    flex: 0 0 var(--control-label-column);
-    min-height: var(--control-height);
-    font-size: var(--text-xs);
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.imageLabelOverride {
-    color: var(--overlay-80);
-}
 
 /* The mock's `.mediafield` column: mode tabs above the picker/tile. */
 .imageField {
     display: flex;
     flex-direction: column;
     gap: var(--space-3xs);
-    flex: 1 1 200px;
-    min-width: 0;
 }
 
 /* Custom mode: gradient swatch (opens the picker's fill tabs) + raw CSS. */

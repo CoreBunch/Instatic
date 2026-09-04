@@ -343,6 +343,9 @@ export function FloatingPanel({
       role="dialog"
       aria-label={ariaLabel ?? (typeof headerTitle === 'string' ? headerTitle : undefined)}
       className={cn(styles.panel, className)}
+      // Portaled to <body>, so it declares its own surface ramp: a detached
+      // piece of the chrome, not a card.
+      data-surface="chrome"
       // Transitions from the panel's own controls bubble up here, so only the
       // panel's own position transition disarms the glide.
       onTransitionEnd={(event) => {

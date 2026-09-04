@@ -78,6 +78,7 @@ export function UrlControl({
     >
       <div className={styles.urlControl}>
         <SegmentedControl<'url' | 'page'>
+          look="tiles"
           fullWidth
           aria-label="Link type"
           value={mode}

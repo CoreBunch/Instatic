@@ -27,9 +27,27 @@ interface BorderPopoutRowProps {
   /** Breakpoint tab id — the editor remounts per tab, like the other rows. */
   activeTab: string
   onChange: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
+  /** Several properties in one commit — the first-open seed is one undo step. */
+  onChangeMany: (patch: Partial<CSSPropertyBag>) => void
   onClearProperty: (property: keyof CSSPropertyBag) => void
   onPreview?: (patch: Partial<CSSPropertyBag>) => void
   onClearPreview?: () => void
+}
+
+/**
+ * What the first click on an empty Border row writes: a visible 1px solid
+ * white border on every side. A popout full of empty fields tells the user
+ * nothing; a border they can SEE, then change, does — the same reason
+ * "Add effect" drops a real shadow instead of a blank row.
+ */
+function seedBorder(): Partial<CSSPropertyBag> {
+  const patch: Record<string, string> = {}
+  for (const side of SIDES) {
+    patch[`border${side}Width`] = '1px'
+    patch[`border${side}Style`] = 'solid'
+    patch[`border${side}Color`] = '#ffffff'
+  }
+  return patch
 }
 
 function readFirstSet(styles: Record<string, unknown>, field: 'Style' | 'Color'): string {
@@ -45,6 +63,7 @@ export function BorderPopoutRow({
   currentStyles,
   activeTab,
   onChange,
+  onChangeMany,
   onClearProperty,
   onPreview,
   onClearPreview,
@@ -80,7 +99,12 @@ export function BorderPopoutRow({
           } as CSSProperties
         }
         triggerRef={triggerRef}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          // An empty row's first click puts a border on the element right
+          // away; the popout then opens on something to adjust.
+          if (!isSet && !open) onChangeMany(seedBorder())
+          setOpen((current) => !current)
+        }}
         ariaExpanded={open}
         ariaLabel={isSet ? `Edit border — ${summary}` : 'Add a border'}
         onClear={isSet ? clearBorder : undefined}
@@ -93,6 +117,10 @@ export function BorderPopoutRow({
         anchorRef={triggerRef}
         title="Border"
         closeLabel="Close border editor"
+        // Wider than the default popout: the Width row carries number ⊕ unit
+        // ⊕ the two scope tiles beside a 52px label, and at 244px the number
+        // field had no room left.
+        width={288}
         estimatedHeight={280}
       >
         <div className={styles.popoutBody}>

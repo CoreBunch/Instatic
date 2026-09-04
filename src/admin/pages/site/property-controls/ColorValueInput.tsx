@@ -93,8 +93,6 @@ export function ColorValueInput({
       drillInTitle={drillInTitle}
       fieldSize="sm"
       monospace
-      onTextChange={onChange}
-      onTextBlur={() => {}}
       onSwatchChange={onChange}
       onTokenSelect={onChange}
       onTokenPreview={previewActive ? onPreview : undefined}

@@ -96,6 +96,8 @@ The part nobody else has: **[Core Framework](https://coreframework.com) is built
 
 Your whole design system lives as data. Change one token and every page that uses it updates.
 
+**An inspector that answers in the same frame.** Every value in the Properties panel is something you click or drag, not something you have to know the CSS syntax for: a 3×3 grid for object and background position, unit selects that can hold `auto`, a square Auto chip in the spacing editor, a visible border from the first click. Typing a number, sliding, or dragging left and right on any numeric field previews on the canvas instantly and commits once when you let go — one undo entry per drag, and the canvas never glides after the cursor, because edit mode neutralises the site's own CSS transitions. On the canvas itself: corner dots that round the element (Alt for a single corner, following the Radius row's "separately" mode), a ratio lock the resize handles honour (Shift flips it per drag), and an eye in the Spacing section that shows every margin and padding at once. The editor's fields, search bars and grouped buttons share one surface ramp, so the left sidebar, the inspector and every floating popout look the same.
+
 ### 🧱 Build
 
 <img src="docs/assets/readme/build-components.webp" alt="Editing a Visual Component — a typed text param with a default value, bound to a node in the component's own tree" width="100%">

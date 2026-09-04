@@ -311,6 +311,32 @@
     cursor: nwse-resize;
 }
 
+/* ── Corner-radius dots ───────────────────────────────────────────────────
+   Round, so they never read as a ninth resize handle; they sit INSIDE the
+   ring on each corner's diagonal, `radius × zoom` from the corner. Above the
+   resize handles: at a zero radius the dot hugs the corner handle, and the
+   dot is the one the pointer should find. */
+.radiusHandle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 8px;
+    height: 8px;
+    box-sizing: border-box;
+    border: 1px solid var(--canvas-accent);
+    border-radius: 50%;
+    background: var(--picker-white);
+    pointer-events: auto;
+    z-index: 53;
+    cursor: move;
+    /* No transition (same reason as the rings): the RAF loop places the dot
+       every frame, and a transition would make it trail the curve. */
+}
+
+.radiusHandle:hover {
+    background: var(--canvas-accent);
+}
+
 /* ── Dimension badge ─────────────────────────────────────────────────────
    `700 × 412` under the selection ring — CSS px of the element, not screen
    px, so the number matches what the inspector fields say at any zoom. */

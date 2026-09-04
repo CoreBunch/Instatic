@@ -5,7 +5,10 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-s);
-    width: 244px;
+    /* The host (FloatingPanel, default 244px) owns the width — a fixed width
+       here overflowed the panel's content box by its 1px borders and turned
+       the panel's `overflow-y: auto` into a horizontal scrollbar. */
+    width: 100%;
     padding: var(--space-s);
     box-sizing: border-box;
 }

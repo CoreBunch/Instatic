@@ -232,6 +232,9 @@ export function AgentPanel({ variant = 'floating' }: AgentPanelProps) {
     >
     <div
       data-testid="agent-panel"
+      // A --bg-surface card floating inside the chrome sidebar: its fields
+      // need the card ramp back.
+      data-surface="card"
       className={styles.panel}
     >
       {/* ── Shared Panel Header — drag handle + close + clear actions ──────── */}

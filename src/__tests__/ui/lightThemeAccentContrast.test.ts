@@ -20,12 +20,25 @@ function readTokenBlock(selector: string): Record<string, string> {
     if (char === '}') {
       depth -= 1
       if (depth === 0) {
-        return Object.fromEntries(
+        const tokens = Object.fromEntries(
           source
             .slice(openBrace + 1, index)
             .matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)
             .map((match) => [match[1], match[2].trim()]),
         )
+        // The live surface/border tokens alias a ramp (`--bg-surface-2:
+        // var(--card-surface-2)`); follow the alias inside the same block so
+        // the contrast maths sees the hex it resolves to.
+        for (const [name, value] of Object.entries(tokens)) {
+          let resolved = value
+          for (let hops = 0; hops < 4; hops += 1) {
+            const alias = resolved.match(/^var\((--[\w-]+)\)$/)
+            if (!alias || !(alias[1] in tokens)) break
+            resolved = tokens[alias[1]]
+          }
+          tokens[name] = resolved
+        }
+        return tokens
       }
     }
   }

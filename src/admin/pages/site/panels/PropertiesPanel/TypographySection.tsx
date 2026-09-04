@@ -184,10 +184,7 @@ function SizeRow({ storedStyles, currentStyles, onChange, onPreview, onClearPrev
             placeholder={cellPlaceholder('fontSize', sizeSet)}
             tokens={typographyTokens}
             onCommit={(resolved) => onChange('fontSize', resolved)}
-            onStep={(delta) => {
-              const next = stepCssLength(cellValue('fontSize', sizeSet) || cellPlaceholder('fontSize', sizeSet) || '16px', delta)
-              if (next) onChange('fontSize', next)
-            }}
+            stepValue={(current, delta) => stepCssLength(current || '16px', delta)}
             onPreview={onPreview ? (resolved) => onPreview('fontSize', resolved) : undefined}
             onClearPreview={onClearPreview}
           />
@@ -198,16 +195,18 @@ function SizeRow({ storedStyles, currentStyles, onChange, onPreview, onClearPrev
             value={cellValue('lineHeight', lineHeightSet)}
             placeholder={cellPlaceholder('lineHeight', lineHeightSet)}
             tokens={[]}
+            // A bare line-height IS the value (`1.5` = 1.5× the font size);
+            // the stepper below keeps it unitless, so the typed path must too.
+            implicitUnit=""
             onCommit={(resolved) => onChange('lineHeight', resolved)}
-            onStep={(delta) => {
+            stepValue={(current, delta) => {
               // Unitless line heights step in tenths — whole numbers would
               // jump from 1.5 straight past every value an author wants.
-              const current = cellValue('lineHeight', lineHeightSet) || cellPlaceholder('lineHeight', lineHeightSet) || '1.5'
-              const unitless = /^-?\d*\.?\d+$/.test(current.trim())
-              const next = unitless
-                ? String(Math.max(0, Math.round((Number(current) + delta * 0.1) * 100) / 100))
-                : stepCssLength(current, delta)
-              if (next) onChange('lineHeight', next)
+              const base = current || '1.5'
+              const unitless = /^-?\d*\.?\d+$/.test(base.trim())
+              return unitless
+                ? String(Math.max(0, Math.round((Number(base) + delta * 0.1) * 100) / 100))
+                : stepCssLength(base, delta)
             }}
             onPreview={onPreview ? (resolved) => onPreview('lineHeight', resolved) : undefined}
             onClearPreview={onClearPreview}

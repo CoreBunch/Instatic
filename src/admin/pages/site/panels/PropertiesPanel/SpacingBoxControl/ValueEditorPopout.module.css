@@ -88,31 +88,36 @@
     border-radius: var(--radius-sm);
 }
 
-/* Compact numeric field beside the rail. */
-.numberField.numberField {
-    width: 44px;
-    min-width: 44px;
+/* Compact number ⊕ unit duo beside the rail — the shared UnitField on the
+   popout's proportions (44px number, 52px unit) instead of the section rows'
+   1fr ⊕ 88px split. */
+.unitField.unitField {
+    flex: none;
+    grid-template-columns: 44px 52px;
+    gap: var(--space-2xs);
+}
+
+.unitField.unitField input {
     text-align: center;
     font-variant-numeric: tabular-nums;
 }
 
-.unitSelect {
-    width: 52px;
-    flex: none;
-}
-
 /* ── Preset chips ────────────────────────────────────────────────────────── */
 
-/* Five equal columns so both rows line up. Auto takes two of them: it is a
-   keyword, not a number, and the wider cell says so at a glance. */
+/* Four equal columns: the eight px presets make two full rows beside the
+   Auto square. Auto spans two columns AND two rows — a keyword, not a
+   number, and the square says so at a glance. */
 .chips {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: var(--space-3xs);
 }
 
 .chipAuto.chipAuto {
     grid-column: span 2;
+    grid-row: span 2;
+    /* Let the grid stretch it over both rows — Button pins its own height. */
+    height: auto;
 }
 
 /* Doubled selector lifts specificity over Button.module.css's variant/size
@@ -159,7 +164,7 @@
 
 .tokenGrid {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: var(--space-3xs);
 }
 

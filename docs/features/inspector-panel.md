@@ -69,7 +69,7 @@ popoutach), wariant `wide` (kontrolka zawija się POD etykietę w wąskim doku �
 Inset, Spacing) oraz `testId`. Sekcje wizualne (Size, Layout, Position,
 Styles, Typography) i generyczne wiersze `ClassPropertyRow` używają tego
 samego komponentu, więc etykiety liczą się do piksela w całym panelu. Wiersze
-kompozytowe, które same rysują swoją siatkę (`ScopeGroup` — Padding, Radius),
+kompozytowe, które same rysują swoją siatkę (`ScopeGroup` — Radius),
 biorą samą etykietę przez `ControlRowLabel`.
 
 ---
@@ -82,7 +82,7 @@ Kolejność w panelu:
 |---|---|---|
 | 1 | **Position** | Type · Inset · Z Index |
 | 2 | **Size** | Width · Height |
-| 3 | **Layout** | Type · Columns · Rows · Align · Gap · Padding |
+| 3 | **Layout** | Type · Columns · Rows · Align · Gap |
 | 4 | **Spacing** | boks margin/padding |
 | 5 | **Styles** | Opacity · Visible · Fill · Image · Overflow · Radius · Border · Shadows |
 | 6 | **Typography** | Font · Weight · Size · Spacing · Align · Color |
@@ -116,11 +116,13 @@ i `Border` nie istnieją już jako osobne sekcje — wsiąkły w `Styles`.
 | kontrolka | klasa | zachowanie |
 |---|---|---|
 | Text | `.field` | zwykłe pole |
-| NumberField | `.field.numberfield` | chevrony `.stepper` na hover/focus · przeciąganie w poziomie · Shift ×10 |
+| NumberField | `.field.numberfield` | chevrony `.stepper` na hover/focus · przeciąganie w poziomie · Shift ×10. Wiersz daje samą matematykę kroku (`TokenAwareInput.stepValue(current, delta)`), pole niesie trzy gesty: chevron i strzałki commitują krok, **scrub jest sesją** — `Input.onScrub` podaje co klatkę sumę kroków od chwytu, pole podgląda `start + total` kanałem `onPreview` (scena reaguje natychmiast, bez zapisu do store) i commituje raz przy puszczeniu (jeden wpis undo). `UnitField` i pole Opacity mają tę samą sesję |
 | Pole z osią | `.numberfield > .axis` | litera `X`/`Y` przy prawej krawędzi w spoczynku, **ustępuje stepperowi** pod kursorem — ten sam slot 16px, więc wartość nie skacze |
 | DimensionField | `.fused` | numberfield ⊕ select sklejone w jeden pasek (`Width`, `Height`) |
 | Select | `.field.select` | menu z `data-options`, w braku — słownik po etykiecie (§7.4) |
 | StepGroup | `.duo > .stepgroup` | para −/+ obok pola, dla wartości policzalnych |
+| UnitField | `.duo` | liczba ⊕ select jednostki; słowa kluczowe (`auto`, `none`, `normal`) w tym samym selekcie, więc pole potrafi TRZYMAĆ `auto`. Jeden komponent dla wierszy długości (§4.1), popoutu wartości (§6.6) i offsetów pozycji |
+| PositionControl | `.trigger` → popout | `object-position` / `background-position` jako klik, nie fraza: pole-trigger (wygląd jak wiersz efektu) otwiera siatkę 3×3 kotwic (left/center/right × top/center/bottom, hover podgląda na scenie) + pola X / Y (`UnitField`, `%`/`px`/`em`/`rem`). Kafel świeci, gdy wartość rozwiązuje się do jego kotwicy — słowem albo procentem (`0% 0%` = `left top`) |
 
 ### 4.2 Grupy przycisków
 
@@ -190,13 +192,14 @@ ramka w środku ramki to dwa pudełka na jedną rzecz.
 
 ### 6.1 Zakres: wspólna wartość albo per część
 
-`.scopegroup[data-mode="all" | "parts"]` — używane przez `Padding` (4 strony),
-`Radius` (4 rogi) i `Rotate` (3 osie, `.parts[data-parts="3"]`).
+`.scopegroup[data-mode="all" | "parts"]` — używane przez `Radius` (4 rogi)
+i docelowo `Rotate` (3 osie, `.parts[data-parts="3"]`). (Wiersz Padding w
+Layout, który też na nim jeździł, wyleciał 2026-09-04 — dublował box Spacing.)
 
 ```
-Padding   [ 0 ]  ← wygaszone      [▢][⛶]
+Radius    [ 0 ]  ← wygaszone      [▢][⛶]
           [0] [0] [0] [0]
-           T   R   B   L
+          TL  TR  BR  BL
 ```
 
 - **Pierwsza linia nie zmienia kształtu**: zawsze jedno pole + przełącznik obok.
@@ -294,6 +297,18 @@ rysuje go `SpacingHighlightOverlay` (`canvas/`), mierząc `getComputedStyle`
 i rect elementu w pętli rAF aktywnej wyłącznie podczas interakcji — podglądy
 (pisanie, suwak, hover tokenu) odświeżają pasy co klatkę, a poza interakcją
 nakładka nie kosztuje nic.
+
+**Pin „pokaż wszystkie odstępy".** Sekcja Spacing nie ma `+` (do box-modelu
+nie ma czego dodać), więc jej slot akcji w nagłówku sekcji zajmuje oko
+(`SpacingOverlayToggle`, `aria-pressed`) — tam, gdzie każda inna sekcja trzyma
+swój jeden przycisk. Włączone trzyma na scenie WSZYSTKIE pasy marginesu i paddingu
+zaznaczonego elementu, niezależnie od tego, który bok jest edytowany — box
+model elementu do odczytania jednym spojrzeniem. Bok zerowy nie rysuje pasa
+ani chipa (osiem „0" to szum); chip „0" zostaje tylko na boku aktualnie
+edytowanym. Stan to sesyjne `spacingOverlayPinned` w `selectionSlice` —
+świadomie **przeżywa zmianę zaznaczenia**, bo jest sposobem patrzenia na
+elementy, nie edycją jednego z nich. Ten sam `SpacingHighlightOverlay` rysuje
+oba tryby: pin daje osiem celów (box × bok), interakcja — jej boki.
 
 Pasy rysuje `repeating-linear-gradient` pod 135°: `--canvas-spacing-*-fill`
 to kreska, `--canvas-spacing-*-wash` to słabe tło między kreskami. Kreskowanie
@@ -424,14 +439,19 @@ Fokus w polu boku Spacingu (§6.3) lub Insetu (§6.2) otwiera **pływający edyt
 wartości** — `ValueEditorPopout` na wspólnym `FloatingPanel`, obok pola. Jeden
 naraz: fokus na innym boku przenosi go tam, Escape / klik obok zamyka. Od góry:
 
-- **suwak + pole liczbowe + select jednostki** (`px` domyślnie, `em`, `rem`,
-  `%`, `vw`, `vh`). Zakres suwaka zależy od jednostki (px 0–512, em/rem 0–16,
-  % 0–100); inset schodzi w ujemne. Zmiana jednostki **nie przelicza** —
-  przeetykietowuje liczbę (`16px` → `16em`).
-- **siatka chipów** w pięciu kolumnach: `Auto` (margin i inset — padding nie
-  zna auto) zajmuje dwie z nich, bo to słowo kluczowe, nie liczba; dalej
-  presety jednostki (px: 0…64, em/rem: 0…8). Klik commit-uje od razu, hover
-  podgląda.
+- **suwak + `UnitField`** — ten sam duet liczba ⊕ select jednostki, którym
+  jedzie każdy wiersz długości (§4.1), na proporcjach popoutu (44 ⊕ 52 px;
+  `px` domyślnie, `em`, `rem`, `%`, `vw`, `vh`). Tam, gdzie właściwość zna
+  `auto` (margin, inset), słowo kluczowe siedzi **w selekcie** — pole potrafi
+  TRZYMAĆ `auto` (pole wygaszone, select „Auto"), zamiast świecić pustką obok
+  chipa. Zakres suwaka zależy od jednostki (px 0–512, em/rem 0–16, % 0–100);
+  inset schodzi w ujemne. Zmiana jednostki **nie przelicza** —
+  przeetykietowuje liczbę (`16px` → `16em`); jednostka wybrana przy pustym
+  polu (`onUnitChange`) od razu przestawia suwak i presety.
+- **siatka chipów** w czterech kolumnach: `Auto` (margin i inset — padding nie
+  zna auto) to **kwadrat 2×2** — słowo kluczowe, nie liczba, i kształt mówi
+  to od razu; obok osiem presetów px w dwóch pełnych rzędach (em/rem: 0…8).
+  Klik commit-uje od razu, hover podgląda.
 - **siatka tokenów** — cała skala spacingu frameworka (`4xs`…`4xl`) jako te
   same chipy; klik zapisuje `var(--space-…)`. Dlatego pola boków **nie**
   otwierają już własnego dropdownu z podpowiedziami: skala mieszka tutaj, a
@@ -692,6 +712,20 @@ pod jaki był projektowany, gdy panel był jeszcze kartą `#1b1b1b`.
 
 **`--bg-surface` nie istnieje.** Znaczył „kartę panelu"; panel kartą nie jest,
 a jego ostatni użytkownik (`.popout`) stoi na tonie chrome.
+
+**Wdrożenie: dwie drabinki, jeden przełącznik.** `globals.css` trzyma drabinkę
+kart (`--card-surface-2/3/4`, `--card-line-subtle/muted`) i drabinkę chrome
+(`--panel-surface-*`, `--panel-line-*`); żywe `--bg-surface-2/3/4` i
+`--border-subtle/muted` są aliasami tej, którą wybrał najbliższy
+`[data-surface]`. Powłoki stojące na `--bg-body` — oba sidebary, toolbar i
+`FloatingPanel` (portal do `<body>`, więc musi sam się ostemplować) — mają
+`data-surface="chrome"`; karta `--bg-surface` z polami wewnątrz takiej powłoki
+(Agent, pływający wariant panelu, karta koloru, lista kroków skali) ma
+`data-surface="card"` i dostaje z powrotem jaśniejszą drabinkę. Reszta admina
+nie potrzebuje stempla — korzeń i tak rozwiązuje się do kart. Dzięki temu
+`Input`, `Select`, `SearchBar`, `SegmentedControl` czy `StepGroup` wyglądają
+identycznie po lewej i po prawej stronie edytora bez żadnego nadpisania per
+komponent, a popout ma te same tony co panel, z którego odpłynął.
 
 **Jeden akcent: `--accent-3` = `#0099ff`.** Kropka „właściwość ustawiona",
 kropka klasy, ptaszek w menu, przypięta krawędź insetu, wciśnięty przełącznik,

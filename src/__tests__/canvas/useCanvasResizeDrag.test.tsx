@@ -77,6 +77,7 @@ beforeEach(() => {
     selectedNodeId: null,
     selectedNodeIds: [],
     lockedInsetSides: [],
+    sizeRatioLocked: false,
   } as Parameters<typeof useEditorStore.setState>[0])
 })
 
@@ -206,6 +207,38 @@ describe('useCanvasResizeDrag', () => {
     // never re-applies values it believes are already set).
     expect(element(iframe, nodeId).style.width).toBe('250px')
     expect(element(iframe, nodeId).style.height).toBe('130px')
+  })
+
+  it('keeps the ratio while the Size lock is on — an edge handle derives the other axis', () => {
+    const nodeId = setupSelectedNode()
+    const iframe = mountCanvasIframe(nodeId)
+    const writeStyles = mock(() => {})
+    useEditorStore.getState().setSizeRatioLocked(true)
+
+    // 200×100 → dragging E to 300 wide must land at 150 tall.
+    begin(iframe, writeStyles, 'e')
+    window.dispatchEvent(
+      new MouseEvent('pointermove', { clientX: 200, clientY: 100, cancelable: true }),
+    )
+    window.dispatchEvent(new MouseEvent('pointerup'))
+
+    expect(writeStyles.mock.calls[0][0]).toEqual({ width: '300px', height: '150px' })
+  })
+
+  it('a corner drag under the lock follows the axis the pointer moved more', () => {
+    const nodeId = setupSelectedNode()
+    const iframe = mountCanvasIframe(nodeId)
+    const writeStyles = mock(() => {})
+    useEditorStore.getState().setSizeRatioLocked(true)
+
+    begin(iframe, writeStyles, 'se')
+    // +20 wide, +80 tall: height leads → 180 tall, width follows at 360.
+    window.dispatchEvent(
+      new MouseEvent('pointermove', { clientX: 120, clientY: 180, cancelable: true }),
+    )
+    window.dispatchEvent(new MouseEvent('pointerup'))
+
+    expect(writeStyles.mock.calls[0][0]).toEqual({ width: '360px', height: '180px' })
   })
 
   it('Escape mid-drag restores the inline style and commits nothing', () => {

@@ -43,13 +43,11 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { CSSPropertyBag } from '@core/page-tree'
 import { useEditorStore } from '@site/store/store'
-import { Button } from '@ui/components/Button'
-import { LinkIcon } from 'pixel-art-icons/icons/link'
-import { RemoveXGlyph } from '@ui/icons/inspectorGlyphs'
 import { cn } from '@ui/cn'
 import { TokenAwareInput } from '@site/property-controls/TokenAwareInput'
 import { useSpacingTokens, type Token } from '@site/property-controls/tokenUtils'
 import { ValueEditorPopout } from './ValueEditorPopout'
+import { SpacingBoxHeader } from './SpacingBoxHeader'
 import { beginSideScrub, sideDisplayChars } from './sideScrub'
 import styles from './SpacingBoxControl.module.css'
 
@@ -494,37 +492,13 @@ function SpacingBox({
       // sanctioned inline-style exception.
       style={{ '--side-chars': sideChars } as React.CSSProperties}
     >
-      <div className={styles.boxHeader}>
-        <span className={styles.boxLabel}>{label}</span>
-        <div className={styles.boxHeaderActions}>
-          <Button
-            type="button"
-            variant="ghost"
-            size="micro"
-            iconOnly
-            onClick={onToggleLinked}
-            aria-pressed={linked}
-            aria-label={linked ? `Unlink ${label} sides` : `Link all ${label} sides`}
-            tooltip={linked ? 'Linked — edits all four sides' : 'Split — edit each side separately'}
-            className={styles.headerBtn}
-          >
-            <LinkIcon size={11} aria-hidden="true" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="micro"
-            iconOnly
-            onClick={onClear}
-            disabled={setCount === 0}
-            aria-label={`Clear ${label}`}
-            tooltip={`Clear ${label}`}
-            className={styles.headerBtn}
-          >
-            <RemoveXGlyph />
-          </Button>
-        </div>
-      </div>
+      <SpacingBoxHeader
+        label={label}
+        linked={linked}
+        onToggleLinked={onToggleLinked}
+        clearDisabled={setCount === 0}
+        onClear={onClear}
+      />
 
       {SIDES.map((side) => (
         <SideInput

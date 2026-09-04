@@ -58,6 +58,17 @@ const CANVAS_CHROME_CSS = [
   '*:focus, *:focus-visible {',
   '  outline: none !important;',
   '}',
+  // A design frame is a direct-manipulation surface: a keystroke, a slider,
+  // a handle drag must land on the element THIS frame. The site's own
+  // `transition`s (hover fades, "all 300ms" on a hero) would make every edit
+  // glide after the cursor, so they are neutralised here — design frames
+  // only; the live frame keeps them, like the published page. Animations
+  // stay everywhere: they are content, not lag.
+  '[data-node-id], [data-node-id] *,',
+  '[data-node-id]::before, [data-node-id]::after,',
+  '[data-node-id] *::before, [data-node-id] *::after {',
+  '  transition: none !important;',
+  '}',
   'iframe { pointer-events: none; }',
 ].join('\n')
 

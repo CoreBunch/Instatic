@@ -528,6 +528,7 @@ export function ModuleInserterDialog({
             <SegmentedControl<InserterView>
               value={view}
               onChange={updateView}
+              look="tiles"
               aria-label="Module inserter view"
               className={styles.viewToggle}
               options={[

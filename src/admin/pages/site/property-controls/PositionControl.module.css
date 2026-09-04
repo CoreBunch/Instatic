@@ -1,0 +1,92 @@
+/* PositionControl — a `<position>` row: field-shaped trigger + a popout with
+   a 3×3 anchor grid and X / Y offset fields. The trigger mirrors the effect
+   row's field (EffectsSection.module.css) so every "click to open" field in
+   the inspector looks the same. */
+
+/* Doubled selector lifts specificity over Button.module.css's variant pairs. */
+.trigger.trigger {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    height: var(--control-height);
+    padding: 0 var(--space-m);
+    border: 1px solid transparent;
+    border-radius: var(--control-radius);
+    background: var(--bg-surface-2);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--text-xs);
+    text-align: left;
+    cursor: pointer;
+    transition: background 110ms ease, border-color 110ms ease;
+}
+
+.trigger.trigger:hover {
+    background: var(--bg-surface-3);
+}
+
+.trigger.trigger[aria-expanded='true'] {
+    border-color: var(--accent-3);
+    color: var(--text-bright);
+}
+
+.value {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.valuePlaceholder {
+    color: var(--text-disabled);
+}
+
+/* ── Popout body ─────────────────────────────────────────────────────────── */
+
+.params {
+    display: flex;
+    flex-direction: column;
+    gap: var(--control-row-gap);
+    padding: var(--space-m);
+}
+
+/* Nine fused tiles with 1px seams — the tiles look of SegmentedControl,
+   folded into two dimensions. */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    overflow: hidden;
+    border-radius: var(--control-radius);
+    background: var(--border-muted);
+}
+
+.tile.tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: var(--control-height);
+    border: 0;
+    border-radius: 0;
+    background: var(--bg-surface-2);
+    color: var(--text-muted);
+}
+
+.tile.tile:hover {
+    background: var(--bg-surface-3);
+    color: var(--text-bright);
+}
+
+.tile.tile[aria-pressed='true'] {
+    background: var(--bg-surface-4);
+    color: var(--accent-3);
+}
+
+.dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}

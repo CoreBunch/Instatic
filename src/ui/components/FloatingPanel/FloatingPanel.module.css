@@ -11,10 +11,15 @@
     overflow-y: auto;
     border: 1px solid var(--border-muted);
     border-radius: var(--panel-radius);
-    /* Same tone as the properties panel the trigger lives in — the panel
-       reads as a detached piece of it, not a lighter foreign box. Height is
-       carried by the border and the shadow. */
-    background: var(--bg-surface);
+    /* Same tone as the editor chrome the trigger lives in (the docked panel
+       is transparent over --bg-body) — the popout reads as a detached piece
+       of it, not a lighter foreign card. Height is carried by the border and
+       the shadow. The chrome ramp comes from data-surface="chrome" on the
+       element; the accent collapse mirrors PropertiesPanel's. */
+    --accent-1: var(--panel-accent);
+    --accent-2: var(--panel-accent);
+    --accent-3: var(--panel-accent);
+    background: var(--bg-body);
     box-shadow: var(--shadow-panel);
 }
 

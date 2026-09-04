@@ -67,6 +67,7 @@ export function FrameworkPanel({
           options={TABS}
           onChange={setTab}
           size="sm"
+          look="tiles"
           fullWidth
         />
       </div>

@@ -309,13 +309,12 @@ function InsetSideInput({
           if (locked) return
           onOpenEditor(document.getElementById(inputId))
         }}
-        onStep={(delta) => {
-          if (locked) return
+        stepValue={(current, delta) => {
+          if (locked) return undefined
           // Offsets go negative — pulling an element past its edge is normal.
-          const next = stepCssLength(value || (placeholder === 'auto' ? '0px' : placeholder), delta, {
+          return stepCssLength(current === 'auto' ? '0px' : current, delta, {
             min: Number.NEGATIVE_INFINITY,
           })
-          if (next) onChange(property, next)
         }}
         onPreview={
           onPreview && !locked

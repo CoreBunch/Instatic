@@ -42,7 +42,6 @@ import { GapInput } from './GapInput'
 import { GridTrackControl } from './GridTrackControl'
 import { GridAxisControl } from './GridAxisControl'
 import { ControlRow } from '@ui/components/ControlRow'
-import { PaddingRow } from './PaddingRow'
 import styles from '../LayoutSection.module.css'
 
 // ---------------------------------------------------------------------------
@@ -55,9 +54,6 @@ interface LayoutSectionProps {
   /** Active breakpoint tab id — used to key sub-controls so they re-mount on tab change. */
   activeTab: string
   onChange: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
-  /** Applies several properties in one store commit (one undo entry) — the
-   *  Padding row writes four sides at once. */
-  onChangeMany: (patch: Partial<CSSPropertyBag>) => void
   onRemove: (property: keyof CSSPropertyBag) => void
   /**
    * Fully clear a property — removes it from base styles AND from every
@@ -158,7 +154,6 @@ export function LayoutSection({
   storedStyles,
   activeTab,
   onChange,
-  onChangeMany,
   onRemove,
   onClearProperty,
   onClearProperties,
@@ -238,14 +233,6 @@ export function LayoutSection({
             onPreview={onPreview ? (v) => onPreview({ gap: v ?? null } as Partial<CSSPropertyBag>) : undefined}
             onClearPreview={onClearPreview}
           />
-          <PaddingRow
-            currentStyles={currentStyles}
-            storedStyles={storedStyles}
-            onChange={onChange}
-            onChangeMany={onChangeMany}
-            onPreview={onPreview}
-            onClearPreview={onClearPreview}
-          />
         </div>
       )}
 
@@ -289,14 +276,6 @@ export function LayoutSection({
             isSet={hasStyleValue(storedStyles.gap)}
             onChange={(v) => onChange('gap', v)}
             onPreview={onPreview ? (v) => onPreview({ gap: v ?? null } as Partial<CSSPropertyBag>) : undefined}
-            onClearPreview={onClearPreview}
-          />
-          <PaddingRow
-            currentStyles={currentStyles}
-            storedStyles={storedStyles}
-            onChange={onChange}
-            onChangeMany={onChangeMany}
-            onPreview={onPreview}
             onClearPreview={onClearPreview}
           />
         </div>

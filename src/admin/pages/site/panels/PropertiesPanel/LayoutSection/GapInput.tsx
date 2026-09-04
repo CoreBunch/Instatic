@@ -66,10 +66,7 @@ export function GapInput({ value, isSet, onChange, onPreview, onClearPreview }: 
             placeholder="0px"
             tokens={tokens}
             onCommit={(resolved) => onChange(formatGap(row, resolved))}
-            onStep={(delta) => {
-              const next = stepCssLength(column || '0px', delta)
-              if (next) onChange(formatGap(row, next))
-            }}
+            stepValue={(current, delta) => stepCssLength(current || '0px', delta)}
             onPreview={onPreview ? (resolved) => onPreview(formatGap(row, resolved)) : undefined}
             onClearPreview={onClearPreview}
           />
@@ -82,10 +79,7 @@ export function GapInput({ value, isSet, onChange, onPreview, onClearPreview }: 
             placeholder="0px"
             tokens={tokens}
             onCommit={(resolved) => onChange(formatGap(resolved, column))}
-            onStep={(delta) => {
-              const next = stepCssLength(row || '0px', delta)
-              if (next) onChange(formatGap(next, column))
-            }}
+            stepValue={(current, delta) => stepCssLength(current || '0px', delta)}
             onPreview={onPreview ? (resolved) => onPreview(formatGap(resolved, column)) : undefined}
             onClearPreview={onClearPreview}
           />

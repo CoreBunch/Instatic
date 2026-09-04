@@ -118,6 +118,11 @@ export function useTypographyTokens(): ReadonlyArray<Token> {
 export function resolveTokenValue(
   raw: string,
   tokens: ReadonlyArray<Token>,
+  /**
+   * Unit a bare number gets. `px` for every length; `''` for the few
+   * properties where a bare number IS the value (`line-height: 1.5`).
+   */
+  implicitUnit = 'px',
 ): string | undefined {
   const trimmed = raw.trim()
   if (!trimmed) return undefined
@@ -128,7 +133,7 @@ export function resolveTokenValue(
   )
   if (match) return match.valueExpr
 
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return `${trimmed}px`
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return `${trimmed}${implicitUnit}`
   return trimmed
 }
 

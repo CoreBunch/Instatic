@@ -4,9 +4,10 @@
  *
  * Modeled on Figma's spacing popover, carried by the shared FloatingPanel so
  * it opens BESIDE the focused side input and dismisses like every other
- * inspector popout (Escape, ×, outside click). Top to bottom: a slider +
- * compact number + unit select, a preset chip grid (with `Auto` where the
- * property accepts it), and a Reset footer.
+ * inspector popout (Escape, ×, outside click). Top to bottom: a slider + the
+ * shared UnitField (number + unit select, with `Auto` as a keyword in the
+ * select where the property accepts it), a preset chip grid (with a square
+ * `Auto` chip for the same properties), and a Reset footer.
  *
  * It owns NO write path of its own: every change flows through the SAME
  * onCommit / onPreview callbacks the inline side input uses, so linked mode
@@ -16,22 +17,26 @@
  * Changing the unit converts nothing — it re-labels the number (`16px` →
  * `16em`), which is how these editors behave everywhere. A value the popout
  * cannot parse into number + unit (`calc(...)`) shows a "complex value"
- * state: slider, number and presets disable; the token grid and Reset stay —
- * a token IS a value you can pick from here, so it must not lock the editor
- * that set it.
+ * state: slider and presets disable, the UnitField shows it verbatim so a
+ * typed number can replace it, and the token grid and Reset stay — a token
+ * IS a value you can pick from here, so it must not lock the editor that
+ * set it.
  */
 
 import { useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { Button } from '@ui/components/Button'
-import { Input } from '@ui/components/Input'
-import { Select } from '@ui/components/Select'
 import { FloatingPanel } from '@ui/components/FloatingPanel'
 import { cn } from '@ui/cn'
+import { UnitField } from '@site/property-controls/UnitField'
 import type { Token } from '@site/property-controls/tokenUtils'
 import styles from './ValueEditorPopout.module.css'
 
 const UNITS = ['px', 'em', 'rem', '%', 'vw', 'vh'] as const
 type Unit = (typeof UNITS)[number]
+
+function isUnit(raw: string): raw is Unit {
+  return (UNITS as readonly string[]).includes(raw)
+}
 
 /** Sensible slider span per unit; min is 0, or −max where negatives apply. */
 const SLIDER_MAX: Record<Unit, number> = { px: 512, em: 16, rem: 16, '%': 100, vw: 100, vh: 100 }
@@ -64,8 +69,8 @@ function parseSideValue(raw: string): Parsed {
   if (!match) return { kind: 'complex' }
   // A bare number means px — same reading the side inputs give a typed `16`.
   const unit = (match[2] ?? 'px').toLowerCase()
-  if (!(UNITS as readonly string[]).includes(unit)) return { kind: 'complex' }
-  return { kind: 'number', number: Number(match[1]), unit: unit as Unit }
+  if (!isUnit(unit)) return { kind: 'complex' }
+  return { kind: 'number', number: Number(match[1]), unit }
 }
 
 /** Strip float junk from slider math: 0.30000000000000004 → 0.3. */
@@ -84,7 +89,7 @@ interface ValueEditorPopoutProps {
   title: string
   /** Stored CSS value for the side (`''` when unset). */
   value: string
-  /** Offer the `auto` chip (margin and inset — padding has no auto). */
+  /** Offer `auto` — chip and select keyword (margin and inset; padding has no auto). */
   allowAuto: boolean
   /** Let the slider go negative (margins collapse, inset offsets pull past
    *  their edge). Padding cannot: negative padding is invalid CSS. */
@@ -115,7 +120,8 @@ export function ValueEditorPopout({
   const complex = parsed.kind === 'complex'
 
   // Unit is read from the value while it has one; the choice state only
-  // matters for unset/auto values, where there is no unit to read.
+  // matters for unset/auto values, where there is no unit to read — the
+  // UnitField's select reports its pick through onUnitChange.
   const [unitChoice, setUnitChoice] = useState<Unit | null>(null)
   const unit = parsed.kind === 'number' ? parsed.unit : (unitChoice ?? 'px')
 
@@ -123,9 +129,6 @@ export function ValueEditorPopout({
   // same contract as the opacity slider in StylesSection.
   const [drag, setDrag] = useState<number | null>(null)
   const dragging = useRef(false)
-
-  // Number field draft: commits on Enter/blur like every inspector field.
-  const [numberDraft, setNumberDraft] = useState<string | null>(null)
 
   const max = SLIDER_MAX[unit]
   const min = allowNegative ? -max : 0
@@ -139,14 +142,6 @@ export function ValueEditorPopout({
     onClearPreview?.()
     onCommit(`${fmt(drag)}${unit}`)
     setDrag(null)
-  }
-
-  const commitTyped = (raw: string) => {
-    setNumberDraft(null)
-    const trimmed = raw.trim()
-    if (trimmed === '') return
-    const n = Number(trimmed)
-    if (Number.isFinite(n)) onCommit(`${fmt(n)}${unit}`)
   }
 
   return (
@@ -192,45 +187,30 @@ export function ValueEditorPopout({
             onPointerUp={commitDrag}
             onBlur={commitDrag}
           />
-          <Input
+          {/* The same number ⊕ unit duo every length row uses; `auto` lives in
+              its select, so the field can HOLD the keyword instead of going
+              blank around it. While the thumb moves the field reads the
+              drag, not the stored value — the whole popout shows one number,
+              live. */}
+          <UnitField
             fieldSize="xs"
-            inputMode="decimal"
+            className={styles.unitField}
             aria-label={`${title} value`}
-            className={styles.numberField}
-            // While the thumb moves the field reads the drag, not the stored
-            // value — the whole popout shows one number, live.
-            value={
-              numberDraft ??
-              (drag !== null ? fmt(drag) : parsed.kind === 'number' ? fmt(parsed.number) : '')
-            }
-            placeholder={parsed.kind === 'auto' ? 'auto' : complex ? '—' : '0'}
-            disabled={complex}
-            onChange={(event) => setNumberDraft(event.target.value)}
-            onBlur={(event) => commitTyped(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') (event.target as HTMLInputElement).blur()
+            value={drag !== null ? `${fmt(drag)}${unit}` : value}
+            placeholder={`0${unit}`}
+            units={UNITS}
+            keywords={allowAuto ? ['auto'] : []}
+            onUnitChange={(next) => {
+              if (isUnit(next)) setUnitChoice(next)
             }}
-          />
-          <Select
-            fieldSize="xs"
-            aria-label={`${title} unit`}
-            className={styles.unitSelect}
-            value={unit}
-            disabled={complex}
-            options={UNITS.map((u) => ({ label: u, value: u }))}
-            onChange={(event) => {
-              const next = event.target.value as Unit
-              setUnitChoice(next)
-              // Re-label, don't convert: 16px → 16em keeps the 16.
-              if (parsed.kind === 'number') onCommit(`${fmt(parsed.number)}${next}`)
-            }}
+            onCommit={onCommit}
+            onPreview={onPreview}
+            onClearPreview={onClearPreview}
           />
         </div>
 
         {complex ? (
-          <p className={styles.complexNote}>
-            Complex value — edit it in the side field itself.
-          </p>
+          <p className={styles.complexNote}>Complex value — type a number to replace it.</p>
         ) : null}
 
         <div className={styles.chips}>

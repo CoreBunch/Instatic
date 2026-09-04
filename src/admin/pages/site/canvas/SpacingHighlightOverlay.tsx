@@ -1,36 +1,55 @@
 /**
  * SpacingHighlightOverlay — live margin/padding visualization on the canvas.
  *
- * While the inspector's Spacing box is being interacted with (side-input
- * focus, band hover, or an open value-editor popout — `spacingHighlight` in
- * `selectionSlice`), this overlay tints the corresponding spacing band(s) of
- * the SELECTED element and floats a value chip over each band with the used
- * value in px — the Webflow-style "see what you're changing" affordance.
+ * Two things switch it on, both session state in `selectionSlice`:
+ *
+ *   - `spacingHighlight` — while the inspector's Spacing box is being
+ *     interacted with (side-input focus, band hover, or an open value-editor
+ *     popout), the corresponding band(s) of the SELECTED element are tinted
+ *     and a value chip floats over each with the used value in px — the
+ *     Webflow-style "see what you're changing" affordance.
+ *   - `spacingOverlayPinned` — the Spacing box's "show all spacing" pin: every
+ *     margin and padding band of the selected element stays drawn, so the
+ *     user can read an element's box model at a glance. Zero-width sides draw
+ *     no band and (unlike the focused side) no chip either — eight "0" chips
+ *     would just be noise.
  *
  * Geometry: margin bands sit OUTSIDE the border box, padding bands INSIDE it
  * (inset by the border widths). A NEGATIVE margin draws too — flipped to the
  * inside of the same edge (that is the space it swallowed) and tinted with
  * its own colour, so "pulled 20px up" never looks like "pushed 20px down".
- * A zero side draws no band, but its chip still shows "0" at the edge
- * midpoint so the focused side stays legible.
+ * A zero side draws no band, but a focused/hovered zero side still shows a
+ * "0" chip at the edge midpoint so it stays legible.
  *
  * Liveness: preview writes (typing, slider drag, token hover) mutate styles
  * inside the iframe, so the RAF tick re-reads `getComputedStyle` + the
- * element rect every frame — but ONLY while a highlight is active. When
- * `spacingHighlight` is null the component renders nothing and no loop runs:
- * zero cost for normal canvas work. Same portal / measure-session / READ-then-
- * WRITE architecture as `BreakpointSelectionOverlay`.
+ * element rect every frame — but ONLY while something is on. When nothing is,
+ * the component renders nothing and no loop runs: zero cost for normal canvas
+ * work. Same portal / measure-session / READ-then-WRITE architecture as
+ * `BreakpointSelectionOverlay`.
  */
 
 import { useEffect, useEffectEvent, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@ui/cn'
 import { useEditorStore } from '@site/store/store'
+import type { InsetSide } from '@site/store/slices/selectionSlice'
 import { CanvasNodeElementCache } from './canvasNodeLookup'
 import { createCanvasOverlayMeasureSession } from './canvasOverlayGeometry'
 import { hideOverlayElement, positionOverlayElement } from './canvasSelectionOverlayPositioning'
 import { spacingBandRect, type SideWidths } from './spacingHighlightGeometry'
 import styles from './SpacingHighlightOverlay.module.css'
+
+type Box = 'margin' | 'padding'
+const BOXES: readonly Box[] = ['margin', 'padding']
+const SIDES: readonly InsetSide[] = ['top', 'right', 'bottom', 'left']
+
+interface BandTarget {
+  box: Box
+  side: InsetSide
+  /** Part of the live interaction (focused/hovered side), not just the pin. */
+  focused: boolean
+}
 
 interface SpacingHighlightOverlayProps {
   /** The breakpoint frame's iframe — the selected element lives inside it. */
@@ -50,18 +69,31 @@ export function SpacingHighlightOverlay({
   mode,
 }: SpacingHighlightOverlayProps) {
   const highlight = useEditorStore((s) => s.spacingHighlight)
+  const pinned = useEditorStore((s) => s.spacingOverlayPinned)
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId)
   const layerRef = useRef<HTMLDivElement>(null)
   const elementCacheRef = useRef<CanvasNodeElementCache | null>(null)
   if (elementCacheRef.current === null) elementCacheRef.current = new CanvasNodeElementCache()
 
-  const active = Boolean(highlight && selectedNodeId)
+  // Pinned: every band of both boxes, with the live interaction (if any)
+  // marked as focused. Otherwise only the interaction's sides.
+  const targets: BandTarget[] = pinned
+    ? BOXES.flatMap((box) =>
+        SIDES.map((side) => ({
+          box,
+          side,
+          focused: highlight?.box === box && highlight.sides.includes(side),
+        })),
+      )
+    : (highlight?.sides.map((side) => ({ box: highlight.box, side, focused: true })) ?? [])
 
-  // Reads the freshest highlight/selection from the latest render closure —
+  const active = targets.length > 0 && selectedNodeId !== null
+
+  // Reads the freshest targets/selection from the latest render closure —
   // the RAF effect below only re-arms when the loop should start/stop.
   const tickOnce = useEffectEvent((iframe: HTMLIFrameElement | null) => {
     const layer = layerRef.current
-    if (!layer || !highlight || !selectedNodeId) return
+    if (!layer || targets.length === 0 || !selectedNodeId) return
     const iframeDoc = iframe?.contentDocument ?? null
     const win = iframeDoc?.defaultView ?? null
     const element =
@@ -88,34 +120,36 @@ export function SpacingHighlightOverlay({
       bottom: parseFloat(computed.borderBottomWidth) || 0,
       left: parseFloat(computed.borderLeftWidth) || 0,
     }
-    const placements = highlight.sides.map((side) => {
+    const placements = targets.map(({ box, side, focused }) => {
       // Computed margin/padding is always the used length in px (`auto`
       // margins resolve to their used value); NaN-safe fallback covers
       // detached/edge cases.
-      const value = parseFloat(computed.getPropertyValue(`${highlight.box}-${side}`)) || 0
+      const value = parseFloat(computed.getPropertyValue(`${box}-${side}`)) || 0
       const rounded = Math.round(value)
       // Negative margins are drawn at their magnitude on the flipped side;
       // padding cannot be negative, so this only ever fires for margins.
       const negative = value < 0
       const thickness = Math.abs(value)
       const rect = session.measureRect(
-        spacingBandRect(highlight.box, side, borderBox, thickness, borders, negative),
+        spacingBandRect(box, side, borderBox, thickness, borders, negative),
       )
       return {
-        side,
+        key: `${box}-${side}`,
         negative,
         label: rounded === 0 ? '0' : `${rounded}px`,
         bandRect: thickness > 0 ? rect : null,
-        // Chip anchors to the band centre — for a zero side that degenerates
-        // to the edge midpoint, so "0" still has a home.
+        // A focused zero side keeps its "0" chip at the edge midpoint (the
+        // band centre degenerates to it); a merely pinned zero side shows
+        // nothing.
+        showChip: focused || thickness > 0,
         chipX: Math.round(rect.x + rect.width / 2),
         chipY: Math.round(rect.y + rect.height / 2),
       }
     })
 
     // ── WRITE phase ─────────────────────────────────────────────────────
-    for (const { side, negative, label, bandRect, chipX, chipY } of placements) {
-      const band = layer.querySelector<HTMLElement>(`[data-spacing-band="${side}"]`)
+    for (const { key, negative, label, bandRect, showChip, chipX, chipY } of placements) {
+      const band = layer.querySelector<HTMLElement>(`[data-spacing-band="${key}"]`)
       positionOverlayElement(band, bandRect)
       // The negative tint is a data attribute, not a class swap: the RAF tick
       // owns this element imperatively and the CSS keys off the attribute.
@@ -126,8 +160,12 @@ export function SpacingHighlightOverlay({
           else band.removeAttribute('data-negative')
         }
       }
-      const chip = layer.querySelector<HTMLElement>(`[data-spacing-chip="${side}"]`)
+      const chip = layer.querySelector<HTMLElement>(`[data-spacing-chip="${key}"]`)
       if (!chip) continue
+      if (!showChip) {
+        if (chip.style.display !== 'none') chip.style.display = 'none'
+        continue
+      }
       const chipFlag = negative ? 'true' : null
       if (chip.getAttribute('data-negative') !== chipFlag) {
         if (chipFlag) chip.setAttribute('data-negative', chipFlag)
@@ -159,7 +197,7 @@ export function SpacingHighlightOverlay({
     }
   }, [active, iframeElement])
 
-  if (!active || !highlight) return null
+  if (!active) return null
 
   return createPortal(
     <div
@@ -168,18 +206,19 @@ export function SpacingHighlightOverlay({
       data-canvas-spacing-overlay-mode={mode}
       aria-hidden="true"
     >
-      {highlight.sides.map((side) => (
+      {targets.map(({ box, side }) => (
         <div
-          key={`band-${side}`}
-          data-spacing-band={side}
-          className={cn(
-            styles.band,
-            highlight.box === 'margin' ? styles.marginBand : styles.paddingBand,
-          )}
+          key={`band-${box}-${side}`}
+          data-spacing-band={`${box}-${side}`}
+          className={cn(styles.band, box === 'margin' ? styles.marginBand : styles.paddingBand)}
         />
       ))}
-      {highlight.sides.map((side) => (
-        <div key={`chip-${side}`} data-spacing-chip={side} className={styles.chip} />
+      {targets.map(({ box, side }) => (
+        <div
+          key={`chip-${box}-${side}`}
+          data-spacing-chip={`${box}-${side}`}
+          className={styles.chip}
+        />
       ))}
     </div>,
     portalTarget,

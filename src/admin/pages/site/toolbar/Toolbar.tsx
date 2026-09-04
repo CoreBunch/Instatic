@@ -166,6 +166,7 @@ export function Toolbar({
       <header
         aria-label="Editor toolbar"
         data-testid="toolbar"
+        data-surface="chrome"
         className={styles.header}
       >
         {/* ── Left section ────────────────────────────────────────────────── */}

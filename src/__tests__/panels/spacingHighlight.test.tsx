@@ -13,11 +13,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { SpacingBoxControl } from '@site/panels/PropertiesPanel/SpacingBoxControl/SpacingBoxControl'
+import { SpacingOverlayToggle } from '@site/panels/PropertiesPanel/SpacingBoxControl/SpacingOverlayToggle'
 import { useEditorStore } from '@site/store/store'
 
 beforeEach(() => {
   localStorage.clear()
-  useEditorStore.setState({ spacingHighlight: null })
+  useEditorStore.setState({ spacingHighlight: null, spacingOverlayPinned: false })
 })
 afterEach(cleanup)
 
@@ -118,5 +119,23 @@ describe('SpacingBoxControl → spacingHighlight', () => {
     useEditorStore.getState().clearSelection()
 
     expect(useEditorStore.getState().spacingHighlight).toBeNull()
+  })
+
+  it('the "show all spacing" pin toggles the session flag and survives clearSelection', () => {
+    render(<SpacingOverlayToggle />)
+    const pin = screen.getByRole('button', { name: 'Show all spacing on the canvas' })
+    expect(pin.getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(pin)
+    expect(useEditorStore.getState().spacingOverlayPinned).toBe(true)
+    expect(pin.getAttribute('aria-pressed')).toBe('true')
+
+    // A way of LOOKING at elements, not a per-element edit: reselecting must
+    // not switch it off.
+    useEditorStore.getState().clearSelection()
+    expect(useEditorStore.getState().spacingOverlayPinned).toBe(true)
+
+    fireEvent.click(pin)
+    expect(useEditorStore.getState().spacingOverlayPinned).toBe(false)
   })
 })

@@ -40,18 +40,10 @@
        --bg-body (#0d0d0e) sidebar, one uniform tone with the toolbar and
        rails. The inner fades must blend into --bg-body accordingly. */
     --panel-fade-bg: var(--bg-body);
-    /* The panel stands on the chrome, not on a card, so every control inside
-       it drops one step down the ladder (docs/features/inspector-panel.md §9).
-       Remapping the surface/border tokens here — instead of restyling each
-       primitive — means Input, Select, Button, SegmentedControl and everything
-       else picks up the panel ramp with no per-component override.
-       Colour is one signal in this panel, so the three accents collapse into
-       --panel-accent: set-property dot, active tick, pressed toggle. */
-    --bg-surface-2: var(--panel-surface-2);
-    --bg-surface-3: var(--panel-surface-3);
-    --bg-surface-4: var(--panel-surface-4);
-    --border-subtle: var(--panel-line-subtle);
-    --border-muted: var(--panel-line-muted);
+    /* The surface ramp comes from the sidebar shell ([data-surface="chrome"],
+       docs/features/inspector-panel.md §9). What stays panel-specific: colour
+       is one signal here, so the three accents collapse into --panel-accent —
+       set-property dot, active tick, pressed toggle. */
     --accent-1: var(--panel-accent);
     --accent-2: var(--panel-accent);
     --accent-3: var(--panel-accent);

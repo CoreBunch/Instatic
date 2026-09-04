@@ -28,6 +28,7 @@
 
 import { useState } from 'react'
 import type { CSSPropertyBag } from '@core/page-tree'
+import { useEditorStore } from '@site/store/store'
 import { Button } from '@ui/components/Button'
 import { ControlRow } from '@ui/components/ControlRow'
 import { Select } from '@ui/components/Select'
@@ -35,7 +36,7 @@ import { PadlockGlyph } from '@ui/icons/inspectorGlyphs'
 import { TokenAwareInput } from '@site/property-controls/TokenAwareInput'
 import { useSpacingTokens } from '@site/property-controls/tokenUtils'
 import { ClassPropertyRow } from './ClassPropertyRow'
-import { hasStyleValue } from './styleValueUtils'
+import { hasStyleValue, stepCssLength } from './styleValueUtils'
 import styles from './SizeSection.module.css'
 
 // ---------------------------------------------------------------------------
@@ -124,8 +125,11 @@ export function SizeSection({
   onPreview,
   onClearPreview,
 }: SizeSectionProps) {
-  // Ratio lock is transient editing state, not CSS — it doesn't persist.
-  const [linked, setLinked] = useState(false)
+  // Ratio lock is transient editing state, not CSS — it doesn't persist. It
+  // lives in the store (per selection) because the canvas resize handles
+  // honour it too: a locked element keeps its proportions when dragged.
+  const linked = useEditorStore((s) => s.sizeRatioLocked)
+  const setLinked = useEditorStore((s) => s.setSizeRatioLocked)
   // Modes chosen while the dimension has no convertible value yet (e.g.
   // "Relative" picked on an unset width) — the next typed number honours it.
   const [modeOverride, setModeOverride] = useState<Partial<Record<Dimension, SizeMode>>>({})
@@ -148,15 +152,15 @@ export function SizeSection({
     heightNumeric.n !== 0 &&
     widthNumeric.unit === heightNumeric.unit
 
-  function commitDimension(dimension: Dimension, raw: string | undefined) {
-    setModeOverride((current) => ({ ...current, [dimension]: undefined }))
-    if (raw === undefined || raw.trim() === '') {
-      onRemove(dimension)
-      return
-    }
+  /**
+   * What a typed value means for the box: the bare number gets the unit the
+   * active mode implies (anything with an explicit unit / token / function
+   * passes through untouched), and while the ratio is locked the other
+   * dimension scales with it. One resolver for commit AND preview, so the
+   * canvas shows the locked pair while typing, not only after the blur.
+   */
+  function resolveDimension(dimension: Dimension, raw: string): Partial<CSSPropertyBag> {
     let next = raw.trim()
-    // Bare numbers get the unit the active mode implies; anything with an
-    // explicit unit / token / function passes through untouched.
     if (/^-?\d*\.?\d+$/.test(next)) {
       const mode = modeOverride[dimension] ?? detectMode(currentStyles[dimension])
       next =
@@ -174,19 +178,31 @@ export function SizeSection({
       const otherCurrent = dimension === 'width' ? heightNumeric : widthNumeric
       if (parsedNext && selfCurrent && otherCurrent && parsedNext.unit === selfCurrent.unit) {
         const scaled = roundValue((otherCurrent.n * parsedNext.n) / selfCurrent.n)
-        onChangeMany({ [dimension]: next, [other]: `${scaled}${otherCurrent.unit}` })
-        return
+        return { [dimension]: next, [other]: `${scaled}${otherCurrent.unit}` }
       }
     }
-    onChange(dimension, next)
+    return { [dimension]: next }
   }
 
-  /** ▲▼ on a dimension field steps its numeric part, keeping the unit. */
-  function stepDimension(dimension: Dimension, delta: number) {
-    const parsed = parseNumeric(currentStyles[dimension])
-    // `auto` / `fit-content` / `calc(…)` have no number to step.
-    if (!parsed) return
-    commitDimension(dimension, `${roundValue(parsed.n + delta)}${parsed.unit}`)
+  function commitDimension(dimension: Dimension, raw: string | undefined) {
+    setModeOverride((current) => ({ ...current, [dimension]: undefined }))
+    if (raw === undefined || raw.trim() === '') {
+      onRemove(dimension)
+      return
+    }
+    const patch = resolveDimension(dimension, raw)
+    if (Object.keys(patch).length > 1) onChangeMany(patch)
+    else onChange(dimension, patch[dimension])
+  }
+
+  function previewDimension(dimension: Dimension, raw: string | number | undefined) {
+    if (!onPreview) return
+    const text = raw === undefined ? '' : String(raw)
+    if (text.trim() === '') {
+      onPreview({ [dimension]: null } as Partial<CSSPropertyBag>)
+      return
+    }
+    onPreview(resolveDimension(dimension, text))
   }
 
   function applyMode(dimension: Dimension, mode: SizeMode) {
@@ -226,7 +242,7 @@ export function SizeSection({
               : 'Ratio lock needs numeric width and height in the same unit'
           }
           disabled={!linkable && !linked}
-          onClick={() => setLinked((current) => !current)}
+          onClick={() => setLinked(!linked)}
         >
           <PadlockGlyph locked={linked} />
         </Button>
@@ -237,9 +253,8 @@ export function SizeSection({
           modeOverride={modeOverride.width}
           tokens={spacingTokens}
           onCommit={commitDimension}
-          onStep={stepDimension}
           onModeChange={applyMode}
-          onPreview={previewProperty}
+          onPreview={onPreview ? previewDimension : undefined}
           onClearPreview={onClearPreview}
         />
         <DimensionRow
@@ -249,9 +264,8 @@ export function SizeSection({
           modeOverride={modeOverride.height}
           tokens={spacingTokens}
           onCommit={commitDimension}
-          onStep={stepDimension}
           onModeChange={applyMode}
-          onPreview={previewProperty}
+          onPreview={onPreview ? previewDimension : undefined}
           onClearPreview={onClearPreview}
         />
       </div>
@@ -287,9 +301,9 @@ interface DimensionRowProps {
   modeOverride: SizeMode | undefined
   tokens: ReturnType<typeof useSpacingTokens>
   onCommit: (dimension: Dimension, raw: string | undefined) => void
-  onStep: (dimension: Dimension, delta: number) => void
   onModeChange: (dimension: Dimension, mode: SizeMode) => void
-  onPreview?: (property: keyof CSSPropertyBag, value: string | number | undefined) => void
+  /** Live preview of this row's own dimension (the section resolves unit + ratio). */
+  onPreview?: (dimension: Dimension, value: string | number | undefined) => void
   onClearPreview?: () => void
 }
 
@@ -300,7 +314,6 @@ function DimensionRow({
   modeOverride,
   tokens,
   onCommit,
-  onStep,
   onModeChange,
   onPreview,
   onClearPreview,
@@ -326,7 +339,9 @@ function DimensionRow({
           placeholder={placeholder}
           tokens={tokens}
           onCommit={(resolved) => onCommit(dimension, resolved)}
-          onStep={(delta) => onStep(dimension, delta)}
+          // `auto` / `fit-content` / `calc(…)` have no number to step — the
+          // math returns undefined and the field simply does not move.
+          stepValue={(current, delta) => stepCssLength(current, delta)}
           onPreview={onPreview ? (resolved) => onPreview(dimension, resolved) : undefined}
           onClearPreview={onClearPreview}
         />

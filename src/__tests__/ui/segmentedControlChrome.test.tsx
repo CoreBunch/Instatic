@@ -6,7 +6,7 @@ import { SegmentedControl } from '@ui/components/SegmentedControl'
 afterEach(cleanup)
 
 describe('SegmentedControl editor chrome variants', () => {
-  it('exposes a recessed active surface for dark panel tab strips', () => {
+  it('presses exactly the segment matching the value', () => {
     render(
       <SegmentedControl
         value="layers"
@@ -15,14 +15,13 @@ describe('SegmentedControl editor chrome variants', () => {
           { value: 'site', label: 'Site' },
         ]}
         onChange={() => {}}
-        activeSurface="recessed"
+        look="tiles"
         data-testid="segmented-control"
       />,
     )
 
-    const group = screen.getByTestId('segmented-control')
-    expect(group.getAttribute('data-active-surface')).toBe('recessed')
     expect(screen.getByRole('button', { name: 'Layers' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Site' }).getAttribute('aria-pressed')).toBe('false')
   })
 
   it('renders clearable segment content separately from its close overlay', () => {
@@ -44,7 +43,7 @@ describe('SegmentedControl editor chrome variants', () => {
     expect(content).not.toBe(clearOverlay)
   })
 
-  it('uses the recessed tab surface and top fade in Explorer Layers chrome', () => {
+  it('uses the tiles tab surface and top fade in Explorer Layers chrome', () => {
     const explorerSource = readFileSync('src/admin/pages/site/panels/ExplorerPanel/ExplorerPanel.tsx', 'utf8')
     const domPanelCss = readFileSync('src/admin/pages/site/panels/DomPanel/DomPanel.module.css', 'utf8')
     const leftSidebarCss = readFileSync(
@@ -52,7 +51,7 @@ describe('SegmentedControl editor chrome variants', () => {
       'utf8',
     )
 
-    expect(explorerSource).toContain('activeSurface="recessed"')
+    expect(explorerSource).toContain('look="tiles"')
     expect(domPanelCss).toContain('.searchRow::after')
     expect(domPanelCss).toContain('linear-gradient(180deg, var(--panel-fade-bg) 0%, transparent)')
     expect(leftSidebarCss).toContain('--panel-fade-bg: var(--bg-body)')

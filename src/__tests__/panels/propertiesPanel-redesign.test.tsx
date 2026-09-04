@@ -691,28 +691,9 @@ describe('StyleRuleComposer unset CSS property placeholders', () => {
 describe('ScopeGroup — one value for all, or one per part', () => {
   // inspector-panel.md §6.1: the first line never changes shape, and in
   // "parts" mode the linked field stays put and is REALLY disabled — not
-  // merely greyed, and never swapped out for the parts grid.
-  it('keeps the linked padding field mounted and disables it in per-side mode', () => {
-    const { nodeId, classIds } = loadSiteWithClasses(1)
-    const clsId = classIds[0]
-    useEditorStore.getState().updateClassStyles(clsId, { display: 'flex', paddingTop: '8px' })
-    selectNode(nodeId)
-    render(<PropertiesPanel />)
-
-    fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
-
-    const linked = screen.getByLabelText('Padding (all sides)') as HTMLInputElement
-    expect(linked.disabled).toBe(false)
-
-    fireEvent.click(screen.getByRole('button', { name: /each side separately/i }))
-
-    // Same field, still there, now inert — and the four side fields joined it.
-    const afterSwitch = screen.getByLabelText('Padding (all sides)') as HTMLInputElement
-    expect(afterSwitch.disabled).toBe(true)
-    expect(screen.getByLabelText('Padding top')).toBeTruthy()
-    expect(screen.getByLabelText('Padding left')).toBeTruthy()
-  })
-
+  // merely greyed, and never swapped out for the parts grid. Radius is the
+  // one row on ScopeGroup (the Layout padding row was removed — it doubled
+  // the Spacing box).
   it('keeps the linked radius field mounted and disables it in per-corner mode', () => {
     const { nodeId, classIds } = loadSiteWithClasses(1)
     const clsId = classIds[0]

@@ -79,6 +79,14 @@ export const LENGTH_PROPERTIES: ReadonlyMap<keyof CSSPropertyBag, LengthControlS
   ['columnGap', { units: SIZE_UNITS, keywords: [] }],
   ['outlineOffset', { units: TEXT_UNITS, keywords: [] }],
   ['letterSpacing', { units: TEXT_UNITS, keywords: ['normal'] }],
+  // Border widths: the popout's Width field and the generic rows share this
+  // spec, so a typed `4` can never be stored unitless (invalid CSS the
+  // browser drops silently — the "border does nothing" bug).
+  ['borderWidth', { units: TEXT_UNITS, keywords: [] }],
+  ['borderTopWidth', { units: TEXT_UNITS, keywords: [] }],
+  ['borderRightWidth', { units: TEXT_UNITS, keywords: [] }],
+  ['borderBottomWidth', { units: TEXT_UNITS, keywords: [] }],
+  ['borderLeftWidth', { units: TEXT_UNITS, keywords: [] }],
 ])
 
 // ---------------------------------------------------------------------------
