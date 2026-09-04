@@ -254,6 +254,8 @@ Folder routes (`/admin/api/cms/media/folders/...`) are matched **before** asset 
 
 Uploads initiated outside the Media page use the same pipeline. In particular, the Agent Panel's explicit **Save to Media** image action resolves the private chat image, wraps it in a MIME-correct `File`, and calls `uploadCmsMediaAsset`; it does not create an AI-specific storage route. On success, `mediaAssetEvents.ts` upserts the new row into an already-mounted Site → Media explorer while the normal media cache is primed for canvas consumers.
 
+The multipart body carries the `file` part and, optionally, an `altText` text part: Site Import sends the authored `<img alt>` so the record is created with it (`createMediaAsset` writes `alt_text`), instead of leaving every imported image blank for the user to back-fill. Every other upload omits it and the record starts empty.
+
 ```text
 POST /admin/api/cms/media
     │
@@ -288,7 +290,7 @@ mediaVariants.ts (host)    ← streams each returned variant through
 media_assets row created, variants_json populated for raster sources
 ```
 
-SVG uploads are sanitized and stored as originals only. GIF uploads also stay original-only so animation is preserved; the responsive WebP ladder is generated only for JPEG, PNG, and WebP uploads.
+SVG uploads are sanitized and stored as originals only. GIF uploads also stay original-only so animation is preserved; the responsive WebP ladder is generated for JPEG, PNG, WebP, and AVIF uploads.
 
 The ladder encodes one WebP per target width (64 / 320 / 640 / 1024 / 1600 / 2048) **below** the source's intrinsic width — never upscaled — plus one rung **at** the intrinsic width. That top rung exists so `srcset` can be built from variants alone: the original file (often a multi-MB PNG) never appears as a srcset candidate, because a high-DPI display asking for more pixels than the largest sub-intrinsic rung would otherwise select it (`sizes="1280px"` on a 2x screen requests 2560 device px). `buildMediaSrcset` (publisher) and `buildVariantSrcset` (admin surfaces) both enforce the variants-only rule at render time. The `sizes` attribute has no user knob: the publisher's `resolveAutoSizes` (`src/core/publisher/sizesResolver.ts`) derives it from the layout it generates the CSS for — pixel caps, `%`/`vw` widths, px paddings, and grid column tracks all compose into exact CSS math per viewport tier (e.g. `(max-width: 375px) 100vw, min(33.33vw - 16px, 410.67px)`); constructs it can't model (flex rows, auto-fit grids) degrade to the container width, which only ever over-fetches, never blurs. Lazy images prefix the `auto` keyword so Chromium-based browsers select by the actual rendered width.
 

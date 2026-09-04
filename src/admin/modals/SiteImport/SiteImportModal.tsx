@@ -26,8 +26,9 @@
 // modules itself rather than rely on the site editor's chunk having loaded.
 // This rides the modal's own lazy chunk; it adds nothing to the shell bundle.
 import '@modules/base'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { nanoid } from 'nanoid'
+import { isAbortError } from '@core/http'
 import { Dialog } from '@ui/components/Dialog'
 import { pushToast } from '@ui/components/Toast'
 import {
@@ -49,7 +50,16 @@ import { CmsBundleConflictsStep } from './steps/CmsBundleConflictsStep'
 import { ConflictsStep } from './steps/ConflictsStep'
 import { ImportStep } from './steps/ImportStep'
 import { SiteImportFooter } from './SiteImportFooter'
-import { makeInitialRunProgress, type RunProgress } from './shared/importProgress'
+import {
+  importNeedsAttention,
+  makeCmsRunDoneProgress,
+  makeCmsRunProgress,
+  makeInitialRunProgress,
+  makeStaticRunDoneProgress,
+  makeStaticRunProgress,
+  type CmsRunTotals,
+  type RunProgress,
+} from './shared/importProgress'
 import { createSiteImportAdapter } from './shared/createSiteImportAdapter'
 import { describeCmsBundleLoadError, useCmsBundleImport } from './shared/useCmsBundleImport'
 import {
@@ -133,6 +143,9 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [logOpen, setLogOpen] = useState(false)
+  // Cancellation handle for the active static run. Aborting stops queued and
+  // in-flight uploads and prevents the store commit and draft save.
+  const runAbortRef = useRef<AbortController | null>(null)
 
   const siteName = useEditorStore((s) => s.site?.name) ?? 'this site'
 
@@ -340,31 +353,13 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   ) {
     const resolvedPlan = buildResolvedPlan(planToRun, pageResMap, ruleResMap, tokenResMap, crossSheetResolutions)
 
-    // Totals come from the plan being committed. Media is the only genuinely
-    // incremental phase (per-asset uploads); everything else lands in one atomic
-    // commit, so those rows flip pending → done together once it completes.
-    const initial = makeInitialRunProgress()
-    initial.phase = 'uploading'
-    initial.categories = {
-      pages: { done: 0, total: resolvedPlan.pages.length },
-      // Kept stylesheet files count alongside converted rules — one "styles" row.
-      styles: { done: 0, total: resolvedPlan.styleRules.length + resolvedPlan.stylesheets.length },
-      media: { done: 0, total: resolvedPlan.assets.length },
-      colors: { done: 0, total: resolvedPlan.colors.length },
-      fonts: {
-        done: 0,
-        total: resolvedPlan.fonts.length + resolvedPlan.googleFonts.length + resolvedPlan.fontTokens.length,
-      },
-      scripts: { done: 0, total: resolvedPlan.scripts.length },
-      site: { done: 0, total: 0 },
-      rows: { done: 0, total: 0 },
-      mediaFolders: { done: 0, total: 0 },
-      redirects: { done: 0, total: 0 },
-    }
     setLogOpen(false)
     setResult(null)
-    setRunProgress(initial)
+    setRunProgress(makeStaticRunProgress(resolvedPlan))
     setStep('run')
+
+    const abortController = new AbortController()
+    runAbortRef.current = abortController
 
     const adapter = createSiteImportAdapter({
       sessionId: nanoid(),
@@ -394,81 +389,60 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     })
 
     try {
-      const importResult = await commitImportPlan(resolvedPlan, adapter)
+      const importResult = await commitImportPlan(resolvedPlan, adapter, {
+        signal: abortController.signal,
+      })
       setRunProgress((prev) => ({
         ...prev,
         phase: 'applying',
         currentItem: 'Saving imported draft…',
       }))
       await saveImportedDraftSite()
-      // Reconcile every category to what was actually committed — skipped pages
-      // or rules (conflict resolutions) leave fewer than the planned totals.
-      setRunProgress((prev) => ({
-        ...prev,
-        phase: 'done',
-        currentItem: '',
-        categories: {
-          pages: { done: importResult.pages.length, total: importResult.pages.length },
-          styles: {
-            done: importResult.styleRules.length + importResult.stylesheets.length,
-            total: importResult.styleRules.length + importResult.stylesheets.length,
-          },
-          media: { done: importResult.assets.length, total: importResult.assets.length },
-          colors: { done: importResult.colors.length, total: importResult.colors.length },
-          fonts: {
-            done: importResult.fonts.length + importResult.fontTokens.length,
-            total: importResult.fonts.length + importResult.fontTokens.length,
-          },
-          scripts: { done: importResult.scripts.length, total: importResult.scripts.length },
-          site: { done: 0, total: 0 },
-          rows: { done: 0, total: 0 },
-          mediaFolders: { done: 0, total: 0 },
-          redirects: { done: 0, total: 0 },
-        },
-      }))
+      const doneProgress = makeStaticRunDoneProgress(resolvedPlan, importResult)
+      setRunProgress(doneProgress)
       setResult(importResult)
+      // A run that lost uploads or references is not a clean success: say so,
+      // and open the log so the affected paths are on screen without a click.
+      const needsAttention = importNeedsAttention(doneProgress, importResult)
+      setLogOpen(needsAttention)
+      const media = doneProgress.categories.media
+      const mediaSummary = media.done < media.total
+        ? `${media.done} of ${media.total} assets uploaded`
+        : `${media.done} assets`
       pushToast({
-        kind: 'success',
-        title: 'Site imported',
-        body: `${importResult.pages.length} pages · ${importResult.styleRules.length} style rules · ${importResult.assets.length} assets`,
+        kind: needsAttention ? 'warning' : 'success',
+        title: needsAttention ? 'Site imported with warnings' : 'Site imported',
+        body: `${importResult.pages.length} pages · ${importResult.styleRules.length} style rules · ${mediaSummary}`,
         location: 'site-workspace',
       })
     } catch (err) {
+      // A cancelled run already closed the modal and toasted from
+      // handleRunCancel — it is not a failure.
+      if (isAbortError(err)) return
       console.error('[SiteImportModal] commit failed:', err)
       const msg = getErrorMessage(err, 'Unknown import error')
       setRunProgress((prev) => ({ ...prev, phase: 'failed', currentItem: '', errorMessage: msg }))
       pushToast({ kind: 'error', title: 'Import failed', body: msg })
+    } finally {
+      if (runAbortRef.current === abortController) runAbortRef.current = null
     }
   }
 
   async function kickOffCmsRun(selectionToImport: BundleImportSelection) {
     if (!cmsBundleState) return
 
-    const rowCount = selectedCmsRowCount(selectionToImport, cmsBundleState.bundle)
-    const mediaCount = selectedCmsMediaCount(selectionToImport, cmsBundleState.bundle.media?.length ?? 0)
-    const mediaFolderCount = selectedCmsMediaFolderCount(selectionToImport, cmsBundleState.bundle)
-    const redirectCount = selectedCmsRedirectCount(selectionToImport, cmsBundleState.bundle)
-    const siteCount = selectionToImport.includeSite && cmsBundleState.bundle.site ? 1 : 0
+    const totals: CmsRunTotals = {
+      site: selectionToImport.includeSite && cmsBundleState.bundle.site ? 1 : 0,
+      rows: selectedCmsRowCount(selectionToImport, cmsBundleState.bundle),
+      media: selectedCmsMediaCount(selectionToImport, cmsBundleState.bundle.media?.length ?? 0),
+      mediaFolders: selectedCmsMediaFolderCount(selectionToImport, cmsBundleState.bundle),
+      redirects: selectedCmsRedirectCount(selectionToImport, cmsBundleState.bundle),
+    }
 
     setLogOpen(false)
     setResult(null)
     setCmsResult(null)
-    setRunProgress({
-      phase: 'applying',
-      currentItem: 'Importing site bundle…',
-      categories: {
-        pages: { done: 0, total: 0 },
-        styles: { done: 0, total: 0 },
-        colors: { done: 0, total: 0 },
-        fonts: { done: 0, total: 0 },
-        scripts: { done: 0, total: 0 },
-        site: { done: 0, total: siteCount },
-        rows: { done: 0, total: rowCount },
-        media: { done: 0, total: mediaCount },
-        mediaFolders: { done: 0, total: mediaFolderCount },
-        redirects: { done: 0, total: redirectCount },
-      },
-    })
+    setRunProgress(makeCmsRunProgress(totals))
     setStep('run')
 
     try {
@@ -477,22 +451,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
         setStep('analyze')
         return
       }
-      setRunProgress({
-        phase: 'done',
-        currentItem: '',
-        categories: {
-          pages: { done: 0, total: 0 },
-          styles: { done: 0, total: 0 },
-          colors: { done: 0, total: 0 },
-          fonts: { done: 0, total: 0 },
-          scripts: { done: 0, total: 0 },
-          site: { done: siteCount, total: siteCount },
-          rows: { done: importResult.rowsInserted + importResult.rowsReplaced + importResult.rowsSkipped, total: rowCount },
-          media: { done: importResult.mediaImported, total: mediaCount },
-          mediaFolders: { done: importResult.mediaFoldersImported, total: mediaFolderCount },
-          redirects: { done: importResult.redirectsImported, total: redirectCount },
-        },
-      })
+      setRunProgress(makeCmsRunDoneProgress(totals, importResult))
       setCmsResult(importResult)
     } catch (err) {
       const msg = getErrorMessage(err, 'Unknown import error')
@@ -505,11 +464,28 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   function handleClose() {
     if (runProgress.phase === 'applying') return // uncancellable during commit
     if (cmsBundleState?.importing) return
+    if (step === 'run' && runProgress.phase === 'uploading') {
+      // Closing mid-upload (X, Escape, backdrop) is a cancel, not a detach —
+      // otherwise the run keeps uploading and commits after the UI is gone.
+      handleRunCancel()
+      return
+    }
     closeModal()
   }
 
   function handleRunCancel() {
-    // During upload phase we can close (orphaned assets are harmless per spec).
+    // Only the upload phase is cancellable — the store commit is one atomic
+    // mutation, so the footer disables Cancel once 'applying' starts.
+    runAbortRef.current?.abort()
+    runAbortRef.current = null
+    const uploaded = runProgress.categories.media.done
+    pushToast({
+      kind: 'info',
+      title: 'Import cancelled',
+      body: uploaded > 0
+        ? `Nothing was imported. ${uploaded} ${uploaded === 1 ? 'file' : 'files'} already uploaded ${uploaded === 1 ? 'stays' : 'stay'} in the Media Library.`
+        : 'Nothing was imported.',
+    })
     closeModal()
   }
 

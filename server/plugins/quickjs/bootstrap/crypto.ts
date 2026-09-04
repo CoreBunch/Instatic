@@ -1,11 +1,20 @@
 /**
- * WebCrypto-compatible crypto.subtle shim evaluated inside every plugin
- * QuickJS VM.
+ * WebCrypto-compatible crypto shim evaluated inside every plugin QuickJS VM.
  *
  * Exposed surface: crypto.subtle.digest, crypto.subtle.importKey (raw HMAC),
- * and crypto.subtle.sign (HMAC). Bytes cross the host bridge as base64
- * strings via __hostCall('crypto.digest') / __hostCall('crypto.signHmac').
+ * crypto.subtle.sign (HMAC), plus crypto.getRandomValues and
+ * crypto.randomUUID. Digest/HMAC bytes cross the host bridge as base64
+ * strings via __hostCall('crypto.digest') / __hostCall('crypto.signHmac');
+ * entropy uses the synchronous __hostRandomBytes bridge instead, because
+ * getRandomValues is synchronous by spec and __hostCall returns a Promise.
  */
+
+/**
+ * Per-call entropy ceiling, shared by the VM shim and the host function so
+ * both agree on one bound. Matches the WebCrypto quota for
+ * `crypto.getRandomValues`, which throws QuotaExceededError above 65536 bytes.
+ */
+export const CRYPTO_RANDOM_BYTES_MAX = 65536
 
 export const CRYPTO_SUBTLE_SHIM = `// ------- crypto.subtle — WebCrypto-compatible shim --------------------------
 // Storage / auth plugins need SHA-256 + HMAC-SHA256 (AWS Sigv4, JWT signing,
@@ -137,6 +146,89 @@ globalThis.crypto.subtle = {
     const bytes = __base64ToBytes(String(sigBase64));
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   },
+};
+
+`
+
+/**
+ * CSPRNG shim — `crypto.getRandomValues` and `crypto.randomUUID`.
+ *
+ * Must be evaluated after BASE64_SHIM (uses `__base64ToBytes`) and it augments
+ * whatever `globalThis.crypto` already exists rather than replacing it, so the
+ * ordering against CRYPTO_SUBTLE_SHIM does not matter.
+ *
+ * Without this, `Math.random` and `Date` were the only entropy in the sandbox,
+ * so a plugin minting a bearer token, nonce, invitation code or one-time link
+ * had no safe way to do it on the server.
+ */
+export const CRYPTO_RANDOM_SHIM = `// ------- crypto.getRandomValues / crypto.randomUUID -------------------------
+// Entropy comes from the host's CSPRNG through the SYNCHRONOUS
+// __hostRandomBytes bridge (base64 in, bytes out). getRandomValues is
+// synchronous by spec, so it cannot use the Promise-returning __hostCall the
+// digest/HMAC paths use.
+var __CRYPTO_RANDOM_MAX = ${CRYPTO_RANDOM_BYTES_MAX};
+
+// QuickJS has no DOMException, so carry the spec's error \`name\` on a plain
+// Error. Plugins that branch on err.name still behave the same.
+function __cryptoNamedError(name, message) {
+  var err = new Error(message);
+  err.name = name;
+  return err;
+}
+
+// getRandomValues accepts only integer-typed views. Float and non-typed views
+// are a TypeMismatchError per spec. Named rather than instanceof-checked so a
+// missing BigInt64Array in the engine degrades to "unsupported", not a crash.
+var __CRYPTO_INTEGER_VIEWS = [
+  'Int8Array', 'Uint8Array', 'Uint8ClampedArray',
+  'Int16Array', 'Uint16Array',
+  'Int32Array', 'Uint32Array',
+  'BigInt64Array', 'BigUint64Array',
+];
+
+function __cryptoRandomBytes(count) {
+  if (count <= 0) return new Uint8Array(0);
+  return __base64ToBytes(__hostRandomBytes(count));
+}
+
+globalThis.crypto = globalThis.crypto || {};
+
+globalThis.crypto.getRandomValues = function getRandomValues(array) {
+  if (!array || typeof array !== 'object' || !ArrayBuffer.isView(array)) {
+    throw __cryptoNamedError('TypeMismatchError', 'getRandomValues expects an integer-typed TypedArray.');
+  }
+  var kind = array.constructor && array.constructor.name;
+  if (__CRYPTO_INTEGER_VIEWS.indexOf(kind) < 0) {
+    throw __cryptoNamedError('TypeMismatchError', 'getRandomValues does not support ' + String(kind) + '.');
+  }
+  if (array.byteLength > __CRYPTO_RANDOM_MAX) {
+    throw __cryptoNamedError(
+      'QuotaExceededError',
+      'getRandomValues supports at most ' + __CRYPTO_RANDOM_MAX + ' bytes per call.',
+    );
+  }
+  if (array.byteLength === 0) return array;
+  // Fill through a byte view so the element width of the caller's array is
+  // irrelevant — the spec fills the underlying bytes.
+  var bytes = __cryptoRandomBytes(array.byteLength);
+  new Uint8Array(array.buffer, array.byteOffset, array.byteLength).set(bytes);
+  return array;
+};
+
+var __CRYPTO_HEX = '0123456789abcdef';
+
+globalThis.crypto.randomUUID = function randomUUID() {
+  var b = __cryptoRandomBytes(16);
+  // RFC 9562 §5.4: version 4 in the high nibble of octet 6, variant 10 in the
+  // top two bits of octet 8.
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  var out = '';
+  for (var i = 0; i < 16; i++) {
+    if (i === 4 || i === 6 || i === 8 || i === 10) out += '-';
+    out += __CRYPTO_HEX[b[i] >> 4] + __CRYPTO_HEX[b[i] & 0x0f];
+  }
+  return out;
 };
 
 `

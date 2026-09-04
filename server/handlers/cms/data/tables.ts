@@ -39,8 +39,8 @@ import {
 import { normalizeDataTableFields } from '@core/data/fields'
 import { slugForTable } from '@core/data/cells'
 import { slugFromTitle } from '@core/utils/slug'
-import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { fetchPublishedDataRowItems } from '@core/loops/sources/dataRows'
+import { parseCellFilter } from '@core/loops/cellFilter'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../../http'
 import { CMS_API_PREFIX, requestAuditContext } from '../shared'
 import {
@@ -86,7 +86,7 @@ function buildTablePatch(
     update.slug = slug
   }
   if (body.routeBase !== undefined) {
-    update.routeBase = normalizeRouteBase(body.routeBase.trim())
+    update.routeBase = body.routeBase
   }
   if (body.singularLabel !== undefined) {
     if (!body.singularLabel.trim()) return { error: 'Singular label is required' }
@@ -210,13 +210,12 @@ async function handleTablesCollection(req: Request, db: DbClient): Promise<Respo
     const singularLabel = body.singularLabel?.trim() || name.replace(/s$/i, '') || name
     const pluralLabel = body.pluralLabel?.trim() || name
     const slug = slugFromTitle(body.slug?.trim() || pluralLabel)
-    const routeBase = normalizeRouteBase(body.routeBase?.trim() || slug)
 
     const table = await createDataTable(db, {
       name,
       slug,
       kind: body.kind === 'postType' ? 'postType' : 'data',
-      routeBase,
+      routeBase: body.routeBase,
       singularLabel,
       pluralLabel,
       primaryFieldId: body.primaryFieldId?.trim() || undefined,
@@ -302,6 +301,9 @@ async function handleTableRows(
   if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
 
   if (req.method === 'GET') {
+    // A broad content.* capability satisfies requireDataAccess, but reading a
+    // system table's rows still needs data.system.tables.read (GHSA-x69h).
+    if (!canReadTable(user, table)) return jsonResponse({ error: 'Table not found' }, { status: 404 })
     const visibility = canSeeAllDataRows(user) ? {} : { ownerUserId: user.id }
     return jsonResponse({ rows: await listDataRows(db, tableId, visibility) })
   }
@@ -384,12 +386,21 @@ async function handleTableLoopPreview(
   const rawOffset = Number.parseInt(url.searchParams.get('offset') ?? '0', 10)
   const offset = Math.max(Number.isFinite(rawOffset) ? rawOffset : 0, 0)
 
+  // The canvas preview must apply the loop's cell condition too, or the
+  // editor shows rows the published page will not.
+  const cellFilter = parseCellFilter({
+    cellField: url.searchParams.get('cellField') ?? '',
+    cellOperator: url.searchParams.get('cellOperator') ?? '',
+    cellValue: url.searchParams.get('cellValue') ?? '',
+  })
+
   const result = await fetchPublishedDataRowItems(db, {
     tableId,
     orderBy,
     direction,
     limit,
     offset,
+    cellFilter,
   })
   return jsonResponse(result)
 }

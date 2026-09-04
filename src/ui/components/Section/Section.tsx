@@ -12,6 +12,7 @@
 import { useState } from "react";
 import type { IconComponent } from "pixel-art-icons/types";
 import { cn } from "@ui/cn";
+import { ChevronDown2Icon } from "pixel-art-icons/icons/chevron-down-2";
 import styles from "./Section.module.css";
 
 interface SectionProps {
@@ -32,6 +33,12 @@ interface SectionProps {
    * for inter-section spacing (Data inspector) leave this off.
    */
   flush?: boolean;
+  /**
+   * Render a trailing chevron that flips with the open state — for standalone
+   * accordions (dialog "Advanced" areas) where the disclosure affordance isn't
+   * carried by the surrounding panel pattern. Inspector panels leave this off.
+   */
+  chevron?: boolean;
 }
 
 export function Section({
@@ -45,6 +52,7 @@ export function Section({
   headerAction,
   forceOpen = false,
   flush = false,
+  chevron = false,
 }: SectionProps) {
   const [open, setOpen] = useState(defaultOpen);
   const expanded = forceOpen || open;
@@ -78,6 +86,14 @@ export function Section({
             )}
           </span>
           {meta && <span className={styles.sectionMeta}>{meta}</span>}
+          {chevron && (
+            <span
+              className={cn(styles.sectionChevron, expanded && styles.sectionChevronOpen)}
+              aria-hidden="true"
+            >
+              <ChevronDown2Icon size={11} />
+            </span>
+          )}
         </button>
         {headerAction && (
           <span className={styles.sectionHeaderAction}>{headerAction}</span>

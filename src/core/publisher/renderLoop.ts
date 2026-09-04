@@ -20,7 +20,8 @@ import {
   type LoopItem,
 } from '@core/loops'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
-import { resolveHtmlTag } from '@modules/base/utils/htmlTag'
+import { resolveHtmlTag } from '@core/htmlAttributes'
+import { htmlAttributesAttr } from './htmlAttributesEmit'
 import { injectNodeClassIds, injectNodeId, injectNodeInlineStyles } from './classInjection'
 import { escapeHtml } from './utils'
 import type { RenderConfig, RenderAccumulators, RenderNodeFn } from './renderConfig'
@@ -117,7 +118,12 @@ export function renderLoop(
     acc.infiniteLoopIds.add(loopId)
   }
 
-  // Wrapper element — author-selectable via the shared htmlTag helper
+  // Author attributes — normalised, escaped, and filtered by the shared
+  // sanitiser, which reserves the `data-instatic-*` prefix so the loop's own
+  // bookkeeping above can't be redirected from the attributes panel.
+  attrs += htmlAttributesAttr(props.htmlAttributes)
+
+  // Wrapper element — author-selectable via the shared tag controls
   // (defaults to 'div'). `resolveHtmlTag` always returns a safe lowercase
   // tag name, so it's already escape-safe for interpolation.
   const tag = resolveHtmlTag(props.tag, props.customTag)

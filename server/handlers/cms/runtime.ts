@@ -12,6 +12,9 @@
  *        iframe. Read-floor capability is correct here: anyone who can
  *        open the site editor can preview the draft they posted.
  *
+ *   POST /admin/api/cms/runtime/validate — compile every enabled draft
+ *        script and return file/line diagnostics without publishing.
+ *
  * Both endpoints accept the draft site in the request body rather than
  * loading the persisted draft — preview must reflect unsaved edits.
  */
@@ -21,6 +24,7 @@ import { resolveSiteDependencyLock } from '../../publish/runtime/dependencyResol
 import { ensureRuntimeDependencyCache } from '../../publish/runtime/dependencyCache'
 import { buildRuntimePackageImportmap } from '../../publish/runtime/packageImportmap'
 import { buildRuntimePreviewDocument } from '../../publish/runtime/previewRuntime'
+import { buildSiteRuntimeScripts } from '../../publish/runtime/bundleScripts'
 import { validateSite, validatePages, validateVisualComponents, SiteValidationError } from '@core/persistence/validate'
 import { isSafePackageName } from '@core/site-dependencies/packageNames'
 import type { SitePackageJson } from '@core/site-dependencies/manifest'
@@ -82,6 +86,29 @@ function runtimeRequestPackageJson(raw: unknown): SitePackageJson {
   }
 }
 
+function runtimeRequestSite(raw: Record<string, unknown>): SiteDocument {
+  const shell: SiteShell = validateSite(raw)
+  const rawPages = Array.isArray(raw.pages) ? raw.pages : []
+  const rawVCs = Array.isArray(raw.visualComponents) ? raw.visualComponents : []
+  const parsedVCs = rawVCs.flatMap((value) => {
+    const visualComponent = parseVisualComponent(value)
+    return visualComponent ? [visualComponent] : []
+  })
+  const visualComponents = validateVisualComponents(parsedVCs)
+  const pages = validatePages(shell, rawPages, visualComponents, {
+    storedVcIds: new Set(parsedVCs.map((visualComponent) => visualComponent.id)),
+  })
+  // Saved layouts are editor-only; script compilation never reads them.
+  return { ...shell, pages, visualComponents, layouts: [] }
+}
+
+async function runtimeDependencyCache(site: SiteDocument) {
+  const runtime = normalizeSiteRuntimeConfig(site.runtime)
+  return Object.keys(runtime.dependencyLock.packages).length > 0
+    ? await ensureRuntimeDependencyCache(runtime.dependencyLock)
+    : undefined
+}
+
 export async function handleRuntimeRoutes(req: Request, db: DbClient): Promise<Response | null> {
   const url = new URL(req.url)
 
@@ -131,6 +158,33 @@ export async function handleRuntimeRoutes(req: Request, db: DbClient): Promise<R
     }
   }
 
+  if (url.pathname === '/admin/api/cms/runtime/validate') {
+    const user = await requireCapability(req, db, 'site.read')
+    if (user instanceof Response) return user
+    if (req.method !== 'POST') return methodNotAllowed()
+
+    const RuntimeValidationBodySchema = Type.Object({
+      site: Type.Record(Type.String(), Type.Unknown()),
+    })
+    const body = await readValidatedBody(req, RuntimeValidationBodySchema)
+    if (!body) return badRequest('Invalid request body')
+
+    try {
+      const site = runtimeRequestSite(body.site)
+      const build = await buildSiteRuntimeScripts({
+        site,
+        target: 'publish',
+        assetBasePath: '/_instatic/runtime-validation/',
+        dependencyCache: await runtimeDependencyCache(site),
+        scriptSelection: 'all-enabled',
+      })
+      return jsonResponse({ diagnostics: build.diagnostics })
+    } catch (err) {
+      if (err instanceof SiteValidationError) return badRequest(err.message)
+      return badRequest(getErrorMessage(err, 'Runtime script validation failed'))
+    }
+  }
+
   if (url.pathname === '/admin/api/cms/runtime/preview') {
     // Preview is a render — the right gate is the read floor for the site
     // editor, not page-metadata edit. A Designer holding `site.style.edit`
@@ -162,37 +216,16 @@ export async function handleRuntimeRoutes(req: Request, db: DbClient): Promise<R
     if (!pageId) return badRequest('Missing pageId')
 
     try {
-      const shell: SiteShell = validateSite(body.site)
-      // The editor sends the full in-memory SiteDocument (shell + pages + VCs).
-      // Parse each component separately so validateVisualComponents can run.
-      const rawPages = Array.isArray(body.site.pages) ? body.site.pages : []
-      const rawVCs = Array.isArray(body.site.visualComponents) ? body.site.visualComponents : []
-      const parsedVCs = rawVCs.flatMap((raw) => {
-        const vc = parseVisualComponent(raw)
-        return vc ? [vc] : []
-      })
-      const visualComponents = validateVisualComponents(parsedVCs)
-      // Strip page VC-refs only against ids present in the submitted roster, so
-      // a deduped/de-cycled VC does not strip authored slot content from the
-      // preview render (ISS-016).
-      const pages = validatePages(shell, rawPages, visualComponents, {
-        storedVcIds: new Set(parsedVCs.map((vc) => vc.id)),
-      })
-      // Saved layouts are editor-only; preview rendering ignores them.
-      const site: SiteDocument = { ...shell, pages, visualComponents, layouts: [] }
+      const site = runtimeRequestSite(body.site)
       const page = resolvePreviewPage(site, pageId)
       if (!page) return jsonResponse({ error: 'Page not found' }, { status: 404 })
 
-      const runtime = normalizeSiteRuntimeConfig(site.runtime)
-      const dependencyCache = Object.keys(runtime.dependencyLock.packages).length > 0
-        ? await ensureRuntimeDependencyCache(runtime.dependencyLock)
-        : undefined
       const preview = await buildRuntimePreviewDocument({
         site,
         page,
         registry,
         assetBasePath: '/_instatic/preview/runtime/',
-        dependencyCache,
+        dependencyCache: await runtimeDependencyCache(site),
         breakpointId,
         templateContext,
         db,

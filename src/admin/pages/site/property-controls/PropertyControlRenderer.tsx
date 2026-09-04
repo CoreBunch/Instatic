@@ -36,7 +36,7 @@ import { UrlControl } from './UrlControl'
 import { SvgControl } from './SvgControl'
 import { DataTableControl } from './DataTableControl'
 import { DynamicBindingControl } from './DynamicBindingControl'
-import { getDynamicBindingMode } from './bindingCompatibility'
+import { getDynamicBindingMode } from '@admin/shared/DataBindingPicker/bindingCompatibility'
 import { cn } from '@ui/cn'
 import styles from './controls.module.css'
 

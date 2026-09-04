@@ -14,6 +14,42 @@ import type {
 afterEach(cleanup)
 
 describe('NewTableDialog schema composer', () => {
+  it('uses the post type schema without a kind switch for collections', async () => {
+    const user = userEvent.setup()
+    const created: CreateDataTableInput[] = []
+
+    render(
+      <NewTableDialog
+        open
+        onClose={() => undefined}
+        onCreate={async (input) => {
+          created.push(input)
+        }}
+        tables={[]}
+        variant="collection"
+      />,
+    )
+
+    expect(screen.getByRole('dialog', { name: 'New collection' })).toBeTruthy()
+    expect(screen.queryByRole('group', { name: 'Table kind' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Data table' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Post type' })).toBeNull()
+    expect(screen.getByText('Record structure')).toBeTruthy()
+    expect(screen.getByText('/projects/entry-slug')).toBeTruthy()
+
+    await user.type(screen.getByLabelText('Name'), 'Case Studies')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(created).toHaveLength(1)
+    expect(created[0]).toMatchObject({
+      name: 'Case Studies',
+      slug: 'case-studies',
+      kind: 'postType',
+      routeBase: '/case-studies',
+      primaryFieldId: 'title',
+    })
+  })
+
   it('only exposes the editable collection slug for post types', async () => {
     const user = userEvent.setup()
 

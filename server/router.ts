@@ -102,13 +102,38 @@ export async function handleServerRequest(
 ): Promise<Response> {
   const url = new URL(req.url)
   const { pathname } = url
+  const request = asGetForHead(req)
 
   for (const route of routes) {
-    const response = await route(req, runtime, url, pathname)
+    const response = await route(request, runtime, url, pathname)
     if (response) return response
   }
 
   return jsonResponse({ error: 'Not found' }, { status: 404 })
+}
+
+/**
+ * RFC 9110 §9.3.2: HEAD is identical to GET except that the server must not
+ * send content. Normalising it once here — rather than asking every
+ * method-gated handler in the tree to remember — is what makes that guarantee
+ * hold for every route, including ones added later.
+ *
+ * Without it, a HEAD matched no GET-gated route and fell all the way to the
+ * dispatcher's terminal 404, so uptime monitors and link checkers (which probe
+ * with HEAD by convention) reported a healthy published site as permanently
+ * missing. See issue #306.
+ *
+ * Dropping the body is `Bun.serve`'s job and it already does it: a HEAD
+ * response goes out with the headers a GET would have produced, `content-length`
+ * included, and no content. Handlers stay body-agnostic.
+ *
+ * Cloning is safe here — the copy keeps the URL, the cookies, and the synthetic
+ * `x-bun-socket-ip` header that `stampSocketIp` writes at the `Bun.serve`
+ * boundary, so `clientIp()` attribution is unaffected. HEAD carries no body,
+ * so there is nothing to re-stream.
+ */
+function asGetForHead(req: Request): Request {
+  return req.method === 'HEAD' ? new Request(req, { method: 'GET' }) : req
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +245,19 @@ function tryServePublicForm(req: Request, runtime: ServerRuntime, url: URL, path
 async function tryServeRuntimeAsset(req: Request, runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response | null> {
   if (req.method !== 'GET' || !pathname.startsWith('/_instatic/assets/')) return null
 
+  // Allowlist the asset kinds the publisher emits here (JS/CSS/maps/fonts/raster).
+  // An unrecognised extension is a hard 404, so a file planted in the published
+  // tree (e.g. an SVG) is never served back as active content (GHSA-5h25).
+  const contentType = contentTypeForAssetPath(pathname)
+  if (!contentType) return new Response('Not found', { status: 404 })
+
+  // No CSP is set for non-admin paths globally, so deny scripting and MIME
+  // sniffing on what we do serve here.
+  const hardening = {
+    'x-content-type-options': 'nosniff',
+    'content-security-policy': "default-src 'none'",
+  }
+
   // Disk-first: a full publish bakes the runtime JS into the active slot, so
   // published pages serve their scripts straight off disk (no DB round-trip,
   // no rebuild). Content-hashed filenames keep `immutable` caching correct.
@@ -228,8 +266,9 @@ async function tryServeRuntimeAsset(req: Request, runtime: ServerRuntime, _url: 
     if (bytes) {
       return binaryResponse(bytes, {
         headers: {
-          'content-type': contentTypeForAssetPath(pathname),
+          'content-type': contentType,
           'cache-control': 'public, max-age=31536000, immutable',
+          ...hardening,
         },
       })
     }
@@ -243,25 +282,31 @@ async function tryServeRuntimeAsset(req: Request, runtime: ServerRuntime, _url: 
     headers: {
       'content-type': runtimeAsset.contentType,
       'cache-control': 'public, max-age=31536000, immutable',
+      ...hardening,
     },
   })
 }
 
 /** Derive a response content-type for a baked static asset from its extension. */
-function contentTypeForAssetPath(pathname: string): string {
+/**
+ * Content type for a `/_instatic/assets/*` path, or `null` when the extension
+ * is not one the publisher emits here — an allowlist, so `null` means the
+ * caller 404s rather than serving active content like SVG/HTML (GHSA-5h25).
+ */
+function contentTypeForAssetPath(pathname: string): string | null {
   if (pathname.endsWith('.js') || pathname.endsWith('.mjs')) return 'text/javascript; charset=utf-8'
   if (pathname.endsWith('.css')) return 'text/css; charset=utf-8'
   if (pathname.endsWith('.map') || pathname.endsWith('.json')) return 'application/json; charset=utf-8'
-  if (pathname.endsWith('.svg')) return 'image/svg+xml'
   if (pathname.endsWith('.png')) return 'image/png'
   if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) return 'image/jpeg'
   if (pathname.endsWith('.gif')) return 'image/gif'
   if (pathname.endsWith('.webp')) return 'image/webp'
+  if (pathname.endsWith('.avif')) return 'image/avif'
   if (pathname.endsWith('.woff2')) return 'font/woff2'
   if (pathname.endsWith('.woff')) return 'font/woff'
   if (pathname.endsWith('.ttf')) return 'font/ttf'
   if (pathname.endsWith('.otf')) return 'font/otf'
-  return 'application/octet-stream'
+  return null
 }
 
 /**
@@ -323,7 +368,7 @@ async function tryServeMediaRedirect(
   pathname: string,
 ): Promise<Response | null> {
   if (!pathname.startsWith('/_instatic/media/')) return null
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
+  if (req.method !== 'GET') {
     return new Response('Method not allowed', { status: 405 })
   }
   const match = pathname.match(/^\/_instatic\/media\/([^/]+)\/(.+)$/)

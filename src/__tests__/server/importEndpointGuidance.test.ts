@@ -23,7 +23,13 @@ async function setupDb(): Promise<{ db: DbClient; cleanup: () => Promise<void> }
   const dir = await mkdtemp(join(tmpdir(), 'instatic-import-guide-'))
   const db = createSqliteClient(join(dir, 'test.db'))
   await runMigrations(db, sqliteMigrations)
-  return { db, cleanup: async () => { await rm(dir, { recursive: true, force: true }) } }
+  return {
+    db,
+    cleanup: async () => {
+      await db.close()
+      await rm(dir, { recursive: true, force: true })
+    },
+  }
 }
 
 /** Minimal ZIP local-file-header prefix — enough for magic-byte detection. */

@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { readFile, rm, stat } from 'node:fs/promises'
+import { lstat, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -477,5 +477,53 @@ describe('prepareInactiveSlot', () => {
     await prepareInactiveSlot(uploadsDir)
     const publishedStat = await stat(join(uploadsDir, 'published'))
     expect(publishedStat.isDirectory()).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Pointer-file mechanism + legacy symlink migration
+//
+// `current` is a plain pointer file (symlinks cannot be created by a
+// standard user on Windows). Installs that published before the change
+// still have a symlink on disk — reads must honor it and the next swap
+// must replace it with a pointer file.
+// ---------------------------------------------------------------------------
+
+describe('current pointer file + legacy symlink migration', () => {
+  it('swapSlot writes a plain file naming the slot, not a symlink', async () => {
+    await swapSlot(uploadsDir, 'b')
+    const currentPath = join(uploadsDir, 'published', 'current')
+    const entry = await lstat(currentPath)
+    expect(entry.isFile()).toBe(true)
+    expect(entry.isSymbolicLink()).toBe(false)
+    expect((await readFile(currentPath, 'utf-8')).trim()).toBe('b')
+  })
+
+  it('getActiveSlot reads a legacy symlink left by the previous mechanism', async () => {
+    const { slotDir } = await prepareInactiveSlot(uploadsDir) // creates published/ + b/
+    await writeArtefact(slotDir, '/', '<html>legacy</html>')
+    await symlink('b', join(uploadsDir, 'published', 'current'))
+
+    expect(await getActiveSlot(uploadsDir)).toBe('b')
+    expect(await readArtefact(uploadsDir, '/')).toBe('<html>legacy</html>')
+  })
+
+  it('swapSlot replaces a legacy symlink with a pointer file', async () => {
+    await prepareInactiveSlot(uploadsDir)
+    const currentPath = join(uploadsDir, 'published', 'current')
+    await symlink('b', currentPath)
+
+    await swapSlot(uploadsDir, 'a')
+
+    const entry = await lstat(currentPath)
+    expect(entry.isSymbolicLink()).toBe(false)
+    expect(entry.isFile()).toBe(true)
+    expect(await getActiveSlot(uploadsDir)).toBe('a')
+  })
+
+  it('ignores a corrupt pointer file and falls back to the default slot', async () => {
+    await prepareInactiveSlot(uploadsDir)
+    await writeFile(join(uploadsDir, 'published', 'current'), 'garbage', 'utf-8')
+    expect(await getActiveSlot(uploadsDir)).toBe('a')
   })
 })

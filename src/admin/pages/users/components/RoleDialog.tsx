@@ -16,7 +16,7 @@ import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { SaveSolidIcon } from 'pixel-art-icons/icons/save-solid'
 import { CapabilityPicker } from '@admin/shared/CapabilityPicker'
-import type { CoreCapability } from '@core/capabilities'
+import { OWNER_ONLY_CAPABILITIES, type CoreCapability } from '@core/capabilities'
 import dialogStyles from '../../../shared/dialogs/SiteCreateDialog/SiteCreateDialog.module.css'
 import styles from '../UsersPage.module.css'
 import type { RoleDialogMode, RoleFormState } from '../types'
@@ -33,6 +33,7 @@ interface RoleDialogProps {
 }
 
 const ROLE_FORM_ID = 'users-page-role-form'
+const OWNER_ONLY_CAPABILITY_SET = new Set<CoreCapability>(OWNER_ONLY_CAPABILITIES)
 
 export function RoleDialog({
   mode,
@@ -109,6 +110,7 @@ export function RoleDialog({
           groups={CAPABILITY_GROUPS}
           selected={new Set(form.capabilities as CoreCapability[])}
           readonly={readonly}
+          disabledCapabilities={readonly ? undefined : OWNER_ONLY_CAPABILITY_SET}
           onChange={(next) => onChange({ ...form, capabilities: [...next] })}
         />
 

@@ -182,6 +182,8 @@ Four system roles, defined in `SYSTEM_ROLES`:
 
 `listRoles(db)` returns the built-ins in rank order (`owner`, `admin`, `client`, `member`), followed by custom roles alphabetized by name. Custom roles can be created via `roles.manage` (Owner-only). Roles are persisted in the `roles` table with `capabilities_json: CoreCapability[]`.
 
+Role assignment follows a strict delegation rule: an actor may assign only a role whose effective capabilities are a subset of the actor's own capabilities. This applies to both user creation and role changes, including self-assignment. `roles.manage` is additionally reserved for the Owner role: role mutations reject it, persisted non-Owner roles are stripped on read as a runtime fail-safe, and migration `025_remove_non_owner_role_management` removes legacy invalid grants.
+
 ### System role auto-sync
 
 The **Owner** and **Admin** roles are force-resynced from `SYSTEM_ROLES` on every server boot (`syncSystemRoles(db)` in `server/repositories/roles.ts`, called by `server/index.ts`). Owner gets the full `CORE_CAPABILITIES` set; Admin gets its explicit list (all capabilities except `roles.manage`). This guarantees that adding a new capability to the codebase propagates to both roles at next boot — no existing Owner or Admin account is ever stranded on a stale grant list.

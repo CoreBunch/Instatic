@@ -7,7 +7,7 @@
  *         atomic Mutative recipe → single Cmd+Z undo step.
  */
 
-import type { SiteImportAdapter, SiteImportTransaction } from '@core/siteImport'
+import type { ImportWarning, SiteImportAdapter, SiteImportTransaction } from '@core/siteImport'
 import { installCmsGoogleFont } from '@core/persistence/cmsFonts'
 import {
   createCmsMediaFolder,
@@ -121,16 +121,28 @@ export function createSiteImportAdapter(opts: AdapterCallbacks): SiteImportAdapt
     return parentId
   }
 
-  async function assignAssetToFolder(assetId: string, folderId: string): Promise<void> {
+  /**
+   * File the uploaded asset under the folder tree that mirrors its bundle
+   * path. Best-effort by design: the bytes are already in the library with
+   * their final URL, so a folder API failure here must never make the upload
+   * look failed (#409) — it leaves the asset at the media root and reports an
+   * `asset-folder-failed` warning the user can act on.
+   */
+  async function placeAssetInFolder(assetId: string, path: string): Promise<ImportWarning | null> {
+    const segments = dirSegments(path)
+    if (segments.length === 0) return null
     try {
-      await setCmsMediaAssetFolders(assetId, { add: [folderId] })
+      const folderId = await ensureFolderPath(segments)
+      if (folderId) await setCmsMediaAssetFolders(assetId, { add: [folderId] })
+      return null
     } catch (err) {
-      // Surface as a non-fatal log: the asset uploaded fine, only the
-      // folder placement failed. The user can drag it to the right folder
-      // by hand afterwards.
-      console.warn(
-        `[siteImportAdapter] Asset ${assetId} placed at the media root; ${getErrorMessage(err, 'folder assignment failed')}.`,
-      )
+      return {
+        kind: 'asset-folder-failed',
+        message:
+          `Uploaded ${path} to the media root — could not place it in the folder `
+          + `${segments.join('/')}: ${getErrorMessage(err, 'folder placement failed')}`,
+        path,
+      }
     }
   }
 
@@ -139,28 +151,20 @@ export function createSiteImportAdapter(opts: AdapterCallbacks): SiteImportAdapt
       return installCmsGoogleFont(font)
     },
 
-    async uploadAsset({ path, bytes, mimeType }) {
+    async uploadAsset({ path, bytes, mimeType, altText, signal }) {
       opts.onUploadStart?.({ path })
       // bytes comes from fflate/File APIs — always backed by a plain ArrayBuffer.
       // TypeScript's BlobPart constraint excludes SharedArrayBuffer; the cast is safe.
       const blobData: ArrayBuffer = bytes.slice().buffer as ArrayBuffer
       const file = new File([blobData], basename(path), { type: mimeType })
-      const asset = await uploadCmsMediaAsset(file)
+      const asset = await uploadCmsMediaAsset(file, { signal, altText })
 
-      // Place the asset under a folder that mirrors its source bundle path.
-      // Folder creation happens lazily here so a flat bundle (every asset at
-      // the root) makes zero folder API calls. Failures inside
-      // `ensureFolderPath` propagate up — the surrounding `commitImportPlan`
-      // catches them per-asset and continues, so a folder API blip never
-      // strands later uploads.
-      const segments = dirSegments(path)
-      if (segments.length > 0) {
-        const folderId = await ensureFolderPath(segments)
-        if (folderId) await assignAssetToFolder(asset.id, folderId)
-      }
+      // Folder placement is lazy (a flat bundle makes zero folder API calls)
+      // and best-effort: the public path below is final regardless.
+      const folderWarning = await placeAssetInFolder(asset.id, path)
 
       opts.onUploadComplete?.({ path, url: asset.publicPath })
-      return asset.publicPath
+      return { url: asset.publicPath, warnings: folderWarning ? [folderWarning] : [] }
     },
 
     async commit(recipe) {
@@ -168,7 +172,7 @@ export function createSiteImportAdapter(opts: AdapterCallbacks): SiteImportAdapt
       const ok = useEditorStore.getState().mutateAllPagesAndSite((_site, helpers) => {
         const tx: SiteImportTransaction = {
           addPage: (input) => helpers.addPage(input),
-          addStyleRule: (rule) => helpers.addStyleRule(rule),
+          putStyleRule: (rule) => helpers.putStyleRule(rule),
           overwritePage: (id, input) => helpers.overwritePage(id, input),
           overwriteStyleRule: (id, rule) => helpers.overwriteStyleRule(id, rule),
           addConditions: (conditions) => helpers.addConditions(conditions),

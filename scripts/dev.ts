@@ -18,6 +18,8 @@
  *
  * Either way, the script then:
  *
+ *   - Runs `bun install --frozen-lockfile` so a checkout pulled after a
+ *     dependency change does not start a CMS that dies on its first import.
  *   - Pre-checks ports 3001 (cms) and 5173 (vite) and prints an
  *     actionable message if either is held by something we don't own.
  *   - Spawns the cms (`bun --watch server/index.ts`) and vite
@@ -29,6 +31,7 @@ import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { isSqliteUrl } from '../server/db'
 import { bunCommand, viteCommand } from './lib/bunCommand'
+import { ensureDependencies } from './lib/ensureDependencies'
 import { ensurePortFree } from './lib/freePort'
 
 const CMS_PORT = Number(process.env.PORT ?? '3001')
@@ -222,6 +225,8 @@ if (isSqliteUrl(DATABASE_URL)) {
   stopAppContainerIfRunning()
   await waitForPostgresReady()
 }
+
+await ensureDependencies(log)
 
 await ensurePortFree(CMS_PORT, 'cms', log)
 await ensurePortFree(VITE_PORT, 'vite', log)

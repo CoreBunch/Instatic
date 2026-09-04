@@ -32,6 +32,7 @@ import {
   type PublishedPageVersionWrite,
 } from '../repositories/publish'
 import { buildSiteRuntimeScripts } from './runtime/bundleScripts'
+import { RuntimeScriptBuildError } from './runtime/buildError'
 import { ensureRuntimeDependencyCache } from './runtime/dependencyCache'
 import {
   buildRuntimePackageImportmap,
@@ -150,7 +151,7 @@ async function publishDraftSiteLocked(
     })
     const runtimeErrors = runtimeBuild.diagnostics.filter((d) => d.severity === 'error')
     if (runtimeErrors.length > 0) {
-      throw new Error(`runtime build failed: ${runtimeErrors.map((d) => d.message).join('; ')}`)
+      throw new RuntimeScriptBuildError(page, runtimeErrors)
     }
 
     const snapshot = createSnapshot(

@@ -1224,4 +1224,24 @@ export const sqliteMigrations: Migration[] = [
        where trim(lower(display_name)) = trim(lower(email));
     `,
   },
+  {
+    // `roles.manage` is an installation-Owner power, not a delegable grant.
+    // Older builds allowed it to be persisted on custom/non-Owner roles.
+    id: '025_remove_non_owner_role_management',
+    sql: `
+      update roles
+         set capabilities_json = (
+               select coalesce(json_group_array(value), '[]')
+                 from json_each(roles.capabilities_json)
+                where value <> 'roles.manage'
+             ),
+             updated_at = current_timestamp
+       where id <> 'owner'
+         and exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'roles.manage'
+             );
+    `,
+  },
 ]

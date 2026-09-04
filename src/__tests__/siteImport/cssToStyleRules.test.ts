@@ -485,6 +485,21 @@ describe('cssToStyleRules — ambient name defaults to selector', () => {
 // ---------------------------------------------------------------------------
 
 describe('cssToStyleRules — duplicate class names', () => {
+  it('does not leak a later duplicate into sibling selectors split from one list', () => {
+    const { rules } = cssToStyleRules(
+      '.register, .source-rule { color: red } .source-rule { display: grid }',
+    )
+
+    expect(rules).toHaveLength(2)
+    expect(rules.find((rule) => rule.name === 'register')?.styles).toEqual({
+      color: 'red',
+    })
+    expect(rules.find((rule) => rule.name === 'source-rule')?.styles).toEqual({
+      color: 'red',
+      display: 'grid',
+    })
+  })
+
   it('duplicate .foo → 1 rule with later value + 1 duplicate-class warning', () => {
     const { rules, warnings } = cssToStyleRules('.foo { color: red } .foo { color: blue }')
     expect(rules).toHaveLength(1)
@@ -743,5 +758,47 @@ describe('cssToStyleRules — custom @media as conditional layers (no warnings)'
     const cid = conditionId({ kind: 'media', query: '(max-width: 860px)' })
     expect(Object.keys(a.contextStyles)).toEqual([cid])
     expect(a.contextStyles[cid]).toMatchObject({ color: 'red', fontSize: '14px' })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Shorthand expansion: `none` must never reach a colour longhand.
+//
+// `background: none` and `border: none` are common resets. Expanding them can
+// put `none` in colour longhands. Browsers reject those declarations, causing
+// an authored reset to stop resetting and expose an underlying theme style.
+// ---------------------------------------------------------------------------
+
+describe('cssToStyleRules — shorthand expansion into colour longhands', () => {
+  it('background: none does not publish background-color: none', () => {
+    const { rules } = cssToStyleRules('.close { background: none }')
+    expect(rules[0].styles.backgroundImage).toBe('none')
+    expect(rules[0].styles.backgroundColor).toBe('initial')
+  })
+
+  it('border: none does not publish border-*-color: none', () => {
+    const { rules } = cssToStyleRules('.close { border: none }')
+    expect(rules[0].styles.borderTopStyle).toBe('none')
+    for (const side of ['borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor']) {
+      expect(rules[0].styles[side]).toBe('initial')
+    }
+  })
+
+  it('a real colour is left exactly as authored', () => {
+    const { rules } = cssToStyleRules('.close { background: #e6e6e6; border: 1px solid #ccc }')
+    expect(rules[0].styles.backgroundColor).toBe('#e6e6e6')
+    expect(rules[0].styles.borderTopColor).toBe('#ccc')
+  })
+
+  it('none is still honoured on the properties that accept it', () => {
+    const { rules } = cssToStyleRules('.close { background-image: none; border-style: none }')
+    expect(rules[0].styles.backgroundImage).toBe('none')
+    expect(rules[0].styles.borderTopStyle).toBe('none')
+  })
+
+  it('none survives verbatim in camelCase and kebab-case custom properties', () => {
+    const { rules } = cssToStyleRules('.card { --myColor: none; --my-color: none }')
+    expect(rules[0].styles['--myColor']).toBe('none')
+    expect(rules[0].styles['--my-color']).toBe('none')
   })
 })
