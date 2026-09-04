@@ -1,10 +1,10 @@
 /**
- * TypeBox schemas for `cms.media.*` api-call arguments. Remote ingestion sends
- * URL metadata only; extension callbacks remain inside the VM.
+ * TypeBox schemas for `cms.media.*` api-call arguments. Ingestion sends source
+ * metadata only; extension callbacks remain inside the VM.
  */
 
 import { Type } from '@sinclair/typebox'
-import { RemoteMediaUpsertInputSchema } from '@core/plugin-sdk'
+import { MediaUpsertInputSchema } from '@core/plugin-sdk'
 import { NETWORK_HOST_PATTERN } from './network'
 
 const MEDIA_ID_PATTERN = '^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$'
@@ -33,7 +33,7 @@ const MediaCspOriginSchema = Type.Object(
   { additionalProperties: false },
 )
 
-export const RemoteMediaUpsertArgSchema = RemoteMediaUpsertInputSchema
+export const MediaUpsertArgSchema = MediaUpsertInputSchema
 
 export const RegisterStorageAdapterArgSchema = Type.Object(
   {

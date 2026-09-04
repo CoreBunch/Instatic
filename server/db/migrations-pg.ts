@@ -1169,12 +1169,12 @@ export const pgMigrations: Migration[] = [
     `,
   },
   {
-    // Stable provenance for plugin-managed remote media. The mapping lets a
-    // scheduled integration converge on one media asset instead of creating a
-    // duplicate on every sync, and keeps replacements on the same asset id.
-    id: '026_plugin_remote_media_sources',
+    // Stable provenance for plugin-managed media. The mapping lets an
+    // integration converge on one media asset instead of creating a duplicate
+    // on every sync, and keeps replacements on the same asset id.
+    id: '026_plugin_media_sources',
     sql: `
-      create table if not exists plugin_remote_media_sources (
+      create table if not exists plugin_media_sources (
         plugin_id text not null references installed_plugins(id) on delete cascade,
         source_key text not null,
         asset_id text not null references media_assets(id) on delete cascade,
@@ -1186,8 +1186,8 @@ export const pgMigrations: Migration[] = [
         unique (asset_id)
       );
 
-      create index if not exists plugin_remote_media_sources_asset_idx
-        on plugin_remote_media_sources (asset_id);
+      create index if not exists plugin_media_sources_asset_idx
+        on plugin_media_sources (asset_id);
     `,
   },
 ]

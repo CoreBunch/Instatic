@@ -1,10 +1,10 @@
 /**
- * Media plugin handlers — managed remote ingestion plus adapter, URL
+ * Media plugin handlers — managed-media ingestion plus adapter, URL
  * transformer, and variant-delegate registration.
  *
  * Each target is gated by its own permission, enforced centrally in
  * apiDispatch.ts (via TARGET_PERMISSIONS) before these handlers run:
- *   - `media.import.remote` for host-mediated remote ingestion
+ *   - `media.import` for host-mediated ingestion
  *   - `media.storage.adapter` for storage adapter registration
  *   - `media.url.transform` for URL transformer registration
  *   - `media.variant.delegate` for variant delegate registration
@@ -25,20 +25,23 @@ import { replyApiOk } from '../apiReplies'
 import { buildAdapterShim, runMediaUrlTransformerInWorker } from '../media'
 import type { HostPluginRecord } from '../types'
 import { assertHostPluginPermission } from '../registry'
-import { upsertRemoteMediaAsset } from '../../../media/remoteIngestion'
+import { upsertMediaAsset } from '../../../media/ingestion'
 
-export async function handleMediaUpsertRemote(
-  msg: ApiCallFor<'cms.media.upsertRemote'>,
+export async function handleMediaUpsert(
+  msg: ApiCallFor<'cms.media.upsert'>,
   entry: HostPluginRecord,
   db: DbClient,
 ): Promise<void> {
-  // Fetching the source is a second, independent authority. Keep the media
-  // mutation and network grants separate in the install consent model.
-  assertHostPluginPermission(entry, 'network.outbound')
   const [input] = msg.args
-  const result = await upsertRemoteMediaAsset(db, {
+  // Fetching a remote source is a second, independent authority. Package
+  // assets stay inside the plugin's contained installation directory.
+  if (input.source.kind === 'remote') {
+    assertHostPluginPermission(entry, 'network.outbound')
+  }
+  const result = await upsertMediaAsset(db, {
     pluginId: msg.pluginId,
     networkAllowedHosts: entry.manifest.networkAllowedHosts ?? [],
+    pluginAssetRoot: entry.assetRootPath,
     input,
   })
   replyApiOk(msg.pluginId, msg.correlationId, result)

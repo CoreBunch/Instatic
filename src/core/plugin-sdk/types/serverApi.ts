@@ -180,8 +180,8 @@ export interface ServerPluginApi {
     /**
      * Host-mediated media ingestion plus three independent extension tiers:
      *
-     *   • upsertRemote             — ingest an allowlisted HTTPS image into
-     *                                managed media, keyed by plugin source id.
+     *   • upsert                   — ingest an allowlisted HTTPS image or a
+     *                                contained package asset into managed media.
      *
      *   • registerStorageAdapter   — handle WRITE/DELETE bytes (S3, R2, …).
      *                                Two-phase: adapter signs upload plan,
@@ -190,7 +190,7 @@ export interface ServerPluginApi {
      *   • registerVariantDelegate  — replace local variant ladder with
      *                                a URL template (image-transform CDN).
      *
-     * Each call requires its own permission. Remote ingestion also requires
+     * Each call requires its own permission. A remote upsert also requires
      * `network.outbound` and a matching `networkAllowedHosts` entry.
      */
     media: ServerPluginMediaApi

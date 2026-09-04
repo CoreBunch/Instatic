@@ -182,9 +182,9 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
     surfaces: ['server'],
   },
   {
-    permission: 'media.import.remote',
-    label: 'Import remote media',
-    description: 'Allows the plugin to create or replace media assets from remote URLs on its network allowlist. The host downloads and validates the bytes, then runs the normal storage and responsive-image pipeline.',
+    permission: 'media.import',
+    label: 'Import media',
+    description: 'Allows the plugin to create or replace media assets from contained package files or remote URLs on its network allowlist. The host resolves and validates the bytes, then runs the normal storage and responsive-image pipeline.',
     risk: 'high',
     surfaces: ['server', 'cms'],
   },

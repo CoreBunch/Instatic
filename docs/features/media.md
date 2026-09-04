@@ -17,7 +17,7 @@ The workspace is canvas-style: it uses `AdminWorkspaceCanvasLayout`, the lighter
 - **Auto-open behavior:** upload queue opens when uploads start; bulk-edit opens at 2+ selected; viewer opens on primary selection.
 - **Server side:** `media_assets`, `media_folders`, `media_asset_folders` tables. Handlers under `/admin/api/cms/media`, `/admin/api/cms/media/folders`, `/admin/api/cms/media/storage`. Repositories at `server/repositories/media*.ts`.
 - **Storage adapters:** built-in local-disk plus plugin-registered adapters. Non-public-url adapters route through `/_instatic/media/<adapterId>/<storagePath>` for signed redirects.
-- **Remote plugin ingestion:** `api.cms.media.upsertRemote(...)` lets scheduled integrations import allowlisted HTTPS images through the same validation, storage, and responsive-variant pipeline as admin uploads.
+- **Plugin media ingestion:** `api.cms.media.upsert(...)` lets plugins import allowlisted HTTPS images or contained package assets through the same validation, storage, and responsive-variant pipeline as admin uploads.
 
 ---
 
@@ -223,9 +223,9 @@ create index media_asset_folders_folder_idx on media_asset_folders (folder_id)
 
 Assets with no folder rows are root-level assets. The **All files** view still includes every active asset, while drag/drop onto **All files** clears folder membership and moves the asset back to the root.
 
-### `plugin_remote_media_sources`
+### `plugin_media_sources`
 
-This table records host-owned provenance for media synchronized by plugins. `(plugin_id, source_key)` is the primary key, and `asset_id` is unique so every remote source converges on one managed asset. `source_version` enables a no-download fast path; `content_hash` detects unchanged bytes when an upstream system has no usable version field. Replacing the remote file preserves `asset_id`, so listing rows never need their media references rewritten.
+This table records host-owned provenance for media synchronized by plugins. `(plugin_id, source_key)` is the primary key, and `asset_id` is unique so every plugin source converges on one managed asset. `source_version` enables a no-read fast path; `content_hash` detects unchanged bytes when a source has no usable version field. Replacing the source file preserves `asset_id`, so content rows never need their media references rewritten.
 
 JSON columns end in `_json` per the convention — see [docs/reference/database-dialects.md](../reference/database-dialects.md).
 
@@ -261,7 +261,7 @@ Uploads initiated outside the Media page use the same pipeline. In particular, t
 
 The multipart body carries the `file` part and, optionally, an `altText` text part: Site Import sends the authored `<img alt>` so the record is created with it (`createMediaAsset` writes `alt_text`), instead of leaving every imported image blank for the user to back-fill. Every other upload omits it and the record starts empty.
 
-Scheduled plugins enter this same pipeline through `api.cms.media.upsertRemote(...)`. Only the source URL and metadata cross QuickJS. The Bun host performs the bounded, SSRF-guarded download, then calls the ordinary create or replace path so storage-adapter election, MIME sniffing, intrinsic dimensions, BlurHash, and responsive variants stay identical to an admin upload. The provenance row determines whether the call creates, replaces, or returns the existing asset unchanged.
+Plugins enter this same pipeline through `api.cms.media.upsert(...)`. Only source metadata crosses QuickJS. For a `remote` source, the Bun host performs a bounded, SSRF-guarded download. For a `pluginAsset` source, it reads a package-relative file beneath the plugin's canonical installed asset root and rejects traversal or symlink escapes. Both branches call the ordinary create or replace path, so storage-adapter election, MIME sniffing, intrinsic dimensions, BlurHash, and responsive variants stay identical to an admin upload. The provenance row determines whether the call creates, replaces, or returns the existing asset unchanged.
 
 ```text
 POST /admin/api/cms/media
@@ -362,7 +362,7 @@ See [docs/features/plugin-system.md](plugin-system.md). The plugin SDK's `api.cm
 | Hardcoding `/uploads/...` URLs in modules                            | Use the asset's `public_path` (the host owns the URL shape) |
 | Filling `<img>` `srcset` manually                                    | Use `variants_json` + the publisher's `mediaPresentation.ts`|
 | Adding a docked panel to the Media page                              | Use a floating window — Media is canvas-style by design     |
-| Calling `api.cms.media.*` from a plugin without the matching media permission | Declare `media.import.remote`, `media.storage.adapter`, `media.url.transform`, or `media.variant.delegate` as appropriate |
+| Calling `api.cms.media.*` from a plugin without the matching media permission | Declare `media.import`, `media.storage.adapter`, `media.url.transform`, or `media.variant.delegate` as appropriate |
 | Treating `deleted_at IS NOT NULL` rows as gone                       | They're in Trash; restore is supported until purge          |
 | Skipping `parent_id, slug` uniqueness when creating folders          | The unique constraint enforces it — handle the error path   |
 
@@ -385,8 +385,8 @@ See [docs/features/plugin-system.md](plugin-system.md). The plugin SDK's `api.cm
   - `src/core/persistence/cmsMedia.ts` — client-facing wire schema + API (`CmsMediaAsset`, `CmsMediaVariant`)
   - `server/repositories/mediaAssetMapping.ts` — canonical `media_assets` projection + row mapper (shared by repo and publisher)
   - `server/repositories/media.ts` — `MediaAsset` / `MediaVariant` domain types + CRUD
-  - `server/repositories/pluginRemoteMediaSources.ts` — stable plugin source-to-asset provenance
-  - `server/media/remoteDownload.ts`, `remoteIngestion.ts` — guarded remote download + idempotent managed-media upsert
+  - `server/repositories/pluginMediaSources.ts` — stable plugin source-to-asset provenance
+  - `server/media/remoteDownload.ts`, `ingestion.ts` — guarded source reads + idempotent managed-media upsert
   - `server/handlers/cms/media*.ts` — handlers
   - `server/repositories/mediaFolders.ts`, `mediaMigration.ts`, `mediaStorageAdapters.ts` — folder / migration / adapter repos
   - `server/publish/mediaPresentation.ts`, `mediaPrefetch.ts` — publisher integration
@@ -399,4 +399,4 @@ See [docs/features/plugin-system.md](plugin-system.md). The plugin SDK's `api.cm
   - `src/__tests__/architecture/media-signed-redirect-serving.test.ts`
   - `src/__tests__/architecture/media-storage-no-bytes-in-sandbox.test.ts`
   - `src/__tests__/architecture/media-storage-panel.test.ts`
-  - `src/__tests__/server/pluginRemoteMediaIngestion.test.ts`
+  - `src/__tests__/server/pluginMediaIngestion.test.ts`

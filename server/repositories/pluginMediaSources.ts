@@ -1,7 +1,7 @@
 import type { DbClient } from '../db/client'
 import { placeholder } from '../db/client'
 
-export interface PluginRemoteMediaSource {
+export interface PluginMediaSource {
   pluginId: string
   sourceKey: string
   assetId: string
@@ -9,7 +9,7 @@ export interface PluginRemoteMediaSource {
   contentHash: string
 }
 
-interface PluginRemoteMediaSourceRow {
+interface PluginMediaSourceRow {
   plugin_id: string
   source_key: string
   asset_id: string
@@ -17,7 +17,7 @@ interface PluginRemoteMediaSourceRow {
   content_hash: string
 }
 
-function mapRow(row: PluginRemoteMediaSourceRow): PluginRemoteMediaSource {
+function mapRow(row: PluginMediaSourceRow): PluginMediaSource {
   return {
     pluginId: row.plugin_id,
     sourceKey: row.source_key,
@@ -27,29 +27,29 @@ function mapRow(row: PluginRemoteMediaSourceRow): PluginRemoteMediaSource {
   }
 }
 
-export async function getPluginRemoteMediaSource(
+export async function getPluginMediaSource(
   db: DbClient,
   pluginId: string,
   sourceKey: string,
-): Promise<PluginRemoteMediaSource | null> {
+): Promise<PluginMediaSource | null> {
   const p = (index: number) => placeholder(db.dialect, index)
-  const { rows } = await db.unsafe<PluginRemoteMediaSourceRow>(
+  const { rows } = await db.unsafe<PluginMediaSourceRow>(
     `select plugin_id, source_key, asset_id, source_version, content_hash
-       from plugin_remote_media_sources
+       from plugin_media_sources
       where plugin_id = ${p(1)} and source_key = ${p(2)}`,
     [pluginId, sourceKey],
   )
   return rows[0] ? mapRow(rows[0]) : null
 }
 
-export async function savePluginRemoteMediaSource(
+export async function savePluginMediaSource(
   db: DbClient,
-  source: PluginRemoteMediaSource,
+  source: PluginMediaSource,
 ): Promise<void> {
   const nowIso = new Date().toISOString()
   const p = (index: number) => placeholder(db.dialect, index)
   await db.unsafe(
-    `insert into plugin_remote_media_sources (
+    `insert into plugin_media_sources (
        plugin_id, source_key, asset_id, source_version,
        content_hash, created_at, updated_at
      ) values (${p(1)}, ${p(2)}, ${p(3)}, ${p(4)}, ${p(5)}, ${p(6)}, ${p(7)})

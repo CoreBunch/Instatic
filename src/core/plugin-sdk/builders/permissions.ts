@@ -42,7 +42,7 @@ export const permissions = {
   cmsContentPublish: 'cms.content.publish',
   cmsContentDelete: 'cms.content.delete',
   cmsContentTablesManage: 'cms.content.tables.manage',
-  mediaImportRemote: 'media.import.remote',
+  mediaImport: 'media.import',
   mediaStorageAdapter: 'media.storage.adapter',
   mediaUrlTransform: 'media.url.transform',
   mediaVariantDelegate: 'media.variant.delegate',

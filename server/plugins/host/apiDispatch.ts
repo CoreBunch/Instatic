@@ -37,7 +37,7 @@ import {
   handleMediaRegisterStorageAdapter,
   handleMediaRegisterUrlTransformer,
   handleMediaRegisterVariantDelegate,
-  handleMediaUpsertRemote,
+  handleMediaUpsert,
 } from './handlers/media'
 import { handleCryptoDigest, handleCryptoSignHmac } from './handlers/crypto'
 import {
@@ -97,7 +97,7 @@ const apiHandlers = {
   'network.abort': handleNetworkAbort,
   'cms.schedule.register': handleScheduleRegister,
   'cms.schedule.cancel': handleScheduleCancel,
-  'cms.media.upsertRemote': handleMediaUpsertRemote,
+  'cms.media.upsert': handleMediaUpsert,
   'cms.media.registerStorageAdapter': handleMediaRegisterStorageAdapter,
   'cms.media.registerUrlTransformer': handleMediaRegisterUrlTransformer,
   'cms.media.registerVariantDelegate': handleMediaRegisterVariantDelegate,

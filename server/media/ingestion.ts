@@ -1,9 +1,7 @@
-/**
- * Host-mediated remote media ingestion for scheduled plugins.
- * The caller supplies URL metadata only. Bun downloads, validates, stores,
- * and processes the bytes without carrying them through QuickJS.
- */
-import type { RemoteMediaAsset, RemoteMediaUpsertInput, RemoteMediaUpsertResult } from '@core/plugin-sdk'
+/** Host-mediated managed-media ingestion for plugins. */
+import { readFile, realpath, stat } from 'node:fs/promises'
+import { join } from 'node:path'
+import type { MediaUpsertInput, MediaUpsertResult, UpsertedMediaAsset } from '@core/plugin-sdk'
 import { responseErrorMessage } from '@core/http'
 import type { DbClient } from '../db/client'
 import { sha256Hex } from '../binary'
@@ -14,9 +12,9 @@ import {
   type MediaAsset,
 } from '../repositories/media'
 import {
-  getPluginRemoteMediaSource,
-  savePluginRemoteMediaSource,
-} from '../repositories/pluginRemoteMediaSources'
+  getPluginMediaSource,
+  savePluginMediaSource,
+} from '../repositories/pluginMediaSources'
 import {
   acceptReplacementMedia,
   acceptUploadedMedia,
@@ -24,11 +22,13 @@ import {
   MAX_MEDIA_BYTES,
 } from '../handlers/cms/mediaUpload'
 import { downloadRemoteMedia, type RemoteMediaDownloadDeps } from './remoteDownload'
+import { assertPathWithin } from '../util/pathWithin'
 
-export interface RemoteMediaIngestionArgs {
+export interface MediaIngestionArgs {
   pluginId: string
   networkAllowedHosts: ReadonlyArray<string>
-  input: RemoteMediaUpsertInput
+  pluginAssetRoot: string
+  input: MediaUpsertInput
 }
 
 const keyTails = new Map<string, Promise<void>>()
@@ -48,7 +48,7 @@ async function withSourceKeyLock<T>(key: string, operation: () => Promise<T>): P
   }
 }
 
-function remoteAsset(asset: MediaAsset): RemoteMediaAsset {
+function upsertedAsset(asset: MediaAsset): UpsertedMediaAsset {
   return {
     id: asset.id,
     filename: asset.filename,
@@ -63,7 +63,7 @@ function remoteAsset(asset: MediaAsset): RemoteMediaAsset {
 async function responseError(response: Response): Promise<Error> {
   const message = await responseErrorMessage(
     response,
-    `Remote media import was rejected (HTTP ${response.status}).`,
+    `Media import was rejected (HTTP ${response.status}).`,
   )
   return new Error(message)
 }
@@ -71,7 +71,7 @@ async function responseError(response: Response): Promise<Error> {
 async function updateSyncedMetadata(
   db: DbClient,
   asset: MediaAsset,
-  input: RemoteMediaUpsertInput,
+  input: MediaUpsertInput,
 ): Promise<MediaAsset> {
   let current = asset.deletedAt ? (await restoreMediaAsset(db, asset.id) ?? asset) : asset
   const updated = await updateMediaAssetMetadata(db, current.id, {
@@ -82,13 +82,58 @@ async function updateSyncedMetadata(
   return current
 }
 
+async function readPluginAsset(
+  rootPath: string,
+  relativePath: string,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const candidatePath = join(rootPath, relativePath)
+  assertPathWithin(rootPath, candidatePath)
+
+  // Resolve both sides before reading so a package symlink cannot escape its
+  // installed root even when the lexical path itself looks contained.
+  const [realRootPath, realAssetPath] = await Promise.all([
+    realpath(rootPath),
+    realpath(candidatePath),
+  ])
+  assertPathWithin(realRootPath, realAssetPath)
+  const info = await stat(realAssetPath)
+  if (!info.isFile()) {
+    throw new Error(`Plugin media source "${relativePath}" is not a file.`)
+  }
+  if (info.size > MAX_MEDIA_BYTES) {
+    throw new Error('Plugin media source exceeds the 50 MB limit.')
+  }
+  const fileBytes = await readFile(realAssetPath)
+  if (fileBytes.byteLength === 0) {
+    throw new Error(`Plugin media source "${relativePath}" is empty.`)
+  }
+  if (fileBytes.byteLength > MAX_MEDIA_BYTES) {
+    throw new Error('Plugin media source exceeds the 50 MB limit.')
+  }
+  return new Uint8Array(fileBytes)
+}
+
+async function resolveSourceBytes(
+  args: MediaIngestionArgs,
+  deps: RemoteMediaDownloadDeps,
+): Promise<Uint8Array<ArrayBuffer>> {
+  if (args.input.source.kind === 'pluginAsset') {
+    return readPluginAsset(args.pluginAssetRoot, args.input.source.path)
+  }
+  return downloadRemoteMedia(args.input.source.url, {
+    allowlist: args.networkAllowedHosts,
+    maxBytes: MAX_MEDIA_BYTES,
+    label: `Plugin "${args.pluginId}" media`,
+  }, deps)
+}
+
 async function performUpsert(
   db: DbClient,
-  args: RemoteMediaIngestionArgs,
+  args: MediaIngestionArgs,
   deps: RemoteMediaDownloadDeps,
-): Promise<RemoteMediaUpsertResult> {
+): Promise<MediaUpsertResult> {
   const input = args.input
-  const existingSource = await getPluginRemoteMediaSource(db, args.pluginId, input.sourceKey)
+  const existingSource = await getPluginMediaSource(db, args.pluginId, input.sourceKey)
   const existingAsset = existingSource
     ? await getMediaAsset(db, existingSource.assetId)
     : null
@@ -100,19 +145,15 @@ async function performUpsert(
     input.sourceVersion === existingSource.sourceVersion
   ) {
     const asset = await updateSyncedMetadata(db, existingAsset, input)
-    return { status: 'unchanged', asset: remoteAsset(asset) }
+    return { status: 'unchanged', asset: upsertedAsset(asset) }
   }
 
-  const bytes = await downloadRemoteMedia(input.sourceUrl, {
-    allowlist: args.networkAllowedHosts,
-    maxBytes: MAX_MEDIA_BYTES,
-    label: `Plugin "${args.pluginId}" remote media`,
-  }, deps)
+  const bytes = await resolveSourceBytes(args, deps)
   const contentHash = await sha256Hex(bytes)
   const sourceVersion = input.sourceVersion ?? null
 
   if (existingSource && existingAsset && contentHash === existingSource.contentHash) {
-    await savePluginRemoteMediaSource(db, {
+    await savePluginMediaSource(db, {
       pluginId: args.pluginId,
       sourceKey: input.sourceKey,
       assetId: existingAsset.id,
@@ -120,7 +161,7 @@ async function performUpsert(
       contentHash,
     })
     const asset = await updateSyncedMetadata(db, existingAsset, input)
-    return { status: 'unchanged', asset: remoteAsset(asset) }
+    return { status: 'unchanged', asset: upsertedAsset(asset) }
   }
 
   const file = new File([bytes], input.filename)
@@ -131,8 +172,8 @@ async function performUpsert(
         allowedMimes: IMAGE_MIMES,
         role: 'original',
         uploadedByUserId: null,
-        oversizedMessage: 'Remote media exceeds the 50 MB limit',
-        unsupportedMessage: 'Remote media must be a supported image',
+        oversizedMessage: 'Media source exceeds the 50 MB limit',
+        unsupportedMessage: 'Media source must be a supported image',
       })
     : await acceptUploadedMedia(db, {
         file,
@@ -141,14 +182,14 @@ async function performUpsert(
         role: 'original',
         uploadedByUserId: null,
         ...(input.altText !== undefined ? { altText: input.altText } : {}),
-        oversizedMessage: 'Remote media exceeds the 50 MB limit',
-        unsupportedMessage: 'Remote media must be a supported image',
+        oversizedMessage: 'Media source exceeds the 50 MB limit',
+        unsupportedMessage: 'Media source must be a supported image',
       })
   if (accepted instanceof Response) throw await responseError(accepted)
-  if (!accepted) throw new Error(`Remote media asset "${existingAsset?.id}" no longer exists.`)
+  if (!accepted) throw new Error(`Media asset "${existingAsset?.id}" no longer exists.`)
 
   const asset = await updateSyncedMetadata(db, accepted, input)
-  await savePluginRemoteMediaSource(db, {
+  await savePluginMediaSource(db, {
     pluginId: args.pluginId,
     sourceKey: input.sourceKey,
     assetId: asset.id,
@@ -157,15 +198,15 @@ async function performUpsert(
   })
   return {
     status: existingAsset ? 'replaced' : 'created',
-    asset: remoteAsset(asset),
+    asset: upsertedAsset(asset),
   }
 }
 
-export async function upsertRemoteMediaAsset(
+export async function upsertMediaAsset(
   db: DbClient,
-  args: RemoteMediaIngestionArgs,
+  args: MediaIngestionArgs,
   deps: RemoteMediaDownloadDeps = {},
-): Promise<RemoteMediaUpsertResult> {
+): Promise<MediaUpsertResult> {
   return withSourceKeyLock(`${args.pluginId}\u0000${args.input.sourceKey}`, () =>
     performUpsert(db, args, deps))
 }

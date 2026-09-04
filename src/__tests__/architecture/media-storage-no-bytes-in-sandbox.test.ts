@@ -79,14 +79,21 @@ describe('media storage — no bytes in sandbox', () => {
     expect(flattened).toMatch(/Bytes are NEVER part of `args`/i)
   })
 
-  it('remote ingestion crosses the sandbox as URL metadata only', async () => {
+  it('managed-media ingestion crosses the sandbox as source metadata only', async () => {
     const source = await read('src/core/plugin-sdk/types/media.ts')
-    const match = source.match(
-      /export const RemoteMediaUpsertInputSchema = Type\.Object\(\{([\s\S]*?)\n\}, \{ additionalProperties: false \}\)/,
+    const sourceMatch = source.match(
+      /export const MediaUpsertSourceSchema = Type\.Union\(\[([\s\S]*?)\n\]\)/,
     )
-    expect(match).not.toBeNull()
-    const body = match![1]
-    expect(body).toContain('sourceUrl:')
+    const inputMatch = source.match(
+      /export const MediaUpsertInputSchema = Type\.Object\(\{([\s\S]*?)\n\}, \{ additionalProperties: false \}\)/,
+    )
+    expect(sourceMatch).not.toBeNull()
+    expect(inputMatch).not.toBeNull()
+    const body = `${sourceMatch![1]}\n${inputMatch![1]}`
+    expect(body).toContain("kind: Type.Literal('remote')")
+    expect(body).toContain("kind: Type.Literal('pluginAsset')")
+    expect(body).toContain('url:')
+    expect(body).toContain('path:')
     for (const forbidden of ['bytes', 'buffer', 'body', 'data', 'payload']) {
       expect(body).not.toMatch(new RegExp(`\\b${forbidden}\\s*:`))
     }

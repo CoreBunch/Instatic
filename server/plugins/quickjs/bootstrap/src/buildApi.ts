@@ -250,9 +250,9 @@ globalThis.__buildApi = function buildApi() {
   // the VM via __runMediaAdapterCall / __runMediaUrlTransformer when it
   // actually needs to upload/delete/transform a path.
 
-  function upsertRemote(input: unknown) {
-    assertTargetPermission('cms.media.upsertRemote')
-    return call('cms.media.upsertRemote', [input])
+  function upsert(input: unknown) {
+    assertTargetPermission('cms.media.upsert')
+    return call('cms.media.upsert', [input])
   }
 
   function registerStorageAdapter(adapter: PluginInput) {
@@ -503,7 +503,7 @@ globalThis.__buildApi = function buildApi() {
         },
       },
       media: {
-        upsertRemote: upsertRemote,
+        upsert: upsert,
         registerStorageAdapter: registerStorageAdapter,
         registerUrlTransformer: registerUrlTransformer,
         registerVariantDelegate: registerVariantDelegate,
