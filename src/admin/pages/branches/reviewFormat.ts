@@ -4,6 +4,7 @@
  */
 import type { MergeChange, MergeRequestStatus } from '@core/branches'
 import { formatRelativeTime } from '@core/utils/relativeTime'
+import type { TagPillTone } from '@ui/components/TagPill'
 
 export const REVIEW_FILTERS = ['all', 'pages', 'content', 'files', 'conflicts', 'comments'] as const
 export type ReviewFilter = (typeof REVIEW_FILTERS)[number]
@@ -30,7 +31,7 @@ export function changeKindLabel(change: MergeChange): string {
   return change.tableName ? `Entry · ${change.tableName}` : 'Entry'
 }
 
-export const ACTION_LETTER: Record<MergeChange['action'], string> = { create: 'A', update: 'M', delete: 'D' }
+export const ACTION_TONE: Record<MergeChange['action'], TagPillTone> = { create: 'success', update: 'warning', delete: 'danger' }
 export const ACTION_WORD: Record<MergeChange['action'], string> = { create: 'new', update: 'changed', delete: 'removed' }
 
 export function matchesFilter(change: MergeChange, filter: ReviewFilter, commentCount: number): boolean {
@@ -63,7 +64,8 @@ export function requestStatusLabel(status: MergeRequestStatus): string {
   }
 }
 
-export function requestStatusTone(status: MergeRequestStatus): 'warning' | 'danger' | 'success' | 'neutral' {
+/** The state badge's tone; a withdrawn request is plain (muted). */
+export function requestStatusTone(status: MergeRequestStatus): TagPillTone | null {
   switch (status) {
     case 'open':
       return 'warning'
@@ -72,7 +74,7 @@ export function requestStatusTone(status: MergeRequestStatus): 'warning' | 'dang
     case 'merged':
       return 'success'
     case 'withdrawn':
-      return 'neutral'
+      return null
   }
 }
 

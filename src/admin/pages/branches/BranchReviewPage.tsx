@@ -2,10 +2,10 @@
  * BranchReviewPage — the merge review of one branch
  * (`/admin/branches/:branchId/review`).
  *
- * One timeline: the merge request opens it (its note, status, and what
- * merging grants), then one node per change the plan lists — a page as
+ * Rows of tiles: the merge request opens the review (its note, status, and
+ * what merging does), then one row per change the plan lists — a page as
  * before/after frames, an entry as a field table, a table as its schema,
- * a file as a line diff — each with its own comment thread, and the
+ * a file as a line diff — each beside its own comment thread, and the
  * decision closes it. Conflicts are decided in place; the footer's merge
  * stays disabled until every one has a side. Merging runs the same
  * step-up-gated apply the branch strip used to run from a dialog.
@@ -26,14 +26,13 @@ import { FilterBar } from '@ui/components/FilterBar'
 import { Textarea } from '@ui/components/Input'
 import { Skeleton } from '@ui/components/Skeleton'
 import { Switch } from '@ui/components/Switch'
+import { TagPill } from '@ui/components/TagPill'
 import { pushToast } from '@ui/components/Toast'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { GitMergeSolidIcon } from 'pixel-art-icons/icons/git-merge-solid'
 import { ReviewChangeCard } from './ReviewChangeCard'
 import { ReviewThread } from './ReviewThread'
 import {
-  ACTION_LETTER,
-  ACTION_WORD,
   FILTER_LABELS,
   REQUEST_ENTITY_KEY,
   REVIEW_FILTERS,
@@ -215,26 +214,24 @@ function Review({ branchId, branchName }: ReviewProps) {
           <div className={styles.page}>
             <div className={styles.scroll}>
               <header className={styles.header}>
-                <div className={styles.eyebrow}>
-                  <span>Merge review</span>
-                  <span>·</span>
-                  <span>{branchName} → main</span>
-                </div>
-                <h1 className={styles.title} data-testid="branch-review-title">{title}</h1>
-                <div className={styles.meta}>
-                  {request ? (
-                    <span>
-                      <strong>{request.requestedBy?.displayName ?? 'Removed user'}</strong> requested {relativeIso(request.createdAt)} ago
-                    </span>
-                  ) : (
-                    <span>No merge request yet</span>
-                  )}
-                  <span>{changeCountLabel}</span>
-                  {plan.conflictCount > 0 && (
-                    <span className={styles.del}>{plan.conflictCount} conflict{plan.conflictCount === 1 ? '' : 's'}</span>
-                  )}
-                  <span>{review.comments.length} comment{review.comments.length === 1 ? '' : 's'}</span>
-                  {request && <StatusPill status={request.status} unresolved={open ? unresolved.length : 0} />}
+                <div className={styles.headerMain}>
+                  <div className={styles.eyebrow}>Merge review · {branchName} → main</div>
+                  <h1 className={styles.title} data-testid="branch-review-title">{title}</h1>
+                  <div className={styles.meta}>
+                    {request && <StatusPill status={request.status} unresolved={open ? unresolved.length : 0} />}
+                    {request ? (
+                      <span>
+                        <strong>{request.requestedBy?.displayName ?? 'Removed user'}</strong> requested {relativeIso(request.createdAt)} ago
+                      </span>
+                    ) : (
+                      <span>No merge request yet</span>
+                    )}
+                    <span>{changeCountLabel}</span>
+                    {plan.conflictCount > 0 && (
+                      <span className={styles.del}>{plan.conflictCount} conflict{plan.conflictCount === 1 ? '' : 's'}</span>
+                    )}
+                    <span>{review.comments.length} comment{review.comments.length === 1 ? '' : 's'}</span>
+                  </div>
                 </div>
                 <div className={styles.filters}>
                   <FilterBar
@@ -259,7 +256,6 @@ function Review({ branchId, branchName }: ReviewProps) {
                 {filter === 'all' && (
                   <TimelineNode
                     id="review-request"
-                    marker={request?.requestedBy ? <UserAvatar user={request.requestedBy} size={22} /> : <span className={styles.dot} />}
                     left={(
                       <ReviewThread
                         title="Conversation"
@@ -271,56 +267,54 @@ function Review({ branchId, branchName }: ReviewProps) {
                       />
                     )}
                     right={(
-                      <section className={styles.card} data-testid="review-request-card">
-                        {request ? (
-                          <>
-                            <div className={styles.cardHead}>
-                              {request.requestedBy && <UserAvatar user={request.requestedBy} size={18} />}
-                              <strong>{request.requestedBy?.displayName ?? 'Removed user'}</strong>
-                              <span>asked to merge {branchName} into main</span>
-                              <span>{relativeIso(request.createdAt)}</span>
-                              <span className={styles.spacer} />
-                              <StatusPill status={request.status} unresolved={open ? unresolved.length : 0} />
-                            </div>
-                            {request.note ? (
-                              <p className={styles.requestNote}>{request.note}</p>
-                            ) : (
-                              <p className={styles.cardEmpty}>No note.</p>
-                            )}
-                            {!open && plan.changes.length > 0 && (
-                              <div className={styles.requestEmpty}>
-                                <span>
-                                  {request.status === 'merged'
-                                    ? 'That request was merged. The changes below are new work since.'
-                                    : 'That request is closed. Request a merge again when the branch is ready.'}
-                                </span>
-                                <div>
+                      <section className={styles.tileGroup} data-testid="review-request-card">
+                        <div className={`${styles.tile} ${styles.requestTile}`}>
+                          {request ? (
+                            <>
+                              <div className={styles.requestHead}>
+                                {request.requestedBy && <UserAvatar user={request.requestedBy} size={22} />}
+                                <strong>{request.requestedBy?.displayName ?? 'Removed user'}</strong>
+                                <span>asked to merge {branchName} into main</span>
+                                <span>{relativeIso(request.createdAt)}</span>
+                                <span className={styles.spacer} />
+                                <StatusPill status={request.status} unresolved={open ? unresolved.length : 0} />
+                              </div>
+                              {request.note ? (
+                                <p className={styles.requestNote}>{request.note}</p>
+                              ) : (
+                                <p className={styles.cardEmpty}>No note.</p>
+                              )}
+                              {!open && plan.changes.length > 0 && (
+                                <div className={styles.requestEmpty}>
+                                  <span>
+                                    {request.status === 'merged'
+                                      ? 'That request was merged. The changes below are new work since.'
+                                      : 'That request is closed. Request a merge again when the branch is ready.'}
+                                  </span>
                                   <Button variant="secondary" size="sm" type="button" onClick={() => setDialog('request')} data-testid="review-request-open">
                                     Request merge…
                                   </Button>
                                 </div>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <div className={styles.requestHead}>
+                                <strong>No merge request yet</strong>
                               </div>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            <div className={styles.cardHead}>
-                              <strong>No merge request yet</strong>
-                            </div>
-                            <div className={styles.requestEmpty}>
-                              <span>
-                                {canManage
-                                  ? 'You can merge from the bar below, or ask another manager to review by requesting a merge.'
-                                  : 'When the branch is ready, request a merge so a branch manager reviews it.'}
-                              </span>
-                              <div>
+                              <div className={styles.requestEmpty}>
+                                <span>
+                                  {canManage
+                                    ? 'You can merge from the bar below, or ask another manager to review by requesting a merge.'
+                                    : 'When the branch is ready, request a merge so a branch manager reviews it.'}
+                                </span>
                                 <Button variant="secondary" size="sm" type="button" onClick={() => setDialog('request')} data-testid="review-request-open">
                                   Request merge…
                                 </Button>
                               </div>
-                            </div>
-                          </>
-                        )}
+                            </>
+                          )}
+                        </div>
                         <div className={styles.facts}>
                           <div className={styles.fact}>
                             <span className={styles.factLabel}>Changes</span>
@@ -376,11 +370,6 @@ function Review({ branchId, branchName }: ReviewProps) {
                   <TimelineNode
                     key={change.key}
                     id={`review-change-${change.key}`}
-                    marker={(
-                      <span className={styles.actionBadge} data-action={change.action} aria-label={ACTION_WORD[change.action]}>
-                        {ACTION_LETTER[change.action]}
-                      </span>
-                    )}
                     left={(
                       <ReviewThread
                         title={change.kind === 'row' && change.tableName && !isPageChange(change) ? `${change.tableName}: ${change.label}` : change.label}
@@ -406,8 +395,6 @@ function Review({ branchId, branchName }: ReviewProps) {
                 {filter === 'all' && request && (
                   <TimelineNode
                     id="review-decision"
-                    last
-                    marker={request.resolvedBy ? <UserAvatar user={request.resolvedBy} size={22} /> : <span className={styles.dot} />}
                     left={(
                       <div className={styles.thread} data-testid="review-decision">
                         <div className={styles.threadHead}>
@@ -420,7 +407,7 @@ function Review({ branchId, branchName }: ReviewProps) {
                             <div className={styles.decisionWho}>
                               {request.resolvedBy && <UserAvatar user={request.resolvedBy} size={18} />}
                               <strong>{request.resolvedBy?.displayName ?? 'A branch manager'}</strong>
-                              <span>declined · {request.resolvedAt ? relativeIso(request.resolvedAt) : ''}</span>
+                              <span className={styles.decisionWhen}>declined · {request.resolvedAt ? relativeIso(request.resolvedAt) : ''}</span>
                             </div>
                             <p>{request.resolutionNote}</p>
                           </div>
@@ -430,7 +417,7 @@ function Review({ branchId, branchName }: ReviewProps) {
                             <div className={styles.decisionWho}>
                               <CheckIcon size={12} aria-hidden="true" />
                               <strong>{request.resolvedBy?.displayName ?? 'A branch manager'}</strong>
-                              <span>merged · {request.resolvedAt ? relativeIso(request.resolvedAt) : ''}</span>
+                              <span className={styles.decisionWhen}>merged · {request.resolvedAt ? relativeIso(request.resolvedAt) : ''}</span>
                             </div>
                             <p>The changes are in main's draft. Publish main when you are ready.</p>
                           </div>
@@ -450,12 +437,9 @@ function Review({ branchId, branchName }: ReviewProps) {
                       </div>
                     )}
                     right={(
-                      <section className={styles.card}>
-                        <div className={styles.cardHead}>
-                          <strong>{open ? 'What the decision does' : 'Outcome'}</strong>
-                        </div>
+                      <section className={styles.tileGroup}>
                         {open ? (
-                          <div className={styles.facts}>
+                          <div className={styles.facts} data-cols="2">
                             <div className={styles.fact}>
                               <span className={styles.factLabel}>Merge</span>
                               <span className={styles.factValue}>Writes every change to main's draft, mirrors the result to the branch, and deletes the branch if chosen. Asks for a password.</span>
@@ -466,13 +450,16 @@ function Review({ branchId, branchName }: ReviewProps) {
                             </div>
                           </div>
                         ) : (
-                          <p className={styles.requestNote}>
-                            {request.status === 'declined'
-                              ? 'The branch stays as it is. Fix what the note asks for and request a merge again; every comment above stays with the branch.'
-                              : request.status === 'merged'
-                                ? 'Main’s draft now holds these changes. Publish main to make them live.'
-                                : 'Nothing was merged.'}
-                          </p>
+                          <div className={styles.fact}>
+                            <span className={styles.factLabel}>Outcome</span>
+                            <span className={styles.factValue}>
+                              {request.status === 'declined'
+                                ? 'The branch stays as it is. Fix what the note asks for and request a merge again; every comment above stays with the branch.'
+                                : request.status === 'merged'
+                                  ? 'Main’s draft now holds these changes. Publish main to make them live.'
+                                  : 'Nothing was merged.'}
+                            </span>
+                          </div>
                         )}
                       </section>
                     )}
@@ -600,25 +587,29 @@ function StatusPill({ status, unresolved }: { status: 'open' | 'declined' | 'mer
   const label = status === 'open' && unresolved > 0
     ? `${requestStatusLabel(status)} · ${unresolved} conflict${unresolved === 1 ? '' : 's'}`
     : requestStatusLabel(status)
+  const tone = requestStatusTone(status)
   return (
-    <span className={styles.statusPill} data-tone={requestStatusTone(status)} data-testid="review-status">
-      {label}
-    </span>
+    <TagPill
+      label={label}
+      size="xs"
+      tone={tone ?? undefined}
+      muted={tone === null}
+      leading={<span className={styles.statusDot} aria-hidden="true" />}
+      testId="review-status"
+    />
   )
 }
 
 interface TimelineNodeProps {
   id: string
-  marker: React.ReactNode
   left: React.ReactNode
   right: React.ReactNode
-  last?: boolean
 }
 
-function TimelineNode({ id, marker, left, right, last = false }: TimelineNodeProps) {
+/** One row of the review: the thread tile beside what it discusses. */
+function TimelineNode({ id, left, right }: TimelineNodeProps) {
   return (
-    <div id={id} className={styles.node} data-last={last ? 'true' : 'false'}>
-      <span className={styles.marker}>{marker}</span>
+    <div id={id} className={styles.node}>
       <div className={styles.left}>{left}</div>
       <div className={styles.right}>{right}</div>
     </div>

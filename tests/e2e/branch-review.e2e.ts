@@ -141,8 +141,8 @@ test('owner prepares a branch and an editor without merge rights', async ({ page
   // heading, a paragraph and a button.
   const home = await homeRow(page)
   const root = home.cells.body.rootNodeId
+  // Exactly the seed, not the seed on top of whatever a previous run left.
   const nodes = {
-    ...home.cells.body.nodes,
     [root]: { ...home.cells.body.nodes[root]!, children: ['review-hero'] },
     'review-hero': node('review-hero', 'base.container', {}, ['review-heading', 'review-copy', 'review-cta']),
     'review-heading': node('review-heading', 'base.text', { text: 'Ship your site faster', tag: 'h1' }, [], 'Headline'),

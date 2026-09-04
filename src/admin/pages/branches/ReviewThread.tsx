@@ -1,6 +1,6 @@
 /**
  * ReviewThread — the comments on one change (or on the request itself):
- * a boxed list with an always-present composer. Posting goes through the
+ * a tile with the comments and an always-present composer. Posting goes through the
  * review's `comment` action; the list re-renders from the server's copy.
  */
 import { useState, type KeyboardEvent, type ReactNode } from 'react'
@@ -59,24 +59,28 @@ export function ReviewThread({ title, comments, me, placeholder, onPost, testId 
         <span className={styles.spacer} />
         <span className={styles.threadCount}>{count === 0 ? 'No comments' : `${count} ${count === 1 ? 'comment' : 'comments'}`}</span>
       </div>
-      {comments.map((comment) => (
-        <div key={comment.id} className={styles.threadItem} data-testid={`${testId}-comment`}>
-          <span className={styles.threadAvatar}>
-            {comment.author && <UserAvatar user={comment.author} size={20} />}
-          </span>
-          <div>
-            <div className={styles.threadItemHead}>
-              <strong>{comment.author?.displayName ?? 'Removed user'}</strong>
-              <span>{relativeIso(comment.createdAt)}</span>
+      {count > 0 && (
+        <div className={styles.threadItems}>
+          {comments.map((comment) => (
+            <div key={comment.id} className={styles.threadItem} data-testid={`${testId}-comment`}>
+              <span className={styles.threadAvatar}>
+                {comment.author && <UserAvatar user={comment.author} size={22} />}
+              </span>
+              <div>
+                <div className={styles.threadItemHead}>
+                  <strong>{comment.author?.displayName ?? 'Removed user'}</strong>
+                  <span>{relativeIso(comment.createdAt)}</span>
+                </div>
+                <p className={styles.threadItemText}>{comment.body}</p>
+              </div>
             </div>
-            <p className={styles.threadItemText}>{comment.body}</p>
-          </div>
+          ))}
         </div>
-      ))}
+      )}
       <div className={styles.threadComposer}>
         <div className={styles.threadComposerRow}>
           <span className={styles.threadAvatar}>
-            <UserAvatar user={me} size={20} />
+            <UserAvatar user={me} size={22} />
           </span>
           <Textarea
             fieldSize="sm"

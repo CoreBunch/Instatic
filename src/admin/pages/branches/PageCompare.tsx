@@ -205,7 +205,7 @@ export function PageCompare({ branchId, rowId, label, action, tree, fieldLines, 
   const lines = [...fieldLines, ...treeLines]
 
   return (
-    <div>
+    <div className={styles.compare}>
       <div className={styles.compareBar}>
         <SegmentedControl
           value={mode}
