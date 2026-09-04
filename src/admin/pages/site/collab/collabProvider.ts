@@ -71,17 +71,6 @@ const MAX_BACKLOG_BYTES = 512 * 1024
  */
 declare const __INSTATIC_CMS_DEV_ORIGIN__: string | undefined
 
-function socketBaseUrl(): string {
-  if (
-    import.meta.env.DEV &&
-    typeof __INSTATIC_CMS_DEV_ORIGIN__ === 'string' &&
-    __INSTATIC_CMS_DEV_ORIGIN__.length > 0
-  ) {
-    return __INSTATIC_CMS_DEV_ORIGIN__.replace(/^http/, 'ws')
-  }
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  return `${protocol}://${window.location.host}`
-}
 
 /** y-protocols/sync message types (payload's first varUint). */
 const SYNC_STEP_2 = 1

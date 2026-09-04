@@ -17,7 +17,7 @@ import {
   seedSiteDoc,
   shellMap,
   siteFileContentText,
-  SITE_DOC_ID,
+  MAIN_SITE_DOC_ID,
 } from '@core/collab'
 import type { SiteDocument } from '@core/page-tree'
 import type { SiteFile } from '@core/files/schemas'
@@ -62,7 +62,7 @@ function mutateThroughPatches(
 ): SiteDocument {
   const [next, patches] = create(site, recipe, { enablePatches: true })
   const docs = createCollabDocSet()
-  docs.set(SITE_DOC_ID, doc)
+  docs.set(MAIN_SITE_DOC_ID, doc)
   applySitePatchesToDocs(patches, site, next, docs, 'test-local')
   return next
 }

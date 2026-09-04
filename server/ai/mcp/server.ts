@@ -63,6 +63,7 @@ const NO_WORKSPACE_MESSAGE: Record<EditorBridgeScope, string> = {
 const BROWSER_WORKSPACE_REQUIREMENT: Record<EditorBridgeScope, string> = {
   site: 'Requires the Instatic Site editor to be open in a browser, signed in as the connector owner; this tool edits that live workspace and cannot run headlessly.',
   content: 'Requires the Instatic Content workspace to be open in a browser, signed in as the connector owner; this tool edits that live workspace and cannot run headlessly.',
+  plugin: 'Requires the Instatic Plugin IDE to be open in a browser on the plugin being edited, signed in as the connector owner; this tool edits that live workspace and cannot run headlessly.',
 }
 
 /** Tool description as advertised over MCP — browser tools carry their precondition. */

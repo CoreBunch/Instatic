@@ -202,12 +202,6 @@ export default defineConfig({
   // so upgrades die — and the proxy can crash Vite outright). In dev the
   // client therefore connects the site socket DIRECTLY to the CMS origin.
   // Cookies are host-scoped (port-agnostic on localhost) and the CMS's
-  // Origin allowlist admits the Vite dev origins, so the direct hop is
-  // fully authenticated. Production serves admin + API from one origin —
-  // this constant compiles to undefined there and the same-origin path runs.
-  define: {
-    __INSTATIC_CMS_DEV_ORIGIN__: JSON.stringify(CMS_DEV_SERVER_ORIGIN),
-  },
   plugins: [
     largeBodyDevProxyPlugin(),
     publicSiteDevProxyPlugin(),

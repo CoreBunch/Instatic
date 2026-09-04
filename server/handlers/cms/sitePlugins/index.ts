@@ -25,6 +25,7 @@
  * (`site.<localId>` is an ordinary installed_plugins row) — no duplicates.
  */
 import { readFile } from 'node:fs/promises'
+import { MAIN_SCOPE } from '../../../branches/scope'
 import { join } from 'node:path'
 import { nanoid } from 'nanoid'
 import type { SiteFile } from '@core/files/schemas'
@@ -99,7 +100,7 @@ async function handleScaffold(req: Request, db: DbClient): Promise<Response> {
   }
 
   await runPublishFlush()
-  const shell = await getDraftSite(db)
+  const shell = await getDraftSite(db, MAIN_SCOPE)
   if (!shell) return badRequest('No draft site exists yet')
 
   const folder = sitePluginFolder(body.localId)
@@ -133,7 +134,7 @@ async function handleScaffold(req: Request, db: DbClient): Promise<Response> {
   // relay resets the site doc, and connected editors rebind with the new
   // files. The scaffold is a rare, explicit action; the reset is the
   // designed path for external writers.
-  await saveDraftSite(db, {
+  await saveDraftSite(db, MAIN_SCOPE, {
     ...shell,
     files: [...shell.files, ...created],
     updatedAt: now,
@@ -360,12 +361,12 @@ async function handleDelete(
 
   // Then the draft source folder.
   await runPublishFlush()
-  const shell = await getDraftSite(db)
+  const shell = await getDraftSite(db, MAIN_SCOPE)
   if (shell) {
     const folder = sitePluginFolder(localId)
     const remaining = shell.files.filter((file) => !file.path.startsWith(folder))
     if (remaining.length !== shell.files.length) {
-      await saveDraftSite(db, { ...shell, files: remaining, updatedAt: Date.now() })
+      await saveDraftSite(db, MAIN_SCOPE, { ...shell, files: remaining, updatedAt: Date.now() })
     }
   }
 
