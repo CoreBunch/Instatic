@@ -12,6 +12,7 @@ import {
   type CapabilityTestHarness,
 } from '../helpers/capabilityHarness'
 import { getDraftSite } from '../../../server/repositories/site'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { getInstalledPlugin } from '../../../server/repositories/plugins'
 
 let source: CapabilityTestHarness
@@ -75,7 +76,7 @@ describe('site plugin export/import', () => {
     expect(importRes.status).toBe(200)
     await readJson(importRes)
 
-    const shell = await getDraftSite(target.db)
+    const shell = await getDraftSite(target.db, MAIN_SCOPE)
     const pluginFiles = shell?.files.filter((file) => file.type === 'plugin') ?? []
     expect(pluginFiles.map((file) => file.path).sort()).toEqual([
       'plugins/newsletter/plugin.json',
