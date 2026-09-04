@@ -20,6 +20,7 @@ import {
   type CapabilityTestHarness,
 } from '../helpers/capabilityHarness'
 import { getDraftSite, saveDraftSite } from '../../../server/repositories/site'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { selectToolsForScope } from '../../../server/ai/tools'
 import { pluginTools } from '../../../server/ai/tools/plugin'
 import type { AiTool, ToolContext } from '../../../server/ai/runtime/types'
@@ -157,14 +158,14 @@ describe('plugin lifecycle tool handlers', () => {
     expect(httpActivate.status).toBe(200)
 
     // Change the source (same grants), then the agent rebuilds autonomously.
-    const shell = await getDraftSite(harness.db)
+    const shell = await getDraftSite(harness.db, MAIN_SCOPE)
     if (!shell) throw new Error('no draft')
     const files = shell.files.map((file) =>
       file.path === 'plugins/agent-probe/server/index.ts'
         ? { ...file, content: `${file.content}\n// agent edit`, updatedAt: Date.now() }
         : file,
     )
-    await saveDraftSite(harness.db, { ...shell, files, updatedAt: Date.now() })
+    await saveDraftSite(harness.db, MAIN_SCOPE, { ...shell, files, updatedAt: Date.now() })
 
     const result = await run('plugin_activate', { localId: 'agent-probe' }, ctx(OWNER_CAPS))
     expect(result.ok).toBe(true)

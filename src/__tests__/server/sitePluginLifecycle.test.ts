@@ -16,6 +16,7 @@ import {
   type CapabilityTestHarness,
 } from '../helpers/capabilityHarness'
 import { getDraftSite, saveDraftSite } from '../../../server/repositories/site'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { getInstalledPlugin } from '../../../server/repositories/plugins'
 import type { SitePluginSummary } from '@core/site-plugins'
 
@@ -38,12 +39,12 @@ afterAll(async () => {
 })
 
 async function updateDraftFile(path: string, content: string): Promise<void> {
-  const shell = await getDraftSite(harness.db)
+  const shell = await getDraftSite(harness.db, MAIN_SCOPE)
   if (!shell) throw new Error('no draft site')
   const files = shell.files.map((file) =>
     file.path === path ? { ...file, content, updatedAt: Date.now() } : file,
   )
-  await saveDraftSite(harness.db, { ...shell, files, updatedAt: Date.now() })
+  await saveDraftSite(harness.db, MAIN_SCOPE, { ...shell, files, updatedAt: Date.now() })
 }
 
 describe('site plugin scaffold + validate', () => {
@@ -90,7 +91,7 @@ describe('site plugin scaffold + validate', () => {
       json: { name: 'Newsletter', localId: 'newsletter', template: 'routes' },
     })
     expect(res.status).toBe(201)
-    const shell = await getDraftSite(harness.db)
+    const shell = await getDraftSite(harness.db, MAIN_SCOPE)
     // Scope to this plugin's folder — the suite scaffolds other plugins too.
     const pluginFiles = (shell?.files ?? []).filter(
       (file) => file.type === 'plugin' && file.path.startsWith('plugins/newsletter/'),
@@ -229,7 +230,7 @@ describe('site plugin activation authority', () => {
   })
 
   test('adding a permission requires step-up again; grants follow declarations', async () => {
-    const shell = await getDraftSite(harness.db)
+    const shell = await getDraftSite(harness.db, MAIN_SCOPE)
     const manifestFile = shell?.files.find((file) => file.path === 'plugins/newsletter/plugin.json')
     expect(manifestFile).toBeDefined()
     await updateDraftFile(
@@ -367,7 +368,7 @@ describe('site plugin delete', () => {
 
     expect(await getInstalledPlugin(harness.db, 'site.newsletter')).toBeNull()
     expect(existsSync(join(uploadsDir, 'plugins', 'site.newsletter'))).toBe(false)
-    const shell = await getDraftSite(harness.db)
+    const shell = await getDraftSite(harness.db, MAIN_SCOPE)
     expect(shell?.files.some((file) => file.path.startsWith('plugins/newsletter/'))).toBe(false)
   })
 })

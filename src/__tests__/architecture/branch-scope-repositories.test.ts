@@ -62,7 +62,12 @@ const RAW_SQL_EXEMPT_PREFIXES = [
   'server/db/',
 ]
 
-const BRANCHED_TABLE_SQL = /\b(from|into|update|join)\s+(data_rows|data_tables|site)\b/i
+// A SQL clause naming a branched table. The table must be followed by SQL —
+// a clause keyword, an alias-free terminator, or the end of the line — so an
+// English sentence like "uses a module from site plugin X" in a log message
+// is not mistaken for a query.
+const BRANCHED_TABLE_SQL =
+  /\b(from|into|update|join)\s+(data_rows|data_tables|site)\s*(?:[`;),(]|$|\b(?:where|set|values|on|using|join|left|inner|outer|cross|order|group|having|limit|offset|returning|select|as)\b)/im
 
 function read(path: string): string {
   return readFileSync(join(ROOT, path), 'utf8')

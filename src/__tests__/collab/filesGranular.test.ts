@@ -19,6 +19,7 @@ import {
   siteFileContentText,
   MAIN_SITE_DOC_ID,
 } from '@core/collab'
+import { MAIN_BRANCH_ID } from '@core/branches'
 import type { SiteDocument } from '@core/page-tree'
 import type { SiteFile } from '@core/files/schemas'
 import { makeSite } from '../fixtures'
@@ -63,7 +64,7 @@ function mutateThroughPatches(
   const [next, patches] = create(site, recipe, { enablePatches: true })
   const docs = createCollabDocSet()
   docs.set(MAIN_SITE_DOC_ID, doc)
-  applySitePatchesToDocs(patches, site, next, docs, 'test-local')
+  applySitePatchesToDocs(patches, site, next, docs, 'test-local', MAIN_BRANCH_ID)
   return next
 }
 

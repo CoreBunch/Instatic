@@ -126,9 +126,12 @@ const BUDGETS: ChunkBudget[] = [
     // Raised from 30 KB when site branches landed: the publish gate (disabled
     // with the inline reason on a branch), the version-history entry, and the
     // per-branch persistence hook are part of the shell by design (~+1 KB raw).
-    maxBytes: 32_000,
+    // Raised again for site plugins: the `plugins.edit` gate, the Plugin IDE
+    // route and workspace entry (~+0.8 KB raw). The editor body still lands in
+    // its own chunk — the shell carries no DnD, canvas, or module code.
+    maxBytes: 33_500,
     rationale:
-      'site route shell (current ~31 KB raw / ~10 KB gzipped). Must not ' +
+      'site route shell (current ~32 KB raw / ~10 KB gzipped). Must not ' +
       'pull the visual editor body, DnD, canvas, first-party modules, or ' +
       'PropertiesPanel back into the active route chunk.',
   },
