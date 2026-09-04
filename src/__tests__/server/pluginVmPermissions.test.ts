@@ -41,6 +41,21 @@ const HOOK_PLUGIN_SOURCE = `
   })();
 `
 
+const REMOTE_MEDIA_PLUGIN_SOURCE = `
+  ;(function () {
+    const __plugin_exports = (globalThis.__plugin_exports = {});
+    __plugin_exports.activate = async function activate(api) {
+      await api.cms.media.upsertRemote({
+        sourceKey: 'vaultre:listing-42:photo-7',
+        sourceUrl: 'https://images.example.com/photo-7.jpg',
+        sourceVersion: '2026-09-04T10:00:00Z',
+        filename: 'front-elevation.jpg',
+        altText: '42 Example Street',
+      });
+    };
+  })();
+`
+
 describe('VM-side permission enforcement', () => {
   it('DENIES a declared-but-not-granted permission at the VM boundary (host never reached)', async () => {
     const calls: RecordedCall[] = []
@@ -141,6 +156,65 @@ describe('VM-side permission enforcement', () => {
       })
     } finally {
       vm.dispose()
+    }
+  })
+
+  it('gates remote media ingestion before dispatch and forwards URL metadata when granted', async () => {
+    const deniedCalls: RecordedCall[] = []
+    const deniedVm = await createPluginVm({
+      pluginSource: REMOTE_MEDIA_PLUGIN_SOURCE,
+      env: {
+        pluginId: 'acme.media-denied',
+        manifestVersion: '1.0.0',
+        grantedPermissions: ['network.outbound'],
+        assetBasePath: '/uploads/plugins/acme.media-denied/1.0.0',
+        settings: {},
+        hostCall: async (target, args) => {
+          deniedCalls.push({ target, args })
+          return null
+        },
+        log: () => {},
+      },
+    })
+    try {
+      await expect(deniedVm.runLifecycle('activate')).rejects.toThrow(
+        /requires permission "media\.import\.remote"/,
+      )
+      expect(deniedCalls).toEqual([])
+    } finally {
+      deniedVm.dispose()
+    }
+
+    const grantedCalls: RecordedCall[] = []
+    const grantedVm = await createPluginVm({
+      pluginSource: REMOTE_MEDIA_PLUGIN_SOURCE,
+      env: {
+        pluginId: 'acme.media-granted',
+        manifestVersion: '1.0.0',
+        grantedPermissions: ['media.import.remote', 'network.outbound'],
+        assetBasePath: '/uploads/plugins/acme.media-granted/1.0.0',
+        settings: {},
+        hostCall: async (target, args) => {
+          grantedCalls.push({ target, args })
+          return { status: 'created', asset: { id: 'asset-1' } }
+        },
+        log: () => {},
+      },
+    })
+    try {
+      await grantedVm.runLifecycle('activate')
+      expect(grantedCalls).toEqual([{
+        target: 'cms.media.upsertRemote',
+        args: [{
+          sourceKey: 'vaultre:listing-42:photo-7',
+          sourceUrl: 'https://images.example.com/photo-7.jpg',
+          sourceVersion: '2026-09-04T10:00:00Z',
+          filename: 'front-elevation.jpg',
+          altText: '42 Example Street',
+        }],
+      }])
+    } finally {
+      grantedVm.dispose()
     }
   })
 })

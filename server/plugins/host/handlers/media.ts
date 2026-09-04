@@ -1,10 +1,10 @@
 /**
- * Media plugin handlers — implements cms.media.registerStorageAdapter,
- * cms.media.registerUrlTransformer, and cms.media.registerVariantDelegate
- * api-calls.
+ * Media plugin handlers — managed remote ingestion plus adapter, URL
+ * transformer, and variant-delegate registration.
  *
  * Each target is gated by its own permission, enforced centrally in
  * apiDispatch.ts (via TARGET_PERMISSIONS) before these handlers run:
+ *   - `media.import.remote` for host-mediated remote ingestion
  *   - `media.storage.adapter` for storage adapter registration
  *   - `media.url.transform` for URL transformer registration
  *   - `media.variant.delegate` for variant delegate registration
@@ -24,6 +24,25 @@ import type { DbClient } from '../../../db/client'
 import { replyApiOk } from '../apiReplies'
 import { buildAdapterShim, runMediaUrlTransformerInWorker } from '../media'
 import type { HostPluginRecord } from '../types'
+import { assertHostPluginPermission } from '../registry'
+import { upsertRemoteMediaAsset } from '../../../media/remoteIngestion'
+
+export async function handleMediaUpsertRemote(
+  msg: ApiCallFor<'cms.media.upsertRemote'>,
+  entry: HostPluginRecord,
+  db: DbClient,
+): Promise<void> {
+  // Fetching the source is a second, independent authority. Keep the media
+  // mutation and network grants separate in the install consent model.
+  assertHostPluginPermission(entry, 'network.outbound')
+  const [input] = msg.args
+  const result = await upsertRemoteMediaAsset(db, {
+    pluginId: msg.pluginId,
+    networkAllowedHosts: entry.manifest.networkAllowedHosts ?? [],
+    input,
+  })
+  replyApiOk(msg.pluginId, msg.correlationId, result)
+}
 
 export async function handleMediaRegisterStorageAdapter(
   msg: ApiCallFor<'cms.media.registerStorageAdapter'>,

@@ -182,6 +182,13 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
     surfaces: ['server'],
   },
   {
+    permission: 'media.import.remote',
+    label: 'Import remote media',
+    description: 'Allows the plugin to create or replace media assets from remote URLs on its network allowlist. The host downloads and validates the bytes, then runs the normal storage and responsive-image pipeline.',
+    risk: 'high',
+    surfaces: ['server', 'cms'],
+  },
+  {
     permission: 'media.storage.adapter',
     label: 'Provide a media storage backend',
     description: 'Allows the plugin to register an exclusive storage adapter that the host elects per asset role (original / variant / avatar / font). The adapter issues signed upload targets; the host streams bytes directly. Required for S3, R2, GCS, Azure, and similar backends.',

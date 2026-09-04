@@ -783,9 +783,27 @@ api.cms.hooks.filter('content.entry.cells', (cells, { tableSlug, entryId, actor 
 })
 ```
 
-### CMS media extensions — three independent permissions
+### CMS media ingestion and extensions
 
-The media plugin surface lives at `api.cms.media.*` and is implemented by `server/plugins/host/handlers/media.ts`. It has three independent tiers so a CDN URL rewrite plugin does not need storage-adapter authority.
+The media plugin surface lives at `api.cms.media.*` and is implemented by `server/plugins/host/handlers/media.ts`. Remote ingestion is separate from the three extension tiers so a CRM connector does not need storage-adapter authority, and a CDN URL rewrite plugin does not receive media-write authority.
+
+#### Remote ingestion — requires `media.import.remote` + `network.outbound`
+
+Scheduled integrations can import remote images into the managed Media library without moving bytes through QuickJS. `sourceKey` is scoped to the calling plugin and makes the operation idempotent; `sourceVersion` lets an unchanged sync return immediately without downloading. When the version changes, the host downloads the URL and replaces the existing asset while preserving its id.
+
+```js
+const result = await api.cms.media.upsertRemote({
+  sourceKey: `vaultre:${listing.id}:${photo.id}`,
+  sourceUrl: photo.url,
+  sourceVersion: photo.updatedAt,
+  filename: photo.filename,
+  altText: `${listing.address}, photo ${index + 1}`,
+})
+
+// Store result.asset.id in the listing's media field.
+```
+
+The source URL must use HTTPS and every redirect host must match `networkAllowedHosts`. The Bun host downloads through the shared DNS-pinned SSRF guard, caps the response at 50 MB, sniffs the MIME from the bytes, and passes the file through the ordinary upload pipeline. JPEG, PNG, WebP, and AVIF receive the WebP ladder, intrinsic dimensions, and BlurHash; storage adapters and variant delegates apply exactly as they do to an admin upload. If `sourceVersion` is unavailable, the host downloads and compares a SHA-256 content hash instead.
 
 #### Storage adapters — requires `media.storage.adapter`
 
@@ -949,6 +967,7 @@ Risk levels:
 | `dashboard.widgets.register`| Admin                | Medium    | Register cards in the admin dashboard widget grid                       |
 | `frontend.assets`           | Frontend / manifest  | High      | Inject declarative tags into every published page; also gates module render() `js` |
 | `network.outbound`          | Server               | High      | Make outbound HTTP requests (with `networkAllowedHosts` allowlist)      |
+| `media.import.remote`       | Server / CMS media   | High      | Upsert managed media from an allowlisted remote HTTPS URL               |
 | `media.storage.adapter`     | Server / CMS media   | Dangerous | Register an electable media storage backend                             |
 | `media.url.transform`       | Server / CMS media   | Medium    | Rewrite media URLs at render/preview/admin read time                    |
 | `media.variant.delegate`    | Server / CMS media   | High      | Replace local responsive variant generation with URL templates          |

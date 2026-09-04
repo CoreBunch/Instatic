@@ -7,11 +7,55 @@
 // streams the bytes itself, then commits ROUND TWO (finalizeWrite). Bytes
 // never cross the QuickJS sandbox boundary.
 //
-// Three independent permissions gate the three media tiers; see
+// Independent permissions gate media ingestion and the three extension tiers; see
 // PLUGIN_PERMISSION_VALUES for the full mapping.
 // ---------------------------------------------------------------------------
 
 import { Type, type Static } from '@sinclair/typebox'
+
+// ---------------------------------------------------------------------------
+// Remote media ingestion.
+// ---------------------------------------------------------------------------
+
+export const RemoteMediaUpsertInputSchema = Type.Object({
+  /** Stable identity from the upstream system, scoped to the calling plugin. */
+  sourceKey: Type.String({ minLength: 1, maxLength: 500 }),
+  /** Public HTTPS URL the host should download. */
+  sourceUrl: Type.String({ minLength: 1, maxLength: 2_048 }),
+  /**
+   * Upstream revision, ETag, or updated-at value. Reusing the same version
+   * returns the existing asset without downloading it again. When omitted,
+   * the host downloads and compares the content hash.
+   */
+  sourceVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
+  filename: Type.String({ minLength: 1, maxLength: 255 }),
+  altText: Type.Optional(Type.String({ maxLength: 4_096 })),
+}, { additionalProperties: false })
+
+export type RemoteMediaUpsertInput = Static<typeof RemoteMediaUpsertInputSchema>
+
+export const RemoteMediaAssetSchema = Type.Object({
+  id: Type.String({ minLength: 1 }),
+  filename: Type.String(),
+  publicPath: Type.String({ minLength: 1 }),
+  mimeType: Type.String({ minLength: 1 }),
+  altText: Type.String(),
+  width: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+  height: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+}, { additionalProperties: false })
+
+export type RemoteMediaAsset = Static<typeof RemoteMediaAssetSchema>
+
+export const RemoteMediaUpsertResultSchema = Type.Object({
+  status: Type.Union([
+    Type.Literal('created'),
+    Type.Literal('unchanged'),
+    Type.Literal('replaced'),
+  ]),
+  asset: RemoteMediaAssetSchema,
+}, { additionalProperties: false })
+
+export type RemoteMediaUpsertResult = Static<typeof RemoteMediaUpsertResultSchema>
 
 /**
  * Asset roles the storage subsystem distinguishes. An adapter declares the
@@ -277,6 +321,17 @@ export interface MediaVariantDelegate {
 // ---------------------------------------------------------------------------
 
 export interface ServerPluginMediaApi {
+  /**
+   * Create or update a managed media asset from a remote HTTPS URL. The host
+   * downloads and validates the bytes, writes through the elected storage
+   * adapter, and runs the normal responsive-image pipeline. Image bytes never
+   * cross the QuickJS boundary.
+   *
+   * `sourceKey` is scoped to this plugin and makes scheduled syncs idempotent.
+   * Requires `media.import.remote`, `network.outbound`, and a matching
+   * `networkAllowedHosts` entry for every redirect hop.
+   */
+  upsertRemote: (input: RemoteMediaUpsertInput) => Promise<RemoteMediaUpsertResult>
   /**
    * Register an exclusive storage adapter. The admin elects which adapter
    * handles each role from "Settings → Media storage". An adapter cannot

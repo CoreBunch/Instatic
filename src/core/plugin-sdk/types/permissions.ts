@@ -51,7 +51,12 @@ export const PLUGIN_PERMISSION_VALUES = [
   'loops.register',
   'visualComponents.register',
   'dashboard.widgets.register',
-  // Media subsystem — three independent tiers; a plugin can hold any subset.
+  // Media subsystem — remote ingestion plus three independent extension tiers;
+  // a plugin can hold any subset.
+  //
+  //   • 'media.import.remote' — create or replace plugin-owned media from an
+  //     allowlisted remote URL. The HOST downloads, validates, stores, and
+  //     processes the bytes; QuickJS sees only URL metadata and the result.
   //
   //   • 'media.storage.adapter' — register an exclusive backend that intercepts
   //     every media WRITE / DELETE for one or more roles ('original',
@@ -67,6 +72,7 @@ export const PLUGIN_PERMISSION_VALUES = [
   //   • 'media.variant.delegate' — replace the host's local variant ladder
   //     with a URL template. For image-transform CDNs (Cloudflare Images,
   //     Imgix, Bunny Optimizer). One winning plugin per host.
+  'media.import.remote',
   'media.storage.adapter',
   'media.url.transform',
   'media.variant.delegate',

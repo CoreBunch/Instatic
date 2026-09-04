@@ -62,6 +62,7 @@ const EXPECTED_TARGET_PERMISSIONS: Record<string, string> = {
   'network.fetch': 'network.outbound',
   'cms.schedule.register': 'cms.schedule',
   'cms.schedule.cancel': 'cms.schedule',
+  'cms.media.upsertRemote': 'media.import.remote',
   'cms.media.registerStorageAdapter': 'media.storage.adapter',
   'cms.media.registerUrlTransformer': 'media.url.transform',
   'cms.media.registerVariantDelegate': 'media.variant.delegate',

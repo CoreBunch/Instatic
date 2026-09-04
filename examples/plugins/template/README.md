@@ -105,6 +105,31 @@ Remove permissions you don't need — users see the full permission list before 
 A plugin that drops its editor entrypoint (and any app-kind admin pages) can drop
 `editor.code` too; everything else then runs inside the QuickJS sandbox.
 
+## Remote media sync
+
+A scheduled CRM connector can import allowlisted HTTPS images into managed media without downloading the bytes inside QuickJS. Request both permissions and allow the upstream CDN hosts:
+
+```json
+{
+  "permissions": ["cms.schedule", "media.import.remote", "network.outbound"],
+  "networkAllowedHosts": ["images.example-crm.com"]
+}
+```
+
+Then upsert each upstream image by a stable source identity:
+
+```js
+const result = await api.cms.media.upsertRemote({
+  sourceKey: `listing:${listing.id}:photo:${photo.id}`,
+  sourceUrl: photo.url,
+  sourceVersion: photo.updatedAt,
+  filename: photo.filename,
+  altText: listing.address,
+})
+```
+
+The first call creates a media asset, an unchanged version returns it without downloading, and a changed version replaces its binary while preserving `result.asset.id`.
+
 ## Further reading
 
 - [Plugin system docs](../../../docs/features/plugin-system.md)

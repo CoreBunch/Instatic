@@ -78,4 +78,17 @@ describe('media storage — no bytes in sandbox', () => {
     const flattened = protocol.replace(/[\s*]+/g, ' ')
     expect(flattened).toMatch(/Bytes are NEVER part of `args`/i)
   })
+
+  it('remote ingestion crosses the sandbox as URL metadata only', async () => {
+    const source = await read('src/core/plugin-sdk/types/media.ts')
+    const match = source.match(
+      /export const RemoteMediaUpsertInputSchema = Type\.Object\(\{([\s\S]*?)\n\}, \{ additionalProperties: false \}\)/,
+    )
+    expect(match).not.toBeNull()
+    const body = match![1]
+    expect(body).toContain('sourceUrl:')
+    for (const forbidden of ['bytes', 'buffer', 'body', 'data', 'payload']) {
+      expect(body).not.toMatch(new RegExp(`\\b${forbidden}\\s*:`))
+    }
+  })
 })

@@ -60,7 +60,8 @@ export const TARGET_PERMISSIONS = {
   // Scheduled jobs
   'cms.schedule.register': 'cms.schedule',
   'cms.schedule.cancel': 'cms.schedule',
-  // Media subsystem — three independent surfaces, each its own permission.
+  // Media subsystem — remote ingestion plus three independent extension surfaces.
+  'cms.media.upsertRemote': 'media.import.remote',
   'cms.media.registerStorageAdapter': 'media.storage.adapter',
   'cms.media.registerUrlTransformer': 'media.url.transform',
   'cms.media.registerVariantDelegate': 'media.variant.delegate',

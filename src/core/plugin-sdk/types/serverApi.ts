@@ -178,7 +178,10 @@ export interface ServerPluginApi {
       republishAll: () => Promise<{ count: number }>
     }
     /**
-     * Media subsystem extension points. Three independent tiers:
+     * Host-mediated media ingestion plus three independent extension tiers:
+     *
+     *   • upsertRemote             — ingest an allowlisted HTTPS image into
+     *                                managed media, keyed by plugin source id.
      *
      *   • registerStorageAdapter   — handle WRITE/DELETE bytes (S3, R2, …).
      *                                Two-phase: adapter signs upload plan,
@@ -187,7 +190,8 @@ export interface ServerPluginApi {
      *   • registerVariantDelegate  — replace local variant ladder with
      *                                a URL template (image-transform CDN).
      *
-     * Each call requires its own permission — see PLUGIN_PERMISSION_VALUES.
+     * Each call requires its own permission. Remote ingestion also requires
+     * `network.outbound` and a matching `networkAllowedHosts` entry.
      */
     media: ServerPluginMediaApi
   }
