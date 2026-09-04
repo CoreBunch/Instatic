@@ -14,6 +14,7 @@
  *   - `republishAndSweep`       — the activation/rollback publish coupling
  */
 import type { SiteFile } from '@core/files/schemas'
+import { MAIN_SCOPE } from '../../../branches/scope'
 import type { InstalledPlugin, PluginManifest } from '@core/plugin-sdk'
 import {
   computeSitePluginContentHash,
@@ -76,7 +77,7 @@ export function withSitePluginLock<T>(localId: string, fn: () => Promise<T>): Pr
  */
 export async function readDraftPluginFiles(db: DbClient): Promise<SiteFile[]> {
   await runPublishFlush()
-  const shell = await getDraftSite(db)
+  const shell = await getDraftSite(db, MAIN_SCOPE)
   return shell?.files.filter((file) => file.type === 'plugin') ?? []
 }
 

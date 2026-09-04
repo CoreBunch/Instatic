@@ -14,7 +14,7 @@ import {
 } from '@core/site-plugins'
 import { SplitButton, type SplitButtonMenuItem } from '@ui/components/SplitButton'
 import { PeerAvatar } from '@site/collab/PeerAvatar'
-import { formatRelativeTime } from '@site/panels/AgentPanel/relativeTime'
+import { formatRelativeTime } from '@core/utils/relativeTime'
 import { ToolbarStatus, type ToolbarStatusTone } from '@site/toolbar/ToolbarStatus'
 import type { IdePeer } from './idePresence'
 import styles from './IdeActions.module.css'

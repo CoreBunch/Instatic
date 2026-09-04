@@ -139,7 +139,7 @@ export function createIdeCollabSession(localId: string): IdeCollabSession {
   attach()
 
   const detachReset = provider.onReset((docId) => {
-    if (docId !== SITE_DOC_ID || destroyed) return
+    if (docId !== MAIN_SITE_DOC_ID || destroyed) return
     // The provider already destroyed the old doc; the undo managers hold
     // its Y.Text instances and must not outlive it.
     for (const manager of undoManagers.values()) manager.destroy()
