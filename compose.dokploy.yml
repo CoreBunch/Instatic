@@ -1,0 +1,46 @@
+# compose.dokploy.yml
+# Single-file Docker Compose for deploying Instatic on Dokploy (SQLite mode).
+#
+# Dokploy's Compose app type wants one compose file, but the VPS guide
+# (docs/deployment/vps.md) splits SQLite setup across two files
+# (compose.prod.yml + compose.sqlite.yml). This file merges those into one
+# so it can be pointed at directly from the Dokploy UI.
+#
+# For Postgres instead of SQLite, follow docs/deployment/vps.md directly
+# rather than this file.
+
+name: instatic-prod
+
+services:
+  app:
+    image: ${INSTATIC_IMAGE:-ghcr.io/corebunch/instatic:latest}
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-3001}:3001"
+    environment:
+      PORT: "3001"
+      DATABASE_URL: sqlite:/app/data/cms.db
+      UPLOADS_DIR: /app/uploads
+      STATIC_DIR: /app/dist
+      INSTATIC_SECRET_KEY: ${INSTATIC_SECRET_KEY:-}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+    volumes:
+      - uploads:/app/uploads
+      - data:/app/data
+    healthcheck:
+      test: ["CMD", "bun", "run", "server/healthcheck.ts"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    networks:
+      - dokploy-network
+
+volumes:
+  data:
+  uploads:
+
+networks:
+  dokploy-network:
+    external: true
