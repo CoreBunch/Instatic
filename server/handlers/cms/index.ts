@@ -43,6 +43,7 @@ import { handlePagesRoutes } from './pages'
 import { handleComponentsRoutes } from './components'
 import { handleLayoutsRoutes } from './layouts'
 import { handleRuntimeRoutes } from './runtime'
+import { handleRegistryRoutes } from './registry'
 import { handleMediaRoutes } from './media'
 import { handleMediaFolderRoutes } from './mediaFolders'
 import { handleMediaStorageAdminRoutes } from './mediaStorageAdmin'
@@ -95,6 +96,9 @@ export async function handleCmsRequest(
     ?? (await handleComponentsRoutes(req, db))
     ?? (await handleLayoutsRoutes(req, db))
     ?? (await handleRuntimeRoutes(req, db))
+    // Read-only npm registry proxy for the Dependencies panel: no branch
+    // scope, it never touches site data.
+    ?? (await handleRegistryRoutes(req, db))
     // The folder routes match `/admin/api/cms/media/folders/...` so they must
     // run BEFORE the asset routes whose `/admin/api/cms/media/:id` pattern
     // would otherwise eat them (treating "folders" as an asset id). The

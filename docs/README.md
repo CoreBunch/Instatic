@@ -27,6 +27,7 @@ docs/
 │   ├── content-workspace.md        ← Content workspace: collections, entries, body editor
 │   ├── auth-and-access.md          ← sessions, MFA, capabilities, roles
 │   ├── site-shell.md               ← site config (breakpoints, classes, files, deps)
+│   ├── dependencies.md             ← Dependencies panel: registry proxy, install/remove, lock
 │   ├── modules.md                  ← module engine + first-party blocks
 │   ├── data-workspace.md           ← Data workspace: table schema + field management UI
 │   ├── dashboard.md                ← Dashboard workspace + widget registry
@@ -144,6 +145,7 @@ Three categories, three voices:
 | [features/data-workspace.md](features/data-workspace.md)         | Data workspace UI: DataInspector, field management, DataGrid        |
 | [features/auth-and-access.md](features/auth-and-access.md)       | Sessions, MFA, step-up, lockout, CSRF, capabilities                  |
 | [features/site-shell.md](features/site-shell.md)                 | The persisted site config (breakpoints, classes, files, deps)        |
+| [features/dependencies.md](features/dependencies.md)             | Dependencies panel: npm registry proxy, browse, install, remove, lock |
 | [features/modules.md](features/modules.md)                       | Module engine, defining first-party blocks                          |
 | [features/dashboard.md](features/dashboard.md)                   | Dashboard workspace, widgets, grid, customize mode                  |
 | [features/spotlight.md](features/spotlight.md)                   | Cmd+K command palette                                                |

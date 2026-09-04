@@ -63,13 +63,6 @@ export const ALLOWED_NATIVE_TITLES: Array<{
       'title= is the only way to give sighted users a hover label here.',
   },
   {
-    file: 'admin/pages/site/panels/DependenciesPanel/DepsSection.tsx',
-    reason:
-      'Three non-interactive display spans: truncated dep name (<span title={name}>), ' +
-      'locked-version badge (<span title="Locked at …">), and usage badge ' +
-      '(<span title="Required by …">). All are display-only, no onClick.',
-  },
-  {
     file: 'admin/pages/site/panels/PropertiesPanel/ComponentRefView.tsx',
     reason:
       'Truncated parameter name label (<span title={param.name}>) — non-interactive display.',

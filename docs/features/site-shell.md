@@ -300,7 +300,7 @@ type SitePackageJson = {
 
 The CMS supports plugins that ship their own npm deps and runtime imports (e.g. `three`). When a site declares a dependency, `bun install` runs against a per-site workspace under `uploads/sites/<siteId>/runtime/`, producing a hashed cache directory the server serves at `/_instatic/runtime/cache/<hash>/...`. The runtime cache layout is owned by `src/core/site-runtime/` and served by `server/publish/runtime/`.
 
-The Site → Dependencies panel edits this `package.json`. Saving triggers a `bun install` and updates the runtime lock.
+The Site → Dependencies panel edits this `package.json`: it browses the npm registry through the server proxy and installs into `dependencies` (or `devDependencies`) with a caret range. Every manifest change is picked up by `useAutoResolveDependencies`, which resolves the lock and runs `bun install`. Panel and proxy: [`dependencies.md`](dependencies.md).
 
 ### `SiteRuntimeConfig`
 
@@ -695,7 +695,7 @@ createFile('src/styles/analytics.css', 'style', '/* ... */')
 
 ### Declare a site dependency
 
-Site → Dependencies panel edits `packageJson.dependencies`:
+Site → Dependencies panel (search the registry, open the package, Install) writes `packageJson.dependencies`; the same happens when a runtime-script diagnostic's **Add** action runs or a module declares a dependency:
 
 ```jsonc
 {
@@ -703,7 +703,7 @@ Site → Dependencies panel edits `packageJson.dependencies`:
 }
 ```
 
-Save → server runs `bun install` in the per-site workspace → `runtime.dependencyLock` updates → the publisher emits a `<script type="importmap">` mapping `three` to `/_instatic/runtime/cache/<hash>/three/build/three.module.js`.
+The auto-resolve hook posts the manifest to `/runtime/dependencies/resolve` → the server resolves versions through `server/registry/client.ts` and runs `bun install` in the per-site workspace → `runtime.dependencyLock` updates → the publisher emits a `<script type="importmap">` mapping `three` to `/_instatic/runtime/cache/<hash>/three/build/three.module.js`.
 
 A plugin canvas module can then `import * as THREE from 'three'` and it resolves at runtime.
 
