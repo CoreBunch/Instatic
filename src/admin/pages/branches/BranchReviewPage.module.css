@@ -319,9 +319,11 @@
 .highlight[data-tone="removed"] .highlightLabel { background: var(--danger-light); }
 
 .swipe { display: grid; gap: var(--space-xs); }
-.swipeStack { position: relative; }
-.swipeTop { position: absolute; inset: 0; clip-path: inset(0 calc(100% - var(--split)) 0 0); }
-.swipeLine { position: absolute; top: 0; bottom: 0; left: var(--split); width: 2px; background: var(--warning); transform: translateX(-1px); pointer-events: none; }
+.swipeStack { position: relative; cursor: ew-resize; touch-action: none; user-select: none; border-radius: var(--panel-radius); overflow: hidden; }
+.swipeTop { position: absolute; inset: 0; clip-path: inset(0 calc(100% - var(--split)) 0 0); pointer-events: none; }
+.swipeLine { position: absolute; top: 0; bottom: 0; left: var(--split); width: 3px; background: var(--warning); transform: translateX(-50%); pointer-events: none; }
+.swipeHandle { position: absolute; top: 50%; left: var(--split); width: 32px; height: 32px; transform: translate(-50%, -50%); border-radius: 999px; background: var(--warning); display: grid; place-items: center; pointer-events: none; box-shadow: 0 2px 8px var(--scrim-40); }
+.swipeHandleGrip { width: 10px; height: 14px; border-left: 2px solid var(--bg-body); border-right: 2px solid var(--bg-body); }
 .swipeTagLeft, .swipeTagRight { position: absolute; top: 8px; padding: 2px 8px; border-radius: 999px; font-size: var(--text-3xs); font-weight: 700; color: var(--bg-body); background: var(--text); pointer-events: none; }
 .swipeTagLeft { left: 8px; }
 .swipeTagRight { right: 8px; }

@@ -22,6 +22,7 @@
 import {
   MAIN_BRANCH_ID,
   mergeJson,
+  type BranchMergeRecord,
   type MergeChange,
   type MergeDirection,
   type MergePlan,
@@ -45,6 +46,13 @@ import { describeChange } from './changeDetail'
 import { collectBranchEntities, type BranchEntity } from './entities'
 import { deleteBranchBases, listBranchBases, upsertBranchBases, type BranchBase } from '../repositories/branchBases'
 import { touchBranch } from '../repositories/branches'
+import {
+  getLatestBranchMerge,
+  insertBranchMerge,
+  listMergeUndoEntries,
+  markBranchMergeUndone,
+  type MergeUndoEntry,
+} from '../repositories/branchMerges'
 import {
   createDataTable,
   getDataRow,
@@ -440,6 +448,8 @@ export interface ApplyMergeInput {
 
 export interface ApplyMergeResult {
   plan: MergePlan
+  /** The record `undoBranchMerge` reverses. */
+  merge: BranchMergeRecord
 }
 
 /**
@@ -454,7 +464,7 @@ export async function applyBranchMerge(db: DbClient, input: ApplyMergeInput): Pr
   // Everything that writes runs on the collab-aware lane; the plugin hooks
   // fire AFTER it releases — a listener that writes content takes the same
   // lane and would otherwise wait on the very merge that is waiting on it.
-  const { plan, into, intoNotices } = await serializeCollabAwareWrite(async () => {
+  const { plan, into, intoNotices, merge } = await serializeCollabAwareWrite(async () => {
     const { plan, work, converged, stale } = await planBranchMerge(db, input.branchId, input.direction)
     const unresolved = plan.changes
       .filter((change) => change.conflicts.length > 0 && !input.resolutions[change.key])
@@ -465,13 +475,27 @@ export async function applyBranchMerge(db: DbClient, input: ApplyMergeInput): Pr
     const mirrorOntoFrom = input.direction === 'merge'
     const intoNotices: WriteNotices = { rows: [], shell: false }
     const fromNotices: WriteNotices = { rows: [], shell: false }
+    let merge: BranchMergeRecord | null = null
 
     await db.transaction(async (tx) => {
       const bases: BranchBase[] = [...converged]
       const removed: Array<{ kind: BranchEntityKind; logicalId: string }> = [...stale]
+      // Before-images for undo: what every written entity held on each side,
+      // and the base it was judged against.
+      const basesBefore = new Map(
+        (await listBranchBases(tx, input.branchId)).map((base) => [baseKey(base.kind, base.logicalId), base.content]),
+      )
+      const undoEntries: MergeUndoEntry[] = []
       for (const entry of work) {
         const result = resolvedResult(entry, input.resolutions)
         const resultHash = result === null ? null : contentHash(result)
+        undoEntries.push({
+          change: entry.change,
+          intoBefore: entry.ours?.content ?? null,
+          fromBefore: mirrorOntoFrom ? entry.theirs?.content ?? null : null,
+          baseBefore: basesBefore.get(baseKey(entry.change.kind, entry.change.logicalId)) ?? null,
+          resultHash,
+        })
         const oursHash = entry.ours ? contentHash(entry.ours.content) : null
         const theirsHash = entry.theirs ? contentHash(entry.theirs.content) : null
         if (resultHash !== oursHash) await writeEntity(tx, into, entry, result, input.actorUserId, intoNotices)
@@ -488,12 +512,113 @@ export async function applyBranchMerge(db: DbClient, input: ApplyMergeInput): Pr
       await upsertBranchBases(tx, input.branchId, bases)
       await deleteBranchBases(tx, input.branchId, removed)
       await touchBranch(tx, input.branchId)
+      merge = await insertBranchMerge(tx, {
+        branchId: input.branchId,
+        direction: input.direction,
+        appliedByUserId: input.actorUserId,
+        entries: undoEntries,
+      })
     })
 
     emitCollabNotices(into, intoNotices)
     if (mirrorOntoFrom) emitCollabNotices(from, fromNotices)
-    return { plan, into, intoNotices }
+    if (!merge) throw new Error('[branches] the merge transaction committed without a record')
+    return { plan, into, intoNotices, merge }
   })
   if (isMainScope(into)) await emitContentEvents(db, intoNotices, input.actorUserId)
-  return { plan }
+  return { plan, merge }
+}
+
+function baseKey(kind: BranchEntityKind, logicalId: string): string {
+  return `${kind}\n${logicalId}`
+}
+
+function contentHashOrNull(content: unknown | null): string | null {
+  return content === null ? null : contentHash(content)
+}
+
+function entityHash(entity: BranchEntity | undefined): string | null {
+  return entity ? contentHash(entity.content) : null
+}
+
+/** The latest apply cannot be reversed: nothing is recorded, or the target moved since. */
+export class MergeUndoError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'MergeUndoError'
+  }
+}
+
+export interface UndoMergeInput {
+  branchId: string
+  direction: MergeDirection
+  actorUserId: string | null
+}
+
+export interface UndoMergeResult {
+  merge: BranchMergeRecord
+  /** Entities put back on the target. */
+  restoredCount: number
+}
+
+/**
+ * Reverse the latest merge or update on the branch. Every entity the apply
+ * wrote goes back to what it was on the target, the bases return with it,
+ * and after a merge the branch's mirrored copy goes back too, for every
+ * entity that still holds the merged content (an edit made on the branch
+ * since is kept). Refused outright when the TARGET moved since the apply:
+ * an undo must never silently discard work that landed after the merge.
+ */
+export async function undoBranchMerge(db: DbClient, input: UndoMergeInput): Promise<UndoMergeResult> {
+  await runPublishFlush()
+  const { from, into } = scopesFor(input.branchId, input.direction)
+  const mirrorOntoFrom = input.direction === 'merge'
+  const { merge, restoredCount, intoNotices } = await serializeCollabAwareWrite(async () => {
+    const record = await getLatestBranchMerge(db, input.branchId, input.direction)
+    if (!record) throw new MergeUndoError('There is no merge to undo')
+    const entries = await listMergeUndoEntries(db, record.id)
+    const intoNow = await collectBranchEntities(db, into)
+    const moved = entries.filter((entry) => entityHash(intoNow.get(entry.change.key)) !== entry.resultHash)
+    if (moved.length > 0) {
+      const names = moved.slice(0, 3).map((entry) => entry.change.label).join(', ')
+      throw new MergeUndoError(
+        `${into.branchId} changed since the merge (${names}${moved.length > 3 ? ', ...' : ''}); put it back by hand`,
+      )
+    }
+    const fromNow = mirrorOntoFrom ? await collectBranchEntities(db, from) : null
+    const intoNotices: WriteNotices = { rows: [], shell: false }
+    const fromNotices: WriteNotices = { rows: [], shell: false }
+    let restored = 0
+    await db.transaction(async (tx) => {
+      const bases: BranchBase[] = []
+      const removed: Array<{ kind: BranchEntityKind; logicalId: string }> = []
+      for (const entry of entries) {
+        const work: Work = { change: entry.change, ours: undefined, theirs: undefined, result: null }
+        const intoBefore = entry.intoBefore ?? null
+        if (contentHashOrNull(intoBefore) !== entry.resultHash) {
+          await writeEntity(tx, into, work, intoBefore, input.actorUserId, intoNotices)
+          restored += 1
+        }
+        if (fromNow && entityHash(fromNow.get(entry.change.key)) === entry.resultHash) {
+          const fromBefore = entry.fromBefore ?? null
+          if (contentHashOrNull(fromBefore) !== entry.resultHash) {
+            await writeEntity(tx, from, work, fromBefore, input.actorUserId, fromNotices)
+          }
+        }
+        const { kind, logicalId } = entry.change
+        const baseBefore = entry.baseBefore ?? null
+        if (baseBefore === null) removed.push({ kind, logicalId })
+        else bases.push({ kind, logicalId, contentHash: contentHash(baseBefore), content: baseBefore })
+      }
+      await upsertBranchBases(tx, input.branchId, bases)
+      await deleteBranchBases(tx, input.branchId, removed)
+      await touchBranch(tx, input.branchId)
+      await markBranchMergeUndone(tx, record.id)
+    })
+    emitCollabNotices(into, intoNotices)
+    if (mirrorOntoFrom) emitCollabNotices(from, fromNotices)
+    return { merge: { ...record, undoneAt: new Date().toISOString() }, restoredCount: restored, intoNotices }
+  })
+  if (isMainScope(into)) await emitContentEvents(db, intoNotices, input.actorUserId)
+  return { merge, restoredCount }
 }

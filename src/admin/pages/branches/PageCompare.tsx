@@ -7,11 +7,16 @@
  * by their `uid` attribute and outlined in place, so the highlights come
  * from the tree diff, not from guesses. Side by side, a swipe with one
  * frame clipped over the other, or the plain change list.
+ *
+ * Rendered ids are the COMPOSED ids (a page spliced into its template
+ * chain gets a prefix), so every `uid` is resolved back to its page node
+ * through `composedNodeSourceId` before it is matched against the plan.
  */
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import type { MergeTreeDiff, ReviewRenderSide } from '@core/branches'
 import { apiTextRequest, isAbortError } from '@core/http'
 import { cmsBranchReviewRenderUrl } from '@core/persistence'
+import { composedNodeSourceId } from '@core/templates'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { Switch } from '@ui/components/Switch'
@@ -22,7 +27,7 @@ const MIN_HEIGHT = 360
 const MAX_HEIGHT = 2400
 
 interface HighlightBox {
-  id: string
+  key: string
   label: string
   tone: 'added' | 'changed' | 'removed'
   x: number
@@ -39,6 +44,25 @@ interface FrameProps {
   /** Node ids to outline in this frame, with their tone. */
   marks: Array<{ id: string; label: string; tone: HighlightBox['tone'] }>
   showHighlights: boolean
+}
+
+/**
+ * Every rendered element that carries a node id, keyed by the PAGE node id
+ * it came from. A node inside a loop renders once per item, so one id can
+ * map to several elements; all of them are outlined.
+ */
+function elementsByNodeId(doc: Document): Map<string, HTMLElement[]> {
+  const byId = new Map<string, HTMLElement[]>()
+  const HTMLElementCtor = doc.defaultView?.HTMLElement
+  if (!HTMLElementCtor) return byId
+  for (const element of doc.querySelectorAll('[uid]')) {
+    if (!(element instanceof HTMLElementCtor)) continue
+    const uid = element.getAttribute('uid')
+    if (!uid) continue
+    const id = composedNodeSourceId(uid)
+    byId.set(id, [...(byId.get(id) ?? []), element])
+  }
+  return byId
 }
 
 function ScaledFrame({ branchId, rowId, side, title, marks, showHighlights }: FrameProps) {
@@ -92,21 +116,24 @@ function ScaledFrame({ branchId, rowId, side, title, marks, showHighlights }: Fr
     if (!frame || !doc?.documentElement) return
     const height = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, doc.documentElement.scrollHeight))
     setDocHeight(height)
+    const byId = elementsByNodeId(doc)
+    const scrollX = doc.defaultView?.scrollX ?? 0
+    const scrollY = doc.defaultView?.scrollY ?? 0
     const next: HighlightBox[] = []
     for (const mark of marksRef.current) {
-      const element = doc.querySelector(`[uid="${CSS.escape(mark.id)}"]`)
-      if (!(element instanceof doc.defaultView!.HTMLElement)) continue
-      const rect = element.getBoundingClientRect()
-      if (rect.width === 0 && rect.height === 0) continue
-      next.push({
-        id: mark.id,
-        label: mark.label,
-        tone: mark.tone,
-        x: rect.left + (doc.defaultView?.scrollX ?? 0),
-        y: rect.top + (doc.defaultView?.scrollY ?? 0),
-        width: rect.width,
-        height: rect.height,
-      })
+      for (const [index, element] of (byId.get(mark.id) ?? []).entries()) {
+        const rect = element.getBoundingClientRect()
+        if (rect.width === 0 && rect.height === 0) continue
+        next.push({
+          key: `${mark.id}:${index}`,
+          label: mark.label,
+          tone: mark.tone,
+          x: rect.left + scrollX,
+          y: rect.top + scrollY,
+          width: rect.width,
+          height: rect.height,
+        })
+      }
     }
     setBoxes(next)
     setLoaded(true)
@@ -145,7 +172,7 @@ function ScaledFrame({ branchId, rowId, side, title, marks, showHighlights }: Fr
         )}
         {showHighlights && boxes.map((box) => (
           <span
-            key={box.id}
+            key={box.key}
             className={styles.highlight}
             data-tone={box.tone}
             style={{ '--hl-x': `${box.x}px`, '--hl-y': `${box.y}px`, '--hl-w': `${box.width}px`, '--hl-h': `${box.height}px` } as CSSProperties}
@@ -169,6 +196,17 @@ function markLabel(verb: string, nodeLabel: string | undefined): string {
   return `${verb} · ${nodeLabel}`
 }
 
+/** "Changed text: “a” → “b”" when the plan knows what moved; "Changed text" when it does not. */
+function changedLine(tree: MergeTreeDiff, id: string): string {
+  const head = `Changed ${tree.labels[id] ?? id}`
+  const details = tree.details[id] ?? []
+  return details.length > 0 ? `${head}: ${details.join('; ')}` : head
+}
+
+function clampPercent(value: number): number {
+  return Math.min(100, Math.max(0, value))
+}
+
 interface PageCompareProps {
   branchId: string
   rowId: string
@@ -184,6 +222,7 @@ export function PageCompare({ branchId, rowId, label, action, tree, fieldLines, 
   const [mode, setMode] = useState<Mode>('side')
   const [showHighlights, setShowHighlights] = useState(true)
   const [split, setSplit] = useState(50)
+  const stackRef = useRef<HTMLDivElement | null>(null)
   const hasMain = action !== 'create'
   const hasBranch = action !== 'delete'
   const bothSides = hasMain && hasBranch
@@ -198,11 +237,32 @@ export function PageCompare({ branchId, rowId, label, action, tree, fieldLines, 
   const treeLines = tree
     ? [
         ...tree.added.map((id) => `Added ${tree.labels[id] ?? id}`),
-        ...tree.changed.map((id) => `Changed ${tree.labels[id] ?? id}`),
+        ...tree.changed.map((id) => changedLine(tree, id)),
         ...tree.removed.map((id) => `Removed ${tree.labels[id] ?? id}`),
       ]
     : []
   const lines = [...fieldLines, ...treeLines]
+
+  // Drag anywhere on the stack to move the divider; the frames ignore the
+  // pointer, so the stack sees every event. The range below keeps the
+  // keyboard path.
+  function splitFromPointer(event: PointerEvent<HTMLDivElement>): number {
+    const rect = stackRef.current?.getBoundingClientRect()
+    if (!rect || rect.width === 0) return split
+    return clampPercent(((event.clientX - rect.left) / rect.width) * 100)
+  }
+  function onStackPointerDown(event: PointerEvent<HTMLDivElement>): void {
+    if (event.button !== 0) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setSplit(splitFromPointer(event))
+  }
+  function onStackPointerMove(event: PointerEvent<HTMLDivElement>): void {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
+    setSplit(splitFromPointer(event))
+  }
+  function onStackPointerUp(event: PointerEvent<HTMLDivElement>): void {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
 
   return (
     <div className={styles.compare}>
@@ -242,12 +302,24 @@ export function PageCompare({ branchId, rowId, label, action, tree, fieldLines, 
         )
       ) : mode === 'swipe' && bothSides ? (
         <div className={styles.swipe}>
-          <div className={styles.swipeStack} style={{ '--split': `${split}%` } as CSSProperties}>
+          <div
+            ref={stackRef}
+            className={styles.swipeStack}
+            style={{ '--split': `${split}%` } as CSSProperties}
+            onPointerDown={onStackPointerDown}
+            onPointerMove={onStackPointerMove}
+            onPointerUp={onStackPointerUp}
+            onPointerCancel={onStackPointerUp}
+            data-testid="review-swipe-stack"
+          >
             <ScaledFrame branchId={branchId} rowId={rowId} side="branch" title={`${label} on the branch`} marks={branchMarks} showHighlights={showHighlights} />
             <div className={styles.swipeTop}>
               <ScaledFrame branchId={branchId} rowId={rowId} side="main" title={`${label} on main`} marks={mainMarks} showHighlights={showHighlights} />
             </div>
             <span className={styles.swipeLine} />
+            <span className={styles.swipeHandle} aria-hidden="true">
+              <span className={styles.swipeHandleGrip} />
+            </span>
             <span className={styles.swipeTagLeft}>{mainLabel}</span>
             <span className={styles.swipeTagRight}>Branch</span>
           </div>

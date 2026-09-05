@@ -598,7 +598,7 @@ export const DataRowsSource: LoopEntitySource = {
     const logicalTableId = typeof ctx.filters.tableId === 'string' ? ctx.filters.tableId : ''
     return fetchPublishedDataRowItems(ctx.db, {
       tableId: logicalTableId ? physicalId(ctx.branchId ?? MAIN_BRANCH_ID, logicalTableId) : '',
-      drafts: (ctx.branchId ?? MAIN_BRANCH_ID) !== MAIN_BRANCH_ID,
+      drafts: ctx.drafts ?? (ctx.branchId ?? MAIN_BRANCH_ID) !== MAIN_BRANCH_ID,
       orderBy: ctx.orderBy,
       direction: ctx.direction,
       limit: ctx.limit,

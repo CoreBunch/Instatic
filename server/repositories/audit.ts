@@ -38,6 +38,8 @@ const AuditActionSchema = Type.Union([
   Type.Literal('branch.delete'),
   Type.Literal('branch.merge'),
   Type.Literal('branch.update'),
+  Type.Literal('branch.merge.undo'),
+  Type.Literal('branch.update.undo'),
   Type.Literal('branch.preview.share'),
   Type.Literal('branch.preview.revoke'),
   Type.Literal('branch.review.request'),

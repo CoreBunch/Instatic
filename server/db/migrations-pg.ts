@@ -1335,4 +1335,22 @@ export const pgMigrations: Migration[] = [
         on site_branch_review_comments (branch_id, created_at);
     `,
   },
+  {
+    id: '029_site_branch_merges',
+    sql: `
+      create table if not exists site_branch_merges (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        direction text not null,
+        applied_by_user_id text references users(id) on delete set null,
+        change_count integer not null default 0,
+        entries_json jsonb not null default '[]',
+        undone_at timestamptz,
+        created_at timestamptz not null default now()
+      );
+
+      create index if not exists site_branch_merges_branch_idx
+        on site_branch_merges (branch_id, created_at desc);
+    `,
+  },
 ]

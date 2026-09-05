@@ -8,7 +8,7 @@
  */
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from '@admin/lib/routing'
+import { useLocation, useNavigate } from '@admin/lib/routing'
 import { ArrowDownIcon } from 'pixel-art-icons/icons/arrow-down'
 import { CircleDotSolidIcon } from 'pixel-art-icons/icons/circle-dot-solid'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
@@ -66,6 +66,9 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
   const canManage = hasCapability(user, 'site.branches.manage')
   const canAuthor = canActOnBranch(user, current)
   const navigate = useNavigate()
+  // The review page carries the real merge control in its footer, so the
+  // strip's button only leads there and steps aside once you have arrived.
+  const onReviewPage = useLocation().pathname.startsWith('/admin/branches/')
   const openManage = useBranchStore((state) => state.openManage)
   const [moreOpen, setMoreOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -158,18 +161,20 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
         </Button>
       )}
 
-      <Button
-        variant="primary"
-        size="xs"
-        type="button"
-        data-testid="branch-strip-merge"
-        tooltip={canManage ? 'Review every change, then merge' : 'Review the changes and request a merge'}
-        tooltipSide="bottom"
-        onClick={() => navigate(`/admin/branches/${encodeURIComponent(current.id)}/review`)}
-      >
-        <GitMergeSolidIcon size={12} aria-hidden="true" />
-        <span>{canManage ? 'Merge into main…' : 'Request merge…'}</span>
-      </Button>
+      {!onReviewPage && (
+        <Button
+          variant="primary"
+          size="xs"
+          type="button"
+          data-testid="branch-strip-merge"
+          tooltip={canManage ? 'Open the merge review; merging happens there' : 'Review the changes and request a merge'}
+          tooltipSide="bottom"
+          onClick={() => navigate(`/admin/branches/${encodeURIComponent(current.id)}/review`)}
+        >
+          <GitMergeSolidIcon size={12} aria-hidden="true" />
+          <span>{canManage ? 'Review merge…' : 'Request merge…'}</span>
+        </Button>
+      )}
 
       <Button
         ref={moreRef}

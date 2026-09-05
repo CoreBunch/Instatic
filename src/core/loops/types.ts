@@ -132,6 +132,12 @@ export interface SourceFetchContext {
    */
   request?: SourceRequestContext
   /**
+   * Read draft rows instead of published versions. Unset, the source decides
+   * from `branchId` (drafts off main). The merge review sets it on both
+   * sides, because a merge compares drafts with drafts.
+   */
+  drafts?: boolean
+  /**
    * Branch whose rows the source reads. Publishing and public rendering run
    * on `main`; the editor's runtime preview and branch previews pass the
    * branch being viewed so `data.rows` addresses that branch's tables (see

@@ -44,8 +44,23 @@ export interface SiteContent {
 /** A site file minus its id (the logical id) and timestamps (never merged). */
 export type FileContent = Omit<SiteFile, 'id' | 'createdAt' | 'updatedAt'>
 
+/**
+ * A cell that is absent, null, or the empty string is the same empty cell.
+ * Rows written by different paths disagree on which of the three they store
+ * (an import keeps `""`, the relay drops the key), and that must never read
+ * as a change, a conflict, or a "cleared" field in the review.
+ */
+export function compactCells(cells: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(cells)) {
+    if (value === undefined || value === null || value === '') continue
+    out[key] = value
+  }
+  return out
+}
+
 export function rowContent(row: Pick<DataRow, 'tableId' | 'cells' | 'slug'>): RowContent {
-  return { tableId: row.tableId, cells: row.cells, slug: row.slug }
+  return { tableId: row.tableId, cells: compactCells(row.cells), slug: row.slug }
 }
 
 export function tableContent(table: DataTable): TableContent {

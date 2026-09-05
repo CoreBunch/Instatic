@@ -19,18 +19,18 @@ import { hasCapability } from '@admin/access'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import { mergeBranch, refreshBranches, switchBranch, useActiveBranchId, useBranchStore } from '@admin/state/branchStore'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
+import { useConfirmAction } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { UserAvatar } from '@admin/shared/UserAvatar/UserAvatar'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { FilterBar } from '@ui/components/FilterBar'
 import { Textarea } from '@ui/components/Input'
 import { Skeleton } from '@ui/components/Skeleton'
-import { Switch } from '@ui/components/Switch'
 import { TagPill } from '@ui/components/TagPill'
 import { pushToast } from '@ui/components/Toast'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
-import { GitMergeSolidIcon } from 'pixel-art-icons/icons/git-merge-solid'
 import { ReviewChangeCard } from './ReviewChangeCard'
+import { ReviewFooter } from './ReviewFooter'
 import { ReviewThread } from './ReviewThread'
 import {
   FILTER_LABELS,
@@ -101,10 +101,12 @@ function Review({ branchId, branchName }: ReviewProps) {
   const user = useAuthenticatedAdminUser()
   const canManage = hasCapability(user, 'site.branches.manage')
   const { runStepUp } = useStepUp()
+  const confirmAction = useConfirmAction()
   const data = useBranchReview(branchId)
   const [filter, setFilter] = useState<ReviewFilter>('all')
   const [resolutions, setResolutions] = useState<Record<string, MergeResolution>>({})
-  const [deleteAfter, setDeleteAfter] = useState(true)
+  // Off by default: a merge that deletes the branch cannot be undone.
+  const [deleteAfter, setDeleteAfter] = useState(false)
   const [dialog, setDialog] = useState<'request' | 'decline' | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -186,18 +188,45 @@ function Review({ branchId, branchName }: ReviewProps) {
     }
   }
 
-  async function merge(): Promise<void> {
+  function merge(): void {
     if (unresolved.length > 0 || loadedPlan.changes.length === 0) return
-    const done = await withBusy('merge the branch', async () => {
+    const count = loadedPlan.changes.length
+    const changes = `${count} change${count === 1 ? '' : 's'}`
+    confirmAction({
+      title: `Merge ${branchName} into main?`,
+      description: deleteAfter
+        ? `${changes} land in main's draft and the branch is deleted, so this cannot be undone. Nothing is published.`
+        : `${changes} land in main's draft. Nothing is published, and the merge can be undone from this page while main stays as merged.`,
+      confirmLabel: 'Merge into main',
+      commit: () => { void runMerge() },
+    })
+  }
+
+  async function runMerge(): Promise<void> {
+    await withBusy('merge the branch', async () => {
       const result = await runStepUp(() => mergeBranch(branchId, 'merge', { resolutions, deleteBranch: deleteAfter }))
       const count = result.plan.changes.length
       pushToast({
         kind: 'success',
         title: `Merged ${branchName} into main`,
         body: `${count} change${count === 1 ? '' : 's'} landed in main's draft. Publish when you're ready.${result.branchDeleted ? ' The branch was deleted.' : ''}`,
+        ...(result.merge ? { action: { label: 'Undo', onSelect: () => { void undo() } } } : {}),
+      })
+      if (result.branchDeleted) navigate('/admin/site')
+      else await data.reload()
+    })
+  }
+
+  async function undo(): Promise<void> {
+    await withBusy('undo the merge', async () => {
+      const result = await runStepUp(() => data.undo())
+      const count = result.restoredCount
+      pushToast({
+        kind: 'success',
+        title: `Undid the merge of ${branchName}`,
+        body: `${count} change${count === 1 ? '' : 's'} put back. Main's draft is as it was before the merge.`,
       })
     })
-    if (done) navigate('/admin/site')
   }
 
   const changeCountLabel = `${plan.changes.length} change${plan.changes.length === 1 ? '' : 's'}`
@@ -469,70 +498,22 @@ function Review({ branchId, branchName }: ReviewProps) {
               </div>
             </div>
 
-            <footer className={styles.footer} data-testid="branch-review-footer">
-              {canManage ? (
-                <>
-                  <label className={styles.footerToggle}>
-                    <Switch checked={deleteAfter} onCheckedChange={setDeleteAfter} switchSize="sm" aria-label="Delete branch after merging" data-testid="review-delete-toggle" />
-                    <span>Delete branch after merging</span>
-                  </label>
-                  <span className={styles.footerStatus}>
-                    {plan.changes.length === 0
-                      ? ''
-                      : unresolved.length > 0
-                        ? `${unresolved.length} conflict${unresolved.length === 1 ? '' : 's'} still need${unresolved.length === 1 ? 's' : ''} a decision.`
-                        : `Merging writes ${changeCountLabel} to main's draft.`}
-                  </span>
-                  {open && (
-                    <Button variant="secondary" size="sm" type="button" disabled={busy} onClick={() => setDialog('decline')} data-testid="review-decline-open">
-                      Decline…
-                    </Button>
-                  )}
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    type="button"
-                    busy={busy}
-                    disabled={busy || plan.changes.length === 0 || unresolved.length > 0}
-                    tooltip={plan.changes.length === 0 ? 'Nothing to merge' : unresolved.length > 0 ? `${unresolved.length} conflict${unresolved.length === 1 ? '' : 's'} still need a decision` : undefined}
-                    onClick={() => { void merge() }}
-                    data-testid="review-merge"
-                  >
-                    <GitMergeSolidIcon size={12} aria-hidden="true" />
-                    <span>Merge {changeCountLabel}</span>
-                  </Button>
-                </>
-              ) : open ? (
-                <>
-                  <span className={styles.footerStatus}>Waiting for a branch manager to review.</span>
-                  {request.requestedBy?.id === user.id && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      type="button"
-                      busy={busy}
-                      onClick={() => { void withBusy('withdraw the request', () => data.withdraw()) }}
-                      data-testid="review-withdraw"
-                    >
-                      Withdraw request
-                    </Button>
-                  )}
-                </>
-              ) : (
-                <>
-                  <span className={styles.footerStatus}>
-                    {request?.status === 'declined'
-                      ? 'Fix what the note asks for, then request a merge again.'
-                      : request?.status === 'merged'
-                        ? 'The last request was merged. New work on this branch can be requested again.'
-                        : 'Request a merge when the branch is ready for review.'}
-                  </span>
-                  <Button variant="primary" size="sm" type="button" disabled={busy || plan.changes.length === 0} tooltip={plan.changes.length === 0 ? 'Nothing to merge yet' : undefined} onClick={() => setDialog('request')} data-testid="review-request-open">
-                    {request?.status === 'declined' ? 'Request merge again…' : 'Request merge…'}
-                  </Button>
-                </>
-              )}
-            </footer>
+            <ReviewFooter
+              canManage={canManage}
+              plan={plan}
+              request={request}
+              lastMerge={review.lastMerge}
+              unresolvedCount={unresolved.length}
+              busy={busy}
+              userId={user.id}
+              deleteAfter={deleteAfter}
+              onDeleteAfterChange={setDeleteAfter}
+              onMerge={merge}
+              onUndo={() => { void undo() }}
+              onDecline={() => setDialog('decline')}
+              onWithdraw={() => { void withBusy('withdraw the request', () => data.withdraw()) }}
+              onRequest={() => setDialog('request')}
+            />
           </div>
 
           {dialog === 'request' && (

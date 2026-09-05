@@ -38,6 +38,7 @@ import {
   type CollabSocketLike,
 } from '@site/collab/collabProvider'
 import { createCollabRelay, type CollabRelay } from '../../../server/collab/relay'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 import {
   createCollabSocketLayer,
   handleCollabSocketUpgrade,
@@ -209,14 +210,20 @@ describe('collab relay integration (real server, real sockets)', () => {
 
   it('keeps the cells the doc does not own when it persists the derived row', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
-    // SEO lives on the row, never in the doc: seed it out of band before any
-    // doc exists, then let the relay write the row from a doc edit.
-    const seeded = (await getDataRow(stack.harness.db, stack.homeId))!
-    await saveDataRowDraft(stack.harness.db, stack.homeId, {
-      cells: { ...seeded.cells, seoTitle: 'Kept title', seoDescription: 'Kept description' },
-      slug: seeded.slug,
-    })
+    const docId = `page:main:${stack.homeId}`
+    // SEO lives on the row, never in the doc. Seeded as a collab-internal
+    // write so the roster's already-loaded doc is not reset under the client;
+    // what is under test is what the relay's own persist keeps on the row.
+    const seeded = (await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId))!
+    await saveDataRowDraft(
+      stack.harness.db,
+      MAIN_SCOPE,
+      stack.homeId,
+      { cells: { ...seeded.cells, seoTitle: 'Kept title', seoDescription: 'Kept description' }, slug: seeded.slug },
+      null,
+      null,
+      { collabInternal: true },
+    )
 
     const client = connectClient(stack)
     const bound = client.bind(docId)
@@ -225,10 +232,10 @@ describe('collab relay integration (real server, real sockets)', () => {
     setNodeLabel(bound.doc, rootId, 'Edited in the doc')
 
     await waitFor(async () => {
-      const row = await getDataRow(stack.harness.db, stack.homeId)
+      const row = await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId)
       return row !== null && pageFromRow(row).nodes[rootId]?.label === 'Edited in the doc'
     })
-    const row = (await getDataRow(stack.harness.db, stack.homeId))!
+    const row = (await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId))!
     expect(row.cells.seoTitle).toBe('Kept title')
     expect(row.cells.seoDescription).toBe('Kept description')
   })
@@ -680,5 +687,3 @@ describe('collab relay integration (real server, real sockets)', () => {
     })
   })
 })
-
-import { MAIN_SCOPE } from '../../../server/branches/scope'

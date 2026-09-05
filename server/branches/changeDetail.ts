@@ -94,6 +94,49 @@ function normalizeNode(node: Record<string, unknown>): Record<string, unknown> {
   }
 }
 
+const NODE_TEXT_LIMIT = 80
+
+function quote(value: unknown): string {
+  const text = typeof value === 'string' ? value : String(value)
+  const shown = text.length > NODE_TEXT_LIMIT ? `${text.slice(0, NODE_TEXT_LIMIT)}…` : text
+  return `“${shown}”`
+}
+
+/** A scalar the review can print inline; objects and arrays are "changed". */
+function isScalar(value: unknown): value is string | number | boolean {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+}
+
+/**
+ * What moved between two versions of one node, as lines the review prints:
+ * a prop with scalar values on both sides is quoted (`text: “a” → “b”`), a
+ * prop or node field that is structured or missing on one side is named.
+ * Children are not compared here; a child list change is the child's own
+ * add or remove.
+ */
+function nodeChangeDetails(before: Record<string, unknown>, after: Record<string, unknown>): string[] {
+  const lines: string[] = []
+  const a = normalizeNode(before)
+  const b = normalizeNode(after)
+  const aProps = isRecord(a.props) ? a.props : {}
+  const bProps = isRecord(b.props) ? b.props : {}
+  for (const key of [...new Set([...Object.keys(aProps), ...Object.keys(bProps)])].sort()) {
+    const x = aProps[key]
+    const y = bProps[key]
+    if (canonicalJson(x ?? null) === canonicalJson(y ?? null)) continue
+    if (isScalar(x) && isScalar(y)) lines.push(`${key}: ${quote(x)} → ${quote(y)}`)
+    else if (x === undefined || x === null) lines.push(`${key}: set`)
+    else if (y === undefined || y === null) lines.push(`${key}: cleared`)
+    else lines.push(`${key} changed`)
+  }
+  for (const key of Object.keys({ ...a, ...b }).sort()) {
+    if (key === 'props' || key === 'children' || key === 'parentId' || key === 'id') continue
+    if (canonicalJson(a[key] ?? null) === canonicalJson(b[key] ?? null)) continue
+    lines.push(`${key} changed`)
+  }
+  return lines
+}
+
 function nodeLabel(node: unknown): string {
   if (!isRecord(node)) return 'node'
   if (typeof node.label === 'string' && node.label.trim()) return node.label.trim()
@@ -108,7 +151,7 @@ export function treeDiff(before: unknown, after: unknown): MergeTreeDiff | null 
   if (!beforeNodes && !afterNodes) return null
   const a = beforeNodes ?? {}
   const b = afterNodes ?? {}
-  const diff: MergeTreeDiff = { added: [], changed: [], removed: [], labels: {} }
+  const diff: MergeTreeDiff = { added: [], changed: [], removed: [], labels: {}, details: {} }
   for (const id of Object.keys(b)) {
     if (!(id in a)) {
       diff.added.push(id)
@@ -116,6 +159,9 @@ export function treeDiff(before: unknown, after: unknown): MergeTreeDiff | null 
     } else if (nodeSignature(a[id]) !== nodeSignature(b[id])) {
       diff.changed.push(id)
       diff.labels[id] = nodeLabel(b[id])
+      const before = a[id]
+      const after = b[id]
+      if (isRecord(before) && isRecord(after)) diff.details[id] = nodeChangeDetails(before, after)
     }
   }
   for (const id of Object.keys(a)) {
@@ -159,7 +205,14 @@ function schemaDiff(before: readonly unknown[], after: readonly unknown[]): Merg
   return out
 }
 
-const ROW_LABELS: Record<string, string> = { title: 'Title', slug: 'Slug', body: 'Body' }
+const ROW_LABELS: Record<string, string> = {
+  title: 'Title',
+  slug: 'Slug',
+  body: 'Body',
+  seoTitle: 'SEO title',
+  seoDescription: 'SEO description',
+  featuredMediaId: 'Featured media',
+}
 const TABLE_LABELS: Record<string, string> = {
   name: 'Name',
   slug: 'Slug',

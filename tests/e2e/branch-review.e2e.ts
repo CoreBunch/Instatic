@@ -255,7 +255,11 @@ test('the owner resolves the conflict and merges with a step-up', async ({ page 
   await expect(page.getByTestId('review-merge')).toBeEnabled()
   await shot(page, '8-owner-resolved')
 
+  // Deleting after the merge is opt-in (a merge that keeps the branch can be undone).
+  await page.getByTestId('review-delete-toggle').click()
   await page.getByTestId('review-merge').click()
+  // Merging asks first, then steps up.
+  await page.getByRole('button', { name: 'Merge into main' }).click()
   await completeStepUp(page, OWNER.password)
   await expect(page.getByText(/Merged Launch review into main/)).toBeVisible({ timeout: 20_000 })
   await expect(page).toHaveURL(/\/admin\/site/)
