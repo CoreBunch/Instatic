@@ -5,7 +5,9 @@ import {
   CmsMediaFolderEnvelopeSchema,
   CmsMediaFolderListResponseSchema,
   CmsMediaListResponseSchema,
+  CmsMediaUsageEnvelopeSchema,
   type CmsMediaAssetWire,
+  type CmsMediaUsageRef,
   type CmsMediaFolder,
 } from './responseSchemas'
 
@@ -202,6 +204,33 @@ export async function renameCmsMediaAsset(
  * — the file stays on disk; restore() un-stamps; `purgeCmsMediaAsset()`
  * finishes the job.
  */
+/**
+ * Which of these assets something still depends on.
+ *
+ * Called before a destructive action so the confirmation can name what
+ * breaks rather than warning in the abstract. A POST because a selection can
+ * carry a hundred ids, which is the wrong shape for a query string.
+ */
+export async function listCmsMediaUsage(
+  assetIds: string[],
+  options: ClientBase = {},
+): Promise<CmsMediaUsageRef[]> {
+  if (assetIds.length === 0) return []
+  const { fetchImpl, basePath } = resolveClient(options)
+  const res = await fetchImpl(`${basePath}/media/usage`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assetIds }),
+  })
+  const payload = await readEnvelope(
+    res,
+    CmsMediaUsageEnvelopeSchema,
+    `CMS media usage lookup failed with ${res.status}`,
+  )
+  return payload.usage
+}
+
 export async function deleteCmsMediaAsset(
   assetId: string,
   options: ClientBase = {},
@@ -338,3 +367,7 @@ export async function deleteCmsMediaFolder(
   })
   await assertOk(res, `CMS folder delete failed with ${res.status}`)
 }
+
+// Re-exported so consumers import media types from the media module rather
+// than reaching into the shared schema file.
+export type { CmsMediaUsageRef }
