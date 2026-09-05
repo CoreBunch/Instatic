@@ -75,17 +75,17 @@ export async function handleCmsRequest(
     return jsonResponse({ error: 'Forbidden: invalid origin' }, { status: 403 })
   }
 
-  // Branch scope — resolved ONCE per request from the `X-Instatic-Branch`
-  // header and handed to every content-shaped route group. Groups that only
-  // ever address the live site (dashboard, publish, plugins) pin MAIN_SCOPE
-  // themselves; user / media / auth groups have no branched data at all.
-  const scope = await resolveBranchScope(req, db)
-  if (scope instanceof Response) return scope
-
   // Try each route group in order. The first to return a non-null
   // Response handled the request; null means "this group didn't match,
   // try the next one".
-  const response =
+  //
+  // The account groups run BEFORE the branch header is looked at. They have
+  // no branched data, and a tab can carry a header naming a branch that no
+  // longer exists (deleted from elsewhere, or the database reset under it):
+  // that must never stop anyone from finishing setup, checking their
+  // session, or signing in — signing in is how the tab recovers. It also
+  // means a branch's existence is not revealed before authentication.
+  const accountResponse =
     (await handleSetupRoutes(req, db))
     ?? (await handleMeRoutes(req, db, options))
     ?? (await handleAuthRoutes(req, db))
@@ -96,7 +96,17 @@ export async function handleCmsRequest(
     ?? (await handleUsersRoutes(req, db))
     ?? (await handleRolesRoutes(req, db))
     ?? (await handleAuditRoutes(req, db))
-    ?? (await handleBranchesRoutes(req, db, scope, options))
+  if (accountResponse) return accountResponse
+
+  // Branch scope — resolved ONCE per request from the `X-Instatic-Branch`
+  // header and handed to every content-shaped route group. Groups that only
+  // ever address the live site (dashboard, publish, plugins) pin MAIN_SCOPE
+  // themselves; the media groups have no branched data at all.
+  const scope = await resolveBranchScope(req, db)
+  if (scope instanceof Response) return scope
+
+  const response =
+    (await handleBranchesRoutes(req, db, scope, options))
     ?? (await handleSiteRoutes(req, db, scope))
     // The transactional whole-document save — must run before the pages/
     // components/layouts GET handlers only for tidiness; paths are distinct.
