@@ -43,10 +43,10 @@ import {
   FRAME_SYNC,
   PRESENCE_DOC_ID,
   REMOTE_ORIGIN,
+  SITE_SOCKET_PATH,
   decodeResetReason,
   type ResetReason,
 } from '@core/collab'
-import { collabSocketUrl } from './socketUrl'
 
 const RECONNECT_BASE_DELAY_MS = 1_000
 const RECONNECT_MAX_DELAY_MS = 30_000
@@ -127,13 +127,11 @@ export function createCollabProvider(
   const createSocket =
     opts.createSocket ??
     ((): CollabSocketLike => {
-      // Under `vite dev` the socket bypasses the proxy and dials the CMS port
-      // directly — see socketUrl.ts for why, and why the hostname is kept.
-      const devCmsPort = import.meta.env.DEV
-        ? String(import.meta.env.VITE_CMS_DEV_PORT ?? '3001')
-        : null
+      // Same origin in dev and production: under `vite dev` the proxy
+      // forwards the upgrade to the CMS (`ws: true` in vite.config.ts).
+      const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
       return new WebSocket(
-        collabSocketUrl(window.location, devCmsPort),
+        `${scheme}://${window.location.host}${SITE_SOCKET_PATH}`,
       ) as unknown as CollabSocketLike
     })
 

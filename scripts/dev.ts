@@ -258,10 +258,9 @@ const processes: DevProcess[] = [
   {
     name: 'vite',
     command: viteCommand('--host', '127.0.0.1', '--port', String(VITE_PORT), '--strictPort'),
-    // vite.config.ts reads PORT for both the proxy target and the collab
-    // socket's dev port. Inheriting it from the developer's shell happened to
-    // work only because CMS_PORT's default matches the config's — pass it
-    // explicitly so the two can't drift. `scripts/e2e-dev.ts` already does.
+    // vite.config.ts reads PORT for the proxy target. Inheriting it from the
+    // developer's shell happened to work only because CMS_PORT's default
+    // matches the config's; pass it explicitly so the two can't drift.
     env: { PORT: String(CMS_PORT) },
   },
 ]

@@ -89,24 +89,20 @@ describe('development workflow', () => {
     expect(viteConfig).toContain("const CMS_DEV_SERVER_ORIGIN = `http://localhost:${process.env.PORT ?? '3001'}`")
     expect(viteConfig).toContain('target: CMS_DEV_SERVER_ORIGIN')
     expect(viteConfig).toContain('changeOrigin: true')
-    expect(viteConfig).toContain('largeBodyDevProxyPlugin()')
-    expect(viteConfig).toContain('shouldBufferLargeDevProxyRequest(req)')
   })
 
-  it('Vite never forwards WebSocket upgrades, and the collab socket gets the CMS port instead', () => {
+  it('Vite forwards WebSocket upgrades, so the collab socket is same-origin in dev', () => {
     const viteConfig = readSiteFile('vite.config.ts')
     const devScript = readSiteFile('scripts/dev.ts')
 
-    // Vite runs inside Bun (scripts/vite.ts), and Bun's node:http client never
-    // emits 'upgrade'. Enabling `ws` forwarding makes the browser socket hang
-    // and then kills the dev process via `socket.destroySoon()`. The collab
-    // socket dials the CMS port directly instead — never re-enable this.
-    expect(viteConfig).not.toMatch(/^\s*ws:\s*true/m)
+    // Since Bun 1.4.1 the node:http client emits 'upgrade', so the collab
+    // socket rides the same proxy as every other /admin/api request and the
+    // dev server is same-origin like production. No port is dialled directly.
+    expect(viteConfig).toMatch(/^\s*ws:\s*true/m)
+    expect(viteConfig).not.toContain('VITE_CMS_DEV_PORT')
 
-    // The dialled port must come from the same source as the proxy target so
-    // they cannot drift, and dev.ts must actually hand PORT to the Vite child
-    // (it previously relied on both defaults happening to be 3001).
-    expect(viteConfig).toContain("'import.meta.env.VITE_CMS_DEV_PORT': JSON.stringify(process.env.PORT ?? '3001')")
+    // dev.ts must hand PORT to the Vite child so the proxy target cannot
+    // drift from the CMS it started (both defaults happen to be 3001).
     expect(devScript).toContain('env: { PORT: String(CMS_PORT) }')
   })
 

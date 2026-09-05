@@ -1,0 +1,62 @@
+# Throwaway experiment for the refactor/vite-dev-proxy branch; deleted before
+# merge. It answers one question a macOS laptop cannot: on a Linux runner under
+# the pinned Bun, does the Vite dev server (running inside Bun) come up, and does
+# it forward a WebSocket upgrade to the CMS instead of hanging? The earlier
+# E2E workflow died on exactly this before a single test ran.
+name: Vite dev smoke (experiment)
+
+on:
+  push:
+    branches:
+      - refactor/vite-dev-proxy
+
+permissions:
+  contents: read
+
+jobs:
+  vite-dev:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Reads "packageManager" from package.json.
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      - name: Boot the CMS and the Vite dev server
+        run: |
+          bun --version
+          PORT=3001 DATABASE_URL=sqlite:./.tmp/smoke.db UPLOADS_DIR=./.tmp/smoke-uploads bun server/index.ts > cms.log 2>&1 &
+          PORT=3001 bun scripts/vite.ts --host 127.0.0.1 --port 5173 --strictPort > vite.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://127.0.0.1:5173/admin; then
+              echo "vite ready after ${i}s"; break
+            fi
+            sleep 1
+          done
+          curl -fsS -o /dev/null http://127.0.0.1:5173/admin || { echo "VITE NEVER CAME UP"; cat vite.log; exit 1; }
+
+      # An unauthenticated upgrade is refused by the CMS, but the point is that
+      # the status line comes back through the proxy at all: before the fix the
+      # request hung and the proxy died on socket.destroySoon().
+      - name: WebSocket upgrade through the Vite proxy returns a status line
+        run: |
+          set +e
+          out=$(curl -s -i -m 10 \
+            -H "Connection: Upgrade" -H "Upgrade: websocket" \
+            -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+            http://127.0.0.1:5173/admin/api/cms/site-socket 2>&1 | head -1)
+          echo "upgrade response: ${out:-<none within 10s>}"
+          [ -n "$out" ] || exit 1
+
+      - name: Vite process survived the upgrade
+        run: |
+          curl -fsS -o /dev/null http://127.0.0.1:5173/admin && echo "vite still serving"
+
+      - name: Logs
+        if: always()
+        run: |
+          echo "--- vite.log ---"; cat vite.log || true
+          echo "--- cms.log ---"; tail -20 cms.log || true
