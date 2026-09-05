@@ -75,10 +75,11 @@ export async function renameBranch(
   id: string,
   name: string,
 ): Promise<SiteBranch | null> {
+  const now = new Date().toISOString()
   const { rows } = await db<SiteBranchRow>`
     update site_branches
     set name = ${name},
-        updated_at = current_timestamp
+        updated_at = ${now}
     where id = ${id}
       and id <> ${MAIN_BRANCH_ID}
     returning id, name, base_branch_id, created_by_user_id, created_at, updated_at
@@ -87,9 +88,13 @@ export async function renameBranch(
 }
 
 export async function touchBranch(db: DbClient, id: string): Promise<void> {
+  // Bound as ISO text: SQLite's `current_timestamp` is a space-separated
+  // local-time string that `Date.parse` reads as local time, which showed
+  // a just-merged branch as "updated 2h ago".
+  const now = new Date().toISOString()
   await db`
     update site_branches
-    set updated_at = current_timestamp
+    set updated_at = ${now}
     where id = ${id}
   `
 }

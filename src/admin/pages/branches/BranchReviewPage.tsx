@@ -191,12 +191,12 @@ function Review({ branchId, branchName }: ReviewProps) {
   function merge(): void {
     if (unresolved.length > 0 || loadedPlan.changes.length === 0) return
     const count = loadedPlan.changes.length
-    const changes = `${count} change${count === 1 ? '' : 's'}`
+    const lands = `${count} change${count === 1 ? ' lands' : 's land'}`
     confirmAction({
       title: `Merge ${branchName} into main?`,
       description: deleteAfter
-        ? `${changes} land in main's draft and the branch is deleted, so this cannot be undone. Nothing is published.`
-        : `${changes} land in main's draft. Nothing is published, and the merge can be undone from this page while main stays as merged.`,
+        ? `${lands} in main's draft and the branch is deleted, so this cannot be undone. Nothing is published.`
+        : `${lands} in main's draft. Nothing is published, and the merge can be undone from this page while main stays as merged.`,
       confirmLabel: 'Merge into main',
       commit: () => { void runMerge() },
     })
