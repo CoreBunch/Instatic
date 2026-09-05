@@ -167,6 +167,30 @@ export async function createPage(
 }
 
 /**
+ * Delete a template from the Site Explorer by its title, confirming the
+ * prompt. Assumes the Site editor is open.
+ *
+ * Every spec that publishes a Posts template MUST call this before it ends.
+ * The suite shares one database, and the template chain keeps at most one
+ * template per breadth level (highest priority, then document order), so a
+ * template left behind decides which template every later spec's entry route
+ * renders through. One leaked priority-300 template is enough to make an
+ * unrelated spec's public-route assertion fail depending on run order.
+ */
+export async function deleteTemplate(page: Page, name: string): Promise<void> {
+  await openSitePanel(page)
+  const item = page.getByRole('treeitem', { name: `Open template ${name}` })
+  await expect(item).toBeVisible()
+  await item.click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Delete' }).click()
+  // Templates are pages, so the explorer's page prompt is the one that opens.
+  const dialog = page.getByRole('alertdialog', { name: 'Delete page?' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'Delete page' }).click()
+  await expect(item).toHaveCount(0)
+}
+
+/**
  * Publish the current draft. Publishing is a sensitive action that may require
  * a fresh-password step-up; this satisfies the prompt with the owner password
  * when it appears, then waits for the button to report "Published".

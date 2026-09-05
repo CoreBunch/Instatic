@@ -22,7 +22,7 @@
     "dev:agent": "bun run dev:server",
     "dev:server": "bun --watch server/index.ts",
     "dev:vite": "bun run scripts/vite.ts",
-    "e2e:dev": "bun run scripts/e2e-dev.ts",
+    "e2e:serve": "bun run scripts/e2e-server.ts",
     "db:drop": "bun run scripts/db-drop.ts",
     "start": "bun run scripts/start.ts",
     "docker:up": "docker compose -f compose.prod.yml -f compose.build.yml up --build",

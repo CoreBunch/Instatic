@@ -3,6 +3,7 @@ import {
   ANONYMOUS_STATE,
   OWNER,
   PUBLIC_BASE_URL,
+  deleteTemplate,
   insertModuleViaPicker,
   insertNotchModule,
   login,
@@ -119,6 +120,13 @@ test.describe('entry SEO meta', () => {
       } finally {
         await context.close()
       }
+    })
+
+    // Priority 300 outranks every other Posts template the suite publishes;
+    // left behind, it would render every later spec's entry route.
+    await test.step('remove the template so later specs resolve their own', async () => {
+      await openSiteEditor(page)
+      await deleteTemplate(page, `SEO Meta Template ${suffix}`)
     })
   })
 })
