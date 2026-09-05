@@ -39,12 +39,6 @@ const PLUGIN_READ_CAPABILITIES: CoreCapability[] = [
   'plugins.lifecycle',
 ]
 
-const RUNTIME_STORAGE_CAPABILITIES: CoreCapability[] = [
-  'runtime.dependencies',
-  'storage.elect',
-  'storage.migrate',
-]
-
 export function hasCapability(user: CmsCurrentUser | null, capability: CoreCapability): boolean {
   return Boolean(user?.capabilities.includes(capability))
 }
@@ -86,6 +80,16 @@ export function canEditContent(user: CmsCurrentUser | null): boolean {
 export function canEditStyle(user: CmsCurrentUser | null): boolean {
   if (!user) return true
   return hasCapability(user, 'site.style.edit')
+}
+
+/**
+ * Install, remove and re-declare the site's npm dependencies (Dependencies
+ * panel, runtime-import fixes). Browsing the registry only needs `site.read`.
+ * Null session = unrestricted, like every other editor gate here.
+ */
+export function canManageRuntimeDependencies(user: CmsCurrentUser | null): boolean {
+  if (!user) return true
+  return hasCapability(user, 'runtime.dependencies')
 }
 
 /** Caller can save the draft site in any form (structure + content + style). */
@@ -328,9 +332,3 @@ export function workspacePath(workspace: AdminWorkspace): string {
       return '/admin/account'
   }
 }
-
-// Reference unused imports so the linter doesn't strip them when not consumed
-// downstream yet (RUNTIME_STORAGE_CAPABILITIES is here for symmetry — the
-// runtime workspace doesn't currently have its own canAccess gate because
-// there is no dedicated runtime workspace; storage admin lives under media).
-void RUNTIME_STORAGE_CAPABILITIES

@@ -21,6 +21,7 @@ import {
 import { validateSite } from '@core/persistence/validate'
 import { normalizeSitePackageJson } from '@core/site-dependencies/manifest'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
+import { isRecord } from '@core/utils/isRecord'
 import type { DbClient } from '../db/client'
 import { notifyShellWrite, serializeCollabAwareWrite } from './rowWriteEvents'
 import type { SiteRow } from '../types'
@@ -38,10 +39,6 @@ function shellToStorage(shell: SiteShell): StoredSitePayload {
     cmsSiteSchemaVersion: CMS_SITE_SCHEMA_VERSION,
     site: rest,
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function readStoredShell(row: SiteRow): SiteShell {

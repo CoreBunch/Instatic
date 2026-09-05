@@ -528,7 +528,7 @@ Opens the rail-selected panel:
   - Active tab is held in `explorerPanelTab` (`uiSlice`, `'layers' | 'site' | 'code' | 'media'`) and persisted per-workspace via `siteEditorLayoutPersistence` (stored field `explorerPanelTab`).
 - `FrameworkPanel` — site-level design tokens (the Core Framework) in one panel with **Overview / Colors / Type / Space** tabs. Its "Manage framework" button opens `FrameworkManagerDialog`, a declarative state picker (Full framework / Variables only / None) that reconciles the framework to the chosen target. Sits **above** Selectors in the rail.
 - `SelectorsPanel` — CSS class library
-- `DependenciesPanel` — site package.json / `bun install`
+- `DependenciesPanel` — npm registry browser + the site's `package.json`: search, package pages (README, versions, deps, advisories), install / remove, runtime-import issues. See [`features/dependencies.md`](features/dependencies.md).
 - `PluginEditorPanel` — plugin-provided editor panels
 - `AgentPanel` — AI assistant
 

@@ -31,47 +31,78 @@ import DOMPurify, { type Config } from 'dompurify'
 
 type DOMPurifyHookNode = {
   tagName?: string
+  getAttribute?: (name: string) => string | null
   setAttribute?: (name: string, value: string) => void
+  removeAttribute?: (name: string) => void
+}
+
+/**
+ * A DOMPurify config plus the sentinels this module's own passes read.
+ * DOMPurify hands the active config to every hook, so a policy that only one
+ * profile wants (the image rules of `MARKDOWN_DOCUMENT_CONFIG`) travels with
+ * that profile instead of applying to every sanitised document.
+ */
+export type SanitizerConfig = Config & {
+  /** Regex post-strip pass in `sanitizeRichtext()`. */
+  _plainText?: true
+  /** Drop `<img src>` that is not absolute http(s) and stamp the rest no-referrer + lazy. */
+  _externalImagesOnly?: true
 }
 
 export type DOMPurifyRuntime = {
   sanitize?: (value: string, config?: Config) => unknown
-  addHook?: (hookName: 'afterSanitizeAttributes', callback: (node: DOMPurifyHookNode) => void) => void
+  addHook?: (
+    hookName: 'afterSanitizeAttributes',
+    callback: (node: DOMPurifyHookNode, hookEvent: null, config: SanitizerConfig) => void,
+  ) => void
 }
 
 type DOMPurifyFactory = DOMPurifyRuntime & ((window: Window) => DOMPurifyRuntime)
 
 const importedDOMPurify = DOMPurify as unknown as DOMPurifyFactory
 let activeDOMPurify: DOMPurifyRuntime | null = null
-const purifiersWithLinkHook = new WeakSet<object>()
+const hookedPurifiers = new WeakSet<object>()
 
-function installLinkHook(purifier: DOMPurifyRuntime): DOMPurifyRuntime {
-  if (!purifiersWithLinkHook.has(purifier) && typeof purifier.addHook === 'function') {
-    purifier.addHook('afterSanitizeAttributes', (node) => {
+/**
+ * Attribute post-pass, installed once per purifier: every link opens in a new
+ * tab with `noopener`, and profiles that opt in (`_externalImagesOnly`) keep
+ * only absolute http(s) images, stamped no-referrer + lazy. DOMPurify admits
+ * `data:` on <img> regardless of `ALLOWED_URI_REGEXP`, so the image rule
+ * cannot be expressed in the config alone.
+ */
+function installAttributeHook(purifier: DOMPurifyRuntime): DOMPurifyRuntime {
+  if (!hookedPurifiers.has(purifier) && typeof purifier.addHook === 'function') {
+    purifier.addHook('afterSanitizeAttributes', (node, _hookEvent, config) => {
       if (node.tagName === 'A') {
         node.setAttribute?.('target', '_blank')
         node.setAttribute?.('rel', 'noopener noreferrer')
       }
+      if (node.tagName === 'IMG' && config._externalImagesOnly) {
+        const src = node.getAttribute?.('src') ?? ''
+        if (!/^https?:\/\//i.test(src.replace(/\s+/g, ''))) node.removeAttribute?.('src')
+        node.setAttribute?.('referrerpolicy', 'no-referrer')
+        node.setAttribute?.('loading', 'lazy')
+      }
     })
-    purifiersWithLinkHook.add(purifier)
+    hookedPurifiers.add(purifier)
   }
   return purifier
 }
 
 export function configureRichtextSanitizer(purifier: DOMPurifyRuntime | null): void {
-  activeDOMPurify = purifier ? installLinkHook(purifier) : null
+  activeDOMPurify = purifier ? installAttributeHook(purifier) : null
 }
 
 function getDOMPurify(): DOMPurifyRuntime | null {
   const direct = activeDOMPurify ?? importedDOMPurify
   if (typeof direct.sanitize === 'function') {
-    return installLinkHook(direct)
+    return installAttributeHook(direct)
   }
 
   if (typeof window !== 'undefined' && typeof importedDOMPurify === 'function') {
     activeDOMPurify = importedDOMPurify(window)
     if (typeof activeDOMPurify.sanitize === 'function') {
-      return installLinkHook(activeDOMPurify)
+      return installAttributeHook(activeDOMPurify)
     }
   }
 
@@ -149,7 +180,7 @@ const RICHTEXT_CONFIG: Config = {
  * Pass this to `sanitizeRichtext()` — it applies a post-strip pass to catch
  * any tags that DOMPurify's `ALLOWED_TAGS: []` might not catch in edge cases.
  */
-export const PLAIN_TEXT_CONFIG: Config & { _plainText?: true } = {
+export const PLAIN_TEXT_CONFIG: SanitizerConfig = {
   ALLOWED_TAGS: [],
   ALLOWED_ATTR: [],
   RETURN_DOM: false,
@@ -173,7 +204,7 @@ export const PLAIN_TEXT_CONFIG: Config & { _plainText?: true } = {
  */
 export function sanitizeRichtext(
   value: unknown,
-  config: Config & { _plainText?: true } = RICHTEXT_CONFIG,
+  config: SanitizerConfig = RICHTEXT_CONFIG,
 ): string {
   const str = String(value ?? '')
   if (!str.trim()) return ''
@@ -259,4 +290,41 @@ export function sanitizeSvg(value: unknown): string {
   }
 
   return String(purifier.sanitize(str, SVG_CONFIG))
+}
+
+/**
+ * Markdown-document config — the richtext set plus the elements GFM READMEs
+ * rely on: images (badges, logos), tables, rules, collapsible `<details>`.
+ * Used by the Dependencies panel to render package READMEs the publisher's
+ * markdown renderer produced. No form controls (a README must not put a live
+ * password or file input inside the admin), no `data:` or relative URLs, and
+ * every image is stamped `referrerpolicy="no-referrer"` by the attribute
+ * hook (`_externalImagesOnly`) so a README badge never learns which CMS
+ * origin viewed it.
+ *
+ * `ALLOWED_URI_REGEXP` is matched against every attribute value that is not
+ * URI-safe, so the non-URI attributes this profile adds (`width="120"`,
+ * `align="center"`) must be declared URI-safe or DOMPurify drops them.
+ */
+export const MARKDOWN_DOCUMENT_CONFIG: SanitizerConfig = {
+  ...RICHTEXT_CONFIG,
+  ALLOWED_TAGS: [
+    ...(RICHTEXT_CONFIG.ALLOWED_TAGS ?? []),
+    'hr', 'sup', 'sub', 'kbd',
+    'img',
+    'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
+    'details', 'summary',
+  ],
+  // `id` and `class` are deliberately dropped from the richtext set: a README
+  // is third-party markup rendered inside the admin, and an attacker-chosen
+  // `id` collides with the app's own elements (`#tooltip-root` would capture
+  // every tooltip portal). README anchors only need `href="#…"`, which works
+  // without ids on the target.
+  ALLOWED_ATTR: [
+    ...(RICHTEXT_CONFIG.ALLOWED_ATTR ?? []).filter((attr) => attr !== 'id' && attr !== 'class'),
+    'src', 'alt', 'title', 'width', 'height', 'align', 'loading', 'referrerpolicy', 'open',
+  ],
+  ADD_URI_SAFE_ATTR: ['width', 'height', 'align', 'loading', 'referrerpolicy', 'open'],
+  ALLOWED_URI_REGEXP: /^(?:https?:\/\/|#)/i,
+  _externalImagesOnly: true,
 }

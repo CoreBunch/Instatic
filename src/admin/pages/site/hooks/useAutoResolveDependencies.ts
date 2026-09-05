@@ -16,16 +16,19 @@
  *     plugins would see "TypeError: Failed to resolve module specifier".
  *
  * The resolution itself is a store action (`resolveDependencyLock`) so the
- * Dependencies Panel reads the same status the auto-resolve produces.
+ * Dependencies panel (`useInstalledDependencies`) reads the same status the
+ * auto-resolve produces and can offer a retry.
  * Failures surface through `dependencyResolveStatus = 'error'` but don't
  * throw — a network blip shouldn't crash the editor.
  *
- * Mounted from `SitePage` so the loop runs whenever the visual editor is
- * open, regardless of whether the Dependencies Panel itself is visible.
+ * Mounted from `AdminCanvasEditorBody` so the loop runs whenever the visual
+ * editor is open, regardless of whether the Dependencies panel is visible.
+ * Installing from the panel writes `packageJson` and relies on this hook to
+ * turn that into a resolve; keep them mounted together.
  */
 import { useEffect, useRef } from 'react'
 import { useEditorStore } from '@site/store/store'
-import { evaluateDependencyLockStatus } from '@site/panels/DependenciesPanel/lockStatus'
+import { isDependencyLockInSync } from '@core/site-dependencies/lockStatus'
 
 const AUTO_RESOLVE_DEBOUNCE_MS = 600
 
@@ -52,7 +55,7 @@ export function useAutoResolveDependencies({
     // otherwise fire one no-op resolve on mount.
     if (!site) return
 
-    const status = evaluateDependencyLockStatus(packageJson, lockedPackages)
+    const lockInSync = isDependencyLockInSync(packageJson, lockedPackages)
     const lockHasPackages = Object.keys(lockedPackages).length > 0
     // Every locked package needs a root entry in the importmap — `name` →
     // its entry-file URL. Missing entries mean the iframe sandbox would
@@ -61,7 +64,7 @@ export function useAutoResolveDependencies({
       !packageImportmap
       || Object.keys(lockedPackages).some((name) => !packageImportmap.imports[name])
     )
-    if (status.kind === 'in-sync' && !importmapMissing) return
+    if (lockInSync && !importmapMissing) return
 
     // Don't pile on top of an in-flight resolve — the action's own
     // concurrency guard short-circuits, but skipping the timer avoids the
@@ -72,7 +75,7 @@ export function useAutoResolveDependencies({
     timerRef.current = setTimeout(() => {
       timerRef.current = null
       // Swallow rejections — the action stores the error on the slice for
-      // DepsSection to display. A thrown promise here would surface as an
+      // the Dependencies panel to display. A thrown promise here would surface as an
       // unhandled rejection in the console.
       resolveDependencyLock().catch(() => {})
     }, debounceMs)

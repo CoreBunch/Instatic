@@ -43,7 +43,7 @@ import { useDebouncedSave } from '../../hooks/useDebouncedSave'
 import { TagEditor } from '../TagEditor/TagEditor'
 import { ReplaceFileDialog } from '../ReplaceFileDialog/ReplaceFileDialog'
 import { ViewerBody } from '../viewers/ViewerBody'
-import { formatBytes } from '../../utils/formatBytes'
+import { formatBytes } from '@admin/lib/formatBytes'
 import styles from './MediaViewerWindow.module.css'
 
 /**

@@ -225,7 +225,7 @@ durable assertion brittle:
   normalization, module dependency/importmap filtering, site runtime build,
   dependency resolver/cache, package importmap/server, malformed runtime-cache
   paths, and runtime asset publish injection are covered by focused Bun tests in
-  `src/__tests__/panels/depsSectionRuntime.test.tsx`,
+  `src/__tests__/panels/dependenciesPanel.test.tsx`,
   `src/__tests__/editor-hooks/useAutoResolveDependencies.test.tsx`,
   `src/__tests__/persistence/cmsRuntimeClient.test.ts`,
   `src/__tests__/server/cmsRuntimeHandlers.test.ts`,

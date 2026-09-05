@@ -33,6 +33,7 @@ import {
   compiledFormatValueErrors,
   compiledSafeParseValue,
 } from './typeboxCompiler'
+import { isRecord } from './isRecord'
 
 export { Type, Value }
 export type { TSchema }
@@ -117,6 +118,30 @@ export function filterArray<T extends TSchema>(
     }
   }
   return out
+}
+
+/**
+ * Keep only the entries of a plain-object record whose values satisfy
+ * `valueSchema`. Non-objects yield `{}`. The record-shaped sibling of
+ * `filterArray`, for loose upstream documents (registry packuments) where one
+ * odd entry must not invalidate the rest.
+ */
+export function filterRecord<T extends TSchema>(
+  valueSchema: T,
+  value: unknown,
+): Record<string, TBStatic<T>> {
+  if (!isRecord(value)) return {}
+  const validator = compiled(valueSchema)
+  const out: Record<string, TBStatic<T>> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    if (validator.Check(entry)) out[key] = validator.Decode(entry) as TBStatic<T>
+  }
+  return out
+}
+
+/** `T | null`, the shape persisted and proxied values use for "known to be absent". */
+export function nullable<T extends TSchema>(schema: T) {
+  return Type.Union([schema, Type.Null()])
 }
 
 /**

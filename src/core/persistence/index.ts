@@ -95,3 +95,11 @@ export type {
 } from './cmsAuth'
 
 // usePersistence moved to src/editor/hooks/usePersistence.ts (Constraint #179 — no React in core)
+export {
+  getCmsRegistryLatestVersion,
+  getCmsRegistryPackage,
+  getCmsRegistryPackageAdvisories,
+  getCmsRegistryPackageDownloads,
+  getCmsRegistryProfile,
+  searchCmsRegistry,
+} from './cmsRegistry'
