@@ -326,6 +326,7 @@ AI-002 note: Data-scope default selection, save feedback, reload persistence, cl
 | PLUGIN-005 | P2 | partial | Plugins | Inspect and control plugin schedules | Active plugin with schedules | Plugin schedule dialog | Schedules list and mutating controls respect permissions | stale paused state, duplicate runs |
 | PLUGIN-006 | P2 | partial | Plugins | Install a plugin-provided site pack | Active plugin with pack | Plugins page | Pack content imports with clear feedback | conflicts, partial imports |
 | PLUGIN-008 | P2 | ✅ | Plugins | Upload invalid plugin package | Logged in | Plugins page | Error is specific and recoverable | generic failure, stuck upload |
+| SITEPLUGIN-001 | P1 | ✅ | Plugins | Author, build and activate a site plugin in the Plugin IDE | Logged in with plugins.edit | Plugins page, Plugin IDE | Scaffold opens in the IDE, builds cleanly, activates through the permission review, and an edit reads as Draft changed | stale build served after an edit, activation without consent |
 
 PLUGIN-001 note: JSON manifest review/install step-up is automated in `capabilities.e2e.ts`; ZIP package review/install and activation are exercised by the packaged lifecycle/surfaces fixtures in `plugins.e2e.ts`; malformed ZIP/path-traversal/package-edge coverage remains lower-level or future browser expansion.
 
