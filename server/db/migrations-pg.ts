@@ -1285,6 +1285,12 @@ export const pgMigrations: Migration[] = [
         on site_branch_previews (branch_id);
 
       update roles
+         set capabilities_json = capabilities_json || '["site.branches.create"]'::jsonb,
+             updated_at = current_timestamp
+       where id in ('owner', 'admin')
+         and not (capabilities_json ? 'site.branches.create');
+
+      update roles
          set capabilities_json = capabilities_json || '["site.branches.manage"]'::jsonb,
              updated_at = current_timestamp
        where id in ('owner', 'admin')

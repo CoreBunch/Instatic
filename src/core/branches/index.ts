@@ -14,6 +14,7 @@ export {
   physicalId,
   slugifyBranchName,
 } from './ids'
+export { canActOnBranch, canMergeBranches, type BranchActor } from './access'
 export { jsonEquals, mergeJson, type JsonMergeResult } from './threeWayMerge'
 export {
   BranchEnvelopeSchema,

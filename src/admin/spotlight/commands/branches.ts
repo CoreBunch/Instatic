@@ -33,7 +33,7 @@ export function getBranchesCommands(): Command[] {
       iconName: 'git-branch-solid',
       keywords: ['branch', 'create', 'new', 'fork'],
       workspaces: ['any'],
-      capability: 'site.branches.manage',
+      capability: 'site.branches.create',
       run: (ctx) => {
         ctx.closeSpotlight()
         useBranchStore.getState().openSwitcher('create')
@@ -62,7 +62,9 @@ export function getBranchesCommands(): Command[] {
       iconName: 'edit-solid',
       keywords: ['branch', 'manage', 'rename', 'delete'],
       workspaces: ['any'],
-      capability: 'site.branches.manage',
+      // Creators rename and delete their own branches from the same dialog;
+      // the server and the dialog's rows keep them off everyone else's.
+      capability: 'site.branches.create',
       run: (ctx) => {
         ctx.closeSpotlight()
         useBranchStore.getState().openManage()

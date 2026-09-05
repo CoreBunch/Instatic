@@ -90,7 +90,7 @@ function BranchRow({
 
 export function BranchChip() {
   const user = useCurrentAdminUser()
-  const canManage = hasCapability(user, 'site.branches.manage')
+  const canCreate = hasCapability(user, 'site.branches.create')
   const branches = useBranches()
   const current = useActiveBranch()
   const mode = useBranchStore((state) => state.switcher)
@@ -162,7 +162,7 @@ export function BranchChip() {
     event.preventDefault()
     const first = filtered[0]
     if (first) select(first)
-    else if (canManage && slugifyBranchName(query)) startCreate()
+    else if (canCreate && slugifyBranchName(query)) startCreate()
   }
 
   return (
@@ -223,7 +223,7 @@ export function BranchChip() {
                       onSelect={() => select(branch)}
                     />
                   ))}
-                  {filtered.length === 0 && (canManage && slugifyBranchName(query) ? (
+                  {filtered.length === 0 && (canCreate && slugifyBranchName(query) ? (
                     <ContextMenuItem className={styles.createRow} onClick={startCreate}>
                       <PlusIcon size={12} aria-hidden="true" />
                       <span>
@@ -255,7 +255,7 @@ export function BranchChip() {
                   )}
                 </>
               )}
-              {canManage && (
+              {canCreate && (
                 <>
                   <ContextMenuSeparator />
                   <ContextMenuItem data-testid="branch-create-action" onClick={startCreate}>

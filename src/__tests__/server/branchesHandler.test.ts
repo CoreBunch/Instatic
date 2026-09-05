@@ -99,7 +99,7 @@ describe('branches endpoints', () => {
     expect(deleteMain.status).toBe(400)
   })
 
-  it('gates management on site.branches.manage and deletion on step-up', async () => {
+  it('splits forking from managing: creators reach their own branches, managers reach every branch and merge', async () => {
     harness = await createCapabilityTestHarness()
     const owner = await harness.setupOwner()
     expect((await harness.cms(BRANCHES, { method: 'POST', cookie: owner, json: { name: 'Doomed' } })).status).toBe(201)
@@ -113,16 +113,38 @@ describe('branches endpoints', () => {
     await expectForbidden(await harness.cms(BRANCHES, { method: 'POST', cookie: reader.cookie, json: { name: 'Nope' } }))
     await expectForbidden(await harness.cms(`${BRANCHES}/doomed`, { method: 'DELETE', cookie: reader.cookie }))
 
+    // A creator forks, and reaches only what they forked: the owner's branch
+    // stays out of bounds, and merging into main is never theirs.
+    const creator = await harness.createRoleUser({
+      name: 'Branch creator',
+      slug: 'branch-creator',
+      capabilities: ['site.read', 'site.branches.create'],
+    })
+    expect((await harness.cms(BRANCHES, { method: 'POST', cookie: creator.cookie, json: { name: 'Mine' } })).status).toBe(201)
+    expect((await harness.cms(`${BRANCHES}/mine`, { method: 'PATCH', cookie: creator.cookie, json: { name: 'Mine renamed' } })).status).toBe(200)
+    expect((await harness.cms(`${BRANCHES}/mine/preview`, { method: 'POST', cookie: creator.cookie })).status).toBe(201)
+    await expectForbidden(await harness.cms(`${BRANCHES}/doomed`, { method: 'PATCH', cookie: creator.cookie, json: { name: 'Not yours' } }))
+    await expectForbidden(await harness.cms(`${BRANCHES}/doomed/preview`, { method: 'POST', cookie: creator.cookie }))
+    await expectForbidden(await harness.cms(`${BRANCHES}/mine/merge`, { method: 'POST', cookie: creator.cookie, json: {} }))
+
+    // A manager reaches every branch and is the one who merges, but managing
+    // alone does not fork.
     const manager = await harness.createRoleUser({
       name: 'Branch manager',
       slug: 'branch-manager',
       capabilities: ['site.read', 'site.branches.manage'],
     })
+    await expectForbidden(await harness.cms(BRANCHES, { method: 'POST', cookie: manager.cookie, json: { name: 'No fork' } }))
+    expect((await harness.cms(`${BRANCHES}/mine`, { method: 'PATCH', cookie: manager.cookie, json: { name: 'Mine, managed' } })).status).toBe(200)
     await expectStepUpRequired(await harness.cms(`${BRANCHES}/doomed`, { method: 'DELETE', cookie: manager.cookie }))
 
     const stepped = await harness.stepUp(manager.cookie)
     const deleted = await harness.cms(`${BRANCHES}/doomed`, { method: 'DELETE', cookie: stepped })
     expect(deleted.status).toBe(200)
+
+    // The creator retires their own branch the same way, step-up included.
+    const creatorStepped = await harness.stepUp(creator.cookie)
+    expect((await harness.cms(`${BRANCHES}/mine`, { method: 'DELETE', cookie: creatorStepped })).status).toBe(200)
 
     const gone = await harness.cms('/admin/api/cms/data/tables', {
       cookie: owner,
