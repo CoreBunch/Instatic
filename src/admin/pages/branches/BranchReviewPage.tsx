@@ -39,6 +39,7 @@ import {
   isPageChange,
   matchesFilter,
   relativeIso,
+  relativeIsoAgo,
   requestStatusLabel,
   requestStatusTone,
   type ReviewFilter,
@@ -221,7 +222,7 @@ function Review({ branchId, branchName }: ReviewProps) {
                     {request && <StatusPill status={request.status} unresolved={open ? unresolved.length : 0} />}
                     {request ? (
                       <span>
-                        <strong>{request.requestedBy?.displayName ?? 'Removed user'}</strong> requested {relativeIso(request.createdAt)} ago
+                        <strong>{request.requestedBy?.displayName ?? 'Removed user'}</strong> requested {relativeIsoAgo(request.createdAt)}
                       </span>
                     ) : (
                       <span>No merge request yet</span>
