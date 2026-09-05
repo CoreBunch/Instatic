@@ -50,6 +50,7 @@ import {
   LIBRARY_MAX_HEIGHT,
   LIBRARY_MIN_HEIGHT,
 } from '../hooks/useDashboardLayout'
+import { DashboardWidgetMount } from './DashboardWidgetMount'
 import styles from './BlockLibrary.module.css'
 
 /**
@@ -419,7 +420,6 @@ function LibraryItem({ widget, onAdd }: LibraryItemProps) {
     attributes,
     isDragging,
   } = useDraggable({ id: `${LIBRARY_DRAG_PREFIX}${widget.id}` })
-  const Render = widget.render
 
   // Preview height in pixels, matching what the same widget will occupy
   // on the dashboard once dropped. The dashboard uses
@@ -487,7 +487,7 @@ function LibraryItem({ widget, onAdd }: LibraryItemProps) {
         <div className={styles.itemPreview} aria-hidden="true">
           {/* Render with edit-mode chrome so Widget previews do not
               introduce nested buttons inside the add/drag surface. */}
-          <Render span={widget.defaultSize} editing />
+          <DashboardWidgetMount definition={widget} span={widget.defaultSize} editing />
         </div>
       </button>
       <footer className={styles.itemFoot}>

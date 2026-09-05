@@ -16,6 +16,7 @@
  * under the implicit `core` namespace.
  */
 import type { ComponentType } from 'react'
+import type { PluginPermission } from '@core/plugin-sdk'
 import type { PixelArtIconComponent } from './iconLookup'
 
 /**
@@ -44,6 +45,13 @@ export interface DashboardWidgetRendererProps {
   editing: boolean
 }
 
+export interface DashboardWidgetPluginContext {
+  /** Version of the plugin that registered the widget. */
+  version: string
+  /** Permissions granted to the plugin at install time. */
+  grantedPermissions: readonly PluginPermission[]
+}
+
 export interface DashboardWidgetDefinition {
   /**
    * Stable identifier. First-party widgets use plain keys (`pages`).
@@ -54,6 +62,8 @@ export interface DashboardWidgetDefinition {
   id: string
   /** Owner plugin id, or `'core'` for first-party widgets. */
   ownerId: string
+  /** Host context required when a plugin-owned renderer is mounted. */
+  pluginContext?: DashboardWidgetPluginContext
   /** Display name in the block picker and widget chrome. */
   name: string
   /** Short description shown beneath the name in the block picker. */
