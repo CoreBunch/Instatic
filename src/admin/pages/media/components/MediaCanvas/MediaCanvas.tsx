@@ -6,6 +6,8 @@
  * navigation land in M3/M4 — this component is the first interactive surface.
  */
 import {
+  useEffect,
+  useEffectEvent,
   useState,
   type ChangeEvent,
   type DragEvent,
@@ -197,6 +199,46 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
   }
 
   /**
+   * Select everything currently on screen.
+   *
+   * "Everything" is `visibleAssets` — what the active folder, filter, search
+   * and trash toggle have already narrowed to — not the whole library. That is
+   * what every file manager means by Select All, and it is the only reading
+   * that makes the trash view's "select all, then delete" safe: it cannot
+   * reach past the filter into live assets.
+   */
+  function selectAllVisible() {
+    if (workspace.visibleAssets.length === 0) return
+    workspace.addToSelection(workspace.visibleAssets.map((asset) => asset.id))
+  }
+
+  // Ctrl/Cmd+A, the shortcut people try first. Document-level because the grid
+  // is a plain div with no tabindex, so a React `onKeyDown` would only fire
+  // while focus happened to sit on a tile.
+  //
+  // Ignored while focus is in a text field — the browser's own select-all is
+  // what someone typing in the search box means — and while any dialog is
+  // open, so a rename or a delete confirmation keeps its own select-all.
+  const selectAllEvent = useEffectEvent(() => selectAllVisible())
+  useEffect(() => {
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key !== 'a' && event.key !== 'A') return
+      if (!(isMacLike() ? event.metaKey : event.ctrlKey)) return
+      const target = event.target
+      if (
+        target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || (target instanceof HTMLElement && target.isContentEditable)
+      ) return
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return
+      event.preventDefault()
+      selectAllEvent()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  /**
    * Which assets a right-click acts on.
    *
    * The same Finder rule `handleAssetDragStart` already uses: acting on an
@@ -368,6 +410,21 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
           groupLabel="Filter media type"
           trailing={(
             <div role="group" aria-label="Media view" className={styles.viewGroup}>
+              {/* Discoverability for Ctrl/Cmd+A. The shortcut is the one people
+                  reach for, but only if they already know it exists — and the
+                  trash is where it matters most, because emptying it was
+                  otherwise a file-at-a-time job. */}
+              <Button
+                variant="ghost"
+                size="xs"
+                tooltip={`Select all ${workspace.visibleAssets.length}`}
+                aria-label={`Select all ${workspace.visibleAssets.length} items`}
+                disabled={workspace.visibleAssets.length === 0}
+                onClick={selectAllVisible}
+              >
+                <CheckIcon size={13} />
+                <span>All</span>
+              </Button>
               <SortMenu
                 value={workspace.filters.sort}
                 onChange={workspace.setSort}
