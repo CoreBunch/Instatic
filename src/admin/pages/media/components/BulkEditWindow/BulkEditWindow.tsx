@@ -231,6 +231,7 @@ export function BulkEditWindow({ workspace, open, onClose }: BulkEditWindowProps
       onClose={onClose}
       title={`Bulk edit · ${count} selected`}
       defaultPosition={{ x: 24, y: 120 }}
+      minimizable
       width={360}
       maxHeight={560}
       ariaLabel="Bulk edit selected media"
