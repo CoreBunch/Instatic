@@ -1334,7 +1334,7 @@ export const pgMigrations: Migration[] = [
     // uploaded zip / JSON manifest; 'site-local' = generated from the site
     // draft's plugins/<id>/ source (docs/features/site-plugins.md). Display +
     // lifecycle routing only — the runtime never branches on it.
-    id: '028_installed_plugins_source',
+    id: '029_installed_plugins_source',
     sql: `
       alter table installed_plugins
         add column if not exists source text not null default 'installed';
