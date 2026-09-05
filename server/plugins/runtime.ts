@@ -94,6 +94,7 @@ export { primePluginSettingsCache }
 
 interface ResolvedEntrypoint {
   entryPath: string
+  assetRootPath: string
 }
 
 function resolvePluginServerEntrypoint(
@@ -102,9 +103,11 @@ function resolvePluginServerEntrypoint(
 ): ResolvedEntrypoint | null {
   if (!manifest.assetBasePath || !manifest.entrypoints?.server) return null
   const relativeBase = manifest.assetBasePath.replace(/^\/uploads\/?/, '')
-  const entryPath = join(uploadsDir, relativeBase, manifest.entrypoints.server)
+  const assetRootPath = join(uploadsDir, relativeBase)
+  const entryPath = join(assetRootPath, manifest.entrypoints.server)
+  assertPathWithin(uploadsDir, assetRootPath)
   assertPathWithin(uploadsDir, entryPath)
-  return { entryPath }
+  return { entryPath, assetRootPath }
 }
 
 /**
@@ -123,6 +126,7 @@ export async function loadPluginServerEntrypoint(
   const result = await loadPluginInWorker({
     manifest,
     entryFileUrl: resolved.entryPath,
+    assetRootPath: resolved.assetRootPath,
     settings: getCachedPluginSettings(manifest.id),
   })
   if (!result.ok) {

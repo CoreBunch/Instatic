@@ -243,11 +243,17 @@ globalThis.__buildApi = function buildApi() {
   }
 
   // ---- media subsystem -----------------------------------------------------
-  // Three independent surfaces under api.cms.media. The callbacks live INSIDE
+  // One host-mediated ingestion surface plus three extension surfaces live
+  // under api.cms.media. Extension callbacks live INSIDE
   // the VM (stored under __plugin_handlers.mediaAdapters / mediaUrlTransformers);
   // the host only knows the adapter id + metadata. The host calls back into
   // the VM via __runMediaAdapterCall / __runMediaUrlTransformer when it
   // actually needs to upload/delete/transform a path.
+
+  function upsert(input: unknown) {
+    assertTargetPermission('cms.media.upsert')
+    return call('cms.media.upsert', [input])
+  }
 
   function registerStorageAdapter(adapter: PluginInput) {
     assertTargetPermission('cms.media.registerStorageAdapter')
@@ -497,6 +503,7 @@ globalThis.__buildApi = function buildApi() {
         },
       },
       media: {
+        upsert: upsert,
         registerStorageAdapter: registerStorageAdapter,
         registerUrlTransformer: registerUrlTransformer,
         registerVariantDelegate: registerVariantDelegate,

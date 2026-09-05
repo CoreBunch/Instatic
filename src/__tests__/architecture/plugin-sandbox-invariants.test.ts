@@ -198,6 +198,7 @@ describe('plugin sandbox invariants', () => {
       'cms.media.registerStorageAdapter',
       'cms.media.registerUrlTransformer',
       'cms.media.registerVariantDelegate',
+      'cms.media.upsert',
       'cms.routes.register',
       'cms.schedule.cancel',
       'cms.schedule.register',
