@@ -76,9 +76,10 @@ export async function resolveBranchPreviewToken(db: DbClient, tokenHash: string)
 
 /** Retire every active link of a branch; returns how many were active. */
 export async function revokeBranchPreviews(db: DbClient, branchId: string): Promise<number> {
+  const now = new Date().toISOString()
   const { rows } = await db<{ id: string }>`
     update site_branch_previews
-    set revoked_at = current_timestamp
+    set revoked_at = ${now}
     where branch_id = ${branchId}
       and revoked_at is null
     returning id
