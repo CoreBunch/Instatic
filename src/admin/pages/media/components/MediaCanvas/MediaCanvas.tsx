@@ -207,8 +207,17 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
    * that makes the trash view's "select all, then delete" safe: it cannot
    * reach past the filter into live assets.
    */
-  function selectAllVisible() {
+  const allVisibleSelected =
+    workspace.visibleAssets.length > 0
+    && workspace.visibleAssets.every((asset) => workspace.selectedAssetIds.has(asset.id))
+
+  /** Select every visible asset, or clear the selection when it already covers them. */
+  function toggleSelectAllVisible() {
     if (workspace.visibleAssets.length === 0) return
+    if (allVisibleSelected) {
+      workspace.clearSelection()
+      return
+    }
     workspace.addToSelection(workspace.visibleAssets.map((asset) => asset.id))
   }
 
@@ -219,7 +228,7 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
   // Ignored while focus is in a text field — the browser's own select-all is
   // what someone typing in the search box means — and while any dialog is
   // open, so a rename or a delete confirmation keeps its own select-all.
-  const selectAllEvent = useEffectEvent(() => selectAllVisible())
+  const selectAllEvent = useEffectEvent(() => toggleSelectAllVisible())
   useEffect(() => {
     function onKeyDown(event: globalThis.KeyboardEvent) {
       if (event.key !== 'a' && event.key !== 'A') return
@@ -230,7 +239,13 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
         || target instanceof HTMLTextAreaElement
         || (target instanceof HTMLElement && target.isContentEditable)
       ) return
-      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return
+      // Only a real MODAL takes the shortcut away. `aria-modal` is what marks
+      // one: `Dialog` sets it, the floating windows do not. Matching
+      // `role="dialog"` instead disabled the shortcut almost everywhere in
+      // Media, because selecting a single asset opens the viewer window — and
+      // that carries `role="dialog"` while deliberately leaving the grid
+      // usable behind it.
+      if (document.querySelector('[aria-modal="true"]')) return
       event.preventDefault()
       selectAllEvent()
     }
@@ -417,13 +432,22 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
               <Button
                 variant="ghost"
                 size="xs"
-                tooltip={`Select all ${workspace.visibleAssets.length}`}
-                aria-label={`Select all ${workspace.visibleAssets.length} items`}
+                pressed={allVisibleSelected}
+                tooltip={
+                  allVisibleSelected
+                    ? 'Clear selection'
+                    : `Select all ${workspace.visibleAssets.length}`
+                }
+                aria-label={
+                  allVisibleSelected
+                    ? 'Clear selection'
+                    : `Select all ${workspace.visibleAssets.length} items`
+                }
                 disabled={workspace.visibleAssets.length === 0}
-                onClick={selectAllVisible}
+                onClick={toggleSelectAllVisible}
               >
                 <CheckIcon size={13} />
-                <span>All</span>
+                <span>{allVisibleSelected ? 'None' : 'All'}</span>
               </Button>
               <SortMenu
                 value={workspace.filters.sort}

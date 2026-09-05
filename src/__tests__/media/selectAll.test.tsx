@@ -29,7 +29,10 @@ function claimsSelectAll(target: EventTarget | null): boolean {
     || target instanceof HTMLTextAreaElement
     || (target instanceof HTMLElement && target.isContentEditable)
   ) return false
-  if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return false
+  // Only a real modal — `aria-modal="true"` — takes the shortcut. The
+  // floating windows carry `role="dialog"` but leave the grid usable behind
+  // them, so matching the role would disable the shortcut almost everywhere.
+  if (document.querySelector('[aria-modal="true"]')) return false
   return true
 }
 
@@ -69,24 +72,54 @@ describe('when Ctrl/Cmd+A selects every visible asset', () => {
     expect(claimsSelectAll(editable)).toBe(false)
   })
 
-  it('stands down while any dialog is open', () => {
+  it('stands down while a modal dialog is open', () => {
     // A rename dialog or a delete confirmation owns the shortcut — selecting
     // the grid behind it would change what a confirmed action applies to.
     const grid = document.createElement('div')
     const dialog = document.createElement('div')
     dialog.setAttribute('role', 'dialog')
+    dialog.setAttribute('aria-modal', 'true')
     document.body.append(grid, dialog)
     expect(claimsSelectAll(grid)).toBe(false)
   })
 
-  it('stands down for an alertdialog too', () => {
-    // `Dialog` renders `alertdialog` when `tone === 'danger'`, which is
-    // exactly what the permanent-delete confirmation is.
+  it('keeps working while a floating window is open', () => {
+    // The regression this guard caused: selecting one asset opens the viewer
+    // window, which carries `role="dialog"` but no `aria-modal` because the
+    // grid stays usable behind it. Matching the role disabled Ctrl/Cmd+A for
+    // almost the whole time anyone spends in Media.
     const grid = document.createElement('div')
-    const alert = document.createElement('div')
-    alert.setAttribute('role', 'alertdialog')
-    document.body.append(grid, alert)
-    expect(claimsSelectAll(grid)).toBe(false)
+    const viewer = document.createElement('aside')
+    viewer.setAttribute('role', 'dialog')
+    document.body.append(grid, viewer)
+    expect(claimsSelectAll(grid)).toBe(true)
+  })
+})
+
+describe('the toggle', () => {
+  /** `allVisibleSelected` — the condition the button and shortcut both read. */
+  const allSelected = (visible: string[], selected: string[]) =>
+    visible.length > 0 && visible.every((id) => new Set(selected).has(id))
+
+  it('is not "all selected" when the grid is empty', () => {
+    // Otherwise `every` on an empty array reports true and the button would
+    // offer to clear a selection that does not exist.
+    expect(allSelected([], [])).toBe(false)
+  })
+
+  it('is not "all selected" when only some are', () => {
+    expect(allSelected(['a', 'b', 'c'], ['a', 'b'])).toBe(false)
+  })
+
+  it('is "all selected" once every visible asset is in the selection', () => {
+    expect(allSelected(['a', 'b'], ['a', 'b'])).toBe(true)
+  })
+
+  it('stays "all selected" when the selection reaches past the filter', () => {
+    // A selection made before narrowing the filter can hold ids that are no
+    // longer visible. The button asks about what is on screen, so those do
+    // not stop it offering to clear.
+    expect(allSelected(['a', 'b'], ['a', 'b', 'offscreen'])).toBe(true)
   })
 })
 
