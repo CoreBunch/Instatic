@@ -13,10 +13,13 @@
  *
  * This gate enforces the invariant at the source level:
  *
- *   The ONLY production source file that may statically import from
- *   `codemirror`, `@codemirror/<anything>`, or `@lezer/<anything>` is
- *   `src/admin/pages/site/code-editor/CodeMirrorEditor.tsx` — the lazy module
- *   itself.
+ *   The ONLY production source files that may statically import from
+ *   `codemirror`, `@codemirror/<anything>`, or `@lezer/<anything>` are the
+ *   lazy chunk's own modules under `src/admin/pages/site/code-editor/`:
+ *   `CodeMirrorEditor.tsx` (the React.lazy entry) and the helper modules it
+ *   alone imports (theme, locked regions, syntax diagnostics). A second
+ *   assertion pins that boundary: nothing outside that set may statically
+ *   import one of the helpers, or the chunk would leak into the eager graph.
  *
  * Dynamic `import('codemirror')` calls are also acceptable because they are
  * code-split by the bundler regardless of where they live, but a separate
@@ -24,9 +27,10 @@
  * preferred over scattering dynamic imports through the editor.
  *
  * If you genuinely need CodeMirror in a new place, extend
- * `CodeMirrorEditor.tsx` (or split a sibling lazy module under
- * `code-editor/`) and import from your new module via `React.lazy()` —
- * do NOT add a static import of the CodeMirror packages in the eager graph.
+ * `CodeMirrorEditor.tsx`, or add a sibling helper under `code-editor/`,
+ * list it in LAZY_CHUNK_MODULES below and import it ONLY from another
+ * listed module — do NOT add a static import of the CodeMirror packages in
+ * the eager graph.
  *
  * @see vite.config.ts — "no manual chunk for codemirror" comment
  * @see src/admin/pages/site/code-editor/CodeMirrorEditor.tsx — the lazy module
@@ -73,9 +77,29 @@ function collectProdFiles(): string[] {
 // CodeMirror lazy-load enforcement
 // ---------------------------------------------------------------------------
 
-// The ONE file allowed to statically import the CodeMirror packages.
-// Path is relative to SRC_ROOT (i.e. relative to `src/`).
-const ALLOWED_CONSUMER = 'admin/pages/site/code-editor/CodeMirrorEditor.tsx'
+// The lazy chunk: the React.lazy entry plus the helpers only it imports.
+// Paths are relative to SRC_ROOT (i.e. relative to `src/`).
+const LAZY_CHUNK_DIR = 'admin/pages/site/code-editor/'
+const LAZY_CHUNK_ENTRY = `${LAZY_CHUNK_DIR}CodeMirrorEditor.tsx`
+const LAZY_CHUNK_HELPERS = [
+  'codeMirrorTheme.ts',
+  'lockedRegions.ts',
+  'syntaxDiagnostics.ts',
+  'uidAttributes.tsx',
+  'contextCompletions.ts',
+  'htmlContextCompletions.ts',
+  'cssContextCompletions.ts',
+  'jsContextCompletions.ts',
+  'syntaxNode.ts',
+  'uidInspector.ts',
+  'cssVarShorthand.ts',
+  'documentDiff.ts',
+  'formatDocument.ts',
+]
+const LAZY_CHUNK_MODULES = new Set([
+  LAZY_CHUNK_ENTRY,
+  ...LAZY_CHUNK_HELPERS.map((file) => `${LAZY_CHUNK_DIR}${file}`),
+])
 
 // Matches: import ... from 'codemirror' / '@codemirror/...' / '@lezer/...'
 //          require('codemirror') / require('@codemirror/...') / require('@lezer/...')
@@ -98,13 +122,13 @@ const CODEMIRROR_IMPORT_PATTERNS: { family: string; pattern: RegExp }[] = [
 ]
 
 describe('CodeMirror lazy-load enforcement', () => {
-  it(`only ${ALLOWED_CONSUMER} may statically import codemirror / @codemirror / @lezer`, () => {
+  it(`only the lazy chunk (${LAZY_CHUNK_ENTRY} + its helpers) may statically import codemirror / @codemirror / @lezer`, () => {
     const allFiles = collectProdFiles()
     const violations: { file: string; family: string }[] = []
 
     for (const file of allFiles) {
       const rel = relative(SRC_ROOT, file)
-      if (rel === ALLOWED_CONSUMER) continue
+      if (LAZY_CHUNK_MODULES.has(rel)) continue
 
       let source: string
       try {
@@ -126,12 +150,12 @@ describe('CodeMirror lazy-load enforcement', () => {
       )
       throw new Error(
         `[codemirror-lazy-only] CodeMirror must stay behind the React.lazy()\n` +
-        `boundary in CodeEditorPanel.tsx. Only src/${ALLOWED_CONSUMER} is\n` +
-        `permitted to statically import CodeMirror packages. A static import\n` +
+        `boundary in CodeEditorPanel.tsx. Only src/${LAZY_CHUNK_ENTRY} and its\n` +
+        `listed helpers may statically import CodeMirror packages. A static import\n` +
         `elsewhere pulls the ~605 kB CodeMirror bundle into the eager admin\n` +
         `chunk and undoes the code-split.\n\n` +
-        `Move the new code into a lazy module under src/admin/pages/site/code-editor/\n` +
-        `and consume it via React.lazy(() => import('./<your-module>')).\n\n` +
+        `Move the new code into a helper under src/admin/pages/site/code-editor/,\n` +
+        `list it in LAZY_CHUNK_HELPERS, and import it only from the lazy chunk.\n\n` +
         `Violations:\n${lines.join('\n')}`
       )
     }
@@ -139,11 +163,27 @@ describe('CodeMirror lazy-load enforcement', () => {
     expect(violations).toHaveLength(0)
   })
 
-  it('the allowed consumer file actually exists at the documented path', () => {
-    // Sanity check — if CodeMirrorEditor.tsx is renamed or moved without
-    // updating ALLOWED_CONSUMER above, the gate would silently start
-    // failing for the lazy module itself. Detect that case directly.
-    const allowed = join(SRC_ROOT, ALLOWED_CONSUMER)
-    expect(existsSync(allowed)).toBe(true)
+  it('no file outside the lazy chunk statically imports one of its helpers', () => {
+    // The helpers pull CodeMirror in; importing one from the eager graph
+    // would drag the whole chunk along just as a direct CM import would.
+    const helperImport = new RegExp(
+      `from\\s+['"](?:\\.\\/|@site\\/code-editor\\/|@admin\\/pages\\/site\\/code-editor\\/)(?:${LAZY_CHUNK_HELPERS.join('|')})['"]`,
+    )
+    const violations: string[] = []
+    for (const file of collectProdFiles()) {
+      const rel = relative(SRC_ROOT, file)
+      if (LAZY_CHUNK_MODULES.has(rel)) continue
+      if (helperImport.test(readFileSync(file, 'utf8'))) violations.push(`src/${rel}`)
+    }
+    expect(violations).toEqual([])
+  })
+
+  it('every lazy-chunk module actually exists at the documented path', () => {
+    // Sanity check — if a module is renamed or moved without updating
+    // LAZY_CHUNK_MODULES above, the gate would silently start failing for
+    // the lazy chunk itself. Detect that case directly.
+    for (const rel of LAZY_CHUNK_MODULES) {
+      expect(existsSync(join(SRC_ROOT, rel))).toBe(true)
+    }
   })
 })

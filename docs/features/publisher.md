@@ -171,6 +171,39 @@ See [docs/features/loops.md](loops.md) for sources, filters, and registration.
 
 ---
 
+## Editable HTML projection (God Mode)
+
+`RenderConfig.projection: true` switches `renderNode` from publish output to
+**God Mode's editable HTML dialect** (`src/core/publisher/renderProjection.ts`,
+feature doc: [`god-mode.md`](god-mode.md)). Differences from a publish render:
+
+- **Tokens verbatim** — `resolveDynamicProps` is skipped entirely: `{source.field}`
+  tokens stay as source text, structured `dynamicBindings` are not applied, and
+  `cms:page:<id>` refs stay raw.
+- **Hidden nodes render** (no attribute emitted — the flag is uid-carried
+  metadata). Holes never emit; media enrichment and auto-`sizes` are skipped.
+- **Structural modules render as marker tags** instead of expanding, dispatched
+  by `resolveProjectionRenderer(moduleId)` before the specialised-renderer path:
+
+  | Module | Projection tag | Children |
+  |---|---|---|
+  | `base.loop` | `<instatic-loop data-source-id …>` (import-dialect attrs) | template, once |
+  | `base.visual-component-ref` | `<instatic-component data-component-id data-component-name>` | slot fills only — internals opaque |
+  | `base.slot-instance` | `<instatic-slot data-slot-name>` | user content |
+  | `base.slot-outlet` | `<instatic-slot-outlet data-slot-name>` | default content |
+  | `base.outlet` | `<instatic-outlet data-tag/data-custom-tag>` | none |
+
+  The loop/outlet attributes are exactly `htmlImport/rules.ts`'s
+  `mapLoopProps`/`mapOutletProps` vocabulary — one dialect, emit and import.
+  Tag names are exported as `PROJECTION_TAGS` from `@core/publisher`, and
+  each tag's attribute list as `PROJECTION_TAG_ATTRIBUTES` (the God Mode HTML
+  panel completes from it); the inverse is `importProjectionHtml` — the
+  uid-preserving import ([`html-import.md`](html-import.md) → "Uid-preserving
+  projection import").
+
+With `projection` absent or false the render is byte-identical to before the
+flag existed — gated by `projectionRender.test.ts`.
+
 ## Dynamic node detection
 
 `findDynamicNodeIds` (`src/core/publisher/dynamicDetection.ts`) classifies every node in a page tree as static or dynamic in a single walk. The result set drives both Layer A's shell-vs-complete decision and Layer C's `<instatic-hole>` placeholder emission. The rules:

@@ -159,6 +159,16 @@ async function removeIfExists(path: string): Promise<void> {
   await rm(path, { recursive: true, force: true })
 }
 
+/** Every locked package still has its manifest under `node_modules/`. */
+function installedPackagesPresent(
+  nodeModulesDir: string,
+  exactDependencies: Record<string, string>,
+): boolean {
+  return Object.keys(exactDependencies).every((name) =>
+    existsSync(join(nodeModulesDir, name, 'package.json')),
+  )
+}
+
 /**
  * In-process map of installs currently running, keyed by lock hash. Two
  * concurrent requests for the same dependency set share the same install
@@ -177,10 +187,22 @@ async function performInstall(
   const nodeModulesDir = nodeModulesDirForHash(hash, cacheRoot)
   const sentinelPath = sentinelPathForHash(hash, cacheRoot)
 
-  // Fast path: cache is intact — install completed and the sentinel marker
-  // proves it.
+  // Fast path: cache is intact — install completed (sentinel) AND every
+  // locked package is still on disk. The sentinel alone is not proof: the
+  // default cache root is the OS temp dir, and temp cleaners (macOS reaps
+  // files untouched for 3 days, systemd-tmpfiles /tmp after 10) delete
+  // package files by age while leaving directories and the sentinel behind.
+  // Packages Bun clones from its global cache keep their original mtimes,
+  // so they go first; the bundler then fails with a bare
+  // `Could not resolve "<package>"` for a dependency the site declares.
+  const exactDependencies = sortedExactDependencies(lock)
   if (existsSync(sentinelPath)) {
-    return { hash, workspaceDir, nodeModulesDir }
+    if (installedPackagesPresent(nodeModulesDir, exactDependencies)) {
+      return { hash, workspaceDir, nodeModulesDir }
+    }
+    // Reaped behind the sentinel — rebuild from scratch. Removing the slot
+    // first matters: the rename fallback below trusts an existing sentinel.
+    await removeIfExists(workspaceDir)
   }
 
   // Slow path: install atomically. We materialize the workspace into a temp
@@ -188,7 +210,6 @@ async function performInstall(
   // rename the temp dir into its final hash-based slot. A partial install
   // therefore never appears as a valid cache entry — the next request will
   // simply re-attempt the install.
-  const exactDependencies = sortedExactDependencies(lock)
   const maxPackages = options.maxPackages ?? DEFAULT_MAX_RUNTIME_PACKAGES
   if (Object.keys(exactDependencies).length > maxPackages) {
     throw new Error(

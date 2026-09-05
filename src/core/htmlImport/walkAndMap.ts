@@ -90,6 +90,32 @@ interface ImportBodyAttributes {
   props?: Record<string, unknown>
 }
 
+/** What the rule table mapped one element to, before a node is constructed. */
+export interface MappedElement {
+  moduleId: string
+  /** Rule props, merged with the element's collected `htmlAttributes` bag. */
+  props: Record<string, unknown>
+}
+
+/**
+ * Node-construction override for one element. Return a PageNode to use it in
+ * place of the default `createNode(moduleId, { ...defaults, ...props })`, or
+ * `undefined` to fall through to the default. The walker still owns the
+ * element-derived layers on whatever comes back: classIds (from
+ * `el.classList`), inlineStyles (from the harvest), children (from the
+ * recursion), and the children/`text`-prop exclusivity rule.
+ *
+ * This is the uid-preserving projection importer's seam
+ * (`importProjectionHtml`): its hook matches `uid` attributes back to
+ * existing nodes and patches them instead of minting fresh ones.
+ */
+export type BuildNodeHook = (el: Element, mapped: MappedElement) => PageNode | undefined
+
+/** Optional per-walk behavior overrides. */
+export interface WalkHooks {
+  buildNode?: BuildNodeHook
+}
+
 /** The result returned by the convenience entry point importHtml(). */
 export interface ImportResult extends WalkResult {
   /** Counts of constructs stripped by stripUnsafe(). */
@@ -111,7 +137,7 @@ export interface ImportResult extends WalkResult {
 // global (it runs in the browser bundle and under the happy-dom test polyfill).
 const ELEMENT_NODE = 1
 const TEXT_NODE = 3
-const HTML_ATTRIBUTE_MODULES = new Set([
+export const HTML_ATTRIBUTE_MODULES = new Set([
   'base.container',
   'base.text',
   'base.link',
@@ -121,10 +147,29 @@ const HTML_ATTRIBUTE_MODULES = new Set([
   // so its safe data-* / ARIA attributes have to survive import like any other
   // element's. Without this the hooks silently vanish and the script no-ops.
   'base.form',
+  // Loop and outlet marker tags project author htmlAttributes verbatim
+  // (renderProjectionLoop / renderProjectionOutlet), so the import collects
+  // them back — the dialect's own data-* vocabulary is filtered out via
+  // MODULE_GENERATED_ATTRIBUTE_NAMES below.
+  'base.loop',
+  'base.outlet',
 ])
 
 const MODULE_GENERATED_ATTRIBUTE_NAMES: Record<string, readonly string[]> = {
   'base.button': ['aria-disabled', 'disabled', 'href', 'rel', 'target', 'type'],
+  'base.loop': [
+    'data-source-id',
+    'data-table-id',
+    'data-order-by',
+    'data-direction',
+    'data-limit',
+    'data-offset',
+    'data-pagination',
+    'data-page-size',
+    'data-tag',
+    'data-custom-tag',
+  ],
+  'base.outlet': ['data-tag', 'data-custom-tag'],
   'base.form': [
     'action',
     'data-instatic-form-id',
@@ -160,6 +205,11 @@ const MODULE_GENERATED_ATTRIBUTE_NAMES: Record<string, readonly string[]> = {
 interface WalkContext {
   nodes: Record<string, PageNode>
   inlineStyles: Map<Element, Record<string, string>>
+  /**
+   * Optional node-construction override (see `WalkHooks.buildNode`). Absent
+   * on the default lossy path.
+   */
+  buildNode?: BuildNodeHook
   /**
    * True inside a `<pre>` subtree, where whitespace (incl. newlines) is
    * significant and must be preserved verbatim. Outside, whitespace is
@@ -329,10 +379,13 @@ function processElement(el: Element, ctx: WalkContext): string {
     Object.assign(props, collectElementProps(el, moduleId))
   }
 
-  // Merge module defaults with rule-specific props so every node starts
-  // from a well-formed baseline.
-  const def = registry.getOrThrow(moduleId)
-  const node = createNode(moduleId, { ...def.defaults, ...props })
+  // A buildNode hook may supply the node (the projection importer's
+  // uid-preserving patch); otherwise merge module defaults with rule-specific
+  // props so every node starts from a well-formed baseline.
+  const node =
+    ctx.buildNode?.(el, { moduleId, props }) ??
+    createNode(moduleId, { ...registry.getOrThrow(moduleId).defaults, ...props })
+  if (rule.locked) node.locked = true
 
   // Preserve element class *names* verbatim. This layer is registry-agnostic
   // (it has no SiteDocument), so it cannot mint real class ids here. The store
@@ -400,8 +453,16 @@ function processElement(el: Element, ctx: WalkContext): string {
 export function walkAndMap(
   doc: Document,
   inlineStyles: Map<Element, Record<string, string>> = new Map(),
+  hooks?: WalkHooks,
 ): WalkResult {
-  const ctx: WalkContext = { nodes: {}, inlineStyles, preserveWs: false, warnings: [], imageAlts: {} }
+  const ctx: WalkContext = {
+    nodes: {},
+    inlineStyles,
+    buildNode: hooks?.buildNode,
+    preserveWs: false,
+    warnings: [],
+    imageAlts: {},
+  }
 
   if (!doc.body) return { nodes: ctx.nodes, rootIds: [], warnings: [], imageAlts: {} }
 

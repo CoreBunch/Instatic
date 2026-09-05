@@ -2,13 +2,13 @@
 
 `src/core/htmlImport` converts an HTML string into a flat fragment of first-class `PageNode`s that callers splice directly into the live page tree.
 
-The module has two consumers: the paste-HTML UI and the AI agent's `insertHtml` / `replaceNodeHtml` tools. Both call the same `importHtml(source)` entry point — no duplicated mapping logic.
+The module has three consumers: the paste-HTML UI and the AI agent's `insertHtml` / `replaceNodeHtml` tools call the same `importHtml(source)` entry point, and God Mode's HTML panel applies edits through `importProjectionHtml(source, options)` — the uid-preserving import that patches an existing subtree instead of replacing it (see [Uid-preserving projection import](#uid-preserving-projection-import-god-mode)). All share one rule table — no duplicated mapping logic.
 
 ---
 
 ## TL;DR
 
-- Single entry point: `importHtml(source)` → `{ nodes, rootIds, body?, stripped, styleCss }`.
+- Single entry point: `importHtml(source)` → `{ nodes, rootIds, body?, stripped, styleCss }`. God Mode's HTML apply uses `importProjectionHtml(source, { tree, rootId, styleRules })` instead — same pipeline, plus uid matching and a change diff.
 - Pipeline: `parseHtml` → `harvestInlineStyles` + `collectStyleCss` → `stripUnsafe` → `walkAndMap`.
 - Mapping is rule-driven (`HTML_TO_MODULE_RULES`). The catch-all `*` rule guarantees every element produces a node — nothing falls through.
 - Every produced node is a real `PageNode`: selectable, draggable, deletable, and re-styleable in the canvas.
@@ -27,7 +27,10 @@ src/core/htmlImport/
 ├── stripUnsafe.ts     — removes <script>, on* attrs (counted), <style>+style= (harvested first); collectStyleCss returns the <style> CSS
 ├── inlineStyle.ts     — harvests the full inline style="" bag (security-gated) before it is stripped
 ├── rules.ts           — HTML_TO_MODULE_RULES declarative mapping table
-└── walkAndMap.ts      — DOM walker + importHtml() entry point
+├── attrReaders.ts     — shared attribute readers (attr / normalizedAttr / numberAttr / integerAttr)
+├── instaticDialect.ts — instatic-* attribute vocabulary: mapLoopProps / mapOutletProps / patchLoopProps
+├── projectionImport.ts — importProjectionHtml(): uid-preserving God Mode import + diff
+└── walkAndMap.ts      — DOM walker + importHtml() entry point (+ buildNode hook seam)
 
 src/admin/modals/ImportHtml/
 ├── ImportHtmlModal.tsx        — modal: CodeMirror HTML editor, DOM-tree preview, error alert, footer buttons
@@ -97,7 +100,10 @@ Callers splice the fragment into the page tree via `insertImportedNodes(parentId
 |---|---|---|---|
 | `instatic-outlet` | `base.outlet` | none (the CMS content outlet) | **No** |
 | `instatic-loop` | `base.loop` | `sourceId`, `filters.tableId`, `orderBy`, `direction`, `limit`, `offset`, `pagination`, `pageSize`, optional `tag` / `customTag` from `data-*` attrs | Yes |
-| `h1`–`h6`, `p`, `span`, `small`, `strong`, `em` | `base.text` | `text` = `el.textContent`, `tag` = tag name | No |
+| `instatic-component` | `base.visual-component-ref` | `componentId` from `data-component-id` (`data-component-name` is display-only, ignored) | Yes (slot fills) |
+| `instatic-slot` | `base.slot-instance` | `slotName` from `data-slot-name` (default `children`); node is stamped `locked: true` | Yes (user content) |
+| `instatic-slot-outlet` | `base.slot-outlet` | `slotName` from `data-slot-name` (default `children`) | Yes (default content) |
+| `h1`–`h6`, `p`, `span`, `small`, `strong`, `em` | `base.text` | `text` = `el.textContent`, `tag` = tag name; an element whose only element children are `<br>`s stays ONE `base.text` with `\n` breaks | No (unless wrapping non-`<br>` elements) |
 | `a` with class `btn` | `base.button`, or `base.link` when it wraps element children | `label` (`text` on `base.link`) = `el.textContent`, `href`, `target` | No for text-only; yes when it wraps elements |
 | `a` (no `btn` class) | `base.link` | `text` = `el.textContent`, `href`, `target` | No for text-only; yes when it wraps elements |
 | `img` | `base.image` | `src`, plus `loading` / `decoding` / `fetchPriority` when the attribute holds a value the module offers; `alt` is reported in `imageAlts` for the media record, not stored as a prop | No |
@@ -118,7 +124,9 @@ Callers splice the fragment into the page tree via `insertImportedNodes(parentId
 
 - **`<instatic-outlet>` → `base.outlet`.** The custom element marks where matched content flows in a CMS template. It maps to a childless `base.outlet` node (any inner markup is ignored — the composer fills it). This rule lets the AI agent and hand-authored template HTML place the single content outlet inline via the normal import path. See [templates.md](templates.md) and [agent.md](agent.md).
 - **`<instatic-loop>` → `base.loop`.** The custom element lets the AI agent and hand-authored snippets create a real Loop through the same HTML import path. Children recurse normally and become loop variants. Loop configuration is read from attributes: `data-source-id`, `data-table-id` (stored as `filters.tableId`), `data-order-by`, `data-direction`, `data-limit`, `data-offset`, `data-pagination`, `data-page-size`, and optional `data-tag` / `data-custom-tag`. See [loops.md](loops.md) and [agent.md](agent.md).
-- `base.text` uses `tag` (not a separate `level` or heading prop) — the tag name is passed through directly. Imported bare DOM text uses `tag: 'none'`, which publishes text without an element wrapper.
+- **`<instatic-component>` / `<instatic-slot>` / `<instatic-slot-outlet>`** are the God Mode projection dialect's structural tags (`PROJECTION_TAGS` in `@core/publisher` — one source of truth for both the projection render and these selectors). They are part of the shared rule table, so the lossy path accepts them too. A slot-instance produced here is stamped `locked: true` (the rule's `locked` field), matching the `syncSlotInstances` invariant for materialized slots.
+- **Loop and outlet author `htmlAttributes` are collected.** `base.loop` and `base.outlet` are in `HTML_ATTRIBUTE_MODULES`; the dialect's own `data-*` vocabulary is filtered out via `MODULE_GENERATED_ATTRIBUTE_NAMES` so only author attributes land in `props.htmlAttributes` — mirroring what `renderProjectionLoop` / `renderProjectionOutlet` emit.
+- `base.text` uses `tag` (not a separate `level` or heading prop) — the tag name is passed through directly. Imported bare DOM text uses `tag: 'none'`, which publishes text without an element wrapper. An element whose only element children are `<br>`s maps to a single `base.text` whose `text` carries `\n` breaks — the exact inverse of the module's `textToBreakHtml` render, so multi-line text round-trips as one node.
 - **Direct text inside a recursing container is preserved.** The walker iterates `childNodes` (not just `children`): element children route through the rules, and each significant text node becomes a synthesized `base.text` child with `tag: 'none'` in document order. That no-wrapper text mode publishes back to bare text, so `<div class="num">98%</div>` and `<li>Buy milk</li>` import as containers holding their original text without adding selector-visible wrapper elements. Whitespace-only text (indentation between tags) is skipped; internal whitespace runs collapse to single spaces, and boundary spaces are kept when the text run sits between element siblings.
 - **`<body>` metadata is preserved separately.** Classes, safe HTML attributes (`id`, ARIA, `data-*`, etc.), and harvested inline styles on `<body>` are returned as `fragment.body` rather than inserted into `rootIds`. Full-site import applies them to `base.body`; paste-style HTML import can ignore them without changing the fragment structure.
 - `base.link` uses the prop `text` (not `label`). `base.button` uses `label` (not `text`). These match the module source.
@@ -164,6 +172,68 @@ The importer is "approximate by construction". Several inputs do not survive the
 | Void elements (`<br>`, `<hr>`, etc.) | Imported as a childless `base.container` node with `tag:'custom'` and the real tag name as `customTag`. No children, no empty-container placeholder. `<input>` imports as a form primitive instead. | React throws if children are rendered inside void element tags; the dedicated void-element rule (before the catch-all) sets `recurse:false` and the canvas renderer skips children entirely for void tags. |
 
 These losses are deliberate. The importer is a structural bootstrap, not a fidelity snapshot.
+
+---
+
+## Uid-preserving projection import (God Mode)
+
+`importProjectionHtml(source, { tree, rootId, styleRules })` (`projectionImport.ts`)
+is the inverse of the publisher's editable HTML projection
+([`publisher.md`](publisher.md) → "Editable HTML projection"): it parses edited
+projection HTML back into a **replacement subtree** for `rootId`, preserving node
+identity via the `uid` attributes the projection stamps on every element. It is
+**pure** — the base tree is never mutated; callers inspect the diff first, then
+write its created and patched nodes, delete the vanished ones, and re-link
+parents around them (untouched nodes must not be rewritten — see
+[`god-mode.md`](god-mode.md) → "HTML panel"). The editor's splice is the site
+slice's `applyProjectionImport` (one undo step, class-name linking, selection
+pruning — see [`god-mode.md`](god-mode.md) → "HTML panel").
+
+How each element is treated:
+
+- **`uid` matches a node in the projected subtree** → the node is *patched in
+  place*: same id; `label`, `locked`, `hidden`, `breakpointOverrides`,
+  `propBindings`, and `dynamicBindings` all survive (the projection never emits
+  them — they are uid-carried metadata). The element's position decides the
+  node's position, so moves and reorders are moves, never delete+recreate.
+  Re-tagging an element into a different module (`<p>` → `<div>`) keeps the id
+  and metadata but takes the new module's props.
+- **Projected attributes are a PARTIAL view** of a matched node's props: only
+  what the dialect projects is patched; unprojected keys survive. The loop
+  `filters` bag is the canonical case (`patchLoopProps` in `instaticDialect.ts`): only
+  `filters.tableId` is projected as `data-table-id`, so plugin-defined filter
+  keys are preserved, never rebuilt from attributes.
+- **No `uid`, or an unknown / duplicate / out-of-subtree one** → a new node via
+  the shared rule table (exactly the lossy mapping). The `uid` attribute itself
+  is stripped before the walk so it never leaks into `props.htmlAttributes`.
+- **A uid present in the base subtree but absent from the HTML** → a deletion.
+- **Bare text** (`base.text` with `tag: 'none'`) renders without an element and
+  cannot carry a uid; a synthesized text child under a matched parent adopts
+  the parent's next unclaimed bare-text child positionally, keeping its id and
+  metadata.
+
+Root handling: a source consisting of exactly one top-level element carrying
+`uid="<rootId>"` re-describes the root node itself; anything else (a page
+projection — `base.body` emits no wrapper — or a root whose uid was removed)
+preserves the base root node and treats the top-level items as its children.
+
+The result carries a `diff` — `createdIds` / `patchedIds` / `deletedIds`, plus
+`deletedLockedIds`, `deletedStructuralIds` (VC refs, slot instances, slot
+outlets), and `retypedStructuralIds` (a matched marker element re-tagged away
+from its structural module — the node survives, but the Component/slot
+structure is dismantled, so confirm gates treat it like a structural deletion)
+— computed before anything mutates, so the HTML panel's destructive-diff
+confirm can gate on it. Class names resolve back to registry
+ids via the passed `styleRules` (unknown names stay names for the caller to
+link on insert, same as the lossy path); `warnings`, `stripped`, and `styleCss`
+mirror `importHtml`.
+
+The seam into the shared walker is `WalkHooks.buildNode` (`walkAndMap.ts`): the
+projection importer supplies a node factory that matches uids and patches, while
+the walker keeps owning the element-derived layers (classIds, inlineStyles,
+children, text/children exclusivity) for whatever node comes back.
+
+Tests: `src/__tests__/htmlImport/projectionImport.test.ts`.
 
 ---
 

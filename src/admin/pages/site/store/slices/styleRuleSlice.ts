@@ -40,6 +40,7 @@ import { createConditionActions } from './styleRule/conditionActions'
 import { createPropertyActions } from './styleRule/propertyActions'
 import { createRegistryActions } from './styleRule/registryActions'
 import { createAssignmentActions } from './styleRule/assignmentActions'
+import { createStylesheetEditActions } from './styleRule/stylesheetEditActions'
 
 // Re-export the public slice + boundary types for store wiring and consumers
 // (e.g. the canvas reads `ClassPreviewAssignment`).
@@ -73,5 +74,6 @@ export const createStyleRuleSlice: EditorStoreSliceCreator<StyleRuleSlice> = (se
     ...createPropertyActions(helpers),
     ...createRegistryActions(helpers),
     ...createAssignmentActions(helpers),
+    ...createStylesheetEditActions(helpers),
   }
 }

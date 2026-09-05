@@ -6,8 +6,8 @@ export function getReusableClasses(classes: Record<string, StyleRule>): StyleRul
 }
 
 /**
- * Tally how many nodes reference each class, in a SINGLE pass over the whole
- * site tree. Returns a `Map<classId, count>`; classes with zero references are
+ * Tally how many nodes reference each class, in a SINGLE pass over every
+ * page and Visual Component tree. Returns a `Map<classId, count>`; classes with zero references are
  * simply absent (callers default to 0).
  *
  * This replaces a per-selector scan: counting one selector at a time was
@@ -20,15 +20,17 @@ export function buildSelectorUsageMap(site: SiteDocument | null): Map<string, nu
   const usage = new Map<string, number>()
   if (!site) return usage
 
-  for (const page of site.pages) {
-    for (const node of Object.values(page.nodes)) {
-      const classIds = node.classIds
-      if (!classIds) continue
-      for (const classId of classIds) {
+  const tally = (nodes: Record<string, { classIds?: string[] }>): void => {
+    for (const node of Object.values(nodes)) {
+      for (const classId of node.classIds ?? []) {
         usage.set(classId, (usage.get(classId) ?? 0) + 1)
       }
     }
   }
+  // Class ids are global: a class assigned only inside a Visual Component
+  // definition is still in use.
+  for (const page of site.pages) tally(page.nodes)
+  for (const vc of site.visualComponents) tally(vc.tree.nodes)
   return usage
 }
 

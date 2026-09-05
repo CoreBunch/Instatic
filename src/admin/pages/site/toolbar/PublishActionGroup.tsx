@@ -1,4 +1,6 @@
+import { Button } from '@ui/components/Button'
 import { SplitButton, type SplitButtonMenuItem } from '@ui/components/SplitButton'
+import { cn } from '@ui/cn'
 import type { IconComponent } from 'pixel-art-icons/types'
 import styles from './Toolbar.module.css'
 
@@ -11,6 +13,13 @@ interface PublishActionGroupProps {
   statusLabel?: string | null
   statusTone?: PublishActionStatusTone
   statusAriaLabel?: string
+  /**
+   * Makes the status chip a button: a status the user can act on (code
+   * errors → open the offending file) must be one click away, not a label
+   * whose only resolution lives in a panel they have to know to open.
+   */
+  onStatusActivate?: () => void
+  statusTooltip?: string
   publishLabel: string
   publishAriaLabel: string
   publishTitle: string
@@ -28,6 +37,8 @@ export function PublishActionGroup({
   statusLabel,
   statusTone = 'neutral',
   statusAriaLabel,
+  onStatusActivate,
+  statusTooltip,
   publishLabel,
   publishAriaLabel,
   publishTitle,
@@ -42,7 +53,21 @@ export function PublishActionGroup({
 }: PublishActionGroupProps) {
   return (
     <div className={styles.publishActionGroup}>
-      {statusLabel && (
+      {statusLabel && onStatusActivate ? (
+        <Button
+          variant="ghost"
+          size="xs"
+          className={cn(styles.publishActionStatus, styles.publishActionStatusButton)}
+          data-tone={statusTone}
+          aria-label={statusAriaLabel ?? statusLabel}
+          tooltip={statusTooltip}
+          onClick={onStatusActivate}
+          data-testid="toolbar-status-action"
+        >
+          <span className={styles.publishActionStatusDot} aria-hidden="true" />
+          {statusLabel}
+        </Button>
+      ) : statusLabel ? (
         <span
           role="status"
           aria-live="polite"
@@ -53,7 +78,7 @@ export function PublishActionGroup({
           <span className={styles.publishActionStatusDot} aria-hidden="true" />
           {statusLabel}
         </span>
-      )}
+      ) : null}
 
       <SplitButton
         variant={publishState === 'error' ? 'destructive' : 'primary'}

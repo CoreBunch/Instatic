@@ -8,7 +8,9 @@ import * as sdk from '@core/plugin-sdk'
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const scannedRoots = ['src', 'server']
 const legacyTypesPath = join('src', 'core', 'plugins', 'types.ts')
-const legacyTypesImportMarker = ['plugins', 'types'].join('/')
+// The legacy module path as an import specifier tail — a word boundary after
+// `types` keeps `prettier/plugins/typescript` (a real dependency) out.
+const legacyTypesImportMarker = new RegExp(`${['plugins', 'types'].join('/')}(?![a-z])`)
 
 async function collectFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true })
@@ -53,7 +55,7 @@ describe('public plugin SDK exports', () => {
     const offenders: string[] = []
     for (const file of files) {
       const content = await readFile(file, 'utf8')
-      if (content.includes(legacyTypesImportMarker)) {
+      if (legacyTypesImportMarker.test(content)) {
         offenders.push(relative(repoRoot, file))
       }
     }

@@ -170,6 +170,44 @@ export const KEYBINDINGS: ReadonlyArray<KeybindingDefinition> = [
     capability: 'ai.chat',
   },
 
+  {
+    commandId: 'godMode.toggle',
+    shortcut: { mac: '\u2318\u21e7G', win: 'Ctrl+Shift+G' },
+    ariaKeyshortcuts: isPlatformMac() ? 'Meta+Shift+G' : 'Control+Shift+G',
+    match: (e) =>
+      (e.metaKey || e.ctrlKey) &&
+      e.shiftKey &&
+      !e.altKey &&
+      e.key.toLowerCase() === 'g',
+    scope: 'editor',
+    ignoreInEditableField: true,
+    capability: 'site.structure.edit',
+  },
+
+  // Dispatched by the HTML panel's CodeMirror keymap (`onSubmit`), not by a
+  // global handler — registered here so the label comes from this single
+  // source and the help screen lists it.
+  {
+    commandId: 'godMode.applyHtml',
+    displayName: 'Apply HTML panel edits',
+    shortcut: { mac: '\u2318\u21a9', win: 'Ctrl+Enter' },
+    ariaKeyshortcuts: isPlatformMac() ? 'Meta+Enter' : 'Control+Enter',
+    match: (e) => (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === 'Enter',
+    scope: 'editor',
+    capability: 'site.structure.edit',
+  },
+
+  // Handled by every code editor's own CodeMirror keymap (and the Code
+  // Dock's Format buttons) — registered for the label and the help screen.
+  {
+    commandId: 'codeEditor.format',
+    displayName: 'Format code document',
+    shortcut: { mac: '\u21e7\u2325F', win: 'Shift+Alt+F' },
+    ariaKeyshortcuts: 'Shift+Alt+F',
+    match: (e) => e.shiftKey && e.altKey && !e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'f',
+    scope: 'editor',
+  },
+
   // ── Canvas + Layers tree (layer operations) ─────────────────────────────────
 
   {

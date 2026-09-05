@@ -22,6 +22,7 @@ import { getAccountCommands } from './commands/account'
 import { getEditorCommands } from './commands/editor'
 import { getLayersCommands } from './commands/layers'
 import { getPanelsCommands } from './commands/panels'
+import { getGodModeCommands } from './commands/godMode'
 import { getSettingsCommands } from './commands/settings'
 import { getHelpCommands } from './commands/help'
 import { getPagesCommands } from './commands/pages'
@@ -69,6 +70,7 @@ export function getAllCommands(): Command[] {
       ...getEditorCommands(),
       ...getLayersCommands(),
       ...getPanelsCommands(),
+      ...getGodModeCommands(),
       ...getPagesCommands(),
       ...getBreakpointsCommands(),
       ...getContentCommands(),

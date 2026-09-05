@@ -5,10 +5,11 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect, type CSSProperties } from 'react'
 import { CanvasRoot } from '@admin/pages/site/canvas'
 import { CodeEditorPanel, CodeEditorSkeleton } from '@admin/pages/site/code-editor'
 import { useActiveLivePath } from '@admin/pages/site/hooks/useActiveLivePath'
+import { useGodModeUnlocked } from '@admin/pages/site/hooks/useGodModeUnlocked'
 import { useAutoResolveDependencies } from '@admin/pages/site/hooks/useAutoResolveDependencies'
 import { LayoutNameDialog } from '@admin/pages/site/dialogs/LayoutNameDialog'
 import { PropertiesPanel } from '@admin/pages/site/panels/PropertiesPanel'
@@ -28,6 +29,16 @@ import type { RuntimeScriptValidationState } from '@admin/pages/site/hooks/useRu
 // sources; CanvasRoot and PropertiesPanel need them.
 import '@modules/base'
 import '@core/loops/sources'
+
+// God Mode Code Dock — mounted only while the mode is active, so the chunk
+// (and later, the CodeMirror panels behind it) never loads for users who
+// don't use God Mode.
+// Import the component file (not the barrel) so the emitted chunk is named
+// CodeDock-*.js — a kebab-case code-dock-*.js chunk false-positives the
+// per-icon-chunk gate for the vendored `code` icon (bundle-size-budgets).
+const CodeDock = lazy(() =>
+  import('@admin/pages/site/code-dock/CodeDock').then((m) => ({ default: m.CodeDock })),
+)
 
 const ImportHtmlModal = lazy(() =>
   import('@admin/modals/ImportHtml').then((m) => ({ default: m.ImportHtmlModal })),
@@ -59,6 +70,17 @@ export function AdminCanvasEditorBody({
 
   const propertiesPanelMode = useEditorStore((s) => s.propertiesPanelMode)
   const rightSidebarExpanded = useEditorStore(selectRightSidebarExpanded)
+  const godModeUnlocked = useGodModeUnlocked()
+  const godModeActive = useEditorStore((s) => s.godModeActive)
+  const setGodModeActive = useEditorStore((s) => s.setGodModeActive)
+  const showCodeDock = godModeUnlocked && godModeActive
+
+  // A persisted godModeActive flag can outlive the entitlement (preference
+  // turned off, capability revoked). Clear it so the right sidebar comes
+  // back instead of leaving the editor with no properties surface at all.
+  useEffect(() => {
+    if (godModeActive && !godModeUnlocked) setGodModeActive(false)
+  }, [godModeActive, godModeUnlocked, setGodModeActive])
   const importHtmlModalOpen = useEditorStore((s) => s.importHtmlModalOpen)
   const hasRightSidebar = rightSidebarExpanded
   const narrowChrome = useNarrowEditorChrome()
@@ -126,6 +148,14 @@ export function AdminCanvasEditorBody({
         </ConfirmDeleteProvider>
       </DndContext>
 
+      {/* God Mode Code Dock — bottom region below the editor row (the shell
+          is a column flex, so this lands under sidebars + canvas). */}
+      {showCodeDock && (
+        <Suspense fallback={<CodeDockLoading />}>
+          <CodeDock runtimeValidation={runtimeValidation} />
+        </Suspense>
+      )}
+
       {/* Code editor/media preview: viewport overlay, not constrained by the
           canvas stage. The panel itself is small chrome; the heavy CodeMirror
           6 bundle (~600 kB) is lazy-loaded inside the panel only when the
@@ -146,6 +176,27 @@ export function AdminCanvasEditorBody({
         </Suspense>
       )}
     </>
+  )
+}
+
+/**
+ * Dock-shaped placeholder while the God Mode chunk loads. The dock is a
+ * sizeable lazy chunk (three CodeMirror panels), and on a cold dev-server
+ * load that wait is long enough that an empty fallback reads as "the toggle
+ * did nothing" — the canvas just shrinks. Hold the dock's height and say so.
+ */
+function CodeDockLoading() {
+  const height = useEditorStore((s) => s.codeDockHeight)
+  return (
+    <div
+      className={styles.codeDockLoading}
+      style={{ '--code-dock-height': `${height}px` } as CSSProperties}
+      role="status"
+      aria-live="polite"
+      data-testid="code-dock-loading"
+    >
+      Loading code panels…
+    </div>
   )
 }
 

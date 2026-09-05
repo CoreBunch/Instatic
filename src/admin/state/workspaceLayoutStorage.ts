@@ -97,6 +97,16 @@ export interface StoredWorkspaceLayout {
   leftPanelModes?: Record<string, PanelMode>
   /** Built-in left-rail panels that are open, including floating panels. */
   openLeftPanels?: string[]
+  /** Whether God Mode (Code Dock shown, right sidebar hidden) is active (site only). */
+  godModeActive?: boolean
+  /** Code Dock pixel height (site only). */
+  codeDockHeight?: number
+  /** Per-column visibility of the Code Dock panels, keyed by 'html' | 'css' | 'js'. */
+  codeDockPanels?: Record<string, boolean>
+  /** Panel shown while the Code Dock is in narrow-window tabbed mode. */
+  codeDockActiveTab?: string
+  /** Relative flex weights of the Code Dock columns. */
+  codeDockColumnWeights?: Record<string, number>
 }
 
 interface StoredEditorLayout {
@@ -149,6 +159,11 @@ const StoredWorkspaceLayoutSchema = Type.Object(
     propertiesPanelMode: Type.Optional(Type.String()),
     leftPanelModes: Type.Optional(Type.Record(Type.String(), Type.String())),
     openLeftPanels: Type.Optional(Type.Array(Type.String())),
+    godModeActive: Type.Optional(Type.Boolean()),
+    codeDockHeight: Type.Optional(Type.Number()),
+    codeDockPanels: Type.Optional(Type.Record(Type.String(), Type.Boolean())),
+    codeDockActiveTab: Type.Optional(Type.String()),
+    codeDockColumnWeights: Type.Optional(Type.Record(Type.String(), Type.Number())),
   },
   { additionalProperties: true },
 )

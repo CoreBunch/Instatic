@@ -29,6 +29,7 @@ import { createLifecycleActions } from './site/lifecycleActions'
 import { createPageActions } from './site/pageActions'
 import { createExplorerActions } from './site/explorerActions'
 import { createNodeActions } from './site/nodeActions'
+import { createProjectionApplyActions } from './site/projectionApplyActions'
 import { createBreakpointActions } from './site/breakpointActions'
 import { createSettingsActions } from './site/settingsActions'
 import { createFontActions } from './site/fontActions'
@@ -74,6 +75,7 @@ export const createSiteSlice: EditorStoreSliceCreator<SiteSlice> = (set, get) =>
     ...createPageActions(helpers),
     ...createExplorerActions(helpers),
     ...createNodeActions(helpers),
+    ...createProjectionApplyActions(helpers),
     ...createBreakpointActions(helpers),
     ...createSettingsActions(helpers),
     ...createFontActions(helpers),

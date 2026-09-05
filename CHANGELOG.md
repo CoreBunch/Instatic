@@ -4,6 +4,15 @@ All notable changes to Instatic will be documented here.
 
 This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
 
+## Unreleased
+
+### Editor, import, and publishing
+
+- Added **God Mode**, a per-user editor mode for structure editors that replaces the properties sidebar with a Code Dock of three panels: an editable HTML projection of the selection or the whole page (edits apply live, with a confirm for destructive or stale changes, reverse selection sync from the cursor, and breadcrumbs), a CSS panel over the style-rule registry, and a JS panel editing the page script. Each panel formats with Prettier, offers context-aware completions (classes, tokens, data fields), and can expand into a full-size editor. Enable it under Settings → Preferences; toggle with ⌘⇧G.
+- Fixed the site editor crashing the browser tab ("Aw, Snap") on large sites. Two causes: every live HTML apply in God Mode rewrote the whole projected subtree into the collaboration document, and the undo history retained each rewrite until the tab ran out of memory; and connecting to the collaboration server re-assembled the whole site once per page instead of once, so a 20-page site did seconds of blocked work and hundreds of megabytes of allocation at load. A live apply now writes only what changed, and the site is assembled once.
+- Made the toolbar's "N code errors" status a button: it opens the first error's file in the Code Editor, whose Problems list shows every error with its `file:line:column`. Before, the count was a passive label and the Problems list only appeared once a script file was open.
+- Fixed publish validation failing with `Could not resolve "<package>"` for a dependency the site declares. The runtime dependency cache lives in the OS temp directory, and temp cleaners delete package files by age while leaving the install-complete marker behind, so the server kept trusting an emptied cache. A cache now counts as installed only while every locked package is on disk, and a reaped one is reinstalled on demand. `RUNTIME_CACHE_DIR` moves the cache to a persistent path.
+
 ## 0.0.18 - 2026-09-01
 
 ### Security

@@ -35,6 +35,7 @@ import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import { getFieldIcon } from '@admin/pages/data/utils/fieldIcons'
 import { isFieldBindable, type PropertyControlKind } from './bindingCompatibility'
 import { _cachedMeta, loadDataMeta } from './cache'
+import { loopMetadataFields } from './entryFields'
 import { SYSTEM_SOURCES, type SystemSourceId } from './systemSources'
 import { getCmsDataTable, previewCmsDataLoopItems } from '@core/persistence/cmsData'
 import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
@@ -67,18 +68,6 @@ function LoopFieldIcon({ format }: { format?: LoopSourceField['format'] }) {
   if (format === 'url') return <LoopUrlIcon size={12} aria-hidden="true" />
   return <LoopPlainTextIcon size={12} aria-hidden="true" />
 }
-
-// Loop synthetic fields that only make sense on `postType` tables. Hidden
-// from the loop-metadata group when scoped to a `kind: 'data'` table (no
-// body, featured media, SEO, etc.).
-const POST_TYPE_ONLY_LOOP_FIELDS = new Set([
-  'title',
-  'body',
-  'featuredMedia',
-  'firstImage',
-  'seoTitle',
-  'seoDescription',
-])
 
 // ---------------------------------------------------------------------------
 // Props
@@ -295,13 +284,7 @@ export function DataBindingPicker({
 
       // Loop synthetics not already present in the table.
       if (availableFields && availableFields.length > 0) {
-        const tableFieldIds = new Set(scopedTable.fields.map((f) => f.id))
-        const loopEntries: FieldEntry[] = availableFields
-          .filter((f) => !tableFieldIds.has(f.id))
-          .filter(
-            (f) =>
-              scopedTable.kind === 'postType' || !POST_TYPE_ONLY_LOOP_FIELDS.has(f.id),
-          )
+        const loopEntries: FieldEntry[] = loopMetadataFields(scopedTable, availableFields)
           .map((f) => ({ kind: 'loop' as const, field: f }))
         if (loopEntries.length > 0) {
           result.push({ label: 'Loop metadata', entries: loopEntries })

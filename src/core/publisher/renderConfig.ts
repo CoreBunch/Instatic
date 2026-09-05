@@ -119,6 +119,20 @@ export interface RenderConfig {
    * Used by the agent read-surface (read_document).
    */
   readonly annotateNodeIds?: boolean
+  /**
+   * God Mode's editable HTML projection (docs/features/god-mode.md). When
+   * true, the render emits the editable dialect instead of publish output:
+   * dynamic tokens stay verbatim (no interpolation, no structured-binding
+   * application, no page-ref resolution), hidden nodes render, media
+   * enrichment and auto-sizes are skipped, holes never emit, and the
+   * structural modules render as `instatic-*` marker tags
+   * (see renderProjection.ts). Projection implies uid annotation — every
+   * element carries `uid="<nodeId>"` regardless of `annotateNodeIds`,
+   * because identity is the dialect's round-trip guarantee. Default
+   * (absent/false) is the publish path, byte-identical to before this flag
+   * existed.
+   */
+  readonly projection?: boolean
 }
 
 /**

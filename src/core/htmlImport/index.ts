@@ -4,6 +4,8 @@
  * Public API:
  *
  *   importHtml(source)   — parse → harvest → strip → walk; the single entry point.
+ *   importProjectionHtml — uid-preserving God Mode projection import (patch /
+ *                          create / delete against a base subtree + diff report).
  *   parseHtml(source)    — DOMParser wrapper (browser / test polyfill).
  *   stripUnsafe(doc)     — mutates doc in place, returns StripReport.
  *   collectStyleCss(doc) — concatenated CSS of every <style> block (pre-strip).
@@ -27,5 +29,12 @@ export type {  ImportFragment, ImportResult } from './walkAndMap'
 export { parseHtml } from './parseHtml'
 export { stripUnsafe } from './stripUnsafe'
 export { walkAndMap, importHtml } from './walkAndMap'
+
+export { importProjectionHtml } from './projectionImport'
+export type {
+  ProjectionImportOptions,
+  ProjectionImportDiff,
+  ProjectionImportResult,
+} from './projectionImport'
 
 export { normalizeImportedText } from './text'

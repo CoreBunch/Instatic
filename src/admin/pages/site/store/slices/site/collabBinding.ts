@@ -31,7 +31,7 @@
  */
 import * as Y from 'yjs'
 import type { Patches } from 'mutative'
-import type { Page, SiteDocument, SiteShell } from '@core/page-tree'
+import type { Page, SiteDocument } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import type { SavedLayout } from '@core/layouts'
 import {
@@ -57,9 +57,7 @@ import {
   treeMap,
   type CollabDocSet,
 } from '@core/collab'
-import { clonePackageJson } from '@core/site-dependencies/manifest'
-import { cloneSiteRuntimeConfig } from '@core/site-runtime'
-import { validateSite } from '@core/persistence/validate'
+import { assembleSiteFromShell } from './collabSiteAssembly'
 import type { EditorStoreApi } from '@site/store/types'
 import { pruneCanvasSelectionDraft } from '../selectionSlice'
 import type { Awareness } from 'y-protocols/awareness'
@@ -437,73 +435,22 @@ function projectDocIntoStore(docId: string): void {
     if (!doc) return
     const projected = projectSiteDoc(doc)
     if (Object.keys(projected.shell).length === 0) return
-    // The projected shell is untyped wire data — validate it before it enters
-    // the store, exactly like the HTTP load path (validateSite) and the relay's
-    // persist path both do. `validateSite` is tolerant of individual malformed
-    // entries (drops bad style rules / conditions / files rather than
-    // rejecting the whole shell), so one corrupt rule from any source can't
-    // crash a panel. `id`/`updatedAt` are non-collaborative — inject them like
-    // the persist path. If the shell is not yet coherent (mid-sync), skip this
-    // tick; the next projection re-runs once it is.
-    let shell: SiteShell
-    try {
-      shell = validateSite({
-        ...projected.shell,
-        id: 'default',
-        updatedAt:
-          typeof projected.shell.updatedAt === 'number' ? projected.shell.updatedAt : Date.now(),
-      })
-    } catch (err) {
-      console.warn('[collabBinding] projected shell failed validation — projection skipped:', err)
-      return
-    }
-    const byId = {
-      pages: new Map(site.pages.map((p) => [p.id, p])),
-      components: new Map(site.visualComponents.map((vc) => [vc.id, vc])),
-      layouts: new Map(site.layouts.map((l) => [l.id, l])),
-    }
-    const assemble = <T extends { id: string }>(
-      ids: readonly string[],
-      existing: Map<string, T>,
-      kind: 'page' | 'component' | 'layout',
-    ): T[] => {
-      const rows: T[] = []
-      for (const id of ids) {
-        const known = existing.get(id)
-        if (known) {
-          rows.push(known)
-          continue
-        }
-        const rowDocId = encodeCollabDocId({ kind, rowId: id })
-        const fresh = rowFromDoc(rowDocId) as T | null
-        if (fresh) {
-          rows.push(fresh)
-          continue
-        }
-        // A peer created this row — its doc isn't bound here yet. Bind it;
-        // the whenSynced hook re-projects the site once content arrives.
-        bindDocThroughProvider(rowDocId)
-      }
-      return rows
-    }
-    const nextSite: SiteDocument = {
-      ...site,
-      ...shell,
-      pages: assemble(projected.rosters.pages, byId.pages, 'page'),
-      visualComponents: assemble(projected.rosters.components, byId.components, 'component'),
-      layouts: assemble(projected.rosters.layouts, byId.layouts, 'layout'),
-    }
-    if (projected.shell.conditions === undefined) delete nextSite.conditions
-    const packageJson = clonePackageJson(nextSite.packageJson)
-    const siteRuntime = cloneSiteRuntimeConfig(nextSite.runtime)
-    const alignedSite = { ...nextSite, packageJson, runtime: siteRuntime }
-    alignedSiteRef = alignedSite
+    const assembled = assembleSiteFromShell({
+      site,
+      projected,
+      rowFromDoc,
+      // A roster member with an empty doc: a peer created it. Bind it; the
+      // whenSynced hook re-assembles the site once its content arrives.
+      bindRowDoc: bindDocThroughProvider,
+    })
+    if (!assembled) return
+    alignedSiteRef = assembled.site
     api.setState((draft) => {
-      draft.site = alignedSite
-      draft.packageJson = packageJson
-      draft.siteRuntime = siteRuntime
-      if (!nextSite.pages.some((p) => p.id === draft.activePageId)) {
-        draft.activePageId = nextSite.pages[0]?.id ?? null
+      draft.site = assembled.site
+      draft.packageJson = assembled.packageJson
+      draft.siteRuntime = assembled.siteRuntime
+      if (!assembled.site.pages.some((p) => p.id === draft.activePageId)) {
+        draft.activePageId = assembled.site.pages[0]?.id ?? null
       }
       // A roster change can drop the whole document the selection lives in (a
       // peer deleted the page, or an undo removed it). Prune AFTER site +
@@ -613,6 +560,16 @@ function seedDetachedDocs(site: SiteDocument): void {
   }
 }
 
+/** Whether the store's site already assembles the row behind `docId`. */
+function storeHoldsRow(docId: string): boolean {
+  const site = storeApi?.getState().site
+  const parsed = parseCollabDocId(docId)
+  if (!site || !parsed || parsed.kind === 'site') return false
+  const rows: readonly { id: string }[] =
+    parsed.kind === 'page' ? site.pages : parsed.kind === 'component' ? site.visualComponents : site.layouts
+  return rows.some((row) => row.id === parsed.rowId)
+}
+
 function bindDocThroughProvider(docId: string): void {
   if (!provider || hasProviderGate(docId)) return
   const binding = provider.bind(docId)
@@ -625,8 +582,13 @@ function bindDocThroughProvider(docId: string): void {
     scheduleProjection(docId)
     // A row doc bound on demand (a peer created the row) re-assembles the
     // site once its content arrives — the roster projection skipped it
-    // while it was empty.
-    if (docId !== SITE_DOC_ID) scheduleProjection(SITE_DOC_ID)
+    // while it was empty. A row the store already holds (every row of the
+    // HTTP-loaded site, at connect time) needs no re-assembly: its own
+    // projection above replaces it in place. Re-assembling the site once
+    // per row doc sync ran the full shell projection and its store fan-out
+    // per page on load — seconds of blocked main thread and hundreds of
+    // megabytes of garbage on a large site, enough to crash the renderer.
+    if (docId !== SITE_DOC_ID && !storeHoldsRow(docId)) scheduleProjection(SITE_DOC_ID)
   })
 }
 

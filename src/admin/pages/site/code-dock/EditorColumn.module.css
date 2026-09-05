@@ -1,0 +1,130 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.editor {
+  flex: 1;
+  min-height: 0;
+}
+
+.editor [data-codemirror-container] {
+  height: 100%;
+  min-height: 0;
+}
+
+.editor :global(.cm-editor) {
+  height: 100%;
+}
+
+.editor :global(.cm-scroller) {
+  min-height: 0;
+}
+
+.loading,
+.empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: var(--space-s);
+  font-size: var(--text-s);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.status {
+  flex: none;
+  padding: var(--space-3xs) var(--space-s);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.statusError {
+  color: var(--danger);
+}
+
+.statusWarning {
+  color: var(--warning);
+}
+
+.toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  padding: var(--space-3xs) var(--space-s);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.toolbarNote {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dirty {
+  color: var(--warning);
+}
+
+.banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  padding: var(--space-3xs) var(--space-s);
+  border-bottom: 1px solid var(--warning-30);
+  background: var(--warning-10);
+  font-size: var(--text-2xs);
+  color: var(--text);
+}
+
+.bannerText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bannerActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+}
+
+.toolbarActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+}
+
+.breadcrumbs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4xs);
+  padding: var(--space-4xs) var(--space-xs);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.breadcrumbSeparator {
+  color: var(--text-subtle);
+  user-select: none;
+}

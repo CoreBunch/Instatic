@@ -553,8 +553,10 @@ contract on the right.
 
 `src/admin/pages/site/sidebars/RightSidebar/RightSidebar.tsx`. Accepts a `mode` prop (`'site' | 'hidden'`):
 
-- `'site'` — expands when a node or class is selected AND the panel is docked AND not collapsed. Determined by `selectRightSidebarExpanded` (`src/admin/pages/site/store/store.ts`).
+- `'site'` — expands when a node or class is selected AND the panel is docked AND not collapsed AND God Mode is off. Determined by `selectRightSidebarExpanded` (`src/admin/pages/site/store/store.ts`).
 - `'hidden'` — always collapsed (site viewer; no `pages.draft.save` capability).
+
+While **God Mode** is active the docked right sidebar is suppressed entirely and the bottom **Code Dock** (HTML | CSS | JS panels) takes over as the styling surface; Properties stays reachable as a floating window. The CSS panel is a live two-way projection of the style-rule registry (edits apply through `applyStylesheetEdit`, one undo step per flush). See [`docs/features/god-mode.md`](features/god-mode.md).
 
 `isExpanded` is derived from synchronous editor store state only — never from async prop availability. This means the sidebar lands at its final width on the very first render with no transition.
 
@@ -591,7 +593,7 @@ The sidebar shell expands/collapses by animating `--*-panel-width`. The panel sl
 
 `src/admin/pages/site/toolbar/`:
 
-- `PublishButton`, `PublishActionGroup` — publish current site / page
+- `PublishButton`, `PublishActionGroup` — publish current site / page. The status chip beside Publish (draft synced, connecting, checking code, N code errors) is a passive `role="status"` label except when code errors name a file: then it is a button that opens the first error's file in the Code Editor, whose Problems list shows every error with its `file:line:column` (gated by `src/__tests__/toolbar/publishStatusAction.test.tsx`).
 - `SettingsButton` — opens the Settings modal (see below)
 - `ZoomControls` — canvas zoom
 - `ModulePickerDropdown` — opens the module inserter modal

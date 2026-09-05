@@ -93,15 +93,56 @@ function authorSelectorSubject(selectedElement: Element | null): Element | null 
   const nodeId = selectedElement.getAttribute('data-node-id')
   if (!nodeId) return selectedElement
 
-  const body = selectedElement.ownerDocument.body
-  const root = body?.cloneNode(true) as HTMLElement | null
+  const root = cloneCanvasBody(selectedElement)
   if (!root) return selectedElement
 
+  // Locate the subject BEFORE stripping: `data-node-id` is itself stripped.
   const subject = findCanvasNodeClone(root, nodeId)
   if (!subject) return selectedElement
 
   stripCanvasEditorAttributes(root)
   return subject
+}
+
+function cloneCanvasBody(canvasElement: Element): HTMLElement | null {
+  return (canvasElement.ownerDocument.body?.cloneNode(true) as HTMLElement | null) ?? null
+}
+
+/**
+ * An editor-attribute-free clone of the canvas body hosting `canvasElement`,
+ * for matching author selectors against the whole rendered page (the God
+ * Mode CSS panel's page scope and its "matches N elements" counts).
+ */
+export function authorCanvasRoot(canvasElement: Element): Element | null {
+  const root = cloneCanvasBody(canvasElement)
+  if (root) stripCanvasEditorAttributes(root)
+  return root
+}
+
+/**
+ * How many elements under `root` an ambient rule reaches — the union over
+ * its selector-list entries, each tried directly and then with interactive
+ * state pseudos stripped (`a:hover` still counts the links it will style).
+ */
+export function countAmbientRuleMatches(rule: StyleRule, root: Element): number {
+  const matched = new Set<Element>()
+  for (const entry of splitSelectorList(styleRuleSelector(rule))) {
+    for (const element of safeQueryAll(root, entry)) matched.add(element)
+    const { base, pseudo } = stripStatePseudos(entry)
+    if (pseudo && base) {
+      for (const element of safeQueryAll(root, base)) matched.add(element)
+    }
+  }
+  return matched.size
+}
+
+function safeQueryAll(root: Element, selector: string): Element[] {
+  try {
+    return Array.from(root.querySelectorAll(selector))
+  } catch (_err) {
+    // Corrupt persisted selectors must not break the panel render path.
+    return []
+  }
 }
 
 function findCanvasNodeClone(root: Element, nodeId: string): Element | null {

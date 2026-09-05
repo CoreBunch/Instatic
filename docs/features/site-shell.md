@@ -199,6 +199,7 @@ Schema source of truth: `src/core/files/schemas.ts`.
 
 - `'style'` files are concatenated into the page-scoped `userStyles` bundle via `userStylesheets.ts`, honouring each stylesheet's `SiteRuntimeConfig.styles[id]` (enable / scope / priority).
 - `'script'` files are exposed to module render functions through `props._siteScripts`.
+- A **page script** is a `'script'` file whose runtime scope targets exactly one page (`findPageScript` / `pageScriptRuntimeConfig` in `@core/site-runtime`); God Mode's JS panel creates one lazily at `scripts/pages/<slug>.js` (see [`god-mode.md`](god-mode.md) → "JS panel").
 - `'component'`, `'config'`, and `'doc'` files are stored but not auto-emitted; modules can read them via `ctx.siteFiles`.
 - `'asset'` files store binary content in `blob` (base64-encoded); the file's `content` field is absent.
 
@@ -298,7 +299,7 @@ type SitePackageJson = {
 }
 ```
 
-The CMS supports plugins that ship their own npm deps and runtime imports (e.g. `three`). When a site declares a dependency, `bun install` runs against a per-site workspace under `uploads/sites/<siteId>/runtime/`, producing a hashed cache directory the server serves at `/_instatic/runtime/cache/<hash>/...`. The runtime cache layout is owned by `src/core/site-runtime/` and served by `server/publish/runtime/`.
+The CMS supports plugins that ship their own npm deps and runtime imports (e.g. `three`). When a site declares a dependency, `bun install` runs against a workspace keyed by the hash of its exact locked versions, under the runtime cache root (`RUNTIME_CACHE_DIR`; default `instatic-runtime-cache` in the OS temp dir — never under `UPLOADS_DIR`, which is served publicly), and the server serves the installed packages at `/_instatic/runtime/cache/<hash>/...`. A workspace counts as installed only when its completion sentinel exists **and** every locked package's `package.json` is still on disk: temp cleaners delete package files by age (Bun keeps the original mtimes of packages it clones from its global cache) while leaving directories and the sentinel behind, and trusting the sentinel alone made publish validation fail with a bare `Could not resolve "<package>"` for a declared dependency. A reaped workspace is removed and reinstalled on demand (`server/publish/runtime/dependencyCache.ts`, gated by `src/__tests__/server/runtimeDependencies.test.ts`). The cache layout is owned by `server/publish/runtime/`.
 
 The Site → Dependencies panel edits this `package.json`. Saving triggers a `bun install` and updates the runtime lock.
 
@@ -522,7 +523,14 @@ untouched), and their Mutative patches translate into targeted Y operations
 children via array diffs, roster membership via pre/post id-set diffs;
 anything unattributable repopulates the doc (the conservative escape hatch).
 Remote/undo/reconcile changes flow the OTHER way: a per-doc projection
-replaces the affected row or shell in the store.
+replaces the affected row or shell in the store (the shell → site assembly is
+`collabSiteAssembly.ts`, next to the binding). A row doc's first sync
+projects that row in place; the site is re-assembled from the shell only
+for its own sync and for a row the store does not hold yet (a peer created
+it, so the roster projection bound its doc on demand). Re-assembling once
+per row doc ran the full shell projection and its store fan-out per page
+on load — enough blocked main thread and garbage on a large site to crash
+the renderer (gated by `src/__tests__/collab/connectProjectionScope.test.ts`).
 
 One surface needs more than the projection: the inline text editor is a
 contentEditable React does not own, and every keystroke commits the element's

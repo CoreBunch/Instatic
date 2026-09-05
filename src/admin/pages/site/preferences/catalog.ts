@@ -73,6 +73,14 @@ const PREFERENCE_CATEGORIES: ReadonlyArray<{
 //      branch in the dispatcher.
 // ---------------------------------------------------------------------------
 
+/**
+ * Capability gate for a preference. A gated preference is hidden from the
+ * Settings UI (and its feature UI must self-gate) unless the current user
+ * passes the named access check:
+ *   - 'structure-edit' → `canEditStructure` (src/admin/access.ts)
+ */
+export type PreferenceGate = 'structure-edit'
+
 interface BooleanPreferenceDef {
   id: string
   type: 'boolean'
@@ -80,6 +88,7 @@ interface BooleanPreferenceDef {
   label: string
   description: string
   default: boolean
+  gate?: PreferenceGate
 }
 
 /**
@@ -139,6 +148,15 @@ export const PREFERENCE_CATALOG = [
     label: 'Preview suggestions on hover',
     description: 'Temporarily apply class suggestions, design tokens (spacing, colour, …), and variable autocomplete entries to the selected canvas element while hovering them in the Properties panel.',
     default: true,
+  },
+  {
+    id: 'godMode',
+    type: 'boolean',
+    category: 'editor',
+    label: 'Enable God Mode',
+    description: 'Unlock the God Mode toggle in the editor toolbar (\u2318\u21e7G): hides the properties sidebar and opens the HTML | CSS | JS Code Dock at the bottom of the site editor.',
+    default: false,
+    gate: 'structure-edit',
   },
   {
     id: 'confirmBeforeDelete',

@@ -28,22 +28,21 @@
  * @see Constraint #402 — no inline styles
  */
 
-import { useRef, useEffect, useEffectEvent, useCallback } from 'react'
+import { useRef, useEffect, useEffectEvent, useCallback, useImperativeHandle, type Ref } from 'react'
 import { EditorView, basicSetup } from 'codemirror'
-import { EditorState } from '@codemirror/state'
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { Annotation, EditorState, Prec } from '@codemirror/state'
 import {
+  acceptCompletion,
   autocompletion,
   type CompletionContext,
   type CompletionResult,
 } from '@codemirror/autocomplete'
-import { hoverTooltip, tooltips, type Tooltip } from '@codemirror/view'
+import { hoverTooltip, keymap, tooltips, type Tooltip } from '@codemirror/view'
 import { javascript } from '@codemirror/lang-javascript'
 import { css } from '@codemirror/lang-css'
 import { json } from '@codemirror/lang-json'
 import { markdown } from '@codemirror/lang-markdown'
 import { html } from '@codemirror/lang-html'
-import { tags as t } from '@lezer/highlight'
 import type { Extension } from '@codemirror/state'
 import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint'
 import type { SiteRuntimeDiagnostic } from '@core/site-runtime'
@@ -56,229 +55,16 @@ import type {
   TypeScriptProjectFile,
 } from './typescriptProtocol'
 import { renderMarkdownDocumentation } from './markdownDocumentation'
-
-// ---------------------------------------------------------------------------
-// GitHub Dark-inspired CM6 theme — CSS custom properties only.
-// ---------------------------------------------------------------------------
-// All color values are CSS custom properties from globals.css.
-// No hex, rgb(), or hsl() literals in this lazy-loaded editor module.
-const achromatic = EditorView.theme({
-  '&': {
-    backgroundColor: 'var(--bg-surface)',
-    color: 'var(--text)',
-    height: '100%',
-    fontSize: '12px',
-    fontFamily: 'var(--font-mono)',
-  },
-  '&.cm-focused': {
-    outline: 'none',
-  },
-  '.cm-content': {
-    caretColor: 'var(--overlay)',
-    padding: 'var(--space-s) 0',
-  },
-  '.cm-cursor': {
-    borderLeftColor: 'var(--overlay)',
-  },
-  '.cm-selectionBackground': {
-    backgroundColor: 'var(--overlay-10)',
-  },
-  '&.cm-focused .cm-selectionBackground': {
-    backgroundColor: 'var(--overlay-10)',
-  },
-  '.cm-gutters': {
-    backgroundColor: 'var(--bg-surface-3)',
-    borderRight: '1px solid var(--overlay-10)',
-    color: 'var(--text-disabled)',
-  },
-  '.cm-gutter': {
-    minWidth: '3ch',
-  },
-  '.cm-lineNumbers .cm-gutterElement': {
-    color: 'var(--text-disabled)',
-    fontSize: '11px',
-  },
-  '.cm-activeLine': {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-  },
-  '.cm-activeLineGutter': {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    color: 'var(--text-subtle)',
-  },
-  '.cm-line': {
-    padding: '0 var(--space-l) 0 var(--space-3xs)',
-  },
-  '.cm-tooltip': {
-    backgroundColor: 'var(--bg-surface-2)',
-    border: '1px solid var(--overlay-10)',
-    color: 'var(--text)',
-  },
-  '.cm-typescript-hover': {
-    maxWidth: 'min(340px, calc(100vw - 32px))',
-    padding: 'var(--space-s) var(--space-m)',
-    fontFamily: 'var(--font-mono)',
-    fontSize: 'var(--text-xs)',
-    lineHeight: '1.5',
-    overflowWrap: 'anywhere',
-  },
-  '.cm-typescript-hover-signature': {
-    color: 'var(--syntax-entity)',
-    whiteSpace: 'pre-wrap',
-  },
-  '.cm-typescript-hover-documentation': {
-    marginTop: 'var(--space-xs)',
-    color: 'var(--text-muted)',
-    fontFamily: 'var(--font-sans)',
-    whiteSpace: 'pre-wrap',
-  },
-  '.cm-typescript-hover-documentation p': {
-    margin: '0',
-  },
-  '.cm-typescript-hover-documentation p + p': {
-    marginTop: 'var(--space-xs)',
-  },
-  '.cm-typescript-hover-documentation strong': {
-    color: 'var(--text)',
-    fontWeight: '600',
-  },
-  '.cm-typescript-hover-documentation code': {
-    padding: '0 var(--space-3xs)',
-    borderRadius: 'var(--radius-sm)',
-    backgroundColor: 'var(--overlay-10)',
-    color: 'var(--syntax-string)',
-    fontFamily: 'var(--font-mono)',
-  },
-  '.cm-typescript-hover-documentation a': {
-    color: 'var(--syntax-constant)',
-    textDecoration: 'underline',
-    textUnderlineOffset: '2px',
-  },
-  '.cm-lintRange-error': {
-    textDecorationColor: 'var(--danger)',
-  },
-  '.cm-lint-marker-error': {
-    color: 'var(--danger)',
-  },
-}, { dark: true })
-
-const readableHighlightStyle = HighlightStyle.define([
-  {
-    tag: [
-      t.comment,
-      t.lineComment,
-      t.blockComment,
-      t.docComment,
-      t.meta,
-    ],
-    color: 'var(--syntax-comment)',
-    fontStyle: 'italic',
-  },
-  {
-    tag: [
-      t.keyword,
-      t.definitionKeyword,
-      t.operatorKeyword,
-      t.modifier,
-      t.controlKeyword,
-    ],
-    color: 'var(--syntax-keyword)',
-    fontWeight: '600',
-  },
-  {
-    tag: [
-      t.labelName,
-      t.typeName,
-      t.className,
-      t.namespace,
-      t.macroName,
-      t.tagName,
-      t.function(t.variableName),
-      t.function(t.propertyName),
-    ],
-    color: 'var(--syntax-entity)',
-  },
-  {
-    tag: [
-      t.propertyName,
-      t.definition(t.propertyName),
-      t.attributeName,
-    ],
-    color: 'var(--syntax-property)',
-  },
-  {
-    tag: [
-      t.variableName,
-      t.definition(t.variableName),
-      t.local(t.variableName),
-      t.special(t.variableName),
-    ],
-    color: 'var(--syntax-variable)',
-  },
-  {
-    tag: [
-      t.atom,
-      t.bool,
-      t.number,
-      t.integer,
-      t.float,
-      t.unit,
-      t.color,
-      t.url,
-      t.literal,
-      t.contentSeparator,
-    ],
-    color: 'var(--syntax-constant)',
-  },
-  {
-    tag: [
-      t.string,
-      t.regexp,
-      t.escape,
-      t.special(t.string),
-      t.inserted,
-      t.deleted,
-    ],
-    color: 'var(--syntax-string)',
-  },
-  {
-    tag: [
-      t.operator,
-      t.arithmeticOperator,
-      t.logicOperator,
-      t.compareOperator,
-      t.definitionOperator,
-      t.derefOperator,
-      t.punctuation,
-      t.separator,
-      t.bracket,
-      t.paren,
-      t.squareBracket,
-      t.brace,
-    ],
-    color: 'var(--syntax-operator)',
-  },
-  {
-    tag: [t.heading, t.strong],
-    color: 'var(--syntax-entity)',
-    fontWeight: '700',
-  },
-  {
-    tag: [t.emphasis],
-    color: 'var(--syntax-string)',
-    fontStyle: 'italic',
-  },
-  {
-    tag: [t.link],
-    color: 'var(--syntax-constant)',
-    textDecoration: 'underline',
-  },
-  {
-    tag: t.invalid,
-    color: 'var(--syntax-invalid)',
-  },
-], { themeType: 'dark' })
-
-const readableSyntaxHighlighting = syntaxHighlighting(readableHighlightStyle)
+import { editorTheme, readableSyntaxHighlighting } from './codeMirrorTheme'
+import { foldLockedRanges, lockedRegions, type LockedRange } from './lockedRegions'
+import { uidAttributes } from './uidAttributes'
+import { syntaxDiagnostics } from './syntaxDiagnostics'
+import { contextCompletions } from './contextCompletions'
+import { uidInspector } from './uidInspector'
+import { cssVarShorthand } from './cssVarShorthand'
+import { documentChanges } from './documentDiff'
+import { formatDocument, isFormattableLanguage, type FormatResult } from './formatDocument'
+import type { EditorCompletionCatalog } from './completionCatalog'
 
 // ---------------------------------------------------------------------------
 // Per-type extension stacks
@@ -343,7 +129,7 @@ interface CodeMirrorEditorProps {
   /** Which language extensions to load for highlighting. */
   language: CodeLanguage
   /** Debounced (250 ms) on every edit, and flushed immediately on docKey switch. */
-  onChange: (content: string) => void
+  onChange: (content: string, info: EditorChangeInfo) => void
   /**
    * Change propagation delay. File editors keep the 250 ms default; modal
    * command surfaces can pass 0 so their primary action never reads stale text.
@@ -357,7 +143,78 @@ interface CodeMirrorEditorProps {
   projectFiles?: readonly { path: string; content?: string }[]
   /** Reports non-blocking semantic TypeScript diagnostics to the Problems panel. */
   onTypeScriptDiagnosticsChange?: (diagnostics: TypeScriptEditorDiagnostic[]) => void
+  /**
+   * Surface the language grammar's parse errors as inline diagnostics and
+   * report their count with every change, so a live-applying caller can hold
+   * back while the document is mid-edit.
+   */
+  lintSyntax?: boolean
+  /**
+   * Read-only ranges of the INITIAL document (folded on mount, edits inside
+   * them rejected). They follow edits made above them.
+   */
+  lockedRanges?: readonly LockedRange[]
+  /** View-only document: every change is rejected and the surface is not editable. */
+  readOnly?: boolean
+  /**
+   * Show every `uid="…"` attribute as a clickable Instatic mark instead of
+   * text (click reveals the uid, click again hides it). The text stays in
+   * the document. For the God Mode HTML projection.
+   */
+  foldUidAttributes?: boolean
+  /** Mod-Enter: the pending text is flushed to `onChange`, then this runs. */
+  onSubmit?: () => void
+  /**
+   * Context the document is edited in — class names, published-site custom
+   * properties, dynamic-token schemas, page classes/ids — turned into
+   * completion sources appended to the language's defaults (language data,
+   * so the TypeScript language-service override above ignores it). Read
+   * live: a new catalog takes effect on the next completion, no remount.
+   */
+  completions?: EditorCompletionCatalog
+  /**
+   * Reports the `uid` of the element whose markup the cursor is in as it
+   * changes (null for uid-less content, or when the editor loses focus).
+   * For the God Mode HTML projection's reverse selection sync.
+   */
+  onCursorUid?: (uid: string | null) => void
+  /** Reports the `uid` of the element whose tag name was clicked. */
+  onTagClick?: (uid: string) => void
+  /**
+   * Follow `value` while mounted: when it changes for the same `docKey`,
+   * the buffer is patched IN PLACE with the minimal line edits (caret,
+   * history and folds survive) instead of ignoring it. Skipped while an
+   * edit is still pending, which would be overwritten by the flush anyway.
+   * Such patches never re-enter `onChange`.
+   */
+  syncValue?: boolean
+  /** Show the lint marker gutter column (diagnostics stay inline without it). */
+  lintGutter?: boolean
+  /** Formatting (Shift-Alt-F or `format()`) failed — e.g. the document does not parse. */
+  onFormatError?: (message: string) => void
+  ref?: Ref<CodeMirrorEditorHandle>
 }
+
+export interface CodeMirrorEditorHandle {
+  /** Format the document with Prettier; resolves once the buffer is updated. */
+  format: () => Promise<FormatResult>
+}
+
+/** Marks a transaction that brings the buffer up to date with `value` — not an author edit. */
+const valueSync = Annotation.define<boolean>()
+
+const rejectAllChanges = EditorState.changeFilter.of(() => false)
+const readOnlyExtensions = [EditorState.readOnly.of(true), EditorView.editable.of(false), rejectAllChanges]
+
+export interface EditorChangeInfo {
+  /** Parser error count at the time of the change (always 0 unless `lintSyntax`). */
+  syntaxErrorCount: number
+}
+
+export type { LockedRange } from './lockedRegions'
+
+const EMPTY_LOCKED_RANGES: readonly LockedRange[] = []
+const EMPTY_SYNTAX_DIAGNOSTICS: Diagnostic[] = []
 
 const EMPTY_DIAGNOSTICS: SiteRuntimeDiagnostic[] = []
 
@@ -400,10 +257,12 @@ function dispatchCombinedDiagnostics(
   view: EditorView,
   runtimeDiagnostics: SiteRuntimeDiagnostic[],
   typeScriptDiagnostics: TypeScriptEditorDiagnostic[],
+  syntax: Diagnostic[],
 ): void {
   view.dispatch(setDiagnostics(view.state, [
     ...codeMirrorDiagnostics(view.state.doc, runtimeDiagnostics),
     ...typeScriptCodeMirrorDiagnostics(view.state.doc, typeScriptDiagnostics),
+    ...syntax,
   ]))
 }
 
@@ -504,18 +363,31 @@ export default function CodeMirrorEditor({
   filePath,
   projectFiles = EMPTY_PROJECT_FILES,
   onTypeScriptDiagnosticsChange,
+  lintSyntax = false,
+  lockedRanges = EMPTY_LOCKED_RANGES,
+  readOnly = false,
+  foldUidAttributes = false,
+  onSubmit,
+  completions,
+  onCursorUid,
+  onTagClick,
+  syncValue = false,
+  lintGutter: showLintGutter = true,
+  onFormatError,
+  ref,
 }: CodeMirrorEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   const typeScriptClientRef = useRef<TypeScriptLanguageClient | null>(null)
   const typeScriptDiagnosticsRef = useRef<TypeScriptEditorDiagnostic[]>([])
   const runtimeDiagnosticsRef = useRef<SiteRuntimeDiagnostic[]>(diagnostics)
+  const syntaxDiagnosticsRef = useRef<Diagnostic[]>(EMPTY_SYNTAX_DIAGNOSTICS)
   const refreshTypeScriptDiagnosticsRef = useRef<(() => void) | null>(null)
 
   // Refs to hold pending debounce state. Using refs (not state) so that reads
   // inside the CM6 update listener always see the current values without
   // triggering re-renders.
-  const pendingContentRef = useRef<string | null>(null)
+  const pendingChangeRef = useRef<{ content: string; info: EditorChangeInfo } | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Always-current reference to onChange — avoids stale closure inside the CM6
@@ -528,6 +400,43 @@ export default function CodeMirrorEditor({
   useEffect(() => {
     onTypeScriptDiagnosticsChangeRef.current = onTypeScriptDiagnosticsChange
   }, [onTypeScriptDiagnosticsChange])
+  const onSubmitRef = useRef(onSubmit)
+  useEffect(() => {
+    onSubmitRef.current = onSubmit
+  }, [onSubmit])
+  const completionsRef = useRef(completions)
+  useEffect(() => {
+    completionsRef.current = completions
+  }, [completions])
+  const getCompletions = () => completionsRef.current ?? null
+  const onCursorUidRef = useRef(onCursorUid)
+  const onTagClickRef = useRef(onTagClick)
+  useEffect(() => {
+    onCursorUidRef.current = onCursorUid
+    onTagClickRef.current = onTagClick
+  }, [onCursorUid, onTagClick])
+  const inspectorHandlers = () => ({
+    onCursorUid: (uid: string | null) => onCursorUidRef.current?.(uid),
+    onTagClick: (uid: string) => onTagClickRef.current?.(uid),
+  })
+  const onFormatErrorRef = useRef(onFormatError)
+  useEffect(() => {
+    onFormatErrorRef.current = onFormatError
+  }, [onFormatError])
+
+  const format = async (): Promise<FormatResult> => {
+    const view = viewRef.current
+    if (!view) return { ok: false, error: 'No document is open' }
+    if (!isFormattableLanguage(language)) return { ok: false, error: 'This document type cannot be formatted' }
+    const result = await formatDocument(view, language)
+    if (!result.ok) onFormatErrorRef.current?.(result.error)
+    return result
+  }
+  const formatRef = useRef(format)
+  useEffect(() => {
+    formatRef.current = format
+  })
+  useImperativeHandle(ref, () => ({ format: () => formatRef.current() }), [])
 
   // useCallback kept: stable identity for the [flush] useEffect dep array (exhaustive-deps).
   // Flush pending content to the store immediately (called on doc switch).
@@ -536,10 +445,11 @@ export default function CodeMirrorEditor({
       clearTimeout(timerRef.current)
       timerRef.current = null
     }
-    if (pendingContentRef.current !== null) {
+    if (pendingChangeRef.current !== null) {
       // Flush-on-switch: persist pending edit before unmounting.
-      onChangeRef.current(pendingContentRef.current)
-      pendingContentRef.current = null
+      const { content, info } = pendingChangeRef.current
+      pendingChangeRef.current = null
+      onChangeRef.current(content, info)
     }
   }, [])
 
@@ -563,6 +473,27 @@ export default function CodeMirrorEditor({
       state: EditorState.create({
         doc: value,
         extensions: [
+          // Ahead of basicSetup so Mod-Enter wins over the default Enter
+          // binding, Tab accepts an open completion, and Shift-Alt-F formats.
+          Prec.high(keymap.of([
+            {
+              key: 'Mod-Enter',
+              run: () => {
+                if (!onSubmitRef.current) return false
+                flush()
+                onSubmitRef.current()
+                return true
+              },
+            },
+            { key: 'Tab', run: acceptCompletion },
+            {
+              key: 'Shift-Alt-f',
+              run: () => {
+                void formatRef.current()
+                return true
+              },
+            },
+          ])),
           basicSetup,
           ...getLanguageExtensions(language),
           ...(typeScriptClient && filePath
@@ -571,12 +502,19 @@ export default function CodeMirrorEditor({
                 hoverTooltip(typeScriptHoverSource(typeScriptClient, filePath)),
               ]
             : []),
+          ...(completions ? [contextCompletions(getCompletions)] : []),
+          ...(onCursorUid || onTagClick ? [uidInspector(inspectorHandlers)] : []),
+          ...(language === 'css' ? [cssVarShorthand()] : []),
           readableSyntaxHighlighting,
-          achromatic,
+          editorTheme,
+          ...(lockedRanges.length > 0 ? [lockedRegions(lockedRanges)] : []),
+          ...(readOnly ? readOnlyExtensions : []),
+          ...(foldUidAttributes ? [uidAttributes()] : []),
           editorTooltipBoundary,
-          lintGutter(),
+          ...(showLintGutter ? [lintGutter()] : []),
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) return
+            const synced = update.transactions.every((tr) => tr.annotation(valueSync) === true)
             const content = update.state.doc.toString()
             if (typeScriptClient && filePath) {
               typeScriptClient.updateFile(filePath, content)
@@ -586,21 +524,40 @@ export default function CodeMirrorEditor({
                 typeScriptDiagnosticsTimer = null
               }, 300)
             }
+            const syntax = lintSyntax ? syntaxDiagnostics(update.state) : EMPTY_SYNTAX_DIAGNOSTICS
+            if (lintSyntax) {
+              syntaxDiagnosticsRef.current = syntax
+              // Nested dispatches are not allowed from an update listener.
+              queueMicrotask(() => {
+                if (viewRef.current !== view) return
+                dispatchCombinedDiagnostics(
+                  view,
+                  runtimeDiagnosticsRef.current,
+                  typeScriptDiagnosticsRef.current,
+                  syntaxDiagnosticsRef.current,
+                )
+              })
+            }
+            // A value sync is the parent's own text arriving; it is not an
+            // edit to report back.
+            if (synced) return
+            const info: EditorChangeInfo = { syntaxErrorCount: syntax.length }
             if (changeDelayMs <= 0) {
               if (timerRef.current) {
                 clearTimeout(timerRef.current)
                 timerRef.current = null
               }
-              pendingContentRef.current = null
-              onChangeRef.current(content)
+              pendingChangeRef.current = null
+              onChangeRef.current(content, info)
               return
             }
-            pendingContentRef.current = content
+            pendingChangeRef.current = { content, info }
             if (timerRef.current) clearTimeout(timerRef.current)
             timerRef.current = setTimeout(() => {
-              if (pendingContentRef.current !== null) {
-                onChangeRef.current(pendingContentRef.current)
-                pendingContentRef.current = null
+              if (pendingChangeRef.current !== null) {
+                const pending = pendingChangeRef.current
+                pendingChangeRef.current = null
+                onChangeRef.current(pending.content, pending.info)
               }
               timerRef.current = null
             }, changeDelayMs)
@@ -610,6 +567,8 @@ export default function CodeMirrorEditor({
       }),
       parent: container,
     })
+    if (lockedRanges.length > 0) foldLockedRanges(view, lockedRanges)
+    syntaxDiagnosticsRef.current = lintSyntax ? syntaxDiagnostics(view.state) : EMPTY_SYNTAX_DIAGNOSTICS
 
     if (typeScriptClient && filePath) {
       refreshTypeScriptDiagnosticsRef.current = () => {
@@ -624,6 +583,7 @@ export default function CodeMirrorEditor({
               view,
               runtimeDiagnosticsRef.current,
               nextDiagnostics,
+              syntaxDiagnosticsRef.current,
             )
             onTypeScriptDiagnosticsChangeRef.current?.(nextDiagnostics)
           })
@@ -631,7 +591,7 @@ export default function CodeMirrorEditor({
             if (typeScriptClientRef.current !== typeScriptClient) return
             console.error('[CodeMirrorEditor] TypeScript diagnostics unavailable:', error)
             typeScriptDiagnosticsRef.current = []
-            dispatchCombinedDiagnostics(view, runtimeDiagnosticsRef.current, [])
+            dispatchCombinedDiagnostics(view, runtimeDiagnosticsRef.current, [], syntaxDiagnosticsRef.current)
             onTypeScriptDiagnosticsChangeRef.current?.([])
           })
       }
@@ -683,10 +643,19 @@ export default function CodeMirrorEditor({
   }, [filePath, language, projectFiles])
 
   useEffect(() => {
+    if (!syncValue) return
+    const view = viewRef.current
+    if (!view || pendingChangeRef.current !== null) return
+    const current = view.state.doc.toString()
+    if (current === value) return
+    view.dispatch({ changes: documentChanges(current, value), annotations: [valueSync.of(true)] })
+  }, [value, syncValue])
+
+  useEffect(() => {
     const view = viewRef.current
     if (!view) return
     runtimeDiagnosticsRef.current = diagnostics
-    dispatchCombinedDiagnostics(view, diagnostics, typeScriptDiagnosticsRef.current)
+    dispatchCombinedDiagnostics(view, diagnostics, typeScriptDiagnosticsRef.current, syntaxDiagnosticsRef.current)
   }, [diagnostics, docKey])
 
   return (

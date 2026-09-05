@@ -25,7 +25,7 @@ The server is a single `Bun.serve` process that boots the DB, runs migrations, a
 ```text
 server/index.ts
     │
-    ├─→ readServerConfig()                   ← env vars: PORT, DATABASE_URL, UPLOADS_DIR, STATIC_DIR, PUBLIC_ORIGIN, TRUSTED_PROXY_CIDRS
+    ├─→ readServerConfig()                   ← env vars: PORT, DATABASE_URL, UPLOADS_DIR, STATIC_DIR, RUNTIME_CACHE_DIR, PUBLIC_ORIGIN, TRUSTED_PROXY_CIDRS
     │
     ├─→ createDbClient(DATABASE_URL)         ← server/db/index.ts
     │     │

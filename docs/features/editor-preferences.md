@@ -78,10 +78,12 @@ Why a catalog (not hand-rolled per-preference code):
 - **Type-safe ids.** `as const` preserves the literal union type. `useEditorPreference('layersShowTag')` compiles, `useEditorPreference('layersShowtag')` does not.
 - **Defaults can't drift.** The schema and `DEFAULT_EDITOR_PREFS` are derived from the catalog at module load. There is no separate "registered" list to keep in sync.
 
+Boolean entries may declare a **capability gate**: `gate: 'structure-edit'` hides the row from users failing `canEditStructure` (`src/admin/access.ts`). The gate hides the Settings row only — the feature the preference unlocks must also self-gate (see the `godMode` preference and [`god-mode.md`](god-mode.md)).
+
 The discriminated union has three branches:
 
 ```ts
-interface BooleanPreferenceDef        { id, type: 'boolean',        category, label, description, default: boolean }
+interface BooleanPreferenceDef        { id, type: 'boolean',        category, label, description, default: boolean, gate? }
 interface SelectPreferenceDef         { id, type: 'select',         category, label, description, options, default: string }
 interface DynamicSelectPreferenceDef  { id, type: 'select-dynamic', category, label, description, optionsSource, default: string }
 

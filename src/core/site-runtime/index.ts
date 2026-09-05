@@ -32,6 +32,7 @@ export {
   normalizeStyleRuntimeConfig,
   normalizeSiteRuntimeConfig,
 } from './runtimeConfig'
+export { findPageScript, pageScriptPath, pageScriptRuntimeConfig } from './pageScript'
 export {
   analyzeRuntimeScriptImports,
   extractRuntimeImportSpecifiers,

@@ -18,8 +18,11 @@
  * tag:'custom' + customTag so resolveHtmlTag emits the real element name.
  */
 
+import { PROJECTION_TAGS } from '@core/publisher'
 import { normalizeImportedText } from './text'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
+import { attr, normalizedAttr, numberAttr } from './attrReaders'
+import { mapLoopProps, mapOutletProps } from './instaticDialect'
 
 export interface ImportRule {
   /** CSS selector tested via `el.matches()`. */
@@ -36,11 +39,62 @@ export interface ImportRule {
    * icon/`<svg>` recurses to preserve that nested content.
    */
   recurse?: boolean | ((el: Element) => boolean)
+  /**
+   * When true the walker stamps `locked: true` on the produced node. Used by
+   * the slot-instance rule: materialized slots are locked everywhere else in
+   * the system (`syncSlotInstances`), so slots entering through HTML keep the
+   * same invariant.
+   */
+  locked?: boolean
 }
 
 /** True when the element has at least one element (non-text) child. */
 function hasElementChild(el: Element): boolean {
   return el.children.length > 0
+}
+
+/**
+ * True when the element's only ELEMENT children are `<br>` line breaks —
+ * `<h2>Get the<br>file-based</h2>`. base.text renders authored newlines as
+ * `<br>` (`textToBreakHtml`), so this shape maps back to a single base.text
+ * with `\n` in its `text` prop instead of a container wrapping three nodes.
+ */
+function onlyLineBreakChildren(el: Element): boolean {
+  if (el.children.length === 0) return false
+  return Array.from(el.children).every((child) => child.tagName.toLowerCase() === 'br')
+}
+
+/**
+ * Reassemble a text-with-breaks element into a `\n`-separated string:
+ * text nodes verbatim, each `<br>` a newline, each line whitespace-collapsed
+ * the way `normalizeImportedText` collapses plain text.
+ */
+function textWithLineBreaks(el: Element): string {
+  let out = ''
+  for (const child of Array.from(el.childNodes)) {
+    // 1 = ELEMENT_NODE, 3 = TEXT_NODE (numeric so no `Node` global is needed)
+    if (child.nodeType === 1 && (child as Element).tagName.toLowerCase() === 'br') {
+      out += '\n'
+    } else if (child.nodeType === 3) {
+      out += child.textContent ?? ''
+    }
+  }
+  return out
+    .split('\n')
+    .map((line) => normalizeImportedText(line))
+    .join('\n')
+}
+
+/** True when the element should map to base.text (no children, or only `<br>`s). */
+function isTextLeaf(el: Element): boolean {
+  return !hasElementChild(el) || onlyLineBreakChildren(el)
+}
+
+/** The base.text `text` prop for a text-leaf element. */
+function textLeafContent(el: Element): string {
+  return onlyLineBreakChildren(el)
+    ? textWithLineBreaks(el)
+    : normalizeImportedText(el.textContent ?? '')
 }
 
 /**
@@ -69,14 +123,6 @@ const TEXT_INPUT_TYPES = [
   'hidden',
 ] as const
 
-function attr(el: Element, name: string): string {
-  return el.getAttribute(name) ?? ''
-}
-
-function normalizedAttr(el: Element, name: string): string {
-  return attr(el, name).trim().toLowerCase()
-}
-
 const IMAGE_LOADING_VALUES = ['lazy', 'eager'] as const
 const IMAGE_DECODING_VALUES = ['async', 'sync', 'auto'] as const
 const IMAGE_FETCH_PRIORITY_VALUES = ['auto', 'high', 'low'] as const
@@ -95,13 +141,6 @@ function enumAttr<T extends string>(
   return (allowed as readonly string[]).includes(value) ? { [propName]: value as T } : {}
 }
 
-function numberAttr(el: Element, name: string, fallback: number = 0): number {
-  const raw = attr(el, name).trim()
-  if (!raw) return fallback
-  const value = Number(raw)
-  return Number.isFinite(value) ? value : fallback
-}
-
 function formControlFieldId(el: Element): string {
   return attr(el, 'data-instatic-field-id') || attr(el, 'name') || attr(el, 'id')
 }
@@ -115,10 +154,6 @@ function formIdentifier(el: Element): string {
 
 function optionalFormIdentifier(el: Element): string {
   return normalizeIdentifierValue(attr(el, 'form'))
-}
-
-function integerAttr(el: Element, name: string, fallback: number, min: number): number {
-  return Math.max(min, Math.floor(numberAttr(el, name, fallback)))
 }
 
 function normalizeInputType(el: Element): typeof TEXT_INPUT_TYPES[number] {
@@ -138,40 +173,13 @@ function submitLabel(el: Element): string {
   return label || 'Submit'
 }
 
-function mapLoopProps(el: Element): Record<string, unknown> {
-  const tableId = attr(el, 'data-table-id')
-  const customTag = attr(el, 'data-custom-tag')
-  const tag = attr(el, 'data-tag')
-  return {
-    sourceId: attr(el, 'data-source-id'),
-    filters: tableId ? { tableId } : {},
-    orderBy: attr(el, 'data-order-by'),
-    direction: normalizedAttr(el, 'data-direction') === 'asc' ? 'asc' : 'desc',
-    limit: integerAttr(el, 'data-limit', 10, 1),
-    offset: integerAttr(el, 'data-offset', 0, 0),
-    pagination: normalizedAttr(el, 'data-pagination') === 'infinite' ? 'infinite' : 'none',
-    pageSize: integerAttr(el, 'data-page-size', 10, 1),
-    ...(customTag ? { tag: 'custom', customTag } : tag ? { tag } : {}),
-  }
-}
-
-function mapOutletProps(el: Element): Record<string, unknown> {
-  const customTag = attr(el, 'data-custom-tag')
-  const tag = attr(el, 'data-tag')
-  return customTag
-    ? { tag: 'custom', customTag }
-    : tag
-      ? { tag }
-      : {}
-}
-
 export const HTML_TO_MODULE_RULES: ImportRule[] = [
   // CMS content outlet → base.outlet (LEAF). The agent (and any hand-authored
   // template HTML) writes `<instatic-outlet>` to mark where matched content —
   // a page tree or the current entry body — flows in. base.outlet is childless,
   // so we never recurse; any inner markup is ignored (the composer fills it).
   {
-    match: 'instatic-outlet',
+    match: PROJECTION_TAGS.outlet,
     map: (el) => ({ moduleId: 'base.outlet', props: mapOutletProps(el) }),
   },
 
@@ -180,8 +188,43 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
   // Children become loop variants; each iteration resolves `{currentEntry.*}`
   // tokens against the selected source item.
   {
-    match: 'instatic-loop',
+    match: PROJECTION_TAGS.loop,
     map: (el) => ({ moduleId: 'base.loop', props: mapLoopProps(el) }),
+    recurse: true,
+  },
+
+  // God Mode dialect — Visual Component ref (consumer side). The projection
+  // renders VC internals opaquely, so the only children are the ref's
+  // slot-instance fills; `data-component-name` is display-only and ignored.
+  {
+    match: PROJECTION_TAGS.component,
+    map: (el) => ({
+      moduleId: 'base.visual-component-ref',
+      props: { componentId: attr(el, 'data-component-id') },
+    }),
+    recurse: true,
+  },
+
+  // God Mode dialect — slot instance (a VC ref's materialized fill wrapper).
+  // Locked, matching the `syncSlotInstances` invariant for materialized slots.
+  {
+    match: PROJECTION_TAGS.slot,
+    map: (el) => ({
+      moduleId: 'base.slot-instance',
+      props: { slotName: attr(el, 'data-slot-name') || 'children' },
+    }),
+    recurse: true,
+    locked: true,
+  },
+
+  // God Mode dialect — slot outlet (inside a VC definition tree). Children
+  // are the slot's default content.
+  {
+    match: PROJECTION_TAGS.slotOutlet,
+    map: (el) => ({
+      moduleId: 'base.slot-outlet',
+      props: { slotName: attr(el, 'data-slot-name') || 'children' },
+    }),
     recurse: true,
   },
 
@@ -194,16 +237,16 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
     // recurse to a container so the nested structure + line breaks survive
     // instead of being flattened into one merged string.
     map: (el) =>
-      hasElementChild(el)
+      isTextLeaf(el)
         ? {
-            moduleId: 'base.container',
-            props: { tag: 'custom', customTag: el.tagName.toLowerCase() },
+            moduleId: 'base.text',
+            props: { text: textLeafContent(el), tag: el.tagName.toLowerCase() },
           }
         : {
-            moduleId: 'base.text',
-            props: { text: normalizeImportedText(el.textContent ?? ''), tag: el.tagName.toLowerCase() },
+            moduleId: 'base.container',
+            props: { tag: 'custom', customTag: el.tagName.toLowerCase() },
           },
-    recurse: hasElementChild,
+    recurse: (el) => !isTextLeaf(el),
   },
 
   // Forms and form controls → first-class form modules. Imported third-party

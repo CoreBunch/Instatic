@@ -92,3 +92,13 @@ export function useRuntimeScriptDiagnostics(): RuntimeScriptValidationState {
 
   return validation
 }
+
+/** The compiler diagnostics that belong to one script file. */
+export function fileRuntimeDiagnostics(
+  diagnostics: readonly SiteRuntimeDiagnostic[],
+  file: { id: string; path: string },
+): SiteRuntimeDiagnostic[] {
+  return diagnostics.filter((diagnostic) => (
+    diagnostic.fileId === file.id || (!diagnostic.fileId && diagnostic.path === file.path)
+  ))
+}

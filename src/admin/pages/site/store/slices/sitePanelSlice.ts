@@ -42,6 +42,7 @@ import {
 } from '@core/site-runtime'
 import { resolveCmsRuntimeDependencies } from '@core/persistence'
 import { buildSiteHelpers } from './site/helpers'
+import { writeSiteRuntimeDraft } from './site/siteRuntimeDraft'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
 // ---------------------------------------------------------------------------
@@ -191,8 +192,7 @@ export const createSitePanelSlice: EditorStoreSliceCreator<SitePanelSlice> = (se
       return
     }
     mutateSiteState((state, site) => {
-      state.siteRuntime = nextRuntime
-      site.runtime = nextRuntime
+      writeSiteRuntimeDraft(state, site, nextRuntime)
       return true
     })
   }

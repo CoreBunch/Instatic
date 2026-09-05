@@ -115,6 +115,13 @@ export function linkImportedClassNames(
   const ids: string[] = []
   for (const name of classNames) {
     if (name.length === 0) continue
+    // The uid-preserving import resolves KNOWN class names to registry ids
+    // itself and leaves only unknown names behind; an id must pass through
+    // untouched or it would be re-read as a name and minted again.
+    if (rules[name]) {
+      ids.push(name)
+      continue
+    }
     let id = byName.get(name)
     if (!id) {
       const now = Date.now()
