@@ -14,6 +14,11 @@
  * `alertdialog` counts as a layer: `Dialog` renders that role instead of
  * `dialog` when `tone === 'danger'`, which is exactly what a destructive
  * confirmation opened from one of these windows is.
+ *
+ * So does `menu`. A context menu opened inside a window owns Escape while it
+ * is up — closing the menu and the window together on one press loses the
+ * user's place. Menus portal to `document.body`, so they are not descendants
+ * of the panel and the document-order test alone would miss them.
  */
 
 import { useEffect, useEffectEvent, type RefObject } from 'react'
@@ -35,6 +40,11 @@ export function useTopmostEscape(
       if (event.key !== 'Escape') return
       const self = panelRef.current
       if (!self) return
+
+      // An open menu owns Escape wherever it sits — it is a transient layer
+      // above everything, and unlike a dialog it may render before the panel
+      // in document order.
+      if (document.querySelector('[role="menu"]')) return
 
       const stackedAbove = Array.from(
         document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
