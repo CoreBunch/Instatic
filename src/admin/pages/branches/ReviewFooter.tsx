@@ -1,7 +1,8 @@
 /**
  * ReviewFooter — the review's decision bar. A manager decides here (keep or
  * delete the branch after merging, undo the last merge, decline, merge); a
- * requester waits or withdraws; everyone else asks for a merge. Presentation
+ * requester waits or withdraws; everyone else asks for a merge; whoever may
+ * delete the branch can drop its changes from here. Presentation
  * only: every action is a callback the page owns, and the page runs the
  * confirmations, step-ups, and toasts.
  */
@@ -9,6 +10,7 @@ import type { BranchMergeRecord, BranchMergeRequest, MergePlan } from '@core/bra
 import { Button } from '@ui/components/Button'
 import { Switch } from '@ui/components/Switch'
 import { GitMergeSolidIcon } from 'pixel-art-icons/icons/git-merge-solid'
+import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { relativeIsoAgo } from './reviewFormat'
 import styles from './BranchReviewPage.module.css'
 
@@ -28,6 +30,9 @@ interface ReviewFooterProps {
   onDecline: () => void
   onWithdraw: () => void
   onRequest: () => void
+  /** May delete the branch (a manager, or its creator): shows *Drop changes*. */
+  canDrop: boolean
+  onDrop: () => void
 }
 
 export function ReviewFooter({
@@ -45,12 +50,28 @@ export function ReviewFooter({
   onDecline,
   onWithdraw,
   onRequest,
+  canDrop,
+  onDrop,
 }: ReviewFooterProps) {
   const open = request?.status === 'open'
   const changeCountLabel = `${plan.changes.length} change${plan.changes.length === 1 ? '' : 's'}`
 
   return (
     <footer className={styles.footer} data-testid="branch-review-footer">
+      {canDrop && (
+        <Button
+          variant="secondary"
+          size="sm"
+          type="button"
+          disabled={busy}
+          tooltip="Delete the branch and discard every unmerged change"
+          onClick={onDrop}
+          data-testid="review-drop"
+        >
+          <TrashSolidIcon size={12} aria-hidden="true" />
+          <span>Drop changes…</span>
+        </Button>
+      )}
       {canManage ? (
         <>
           <label className={styles.footerToggle}>

@@ -10,8 +10,8 @@
  * stays disabled until every one has a side. Merging runs the same
  * step-up-gated apply the branch strip used to run from a dialog.
  */
-import { useEffect, useState } from 'react'
-import { MAIN_BRANCH_ID, type MergeChange, type MergeResolution, type ReviewUserLabel } from '@core/branches'
+import { useEffect, useRef, useState } from 'react'
+import { MAIN_BRANCH_ID, canActOnBranch, type MergeChange, type MergeResolution, type ReviewUserLabel, type SiteBranch } from '@core/branches'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { AdminWorkspaceCanvasLayout } from '@admin/layouts/AdminWorkspaceCanvasLayout'
 import { useNavigate, useParams } from '@admin/lib/routing'
@@ -19,6 +19,7 @@ import { hasCapability } from '@admin/access'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import { mergeBranch, refreshBranches, switchBranch, useActiveBranchId, useBranchStore } from '@admin/state/branchStore'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
+import { DeleteBranchDialog } from '@admin/shared/BranchSwitcher/DeleteBranchDialog'
 import { useConfirmAction } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { UserAvatar } from '@admin/shared/UserAvatar/UserAvatar'
 import { Button } from '@ui/components/Button'
@@ -54,10 +55,22 @@ export function BranchReviewPage() {
   const branchesLoaded = useBranchStore((state) => state.branchesLoaded)
   const activeBranchId = useActiveBranchId()
   const branch = branches.find((candidate) => candidate.id === branchId) ?? null
+  const navigate = useNavigate()
 
   useEffect(() => {
     if (!branchesLoaded) void refreshBranches()
   }, [branchesLoaded])
+
+  // The branch can disappear while this page is open (dropped from the
+  // footer, deleted from the strip or another tab, the database reset under
+  // it): the tab is already back on main by then, so the page goes back to
+  // the site instead of announcing a branch that existed a moment ago. A
+  // link to a branch that never loaded keeps the message and the way back.
+  const seenRef = useRef(false)
+  useEffect(() => {
+    if (branch) seenRef.current = true
+    else if (branchesLoaded && seenRef.current) navigate('/admin/site')
+  }, [branch, branchesLoaded, navigate])
 
   // Reviewing a branch means being on it: "back to the editor" lands there,
   // and the toolbar strip names what is being reviewed.
@@ -73,9 +86,14 @@ export function BranchReviewPage() {
           <div className={styles.canvas}>
             {branchesLoaded ? (
               <div className={styles.state} role="alert">
-                {branch?.id === MAIN_BRANCH_ID
-                  ? 'Main is the live site; it is what branches merge into.'
-                  : `There is no branch “${branchId}”.`}
+                <span>
+                  {branch?.id === MAIN_BRANCH_ID
+                    ? 'Main is the live site; it is what branches merge into.'
+                    : `There is no branch “${branchId}”.`}
+                </span>
+                <Button variant="secondary" size="sm" type="button" onClick={() => navigate('/admin/site')} data-testid="branch-review-back">
+                  Back to the site
+                </Button>
               </div>
             ) : (
               <div className={styles.loading} aria-busy="true" aria-label="Loading the branch">
@@ -88,18 +106,21 @@ export function BranchReviewPage() {
       />
     )
   }
-  return <Review key={branch.id} branchId={branch.id} branchName={branch.name} />
+  return <Review key={branch.id} branch={branch} />
 }
 
 interface ReviewProps {
-  branchId: string
-  branchName: string
+  branch: SiteBranch
 }
 
-function Review({ branchId, branchName }: ReviewProps) {
+function Review({ branch }: ReviewProps) {
+  const branchId = branch.id
+  const branchName = branch.name
   const navigate = useNavigate()
   const user = useAuthenticatedAdminUser()
   const canManage = hasCapability(user, 'site.branches.manage')
+  // Dropping the branch is for whoever may delete it: a manager, or its creator.
+  const canDrop = canActOnBranch(user, branch)
   const { runStepUp } = useStepUp()
   const confirmAction = useConfirmAction()
   const data = useBranchReview(branchId)
@@ -107,7 +128,7 @@ function Review({ branchId, branchName }: ReviewProps) {
   const [resolutions, setResolutions] = useState<Record<string, MergeResolution>>({})
   // Off by default: a merge that deletes the branch cannot be undone.
   const [deleteAfter, setDeleteAfter] = useState(false)
-  const [dialog, setDialog] = useState<'request' | 'decline' | null>(null)
+  const [dialog, setDialog] = useState<'request' | 'decline' | 'drop' | null>(null)
   const [busy, setBusy] = useState(false)
 
   const me: ReviewUserLabel = {
@@ -511,11 +532,14 @@ function Review({ branchId, branchName }: ReviewProps) {
               onMerge={merge}
               onUndo={() => { void undo() }}
               onDecline={() => setDialog('decline')}
+              canDrop={canDrop}
+              onDrop={() => setDialog('drop')}
               onWithdraw={() => { void withBusy('withdraw the request', () => data.withdraw()) }}
               onRequest={() => setDialog('request')}
             />
           </div>
 
+          {dialog === 'drop' && <DeleteBranchDialog branch={branch} onClose={() => setDialog(null)} />}
           {dialog === 'request' && (
             <NoteDialog
               eyebrow="Request a merge"
