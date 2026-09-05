@@ -37,9 +37,13 @@ export const CAPABILITY_META: Record<CoreCapability, CapabilityMeta> = {
     label: 'Edit site styles',
     description: 'Modify CSS classes, style overrides, breakpoints, and framework tokens.',
   },
+  'site.branches.create': {
+    label: 'Create branches',
+    description: 'Fork a branch, and rename, delete, update, or share a preview link for the branches you created.',
+  },
   'site.branches.manage': {
     label: 'Manage branches',
-    description: 'Create, rename, delete, merge, and update site branches, and share their preview links.',
+    description: 'Act on every branch, merge branches into main, and decline merge requests. Does not fork on its own.',
   },
   'pages.edit': {
     label: 'Edit pages',

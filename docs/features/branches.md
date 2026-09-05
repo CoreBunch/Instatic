@@ -17,7 +17,7 @@ main with a three-way review. Publishing only ever happens on main.
 - **Merge** (branch → main) and **Update** (main → branch) are the same three-way merge over `site_branch_bases` (`server/branches/merge.ts`): field-level where both sides moved different fields, a reviewer decision where they moved the same one. An update never writes main.
 - **Merge review** (`/admin/branches/:id/review`) is where merging happens: one row of tiles per planned change, its comment thread beside it — pages as before/after renders with the changed nodes outlined, entries as field tables, tables as schemas, files as line diffs — each with its own comment thread; anyone with `site.read` can ask for a merge, comment, and read the plan, a branch manager declines or merges from the page's footer.
 - **Version history** lists a row's published versions and restores one into the draft on the active branch (`data_row_versions`, `GET/POST …/data/rows/:id/versions`).
-- Capability: `site.branches.manage` (Owner, Admin). Audit: `branch.*`, `version.restore`.
+- Capabilities: `site.branches.create` forks a branch and covers the branches you forked (rename, delete, update from main, preview links); `site.branches.manage` covers every branch plus merging into main and declining a request, and does not fork on its own. Owner and Admin hold both. The one rule is `canActOnBranch` in `@core/branches`, used by the server gates and the UI alike. Audit: `branch.*`, `version.restore`.
 
 ---
 
@@ -27,6 +27,7 @@ main with a three-way review. Publishing only ever happens on main.
 src/core/branches/
 ├── ids.ts             MAIN_BRANCH_ID, id pattern, slugify, physicalId / logicalIdOf
 ├── schemas.ts         SiteBranch, BranchPreview, MergePlan, request/response envelopes
+├── access.ts          canActOnBranch / canMergeBranches — who may act on a branch (server gates + UI)
 ├── threeWayMerge.ts   mergeJson(base, ours, theirs) — the pure JSON three-way merge
 └── index.ts           barrel (gated: no deep imports)
 
@@ -105,7 +106,7 @@ Doc ids carry the branch: `page:<branch>:<rowId>`, `component:<branch>:<rowId>`,
 Everything lives in the shared toolbar (`src/admin/pages/site/toolbar/Toolbar.tsx`), so it is present on every admin route:
 
 - **Chip** (`BranchChip`) next to the site brand — always icon-only, tinted with the branch accent off main (the context strip right above it carries the name, so the chip does not repeat it). Opens a palette: search first (Enter switches to the first match, or starts creating when nothing matches), then *Current* and *Recent* (main first, then by `updatedAt`), then *Create branch…* (an in-place form: name → slug preview, start from main or the current branch) and *Manage branches…*.
-- **Context strip** (`BranchContextStrip`) above the toolbar while on a branch, painted `--bg-surface-2` with the identity tint (`pillAccent(branch.id)`) on the icon and name only. Actions: *Share preview* / *New preview link*, *Merge into main…* (*Request merge…* without `site.branches.manage`; both open the review page), and a menu with *Update from main…*, *Rename…*, *Revoke preview link*, *Switch to main*, *Delete branch*.
+- **Context strip** (`BranchContextStrip`) above the toolbar while on a branch, painted `--bg-surface-2` with the identity tint (`pillAccent(branch.id)`) on the icon and name only. Actions: *Share preview* / *New preview link*, *Merge into main…* (*Request merge…* without `site.branches.manage`; both open the review page) — every other strip action is also available to the branch's creator, not only managers, and a menu with *Update from main…*, *Rename…*, *Revoke preview link*, *Switch to main*, *Delete branch*.
 - **Manage dialog** (`ManageBranchesDialog`) — search by name or id, open, rename inline, delete, create.
 - **Update dialog** (`UpdateBranchDialog`) — the update plan grouped by Site / Tables / entries per table, `New` / `Changed` / `Removed` badges, a two-way choice per conflict. Merging has no dialog: it happens on the review page (below).
 - **Delete** always confirms (`DeleteBranchDialog`) and steps up.
@@ -119,9 +120,9 @@ Everything lives in the shared toolbar (`src/admin/pages/site/toolbar/Toolbar.ts
 
 | Endpoint | Gate | Effect |
 |----------|------|--------|
-| `POST /admin/api/cms/branches/:id/preview` | `site.branches.manage` | Issues a new token (retiring the previous one) and returns `{ url, preview }`. Only the SHA-256 is stored. |
+| `POST /admin/api/cms/branches/:id/preview` | `canActOnBranch` (manager, or the creator of this branch) | Issues a new token (retiring the previous one) and returns `{ url, preview }`. Only the SHA-256 is stored. |
 | `GET …/preview` | `site.read` | `{ preview }` — the active link's metadata, or `null`. |
-| `DELETE …/preview` | `site.branches.manage` | Revokes. |
+| `DELETE …/preview` | `canActOnBranch` | Revokes. |
 | `GET /_instatic/preview/<token>` | public | Validates, sets `instatic_branch_preview` (HttpOnly, SameSite=Lax, Path=/, 30 days) and redirects to `/`. A dead token clears the cookie instead. |
 | `GET /_instatic/preview/exit` | public | Clears the cookie. |
 
@@ -147,7 +148,7 @@ Every planned change carries `detail` (`server/branches/changeDetail.ts`, schema
 
 `applyBranchMerge` flushes the relay, re-plans against live data (an unresolved conflict aborts before any write), then in one transaction writes each result to `into`. A **merge** also mirrors the result onto the branch so both sides agree afterwards, and the base becomes the result. An **update** never writes main: the branch takes the result and the base becomes main's content as of the update, so the branch's own changes stay pending. Entities identical on both sides whose base is stale move their base forward too, so a later edit on one side is not reported as a conflict. Row writes use the repositories with `collabInternal`; after commit the row/shell write notifications fire (open editors reset and reload) and, when main received rows, the `content.entry.*` plugin hooks fire for them. Table creates run before rows and restore a soft-deleted table under the same id; table deletes run last and abort the merge (`MergeApplyError`) when the table still has rows.
 
-Endpoints: `GET|POST /admin/api/cms/branches/:id/merge` and `…/update`. `GET` (the plan) needs `site.read` — the review page shows it to whoever can read the site; `POST` needs `site.branches.manage` and steps up. `POST` body: `{ resolutions?: Record<key, 'into' | 'from'>, deleteBranch?: boolean }` → `{ plan, branchDeleted }`; unresolved conflicts answer `409 { code: 'merge_conflicts', keys }`. A successful merge closes the branch's open merge request as `merged`.
+Endpoints: `GET|POST /admin/api/cms/branches/:id/merge` and `…/update`. `GET` (the plan) needs `site.read` — the review page shows it to whoever can read the site; `POST …/merge` needs `site.branches.manage`; `POST …/update` needs `canActOnBranch` (a manager, or the branch's creator); both step up. `POST` body: `{ resolutions?: Record<key, 'into' | 'from'>, deleteBranch?: boolean }` → `{ plan, branchDeleted }`; unresolved conflicts answer `409 { code: 'merge_conflicts', keys }`. A successful merge closes the branch's open merge request as `merged`.
 
 ---
 
@@ -220,5 +221,5 @@ Add `branch_id text not null default 'main'` and the generated `logical_id` to t
 - [`site-shell.md`](site-shell.md) — collab document model
 - [`content-storage.md`](content-storage.md) — the branched tables
 - [`publisher.md`](publisher.md) — the public render path a preview mirrors
-- [`../reference/capabilities.md`](../reference/capabilities.md) — `site.branches.manage`
+- [`../reference/capabilities.md`](../reference/capabilities.md) — `site.branches.create`, `site.branches.manage`
 - [`audit-log.md`](audit-log.md) — `branch.*`, `branch.review.*`, `version.restore`

@@ -57,6 +57,7 @@ const adminCapabilities: CoreCapability[] = [
   'content.publish.own',
   'content.publish.any',
   'content.manage',
+  'site.branches.create',
   'site.branches.manage',
   'media.read',
   'media.write',

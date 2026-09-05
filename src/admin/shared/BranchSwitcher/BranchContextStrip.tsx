@@ -19,7 +19,7 @@ import { LinkIcon } from 'pixel-art-icons/icons/link'
 import { MoreHorizontalSolidIcon } from 'pixel-art-icons/icons/more-horizontal-solid'
 import { ShareSolidIcon } from 'pixel-art-icons/icons/share-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
-import { MAIN_BRANCH_ID, type BranchPreview, type SiteBranch } from '@core/branches'
+import { MAIN_BRANCH_ID, canActOnBranch, type BranchPreview, type SiteBranch } from '@core/branches'
 import { getCmsBranchPreview, issueCmsBranchPreview, revokeCmsBranchPreview } from '@core/persistence'
 import { isAbortError } from '@core/http'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -61,7 +61,10 @@ export function BranchContextStrip() {
 
 function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
   const user = useCurrentAdminUser()
+  // Merge is a manager's call; everything else here belongs to whoever may
+  // act on THIS branch: a manager, or the creator who forked it.
   const canManage = hasCapability(user, 'site.branches.manage')
+  const canAuthor = canActOnBranch(user, current)
   const navigate = useNavigate()
   const openManage = useBranchStore((state) => state.openManage)
   const [moreOpen, setMoreOpen] = useState(false)
@@ -139,7 +142,7 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
       )}
       <span className={styles.stripSpacer} aria-hidden="true" />
 
-      {canManage && (
+      {canAuthor && (
         <Button
           variant="secondary"
           size="xs"
@@ -194,7 +197,7 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
           width={240}
           zIndex={10000}
         >
-          {canManage && (
+          {canAuthor && (
             <ContextMenuItem
               data-testid="branch-strip-update"
               onClick={() => {
@@ -206,7 +209,7 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
               <span>Update from main…</span>
             </ContextMenuItem>
           )}
-          {canManage && (
+          {canAuthor && (
             <ContextMenuItem
               onClick={() => {
                 setMoreOpen(false)
@@ -217,7 +220,7 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
               <span>Rename…</span>
             </ContextMenuItem>
           )}
-          {canManage && preview && (
+          {canAuthor && preview && (
             <ContextMenuItem
               data-testid="branch-strip-revoke"
               onClick={() => {
@@ -239,7 +242,7 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
             <CircleDotSolidIcon size={12} aria-hidden="true" />
             <span>Switch to main</span>
           </ContextMenuItem>
-          {canManage && (
+          {canAuthor && (
             <>
               <ContextMenuSeparator />
               <ContextMenuItem

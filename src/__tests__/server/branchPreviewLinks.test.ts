@@ -101,7 +101,7 @@ describe('branch preview links', () => {
     expect(deadEntry.headers.get('set-cookie')).toContain('Max-Age=0')
   })
 
-  it('rotates the link on every share and gates issuing on site.branches.manage', async () => {
+  it('rotates the link on every share and gates issuing on who may act on the branch', async () => {
     harness = await createCapabilityTestHarness()
     const owner = await harness.setupOwner()
     expect((await harness.cms(BRANCHES, { method: 'POST', cookie: owner, json: { name: 'Rotate' } })).status).toBe(201)
@@ -122,6 +122,18 @@ describe('branch preview links', () => {
     expect((await harness.cms(`${BRANCHES}/rotate/preview`, { cookie: reader.cookie })).status).toBe(200)
     await expectForbidden(await harness.cms(`${BRANCHES}/rotate/preview`, { method: 'POST', cookie: reader.cookie }))
     await expectForbidden(await harness.cms(`${BRANCHES}/rotate/preview`, { method: 'DELETE', cookie: reader.cookie }))
+
+    // A creator shares the branches they forked, not the owner's.
+    const creator = await harness.createRoleUser({
+      name: 'Creator',
+      slug: 'creator',
+      capabilities: ['site.read', 'site.branches.create'],
+    })
+    expect((await harness.cms(BRANCHES, { method: 'POST', cookie: creator.cookie, json: { name: 'Shared' } })).status).toBe(201)
+    expect((await harness.cms(`${BRANCHES}/shared/preview`, { method: 'POST', cookie: creator.cookie })).status).toBe(201)
+    expect((await harness.cms(`${BRANCHES}/shared/preview`, { method: 'DELETE', cookie: creator.cookie })).status).toBe(200)
+    await expectForbidden(await harness.cms(`${BRANCHES}/rotate/preview`, { method: 'POST', cookie: creator.cookie }))
+    await expectForbidden(await harness.cms(`${BRANCHES}/rotate/preview`, { method: 'DELETE', cookie: creator.cookie }))
 
     expect((await harness.cms(`${BRANCHES}/main/preview`, { method: 'POST', cookie: owner })).status).toBe(400)
   })

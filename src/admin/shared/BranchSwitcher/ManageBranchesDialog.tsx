@@ -11,7 +11,7 @@ import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
 import { GitBranchSolidIcon } from 'pixel-art-icons/icons/git-branch-solid'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
-import { MAIN_BRANCH_ID, slugifyBranchName, type SiteBranch } from '@core/branches'
+import { MAIN_BRANCH_ID, canActOnBranch, slugifyBranchName, type SiteBranch } from '@core/branches'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import {
   createBranch,
@@ -21,6 +21,8 @@ import {
   useBranchStore,
   useBranches,
 } from '@admin/state/branchStore'
+import { hasCapability } from '@admin/access'
+import { useCurrentAdminUser } from '@admin/sessionContext'
 import { useAdminUi } from '@admin/state/adminUi'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
@@ -41,6 +43,10 @@ interface ManageBranchesDialogProps {
 
 export function ManageBranchesDialog({ open, onClose }: ManageBranchesDialogProps) {
   const siteName = useAdminUi((state) => state.siteName)
+  const user = useCurrentAdminUser()
+  // Forking is its own capability; each row's rename/delete follows the
+  // same rule the server gates, so nothing here is offered and then refused.
+  const canCreate = hasCapability(user, 'site.branches.create')
   const branches = useBranches()
   const current = useActiveBranch()
 
@@ -117,7 +123,8 @@ export function ManageBranchesDialog({ open, onClose }: ManageBranchesDialogProp
               variant="secondary"
               size="sm"
               type="button"
-              disabled={creating}
+              disabled={creating || !canCreate}
+              tooltip={canCreate ? undefined : 'Your role cannot create branches'}
               data-testid="branch-manage-new"
               onClick={() => setCreating(true)}
             >
@@ -273,8 +280,9 @@ export function ManageBranchesDialog({ open, onClose }: ManageBranchesDialogProp
                           size="xs"
                           type="button"
                           iconOnly
+                          disabled={!canActOnBranch(user, branch)}
                           aria-label={`Rename ${branch.name}`}
-                          tooltip="Rename"
+                          tooltip={canActOnBranch(user, branch) ? 'Rename' : 'Only its creator or a branch manager can rename this branch'}
                           data-testid={`branch-manage-rename-${branch.id}`}
                           onClick={() => {
                             setRenamingId(branch.id)
@@ -289,8 +297,9 @@ export function ManageBranchesDialog({ open, onClose }: ManageBranchesDialogProp
                           type="button"
                           iconOnly
                           dangerHover
+                          disabled={!canActOnBranch(user, branch)}
                           aria-label={`Delete ${branch.name}`}
-                          tooltip="Delete"
+                          tooltip={canActOnBranch(user, branch) ? 'Delete' : 'Only its creator or a branch manager can delete this branch'}
                           data-testid={`branch-manage-delete-${branch.id}`}
                           onClick={() => setDeleting(branch)}
                         >

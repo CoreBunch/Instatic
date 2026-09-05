@@ -1362,8 +1362,20 @@ export const sqliteMigrations: Migration[] = [
       create index if not exists site_branch_previews_branch_idx
         on site_branch_previews (branch_id);
 
-      -- Branch management is an Owner/Admin power; the boot-time role sync
-      -- re-applies this, the migration records it for the seed snapshot.
+      -- Branch powers are Owner/Admin by default: create forks a branch and
+      -- reaches the branches you forked; manage reaches every branch and
+      -- merges. The boot-time role sync re-applies both; the migration
+      -- records them for the seed snapshot.
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'site.branches.create'),
+             updated_at = current_timestamp
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'site.branches.create'
+             );
+
       update roles
          set capabilities_json = json_insert(capabilities_json, '$[#]', 'site.branches.manage'),
              updated_at = current_timestamp

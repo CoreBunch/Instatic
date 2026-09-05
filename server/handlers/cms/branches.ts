@@ -33,6 +33,8 @@ import {
   CreateReviewCommentBodySchema,
   DeclineMergeRequestBodySchema,
   RenameBranchBodySchema,
+  canActOnBranch,
+  canMergeBranches,
   isMainBranch,
   isValidBranchId,
   slugifyBranchName,
@@ -49,7 +51,7 @@ import {
 } from '../../branches/review'
 import { renderBranchReviewPage } from '../../publish/branchReviewRender'
 import { getOpenMergeRequest } from '../../repositories/branchReviews'
-import { userHasCapability } from '../../auth/authz'
+import { requireAuthenticatedUser, userHasCapability } from '../../auth/authz'
 import { canReadTable } from './data/access'
 import { listDataTables } from '../../repositories/data'
 import { MAIN_SCOPE } from '../../branches/scope'
@@ -65,7 +67,7 @@ import { runPublishFlush } from '../../publish/publishFlush'
 import { expectedOrigin } from '../../auth/security'
 import { getActiveBranchPreview, revokeBranchPreviews } from '../../repositories/branchPreviews'
 import { requireCapability, requireStepUp } from '../../auth/authz'
-import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
+import { badRequest, forbidden, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
 import { createAuditEvent } from '../../repositories/audit'
 import { branchExists, getBranch, listBranches, renameBranch } from '../../repositories/branches'
 import { CMS_API_PREFIX, requestAuditContext, type CmsHandlerOptions } from './shared'
@@ -188,15 +190,18 @@ async function handleMergeApply(
   direction: MergeDirection,
   options: CmsHandlerOptions,
 ): Promise<Response> {
-  const user = await requireCapability(req, db, 'site.branches.manage')
+  const user = await requireAuthenticatedUser(req, db)
   if (user instanceof Response) return user
   if (isMainBranch(branchId)) return badRequest('Main is the live site; it is what branches merge into')
-  // Merging rewrites main's drafts wholesale; updating rewrites the branch.
+  const branch = await getBranch(db, branchId)
+  if (!branch) return branchNotFound(branchId)
+  // Merging rewrites main's drafts wholesale and is a manager's call alone.
+  // Updating rewrites only the branch, so its creator may do it too.
+  const allowed = direction === 'merge' ? canMergeBranches(user) : canActOnBranch(user, branch)
+  if (!allowed) return forbidden()
   // Both are re-verified like publishing is.
   const stepUp = await requireStepUp(req, db, user)
   if (stepUp) return stepUp
-  const branch = await getBranch(db, branchId)
-  if (!branch) return branchNotFound(branchId)
   const body = await readValidatedBody(req, ApplyMergeBodySchema)
   if (!body) return badRequest('Invalid merge payload')
 
@@ -254,10 +259,12 @@ async function handlePreviewState(req: Request, db: DbClient, branchId: string):
 }
 
 async function handlePreviewIssue(req: Request, db: DbClient, branchId: string): Promise<Response> {
-  const user = await requireCapability(req, db, 'site.branches.manage')
+  const user = await requireAuthenticatedUser(req, db)
   if (user instanceof Response) return user
   if (isMainBranch(branchId)) return badRequest('Main is the live site; it has no preview link')
-  if (!(await getBranch(db, branchId))) return branchNotFound(branchId)
+  const branch = await getBranch(db, branchId)
+  if (!branch) return branchNotFound(branchId)
+  if (!canActOnBranch(user, branch)) return forbidden()
   const { token, preview } = await issueBranchPreviewLink(db, { branchId, createdByUserId: user.id })
   await createAuditEvent(db, {
     actorUserId: user.id,
@@ -271,9 +278,11 @@ async function handlePreviewIssue(req: Request, db: DbClient, branchId: string):
 }
 
 async function handlePreviewRevoke(req: Request, db: DbClient, branchId: string): Promise<Response> {
-  const user = await requireCapability(req, db, 'site.branches.manage')
+  const user = await requireAuthenticatedUser(req, db)
   if (user instanceof Response) return user
-  if (!(await getBranch(db, branchId))) return branchNotFound(branchId)
+  const branch = await getBranch(db, branchId)
+  if (!branch) return branchNotFound(branchId)
+  if (!canActOnBranch(user, branch)) return forbidden()
   const revoked = await revokeBranchPreviews(db, branchId)
   if (revoked > 0) {
     await createAuditEvent(db, {
@@ -448,7 +457,9 @@ async function handleList(req: Request, db: DbClient): Promise<Response> {
 }
 
 async function handleCreate(req: Request, db: DbClient, options: CmsHandlerOptions): Promise<Response> {
-  const user = await requireCapability(req, db, 'site.branches.manage')
+  // Forking is additive and private, so it is its own capability; managing
+  // alone does not fork.
+  const user = await requireCapability(req, db, 'site.branches.create')
   if (user instanceof Response) return user
   const body = await readValidatedBody(req, CreateBranchBodySchema)
   if (!body) return badRequest('Invalid branch payload')
@@ -482,16 +493,17 @@ async function handleCreate(req: Request, db: DbClient, options: CmsHandlerOptio
 }
 
 async function handleRename(req: Request, db: DbClient, branchId: string): Promise<Response> {
-  const user = await requireCapability(req, db, 'site.branches.manage')
+  const user = await requireAuthenticatedUser(req, db)
   if (user instanceof Response) return user
   if (isMainBranch(branchId)) return badRequest('The main branch cannot be renamed')
+  const previous = await getBranch(db, branchId)
+  if (!previous) return jsonResponse({ error: `Branch "${branchId}" does not exist` }, { status: 404 })
+  if (!canActOnBranch(user, previous)) return forbidden()
   const body = await readValidatedBody(req, RenameBranchBodySchema)
   if (!body) return badRequest('Invalid branch payload')
   const name = normalizeName(body.name)
   if (!name) return badRequest(`Branch names are 1 to ${BRANCH_NAME_MAX_LENGTH} characters`)
 
-  const previous = await getBranch(db, branchId)
-  if (!previous) return jsonResponse({ error: `Branch "${branchId}" does not exist` }, { status: 404 })
   const branch = await renameBranch(db, branchId, name)
   if (!branch) return jsonResponse({ error: `Branch "${branchId}" does not exist` }, { status: 404 })
   await createAuditEvent(db, {
@@ -511,16 +523,18 @@ async function handleDelete(
   branchId: string,
   options: CmsHandlerOptions,
 ): Promise<Response> {
-  const user = await requireCapability(req, db, 'site.branches.manage')
+  const user = await requireAuthenticatedUser(req, db)
   if (user instanceof Response) return user
   if (isMainBranch(branchId)) return badRequest('The main branch cannot be deleted')
+  const branch = await getBranch(db, branchId)
+  if (!branch) return jsonResponse({ error: `Branch "${branchId}" does not exist` }, { status: 404 })
+  // Settle who may act before asking anyone to re-authenticate.
+  if (!canActOnBranch(user, branch)) return forbidden()
   // Deleting a branch discards every unmerged change on it — re-verify the
   // actor the same way user deletion does.
   const stepUp = await requireStepUp(req, db, user)
   if (stepUp) return stepUp
 
-  const branch = await getBranch(db, branchId)
-  if (!branch) return jsonResponse({ error: `Branch "${branchId}" does not exist` }, { status: 404 })
   const deleted = await deleteBranch(db, branchId, options.collabRelay ?? null)
   if (!deleted) return jsonResponse({ error: `Branch "${branchId}" does not exist` }, { status: 404 })
   await createAuditEvent(db, {
