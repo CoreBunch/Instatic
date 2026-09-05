@@ -1,0 +1,20 @@
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.peerStack {
+  display: inline-flex;
+  align-items: center;
+  padding-right: var(--space-3xs);
+}
+
+.peerAvatar {
+  margin-left: calc(-1 * var(--space-3xs));
+}
+
+.peerAvatar:first-child {
+  margin-left: 0;
+}
+

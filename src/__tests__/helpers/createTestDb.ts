@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import { createDbClient, type DbClient } from '../../../server/db'
 import { runMigrations } from '../../../server/db/runMigrations'
+import { syncSystemRoles } from '../../../server/repositories/roles'
 
 export interface TestDb {
   db: DbClient
@@ -34,6 +35,10 @@ export async function createTestDb(): Promise<TestDb> {
     if (!url) throw new Error('TEST_POSTGRES_URL must be set when DB=postgres')
     const { db, migrations } = createDbClient(url)
     await runMigrations(db, migrations)
+    // Mirror server boot: Owner/Admin capability lists are force-resynced
+    // from code, so tests see new capabilities without a migration (the
+    // migration seed is only the initial snapshot).
+    await syncSystemRoles(db)
     return {
       db,
       cleanup: async () => {
@@ -47,6 +52,8 @@ export async function createTestDb(): Promise<TestDb> {
   const tmpFile = path.join(os.tmpdir(), `cms-test-${crypto.randomUUID()}`, 'test.db')
   const { db, migrations } = createDbClient(`sqlite:${tmpFile}`)
   await runMigrations(db, migrations)
+  // Mirror server boot (see the PG branch above).
+  await syncSystemRoles(db)
 
   return {
     db,

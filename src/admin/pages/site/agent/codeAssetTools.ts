@@ -1,6 +1,10 @@
 import {
   aiToolError,
   aiToolOk,
+  applyExactReplacements,
+  hashText,
+  paginateText,
+  utf8ByteLength,
   type AiToolOutput,
   type InspectCodeRuntimeInput,
   type ListCodeAssetsInput,
@@ -32,8 +36,6 @@ type CodeAssetLookup = {
   type?: CodeAssetType
 }
 
-const textEncoder = new TextEncoder()
-
 // Live access to the editor store. Routed through `./storeRef` so this module
 // has no static import edge back into `editor-store/store.ts`.
 const getStoreState = (): EditorStore => getAgentStoreApi<EditorStore>().getState()
@@ -44,13 +46,6 @@ function isCodeAssetFile(file: SiteFile): file is CodeAssetFile {
 
 function contentForCodeAsset(file: CodeAssetFile): string {
   return file.content ?? ''
-}
-
-async function hashCodeAssetContent(content: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', textEncoder.encode(content))
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
 }
 
 function normalizeCodeAssetPath(path: string): string | null {
@@ -72,8 +67,8 @@ async function describeCodeAsset(store: EditorStore, file: CodeAssetFile) {
     path: file.path,
     type: file.type,
     contentChars: content.length,
-    bytes: textEncoder.encode(content).byteLength,
-    hash: await hashCodeAssetContent(content),
+    bytes: utf8ByteLength(content),
+    hash: await hashText(content),
     createdAt: file.createdAt,
     updatedAt: file.updatedAt,
     generated: file.generated === true,
@@ -158,16 +153,6 @@ function normalizeRequestedRuntimeDependencies(
   return { ok: true, dependencies }
 }
 
-function countOccurrences(content: string, search: string): number {
-  let count = 0
-  let index = content.indexOf(search)
-  while (index !== -1) {
-    count++
-    index = content.indexOf(search, index + search.length)
-  }
-  return count
-}
-
 function runtimeInspectionPage(
   store: EditorStore,
   input: InspectCodeRuntimeInput,
@@ -220,31 +205,20 @@ export async function runReadCodeAsset(input: ReadCodeAssetInput): Promise<AiToo
   if (!resolved.ok) return aiToolError(resolved.error)
 
   const content = contentForCodeAsset(resolved.file)
-  const maxChars = input.maxChars ?? 12000
-  const totalParts = Math.max(1, Math.ceil(content.length / maxChars))
-  const part = input.part ?? 1
-  if (part > totalParts) {
-    return aiToolError(`Code asset part ${part} is out of range; totalParts is ${totalParts}.`)
-  }
-
-  const start = (part - 1) * maxChars
-  const end = Math.min(content.length, start + maxChars)
+  const page = paginateText(content, {
+    part: input.part,
+    maxChars: input.maxChars,
+    defaultMaxChars: 12000,
+  })
+  if (!page.ok) return aiToolError(`Code asset ${page.error}`)
   return aiToolOk({
     fileId: resolved.file.id,
     path: resolved.file.path,
     type: resolved.file.type,
-    content: content.slice(start, end),
-    hash: await hashCodeAssetContent(content),
+    content: page.content,
+    hash: await hashText(content),
     runtime: codeAssetRuntime(store, resolved.file),
-    pageInfo: {
-      part,
-      totalParts,
-      nextPart: part < totalParts ? part + 1 : null,
-      maxChars,
-      start,
-      end,
-      totalChars: content.length,
-    },
+    pageInfo: page.pageInfo,
   })
 }
 
@@ -305,37 +279,25 @@ export async function runPatchCodeAsset(input: PatchCodeAssetInput): Promise<AiT
   if (!resolved.ok) return aiToolError(resolved.error)
 
   const currentContent = contentForCodeAsset(resolved.file)
-  const currentHash = await hashCodeAssetContent(currentContent)
+  const currentHash = await hashText(currentContent)
   if (currentHash !== input.expectedHash) {
     return aiToolError(
       `Code asset hash mismatch for ${resolved.file.path}; read_code_asset again before patching.`,
     )
   }
 
-  let nextContent = currentContent
-  let replacementCount = 0
-  for (const replacement of input.replacements) {
-    const matches = countOccurrences(nextContent, replacement.oldText)
-    if (matches === 0) {
-      return aiToolError(`Replacement text not found in ${resolved.file.path}.`)
-    }
-    if (matches > 1 && replacement.replaceAll !== true) {
-      return aiToolError(
-        `Replacement for ${resolved.file.path} is ambiguous: ${matches} matches. ` +
-          'Use a larger oldText span or set replaceAll:true.',
-      )
-    }
-
-    if (replacement.replaceAll === true) {
-      nextContent = nextContent.split(replacement.oldText).join(replacement.newText)
-      replacementCount += matches
-    } else {
-      nextContent = nextContent.replace(replacement.oldText, replacement.newText)
-      replacementCount += 1
-    }
+  const applied = applyExactReplacements(currentContent, input.replacements)
+  if (!applied.ok) {
+    return aiToolError(
+      applied.reason === 'not-found'
+        ? `Replacement text not found in ${resolved.file.path}.`
+        : `Replacement for ${resolved.file.path} is ambiguous: ${applied.matches} matches. ` +
+            'Use a larger oldText span or set replaceAll:true.',
+    )
   }
+  const replacementCount = applied.replaced
 
-  store.updateFileContent(resolved.file.id, nextContent)
+  store.updateFileContent(resolved.file.id, applied.content)
   const afterStore = getStoreState()
   const file = afterStore.site?.files.find((candidate) => candidate.id === resolved.file.id)
   if (!file || !isCodeAssetFile(file)) {

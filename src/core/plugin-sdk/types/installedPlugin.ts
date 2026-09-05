@@ -7,6 +7,15 @@ import type { PluginPermission } from './permissions'
 // Installed plugin — manifest + host bookkeeping
 // ---------------------------------------------------------------------------
 
+/**
+ * Provenance of an installed plugin row. `'installed'` = uploaded zip / JSON
+ * manifest; `'site-local'` = generated from the site draft's
+ * `plugins/<local-id>/` source (docs/features/site-plugins.md). Provenance is
+ * for display labels and lifecycle-action routing only — the plugin runtime
+ * never branches on it.
+ */
+export type InstalledPluginSource = 'installed' | 'site-local'
+
 export interface InstalledPlugin {
   id: string
   name: string
@@ -15,6 +24,7 @@ export interface InstalledPlugin {
   lifecycleStatus: PluginLifecycleStatus
   lastError: string | null
   grantedPermissions: PluginPermission[]
+  source: InstalledPluginSource
   manifest: PluginManifest
   /**
    * Current user-edited settings values, keyed by setting id. Always

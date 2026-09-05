@@ -1,0 +1,59 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-s);
+}
+
+.intro,
+.removedIntro {
+  margin: 0;
+  font-size: var(--text-s);
+  line-height: 1.5;
+  color: var(--text-subtle);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}
+
+.row,
+.rowRemoved {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-s);
+  padding: var(--space-3xs) var(--space-s);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-3);
+}
+
+.rowRemoved {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.permissionId {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text);
+}
+
+.permissionLabel {
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+}
+
+.dangerNote {
+  margin: 0;
+  padding: var(--space-xs) var(--space-s);
+  border-radius: var(--radius);
+  border-left: 2px solid var(--danger);
+  background: var(--bg-surface-3);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text);
+}

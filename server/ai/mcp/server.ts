@@ -46,6 +46,7 @@ const NOOP_BRIDGE: AiBrowserBridge = {
 const NO_WORKSPACE_MESSAGE: Record<EditorBridgeScope, string> = {
   site: 'This tool runs in the Instatic Site editor. Open the Site editor in a browser (signed in as the connector owner) and try again.',
   content: 'This tool runs in the Instatic Content workspace. Open the Content workspace in a browser (signed in as the connector owner) and try again.',
+  plugin: 'This tool runs in the Instatic Plugin IDE. Open /admin/plugins/develop/<plugin-id> in a browser (signed in as the connector owner) and try again.',
 }
 
 /**
@@ -62,6 +63,7 @@ const NO_WORKSPACE_MESSAGE: Record<EditorBridgeScope, string> = {
 const BROWSER_WORKSPACE_REQUIREMENT: Record<EditorBridgeScope, string> = {
   site: 'Requires the Instatic Site editor to be open in a browser, signed in as the connector owner; this tool edits that live workspace and cannot run headlessly.',
   content: 'Requires the Instatic Content workspace to be open in a browser, signed in as the connector owner; this tool edits that live workspace and cannot run headlessly.',
+  plugin: 'Requires the Instatic Plugin IDE to be open in a browser on the plugin being edited, signed in as the connector owner; this tool edits that live workspace and cannot run headlessly.',
 }
 
 /** Tool description as advertised over MCP — browser tools carry their precondition. */
@@ -152,7 +154,7 @@ export function buildMcpServer(ctx: McpServerContext): Server {
     // Content; keep that invariant explicit instead of guessing a bridge.
     let bridge = NOOP_BRIDGE
     if (tool.execution === 'browser') {
-      if (tool.scope !== 'site' && tool.scope !== 'content') {
+      if (tool.scope !== 'site' && tool.scope !== 'content' && tool.scope !== 'plugin') {
         return project({
           isError: true,
           content: [{ type: 'text', text: `Browser tool "${tool.name}" has unsupported scope "${tool.scope}".` }],
@@ -202,6 +204,7 @@ export function buildMcpServer(ctx: McpServerContext): Server {
         scope: tool.scope === 'shared' ? 'content' : tool.scope,
         conversationId: `mcp:${ctx.connectorId}`,
         snapshot: null,
+        uploadsDir: ctx.uploadsDir ?? null,
       })
     } catch (err) {
       // Browser bridge rejection is terminal for a chat turn, but MCP has no

@@ -807,3 +807,16 @@
         margin-left: 0;
     }
 }
+
+/* Draft badge — session-local site plugin preview modules (never active
+   revisions). Identity via warning state color, per the two-layer model. */
+.draftBadge {
+  padding: 0 var(--space-3xs);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-3xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--warning);
+  background: var(--bg-surface-3);
+}

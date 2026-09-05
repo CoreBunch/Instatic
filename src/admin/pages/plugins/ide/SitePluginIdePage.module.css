@@ -1,0 +1,61 @@
+.editorColumn {
+  display: flex;
+  flex-direction: column;
+  /* The layout's .canvasContent is a flex row — without flex:1 the editor
+     column sizes to its content instead of filling the stage. */
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  /* The standard elevated canvas surface (same treatment as the Data
+     grid): the shell stays --bg-body black; the working area sits on
+     --bg-surface-2 with rounded top corners. */
+  background: var(--bg-surface-2);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+}
+
+.editorArea {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.editorArea :global([data-codemirror-container]) {
+  height: 100%;
+}
+
+.editorMount {
+  height: 100%;
+  min-height: 0;
+}
+
+.editorEmpty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xl);
+  color: var(--text-subtle);
+  font-size: var(--text-s);
+  text-align: center;
+}
+
+.missing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-s);
+  height: 100%;
+  color: var(--text-subtle);
+}
+
+.missingTitle {
+  margin: 0;
+  font-size: var(--text-l);
+  color: var(--text);
+}

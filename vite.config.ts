@@ -195,6 +195,13 @@ function vendorChunkName(moduleId: string): string | null {
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Dev-only constant consumed by the collab socket client
+  // (src/admin/pages/site/collab/collabProvider.ts): Vite's WebSocket
+  // proxying is broken when Vite runs under Bun (its bundled http-proxy
+  // calls `socket.destroySoon`, which Bun's net.Socket does not implement,
+  // so upgrades die — and the proxy can crash Vite outright). In dev the
+  // client therefore connects the site socket DIRECTLY to the CMS origin.
+  // Cookies are host-scoped (port-agnostic on localhost) and the CMS's
   plugins: [
     largeBodyDevProxyPlugin(),
     publicSiteDevProxyPlugin(),

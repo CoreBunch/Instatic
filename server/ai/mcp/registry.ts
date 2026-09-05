@@ -27,6 +27,7 @@ import type { AiTool } from '../runtime/types'
 import { toolAllowedForCapabilities } from '../tools/capabilityGate'
 import { contentTools } from '../tools/content'
 import { siteTools } from '../tools/site'
+import { pluginTools } from '../tools/plugin'
 import { styleMcpTools } from './tools/styleTools'
 import { contextMcpTools } from './tools/contextTool'
 import { documentMcpTools } from './tools/documentTools'
@@ -56,6 +57,10 @@ function allMcpTools(runtime?: McpPublishRuntime): AiTool[] {
     uploadMediaMcpTool,
     ...contentTools,
     ...siteTools,
+    // Plugin scope: file tools relay to the connector owner's open Plugin
+    // IDE; plugin_list_plugins / plugin_validate / plugin_activate run
+    // headless (server-resolved) — the site_publish precedent.
+    ...pluginTools,
   ]
   const byName = new Map<string, AiTool>()
   for (const tool of ordered) {

@@ -119,5 +119,5 @@ function summaryForPlan(plan: ExplorerPathChangePlan): string {
 function sectionLabel(sectionId: ExplorerPathChangePlan['sectionId']): string {
   if (sectionId === 'pages') return 'Pages'
   if (sectionId === 'styles') return 'Styles'
-  return 'Scripts'
+  return 'Frontend scripts'
 }

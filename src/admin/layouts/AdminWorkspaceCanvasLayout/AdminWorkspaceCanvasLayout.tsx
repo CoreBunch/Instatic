@@ -34,7 +34,7 @@ const SettingsModal = lazy(() =>
   import('@admin/modals/Settings/SettingsModal').then((m) => ({ default: m.SettingsModal })),
 )
 
-type WorkspaceCanvasSection = Extract<AdminWorkspace, 'content' | 'data' | 'media' | 'branchReview'>
+type WorkspaceCanvasSection = Extract<AdminWorkspace, 'content' | 'data' | 'media' | 'branchReview' | 'pluginIde'>
 
 interface AdminWorkspaceCanvasLayoutProps {
   workspace: WorkspaceCanvasSection

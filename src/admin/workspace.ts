@@ -18,6 +18,12 @@
  * `'ai'` is the AI provider settings + defaults workspace. Gated by
  * `ai.providers.manage` (or `ai.audit.read` for the read-only audit tab).
  */
+/**
+ * `'pluginIde'` is the full-screen site plugin IDE
+ * (`/admin/plugins/develop/:localId`) — authoring is a site-developer
+ * surface, gated by `site.read` (activation, not authoring, needs plugin
+ * powers).
+ */
 export type AdminWorkspace =
   | 'dashboard'
   | 'site'
@@ -30,4 +36,5 @@ export type AdminWorkspace =
   | 'pluginPage'
   /** The merge review of one branch (`/admin/branches/:branchId/review`). */
   | 'branchReview'
+  | 'pluginIde'
   | 'account'

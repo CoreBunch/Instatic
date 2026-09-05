@@ -17,8 +17,10 @@
 
 import type { DbClient } from '../db/client'
 import { getPublishedPageSnapshotById } from '../repositories/publish'
+import { bakePublishedDataRowArtefacts } from './bakeDataRows'
 import { renderPublishedSnapshot } from './publicRenderer'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
+import { updateArtefactInPlace } from './staticArtefact'
 
 // ---------------------------------------------------------------------------
 // Typed error — callers can distinguish "page not found / not published" from
@@ -47,7 +49,12 @@ class PageNotPublishedError extends Error {
  * Throws `PageNotPublishedError` if the page is not found or is not
  * currently published.
  */
-async function republishSinglePage(db: DbClient, pageId: string): Promise<void> {
+async function republishSinglePage(
+  db: DbClient,
+  pageId: string,
+  uploadsDir?: string,
+  publishVersion?: number,
+): Promise<void> {
   // Typed read through the publish repository — the snapshot column is parsed
   // by the DbClient (`*_json` auto-parse) and typed as `PublishedPageSnapshot`,
   // so there is no boundary cast here.
@@ -62,21 +69,41 @@ async function republishSinglePage(db: DbClient, pageId: string): Promise<void> 
   const syntheticUrl = new URL('http://localhost/__republish')
 
   // Drive the full pipeline (publish.before → frontend.assets injection →
-  // publish.html filter → publish.after). The returned HTML is discarded —
-  // the side-effects are what the caller actually needs (lets plugins
-  // catch up on pages published before they were activated).
-  const rendered = await renderPublishedSnapshot(snapshot, { db, url: syntheticUrl })
-  await applyPublishedHtmlPipeline(rendered, db)
+  // publish.html filter → publish.after) — plugin hook listeners and
+  // filters catch up on pages published before the plugin was activated.
+  const rendered = await renderPublishedSnapshot(snapshot, {
+    db,
+    url: syntheticUrl,
+    ...(publishVersion !== undefined ? { publishVersion } : {}),
+  })
+  const html = await applyPublishedHtmlPipeline(rendered, db)
+
+  // Re-bake the Layer-A static artefact when the caller owns an uploads dir.
+  // Without this, baked pages keep serving HTML rendered against the OLD
+  // module registrations / versioned asset URLs — the exact staleness the
+  // site plugin activation coupling exists to prevent.
+  if (uploadsDir) {
+    const urlPath = rendered.slug === 'index' ? '/' : `/${rendered.slug}`
+    await updateArtefactInPlace(uploadsDir, urlPath, html)
+  }
 }
 
 /**
  * Republish every currently-published page. Iterates all published pages and
  * calls `republishSinglePage` for each. Returns the total count published.
  *
+ * `publishVersion` is the version the re-baked shells must carry when the
+ * caller bumps the counter right after (site plugin activation does; the
+ * plugin-host `republishAll` does not and leaves it unset).
+ *
  * Errors for individual pages are logged and do not abort the batch — the
  * count reflects pages that completed without error.
  */
-export async function republishAllPages(db: DbClient): Promise<number> {
+export async function republishAllPages(
+  db: DbClient,
+  uploadsDir?: string,
+  publishVersion?: number,
+): Promise<number> {
   const { rows } = await db<{ id: string }>`
     select id
     from data_rows
@@ -86,7 +113,9 @@ export async function republishAllPages(db: DbClient): Promise<number> {
       and deleted_at is null
     order by created_at asc
   `
-  const results = await Promise.allSettled(rows.map(row => republishSinglePage(db, row.id)))
+  const results = await Promise.allSettled(
+    rows.map((row) => republishSinglePage(db, row.id, uploadsDir, publishVersion)),
+  )
   let count = 0
   for (const [i, result] of results.entries()) {
     if (result.status === 'fulfilled') {
@@ -96,4 +125,23 @@ export async function republishAllPages(db: DbClient): Promise<number> {
     }
   }
   return count
+}
+
+/**
+ * Re-bake every published data-row route (entry-template pages such as
+ * `/posts/hello`) into the ACTIVE slot in place. The page republish above
+ * never touches these — they are produced by the data-row bake — so a site
+ * plugin activation that changes visitor-facing assets must run both before
+ * the old revision is swept. Returns the number of routes re-baked.
+ */
+export async function republishAllDataRows(
+  db: DbClient,
+  uploadsDir: string,
+  publishVersion: number,
+): Promise<number> {
+  const result = await bakePublishedDataRowArtefacts(db, {
+    publishVersion,
+    write: (urlPath, html) => updateArtefactInPlace(uploadsDir, urlPath, html),
+  })
+  return result.baked
 }

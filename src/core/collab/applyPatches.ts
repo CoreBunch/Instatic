@@ -29,6 +29,7 @@ import type { SavedLayout } from '@core/layouts'
 import { encodeCollabDocId, siteDocId } from './docIds'
 import { dataMap, inlineTextPropOf, metaMap, rostersMap, SHELL_PER_ENTRY_KEYS, shellMap, treeMap } from './schema'
 import { buildBreakpointOverridesMap, buildNodeMap, buildPropsMap } from './nodeY'
+import { buildSiteFileEntry, buildSiteFilesMap } from './filesY'
 import { populateComponentDoc, populateLayoutDoc, populatePageDoc } from './seed'
 import { applyTextDiff } from './textDiff'
 import type { CollabDocSet } from './docSet'
@@ -347,6 +348,88 @@ function applyRowTargets(
 }
 
 // ---------------------------------------------------------------------------
+// Shell files (granular per-file entries; content as Y.Text)
+// ---------------------------------------------------------------------------
+
+/**
+ * Translate file-array patches onto the per-file Y.Map. Membership derives
+ * from the pre/post id-set diff (splice index churn is meaningless);
+ * whole-entry replaces at depth 2 skip pure index shifts via the same
+ * object-identity check the row translator uses; `content` edits splice the
+ * entry's Y.Text so concurrent remote edits to the SAME file survive.
+ */
+function applyFilesTargets(
+  shell: Y.Map<unknown>,
+  preSite: SiteDocument,
+  nextSite: SiteDocument,
+  wholesale: boolean,
+  fieldTargets: ReadonlyMap<number, ReadonlySet<string>>,
+): void {
+  const existing = shell.get('files')
+  if (!(existing instanceof Y.Map) || wholesale) {
+    // Legacy LWW-array layout, unseeded shell, or an unattributable
+    // whole-array op — (re)build the granular map from the final state.
+    shell.set('files', buildSiteFilesMap(nextSite.files))
+    return
+  }
+  const filesMap = existing
+
+  const preById = new Map(preSite.files.map((file) => [file.id, file]))
+  const nextById = new Map(nextSite.files.map((file) => [file.id, file]))
+
+  // Membership.
+  for (const [id, file] of nextById) {
+    if (!preById.has(id)) filesMap.set(id, buildSiteFileEntry(file))
+  }
+  for (const id of preById.keys()) {
+    if (!nextById.has(id)) filesMap.delete(id)
+  }
+
+  // Per-entry field updates.
+  for (const [index, fields] of fieldTargets) {
+    const file = nextSite.files[index]
+    if (!file || !nextById.has(file.id)) continue
+    const preFile = preById.get(file.id)
+    if (!preFile) continue // freshly created — membership already built it
+
+    const entryValue = filesMap.get(file.id)
+    if (!(entryValue instanceof Y.Map)) {
+      filesMap.set(file.id, buildSiteFileEntry(file))
+      continue
+    }
+    const entry = entryValue
+
+    if (fields.has('*')) {
+      // Whole-entry replace at depth 2. A splice shifts UNTOUCHED files to
+      // new indices and Mutative emits replace ops for them — the object
+      // identity check skips those so a delete of one file can never
+      // clobber concurrent edits to its neighbours.
+      if (preFile !== file) filesMap.set(file.id, buildSiteFileEntry(file))
+      continue
+    }
+
+    for (const field of fields) {
+      const value = (file as unknown as Record<string, unknown>)[field]
+      if (field === 'content' && typeof value === 'string') {
+        const text = entry.get('content')
+        if (text instanceof Y.Text) {
+          applyTextDiff(
+            text,
+            typeof preFile.content === 'string' ? preFile.content : text.toString(),
+            value,
+          )
+        } else {
+          entry.set('content', new Y.Text(value))
+        }
+        continue
+      }
+      if (value === undefined) entry.delete(field)
+      else entry.set(field, value)
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -370,6 +453,11 @@ export function applySitePatchesToDocs(
   const shellHeads = new Set<string>()
   const shellEntryTargets = new Map<string, Set<string>>() // head → entry keys ('*' = whole)
   const collectionPatches = new Map<Collection, Patches[number][]>()
+  // files/<index>/<field...> targets. Membership (add/remove) is derived
+  // from a pre/post id-set diff like the rosters; '*' = whole-array op.
+  let filesTouched = false
+  let filesWholesale = false
+  const fileFieldTargets = new Map<number, Set<string>>() // index → fields ('*' = whole entry)
 
   for (const patch of patches) {
     const path = patchPath(patch)
@@ -381,6 +469,24 @@ export function applySitePatchesToDocs(
       continue
     }
     if (SHELL_SKIPPED_KEYS.has(head)) continue
+    if (head === 'files') {
+      filesTouched = true
+      const index = path[1]
+      if (index === undefined || index === 'length') {
+        // Whole-array replace or splice bookkeeping — membership diff covers it.
+        if (index === undefined) filesWholesale = true
+        continue
+      }
+      if (typeof index !== 'number') {
+        filesWholesale = true
+        continue
+      }
+      const field = path[2]
+      const fields = fileFieldTargets.get(index) ?? new Set<string>()
+      fields.add(field === undefined ? '*' : String(field))
+      fileFieldTargets.set(index, fields)
+      continue
+    }
     if (SHELL_PER_ENTRY_KEYS.has(head)) {
       shellEntryTargets.set(head, shellEntryTargets.get(head) ?? new Set())
       shellEntryTargets.get(head)!.add(path.length === 1 ? '*' : String(path[1]))
@@ -396,7 +502,12 @@ export function applySitePatchesToDocs(
     if (colPatches.some(isMembershipShapedOp)) collectionsWithMembershipOps.push(col)
   }
 
-  if (shellHeads.size > 0 || shellEntryTargets.size > 0 || collectionsWithMembershipOps.length > 0) {
+  if (
+    shellHeads.size > 0 ||
+    shellEntryTargets.size > 0 ||
+    filesTouched ||
+    collectionsWithMembershipOps.length > 0
+  ) {
     const siteDoc = docs.ensure(siteDocId(branchId))
     touch(siteDocId(branchId))
     siteDoc.transact(() => {
@@ -405,6 +516,10 @@ export function applySitePatchesToDocs(
         const value = (nextSite as unknown as Record<string, unknown>)[head]
         if (value === undefined) shell.delete(head)
         else shell.set(head, value)
+      }
+
+      if (filesTouched) {
+        applyFilesTargets(shell, preSite, nextSite, filesWholesale, fileFieldTargets)
       }
       for (const [head, targets] of shellEntryTargets) {
         const nextEntries = (nextSite as unknown as Record<string, Record<string, unknown>>)[head] ?? {}

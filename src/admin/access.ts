@@ -218,6 +218,15 @@ export function canConfigurePlugins(user: CmsCurrentUser | null): boolean {
   return hasCapability(user, 'plugins.configure')
 }
 
+/**
+ * Caller can author site-plugin source in the Plugin IDE — scaffold plugins
+ * and create/edit/rename/delete files under `plugins/<local-id>/` in the
+ * draft. Authoring only: code runs after a `plugins.install` activation.
+ */
+export function canEditPlugins(user: CmsCurrentUser | null): boolean {
+  return hasCapability(user, 'plugins.edit')
+}
+
 /** Caller can install, upgrade, uninstall, and re-sync plugin packs. */
 export function canInstallPlugins(user: CmsCurrentUser | null): boolean {
   return hasCapability(user, 'plugins.install')
@@ -287,6 +296,10 @@ export function canAccessWorkspace(user: CmsCurrentUser | null, workspace: Admin
     case 'plugins':
     case 'pluginPage':
       return canAccessPluginsWorkspace(user)
+    case 'pluginIde':
+      // Authoring site plugin source is site-developer work — activation
+      // (the power grant) is separately gated by plugins.install.
+      return hasCapability(user, 'site.read')
     case 'users':
       return canAccessUsersWorkspace(user)
     case 'ai':
@@ -319,6 +332,7 @@ export function workspacePath(workspace: AdminWorkspace): string {
     case 'media':
       return '/admin/media'
     case 'plugins':
+    case 'pluginIde':
       return '/admin/plugins'
     case 'users':
       return '/admin/users'

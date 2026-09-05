@@ -50,6 +50,11 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   // Shared utilities — body parsers, audit context helpers, schema
   // exports. No request handlers live here.
   ['shared.ts', 'Shared request helpers; no handlers.'],
+  // Site-plugin service layer — list projection + activation engine shared
+  // by the HTTP routes (sitePlugins/index.ts, which gates every route) and
+  // the AI plugin tools (capability-gated at tool selection + execution).
+  // No request handlers live here.
+  ['sitePlugins/service.ts', 'Transport-independent service layer; sitePlugins/index.ts and the AI tool gates own auth.'],
   ['session.ts', 'Session lookup helper; called from auth.ts which gates.'],
   // Media upload helpers — `acceptUploadedMedia`, `readUploadForm`,
   // file-magic sniffing. Always called by an already-gated parent

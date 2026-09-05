@@ -1413,4 +1413,15 @@ export const sqliteMigrations: Migration[] = [
         on site_branch_review_comments (branch_id, created_at);
     `,
   },
+  {
+    // Site plugins: provenance of an installed_plugins row. 'installed' =
+    // uploaded zip / JSON manifest; 'site-local' = generated from the site
+    // draft's plugins/<id>/ source (docs/features/site-plugins.md). Display +
+    // lifecycle routing only — the runtime never branches on it.
+    id: '029_installed_plugins_source',
+    sql: `
+      alter table installed_plugins
+        add column source text not null default 'installed';
+    `,
+  },
 ]

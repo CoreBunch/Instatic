@@ -28,6 +28,7 @@ const PATH = '/admin/api/ai/editor-bridge'
 const EditorBridgeScopeSchema = Type.Union([
   Type.Literal('site'),
   Type.Literal('content'),
+  Type.Literal('plugin'),
 ])
 
 // Mirrors the Content workspace entry gate in `src/admin/access.ts` and
@@ -64,7 +65,7 @@ async function handle(req: Request, db: DbClient): Promise<Response> {
   )
   if (!scopeResult.ok) {
     return jsonResponse(
-      { error: 'Query parameter `scope` is required (one of: site, content)' },
+      { error: 'Query parameter `scope` is required (one of: site, content, plugin)' },
       { status: 400 },
     )
   }
@@ -72,9 +73,13 @@ async function handle(req: Request, db: DbClient): Promise<Response> {
 
   // Hosting a bridge requires access to the workspace whose live state the
   // browser tool will read or mutate.
-  const hasWorkspaceAccess = scope === 'site'
-    ? userHasCapability(userOrResponse, 'site.read')
-    : userHasAnyCapability(userOrResponse, CONTENT_BRIDGE_CAPABILITIES)
+  const hasWorkspaceAccess =
+    scope === 'site' || scope === 'plugin'
+      // Plugin IDE entry mirrors its page gate: site.read opens the IDE
+      // read-only; write tools re-check plugins.edit in the browser bridge
+      // and at tool selection.
+      ? userHasCapability(userOrResponse, 'site.read')
+      : userHasAnyCapability(userOrResponse, CONTENT_BRIDGE_CAPABILITIES)
   if (!hasWorkspaceAccess) {
     return jsonResponse({ error: 'Forbidden' }, { status: 403 })
   }

@@ -2,7 +2,7 @@
 
 End-to-end description of the plugin system: what plugins are, how they ship, how they run sandboxed, what they can do, and how to author them.
 
-A plugin is a zip package containing a `plugin.json` manifest and one or more bundled JavaScript entrypoints. The SDK CLI usually authors that zip from `instatic-plugin.config.ts`, then the CMS host loads installed plugins at boot. Each server entrypoint runs in its own Bun `Worker`, and that worker hosts a **QuickJS-WASM sandbox** — no Node, no Bun, no host file system, no environment variables, no network unless explicitly granted. Plugins reach the CMS through SDK surfaces scoped to where they run: `api.plugin.*`, `api.cms.*`, `api.editor.*`, and `api.dashboard.*`.
+A plugin is a package containing a `plugin.json` manifest and one or more bundled JavaScript entrypoints. Packages come from two sources — an uploaded **zip** (the SDK CLI usually authors it from `instatic-plugin.config.ts`) or a **site plugin** built from the site draft's `plugins/<local-id>/` source ([`site-plugins.md`](site-plugins.md)); both produce byte-compatible packages and identical runtime records, so everything below applies to both. The CMS host loads installed plugins at boot. Each server entrypoint runs in its own Bun `Worker`, and that worker hosts a **QuickJS-WASM sandbox** — no Node, no Bun, no host file system, no environment variables, no network unless explicitly granted. Plugins reach the CMS through SDK surfaces scoped to where they run: `api.plugin.*`, `api.cms.*`, `api.editor.*`, and `api.dashboard.*`.
 
 ---
 

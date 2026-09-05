@@ -14,6 +14,8 @@ import type { VisualComponent } from '@core/visualComponents'
 import type { SavedLayout } from '@core/layouts'
 import { dataMap, metaMap, rostersMap, SEED_CLIENT_ID, SEED_ORIGIN, SHELL_PER_ENTRY_KEYS, shellMap, treeMap } from './schema'
 import { buildNodeMap } from './nodeY'
+import { buildSiteFilesMap } from './filesY'
+import type { SiteFile } from '@core/files/schemas'
 
 function seeding(doc: Y.Doc, fn: () => void): void {
   const previousClientId = doc.clientID
@@ -112,6 +114,12 @@ export function seedSiteDocFromParts(
     const shell = shellMap(doc)
     for (const [key, value] of Object.entries(shellFields)) {
       if (SHELL_SKIPPED_KEYS.has(key) || value === undefined) continue
+      if (key === 'files' && Array.isArray(value)) {
+        // Per-file granular layout — entry Y.Maps with Y.Text content, so
+        // two admins can co-edit code files character-by-character.
+        shell.set('files', buildSiteFilesMap(value as SiteFile[]))
+        continue
+      }
       if (SHELL_PER_ENTRY_KEYS.has(key)) {
         const entryMap = new Y.Map<unknown>()
         for (const [entryKey, entryValue] of Object.entries(value as Record<string, unknown>)) {
