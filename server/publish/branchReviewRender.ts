@@ -8,6 +8,7 @@
  * the plan says changed, and no runtime scripts are bundled — the frame
  * is sandboxed without scripts, so bundling would be wasted work.
  */
+import { REVIEW_VIEWPORT } from '@core/branches'
 import '../../src/modules/base'
 import '@core/loops/sources'
 import { registry } from '@core/module-engine'
@@ -18,6 +19,7 @@ import type { SourceRequestContext } from '@core/loops/types'
 import type { DbClient } from '../db/client'
 import { MAIN_SCOPE, type BranchScope } from '../branches/scope'
 import { getDraftSiteDocument } from '../repositories/publish'
+import { resolveViewportUnits } from './reviewViewportUnits'
 import { prefetchLoopData } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { getPublishVersion } from './publishState'
@@ -63,5 +65,6 @@ export async function renderBranchReviewPage(
     annotateNodeIds: true,
     publishVersion: getPublishVersion(),
   })
-  return rendered.html
+  // Viewport units against a desktop screen, not against the document-tall frame.
+  return resolveViewportUnits(rendered.html, REVIEW_VIEWPORT)
 }

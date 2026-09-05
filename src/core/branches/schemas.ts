@@ -277,6 +277,11 @@ export type BranchReviewState = Static<typeof BranchReviewStateSchema>
 
 export const REVIEW_NOTE_MAX_LENGTH = 2000
 export const REVIEW_COMMENT_MAX_LENGTH = 4000
+/**
+ * The desktop viewport the review's page frames stand for: the frame is
+ * laid out this wide, and the server resolves viewport units against it.
+ */
+export const REVIEW_VIEWPORT = { width: 1280, height: 800 } as const
 
 export const CreateMergeRequestBodySchema = Type.Object({
   note: Type.String({ maxLength: REVIEW_NOTE_MAX_LENGTH }),

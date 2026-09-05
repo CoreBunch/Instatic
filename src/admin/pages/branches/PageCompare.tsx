@@ -13,7 +13,7 @@
  * through `composedNodeSourceId` before it is matched against the plan.
  */
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
-import type { MergeTreeDiff, ReviewRenderSide } from '@core/branches'
+import { REVIEW_VIEWPORT, type MergeTreeDiff, type ReviewRenderSide } from '@core/branches'
 import { apiTextRequest, isAbortError } from '@core/http'
 import { cmsBranchReviewRenderUrl } from '@core/persistence'
 import { composedNodeSourceId } from '@core/templates'
@@ -23,7 +23,10 @@ import { Switch } from '@ui/components/Switch'
 import { changedNodeLine } from './reviewFormat'
 import styles from './BranchReviewPage.module.css'
 
-const PAGE_WIDTH = 1280
+// The frame is laid out at the review viewport's width; the server resolved
+// the page's viewport units against the same viewport, so a `vh` hero is as
+// tall as on a screen although the frame is as tall as the document.
+const PAGE_WIDTH = REVIEW_VIEWPORT.width
 const MIN_HEIGHT = 360
 const MAX_HEIGHT = 2400
 
