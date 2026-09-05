@@ -383,10 +383,9 @@ function friendlyManifestError(message: string, path: string): string {
   return message
 }
 
-export function parsePluginManifest(input: unknown): PluginManifest {
-  let data: ManifestRaw
+function parseManifestShape(input: unknown): ManifestRaw {
   try {
-    data = Value.Parse(manifestSchema, input) as ManifestRaw
+    return Value.Parse(manifestSchema, input) as ManifestRaw
   } catch {
     const errors = [...compiled(manifestSchema).Errors(input)]
     const first = errors[0]
@@ -394,7 +393,9 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     const message = first ? friendlyManifestError(rawMessage, first.path ?? '') : rawMessage
     throw new Error(`Invalid plugin manifest: ${message}`)
   }
+}
 
+function assertCompatibleApiVersion(data: ManifestRaw): void {
   // SDK compatibility — reject manifests targeting a host API version this
   // build can't honour. Done after schema validation so the error message
   // can reference the parsed value rather than `unknown`.
@@ -405,7 +406,9 @@ export function parsePluginManifest(input: unknown): PluginManifest {
         `Update the plugin (or the host) to a compatible version.`,
     )
   }
+}
 
+function assertAssetBasePath(data: ManifestRaw): void {
   // The schema permits any `/uploads/plugins/{id}/{version}` shape, but the
   // path must reference *this* plugin's own id+version — anything else would
   // let one plugin manifest target another plugin's files at the filesystem
@@ -419,7 +422,9 @@ export function parsePluginManifest(input: unknown): PluginManifest {
       )
     }
   }
+}
 
+function assertEntrypointPermissions(data: ManifestRaw): void {
   // Entrypoint ↔ permission coherence. Editor entrypoints are unsandboxed
   // plugin JavaScript dynamically imported into the admin window, so they
   // require the `editor.code` permission — without this check a
@@ -440,7 +445,12 @@ export function parsePluginManifest(input: unknown): PluginManifest {
       `\`modules.register\` permission. Add "modules.register" to \`permissions\`.`,
     )
   }
+}
 
+function normalizeResources(data: ManifestRaw): {
+  resourceIds: Set<string>
+  resources: PluginResource[]
+} {
   const duplicateResources = new Set<string>()
   const resources: PluginResource[] = data.resources.map((resource) => {
     if (duplicateResources.has(resource.id)) {
@@ -459,6 +469,13 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     return resource as PluginResource
   })
 
+  return { resourceIds: duplicateResources, resources }
+}
+
+function normalizeAdminPages(
+  data: ManifestRaw,
+  resourceIds: ReadonlySet<string>,
+): PluginAdminPage[] {
   // Admin pages mount in the CMS sidebar — that surface is gated by the
   // `admin.navigation` permission. A manifest declaring pages without the
   // permission used to be silently skipped at mount time; fail loudly at
@@ -476,7 +493,7 @@ export function parsePluginManifest(input: unknown): PluginManifest {
       throw new Error(`Invalid plugin manifest: duplicate admin page "${page.id}"`)
     }
     duplicatePages.add(page.id)
-    if (page.content.kind === 'resource' && !duplicateResources.has(page.content.resource)) {
+    if (page.content.kind === 'resource' && !resourceIds.has(page.content.resource)) {
       throw new Error(`Invalid plugin manifest: resource page "${page.id}" references unknown resource "${page.content.resource}"`)
     }
     if (page.content.kind === 'app') {
@@ -522,6 +539,10 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     }
   })
 
+  return adminPages
+}
+
+function assertFrontendAssets(data: ManifestRaw): void {
   // Frontend asset coherence — `frontend.assets[]` requires the
   // `frontend.assets` permission. Allowing the array without the permission
   // would silently inject tags onto every published page with no consent
@@ -552,7 +573,9 @@ export function parsePluginManifest(input: unknown): PluginManifest {
       }
     }
   }
+}
 
+function assertContentAccess(data: ManifestRaw): void {
   // Content access coherence — required when any `cms.content.*` permission
   // is granted; each mode in `modes[]` requires the matching permission.
   // Fail-closed defense: a plugin that requests `cms.content.write` but
@@ -593,7 +616,9 @@ export function parsePluginManifest(input: unknown): PluginManifest {
       }
     }
   }
+}
 
+function assertNetworkAllowedHosts(data: ManifestRaw): void {
   // networkAllowedHosts — reject raw internal targets. The load-bearing SSRF
   // block lives in performGatedFetch (which also blocks any host that *resolves*
   // to a private/loopback/link-local address); this is defense-in-depth so an
@@ -615,7 +640,9 @@ export function parsePluginManifest(input: unknown): PluginManifest {
       }
     }
   }
+}
 
+function assertSettings(data: ManifestRaw): void {
   // Settings — duplicate id check.
   if (data.settings && data.settings.length > 0) {
     const seen = new Set<string>()
@@ -636,7 +663,13 @@ export function parsePluginManifest(input: unknown): PluginManifest {
       }
     }
   }
+}
 
+function buildPluginManifest(
+  data: ManifestRaw,
+  resources: PluginResource[],
+  adminPages: PluginAdminPage[],
+): PluginManifest {
   return {
     id: data.id,
     name: data.name,
@@ -672,6 +705,22 @@ export function parsePluginManifest(input: unknown): PluginManifest {
   }
 }
 
+export function parsePluginManifest(input: unknown): PluginManifest {
+  const data = parseManifestShape(input)
+
+  assertCompatibleApiVersion(data)
+  assertAssetBasePath(data)
+  assertEntrypointPermissions(data)
+  const { resourceIds, resources } = normalizeResources(data)
+  const adminPages = normalizeAdminPages(data, resourceIds)
+  assertFrontendAssets(data)
+  assertContentAccess(data)
+  assertNetworkAllowedHosts(data)
+  assertSettings(data)
+
+  return buildPluginManifest(data, resources, adminPages)
+}
+
 export function missingPluginPermissionGrants(
   manifest: Pick<PluginManifest, 'permissions'>,
   grantedPermissions: PluginPermission[],
@@ -683,4 +732,3 @@ export function missingPluginPermissionGrants(
 export function permissionLabel(permission: PluginPermission): string {
   return sdkPermissionLabel(permission)
 }
-
