@@ -90,7 +90,7 @@ export function createBridge(
   let destroyed = false
 
   const bridge: AiBrowserBridge = {
-    callBrowser(toolName, input) {
+    callBrowser(toolName, input, options) {
       if (destroyed) {
         return Promise.reject(new Error('AI chat stream ended before tool result arrived.'))
       }
@@ -108,7 +108,7 @@ export function createBridge(
         }
         const timer = setTimeout(
           () => settle(new Error(`Browser tool "${toolName}" result timed out.`)),
-          timeoutMs,
+          options?.timeoutMs ?? timeoutMs,
         )
         const onAbort = () => settle(new Error('AI chat stream aborted before tool result arrived.'))
         const cleanup = () => {
