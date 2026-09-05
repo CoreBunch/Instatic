@@ -43,9 +43,11 @@ jobs:
       - name: Install Playwright browser
         run: bunx playwright install --with-deps chromium
 
-      # Each shard boots its own `e2e:dev` stack on its own disposable SQLite
+      # Each shard boots its own `e2e:serve` stack on its own disposable SQLite
       # database, so the shards share no state and the setup projects
-      # (owner, dashboard preflight, personas) run once per shard.
+      # (owner, dashboard preflight, personas) run once per shard. That command
+      # builds the SPA and serves it from the Bun process -- no Vite dev
+      # server, which hangs on these runners.
       - name: Run E2E
         run: bunx playwright test --shard=${{ matrix.shard }}/4
 

@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import {
   ACCOUNT_PERSONA,
+  ADMIN_BASE_URL,
   ANONYMOUS_STATE,
   OWNER,
   completeStepUp as runStepUp,
@@ -36,7 +37,6 @@ const TEXT_AVATAR = Buffer.from('not an image', 'utf8')
 const OVERSIZED_AVATAR = Buffer.alloc(5 * 1024 * 1024 + 1)
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
-const ADMIN_BASE_URL = process.env.E2E_ADMIN_BASE_URL ?? 'http://127.0.0.1:5174'
 
 function decodeBase32(secret: string): Buffer {
   let bits = ''

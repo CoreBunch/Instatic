@@ -42,27 +42,29 @@ bun run test:e2e
 
 The Playwright config starts a disposable local stack by default:
 
-- Admin UI: `http://127.0.0.1:5174`
-- CMS/public site: `http://127.0.0.1:3002`
+- Admin UI **and** public site: `http://127.0.0.1:3002`
 - Database: `.tmp/e2e-agent.db`
 - Uploads: `.tmp/e2e-uploads`
 
-`scripts/e2e-dev.ts` resets only those `.tmp/e2e-*` paths, then runs the same
-Vite + Bun CMS stack a developer uses — with one deliberate difference: the CMS
-runs **without** `bun --watch`. A regression suite needs a stable server, and
-under watch the publish pipeline writing baked HTML (and the SQLite DB churning)
-can reload the server mid-test and drop in-memory state. Vite is likewise told to
-ignore the runtime-written paths (`.tmp`, `uploads`, `dist` in `vite.config.ts`),
-so publishing never reloads the admin app mid-test. The Vite dev proxy follows
-the configured CMS `PORT`, keeping the Playwright admin UI pointed at the
-disposable CMS instead of any regular dev server on port 3001.
+`scripts/e2e-server.ts` resets only those `.tmp/e2e-*` paths, builds the admin
+SPA, and serves it from the same Bun process that serves the published site.
+That is **not** the `bun run dev` stack, on purpose:
 
-When Vite itself runs on Bun, its Node-compatible native proxy can stop
-draining multi-megabyte request bodies after socket backpressure fills both
-sides. `largeBodyDevProxyPlugin` intercepts only known-length CMS API bodies of
-at least 1 MiB, buffers them with the same 128 MiB ceiling as `Bun.serve`, and
-forwards them with an explicit `Content-Length`. Small requests, non-CMS
-traffic, and streaming AI responses remain on Vite's native proxy.
+- **No Vite.** The suite exercises the bundle users actually get. It also keeps
+  the suite off the Vite dev server running inside Bun, which is fragile enough
+  to carry its own warnings in `vite.config.ts` and which hangs outright on
+  Linux CI runners. `vite build` is a batch step and runs there fine — it is
+  the long-lived dev server that does not.
+- **No `--watch`.** A regression suite needs a stable server: under watch, the
+  publish pipeline writing baked HTML (and the SQLite DB churning) reloads the
+  server mid-test and drops in-memory state.
+- **One origin.** Admin and the public site share a port, so no two base URLs
+  can drift apart. Anonymous visitor checks stay honest because
+  `visitPublicPage` opens a fresh browser context, and the session cookie is
+  scoped to `Path=/admin` so it never rides along on a public request.
+
+Because the command builds before it serves, the `webServer` start budget is
+five minutes rather than the usual two.
 
 For debugging against a server you started yourself, set
 `E2E_REUSE_SERVER=1` and override `E2E_ADMIN_BASE_URL` /
@@ -106,6 +108,12 @@ first retry automatically.
   homepage), clean-install dashboard coverage runs before shared mutations,
   account-global security changes stay on the account persona, fixture-owned AI
   defaults are removed, and publish→assert happens within a single test.
+- **Template rule.** A spec that publishes a Posts template removes it before
+  it ends (`deleteTemplate` in `helpers/editor.ts`). The template chain keeps
+  one template per breadth level — highest priority, then document order — so a
+  template left behind decides which template every later spec's entry route
+  renders through. Sharding hides this by splitting specs across databases; a
+  full single-process run does not, and that is the run that must be green.
 
 ### Automated coverage map
 

@@ -4,6 +4,7 @@ import {
   OWNER,
   canvasFrame,
   completeStepUp,
+  deleteTemplate,
   insertModuleViaPicker,
   insertNotchModule,
   login,
@@ -144,6 +145,11 @@ test.describe('content', () => {
         await expect(
           liveFrame.getByLabel('Post body (live preview)'),
         ).toBeVisible()
+      })
+
+      await test.step('remove the template so later specs resolve their own', async () => {
+        await openSiteEditor(page)
+        await deleteTemplate(page, `E2E Posts Template ${suffix}`)
       })
     })
   })
@@ -286,6 +292,11 @@ test.describe('content', () => {
             ).toBeVisible()
           },
         })
+      })
+
+      await test.step('remove the template so later specs resolve their own', async () => {
+        await openSiteEditor(page)
+        await deleteTemplate(page, `E2E Posts Template ${suffix}`)
       })
     })
   })
@@ -435,6 +446,11 @@ test.describe('content', () => {
           visibleText: [renderedText],
           hiddenText: [tokenText, `{currentEntry.${fieldId}}`, templateName],
         })
+      })
+
+      await test.step('remove the template so later specs resolve their own', async () => {
+        await openSiteEditor(page)
+        await deleteTemplate(page, templateName)
       })
     })
   })
