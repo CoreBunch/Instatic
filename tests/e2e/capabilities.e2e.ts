@@ -1403,7 +1403,7 @@ async function installReviewedPluginPackage(
 
 function installedPluginHeading(page: Page, pluginName: string) {
   return page
-    .locator('[aria-label="Installed plugins"]')
+    .locator('[aria-label="Plugins"]')
     .getByRole('heading', { name: pluginName })
 }
 
