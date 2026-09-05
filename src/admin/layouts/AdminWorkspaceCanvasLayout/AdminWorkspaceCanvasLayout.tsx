@@ -11,7 +11,6 @@
 import { lazy, Suspense, useRef, type CSSProperties, type ReactNode, type SyntheticEvent } from 'react'
 import { Toolbar } from '@site/toolbar/Toolbar'
 import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
-import { ConfirmDeleteProvider } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { SidebarResizeHandle } from '@admin/shared/SidebarResizeHandle'
 import { useEditorAppearancePreferences } from '@site/preferences/editorPreferences'
 import { useInstalledEditorPlugins } from '@admin/pages/plugins/hooks/useInstalledEditorPlugins'
@@ -90,29 +89,27 @@ export function AdminWorkspaceCanvasLayout({
         rightSlot={toolbarRightSlot}
       />
 
-      <ConfirmDeleteProvider>
-        <div className={styles.editorBody}>
-          {contentSidebar ?? null}
-          <div
-            className={cn(styles.canvasStage, hasRightSidebar && styles.canvasStageRightSidebarOpen)}
-            data-right-sidebar-expanded={hasRightSidebar ? 'true' : 'false'}
-          >
-            <div className={styles.canvasContent} key={workspace}>
-              {contentCanvas}
-            </div>
-            {hasReopenableRightPanel && (
-              <WorkspaceRightPanelNotch
-                workspace={workspace}
-                onOpen={() => setRightPanel({ collapsed: false })}
-              />
-            )}
+      <div className={styles.editorBody}>
+        {contentSidebar ?? null}
+        <div
+          className={cn(styles.canvasStage, hasRightSidebar && styles.canvasStageRightSidebarOpen)}
+          data-right-sidebar-expanded={hasRightSidebar ? 'true' : 'false'}
+        >
+          <div className={styles.canvasContent} key={workspace}>
+            {contentCanvas}
           </div>
-          <WorkspaceRightSidebar
-            hidden={!rightPanelAvailable}
-            contentPanel={contentRightPanel}
-          />
+          {hasReopenableRightPanel && (
+            <WorkspaceRightPanelNotch
+              workspace={workspace}
+              onOpen={() => setRightPanel({ collapsed: false })}
+            />
+          )}
         </div>
-      </ConfirmDeleteProvider>
+        <WorkspaceRightSidebar
+          hidden={!rightPanelAvailable}
+          contentPanel={contentRightPanel}
+        />
+      </div>
 
       {settingsOpen && (
         <Suspense fallback={null}>

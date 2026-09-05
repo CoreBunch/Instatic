@@ -20,6 +20,7 @@ import { composedNodeSourceId } from '@core/templates'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { Switch } from '@ui/components/Switch'
+import { changedNodeLine } from './reviewFormat'
 import styles from './BranchReviewPage.module.css'
 
 const PAGE_WIDTH = 1280
@@ -196,15 +197,12 @@ function markLabel(verb: string, nodeLabel: string | undefined): string {
   return `${verb} · ${nodeLabel}`
 }
 
-/** "Changed text: “a” → “b”" when the plan knows what moved; "Changed text" when it does not. */
-function changedLine(tree: MergeTreeDiff, id: string): string {
-  const head = `Changed ${tree.labels[id] ?? id}`
-  const details = tree.details[id] ?? []
-  return details.length > 0 ? `${head}: ${details.join('; ')}` : head
-}
-
 function clampPercent(value: number): number {
   return Math.min(100, Math.max(0, value))
+}
+
+function releaseSwipePointer(event: PointerEvent<HTMLDivElement>): void {
+  if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
 }
 
 interface PageCompareProps {
@@ -237,7 +235,7 @@ export function PageCompare({ branchId, rowId, label, action, tree, fieldLines, 
   const treeLines = tree
     ? [
         ...tree.added.map((id) => `Added ${tree.labels[id] ?? id}`),
-        ...tree.changed.map((id) => changedLine(tree, id)),
+        ...tree.changed.map((id) => changedNodeLine(tree, id)),
         ...tree.removed.map((id) => `Removed ${tree.labels[id] ?? id}`),
       ]
     : []
@@ -259,9 +257,6 @@ export function PageCompare({ branchId, rowId, label, action, tree, fieldLines, 
   function onStackPointerMove(event: PointerEvent<HTMLDivElement>): void {
     if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
     setSplit(splitFromPointer(event))
-  }
-  function onStackPointerUp(event: PointerEvent<HTMLDivElement>): void {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }
 
   return (
@@ -308,8 +303,8 @@ export function PageCompare({ branchId, rowId, label, action, tree, fieldLines, 
             style={{ '--split': `${split}%` } as CSSProperties}
             onPointerDown={onStackPointerDown}
             onPointerMove={onStackPointerMove}
-            onPointerUp={onStackPointerUp}
-            onPointerCancel={onStackPointerUp}
+            onPointerUp={releaseSwipePointer}
+            onPointerCancel={releaseSwipePointer}
             data-testid="review-swipe-stack"
           >
             <ScaledFrame branchId={branchId} rowId={rowId} side="branch" title={`${label} on the branch`} marks={branchMarks} showHighlights={showHighlights} />

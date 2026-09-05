@@ -2,7 +2,7 @@
  * Labels and grouping the merge review uses: how a change's kind and action
  * read, which filter a change belongs to, and short relative times.
  */
-import type { MergeChange, MergeRequestStatus } from '@core/branches'
+import type { MergeChange, MergeRequestStatus, MergeTreeDiff } from '@core/branches'
 import { formatRelativeTime } from '@core/utils/relativeTime'
 import type { TagPillTone } from '@ui/components/TagPill'
 
@@ -100,3 +100,17 @@ export function relativeIsoAgo(iso: string): string {
 
 /** Every comment on the request itself uses the empty key. */
 export const REQUEST_ENTITY_KEY = ''
+
+/**
+ * "Changed text: “a” → “b”" for a node the tree diff lists as changed. The
+ * diff names props in full (`text: “a” → “b”`); when the node is labelled by
+ * the same word (a `text` node's `text` prop) the label already says it, so
+ * the prop name is not repeated. Without details it is "Changed text".
+ */
+export function changedNodeLine(tree: MergeTreeDiff, id: string): string {
+  const label = tree.labels[id] ?? id
+  const details = (tree.details[id] ?? []).map((detail) =>
+    detail.startsWith(`${label}: `) ? detail.slice(label.length + 2) : detail,
+  )
+  return details.length > 0 ? `Changed ${label}: ${details.join('; ')}` : `Changed ${label}`
+}
