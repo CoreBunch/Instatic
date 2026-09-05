@@ -1292,7 +1292,7 @@ export const pgMigrations: Migration[] = [
     `,
   },
   {
-    id: '027_site_branch_reviews',
+    id: '028_site_branch_reviews',
     sql: `
       create table if not exists site_branch_merge_requests (
         id text primary key,
