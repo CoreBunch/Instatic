@@ -16,6 +16,9 @@ export default defineConfig({
   expect: {
     timeout: 10_000,
   },
+  // A stray `.only` would otherwise green the whole suite in CI by running
+  // one test.
+  forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: [
     ['list'],
