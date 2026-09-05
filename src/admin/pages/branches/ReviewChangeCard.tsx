@@ -90,7 +90,7 @@ function FieldTable({ fields, action }: { fields: MergeFieldChange[]; action: Me
 function fieldLines(fields: MergeFieldChange[]): string[] {
   return fields.map((field) => {
     if (field.before === null) return `${field.label}: set to “${field.after ?? ''}”`
-    if (field.after === null) return `${field.label}: cleared`
+    if (field.after === null) return `${field.label}: cleared (was “${field.before}”)`
     return `${field.label}: “${field.before}” → “${field.after}”`
   })
 }
@@ -130,7 +130,15 @@ export function ReviewChangeCard({ branchId, change, resolution, canResolve, onR
         {detail.tree && (
           <ul className={styles.changeList}>
             {detail.tree.added.map((id) => <li key={`a-${id}`}>Added {detail.tree!.labels[id] ?? id}</li>)}
-            {detail.tree.changed.map((id) => <li key={`c-${id}`}>Changed {detail.tree!.labels[id] ?? id}</li>)}
+            {detail.tree.changed.map((id) => {
+              const details = detail.tree!.details[id] ?? []
+              return (
+                <li key={`c-${id}`}>
+                  Changed {detail.tree!.labels[id] ?? id}
+                  {details.length > 0 && `: ${details.join('; ')}`}
+                </li>
+              )
+            })}
             {detail.tree.removed.map((id) => <li key={`r-${id}`}>Removed {detail.tree!.labels[id] ?? id}</li>)}
           </ul>
         )}

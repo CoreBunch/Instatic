@@ -201,7 +201,11 @@ test('merge a branch into main from the review page (BRANCH-005)', async ({ page
   await page.waitForTimeout(400)
   await shot(page, '8-merge-review', 'full')
 
+  // Deleting after the merge is opt-in (a merge that keeps the branch can be undone).
+  await page.getByTestId('review-delete-toggle').click()
   await page.getByTestId('review-merge').click()
+  // Merging asks first, then steps up.
+  await page.getByRole('button', { name: 'Merge into main' }).click()
   await completeStepUp(page)
   await expect(page).toHaveURL(/\/admin\/site/)
   // The branch was deleted after merging, so the tab is back on main …

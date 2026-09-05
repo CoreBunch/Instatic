@@ -229,3 +229,22 @@ export async function insertReviewComment(
   if (!comment) throw new Error('[branches] review comment vanished after insert')
   return comment
 }
+
+/** After an undone merge, the request that merge answered is open again. */
+export async function reopenMergedRequest(db: DbClient, branchId: string): Promise<BranchMergeRequest | null> {
+  const { rows } = await db<{ id: string }>`
+    select id from site_branch_merge_requests
+    where branch_id = ${branchId} and status = 'merged'
+    order by updated_at desc
+    limit 1
+  `
+  const id = rows[0]?.id
+  if (!id) return null
+  const now = new Date().toISOString()
+  await db`
+    update site_branch_merge_requests
+    set status = 'open', resolved_by_user_id = null, resolved_at = null, resolution_note = '', updated_at = ${now}
+    where id = ${id}
+  `
+  return getMergeRequestById(db, id)
+}

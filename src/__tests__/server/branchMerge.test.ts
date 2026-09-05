@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it } from 'bun:test'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
-import { applyBranchMerge, planBranchMerge } from '../../../server/branches/merge'
+import { MergeUndoError, applyBranchMerge, planBranchMerge, undoBranchMerge } from '../../../server/branches/merge'
 import { getDataRow, listDataRows, saveDataRowDraft, softDeleteDataRow, upsertDataRowDraft } from '../../../server/repositories/data'
 import { getDraftSite, saveDraftSite } from '../../../server/repositories/site'
 import {
@@ -175,6 +175,85 @@ describe('branch merge', () => {
     expect((await getDataRow(harness.db, MAIN_SCOPE, 'shipped'))!.cells.title).toBe('Shipped')
     const remaining = await readJson<{ branches: Array<{ id: string }> }>(await harness.cms(BRANCHES, { cookie: owner }))
     expect(remaining.branches.map((branch) => branch.id)).toEqual(['main'])
+  })
+
+  it('records every apply and undoes the latest one, putting main and the base back', async () => {
+    harness = await createCapabilityTestHarness()
+    const owner = await harness.setupOwner()
+    const branchId = await forkViaApi(harness, owner, 'Undo Me')
+    const branch = { branchId }
+    const [home] = await listDataRows(harness.db, branch, 'pages')
+    const originalTitle = home!.cells.title
+    await saveDataRowDraft(harness.db, branch, home!.id, {
+      cells: { ...home!.cells, title: 'Merged title' },
+      slug: home!.slug,
+    })
+    await upsertDataRowDraft(harness.db, branch, {
+      id: 'undo-post',
+      tableId: 'posts',
+      cells: { title: 'Merged post', slug: 'merged-post' },
+      slug: 'merged-post',
+    })
+
+    const applied = await applyBranchMerge(harness.db, { branchId, direction: 'merge', resolutions: {}, actorUserId: null })
+    expect(applied.merge).toMatchObject({ branchId, direction: 'merge', changeCount: 2, undoneAt: null })
+    expect((await getDataRow(harness.db, MAIN_SCOPE, home!.id))!.cells.title).toBe('Merged title')
+
+    const undone = await undoBranchMerge(harness.db, { branchId, direction: 'merge', actorUserId: null })
+    expect(undone.restoredCount).toBe(2)
+    expect(undone.merge.undoneAt).not.toBeNull()
+    expect((await getDataRow(harness.db, MAIN_SCOPE, home!.id))!.cells.title).toBe(originalTitle)
+    expect(await getDataRow(harness.db, MAIN_SCOPE, 'undo-post')).toBeNull()
+    // The branch keeps its work and the base is back where the fork put it,
+    // so the very same plan comes back.
+    expect((await getDataRow(harness.db, branch, 'undo-post'))!.cells.title).toBe('Merged post')
+    const replanned = await planBranchMerge(harness.db, branchId, 'merge')
+    expect(replanned.plan.changes.map((change) => `${change.action} ${change.label}`).sort()).toEqual([
+      'create Merged post',
+      'update Merged title',
+    ])
+    // Undone is undone: a second undo has nothing to reverse.
+    await expect(undoBranchMerge(harness.db, { branchId, direction: 'merge', actorUserId: null })).rejects.toBeInstanceOf(MergeUndoError)
+
+    // Main edited after a merge: the undo is refused and main keeps the edit.
+    await applyBranchMerge(harness.db, { branchId, direction: 'merge', resolutions: {}, actorUserId: null })
+    const merged = (await getDataRow(harness.db, MAIN_SCOPE, home!.id))!
+    await saveDataRowDraft(harness.db, MAIN_SCOPE, home!.id, {
+      cells: { ...merged.cells, title: 'Edited on main after' },
+      slug: merged.slug,
+    })
+    await expect(undoBranchMerge(harness.db, { branchId, direction: 'merge', actorUserId: null })).rejects.toBeInstanceOf(MergeUndoError)
+    expect((await getDataRow(harness.db, MAIN_SCOPE, home!.id))!.cells.title).toBe('Edited on main after')
+  })
+
+  it('exposes undo over HTTP behind the merge gates and reports a moved target as 409', async () => {
+    harness = await createCapabilityTestHarness()
+    const owner = await harness.setupOwner()
+    const branchId = await forkViaApi(harness, owner, 'Undo Http')
+    await upsertDataRowDraft(harness.db, { branchId }, {
+      id: 'undo-http',
+      tableId: 'posts',
+      cells: { title: 'Undo HTTP', slug: 'undo-http' },
+      slug: 'undo-http',
+    })
+    const applied = await harness.cms(`${BRANCHES}/${branchId}/merge`, { method: 'POST', cookie: owner, json: {} })
+    expect(applied.status).toBe(200)
+    expect(await readJson<{ merge: { changeCount: number } | null }>(applied)).toMatchObject({ merge: { changeCount: 1 } })
+
+    const manager = await harness.createRoleUser({
+      name: 'Undoer',
+      slug: 'undoer',
+      capabilities: ['site.read', 'site.branches.manage'],
+    })
+    await expectStepUpRequired(
+      await harness.cms(`${BRANCHES}/${branchId}/merge/undo`, { method: 'POST', cookie: manager.cookie }),
+    )
+    const undone = await harness.cms(`${BRANCHES}/${branchId}/merge/undo`, { method: 'POST', cookie: owner })
+    expect(undone.status).toBe(200)
+    expect(await readJson<{ restoredCount: number }>(undone)).toMatchObject({ restoredCount: 1 })
+    expect(await getDataRow(harness.db, MAIN_SCOPE, 'undo-http')).toBeNull()
+    const again = await harness.cms(`${BRANCHES}/${branchId}/merge/undo`, { method: 'POST', cookie: owner })
+    expect(again.status).toBe(409)
   })
 })
 

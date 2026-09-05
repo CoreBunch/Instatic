@@ -19,3 +19,4 @@ export {
 } from './templateMatching'
 export { composeTemplateChain } from './templateCompose'
 export { firstOutletId, treeHasOutlet, subtreeHasOutlet } from './outlet'
+export { composedNodeSourceId } from './templateCompose'

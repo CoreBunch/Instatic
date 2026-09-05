@@ -22,8 +22,9 @@ import {
   type ApplyMergeBody,
   type CreateBranchBody,
   type MergeDirection,
-  type MergePlan,
   type SiteBranch,
+  type ApplyMergeEnvelope,
+  type UndoMergeEnvelope,
 } from '@core/branches'
 import { registerApiErrorListener } from '@core/http'
 import {
@@ -32,6 +33,7 @@ import {
   deleteCmsBranch,
   listCmsBranches,
   renameCmsBranch,
+  undoCmsBranchMerge,
 } from '@core/persistence'
 import { pushToast } from '@ui/components/Toast'
 import { BRANCH_HEADER, currentBranchId, rememberBranchId } from './activeBranch'
@@ -211,10 +213,7 @@ export async function deleteBranch(branchId: string): Promise<void> {
   await refreshBranchesAfterMutation()
 }
 
-export interface BranchMergeResult {
-  plan: MergePlan
-  branchDeleted: boolean
-}
+export type BranchMergeResult = ApplyMergeEnvelope
 
 /**
  * Merge a branch into main, or update it from main. Callers wrap this in
@@ -236,6 +235,18 @@ export async function mergeBranch(
   }
   if (result.branchDeleted) leaveDeletedBranch(branchId)
   else useBranchStore.getState().bumpEpoch()
+  await refreshBranchesAfterMutation()
+  return result
+}
+
+/**
+ * Reverse the latest merge or update on a branch. Callers wrap this in
+ * `runStepUp`. Content moved on the target (and, after a merge, on the
+ * branch), so every branch-scoped workspace reloads.
+ */
+export async function undoBranchMerge(branchId: string, direction: MergeDirection): Promise<UndoMergeEnvelope> {
+  const result = await undoCmsBranchMerge(branchId, direction)
+  useBranchStore.getState().bumpEpoch()
   await refreshBranchesAfterMutation()
   return result
 }

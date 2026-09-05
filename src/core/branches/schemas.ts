@@ -99,6 +99,8 @@ export const MergeTreeDiffSchema = Type.Object({
   removed: Type.Array(Type.String()),
   /** Human label per node id that appears above. */
   labels: Type.Record(Type.String(), Type.String()),
+  /** For each changed node, what moved: `text: “old” → “new”`, `hidden changed`, … */
+  details: Type.Record(Type.String(), Type.Array(Type.String())),
 })
 export type MergeTreeDiff = Static<typeof MergeTreeDiffSchema>
 
@@ -182,10 +184,36 @@ export const ApplyMergeBodySchema = Type.Object({
 })
 export type ApplyMergeBody = Static<typeof ApplyMergeBodySchema>
 
+/**
+ * One applied merge or update, kept so it can be undone. The server holds
+ * what every touched entity looked like before; the client sees only the
+ * record. `undoneAt` is set once it has been reversed.
+ */
+export const BranchMergeRecordSchema = Type.Object({
+  id: Type.String(),
+  branchId: Type.String(),
+  direction: MergeDirectionSchema,
+  appliedByUserId: Type.Union([Type.String(), Type.Null()]),
+  changeCount: Type.Integer(),
+  createdAt: Type.String(),
+  undoneAt: Type.Union([Type.String(), Type.Null()]),
+})
+export type BranchMergeRecord = Static<typeof BranchMergeRecordSchema>
+
 export const ApplyMergeEnvelopeSchema = Type.Object({
   plan: MergePlanSchema,
   branchDeleted: Type.Boolean(),
+  /** The record to undo by; null when the branch was deleted with the merge. */
+  merge: Type.Union([BranchMergeRecordSchema, Type.Null()]),
 })
+export type ApplyMergeEnvelope = Static<typeof ApplyMergeEnvelopeSchema>
+
+export const UndoMergeEnvelopeSchema = Type.Object({
+  merge: BranchMergeRecordSchema,
+  /** Entities put back the way they were. */
+  restoredCount: Type.Integer(),
+})
+export type UndoMergeEnvelope = Static<typeof UndoMergeEnvelopeSchema>
 
 // ---------------------------------------------------------------------------
 // Merge review — requests and comments on a branch
@@ -242,6 +270,8 @@ export const BranchReviewStateSchema = Type.Object({
   comments: Type.Array(BranchReviewCommentSchema),
   /** Hash of the branch's content right now (compare with `request.contentHash`). */
   contentHash: Type.String(),
+  /** The newest merge into main that has not been undone, if any. */
+  lastMerge: Type.Union([BranchMergeRecordSchema, Type.Null()]),
 })
 export type BranchReviewState = Static<typeof BranchReviewStateSchema>
 

@@ -15,6 +15,8 @@
  *   POST   /admin/api/cms/branches/:id/merge     merge into main            (site.branches.manage + step-up)
  *   GET    /admin/api/cms/branches/:id/update    plan updating from main    (site.read)
  *   POST   /admin/api/cms/branches/:id/update    update from main           (site.branches.manage)
+ *   POST   /admin/api/cms/branches/:id/merge/undo   reverse the latest merge   (same gates as the merge)
+ *   POST   /admin/api/cms/branches/:id/update/undo  reverse the latest update  (same gates as the update)
  *   GET    /admin/api/cms/branches/:id/review            request + comments + content hash (site.read)
  *   POST   /admin/api/cms/branches/:id/review/request    ask for a merge            (site.read)
  *   POST   /admin/api/cms/branches/:id/review/withdraw   withdraw the open request  (requester or site.branches.manage)
@@ -50,7 +52,7 @@ import {
   readBranchReviewState,
 } from '../../branches/review'
 import { renderBranchReviewPage } from '../../publish/branchReviewRender'
-import { getOpenMergeRequest } from '../../repositories/branchReviews'
+import { getOpenMergeRequest, reopenMergedRequest } from '../../repositories/branchReviews'
 import { requireAuthenticatedUser, userHasCapability } from '../../auth/authz'
 import { canReadTable } from './data/access'
 import { listDataTables } from '../../repositories/data'
@@ -62,7 +64,10 @@ import type { BranchScope } from '../../branches/scope'
 import { forkBranch } from '../../branches/fork'
 import { deleteBranch } from '../../branches/deleteBranch'
 import { issueBranchPreviewLink, previewEntryPath } from '../../branches/previewLinks'
-import { MergeApplyError, MergeConflictsUnresolvedError, applyBranchMerge, planBranchMerge } from '../../branches/merge'
+import { MergeApplyError, MergeConflictsUnresolvedError, MergeUndoError,
+  applyBranchMerge, planBranchMerge,
+  undoBranchMerge,
+} from '../../branches/merge'
 import { runPublishFlush } from '../../publish/publishFlush'
 import { expectedOrigin } from '../../auth/security'
 import { getActiveBranchPreview, revokeBranchPreviews } from '../../repositories/branchPreviews'
@@ -126,11 +131,18 @@ export async function handleBranchesRoutes(
     }
     return null
   }
-  if (segments.length === 2 && (segments[1] === 'merge' || segments[1] === 'update')) {
+  if (segments[1] === 'merge' || segments[1] === 'update') {
     const direction: MergeDirection = segments[1]
-    if (req.method === 'GET') return handleMergePlan(req, db, branchId, direction)
-    if (req.method === 'POST') return handleMergeApply(req, db, branchId, direction, options)
-    return methodNotAllowed()
+    if (segments.length === 2) {
+      if (req.method === 'GET') return handleMergePlan(req, db, branchId, direction)
+      if (req.method === 'POST') return handleMergeApply(req, db, branchId, direction, options)
+      return methodNotAllowed()
+    }
+    if (segments.length === 3 && segments[2] === 'undo') {
+      if (req.method === 'POST') return handleMergeUndo(req, db, branchId, direction)
+      return methodNotAllowed()
+    }
+    return null
   }
   return null
 }
@@ -205,14 +217,14 @@ async function handleMergeApply(
   const body = await readValidatedBody(req, ApplyMergeBodySchema)
   if (!body) return badRequest('Invalid merge payload')
 
-  let plan
+  let applied
   try {
-    plan = (await applyBranchMerge(db, {
+    applied = await applyBranchMerge(db, {
       branchId,
       direction,
       resolutions: body.resolutions ?? {},
       actorUserId: user.id,
-    })).plan
+    })
   } catch (err) {
     if (err instanceof MergeConflictsUnresolvedError) {
       return jsonResponse({ error: err.message, code: 'merge_conflicts', keys: err.keys }, { status: 409 })
@@ -222,6 +234,7 @@ async function handleMergeApply(
     }
     throw err
   }
+  const { plan, merge } = applied
   await createAuditEvent(db, {
     actorUserId: user.id,
     action: direction === 'merge' ? 'branch.merge' : 'branch.update',
@@ -247,7 +260,7 @@ async function handleMergeApply(
       })
     }
   }
-  return jsonResponse({ plan, branchDeleted })
+  return jsonResponse({ plan, branchDeleted, merge: branchDeleted ? null : merge })
 }
 
 async function handlePreviewState(req: Request, db: DbClient, branchId: string): Promise<Response> {
@@ -546,4 +559,45 @@ async function handleDelete(
     ...requestAuditContext(req),
   })
   return jsonResponse({ ok: true })
+}
+
+async function handleMergeUndo(
+  req: Request,
+  db: DbClient,
+  branchId: string,
+  direction: MergeDirection,
+): Promise<Response> {
+  const user = await requireAuthenticatedUser(req, db)
+  if (user instanceof Response) return user
+  if (isMainBranch(branchId)) return badRequest('Main is the live site; it is what branches merge into')
+  const branch = await getBranch(db, branchId)
+  if (!branch) return branchNotFound(branchId)
+  // Undoing rewrites exactly what the apply rewrote: same gates, same step-up.
+  const allowed = direction === 'merge' ? canMergeBranches(user) : canActOnBranch(user, branch)
+  if (!allowed) return forbidden()
+  const stepUp = await requireStepUp(req, db, user)
+  if (stepUp) return stepUp
+
+  let result
+  try {
+    result = await undoBranchMerge(db, { branchId, direction, actorUserId: user.id })
+  } catch (err) {
+    if (err instanceof MergeUndoError) {
+      return jsonResponse({ error: err.message, code: 'merge_undo' }, { status: 409 })
+    }
+    if (err instanceof MergeApplyError) {
+      return jsonResponse({ error: err.message, code: 'merge_apply', key: err.key }, { status: 409 })
+    }
+    throw err
+  }
+  if (direction === 'merge') await reopenMergedRequest(db, branchId)
+  await createAuditEvent(db, {
+    actorUserId: user.id,
+    action: direction === 'merge' ? 'branch.merge.undo' : 'branch.update.undo',
+    targetType: 'branch',
+    targetId: branchId,
+    metadata: { name: branch.name, restored: result.restoredCount, mergeId: result.merge.id },
+    ...requestAuditContext(req),
+  })
+  return jsonResponse({ merge: result.merge, restoredCount: result.restoredCount })
 }

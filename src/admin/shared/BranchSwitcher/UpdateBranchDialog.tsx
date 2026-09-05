@@ -23,6 +23,7 @@ import { getCmsBranchMergePlan } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { mergeBranch } from '@admin/state/branchStore'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
+import { useConfirmAction } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
@@ -66,6 +67,7 @@ function describeConflicts(conflicts: string[]): string {
 
 export function UpdateBranchDialog({ branch, onClose }: UpdateBranchDialogProps) {
   const { runStepUp } = useStepUp()
+  const confirmAction = useConfirmAction()
   const [plan, setPlan] = useState<MergePlan | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [resolutions, setResolutions] = useState<Record<string, MergeResolution>>({})
@@ -95,8 +97,18 @@ export function UpdateBranchDialog({ branch, onClose }: UpdateBranchDialogProps)
     : 0
   const total = plan?.changes.length ?? 0
 
-  async function apply(): Promise<void> {
+  function apply(): void {
     if (!plan || busy || unresolved > 0) return
+    confirmAction({
+      title: `Update ${branch.name} from main?`,
+      description: `${total} change${total === 1 ? '' : 's'} from main will be written over the branch's draft. Undo is offered right after, as long as the branch is not edited in between.`,
+      confirmLabel: 'Update branch',
+      commit: () => { void applyUpdate() },
+    })
+  }
+
+  async function applyUpdate(): Promise<void> {
+    if (!plan) return
     setBusy(true)
     try {
       const result = await runStepUp(() => mergeBranch(branch.id, 'update', { resolutions }))
@@ -143,7 +155,7 @@ export function UpdateBranchDialog({ branch, onClose }: UpdateBranchDialogProps)
             disabled={!plan || total === 0 || unresolved > 0}
             tooltip={unresolved > 0 ? `${unresolved} conflict${unresolved === 1 ? '' : 's'} still need a decision` : undefined}
             data-testid="branch-merge-apply"
-            onClick={() => { void apply() }}
+            onClick={apply}
           >
             <ArrowDownIcon size={12} aria-hidden="true" />
             <span>{`Update with ${total} change${total === 1 ? '' : 's'}`}</span>

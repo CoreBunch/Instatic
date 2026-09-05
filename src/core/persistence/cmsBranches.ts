@@ -11,6 +11,9 @@
 import { apiRequest } from '@core/http'
 import {
   ApplyMergeEnvelopeSchema,
+  UndoMergeEnvelopeSchema,
+  type ApplyMergeEnvelope,
+  type UndoMergeEnvelope,
   BranchEnvelopeSchema,
   BranchListEnvelopeSchema,
   BranchPreviewLinkEnvelopeSchema,
@@ -107,12 +110,21 @@ export async function applyCmsBranchMerge(
   id: string,
   direction: MergeDirection,
   body: ApplyMergeBody,
-): Promise<{ plan: MergePlan; branchDeleted: boolean }> {
+): Promise<ApplyMergeEnvelope> {
   return apiRequest(`${BRANCHES_PATH}/${encodeURIComponent(id)}/${direction}`, {
     method: 'POST',
     body,
     schema: ApplyMergeEnvelopeSchema,
     fallbackMessage: direction === 'merge' ? 'Failed to merge the branch' : 'Failed to update the branch',
+  })
+}
+
+/** Reverse the latest merge (or update) on the branch; 409 when the target moved since. */
+export async function undoCmsBranchMerge(id: string, direction: MergeDirection): Promise<UndoMergeEnvelope> {
+  return apiRequest(`${BRANCHES_PATH}/${encodeURIComponent(id)}/${direction}/undo`, {
+    method: 'POST',
+    schema: UndoMergeEnvelopeSchema,
+    fallbackMessage: direction === 'merge' ? 'Failed to undo the merge' : 'Failed to undo the update',
   })
 }
 

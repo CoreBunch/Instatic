@@ -229,6 +229,7 @@ async function resolveOneLoop(
     url?: URL
     request?: SourceRequestContext
     branchId?: string
+    drafts?: boolean
   },
 ): Promise<ResolvedLoopData> {
   const props = readLoopProps(node)
@@ -253,6 +254,7 @@ async function resolveOneLoop(
     // Built-in publish-time sources ignore it.
     request: ctx.request,
     branchId: ctx.branchId,
+    drafts: ctx.drafts,
   }
 
   try {
@@ -291,6 +293,7 @@ export async function prefetchLoopData(
     rootNodeId?: string
     /** Branch whose rows loops read; absent means main (publishing, public routes). */
     branchId?: string
+    drafts?: boolean
   },
 ): Promise<LoopDataMap> {
   const nodes = collectLoopNodes(page, site, options?.rootNodeId)
@@ -312,6 +315,7 @@ export async function prefetchLoopData(
         url,
         request: options?.request,
         branchId: options?.branchId,
+        drafts: options?.drafts,
       })
       return [node.id, data] as [string, ResolvedLoopData]
     }),

@@ -52,6 +52,30 @@ const KIND_TABLE: Record<Exclude<CollabDocKind, 'site'>, string> = {
   layout: 'layouts',
 }
 
+/**
+ * The cells each doc kind derives from its Y doc. Every other cell on the
+ * row (SEO title and description, featured media, plugin-owned fields) is
+ * edited elsewhere and must survive a relay write untouched; an owned cell
+ * the projection no longer emits (a page that stopped being a template)
+ * is cleared.
+ */
+const OWNED_CELLS: Record<Exclude<CollabDocKind, 'site'>, readonly string[]> = {
+  page: ['title', 'slug', 'body', 'templateEnabled', 'templateTarget', 'templatePriority'],
+  component: ['name', 'slug', 'body', 'params', 'classIds'],
+  layout: ['name', 'slug', 'body', 'classes'],
+}
+
+/** The row's stored cells with the doc-owned ones replaced by what the doc derives. */
+export function mergeDerivedCells(
+  existing: Record<string, unknown> | undefined,
+  derived: Record<string, unknown>,
+  owned: readonly string[],
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...existing }
+  for (const key of owned) delete merged[key]
+  return { ...merged, ...derived }
+}
+
 export type DerivedWrite = 'written' | 'incomplete' | 'invalid'
 type SiteRosters = ReturnType<typeof projectSiteDoc>['rosters']
 
@@ -330,10 +354,13 @@ export function createRelayPersistence(
       slug = layoutSlugFromName(layout.name)
     }
 
+    // The doc carries only the cells the editor owns; the rest of the row
+    // was edited elsewhere and stays exactly as stored.
+    const existing = await getDataRow(db, scope, parsed.rowId)
     await upsertDataRowDraft(
       db,
       scope,
-      { id: parsed.rowId, tableId: table, cells, slug },
+      { id: parsed.rowId, tableId: table, cells: mergeDerivedCells(existing?.cells, cells, OWNED_CELLS[parsed.kind]), slug },
       null,
       { collabInternal: true },
     )

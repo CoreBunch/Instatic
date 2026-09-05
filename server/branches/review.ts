@@ -13,6 +13,7 @@ import type { DbClient } from '../db/client'
 import { contentHash } from './contentHash'
 import { runPublishFlush } from '../publish/publishFlush'
 import { collectBranchEntities } from './entities'
+import { getLatestBranchMerge } from '../repositories/branchMerges'
 import {
   closeOpenMergeRequests,
   getLatestMergeRequest,
@@ -52,12 +53,13 @@ export async function branchContentHash(db: DbClient, branchId: string): Promise
 export async function readBranchReviewState(db: DbClient, branch: SiteBranch): Promise<BranchReviewState> {
   // Same reason as the plan: the hash must see what the editors see.
   await runPublishFlush()
-  const [request, comments, hash] = await Promise.all([
+  const [request, comments, hash, lastMerge] = await Promise.all([
     getLatestMergeRequest(db, branch.id),
     listReviewComments(db, branch.id),
     branchContentHash(db, branch.id),
+    getLatestBranchMerge(db, branch.id, 'merge'),
   ])
-  return { branch, request, comments, contentHash: hash }
+  return { branch, request, comments, contentHash: hash, lastMerge }
 }
 
 /** True when the error is the partial unique index on open requests firing. */

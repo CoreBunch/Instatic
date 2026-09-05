@@ -107,6 +107,7 @@ export {
   revokeCmsBranchPreview,
   getCmsBranchMergePlan,
   applyCmsBranchMerge,
+  undoCmsBranchMerge,
   getCmsBranchReview,
   requestCmsBranchMerge,
   withdrawCmsBranchMergeRequest,
