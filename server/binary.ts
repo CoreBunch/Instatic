@@ -34,3 +34,9 @@ export function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 export function binaryResponse(bytes: Uint8Array, init?: ResponseInit): Response {
   return new Response(toArrayBuffer(bytes), init)
 }
+
+/** SHA-256 as lowercase hexadecimal for byte identity and upload verification. */
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', toArrayBuffer(bytes))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}

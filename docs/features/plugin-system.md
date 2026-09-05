@@ -783,9 +783,40 @@ api.cms.hooks.filter('content.entry.cells', (cells, { tableSlug, entryId, actor 
 })
 ```
 
-### CMS media extensions — three independent permissions
+### CMS media ingestion and extensions
 
-The media plugin surface lives at `api.cms.media.*` and is implemented by `server/plugins/host/handlers/media.ts`. It has three independent tiers so a CDN URL rewrite plugin does not need storage-adapter authority.
+The media plugin surface lives at `api.cms.media.*` and is implemented by `server/plugins/host/handlers/media.ts`. Managed-media ingestion is separate from the three extension tiers so an integration does not need storage-adapter authority, and a CDN URL rewrite plugin does not receive media-write authority.
+
+#### Managed-media ingestion — requires `media.import`
+
+Plugins can import remote images or package assets into the managed Media library without moving bytes through QuickJS. `sourceKey` is scoped to the calling plugin and makes the operation idempotent; `sourceVersion` lets an unchanged sync return immediately without reading the source. When the version changes, the host ingests the source and replaces the existing asset while preserving its id.
+
+```js
+const result = await api.cms.media.upsert({
+  sourceKey: `catalog:${item.id}:hero`,
+  source: { kind: 'remote', url: item.heroUrl },
+  sourceVersion: item.updatedAt,
+  filename: item.heroFilename,
+  altText: item.name,
+})
+
+// Store result.asset.id in the content's media field.
+```
+
+Remote sources additionally require `network.outbound`. The URL must use HTTPS and every redirect host must match `networkAllowedHosts`. The Bun host downloads through the shared DNS-pinned SSRF guard and caps the response at 50 MB.
+
+Plugins can also promote a bundled file into managed media without network authority:
+
+```js
+await api.cms.media.upsert({
+  sourceKey: 'starter:default-hero',
+  source: { kind: 'pluginAsset', path: 'assets/default-hero.jpg' },
+  sourceVersion: api.plugin.version,
+  filename: 'default-hero.jpg',
+})
+```
+
+Package paths are resolved beneath the plugin's installed asset root; arbitrary host filesystem paths, traversal, and symlink escapes are rejected. Both sources are MIME-sniffed and passed through the ordinary upload pipeline. JPEG, PNG, WebP, and AVIF receive the WebP ladder, intrinsic dimensions, and BlurHash; storage adapters and variant delegates apply exactly as they do to an admin upload. If `sourceVersion` is unavailable, the host reads the source and compares a SHA-256 content hash instead.
 
 #### Storage adapters — requires `media.storage.adapter`
 
@@ -949,6 +980,7 @@ Risk levels:
 | `dashboard.widgets.register`| Admin                | Medium    | Register cards in the admin dashboard widget grid                       |
 | `frontend.assets`           | Frontend / manifest  | High      | Inject declarative tags into every published page; also gates module render() `js` |
 | `network.outbound`          | Server               | High      | Make outbound HTTP requests (with `networkAllowedHosts` allowlist)      |
+| `media.import`              | Server / CMS media   | High      | Upsert managed media from a remote URL or contained package asset       |
 | `media.storage.adapter`     | Server / CMS media   | Dangerous | Register an electable media storage backend                             |
 | `media.url.transform`       | Server / CMS media   | Medium    | Rewrite media URLs at render/preview/admin read time                    |
 | `media.variant.delegate`    | Server / CMS media   | High      | Replace local responsive variant generation with URL templates          |

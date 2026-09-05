@@ -7,11 +7,75 @@
 // streams the bytes itself, then commits ROUND TWO (finalizeWrite). Bytes
 // never cross the QuickJS sandbox boundary.
 //
-// Three independent permissions gate the three media tiers; see
+// Independent permissions gate media ingestion and the three extension tiers; see
 // PLUGIN_PERMISSION_VALUES for the full mapping.
 // ---------------------------------------------------------------------------
 
 import { Type, type Static } from '@sinclair/typebox'
+
+// ---------------------------------------------------------------------------
+// Managed media ingestion.
+// ---------------------------------------------------------------------------
+
+const PLUGIN_ASSET_PATH_PATTERN = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[a-zA-Z0-9._/-]+$/
+
+export const MediaUpsertSourceSchema = Type.Union([
+  Type.Object({
+    kind: Type.Literal('remote'),
+    /** Public HTTPS URL the host should download. */
+    url: Type.String({ minLength: 1, maxLength: 2_048 }),
+  }, { additionalProperties: false }),
+  Type.Object({
+    kind: Type.Literal('pluginAsset'),
+    /** Package-relative path beneath this plugin's installed asset root. */
+    path: Type.String({
+      minLength: 1,
+      maxLength: 1_024,
+      pattern: PLUGIN_ASSET_PATH_PATTERN.source,
+    }),
+  }, { additionalProperties: false }),
+])
+
+export type MediaUpsertSource = Static<typeof MediaUpsertSourceSchema>
+
+export const MediaUpsertInputSchema = Type.Object({
+  /** Stable source identity scoped to the calling plugin. */
+  sourceKey: Type.String({ minLength: 1, maxLength: 500 }),
+  source: MediaUpsertSourceSchema,
+  /**
+   * Source revision, ETag, package version, or updated-at value. Reusing the
+   * same version returns the existing asset without reading it again. When
+   * omitted, the host reads the source and compares the content hash.
+   */
+  sourceVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
+  filename: Type.String({ minLength: 1, maxLength: 255 }),
+  altText: Type.Optional(Type.String({ maxLength: 4_096 })),
+}, { additionalProperties: false })
+
+export type MediaUpsertInput = Static<typeof MediaUpsertInputSchema>
+
+export const UpsertedMediaAssetSchema = Type.Object({
+  id: Type.String({ minLength: 1 }),
+  filename: Type.String(),
+  publicPath: Type.String({ minLength: 1 }),
+  mimeType: Type.String({ minLength: 1 }),
+  altText: Type.String(),
+  width: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+  height: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+}, { additionalProperties: false })
+
+export type UpsertedMediaAsset = Static<typeof UpsertedMediaAssetSchema>
+
+export const MediaUpsertResultSchema = Type.Object({
+  status: Type.Union([
+    Type.Literal('created'),
+    Type.Literal('unchanged'),
+    Type.Literal('replaced'),
+  ]),
+  asset: UpsertedMediaAssetSchema,
+}, { additionalProperties: false })
+
+export type MediaUpsertResult = Static<typeof MediaUpsertResultSchema>
 
 /**
  * Asset roles the storage subsystem distinguishes. An adapter declares the
@@ -277,6 +341,18 @@ export interface MediaVariantDelegate {
 // ---------------------------------------------------------------------------
 
 export interface ServerPluginMediaApi {
+  /**
+   * Create or update managed media from a remote HTTPS URL or a file shipped
+   * inside this plugin's package. The host resolves and validates the bytes,
+   * writes through the elected storage adapter, and runs the normal responsive
+   * image pipeline. Image bytes never cross the QuickJS boundary.
+   *
+   * `sourceKey` is scoped to this plugin and makes scheduled syncs idempotent.
+   * Requires `media.import`. Remote sources additionally require
+   * `network.outbound` and a matching `networkAllowedHosts` entry for every
+   * redirect hop.
+   */
+  upsert: (input: MediaUpsertInput) => Promise<MediaUpsertResult>
   /**
    * Register an exclusive storage adapter. The admin elects which adapter
    * handles each role from "Settings → Media storage". An adapter cannot

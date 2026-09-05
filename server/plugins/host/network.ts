@@ -1,7 +1,7 @@
 /**
  * SSRF-safe outbound fetch for every server-initiated request to a
- * caller-influenced URL: the plugin `network.outbound` capability
- * (`performGatedFetch`) and media storage migration both go through
+ * caller-influenced URL: plugin outbound requests, remote media ingestion,
+ * MCP remote uploads, and media storage migration all go through
  * `guardedFetch` here.
  *
  * `guardedFetch` resolves the host, refuses any address that is not a
@@ -126,6 +126,7 @@ async function assertOutboundAllowed(
   urlString: string,
   resolveHost: (host: string) => Promise<string[]>,
   label: string,
+  requireHttps: boolean,
 ): Promise<ValidatedTarget> {
   let parsed: URL
   try {
@@ -133,7 +134,10 @@ async function assertOutboundAllowed(
   } catch {
     throw new Error(`${label} fetch has an invalid URL: "${urlString}"`)
   }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+  if (requireHttps && parsed.protocol !== 'https:') {
+    throw new Error(`${label} fetch only supports https: URLs (got "${parsed.protocol}")`)
+  }
+  if (!requireHttps && parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     throw new Error(`${label} fetch only supports http: and https: URLs (got "${parsed.protocol}")`)
   }
   if (allowlist !== undefined && !hostMatchesAllowlist(parsed.host, allowlist)) {
@@ -234,6 +238,8 @@ export interface GuardedFetchOptions {
   fetchImpl?: typeof fetch
   signal?: AbortSignal
   maxRedirects?: number
+  /** Require HTTPS on the initial URL and every redirect hop. */
+  requireHttps?: boolean
   /** Prefix for error messages, e.g. a plugin id or `Media migration`. */
   label?: string
 }
@@ -263,7 +269,13 @@ export async function guardedFetch(
     // connection to the checked IP. Bun is told not to follow redirects, so an
     // allowlisted host can never bounce us to a private/internal target, and
     // the pin closes the check-then-connect DNS-rebinding gap (SSRF).
-    const { url: parsed, pinnedIp } = await assertOutboundAllowed(opts.allowlist, currentUrl, resolveHost, label)
+    const { url: parsed, pinnedIp } = await assertOutboundAllowed(
+      opts.allowlist,
+      currentUrl,
+      resolveHost,
+      label,
+      opts.requireHttps ?? false,
+    )
     const request = buildPinnedRequest(parsed, pinnedIp, headers)
 
     const fetchInit: PinnedFetchInit = {
@@ -282,6 +294,7 @@ export async function guardedFetch(
       if (hop >= maxRedirects) {
         throw new Error(`${label} fetch exceeded ${maxRedirects} redirects.`)
       }
+      await response.body?.cancel()
       // Resolve the redirect against the ORIGINAL hostname URL, not the pinned
       // IP URL, so a relative Location keeps the right host.
       const next = new URL(location, currentUrl)
