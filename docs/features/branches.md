@@ -84,7 +84,7 @@ Foreign keys stay physical, so main's rows, versions, redirects, and media refer
 
 ### Scope
 
-`BranchScope { branchId }` is an explicit parameter on every repository function that touches a branched table (gated). The CMS dispatcher resolves it once:
+`BranchScope { branchId }` is an explicit parameter on every repository function that touches a branched table (gated). The CMS dispatcher resolves it once, **after** the account route groups (setup, session, login, preferences, users, roles, audit) have had their turn: those hold no branched data, and a tab can carry a header naming a branch that no longer exists (deleted from another tab, or the database reset under it), which must never block signing in — signing in is how such a tab recovers, since the authenticated branch store drops back to main on the first `branch_not_found` it sees. It also keeps a branch's existence from being revealed before authentication.
 
 ```ts
 const scope = await resolveBranchScope(req, db)   // MAIN_SCOPE, or 400 / 404 { code: 'branch_not_found' }

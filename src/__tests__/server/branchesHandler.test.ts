@@ -78,6 +78,27 @@ describe('branches endpoints', () => {
     expect(await readJson<{ code: string }>(unknown)).toMatchObject({ code: 'branch_not_found' })
   })
 
+  it('lets a stale branch header through the account routes and still refuses it on content', async () => {
+    harness = await createCapabilityTestHarness()
+    const owner = await harness.setupOwner()
+    // A tab remembering a branch that no longer exists sends its header on
+    // every request, the sign-in included; the account routes must not care.
+    const stale = { 'X-Instatic-Branch': 'long-gone' }
+    expect((await harness.cms('/admin/api/cms/setup/status', { headers: stale })).status).toBe(200)
+    expect((await harness.cms('/admin/api/cms/me', { cookie: owner, headers: stale })).status).toBe(200)
+    // Wrong password answers as a login failure, not as a missing branch.
+    const login = await harness.cms('/admin/api/cms/login', {
+      method: 'POST',
+      headers: stale,
+      json: { email: 'nobody@example.test', password: 'not-the-password' },
+    })
+    expect(login.status).toBe(401)
+    // Content routes still refuse it, with the code the client falls back on.
+    const content = await harness.cms(BRANCHES, { cookie: owner, headers: stale })
+    expect(content.status).toBe(404)
+    expect(await readJson<{ code: string }>(content)).toMatchObject({ code: 'branch_not_found' })
+  })
+
   it('refuses duplicate ids, malformed ids, and any change to main', async () => {
     harness = await createCapabilityTestHarness()
     const owner = await harness.setupOwner()
