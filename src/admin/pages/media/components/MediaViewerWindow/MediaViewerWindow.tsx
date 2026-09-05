@@ -33,6 +33,8 @@ import { useCurrentAdminUser } from '@admin/sessionContext'
 import { Copy2SolidIcon } from 'pixel-art-icons/icons/copy-2-solid'
 import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
 import { ReloadIcon } from 'pixel-art-icons/icons/reload'
+import { MinusIcon } from 'pixel-art-icons/icons/minus'
+import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import { PanelHeader } from '@admin/shared/PanelHeader'
@@ -101,6 +103,7 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
   const currentUser = useCurrentAdminUser()
   const { asset } = editor
   const [replaceOpen, setReplaceOpen] = useState(false)
+  const [minimized, setMinimized] = useState(false)
   const bucket = bucketForMime(asset.mimeType)
   const canWrite = canWriteMedia(currentUser)
   const canReplace = canReplaceMedia(currentUser)
@@ -175,14 +178,31 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
       style={panelPositionStyle}
       onClick={(event) => event.stopPropagation()}
     >
+      {/* This window builds its own shell rather than `FloatingWindow`, so the
+          collapse control is wired here directly — same behaviour, same
+          per-session scope, same reason for staying put: the position is the
+          user's own and folding to a corner would discard it. */}
       <PanelHeader
         panelId="mediaDetachedInspector"
         title={asset.filename}
         onClose={onClose}
         dragHandleProps={headerDragProps}
-      />
+      >
+        <Button
+          variant="ghost"
+          size="xs"
+          iconOnly
+          tooltip={minimized ? 'Expand' : 'Minimize'}
+          aria-label={minimized ? `Expand ${asset.filename}` : `Minimize ${asset.filename}`}
+          aria-expanded={!minimized}
+          data-testid="panel-minimize-mediaDetachedInspector"
+          onClick={() => setMinimized((value) => !value)}
+        >
+          {minimized ? <PlusIcon size={13} /> : <MinusIcon size={13} />}
+        </Button>
+      </PanelHeader>
 
-      <div className={styles.body}>
+      {!minimized && <div className={styles.body}>
         <div className={styles.viewer}>
           <ViewerBody asset={asset} />
         </div>
@@ -343,7 +363,7 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
             </Section>
           )}
         </aside>
-      </div>
+      </div>}
 
       {canReplace && (
         <ReplaceFileDialog
