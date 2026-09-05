@@ -48,6 +48,7 @@ export {
   ReviewUserLabelSchema,
   REVIEW_COMMENT_MAX_LENGTH,
   REVIEW_NOTE_MAX_LENGTH,
+  REVIEW_VIEWPORT,
   MergeDirectionSchema,
   MergePlanEnvelopeSchema,
   MergePlanSchema,
