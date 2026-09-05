@@ -4,6 +4,7 @@ import { PanelHeader } from '@admin/shared/PanelHeader'
 import type { FloatingPanelId, PanelPosition } from '@admin/state/workspaceLayoutStorage'
 import { cn } from '@ui/cn'
 import { useDraggablePanel } from './useDraggablePanel'
+import { useTopmostEscape } from './useTopmostEscape'
 import styles from './FloatingWindow.module.css'
 
 interface FloatingWindowProps {
@@ -51,6 +52,8 @@ export function FloatingWindow({
     () => defaultPosition,
   )
   useImperativeHandle(forwardedRef, () => panelRef.current as HTMLDivElement)
+
+  useTopmostEscape(open, panelRef, onClose)
 
   if (!open) return null
 
