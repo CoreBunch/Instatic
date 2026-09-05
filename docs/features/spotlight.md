@@ -81,8 +81,10 @@ interface Command {
   capability?:    string | readonly string[]
   /** Workspace gate — only show on these workspaces. 'any' = always. */
   workspaces?:    ReadonlyArray<AdminWorkspace | 'any'>
-  /** Predicate run at query time — finer-grained gating. */
+  /** Contextual relevance — hides when false, scores +250 when true. */
   when?:          (ctx: CommandContext) => boolean
+  /** Environment gate — hides when false, never scores. */
+  available?:     (ctx: CommandContext) => boolean
   /** Boosts ranking when `when` returns true. Default 1.0. */
   priorityBoost?: number
 
@@ -161,7 +163,9 @@ The subscription is **dropped on close** to avoid spurious re-renders.
 | `account` / `users`| Account security, session revocation, user management                |
 | `branches`         | Switch branch…, Create branch…, Switch to main, Manage branches… (`commands/branches.ts`) |
 
-Each command's `when(ctx)` / `workspaces` / `capability` fields filter by user capability + workspace context. `filterCommands(commands, ctx)` runs once per palette open.
+Each command's `when(ctx)` / `available(ctx)` / `workspaces` / `capability` fields filter by user capability + workspace context. `filterCommands(commands, ctx)` runs once per palette open.
+
+**`when` vs `available`** — both hide the command when they return false, and the difference is what a `true` means. `when` is *contextual relevance*: the user has something to act on right now (a selection, an undoable edit, an open page), so a `true` also scores **+250** and lifts the command above one that merely matches the query text. `available` is an *environment gate*: whether the command exists here at all (publishing only on main, branch actions only off main). It scores nothing, because a gate that is true almost all the time would otherwise carry a standing +250 — enough to outrank the +150 recency boost and pin the command to the top of an empty palette forever. Reach for `available` whenever the predicate is not about something the user is pointing at.
 
 ---
 

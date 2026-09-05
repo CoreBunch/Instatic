@@ -36,7 +36,9 @@ export function getEditorCommands(): Command[] {
       workspaces: ['site'],
       capability: 'pages.publish',
       // Publishing only exists on main; on a branch the palette hides it.
-      when: () => isOnMainBranch(),
+      // A visibility gate, not a relevance one: `when` would hand Publish a
+      // standing +250 on main and pin it above recently run commands.
+      available: () => isOnMainBranch(),
       run: async (ctx) => {
         ctx.closeSpotlight()
         try {

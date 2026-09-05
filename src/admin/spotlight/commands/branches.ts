@@ -48,7 +48,7 @@ export function getBranchesCommands(): Command[] {
       keywords: ['branch', 'main', 'live', 'switch'],
       workspaces: ['any'],
       capability: 'site.read',
-      when: () => !isOnMainBranch(),
+      available: () => !isOnMainBranch(),
       run: (ctx) => {
         ctx.closeSpotlight()
         switchBranch(MAIN_BRANCH_ID)
