@@ -48,8 +48,13 @@ export function UploadQueueWindow({ queue, open, onClose, onRevealAsset }: Uploa
       panelId="mediaUploadQueue"
       open={open}
       onClose={onClose}
+      minimizable
       title={`Uploads (${succeeded}/${total})`}
-      defaultPosition={{ x: 16, y: 80 }}
+      // Bottom-left by default — where a browser puts its download shelf and
+      // Finder its copy progress, so a transfer sits out of the way of the
+      // grid it is filling. Only the DEFAULT: `useDraggablePanel` restores a
+      // stored position first, so a window the user has moved stays moved.
+      defaultPosition={{ x: 16, y: Math.max(80, window.innerHeight - 360) }}
       width={360}
       maxHeight={420}
       ariaLabel="Upload queue"

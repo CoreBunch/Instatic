@@ -84,24 +84,43 @@ export function MediaPage() {
   // completes (the user dismisses it) and the toolbar button toggles it — so
   // it can't be derived. Auto-opening on the async upload transition is the
   // legitimate "sync UI to an external async system" use of an effect.
+  //
+  // Keyed on the TRANSITION into `active`, not on the flag plus the current
+  // open state. Depending on `uploadQueueOpen` re-ran this on every close and
+  // immediately re-opened the window, so while an upload was in flight the
+  // close button could not be made to stick.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (workspace.uploadQueue.active && !uploadQueueOpen) {
-      setUploadQueueOpen(true)
-    }
-  }, [workspace.uploadQueue.active, uploadQueueOpen])
+    if (workspace.uploadQueue.active) setUploadQueueOpen(true)
+  }, [workspace.uploadQueue.active])
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Closing the queue window hides the transfer, it does not cancel it — so
+  // the button that reopens it carries the progress. Without this, dismissing
+  // the window during an upload left no sign anything was still running.
+  const uploadsInFlight = workspace.uploadQueue.items.filter(
+    (item) => item.status === 'queued' || item.status === 'uploading',
+  ).length
+  const uploadsTotal = workspace.uploadQueue.items.length
 
   const toolbarRightSlot = (
     <Button
       variant="ghost"
       size="sm"
       onClick={() => setUploadQueueOpen((open) => !open)}
-      aria-label="Toggle upload queue"
+      aria-label={
+        uploadsInFlight > 0
+          ? `Toggle upload queue — ${uploadsTotal - uploadsInFlight} of ${uploadsTotal} done`
+          : 'Toggle upload queue'
+      }
       pressed={uploadQueueOpen}
     >
       <UploadIcon size={13} />
-      <span>Uploads</span>
+      <span>
+        {uploadsInFlight > 0
+          ? `Uploads ${uploadsTotal - uploadsInFlight}/${uploadsTotal}`
+          : 'Uploads'}
+      </span>
       {workspace.uploadQueue.active && (
         <span aria-hidden="true" style={{ marginLeft: 4 }}>·</span>
       )}
